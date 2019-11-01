@@ -1,0 +1,18 @@
+{
+  "name": "node",
+  "version": "0.1.0",
+  "description": "",
+  "main": "lib/index.js",
+  "repository": {
+    "type": "git",
+    "url": ".."
+  },
+  "author": "Anthony MOI <m.anthony.moi@gmail.com>",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "neon-cli": "^0.3.3"
+  },
+  "scripts": {
+    "install": "neon build"
+  }
+}

@@ -1,0 +1,18 @@
+[package]
+name = "node"
+version = "0.1.0"
+authors = ["Anthony MOI <m.anthony.moi@gmail.com>"]
+license = "Apache-2.0"
+build = "build.rs"
+exclude = ["artifacts.json", "index.node"]
+
+[lib]
+name = "node"
+crate-type = ["cdylib"]
+
+[build-dependencies]
+neon-build = "0.3.3"
+
+[dependencies]
+neon = "0.3.3"
+tokenizers-lib = { path = "../../../tokenizers" }
