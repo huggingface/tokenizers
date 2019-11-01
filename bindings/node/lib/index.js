@@ -5,4 +5,4 @@ if (typeof process.argv[2] == 'string') {
 	s = process.argv[2];
 }
 
-console.log(addon.tokenize(s));
+console.log(addon.WhitespaceTokenizer.tokenize(s));
