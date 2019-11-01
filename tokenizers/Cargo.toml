@@ -1,0 +1,15 @@
+[package]
+name = "tokenizers"
+version = "0.1.0"
+authors = ["Anthony MOI <m.anthony.moi@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "tokenizers"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cli"
+path = "src/cli.rs"
+
+[dependencies]
