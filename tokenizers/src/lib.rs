@@ -1,3 +1,7 @@
-pub fn tokenize(s: &str) -> Vec<u32> {
-    vec![1, 2, 3]
-}
+#[macro_use]
+extern crate lazy_static;
+
+mod libs;
+
+// Re-export
+pub use libs::WhitespaceTokenizer;

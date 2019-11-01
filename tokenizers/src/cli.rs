@@ -1,8 +1,11 @@
 /// This is the CLI binary for the Tokenizers project
-use tokenizers;
+use tokenizers::WhitespaceTokenizer;
 
 fn main() {
-    println!("Hello, world!");
     let s = "Hey man!";
-    println!("Tokenizing {:?} gives {:?}", s, tokenizers::tokenize(&s));
+    println!(
+        "Tokenizing {:?} gives {:?}",
+        s,
+        WhitespaceTokenizer::tokenize(&s)
+    );
 }
