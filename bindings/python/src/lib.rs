@@ -1,4 +1,5 @@
 extern crate tokenizers as tk;
+
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
@@ -6,8 +7,7 @@ use pyo3::wrap_pyfunction;
 /// Tokenize
 fn tokenize(a: String) -> PyResult<Vec<u32>> {
     println!("Tokenize in rust");
-    tk::test();
-    Ok(vec![1, 2, 3])
+    Ok(tk::tokenize(&a))
 }
 
 #[pymodule]
@@ -20,6 +20,6 @@ fn tokenizers(py: Python, m: &PyModule) -> PyResult<()> {
 mod tests {
     #[test]
     fn it_works() {
-        assert_eq!(2 + 2, 4);
+        assert_eq!(tk::tokenize("Hey man!"), vec![1, 2, 3]);
     }
 }

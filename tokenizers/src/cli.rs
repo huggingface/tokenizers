@@ -1,7 +1,8 @@
 /// This is the CLI binary for the Tokenizers project
-use tokenizers::test;
+use tokenizers;
 
 fn main() {
     println!("Hello, world!");
-    test();
+    let s = "Hey man!";
+    println!("Tokenizing {:?} gives {:?}", s, tokenizers::tokenize(&s));
 }
