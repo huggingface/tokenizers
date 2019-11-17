@@ -1,7 +1,8 @@
 #[macro_use]
 extern crate lazy_static;
 
-mod libs;
-
-// Re-export
-pub use libs::WhitespaceTokenizer;
+pub mod models;
+pub mod normalizers;
+pub mod pre_tokenizers;
+pub mod processors;
+pub mod tokenizer;
