@@ -1,6 +1,12 @@
-use super::{Pair, Word};
+use super::{Error, Pair, Word};
 use crate::tokenizer::{Model, Token};
-use std::collections::HashMap;
+use serde_json::Value;
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::prelude::*,
+    io::{BufRead, BufReader},
+};
 
 pub struct BPE {
     /// The vocabulary assigns a number to each token
@@ -22,6 +28,62 @@ impl BPE {
             vocab_r,
             merges,
         }
+    }
+
+    pub fn from_files(vocab: &str, merges: &str) -> Result<Self, Error> {
+        // Read vocab.json
+        let vocab_file = File::open(vocab)?;
+        let mut vocab_file = BufReader::new(vocab_file);
+
+        let mut buffer = String::new();
+        vocab_file.read_to_string(&mut buffer)?;
+        let json: Value = serde_json::from_str(&buffer)?;
+        let mut vocab = HashMap::new();
+        match json {
+            Value::Object(m) => {
+                for (token, id) in m {
+                    if let Value::Number(id) = id {
+                        let id = id.as_u64().ok_or(Error::BadVocabulary)? as u32;
+                        vocab.insert(token, id);
+                    }
+                }
+            }
+            _ => return Err(Error::BadVocabulary),
+        };
+
+        // Read merges file
+        let merge_file = File::open(merges)?;
+        let merge_file = BufReader::new(merge_file);
+        let mut merges = HashMap::<Pair, (u32, u32)>::new();
+        for (rank, line) in merge_file.lines().enumerate() {
+            let line = line?;
+            if line.starts_with("#version") {
+                // Skip line with: #version
+                continue;
+            }
+
+            let parts = line.split(" ").collect::<Vec<_>>();
+
+            let a = vocab
+                .get(parts[0])
+                .ok_or(Error::MergeTokenOutOfVocabulary(parts[0].to_owned()))?;
+            let b = vocab
+                .get(parts[1])
+                .ok_or(Error::MergeTokenOutOfVocabulary(parts[1].to_owned()))?;
+            let pair = (*a, *b);
+            let new_token = format!("{}{}", parts[0], parts[1]);
+            let new_id = vocab
+                .get(&new_token)
+                .ok_or(Error::MergeTokenOutOfVocabulary(new_token))?;
+
+            merges.insert(pair, (rank as u32, *new_id));
+        }
+
+        Ok(BPE {
+            vocab: vocab.clone(),
+            vocab_r: vocab.into_iter().map(|(token, id)| (id, token)).collect(),
+            merges,
+        })
     }
 }
 

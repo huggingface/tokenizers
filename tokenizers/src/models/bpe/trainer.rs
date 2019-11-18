@@ -3,7 +3,7 @@
 //!
 //! In charge of training a BPE model
 //!
-use super::{Pair, Word, BPE};
+use super::{Error, Pair, Word, BPE};
 use crate::tokenizer::PreTokenizer;
 use rayon::prelude::*;
 use std::{
@@ -34,17 +34,6 @@ impl TrainerConfig {
             vocab_size,
             min_frequency,
         }
-    }
-}
-
-#[derive(Debug)]
-pub enum Error {
-    Io(std::io::Error),
-}
-
-impl std::convert::From<std::io::Error> for Error {
-    fn from(error: std::io::Error) -> Self {
-        Error::Io(error)
     }
 }
 
