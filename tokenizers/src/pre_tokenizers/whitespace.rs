@@ -1,9 +1,9 @@
+use crate::tokenizer::PreTokenizer;
 use onig::Regex;
 
-pub struct WhitespaceTokenizer();
-
-impl WhitespaceTokenizer {
-    pub fn tokenize(s: &str) -> Vec<String> {
+pub struct Whitespace;
+impl PreTokenizer for Whitespace {
+    fn pre_tokenize(&self, s: &str) -> Vec<String> {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"\w+|[^\w\s]+").unwrap();
         }
@@ -15,10 +15,11 @@ impl WhitespaceTokenizer {
 
 #[cfg(test)]
 mod tests {
-    use super::WhitespaceTokenizer;
+    use super::Whitespace;
+    use crate::tokenizer::PreTokenizer;
 
     #[test]
-    fn separate_words() {
+    fn basic() {
         let tests = vec![
             ("Hey man!", vec!["Hey", "man", "!"]),
             (
@@ -26,8 +27,9 @@ mod tests {
                 vec!["How", "are", "you", "doing", "?"],
             ),
         ];
+        let pretok = Whitespace;
         for (s, res) in tests {
-            assert_eq!(WhitespaceTokenizer::tokenize(s), res);
+            assert_eq!(pretok.pre_tokenize(s), res);
         }
     }
 }
