@@ -7,6 +7,8 @@ from transformers import GPT2Tokenizer
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--file", default=None, type=str, help="The file to encode")
+parser.add_argument("--vocab", default=None, type=str, required=True, help="The vocab.json file")
+parser.add_argument("--merges", default=None, type=str, required=True, help="The merges.txt file")
 args = parser.parse_args()
 
 if args.file is not None:
@@ -41,11 +43,7 @@ Namespaces are one honking great idea -- let's do more of those!
 
 
 tok_p = GPT2Tokenizer.from_pretrained('gpt2')
-tok_r = Tokenizer.bpe_from_files(
-    "../../data/gpt2-vocab.json",
-    "../../data/gpt2-merges.txt",
-    pre_tokenizer="ByteLevel",
-)
+tok_r = Tokenizer.bpe_from_files(args.vocab, args.merges, pre_tokenizer="ByteLevel")
 
 def tokenize_r():
     # return [ tok_r.encode(sentence) for sentence in text]
