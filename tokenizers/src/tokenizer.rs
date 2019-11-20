@@ -27,6 +27,8 @@ pub trait PreTokenizer {
 /// Represents a `Model` used during Tokenization (Like BPE or Word or Unigram)
 pub trait Model {
     fn tokenize(&self, tokens: Vec<String>) -> Vec<Token>;
+    fn token_to_id(&self, token: &str) -> Option<u32>;
+    fn id_to_token(&self, id: u32) -> Option<String>;
 }
 
 /// A PostProcessor has the responsibility to post process an encoded output of the Tokenizer.
@@ -97,6 +99,16 @@ impl Tokenizer {
     pub fn with_model(&mut self, model: Box<dyn Model + Sync>) -> &Self {
         self.model = model;
         self
+    }
+
+    /// Converts a token in the corresponding id.
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.model.token_to_id(token)
+    }
+
+    /// Converts an id to the corresponding token.
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
+        self.model.id_to_token(id)
     }
 
     /// Encode the given sentence

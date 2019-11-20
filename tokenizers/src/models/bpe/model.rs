@@ -150,4 +150,12 @@ impl Model for BPE {
 
         encoded
     }
+
+    fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.vocab.get(token).map(|id| *id)
+    }
+
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.vocab_r.get(&id).map(|token| token.clone())
+    }
 }

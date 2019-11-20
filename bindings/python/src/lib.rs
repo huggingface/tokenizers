@@ -153,6 +153,14 @@ impl Tokenizer {
             })
             .collect()
     }
+
+    fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.tokenizer.token_to_id(token)
+    }
+
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.tokenizer.id_to_token(id)
+    }
 }
 
 #[pymodule]
