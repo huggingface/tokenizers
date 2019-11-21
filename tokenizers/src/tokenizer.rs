@@ -144,7 +144,21 @@ impl Tokenizer {
     }
 
     /// Decode the given ids, back to a String
-    pub fn decode(&self, tokens: Vec<u32>) -> String {
-        unimplemented!("Decode is not implemented yet");
+    pub fn decode(&self, ids: Vec<u32>) -> String {
+        let tokens = self.model.decode(ids);
+
+        if let Some(decoder) = &self.decoder {
+            decoder.decode(tokens)
+        } else {
+            tokens.join(" ")
+        }
+    }
+
+    /// Decode all sentences in parallel
+    pub fn decode_batch(&self, sentences: Vec<Vec<u32>>) -> Vec<String> {
+        sentences
+            .into_par_iter()
+            .map(|sentence| self.decode(sentence))
+            .collect()
     }
 }

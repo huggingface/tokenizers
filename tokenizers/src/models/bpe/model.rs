@@ -151,6 +151,14 @@ impl Model for BPE {
         encoded
     }
 
+    fn decode(&self, ids: Vec<u32>) -> Vec<String> {
+        ids.into_iter()
+            .map(|id| self.vocab_r.get(&id))
+            .filter(|token| token.is_some())
+            .map(|id| id.unwrap().clone())
+            .collect()
+    }
+
     fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.get(token).map(|id| *id)
     }
