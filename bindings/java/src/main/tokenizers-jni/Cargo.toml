@@ -1,0 +1,12 @@
+[package]
+name = "tokenizers-jni"
+version = "0.1.0"
+authors = ["Anthony MOI <m.anthony.moi@gmail.com>", "Morgan FUNTOWICZ <morgan@huggingface.co>"]
+edition = "2018"
+
+[dependencies]
+jni = "~0.14.0"
+tokenizers-lib = {  path = "../../../../../tokenizers", version = "~0.0.1" }
+
+[lib]
+crate_type = ["cdylib"]
