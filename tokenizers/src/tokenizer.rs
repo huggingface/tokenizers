@@ -27,6 +27,7 @@ pub trait PreTokenizer {
 /// Represents a `Model` used during Tokenization (Like BPE or Word or Unigram)
 pub trait Model {
     fn tokenize(&self, tokens: Vec<String>) -> Vec<Token>;
+    fn decode(&self, ids: Vec<u32>) -> Vec<String>;
     fn token_to_id(&self, token: &str) -> Option<u32>;
     fn id_to_token(&self, id: u32) -> Option<String>;
 }
@@ -35,6 +36,11 @@ pub trait Model {
 /// Truncating, Padding, etc... are PostProcessor steps
 pub trait PostProcessor {
     fn process(&self, tokens: Vec<Token>) -> Vec<Token>;
+}
+
+/// A Decoder has the responsibility to merge the given Vec<String> in a String
+pub trait Decoder {
+    fn decode(&self, tokens: Vec<String>) -> String;
 }
 
 /// A Token represents the output of the Tokenizer
@@ -61,6 +67,7 @@ pub struct Tokenizer {
     pre_tokenizer: Option<Box<dyn PreTokenizer + Sync>>,
     model: Box<dyn Model + Sync>,
     post_processors: Vec<Box<dyn PostProcessor + Sync>>,
+    decoder: Option<Box<dyn Decoder + Sync>>,
 }
 
 impl Tokenizer {
@@ -71,6 +78,7 @@ impl Tokenizer {
             pre_tokenizer: None,
             model,
             post_processors: vec![],
+            decoder: None,
         }
     }
 
@@ -92,6 +100,12 @@ impl Tokenizer {
         post_processors: Vec<Box<dyn PostProcessor + Sync>>,
     ) -> &Self {
         self.post_processors = post_processors;
+        self
+    }
+
+    /// Set the decoder
+    pub fn with_decoder(&mut self, decoder: Box<dyn Decoder + Sync>) -> &Self {
+        self.decoder = Some(decoder);
         self
     }
 
