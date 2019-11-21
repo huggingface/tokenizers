@@ -1,6 +1,7 @@
 use super::Pair;
 
 // TODO: Add tests
+#[derive(Clone)]
 pub struct Word {
     chars: Vec<u32>,
     sizes: Vec<usize>,
