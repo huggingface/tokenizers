@@ -58,17 +58,26 @@ print(f"Tokenizing {len(text)} lines")
 start = time.time()
 encoded_r = tokenize_r()
 end = time.time()
-print(f"Rust tokenizer took: {end - start} sec")
+time_r = end - start
+print(f"Rust tokenizer took: {time_r} sec")
 
 # Python version
 start = time.time()
 encoded_p = tokenize_p()
 end = time.time()
-print(f"Transformer tokenizer took: {end - start} sec")
+time_p = end - start
+print(f"Transformer tokenizer took: {time_p} sec")
+
+print(f"SpeedUp Ratio: {time_p / time_r}")
 
 ids_r = [ [ token.id for token in sentence ] for sentence in encoded_r ]
 assert(ids_r == encoded_p)
 
 decoded_r = tok_r.decode_batch(ids_r)
-print(f"Decoded sentences: {decoded_r}")
+for i in range(0, len(text)):
+    if decoded_r[i] != text[i]:
+        print(decoded_r[i])
+        print(text[i])
+        print("")
+
 assert(decoded_r == text)

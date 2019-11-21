@@ -48,17 +48,14 @@ impl PreTokenizer for ByteLevel {
 
 impl Decoder for ByteLevel {
     fn decode(&self, tokens: Vec<String>) -> String {
-        tokens
-            .into_iter()
-            .map(|token| {
-                let bytes = token
-                    .chars()
-                    .map(|c| CHAR_BYTES[&(c as u32)])
-                    .collect::<Vec<u8>>();
-                String::from_utf8_lossy(&bytes).into_owned()
-            })
-            .collect::<Vec<_>>()
-            .join("")
+        String::from_utf8_lossy(
+            &tokens
+                .join("")
+                .chars()
+                .map(|c| CHAR_BYTES[&(c as u32)])
+                .collect::<Vec<_>>(),
+        )
+        .into_owned()
     }
 }
 
@@ -92,5 +89,26 @@ mod tests {
                 .collect::<Vec<String>>()
             )
         );
+    }
+
+    #[test]
+    fn decode_works_on_separated_tokens() {
+        let samples = vec![
+            String::from(
+                "A Nuskhuri abbreviation of იესუ ქრისტე ( iesu kriste ) \" Jesus Christ \"",
+            ),
+            String::from("An equal number have descenders , like p or q in English : გ , დ , ე , ვ , კ , ლ , ჟ , ტ , უ , ფ , ღ , ყ , ც"),
+        ];
+
+        let bl = ByteLevel;
+        for sample in samples {
+            let pre_tokenized = bl.pre_tokenize(&sample);
+            let separated_tokens = pre_tokenized
+                .into_iter()
+                .map(|token| token.split("").map(|t| t.into()).collect::<Vec<_>>())
+                .flatten()
+                .collect::<Vec<_>>();
+            assert_eq!(sample, bl.decode(separated_tokens));
+        }
     }
 }
