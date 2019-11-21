@@ -69,4 +69,6 @@ print(f"Transformer tokenizer took: {end - start} sec")
 ids_r = [ [ token.id for token in sentence ] for sentence in encoded_r ]
 assert(ids_r == encoded_p)
 
-print(f"Decoded sentences: {tok_r.decode_batch(ids_r)}")
+decoded_r = tok_r.decode_batch(ids_r)
+print(f"Decoded sentences: {decoded_r}")
+assert(decoded_r == text)
