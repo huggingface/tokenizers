@@ -43,7 +43,7 @@ Namespaces are one honking great idea -- let's do more of those!
 
 
 tok_p = GPT2Tokenizer.from_pretrained('gpt2')
-tok_r = Tokenizer.bpe_from_files(args.vocab, args.merges, pre_tokenizer="ByteLevel")
+tok_r = Tokenizer.bpe_from_files(args.vocab, args.merges, pre_tokenizer="ByteLevel", decoder="ByteLevel")
 
 def tokenize_r():
     # return [ tok_r.encode(sentence) for sentence in text]
@@ -66,4 +66,7 @@ encoded_p = tokenize_p()
 end = time.time()
 print(f"Transformer tokenizer took: {end - start} sec")
 
-assert([ [ token.id for token in sentence] for sentence in encoded_r ] == encoded_p)
+ids_r = [ [ token.id for token in sentence ] for sentence in encoded_r ]
+assert(ids_r == encoded_p)
+
+print(f"Decoded sentences: {tok_r.decode_batch(ids_r)}")

@@ -54,6 +54,13 @@ fn get_post_processor(_name: &str) -> Option<Box<dyn tk::tokenizer::PostProcesso
     None
 }
 
+fn get_decoder(name: &str) -> Option<Box<dyn tk::tokenizer::Decoder + Sync>> {
+    match name {
+        "ByteLevel" => Some(Box::new(tk::decoders::byte_level::ByteLevel)),
+        _ => None,
+    }
+}
+
 #[pyclass]
 struct Tokenizer {
     tokenizer: tk::tokenizer::Tokenizer,
@@ -109,6 +116,7 @@ impl Tokenizer {
                                 )));
                             }
                         }
+                        tokenizer.with_normalizers(normalizers);
                     }
                     "post_processors" => {
                         let mut processors = vec![];
@@ -123,6 +131,18 @@ impl Tokenizer {
                                     value
                                 )));
                             }
+                        }
+                        tokenizer.with_post_processors(processors);
+                    }
+                    "decoder" => {
+                        let value = value.to_string();
+                        if let Some(decoder) = get_decoder(&value) {
+                            tokenizer.with_decoder(decoder);
+                        } else {
+                            return Err(exceptions::Exception::py_err(format!(
+                                "Decoder `{}` not found",
+                                value
+                            )));
                         }
                     }
                     _ => println!("Ignored unknown kwarg `{}`", option),
@@ -152,6 +172,14 @@ impl Tokenizer {
                     .collect()
             })
             .collect()
+    }
+
+    fn decode(&self, ids: Vec<u32>) -> String {
+        self.tokenizer.decode(ids)
+    }
+
+    fn decode_batch(&self, sentences: Vec<Vec<u32>>) -> Vec<String> {
+        self.tokenizer.decode_batch(sentences)
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
