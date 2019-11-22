@@ -7,6 +7,8 @@ from transformers import GPT2Tokenizer
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--file", default=None, type=str, help="The file to encode")
+parser.add_argument("--vocab", default=None, type=str, required=True, help="The vocab.json file")
+parser.add_argument("--merges", default=None, type=str, required=True, help="The merges.txt file")
 args = parser.parse_args()
 
 if args.file is not None:
@@ -41,11 +43,7 @@ Namespaces are one honking great idea -- let's do more of those!
 
 
 tok_p = GPT2Tokenizer.from_pretrained('gpt2')
-tok_r = Tokenizer.bpe_from_files(
-    "../../data/gpt2-vocab.json",
-    "../../data/gpt2-merges.txt",
-    pre_tokenizer="ByteLevel",
-)
+tok_r = Tokenizer.bpe_from_files(args.vocab, args.merges, pre_tokenizer="ByteLevel", decoder="ByteLevel")
 
 def tokenize_r():
     # return [ tok_r.encode(sentence) for sentence in text]
@@ -60,12 +58,26 @@ print(f"Tokenizing {len(text)} lines")
 start = time.time()
 encoded_r = tokenize_r()
 end = time.time()
-print(f"Rust tokenizer took: {end - start} sec")
+time_r = end - start
+print(f"Rust tokenizer took: {time_r} sec")
 
 # Python version
 start = time.time()
 encoded_p = tokenize_p()
 end = time.time()
-print(f"Transformer tokenizer took: {end - start} sec")
+time_p = end - start
+print(f"Transformer tokenizer took: {time_p} sec")
 
-assert([ [ token.id for token in sentence] for sentence in encoded_r ] == encoded_p)
+print(f"SpeedUp Ratio: {time_p / time_r}")
+
+ids_r = [ [ token.id for token in sentence ] for sentence in encoded_r ]
+assert(ids_r == encoded_p)
+
+decoded_r = tok_r.decode_batch(ids_r)
+for i in range(0, len(text)):
+    if decoded_r[i] != text[i]:
+        print(decoded_r[i])
+        print(text[i])
+        print("")
+
+assert(decoded_r == text)

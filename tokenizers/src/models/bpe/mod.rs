@@ -1,5 +1,6 @@
 use std::{convert::From, io};
 
+mod cache;
 mod model;
 mod trainer;
 mod word;
@@ -33,6 +34,7 @@ impl From<serde_json::Error> for Error {
 }
 
 // Re-export
+pub use cache::*;
 pub use model::*;
 pub use trainer::*;
 pub use word::*;

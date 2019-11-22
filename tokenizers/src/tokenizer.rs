@@ -27,12 +27,20 @@ pub trait PreTokenizer {
 /// Represents a `Model` used during Tokenization (Like BPE or Word or Unigram)
 pub trait Model {
     fn tokenize(&self, tokens: Vec<String>) -> Vec<Token>;
+    fn decode(&self, ids: Vec<u32>) -> Vec<String>;
+    fn token_to_id(&self, token: &str) -> Option<u32>;
+    fn id_to_token(&self, id: u32) -> Option<String>;
 }
 
 /// A PostProcessor has the responsibility to post process an encoded output of the Tokenizer.
 /// Truncating, Padding, etc... are PostProcessor steps
 pub trait PostProcessor {
     fn process(&self, tokens: Vec<Token>) -> Vec<Token>;
+}
+
+/// A Decoder has the responsibility to merge the given Vec<String> in a String
+pub trait Decoder {
+    fn decode(&self, tokens: Vec<String>) -> String;
 }
 
 /// A Token represents the output of the Tokenizer
@@ -59,6 +67,7 @@ pub struct Tokenizer {
     pre_tokenizer: Option<Box<dyn PreTokenizer + Sync>>,
     model: Box<dyn Model + Sync>,
     post_processors: Vec<Box<dyn PostProcessor + Sync>>,
+    decoder: Option<Box<dyn Decoder + Sync>>,
 }
 
 impl Tokenizer {
@@ -69,6 +78,7 @@ impl Tokenizer {
             pre_tokenizer: None,
             model,
             post_processors: vec![],
+            decoder: None,
         }
     }
 
@@ -93,10 +103,26 @@ impl Tokenizer {
         self
     }
 
+    /// Set the decoder
+    pub fn with_decoder(&mut self, decoder: Box<dyn Decoder + Sync>) -> &Self {
+        self.decoder = Some(decoder);
+        self
+    }
+
     /// Set the model
     pub fn with_model(&mut self, model: Box<dyn Model + Sync>) -> &Self {
         self.model = model;
         self
+    }
+
+    /// Converts a token in the corresponding id.
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.model.token_to_id(token)
+    }
+
+    /// Converts an id to the corresponding token.
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
+        self.model.id_to_token(id)
     }
 
     /// Encode the given sentence
@@ -118,7 +144,21 @@ impl Tokenizer {
     }
 
     /// Decode the given ids, back to a String
-    pub fn decode(&self, tokens: Vec<u32>) -> String {
-        unimplemented!("Decode is not implemented yet");
+    pub fn decode(&self, ids: Vec<u32>) -> String {
+        let tokens = self.model.decode(ids);
+
+        if let Some(decoder) = &self.decoder {
+            decoder.decode(tokens)
+        } else {
+            tokens.join(" ")
+        }
+    }
+
+    /// Decode all sentences in parallel
+    pub fn decode_batch(&self, sentences: Vec<Vec<u32>>) -> Vec<String> {
+        sentences
+            .into_par_iter()
+            .map(|sentence| self.decode(sentence))
+            .collect()
     }
 }
