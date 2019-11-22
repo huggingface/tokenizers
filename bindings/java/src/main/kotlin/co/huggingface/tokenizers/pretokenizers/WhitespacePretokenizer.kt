@@ -6,14 +6,13 @@ import co.huggingface.tokenizers.jni.Native
 
 class WhitespacePretokenizer() : Pretokenizer, Native {
 
-    val ref: Long
-        get
+    private var ref: Long = -1
 
     init {
         this.ref = nativeHandle()
     }
 
-    external fun nativeHandle(): Long
+    private external fun nativeHandle(): Long
     external override fun finalize();
 
     @Throws(NativeAllocationFailedException::class, StringDecodingException::class)
