@@ -30,11 +30,8 @@ pub struct BPE {}
 #[pymethods]
 impl BPE {
     #[staticmethod]
-    fn from_files() -> PyResult<Model> {
-        match tk::models::bpe::BPE::from_files(
-            "../../data/gpt2-vocab.json",
-            "../../data/gpt2-merges.txt",
-        ) {
+    fn from_files(vocab: &str, merges: &str) -> PyResult<Model> {
+        match tk::models::bpe::BPE::from_files(vocab, merges) {
             Err(e) => {
                 println!("Error: {:?}", e);
                 Err(exceptions::Exception::py_err(
