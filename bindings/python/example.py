@@ -2,7 +2,7 @@ import os
 import time
 import argparse
 
-from tokenizers import Tokenizer
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders
 from transformers import GPT2Tokenizer
 
 parser = argparse.ArgumentParser()
@@ -43,7 +43,13 @@ Namespaces are one honking great idea -- let's do more of those!
 
 
 tok_p = GPT2Tokenizer.from_pretrained('gpt2')
-tok_r = Tokenizer.bpe_from_files(args.vocab, args.merges, pre_tokenizer="ByteLevel", decoder="ByteLevel")
+
+# Create a Tokenizer using BPE
+tok_r = Tokenizer(models.BPE.from_files(args.vocab, args.merges))
+# Use ByteLevel PreTokenizer
+tok_r.with_pre_tokenizer(pre_tokenizers.ByteLevel.new())
+# Use ByteLevel Decoder
+tok_r.with_decoder(decoders.ByteLevel.new())
 
 def tokenize_r():
     # return [ tok_r.encode(sentence) for sentence in text]
