@@ -14,7 +14,10 @@ maturin develop --release
 # Then test:
 pip install transformers
 
-python example.py --file <FILE_PATH>
-# or
-python example.py
+# Download vocab/merges from GPT-2
+wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-vocab.json
+wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-merges.txt
+
+python examples/example.py --file <FILE_PATH> --merges gpt2-merges.txt --vocab gpt2-vocab.json
+python custom_pre_tokenizer.py --merges gpt2-merges.txt --vocab gpt2-vocab.json
 ```
