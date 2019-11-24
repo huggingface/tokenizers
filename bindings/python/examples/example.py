@@ -1,4 +1,3 @@
-import os
 import time
 import argparse
 
@@ -12,10 +11,7 @@ parser.add_argument("--merges", default=None, type=str, required=True, help="The
 args = parser.parse_args()
 
 if args.file is not None:
-    current_dir = os.path.abspath(os.path.dirname(__file__))
-    path = os.path.join(current_dir, args.file)
-
-    with open(path, "r") as fp:
+    with open(args.file, "r") as fp:
         text = [ line.strip() for line in fp ]
 else:
     text = """
