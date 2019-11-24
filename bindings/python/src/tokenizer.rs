@@ -3,7 +3,9 @@ extern crate tokenizers as tk;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 
+use super::decoders::Decoder;
 use super::models::Model;
+use super::pre_tokenizers::PreTokenizer;
 use super::token::Token;
 
 #[pyclass]
@@ -21,7 +23,7 @@ impl Tokenizer {
             Ok(())
         } else {
             Err(exceptions::Exception::py_err(
-                "The model is already being used in another Tokenizer",
+                "The Model is already being used in another Tokenizer",
             ))
         }
     }
@@ -32,7 +34,29 @@ impl Tokenizer {
             Ok(())
         } else {
             Err(exceptions::Exception::py_err(
-                "The model is already being used in another Tokenizer",
+                "The Model is already being used in another Tokenizer",
+            ))
+        }
+    }
+
+    fn with_pre_tokenizer(&mut self, pretok: &mut PreTokenizer) -> PyResult<()> {
+        if let Some(pretok) = pretok.pretok.to_pointer() {
+            self.tokenizer.with_pre_tokenizer(pretok);
+            Ok(())
+        } else {
+            Err(exceptions::Exception::py_err(
+                "The PreTokenizer is already being used in another Tokenizer",
+            ))
+        }
+    }
+
+    fn with_decoder(&mut self, decoder: &mut Decoder) -> PyResult<()> {
+        if let Some(decoder) = decoder.decoder.to_pointer() {
+            self.tokenizer.with_decoder(decoder);
+            Ok(())
+        } else {
+            Err(exceptions::Exception::py_err(
+                "The Decoder is already being used in another Tokenizer",
             ))
         }
     }

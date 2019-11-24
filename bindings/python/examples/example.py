@@ -1,8 +1,7 @@
-import os
 import time
 import argparse
 
-from tokenizers import Tokenizer
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders
 from transformers import GPT2Tokenizer
 
 parser = argparse.ArgumentParser()
@@ -12,10 +11,7 @@ parser.add_argument("--merges", default=None, type=str, required=True, help="The
 args = parser.parse_args()
 
 if args.file is not None:
-    current_dir = os.path.abspath(os.path.dirname(__file__))
-    path = os.path.join(current_dir, args.file)
-
-    with open(path, "r") as fp:
+    with open(args.file, "r") as fp:
         text = [ line.strip() for line in fp ]
 else:
     text = """
@@ -43,7 +39,13 @@ Namespaces are one honking great idea -- let's do more of those!
 
 
 tok_p = GPT2Tokenizer.from_pretrained('gpt2')
-tok_r = Tokenizer.bpe_from_files(args.vocab, args.merges, pre_tokenizer="ByteLevel", decoder="ByteLevel")
+
+# Create a Tokenizer using BPE
+tok_r = Tokenizer(models.BPE.from_files(args.vocab, args.merges))
+# Use ByteLevel PreTokenizer
+tok_r.with_pre_tokenizer(pre_tokenizers.ByteLevel.new())
+# Use ByteLevel Decoder
+tok_r.with_decoder(decoders.ByteLevel.new())
 
 def tokenize_r():
     # return [ tok_r.encode(sentence) for sentence in text]

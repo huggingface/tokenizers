@@ -97,7 +97,10 @@ mod tests {
             String::from(
                 "A Nuskhuri abbreviation of იესუ ქრისტე ( iesu kriste ) \" Jesus Christ \"",
             ),
-            String::from("An equal number have descenders , like p or q in English : გ , დ , ე , ვ , კ , ლ , ჟ , ტ , უ , ფ , ღ , ყ , ც"),
+            String::from(
+                "An equal number have descenders , like p or q in English \
+                 : გ , დ , ე , ვ , კ , ლ , ჟ , ტ , უ , ფ , ღ , ყ , ც",
+            ),
         ];
 
         let bl = ByteLevel;
