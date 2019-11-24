@@ -19,6 +19,7 @@ fn models(_py: Python, m: &PyModule) -> PyResult<()> {
 /// PreTokenizers Module
 #[pymodule]
 fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<pre_tokenizers::PreTokenizer>()?;
     m.add_class::<pre_tokenizers::ByteLevel>()?;
     Ok(())
 }
@@ -26,6 +27,7 @@ fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
 /// Decoders Module
 #[pymodule]
 fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<decoders::Decoder>()?;
     m.add_class::<decoders::ByteLevel>()?;
     Ok(())
 }
