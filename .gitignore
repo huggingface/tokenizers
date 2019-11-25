@@ -3,3 +3,6 @@
 
 .env
 target
+
+/data
+/docs
