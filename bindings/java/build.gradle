@@ -1,0 +1,33 @@
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '1.3.60'
+}
+
+group 'co.huggingface'
+version '1.0-SNAPSHOT'
+
+ext.junit_version = "5.5.2"
+
+
+test { useJUnitPlatform() }
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
+    testImplementation "org.junit.jupiter:junit-jupiter:$junit_version"
+
+    testCompile "org.junit.jupiter:junit-jupiter-api:$junit_version"
+    testCompile "org.junit.jupiter:junit-jupiter-params:$junit_version"
+    runtime "org.junit.jupiter:junit-jupiter-engine:$junit_version"
+}
+
+
+compileKotlin { kotlinOptions.jvmTarget = "1.8" }
+compileTestKotlin { kotlinOptions.jvmTarget = "1.8" }
+
+
+tasks.withType(Test) {
+    systemProperty "java.library.path", "D:\\Workspace\\Rust\\tokenizers\\bindings\\java\\src\\main\\tokenizers-jni\\target\\debug"
+}
