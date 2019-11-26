@@ -40,4 +40,20 @@ where
             None
         }
     }
+
+    pub fn execute<F, U>(&self, closure: F) -> U
+    where
+        F: FnOnce(&Box<T>) -> U,
+    {
+        match self {
+            Container::Owned(val) => closure(val),
+            Container::Pointer(ptr) => unsafe {
+                let val = Box::from_raw(*ptr);
+                let res = closure(&val);
+                // We call this to make sure we don't drop the Box
+                Box::into_raw(val);
+                res
+            },
+        }
+    }
 }
