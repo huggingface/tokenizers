@@ -4,7 +4,6 @@ on: [push]
 
 jobs:
   build:
-
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -12,7 +11,20 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
+    - name: Install Rust Stable
+          uses: actions-rs/toolchain@v1
+          with:
+            toolchain: stable
+            override: true
+
     - name: Build
-      run: cargo build --verbose --manifest-path ./tokenizers/Cargo.toml
-    - name: Run tests
-      run: cargo test --verbose --manifest-path ./tokenizers/Cargo.toml
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --verbose --manifest-path ./tokenizers/Cargo.toml
+
+    - name: Run Tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --verbose --manifest-path ./tokenizers/Cargo.toml
