@@ -1,15 +1,14 @@
 extern crate jni;
 extern crate tokenizers;
 
-use jni::objects::{JClass, JObject, JValue, JString, JList};
-use jni::sys::{jint, jlong, jobject, jstring};
 use jni::{JNIEnv};
+use jni::objects::{JClass, JObject, JValue, JString, JList};
+use jni::sys::{jint, jlong, jobject};
 
 use tokenizers::models::bpe::{Error as BpeError, BPE};
 use tokenizers::tokenizer::{Token, PreTokenizer, Model};
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
-use jni::strings::JNIStr;
-use std::borrow::Borrow;
+
 
 const NATIVE_ALLOCATION_FAILED_EXCEPTION: &str = "co/huggingface/tokenizers/exceptions/NativeAllocationFailedException";
 const STRING_DECODING_EXCEPTION: &str = "co/huggingface/tokenizers/exceptions/StringDecodingException";
@@ -73,9 +72,9 @@ pub extern "system" fn Java_co_huggingface_tokenizers_pretokenizers_WhitespacePr
 
 #[no_mangle]
 pub unsafe extern "system" fn Java_co_huggingface_tokenizers_pretokenizers_WhitespacePretokenizer_finalize(_env: JNIEnv, _obj: JObject){
-    match _env.get_field(_obj, "ref", "J"){
+    match _env.get_field(_obj, "handle", "J"){
         Ok(ptr) => {
-            _env.set_field(_obj, "ref", "J", JValue::Long(-1));
+            _env.set_field(_obj, "handle", "J", JValue::Long(-1));
             let boxed = Box::from_raw(ptr.j().unwrap() as *mut Whitespace);
             return
         },
@@ -90,7 +89,7 @@ pub unsafe extern "system" fn Java_co_huggingface_tokenizers_pretokenizers_White
 #[no_mangle]
 pub unsafe extern "system" fn Java_co_huggingface_tokenizers_pretokenizers_WhitespacePretokenizer_pretokenize(_env: JNIEnv, _obj: JObject, s: JString) -> jobject {
     // Retrieve Whitespace instance ptr and reinterpret_cast<Whitespace>
-    let whitespace = match _env.get_field(_obj, "ref", "J"){
+    let whitespace = match _env.get_field(_obj, "handle", "J"){
         Ok(ptr) => match ptr.j(){
             Ok(ptr) => Some(&mut *(ptr as *mut Whitespace)),
             Err(_) => {
@@ -150,7 +149,7 @@ pub extern "system" fn Java_co_huggingface_tokenizers_models_BytePairEncoder_fro
         return JObject::null().into_inner()
     }
 
-    let handle = Box::into_raw(bpe.into()) as jlong;
+    let handle = Box::into_raw(bpe.unwrap()) as jlong;
     match _env.new_object("Lco/huggingface/tokenizers/models/BytePairEncoder;", "()V", &[]){
         Ok(j_bpe) => {
             _env.set_field(j_bpe, "handle", "J", JValue::Long(handle));
@@ -167,10 +166,7 @@ pub extern "system" fn Java_co_huggingface_tokenizers_models_BytePairEncoder_fro
 pub unsafe extern "system" fn Java_co_huggingface_tokenizers_models_BytePairEncoder_tokenize(_env: JNIEnv, _obj: JObject, words: JObject) -> jobject {
     let bpe = match _env.get_field(_obj, "handle", "J") {
         Ok(ptr) => match ptr.j() {
-            Ok(ptr) => {
-                jprint(&_env, format!("{}", ptr).as_str());
-                Some(&mut *(ptr as *mut BPE))
-            },
+            Ok(ptr) => Some(&mut *(ptr as *mut BPE)),
             Err(_) => {
                 _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to reinterpret BPE ptr");
                 None
@@ -204,35 +200,33 @@ pub unsafe extern "system" fn Java_co_huggingface_tokenizers_models_BytePairEnco
         }
     };
 
-    jprint(&_env, "tokenizer(): before");
-
-    if (_env).exception_check().unwrap() {
-        jprint(&_env, "catch exception");
-    }
-
-    let bpe_ = bpe.unwrap();
-    let tokens = bpe_.tokenize(vec_words.unwrap().to_owned());
-
-    jprint(&_env, "tokenize(): done");
+    let tokens = bpe.unwrap().tokenize(vec_words.unwrap());
 
     match _env.new_object("java/util/ArrayList", "(I)V", &[JValue::Int(2 as jint)]) {
         Ok(jarray_) => match JList::from_env(&_env, jarray_) {
             Ok(jarray_) => {
-//                // Push words into the ArrayList
-//                for token in tokens {
-                    let j_token_args = &[
-                        JValue::from(1 as jlong),
-//                        JValue::from(JObject::from(_env.new_string(token.value).unwrap())),
-                        JValue::from(JObject::from(_env.new_string("Hello").unwrap())),
-                        JValue::from(0 as jint),
-                        JValue::from(1 as jint)
-                    ];
+                // Push words into the ArrayList
+                tokens.iter().for_each(|token| {
+                    match _env.new_string(token.value.as_str()){
 
-                    match _env.new_object("Lco/huggingface/tokenizers/Token;", "(JLjava/lang/String;II)V", j_token_args) {
-                        Ok(j_token) => jarray_.add(j_token),
-                        Err(_) => _env.throw_new(STRING_DECODING_EXCEPTION, "Failed to convert Rust Token to Java")
-                    };
-//                }
+                        // TODO : impl JavaMapper for Token (reduce boilerplate)
+                        Ok(jtoken_value) => {
+                            let j_token_args = &[
+                                JValue::from(token.id as jlong),
+                                JValue::from(JObject::from(jtoken_value)),
+                                JValue::from(token.offsets.0 as jint),
+                                JValue::from(token.offsets.1 as jint)
+                            ];
+
+                            match _env.new_object("Lco/huggingface/tokenizers/Token;", "(JLjava/lang/String;II)V", j_token_args) {
+                                Ok(j_token) => jarray_.add(j_token).unwrap(),
+                                Err(_) => _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to allocate Token").unwrap()
+                            }
+                        },
+                        Err(_) => _env.throw_new(STRING_DECODING_EXCEPTION,"Failed to convert Rust string to Java").unwrap()
+                    }
+                });
+
                 return jarray_.into_inner()
             },
             Err(_) => {
@@ -241,8 +235,9 @@ pub unsafe extern "system" fn Java_co_huggingface_tokenizers_models_BytePairEnco
             }
         },
         Err(_) => {
-            _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to allocate ArrayList<Token>");
-            return JObject::null().into_inner()
+        _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to allocate ArrayList<Token>");
+        return JObject::null().into_inner()
         }
     }
+
 }

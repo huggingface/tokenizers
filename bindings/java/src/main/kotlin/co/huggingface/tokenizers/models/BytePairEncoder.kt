@@ -6,7 +6,7 @@ import java.util.*
 
 class BytePairEncoder private constructor(): Model, Native {
 
-    public var handle: Long = -1
+    var handle: Long = -1
 
     companion object{
         @JvmStatic
