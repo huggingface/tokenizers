@@ -12,13 +12,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
-    - name: Moving to tokenizers folder
-      run: cd tokenizers
-    - name: Second move to tokenizers folder
-      run: cd tokenizers
-    - name: List files
-      run: ls -lah
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose --manifest-path ./tokenizers/Cargo.toml
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --verbose --manifest-path ./tokenizers/Cargo.toml
