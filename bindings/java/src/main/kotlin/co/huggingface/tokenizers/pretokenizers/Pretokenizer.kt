@@ -12,5 +12,5 @@ interface Pretokenizer {
      *
      */
     @Throws(NativeAllocationFailedException::class, StringDecodingException::class)
-    fun pretokenize(s: String): Array<String>
+    fun pretokenize(s: String): List<String>
 }

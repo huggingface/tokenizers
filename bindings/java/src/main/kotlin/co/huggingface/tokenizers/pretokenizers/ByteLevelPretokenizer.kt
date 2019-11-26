@@ -4,7 +4,7 @@ import co.huggingface.tokenizers.exceptions.NativeAllocationFailedException
 import co.huggingface.tokenizers.exceptions.StringDecodingException
 import co.huggingface.tokenizers.jni.Native
 
-class WhitespacePretokenizer() : Pretokenizer, Native {
+class ByteLevelPretokenizer: Pretokenizer, Native {
 
     private var handle: Long = -1
 
@@ -12,7 +12,7 @@ class WhitespacePretokenizer() : Pretokenizer, Native {
         this.handle = allocate()
     }
 
-    private external fun allocate(): Long
+    private external fun allocate(): Long;
     external override fun finalize();
 
     @Throws(NativeAllocationFailedException::class, StringDecodingException::class)
