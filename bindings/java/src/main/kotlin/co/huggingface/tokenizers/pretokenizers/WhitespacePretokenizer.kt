@@ -6,10 +6,10 @@ import co.huggingface.tokenizers.jni.Native
 
 class WhitespacePretokenizer() : Pretokenizer, Native {
 
-    private var ref: Long = -1
+    private var handle: Long = -1
 
     init {
-        this.ref = nativeHandle()
+        this.handle = nativeHandle()
     }
 
     private external fun nativeHandle(): Long

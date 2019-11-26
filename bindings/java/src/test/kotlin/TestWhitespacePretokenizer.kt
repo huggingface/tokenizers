@@ -9,7 +9,7 @@ class TestWhitespacePretokenizer: NativeTest() {
     @Test
     fun testInit(){
         val tokenizer = WhitespacePretokenizer()
-        val field = tokenizer.javaClass.getDeclaredField("ref")
+        val field = tokenizer.javaClass.getDeclaredField("handle")
         field.trySetAccessible()
         assertNotEquals(field.get(tokenizer), -1)
     }
@@ -34,7 +34,7 @@ class TestWhitespacePretokenizer: NativeTest() {
     fun testFinalize(){
         val tokenizer = WhitespacePretokenizer()
         tokenizer.finalize()
-        val field = tokenizer.javaClass.getDeclaredField("ref")
+        val field = tokenizer.javaClass.getDeclaredField("handle")
         field.trySetAccessible()
         assertEquals(field.get(tokenizer), -1L)
     }
