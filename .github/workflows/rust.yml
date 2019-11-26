@@ -10,20 +10,21 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
 
     steps:
-    - uses: actions/checkout@v1
-    - name: Install Rust Stable
-          uses: actions-rs/toolchain@v1
-          with:
-            toolchain: stable
-            override: true
+      - uses: actions/checkout@v1
 
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --verbose --manifest-path ./tokenizers/Cargo.toml
+      - name: Install Rust Stable
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
-    - name: Run Tests
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --verbose --manifest-path ./tokenizers/Cargo.toml
+
+      - name: Run Tests
         uses: actions-rs/cargo@v1
         with:
           command: test
