@@ -18,6 +18,10 @@ impl Decoder {
             decoder: Container::Owned(Box::new(decoder)),
         })
     }
+
+    fn decode(&self, tokens: Vec<String>) -> PyResult<String> {
+        Ok(self.decoder.execute(|decoder| decoder.decode(tokens)))
+    }
 }
 
 #[pyclass]

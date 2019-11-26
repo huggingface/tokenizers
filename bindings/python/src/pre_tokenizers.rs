@@ -18,6 +18,10 @@ impl PreTokenizer {
             pretok: Container::Owned(Box::new(py_pretok)),
         })
     }
+
+    fn pre_tokenize(&self, s: &str) -> PyResult<Vec<String>> {
+        Ok(self.pretok.execute(|pretok| pretok.pre_tokenize(s)))
+    }
 }
 
 #[pyclass]
