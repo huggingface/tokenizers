@@ -74,7 +74,7 @@ impl tk::tokenizer::PreTokenizer for PyPreTokenizer {
                 let py = gil.python();
                 e.print(py);
 
-                // Return an empty string as fallback
+                // Return an empty Vec as fallback
                 vec![]
             }
         }
