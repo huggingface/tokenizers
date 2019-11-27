@@ -6,3 +6,6 @@ target
 
 /data
 /docs
+
+__pycache__
+*.so
