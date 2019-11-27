@@ -1,100 +1,27 @@
+mod glue;
+mod helpers;
+
 extern crate jni;
 extern crate tokenizers;
+
+use std::error::Error;
 
 use jni::{JNIEnv};
 use jni::objects::{JClass, JObject, JValue, JString, JList};
 use jni::sys::{jint, jlong, jobject, jstring};
 
-use std::error::Error;
 use tokenizers::models::bpe::{Error as BpeError, BPE};
 use tokenizers::tokenizer::{Token, PreTokenizer, Model, Decoder};
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 
+use helpers::string_vector_to_arraylist;
+use glue::{decode, pretokenize, reinterpret_cast};
 
+// Constants
 const NATIVE_ALLOCATION_FAILED_EXCEPTION: &str = "co/huggingface/tokenizers/exceptions/NativeAllocationFailedException";
 const STRING_DECODING_EXCEPTION: &str = "co/huggingface/tokenizers/exceptions/StringDecodingException";
-
-
-fn jprint(_env: &JNIEnv, msg: &str){
-    let system = _env.find_class("java/lang/System").unwrap();
-    let print_stream = _env.find_class("java/io/PrintStream").unwrap();
-
-    match _env.new_string(msg){
-        Ok(j_string) => {
-            let out = _env
-                .get_static_field(system, "out", "Ljava/io/PrintStream;")
-                .unwrap();
-            _env.call_method(
-                out.l().unwrap(),
-                "println",
-                "(Ljava/lang/String;)V",
-                &[JValue::from(JObject::from(j_string))],
-            ).unwrap();
-        },
-        _ => {}
-    }
-}
-
-
-fn string_vector_to_arraylist(_env: &JNIEnv, vector: &Vec<String>) -> Result<jobject, String>{
-    match _env.new_object("java/util/ArrayList", "(I)V", &[JValue::Int(vector.len() as jint)]){
-        Ok(jarray_) => match JList::from_env(&_env, jarray_){
-            Ok(jarray_) => {
-                // Push words into the ArrayList
-                for item in vector {
-                    match _env.new_string(&item) {
-                        Ok(s) => jarray_.add(JObject::from(s)),
-                        Err(e) => return Err("Unable to create new string from JNIEnv".to_string())
-                    };
-                }
-                return Ok(jarray_.into_inner());
-            },
-            Err(e) => return Err("Object to List convertion failed".to_string())
-        },
-        Err(e) => return Err("Unable to allocate java.util.ArrayList".to_string())
-    };
-}
-
-fn pretokenize(_env: &JNIEnv, pretokenizer: &dyn PreTokenizer, text: &JString) -> Result<Vec<String>, String>{
-    // Convert Java String to Rust String
-    return match _env.get_string(*text) {
-        Ok(s) => match s.to_str() {
-            Ok(s) => Ok(pretokenizer.pre_tokenize(s)),
-            Err(e) => Err(e.description().to_string())
-        },
-        Err(e) => Err("Unable to get string from JNIEnv".to_string())
-    };
-}
-
-fn decode(_env: &JNIEnv, decoder: &dyn Decoder, words: &JObject) -> Result<String, String>{
-    match JList::from_env(&_env, *words){
-        Ok(words) => match words.size(){
-            Ok(size_t) => {
-                let mut tokens: Vec<String> = Vec::with_capacity(size_t as usize);
-
-                // Iterate over words in the ArrayList
-                for i in 0..size_t{
-                    match words.get(i as jint){
-                        Ok(word) => match word {
-                            Some(word) => match _env.get_string(JString::from(word)){
-                                Ok(jstr) => match jstr.to_str() {
-                                    Ok(jstr) => tokens.insert(i as usize, jstr.to_string()),
-                                    Err(e) => return Err("Unable to decode UTF8 string from Java".to_string())
-                                },
-                                Err(e) => return Err("".to_string())
-                            },
-                            _ => return Err("Unable to convert JNI String to std::string".to_string())
-                        }
-                        Err(e) => return Err(format!("Unable to access ArrayList element {}", i).to_string())
-                    }
-                }
-                return Ok(decoder.decode(tokens))
-            }, Err(e) => return Err("Unable to get the size of the ArrayList".to_string())
-        }, Err(e) => return Err("Unable to cast to ArrayList".to_string())
-    }
-}
-
+const TOKEN_CLASS: &str = "Lco/huggingface/tokenizers/Token;";
 
 // Pretokenizer
 
@@ -155,10 +82,12 @@ pub extern "system" fn Java_co_huggingface_tokenizers_pretokenizers_ByteLevelPre
 
 #[no_mangle]
 pub unsafe extern "system" fn Java_co_huggingface_tokenizers_pretokenizers_ByteLevelPretokenizer_finalize(_env: JNIEnv, _obj: JObject) {
+    // Finalize is very special call, let's handle it with extra care to be sure memory (if any) is desallocated properly
     match _env.get_field(_obj, "handle", "J") {
         Ok(ptr) => {
             _env.set_field(_obj, "handle", "J", JValue::Long(-1));
-            let _boxed = Box::from_raw(ptr.j().unwrap() as *mut ByteLevel);
+            let pretokenizer = reinterpret_cast::<ByteLevel>(ptr.j().unwrap());
+            let _boxed = Box::from_raw(pretokenizer);
         },
         Err(_) => _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Unable to retrieve ByteLevel ptr").unwrap()
     };
@@ -167,30 +96,18 @@ pub unsafe extern "system" fn Java_co_huggingface_tokenizers_pretokenizers_ByteL
 #[no_mangle]
 pub unsafe extern "system" fn Java_co_huggingface_tokenizers_pretokenizers_ByteLevelPretokenizer_pretokenize(_env: JNIEnv, _obj: JObject, s: JString) -> jobject {
     // Retrieve Whitespace instance ptr and reinterpret_cast<Whitespace>
-    let pretokenizer = match _env.get_field(_obj, "handle", "J"){
-        Ok(ptr) => match ptr.j(){
-            Ok(ptr) => Some(&mut *(ptr as *mut ByteLevel)),
-            Err(_) => {
-                _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to reinterpret ByteLevelPretokenizer ptr");
-                None
-            }
-        },
-        Err(_) => {
-            _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to retrieve ByteLevelPretokenizer ptr");
-            None
-        }
-    };
+    let pretokenizer = reinterpret_cast::<ByteLevel>(_env.get_field(_obj, "handle", "J").unwrap().j().unwrap());
 
-    match pretokenize(&_env, pretokenizer.unwrap(), &s){
+    match pretokenize(&_env, pretokenizer, &s){
         Ok(tokens) => match string_vector_to_arraylist(&_env, &tokens){
             Ok(jarray_tokens) => return jarray_tokens,
             _ => {
-                _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "");
+                _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "").unwrap();
                 return JObject::null().into_inner();
             }
         },
         Err(e) => {
-            _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, e);
+            _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, e).unwrap();
             return JObject::null().into_inner();
         }
     }
@@ -198,22 +115,10 @@ pub unsafe extern "system" fn Java_co_huggingface_tokenizers_pretokenizers_ByteL
 
 #[no_mangle]
 pub unsafe extern "system" fn Java_co_huggingface_tokenizers_pretokenizers_ByteLevelPretokenizer_decode(_env: JNIEnv, _obj: JObject, words: JObject) -> jstring {
-    // Retrieve Whitespace instance ptr and reinterpret_cast<Whitespace>
-    let pretokenizer = match _env.get_field(_obj, "handle", "J"){
-        Ok(ptr) => match ptr.j(){
-            Ok(ptr) => Some(&mut *(ptr as *mut ByteLevel)),
-            Err(_) => {
-                _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to reinterpret Whitespace ptr");
-                None
-            }
-        },
-        Err(_) => {
-            _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to retrieve Whitespace ptr");
-            None
-        }
-    };
+    // Retrieve ByteLevel instance ptr and reinterpret_cast<ByteLevel>
+    let pretokenizer = reinterpret_cast::<ByteLevel>(_env.get_field(_obj, "handle", "J").unwrap().j().unwrap());
 
-    match decode(&_env, pretokenizer.unwrap(), &words){
+    match decode(&_env, pretokenizer, &words){
         Ok(s) => match _env.new_string(s.as_str()){
             Ok(jstr) => return jstr.into_inner(),
             _ => {
@@ -257,11 +162,11 @@ pub extern "system" fn Java_co_huggingface_tokenizers_models_BytePairEncoder_fro
     let handle = Box::into_raw(bpe.unwrap()) as jlong;
     match _env.new_object("Lco/huggingface/tokenizers/models/BytePairEncoder;", "()V", &[]){
         Ok(j_bpe) => {
-            _env.set_field(j_bpe, "handle", "J", JValue::Long(handle));
+            _env.set_field(j_bpe, "handle", "J", JValue::Long(handle)).unwrap();
             return j_bpe.into_inner();
         }
         Err(_) => {
-            _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Unable to set BytePairEncoder.handle");
+            _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Unable to set BytePairEncoder.handle").unwrap();
             return JObject::null().into_inner();
         }
     }
@@ -269,19 +174,8 @@ pub extern "system" fn Java_co_huggingface_tokenizers_models_BytePairEncoder_fro
 
 #[no_mangle]
 pub unsafe extern "system" fn Java_co_huggingface_tokenizers_models_BytePairEncoder_tokenize(_env: JNIEnv, _obj: JObject, words: JObject) -> jobject {
-    let bpe = match _env.get_field(_obj, "handle", "J") {
-        Ok(ptr) => match ptr.j() {
-            Ok(ptr) => Some(&mut *(ptr as *mut BPE)),
-            Err(_) => {
-                _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to reinterpret BPE ptr");
-                None
-            }
-        },
-        Err(_) => {
-            _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to retrieve BPE ptr");
-            None
-        }
-    };
+    // Retrieve BytePairEncoder object
+    let bpe = reinterpret_cast::<BPE>(_env.get_field(_obj, "handle", "J").unwrap().j().unwrap());
 
     let vec_words = match JList::from_env(&_env, words){
         Ok(j_words) => {
@@ -305,7 +199,7 @@ pub unsafe extern "system" fn Java_co_huggingface_tokenizers_models_BytePairEnco
         }
     };
 
-    let tokens = bpe.unwrap().tokenize(vec_words.unwrap());
+    let tokens = bpe.tokenize(vec_words.unwrap());
 
     match _env.new_object("java/util/ArrayList", "(I)V", &[JValue::Int(2 as jint)]) {
         Ok(jarray_) => match JList::from_env(&_env, jarray_) {
@@ -323,7 +217,7 @@ pub unsafe extern "system" fn Java_co_huggingface_tokenizers_models_BytePairEnco
                                 JValue::from(token.offsets.1 as jint)
                             ];
 
-                            match _env.new_object("Lco/huggingface/tokenizers/Token;", "(JLjava/lang/String;II)V", j_token_args) {
+                            match _env.new_object(TOKEN_CLASS, "(JLjava/lang/String;II)V", j_token_args) {
                                 Ok(j_token) => jarray_.add(j_token).unwrap(),
                                 Err(_) => _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to allocate Token").unwrap()
                             }
@@ -335,13 +229,13 @@ pub unsafe extern "system" fn Java_co_huggingface_tokenizers_models_BytePairEnco
                 return jarray_.into_inner()
             },
             Err(_) => {
-                _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Unable to reinterpret jarray as List");
+                _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Unable to reinterpret jarray as List").unwrap_or_default();
                 return JObject::null().into_inner()
             }
         },
         Err(_) => {
-        _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to allocate ArrayList<Token>");
-        return JObject::null().into_inner()
+            _env.throw_new(NATIVE_ALLOCATION_FAILED_EXCEPTION, "Failed to allocate ArrayList<Token>").unwrap_or_default();
+            return JObject::null().into_inner()
         }
     }
 
