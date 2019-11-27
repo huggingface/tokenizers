@@ -13,4 +13,9 @@ interface Pretokenizer {
      */
     @Throws(NativeAllocationFailedException::class, StringDecodingException::class)
     fun pretokenize(s: String): List<String>
+
+    /**
+     *
+     */
+    fun decode(words: List<String>): String
 }

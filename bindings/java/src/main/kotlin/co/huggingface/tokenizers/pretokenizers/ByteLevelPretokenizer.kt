@@ -12,9 +12,11 @@ class ByteLevelPretokenizer: Pretokenizer, Native {
         this.handle = allocate()
     }
 
-    private external fun allocate(): Long;
-    external override fun finalize();
+    private external fun allocate(): Long
+    external override fun finalize()
 
     @Throws(NativeAllocationFailedException::class, StringDecodingException::class)
     external override fun pretokenize(s: String): List<String>
+
+    external override fun decode(words: List<String>): String
 }

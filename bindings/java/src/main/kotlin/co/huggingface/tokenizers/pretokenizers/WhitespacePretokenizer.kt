@@ -17,4 +17,8 @@ class WhitespacePretokenizer() : Pretokenizer, Native {
 
     @Throws(NativeAllocationFailedException::class, StringDecodingException::class)
     external override fun pretokenize(s: String): List<String>
+
+    override fun decode(words: List<String>): String{
+        return words.joinToString { " " }
+    }
 }
