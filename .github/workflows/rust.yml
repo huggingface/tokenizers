@@ -14,6 +14,10 @@ jobs:
     - uses: actions/checkout@v1
     - name: Moving to tokenizers folder
       run: cd tokenizers
+    - name: Second move to tokenizers folder
+      run: cd tokenizers
+    - name: List files
+      run: ls -lah
     - name: Build
       run: cargo build --verbose
     - name: Run tests
