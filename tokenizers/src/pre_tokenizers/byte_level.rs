@@ -1,5 +1,5 @@
 use crate::tokenizer::{Decoder, PreTokenizer};
-use onig::Regex;
+use regex::Regex;
 use std::collections::HashMap;
 
 fn bytes_char() -> HashMap<u8, u32> {
@@ -24,8 +24,7 @@ fn bytes_char() -> HashMap<u8, u32> {
 
 lazy_static! {
     static ref RE: Regex =
-        Regex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
-            .unwrap();
+        Regex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+").unwrap();
     static ref BYTES_CHAR: HashMap<u8, u32> = bytes_char();
     static ref CHAR_BYTES: HashMap<u32, u8> =
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
@@ -34,8 +33,45 @@ lazy_static! {
 pub struct ByteLevel;
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, s: &str) -> Vec<String> {
-        RE.find_iter(s)
-            .map(|(start, end)| s[start..end].to_owned())
+        RE.captures_iter(s)
+            .map(|capture| {
+                let capture = capture.get(0).unwrap();
+                let start = capture.start();
+                let end = capture.end();
+
+                // if our last character is a whitespace, followed by a non whitespace,
+                // we don't want to return it
+                let last = s[start..end].chars().last();
+                let next = s[end..].chars().nth(0);
+                if last.is_some()
+                    && last.unwrap().is_whitespace()
+                    && next.is_some()
+                    && !next.unwrap().is_whitespace()
+                {
+                    if let Some(newstr) = s[start..end]
+                        .chars()
+                        .collect::<Vec<_>>()
+                        .split_last()
+                        .map(|(_, rest)| rest)
+                        .map(|chars| chars.iter().collect::<String>())
+                    {
+                        return newstr;
+                    }
+                }
+                // if our first char is not a whitespace but the previous one was, we return
+                // a whitespace before our match
+                let prev = s[0..start].chars().last();
+                let current = s[start..end].chars().nth(0).map(|c| c.is_whitespace());
+                if prev.is_some()
+                    && prev.unwrap().is_whitespace()
+                    && current.is_some()
+                    && !current.unwrap()
+                {
+                    return format!(" {}", s[start..end].to_owned());
+                }
+
+                s[start..end].to_owned()
+            })
             .map(|s| {
                 s.into_bytes()
                     .iter()

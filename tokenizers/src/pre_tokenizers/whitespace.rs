@@ -1,5 +1,5 @@
 use crate::tokenizer::PreTokenizer;
-use onig::Regex;
+use regex::Regex;
 
 pub struct Whitespace;
 impl PreTokenizer for Whitespace {
@@ -7,8 +7,16 @@ impl PreTokenizer for Whitespace {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"\w+|[^\w\s]+").unwrap();
         }
-        RE.find_iter(s)
-            .map(|(start, end)| s[start..end].to_owned())
+        RE.captures_iter(s)
+            .map(|captures| {
+                captures
+                    .iter()
+                    .map(|m| {
+                        m.map(|capture| s[capture.start()..capture.end()].to_owned())
+                            .unwrap_or(String::from(""))
+                    })
+                    .collect()
+            })
             .collect()
     }
 }
