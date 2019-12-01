@@ -17,6 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@v1
 
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2019-11-01
+          override: true
+
       - name: Build and audit wheels
         working-directory: /io/bindings/python
         run: sh build-wheels.sh
@@ -37,6 +43,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2019-11-01
+          override: true
 
       - name: Install Python
         uses: actions/setup-python@v1

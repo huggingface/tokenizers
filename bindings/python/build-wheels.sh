@@ -1,10 +1,9 @@
 #!/bin/bash
 set -ex
 
-curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain nightly-2019-11-01 -y
-export PATH="$HOME/.cargo/bin:$PATH"
-
-cd /io/bindings/python
+#curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain nightly-2019-11-01 -y
+#export PATH="$HOME/.cargo/bin:$PATH"
+#cd /io/bindings/python
 
 for PYBIN in /opt/python/{cp35-cp35m,cp36-cp36m,cp37-cp37m}/bin; do
     export PYTHON_SYS_EXECUTABLE="$PYBIN/python"
