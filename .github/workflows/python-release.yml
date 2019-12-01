@@ -1,0 +1,55 @@
+name: Python Release
+
+on:
+  push:
+    branches:
+      - python-release
+
+jobs:
+
+  create_wheels_manylinux:
+    name: Create wheels for manylinux
+    container:
+      image: quay.io/pypa/manylinux1_x86_64
+      volumes:
+        - ./:io
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Build and audit wheels
+        working-directory: ./io/bindings/python
+        run: sh build-wheels.sh
+
+      - name: Store wheels
+        uses: actions/upload-artifact@v1
+        with:
+          name: wheels
+          path: ./io/bindings/python/dist/*
+
+  create_wheels_others:
+    name: Create wheels for other OSes
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+        python: [3.5, 3.6, 3.7]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Install Python
+        - uses: actions/setup-python@v1
+          with:
+            python-version: ${{ matrix.python }}
+            architecture: 'x64'
+
+      - name: Build wheel
+        working-directory: ./bindings/python
+        run: python setup.py bdist_wheel
+
+      - name: Store wheels
+        uses: actions/upload-artifact@v1
+        with:
+          name: wheels
+          path: ./bindings/python/dist/*
+
