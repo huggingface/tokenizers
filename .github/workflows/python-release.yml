@@ -6,7 +6,6 @@ on:
       - python-release
 
 env:
-  AWS_S3_BUCKET: s3://${{ secrets.AWS_S3_BUCKET }}
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   AWS_DEFAULT_REGION: us-east-1
@@ -62,4 +61,4 @@ jobs:
         run: |
           pip install awscli
           echo "Uploading to $AWS_S3_BUCKET/python/wheels"
-          aws s3 sync "./bindings/python/dist" "$AWS_S3_BUCKET/python/wheels"
+          aws s3 sync ./bindings/python/dist s3://tokenizers-release/python/wheels
