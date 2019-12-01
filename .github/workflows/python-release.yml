@@ -5,6 +5,12 @@ on:
     branches:
       - python-release
 
+env:
+  AWS_S3_BUCKET: s3://${{ secrets.AWS_S3_BUCKET }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: us-east-1
+
 jobs:
 
   create_wheels_manylinux:
@@ -18,16 +24,13 @@ jobs:
       - uses: actions/checkout@v1
 
       - name: Build and audit wheels
-        working-directory: /io/bindings/python
+        working-directory: ./bindings/python
         run: sh build-wheels.sh
 
-      - uses: jakejarvis/s3-sync-action@master
-        env:
-          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          SOURCE_DIR: '/io/bindings/python/dist'
-          DEST_DIR: 'python/wheels/'
+      - name: Upload wheels
+        run: |
+          pip install awscli
+          aws s3 sync "/io/bindings/python/dist" "$AWS_S3_BUCKET/python/wheels"
 
   create_wheels_others:
     name: Create wheels for other OSes
@@ -60,10 +63,7 @@ jobs:
         working-directory: ./bindings/python
         run: python setup.py bdist_wheel
 
-      - uses: jakejarvis/s3-sync-action@master
-        env:
-          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          SOURCE_DIR: './bindings/python/dist'
-          DEST_DIR: 'python/wheels/'
+      - name: Upload wheels
+        run: |
+          pip install awscli
+          aws s3 sync "./bindings/python/dist" "$AWS_S3_BUCKET/python/wheels"
