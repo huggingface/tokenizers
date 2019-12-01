@@ -55,10 +55,12 @@ jobs:
         run: python setup.py bdist_wheel
 
       - name: Upload wheels
-        uses: opspresso/action-s3-sync@master
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: "us-east-1"
-          FROM_PATH: "./bindings/python/dist"
-          DEST_PATH: "s3://tokenizers-release/python/wheels"
+        run: |
+          pip install awscli
+          aws configure <<-EOF > /dev/null 2>&1
+          ${AWS_ACCESS_KEY_ID}
+          ${AWS_SECRET_ACCESS_KEY}
+          ${AWS_DEFAULT_REGION}
+          text
+          EOF
+          aws s3 sync ./bindings/python/dist s3://tokenizers-release/python/wheels
