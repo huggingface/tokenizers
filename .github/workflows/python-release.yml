@@ -13,12 +13,12 @@ jobs:
     container:
       image: quay.io/pypa/manylinux1_x86_64
       volumes:
-        - ./:io
+        - ./:/io
     steps:
       - uses: actions/checkout@v1
 
       - name: Build and audit wheels
-        working-directory: ./io/bindings/python
+        working-directory: /io/bindings/python
         run: sh build-wheels.sh
 
       - name: Store wheels
@@ -43,6 +43,10 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           architecture: 'x64'
+
+      - name: Install dependencies
+        run: |
+          pip install setuptools wheel setuptools-rust
 
       - name: Build wheel
         working-directory: ./bindings/python
