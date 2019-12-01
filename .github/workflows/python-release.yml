@@ -17,21 +17,17 @@ jobs:
     steps:
       - uses: actions/checkout@v1
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2019-11-01
-          override: true
-
       - name: Build and audit wheels
         working-directory: /io/bindings/python
         run: sh build-wheels.sh
 
-      - name: Store wheels
-        uses: actions/upload-artifact@v1
-        with:
-          name: wheels
-          path: ./io/bindings/python/dist/*
+      - uses: jakejarvis/s3-sync-action@master
+        env:
+          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          SOURCE_DIR: '/io/bindings/python/dist'
+          DEST_DIR: 'python/wheels/'
 
   create_wheels_others:
     name: Create wheels for other OSes
@@ -64,9 +60,10 @@ jobs:
         working-directory: ./bindings/python
         run: python setup.py bdist_wheel
 
-      - name: Store wheels
-        uses: actions/upload-artifact@v1
-        with:
-          name: wheels
-          path: ./bindings/python/dist/*
-
+      - uses: jakejarvis/s3-sync-action@master
+        env:
+          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          SOURCE_DIR: './bindings/python/dist'
+          DEST_DIR: 'python/wheels/'
