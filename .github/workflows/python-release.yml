@@ -15,10 +15,7 @@ jobs:
   create_wheels_manylinux:
     runs-on: ubuntu-latest
     name: Create wheels for manylinux
-    container:
-      image: quay.io/pypa/manylinux1_x86_64
-      volumes:
-        - ./:/io
+    container: quay.io/pypa/manylinux1_x86_64
     steps:
       - uses: actions/checkout@v1
 
@@ -60,5 +57,10 @@ jobs:
       - name: Upload wheels
         run: |
           pip install awscli
-          echo "Uploading to $AWS_S3_BUCKET/python/wheels"
+          aws configure <<-EOF > /dev/null 2>&1
+${AWS_ACCESS_KEY_ID}
+${AWS_SECRET_ACCESS_KEY}
+${AWS_DEFAULT_REGION}
+text
+EOF
           aws s3 sync ./bindings/python/dist s3://tokenizers-release/python/wheels
