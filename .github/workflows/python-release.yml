@@ -58,9 +58,9 @@ jobs:
         run: |
           pip install awscli
           aws configure <<-EOF > /dev/null 2>&1
-${AWS_ACCESS_KEY_ID}
-${AWS_SECRET_ACCESS_KEY}
-${AWS_DEFAULT_REGION}
-text
-EOF
+          ${AWS_ACCESS_KEY_ID}
+          ${AWS_SECRET_ACCESS_KEY}
+          ${AWS_DEFAULT_REGION}
+          text
+          EOF
           aws s3 sync ./bindings/python/dist s3://tokenizers-release/python/wheels
