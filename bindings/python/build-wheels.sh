@@ -20,10 +20,4 @@ rm dist/*-linux_*
 
 # Upload wheels
 /opt/python/cp37-cp37m/bin/pip install -U awscli
-/opt/python/cp37-cp37m/bin/python -m awscli configure <<-EOF > /dev/null 2>&1
-${AWS_ACCESS_KEY_ID}
-${AWS_SECRET_ACCESS_KEY}
-${AWS_DEFAULT_REGION}
-text
-EOF
 /opt/python/cp37-cp37m/bin/python -m awscli s3 sync ./dist s3://tokenizers-releases/python/wheels
