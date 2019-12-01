@@ -18,3 +18,8 @@ done
 
 # Keep only manylinux wheels
 rm dist/*-linux_*
+
+# Upload wheels
+echo "Uploading to $AWS_S3_BUCKET/python/wheels"
+/opt/python/cp37-cp37m/bin/pip install -U awscli
+/opt/python/cp37-cp37m/bin/python -m aws s3 sync "/io/bindings/python/dist" "$AWS_S3_BUCKET/python/wheels"

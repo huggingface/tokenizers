@@ -27,11 +27,6 @@ jobs:
         working-directory: ./bindings/python
         run: sh build-wheels.sh
 
-      - name: Upload wheels
-        run: |
-          pip install awscli
-          aws s3 sync "/io/bindings/python/dist" "$AWS_S3_BUCKET/python/wheels"
-
   create_wheels_others:
     name: Create wheels for other OSes
     runs-on: ${{ matrix.os }}
@@ -66,4 +61,5 @@ jobs:
       - name: Upload wheels
         run: |
           pip install awscli
+          echo "Uploading to $AWS_S3_BUCKET/python/wheels"
           aws s3 sync "./bindings/python/dist" "$AWS_S3_BUCKET/python/wheels"
