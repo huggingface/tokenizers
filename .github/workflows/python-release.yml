@@ -8,6 +8,7 @@ on:
 jobs:
 
   create_wheels_manylinux:
+    runs-on: ubuntu-latest
     name: Create wheels for manylinux
     container:
       image: quay.io/pypa/manylinux1_x86_64
