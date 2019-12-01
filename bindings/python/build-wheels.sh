@@ -26,4 +26,4 @@ ${AWS_SECRET_ACCESS_KEY}
 ${AWS_DEFAULT_REGION}
 text
 EOF
-/opt/python/cp37-cp37m/bin/python -m awscli s3 sync ./bindings/python/dist s3://tokenizers-release/python/wheels
+/opt/python/cp37-cp37m/bin/python -m awscli s3 sync ./dist s3://tokenizers-release/python/wheels
