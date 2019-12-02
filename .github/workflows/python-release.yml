@@ -1,9 +1,8 @@
 name: Python Release
 
 on:
-  push:
-    branches:
-      - python-release
+  release:
+    types: [created]
 
 env:
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

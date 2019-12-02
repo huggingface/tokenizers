@@ -5,6 +5,9 @@ setup(
     name="tokenizers",
     version="0.0.2",
     description="Fast and Customizable Tokenizers",
+    long_description=open("README.md", "r", encoding="utf-8").read(),
+    long_description_content_type="text/markdown",
+    keywords="NLP tokenizer BPE transformer deep learning"
     author="Anthony MOI",
     author_email="anthony@huggingface.co",
     url="https://github.com/huggingface/tokenizers",
