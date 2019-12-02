@@ -30,7 +30,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macos-latest]
-        python: [3.5, 3.6, 3.7]
+        python: [3.5, 3.6, 3.7, 3.8]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
