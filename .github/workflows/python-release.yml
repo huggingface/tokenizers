@@ -80,7 +80,7 @@ jobs:
         working-directory: ./bindings/python
         run: sh build-sdist.sh
 
-      - name: List dist files:
+      - name: List dist files
         working-directory: ./bindings/python/dist
         run: ls -lah
 
