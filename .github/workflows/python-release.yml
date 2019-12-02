@@ -58,7 +58,7 @@ jobs:
       - name: Upload wheels
         run: |
           pip install awscli
-          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/wheels/$GITHUB_SHA"
+          aws s3 sync --exact-timestamps ./bindings/python/dist s3://tokenizers-releases/python/wheels/${{ GITHUB_SHA }}
 
   upload_package:
     name: Upload package to PyPi
@@ -74,7 +74,11 @@ jobs:
       - name: Retrieve all wheels
         run: |
           pip install awscli
-          aws s3 sync "s3://tokenizers-releases/python/wheels/$GITHUB_SHA" ./bindings/python/dist
+          aws s3 sync s3://tokenizers-releases/python/wheels/${{ GITHUB_SHA }} ./bindings/python/dist
+
+      - name: Install dependencies
+        run: |
+          pip install setuptools wheel setuptools-rust
 
       - name: Create source distribution
         working-directory: ./bindings/python
