@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           pip install awscli
-          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/wheels/$GITHUB_SHA"
+          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$GITHUB_SHA"
 
   upload_package:
     name: Upload package to PyPi
@@ -76,7 +76,7 @@ jobs:
         shell: bash
         run: |
           pip install awscli
-          aws s3 sync "s3://tokenizers-releases/python/wheels/$GITHUB_SHA" ./bindings/python/dist
+          aws s3 sync "s3://tokenizers-releases/python/$GITHUB_SHA" ./bindings/python/dist
 
       - name: Install dependencies
         run: |
