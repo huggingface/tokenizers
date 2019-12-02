@@ -58,4 +58,29 @@ jobs:
       - name: Upload wheels
         run: |
           pip install awscli
-          aws s3 sync ./bindings/python/dist s3://tokenizers-releases/python/wheels
+          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/wheels/$GITHUB_SHA"
+
+  upload_package:
+    name: Upload package to PyPi
+    runs-on: ubuntu-latest
+    needs: [create_wheels_manylinux, create_wheels_others]
+
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Install Python
+        uses: actions/setup-python@v1
+
+      - name: Retrieve all wheels
+        run: |
+          pip install awscli
+          aws s3 sync "s3://tokenizers-releases/python/wheels/$GITHUB_SHA" ./bindings/python/dist
+
+      - name: Create source distribution
+        working-directory: ./bindings/python
+        run: sh build-sdist.sh
+
+      - name: List dist files:
+        working-directory: ./bindings/python/dist
+        run: ls -lah
+
