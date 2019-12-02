@@ -14,7 +14,7 @@ features = ["extension-module"]
 
 [dependencies.tokenizers-lib]
 version = "*"
-path = "../../tokenizers"
+path = "./tokenizers-lib"
 
 [target.x86_64-apple-darwin]
 rustflags = [
