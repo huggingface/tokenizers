@@ -443,15 +443,15 @@ dependencies = [
 
 [[package]]
 name = "tokenizers"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "pyo3 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "tokenizers-lib 0.0.1",
+ "tokenizers-lib 0.0.3",
 ]
 
 [[package]]
 name = "tokenizers-lib"
-version = "0.0.1"
+version = "0.0.3"
 dependencies = [
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
