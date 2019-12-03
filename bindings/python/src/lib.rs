@@ -3,10 +3,19 @@ mod models;
 mod pre_tokenizers;
 mod token;
 mod tokenizer;
+mod trainers;
 mod utils;
 
 use pyo3::prelude::*;
 use pyo3::wrap_pymodule;
+
+/// Trainers Module
+#[pymodule]
+fn trainers(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<trainers::Trainer>()?;
+    m.add_class::<trainers::BpeTrainer>()?;
+    Ok(())
+}
 
 /// Models Module
 #[pymodule]
@@ -39,5 +48,6 @@ fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pymodule!(models))?;
     m.add_wrapped(wrap_pymodule!(pre_tokenizers))?;
     m.add_wrapped(wrap_pymodule!(decoders))?;
+    m.add_wrapped(wrap_pymodule!(trainers))?;
     Ok(())
 }

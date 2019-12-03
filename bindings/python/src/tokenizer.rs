@@ -7,6 +7,7 @@ use super::decoders::Decoder;
 use super::models::Model;
 use super::pre_tokenizers::PreTokenizer;
 use super::token::Token;
+use super::trainers::Trainer;
 
 #[pyclass]
 pub struct Tokenizer {
@@ -96,6 +97,16 @@ impl Tokenizer {
 
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.tokenizer.id_to_token(id)
+    }
+
+    fn train(&mut self, trainer: &Trainer, files: Vec<String>) -> PyResult<()> {
+        trainer.trainer.execute(|trainer| {
+            if let Err(e) = self.tokenizer.train(trainer, files) {
+                Err(exceptions::Exception::py_err(format!("{}", e)))
+            } else {
+                Ok(())
+            }
+        })
     }
 }
 
