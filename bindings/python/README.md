@@ -6,6 +6,9 @@ A fast and easy to use implementation of today's most used tokenizers.
 
  - High Level design: [master](https://github.com/huggingface/tokenizers)
 
+This API is currently in the process of being stabilized. We might introduce breaking changes
+really often in the coming days/weeks, so use at your own risks.
+
 ### Installation
 
 #### With pip:
@@ -41,6 +44,8 @@ maturin develop --release
 
 ### Usage
 
+#### Use a pre-trained tokenizer
+
 ```python
 from tokenizers import Tokenizer, models, pre_tokenizers, decoders
 
@@ -56,7 +61,7 @@ tokenizer = Tokenizer(bpe)
 tokenizer.with_pre_tokenizer(pre_tokenizers.ByteLevel.new())
 tokenizer.with_decoder(decoders.ByteLevel.new())
 
-# And then tokenize:
+# And then encode:
 encoded = tokenizer.encode("I can feel the magic, can you?")
 print(encoded)
 
@@ -65,5 +70,30 @@ encoded = tokenizer.encode_batch([
 	"I can feel the magic, can you?",
 	"The quick brown fox jumps over the lazy dog"
 ])
+print(encoded)
+```
+
+#### Train a new tokenizer
+
+```python
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers
+
+# Initialize a tokenizer
+tokenizer = Tokenizer(models.BPE.empty())
+
+# Customize pre-tokenization and decoding
+tokenizer.with_pre_tokenizer(pre_tokenizers.ByteLevel.new())
+tokenizer.with_decoder(decoders.ByteLevel.new())
+
+# And then train
+trainer = trainers.BpeTrainer.new(vocab_size=20000, min_frequency=2)
+tokenizer.train(trainer, [
+	"./path/to/dataset/1.txt",
+	"./path/to/dataset/2.txt",
+	"./path/to/dataset/3.txt"
+])
+
+# Now we can encode
+encoded = tokenizer.encode("I can feel the magic, can you?")
 print(encoded)
 ```
