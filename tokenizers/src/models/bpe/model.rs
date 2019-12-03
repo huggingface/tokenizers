@@ -33,6 +33,10 @@ impl BPE {
         }
     }
 
+    pub fn empty() -> Self {
+        BPE::new(HashMap::new(), HashMap::new(), HashMap::new())
+    }
+
     pub fn from_files(vocab: &str, merges: &str) -> Result<Self, Error> {
         // Read vocab.json
         let vocab_file = File::open(vocab)?;
