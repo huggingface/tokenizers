@@ -33,6 +33,30 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Error::Io(e) => write!(f, "IoError: {}", e),
+            Error::JsonError(e) => write!(f, "JsonError: {}", e),
+            Error::BadVocabulary => write!(f, "Bad vocabulary json file"),
+            Error::MergeTokenOutOfVocabulary(token) => {
+                write!(f, "Token {} out of vocabulary", token)
+            }
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Io(e) => Some(e),
+            Error::JsonError(e) => Some(e),
+            Error::BadVocabulary => None,
+            Error::MergeTokenOutOfVocabulary(_) => None,
+        }
+    }
+}
+
 // Re-export
 pub use cache::*;
 pub use model::*;
