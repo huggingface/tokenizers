@@ -48,7 +48,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install setuptools wheel setuptools-rust
+          # On old versions of python there is an old version of setuptools already installed
+          pip install setuptools wheel setuptools-rust --ignore-installed --force-reinstall
 
       - name: Build wheel
         working-directory: ./bindings/python
