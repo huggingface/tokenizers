@@ -12,16 +12,18 @@ really often in the coming days/weeks, so use at your own risks.
 ### Installation
 
 #### With pip:
-```
+
+```bash
 pip install tokenizers
 ```
 
 #### From sources:
 
 To use this method, you need to have the Rust nightly toolchain installed.
-```
+
+```bash
 # Install with:
-curl https://sh.rustup.rs -sSf | sh -s -- -default-toolchain nightly-2019-11-01 -
+curl https://sh.rustup.rs -sSf | sh -s -- -default-toolchain nightly-2019-11-01 -y
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # Or select the right toolchain:
@@ -29,7 +31,8 @@ rustup default nightly-2019-11-01
 ```
 
 Once Rust is installed and using the right toolchain you can do the following.
-```
+
+```bash
 git clone https://github.com/huggingface/tokenizers
 cd tokenizers/bindings/python
 
