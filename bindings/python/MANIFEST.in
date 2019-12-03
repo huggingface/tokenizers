@@ -1,0 +1,4 @@
+include Cargo.toml
+recursive-include src *
+recursive-include tokenizers-lib *
+recursive-exclude tokenizers-lib/target *
