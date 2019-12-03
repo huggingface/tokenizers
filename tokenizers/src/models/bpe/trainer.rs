@@ -3,71 +3,64 @@
 //!
 //! In charge of training a BPE model
 //!
-use super::{Error, Pair, Word, BPE};
-use crate::tokenizer::PreTokenizer;
-use rayon::prelude::*;
+use super::{Pair, Word, BPE};
+use crate::tokenizer::{Model, Trainer};
 use std::{
     collections::{HashMap, HashSet},
-    fs::File,
-    io::{BufRead, BufReader},
+    error::Error,
     time::Instant,
 };
 
-pub struct TrainerConfig {
-    // TODO: Add other parameters (whether to save, where, etc...)
-    files: Vec<String>,
-    pre_tokenizer: Box<dyn PreTokenizer + Send + Sync>,
+pub struct BpeTrainerConfig {
     vocab_size: usize,
     min_frequency: u32,
 }
-impl TrainerConfig {
-    // TODO: Make this into a builder
-    pub fn new(
-        files: Vec<String>,
-        pre_tokenizer: Box<dyn PreTokenizer + Send + Sync>,
-        min_frequency: u32,
-        vocab_size: usize,
-    ) -> Self {
-        TrainerConfig {
-            files,
-            pre_tokenizer,
+impl BpeTrainerConfig {
+    pub fn new(min_frequency: u32, vocab_size: usize) -> Self {
+        BpeTrainerConfig {
             vocab_size,
             min_frequency,
         }
     }
-}
 
-pub struct Trainer {
-    // Training parameters
-    config: TrainerConfig,
-}
-
-impl Trainer {
-    pub fn new(config: TrainerConfig) -> Self {
-        Trainer { config }
+    pub fn set_vocab_size(&mut self, value: usize) {
+        self.vocab_size = value;
     }
 
-    /// Train a BPE model
-    pub fn train(&mut self) -> Result<BPE, Error> {
-        //
-        // 1. Read file
-        //
-        let timer = Instant::now();
-        let word_counts = self.read_files()?;
-        println!(
-            "[{:?}] Read {} files and counted {} words",
-            timer.elapsed(),
-            self.config.files.len(),
-            word_counts.len()
-        );
+    pub fn set_min_frequency(&mut self, value: u32) {
+        self.min_frequency = value;
+    }
+}
+impl Default for BpeTrainerConfig {
+    fn default() -> Self {
+        BpeTrainerConfig::new(0, 30000)
+    }
+}
 
+pub struct BpeTrainer {
+    // Training parameters
+    config: BpeTrainerConfig,
+}
+
+impl BpeTrainer {
+    pub fn new(config: BpeTrainerConfig) -> Self {
+        BpeTrainer { config }
+    }
+}
+
+impl Trainer for BpeTrainer {
+    /// Train a BPE model
+    fn train(
+        &self,
+        word_counts: HashMap<String, u32>,
+    ) -> Result<Box<dyn Model + Sync>, Box<dyn Error>> {
         let mut words: Vec<Word> = vec![];
         let mut counts: Vec<i32> = vec![];
         let mut word_to_id: HashMap<String, u32> = HashMap::new();
         let mut id_to_word: Vec<String> = vec![];
 
         //
-        // 2. Tokenize words
+        // 1. Tokenize words
         //
         let timer = Instant::now();
         for (word, count) in &word_counts {
@@ -87,7 +80,7 @@ impl Trainer {
         println!("[{:?}] Tokenized {} words", timer.elapsed(), words.len());
 
         //
-        // 3. Count pairs in words
+        // 2. Count pairs in words
         //
         let timer = Instant::now();
         let mut pair_counts: HashMap<Pair, (i32, Pair)> = HashMap::new();
@@ -123,7 +116,7 @@ impl Trainer {
         );
 
         //
-        // 4. Do merges
+        // 3. Do merges
         //
         let mut merges: Vec<(Pair, u32)> = vec![];
         let timer = Instant::now();
@@ -195,7 +188,7 @@ impl Trainer {
         }
         println!("[{:?}] Computed {} merges", timer.elapsed(), merges.len());
 
-        Ok(BPE::new(
+        Ok(Box::new(BPE::new(
             word_to_id.clone(),
             word_to_id
                 .into_iter()
@@ -206,47 +199,11 @@ impl Trainer {
                 .enumerate()
                 .map(|(index, (pair, new_id))| (pair, (index as u32, new_id)))
                 .collect(),
-        ))
+        )))
     }
 
-    /// Read all the files in parallel, counting all seen words
-    fn read_files(&mut self) -> std::io::Result<HashMap<String, u32>> {
-        let results = self
-            .config
-            .files
-            .par_iter()
-            .map(|file| -> std::io::Result<HashMap<String, u32>> {
-                let mut words = HashMap::new();
-
-                let file: std::fs::File = File::open(file)?;
-                let file = BufReader::new(file);
-
-                for line in file.lines() {
-                    let line = line?;
-                    self.process_line(&mut words, &line);
-                }
-
-                Ok(words)
-            })
-            .collect::<Vec<_>>();
-
-        let mut words = HashMap::new();
-        for result in results {
-            for (word, count) in result? {
-                words
-                    .entry(word)
-                    .and_modify(|c| *c += count)
-                    .or_insert(count);
-            }
-        }
-
-        Ok(words)
-    }
-
-    /// Process a line of text, counting all seen words
-    fn process_line(&self, words: &mut HashMap<String, u32>, line: &str) {
-        let tokens = self.config.pre_tokenizer.pre_tokenize(line);
-
+    /// Process a bunch of tokens, counting them
+    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
         for token in tokens {
             words
                 .entry(token.clone())
