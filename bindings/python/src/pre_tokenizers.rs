@@ -4,6 +4,7 @@ use super::utils::Container;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use std::collections::HashSet;
 
 #[pyclass]
 pub struct PreTokenizer {
@@ -32,6 +33,27 @@ impl ByteLevel {
     fn new() -> PyResult<PreTokenizer> {
         Ok(PreTokenizer {
             pretok: Container::Owned(Box::new(tk::pre_tokenizers::byte_level::ByteLevel)),
+        })
+    }
+}
+
+#[pyclass]
+pub struct BasicPreTokenizer {}
+#[pymethods]
+impl BasicPreTokenizer {
+    #[staticmethod]
+    fn new() -> PyResult<PreTokenizer> {
+        // TODO: Parse kwargs for these
+        let mut do_lower_case = true;
+        let mut never_split = HashSet::new();
+        let mut tokenize_chinese_chars = true;
+
+        Ok(PreTokenizer {
+            pretok: Container::Owned(Box::new(tk::pre_tokenizers::basic::BasicPreTokenizer::new(
+                do_lower_case,
+                never_split,
+                tokenize_chinese_chars,
+            ))),
         })
     }
 }
