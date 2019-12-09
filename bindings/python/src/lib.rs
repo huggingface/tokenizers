@@ -22,6 +22,7 @@ fn trainers(_py: Python, m: &PyModule) -> PyResult<()> {
 fn models(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<models::Model>()?;
     m.add_class::<models::BPE>()?;
+    m.add_class::<models::WordPiece>()?;
     Ok(())
 }
 
@@ -30,6 +31,7 @@ fn models(_py: Python, m: &PyModule) -> PyResult<()> {
 fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<pre_tokenizers::PreTokenizer>()?;
     m.add_class::<pre_tokenizers::ByteLevel>()?;
+    m.add_class::<pre_tokenizers::BasicPreTokenizer>()?;
     Ok(())
 }
 
@@ -38,6 +40,7 @@ fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
 fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<decoders::Decoder>()?;
     m.add_class::<decoders::ByteLevel>()?;
+    m.add_class::<decoders::WordPiece>()?;
     Ok(())
 }
 

@@ -9,7 +9,7 @@ use super::pre_tokenizers::PreTokenizer;
 use super::token::Token;
 use super::trainers::Trainer;
 
-#[pyclass]
+#[pyclass(dict)]
 pub struct Tokenizer {
     tokenizer: tk::tokenizer::Tokenizer,
 }
