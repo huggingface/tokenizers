@@ -36,6 +36,18 @@ impl ByteLevel {
     }
 }
 
+#[pyclass]
+pub struct WordPiece {}
+#[pymethods]
+impl WordPiece {
+    #[staticmethod]
+    fn new() -> PyResult<Decoder> {
+        Ok(Decoder {
+            decoder: Container::Owned(Box::new(tk::decoders::wordpiece::WordPiece)),
+        })
+    }
+}
+
 struct PyDecoder {
     class: PyObject,
 }
