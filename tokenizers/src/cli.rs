@@ -6,7 +6,7 @@ use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use std::io::{self, BufRead, Write};
 use tokenizers::models::bpe::{Error, BPE};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
-use tokenizers::tokenizer::Tokenizer;
+use tokenizers::tokenizer::{EncodeInput, Tokenizer};
 
 fn shell(matches: &ArgMatches) -> Result<(), Error> {
     let vocab = matches
@@ -33,21 +33,12 @@ fn shell(matches: &ArgMatches) -> Result<(), Error> {
         let buffer = buffer.trim_end();
 
         let timer = std::time::Instant::now();
-        let encoded = tokenizer.encode(buffer);
+        let encoded = tokenizer.encode(EncodeInput::Single(buffer.to_owned()));
         let elapsed = timer.elapsed();
         println!("\nInput:\t\t{}", buffer);
-        println!(
-            "Tokens:\t\t{:?}",
-            encoded.iter().map(|t| &t.value).collect::<Vec<_>>()
-        );
-        println!(
-            "IDs:\t\t{:?}",
-            encoded.iter().map(|t| t.id).collect::<Vec<_>>()
-        );
-        println!(
-            "Offsets:\t{:?}",
-            encoded.iter().map(|t| t.offsets).collect::<Vec<_>>()
-        );
+        println!("Tokens:\t\t{:?}", encoded.get_tokens());
+        println!("IDs:\t\t{:?}", encoded.get_ids());
+        println!("Offsets:\t{:?}", encoded.get_offsets());
         println!("Tokenized in {:?}", elapsed);
     }
 }
