@@ -15,7 +15,7 @@ pub struct Model {
 #[pymethods]
 impl Model {
     #[new]
-    fn new(obj: &PyRawObject) -> PyResult<()> {
+    fn new(_obj: &PyRawObject) -> PyResult<()> {
         Err(exceptions::Exception::py_err(
             "Cannot create a Model directly. Use a concrete subclass",
         ))

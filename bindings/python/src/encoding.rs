@@ -1,8 +1,9 @@
 extern crate tokenizers as tk;
 
 use pyo3::prelude::*;
+use pyo3::PyObjectProtocol;
 
-#[pyclass]
+#[pyclass(dict)]
 #[repr(transparent)]
 pub struct Encoding {
     encoding: tk::tokenizer::Encoding,
@@ -11,6 +12,16 @@ pub struct Encoding {
 impl Encoding {
     pub fn new(encoding: tk::tokenizer::Encoding) -> Self {
         Encoding { encoding }
+    }
+}
+
+#[pyproto]
+impl PyObjectProtocol for Encoding {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "Encoding {{ original: '{}', ... }}",
+            self.encoding.get_original()
+        ))
     }
 }
 

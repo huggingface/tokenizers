@@ -8,7 +8,6 @@ use super::decoders::Decoder;
 use super::encoding::Encoding;
 use super::models::Model;
 use super::pre_tokenizers::PreTokenizer;
-use super::token::Token;
 use super::trainers::Trainer;
 
 #[pyclass(dict)]

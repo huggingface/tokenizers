@@ -14,6 +14,7 @@ parser.add_argument("--type", default="gpt2", type=str, help="The type of tokeni
 parser.add_argument("--file", default=None, type=str, help="The file to encode")
 parser.add_argument("--vocab", default=None, type=str, required=True, help="The vocab file")
 parser.add_argument("--merges", default=None, type=str, help="The merges.txt file")
+parser.add_argument("--debug", default=False, type=bool, help="Verbose output")
 args = parser.parse_args()
 
 if args.type == "gpt2" and args.merges is None:
@@ -47,6 +48,7 @@ Namespaces are one honking great idea -- let's do more of those!
 """.split("\n")
 
 if args.type == "gpt2":
+    print("Running GPT-2 tokenizer")
     tok_p = GPT2Tokenizer.from_pretrained('gpt2')
 
     # Create a Tokenizer using BPE
@@ -56,6 +58,7 @@ if args.type == "gpt2":
     # Use ByteLevel Decoder
     tok_r.with_decoder(decoders.ByteLevel.new())
 elif args.type == "bert":
+    print("Running Bert tokenizer")
     tok_p = BertTokenizer.from_pretrained('bert-base-uncased')
 
     tok_r = Tokenizer(models.WordPiece.from_files(args.vocab))
@@ -65,7 +68,6 @@ else:
     raise Exception(f"Unknown type {args.type}")
 
 def tokenize_r():
-    # return [ tok_r.encode(sentence) for sentence in text]
     return tok_r.encode_batch(text);
 
 def tokenize_p():
@@ -89,28 +91,27 @@ print(f"Transformer tokenizer took: {time_p} sec")
 
 print(f"SpeedUp Ratio: {time_p / time_r}")
 
-ids_r = [ [ token.id for token in sentence ] for sentence in encoded_r ]
-diff = 0
-for i in range(0, len(ids_r)):
-    if ids_r[i] != encoded_p[i]:
-        diff += 1
-        print("".join([ token.value for token in encoded_r[i] ]))
-        print("".join(tok_p.tokenize(text[i])))
-        print(text[i])
-        print("")
-        #print(ids_r[i])
-        #print(encoded_p[i])
-print(f"DIFF: {diff}")
-assert(ids_r == encoded_p)
+ids_r = [ sentence.ids for sentence in encoded_r ]
+diff_ids = 0
+for i in range(0, len(encoded_r)):
+    if encoded_r[i].ids != encoded_p[i]:
+        diff_ids += 1
+        if args.debug:
+            print("".join([ token.value for token in encoded_r[i] ]))
+            print("".join(tok_p.tokenize(text[i])))
+            print(text[i])
+            print("")
+print(f"Ids differences: {diff_ids}")
 
-exit()
-decoded_r = tok_r.decode_batch(ids_r)
+decoded_r = tok_r.decode_batch([ sentence.ids for sentence in encoded_r ])
 decoded_p = [ tok_p.decode(en) for en in encoded_p ]
+diff_decoded = 0
 for i in range(0, len(text)):
-    if decoded_r[i] != decoded_p[i]: #text[i]:
-        print(decoded_r[i])
-        print(decoded_p[i])
-        #print(text[i])
-        print("")
-
-assert(decoded_r == text)
+    if decoded_r[i] != decoded_p[i]:
+        diff_decoded += 1
+        if args.debug:
+            print(f"Original:  {text[i]}")
+            print(f"Rust:      {decoded_r[i]}")
+            print(f"Python:    {decoded_p[i]}")
+            print("")
+print(f"Decoding differences: {diff_decoded}")
