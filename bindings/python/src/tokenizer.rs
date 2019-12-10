@@ -2,8 +2,10 @@ extern crate tokenizers as tk;
 
 use pyo3::exceptions;
 use pyo3::prelude::*;
+use pyo3::types::*;
 
 use super::decoders::Decoder;
+use super::encoding::Encoding;
 use super::models::Model;
 use super::pre_tokenizers::PreTokenizer;
 use super::token::Token;
@@ -62,25 +64,36 @@ impl Tokenizer {
         }
     }
 
-    fn encode(&self, sentence: &str) -> Vec<Token> {
-        self.tokenizer
-            .encode(sentence)
-            .into_iter()
-            .map(|token| Token::new(token))
-            .collect()
+    fn encode(&self, sentence: &str, pair: Option<&str>) -> Encoding {
+        Encoding::new(self.tokenizer.encode(if pair.is_some() {
+            tk::tokenizer::EncodeInput::Dual(sentence.to_owned(), pair.unwrap().to_owned())
+        } else {
+            tk::tokenizer::EncodeInput::Single(sentence.to_owned())
+        }))
     }
 
-    fn encode_batch(&self, sentences: Vec<&str>) -> Vec<Vec<Token>> {
-        self.tokenizer
-            .encode_batch(sentences)
+    fn encode_batch(&self, sentences: &PyList) -> PyResult<Vec<Encoding>> {
+        let inputs = sentences
             .into_iter()
-            .map(|sentence| {
-                sentence
-                    .into_iter()
-                    .map(|token| Token::new(token))
-                    .collect()
+            .map(|item| {
+                if let Ok(s1) = item.extract::<String>() {
+                    Ok(tk::tokenizer::EncodeInput::Single(s1))
+                } else if let Ok((s1, s2)) = item.extract::<(String, String)>() {
+                    Ok(tk::tokenizer::EncodeInput::Dual(s1, s2))
+                } else {
+                    Err(exceptions::Exception::py_err(
+                        "Input must be a list[str] or list[(str, str)]",
+                    ))
+                }
             })
-            .collect()
+            .collect::<PyResult<Vec<_>>>()?;
+
+        Ok(self
+            .tokenizer
+            .encode_batch(inputs)
+            .into_iter()
+            .map(|encoding| Encoding::new(encoding))
+            .collect())
     }
 
     fn decode(&self, ids: Vec<u32>) -> String {
@@ -109,4 +122,3 @@ impl Tokenizer {
         })
     }
 }
-
