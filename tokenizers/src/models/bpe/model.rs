@@ -96,6 +96,10 @@ impl BPE {
 }
 
 impl Model for BPE {
+    fn get_vocab_size(&self) -> usize {
+        self.vocab.len()
+    }
+
     fn tokenize(&self, sentence: Vec<String>) -> Vec<Token> {
         if sentence.len() == 0 {
             return vec![];

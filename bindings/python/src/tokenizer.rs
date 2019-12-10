@@ -30,6 +30,11 @@ impl Tokenizer {
         }
     }
 
+    #[getter]
+    fn get_vocab_size(&self) -> usize {
+        self.tokenizer.get_vocab_size()
+    }
+
     fn with_model(&mut self, model: &mut Model) -> PyResult<()> {
         if let Some(model) = model.model.to_pointer() {
             self.tokenizer.with_model(model);

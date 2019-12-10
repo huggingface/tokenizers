@@ -48,6 +48,10 @@ impl WordPiece {
 }
 
 impl Model for WordPiece {
+    fn get_vocab_size(&self) -> usize {
+        self.vocab.len()
+    }
+
     fn tokenize(&self, sentence: Vec<String>) -> Vec<Token> {
         let mut output_tokens = vec![];
 

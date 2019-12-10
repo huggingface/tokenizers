@@ -37,6 +37,7 @@ pub trait Model {
     fn decode(&self, ids: Vec<u32>) -> Vec<String>;
     fn token_to_id(&self, token: &str) -> Option<u32>;
     fn id_to_token(&self, id: u32) -> Option<String>;
+    fn get_vocab_size(&self) -> usize;
 }
 
 /// A PostProcessor has the responsibility to post process an encoded output of the Tokenizer.
@@ -164,6 +165,11 @@ impl Tokenizer {
     pub fn with_model(&mut self, model: Box<dyn Model + Sync>) -> &Self {
         self.model = model;
         self
+    }
+
+    /// Get the size of the vocabulary
+    pub fn get_vocab_size(&self) -> usize {
+        self.model.get_vocab_size()
     }
 
     /// Converts a token in the corresponding id.
