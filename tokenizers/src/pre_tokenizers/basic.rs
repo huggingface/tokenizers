@@ -1,4 +1,4 @@
-use crate::tokenizer::PreTokenizer;
+use crate::tokenizer::{PreTokenizer, Result};
 use std::collections::HashSet;
 use unicode_categories::UnicodeCategories;
 use unicode_normalization::UnicodeNormalization;
@@ -144,7 +144,7 @@ impl BasicPreTokenizer {
 }
 
 impl PreTokenizer for BasicPreTokenizer {
-    fn pre_tokenize(&self, s: &str) -> Vec<String> {
+    fn pre_tokenize(&self, s: &str) -> Result<Vec<String>> {
         let mut text = self.clean_text(s);
 
         // This was added on November 1st, 2018 for the multilingual and Chinese
@@ -166,6 +166,6 @@ impl PreTokenizer for BasicPreTokenizer {
             split_tokens.extend(self.run_split_on_punc(&tk));
         }
 
-        split_tokens
+        Ok(split_tokens)
     }
 }

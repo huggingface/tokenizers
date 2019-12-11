@@ -1,9 +1,27 @@
-use crate::tokenizer::{Model, Token};
+use crate::tokenizer::{Model, Result, Token};
 use std::{
     collections::HashMap,
+    fmt,
     fs::File,
     io::{BufRead, BufReader},
 };
+
+#[derive(Debug)]
+pub enum Error {
+    MissingUnkToken,
+}
+impl std::error::Error for Error {}
+
+impl fmt::Display for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            MissingUnkToken => write!(
+                fmt,
+                "WordPiece error: Missing [UNK] token from the vocabulary"
+            ),
+        }
+    }
+}
 
 pub struct WordPiece {
     unk_token: String,
@@ -52,7 +70,7 @@ impl Model for WordPiece {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sentence: Vec<String>) -> Vec<Token> {
+    fn tokenize(&self, sentence: Vec<String>) -> Result<Vec<Token>> {
         let mut output_tokens = vec![];
 
         let mut offset = 0usize;
@@ -61,7 +79,10 @@ impl Model for WordPiece {
             if char_len > self.max_input_chars_per_word {
                 output_tokens.push(Token {
                     value: self.unk_token.clone(),
-                    id: *self.vocab.get(&self.unk_token).unwrap_or(&0),
+                    id: *self
+                        .vocab
+                        .get(&self.unk_token)
+                        .ok_or(Error::MissingUnkToken)?,
                     offsets: (offset, offset + char_len),
                 });
                 continue;
@@ -104,7 +125,10 @@ impl Model for WordPiece {
             if is_bad {
                 output_tokens.push(Token {
                     value: self.unk_token.clone(),
-                    id: *self.vocab.get(&self.unk_token).unwrap_or(&0),
+                    id: *self
+                        .vocab
+                        .get(&self.unk_token)
+                        .ok_or(Error::MissingUnkToken)?,
                     offsets: (offset, offset + char_len),
                 });
             } else {
@@ -114,15 +138,16 @@ impl Model for WordPiece {
             offset += char_len;
         }
 
-        output_tokens
+        Ok(output_tokens)
     }
 
-    fn decode(&self, ids: Vec<u32>) -> Vec<String> {
-        ids.into_iter()
+    fn decode(&self, ids: Vec<u32>) -> Result<Vec<String>> {
+        Ok(ids
+            .into_iter()
             .map(|id| self.vocab_r.get(&id))
             .filter(|token| token.is_some())
             .map(|id| id.unwrap().clone())
-            .collect()
+            .collect())
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
