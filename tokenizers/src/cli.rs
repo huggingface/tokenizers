@@ -4,11 +4,11 @@
 
 use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use std::io::{self, BufRead, Write};
-use tokenizers::models::bpe::{Error, BPE};
+use tokenizers::models::bpe::BPE;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
-use tokenizers::tokenizer::{EncodeInput, Tokenizer};
+use tokenizers::tokenizer::{EncodeInput, Result, Tokenizer};
 
-fn shell(matches: &ArgMatches) -> Result<(), Error> {
+fn shell(matches: &ArgMatches) -> Result<()> {
     let vocab = matches
         .value_of("vocab")
         .expect("Must give a vocab.json file");
@@ -33,7 +33,7 @@ fn shell(matches: &ArgMatches) -> Result<(), Error> {
         let buffer = buffer.trim_end();
 
         let timer = std::time::Instant::now();
-        let encoded = tokenizer.encode(EncodeInput::Single(buffer.to_owned()));
+        let encoded = tokenizer.encode(EncodeInput::Single(buffer.to_owned()))?;
         let elapsed = timer.elapsed();
         println!("\nInput:\t\t{}", buffer);
         println!("Tokens:\t\t{:?}", encoded.get_tokens());
@@ -43,7 +43,7 @@ fn shell(matches: &ArgMatches) -> Result<(), Error> {
     }
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<()> {
     let matches = App::new("tokenizers")
         .version("0.0.1")
         .author("Anthony M. <anthony@huggingface.co>")

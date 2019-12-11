@@ -1,13 +1,14 @@
-use crate::tokenizer::PreTokenizer;
+use crate::tokenizer::{PreTokenizer, Result};
 use regex::Regex;
 
 pub struct Whitespace;
 impl PreTokenizer for Whitespace {
-    fn pre_tokenize(&self, s: &str) -> Vec<String> {
+    fn pre_tokenize(&self, s: &str) -> Result<Vec<String>> {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"\w+|[^\w\s]+").unwrap();
         }
-        RE.captures_iter(s)
+        Ok(RE
+            .captures_iter(s)
             .map(|captures| {
                 captures
                     .iter()
@@ -17,7 +18,7 @@ impl PreTokenizer for Whitespace {
                     })
                     .collect()
             })
-            .collect()
+            .collect())
     }
 }
 
@@ -37,7 +38,7 @@ mod tests {
         ];
         let pretok = Whitespace;
         for (s, res) in tests {
-            assert_eq!(pretok.pre_tokenize(s), res);
+            assert_eq!(pretok.pre_tokenize(s).unwrap(), res);
         }
     }
 }
