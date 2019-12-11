@@ -1,5 +1,5 @@
 use super::{Cache, Error, Pair, Word};
-use crate::tokenizer::{Model, Token};
+use crate::tokenizer::{Model, Result, Token};
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -37,7 +37,7 @@ impl BPE {
         BPE::new(HashMap::new(), HashMap::new(), HashMap::new())
     }
 
-    pub fn from_files(vocab: &str, merges: &str) -> Result<Self, Error> {
+    pub fn from_files(vocab: &str, merges: &str) -> Result<Self> {
         // Read vocab.json
         let vocab_file = File::open(vocab)?;
         let mut vocab_file = BufReader::new(vocab_file);
@@ -55,7 +55,7 @@ impl BPE {
                     }
                 }
             }
-            _ => return Err(Error::BadVocabulary),
+            _ => return Err(Box::new(Error::BadVocabulary)),
         };
 
         // Read merges file
@@ -100,9 +100,9 @@ impl Model for BPE {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sentence: Vec<String>) -> Vec<Token> {
+    fn tokenize(&self, sentence: Vec<String>) -> Result<Vec<Token>> {
         if sentence.len() == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
 
         let mut encoded: Vec<Token> = Vec::with_capacity(sentence.len());
@@ -181,15 +181,16 @@ impl Model for BPE {
             .unzip::<_, _, Vec<String>, Vec<Word>>();
         self.cache.set_values(keys, values);
 
-        encoded
+        Ok(encoded)
     }
 
-    fn decode(&self, ids: Vec<u32>) -> Vec<String> {
-        ids.into_iter()
+    fn decode(&self, ids: Vec<u32>) -> Result<Vec<String>> {
+        Ok(ids
+            .into_iter()
             .map(|id| self.vocab_r.get(&id))
             .filter(|token| token.is_some())
             .map(|id| id.unwrap().clone())
-            .collect()
+            .collect())
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {

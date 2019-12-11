@@ -1,4 +1,4 @@
-use crate::tokenizer::{Decoder, PreTokenizer};
+use crate::tokenizer::{Decoder, PreTokenizer, Result};
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -32,8 +32,9 @@ lazy_static! {
 
 pub struct ByteLevel;
 impl PreTokenizer for ByteLevel {
-    fn pre_tokenize(&self, s: &str) -> Vec<String> {
-        RE.captures_iter(s)
+    fn pre_tokenize(&self, s: &str) -> Result<Vec<String>> {
+        Ok(RE
+            .captures_iter(s)
             .map(|capture| {
                 let capture = capture.get(0).unwrap();
                 let start = capture.start();
@@ -78,20 +79,20 @@ impl PreTokenizer for ByteLevel {
                     .map(|b| std::char::from_u32(BYTES_CHAR[b]).unwrap())
                     .collect()
             })
-            .collect()
+            .collect())
     }
 }
 
 impl Decoder for ByteLevel {
-    fn decode(&self, tokens: Vec<String>) -> String {
-        String::from_utf8_lossy(
+    fn decode(&self, tokens: Vec<String>) -> Result<String> {
+        Ok(String::from_utf8_lossy(
             &tokens
                 .join("")
                 .chars()
                 .map(|c| CHAR_BYTES[&(c as u32)])
                 .collect::<Vec<_>>(),
         )
-        .into_owned()
+        .into_owned())
     }
 }
 
@@ -104,7 +105,9 @@ mod tests {
     fn pre_tokenization() {
         let pre_tok = ByteLevel;
         assert_eq!(
-            pre_tok.pre_tokenize("Hello my friend, how is your day going?"),
+            pre_tok
+                .pre_tokenize("Hello my friend, how is your day going?")
+                .unwrap(),
             vec![
                 "Hello", "Ġmy", "Ġfriend", ",", "Ġhow", "Ġis", "Ġyour", "Ġday", "Ġgoing", "?"
             ]
@@ -116,14 +119,17 @@ mod tests {
         let decoder = ByteLevel;
         assert_eq!(
             "Hello my friend, how is your day going?",
-            decoder.decode(
-                vec![
-                    "Hello", "Ġmy", "Ġfriend", ",", "Ġhow", "Ġis", "Ġyour", "Ġday", "Ġgoing", "?"
-                ]
-                .into_iter()
-                .map(|s| s.into())
-                .collect::<Vec<String>>()
-            )
+            decoder
+                .decode(
+                    vec![
+                        "Hello", "Ġmy", "Ġfriend", ",", "Ġhow", "Ġis", "Ġyour", "Ġday", "Ġgoing",
+                        "?"
+                    ]
+                    .into_iter()
+                    .map(|s| s.into())
+                    .collect::<Vec<String>>()
+                )
+                .unwrap()
         );
     }
 
@@ -141,13 +147,13 @@ mod tests {
 
         let bl = ByteLevel;
         for sample in samples {
-            let pre_tokenized = bl.pre_tokenize(&sample);
+            let pre_tokenized = bl.pre_tokenize(&sample).unwrap();
             let separated_tokens = pre_tokenized
                 .into_iter()
                 .map(|token| token.split("").map(|t| t.into()).collect::<Vec<_>>())
                 .flatten()
                 .collect::<Vec<_>>();
-            assert_eq!(sample, bl.decode(separated_tokens));
+            assert_eq!(sample, bl.decode(separated_tokens).unwrap());
         }
     }
 }

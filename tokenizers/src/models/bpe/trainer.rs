@@ -4,10 +4,9 @@
 //! In charge of training a BPE model
 //!
 use super::{Pair, Word, BPE};
-use crate::tokenizer::{Model, Trainer};
+use crate::tokenizer::{Model, Result, Trainer};
 use std::{
     collections::{HashMap, HashSet},
-    error::Error,
     time::Instant,
 };
 
@@ -50,10 +49,7 @@ impl BpeTrainer {
 
 impl Trainer for BpeTrainer {
     /// Train a BPE model
-    fn train(
-        &self,
-        word_counts: HashMap<String, u32>,
-    ) -> Result<Box<dyn Model + Sync>, Box<dyn Error>> {
+    fn train(&self, word_counts: HashMap<String, u32>) -> Result<Box<dyn Model + Sync>> {
         let mut words: Vec<Word> = vec![];
         let mut counts: Vec<i32> = vec![];
         let mut word_to_id: HashMap<String, u32> = HashMap::new();
