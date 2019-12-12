@@ -22,7 +22,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --verbose --manifest-path ./tokenizers/Cargo.toml
+          args: --all-targets --verbose --manifest-path ./tokenizers/Cargo.toml
 
       - name: Run Tests
         uses: actions-rs/cargo@v1
