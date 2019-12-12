@@ -19,6 +19,9 @@ use std::{
     io::{BufRead, BufReader},
 };
 
+mod encoding;
+pub use encoding::Encoding;
+
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// A Normalizer takes care of pre-processing strings
@@ -70,138 +73,6 @@ impl Token {
     pub fn new(id: u32, value: String, offsets: (usize, usize)) -> Self {
         Token { id, value, offsets }
     }
-}
-
-/// The Encoding struct represents the output of the Tokenizer
-#[derive(Default)]
-pub struct Encoding {
-    original: String,
-    normalized: String,
-    ids: Vec<u32>,
-    type_ids: Vec<u32>,
-    tokens: Vec<String>,
-    offsets: Vec<(usize, usize)>,
-    special_tokens_mask: Vec<u32>,
-    attention_mask: Vec<u32>,
-    overflowing: Option<Box<Encoding>>,
-}
-impl Encoding {
-    pub fn new(
-        original: String,
-        normalized: String,
-        ids: Vec<u32>,
-        type_ids: Vec<u32>,
-        tokens: Vec<String>,
-        offsets: Vec<(usize, usize)>,
-        special_tokens_mask: Vec<u32>,
-        attention_mask: Vec<u32>,
-        overflowing: Option<Box<Encoding>>,
-    ) -> Self {
-        Encoding {
-            original,
-            normalized,
-            ids,
-            type_ids,
-            tokens,
-            offsets,
-            special_tokens_mask,
-            attention_mask,
-            overflowing,
-        }
-    }
-
-    pub fn get_original(&self) -> &str {
-        &self.original
-    }
-
-    pub fn get_normalized(&self) -> &str {
-        &self.normalized
-    }
-
-    pub fn get_tokens(&self) -> &[String] {
-        &self.tokens[..]
-    }
-
-    pub fn get_ids(&self) -> &[u32] {
-        &self.ids
-    }
-
-    pub fn get_type_ids(&self) -> &[u32] {
-        &self.type_ids
-    }
-
-    pub fn get_offsets(&self) -> &[(usize, usize)] {
-        &self.offsets
-    }
-
-    pub fn get_special_tokens_mask(&self) -> &[u32] {
-        &self.special_tokens_mask
-    }
-
-    pub fn get_attention_mask(&self) -> &[u32] {
-        &self.attention_mask
-    }
-
-    pub fn take_overflowing(&mut self) -> Option<Box<Encoding>> {
-        self.overflowing.take()
-    }
-
-    pub fn truncate(&mut self, max_len: usize, stride: usize) {
-        if max_len > self.ids.len() {
-            return;
-        }
-
-        let mut o_ids = self.ids.split_off(max_len);
-        let mut o_type_ids = self.type_ids.split_off(max_len);
-        let mut o_tokens = self.tokens.split_off(max_len);
-        let mut o_offsets = self.offsets.split_off(max_len);
-        let mut o_spe_toks = self.special_tokens_mask.split_off(max_len);
-        let mut o_attent = self.attention_mask.split_off(max_len);
-
-        // Figure out offsets for original and normalized
-        // TODO: We will be able to retrive the right part of original
-        // only when we will have the alignment difference between both
-        // For now we will use the normalized offset...
-        let max = self
-            .offsets
-            .iter()
-            .fold(0, |max, (_, end)| if *end > max { *end } else { max });
-        let trunc_original = self.original.split_off(max);
-        let trunc_normalized = self.normalized.split_off(max);
-
-        if stride > 0 {
-            o_ids = prepend_stride(&self.ids, o_ids, stride);
-            o_type_ids = prepend_stride(&self.type_ids, o_type_ids, stride);
-            o_tokens = prepend_stride(&self.tokens, o_tokens, stride);
-            o_offsets = prepend_stride(&self.offsets, o_offsets, stride);
-            o_spe_toks = prepend_stride(&self.special_tokens_mask, o_spe_toks, stride);
-            o_attent = prepend_stride(&self.attention_mask, o_attent, stride);
-        }
-
-        self.overflowing = Some(Box::new(Encoding {
-            original: trunc_original,
-            normalized: trunc_normalized,
-            ids: o_ids,
-            type_ids: o_type_ids,
-            tokens: o_tokens,
-            offsets: o_offsets,
-            special_tokens_mask: o_spe_toks,
-            attention_mask: o_attent,
-            overflowing: None,
-        }));
-    }
-}
-
-fn prepend_stride<T: Clone>(previous: &Vec<T>, current: Vec<T>, stride: usize) -> Vec<T> {
-    let prev = previous
-        .iter()
-        .rev()
-        .take(stride)
-        .map(|v| v.clone())
-        .rev()
-        .collect::<Vec<_>>();
-
-    [&prev[..], &current[..]].concat()
 }
 
 pub enum EncodeInput {
@@ -309,17 +180,17 @@ impl Tokenizer {
                 },
             );
 
-            Ok(Encoding {
+            Ok(Encoding::new(
                 original,
                 normalized,
                 ids,
-                type_ids: vec![type_id; length],
+                vec![type_id; length],
                 tokens,
                 offsets,
-                attention_mask: vec![1; length],
-                special_tokens_mask: vec![0; length],
-                overflowing: None,
-            })
+                vec![0; length],
+                vec![1; length],
+                None,
+            ))
         };
 
         let (sentence, pair) = match input {
@@ -420,7 +291,7 @@ impl Tokenizer {
     /// Post processing logic, handling the case where there is no PostProcessor set
     fn post_process(
         &self,
-        encoding: Encoding,
+        mut encoding: Encoding,
         pair_encoding: Option<Encoding>,
     ) -> Result<Encoding> {
         if let Some(processor) = &self.post_processor {
@@ -428,35 +299,10 @@ impl Tokenizer {
         } else {
             match pair_encoding {
                 None => Ok(encoding),
-                Some(pair) => Ok(Encoding {
-                    original: format!("{}{}", encoding.original, pair.original),
-                    normalized: format!("{}{}", encoding.normalized, pair.normalized),
-                    ids: [&encoding.ids[..], &pair.ids[..]].concat(),
-                    type_ids: [&encoding.type_ids[..], &pair.type_ids[..]].concat(),
-                    tokens: [&encoding.tokens[..], &pair.tokens[..]].concat(),
-                    offsets: [
-                        &encoding.offsets[..],
-                        &pair
-                            .offsets
-                            .into_iter()
-                            .map(|(start, end)| {
-                                (
-                                    start + encoding.original.len(),
-                                    end + encoding.original.len(),
-                                )
-                            })
-                            .collect::<Vec<_>>(),
-                    ]
-                    .concat(),
-                    special_tokens_mask: [
-                        &encoding.special_tokens_mask[..],
-                        &pair.special_tokens_mask[..],
-                    ]
-                    .concat(),
-                    attention_mask: [&encoding.attention_mask[..], &pair.attention_mask[..]]
-                        .concat(),
-                    overflowing: None,
-                }),
+                Some(pair) => {
+                    encoding.merge_with(pair);
+                    Ok(encoding)
+                }
             }
         }
     }
