@@ -15,7 +15,7 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            MissingUnkToken => write!(
+            Error::MissingUnkToken => write!(
                 fmt,
                 "WordPiece error: Missing [UNK] token from the vocabulary"
             ),
@@ -156,5 +156,15 @@ impl Model for WordPiece {
 
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).map(|token| token.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_display() {
+        assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
     }
 }
