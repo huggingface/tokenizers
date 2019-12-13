@@ -72,12 +72,12 @@ impl Tokenizer {
     fn encode(&self, sentence: &str, pair: Option<&str>) -> PyResult<Encoding> {
         ToPyResult(
             self.tokenizer
-                .encode(if pair.is_some() {
-                    tk::tokenizer::EncodeInput::Dual(sentence.to_owned(), pair.unwrap().to_owned())
+                .encode(if let Some(pair) = pair {
+                    tk::tokenizer::EncodeInput::Dual(sentence.to_owned(), pair.to_owned())
                 } else {
                     tk::tokenizer::EncodeInput::Single(sentence.to_owned())
                 })
-                .map(|encoding| Encoding::new(encoding)),
+                .map(Encoding::new),
         )
         .into()
     }
@@ -98,12 +98,11 @@ impl Tokenizer {
             })
             .collect::<PyResult<Vec<_>>>()?;
 
-        ToPyResult(self.tokenizer.encode_batch(inputs).map(|encodings| {
-            encodings
-                .into_iter()
-                .map(|encoding| Encoding::new(encoding))
-                .collect()
-        }))
+        ToPyResult(
+            self.tokenizer
+                .encode_batch(inputs)
+                .map(|encodings| encodings.into_iter().map(Encoding::new).collect()),
+        )
         .into()
     }
 
