@@ -8,7 +8,7 @@ pub struct Token {
     tok: tk::tokenizer::Token,
 }
 impl Token {
-    pub fn new(tok: tk::tokenizer::Token) -> Self {
+    pub fn _new(tok: tk::tokenizer::Token) -> Self {
         Token { tok }
     }
 }

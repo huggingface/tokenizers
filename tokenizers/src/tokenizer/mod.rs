@@ -19,6 +19,9 @@ use std::{
     io::{BufRead, BufReader},
 };
 
+mod encoding;
+pub use encoding::Encoding;
+
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// A Normalizer takes care of pre-processing strings
@@ -69,60 +72,6 @@ pub struct Token {
 impl Token {
     pub fn new(id: u32, value: String, offsets: (usize, usize)) -> Self {
         Token { id, value, offsets }
-    }
-}
-
-/// The Encoding struct represents the output of the Tokenizer
-#[derive(Default)]
-pub struct Encoding {
-    original: String,
-    normalized: String,
-    ids: Vec<u32>,
-    type_ids: Vec<u32>,
-    tokens: Vec<String>,
-    offsets: Vec<(usize, usize)>,
-}
-impl Encoding {
-    pub fn new(
-        original: String,
-        normalized: String,
-        ids: Vec<u32>,
-        type_ids: Vec<u32>,
-        tokens: Vec<String>,
-        offsets: Vec<(usize, usize)>,
-    ) -> Self {
-        Encoding {
-            original,
-            normalized,
-            ids,
-            type_ids,
-            tokens,
-            offsets,
-        }
-    }
-
-    pub fn get_original(&self) -> &str {
-        &self.original
-    }
-
-    pub fn get_normalized(&self) -> &str {
-        &self.normalized
-    }
-
-    pub fn get_tokens(&self) -> &[String] {
-        &self.tokens[..]
-    }
-
-    pub fn get_ids(&self) -> &[u32] {
-        &self.ids
-    }
-
-    pub fn get_type_ids(&self) -> &[u32] {
-        &self.type_ids
-    }
-
-    pub fn get_offsets(&self) -> &[(usize, usize)] {
-        &self.offsets
     }
 }
 
@@ -231,14 +180,17 @@ impl Tokenizer {
                 },
             );
 
-            Ok(Encoding {
+            Ok(Encoding::new(
                 original,
                 normalized,
                 ids,
-                type_ids: vec![type_id; length],
+                vec![type_id; length],
                 tokens,
                 offsets,
-            })
+                vec![0; length],
+                vec![1; length],
+                None,
+            ))
         };
 
         let (sentence, pair) = match input {
@@ -339,7 +291,7 @@ impl Tokenizer {
     /// Post processing logic, handling the case where there is no PostProcessor set
     fn post_process(
         &self,
-        encoding: Encoding,
+        mut encoding: Encoding,
         pair_encoding: Option<Encoding>,
     ) -> Result<Encoding> {
         if let Some(processor) = &self.post_processor {
@@ -347,27 +299,10 @@ impl Tokenizer {
         } else {
             match pair_encoding {
                 None => Ok(encoding),
-                Some(pair) => Ok(Encoding {
-                    original: format!("{}{}", encoding.original, pair.original),
-                    normalized: format!("{}{}", encoding.normalized, pair.normalized),
-                    ids: [&encoding.ids[..], &pair.ids[..]].concat(),
-                    type_ids: [&encoding.type_ids[..], &pair.type_ids[..]].concat(),
-                    tokens: [&encoding.tokens[..], &pair.tokens[..]].concat(),
-                    offsets: [
-                        &encoding.offsets[..],
-                        &pair
-                            .offsets
-                            .into_iter()
-                            .map(|(start, end)| {
-                                (
-                                    start + encoding.original.len(),
-                                    end + encoding.original.len(),
-                                )
-                            })
-                            .collect::<Vec<_>>(),
-                    ]
-                    .concat(),
-                }),
+                Some(pair) => {
+                    encoding.merge_with(pair);
+                    Ok(encoding)
+                }
             }
         }
     }

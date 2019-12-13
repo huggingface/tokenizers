@@ -1,10 +1,11 @@
 extern crate tokenizers as tk;
 
+use super::error::{PyError, ToPyResult};
 use super::utils::Container;
-use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use std::collections::HashSet;
+use tk::tokenizer::Result;
 
 #[pyclass]
 pub struct PreTokenizer {
@@ -21,7 +22,7 @@ impl PreTokenizer {
     }
 
     fn pre_tokenize(&self, s: &str) -> PyResult<Vec<String>> {
-        Ok(self.pretok.execute(|pretok| pretok.pre_tokenize(s)))
+        ToPyResult(self.pretok.execute(|pretok| pretok.pre_tokenize(s))).into()
     }
 }
 
@@ -42,11 +43,26 @@ pub struct BasicPreTokenizer {}
 #[pymethods]
 impl BasicPreTokenizer {
     #[staticmethod]
-    fn new() -> PyResult<PreTokenizer> {
-        // TODO: Parse kwargs for these
+    #[args(kwargs = "**")]
+    fn new(kwargs: Option<&PyDict>) -> PyResult<PreTokenizer> {
         let mut do_lower_case = true;
         let mut never_split = HashSet::new();
         let mut tokenize_chinese_chars = true;
+
+        if let Some(kwargs) = kwargs {
+            for (key, val) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "do_lower_case" => do_lower_case = val.extract()?,
+                    "tokenize_chinese_chars" => tokenize_chinese_chars = val.extract()?,
+                    "never_split" => {
+                        let values: Vec<String> = val.extract()?;
+                        never_split = values.into_iter().collect();
+                    }
+                    _ => println!("Ignored unknown kwargs option {}", key),
+                }
+            }
+        }
 
         Ok(PreTokenizer {
             pretok: Container::Owned(Box::new(tk::pre_tokenizers::basic::BasicPreTokenizer::new(
@@ -65,43 +81,27 @@ struct PyPreTokenizer {
 
 impl PyPreTokenizer {
     pub fn new(class: PyObject) -> PyResult<Self> {
-        let pretok = PyPreTokenizer { class };
-
-        // Quickly test the PyPreTokenizer
-        pretok._pre_tokenize("This is a test sentence")?;
-
-        Ok(pretok)
-    }
-
-    fn _pre_tokenize(&self, sentence: &str) -> PyResult<Vec<String>> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        let args = PyTuple::new(py, &[sentence]);
-        let res = self.class.call_method(py, "pre_tokenize", args, None)?;
-
-        let tokens = res.cast_as::<PyList>(py).map_err(|_| {
-            exceptions::TypeError::py_err("`pre_tokenize` is expected to return a List[str]`")
-        })?;
-        let tokens: Vec<String> = tokens.extract().map_err(|_| {
-            exceptions::TypeError::py_err("`pre_tokenize` is expected to return a List[str]`")
-        })?;
-
-        Ok(tokens)
+        Ok(PyPreTokenizer { class })
     }
 }
 
 impl tk::tokenizer::PreTokenizer for PyPreTokenizer {
-    fn pre_tokenize(&self, sentence: &str) -> Vec<String> {
-        match self._pre_tokenize(sentence) {
-            Ok(res) => res,
-            Err(e) => {
-                let gil = Python::acquire_gil();
-                let py = gil.python();
-                e.print(py);
+    fn pre_tokenize(&self, sentence: &str) -> Result<Vec<String>> {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
 
-                // Return an empty Vec as fallback
-                vec![]
+        let args = PyTuple::new(py, &[sentence]);
+        match self.class.call_method(py, "pre_tokenize", args, None) {
+            Ok(res) => Ok(res
+                .cast_as::<PyList>(py)
+                .map_err(|_| PyError::from("`pre_tokenize is expected to return a List[str]"))?
+                .extract::<Vec<String>>()
+                .map_err(|_| PyError::from("`pre_tokenize` is expected to return a List[str]"))?),
+            Err(e) => {
+                e.print(py);
+                Err(Box::new(PyError::from(
+                    "Error while calling `pre_tokenize`",
+                )))
             }
         }
     }

@@ -1,49 +1,69 @@
 import argparse
 
-from tokenizers import Tokenizer, models, pre_tokenizers
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--vocab", default=None, type=str, required=True, help="The vocab.json file")
 parser.add_argument("--merges", default=None, type=str, required=True, help="The merges.txt file")
 args = parser.parse_args()
 
-class MyPreTok:
-    """
-    This class represents a custom PreTokenizer that will be called
+class GoodCustom:
+    """GoodCustom
+    This class represents a good custom PreTokenizer that will be called
     by `tokenizers` when needed
     """
     def pre_tokenize(self, sentence):
-        if sentence.startswith("Hello"):
-            # This will generate an error
-            return None
+        return sentence.split(" ")
 
-        # Prepend "Haha"
-        return sum([ [ "Haha" ], sentence.split(" ") ], [])
+    def decode(self, tokens):
+        return ", ".join(tokens)
 
+class BadCustom:
+    """Bad Pretok
+    This class represents a bad custom PreTokenizer that will trigger an exception
+    when called by `tokenizers`
+    """
+    def pre_tokenize(self, sentence):
+        return None
 
-# Create a PreTokenizer from our custom one
-mypretok = MyPreTok()
-pretok = pre_tokenizers.PreTokenizer.custom(mypretok)
-
-# Create a Tokenizer using a BPE model
-bpe = models.BPE.from_files(args.vocab, args.merges)
-tokenizer = Tokenizer(bpe)
-
-# And attach our PreTokenizer
-tokenizer.with_pre_tokenizer(pretok)
-
+    def decode(self, tokens):
+        return None
 
 def tokenize(sentence):
-    output = [ token.value for token in tokenizer.encode(sentence) ]
+    output = tokenizer.encode(sentence).tokens
     print(f"`{sentence}` tokenized to {output}")
     return output
 
 
-## Good example
-# Our PreTokenizer has been used as expected
-assert(tokenize("Hey friend") == [ "H", "aha", "Hey", "friend" ])
+# Create a Tokenizer using a BPE model
+bpe = models.BPE.from_files(args.vocab, args.merges)
+tokenizer = Tokenizer(models.BPE.from_files(args.vocab, args.merges))
 
-## Bad example
-# In this case, our PreTokenizer returns None instead of a List[str]
-# So it doesn't work as expected, and we get a empty list back, with an error printed
-assert(tokenize("Hello friend") == [])
+# Test the good custom classes
+good_custom = GoodCustom()
+good_pretok = pre_tokenizers.PreTokenizer.custom(good_custom)
+good_decoder = decoders.Decoder.custom(good_custom)
+
+tokenizer.with_pre_tokenizer(good_pretok)
+tokenizer.with_decoder(good_decoder)
+
+print("Tokenization will work with good custom:")
+encoding = tokenizer.encode("Hey friend!")
+print(f"IDS: {encoding.ids}")
+print(f"TOKENS: {encoding.tokens}")
+print(f"OFFSETS: {encoding.offsets}")
+decoded = tokenizer.decode(encoding.ids)
+print(f"DECODED: {decoded}")
+
+# Now test with the bad custom classes
+bad_custom = BadCustom()
+bad_pretok = pre_tokenizers.PreTokenizer.custom(bad_custom)
+bad_decoder = decoders.Decoder.custom(bad_custom)
+
+tokenizer.with_pre_tokenizer(bad_pretok)
+tokenizer.with_decoder(bad_decoder)
+try:
+    encoding = tokenizer.encode("Hey friend!")
+except:
+    print("Bad tokenizer didn't work")
+

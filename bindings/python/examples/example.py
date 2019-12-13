@@ -61,8 +61,8 @@ elif args.type == "bert":
     print("Running Bert tokenizer")
     tok_p = BertTokenizer.from_pretrained('bert-base-uncased')
 
-    tok_r = Tokenizer(models.WordPiece.from_files(args.vocab))
-    tok_r.with_pre_tokenizer(pre_tokenizers.BasicPreTokenizer.new())
+    tok_r = Tokenizer(models.WordPiece.from_files(args.vocab, unk_token="[UNK]", max_input_chars_per_word=100))
+    tok_r.with_pre_tokenizer(pre_tokenizers.BasicPreTokenizer.new(do_lower_case=True, tokenize_chinese_chars=True, never_split=[]))
     tok_r.with_decoder(decoders.WordPiece.new())
 else:
     raise Exception(f"Unknown type {args.type}")

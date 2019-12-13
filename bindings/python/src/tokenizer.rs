@@ -6,6 +6,7 @@ use pyo3::types::*;
 
 use super::decoders::Decoder;
 use super::encoding::Encoding;
+use super::error::ToPyResult;
 use super::models::Model;
 use super::pre_tokenizers::PreTokenizer;
 use super::trainers::Trainer;
@@ -68,12 +69,17 @@ impl Tokenizer {
         }
     }
 
-    fn encode(&self, sentence: &str, pair: Option<&str>) -> Encoding {
-        Encoding::new(self.tokenizer.encode(if pair.is_some() {
-            tk::tokenizer::EncodeInput::Dual(sentence.to_owned(), pair.unwrap().to_owned())
-        } else {
-            tk::tokenizer::EncodeInput::Single(sentence.to_owned())
-        }))
+    fn encode(&self, sentence: &str, pair: Option<&str>) -> PyResult<Encoding> {
+        ToPyResult(
+            self.tokenizer
+                .encode(if pair.is_some() {
+                    tk::tokenizer::EncodeInput::Dual(sentence.to_owned(), pair.unwrap().to_owned())
+                } else {
+                    tk::tokenizer::EncodeInput::Single(sentence.to_owned())
+                })
+                .map(|encoding| Encoding::new(encoding)),
+        )
+        .into()
     }
 
     fn encode_batch(&self, sentences: &PyList) -> PyResult<Vec<Encoding>> {
@@ -92,20 +98,21 @@ impl Tokenizer {
             })
             .collect::<PyResult<Vec<_>>>()?;
 
-        Ok(self
-            .tokenizer
-            .encode_batch(inputs)
-            .into_iter()
-            .map(|encoding| Encoding::new(encoding))
-            .collect())
+        ToPyResult(self.tokenizer.encode_batch(inputs).map(|encodings| {
+            encodings
+                .into_iter()
+                .map(|encoding| Encoding::new(encoding))
+                .collect()
+        }))
+        .into()
     }
 
-    fn decode(&self, ids: Vec<u32>) -> String {
-        self.tokenizer.decode(ids)
+    fn decode(&self, ids: Vec<u32>) -> PyResult<String> {
+        ToPyResult(self.tokenizer.decode(ids)).into()
     }
 
-    fn decode_batch(&self, sentences: Vec<Vec<u32>>) -> Vec<String> {
-        self.tokenizer.decode_batch(sentences)
+    fn decode_batch(&self, sentences: Vec<Vec<u32>>) -> PyResult<Vec<String>> {
+        ToPyResult(self.tokenizer.decode_batch(sentences)).into()
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
