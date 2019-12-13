@@ -1,10 +1,11 @@
 extern crate tokenizers as tk;
 
+use super::error::{PyError, ToPyResult};
 use super::utils::Container;
-use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use std::collections::HashSet;
+use tk::tokenizer::Result;
 
 #[pyclass]
 pub struct PreTokenizer {
@@ -21,7 +22,7 @@ impl PreTokenizer {
     }
 
     fn pre_tokenize(&self, s: &str) -> PyResult<Vec<String>> {
-        Ok(self.pretok.execute(|pretok| pretok.pre_tokenize(s)))
+        ToPyResult(self.pretok.execute(|pretok| pretok.pre_tokenize(s))).into()
     }
 }
 

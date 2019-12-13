@@ -1,9 +1,10 @@
 extern crate tokenizers as tk;
 
+use super::error::{PyError, ToPyResult};
 use super::utils::Container;
-use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use tk::tokenizer::Result;
 
 #[pyclass]
 pub struct Decoder {
@@ -20,7 +21,7 @@ impl Decoder {
     }
 
     fn decode(&self, tokens: Vec<String>) -> PyResult<String> {
-        Ok(self.decoder.execute(|decoder| decoder.decode(tokens)))
+        ToPyResult(self.decoder.execute(|decoder| decoder.decode(tokens))).into()
     }
 }
 
