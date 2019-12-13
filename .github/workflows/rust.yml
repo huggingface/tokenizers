@@ -29,13 +29,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: -- --check
+          args:  --manifest-path ./tokenizers/Cargo.toml -- --check
 
       - name: Lint with Clippy
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-targets --all-features -- -D warnings
+          args:  --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Run Tests
         uses: actions-rs/cargo@v1
