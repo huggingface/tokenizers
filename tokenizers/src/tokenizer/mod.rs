@@ -236,7 +236,8 @@ impl Tokenizer {
     }
 
     /// Train a model and replace our current Model, using the given Trainer
-    pub fn train(&mut self, trainer: &dyn Trainer, files: Vec<String>) -> Result<()> {
+    #[allow(clippy::borrowed_box)]
+    pub fn train(&mut self, trainer: &Box<dyn Trainer>, files: Vec<String>) -> Result<()> {
         let results = files
             .par_iter()
             .map(|file| -> Result<HashMap<String, u32>> {
