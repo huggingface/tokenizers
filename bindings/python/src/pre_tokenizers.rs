@@ -7,7 +7,7 @@ use pyo3::types::*;
 use std::collections::HashSet;
 use tk::tokenizer::Result;
 
-#[pyclass]
+#[pyclass(dict)]
 pub struct PreTokenizer {
     pub pretok: Container<dyn tk::tokenizer::PreTokenizer + Sync>,
 }
