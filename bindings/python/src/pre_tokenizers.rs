@@ -82,10 +82,12 @@ impl tk::tokenizer::PreTokenizer for PyPreTokenizer {
                 .map_err(|_| PyError::from("`pre_tokenize is expected to return a List[str]"))?
                 .extract::<Vec<String>>()
                 .map_err(|_| PyError::from("`pre_tokenize` is expected to return a List[str]"))?),
-            Err(e) => Err(Box::new(PyError(format!(
-                "Error while calling `pre_tokenize`: {:?}",
-                e
-            )))),
+            Err(e) => {
+                e.print(py);
+                Err(Box::new(PyError::from(
+                    "Error while calling `pre_tokenize`",
+                )))
+            }
         }
     }
 }

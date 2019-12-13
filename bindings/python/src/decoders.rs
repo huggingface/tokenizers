@@ -72,10 +72,10 @@ impl tk::tokenizer::Decoder for PyDecoder {
                 .to_string()
                 .map_err(|_| PyError::from("`decode` is expected to return a str"))?
                 .into_owned()),
-            Err(e) => Err(Box::new(PyError(format!(
-                "Error while calling `decode`: {:?}",
-                e
-            )))),
+            Err(e) => {
+                e.print(py);
+                Err(Box::new(PyError::from("Error while calling `decode`")))
+            }
         }
     }
 }
