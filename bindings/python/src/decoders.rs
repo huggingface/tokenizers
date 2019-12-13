@@ -55,46 +55,27 @@ struct PyDecoder {
 
 impl PyDecoder {
     pub fn new(class: PyObject) -> PyResult<Self> {
-        let decoder = PyDecoder { class };
-
-        // Quickly test the PyDecoder
-        decoder._decode(vec![
-            "This".into(),
-            "is".into(),
-            "a".into(),
-            "sentence".into(),
-        ])?;
-
-        Ok(decoder)
-    }
-
-    fn _decode(&self, tokens: Vec<String>) -> PyResult<String> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        let args = PyTuple::new(py, &[tokens]);
-        let res = self.class.call_method(py, "decode", args, None)?;
-
-        let decoded = res
-            .cast_as::<PyString>(py)
-            .map_err(|_| exceptions::TypeError::py_err("`decode` is expected to return a str"))?;
-
-        Ok(decoded.to_string()?.into_owned())
+        Ok(PyDecoder { class })
     }
 }
 
 impl tk::tokenizer::Decoder for PyDecoder {
-    fn decode(&self, tokens: Vec<String>) -> String {
-        match self._decode(tokens) {
-            Ok(res) => res,
-            Err(e) => {
-                let gil = Python::acquire_gil();
-                let py = gil.python();
-                e.print(py);
+    fn decode(&self, tokens: Vec<String>) -> Result<String> {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
 
-                // Return an empty string as fallback
-                String::from("")
-            }
+        let args = PyTuple::new(py, &[tokens]);
+        match self.class.call_method(py, "decode", args, None) {
+            Ok(res) => Ok(res
+                .cast_as::<PyString>(py)
+                .map_err(|_| PyError::from("`decode` is expected to return a str"))?
+                .to_string()
+                .map_err(|_| PyError::from("`decode` is expected to return a str"))?
+                .into_owned()),
+            Err(e) => Err(Box::new(PyError(format!(
+                "Error while calling `decode`: {:?}",
+                e
+            )))),
         }
     }
 }

@@ -66,44 +66,26 @@ struct PyPreTokenizer {
 
 impl PyPreTokenizer {
     pub fn new(class: PyObject) -> PyResult<Self> {
-        let pretok = PyPreTokenizer { class };
-
-        // Quickly test the PyPreTokenizer
-        pretok._pre_tokenize("This is a test sentence")?;
-
-        Ok(pretok)
-    }
-
-    fn _pre_tokenize(&self, sentence: &str) -> PyResult<Vec<String>> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        let args = PyTuple::new(py, &[sentence]);
-        let res = self.class.call_method(py, "pre_tokenize", args, None)?;
-
-        let tokens = res.cast_as::<PyList>(py).map_err(|_| {
-            exceptions::TypeError::py_err("`pre_tokenize` is expected to return a List[str]`")
-        })?;
-        let tokens: Vec<String> = tokens.extract().map_err(|_| {
-            exceptions::TypeError::py_err("`pre_tokenize` is expected to return a List[str]`")
-        })?;
-
-        Ok(tokens)
+        Ok(PyPreTokenizer { class })
     }
 }
 
 impl tk::tokenizer::PreTokenizer for PyPreTokenizer {
-    fn pre_tokenize(&self, sentence: &str) -> Vec<String> {
-        match self._pre_tokenize(sentence) {
-            Ok(res) => res,
-            Err(e) => {
-                let gil = Python::acquire_gil();
-                let py = gil.python();
-                e.print(py);
+    fn pre_tokenize(&self, sentence: &str) -> Result<Vec<String>> {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
 
-                // Return an empty Vec as fallback
-                vec![]
-            }
+        let args = PyTuple::new(py, &[sentence]);
+        match self.class.call_method(py, "pre_tokenize", args, None) {
+            Ok(res) => Ok(res
+                .cast_as::<PyList>(py)
+                .map_err(|_| PyError::from("`pre_tokenize is expected to return a List[str]"))?
+                .extract::<Vec<String>>()
+                .map_err(|_| PyError::from("`pre_tokenize` is expected to return a List[str]"))?),
+            Err(e) => Err(Box::new(PyError(format!(
+                "Error while calling `pre_tokenize`: {:?}",
+                e
+            )))),
         }
     }
 }
