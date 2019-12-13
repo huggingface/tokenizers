@@ -12,6 +12,7 @@ pub struct Encoding {
     overflowing: Option<Box<Encoding>>,
 }
 impl Encoding {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         original: String,
         normalized: String,
@@ -118,8 +119,8 @@ impl Encoding {
     }
 
     pub fn merge_with(&mut self, pair: Encoding) {
-        self.original.extend(pair.original.chars());
-        self.normalized.extend(pair.normalized.chars());
+        self.original.push_str(&pair.original);
+        self.normalized.push_str(&pair.normalized);
         self.ids.extend(pair.ids);
         self.type_ids.extend(pair.type_ids);
         self.tokens.extend(pair.tokens);
@@ -142,12 +143,12 @@ impl Encoding {
 
 /// Prepend the `stride` last elements of the `previous` Vec to the current Vec
 // A new Vec is instantiated though.
-fn prepend_stride<T: Clone>(previous: &Vec<T>, current: Vec<T>, stride: usize) -> Vec<T> {
+fn prepend_stride<T: Clone>(previous: &[T], current: Vec<T>, stride: usize) -> Vec<T> {
     let prev = previous
         .iter()
         .rev()
         .take(stride)
-        .map(|v| v.clone())
+        .cloned()
         .rev()
         .collect::<Vec<_>>();
 

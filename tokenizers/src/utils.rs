@@ -52,9 +52,9 @@ pub fn truncate_encodings(
             }
 
             encoding.truncate(encoding.get_ids().len() - n_first, stride);
-            pair_encoding
-                .as_mut()
-                .map(|encoding| encoding.truncate(encoding.get_ids().len() - n_second, stride));
+            if let Some(encoding) = pair_encoding.as_mut() {
+                encoding.truncate(encoding.get_ids().len() - n_second, stride);
+            }
         }
         TruncationStrategy::OnlyFirst | TruncationStrategy::OnlySecond => {
             let target = if strategy == TruncationStrategy::OnlyFirst {

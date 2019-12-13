@@ -83,13 +83,13 @@ impl PostProcessor for BertProcessing {
                     .map(|e| e.get_normalized())
                     .unwrap_or("")
             ),
-            [&ids[..], &pair_ids.unwrap_or(vec![])[..]].concat(),
-            [&type_ids[..], &pair_type_ids.unwrap_or(vec![])[..]].concat(),
-            [&tokens[..], &pair_tokens.unwrap_or(vec![])[..]].concat(),
-            [&offsets[..], &pair_offsets.unwrap_or(vec![])[..]].concat(),
+            [&ids[..], &pair_ids.unwrap_or_else(|| vec![])[..]].concat(),
+            [&type_ids[..], &pair_type_ids.unwrap_or_else(|| vec![])[..]].concat(),
+            [&tokens[..], &pair_tokens.unwrap_or_else(|| vec![])[..]].concat(),
+            [&offsets[..], &pair_offsets.unwrap_or_else(|| vec![])[..]].concat(),
             [
                 &special_tokens[..],
-                &pair_special_tokens.unwrap_or(vec![])[..],
+                &pair_special_tokens.unwrap_or_else(|| vec![])[..],
             ]
             .concat(),
             attention_mask,

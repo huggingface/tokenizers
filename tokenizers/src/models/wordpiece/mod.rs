@@ -151,11 +151,11 @@ impl Model for WordPiece {
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.vocab.get(token).map(|id| *id)
+        self.vocab.get(token).copied()
     }
 
     fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab_r.get(&id).map(|token| token.clone())
+        self.vocab_r.get(&id).cloned()
     }
 }
 

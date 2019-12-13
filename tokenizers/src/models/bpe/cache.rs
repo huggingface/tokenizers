@@ -10,6 +10,7 @@ use std::sync::Mutex;
 /// The goal is clearly not the accuracy of the content, both get and set
 /// are not guaranteed to actually get or set.
 ///
+#[derive(Default)]
 pub struct Cache<K, V>
 where
     K: Eq + Hash + Clone,
@@ -32,9 +33,7 @@ where
     pub fn get_values(&self, keys: &[K]) -> Vec<Option<V>> {
         let mut lock = self.map.try_lock();
         if let Ok(ref mut cache) = lock {
-            keys.iter()
-                .map(|k| cache.get(k).map(|v| v.clone()))
-                .collect()
+            keys.iter().map(|k| cache.get(k).cloned()).collect()
         } else {
             keys.iter().map(|_| None).collect()
         }

@@ -236,7 +236,7 @@ impl Tokenizer {
     }
 
     /// Train a model and replace our current Model, using the given Trainer
-    pub fn train(&mut self, trainer: &Box<dyn Trainer>, files: Vec<String>) -> Result<()> {
+    pub fn train(&mut self, trainer: &dyn Trainer, files: Vec<String>) -> Result<()> {
         let results = files
             .par_iter()
             .map(|file| -> Result<HashMap<String, u32>> {
@@ -284,7 +284,7 @@ impl Tokenizer {
         if let Some(normalizer) = &self.normalizer {
             normalizer.normalize(sentence)
         } else {
-            Ok(sentence.to_owned())
+            Ok(sentence)
         }
     }
 
