@@ -4,6 +4,7 @@ use super::utils::Container;
 
 use pyo3::exceptions;
 use pyo3::prelude::*;
+use pyo3::types::*;
 
 /// A Model represents some tokenization algorithm like BPE or Word
 /// This class cannot be constructed directly. Please use one of the concrete models.
@@ -71,10 +72,21 @@ impl WordPiece {
     ///
     /// Instantiate a new WordPiece model using the provided vocabulary file
     #[staticmethod]
-    fn from_files(vocab: &str) -> PyResult<Model> {
-        // TODO: Parse kwargs for these
-        let unk_token = String::from("[UNK]");
-        let max_input_chars_per_word = Some(100);
+    #[args(kwargs = "**")]
+    fn from_files(vocab: &str, kwargs: Option<&PyDict>) -> PyResult<Model> {
+        let mut unk_token = String::from("[UNK]");
+        let mut max_input_chars_per_word = Some(100);
+
+        if let Some(kwargs) = kwargs {
+            for (key, val) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "unk_token" => unk_token = val.extract()?,
+                    "max_input_chars_per_word" => max_input_chars_per_word = Some(val.extract()?),
+                    _ => println!("Ignored unknown kwargs option {}", key),
+                }
+            }
+        }
 
         match tk::models::wordpiece::WordPiece::from_files(
             vocab,

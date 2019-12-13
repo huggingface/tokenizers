@@ -43,11 +43,26 @@ pub struct BasicPreTokenizer {}
 #[pymethods]
 impl BasicPreTokenizer {
     #[staticmethod]
-    fn new() -> PyResult<PreTokenizer> {
-        // TODO: Parse kwargs for these
+    #[args(kwargs = "**")]
+    fn new(kwargs: Option<&PyDict>) -> PyResult<PreTokenizer> {
         let mut do_lower_case = true;
         let mut never_split = HashSet::new();
         let mut tokenize_chinese_chars = true;
+
+        if let Some(kwargs) = kwargs {
+            for (key, val) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "do_lower_case" => do_lower_case = val.extract()?,
+                    "tokenize_chinese_chars" => tokenize_chinese_chars = val.extract()?,
+                    "never_split" => {
+                        let values: Vec<String> = val.extract()?;
+                        never_split = values.into_iter().collect();
+                    }
+                    _ => println!("Ignored unknown kwargs option {}", key),
+                }
+            }
+        }
 
         Ok(PreTokenizer {
             pretok: Container::Owned(Box::new(tk::pre_tokenizers::basic::BasicPreTokenizer::new(
