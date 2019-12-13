@@ -1,5 +1,6 @@
 mod decoders;
 mod encoding;
+mod error;
 mod models;
 mod pre_tokenizers;
 mod token;
