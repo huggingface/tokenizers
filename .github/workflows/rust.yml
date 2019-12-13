@@ -16,6 +16,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+          components: rustfmt, clippy
           override: true
 
       - name: Build
@@ -23,6 +24,18 @@ jobs:
         with:
           command: build
           args: --verbose --manifest-path ./tokenizers/Cargo.toml
+
+    - name: Lint with RustFmt
+      uses: actions-rs/cargo@v1
+      with:
+        command: fmt
+        args: -- --check
+
+    - name: Lint with Clippy
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        args: --all-targets --all-features -- -D warnings
 
       - name: Run Tests
         uses: actions-rs/cargo@v1
