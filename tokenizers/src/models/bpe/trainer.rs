@@ -158,12 +158,10 @@ impl Trainer for BpeTrainer {
             let mut change_count = |pair: Pair, count: i32, word_index: usize| {
                 if pair_counts.contains_key(&pair) {
                     pair_counts.get_mut(&pair).unwrap().0 += count;
-                } else {
-                    if count > 0 {
-                        pair_counts.insert(pair, (count, pair));
-                        if !where_to_update.contains_key(&pair) {
-                            where_to_update.insert(pair, HashSet::new());
-                        }
+                } else if count > 0 {
+                    pair_counts.insert(pair, (count, pair));
+                    if !where_to_update.contains_key(&pair) {
+                        where_to_update.insert(pair, HashSet::new());
                     }
                 }
 
