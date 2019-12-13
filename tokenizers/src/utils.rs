@@ -59,12 +59,10 @@ pub fn truncate_encodings(
         TruncationStrategy::OnlyFirst | TruncationStrategy::OnlySecond => {
             let target = if strategy == TruncationStrategy::OnlyFirst {
                 Ok(&mut encoding)
+            } else if let Some(encoding) = pair_encoding.as_mut() {
+                Ok(encoding)
             } else {
-                if let Some(encoding) = pair_encoding.as_mut() {
-                    Ok(encoding)
-                } else {
-                    Err(Box::new(Error::SecondSequenceNotProvided))
-                }
+                Err(Box::new(Error::SecondSequenceNotProvided))
             }?;
 
             if target.get_ids().len() <= to_remove {
