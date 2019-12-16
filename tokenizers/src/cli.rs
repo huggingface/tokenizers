@@ -6,7 +6,7 @@ use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use std::io::{self, BufRead, Write};
 use tokenizers::models::bpe::BPE;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
-use tokenizers::tokenizer::{EncodeInput, Result, Tokenizer};
+use tokenizers::tokenizer::{AddedToken, EncodeInput, Result, Tokenizer};
 
 fn shell(matches: &ArgMatches) -> Result<()> {
     let vocab = matches
@@ -19,6 +19,18 @@ fn shell(matches: &ArgMatches) -> Result<()> {
     let bpe = BPE::from_files(vocab, merges)?;
     let mut tokenizer = Tokenizer::new(Box::new(bpe));
     tokenizer.with_pre_tokenizer(Box::new(ByteLevel));
+    tokenizer.with_decoder(Box::new(ByteLevel));
+
+    tokenizer.add_tokens(&[
+        AddedToken {
+            content: String::from("ing"),
+            single_word: false,
+        },
+        AddedToken {
+            content: String::from("[ENT]"),
+            single_word: true,
+        },
+    ]);
 
     let stdin = io::stdin();
     let mut handle = stdin.lock();
@@ -39,6 +51,10 @@ fn shell(matches: &ArgMatches) -> Result<()> {
         println!("Tokens:\t\t{:?}", encoded.get_tokens());
         println!("IDs:\t\t{:?}", encoded.get_ids());
         println!("Offsets:\t{:?}", encoded.get_offsets());
+        println!(
+            "Decoded:\t{}",
+            tokenizer.decode(encoded.get_ids().to_vec()).unwrap()
+        );
         println!("Tokenized in {:?}", elapsed);
     }
 }
