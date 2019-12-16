@@ -38,8 +38,11 @@ impl PostProcessor for BertProcessing {
                 .unwrap_or(0)
             + special_token_len;
 
-        let need_trunc = total_len - self.max_len;
-        println!("Need to trunc {}", need_trunc);
+        let need_trunc = if total_len > self.max_len {
+            total_len - self.max_len
+        } else {
+            0
+        };
         let (mut encoding, pair_encoding) = truncate_encodings(
             encoding,
             pair_encoding,
