@@ -6,7 +6,7 @@ import logging
 logging.getLogger('transformers').disabled = True
 logging.getLogger('transformers.tokenization_utils').disabled = True
 
-from tokenizers import Tokenizer, models, pre_tokenizers, decoders
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders, processors
 from transformers import GPT2Tokenizer, BertTokenizer
 
 parser = argparse.ArgumentParser()
@@ -64,6 +64,10 @@ elif args.type == "bert":
     tok_r = Tokenizer(models.WordPiece.from_files(args.vocab, unk_token="[UNK]", max_input_chars_per_word=100))
     tok_r.with_pre_tokenizer(pre_tokenizers.BasicPreTokenizer.new(do_lower_case=True, tokenize_chinese_chars=True, never_split=[]))
     tok_r.with_decoder(decoders.WordPiece.new())
+    tok_r.with_post_processor(processors.BertProcessing.new(
+        ("[SEP]", tok_r.token_to_id("[SEP]")),
+        ("[CLS]", tok_r.token_to_id("[CLS]")),
+    ))
 else:
     raise Exception(f"Unknown type {args.type}")
 
@@ -97,8 +101,10 @@ for i in range(0, len(encoded_r)):
     if encoded_r[i].ids != encoded_p[i]:
         diff_ids += 1
         if args.debug:
-            print("".join([ token.value for token in encoded_r[i] ]))
-            print("".join(tok_p.tokenize(text[i])))
+            print(encoded_r[i].ids)
+            print(encoded_p[i])
+            print(encoded_r[i].tokens)
+            print(tok_p.tokenize(text[i]))
             print(text[i])
             print("")
 print(f"Ids differences: {diff_ids}")
