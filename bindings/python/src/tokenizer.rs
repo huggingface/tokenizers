@@ -9,6 +9,7 @@ use super::encoding::Encoding;
 use super::error::ToPyResult;
 use super::models::Model;
 use super::pre_tokenizers::PreTokenizer;
+use super::processors::PostProcessor;
 use super::trainers::Trainer;
 
 #[pyclass(dict)]
@@ -65,6 +66,17 @@ impl Tokenizer {
         } else {
             Err(exceptions::Exception::py_err(
                 "The Decoder is already being used in another Tokenizer",
+            ))
+        }
+    }
+
+    fn with_post_processor(&mut self, processor: &mut PostProcessor) -> PyResult<()> {
+        if let Some(processor) = processor.processor.to_pointer() {
+            self.tokenizer.with_post_processor(processor);
+            Ok(())
+        } else {
+            Err(exceptions::Exception::py_err(
+                "The Processor is already being used in another Tokenizer",
             ))
         }
     }

@@ -1,13 +1,31 @@
 use crate::tokenizer::{Encoding, PostProcessor, Result};
 use crate::utils::{truncate_encodings, TruncationStrategy};
 
-struct BertProcessing {
+pub struct BertProcessing {
     max_len: usize,
     trunc_strategy: TruncationStrategy,
     trunc_stride: usize,
 
     sep: (String, u32),
     cls: (String, u32),
+}
+
+impl BertProcessing {
+    pub fn new(
+        max_len: usize,
+        trunc_strategy: TruncationStrategy,
+        trunc_stride: usize,
+        sep: (String, u32),
+        cls: (String, u32),
+    ) -> Self {
+        BertProcessing {
+            max_len,
+            trunc_strategy,
+            trunc_stride,
+            sep,
+            cls,
+        }
+    }
 }
 
 impl PostProcessor for BertProcessing {
