@@ -80,17 +80,52 @@ pub enum EncodeInput {
     Dual(String, String),
 }
 
+#[derive(Debug, Clone)]
+pub struct AddedToken {
+    /// The content of the added token
+    pub content: String,
+    /// Whether this token must be a single word or can break words
+    pub single_word: bool,
+}
+impl Default for AddedToken {
+    fn default() -> Self {
+        AddedToken {
+            content: String::new(),
+            single_word: false,
+        }
+    }
+}
+// We only want to hash on the content. AddedToken cannot be added multiple times with different
+// options
+impl std::hash::Hash for AddedToken {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.content.hash(state);
+    }
+}
+impl std::cmp::PartialEq for AddedToken {
+    fn eq(&self, other: &Self) -> bool {
+        self.content == other.content
+    }
+}
+impl std::cmp::Eq for AddedToken {}
+
 ///
 /// ## Tokenizer
 ///
 /// A Tokenizer is capable of encoding/decoding any text
 ///
 pub struct Tokenizer {
+    // Tokenizer parts
     normalizer: Option<Box<dyn Normalizer + Sync>>,
     pre_tokenizer: Option<Box<dyn PreTokenizer + Sync>>,
     model: Box<dyn Model + Sync>,
     post_processor: Option<Box<dyn PostProcessor + Sync>>,
     decoder: Option<Box<dyn Decoder + Sync>>,
+
+    // Added Vocabulary capabilities
+    added_tokens: HashMap<AddedToken, u32>,
+    added_tokens_r: HashMap<u32, AddedToken>,
+    split_re: Option<regex::Regex>,
 }
 
 impl Tokenizer {
@@ -102,6 +137,9 @@ impl Tokenizer {
             model,
             post_processor: None,
             decoder: None,
+            added_tokens: HashMap::new(),
+            added_tokens_r: HashMap::new(),
+            split_re: None,
         }
     }
 
@@ -306,5 +344,72 @@ impl Tokenizer {
                 }
             }
         }
+    }
+
+    /// Add the given tokens to the added vocabulary
+    pub fn add_tokens(&mut self, tokens: &[AddedToken]) -> usize {
+        let mut ignored = 0;
+        for token in tokens {
+            if token.content.is_empty() {
+                ignored += 1;
+                continue;
+            }
+
+            let new_id = (self.model.get_vocab_size() - 1 + self.added_tokens.len()) as u32;
+            let id = self
+                .added_tokens
+                .entry(token.clone())
+                .and_modify(|_| ignored += 1)
+                .or_insert(new_id);
+
+            // Update the current revert operation
+            self.added_tokens_r
+                .entry(*id)
+                .and_modify(|t| *t = token.clone())
+                .or_insert_with(|| token.clone());
+        }
+
+        // We rebuild the regex here everytime on purpose, because the added tokens may
+        // have changed
+        let added_tokens = self
+            .added_tokens
+            .keys()
+            .map(|token| {
+                if token.single_word {
+                    let first_b = token
+                        .content
+                        .chars()
+                        .nth(0)
+                        .map(|c| {
+                            if regex_syntax::is_word_character(c) {
+                                r"\b"
+                            } else {
+                                ""
+                            }
+                        })
+                        .unwrap();
+                    let last_b = token
+                        .content
+                        .chars()
+                        .last()
+                        .map(|c| {
+                            if regex_syntax::is_word_character(c) {
+                                r"\b"
+                            } else {
+                                ""
+                            }
+                        })
+                        .unwrap();
+                    format!(r"{}{}{}", first_b, regex::escape(&token.content), last_b)
+                } else {
+                    regex::escape(&token.content)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        self.split_re = Some(regex::Regex::new(&format!(r"({})", added_tokens.join("|"))).unwrap());
+
+        // Return the number of added tokens
+        tokens.len() - ignored
     }
 }
