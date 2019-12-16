@@ -122,6 +122,31 @@ impl Tokenizer {
         self.tokenizer.id_to_token(id)
     }
 
+    fn add_tokens(&mut self, tokens: &PyList) -> PyResult<usize> {
+        let tokens = tokens
+            .into_iter()
+            .map(|token| {
+                if let Ok(content) = token.extract::<String>() {
+                    Ok(tk::tokenizer::AddedToken {
+                        content,
+                        ..Default::default()
+                    })
+                } else if let Ok((content, single_word)) = token.extract::<(String, bool)>() {
+                    Ok(tk::tokenizer::AddedToken {
+                        content,
+                        single_word,
+                    })
+                } else {
+                    Err(exceptions::Exception::py_err(
+                        "Input must be a list[str] or list[(str, bool)]",
+                    ))
+                }
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+
+        Ok(self.tokenizer.add_tokens(&tokens))
+    }
+
     fn train(&mut self, trainer: &Trainer, files: Vec<String>) -> PyResult<()> {
         trainer.trainer.execute(|trainer| {
             if let Err(e) = self.tokenizer.train(trainer, files) {
