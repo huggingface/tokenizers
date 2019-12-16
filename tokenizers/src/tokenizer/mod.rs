@@ -38,7 +38,6 @@ pub trait PreTokenizer {
 /// Represents a `Model` used during Tokenization (Like BPE or Word or Unigram)
 pub trait Model {
     fn tokenize(&self, tokens: Vec<String>) -> Result<Vec<Token>>;
-    fn decode(&self, ids: Vec<u32>) -> Result<Vec<String>>;
     fn token_to_id(&self, token: &str) -> Option<u32>;
     fn id_to_token(&self, id: u32) -> Option<String>;
     fn get_vocab_size(&self) -> usize;
@@ -292,7 +291,18 @@ impl Tokenizer {
 
     /// Decode the given ids, back to a String
     pub fn decode(&self, ids: Vec<u32>) -> Result<String> {
-        let tokens = self.model.decode(ids)?;
+        let tokens = ids
+            .into_iter()
+            .map(|id| {
+                if let Some(token) = self.added_tokens_r.get(&id) {
+                    Some(token.content.to_owned())
+                } else {
+                    self.model.id_to_token(id)
+                }
+            })
+            .filter(|token| token.is_some())
+            .map(|id| id.unwrap())
+            .collect::<Vec<_>>();
 
         if let Some(decoder) = &self.decoder {
             decoder.decode(tokens)
