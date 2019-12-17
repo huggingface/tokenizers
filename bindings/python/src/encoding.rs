@@ -56,4 +56,19 @@ impl Encoding {
     fn get_offsets(&self) -> Vec<(usize, usize)> {
         self.encoding.get_offsets().to_vec()
     }
+
+    #[getter]
+    fn get_special_tokens_mask(&self) -> Vec<u32> {
+        self.encoding.get_special_tokens_mask().to_vec()
+    }
+
+    #[getter]
+    fn get_attention_mask(&self) -> Vec<u32> {
+        self.encoding.get_attention_mask().to_vec()
+    }
+
+    #[getter]
+    fn get_overflowing(&self) -> Option<Encoding> {
+        self.encoding.get_overflowing().cloned().map(Encoding::new)
+    }
 }

@@ -1,5 +1,5 @@
 /// The Encoding struct represents the output of the Tokenizer
-#[derive(Default, PartialEq, Debug)]
+#[derive(Default, PartialEq, Debug, Clone)]
 pub struct Encoding {
     original: String,
     normalized: String,
@@ -67,6 +67,10 @@ impl Encoding {
 
     pub fn get_attention_mask(&self) -> &[u32] {
         &self.attention_mask
+    }
+
+    pub fn get_overflowing(&self) -> Option<&Encoding> {
+        self.overflowing.as_ref().map(|b| &**b)
     }
 
     pub fn take_overflowing(&mut self) -> Option<Box<Encoding>> {
