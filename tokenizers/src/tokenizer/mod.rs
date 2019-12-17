@@ -12,6 +12,9 @@
 //!   - PostProcessor: Takes care of the processing after tokenization. (Like truncating, padding,
 //!   ...)
 //!
+use crate::utils::{
+    pad_encodings, truncate_encodings, PaddingParams, PaddingStrategy, TruncationParams,
+};
 use rayon::prelude::*;
 use std::{
     collections::HashMap,
@@ -20,7 +23,7 @@ use std::{
 };
 
 mod encoding;
-pub use encoding::Encoding;
+pub use encoding::*;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -46,6 +49,7 @@ pub trait Model {
 /// A PostProcessor has the responsibility to post process an encoded output of the Tokenizer.
 /// Truncating, Padding, etc... are PostProcessor steps
 pub trait PostProcessor {
+    fn added_tokens(&self, encoding: &Encoding, pair_encoding: &Option<Encoding>) -> Result<usize>;
     fn process(&self, encoding: Encoding, pair_encoding: Option<Encoding>) -> Result<Encoding>;
 }
 
@@ -125,6 +129,10 @@ pub struct Tokenizer {
     added_tokens: HashMap<AddedToken, u32>,
     added_tokens_r: HashMap<u32, AddedToken>,
     split_re: Option<regex::Regex>,
+
+    // General processing parameters
+    trunc: Option<TruncationParams>,
+    padding: Option<PaddingParams>,
 }
 
 impl Tokenizer {
@@ -139,11 +147,13 @@ impl Tokenizer {
             added_tokens: HashMap::new(),
             added_tokens_r: HashMap::new(),
             split_re: None,
+            trunc: None,
+            padding: None,
         }
     }
 
-    /// Set the normalizers
-    pub fn with_normalizers(&mut self, normalizer: Box<dyn Normalizer + Sync>) -> &Self {
+    /// Set the normalizer
+    pub fn with_normalizer(&mut self, normalizer: Box<dyn Normalizer + Sync>) -> &Self {
         self.normalizer = Some(normalizer);
         self
     }
@@ -169,6 +179,18 @@ impl Tokenizer {
     /// Set the model
     pub fn with_model(&mut self, model: Box<dyn Model + Sync>) -> &Self {
         self.model = model;
+        self
+    }
+
+    /// Set the truncation parameters
+    pub fn with_truncation(&mut self, trunc: Option<TruncationParams>) -> &Self {
+        self.trunc = trunc;
+        self
+    }
+
+    /// Set the padding strategy
+    pub fn with_padding(&mut self, padding: Option<PaddingParams>) -> &Self {
+        self.padding = padding;
         self
     }
 
@@ -283,10 +305,17 @@ impl Tokenizer {
 
     /// Encode all the sentences in parallel, using multiple threads
     pub fn encode_batch(&self, inputs: Vec<EncodeInput>) -> Result<Vec<Encoding>> {
-        inputs
+        let encodings = inputs
             .into_par_iter()
             .map(|input| self.encode(input))
-            .collect()
+            .collect::<Result<Vec<Encoding>>>()?;
+
+        if let Some(params) = &self.padding {
+            // We do the padding here to make sure we handle the batch padding
+            pad_encodings(encodings, &params)
+        } else {
+            Ok(encodings)
+        }
     }
 
     /// Decode the given ids, back to a String
@@ -376,20 +405,61 @@ impl Tokenizer {
     /// Post processing logic, handling the case where there is no PostProcessor set
     fn post_process(
         &self,
-        mut encoding: Encoding,
+        encoding: Encoding,
         pair_encoding: Option<Encoding>,
     ) -> Result<Encoding> {
-        if let Some(processor) = &self.post_processor {
-            processor.process(encoding, pair_encoding)
+        // 1. First we truncate if needed
+        let (mut encoding, pair_encoding) = {
+            if let Some(trunc) = &self.trunc {
+                let n_added_tokens = if let Some(processor) = &self.post_processor {
+                    processor.added_tokens(&encoding, &pair_encoding)?
+                } else {
+                    0
+                };
+
+                if n_added_tokens > 0 {
+                    let params = TruncationParams {
+                        max_length: trunc.max_length - n_added_tokens,
+                        ..*trunc
+                    };
+                    truncate_encodings(encoding, pair_encoding, &params)?
+                } else {
+                    truncate_encodings(encoding, pair_encoding, &trunc)?
+                }
+            } else {
+                (encoding, pair_encoding)
+            }
+        };
+
+        // 2. Then We post process
+        let mut final_encoding = if let Some(processor) = &self.post_processor {
+            processor.process(encoding, pair_encoding)?
         } else {
             match pair_encoding {
-                None => Ok(encoding),
+                None => encoding,
                 Some(pair) => {
                     encoding.merge_with(pair);
-                    Ok(encoding)
+                    encoding
                 }
             }
+        };
+
+        // 3. Then we pad if needed
+        if let Some(params) = &self.padding {
+            // We can only pad for a given size. If the Strategy is BatchLongest, it will be done
+            // when we handle a batch
+            if let PaddingStrategy::Fixed(size) = params.strategy {
+                final_encoding.pad(
+                    size,
+                    params.pad_id,
+                    params.pad_type_id,
+                    &params.pad_token,
+                    &params.direction,
+                );
+            }
         }
+
+        Ok(final_encoding)
     }
 
     /// Add the given tokens to the added vocabulary

@@ -1,4 +1,5 @@
 /// The various possible padding directions
+#[derive(Debug, Clone)]
 pub enum PaddingDirection {
     Left,
     Right,
@@ -155,8 +156,8 @@ impl Encoding {
         pad_length: usize,
         pad_id: u32,
         pad_type_id: u32,
-        pad_token: String,
-        direction: PaddingDirection,
+        pad_token: &str,
+        direction: &PaddingDirection,
     ) {
         if self.ids.len() > pad_length {
             // We just do nothing if the wanted padding length is smaller than us
@@ -166,13 +167,13 @@ impl Encoding {
 
         let ids_pad = vec![pad_id; pad_length];
         let type_ids_pad = vec![pad_type_id; pad_length];
-        let tokens_pad = vec![pad_token; pad_length];
+        let tokens_pad = vec![pad_token.to_owned(); pad_length];
         let attention_pad = vec![0; pad_length];
         let special_pad = vec![1; pad_length];
         let offsets_pad = vec![(0, 0); pad_length];
 
         match direction {
-            Left => {
+            PaddingDirection::Left => {
                 self.ids = [&ids_pad[..], &self.ids[..]].concat();
                 self.type_ids = [&type_ids_pad[..], &self.type_ids[..]].concat();
                 self.tokens = [&tokens_pad[..], &self.tokens[..]].concat();
@@ -181,7 +182,7 @@ impl Encoding {
                     [&special_pad[..], &self.special_tokens_mask[..]].concat();
                 self.offsets = [&offsets_pad[..], &self.offsets[..]].concat();
             }
-            Right => {
+            PaddingDirection::Right => {
                 self.ids = [&self.ids[..], &ids_pad[..]].concat();
                 self.type_ids = [&self.type_ids[..], &type_ids_pad[..]].concat();
                 self.tokens = [&self.tokens[..], &tokens_pad[..]].concat();
