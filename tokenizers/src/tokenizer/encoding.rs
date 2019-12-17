@@ -1,3 +1,9 @@
+/// The various possible padding directions
+pub enum PaddingDirection {
+    Left,
+    Right,
+}
+
 /// The Encoding struct represents the output of the Tokenizer
 #[derive(Default, PartialEq, Debug, Clone)]
 pub struct Encoding {
@@ -142,6 +148,49 @@ impl Encoding {
         self.special_tokens_mask.extend(pair.special_tokens_mask);
         self.attention_mask.extend(pair.attention_mask);
         // TODO: Handle the overflowing
+    }
+
+    pub fn pad(
+        &mut self,
+        pad_length: usize,
+        pad_id: u32,
+        pad_type_id: u32,
+        pad_token: String,
+        direction: PaddingDirection,
+    ) {
+        if self.ids.len() > pad_length {
+            // We just do nothing if the wanted padding length is smaller than us
+            return;
+        }
+        let pad_length = pad_length - self.ids.len();
+
+        let ids_pad = vec![pad_id; pad_length];
+        let type_ids_pad = vec![pad_type_id; pad_length];
+        let tokens_pad = vec![pad_token; pad_length];
+        let attention_pad = vec![0; pad_length];
+        let special_pad = vec![1; pad_length];
+        let offsets_pad = vec![(0, 0); pad_length];
+
+        match direction {
+            Left => {
+                self.ids = [&ids_pad[..], &self.ids[..]].concat();
+                self.type_ids = [&type_ids_pad[..], &self.type_ids[..]].concat();
+                self.tokens = [&tokens_pad[..], &self.tokens[..]].concat();
+                self.attention_mask = [&attention_pad[..], &self.attention_mask[..]].concat();
+                self.special_tokens_mask =
+                    [&special_pad[..], &self.special_tokens_mask[..]].concat();
+                self.offsets = [&offsets_pad[..], &self.offsets[..]].concat();
+            }
+            Right => {
+                self.ids = [&self.ids[..], &ids_pad[..]].concat();
+                self.type_ids = [&self.type_ids[..], &type_ids_pad[..]].concat();
+                self.tokens = [&self.tokens[..], &tokens_pad[..]].concat();
+                self.attention_mask = [&self.attention_mask[..], &attention_pad[..]].concat();
+                self.special_tokens_mask =
+                    [&self.special_tokens_mask[..], &special_pad[..]].concat();
+                self.offsets = [&self.offsets[..], &offsets_pad[..]].concat();
+            }
+        }
     }
 }
 
