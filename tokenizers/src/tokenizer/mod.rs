@@ -12,8 +12,9 @@
 //!   - PostProcessor: Takes care of the processing after tokenization. (Like truncating, padding,
 //!   ...)
 //!
-use crate::utils::{
+pub use crate::utils::{
     pad_encodings, truncate_encodings, PaddingParams, PaddingStrategy, TruncationParams,
+    TruncationStrategy,
 };
 use rayon::prelude::*;
 use std::{
@@ -47,9 +48,11 @@ pub trait Model {
 }
 
 /// A PostProcessor has the responsibility to post process an encoded output of the Tokenizer.
-/// Truncating, Padding, etc... are PostProcessor steps
+/// It adds any special tokens that a language model would require
 pub trait PostProcessor {
+    /// Returns the number of tokens that will be added during the processing step
     fn added_tokens(&self, encoding: &Encoding, pair_encoding: &Option<Encoding>) -> Result<usize>;
+    /// Process both encodings and returns a new merged one
     fn process(&self, encoding: Encoding, pair_encoding: Option<Encoding>) -> Result<Encoding>;
 }
 
@@ -144,9 +147,11 @@ impl Tokenizer {
             model,
             post_processor: None,
             decoder: None,
+
             added_tokens: HashMap::new(),
             added_tokens_r: HashMap::new(),
             split_re: None,
+
             trunc: None,
             padding: None,
         }

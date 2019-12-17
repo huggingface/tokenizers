@@ -6,11 +6,15 @@ use pyo3::types::*;
 
 use super::decoders::Decoder;
 use super::encoding::Encoding;
-use super::error::ToPyResult;
+use super::error::{PyError, ToPyResult};
 use super::models::Model;
 use super::pre_tokenizers::PreTokenizer;
 use super::processors::PostProcessor;
 use super::trainers::Trainer;
+
+use tk::tokenizer::{
+    PaddingDirection, PaddingParams, PaddingStrategy, TruncationParams, TruncationStrategy,
+};
 
 #[pyclass(dict)]
 pub struct Tokenizer {
@@ -79,6 +83,76 @@ impl Tokenizer {
                 "The Processor is already being used in another Tokenizer",
             ))
         }
+    }
+
+    fn with_truncation(
+        &mut self,
+        max_length: usize,
+        stride: usize,
+        strategy: &str,
+    ) -> PyResult<()> {
+        let strategy = match strategy {
+            "longest_first" => Ok(TruncationStrategy::LongestFirst),
+            "only_first" => Ok(TruncationStrategy::OnlyFirst),
+            "only_second" => Ok(TruncationStrategy::OnlySecond),
+            other => Err(PyError(format!(
+                "Unknown `strategy`: `{}`. Use \
+                 one of `longest_first`, `only_first`, or `only_second`",
+                other
+            ))
+            .into_pyerr()),
+        }?;
+
+        self.tokenizer.with_truncation(Some(TruncationParams {
+            max_length,
+            stride,
+            strategy,
+        }));
+
+        Ok(())
+    }
+
+    fn without_truncation(&mut self) {
+        self.tokenizer.with_truncation(None);
+    }
+
+    fn with_padding(
+        &mut self,
+        size: Option<usize>,
+        direction: &str,
+        pad_id: u32,
+        pad_type_id: u32,
+        pad_token: &str,
+    ) -> PyResult<()> {
+        let strategy = if let Some(size) = size {
+            PaddingStrategy::Fixed(size)
+        } else {
+            PaddingStrategy::BatchLongest
+        };
+        let direction = match direction {
+            "left" => Ok(PaddingDirection::Left),
+            "right" => Ok(PaddingDirection::Right),
+            other => Err(PyError(format!(
+                "Unknown `direction`: `{}`. Use \
+                 one of `left` or `right`",
+                other
+            ))
+            .into_pyerr()),
+        }?;
+
+        self.tokenizer.with_padding(Some(PaddingParams {
+            strategy,
+            direction,
+            pad_id,
+            pad_type_id,
+            pad_token: pad_token.to_owned(),
+        }));
+
+        Ok(())
+    }
+
+    fn without_padding(&mut self) {
+        self.tokenizer.with_padding(None);
     }
 
     fn encode(&self, sentence: &str, pair: Option<&str>) -> PyResult<Encoding> {
