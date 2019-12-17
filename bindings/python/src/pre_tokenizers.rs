@@ -39,12 +39,13 @@ impl ByteLevel {
 }
 
 #[pyclass]
-pub struct BasicPreTokenizer {}
+pub struct BertPreTokenizer {}
 #[pymethods]
-impl BasicPreTokenizer {
+impl BertPreTokenizer {
     #[staticmethod]
     #[args(kwargs = "**")]
     fn new(kwargs: Option<&PyDict>) -> PyResult<PreTokenizer> {
+        let mut do_basic_tokenize = true;
         let mut do_lower_case = true;
         let mut never_split = HashSet::new();
         let mut tokenize_chinese_chars = true;
@@ -53,6 +54,7 @@ impl BasicPreTokenizer {
             for (key, val) in kwargs {
                 let key: &str = key.extract()?;
                 match key {
+                    "do_basic_tokenize" => do_basic_tokenize = val.extract()?,
                     "do_lower_case" => do_lower_case = val.extract()?,
                     "tokenize_chinese_chars" => tokenize_chinese_chars = val.extract()?,
                     "never_split" => {
@@ -65,7 +67,8 @@ impl BasicPreTokenizer {
         }
 
         Ok(PreTokenizer {
-            pretok: Container::Owned(Box::new(tk::pre_tokenizers::basic::BasicPreTokenizer::new(
+            pretok: Container::Owned(Box::new(tk::pre_tokenizers::bert::BertPreTokenizer::new(
+                do_basic_tokenize,
                 do_lower_case,
                 never_split,
                 tokenize_chinese_chars,
