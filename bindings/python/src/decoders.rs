@@ -32,7 +32,7 @@ impl ByteLevel {
     #[staticmethod]
     fn new() -> PyResult<Decoder> {
         Ok(Decoder {
-            decoder: Container::Owned(Box::new(tk::decoders::byte_level::ByteLevel)),
+            decoder: Container::Owned(Box::new(tk::decoders::byte_level::ByteLevel::new(false))),
         })
     }
 }

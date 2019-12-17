@@ -31,9 +31,11 @@ pub struct ByteLevel {}
 #[pymethods]
 impl ByteLevel {
     #[staticmethod]
-    fn new() -> PyResult<PreTokenizer> {
+    fn new(add_prefix_space: bool) -> PyResult<PreTokenizer> {
         Ok(PreTokenizer {
-            pretok: Container::Owned(Box::new(tk::pre_tokenizers::byte_level::ByteLevel)),
+            pretok: Container::Owned(Box::new(tk::pre_tokenizers::byte_level::ByteLevel::new(
+                add_prefix_space,
+            ))),
         })
     }
 }
