@@ -27,15 +27,15 @@ impl PyObjectProtocol for Encoding {
 
 #[pymethods]
 impl Encoding {
-    #[getter]
-    fn get_original(&self) -> String {
-        self.encoding.get_original().to_owned()
-    }
+    // #[getter]
+    // fn get_original(&self) -> String {
+    //     self.encoding.get_original().to_owned()
+    // }
 
-    #[getter]
-    fn get_normalized(&self) -> String {
-        self.encoding.get_normalized().to_owned()
-    }
+    // #[getter]
+    // fn get_normalized(&self) -> String {
+    //     self.encoding.get_normalized().to_owned()
+    // }
 
     #[getter]
     fn get_ids(&self) -> Vec<u32> {
@@ -52,10 +52,10 @@ impl Encoding {
         self.encoding.get_type_ids().to_vec()
     }
 
-    #[getter]
-    fn get_offsets(&self) -> Vec<(usize, usize)> {
-        self.encoding.get_offsets().to_vec()
-    }
+    // #[getter]
+    // fn get_offsets(&self) -> Vec<(usize, usize)> {
+    //     self.encoding.get_offsets().to_vec()
+    // }
 
     #[getter]
     fn get_special_tokens_mask(&self) -> Vec<u32> {
