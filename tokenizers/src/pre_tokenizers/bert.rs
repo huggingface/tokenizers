@@ -57,7 +57,7 @@ fn is_chinese_char(c: char) -> bool {
     }
 }
 
-pub struct BasicPreTokenizer {
+pub struct BertPreTokenizer {
     /// Whether to do the basic tokenization
     do_basic_tokenize: bool,
     /// Whether to lower case the input.
@@ -68,14 +68,14 @@ pub struct BasicPreTokenizer {
     tokenize_chinese_chars: bool,
 }
 
-impl BasicPreTokenizer {
+impl BertPreTokenizer {
     pub fn new(
         do_basic_tokenize: bool,
         do_lower_case: bool,
         never_split: HashSet<String>,
         tokenize_chinese_chars: bool,
     ) -> Self {
-        BasicPreTokenizer {
+        BertPreTokenizer {
             do_basic_tokenize,
             do_lower_case,
             never_split,
@@ -147,7 +147,7 @@ impl BasicPreTokenizer {
     }
 }
 
-impl PreTokenizer for BasicPreTokenizer {
+impl PreTokenizer for BertPreTokenizer {
     fn pre_tokenize(&self, s: &str) -> Result<Vec<String>> {
         if !self.do_basic_tokenize {
             Ok(whitespace_tokenize(&s)
