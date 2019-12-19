@@ -471,7 +471,7 @@ impl Tokenizer {
     pub fn add_tokens(&mut self, tokens: &[AddedToken]) -> usize {
         let mut ignored = 0;
         for token in tokens {
-            if token.content.is_empty() {
+            if token.content.is_empty() || self.token_to_id(&token.content).is_some() {
                 ignored += 1;
                 continue;
             }
