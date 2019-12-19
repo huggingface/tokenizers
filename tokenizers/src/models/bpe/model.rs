@@ -202,6 +202,7 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
+    // Ensure `BPE::from_files` works as expected.
     fn test_bpe_from_files() {
         // Set up vocab file.
         let mut vocab_file = NamedTempFile::new().unwrap();
@@ -224,6 +225,7 @@ mod tests {
     }
 
     #[test]
+    // Ensure `MergeTokenOutOfVocabulary` error is returned when it should be.
     fn test_bpe_from_files_merge_token_oov() {
         // Set up vocab file.
         let mut vocab_file = NamedTempFile::new().unwrap();
@@ -253,6 +255,8 @@ mod tests {
     }
 
     #[test]
+    // Ensure `BadMerges` error is returned when there is an invalid line in the
+    // merges.txt file.
     fn test_bpe_from_files_bad_merges() {
         // Set up vocab file.
         let mut vocab_file = NamedTempFile::new().unwrap();

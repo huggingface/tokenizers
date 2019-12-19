@@ -13,14 +13,15 @@ use std::{
 };
 
 pub struct BpeTrainerConfig {
-    vocab_size: usize,
     min_frequency: u32,
+    vocab_size: usize,
 }
+
 impl BpeTrainerConfig {
     pub fn new(min_frequency: u32, vocab_size: usize) -> Self {
         BpeTrainerConfig {
-            vocab_size,
             min_frequency,
+            vocab_size,
         }
     }
 
@@ -32,12 +33,14 @@ impl BpeTrainerConfig {
         self.min_frequency = value;
     }
 }
+
 impl Default for BpeTrainerConfig {
     fn default() -> Self {
         BpeTrainerConfig::new(0, 30000)
     }
 }
 
+#[derive(Default)]
 pub struct BpeTrainer {
     // Training parameters
     config: BpeTrainerConfig,

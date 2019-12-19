@@ -5,6 +5,7 @@ pub struct Word {
     chars: Vec<u32>,
     sizes: Vec<usize>,
 }
+
 impl Word {
     pub fn new() -> Self {
         Word {
@@ -109,8 +110,8 @@ mod tests {
         // training. This merge affects the counts for the pairs
         // ('e', 'l') ~= (1, 2),
         // ('e', 'll') ~= (1, 4),
-        // ('ll', 'o') ~= (4, 3), and
-        // ('l', 'o') ~= (2, 3).
+        // ('l', 'o') ~= (2, 3), and
+        // ('ll', 'o') ~= (4, 3).
         // So the changes should reflect that:
         assert_eq!(
             changes,
