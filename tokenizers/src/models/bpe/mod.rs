@@ -17,6 +17,9 @@ pub enum Error {
     JsonError(serde_json::Error),
     /// When the vocab.json file is in the wrong format
     BadVocabulary,
+    /// When the merges.txt file is in the wrong format. This error holds the line
+    /// number of the line that caused the error.
+    BadMerges(usize),
     /// If a token found in merges, is not in the vocab
     MergeTokenOutOfVocabulary(String),
 }
@@ -39,6 +42,7 @@ impl std::fmt::Display for Error {
             Error::Io(e) => write!(f, "IoError: {}", e),
             Error::JsonError(e) => write!(f, "JsonError: {}", e),
             Error::BadVocabulary => write!(f, "Bad vocabulary json file"),
+            Error::BadMerges(line) => write!(f, "Merges text file invalid at line {}", line),
             Error::MergeTokenOutOfVocabulary(token) => {
                 write!(f, "Token {} out of vocabulary", token)
             }
@@ -52,6 +56,7 @@ impl std::error::Error for Error {
             Error::Io(e) => Some(e),
             Error::JsonError(e) => Some(e),
             Error::BadVocabulary => None,
+            Error::BadMerges(_) => None,
             Error::MergeTokenOutOfVocabulary(_) => None,
         }
     }

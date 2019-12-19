@@ -70,6 +70,9 @@ impl BPE {
             }
 
             let parts = line.split(' ').collect::<Vec<_>>();
+            if parts.len() != 2 {
+                return Err(Error::BadMerges(rank + 1).into());
+            }
 
             let a = vocab
                 .get(parts[0])
@@ -190,5 +193,32 @@ impl Model for BPE {
 
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_bpe_from_files() {
+        // Set up vocab file.
+        let mut vocab_file = NamedTempFile::new().unwrap();
+        vocab_file
+            .write_all("{\"a\": 0, \"b\": 1, \"c\": 2, \"ab\": 3}".as_bytes())
+            .unwrap();
+
+        // Set up merges file.
+        let mut merges_file = NamedTempFile::new().unwrap();
+        merges_file
+            .write_all("#version: 0.2\na b".as_bytes())
+            .unwrap();
+
+        assert!(BPE::from_files(
+            vocab_file.path().to_str().unwrap(),
+            merges_file.path().to_str().unwrap()
+        )
+        .is_ok());
     }
 }

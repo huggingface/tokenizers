@@ -3,6 +3,11 @@ authors = ["Anthony MOI <m.anthony.moi@gmail.com>"]
 edition = "2018"
 name = "tokenizers-lib"
 version = "0.0.7"
+
+[lib]
+name = "tokenizers"
+path = "src/lib.rs"
+
 [[bin]]
 name = "cli"
 path = "src/cli.rs"
@@ -17,6 +22,5 @@ clap = "2.33.0"
 unicode-normalization = "0.1.11"
 unicode_categories = "0.1.1"
 
-[lib]
-name = "tokenizers"
-path = "src/lib.rs"
+[dev-dependencies]
+tempfile = "3.1"
