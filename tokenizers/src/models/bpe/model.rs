@@ -215,10 +215,67 @@ mod tests {
             .write_all("#version: 0.2\na b".as_bytes())
             .unwrap();
 
+        // Make sure we can instatiate a BPE model from the files.
         assert!(BPE::from_files(
             vocab_file.path().to_str().unwrap(),
             merges_file.path().to_str().unwrap()
         )
         .is_ok());
+    }
+
+    #[test]
+    fn test_bpe_from_files_merge_token_oov() {
+        // Set up vocab file.
+        let mut vocab_file = NamedTempFile::new().unwrap();
+        vocab_file
+            .write_all("{\"a\": 0, \"b\": 1, \"c\": 2, \"ab\": 3}".as_bytes())
+            .unwrap();
+
+        // Set up merges file.
+        let mut merges_file = NamedTempFile::new().unwrap();
+        merges_file
+            .write_all("#version: 0.2\na b\na d".as_bytes())
+            .unwrap();
+
+        // Ensure the result of BPE::from_files is a MergeTokenOutOfVocabulary error.
+        match BPE::from_files(
+            vocab_file.path().to_str().unwrap(),
+            merges_file.path().to_str().unwrap(),
+        ) {
+            Ok(_) => unreachable!(),
+            Err(err) => match err.downcast_ref::<Error>() {
+                Some(Error::MergeTokenOutOfVocabulary(token)) => {
+                    assert_eq!(*token, String::from("d"))
+                }
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    #[test]
+    fn test_bpe_from_files_bad_merges() {
+        // Set up vocab file.
+        let mut vocab_file = NamedTempFile::new().unwrap();
+        vocab_file
+            .write_all("{\"a\": 0, \"b\": 1, \"c\": 2, \"ab\": 3}".as_bytes())
+            .unwrap();
+
+        // Set up merges file with a bad line.
+        let mut merges_file = NamedTempFile::new().unwrap();
+        merges_file
+            .write_all("#version: 0.2\na b\nc".as_bytes())
+            .unwrap();
+
+        // Ensure the result of BPE::from_files is a BadMerges error.
+        match BPE::from_files(
+            vocab_file.path().to_str().unwrap(),
+            merges_file.path().to_str().unwrap(),
+        ) {
+            Ok(_) => unreachable!(),
+            Err(err) => match err.downcast_ref::<Error>() {
+                Some(Error::BadMerges(line)) => assert_eq!(*line, 3usize),
+                _ => unreachable!(),
+            },
+        }
     }
 }
