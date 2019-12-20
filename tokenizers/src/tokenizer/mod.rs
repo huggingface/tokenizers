@@ -93,6 +93,14 @@ pub struct AddedToken {
     /// Whether this token must be a single word or can break words
     pub single_word: bool,
 }
+impl AddedToken {
+    fn from(content: String) -> Self {
+        AddedToken {
+            content,
+            ..Default::default()
+        }
+    }
+}
 impl Default for AddedToken {
     fn default() -> Self {
         AddedToken {
@@ -132,6 +140,7 @@ pub struct Tokenizer {
     added_tokens: HashMap<AddedToken, u32>,
     added_tokens_r: HashMap<u32, AddedToken>,
     split_re: Option<regex::Regex>,
+    special_tokens: HashMap<String, u32>,
 
     // General processing parameters
     trunc: Option<TruncationParams>,
@@ -151,6 +160,7 @@ impl Tokenizer {
             added_tokens: HashMap::new(),
             added_tokens_r: HashMap::new(),
             split_re: None,
+            special_tokens: HashMap::new(),
 
             trunc: None,
             padding: None,
@@ -200,18 +210,31 @@ impl Tokenizer {
     }
 
     /// Get the size of the vocabulary
-    pub fn get_vocab_size(&self) -> usize {
+    pub fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
         self.model.get_vocab_size()
+            + if with_added_tokens {
+                self.added_tokens.len()
+            } else {
+                0
+            }
     }
 
     /// Converts a token in the corresponding id.
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.model.token_to_id(token)
+        if let Some(id) = self.added_tokens.get(&AddedToken::from(token.to_owned())) {
+            Some(*id)
+        } else {
+            self.model.token_to_id(token)
+        }
     }
 
     /// Converts an id to the corresponding token.
     pub fn id_to_token(&self, id: u32) -> Option<String> {
-        self.model.id_to_token(id)
+        if let Some(token) = self.added_tokens_r.get(&id) {
+            Some(token.content.clone())
+        } else {
+            self.model.id_to_token(id)
+        }
     }
 
     /// Encode the given sentence
@@ -324,15 +347,19 @@ impl Tokenizer {
     }
 
     /// Decode the given ids, back to a String
-    pub fn decode(&self, ids: Vec<u32>) -> Result<String> {
+    pub fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> Result<String> {
         let tokens = ids
             .into_iter()
             .map(|id| {
-                if let Some(token) = self.added_tokens_r.get(&id) {
+                let token = if let Some(token) = self.added_tokens_r.get(&id) {
                     Some(token.content.to_owned())
                 } else {
                     self.model.id_to_token(id)
-                }
+                };
+
+                token.filter(|token| {
+                    !skip_special_tokens || !self.special_tokens.contains_key(token)
+                })
             })
             .filter(|token| token.is_some())
             .map(|id| id.unwrap())
@@ -346,10 +373,14 @@ impl Tokenizer {
     }
 
     /// Decode all sentences in parallel
-    pub fn decode_batch(&self, sentences: Vec<Vec<u32>>) -> Result<Vec<String>> {
+    pub fn decode_batch(
+        &self,
+        sentences: Vec<Vec<u32>>,
+        skip_special_tokens: bool,
+    ) -> Result<Vec<String>> {
         sentences
             .into_par_iter()
-            .map(|sentence| self.decode(sentence))
+            .map(|sentence| self.decode(sentence, skip_special_tokens))
             .collect()
     }
 
@@ -467,11 +498,29 @@ impl Tokenizer {
         Ok(final_encoding)
     }
 
+    /// Register the given tokens as special tokens. This is especially useful for removing
+    /// these special tokens while decoding
+    pub fn add_special_tokens(&mut self, tokens: &[&str]) -> usize {
+        let added_tokens = tokens
+            .iter()
+            .map(|t| AddedToken::from((*t).to_owned()))
+            .collect::<Vec<_>>();
+
+        let added = self.add_tokens(&added_tokens);
+        for token in tokens {
+            if let Some(id) = self.token_to_id(token) {
+                self.special_tokens.entry((*token).to_owned()).or_insert(id);
+            }
+        }
+
+        added
+    }
+
     /// Add the given tokens to the added vocabulary
     pub fn add_tokens(&mut self, tokens: &[AddedToken]) -> usize {
         let mut ignored = 0;
         for token in tokens {
-            if token.content.is_empty() {
+            if token.content.is_empty() || self.token_to_id(&token.content).is_some() {
                 ignored += 1;
                 continue;
             }

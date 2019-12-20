@@ -36,9 +36,8 @@ impl Tokenizer {
         }
     }
 
-    #[getter]
-    fn get_vocab_size(&self) -> usize {
-        self.tokenizer.get_vocab_size()
+    fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
+        self.tokenizer.get_vocab_size(with_added_tokens)
     }
 
     fn with_model(&mut self, model: &mut Model) -> PyResult<()> {
@@ -192,12 +191,16 @@ impl Tokenizer {
         .into()
     }
 
-    fn decode(&self, ids: Vec<u32>) -> PyResult<String> {
-        ToPyResult(self.tokenizer.decode(ids)).into()
+    fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> PyResult<String> {
+        ToPyResult(self.tokenizer.decode(ids, skip_special_tokens)).into()
     }
 
-    fn decode_batch(&self, sentences: Vec<Vec<u32>>) -> PyResult<Vec<String>> {
-        ToPyResult(self.tokenizer.decode_batch(sentences)).into()
+    fn decode_batch(
+        &self,
+        sentences: Vec<Vec<u32>>,
+        skip_special_tokens: bool,
+    ) -> PyResult<Vec<String>> {
+        ToPyResult(self.tokenizer.decode_batch(sentences, skip_special_tokens)).into()
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
@@ -231,6 +234,10 @@ impl Tokenizer {
             .collect::<PyResult<Vec<_>>>()?;
 
         Ok(self.tokenizer.add_tokens(&tokens))
+    }
+
+    fn add_special_tokens(&mut self, tokens: Vec<&str>) -> PyResult<usize> {
+        Ok(self.tokenizer.add_special_tokens(&tokens))
     }
 
     fn train(&mut self, trainer: &Trainer, files: Vec<String>) -> PyResult<()> {
