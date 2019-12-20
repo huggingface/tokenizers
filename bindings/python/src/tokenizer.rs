@@ -36,9 +36,8 @@ impl Tokenizer {
         }
     }
 
-    #[getter]
-    fn get_vocab_size(&self) -> usize {
-        self.tokenizer.get_vocab_size()
+    fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
+        self.tokenizer.get_vocab_size(with_added_tokens)
     }
 
     fn with_model(&mut self, model: &mut Model) -> PyResult<()> {

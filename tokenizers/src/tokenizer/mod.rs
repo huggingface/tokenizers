@@ -210,8 +210,13 @@ impl Tokenizer {
     }
 
     /// Get the size of the vocabulary
-    pub fn get_vocab_size(&self) -> usize {
+    pub fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
         self.model.get_vocab_size()
+            + if with_added_tokens {
+                self.added_tokens.len()
+            } else {
+                0
+            }
     }
 
     /// Converts a token in the corresponding id.
