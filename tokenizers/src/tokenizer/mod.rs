@@ -342,15 +342,19 @@ impl Tokenizer {
     }
 
     /// Decode the given ids, back to a String
-    pub fn decode(&self, ids: Vec<u32>) -> Result<String> {
+    pub fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> Result<String> {
         let tokens = ids
             .into_iter()
             .map(|id| {
-                if let Some(token) = self.added_tokens_r.get(&id) {
+                let token = if let Some(token) = self.added_tokens_r.get(&id) {
                     Some(token.content.to_owned())
                 } else {
                     self.model.id_to_token(id)
-                }
+                };
+
+                token.filter(|token| {
+                    !skip_special_tokens || !self.special_tokens.contains_key(token)
+                })
             })
             .filter(|token| token.is_some())
             .map(|id| id.unwrap())
@@ -364,10 +368,14 @@ impl Tokenizer {
     }
 
     /// Decode all sentences in parallel
-    pub fn decode_batch(&self, sentences: Vec<Vec<u32>>) -> Result<Vec<String>> {
+    pub fn decode_batch(
+        &self,
+        sentences: Vec<Vec<u32>>,
+        skip_special_tokens: bool,
+    ) -> Result<Vec<String>> {
         sentences
             .into_par_iter()
-            .map(|sentence| self.decode(sentence))
+            .map(|sentence| self.decode(sentence, skip_special_tokens))
             .collect()
     }
 

@@ -192,12 +192,16 @@ impl Tokenizer {
         .into()
     }
 
-    fn decode(&self, ids: Vec<u32>) -> PyResult<String> {
-        ToPyResult(self.tokenizer.decode(ids)).into()
+    fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> PyResult<String> {
+        ToPyResult(self.tokenizer.decode(ids, skip_special_tokens)).into()
     }
 
-    fn decode_batch(&self, sentences: Vec<Vec<u32>>) -> PyResult<Vec<String>> {
-        ToPyResult(self.tokenizer.decode_batch(sentences)).into()
+    fn decode_batch(
+        &self,
+        sentences: Vec<Vec<u32>>,
+        skip_special_tokens: bool,
+    ) -> PyResult<Vec<String>> {
+        ToPyResult(self.tokenizer.decode_batch(sentences, skip_special_tokens)).into()
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {

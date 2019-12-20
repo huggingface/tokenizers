@@ -53,7 +53,7 @@ fn shell(matches: &ArgMatches) -> Result<()> {
         println!("Offsets:\t{:?}", encoded.get_offsets());
         println!(
             "Decoded:\t{}",
-            tokenizer.decode(encoded.get_ids().to_vec()).unwrap()
+            tokenizer.decode(encoded.get_ids().to_vec(), true).unwrap()
         );
         println!("Tokenized in {:?}", elapsed);
     }
