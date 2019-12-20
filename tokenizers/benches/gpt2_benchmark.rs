@@ -10,7 +10,7 @@ use tokenizers::tokenizer::{EncodeInput, Tokenizer};
 fn gpt2_benchmark(c: &mut Criterion) {
     let bpe = BPE::from_files("gpt2-vocab.json", "gpt2-merges.txt").unwrap();
     let mut tokenizer = Tokenizer::new(Box::new(bpe));
-    tokenizer.with_pre_tokenizer(Box::new(ByteLevel));
+    tokenizer.with_pre_tokenizer(Box::new(ByteLevel::new(false)));
     let sentence = "The quick brown fox jumps over the lazy dog";
 
     c.bench_function("gpt2 encode", |b| {
