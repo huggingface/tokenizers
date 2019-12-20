@@ -15,7 +15,7 @@ path = "src/cli.rs"
 bench = false
 
 [[bench]]
-name = "gpt2_benchmark"
+name = "bpe_benchmark"
 harness = false
 
 [dependencies]
