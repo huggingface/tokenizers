@@ -14,7 +14,7 @@ impl PreTokenizer for Whitespace {
                     .iter()
                     .map(|m| {
                         m.map(|capture| s[capture.start()..capture.end()].to_owned())
-                            .unwrap_or(String::from(""))
+                            .unwrap_or_else(|| String::from(""))
                     })
                     .collect()
             })

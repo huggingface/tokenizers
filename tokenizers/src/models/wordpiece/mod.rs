@@ -141,21 +141,12 @@ impl Model for WordPiece {
         Ok(output_tokens)
     }
 
-    fn decode(&self, ids: Vec<u32>) -> Result<Vec<String>> {
-        Ok(ids
-            .into_iter()
-            .map(|id| self.vocab_r.get(&id))
-            .filter(|token| token.is_some())
-            .map(|id| id.unwrap().clone())
-            .collect())
-    }
-
     fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.vocab.get(token).map(|id| *id)
+        self.vocab.get(token).copied()
     }
 
     fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab_r.get(&id).map(|token| token.clone())
+        self.vocab_r.get(&id).cloned()
     }
 }
 

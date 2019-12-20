@@ -3,6 +3,7 @@ mod encoding;
 mod error;
 mod models;
 mod pre_tokenizers;
+mod processors;
 mod token;
 mod tokenizer;
 mod trainers;
@@ -33,7 +34,7 @@ fn models(_py: Python, m: &PyModule) -> PyResult<()> {
 fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<pre_tokenizers::PreTokenizer>()?;
     m.add_class::<pre_tokenizers::ByteLevel>()?;
-    m.add_class::<pre_tokenizers::BasicPreTokenizer>()?;
+    m.add_class::<pre_tokenizers::BertPreTokenizer>()?;
     Ok(())
 }
 
@@ -46,6 +47,14 @@ fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
     Ok(())
 }
 
+/// Processors Module
+#[pymodule]
+fn processors(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<processors::PostProcessor>()?;
+    m.add_class::<processors::BertProcessing>()?;
+    Ok(())
+}
+
 /// Tokenizers Module
 #[pymodule]
 fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
@@ -53,6 +62,7 @@ fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pymodule!(models))?;
     m.add_wrapped(wrap_pymodule!(pre_tokenizers))?;
     m.add_wrapped(wrap_pymodule!(decoders))?;
+    m.add_wrapped(wrap_pymodule!(processors))?;
     m.add_wrapped(wrap_pymodule!(trainers))?;
     Ok(())
 }

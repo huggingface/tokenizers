@@ -9,6 +9,9 @@ impl PyError {
     pub fn from(s: &str) -> Self {
         PyError(String::from(s))
     }
+    pub fn into_pyerr(self) -> PyErr {
+        exceptions::Exception::py_err(format!("{}", self))
+    }
 }
 impl Display for PyError {
     fn fmt(&self, fmt: &mut Formatter) -> FmtResult {

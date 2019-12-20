@@ -3,6 +3,8 @@
 //!
 //! In charge of training a BPE model
 //!
+#![allow(clippy::map_entry)]
+
 use super::{Pair, Word, BPE};
 use crate::tokenizer::{Model, Result, Trainer};
 use std::{
@@ -87,7 +89,7 @@ impl Trainer for BpeTrainer {
 
                 // Initialize pair_counts and where_to_update for this pair if we just saw it
                 if !pair_counts.contains_key(&cur_pair) {
-                    let pair = (0, cur_pair.clone());
+                    let pair = (0, cur_pair);
                     pair_counts.insert(cur_pair, pair);
                     if !where_to_update.contains_key(&cur_pair) {
                         where_to_update.insert(cur_pair, HashSet::new());
@@ -125,7 +127,7 @@ impl Trainer for BpeTrainer {
             // Find the best pair
             let mut best_count = 0;
             let mut best_pair = (std::u32::MAX, std::u32::MAX);
-            for (_, x) in &pair_counts {
+            for x in pair_counts.values() {
                 if x.0 > best_count {
                     best_count = x.0;
                     best_pair = x.1;
@@ -158,12 +160,10 @@ impl Trainer for BpeTrainer {
             let mut change_count = |pair: Pair, count: i32, word_index: usize| {
                 if pair_counts.contains_key(&pair) {
                     pair_counts.get_mut(&pair).unwrap().0 += count;
-                } else {
-                    if count > 0 {
-                        pair_counts.insert(pair, (count, pair));
-                        if !where_to_update.contains_key(&pair) {
-                            where_to_update.insert(pair, HashSet::new());
-                        }
+                } else if count > 0 {
+                    pair_counts.insert(pair, (count, pair));
+                    if !where_to_update.contains_key(&pair) {
+                        where_to_update.insert(pair, HashSet::new());
                     }
                 }
 

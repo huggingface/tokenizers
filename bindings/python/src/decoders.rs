@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use tk::tokenizer::Result;
 
-#[pyclass]
+#[pyclass(dict)]
 pub struct Decoder {
     pub decoder: Container<dyn tk::tokenizer::Decoder + Sync>,
 }
@@ -32,7 +32,7 @@ impl ByteLevel {
     #[staticmethod]
     fn new() -> PyResult<Decoder> {
         Ok(Decoder {
-            decoder: Container::Owned(Box::new(tk::decoders::byte_level::ByteLevel)),
+            decoder: Container::Owned(Box::new(tk::decoders::byte_level::ByteLevel::new(false))),
         })
     }
 }

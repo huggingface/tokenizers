@@ -69,14 +69,14 @@ impl BPE {
                 continue;
             }
 
-            let parts = line.split(" ").collect::<Vec<_>>();
+            let parts = line.split(' ').collect::<Vec<_>>();
 
             let a = vocab
                 .get(parts[0])
-                .ok_or(Error::MergeTokenOutOfVocabulary(parts[0].to_owned()))?;
+                .ok_or_else(|| Error::MergeTokenOutOfVocabulary(parts[0].to_owned()))?;
             let b = vocab
                 .get(parts[1])
-                .ok_or(Error::MergeTokenOutOfVocabulary(parts[1].to_owned()))?;
+                .ok_or_else(|| Error::MergeTokenOutOfVocabulary(parts[1].to_owned()))?;
             let pair = (*a, *b);
             let new_token = format!("{}{}", parts[0], parts[1]);
             let new_id = vocab
@@ -101,7 +101,7 @@ impl Model for BPE {
     }
 
     fn tokenize(&self, sentence: Vec<String>) -> Result<Vec<Token>> {
-        if sentence.len() == 0 {
+        if sentence.is_empty() {
             return Ok(vec![]);
         }
 
@@ -109,7 +109,7 @@ impl Model for BPE {
         let mut cached_words = self.cache.get_values(&sentence);
 
         for (i, w) in sentence.iter().enumerate() {
-            if let None = cached_words[i] {
+            if cached_words[i].is_none() {
                 let mut word = Word::new();
                 for c in w.chars() {
                     match self.vocab.get(&c.to_string()) {
@@ -184,20 +184,11 @@ impl Model for BPE {
         Ok(encoded)
     }
 
-    fn decode(&self, ids: Vec<u32>) -> Result<Vec<String>> {
-        Ok(ids
-            .into_iter()
-            .map(|id| self.vocab_r.get(&id))
-            .filter(|token| token.is_some())
-            .map(|id| id.unwrap().clone())
-            .collect())
-    }
-
     fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.vocab.get(token).map(|id| *id)
+        self.vocab.get(token).copied()
     }
 
     fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab_r.get(&id).map(|token| token.clone())
+        self.vocab_r.get(&id).cloned()
     }
 }

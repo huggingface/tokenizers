@@ -1,5 +1,12 @@
+/// The various possible padding directions
+#[derive(Debug, Clone)]
+pub enum PaddingDirection {
+    Left,
+    Right,
+}
+
 /// The Encoding struct represents the output of the Tokenizer
-#[derive(Default, PartialEq, Debug)]
+#[derive(Default, PartialEq, Debug, Clone)]
 pub struct Encoding {
     original: String,
     normalized: String,
@@ -12,6 +19,7 @@ pub struct Encoding {
     overflowing: Option<Box<Encoding>>,
 }
 impl Encoding {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         original: String,
         normalized: String,
@@ -68,6 +76,10 @@ impl Encoding {
         &self.attention_mask
     }
 
+    pub fn get_overflowing(&self) -> Option<&Encoding> {
+        self.overflowing.as_ref().map(|b| &**b)
+    }
+
     pub fn take_overflowing(&mut self) -> Option<Box<Encoding>> {
         self.overflowing.take()
     }
@@ -118,8 +130,8 @@ impl Encoding {
     }
 
     pub fn merge_with(&mut self, pair: Encoding) {
-        self.original.extend(pair.original.chars());
-        self.normalized.extend(pair.normalized.chars());
+        self.original.push_str(&pair.original);
+        self.normalized.push_str(&pair.normalized);
         self.ids.extend(pair.ids);
         self.type_ids.extend(pair.type_ids);
         self.tokens.extend(pair.tokens);
@@ -138,16 +150,59 @@ impl Encoding {
         self.attention_mask.extend(pair.attention_mask);
         // TODO: Handle the overflowing
     }
+
+    pub fn pad(
+        &mut self,
+        pad_length: usize,
+        pad_id: u32,
+        pad_type_id: u32,
+        pad_token: &str,
+        direction: &PaddingDirection,
+    ) {
+        if self.ids.len() > pad_length {
+            // We just do nothing if the wanted padding length is smaller than us
+            return;
+        }
+        let pad_length = pad_length - self.ids.len();
+
+        let ids_pad = vec![pad_id; pad_length];
+        let type_ids_pad = vec![pad_type_id; pad_length];
+        let tokens_pad = vec![pad_token.to_owned(); pad_length];
+        let attention_pad = vec![0; pad_length];
+        let special_pad = vec![1; pad_length];
+        let offsets_pad = vec![(0, 0); pad_length];
+
+        match direction {
+            PaddingDirection::Left => {
+                self.ids = [&ids_pad[..], &self.ids[..]].concat();
+                self.type_ids = [&type_ids_pad[..], &self.type_ids[..]].concat();
+                self.tokens = [&tokens_pad[..], &self.tokens[..]].concat();
+                self.attention_mask = [&attention_pad[..], &self.attention_mask[..]].concat();
+                self.special_tokens_mask =
+                    [&special_pad[..], &self.special_tokens_mask[..]].concat();
+                self.offsets = [&offsets_pad[..], &self.offsets[..]].concat();
+            }
+            PaddingDirection::Right => {
+                self.ids = [&self.ids[..], &ids_pad[..]].concat();
+                self.type_ids = [&self.type_ids[..], &type_ids_pad[..]].concat();
+                self.tokens = [&self.tokens[..], &tokens_pad[..]].concat();
+                self.attention_mask = [&self.attention_mask[..], &attention_pad[..]].concat();
+                self.special_tokens_mask =
+                    [&self.special_tokens_mask[..], &special_pad[..]].concat();
+                self.offsets = [&self.offsets[..], &offsets_pad[..]].concat();
+            }
+        }
+    }
 }
 
 /// Prepend the `stride` last elements of the `previous` Vec to the current Vec
 // A new Vec is instantiated though.
-fn prepend_stride<T: Clone>(previous: &Vec<T>, current: Vec<T>, stride: usize) -> Vec<T> {
+fn prepend_stride<T: Clone>(previous: &[T], current: Vec<T>, stride: usize) -> Vec<T> {
     let prev = previous
         .iter()
         .rev()
         .take(stride)
-        .map(|v| v.clone())
+        .cloned()
         .rev()
         .collect::<Vec<_>>();
 
