@@ -1,8 +1,3 @@
-//!
-//! # Trainer
-//!
-//! In charge of training a BPE model
-//!
 #![allow(clippy::map_entry)]
 
 use super::{Pair, Word, BPE};
@@ -13,14 +8,15 @@ use std::{
 };
 
 pub struct BpeTrainerConfig {
-    vocab_size: usize,
     min_frequency: u32,
+    vocab_size: usize,
 }
+
 impl BpeTrainerConfig {
     pub fn new(min_frequency: u32, vocab_size: usize) -> Self {
         BpeTrainerConfig {
-            vocab_size,
             min_frequency,
+            vocab_size,
         }
     }
 
@@ -32,12 +28,30 @@ impl BpeTrainerConfig {
         self.min_frequency = value;
     }
 }
+
 impl Default for BpeTrainerConfig {
     fn default() -> Self {
         BpeTrainerConfig::new(0, 30000)
     }
 }
 
+/// In charge of training a BPE model from a mapping of words to word counts.
+///
+/// # Examples
+///
+/// ```
+/// use std::collections::HashMap;
+/// use tokenizers::tokenizer::Trainer;
+/// use tokenizers::models::bpe::BpeTrainer;
+///
+/// let word_counts: HashMap<String, u32> = [
+///     (String::from("Hello"), 1),
+///     (String::from("World"), 1),
+/// ].iter().cloned().collect();
+/// let trainer = BpeTrainer::default();
+/// let model = trainer.train(word_counts);
+/// ```
+#[derive(Default)]
 pub struct BpeTrainer {
     // Training parameters
     config: BpeTrainerConfig,
