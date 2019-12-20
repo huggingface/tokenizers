@@ -20,7 +20,10 @@ fn bpe_benchmark(c: &mut Criterion) {
         (String::from("the"), 1),
         (String::from("lazy"), 1),
         (String::from("dog"), 1),
-    ].iter().cloned().collect();
+    ]
+    .iter()
+    .cloned()
+    .collect();
     let trainer = BpeTrainer::new(BpeTrainerConfig::new(0, 100));
 
     c.bench_function("BPE train", |b| {
