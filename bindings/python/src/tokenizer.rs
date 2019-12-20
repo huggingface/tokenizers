@@ -233,6 +233,10 @@ impl Tokenizer {
         Ok(self.tokenizer.add_tokens(&tokens))
     }
 
+    fn add_special_tokens(&mut self, tokens: Vec<&str>) -> PyResult<usize> {
+        Ok(self.tokenizer.add_special_tokens(&tokens))
+    }
+
     fn train(&mut self, trainer: &Trainer, files: Vec<String>) -> PyResult<()> {
         trainer.trainer.execute(|trainer| {
             if let Err(e) = self.tokenizer.train(trainer, files) {
