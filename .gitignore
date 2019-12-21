@@ -4,6 +4,8 @@
 .env
 target
 
+Cargo.lock
+
 /data
 /docs
 
