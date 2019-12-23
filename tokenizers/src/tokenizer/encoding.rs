@@ -85,7 +85,7 @@ impl Encoding {
     }
 
     pub fn truncate(&mut self, max_len: usize, stride: usize) {
-        if max_len > self.ids.len() {
+        if max_len >= self.ids.len() {
             return;
         }
 
