@@ -20,18 +20,18 @@ impl BpeTrainer {
     #[staticmethod]
     #[args(kwargs = "**")]
     pub fn new(kwargs: Option<&PyDict>) -> PyResult<Trainer> {
-        let mut config: tk::models::bpe::BpeTrainerConfig = Default::default();
+        let mut trainer = tk::models::bpe::BpeTrainer::default();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
                 let key: &str = key.extract()?;
                 match key {
                     "vocab_size" => {
                         let size: usize = val.extract()?;
-                        config.set_vocab_size(size);
+                        trainer.vocab_size = size;
                     }
                     "min_frequency" => {
                         let freq: u32 = val.extract()?;
-                        config.set_min_frequency(freq);
+                        trainer.min_frequency = freq;
                     }
                     _ => println!("Ignored unknown kwargs option {}", key),
                 };
@@ -39,7 +39,7 @@ impl BpeTrainer {
         }
 
         Ok(Trainer {
-            trainer: Container::Owned(Box::new(tk::models::bpe::BpeTrainer::new(config))),
+            trainer: Container::Owned(Box::new(trainer)),
         })
     }
 }
