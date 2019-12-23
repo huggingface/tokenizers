@@ -351,7 +351,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers-lib"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
