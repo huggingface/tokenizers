@@ -54,7 +54,7 @@ if args.type == "gpt2":
     # Create a Tokenizer using BPE
     tok_r = Tokenizer(models.BPE.from_files(args.vocab, args.merges))
     # Use ByteLevel PreTokenizer
-    tok_r.with_pre_tokenizer(pre_tokenizers.ByteLevel.new())
+    tok_r.with_pre_tokenizer(pre_tokenizers.ByteLevel.new(False))
     # Use ByteLevel Decoder
     tok_r.with_decoder(decoders.ByteLevel.new())
 elif args.type == "bert":
@@ -109,7 +109,7 @@ for i in range(0, len(encoded_r)):
             print("")
 print(f"Ids differences: {diff_ids}")
 
-decoded_r = tok_r.decode_batch([ sentence.ids for sentence in encoded_r ])
+decoded_r = tok_r.decode_batch([ sentence.ids for sentence in encoded_r ], False)
 decoded_p = [ tok_p.decode(en) for en in encoded_p ]
 diff_decoded = 0
 for i in range(0, len(text)):
