@@ -97,23 +97,34 @@ impl Tokenizer {
         }
     }
 
-    fn with_truncation(
-        &mut self,
-        max_length: usize,
-        stride: usize,
-        strategy: &str,
-    ) -> PyResult<()> {
-        let strategy = match strategy {
-            "longest_first" => Ok(TruncationStrategy::LongestFirst),
-            "only_first" => Ok(TruncationStrategy::OnlyFirst),
-            "only_second" => Ok(TruncationStrategy::OnlySecond),
-            other => Err(PyError(format!(
-                "Unknown `strategy`: `{}`. Use \
-                 one of `longest_first`, `only_first`, or `only_second`",
-                other
-            ))
-            .into_pyerr()),
-        }?;
+    #[args(kwargs = "**")]
+    fn with_truncation(&mut self, max_length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
+        let mut stride = 0;
+        let mut strategy = TruncationStrategy::LongestFirst;
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "stride" => stride = value.extract()?,
+                    "strategy" => {
+                        let value: &str = value.extract()?;
+                        strategy = match value {
+                            "longest_first" => Ok(TruncationStrategy::LongestFirst),
+                            "only_first" => Ok(TruncationStrategy::OnlyFirst),
+                            "only_second" => Ok(TruncationStrategy::OnlySecond),
+                            _ => Err(PyError(format!(
+                                "Unknown `strategy`: `{}`. Use \
+                                 one of `longest_first`, `only_first`, or `only_second`",
+                                value
+                            ))
+                            .into_pyerr()),
+                        }?
+                    }
+                    _ => println!("Ignored unknown kwarg option {}", key),
+                }
+            }
+        }
 
         self.tokenizer.with_truncation(Some(TruncationParams {
             max_length,
