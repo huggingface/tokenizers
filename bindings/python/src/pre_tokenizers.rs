@@ -40,7 +40,7 @@ impl ByteLevel {
                 let key: &str = key.extract()?;
                 match key {
                     "add_prefix_space" => add_prefix_space = value.extract()?,
-                    other => println!("Ignored unknown kwargs option {}", key),
+                    _ => println!("Ignored unknown kwargs option {}", key),
                 }
             }
         }
