@@ -36,8 +36,21 @@ impl Tokenizer {
         }
     }
 
-    fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
-        self.tokenizer.get_vocab_size(with_added_tokens)
+    #[args(kwargs = "**")]
+    fn get_vocab_size(&self, kwargs: Option<&PyDict>) -> PyResult<usize> {
+        let mut with_added_tokens = true;
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "with_added_tokens" => with_added_tokens = value.extract()?,
+                    _ => println!("Ignored unknown kwarg option {}", key),
+                }
+            }
+        }
+
+        Ok(self.tokenizer.get_vocab_size(with_added_tokens))
     }
 
     fn with_model(&mut self, model: &mut Model) -> PyResult<()> {
