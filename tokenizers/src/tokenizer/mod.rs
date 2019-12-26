@@ -577,7 +577,12 @@ impl Tokenizer {
             })
             .collect::<Vec<_>>();
 
-        self.split_re = Some(regex::Regex::new(&format!(r"({})", added_tokens.join("|"))).unwrap());
+        if added_tokens.is_empty() {
+            self.split_re = None;
+        } else {
+            self.split_re =
+                Some(regex::Regex::new(&format!(r"({})", added_tokens.join("|"))).unwrap());
+        }
 
         // Return the number of added tokens
         tokens.len() - ignored
