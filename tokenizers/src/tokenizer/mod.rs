@@ -34,8 +34,7 @@ pub type Offsets = (usize, usize);
 
 /// A PreTokenizer takes care of pre-tokenizing strings before this goes to the model
 pub trait PreTokenizer {
-    // TODO: Should return offsets with each substring
-    fn pre_tokenize(&self, s: &str) -> Result<Vec<String>>;
+    fn pre_tokenize(&self, s: &str) -> Result<Vec<(String, Offsets)>>;
 }
 
 /// Represents a `Model` used during Tokenization (Like BPE or Word or Unigram)
