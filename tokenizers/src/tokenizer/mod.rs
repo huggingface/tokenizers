@@ -24,14 +24,12 @@ use std::{
 };
 
 mod encoding;
+mod normalizer;
+
 pub use encoding::*;
+pub use normalizer::*;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
-/// A Normalizer takes care of pre-processing strings
-pub trait Normalizer {
-    fn normalize(&self, s: String) -> Result<String>;
-}
 pub type Offsets = (usize, usize);
 
 /// A PreTokenizer takes care of pre-tokenizing strings before this goes to the model
