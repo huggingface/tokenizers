@@ -32,6 +32,7 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 pub trait Normalizer {
     fn normalize(&self, s: String) -> Result<String>;
 }
+pub type Offsets = (usize, usize);
 
 /// A PreTokenizer takes care of pre-tokenizing strings before this goes to the model
 pub trait PreTokenizer {
@@ -41,7 +42,7 @@ pub trait PreTokenizer {
 
 /// Represents a `Model` used during Tokenization (Like BPE or Word or Unigram)
 pub trait Model {
-    fn tokenize(&self, tokens: Vec<String>) -> Result<Vec<Token>>;
+    fn tokenize(&self, tokens: Vec<(String, Offsets)>) -> Result<Vec<Token>>;
     fn token_to_id(&self, token: &str) -> Option<u32>;
     fn id_to_token(&self, id: u32) -> Option<String>;
     fn get_vocab_size(&self) -> usize;
