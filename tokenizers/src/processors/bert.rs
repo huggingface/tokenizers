@@ -61,23 +61,12 @@ impl PostProcessor for BertProcessing {
 
         let attention_mask = vec![1; ids.len() + pair_ids.as_ref().map(|e| e.len()).unwrap_or(0)];
 
+        let normalized = encoding.get_normalized();
+        if let Some(pair) = &pair_encoding {
+            encoding.get_normalized().merge_with(pair.get_normalized());
+        };
         Ok(Encoding::new(
-            format!(
-                "{}{}",
-                encoding.get_original(),
-                pair_encoding
-                    .as_ref()
-                    .map(|e| e.get_original())
-                    .unwrap_or("")
-            ),
-            format!(
-                "{}{}",
-                encoding.get_normalized(),
-                pair_encoding
-                    .as_ref()
-                    .map(|e| e.get_normalized())
-                    .unwrap_or("")
-            ),
+            *normalized,
             [&ids[..], &pair_ids.unwrap_or_else(|| vec![])[..]].concat(),
             [&type_ids[..], &pair_type_ids.unwrap_or_else(|| vec![])[..]].concat(),
             [&tokens[..], &pair_tokens.unwrap_or_else(|| vec![])[..]].concat(),
