@@ -182,13 +182,25 @@ impl NormalizedString {
 
     /// Lowercase
     pub fn lowercase(&mut self) -> &mut Self {
-        self.normalized.to_lowercase();
+        let mut new_chars: Vec<(char, isize)> = vec![];
+        self.for_each(|c| {
+            c.to_lowercase().enumerate().for_each(|(index, c)| {
+                new_chars.push((c, if index > 0 { 1 } else { 0 }));
+            })
+        });
+        self.transform(new_chars.into_iter());
         self
     }
 
     /// Uppercase
     pub fn uppercase(&mut self) -> &mut Self {
-        self.normalized.to_uppercase();
+        let mut new_chars: Vec<(char, isize)> = vec![];
+        self.for_each(|c| {
+            c.to_uppercase().enumerate().for_each(|(index, c)| {
+                new_chars.push((c, if index > 0 { 1 } else { 0 }));
+            })
+        });
+        self.transform(new_chars.into_iter());
         self
     }
 
@@ -225,6 +237,11 @@ impl NormalizedString {
     /// Returns the length
     pub fn len(&self) -> usize {
         self.normalized.len()
+    }
+
+    /// Whether empty
+    pub fn is_empty(&self) -> bool {
+        self.normalized.len() == 0
     }
 }
 
