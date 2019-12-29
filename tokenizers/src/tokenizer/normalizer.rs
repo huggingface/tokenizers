@@ -42,6 +42,27 @@ impl NormalizedString {
         &self.original
     }
 
+    /// Return a range of the normalized string
+    pub fn get_range(&self, range: std::ops::Range<usize>) -> Option<&str> {
+        self.normalized.get(range)
+    }
+
+    /// Return a range of the original string, using a range from the normalized string
+    pub fn get_range_original(&self, range: std::ops::Range<usize>) -> Option<&str> {
+        self.alignments
+            .get(range)
+            .map(|alignments| {
+                if alignments.is_empty() {
+                    None
+                } else {
+                    let start = alignments[0].0;
+                    let end = alignments[alignments.len() - 1].1;
+                    self.original.get(start..end)
+                }
+            })
+            .flatten()
+    }
+
     /// Applies transformations to the current normalized version, updating the current
     /// alignments with the new ones.
     /// This method expect an Iterator yielding each char of the new normalized string
@@ -298,5 +319,15 @@ mod tests {
             &n.alignments,
             &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (6, 7)]
         );
+    }
+
+    #[test]
+    fn original_range() {
+        let mut n = NormalizedString::from("Hello_______ World!");
+        n.filter(|c| *c != '_').lowercase();
+        let world_n = n.get_range(6..11).unwrap();
+        let world_o = n.get_range_original(6..11).unwrap();
+        assert_eq!(world_n, "world");
+        assert_eq!(world_o, "World");
     }
 }
