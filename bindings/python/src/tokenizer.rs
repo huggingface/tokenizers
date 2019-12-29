@@ -8,6 +8,7 @@ use super::decoders::Decoder;
 use super::encoding::Encoding;
 use super::error::{PyError, ToPyResult};
 use super::models::Model;
+use super::normalizers::Normalizer;
 use super::pre_tokenizers::PreTokenizer;
 use super::processors::PostProcessor;
 use super::trainers::Trainer;
@@ -93,6 +94,17 @@ impl Tokenizer {
         } else {
             Err(exceptions::Exception::py_err(
                 "The Processor is already being used in another Tokenizer",
+            ))
+        }
+    }
+
+    fn with_normalizer(&mut self, normalizer: &mut Normalizer) -> PyResult<()> {
+        if let Some(normalizer) = normalizer.normalizer.to_pointer() {
+            self.tokenizer.with_normalizer(normalizer);
+            Ok(())
+        } else {
+            Err(exceptions::Exception::py_err(
+                "The Normalizer is already being used in another Tokenizer",
             ))
         }
     }
