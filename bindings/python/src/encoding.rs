@@ -1,6 +1,7 @@
 extern crate tokenizers as tk;
 
 use pyo3::prelude::*;
+use pyo3::types::*;
 
 #[pyclass(dict)]
 #[repr(transparent)]
@@ -24,6 +25,34 @@ impl Encoding {
     #[getter]
     fn get_normalized(&self) -> String {
         self.encoding.get_normalized().get().to_owned()
+    }
+
+    #[args(kwargs = "**")]
+    fn get_range(
+        &self,
+        range: (usize, usize),
+        kwargs: Option<&PyDict>,
+    ) -> PyResult<Option<String>> {
+        let mut original = false;
+        if let Some(kwargs) = kwargs {
+            if let Some(koriginal) = kwargs.get_item("original") {
+                original = koriginal.extract()?;
+            }
+        }
+
+        if original {
+            Ok(self
+                .encoding
+                .get_normalized()
+                .get_range_original(range.0..range.1)
+                .map(|s| s.to_owned()))
+        } else {
+            Ok(self
+                .encoding
+                .get_normalized()
+                .get_range(range.0..range.1)
+                .map(|s| s.to_owned()))
+        }
     }
 
     #[getter]
