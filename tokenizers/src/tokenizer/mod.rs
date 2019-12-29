@@ -430,7 +430,7 @@ impl Tokenizer {
         let mut normalized = NormalizedString::from(sequence);
 
         if let Some(normalizer) = &self.normalizer {
-            normalizer.normalize(&mut normalized);
+            normalizer.normalize(&mut normalized)?;
         }
 
         Ok(normalized)
