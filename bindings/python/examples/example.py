@@ -6,7 +6,7 @@ import logging
 logging.getLogger('transformers').disabled = True
 logging.getLogger('transformers.tokenization_utils').disabled = True
 
-from tokenizers import Tokenizer, models, pre_tokenizers, decoders, processors
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders, processors, normalizers
 from transformers import GPT2Tokenizer, BertTokenizer
 
 parser = argparse.ArgumentParser()
@@ -61,8 +61,19 @@ elif args.type == "bert":
     print("Running Bert tokenizer")
     tok_p = BertTokenizer.from_pretrained('bert-base-uncased')
 
-    tok_r = Tokenizer(models.WordPiece.from_files(args.vocab, unk_token="[UNK]", max_input_chars_per_word=100))
-    tok_r.with_pre_tokenizer(pre_tokenizers.BasicPreTokenizer.new(do_lower_case=True, tokenize_chinese_chars=True, never_split=[]))
+    tok_r = Tokenizer(models.WordPiece.from_files(
+        args.vocab,
+        unk_token="[UNK]",
+        max_input_chars_per_word=100)
+    )
+    tok_r.with_normalizer(normalizers.BertNormalizer.new(
+        clean_text=True,
+        handle_chinese_chars=True,
+        strip_accents=True,
+        lowercase=True,
+    ))
+    # tok_r.with_pre_tokenizer(pre_tokenizers.Whitespace.new())
+    tok_r.with_pre_tokenizer(pre_tokenizers.BertPreTokenizer.new())
     tok_r.with_decoder(decoders.WordPiece.new())
     tok_r.with_post_processor(processors.BertProcessing.new(
         ("[SEP]", tok_r.token_to_id("[SEP]")),
@@ -75,7 +86,7 @@ def tokenize_r():
     return tok_r.encode_batch(text);
 
 def tokenize_p():
-    return [tok_p.encode(sentence) for sentence in tqdm(text)]
+    return [tok_p.encode(sentence, add_special_tokens=True) for sentence in tqdm(text)]
 
 print(f"Tokenizing {len(text)} lines")
 
