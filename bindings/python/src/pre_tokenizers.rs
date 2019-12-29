@@ -1,16 +1,20 @@
 extern crate tokenizers as tk;
 
-use super::error::{PyError, ToPyResult};
-use super::utils::Container;
+use std::collections::HashSet;
+
 use pyo3::prelude::*;
 use pyo3::types::*;
-use std::collections::HashSet;
+
 use tk::tokenizer::Result;
+
+use super::error::{PyError, ToPyResult};
+use super::utils::Container;
 
 #[pyclass(dict)]
 pub struct PreTokenizer {
     pub pretok: Container<dyn tk::tokenizer::PreTokenizer + Sync>,
 }
+
 #[pymethods]
 impl PreTokenizer {
     #[staticmethod]
@@ -123,4 +127,12 @@ impl tk::tokenizer::PreTokenizer for PyPreTokenizer {
             }
         }
     }
+}
+
+#[pymodule(pretokenizers)]
+fn pretokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PreTokenizer>()?;
+    m.add_class::<ByteLevel>()?;
+    m.add_class::<BertPreTokenizer>()?;
+    Ok(())
 }

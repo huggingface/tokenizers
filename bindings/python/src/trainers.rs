@@ -1,8 +1,9 @@
 extern crate tokenizers as tk;
 
-use super::utils::Container;
 use pyo3::prelude::*;
 use pyo3::types::*;
+
+use super::utils::Container;
 
 #[pyclass]
 pub struct Trainer {
@@ -11,6 +12,7 @@ pub struct Trainer {
 
 #[pyclass]
 pub struct BpeTrainer {}
+
 #[pymethods]
 impl BpeTrainer {
     /// new(/vocab_size, min_frequency)
@@ -42,4 +44,11 @@ impl BpeTrainer {
             trainer: Container::Owned(Box::new(trainer)),
         })
     }
+}
+
+#[pymodule(trainers)]
+fn trainers(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<Trainer>()?;
+    m.add_class::<BpeTrainer>()?;
+    Ok(())
 }

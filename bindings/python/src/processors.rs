@@ -1,7 +1,8 @@
 extern crate tokenizers as tk;
 
-use super::utils::Container;
 use pyo3::prelude::*;
+
+use super::utils::Container;
 
 #[pyclass(dict)]
 pub struct PostProcessor {
@@ -10,6 +11,7 @@ pub struct PostProcessor {
 
 #[pyclass]
 pub struct BertProcessing {}
+
 #[pymethods]
 impl BertProcessing {
     #[staticmethod]
@@ -20,4 +22,11 @@ impl BertProcessing {
             ))),
         })
     }
+}
+
+#[pymodule(processors)]
+fn processors(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PostProcessor>()?;
+    m.add_class::<BertProcessing>()?;
+    Ok(())
 }

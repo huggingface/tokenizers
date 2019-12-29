@@ -1,10 +1,10 @@
 extern crate tokenizers as tk;
 
-use super::utils::Container;
-
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+
+use super::utils::Container;
 
 /// A Model represents some tokenization algorithm like BPE or Word
 /// This class cannot be constructed directly. Please use one of the concrete models.
@@ -104,4 +104,12 @@ impl WordPiece {
             }),
         }
     }
+}
+
+#[pymodule(models)]
+fn models(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<Model>()?;
+    m.add_class::<BPE>()?;
+    m.add_class::<WordPiece>()?;
+    Ok(())
 }

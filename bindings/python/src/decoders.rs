@@ -1,15 +1,18 @@
 extern crate tokenizers as tk;
 
-use super::error::{PyError, ToPyResult};
-use super::utils::Container;
 use pyo3::prelude::*;
 use pyo3::types::*;
+
 use tk::tokenizer::Result;
+
+use super::error::{PyError, ToPyResult};
+use super::utils::Container;
 
 #[pyclass(dict)]
 pub struct Decoder {
     pub decoder: Container<dyn tk::tokenizer::Decoder + Sync>,
 }
+
 #[pymethods]
 impl Decoder {
     #[staticmethod]
@@ -78,4 +81,12 @@ impl tk::tokenizer::Decoder for PyDecoder {
             }
         }
     }
+}
+
+#[pymodule(decoders)]
+fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<Decoder>()?;
+    m.add_class::<ByteLevel>()?;
+    m.add_class::<WordPiece>()?;
+    Ok(())
 }
