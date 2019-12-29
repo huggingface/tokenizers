@@ -1,10 +1,8 @@
 extern crate tokenizers as tk;
 
-use super::error::{PyError, ToPyResult};
 use super::utils::Container;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use tk::tokenizer::Result;
 
 #[pyclass(dict)]
 pub struct Normalizer {

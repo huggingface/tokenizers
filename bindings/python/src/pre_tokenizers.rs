@@ -4,7 +4,6 @@ use super::error::{PyError, ToPyResult};
 use super::utils::Container;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use std::collections::HashSet;
 use tk::tokenizer::{Offsets, Result};
 
 #[pyclass(dict)]
