@@ -173,6 +173,7 @@ impl Model for BPE {
                                 .map(|rank| {
                                     if let Some(dropout) = self.dropout {
                                         // With probability `dropout` we'll ignore
+                                        // this merge.
                                         if thread_rng().gen::<f32>() < dropout {
                                             &(std::u32::MAX, std::u32::MAX)
                                         } else {
