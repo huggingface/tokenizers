@@ -53,6 +53,18 @@ impl ByteLevel {
 }
 
 #[pyclass]
+pub struct Whitespace {}
+#[pymethods]
+impl Whitespace {
+    #[staticmethod]
+    fn new() -> PyResult<PreTokenizer> {
+        Ok(PreTokenizer {
+            pretok: Container::Owned(Box::new(tk::pre_tokenizers::whitespace::Whitespace)),
+        })
+    }
+}
+
+#[pyclass]
 pub struct BertPreTokenizer {}
 #[pymethods]
 impl BertPreTokenizer {
