@@ -38,6 +38,7 @@ impl BPE {
         }
     }
 
+    /// Initialize a BPE model with [dropout](https://arxiv.org/abs/1910.13267).
     pub fn with_dropout(
         vocab: HashMap<String, u32>,
         vocab_r: HashMap<u32, String>,
