@@ -2,13 +2,13 @@ use super::Result;
 use std::cmp::Ordering;
 use unicode_normalization_alignments::UnicodeNormalization;
 
-/// A Normalizer takes care of pre-processing strings
+/// Takes care of pre-processing strings.
 pub trait Normalizer {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
 }
 
-/// A normalized string takes care of keeping both versions of a String, and
-/// provides necessary alignments to retrieve ranges of both strings
+/// A normalized string takes care of keeping both versions of a `String`, and
+/// provides necessary alignments to retrieve ranges of both strings.
 #[derive(Default, Debug, Clone)]
 pub struct NormalizedString {
     original: String,
