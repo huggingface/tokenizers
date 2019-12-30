@@ -273,41 +273,17 @@ mod tests {
         .collect();
         let vocab_r: HashMap<u32, String> = vocab
             .iter()
-            .map(|(key, val)| (val.clone(), key.to_owned()))
+            .map(|(key, val)| (*val, key.to_owned()))
             .collect();
         let merges: HashMap<Pair, (u32, u32)> = [
-            (
-                (vocab["r"].clone(), vocab["e"].clone()),
-                (1u32, vocab["re"].clone()),
-            ), // 'r-e' -> 're'
-            (
-                (vocab["a"].clone(), vocab["t"].clone()),
-                (2u32, vocab["at"].clone()),
-            ), // 'a-t' -> 'at'
-            (
-                (vocab["e"].clone(), vocab["d"].clone()),
-                (3u32, vocab["ed"].clone()),
-            ), // 'e-d' -> 'ed'
-            (
-                (vocab["u"].clone(), vocab["n"].clone()),
-                (4u32, vocab["un"].clone()),
-            ), // 'u-n' -> 'un'
-            (
-                (vocab["at"].clone(), vocab["ed"].clone()),
-                (5u32, vocab["ated"].clone()),
-            ), // 'at-ed' -> 'ated'
-            (
-                (vocab["re"].clone(), vocab["l"].clone()),
-                (6u32, vocab["rel"].clone()),
-            ), // 're-l' -> 'rel'
-            (
-                (vocab["rel"].clone(), vocab["ated"].clone()),
-                (7u32, vocab["related"].clone()),
-            ), // 'rel-ated' -> 'related'
-            (
-                (vocab["un"].clone(), vocab["related"].clone()),
-                (8u32, vocab["unrelated"].clone()),
-            ), // 'un-related' -> 'unrelated'
+            ((vocab["r"], vocab["e"]), (1u32, vocab["re"])), // 'r-e' -> 're'
+            ((vocab["a"], vocab["t"]), (2u32, vocab["at"])), // 'a-t' -> 'at'
+            ((vocab["e"], vocab["d"]), (3u32, vocab["ed"])), // 'e-d' -> 'ed'
+            ((vocab["u"], vocab["n"]), (4u32, vocab["un"])), // 'u-n' -> 'un'
+            ((vocab["at"], vocab["ed"]), (5u32, vocab["ated"])), // 'at-ed' -> 'ated'
+            ((vocab["re"], vocab["l"]), (6u32, vocab["rel"])), // 're-l' -> 'rel'
+            ((vocab["rel"], vocab["ated"]), (7u32, vocab["related"])), // 'rel-ated' -> 'related'
+            ((vocab["un"], vocab["related"]), (8u32, vocab["unrelated"])), // 'un-related' -> 'unrelated'
         ]
         .iter()
         .cloned()
@@ -340,8 +316,8 @@ mod tests {
 
         // Now try with dropout between 0 and 1.
         bpe.dropout = Some(0.5);
-        let tokens = bpe.tokenize(sentence.clone()).unwrap();
-        assert!(1 <= tokens.len() && tokens.len() <= 9);
+        let tokens = bpe.tokenize(sentence).unwrap();
+        assert!(!tokens.is_empty() && tokens.len() <= 9);
     }
 
     #[test]
