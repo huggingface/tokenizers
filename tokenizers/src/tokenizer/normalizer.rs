@@ -1,6 +1,6 @@
 use super::Result;
 use std::cmp::Ordering;
-use unicode_normalization::UnicodeNormalization;
+use unicode_normalization_alignments::UnicodeNormalization;
 
 /// A Normalizer takes care of pre-processing strings
 pub trait Normalizer {
