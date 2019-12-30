@@ -5,11 +5,11 @@ use std::collections::HashMap;
 
 use criterion::black_box;
 use criterion::Criterion;
-use tokenizers::models::bpe::{BpeTrainer, BpeTrainerConfig};
+use tokenizers::models::bpe::BpeTrainer;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::tokenizer::{EncodeInput, Tokenizer, Trainer};
 
-fn bpe_benchmark(c: &mut Criterion) {
+fn bpe_small_benchmark(c: &mut Criterion) {
     let word_counts: HashMap<String, u32> = [
         (String::from("The"), 1),
         (String::from("quick"), 1),
@@ -24,7 +24,7 @@ fn bpe_benchmark(c: &mut Criterion) {
     .iter()
     .cloned()
     .collect();
-    let trainer = BpeTrainer::new(BpeTrainerConfig::new(0, 100));
+    let trainer = BpeTrainer::new(0, 100);
 
     c.bench_function("BPE train", |b| {
         b.iter(|| trainer.train(black_box(word_counts.clone())))
@@ -41,5 +41,5 @@ fn bpe_benchmark(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bpe_benchmark);
+criterion_group!(benches, bpe_small_benchmark);
 criterion_main!(benches);
