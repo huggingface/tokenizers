@@ -7,8 +7,7 @@ mod word;
 
 pub type Pair = (u32, u32);
 
-/// ## Error
-/// Errors that can be encountered while using BPE
+/// Errors that can be encountered while using BPE.
 #[derive(Debug)]
 pub enum Error {
     /// An error encountered while reading files mainly.

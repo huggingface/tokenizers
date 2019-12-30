@@ -1,13 +1,13 @@
 use crate::tokenizer::NormalizedString;
 
-/// The various possible padding directions
+/// The various possible padding directions.
 #[derive(Debug, Clone)]
 pub enum PaddingDirection {
     Left,
     Right,
 }
 
-/// The Encoding struct represents the output of the Tokenizer
+/// Represents the output of a `Tokenizer`.
 #[derive(Default, PartialEq, Debug, Clone)]
 pub struct Encoding {
     normalized: NormalizedString,
@@ -180,7 +180,7 @@ impl Encoding {
     }
 }
 
-/// Prepend the `stride` last elements of the `previous` Vec to the current Vec
+/// Prepend the `stride` last elements of the `previous` `Vec` to the current `Vec`.
 // A new Vec is instantiated though.
 fn prepend_stride<T: Clone>(previous: &[T], current: Vec<T>, stride: usize) -> Vec<T> {
     let prev = previous
