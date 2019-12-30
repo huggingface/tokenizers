@@ -122,6 +122,73 @@ impl BPE {
             dropout: None,
         })
     }
+
+    fn merge_word(&self, w: &str) -> Word {
+        let mut word = Word::new();
+        for c in w.chars() {
+            match self.vocab.get(&c.to_string()) {
+                // TODO: Handle UNK
+                None => println!("{} is an unknown character. Skip it.", c.escape_unicode()),
+                Some(id) => word.add(*id),
+            }
+        }
+
+        loop {
+            if word.get_chars().len() < 2 {
+                break;
+            }
+
+            let ((rank, new_id), pair) = word
+                .get_chars()
+                .windows(2)
+                .map(|window| {
+                    let pair = (window[0], window[1]);
+                    let rank = self
+                        .merges
+                        .get(&pair)
+                        .map(|rank| {
+                            if let Some(dropout) = self.dropout {
+                                // With probability `dropout` we'll ignore this merge.
+                                if thread_rng().gen::<f32>() < dropout {
+                                    &(std::u32::MAX, std::u32::MAX)
+                                } else {
+                                    rank
+                                }
+                            } else {
+                                rank
+                            }
+                        })
+                        .unwrap_or(&(std::u32::MAX, std::u32::MAX));
+                    (rank, pair)
+                })
+                .min()
+                .unwrap();
+
+            if *rank == std::u32::MAX {
+                // We are done merging this word
+                break;
+            }
+
+            // Let's merge
+            word.merge(pair.0, pair.1, *new_id);
+        }
+
+        word
+    }
+
+    fn word_to_tokens(&self, word: &Word, initial_offsets: &(usize, usize)) -> Vec<Token> {
+        word.get_chars()
+            .iter()
+            .zip(word.get_offsets())
+            .map(|(id, offsets)| {
+                Token::new(
+                    *id,
+                    self.vocab_r[id].clone(),
+                    (initial_offsets.0 + offsets.0, initial_offsets.0 + offsets.1),
+                )
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 impl Model for BPE {
@@ -135,97 +202,53 @@ impl Model for BPE {
         }
 
         let mut encoded: Vec<Token> = Vec::with_capacity(sentence.len());
-        let mut cached_words = self.cache.get_values(
-            &sentence
-                .iter()
-                .map(|(s, _)| s.to_owned())
-                .collect::<Vec<_>>(),
-        );
+        let mut cached_words = match self.dropout {
+            None => Some(
+                self.cache.get_values(
+                    &sentence
+                        .iter()
+                        .map(|(s, _)| s.to_owned())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+            Some(_) => None, // If using dropout we don't want to use a cached.
+        };
 
         for (i, (w, initial_offsets)) in sentence.iter().enumerate() {
-            // If we're using dropout or we don't have a cache hit, we have to compute
-            // merges for this word.
-            if self.dropout.is_some() || cached_words[i].is_none() {
-                let mut word = Word::new();
-                for c in w.chars() {
-                    match self.vocab.get(&c.to_string()) {
-                        // TODO: Handle UNK
+            let tokens = match cached_words {
+                None => {
+                    // Not using cache since we're using dropout.
+                    let word = self.merge_word(&w);
+                    self.word_to_tokens(&word, initial_offsets)
+                }
+                Some(ref mut cache) => {
+                    match cache[i].as_ref() {
                         None => {
-                            println!("{} is an unknown character. Skip it.", c.escape_unicode())
+                            // No cache hit, so re-compute merges.
+                            let word = self.merge_word(&w);
+                            let tokens = self.word_to_tokens(&word, initial_offsets);
+                            // Add to cache.
+                            cache[i] = Some(word);
+                            tokens
                         }
-                        Some(id) => word.add(*id),
+                        Some(word) => self.word_to_tokens(word, initial_offsets),
                     }
                 }
-
-                loop {
-                    if word.get_chars().len() < 2 {
-                        break;
-                    }
-
-                    let ((rank, new_id), pair) = word
-                        .get_chars()
-                        .windows(2)
-                        .map(|window| {
-                            let pair = (window[0], window[1]);
-                            let rank = self
-                                .merges
-                                .get(&pair)
-                                .map(|rank| {
-                                    if let Some(dropout) = self.dropout {
-                                        // With probability `dropout` we'll ignore
-                                        // this merge.
-                                        if thread_rng().gen::<f32>() < dropout {
-                                            &(std::u32::MAX, std::u32::MAX)
-                                        } else {
-                                            rank
-                                        }
-                                    } else {
-                                        rank
-                                    }
-                                })
-                                .unwrap_or(&(std::u32::MAX, std::u32::MAX));
-                            (rank, pair)
-                        })
-                        .min()
-                        .unwrap();
-
-                    if *rank == std::u32::MAX {
-                        // We are done merging this word
-                        break;
-                    }
-
-                    // Let's merge
-                    word.merge(pair.0, pair.1, *new_id);
-                }
-
-                cached_words[i] = Some(word);
-            }
-
-            let word = cached_words[i].as_ref().unwrap();
-            let tokens = word
-                .get_chars()
-                .iter()
-                .zip(word.get_offsets())
-                .map(|(id, offsets)| {
-                    Token::new(
-                        *id,
-                        self.vocab_r[id].clone(),
-                        (initial_offsets.0 + offsets.0, initial_offsets.0 + offsets.1),
-                    )
-                })
-                .collect::<Vec<_>>();
+            };
 
             encoded.extend(tokens);
         }
 
         // Also update cache
-        let (keys, values) = sentence
-            .into_iter()
-            .zip(cached_words)
-            .filter(|(_, v)| v.is_some())
-            .map(|(k, v)| (k.0, v.unwrap()))
-            .unzip::<_, _, Vec<String>, Vec<Word>>();
-        self.cache.set_values(keys, values);
+        if let Some(cache) = cached_words {
+            let (keys, values) = sentence
+                .into_iter()
+                .zip(cache)
+                .filter(|(_, v)| v.is_some())
+                .map(|(k, v)| (k.0, v.unwrap()))
+                .unzip::<_, _, Vec<String>, Vec<Word>>();
+            self.cache.set_values(keys, values);
+        }
 
         Ok(encoded)
     }
