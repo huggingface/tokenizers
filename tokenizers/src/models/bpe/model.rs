@@ -1,5 +1,5 @@
 use super::{Cache, Error, Pair, Word};
-use crate::tokenizer::{Model, Result, Token};
+use crate::tokenizer::{Model, Offsets, Result, Token};
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -103,15 +103,20 @@ impl Model for BPE {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sentence: Vec<String>) -> Result<Vec<Token>> {
+    fn tokenize(&self, sentence: Vec<(String, Offsets)>) -> Result<Vec<Token>> {
         if sentence.is_empty() {
             return Ok(vec![]);
         }
 
         let mut encoded: Vec<Token> = Vec::with_capacity(sentence.len());
-        let mut cached_words = self.cache.get_values(&sentence);
+        let mut cached_words = self.cache.get_values(
+            &sentence
+                .iter()
+                .map(|(s, _)| s.to_owned())
+                .collect::<Vec<_>>(),
+        );
 
-        for (i, w) in sentence.iter().enumerate() {
+        for (i, (w, initial_offsets)) in sentence.iter().enumerate() {
             if cached_words[i].is_none() {
                 let mut word = Word::new();
                 for c in w.chars() {
@@ -155,9 +160,6 @@ impl Model for BPE {
                 cached_words[i] = Some(word);
             }
 
-            // Offsets are word-based, we need to translate them to be sentence-based
-            let last_offset = encoded.last().map(|token| token.offsets.1).unwrap_or(0);
-
             let word = cached_words[i].as_ref().unwrap();
             let tokens = word
                 .get_chars()
@@ -167,7 +169,7 @@ impl Model for BPE {
                     Token::new(
                         *id,
                         self.vocab_r[id].clone(),
-                        (last_offset + offsets.0, last_offset + offsets.1),
+                        (initial_offsets.0 + offsets.0, initial_offsets.0 + offsets.1),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -180,7 +182,7 @@ impl Model for BPE {
             .into_iter()
             .zip(cached_words)
             .filter(|(_, v)| v.is_some())
-            .map(|(k, v)| (k, v.unwrap()))
+            .map(|(k, v)| (k.0, v.unwrap()))
             .unzip::<_, _, Vec<String>, Vec<Word>>();
         self.cache.set_values(keys, values);
 

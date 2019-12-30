@@ -1,4 +1,4 @@
-use crate::tokenizer::{Model, Result, Token};
+use crate::tokenizer::{Model, Offsets, Result, Token};
 use std::{
     collections::HashMap,
     fmt,
@@ -70,11 +70,10 @@ impl Model for WordPiece {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sentence: Vec<String>) -> Result<Vec<Token>> {
+    fn tokenize(&self, sentence: Vec<(String, Offsets)>) -> Result<Vec<Token>> {
         let mut output_tokens = vec![];
 
-        let mut offset = 0usize;
-        for token in sentence {
+        for (token, initial_offsets) in sentence {
             let char_len = token.chars().count();
             if char_len > self.max_input_chars_per_word {
                 output_tokens.push(Token {
@@ -83,7 +82,7 @@ impl Model for WordPiece {
                         .vocab
                         .get(&self.unk_token)
                         .ok_or(Error::MissingUnkToken)?,
-                    offsets: (offset, offset + char_len),
+                    offsets: initial_offsets,
                 });
                 continue;
             }
@@ -106,7 +105,7 @@ impl Model for WordPiece {
                         cur_str = Some(Token {
                             id: self.vocab[&substr],
                             value: substr,
-                            offsets: (offset + start, offset + end),
+                            offsets: (initial_offsets.0 + start, initial_offsets.0 + end),
                         });
                         break;
                     }
@@ -129,13 +128,11 @@ impl Model for WordPiece {
                         .vocab
                         .get(&self.unk_token)
                         .ok_or(Error::MissingUnkToken)?,
-                    offsets: (offset, offset + char_len),
+                    offsets: initial_offsets,
                 });
             } else {
                 output_tokens.extend(sub_tokens);
             }
-
-            offset += char_len;
         }
 
         Ok(output_tokens)

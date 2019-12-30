@@ -19,7 +19,7 @@ regex-syntax = "0.6.12"
 rayon = "1.2.0"
 serde_json = "1.0"
 clap = "2.33.0"
-unicode-normalization = "0.1.11"
+unicode-normalization = { git = "https://github.com/n1t0/unicode-normalization" }
 unicode_categories = "0.1.1"
 
 [dev-dependencies]
