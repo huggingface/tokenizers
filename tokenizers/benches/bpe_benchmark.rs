@@ -1,45 +1,63 @@
 #[macro_use]
 extern crate criterion;
 
-use std::collections::HashMap;
-
-use criterion::black_box;
-use criterion::Criterion;
-use tokenizers::models::bpe::BpeTrainer;
+use criterion::{BatchSize, Criterion};
+use tokenizers::models::bpe::BPE;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
-use tokenizers::tokenizer::{EncodeInput, Tokenizer, Trainer};
+use tokenizers::tokenizer::{AddedToken, EncodeInput, Tokenizer};
 
-fn bpe_small_benchmark(c: &mut Criterion) {
-    let word_counts: HashMap<String, u32> = [
-        (String::from("The"), 1),
-        (String::from("Ġquick"), 1),
-        (String::from("Ġbrown"), 1),
-        (String::from("Ġfox"), 1),
-        (String::from("Ġjumps"), 1),
-        (String::from("Ġover"), 1),
-        (String::from("Ġthe"), 1),
-        (String::from("Ġlazy"), 1),
-        (String::from("Ġdog"), 1),
-    ]
-    .iter()
-    .cloned()
-    .collect();
-    let trainer = BpeTrainer::new(0, 100);
+static SINGLE_INPUT: &str = "Our model, called GPT-2 (a successor to GPT), was trained \
+simply to predict the next word in 40GB of Internet text. Due to our concerns about \
+malicious applications of the technology, we are not releasing the trained model. \
+As an experiment in responsible disclosure, we are instead releasing a much smaller \
+model for researchers to experiment with, as well as a technical paper.\n\
+\n\
+GPT-2 is a large transformer-based language model with 1.5 billion parameters, trained on a dataset \
+of 8 million web pages. GPT-2 is trained with a simple objective: predict the next word, given all \
+of the previous words within some text. The diversity of the dataset causes this simple goal \
+to contain naturally occurring demonstrations of many tasks across diverse domains. \
+GPT-2 is a direct scale-up of GPT, with more than 10X the parameters and trained on \
+more than 10X the amount of data.\n\
+\n\
+GPT-2 displays a broad set of capabilities, including the ability to generate conditional \
+synthetic text samples of unprecedented quality, where we prime the model with an input \
+and have it generate a lengthy continuation. In addition, GPT-2 outperforms other language \
+models trained on specific domains (like Wikipedia, news, or books) without needing to \
+use these domain-specific training datasets. On language tasks like question answering, \
+reading comprehension, summarization, and translation, GPT-2 begins to learn these tasks \
+from the raw text, using no task-specific training data. While scores on these \
+downstream tasks are far from state-of-the-art, they suggest that the tasks can \
+benefit from unsupervised techniques, given sufficient (unlabeled) data and compute.";
 
-    c.bench_function("BPE train", |b| {
-        b.iter(|| trainer.train(black_box(word_counts.clone())))
-    });
-
-    let bpe = trainer.train(word_counts);
-    let mut tokenizer = Tokenizer::new(Box::new(bpe).unwrap());
-    tokenizer.with_pre_tokenizer(Box::new(ByteLevel::new(true)));
-    tokenizer.with_decoder(Box::new(ByteLevel::new(false)));
-    let sentence = "The quick brown fox jumps over the lazy dog";
-
-    c.bench_function("BPE tokenize", |b| {
-        b.iter(|| tokenizer.encode(EncodeInput::Single(String::from(sentence))))
+fn gpt2_encode_benchmark(c: &mut Criterion) {
+    c.bench_function("BPE GPT2 encode", |b| {
+        let bpe = BPE::from_files("benches/gpt2-vocab.json", "benches/gpt2-merges.txt").unwrap();
+        b.iter_batched(
+            || {
+                let mut tokenizer = Tokenizer::new(Box::new(bpe.clone()));
+                tokenizer.with_pre_tokenizer(Box::new(ByteLevel::new(true)));
+                tokenizer.with_decoder(Box::new(ByteLevel::new(false)));
+                tokenizer.add_tokens(&[
+                    AddedToken {
+                        content: String::from("ing"),
+                        single_word: false,
+                    },
+                    AddedToken {
+                        content: String::from("[ENT]"),
+                        single_word: true,
+                    },
+                ]);
+                (tokenizer, EncodeInput::Single(SINGLE_INPUT.into()))
+            },
+            |(tokenizer, input)| tokenizer.encode(input),
+            BatchSize::LargeInput,
+        )
     });
 }
 
-criterion_group!(benches, bpe_small_benchmark);
+criterion_group! {
+    name = benches;
+    config = Criterion::default().sample_size(20);
+    targets = gpt2_encode_benchmark
+}
 criterion_main!(benches);
