@@ -18,6 +18,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufRead, BufReader},
+    path::{Path, PathBuf},
 };
 
 mod encoding;
@@ -40,6 +41,7 @@ pub trait Model {
     fn token_to_id(&self, token: &str) -> Option<u32>;
     fn id_to_token(&self, id: u32) -> Option<String>;
     fn get_vocab_size(&self) -> usize;
+    fn save(&self, folder: &Path, name: &str) -> Result<Vec<PathBuf>>;
 }
 
 /// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.

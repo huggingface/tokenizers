@@ -7,6 +7,7 @@ use std::{
     fs::File,
     io::prelude::*,
     io::{BufRead, BufReader},
+    path::{Path, PathBuf},
 };
 
 pub struct BPE {
@@ -259,6 +260,37 @@ impl Model for BPE {
 
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
+    }
+
+    fn save(&self, folder: &Path, name: &str) -> Result<Vec<PathBuf>> {
+        // Write vocab.json
+        let vocab_path: PathBuf = [folder, Path::new(&format!("{}-vocab.json", name))]
+            .iter()
+            .collect();
+        let mut vocab_file = File::create(&vocab_path)?;
+        let serialized = serde_json::to_string(&self.vocab)?;
+        vocab_file.write_all(&serialized.as_bytes())?;
+
+        // Write merges.txt
+        let merges_path: PathBuf = [folder, Path::new(&format!("{}-merges.txt", name))]
+            .iter()
+            .collect();
+        let mut merges_file = File::create(&merges_path)?;
+        let mut merges: Vec<(Pair, u32)> = self
+            .merges
+            .iter()
+            .map(|(pair, (rank, _))| (*pair, *rank))
+            .collect();
+        merges.sort_unstable_by_key(|k| k.1);
+        merges_file.write_all(
+            &merges
+                .into_iter()
+                .map(|(pair, _)| format!("{} {}\n", pair.0, pair.1).into_bytes())
+                .flatten()
+                .collect::<Vec<_>>()[..],
+        )?;
+
+        Ok(vec![vocab_path, merges_path])
     }
 }
 

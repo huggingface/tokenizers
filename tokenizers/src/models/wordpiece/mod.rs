@@ -3,7 +3,9 @@ use std::{
     collections::HashMap,
     fmt,
     fs::File,
+    io::prelude::*,
     io::{BufRead, BufReader},
+    path::{Path, PathBuf},
 };
 
 #[derive(Debug)]
@@ -144,6 +146,25 @@ impl Model for WordPiece {
 
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
+    }
+
+    fn save(&self, folder: &Path, name: &str) -> Result<Vec<PathBuf>> {
+        // Write vocab.txt
+        let vocab_path: PathBuf = [folder, Path::new(&format!("{}-vocab.txt", name))]
+            .iter()
+            .collect();
+        let mut vocab_file = File::create(&vocab_path)?;
+        let mut vocab: Vec<(&String, &u32)> = self.vocab.iter().collect();
+        vocab.sort_unstable_by_key(|k| *k.1);
+        vocab_file.write_all(
+            &vocab
+                .into_iter()
+                .map(|(token, _)| token.as_bytes().to_owned())
+                .flatten()
+                .collect::<Vec<_>>()[..],
+        )?;
+
+        Ok(vec![vocab_path])
     }
 }
 

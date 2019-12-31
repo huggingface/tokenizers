@@ -1,10 +1,11 @@
 extern crate tokenizers as tk;
 
+use super::error::ToPyResult;
 use super::utils::Container;
-
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use std::path::{Path, PathBuf};
 
 /// A Model represents some tokenization algorithm like BPE or Word
 /// This class cannot be constructed directly. Please use one of the concrete models.
@@ -20,6 +21,19 @@ impl Model {
         Err(exceptions::Exception::py_err(
             "Cannot create a Model directly. Use a concrete subclass",
         ))
+    }
+
+    fn save(&self, folder: &str, name: &str) -> PyResult<Vec<String>> {
+        let saved: PyResult<Vec<_>> = ToPyResult(
+            self.model
+                .execute(|model| model.save(Path::new(folder), name)),
+        )
+        .into();
+
+        Ok(saved?
+            .into_iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect())
     }
 }
 
