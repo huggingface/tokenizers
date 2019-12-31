@@ -1,11 +1,11 @@
 #[macro_use]
 extern crate criterion;
 
-use criterion::{black_box, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokenizers::models::bpe::BPE;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::tokenizer::{AddedToken, EncodeInput, Tokenizer};
@@ -75,16 +75,11 @@ fn bench_gpt2_encode_batch(c: &mut Criterion) {
         .collect();
 
     c.bench_function("BPE GPT2 encode batch", |b| {
-        b.iter_custom(|iter| {
-            // HACK: This is very time-consuming, so instead of doing it `iter` times,
-            // we just do it once and multiply the resulting time by `iter` to
-            // pretend that we did it a bunch of times and each was exactly the same.
-            let tokenizer = create_gpt2_tokenizer(&bpe);
-            let lines = lines.clone();
-            let start = Instant::now();
-            black_box(tokenizer.encode_batch(lines).unwrap());
-            start.elapsed().checked_mul(iter as u32).unwrap()
-        })
+        b.iter_batched(
+            || (create_gpt2_tokenizer(&bpe), lines.clone()),
+            |(tokenizer, input)| tokenizer.encode_batch(input),
+            BatchSize::LargeInput,
+        )
     });
 }
 
