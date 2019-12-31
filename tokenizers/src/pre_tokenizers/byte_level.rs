@@ -61,9 +61,13 @@ impl PreTokenizer for ByteLevel {
                 let next = s[end..].chars().nth(0);
                 if let (Some(last), Some(next)) = (last, next) {
                     if last.is_separator_space() && !next.is_separator_space() {
-                        let bytes = s[start..end - 1].as_bytes().to_vec();
-                        let offsets = (start, end - 1);
-                        return (bytes, offsets);
+                        if let Some((_last, others)) =
+                            s[start..end].chars().collect::<Vec<_>>().split_last()
+                        {
+                            let bytes = others.iter().collect::<String>().as_bytes().to_vec();
+                            let offsets = (start, end - 1);
+                            return (bytes, offsets);
+                        }
                     }
                 }
                 // if our first char is not a whitespace but the previous one was, we return
@@ -74,7 +78,7 @@ impl PreTokenizer for ByteLevel {
                     if prev.is_separator_space() && !current {
                         let bytes =
                             [format!("{}", prev).as_bytes(), s[start..end].as_bytes()].concat();
-                        let offsets = (start - 1, end);
+                        let offsets = (start - prev.len_utf8(), end);
                         return (bytes, offsets);
                     }
                 }
