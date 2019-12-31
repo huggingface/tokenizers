@@ -1,5 +1,6 @@
 use super::{Cache, Error, Pair, Word};
 use crate::tokenizer::{Model, Offsets, Result, Token};
+use log::warn;
 use rand::{thread_rng, Rng};
 use serde_json::Value;
 use std::{
@@ -128,7 +129,7 @@ impl BPE {
         for c in w.chars() {
             match self.vocab.get(&c.to_string()) {
                 // TODO: Handle UNK
-                None => println!("{} is an unknown character. Skip it.", c.escape_unicode()),
+                None => warn!("{} is an unknown character. Skip it.", c.escape_unicode()),
                 Some(id) => word.add(*id),
             }
         }

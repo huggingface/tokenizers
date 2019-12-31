@@ -2,6 +2,7 @@
 
 use super::{Pair, Word, BPE};
 use crate::tokenizer::{Model, Result, Trainer};
+use log::info;
 use std::{
     collections::{HashMap, HashSet},
     time::Instant,
@@ -72,7 +73,7 @@ impl Trainer for BpeTrainer {
             }
             words.push(current_word);
         }
-        println!("[{:?}] Tokenized {} words", timer.elapsed(), words.len());
+        info!("[{:?}] Tokenized {} words", timer.elapsed(), words.len());
 
         //
         // 2. Count pairs in words
@@ -103,7 +104,7 @@ impl Trainer for BpeTrainer {
                 pair_counts.get_mut(&cur_pair).unwrap().0 += count;
             }
         }
-        println!(
+        info!(
             "[{:?}] Counted {} pairs with {} unique tokens",
             timer.elapsed(),
             pair_counts.len(),
@@ -179,7 +180,7 @@ impl Trainer for BpeTrainer {
                 }
             }
         }
-        println!("[{:?}] Computed {} merges", timer.elapsed(), merges.len());
+        info!("[{:?}] Computed {} merges", timer.elapsed(), merges.len());
 
         Ok(Box::new(BPE::new(
             word_to_id.clone(),
