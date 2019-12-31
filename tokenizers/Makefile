@@ -4,7 +4,7 @@
 
 .PHONY : build
 build :
-	cargo build
+	cargo build --all-targets
 
 .PHONY : release
 release :
