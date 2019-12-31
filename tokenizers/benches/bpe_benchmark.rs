@@ -12,14 +12,14 @@ use tokenizers::tokenizer::{EncodeInput, Tokenizer, Trainer};
 fn bpe_small_benchmark(c: &mut Criterion) {
     let word_counts: HashMap<String, u32> = [
         (String::from("The"), 1),
-        (String::from("quick"), 1),
-        (String::from("brown"), 1),
-        (String::from("fox"), 1),
-        (String::from("jumps"), 1),
-        (String::from("over"), 1),
-        (String::from("the"), 1),
-        (String::from("lazy"), 1),
-        (String::from("dog"), 1),
+        (String::from("Ġquick"), 1),
+        (String::from("Ġbrown"), 1),
+        (String::from("Ġfox"), 1),
+        (String::from("Ġjumps"), 1),
+        (String::from("Ġover"), 1),
+        (String::from("Ġthe"), 1),
+        (String::from("Ġlazy"), 1),
+        (String::from("Ġdog"), 1),
     ]
     .iter()
     .cloned()
