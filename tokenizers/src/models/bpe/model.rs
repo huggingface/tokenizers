@@ -1,5 +1,6 @@
 use super::{Cache, Error, Pair, Word};
-use crate::tokenizer::{Model, Result, Token};
+use crate::tokenizer::{Model, Offsets, Result, Token};
+use rand::{thread_rng, Rng};
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -9,14 +10,17 @@ use std::{
 };
 
 pub struct BPE {
-    /// The vocabulary assigns a number to each token
+    /// The vocabulary assigns a number to each token.
     vocab: HashMap<String, u32>,
-    /// Reversed vocabulary, to rebuild sentences
+    /// Reversed vocabulary, to rebuild sentences.
     vocab_r: HashMap<u32, String>,
-    /// Contains the mapping between Pairs and their (rank, new_id)
+    /// Contains the mapping between Pairs and their (rank, new_id).
     merges: HashMap<Pair, (u32, u32)>,
-    /// Contains the cache for optimizing the encoding step
+    /// Contains the cache for optimizing the encoding step.
     cache: Cache<String, Word>,
+    /// Dropout probability for merges. 0 = no dropout is the default. At 1.0, tokenization will
+    /// perform no merges, so the result will just be characters.
+    dropout: Option<f32>,
 }
 
 impl BPE {
@@ -30,6 +34,27 @@ impl BPE {
             vocab_r,
             merges,
             cache: Cache::new(),
+            dropout: None,
+        }
+    }
+
+    /// Initialize a BPE model with [dropout](https://arxiv.org/abs/1910.13267).
+    pub fn with_dropout(
+        vocab: HashMap<String, u32>,
+        vocab_r: HashMap<u32, String>,
+        merges: HashMap<Pair, (u32, u32)>,
+        dropout: f32,
+    ) -> Result<Self> {
+        if dropout < 0.0 || dropout > 1.0 {
+            Err(Error::InvalidDropout.into())
+        } else {
+            Ok(BPE {
+                vocab,
+                vocab_r,
+                merges,
+                cache: Cache::new(),
+                dropout: if dropout == 0.0 { None } else { Some(dropout) },
+            })
         }
     }
 
@@ -94,7 +119,75 @@ impl BPE {
             vocab_r: vocab.into_iter().map(|(token, id)| (id, token)).collect(),
             merges,
             cache: Cache::new(),
+            dropout: None,
         })
+    }
+
+    fn merge_word(&self, w: &str) -> Word {
+        let mut word = Word::new();
+        for c in w.chars() {
+            match self.vocab.get(&c.to_string()) {
+                // TODO: Handle UNK
+                None => println!("{} is an unknown character. Skip it.", c.escape_unicode()),
+                Some(id) => word.add(*id),
+            }
+        }
+
+        loop {
+            if word.get_chars().len() < 2 {
+                break;
+            }
+
+            let ((rank, new_id), pair) = word
+                .get_chars()
+                .windows(2)
+                .map(|window| {
+                    let pair = (window[0], window[1]);
+                    let rank = self
+                        .merges
+                        .get(&pair)
+                        .map(|rank| {
+                            if let Some(dropout) = self.dropout {
+                                // With probability `dropout` we'll ignore this merge.
+                                if thread_rng().gen::<f32>() < dropout {
+                                    &(std::u32::MAX, std::u32::MAX)
+                                } else {
+                                    rank
+                                }
+                            } else {
+                                rank
+                            }
+                        })
+                        .unwrap_or(&(std::u32::MAX, std::u32::MAX));
+                    (rank, pair)
+                })
+                .min()
+                .unwrap();
+
+            if *rank == std::u32::MAX {
+                // We are done merging this word
+                break;
+            }
+
+            // Let's merge
+            word.merge(pair.0, pair.1, *new_id);
+        }
+
+        word
+    }
+
+    fn word_to_tokens(&self, word: &Word, initial_offsets: &(usize, usize)) -> Vec<Token> {
+        word.get_chars()
+            .iter()
+            .zip(word.get_offsets())
+            .map(|(id, offsets)| {
+                Token::new(
+                    *id,
+                    self.vocab_r[id].clone(),
+                    (initial_offsets.0 + offsets.0, initial_offsets.0 + offsets.1),
+                )
+            })
+            .collect::<Vec<_>>()
     }
 }
 
@@ -103,86 +196,59 @@ impl Model for BPE {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sentence: Vec<String>) -> Result<Vec<Token>> {
+    fn tokenize(&self, sentence: Vec<(String, Offsets)>) -> Result<Vec<Token>> {
         if sentence.is_empty() {
             return Ok(vec![]);
         }
 
         let mut encoded: Vec<Token> = Vec::with_capacity(sentence.len());
-        let mut cached_words = self.cache.get_values(&sentence);
+        let mut cached_words = match self.dropout {
+            None => Some(
+                self.cache.get_values(
+                    &sentence
+                        .iter()
+                        .map(|(s, _)| s.to_owned())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+            Some(_) => None, // If using dropout we don't want to use a cached.
+        };
 
-        for (i, w) in sentence.iter().enumerate() {
-            if cached_words[i].is_none() {
-                let mut word = Word::new();
-                for c in w.chars() {
-                    match self.vocab.get(&c.to_string()) {
-                        // TODO: Handle UNK
+        for (i, (w, initial_offsets)) in sentence.iter().enumerate() {
+            let tokens = match cached_words {
+                None => {
+                    // Not using cache since we're using dropout.
+                    let word = self.merge_word(&w);
+                    self.word_to_tokens(&word, initial_offsets)
+                }
+                Some(ref mut cache) => {
+                    match cache[i].as_ref() {
                         None => {
-                            println!("{} is an unknown character. Skip it.", c.escape_unicode())
+                            // No cache hit, so re-compute merges.
+                            let word = self.merge_word(&w);
+                            let tokens = self.word_to_tokens(&word, initial_offsets);
+                            // Add to cache.
+                            cache[i] = Some(word);
+                            tokens
                         }
-                        Some(id) => word.add(*id),
+                        Some(word) => self.word_to_tokens(word, initial_offsets),
                     }
                 }
-
-                loop {
-                    if word.get_chars().len() < 2 {
-                        break;
-                    }
-
-                    let ((rank, new_id), pair) = word
-                        .get_chars()
-                        .windows(2)
-                        .map(|window| {
-                            let pair = (window[0], window[1]);
-                            let rank = self
-                                .merges
-                                .get(&pair)
-                                .unwrap_or(&(std::u32::MAX, std::u32::MAX));
-                            (rank, pair)
-                        })
-                        .min()
-                        .unwrap();
-
-                    if *rank == std::u32::MAX {
-                        // We are done merging this word
-                        break;
-                    }
-
-                    // Let's merge
-                    word.merge(pair.0, pair.1, *new_id);
-                }
-
-                cached_words[i] = Some(word);
-            }
-
-            // Offsets are word-based, we need to translate them to be sentence-based
-            let last_offset = encoded.last().map(|token| token.offsets.1).unwrap_or(0);
-
-            let word = cached_words[i].as_ref().unwrap();
-            let tokens = word
-                .get_chars()
-                .iter()
-                .zip(word.get_offsets())
-                .map(|(id, offsets)| {
-                    Token::new(
-                        *id,
-                        self.vocab_r[id].clone(),
-                        (last_offset + offsets.0, last_offset + offsets.1),
-                    )
-                })
-                .collect::<Vec<_>>();
+            };
 
             encoded.extend(tokens);
         }
 
         // Also update cache
-        let (keys, values) = sentence
-            .into_iter()
-            .zip(cached_words)
-            .filter(|(_, v)| v.is_some())
-            .map(|(k, v)| (k, v.unwrap()))
-            .unzip::<_, _, Vec<String>, Vec<Word>>();
-        self.cache.set_values(keys, values);
+        if let Some(cache) = cached_words {
+            let (keys, values) = sentence
+                .into_iter()
+                .zip(cache)
+                .filter(|(_, v)| v.is_some())
+                .map(|(k, v)| (k.0, v.unwrap()))
+                .unzip::<_, _, Vec<String>, Vec<Word>>();
+            self.cache.set_values(keys, values);
+        }
 
         Ok(encoded)
     }
@@ -202,6 +268,82 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
+    // Test tokenization. With dropout set to 0 tokenization is deterministic,
+    // so we know exactly what the result should be.
+    //
+    // To test this, we'll build a simple model to tokenize the word 'unrelated'.
+    fn test_tokenize_with_and_without_dropout() {
+        let vocab: HashMap<String, u32> = [
+            ("u".into(), 0),
+            ("n".into(), 1),
+            ("r".into(), 2),
+            ("e".into(), 3),
+            ("l".into(), 4),
+            ("a".into(), 5),
+            ("t".into(), 6),
+            ("d".into(), 7),
+            ("re".into(), 8),
+            ("at".into(), 9),
+            ("ed".into(), 10),
+            ("un".into(), 11),
+            ("ated".into(), 12),
+            ("rel".into(), 13),
+            ("related".into(), 14),
+            ("unrelated".into(), 15),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        let vocab_r: HashMap<u32, String> = vocab
+            .iter()
+            .map(|(key, val)| (*val, key.to_owned()))
+            .collect();
+        let merges: HashMap<Pair, (u32, u32)> = [
+            ((vocab["r"], vocab["e"]), (1u32, vocab["re"])), // 'r-e' -> 're'
+            ((vocab["a"], vocab["t"]), (2u32, vocab["at"])), // 'a-t' -> 'at'
+            ((vocab["e"], vocab["d"]), (3u32, vocab["ed"])), // 'e-d' -> 'ed'
+            ((vocab["u"], vocab["n"]), (4u32, vocab["un"])), // 'u-n' -> 'un'
+            ((vocab["at"], vocab["ed"]), (5u32, vocab["ated"])), // 'at-ed' -> 'ated'
+            ((vocab["re"], vocab["l"]), (6u32, vocab["rel"])), // 're-l' -> 'rel'
+            ((vocab["rel"], vocab["ated"]), (7u32, vocab["related"])), // 'rel-ated' -> 'related'
+            ((vocab["un"], vocab["related"]), (8u32, vocab["unrelated"])), // 'un-related' -> 'unrelated'
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        let mut bpe = BPE::new(vocab, vocab_r, merges);
+
+        let sentence: Vec<(String, Offsets)> = vec![("unrelated".into(), (0, 9))];
+
+        // With no dropout:
+        let tokens = bpe.tokenize(sentence.clone()).unwrap();
+        assert_eq!(tokens, vec![Token::new(15u32, "unrelated".into(), (0, 9))]);
+
+        // Now set dropout to 1.0. Result should be no merges performed.
+        bpe.dropout = Some(1.0);
+        let tokens = bpe.tokenize(sentence.clone()).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(0u32, "u".into(), (0, 1)),
+                Token::new(1u32, "n".into(), (1, 2)),
+                Token::new(2u32, "r".into(), (2, 3)),
+                Token::new(3u32, "e".into(), (3, 4)),
+                Token::new(4u32, "l".into(), (4, 5)),
+                Token::new(5u32, "a".into(), (5, 6)),
+                Token::new(6u32, "t".into(), (6, 7)),
+                Token::new(3u32, "e".into(), (7, 8)),
+                Token::new(7u32, "d".into(), (8, 9)),
+            ]
+        );
+
+        // Now try with dropout between 0 and 1.
+        bpe.dropout = Some(0.5);
+        let tokens = bpe.tokenize(sentence).unwrap();
+        assert!(!tokens.is_empty() && tokens.len() <= 9);
+    }
+
+    #[test]
     // Ensure `BPE::from_files` works as expected.
     fn test_bpe_from_files() {
         // Set up vocab file.
@@ -217,11 +359,22 @@ mod tests {
             .unwrap();
 
         // Make sure we can instatiate a BPE model from the files.
-        assert!(BPE::from_files(
+        let result = BPE::from_files(
             vocab_file.path().to_str().unwrap(),
-            merges_file.path().to_str().unwrap()
-        )
-        .is_ok());
+            merges_file.path().to_str().unwrap(),
+        );
+        assert!(result.is_ok());
+
+        let bpe = result.unwrap();
+
+        // Check merges.
+        assert_eq!(bpe.merges.get(&(0u32, 1u32)).unwrap(), &(1u32, 3u32));
+
+        // Check vocab.
+        assert_eq!(bpe.vocab.get("a").unwrap(), &0u32);
+        assert_eq!(bpe.vocab.get("b").unwrap(), &1u32);
+        assert_eq!(bpe.vocab.get("c").unwrap(), &2u32);
+        assert_eq!(bpe.vocab.get("ab").unwrap(), &3u32);
     }
 
     #[test]

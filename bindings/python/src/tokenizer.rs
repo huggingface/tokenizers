@@ -8,6 +8,7 @@ use super::decoders::Decoder;
 use super::encoding::Encoding;
 use super::error::{PyError, ToPyResult};
 use super::models::Model;
+use super::normalizers::Normalizer;
 use super::pre_tokenizers::PreTokenizer;
 use super::processors::PostProcessor;
 use super::trainers::Trainer;
@@ -36,8 +37,21 @@ impl Tokenizer {
         }
     }
 
-    fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
-        self.tokenizer.get_vocab_size(with_added_tokens)
+    #[args(kwargs = "**")]
+    fn get_vocab_size(&self, kwargs: Option<&PyDict>) -> PyResult<usize> {
+        let mut with_added_tokens = true;
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "with_added_tokens" => with_added_tokens = value.extract()?,
+                    _ => println!("Ignored unknown kwarg option {}", key),
+                }
+            }
+        }
+
+        Ok(self.tokenizer.get_vocab_size(with_added_tokens))
     }
 
     fn with_model(&mut self, model: &mut Model) -> PyResult<()> {
@@ -84,23 +98,45 @@ impl Tokenizer {
         }
     }
 
-    fn with_truncation(
-        &mut self,
-        max_length: usize,
-        stride: usize,
-        strategy: &str,
-    ) -> PyResult<()> {
-        let strategy = match strategy {
-            "longest_first" => Ok(TruncationStrategy::LongestFirst),
-            "only_first" => Ok(TruncationStrategy::OnlyFirst),
-            "only_second" => Ok(TruncationStrategy::OnlySecond),
-            other => Err(PyError(format!(
-                "Unknown `strategy`: `{}`. Use \
-                 one of `longest_first`, `only_first`, or `only_second`",
-                other
+    fn with_normalizer(&mut self, normalizer: &mut Normalizer) -> PyResult<()> {
+        if let Some(normalizer) = normalizer.normalizer.to_pointer() {
+            self.tokenizer.with_normalizer(normalizer);
+            Ok(())
+        } else {
+            Err(exceptions::Exception::py_err(
+                "The Normalizer is already being used in another Tokenizer",
             ))
-            .into_pyerr()),
-        }?;
+        }
+    }
+
+    #[args(kwargs = "**")]
+    fn with_truncation(&mut self, max_length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
+        let mut stride = 0;
+        let mut strategy = TruncationStrategy::LongestFirst;
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "stride" => stride = value.extract()?,
+                    "strategy" => {
+                        let value: &str = value.extract()?;
+                        strategy = match value {
+                            "longest_first" => Ok(TruncationStrategy::LongestFirst),
+                            "only_first" => Ok(TruncationStrategy::OnlyFirst),
+                            "only_second" => Ok(TruncationStrategy::OnlySecond),
+                            _ => Err(PyError(format!(
+                                "Unknown `strategy`: `{}`. Use \
+                                 one of `longest_first`, `only_first`, or `only_second`",
+                                value
+                            ))
+                            .into_pyerr()),
+                        }?
+                    }
+                    _ => println!("Ignored unknown kwarg option {}", key),
+                }
+            }
+        }
 
         self.tokenizer.with_truncation(Some(TruncationParams {
             max_length,
@@ -115,29 +151,45 @@ impl Tokenizer {
         self.tokenizer.with_truncation(None);
     }
 
-    fn with_padding(
-        &mut self,
-        size: Option<usize>,
-        direction: &str,
-        pad_id: u32,
-        pad_type_id: u32,
-        pad_token: &str,
-    ) -> PyResult<()> {
-        let strategy = if let Some(size) = size {
-            PaddingStrategy::Fixed(size)
+    #[args(kwargs = "**")]
+    fn with_padding(&mut self, kwargs: Option<&PyDict>) -> PyResult<()> {
+        let mut direction = PaddingDirection::Right;
+        let mut pad_id: u32 = 0;
+        let mut pad_type_id: u32 = 0;
+        let mut pad_token = String::from("[PAD]");
+        let mut max_length: Option<usize> = None;
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "direction" => {
+                        let value: &str = value.extract()?;
+                        direction = match value {
+                            "left" => Ok(PaddingDirection::Left),
+                            "right" => Ok(PaddingDirection::Right),
+                            other => Err(PyError(format!(
+                                "Unknown `direction`: `{}`. Use \
+                                 one of `left` or `right`",
+                                other
+                            ))
+                            .into_pyerr()),
+                        }?;
+                    }
+                    "pad_id" => pad_id = value.extract()?,
+                    "pad_type_id" => pad_type_id = value.extract()?,
+                    "pad_token" => pad_token = value.extract()?,
+                    "max_length" => max_length = value.extract()?,
+                    _ => println!("Ignored unknown kwarg option {}", key),
+                }
+            }
+        }
+
+        let strategy = if let Some(max_length) = max_length {
+            PaddingStrategy::Fixed(max_length)
         } else {
             PaddingStrategy::BatchLongest
         };
-        let direction = match direction {
-            "left" => Ok(PaddingDirection::Left),
-            "right" => Ok(PaddingDirection::Right),
-            other => Err(PyError(format!(
-                "Unknown `direction`: `{}`. Use \
-                 one of `left` or `right`",
-                other
-            ))
-            .into_pyerr()),
-        }?;
 
         self.tokenizer.with_padding(Some(PaddingParams {
             strategy,

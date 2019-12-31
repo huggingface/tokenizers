@@ -7,8 +7,7 @@ mod word;
 
 pub type Pair = (u32, u32);
 
-/// ## Error
-/// Errors that can be encountered while using BPE
+/// Errors that can be encountered while using BPE.
 #[derive(Debug)]
 pub enum Error {
     /// An error encountered while reading files mainly.
@@ -22,6 +21,8 @@ pub enum Error {
     BadMerges(usize),
     /// If a token found in merges, is not in the vocab
     MergeTokenOutOfVocabulary(String),
+    /// Dropout not between 0 and 1.
+    InvalidDropout,
 }
 
 impl From<io::Error> for Error {
@@ -46,6 +47,7 @@ impl std::fmt::Display for Error {
             Error::MergeTokenOutOfVocabulary(token) => {
                 write!(f, "Token {} out of vocabulary", token)
             }
+            Error::InvalidDropout => write!(f, "Dropout should be between 0 and 1"),
         }
     }
 }
@@ -55,9 +57,7 @@ impl std::error::Error for Error {
         match self {
             Error::Io(e) => Some(e),
             Error::JsonError(e) => Some(e),
-            Error::BadVocabulary => None,
-            Error::BadMerges(_) => None,
-            Error::MergeTokenOutOfVocabulary(_) => None,
+            _ => None,
         }
     }
 }

@@ -2,14 +2,10 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Mutex;
 
-///
-/// # Cache
-///
 /// Provides a simple multithread cache that will try to retrieve values
 /// but won't block if someone else is already using it.
 /// The goal is clearly not the accuracy of the content, both get and set
 /// are not guaranteed to actually get or set.
-///
 #[derive(Default)]
 pub struct Cache<K, V>
 where

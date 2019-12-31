@@ -1,17 +1,14 @@
-//!
-//! # Tokenizer module
-//!
 //! Represents a tokenization pipeline.
 //!
-//! A Tokenizer is composed of some of the following parts.
-//!   - Normalizer: Takes care of the text normalization (like unicode normalization).
-//!   - PreTokenizer: Takes care of the pre tokenization (ie. How to split tokens and pre-process
+//! A [`Tokenizer`](struct.Tokenizer.html) is composed of some of the following parts.
+//!   - [`Normalizer`](trait.Normalizer.html): Takes care of the text normalization (like unicode normalization).
+//!   - [`PreTokenizer`](trait.PreTokenizer.html): Takes care of the pre tokenization (ie. How to split tokens and pre-process
 //!   them.
-//!   - Model: A model encapsulates the tokenization algorithm. (Like BPE, Word base, character
-//!   based, ...)
-//!   - PostProcessor: Takes care of the processing after tokenization. (Like truncating, padding,
-//!   ...)
-//!
+//!   - [`Model`](trait.Model.html): A model encapsulates the tokenization algorithm (like BPE, Word base, character
+//!   based, ...).
+//!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
+//!   ...).
+
 pub use crate::utils::{
     pad_encodings, truncate_encodings, PaddingParams, PaddingStrategy, TruncationParams,
     TruncationStrategy,
@@ -24,31 +21,29 @@ use std::{
 };
 
 mod encoding;
+mod normalizer;
+
 pub use encoding::*;
+pub use normalizer::*;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+pub type Offsets = (usize, usize);
 
-/// A Normalizer takes care of pre-processing strings
-pub trait Normalizer {
-    fn normalize(&self, s: String) -> Result<String>;
-}
-
-/// A PreTokenizer takes care of pre-tokenizing strings before this goes to the model
+/// Takes care of pre-tokenizing strings before this goes to the model.
 pub trait PreTokenizer {
-    // TODO: Should return offsets with each substring
-    fn pre_tokenize(&self, s: &str) -> Result<Vec<String>>;
+    fn pre_tokenize(&self, s: &str) -> Result<Vec<(String, Offsets)>>;
 }
 
-/// Represents a `Model` used during Tokenization (Like BPE or Word or Unigram)
+/// Represents a model used during Tokenization (like BPE or Word or Unigram).
 pub trait Model {
-    fn tokenize(&self, tokens: Vec<String>) -> Result<Vec<Token>>;
+    fn tokenize(&self, tokens: Vec<(String, Offsets)>) -> Result<Vec<Token>>;
     fn token_to_id(&self, token: &str) -> Option<u32>;
     fn id_to_token(&self, id: u32) -> Option<String>;
     fn get_vocab_size(&self) -> usize;
 }
 
-/// A PostProcessor has the responsibility to post process an encoded output of the Tokenizer.
-/// It adds any special tokens that a language model would require
+/// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
+/// It adds any special tokens that a language model would require.
 pub trait PostProcessor {
     /// Returns the number of tokens that will be added during the processing step
     fn added_tokens(&self, encoding: &Encoding, pair_encoding: &Option<Encoding>) -> Result<usize>;
@@ -56,19 +51,18 @@ pub trait PostProcessor {
     fn process(&self, encoding: Encoding, pair_encoding: Option<Encoding>) -> Result<Encoding>;
 }
 
-/// A Decoder has the responsibility to merge the given Vec<String> in a String
+/// A `Decoder` has the responsibility to merge the given `Vec<String>` in a `String`.
 pub trait Decoder {
     fn decode(&self, tokens: Vec<String>) -> Result<String>;
 }
 
-/// A Trainer has the responsibility to train a Model. We feed it with lines/sentences
-/// and it returns a Model when done.
+/// A `Trainer` has the responsibility to train a model. We feed it with lines/sentences
+/// and it returns a `Model` when done.
 pub trait Trainer: Sync {
     fn train(&self, words: HashMap<String, u32>) -> Result<Box<dyn Model + Sync>>;
     fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>);
 }
 
-/// A Token
 #[derive(Debug, PartialEq)]
 pub struct Token {
     pub id: u32,
@@ -123,11 +117,7 @@ impl std::cmp::PartialEq for AddedToken {
 }
 impl std::cmp::Eq for AddedToken {}
 
-///
-/// ## Tokenizer
-///
-/// A Tokenizer is capable of encoding/decoding any text
-///
+/// A `Tokenizer` is capable of encoding/decoding any text.
 pub struct Tokenizer {
     // Tokenizer parts
     normalizer: Option<Box<dyn Normalizer + Sync>>,
@@ -249,8 +239,7 @@ impl Tokenizer {
                     // If this is one of our added tokens, lets return an encoding directly
                     if let Some(id) = id {
                         return Ok(Encoding::new(
-                            sentence.clone(),
-                            sentence.clone(),
+                            NormalizedString::from(&sentence),
                             vec![id],
                             vec![type_id],
                             vec![sentence.to_owned()],
@@ -262,13 +251,10 @@ impl Tokenizer {
                     }
 
                     // 1. Normalization
-                    // TODO: Make sure we have the offsets update necessary to go from the original text to
-                    // the normalized one
-                    let original = sentence.clone();
-                    let normalized = self.normalize(sentence)?;
+                    let normalized = self.normalize(&sentence)?;
 
                     // 2. Pre tokenization
-                    let pre_tokenized = self.pre_tokenize(&normalized)?;
+                    let pre_tokenized = self.pre_tokenize(&normalized.get())?;
 
                     // 3. Model
                     let output = self.model.tokenize(pre_tokenized)?;
@@ -289,7 +275,6 @@ impl Tokenizer {
                     );
 
                     Ok(Encoding::new(
-                        original,
                         normalized,
                         ids,
                         vec![type_id; length],
@@ -397,9 +382,12 @@ impl Tokenizer {
 
                 for line in file.lines() {
                     let line = line?;
-                    let normalized = self.normalize(line)?;
-                    let pre_tokenized = self.pre_tokenize(&normalized)?;
-                    trainer.process_tokens(&mut words, pre_tokenized);
+                    let normalized = self.normalize(&line)?;
+                    let pre_tokenized = self.pre_tokenize(normalized.get())?;
+                    trainer.process_tokens(
+                        &mut words,
+                        pre_tokenized.into_iter().map(|(t, _)| t).collect(),
+                    );
                 }
 
                 Ok(words)
@@ -422,20 +410,22 @@ impl Tokenizer {
     }
 
     /// PreTokenization logic, handling the case where there is no PreTokenizer set
-    fn pre_tokenize(&self, sentence: &str) -> Result<Vec<String>> {
+    fn pre_tokenize(&self, sentence: &str) -> Result<Vec<(String, Offsets)>> {
         match &self.pre_tokenizer {
-            None => Ok(vec![sentence.to_owned()]),
+            None => Ok(vec![(sentence.to_owned(), (0, sentence.len()))]),
             Some(pre_tokenizer) => pre_tokenizer.pre_tokenize(sentence),
         }
     }
 
     /// Normalization logic, go through all normalizers
-    fn normalize(&self, sentence: String) -> Result<String> {
+    fn normalize(&self, sequence: &str) -> Result<NormalizedString> {
+        let mut normalized = NormalizedString::from(sequence);
+
         if let Some(normalizer) = &self.normalizer {
-            normalizer.normalize(sentence)
-        } else {
-            Ok(sentence)
+            normalizer.normalize(&mut normalized)?;
         }
+
+        Ok(normalized)
     }
 
     /// Post processing logic, handling the case where there is no PostProcessor set
@@ -577,7 +567,12 @@ impl Tokenizer {
             })
             .collect::<Vec<_>>();
 
-        self.split_re = Some(regex::Regex::new(&format!(r"({})", added_tokens.join("|"))).unwrap());
+        if added_tokens.is_empty() {
+            self.split_re = None;
+        } else {
+            self.split_re =
+                Some(regex::Regex::new(&format!(r"({})", added_tokens.join("|"))).unwrap());
+        }
 
         // Return the number of added tokens
         tokens.len() - ignored
