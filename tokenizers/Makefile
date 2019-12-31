@@ -32,7 +32,17 @@ all-checks : lint test doc
 
 .PHONY : bench
 bench :
-	@./benches/run.sh
+	@echo 'Updating benchmark fixtures...'
+	@test -f ./benches/gpt2-vocab.json \
+		&& echo 'gpt2-vocab.json up-to-date' \
+		|| wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-vocab.json -O ./benches/gpt2-vocab.json
+	@test -f ./benches/gpt2-merges.txt \
+		&& echo 'gpt2-merges.txt up-to-date' \
+		|| wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-merges.txt -O ./benches/gpt2-merges.txt
+	@test -f ./benches/big.txt \
+		&& echo 'big.txt up-to-date' \
+		|| wget https://norvig.com/big.txt -O ./benches/big.txt
+	cargo bench -- --verbose
 
 .PHONY : publish
 publish :
