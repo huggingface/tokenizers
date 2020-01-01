@@ -12,6 +12,7 @@ use super::normalizers::Normalizer;
 use super::pre_tokenizers::PreTokenizer;
 use super::processors::PostProcessor;
 use super::trainers::Trainer;
+use super::utils::Container;
 
 use tk::tokenizer::{
     PaddingDirection, PaddingParams, PaddingStrategy, TruncationParams, TruncationStrategy,
@@ -300,5 +301,49 @@ impl Tokenizer {
                 Ok(())
             }
         })
+    }
+
+    #[getter]
+    fn get_model(&self) -> PyResult<Model> {
+        Ok(Model {
+            model: Container::from_ref(self.tokenizer.get_model()),
+        })
+    }
+
+    #[getter]
+    fn get_normalizer(&self) -> PyResult<Option<Normalizer>> {
+        Ok(self
+            .tokenizer
+            .get_normalizer()
+            .map(|normalizer| Normalizer {
+                normalizer: Container::from_ref(normalizer),
+            }))
+    }
+
+    #[getter]
+    fn get_pre_tokenizer(&self) -> PyResult<Option<PreTokenizer>> {
+        Ok(self
+            .tokenizer
+            .get_pre_tokenizer()
+            .map(|pretok| PreTokenizer {
+                pretok: Container::from_ref(pretok),
+            }))
+    }
+
+    #[getter]
+    fn get_post_processor(&self) -> PyResult<Option<PostProcessor>> {
+        Ok(self
+            .tokenizer
+            .get_post_processor()
+            .map(|processor| PostProcessor {
+                processor: Container::from_ref(processor),
+            }))
+    }
+
+    #[getter]
+    fn get_decoder(&self) -> PyResult<Option<Decoder>> {
+        Ok(self.tokenizer.get_decoder().map(|decoder| Decoder {
+            decoder: Container::from_ref(decoder),
+        }))
     }
 }

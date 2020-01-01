@@ -17,6 +17,11 @@ impl<T> Container<T>
 where
     T: ?Sized,
 {
+    pub fn from_ref(reference: &Box<T>) -> Self {
+        let content: *const T = &**reference;
+        Container::Pointer(content as *mut _)
+    }
+
     /// Consumes ourself and return the Boxed element if we have the ownership, None otherwise.
     pub fn take(self) -> Option<Box<T>> {
         match self {

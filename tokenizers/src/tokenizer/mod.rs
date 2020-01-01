@@ -165,10 +165,22 @@ impl Tokenizer {
         self
     }
 
+    /// Get the normalizer
+    #[allow(clippy::borrowed_box)]
+    pub fn get_normalizer(&self) -> Option<&Box<dyn Normalizer + Sync>> {
+        self.normalizer.as_ref()
+    }
+
     /// Set the pre tokenizer
     pub fn with_pre_tokenizer(&mut self, pre_tokenizer: Box<dyn PreTokenizer + Sync>) -> &Self {
         self.pre_tokenizer = Some(pre_tokenizer);
         self
+    }
+
+    /// Get the pre tokenizer
+    #[allow(clippy::borrowed_box)]
+    pub fn get_pre_tokenizer(&self) -> Option<&Box<dyn PreTokenizer + Sync>> {
+        self.pre_tokenizer.as_ref()
     }
 
     /// Set the post processor
@@ -177,16 +189,34 @@ impl Tokenizer {
         self
     }
 
+    /// Get the post processor
+    #[allow(clippy::borrowed_box)]
+    pub fn get_post_processor(&self) -> Option<&Box<dyn PostProcessor + Sync>> {
+        self.post_processor.as_ref()
+    }
+
     /// Set the decoder
     pub fn with_decoder(&mut self, decoder: Box<dyn Decoder + Sync>) -> &Self {
         self.decoder = Some(decoder);
         self
     }
 
+    /// Get the decoder
+    #[allow(clippy::borrowed_box)]
+    pub fn get_decoder(&self) -> Option<&Box<dyn Decoder + Sync>> {
+        self.decoder.as_ref()
+    }
+
     /// Set the model
     pub fn with_model(&mut self, model: Box<dyn Model + Sync>) -> &Self {
         self.model = model;
         self
+    }
+
+    /// Get the model
+    #[allow(clippy::borrowed_box)]
+    pub fn get_model(&self) -> &Box<dyn Model + Sync> {
+        &self.model
     }
 
     /// Set the truncation parameters
