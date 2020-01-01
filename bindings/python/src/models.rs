@@ -70,7 +70,7 @@ impl BPE {
     #[staticmethod]
     fn empty() -> Model {
         Model {
-            model: Container::Owned(Box::new(tk::models::bpe::BPE::empty())),
+            model: Container::Owned(Box::new(tk::models::bpe::BPE::default())),
         }
     }
 }
