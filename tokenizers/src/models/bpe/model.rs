@@ -212,14 +212,9 @@ impl Model for BPE {
 
         let mut encoded: Vec<Token> = Vec::with_capacity(sentence.len());
         let mut cached_words = match self.dropout {
-            None => Some(
-                self.cache.get_values(
-                    &sentence
-                        .iter()
-                        .map(|(s, _)| s.to_owned())
-                        .collect::<Vec<_>>(),
-                ),
-            ),
+            None => self
+                .cache
+                .get_values(sentence.iter().map(|(s, _)| s.clone())),
             Some(_) => None, // If using dropout we don't want to use a cached.
         };
 
@@ -250,13 +245,8 @@ impl Model for BPE {
 
         // Also update cache
         if let Some(cache) = cached_words {
-            let (keys, values) = sentence
-                .into_iter()
-                .zip(cache)
-                .filter(|(_, v)| v.is_some())
-                .map(|(k, v)| (k.0, v.unwrap()))
-                .unzip::<_, _, Vec<String>, Vec<Word>>();
-            self.cache.set_values(keys, values);
+            let keys_iter = sentence.into_iter().map(|(s, _)| s);
+            self.cache.set_values(keys_iter, cache.into_iter());
         }
 
         Ok(encoded)
