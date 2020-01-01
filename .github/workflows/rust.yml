@@ -23,7 +23,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --verbose --manifest-path ./tokenizers/Cargo.toml
+          args: --all-targets --verbose --manifest-path ./tokenizers/Cargo.toml
 
       - name: Lint with RustFmt
         uses: actions-rs/cargo@v1

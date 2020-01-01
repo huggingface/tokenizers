@@ -77,6 +77,7 @@ impl Token {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum EncodeInput {
     Single(String),
     Dual(String, String),

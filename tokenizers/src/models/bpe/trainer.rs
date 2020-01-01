@@ -16,7 +16,9 @@ use std::collections::{HashMap, HashSet};
 ///
 /// let word_counts: HashMap<String, u32> = [
 ///     (String::from("Hello"), 1),
-///     (String::from("World"), 1),
+///     (String::from(","), 1),
+///     (String::from("ĠWorld"), 1),
+///     (String::from("!"), 1),
 /// ].iter().cloned().collect();
 /// let trainer = BpeTrainer::default();
 /// let model = trainer.train(word_counts);

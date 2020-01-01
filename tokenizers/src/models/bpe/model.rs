@@ -24,6 +24,16 @@ pub struct BPE {
     dropout: Option<f32>,
 }
 
+impl Clone for BPE {
+    fn clone(&self) -> Self {
+        BPE::new(
+            self.vocab.clone(),
+            self.vocab_r.clone(),
+            self.merges.clone(),
+        )
+    }
+}
+
 impl BPE {
     pub fn new(
         vocab: HashMap<String, u32>,
