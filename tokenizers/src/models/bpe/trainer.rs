@@ -2,6 +2,7 @@
 
 use super::{Pair, Word, BPE};
 use crate::tokenizer::{Model, Result, Trainer};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::{
     collections::{HashMap, HashSet},
     time::Instant,
@@ -26,6 +27,7 @@ use std::{
 pub struct BpeTrainer {
     pub min_frequency: u32,
     pub vocab_size: usize,
+    pub show_progress: bool,
 }
 
 impl Default for BpeTrainer {
@@ -33,6 +35,7 @@ impl Default for BpeTrainer {
         Self {
             min_frequency: 0,
             vocab_size: 30000,
+            show_progress: true,
         }
     }
 }
@@ -42,6 +45,7 @@ impl BpeTrainer {
         Self {
             min_frequency,
             vocab_size,
+            ..Default::default()
         }
     }
 }
@@ -53,6 +57,18 @@ impl Trainer for BpeTrainer {
         let mut counts: Vec<i32> = vec![];
         let mut word_to_id: HashMap<String, u32> = HashMap::new();
         let mut id_to_word: Vec<String> = vec![];
+
+        let progress = if self.show_progress {
+            let p = ProgressBar::new(word_counts.len() as u64);
+            p.set_style(
+                ProgressStyle::default_bar()
+                    .template("[{elapsed_precise}] {msg:30} {bar:40} {pos:>7}/{len:7}"),
+            );
+            p.set_message("Tokenize words");
+            Some(p)
+        } else {
+            None
+        };
 
         //
         // 1. Tokenize words
@@ -71,12 +87,21 @@ impl Trainer for BpeTrainer {
                 current_word.add(word_to_id[&s]);
             }
             words.push(current_word);
+
+            if let Some(p) = &progress {
+                p.inc(1);
+            }
         }
         println!("[{:?}] Tokenized {} words", timer.elapsed(), words.len());
 
         //
         // 2. Count pairs in words
         //
+        if let Some(p) = &progress {
+            p.set_message("Count pairs");
+            p.set_length(words.len() as u64);
+            p.reset();
+        }
         let timer = Instant::now();
         let mut pair_counts: HashMap<Pair, (i32, Pair)> = HashMap::new();
         let mut where_to_update: HashMap<Pair, HashSet<usize>> = HashMap::new();
@@ -102,6 +127,10 @@ impl Trainer for BpeTrainer {
                 }
                 pair_counts.get_mut(&cur_pair).unwrap().0 += count;
             }
+
+            if let Some(p) = &progress {
+                p.inc(1);
+            }
         }
         println!(
             "[{:?}] Counted {} pairs with {} unique tokens",
@@ -113,6 +142,11 @@ impl Trainer for BpeTrainer {
         //
         // 3. Do merges
         //
+        if let Some(p) = &progress {
+            p.set_message("Compute merges");
+            p.set_length(self.vocab_size as u64);
+            p.reset();
+        }
         let mut merges: Vec<(Pair, u32)> = vec![];
         let timer = Instant::now();
         loop {
@@ -177,6 +211,10 @@ impl Trainer for BpeTrainer {
                 for change in changes {
                     change_count(change.0, change.1 * counts[word_index], word_index);
                 }
+            }
+
+            if let Some(p) = &progress {
+                p.inc(1);
             }
         }
         println!("[{:?}] Computed {} merges", timer.elapsed(), merges.len());
