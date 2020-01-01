@@ -276,16 +276,18 @@ impl Model for BPE {
             .iter()
             .collect();
         let mut merges_file = File::create(&merges_path)?;
-        let mut merges: Vec<(Pair, u32)> = self
+        let mut merges: Vec<(&Pair, &u32)> = self
             .merges
             .iter()
-            .map(|(pair, (rank, _))| (*pair, *rank))
+            .map(|(pair, (rank, _))| (pair, rank))
             .collect();
-        merges.sort_unstable_by_key(|k| k.1);
+        merges.sort_unstable_by_key(|k| *k.1);
         merges_file.write_all(
             &merges
                 .into_iter()
-                .map(|(pair, _)| format!("{} {}\n", pair.0, pair.1).into_bytes())
+                .map(|(pair, _)| {
+                    format!("{} {}\n", self.vocab_r[&pair.0], self.vocab_r[&pair.1]).into_bytes()
+                })
                 .flatten()
                 .collect::<Vec<_>>()[..],
         )?;
