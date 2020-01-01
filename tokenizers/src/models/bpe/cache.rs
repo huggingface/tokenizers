@@ -26,20 +26,27 @@ where
         }
     }
 
-    pub fn get_values(&self, keys: &[K]) -> Vec<Option<V>> {
+    pub fn get_values<I>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
+    where
+        I: Iterator<Item = K>,
+    {
         let mut lock = self.map.try_lock();
         if let Ok(ref mut cache) = lock {
-            keys.iter().map(|k| cache.get(k).cloned()).collect()
+            Some(keys_iter.map(|k| cache.get(&k).cloned()).collect())
         } else {
-            keys.iter().map(|_| None).collect()
+            None
         }
     }
 
-    pub fn set_values(&self, keys: Vec<K>, values: Vec<V>) {
+    pub fn set_values<I, J>(&self, keys_iter: I, values_iter: J)
+    where
+        I: Iterator<Item = K>,
+        J: Iterator<Item = Option<V>>,
+    {
         let mut lock = self.map.try_lock();
         if let Ok(ref mut cache) = lock {
-            for (key, value) in keys.into_iter().zip(values) {
-                cache.insert(key, value);
+            for (key, value) in keys_iter.zip(values_iter).filter(|(_, v)| v.is_some()) {
+                cache.insert(key, value.unwrap());
             }
         }
     }
