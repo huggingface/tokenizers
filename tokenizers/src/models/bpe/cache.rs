@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Mutex;
 
-static DEFAULT_CAPACITY: usize = 10_000;
+/// The default capacity for a new `Cache`.
+pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
 
 /// Provides a simple multithread cache that will try to retrieve values
 /// but won't block if someone else is already using it.
@@ -24,8 +25,8 @@ where
 {
     fn default() -> Self {
         Self {
-            map: Mutex::new(HashMap::with_capacity(DEFAULT_CAPACITY)),
-            capacity: DEFAULT_CAPACITY,
+            map: Mutex::new(HashMap::with_capacity(DEFAULT_CACHE_CAPACITY)),
+            capacity: DEFAULT_CACHE_CAPACITY,
         }
     }
 }
