@@ -127,10 +127,8 @@ impl BPE {
     fn merge_word(&self, w: &str) -> Word {
         let mut word = Word::new();
         for c in w.chars() {
-            match self.vocab.get(&c.to_string()) {
-                // TODO: Handle UNK
-                None => println!("{} is an unknown character. Skip it.", c.escape_unicode()),
-                Some(id) => word.add(*id),
+            if let Some(id) = self.vocab.get(&c.to_string()) {
+                word.add(*id);
             }
         }
 

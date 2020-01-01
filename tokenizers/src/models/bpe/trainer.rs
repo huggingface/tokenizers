@@ -3,10 +3,7 @@
 use super::{Pair, Word, BPE};
 use crate::tokenizer::{Model, Result, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
-use std::{
-    collections::{HashMap, HashSet},
-    time::Instant,
-};
+use std::collections::{HashMap, HashSet};
 
 /// In charge of training a BPE model from a mapping of words to word counts.
 ///
@@ -73,7 +70,6 @@ impl Trainer for BpeTrainer {
         //
         // 1. Tokenize words
         //
-        let timer = Instant::now();
         for (word, count) in &word_counts {
             let mut current_word = Word::new();
             counts.push(*count as i32);
@@ -92,7 +88,6 @@ impl Trainer for BpeTrainer {
                 p.inc(1);
             }
         }
-        println!("[{:?}] Tokenized {} words", timer.elapsed(), words.len());
 
         //
         // 2. Count pairs in words
@@ -102,7 +97,6 @@ impl Trainer for BpeTrainer {
             p.set_length(words.len() as u64);
             p.reset();
         }
-        let timer = Instant::now();
         let mut pair_counts: HashMap<Pair, (i32, Pair)> = HashMap::new();
         let mut where_to_update: HashMap<Pair, HashSet<usize>> = HashMap::new();
         for (index, word) in words.iter().enumerate() {
@@ -132,12 +126,6 @@ impl Trainer for BpeTrainer {
                 p.inc(1);
             }
         }
-        println!(
-            "[{:?}] Counted {} pairs with {} unique tokens",
-            timer.elapsed(),
-            pair_counts.len(),
-            word_to_id.len()
-        );
 
         //
         // 3. Do merges
@@ -148,7 +136,6 @@ impl Trainer for BpeTrainer {
             p.reset();
         }
         let mut merges: Vec<(Pair, u32)> = vec![];
-        let timer = Instant::now();
         loop {
             // Stop as soon as we have a big enough vocabulary
             if word_to_id.len() >= self.vocab_size {
@@ -217,7 +204,6 @@ impl Trainer for BpeTrainer {
                 p.inc(1);
             }
         }
-        println!("[{:?}] Computed {} merges", timer.elapsed(), merges.len());
 
         Ok(Box::new(BPE::new(
             word_to_id.clone(),
