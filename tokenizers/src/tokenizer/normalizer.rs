@@ -91,10 +91,10 @@ impl NormalizedString {
                     // This is a newly inserted character, so we use the alignment from the
                     // previous one
                     Ordering::Greater => {
+                        offset += 1;
                         if idx < 1 {
                             Some((0, 0))
                         } else {
-                            offset += 1;
                             self.alignments.get(idx - 1).copied()
                         }
                     }
@@ -329,5 +329,26 @@ mod tests {
         let world_o = n.get_range_original(6..11).unwrap();
         assert_eq!(world_n, "world");
         assert_eq!(world_o, "World");
+    }
+
+    #[test]
+    fn added_around_edges() {
+        let mut n = NormalizedString::from("Hello");
+        n.transform(
+            vec![
+                (' ', 1),
+                ('H', 0),
+                ('e', 0),
+                ('l', 0),
+                ('l', 0),
+                ('o', 0),
+                (' ', 1),
+            ]
+            .into_iter(),
+            0,
+        );
+
+        assert_eq!(&n.normalized, " Hello ");
+        assert_eq!(n.get_range_original(0..n.normalized.len()), Some("Hello"));
     }
 }
