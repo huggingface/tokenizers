@@ -120,6 +120,113 @@ impl std::cmp::PartialEq for AddedToken {
 }
 impl std::cmp::Eq for AddedToken {}
 
+struct Config {
+    // Tokenizer parts
+    normalizer: Option<Box<dyn Normalizer + Sync>>,
+    pre_tokenizer: Option<Box<dyn PreTokenizer + Sync>>,
+    model: Box<dyn Model + Sync>,
+    post_processor: Option<Box<dyn PostProcessor + Sync>>,
+    decoder: Option<Box<dyn Decoder + Sync>>,
+
+    // Added Vocabulary capabilities
+    special_tokens: Option<Vec<String>>,
+
+    // General processing parameters
+    trunc: Option<TruncationParams>,
+    padding: Option<PaddingParams>,
+}
+
+/// A `TokenizerBuilder` can be used to create a new `Tokenizer` with a custom configuration.
+pub struct TokenizerBuilder {
+    config: Config,
+}
+
+impl TokenizerBuilder {
+    /// Construct a new `TokenizerBuilder`.
+    pub fn new(model: Box<dyn Model + Sync>) -> Self {
+        Self {
+            config: Config {
+                normalizer: None,
+                pre_tokenizer: None,
+                model,
+                post_processor: None,
+                decoder: None,
+
+                special_tokens: None,
+
+                trunc: None,
+                padding: None,
+            },
+        }
+    }
+
+    /// Add a `Normalizer` to the pipeline.
+    pub fn normalizer(mut self, normalizer: Box<dyn Normalizer + Sync>) -> Self {
+        self.config.normalizer = Some(normalizer);
+        self
+    }
+
+    /// Add a `PreTokenizer` to the pipeline.
+    pub fn pre_tokenizer(mut self, pre_tokenizer: Box<dyn PreTokenizer + Sync>) -> Self {
+        self.config.pre_tokenizer = Some(pre_tokenizer);
+        self
+    }
+
+    /// Add a `PostProcessor` to the pipeline.
+    pub fn post_processor(mut self, post_processor: Box<dyn PostProcessor + Sync>) -> Self {
+        self.config.post_processor = Some(post_processor);
+        self
+    }
+
+    /// Add a `Decoder` to the pipeline.
+    pub fn decoder(mut self, decoder: Box<dyn Decoder + Sync>) -> Self {
+        self.config.decoder = Some(decoder);
+        self
+    }
+
+    /// Add special tokens to the vocabulary.
+    pub fn special_tokens(mut self, special_tokens: Vec<String>) -> Self {
+        self.config.special_tokens = Some(special_tokens);
+        self
+    }
+
+    /// Add truncation to the pipeline.
+    pub fn truncation(mut self, trunc: TruncationParams) -> Self {
+        self.config.trunc = Some(trunc);
+        self
+    }
+
+    /// Add padding to the pipeline.
+    pub fn padding(mut self, padding: PaddingParams) -> Self {
+        self.config.padding = Some(padding);
+        self
+    }
+
+    /// Build the `Tokenizer` with the `TokenizerBuilder`'s configuration.
+    pub fn build(self) -> Tokenizer {
+        let mut tokenizer = Tokenizer {
+            normalizer: self.config.normalizer,
+            pre_tokenizer: self.config.pre_tokenizer,
+            model: self.config.model,
+            post_processor: self.config.post_processor,
+            decoder: self.config.decoder,
+
+            added_tokens: HashMap::new(),
+            added_tokens_r: HashMap::new(),
+            split_re: None,
+            special_tokens: HashMap::new(),
+
+            trunc: self.config.trunc,
+            padding: self.config.padding,
+        };
+        if let Some(special_tokens) = self.config.special_tokens {
+            let special_tokens: Vec<&str> = special_tokens.iter().map(|t| &t[..]).collect();
+            tokenizer.add_special_tokens(&special_tokens[..]);
+        }
+        tokenizer
+    }
+}
+
 /// A `Tokenizer` is capable of encoding/decoding any text.
 pub struct Tokenizer {
     // Tokenizer parts
@@ -143,21 +250,12 @@ pub struct Tokenizer {
 impl Tokenizer {
     /// Instanciate a new Tokenizer, with the given Model
     pub fn new(model: Box<dyn Model + Sync>) -> Self {
-        Tokenizer {
-            normalizer: None,
-            pre_tokenizer: None,
-            model,
-            post_processor: None,
-            decoder: None,
+        TokenizerBuilder::new(model).build()
+    }
 
-            added_tokens: HashMap::new(),
-            added_tokens_r: HashMap::new(),
-            split_re: None,
-            special_tokens: HashMap::new(),
-
-            trunc: None,
-            padding: None,
-        }
+    /// Get a `TokenizerBuilder`.
+    pub fn builder(model: Box<dyn Model + Sync>) -> TokenizerBuilder {
+        TokenizerBuilder::new(model)
     }
 
     /// Set the normalizer
