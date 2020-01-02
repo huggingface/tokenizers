@@ -35,7 +35,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args:  --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/*.rs --check
+          args:  --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/bpe_benchmark.rs --check
 
       - name: Lint with Clippy
         uses: actions-rs/cargo@v1
