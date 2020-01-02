@@ -1,6 +1,7 @@
 use super::Pair;
+use evmap::shallow_copy::ShallowCopy;
 
-#[derive(Clone, Default)]
+#[derive(PartialEq, Eq, Clone, Default)]
 pub struct Word {
     chars: Vec<u32>,
     sizes: Vec<usize>,
@@ -73,6 +74,12 @@ impl Word {
             pos += size;
         }
         offsets
+    }
+}
+
+impl ShallowCopy for Word {
+    unsafe fn shallow_copy(&mut self) -> Self {
+        *self
     }
 }
 

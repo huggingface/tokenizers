@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use evmap::{ReadHandle, WriteHandle};
+use evmap::shallow_copy::ShallowCopy;
 use std::hash::Hash;
-use std::sync::RwLock;
+use std::sync::Mutex;
 
 /// The default capacity for a new `Cache`.
 pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
@@ -12,34 +13,37 @@ pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
 pub struct Cache<K, V>
 where
     K: Eq + Hash + Clone,
-    V: Clone,
+    V: Eq + ShallowCopy + Clone,
 {
-    map: RwLock<HashMap<K, V>>,
+    map_r: ReadHandle<K, V>,
+    map_w: Mutex<WriteHandle<K, V>>,
     pub capacity: usize,
 }
 
 impl<K, V> Default for Cache<K, V>
 where
     K: Eq + Hash + Clone,
-    V: Clone,
+    V: Eq + ShallowCopy + Clone,
 {
     fn default() -> Self {
-        Self {
-            map: RwLock::new(HashMap::with_capacity(DEFAULT_CACHE_CAPACITY)),
-            capacity: DEFAULT_CACHE_CAPACITY,
-        }
+        Self::new(DEFAULT_CACHE_CAPACITY)
     }
 }
 
 impl<K, V> Cache<K, V>
 where
     K: Eq + Hash + Clone,
-    V: Clone,
+    V: Eq + ShallowCopy + Clone,
 {
     /// Create new `Cache` with the given capacity.
     pub fn new(capacity: usize) -> Self {
-        let map = RwLock::new(HashMap::with_capacity(capacity));
-        Cache { map, capacity }
+        let (map_r, mut raw_map_w) = evmap::Options::default().with_capacity(capacity).construct();
+        let map_w = Mutex::new(raw_map_w);
+        Self {
+            map_r,
+            map_w,
+            capacity: capacity,
+        }
     }
 
     /// Create a fresh `Cache` with the same configuration.
@@ -49,8 +53,9 @@ where
 
     /// Try clearing the cache.
     pub fn try_clear(&self) {
-        if let Ok(ref mut cache) = self.map.try_write() {
-            cache.clear();
+        if let Ok(ref mut w) = self.map_w.try_lock() {
+            w.purge();
+            w.refresh();
         }
     }
 
@@ -58,11 +63,7 @@ where
     where
         I: Iterator<Item = K>,
     {
-        if let Ok(ref mut cache) = self.map.try_read() {
-            Some(keys_iter.map(|k| cache.get(&k).cloned()).collect())
-        } else {
-            None
-        }
+        Some(keys_iter.map(|k| self.map_r.get_and(&k, |v| v[0].clone())).collect())
     }
 
     pub fn set_values<I, J>(&self, keys_iter: I, values_iter: J)
@@ -70,14 +71,15 @@ where
         I: Iterator<Item = K>,
         J: Iterator<Item = Option<V>>,
     {
-        if let Ok(ref mut cache) = self.map.try_write() {
+        if let Ok(ref mut w) = self.map_w.try_lock() {
             for (key, value) in keys_iter.zip(values_iter).filter(|(_, v)| v.is_some()) {
                 // If already at capacity, don't add any more values.
-                if cache.len() >= self.capacity {
+                if w.len() >= self.capacity {
                     break;
                 }
-                cache.insert(key, value.unwrap());
+                w.update(key, value.unwrap());
             }
+            w.flush();
         }
     }
 }
