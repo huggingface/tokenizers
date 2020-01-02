@@ -24,10 +24,7 @@ where
     V: Clone,
 {
     fn default() -> Self {
-        Self {
-            map: RwLock::new(HashMap::with_capacity(DEFAULT_CACHE_CAPACITY)),
-            capacity: DEFAULT_CACHE_CAPACITY,
-        }
+        Self::new(DEFAULT_CACHE_CAPACITY)
     }
 }
 
