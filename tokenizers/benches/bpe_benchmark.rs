@@ -33,6 +33,9 @@ from the raw text, using no task-specific training data. While scores on these \
 downstream tasks are far from state-of-the-art, they suggest that the tasks can \
 benefit from unsupervised techniques, given sufficient (unlabeled) data and compute.";
 
+static BATCH_SIZE: usize = 1_000;
+static BIG_BATCH_SIZE: usize = 10_000;
+
 fn create_gpt2_tokenizer(bpe: &BPE) -> Tokenizer {
     let mut tokenizer = Tokenizer::new(Box::new(bpe.clone()));
     tokenizer.with_pre_tokenizer(Box::new(ByteLevel::new(true)));
@@ -54,7 +57,7 @@ fn line_to_input(line: io::Result<String>) -> EncodeInput {
     EncodeInput::Single(line.unwrap())
 }
 
-fn bench_gpt2_encode(c: &mut Criterion) {
+fn bench_gpt2(c: &mut Criterion) {
     let bpe = BPE::from_files("benches/gpt2-vocab.json", "benches/gpt2-merges.txt").unwrap();
 
     // Benchmarks encoding a single input from a fresh tokenizer.
@@ -97,19 +100,26 @@ fn bench_gpt2_encode(c: &mut Criterion) {
             duration
         })
     });
-}
 
-fn bench_gpt2_encode_batch(c: &mut Criterion) {
-    let bpe = BPE::from_files("benches/gpt2-vocab.json", "benches/gpt2-merges.txt").unwrap();
-    let lines: Vec<EncodeInput> = BufReader::new(File::open(Path::new("benches/big.txt")).unwrap())
+    let mut big_batch: Vec<EncodeInput> = Vec::with_capacity(BIG_BATCH_SIZE);
+    let mut batches: Vec<Vec<EncodeInput>> = vec![vec![]];
+    for line in BufReader::new(File::open(Path::new("benches/big.txt")).unwrap())
         .lines()
         .map(line_to_input)
-        .collect();
+    {
+        if big_batch.len() < BIG_BATCH_SIZE {
+            big_batch.push(line.clone());
+        }
+        if batches.last().unwrap().len() >= BATCH_SIZE {
+            batches.push(vec![]);
+        }
+        batches.last_mut().unwrap().push(line);
+    }
 
     // Benchmarks encoding a single big batch on a new tokenizer.
     c.bench_function("BPE GPT2 encode batch", |b| {
         b.iter_batched(
-            || (create_gpt2_tokenizer(&bpe), lines.clone()),
+            || (create_gpt2_tokenizer(&bpe), big_batch.clone()),
             |(tokenizer, input)| tokenizer.encode_batch(input),
             BatchSize::LargeInput,
         )
@@ -119,20 +129,6 @@ fn bench_gpt2_encode_batch(c: &mut Criterion) {
     c.bench_function("BPE GPT2 encode batch many", |b| {
         b.iter_custom(|iters| {
             let tokenizer = create_gpt2_tokenizer(&bpe);
-            let batch_size: usize = 1000;
-
-            // Collect lines into batches of size `batch_size`.
-            let mut batches: Vec<Vec<EncodeInput>> = vec![vec![]];
-            for line in BufReader::new(File::open(Path::new("benches/big.txt")).unwrap())
-                .lines()
-                .map(line_to_input)
-            {
-                if batches.last().unwrap().len() >= batch_size {
-                    batches.push(vec![]);
-                }
-                batches.last_mut().unwrap().push(line);
-            }
-
             let mut duration = Duration::new(0, 0);
             let mut batch_index: usize = 0;
             for _i in 0..iters {
@@ -151,12 +147,7 @@ fn bench_gpt2_encode_batch(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().sample_size(20);
-    targets = bench_gpt2_encode
+    config = Criterion::default().sample_size(20).warm_up_time(Duration::from_secs(5));
+    targets = bench_gpt2
 }
-criterion_group! {
-    name = batch_benches;
-    config = Criterion::default().sample_size(10).warm_up_time(Duration::from_secs(10));
-    targets = bench_gpt2_encode_batch
-}
-criterion_main!(benches, batch_benches);
+criterion_main!(benches);
