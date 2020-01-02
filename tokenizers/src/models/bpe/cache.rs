@@ -54,7 +54,7 @@ where
     {
         Some(
             keys_iter
-                .map(|k| self.map.get(&k).map(|v| v.clone()))
+                .map(|k| self.map.get(&k).map(|v| (*v).clone()))
                 .collect(),
         )
     }
