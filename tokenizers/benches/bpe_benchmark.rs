@@ -57,6 +57,7 @@ fn line_to_input(line: io::Result<String>) -> EncodeInput {
 fn bench_gpt2_encode(c: &mut Criterion) {
     let bpe = BPE::from_files("benches/gpt2-vocab.json", "benches/gpt2-merges.txt").unwrap();
 
+    // Benchmarks encoding a single input from a fresh tokenizer.
     c.bench_function("BPE GPT2 encode", |b| {
         b.iter_batched(
             || {
@@ -70,6 +71,7 @@ fn bench_gpt2_encode(c: &mut Criterion) {
         )
     });
 
+    // Benchmarks encoding many inputs on a single tokenizer.
     c.bench_function("BPE GPT2 encode many", |b| {
         b.iter_custom(|iters| {
             let tokenizer = create_gpt2_tokenizer(&bpe);
@@ -104,12 +106,46 @@ fn bench_gpt2_encode_batch(c: &mut Criterion) {
         .map(line_to_input)
         .collect();
 
+    // Benchmarks encoding a single big batch on a new tokenizer.
     c.bench_function("BPE GPT2 encode batch", |b| {
         b.iter_batched(
             || (create_gpt2_tokenizer(&bpe), lines.clone()),
             |(tokenizer, input)| tokenizer.encode_batch(input),
             BatchSize::LargeInput,
         )
+    });
+
+    // Benchmarks encoding a many smaller batches on a single tokenizer.
+    c.bench_function("BPE GPT2 encode batch many", |b| {
+        b.iter_custom(|iters| {
+            let tokenizer = create_gpt2_tokenizer(&bpe);
+            let batch_size: usize = 1000;
+
+            // Collect lines into batches of size `batch_size`.
+            let mut batches: Vec<Vec<EncodeInput>> = vec![vec![]];
+            for line in BufReader::new(File::open(Path::new("benches/big.txt")).unwrap())
+                .lines()
+                .map(line_to_input)
+            {
+                if batches.last().unwrap().len() >= batch_size {
+                    batches.push(vec![]);
+                }
+                batches.last_mut().unwrap().push(line);
+            }
+
+            let mut duration = Duration::new(0, 0);
+            let mut batch_index: usize = 0;
+            for _i in 0..iters {
+                if batch_index >= batches.len() {
+                    batch_index = 0;
+                }
+                let batch = batches[batch_index].clone();
+                let start = Instant::now();
+                let _ = black_box(tokenizer.encode_batch(batch));
+                duration = duration.checked_add(start.elapsed()).unwrap();
+            }
+            duration
+        })
     });
 }
 
