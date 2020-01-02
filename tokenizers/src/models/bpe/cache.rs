@@ -52,7 +52,11 @@ where
     where
         I: Iterator<Item = K>,
     {
-        Some(keys_iter.map(|k| self.map.get(&k).map(|v| v.clone())).collect())
+        Some(
+            keys_iter
+                .map(|k| self.map.get(&k).map(|v| v.clone()))
+                .collect(),
+        )
     }
 
     pub fn set_values<I, J>(&self, keys_iter: I, values_iter: J)
