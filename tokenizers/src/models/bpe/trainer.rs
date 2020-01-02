@@ -293,11 +293,7 @@ impl Trainer for BpeTrainer {
         self.finalize_progress(&progress, merges.len());
 
         Ok(Box::new(BPE::new(
-            word_to_id.clone(),
-            word_to_id
-                .into_iter()
-                .map(|(token, id)| (id, token))
-                .collect(),
+            word_to_id,
             merges
                 .into_iter()
                 .enumerate()
