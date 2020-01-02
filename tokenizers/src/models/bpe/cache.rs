@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 /// The default capacity for a new `Cache`.
 pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
@@ -14,7 +14,7 @@ where
     K: Eq + Hash + Clone,
     V: Clone,
 {
-    map: Mutex<HashMap<K, V>>,
+    map: RwLock<HashMap<K, V>>,
     pub capacity: usize,
 }
 
@@ -25,7 +25,7 @@ where
 {
     fn default() -> Self {
         Self {
-            map: Mutex::new(HashMap::with_capacity(DEFAULT_CACHE_CAPACITY)),
+            map: RwLock::new(HashMap::with_capacity(DEFAULT_CACHE_CAPACITY)),
             capacity: DEFAULT_CACHE_CAPACITY,
         }
     }
@@ -38,7 +38,7 @@ where
 {
     /// Create new `Cache` with the given capacity.
     pub fn new(capacity: usize) -> Self {
-        let map = Mutex::new(HashMap::with_capacity(capacity));
+        let map = RwLock::new(HashMap::with_capacity(capacity));
         Cache { map, capacity }
     }
 
@@ -49,7 +49,7 @@ where
 
     /// Try clearing the cache.
     pub fn try_clear(&self) {
-        if let Ok(ref mut cache) = self.map.try_lock() {
+        if let Ok(ref mut cache) = self.map.try_write() {
             cache.clear();
         }
     }
@@ -58,7 +58,7 @@ where
     where
         I: Iterator<Item = K>,
     {
-        if let Ok(ref mut cache) = self.map.try_lock() {
+        if let Ok(ref mut cache) = self.map.try_read() {
             Some(keys_iter.map(|k| cache.get(&k).cloned()).collect())
         } else {
             None
@@ -70,7 +70,7 @@ where
         I: Iterator<Item = K>,
         J: Iterator<Item = Option<V>>,
     {
-        if let Ok(ref mut cache) = self.map.try_lock() {
+        if let Ok(ref mut cache) = self.map.try_write() {
             for (key, value) in keys_iter.zip(values_iter).filter(|(_, v)| v.is_some()) {
                 // If already at capacity, don't add any more values.
                 if cache.len() >= self.capacity {
