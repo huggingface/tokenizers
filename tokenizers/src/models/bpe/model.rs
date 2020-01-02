@@ -32,20 +32,13 @@ impl BpeBuilder {
         Self::default()
     }
 
-    /// Set the `token -> ID` vocab map.
-    pub fn vocab(mut self, vocab: HashMap<String, u32>) -> Self {
+    /// Set the vocab (token -> ID) and merges mappings.
+    pub fn vocab_and_merges(
+        mut self,
+        vocab: HashMap<String, u32>,
+        merges: HashMap<Pair, (u32, u32)>,
+    ) -> Self {
         self.config.vocab = Some(vocab);
-        self
-    }
-
-    /// Set the `ID -> token` reverse vocab map.
-    pub fn vocab_r(mut self, vocab_r: HashMap<u32, String>) -> Self {
-        self.config.vocab_r = Some(vocab_r);
-        self
-    }
-
-    /// Set the merges map.
-    pub fn merges(mut self, merges: HashMap<Pair, (u32, u32)>) -> Self {
         self.config.merges = Some(merges);
         self
     }
@@ -148,7 +141,10 @@ impl BPE {
 
     /// Create a new BPE model with the given vocab and merges.
     pub fn new(vocab: HashMap<String, u32>, merges: HashMap<Pair, (u32, u32)>) -> Self {
-        Self::builder().vocab(vocab).merges(merges).build().unwrap()
+        Self::builder()
+            .vocab_and_merges(vocab, merges)
+            .build()
+            .unwrap()
     }
 
     /// Initialize a BPE model from vocab and merges file.
