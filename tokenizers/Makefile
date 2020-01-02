@@ -16,7 +16,8 @@ format :
 
 .PHONY : lint
 lint :
-	cargo fmt -- ./benches/*.rs ./src/*.rs ./src/**/*.rs --check
+	cargo fmt -- --check
+	cargo fmt -- ./benches/*.rs --check
 	cargo clippy --all-targets --all-features -- -D warnings
 
 .PHONY : test
