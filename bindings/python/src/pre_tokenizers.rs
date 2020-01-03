@@ -50,6 +50,14 @@ impl ByteLevel {
             ))),
         })
     }
+
+    #[staticmethod]
+    fn alphabet() -> Vec<String> {
+        tk::pre_tokenizers::byte_level::ByteLevel::alphabet()
+            .into_iter()
+            .map(|c| c.to_string())
+            .collect()
+    }
 }
 
 #[pyclass]

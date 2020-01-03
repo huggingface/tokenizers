@@ -34,7 +34,10 @@ fn line_to_input(line: io::Result<String>) -> EncodeInput {
 }
 
 fn bench_gpt2(c: &mut Criterion) {
-    let bpe = BPE::from_files("benches/gpt2-vocab.json", "benches/gpt2-merges.txt").unwrap();
+    let bpe = BPE::from_files("benches/gpt2-vocab.json", "benches/gpt2-merges.txt")
+        .unwrap()
+        .build()
+        .unwrap();
     let mut lines: Vec<EncodeInput> = vec![];
     let mut batches: Vec<Vec<EncodeInput>> = vec![vec![]];
     for line in BufReader::new(File::open(Path::new("benches/big.txt")).unwrap())

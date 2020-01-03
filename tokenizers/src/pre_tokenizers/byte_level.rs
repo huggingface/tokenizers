@@ -1,9 +1,9 @@
 use crate::tokenizer::{Decoder, Offsets, PreTokenizer, Result};
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use unicode_categories::UnicodeCategories;
 
-fn bytes_char() -> HashMap<u8, u32> {
+fn bytes_char() -> HashMap<u8, char> {
     let mut bs: Vec<u8> = vec![];
     bs.extend(b'!'..=b'~');
     bs.extend(b'\xA1'..=b'\xAC');
@@ -20,14 +20,17 @@ fn bytes_char() -> HashMap<u8, u32> {
         }
     }
 
-    bs.into_iter().zip(cs).collect()
+    bs.into_iter()
+        .zip(cs)
+        .map(|(f, t)| (f, unsafe { std::char::from_u32_unchecked(t) }))
+        .collect()
 }
 
 lazy_static! {
     static ref RE: Regex =
         Regex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+").unwrap();
-    static ref BYTES_CHAR: HashMap<u8, u32> = bytes_char();
-    static ref CHAR_BYTES: HashMap<u32, u8> =
+    static ref BYTES_CHAR: HashMap<u8, char> = bytes_char();
+    static ref CHAR_BYTES: HashMap<char, u8> =
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
 }
 
@@ -37,6 +40,10 @@ pub struct ByteLevel {
 impl ByteLevel {
     pub fn new(add_prefix_space: bool) -> Self {
         ByteLevel { add_prefix_space }
+    }
+
+    pub fn alphabet() -> HashSet<char> {
+        BYTES_CHAR.values().copied().collect()
     }
 }
 
@@ -85,14 +92,7 @@ impl PreTokenizer for ByteLevel {
 
                 (s[start..end].as_bytes().to_vec(), (start, end))
             })
-            .map(|(s, offsets)| {
-                (
-                    s.iter()
-                        .map(|b| std::char::from_u32(BYTES_CHAR[b]).unwrap())
-                        .collect(),
-                    offsets,
-                )
-            })
+            .map(|(s, offsets)| (s.iter().map(|b| BYTES_CHAR[b]).collect(), offsets))
             .collect())
     }
 }
@@ -103,7 +103,7 @@ impl Decoder for ByteLevel {
             &tokens
                 .join("")
                 .chars()
-                .map(|c| CHAR_BYTES[&(c as u32)])
+                .map(|c| CHAR_BYTES[&c])
                 .collect::<Vec<_>>(),
         )
         .into_owned())
