@@ -1,7 +1,7 @@
 import argparse
 import glob
 
-from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers, normalizers
 
 
 parser = argparse.ArgumentParser()
@@ -17,7 +17,7 @@ parser.add_argument("--out",
                     type=str,
                     help="Path to the output directory, where the files will be saved")
 parser.add_argument("--name",
-                    default="bpe-bytelevel",
+                    default="bert-wordpiece",
                     type=str,
                     help="The name of the output vocab files")
 args = parser.parse_args()
@@ -29,21 +29,29 @@ if not files:
 
 
 # Initialize an empty tokenizer
-tokenizer = Tokenizer(models.BPE.empty())
+tokenizer = Tokenizer(models.WordPiece.empty())
 
-# Customize pre-tokenization and decoding
-tokenizer.with_pre_tokenizer(pre_tokenizers.ByteLevel.new(add_prefix_space=False))
-tokenizer.with_decoder(decoders.ByteLevel.new())
+# Customize all the steps
+tokenizer.with_normalizer(normalizers.BertNormalizer.new(
+    clean_text=True,
+    handle_chinese_chars=True,
+    strip_accents=True,
+    lowercase=True,
+))
+tokenizer.with_pre_tokenizer(pre_tokenizers.BertPreTokenizer.new())
+tokenizer.with_decoder(decoders.WordPiece.new())
 
 # And then train
-trainer = trainers.BpeTrainer.new(
+trainer = trainers.WordPieceTrainer.new(
     vocab_size=50000,
     min_frequency=2,
     show_progress=True,
-    special_tokens=[ "<s>", "<pad>", "</s>" ],
-    initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
+    special_tokens=[ "<s>", "<unk>", "<pad>", "</s>" ],
+    limit_alphabet=1000,
+    continuing_subword_prefix="##"
 )
 tokenizer.train(trainer, files)
 
 # Save the files
 tokenizer.model.save(args.out, args.name)
+
