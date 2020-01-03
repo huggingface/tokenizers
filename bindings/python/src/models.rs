@@ -49,6 +49,7 @@ impl BPE {
     ///
     /// Instanciate a new BPE model using the provided vocab and merges files
     #[staticmethod]
+    #[args(kwargs = "**")]
     fn from_files(vocab: &str, merges: &str, kwargs: Option<&PyDict>) -> PyResult<Model> {
         let builder: PyResult<_> =
             ToPyResult(tk::models::bpe::BPE::from_files(vocab, merges)).into();
