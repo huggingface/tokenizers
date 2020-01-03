@@ -70,15 +70,27 @@ impl NormalizedString {
     ///   - `1` if this is a new char
     ///   - `-N` if the char is right before N removed chars
     ///   - `0` if this char represents the old one (even if changed)
+    /// Since it is possible that the normalized string doesn't include some of the characters at
+    /// the beginning of the original one, we need an `initial_offset` which represents the number
+    /// of removed chars at the very beginning.
     ///
     /// `change` should never be more than `1`. If multiple chars are added, each of
     /// them has a `change` of `1`, but more doesn't make any sense.
     /// We treat any value above `1` as `1`.
-    pub fn transform<I: Iterator<Item = (char, isize)>>(&mut self, dest: I) {
-        let mut offset: isize = 0;
+    pub fn transform<I: Iterator<Item = (char, isize)>>(&mut self, dest: I, initial_offset: usize) {
+        let mut offset = 0;
+        let mut remaining_offset = initial_offset;
         let (ch, alignments): (Vec<_>, Vec<_>) = dest
             .enumerate()
             .map(|(index, (c, changes))| {
+                let changes = if remaining_offset != 0 {
+                    let c = changes - remaining_offset as isize;
+                    remaining_offset = 0;
+                    c
+                } else {
+                    changes
+                };
+
                 let uof = if offset < 0 {
                     -offset as usize
                 } else {
@@ -91,10 +103,10 @@ impl NormalizedString {
                     // This is a newly inserted character, so we use the alignment from the
                     // previous one
                     Ordering::Greater => {
+                        offset += 1;
                         if idx < 1 {
                             Some((0, 0))
                         } else {
-                            offset += 1;
                             self.alignments.get(idx - 1).copied()
                         }
                     }
@@ -105,7 +117,7 @@ impl NormalizedString {
                     Ordering::Less => {
                         let uch = -changes as usize;
                         offset += changes;
-                        self.alignments.get(idx..idx + uch).map(|alignments| {
+                        self.alignments.get(idx..=idx + uch).map(|alignments| {
                             let min = alignments
                                 .iter()
                                 .map(|(start, end)| usize::min(*start, *end))
@@ -134,31 +146,31 @@ impl NormalizedString {
 
     /// Applies NFD normalization
     pub fn nfd(&mut self) -> &mut Self {
-        self.transform(self.get().to_owned().nfd());
+        self.transform(self.get().to_owned().nfd(), 0);
         self
     }
 
     /// Applies NFKD normalization
     pub fn nfkd(&mut self) -> &mut Self {
-        self.transform(self.get().to_owned().nfkd());
+        self.transform(self.get().to_owned().nfkd(), 0);
         self
     }
 
     /// Applies NFC normalization
     pub fn nfc(&mut self) -> &mut Self {
-        self.transform(self.get().to_owned().nfc());
+        self.transform(self.get().to_owned().nfc(), 0);
         self
     }
 
     /// Applies NFKC normalization
     pub fn nfkc(&mut self) -> &mut Self {
-        self.transform(self.get().to_owned().nfkc());
+        self.transform(self.get().to_owned().nfkc(), 0);
         self
     }
 
     /// Applies filtering over our characters
     pub fn filter<F: Fn(&char) -> bool>(&mut self, filter: F) -> &mut Self {
-        let mut removed = 0;
+        let mut removed: usize = 0;
         let mut filtered = self
             .normalized
             .chars()
@@ -170,7 +182,7 @@ impl NormalizedString {
                 let keep = filter(&c);
                 if keep {
                     if removed > 0 {
-                        let res = (c, -removed);
+                        let res = (c, -(removed as isize));
                         removed = 0;
                         Some(res)
                     } else {
@@ -185,7 +197,10 @@ impl NormalizedString {
         // For some reason, if we use rev, and unwrap directly, some parts of the tuples we return
         // above get mixed up... So we collect first, then reverse in place
         filtered.reverse();
-        self.transform(filtered.iter().filter(|o| o.is_some()).map(|o| o.unwrap()));
+        self.transform(
+            filtered.iter().filter(|o| o.is_some()).map(|o| o.unwrap()),
+            removed,
+        );
         self
     }
 
@@ -209,7 +224,7 @@ impl NormalizedString {
                 new_chars.push((c, if index > 0 { 1 } else { 0 }));
             })
         });
-        self.transform(new_chars.into_iter());
+        self.transform(new_chars.into_iter(), 0);
         self
     }
 
@@ -221,7 +236,7 @@ impl NormalizedString {
                 new_chars.push((c, if index > 0 { 1 } else { 0 }));
             })
         });
-        self.transform(new_chars.into_iter());
+        self.transform(new_chars.into_iter(), 0);
         self
     }
 
@@ -307,7 +322,7 @@ mod tests {
         n.filter(|c| *c != 'n');
         assert_eq!(
             &n.alignments,
-            &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (6, 7)]
+            &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 6), (6, 7)]
         );
     }
 
@@ -317,7 +332,7 @@ mod tests {
         n.nfd().filter(|c| !c.is_mark_nonspacing() && *c != 'n');
         assert_eq!(
             &n.alignments,
-            &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (6, 7)]
+            &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 6), (6, 7)]
         );
     }
 
@@ -329,5 +344,60 @@ mod tests {
         let world_o = n.get_range_original(6..11).unwrap();
         assert_eq!(world_n, "world");
         assert_eq!(world_o, "World");
+    }
+
+    #[test]
+    fn added_around_edges() {
+        let mut n = NormalizedString::from("Hello");
+        n.transform(
+            vec![
+                (' ', 1),
+                ('H', 0),
+                ('e', 0),
+                ('l', 0),
+                ('l', 0),
+                ('o', 0),
+                (' ', 1),
+            ]
+            .into_iter(),
+            0,
+        );
+
+        assert_eq!(&n.normalized, " Hello ");
+        assert_eq!(n.get_range_original(0..n.normalized.len()), Some("Hello"));
+    }
+
+    #[test]
+    fn remove_at_beginning() {
+        let mut n = NormalizedString::from("     Hello");
+        n.filter(|c| !c.is_whitespace());
+        assert_eq!(n.get_range_original(1.."Hello".len()), Some("ello"));
+        assert_eq!(
+            n.get_range_original(0..n.normalized.len()),
+            Some("     Hello")
+        );
+    }
+
+    #[test]
+    fn remove_at_end() {
+        let mut n = NormalizedString::from("Hello    ");
+        n.filter(|c| !c.is_whitespace());
+        assert_eq!(n.get_range_original(0..4), Some("Hell"));
+        assert_eq!(
+            n.get_range_original(0..n.normalized.len()),
+            Some("Hello    ")
+        );
+    }
+
+    #[test]
+    fn removed_around_both_edges() {
+        let mut n = NormalizedString::from("  Hello  ");
+        n.filter(|c| !c.is_whitespace());
+        assert_eq!(&n.normalized, "Hello");
+
+        println!("{:?}", n.get_range(0.."Hello".len()));
+        println!("{:?}", n.alignments);
+        assert_eq!(n.get_range_original(0.."Hello".len()), Some("  Hello  "));
+        assert_eq!(n.get_range_original(1.."Hell".len()), Some("ell"));
     }
 }

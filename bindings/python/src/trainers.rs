@@ -25,13 +25,19 @@ impl BpeTrainer {
             for (key, val) in kwargs {
                 let key: &str = key.extract()?;
                 match key {
-                    "vocab_size" => {
-                        let size: usize = val.extract()?;
-                        trainer.vocab_size = size;
-                    }
-                    "min_frequency" => {
-                        let freq: u32 = val.extract()?;
-                        trainer.min_frequency = freq;
+                    "vocab_size" => trainer.vocab_size = val.extract()?,
+                    "min_frequency" => trainer.min_frequency = val.extract()?,
+                    "show_progress" => trainer.show_progress = val.extract()?,
+                    "special_tokens" => trainer.special_tokens = val.extract()?,
+                    "limit_alphabet" => trainer.limit_alphabet = val.extract()?,
+                    "initial_alphabet" => {
+                        let alphabet: Vec<String> = val.extract()?;
+                        trainer.initial_alphabet = alphabet
+                            .into_iter()
+                            .map(|s| s.chars().nth(0))
+                            .filter(|c| c.is_some())
+                            .map(|c| c.unwrap())
+                            .collect();
                     }
                     _ => println!("Ignored unknown kwargs option {}", key),
                 };
