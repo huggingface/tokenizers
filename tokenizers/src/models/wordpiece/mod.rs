@@ -9,6 +9,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod trainer;
+pub use trainer::*;
+
 #[derive(Debug)]
 pub enum Error {
     MissingUnkToken,

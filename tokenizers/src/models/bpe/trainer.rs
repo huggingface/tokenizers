@@ -319,11 +319,8 @@ impl BpeTrainer {
 
         (words, counts)
     }
-}
 
-impl Trainer for BpeTrainer {
-    /// Train a BPE model
-    fn train(&self, word_counts: HashMap<String, u32>) -> Result<Box<dyn Model + Sync>> {
+    pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<BPE> {
         let mut word_to_id: HashMap<String, u32> = HashMap::new();
         let mut id_to_word: Vec<String> = vec![];
 
@@ -463,14 +460,22 @@ impl Trainer for BpeTrainer {
         }
         self.finalize_progress(&progress, merges.len());
 
-        Ok(Box::new(BPE::new(
+        Ok(BPE::new(
             word_to_id,
             merges
                 .into_iter()
                 .enumerate()
                 .map(|(index, (pair, new_id))| (pair, (index as u32, new_id)))
                 .collect(),
-        )))
+        ))
+    }
+}
+
+impl Trainer for BpeTrainer {
+    /// Train a BPE model
+    fn train(&self, word_counts: HashMap<String, u32>) -> Result<Box<dyn Model + Sync>> {
+        let bpe = self.train(word_counts)?;
+        Ok(Box::new(bpe))
     }
 
     /// Process a bunch of tokens, counting them
