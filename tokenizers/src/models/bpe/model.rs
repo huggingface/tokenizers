@@ -203,9 +203,9 @@ impl BPE {
         Ok(BPE::builder().vocab_and_merges(vocab, merges))
     }
 
-    /// Try resetting the cache. This fails if a lock can't be acquired.
-    pub fn try_clear_cache(&self) {
-        self.cache.try_clear()
+    /// Reset the cache.
+    pub fn clear_cache(&self) {
+        self.cache.clear()
     }
 
     fn merge_word(&self, w: &str) -> Word {

@@ -44,11 +44,9 @@ where
         Self::new(self.capacity)
     }
 
-    /// Try clearing the cache.
-    pub fn try_clear(&self) {
-        if let Ok(ref mut cache) = self.map.try_write() {
-            cache.clear();
-        }
+    /// Clear the cache.
+    pub fn clear(&self) {
+        self.map.write().unwrap().clear();
     }
 
     pub fn get_values<I>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
