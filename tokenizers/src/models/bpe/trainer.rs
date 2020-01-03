@@ -3,7 +3,51 @@
 use super::{Pair, Word, BPE};
 use crate::tokenizer::{Model, Result, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    iter, mem,
+};
+
+/// Provides access to the `FirstLastIterator` to any Iterator
+trait WithFirstLastIterator: Iterator + Sized {
+    fn with_first_and_last(self) -> FirstLastIterator<Self>;
+}
+
+impl<I> WithFirstLastIterator for I
+where
+    I: Iterator,
+{
+    fn with_first_and_last(self) -> FirstLastIterator<Self> {
+        FirstLastIterator {
+            first: true,
+            iter: self.peekable(),
+        }
+    }
+}
+
+/// Provides information about whether an item is the first and/or the last of the iterator
+struct FirstLastIterator<I>
+where
+    I: Iterator,
+{
+    first: bool,
+    iter: iter::Peekable<I>,
+}
+
+impl<I> Iterator for FirstLastIterator<I>
+where
+    I: Iterator,
+{
+    /// (is_first, is_last, item)
+    type Item = (bool, bool, I::Item);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let first = mem::replace(&mut self.first, false);
+        self.iter
+            .next()
+            .map(|e| (first, self.iter.peek().is_none(), e))
+    }
+}
 
 /// In charge of training a BPE model from a mapping of words to word counts.
 ///
@@ -22,12 +66,23 @@ use std::collections::{HashMap, HashSet};
 /// let model = trainer.train(word_counts);
 /// ```
 pub struct BpeTrainer {
+    /// The minimum frequency a pair must have to produce a merge operation
     pub min_frequency: u32,
+    /// The target vocabulary size
     pub vocab_size: usize,
+    /// Whether to show progress while training
     pub show_progress: bool,
+    /// A list of special tokens that the model should know of
     pub special_tokens: Vec<String>,
+    /// Whether to limit the number of initial tokens that can be kept before computing merges
     pub limit_alphabet: Option<usize>,
+    /// The initial alphabet we want absolutely to include. This allows to cover
+    /// some characters that are not necessarily in the training set
     pub initial_alphabet: HashSet<char>,
+    /// An optional prefix to use on any subword that exist only behind another one
+    pub continuing_subword_prefix: Option<String>,
+    /// An optional suffix to use caracterize and end-of-word subword
+    pub end_of_word_suffix: Option<String>,
 }
 
 impl Default for BpeTrainer {
@@ -39,6 +94,8 @@ impl Default for BpeTrainer {
             special_tokens: vec![],
             limit_alphabet: None,
             initial_alphabet: HashSet::new(),
+            continuing_subword_prefix: None,
+            end_of_word_suffix: None,
         }
     }
 }
@@ -152,13 +209,62 @@ impl BpeTrainer {
             }
         });
     }
+
+    /// Tokenize words and add subwords to the vocabulary when relevant
+    fn tokenize_words(
+        &self,
+        wc: &HashMap<String, u32>,
+        w2id: &mut HashMap<String, u32>,
+        id2w: &mut Vec<String>,
+        p: &Option<ProgressBar>,
+    ) -> (Vec<Word>, Vec<i32>) {
+        let mut words: Vec<Word> = vec![];
+        let mut counts: Vec<i32> = vec![];
+
+        for (word, count) in wc {
+            let mut current_word = Word::new();
+            counts.push(*count as i32);
+
+            for (is_first, is_last, c) in word.chars().with_first_and_last() {
+                let mut s = c.to_string();
+                //if let Some(id) = word_to_id.get(&s) {
+                if w2id.contains_key(&s) {
+                    // Found the initial char in the authorized alphabet
+
+                    // Add the `continuing_subword_prefix` if relevant
+                    if !is_first {
+                        if let Some(prefix) = &self.continuing_subword_prefix {
+                            s = format!("{}{}", prefix, s);
+                        }
+                    }
+                    if is_last {
+                        if let Some(suffix) = &self.end_of_word_suffix {
+                            s = format!("{}{}", s, suffix);
+                        }
+                    }
+
+                    // Insert the new formed string if necessary
+                    if !w2id.contains_key(&s) {
+                        id2w.push(s.clone());
+                        w2id.insert(s.clone(), (id2w.len() - 1) as u32);
+                    }
+                    current_word.add(w2id[&s]);
+                }
+            }
+            words.push(current_word);
+
+            if let Some(p) = p {
+                p.inc(1);
+            }
+        }
+
+        (words, counts)
+    }
 }
 
 impl Trainer for BpeTrainer {
     /// Train a BPE model
     fn train(&self, word_counts: HashMap<String, u32>) -> Result<Box<dyn Model + Sync>> {
-        let mut words: Vec<Word> = vec![];
-        let mut counts: Vec<i32> = vec![];
         let mut word_to_id: HashMap<String, u32> = HashMap::new();
         let mut id_to_word: Vec<String> = vec![];
 
@@ -178,22 +284,8 @@ impl Trainer for BpeTrainer {
         // 3. Tokenize words
         //
         self.update_progress(&progress, word_counts.len(), "Tokenize words");
-        for (word, count) in &word_counts {
-            let mut current_word = Word::new();
-            counts.push(*count as i32);
-
-            for c in word.chars() {
-                let s = c.to_string();
-                if let Some(id) = word_to_id.get(&s) {
-                    current_word.add(*id);
-                }
-            }
-            words.push(current_word);
-
-            if let Some(p) = &progress {
-                p.inc(1);
-            }
-        }
+        let (mut words, counts) =
+            self.tokenize_words(&word_counts, &mut word_to_id, &mut id_to_word, &progress);
         self.finalize_progress(&progress, words.len());
 
         //
@@ -258,10 +350,16 @@ impl Trainer for BpeTrainer {
                 break;
             }
 
-            let new_token = format!(
-                "{}{}",
-                id_to_word[best_pair.0 as usize], id_to_word[best_pair.1 as usize]
-            );
+            // Build new token
+            let part_a = &id_to_word[best_pair.0 as usize];
+            let mut part_b = id_to_word[best_pair.1 as usize].to_owned();
+            if let Some(prefix) = &self.continuing_subword_prefix {
+                if part_b.starts_with(prefix) {
+                    let prefix_byte_len = prefix.chars().map(|c| c.len_utf8()).sum();
+                    part_b = part_b[prefix_byte_len..].to_string();
+                }
+            }
+            let new_token = format!("{}{}", part_a, part_b);
 
             // Insert new token
             let new_token_id = id_to_word.len() as u32;
