@@ -208,11 +208,10 @@ impl BPE {
         Ok(BPE::builder().vocab_and_merges(vocab, merges))
     }
 
-    /// Try resetting the cache. This does nothing if the cache is disabled or if a lock
-    /// on the cache can't be acquired.
-    pub fn try_clear_cache(&self) {
+    /// Reset the cache.
+    pub fn clear_cache(&self) {
         if let Some(ref cache) = self.cache {
-            cache.try_clear()
+            cache.clear()
         }
     }
 
