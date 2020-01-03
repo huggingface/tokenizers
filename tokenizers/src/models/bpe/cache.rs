@@ -1,6 +1,6 @@
+use spin::RwLock;
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::sync::RwLock;
 
 /// The default capacity for a new `Cache`.
 pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
@@ -46,7 +46,7 @@ where
 
     /// Try clearing the cache.
     pub fn try_clear(&self) {
-        if let Ok(ref mut cache) = self.map.try_write() {
+        if let Some(ref mut cache) = self.map.try_write() {
             cache.clear();
         }
     }
@@ -55,7 +55,7 @@ where
     where
         I: Iterator<Item = K>,
     {
-        if let Ok(ref mut cache) = self.map.try_read() {
+        if let Some(ref mut cache) = self.map.try_read() {
             Some(keys_iter.map(|k| cache.get(&k).cloned()).collect())
         } else {
             None
@@ -67,7 +67,7 @@ where
         I: Iterator<Item = K>,
         J: Iterator<Item = Option<V>>,
     {
-        if let Ok(ref mut cache) = self.map.try_write() {
+        if let Some(ref mut cache) = self.map.try_write() {
             for (key, value) in keys_iter.zip(values_iter).filter(|(_, v)| v.is_some()) {
                 // If already at capacity, don't add any more values.
                 if cache.len() >= self.capacity {
