@@ -245,6 +245,10 @@ impl BPE {
         &self.unk_token
     }
 
+    pub fn get_continuing_subword_prefix(&self) -> &Option<String> {
+        &self.continuing_subword_prefix
+    }
+
     fn merge_word(&self, w: &str) -> Word {
         let mut word = Word::new();
         for (is_first, is_last, c) in w.chars().with_first_and_last() {
