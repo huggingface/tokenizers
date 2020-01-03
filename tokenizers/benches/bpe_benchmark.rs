@@ -12,8 +12,12 @@ use tokenizers::tokenizer::{AddedToken, EncodeInput, Tokenizer};
 
 static BATCH_SIZE: usize = 1_000;
 
-fn create_gpt2_tokenizer(bpe: &BPE) -> Tokenizer {
-    let mut tokenizer = Tokenizer::new(Box::new(bpe.clone()));
+fn create_gpt2_tokenizer() -> Tokenizer {
+    let bpe = BPE::from_files("benches/gpt2-vocab.json", "benches/gpt2-merges.txt")
+        .unwrap()
+        .build()
+        .unwrap();
+    let mut tokenizer = Tokenizer::new(Box::new(bpe));
     tokenizer.with_pre_tokenizer(Box::new(ByteLevel::new(true)));
     tokenizer.with_decoder(Box::new(ByteLevel::new(false)));
     tokenizer.add_tokens(&[
@@ -34,10 +38,7 @@ fn line_to_input(line: io::Result<String>) -> EncodeInput {
 }
 
 fn bench_gpt2(c: &mut Criterion) {
-    let bpe = BPE::from_files("benches/gpt2-vocab.json", "benches/gpt2-merges.txt")
-        .unwrap()
-        .build()
-        .unwrap();
+    let tokenizer = create_gpt2_tokenizer();
     let mut lines: Vec<EncodeInput> = vec![];
     let mut batches: Vec<Vec<EncodeInput>> = vec![vec![]];
     for line in BufReader::new(File::open(Path::new("benches/big.txt")).unwrap())
@@ -51,10 +52,8 @@ fn bench_gpt2(c: &mut Criterion) {
         batches.last_mut().unwrap().push(line);
     }
 
-    // Benchmarks encoding a series of inputs on a single tokenizer.
     c.bench_function("BPE GPT2 encode many", |b| {
         b.iter_custom(|iters| {
-            let tokenizer = create_gpt2_tokenizer(&bpe);
             let mut duration = Duration::new(0, 0);
             let mut line_index: usize = 0;
             for _i in 0..iters {
@@ -70,10 +69,8 @@ fn bench_gpt2(c: &mut Criterion) {
         })
     });
 
-    // Benchmarks encoding a series of batches on a single tokenizer.
     c.bench_function("BPE GPT2 encode batch many", |b| {
         b.iter_custom(|iters| {
-            let tokenizer = create_gpt2_tokenizer(&bpe);
             let mut duration = Duration::new(0, 0);
             let mut batch_index: usize = 0;
             for _i in 0..iters {
