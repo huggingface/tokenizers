@@ -237,6 +237,14 @@ impl BPE {
         }
     }
 
+    pub fn get_vocab(&self) -> &HashMap<String, u32> {
+        &self.vocab
+    }
+
+    pub fn get_unk_token(&self) -> &Option<u32> {
+        &self.unk_token
+    }
+
     fn merge_word(&self, w: &str) -> Word {
         let mut word = Word::new();
         for (is_first, is_last, c) in w.chars().with_first_and_last() {

@@ -1,3 +1,4 @@
+use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Offsets, Result, Token};
 use std::{
     collections::HashMap,
@@ -64,6 +65,29 @@ impl WordPiece {
             unk_token,
             max_input_chars_per_word: max_input_chars_per_word.unwrap_or(100),
         })
+    }
+
+    pub fn from_bpe(bpe: &BPE) -> Self {
+        let vocab = bpe.get_vocab().clone();
+        let vocab_r = vocab
+            .clone()
+            .into_iter()
+            .map(|(token, id)| (id, token))
+            .collect();
+
+        let mut wp = WordPiece {
+            vocab,
+            vocab_r,
+            ..Default::default()
+        };
+
+        if let Some(unk) = bpe.get_unk_token() {
+            if let Some(unk_token) = wp.vocab_r.get(&unk) {
+                wp.unk_token = unk_token.to_owned();
+            }
+        }
+
+        wp
     }
 }
 
