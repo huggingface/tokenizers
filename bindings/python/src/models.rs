@@ -49,14 +49,29 @@ impl BPE {
     ///
     /// Instanciate a new BPE model using the provided vocab and merges files
     #[staticmethod]
-    fn from_files(vocab: &str, merges: &str) -> PyResult<Model> {
-        match tk::models::bpe::BPE::from_files(vocab, merges) {
-            Err(e) => {
-                println!("Error: {:?}", e);
-                Err(exceptions::Exception::py_err(
-                    "Error while initializing BPE",
-                ))
+    #[args(kwargs = "**")]
+    fn from_files(vocab: &str, merges: &str, kwargs: Option<&PyDict>) -> PyResult<Model> {
+        let builder: PyResult<_> =
+            ToPyResult(tk::models::bpe::BPE::from_files(vocab, merges)).into();
+        let mut builder = builder?;
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "cache_capacity" => builder = builder.cache_capacity(value.extract()?),
+                    "dropout" => builder = builder.dropout(value.extract()?),
+                    "unk_token" => builder = builder.unk_token(value.extract()?),
+                    _ => println!("Ignored unknown kwarg option {}", key),
+                };
             }
+        }
+
+        match builder.build() {
+            Err(e) => Err(exceptions::Exception::py_err(format!(
+                "Error while initializing BPE: {}",
+                e
+            ))),
             Ok(bpe) => Ok(Model {
                 model: Container::Owned(Box::new(bpe)),
             }),
