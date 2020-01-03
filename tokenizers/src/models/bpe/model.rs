@@ -148,7 +148,7 @@ impl BPE {
     }
 
     /// Initialize a BPE model from vocab and merges file.
-    pub fn from_files(vocab: &str, merges: &str) -> Result<Self> {
+    pub fn from_files(vocab: &str, merges: &str) -> Result<BpeBuilder> {
         // Read vocab.json
         let vocab_file = File::open(vocab)?;
         let mut vocab_file = BufReader::new(vocab_file);
@@ -200,7 +200,7 @@ impl BPE {
             merges.insert(pair, (rank as u32, *new_id));
         }
 
-        Ok(BPE::new(vocab, merges))
+        Ok(BPE::builder().vocab_and_merges(vocab, merges))
     }
 
     /// Try resetting the cache. This fails if a lock can't be acquired.
@@ -470,7 +470,7 @@ mod tests {
         );
         assert!(result.is_ok());
 
-        let bpe = result.unwrap();
+        let bpe = result.unwrap().build().unwrap();
 
         // Check merges.
         assert_eq!(bpe.merges.get(&(0u32, 1u32)).unwrap(), &(1u32, 3u32));
