@@ -58,7 +58,10 @@ fn line_to_input(line: io::Result<String>) -> EncodeInput {
 }
 
 fn bench_gpt2(c: &mut Criterion) {
-    let bpe = BPE::from_files("benches/gpt2-vocab.json", "benches/gpt2-merges.txt").unwrap();
+    let bpe = BPE::from_files("benches/gpt2-vocab.json", "benches/gpt2-merges.txt")
+        .unwrap()
+        .build()
+        .unwrap();
 
     // Benchmarks encoding a single input from a fresh tokenizer.
     c.bench_function("BPE GPT2 encode", |b| {
