@@ -302,6 +302,7 @@ impl Model for BPE {
             },
             Some(_) => None, // If using dropout we don't want to use the cache.
         };
+        let mut should_update_cache = false;
 
         for (i, (w, initial_offsets)) in sentence.iter().enumerate() {
             let tokens = match cached_words {
@@ -318,9 +319,16 @@ impl Model for BPE {
                             let tokens = self.word_to_tokens(&word, initial_offsets);
                             // Add to cache.
                             cache[i] = Some(word);
+                            should_update_cache = true;
                             tokens
                         }
-                        Some(word) => self.word_to_tokens(word, initial_offsets),
+                        Some(word) => {
+                            let tokens = self.word_to_tokens(word, initial_offsets);
+                            // Remove this entry so we don't needlesly try to update
+                            // it in the cache below.
+                            cache[i] = None;
+                            tokens
+                        }
                     }
                 }
             };
@@ -328,13 +336,15 @@ impl Model for BPE {
             encoded.extend(tokens);
         }
 
-        // Also update cache
+        // Try updating the cache if we need to.
         if let Some(cache) = cached_words {
-            let keys_iter = sentence.into_iter().map(|(s, _)| s);
-            self.cache
-                .as_ref()
-                .unwrap()
-                .set_values(keys_iter, cache.into_iter());
+            if should_update_cache {
+                let keys_iter = sentence.into_iter().map(|(s, _)| s);
+                self.cache
+                    .as_ref()
+                    .unwrap()
+                    .set_values(keys_iter, cache.into_iter());
+            }
         }
 
         Ok(encoded)

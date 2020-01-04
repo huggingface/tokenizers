@@ -65,6 +65,19 @@ where
         I: Iterator<Item = K>,
         J: Iterator<Item = Option<V>>,
     {
+        // Before trying to acquire a write lock, we check if we are already at
+        // capacity with a read handler.
+        if let Ok(ref mut cache) = self.map.try_read() {
+            if cache.len() >= self.capacity {
+                // At capacity, so do nothing.
+                return;
+            }
+        } else {
+            // If we couldn't acquire a read handle then we probably won't be able to acquire
+            // a write handle one quadrillionth of a second later.
+            return;
+        }
+        // Not at capacity, so try acquiring a write handle.
         if let Ok(ref mut cache) = self.map.try_write() {
             for (key, value) in keys_iter.zip(values_iter).filter(|(_, v)| v.is_some()) {
                 // If already at capacity, don't add any more values.
