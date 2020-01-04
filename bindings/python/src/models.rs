@@ -133,4 +133,11 @@ impl WordPiece {
             }),
         }
     }
+
+    #[staticmethod]
+    fn empty() -> Model {
+        Model {
+            model: Container::Owned(Box::new(tk::models::wordpiece::WordPiece::default())),
+        }
+    }
 }

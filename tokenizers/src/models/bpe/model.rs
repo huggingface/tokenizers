@@ -1,4 +1,4 @@
-use super::{Cache, Error, Pair, Word};
+use super::{Cache, Error, Pair, WithFirstLastIterator, Word};
 use crate::tokenizer::{Model, Offsets, Result, Token};
 use rand::{thread_rng, Rng};
 use serde_json::Value;
@@ -18,6 +18,8 @@ struct Config {
     cache_capacity: Option<usize>,
     dropout: Option<f32>,
     unk_token: Option<u32>,
+    continuing_subword_prefix: Option<String>,
+    end_of_word_suffix: Option<String>,
 }
 
 /// A `BpeBuilder` can be used to create a `BPE` model with a custom configuration.
@@ -61,6 +63,18 @@ impl BpeBuilder {
         self
     }
 
+    /// Set the `continuing_subword_prefix` option.
+    pub fn continuing_subword_prefix(mut self, prefix: String) -> Self {
+        self.config.continuing_subword_prefix = Some(prefix);
+        self
+    }
+
+    /// Set the `end_of_word_suffix` option.
+    pub fn end_of_word_suffix(mut self, prefix: String) -> Self {
+        self.config.end_of_word_suffix = Some(prefix);
+        self
+    }
+
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
     pub fn build(self) -> Result<BPE> {
         // Validate dropout.
@@ -92,6 +106,8 @@ impl BpeBuilder {
             cache,
             dropout: self.config.dropout,
             unk_token: self.config.unk_token,
+            continuing_subword_prefix: self.config.continuing_subword_prefix,
+            end_of_word_suffix: self.config.end_of_word_suffix,
         })
     }
 }
@@ -111,6 +127,10 @@ pub struct BPE {
     dropout: Option<f32>,
     /// The unknown token to be used when we encounter an unknown char
     unk_token: Option<u32>,
+    /// An optional prefix to use on any subword that exist only behind another one
+    continuing_subword_prefix: Option<String>,
+    /// An optional suffix to caracterize and end-of-word subword
+    end_of_word_suffix: Option<String>,
 }
 
 impl Default for BPE {
@@ -134,6 +154,8 @@ impl Clone for BPE {
             cache: fresh_cache,
             dropout: self.dropout,
             unk_token: self.unk_token,
+            continuing_subword_prefix: self.continuing_subword_prefix.clone(),
+            end_of_word_suffix: self.end_of_word_suffix.clone(),
         }
     }
 }
@@ -215,10 +237,37 @@ impl BPE {
         }
     }
 
+    pub fn get_vocab(&self) -> &HashMap<String, u32> {
+        &self.vocab
+    }
+
+    pub fn get_unk_token(&self) -> &Option<u32> {
+        &self.unk_token
+    }
+
+    pub fn get_continuing_subword_prefix(&self) -> &Option<String> {
+        &self.continuing_subword_prefix
+    }
+
     fn merge_word(&self, w: &str) -> Word {
         let mut word = Word::new();
-        for c in w.chars() {
-            if let Some(id) = self.vocab.get(&c.to_string()) {
+        for (is_first, is_last, c) in w.chars().with_first_and_last() {
+            let mut s = c.to_string();
+
+            // Add the `continuing_subword_prefix` if relevant
+            if !is_first {
+                if let Some(prefix) = &self.continuing_subword_prefix {
+                    s = format!("{}{}", prefix, s);
+                }
+            }
+            // Add the `end_of_word_suffix` if relevant
+            if is_last {
+                if let Some(suffix) = &self.end_of_word_suffix {
+                    s = format!("{}{}", s, suffix);
+                }
+            }
+
+            if let Some(id) = self.vocab.get(&s) {
                 word.add(*id);
             } else if let Some(unk) = &self.unk_token {
                 // Handle UNK token

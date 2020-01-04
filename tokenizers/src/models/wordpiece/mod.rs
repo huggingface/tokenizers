@@ -1,3 +1,4 @@
+use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Offsets, Result, Token};
 use std::{
     collections::HashMap,
@@ -7,6 +8,9 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
+
+mod trainer;
+pub use trainer::*;
 
 #[derive(Debug)]
 pub enum Error {
@@ -27,6 +31,7 @@ impl fmt::Display for Error {
 
 pub struct WordPiece {
     unk_token: String,
+    continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
     vocab: HashMap<String, u32>,
     vocab_r: HashMap<u32, String>,
@@ -37,6 +42,7 @@ impl Default for WordPiece {
         WordPiece {
             vocab: HashMap::new(),
             vocab_r: HashMap::new(),
+            continuing_subword_prefix: String::from("##"),
             unk_token: String::from("[UNK]"),
             max_input_chars_per_word: 100,
         }
@@ -63,7 +69,34 @@ impl WordPiece {
             vocab_r: vocab.into_iter().map(|(token, id)| (id, token)).collect(),
             unk_token,
             max_input_chars_per_word: max_input_chars_per_word.unwrap_or(100),
+            ..Default::default()
         })
+    }
+
+    pub fn from_bpe(bpe: &BPE) -> Self {
+        let vocab = bpe.get_vocab().clone();
+        let vocab_r = vocab
+            .clone()
+            .into_iter()
+            .map(|(token, id)| (id, token))
+            .collect();
+
+        let mut wp = WordPiece {
+            vocab,
+            vocab_r,
+            ..Default::default()
+        };
+
+        if let Some(unk) = bpe.get_unk_token() {
+            if let Some(unk_token) = wp.vocab_r.get(&unk) {
+                wp.unk_token = unk_token.to_owned();
+            }
+        }
+        if let Some(prefix) = bpe.get_continuing_subword_prefix() {
+            wp.continuing_subword_prefix = prefix.to_owned();
+        }
+
+        wp
     }
 }
 
@@ -101,7 +134,7 @@ impl Model for WordPiece {
                 while start < end {
                     let mut substr = chars[start..end].iter().collect::<String>();
                     if start > 0 {
-                        substr = format!("##{}", substr);
+                        substr = format!("{}{}", self.continuing_subword_prefix, substr);
                     }
                     if self.vocab.contains_key(&substr) {
                         cur_str = Some(Token {
@@ -159,7 +192,7 @@ impl Model for WordPiece {
         vocab_file.write_all(
             &vocab
                 .into_iter()
-                .map(|(token, _)| token.as_bytes().to_owned())
+                .map(|(token, _)| format!("{}\n", token).as_bytes().to_owned())
                 .flatten()
                 .collect::<Vec<_>>()[..],
         )?;

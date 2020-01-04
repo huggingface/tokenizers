@@ -18,6 +18,7 @@ use pyo3::wrap_pymodule;
 fn trainers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<trainers::Trainer>()?;
     m.add_class::<trainers::BpeTrainer>()?;
+    m.add_class::<trainers::WordPieceTrainer>()?;
     Ok(())
 }
 

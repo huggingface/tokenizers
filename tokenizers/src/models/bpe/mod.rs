@@ -1,4 +1,4 @@
-use std::{convert::From, io};
+use std::{convert::From, io, iter, mem};
 
 mod cache;
 mod model;
@@ -59,6 +59,47 @@ impl std::error::Error for Error {
             Error::JsonError(e) => Some(e),
             _ => None,
         }
+    }
+}
+
+/// Provides access to the `FirstLastIterator` to any Iterator
+pub(crate) trait WithFirstLastIterator: Iterator + Sized {
+    fn with_first_and_last(self) -> FirstLastIterator<Self>;
+}
+
+impl<I> WithFirstLastIterator for I
+where
+    I: Iterator,
+{
+    fn with_first_and_last(self) -> FirstLastIterator<Self> {
+        FirstLastIterator {
+            first: true,
+            iter: self.peekable(),
+        }
+    }
+}
+
+/// Provides information about whether an item is the first and/or the last of the iterator
+pub(crate) struct FirstLastIterator<I>
+where
+    I: Iterator,
+{
+    first: bool,
+    iter: iter::Peekable<I>,
+}
+
+impl<I> Iterator for FirstLastIterator<I>
+where
+    I: Iterator,
+{
+    /// (is_first, is_last, item)
+    type Item = (bool, bool, I::Item);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let first = mem::replace(&mut self.first, false);
+        self.iter
+            .next()
+            .map(|e| (first, self.iter.peek().is_none(), e))
     }
 }
 
