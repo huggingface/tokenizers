@@ -411,16 +411,24 @@ impl Tokenizer {
                 let mut words = HashMap::new();
 
                 let file: std::fs::File = File::open(file)?;
-                let file = BufReader::new(file);
+                let mut file = BufReader::new(file);
 
-                for line in file.lines() {
-                    let line = line?;
-                    let normalized = self.normalize(&line)?;
-                    let pre_tokenized = self.pre_tokenize(normalized.get())?;
-                    trainer.process_tokens(
-                        &mut words,
-                        pre_tokenized.into_iter().map(|(t, _)| t).collect(),
-                    );
+                let mut buf = String::new();
+                loop {
+                    buf.clear();
+                    // We read new lines using this API instead of the Lines Iterator
+                    // on purpose. We want to keep the `\n` and potential `\r` between each lines
+                    match file.read_line(&mut buf)? {
+                        0 => break,
+                        _ => {
+                            let normalized = self.normalize(&buf)?;
+                            let pre_tokenized = self.pre_tokenize(normalized.get())?;
+                            trainer.process_tokens(
+                                &mut words,
+                                pre_tokenized.into_iter().map(|(t, _)| t).collect(),
+                            );
+                        }
+                    }
                 }
 
                 Ok(words)
