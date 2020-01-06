@@ -1,6 +1,7 @@
 extern crate tokenizers as tk;
 
 use crate::error::PyError;
+use crate::normalized_string::NormalizedString;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use tk::tokenizer::PaddingDirection;
@@ -20,13 +21,8 @@ impl Encoding {
 #[pymethods]
 impl Encoding {
     #[getter]
-    fn get_original(&self) -> String {
-        self.encoding.get_normalized().get_original().to_owned()
-    }
-
-    #[getter]
-    fn get_normalized(&self) -> String {
-        self.encoding.get_normalized().get().to_owned()
+    fn get_normalized(&self) -> NormalizedString {
+        NormalizedString::new(self.encoding.get_normalized().clone())
     }
 
     #[args(kwargs = "**")]

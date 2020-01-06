@@ -2,6 +2,7 @@ mod decoders;
 mod encoding;
 mod error;
 mod models;
+mod normalized_string;
 mod normalizers;
 mod pre_tokenizers;
 mod processors;
@@ -70,6 +71,8 @@ fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
 #[pymodule]
 fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<tokenizer::Tokenizer>()?;
+    m.add_class::<encoding::Encoding>()?;
+    m.add_class::<normalized_string::NormalizedString>()?;
     m.add_wrapped(wrap_pymodule!(models))?;
     m.add_wrapped(wrap_pymodule!(pre_tokenizers))?;
     m.add_wrapped(wrap_pymodule!(decoders))?;

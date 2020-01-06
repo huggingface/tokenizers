@@ -9,9 +9,61 @@ from typing import Optional, Union, List, Tuple
 
 Offsets = Tuple[int, int]
 
+class NormalizedString:
+    """ A NormalizedString produced during normalization """
+
+    @property
+    def original(self) -> str:
+        """ The original string """
+        pass
+
+    @property
+    def normalized(self) -> str:
+        """ The normalized string """
+        pass
+
+    def get_range(self, start: int, end: int) -> Optional[str]:
+        """ Return a range of the normalized string, if the bounds are correct
+
+        Args:
+            start: int:
+                The starting offset in the string
+
+            end: int:
+                The ending offset in the string
+
+        Returns:
+            The substring if the bounds are correct
+        """
+        pass
+
+    def get_range_original(self, start: int, end: int) -> Optional[str]:
+        """ Return a range of the original string, if the bounds are correct
+
+        The given bounds are supposed to be after-normalization-offsets.
+        Provided with the `Encoding.offsets` associated with an `Encoding.ids` unit,
+        this method will return the part of the original string corresponding to the id.
+
+        Args:
+            start: int:
+                The starting offset in the normalized string
+
+            end: int:
+                The ending offset in the normalized string
+
+        Returns:
+            The substring if the bounds are correct
+        """
+        pass
+
 
 class Encoding:
     """ An Encoding as returned by the Tokenizer """
+
+    @property
+    def normalized(self) -> NormalizedString:
+        """ The NormalizedString """
+        pass
 
     @property
     def ids(self) -> List[int]:
