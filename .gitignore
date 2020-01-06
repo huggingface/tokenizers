@@ -10,4 +10,6 @@ Cargo.lock
 /docs
 
 __pycache__
+pip-wheel-metadata
+*.egg-info
 *.so
