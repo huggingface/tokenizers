@@ -3,16 +3,16 @@
 #![doc(html_logo_url = "https://huggingface.co/landing/assets/huggingface_logo.svg")]
 
 //! # Tokenizers
-//! 
+//!
 //! Provides an implementation of today's most used tokenizers, with a focus on performance and
 //! versatility.
-//! 
+//!
 //! ## What is a Tokenizer
-//! 
+//!
 //! A Tokenizer works as a pipeline, it processes some raw text as input and outputs an
 //! `Encoding`.
 //! The various steps of the pipeline are:
-//! 
+//!
 //! 1. The `Normalizer`: in charge of normalizing the text. Common examples of normalization are
 //!    the [unicode normalization standards](https://unicode.org/reports/tr15/#Norm_Forms), such as `NFD` or `NFKC`.
 //! 2. The `PreTokenizer`: in charge of creating initial words splits in the text. The most common way of
