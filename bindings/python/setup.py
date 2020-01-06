@@ -13,6 +13,23 @@ setup(
     url="https://github.com/huggingface/tokenizers",
     license="Apache License 2.0",
     rust_extensions=[RustExtension("tokenizers.tokenizers", binding=Binding.PyO3)],
-    packages=["tokenizers"],
+    packages=[
+        "tokenizers",
+        "tokenizers.models",
+        "tokenizers.decoders",
+        "tokenizers.normalizers",
+        "tokenizers.pre_tokenizers",
+        "tokenizers.processors",
+        "tokenizers.trainers"
+    ],
+    package_data = {
+        'tokenizers': [ 'py.typed', '__init__.pyi' ],
+        'tokenizers.models': [ 'py.typed', '__init__.pyi' ],
+        'tokenizers.decoders': [ 'py.typed', '__init__.pyi' ],
+        'tokenizers.normalizers': [ 'py.typed', '__init__.pyi' ],
+        'tokenizers.pre_tokenizers': [ 'py.typed', '__init__.pyi' ],
+        'tokenizers.processors': [ 'py.typed', '__init__.pyi' ],
+        'tokenizers.trainers': [ 'py.typed', '__init__.pyi' ],
+    },
     zip_safe=False,
 )
