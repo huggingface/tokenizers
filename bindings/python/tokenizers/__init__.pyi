@@ -7,6 +7,87 @@ from tokenizers import trainers
 
 from typing import Optional, Union, List, Tuple
 
+Offsets = Tuple[int, int]
+
+
+class Encoding:
+    """ An Encoding as returned by the Tokenizer """
+
+    @property
+    def ids(self) -> List[int]:
+        """ The tokenized ids """
+        pass
+
+    @property
+    def tokens(self) -> List[str]:
+        """ The tokenized strings """
+        pass
+
+    @property
+    def type_ids(self) -> List[int]:
+        """ The type ids """
+        pass
+
+    @property
+    def offsets(self) -> List[Offsets]:
+        """ The offsets """
+        pass
+
+    @property
+    def special_tokens_mask(self) -> List[int]:
+        """ The special tokens mask """
+        pass
+
+    @property
+    def attention_mask(self) -> List[int]:
+        """ The attention mask """
+        pass
+
+    @property
+    def overflowing(self) -> Optional[Encoding]:
+        """ The overflowing encoding, after truncation """
+        pass
+
+    def pad(self,
+            length: int,
+            pad_id: Optional[int] = 0,
+            pad_type_id: Optional[int] = 0,
+            pad_token: Optional[str] = "[PAD]",
+            direction: Optional[str] = "right"):
+        """ Pad the current Encoding at the given length
+
+        Args:
+            length: int:
+                The length at which to pad
+
+            direction: (`optional`) str:
+                Can be one of: `right` or `left`
+
+            pad_id: (`optional`) unsigned int:
+                The indice to be used when padding
+
+            pad_type_id: (`optional`) unsigned int:
+                The type indice to be used when padding
+
+            pad_token: (`optional`) str:
+                The pad token to be used when padding
+        """
+        pass
+
+    def truncate(self, max_length: int, stride: Optional[int] = 0):
+        """ Truncate the current Encoding at the given max_length
+
+        Args:
+            max_length: int:
+                The maximum length to be kept
+
+            stride: (`optional`) unsigned int:
+                The length of the previous first sequence to be included
+                in the overflowing sequence
+        """
+        pass
+
+
 class Tokenizer:
     """ Tokenizer
 
@@ -24,7 +105,7 @@ class Tokenizer:
            relevant that, for example, a language model would need, such as special tokens.
     """
 
-    def __new__(cls, model: models.Model):
+    def __new__(cls, model: models.Model) -> Tokenizer:
         """ Instantiate a new Tokenizer using the given Model
 
         Args:
