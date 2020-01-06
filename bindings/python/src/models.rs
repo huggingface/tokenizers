@@ -62,6 +62,10 @@ impl BPE {
                     "cache_capacity" => builder = builder.cache_capacity(value.extract()?),
                     "dropout" => builder = builder.dropout(value.extract()?),
                     "unk_token" => builder = builder.unk_token(value.extract()?),
+                    "continuing_subword_prefix" => {
+                        builder = builder.continuing_subword_prefix(value.extract()?)
+                    }
+                    "end_of_word_suffix" => builder = builder.end_of_word_suffix(value.extract()?),
                     _ => println!("Ignored unknown kwarg option {}", key),
                 };
             }
