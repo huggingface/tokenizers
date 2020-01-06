@@ -7,7 +7,7 @@ class Model:
     a Model will return a instance of this class when instantiated.
     """
 
-    def save(folder: str, name: str) -> List[str]:
+    def save(self, folder: str, name: str) -> List[str]:
         """ Save the current model
 
         Save the current model in the given folder, using the given name for the various
@@ -20,6 +20,7 @@ class Model:
 class BPE:
     """ BytePairEncoding model class """
 
+    @staticmethod
     def from_files(vocab: str,
                    merges: str,
                    cache_capacity: Optional[int],
@@ -55,6 +56,7 @@ class BPE:
         """
         pass
 
+    @staticmethod
     def empty() -> Model:
         """ Instantiate an empty BPE Model. """
         pass
@@ -63,6 +65,7 @@ class BPE:
 class WordPiece:
     """ WordPiece model class """
 
+    @staticmethod
     def from_files(vocab: str,
                    unk_token: Optional[str],
                    max_input_chars_per_word: Optional[int]) -> Model:
@@ -80,6 +83,7 @@ class WordPiece:
         """
         pass
 
+    @staticmethod
     def empty() -> Model:
         """ Instantiate an empty WordPiece Model. """
         pass
