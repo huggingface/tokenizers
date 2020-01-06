@@ -1,3 +1,9 @@
 __version__ = "0.0.11"
 
-from .tokenizers import Tokenizer, models, decoders, pre_tokenizers, trainers, processors, normalizers
+from .tokenizers import Tokenizer
+from .tokenizers import decoders
+from .tokenizers import models
+from .tokenizers import normalizers
+from .tokenizers import pre_tokenizers
+from .tokenizers import processors
+from .tokenizers import trainers
