@@ -13,3 +13,5 @@ __pycache__
 pip-wheel-metadata
 *.egg-info
 *.so
+/bindings/python/build
+/bindings/python/dist
