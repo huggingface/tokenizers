@@ -3,9 +3,16 @@ use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder};
 use crate::tokenizer::{Model, Result, Trainer};
 use std::collections::{HashMap, HashSet};
 
-#[derive(Default)]
 pub struct WordPieceTrainerBuilder {
     bpe_trainer_builder: BpeTrainerBuilder,
+}
+
+impl Default for WordPieceTrainerBuilder {
+    fn default() -> Self {
+        Self {
+            bpe_trainer_builder: BpeTrainerBuilder::new().continuing_subword_prefix("##".into()),
+        }
+    }
 }
 
 impl WordPieceTrainerBuilder {
