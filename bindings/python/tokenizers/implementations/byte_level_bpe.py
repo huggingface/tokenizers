@@ -5,8 +5,8 @@ from .base_tokenizer import BaseTokenizer
 
 from typing import Optional
 
-class ByteLevelBpe(BaseTokenizer):
-    """ ByteLevelBpe
+class ByteLevelBPETokenizer(BaseTokenizer):
+    """ ByteLevelBPETokenizer
 
     Represents a Byte-level BPE as introduced by OpenAI with their GPT-2 model
     """
