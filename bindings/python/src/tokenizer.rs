@@ -55,61 +55,6 @@ impl Tokenizer {
         Ok(self.tokenizer.get_vocab_size(with_added_tokens))
     }
 
-    fn with_model(&mut self, model: &mut Model) -> PyResult<()> {
-        if let Some(model) = model.model.to_pointer() {
-            self.tokenizer.with_model(model);
-            Ok(())
-        } else {
-            Err(exceptions::Exception::py_err(
-                "The Model is already being used in another Tokenizer",
-            ))
-        }
-    }
-
-    fn with_pre_tokenizer(&mut self, pretok: &mut PreTokenizer) -> PyResult<()> {
-        if let Some(pretok) = pretok.pretok.to_pointer() {
-            self.tokenizer.with_pre_tokenizer(pretok);
-            Ok(())
-        } else {
-            Err(exceptions::Exception::py_err(
-                "The PreTokenizer is already being used in another Tokenizer",
-            ))
-        }
-    }
-
-    fn with_decoder(&mut self, decoder: &mut Decoder) -> PyResult<()> {
-        if let Some(decoder) = decoder.decoder.to_pointer() {
-            self.tokenizer.with_decoder(decoder);
-            Ok(())
-        } else {
-            Err(exceptions::Exception::py_err(
-                "The Decoder is already being used in another Tokenizer",
-            ))
-        }
-    }
-
-    fn with_post_processor(&mut self, processor: &mut PostProcessor) -> PyResult<()> {
-        if let Some(processor) = processor.processor.to_pointer() {
-            self.tokenizer.with_post_processor(processor);
-            Ok(())
-        } else {
-            Err(exceptions::Exception::py_err(
-                "The Processor is already being used in another Tokenizer",
-            ))
-        }
-    }
-
-    fn with_normalizer(&mut self, normalizer: &mut Normalizer) -> PyResult<()> {
-        if let Some(normalizer) = normalizer.normalizer.to_pointer() {
-            self.tokenizer.with_normalizer(normalizer);
-            Ok(())
-        } else {
-            Err(exceptions::Exception::py_err(
-                "The Normalizer is already being used in another Tokenizer",
-            ))
-        }
-    }
-
     #[args(kwargs = "**")]
     fn with_truncation(&mut self, max_length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut stride = 0;
@@ -328,6 +273,18 @@ impl Tokenizer {
         })
     }
 
+    #[setter]
+    fn set_model(&mut self, model: &mut Model) -> PyResult<()> {
+        if let Some(model) = model.model.to_pointer() {
+            self.tokenizer.with_model(model);
+            Ok(())
+        } else {
+            Err(exceptions::Exception::py_err(
+                "The Model is already being used in another Tokenizer",
+            ))
+        }
+    }
+
     #[getter]
     fn get_normalizer(&self) -> PyResult<Option<Normalizer>> {
         Ok(self
@@ -336,6 +293,18 @@ impl Tokenizer {
             .map(|normalizer| Normalizer {
                 normalizer: Container::from_ref(normalizer),
             }))
+    }
+
+    #[setter]
+    fn set_normalizer(&mut self, normalizer: &mut Normalizer) -> PyResult<()> {
+        if let Some(normalizer) = normalizer.normalizer.to_pointer() {
+            self.tokenizer.with_normalizer(normalizer);
+            Ok(())
+        } else {
+            Err(exceptions::Exception::py_err(
+                "The Normalizer is already being used in another Tokenizer",
+            ))
+        }
     }
 
     #[getter]
@@ -348,6 +317,18 @@ impl Tokenizer {
             }))
     }
 
+    #[setter]
+    fn set_pre_tokenizer(&mut self, pretok: &mut PreTokenizer) -> PyResult<()> {
+        if let Some(pretok) = pretok.pretok.to_pointer() {
+            self.tokenizer.with_pre_tokenizer(pretok);
+            Ok(())
+        } else {
+            Err(exceptions::Exception::py_err(
+                "The PreTokenizer is already being used in another Tokenizer",
+            ))
+        }
+    }
+
     #[getter]
     fn get_post_processor(&self) -> PyResult<Option<PostProcessor>> {
         Ok(self
@@ -358,10 +339,34 @@ impl Tokenizer {
             }))
     }
 
+    #[setter]
+    fn set_post_processor(&mut self, processor: &mut PostProcessor) -> PyResult<()> {
+        if let Some(processor) = processor.processor.to_pointer() {
+            self.tokenizer.with_post_processor(processor);
+            Ok(())
+        } else {
+            Err(exceptions::Exception::py_err(
+                "The Processor is already being used in another Tokenizer",
+            ))
+        }
+    }
+
     #[getter]
     fn get_decoder(&self) -> PyResult<Option<Decoder>> {
         Ok(self.tokenizer.get_decoder().map(|decoder| Decoder {
             decoder: Container::from_ref(decoder),
         }))
+    }
+
+    #[setter]
+    fn set_decoder(&mut self, decoder: &mut Decoder) -> PyResult<()> {
+        if let Some(decoder) = decoder.decoder.to_pointer() {
+            self.tokenizer.with_decoder(decoder);
+            Ok(())
+        } else {
+            Err(exceptions::Exception::py_err(
+                "The Decoder is already being used in another Tokenizer",
+            ))
+        }
     }
 }

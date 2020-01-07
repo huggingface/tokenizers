@@ -169,6 +169,56 @@ class Tokenizer:
         """
         pass
 
+
+    @property
+    def model(self) -> Model:
+        """ Get the model in use with this Tokenizer """
+        pass
+
+    @model.setter
+    def model(self, model: models.Model):
+        """ Change the model to use with this Tokenizer """
+        pass
+
+    @property
+    def pre_tokenizer(self) -> Optional[PreTokenizer]:
+        """ Get the pre-tokenizer in use with this model """
+        pass
+
+    @pre_tokenizer.setter
+    def pre_tokenizer(self, pre_tokenizer: pre_tokenizers.PreTokenizer):
+        """ Change the pre tokenizer to use with this Tokenizer """
+        pass
+
+    @property
+    def decoder(self) -> Optional[Decoder]:
+        """ Get the decoder in use with this model """
+        pass
+
+    @decoder.setter
+    def decoder(self, decoder: decoders.Decoder):
+        """ Change the decoder to use with this Tokenizer """
+        pass
+
+    @property
+    def post_processor(self) -> Optional[PostProcessor]:
+        """ Get the post-processor in use with this Tokenizer """
+        pass
+
+    @post_processor.setter
+    def post_processor(self, processor: processors.PostProcessor):
+        """ Change the post processor to use with this Tokenizer """
+
+    @property
+    def normalizer(self) -> Optional[Normalizer]:
+        """ Get the normalizer in use with this Tokenizer """
+        pass
+
+    @normalizer.setter
+    def normalizer(self, normalizer: normalizers.Normalizer):
+        """ Change the normalizer to use with this Tokenizer """
+
+
     def get_vocab_size(self, with_added_tokens: Optional[bool]) -> int:
         """ Returns the size of the vocabulary
 
@@ -177,24 +227,6 @@ class Tokenizer:
                 Whether to include the added tokens in the vocabulary's size
         """
         pass
-
-    def with_model(self, model: models.Model):
-        """ Change the model to use with this Tokenizer """
-        pass
-
-    def with_pre_tokenizer(self, pre_tokenizer: pre_tokenizers.PreTokenizer):
-        """ Change the pre tokenizer to use with this Tokenizer """
-        pass
-
-    def with_decoder(self, decoder: decoders.Decoder):
-        """ Change the decoder to use with this Tokenizer """
-        pass
-
-    def with_post_processor(self, processor: processors.PostProcessor):
-        """ Change the post processor to use with this Tokenizer """
-
-    def with_normalizer(self, normalizer: normalizers.Normalizer):
-        """ Change the normalizer to use with this Tokenizer """
 
     def with_truncation(self,
                         max_length: int,
