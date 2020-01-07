@@ -5,6 +5,8 @@ from tokenizers import pre_tokenizers
 from tokenizers import processors
 from tokenizers import trainers
 
+from tokenizers.implementations import ByteLevelBpe
+
 from typing import Optional, Union, List, Tuple
 
 Offsets = Tuple[int, int]
