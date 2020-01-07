@@ -71,3 +71,19 @@ class NFKC:
     def new() -> Normalizer:
         """ Instantiate a new NFKC Normalizer """
         pass
+
+class Sequence:
+    """ Allows concatenating multiple other Normalizer as a Sequence.
+
+    All the normalizers run in sequence in the given order
+    """
+
+    @staticmethod
+    def new(normalizers: List[Normalizer]) -> Normalizer:
+        """ Instantiate a new normalization Sequence using the given normalizers
+
+        Args:
+            normalizers: List[Normalizer]:
+                A list of Normalizer to be run as a sequence
+        """
+        pass

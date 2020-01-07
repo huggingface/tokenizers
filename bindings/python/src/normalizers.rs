@@ -1,6 +1,7 @@
 extern crate tokenizers as tk;
 
 use super::utils::Container;
+use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 
@@ -89,6 +90,34 @@ impl NFKC {
     fn new() -> PyResult<Normalizer> {
         Ok(Normalizer {
             normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFKC)),
+        })
+    }
+}
+
+#[pyclass]
+pub struct Sequence {}
+#[pymethods]
+impl Sequence {
+    #[staticmethod]
+    fn new(normalizers: &PyList) -> PyResult<Normalizer> {
+        let normalizers = normalizers
+            .iter()
+            .map(|n| {
+                let normalizer: &mut Normalizer = n.extract()?;
+                if let Some(normalizer) = normalizer.normalizer.to_pointer() {
+                    Ok(normalizer)
+                } else {
+                    Err(exceptions::Exception::py_err(
+                        "At least one normalizer is already being used in another Tokenizer",
+                    ))
+                }
+            })
+            .collect::<PyResult<_>>()?;
+
+        Ok(Normalizer {
+            normalizer: Container::Owned(Box::new(tk::normalizers::utils::Sequence::new(
+                normalizers,
+            ))),
         })
     }
 }
