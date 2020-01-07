@@ -42,9 +42,17 @@ pub struct WordPiece {}
 #[pymethods]
 impl WordPiece {
     #[staticmethod]
-    fn new() -> PyResult<Decoder> {
+    fn new(kwargs: Option<&PyDict>) -> PyResult<Decoder> {
+        let mut prefix = String::from("##");
+
+        if let Some(kwargs) = kwargs {
+            if let Some(p) = kwargs.get_item("prefix") {
+                prefix = p.extract()?;
+            }
+        }
+
         Ok(Decoder {
-            decoder: Container::Owned(Box::new(tk::decoders::wordpiece::WordPiece)),
+            decoder: Container::Owned(Box::new(tk::decoders::wordpiece::WordPiece::new(prefix))),
         })
     }
 }

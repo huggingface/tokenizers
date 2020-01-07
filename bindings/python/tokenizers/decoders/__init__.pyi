@@ -24,6 +24,11 @@ class WordPiece:
     """
 
     @staticmethod
-    def new() -> Decoder:
-        """ Instantiate a new WordPiece Decoder """
+    def new(prefix: str="##") -> Decoder:
+        """ Instantiate a new WordPiece Decoder
+
+        Args:
+            prefix: str:
+                The prefix to use for subwords that are not a beginning-of-word
+        """
         pass
