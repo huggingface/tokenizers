@@ -32,8 +32,8 @@ if not files:
 tokenizer = Tokenizer(models.BPE.empty())
 
 # Customize pre-tokenization and decoding
-tokenizer.with_pre_tokenizer(pre_tokenizers.ByteLevel.new(add_prefix_space=False))
-tokenizer.with_decoder(decoders.ByteLevel.new())
+tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel.new(add_prefix_space=False)
+tokenizer.decoder = decoders.ByteLevel.new()
 
 # And then train
 trainer = trainers.BpeTrainer.new(

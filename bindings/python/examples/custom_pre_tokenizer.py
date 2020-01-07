@@ -44,8 +44,8 @@ good_custom = GoodCustom()
 good_pretok = pre_tokenizers.PreTokenizer.custom(good_custom)
 good_decoder = decoders.Decoder.custom(good_custom)
 
-tokenizer.with_pre_tokenizer(good_pretok)
-tokenizer.with_decoder(good_decoder)
+tokenizer.pre_tokenizer = good_pretok
+tokenizer.decoder = good_decoder
 
 print("Tokenization will work with good custom:")
 encoding = tokenizer.encode("Hey friend!")
@@ -60,8 +60,8 @@ bad_custom = BadCustom()
 bad_pretok = pre_tokenizers.PreTokenizer.custom(bad_custom)
 bad_decoder = decoders.Decoder.custom(bad_custom)
 
-tokenizer.with_pre_tokenizer(bad_pretok)
-tokenizer.with_decoder(bad_decoder)
+tokenizer.pre_tokenizer = bad_pretok
+tokenizer.decoder = bad_decoder
 try:
     encoding = tokenizer.encode("Hey friend!")
 except:

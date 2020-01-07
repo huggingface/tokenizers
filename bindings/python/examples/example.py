@@ -58,9 +58,9 @@ if args.type == "gpt2":
     # Create a Tokenizer using BPE
     tok_r = Tokenizer(BPE.from_files(args.vocab, args.merges))
     # Use ByteLevel PreTokenizer
-    tok_r.with_pre_tokenizer(pre_tokenizers.ByteLevel.new(add_prefix_space=False))
+    tok_r.pre_tokenizer = pre_tokenizers.ByteLevel.new(add_prefix_space=False)
     # Use ByteLevel Decoder
-    tok_r.with_decoder(decoders.ByteLevel.new())
+    tok_r.decoder = decoders.ByteLevel.new()
 elif args.type == "bert":
     print("Running Bert tokenizer")
     tok_p = BertTokenizer.from_pretrained('bert-base-uncased')
@@ -70,19 +70,19 @@ elif args.type == "bert":
         unk_token="[UNK]",
         max_input_chars_per_word=100)
     )
-    tok_r.with_normalizer(BertNormalizer.new(
+    tok_r.normalizer = BertNormalizer.new(
         clean_text=True,
         handle_chinese_chars=True,
         strip_accents=True,
         lowercase=True,
-    ))
-    # tok_r.with_pre_tokenizer(pre_tokenizers.Whitespace.new())
-    tok_r.with_pre_tokenizer(pre_tokenizers.BertPreTokenizer.new())
-    tok_r.with_decoder(decoders.WordPiece.new())
-    tok_r.with_post_processor(BertProcessing.new(
+    )
+    # tok_r.pre_tokenizer = pre_tokenizers.Whitespace.new()
+    tok_r.pre_tokenizer = pre_tokenizers.BertPreTokenizer.new()
+    tok_r.decoder = decoders.WordPiece.new()
+    tok_r.post_processor = BertProcessing.new(
         ("[SEP]", tok_r.token_to_id("[SEP]")),
         ("[CLS]", tok_r.token_to_id("[CLS]")),
-    ))
+    )
 else:
     raise Exception(f"Unknown type {args.type}")
 

@@ -32,14 +32,14 @@ if not files:
 tokenizer = Tokenizer(models.WordPiece.empty())
 
 # Customize all the steps
-tokenizer.with_normalizer(normalizers.BertNormalizer.new(
+tokenizer.normalizer = normalizers.BertNormalizer.new(
     clean_text=True,
     handle_chinese_chars=True,
     strip_accents=True,
     lowercase=True,
-))
-tokenizer.with_pre_tokenizer(pre_tokenizers.BertPreTokenizer.new())
-tokenizer.with_decoder(decoders.WordPiece.new())
+)
+tokenizer.pre_tokenizer = pre_tokenizers.BertPreTokenizer.new()
+tokenizer.decoder = decoders.WordPiece.new()
 
 # And then train
 trainer = trainers.WordPieceTrainer.new(
