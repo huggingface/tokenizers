@@ -6,7 +6,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
-pub struct Config {
+struct Config {
     min_frequency: Option<u32>,
     vocab_size: Option<usize>,
     show_progress: Option<bool>,
@@ -17,6 +17,8 @@ pub struct Config {
     end_of_word_suffix: Option<String>,
 }
 
+/// A `BpeTrainerBuilder` can be used to create a `BpeTrainer` with a custom
+/// configuration.
 #[derive(Default)]
 pub struct BpeTrainerBuilder {
     config: Config,
@@ -103,7 +105,7 @@ impl BpeTrainerBuilder {
     }
 }
 
-/// In charge of training a BPE model from a mapping of words to word counts.
+/// In charge of training a `BPE` model from a mapping of words to word counts.
 ///
 /// # Examples
 ///

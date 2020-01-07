@@ -13,7 +13,6 @@ use std::{
 #[derive(Default)]
 struct Config {
     vocab: Option<HashMap<String, u32>>,
-    vocab_r: Option<HashMap<u32, String>>,
     merges: Option<HashMap<Pair, (u32, u32)>>,
     cache_capacity: Option<usize>,
     dropout: Option<f32>,
@@ -77,42 +76,38 @@ impl BpeBuilder {
 
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
     pub fn build(self) -> Result<BPE> {
+        let mut bpe = BPE::default();
+
         // Validate dropout.
         if let Some(p) = self.config.dropout {
             if p < 0.0 || p > 1.0 {
                 return Err(Error::InvalidDropout.into());
+            } else {
+                bpe.dropout = Some(p);
             }
         }
-
-        let vocab = self.config.vocab.unwrap_or_else(HashMap::new);
-        let vocab_r = match self.config.vocab_r {
-            Some(vocab_r) => vocab_r,
-            None => vocab
+        if let Some(vocab) = self.config.vocab {
+            bpe.vocab_r = vocab
                 .iter()
                 .map(|(key, val)| (*val, key.to_owned()))
-                .collect(),
-        };
-        let merges = self.config.merges.unwrap_or_else(HashMap::new);
-        let cache = match self.config.cache_capacity {
-            Some(0) => None,
-            Some(capacity) => Some(Cache::new(capacity)),
-            None => Some(Cache::default()),
-        };
+                .collect();
+            bpe.vocab = vocab;
+        }
+        if let Some(merges) = self.config.merges {
+            bpe.merges = merges;
+        }
+        if let Some(capacity) = self.config.cache_capacity {
+            bpe.cache = match capacity {
+                0 => None,
+                _ => Some(Cache::new(capacity)),
+            };
+        }
 
-        Ok(BPE {
-            vocab,
-            vocab_r,
-            merges,
-            cache,
-            dropout: self.config.dropout,
-            unk_token: self.config.unk_token,
-            continuing_subword_prefix: self.config.continuing_subword_prefix,
-            end_of_word_suffix: self.config.end_of_word_suffix,
-        })
+        Ok(bpe)
     }
 }
 
-/// A Byte Pair Encoding model.
+/// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 pub struct BPE {
     /// The vocabulary assigns a number to each token.
     vocab: HashMap<String, u32>,
@@ -135,7 +130,16 @@ pub struct BPE {
 
 impl Default for BPE {
     fn default() -> Self {
-        Self::builder().build().unwrap()
+        Self {
+            vocab: HashMap::new(),
+            vocab_r: HashMap::new(),
+            merges: HashMap::new(),
+            cache: Some(Cache::default()),
+            dropout: None,
+            unk_token: None,
+            continuing_subword_prefix: None,
+            end_of_word_suffix: None,
+        }
     }
 }
 
