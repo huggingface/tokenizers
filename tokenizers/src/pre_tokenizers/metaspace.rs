@@ -1,5 +1,7 @@
-use crate::tokenizer::{Offsets, PreTokenizer, Result};
+use crate::tokenizer::{Decoder, Offsets, PreTokenizer, Result};
 
+/// Replaces all the whitespaces by the provided meta character and then
+/// splits on this character
 pub struct Metaspace {
     replacement: char,
     add_prefix_space: bool,
@@ -52,13 +54,37 @@ impl PreTokenizer for Metaspace {
     }
 }
 
+impl Decoder for Metaspace {
+    fn decode(&self, tokens: Vec<String>) -> Result<String> {
+        Ok(tokens
+            .into_iter()
+            .map(|t| t.chars().collect::<Vec<_>>())
+            .flatten()
+            .enumerate()
+            .map(|(i, c)| {
+                if c == self.replacement {
+                    if i == 0 && self.add_prefix_space {
+                        None
+                    } else {
+                        Some(' ')
+                    }
+                } else {
+                    Some(c)
+                }
+            })
+            .filter(|c| c.is_some())
+            .map(|c| c.unwrap())
+            .collect::<String>())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn basic() {
-        let pretok = Metaspace::default();
+        let pretok = Metaspace::new('▁', true);
         let res = pretok.pre_tokenize("Hey friend!").unwrap();
         assert_eq!(
             &res,
@@ -68,7 +94,7 @@ mod tests {
 
     #[test]
     fn multiple_spaces() {
-        let pretok = Metaspace::default();
+        let pretok = Metaspace::new('▁', true);
         let res = pretok.pre_tokenize("Hey   friend!").unwrap();
         assert_eq!(
             &res,
@@ -79,5 +105,14 @@ mod tests {
                 ("▁friend!".into(), (6, 14)),
             ]
         );
+    }
+
+    #[test]
+    fn decode() {
+        let decoder = Metaspace::new('▁', true);
+        let res = decoder
+            .decode(vec!["▁Hey".into(), "▁friend!".into()])
+            .unwrap();
+        assert_eq!(&res, "Hey friend!")
     }
 }

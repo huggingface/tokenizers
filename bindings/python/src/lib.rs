@@ -49,6 +49,7 @@ fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<decoders::Decoder>()?;
     m.add_class::<decoders::ByteLevel>()?;
     m.add_class::<decoders::WordPiece>()?;
+    m.add_class::<decoders::Metaspace>()?;
     Ok(())
 }
 

@@ -57,6 +57,41 @@ impl WordPiece {
     }
 }
 
+#[pyclass]
+pub struct Metaspace {}
+#[pymethods]
+impl Metaspace {
+    #[staticmethod]
+    #[args(kwargs = "**")]
+    fn new(kwargs: Option<&PyDict>) -> PyResult<Decoder> {
+        let mut replacement = '▁';
+        let mut add_prefix_space = true;
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "replacement" => {
+                        let s: &str = value.extract()?;
+                        replacement = s.chars().nth(0).ok_or(exceptions::Exception::py_err(
+                            "replacement must be a character",
+                        ))?;
+                    }
+                    "add_prefix_space" => add_prefix_space = value.extract()?,
+                    _ => println!("Ignored unknown kwarg option {}", key),
+                }
+            }
+        }
+
+        Ok(Decoder {
+            decoder: Container::Owned(Box::new(tk::decoder::metaspace::Metaspace::new(
+                replacement,
+                add_prefix_space,
+            ))),
+        })
+    }
+}
+
 struct PyDecoder {
     class: PyObject,
 }
