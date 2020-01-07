@@ -76,35 +76,34 @@ impl BpeBuilder {
 
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
     pub fn build(self) -> Result<BPE> {
+        let mut bpe = BPE::default();
+
         // Validate dropout.
         if let Some(p) = self.config.dropout {
             if p < 0.0 || p > 1.0 {
                 return Err(Error::InvalidDropout.into());
+            } else {
+                bpe.dropout = Some(p);
             }
         }
+        if let Some(vocab) = self.config.vocab {
+            bpe.vocab_r = vocab
+                .iter()
+                .map(|(key, val)| (*val, key.to_owned()))
+                .collect();
+            bpe.vocab = vocab;
+        }
+        if let Some(merges) = self.config.merges {
+            bpe.merges = merges;
+        }
+        if let Some(capacity) = self.config.cache_capacity {
+            bpe.cache = match capacity {
+                0 => None,
+                _ => Some(Cache::new(capacity)),
+            };
+        }
 
-        let vocab = self.config.vocab.unwrap_or_else(HashMap::new);
-        let vocab_r = vocab
-            .iter()
-            .map(|(key, val)| (*val, key.to_owned()))
-            .collect();
-        let merges = self.config.merges.unwrap_or_else(HashMap::new);
-        let cache = match self.config.cache_capacity {
-            Some(0) => None,
-            Some(capacity) => Some(Cache::new(capacity)),
-            None => Some(Cache::default()),
-        };
-
-        Ok(BPE {
-            vocab,
-            vocab_r,
-            merges,
-            cache,
-            dropout: self.config.dropout,
-            unk_token: self.config.unk_token,
-            continuing_subword_prefix: self.config.continuing_subword_prefix,
-            end_of_word_suffix: self.config.end_of_word_suffix,
-        })
+        Ok(bpe)
     }
 }
 
@@ -131,7 +130,16 @@ pub struct BPE {
 
 impl Default for BPE {
     fn default() -> Self {
-        Self::builder().build().unwrap()
+        Self {
+            vocab: HashMap::new(),
+            vocab_r: HashMap::new(),
+            merges: HashMap::new(),
+            cache: Some(Cache::default()),
+            dropout: None,
+            unk_token: None,
+            continuing_subword_prefix: None,
+            end_of_word_suffix: None,
+        }
     }
 }
 

@@ -78,27 +78,26 @@ impl WordPieceBuilder {
 
     /// Contructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
     pub fn build(self) -> WordPiece {
-        let vocab = self.config.vocab.unwrap_or_else(HashMap::new);
-        let vocab_r = vocab
-            .iter()
-            .map(|(key, val)| (*val, key.to_owned()))
-            .collect();
-        let unk_token = self
-            .config
-            .unk_token
-            .unwrap_or_else(|| String::from("[UNK]"));
-        let continuing_subword_prefix = self
-            .config
-            .continuing_subword_prefix
-            .unwrap_or_else(|| String::from("##"));
-        let max_input_chars_per_word = self.config.max_input_chars_per_word.unwrap_or(100);
-        WordPiece {
-            vocab,
-            vocab_r,
-            unk_token,
-            continuing_subword_prefix,
-            max_input_chars_per_word,
+        let mut wp = WordPiece::default();
+
+        if let Some(vocab) = self.config.vocab {
+            wp.vocab_r = vocab
+                .iter()
+                .map(|(key, val)| (*val, key.to_owned()))
+                .collect();
+            wp.vocab = vocab;
         }
+        if let Some(unk_token) = self.config.unk_token {
+            wp.unk_token = unk_token;
+        }
+        if let Some(continuing_subword_prefix) = self.config.continuing_subword_prefix {
+            wp.continuing_subword_prefix = continuing_subword_prefix;
+        }
+        if let Some(max_input_chars_per_word) = self.config.max_input_chars_per_word {
+            wp.max_input_chars_per_word = max_input_chars_per_word;
+        }
+
+        wp
     }
 }
 
@@ -115,7 +114,13 @@ pub struct WordPiece {
 
 impl Default for WordPiece {
     fn default() -> Self {
-        Self::builder().build()
+        Self {
+            vocab: HashMap::new(),
+            vocab_r: HashMap::new(),
+            unk_token: String::from("[UNK]"),
+            continuing_subword_prefix: String::from("##"),
+            max_input_chars_per_word: 100,
+        }
     }
 }
 
