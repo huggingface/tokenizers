@@ -1,3 +1,6 @@
+//! [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
+//! model.
+
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Offsets, Result, Token};
 use std::{
@@ -29,27 +32,100 @@ impl fmt::Display for Error {
     }
 }
 
-pub struct WordPiece {
-    unk_token: String,
-    continuing_subword_prefix: String,
-    max_input_chars_per_word: usize,
-    vocab: HashMap<String, u32>,
-    vocab_r: HashMap<u32, String>,
+#[derive(Default)]
+struct Config {
+    vocab: Option<HashMap<String, u32>>,
+    unk_token: Option<String>,
+    continuing_subword_prefix: Option<String>,
+    max_input_chars_per_word: Option<usize>,
 }
 
-impl Default for WordPiece {
-    fn default() -> Self {
+/// A `WordPieceBuilder` can be used to create a `WordPiece` model with a custom configuration.
+#[derive(Default)]
+pub struct WordPieceBuilder {
+    config: Config,
+}
+
+impl WordPieceBuilder {
+    /// Construct a new `WordPieceBuilder`.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the vocab (token -> ID) mapping.
+    pub fn vocab(mut self, vocab: HashMap<String, u32>) -> Self {
+        self.config.vocab = Some(vocab);
+        self
+    }
+
+    /// The the `UNK` token for the vocab.
+    pub fn unk_token(mut self, unk_token: String) -> Self {
+        self.config.unk_token = Some(unk_token);
+        self
+    }
+
+    /// Set the prefix for continuing subwords.
+    pub fn continuing_subword_prefix(mut self, continuing_subword_prefix: String) -> Self {
+        self.config.continuing_subword_prefix = Some(continuing_subword_prefix);
+        self
+    }
+
+    /// Set the maximum number of input characters per word.
+    pub fn max_input_chars_per_word(mut self, max_input_chars_per_word: usize) -> Self {
+        self.config.max_input_chars_per_word = Some(max_input_chars_per_word);
+        self
+    }
+
+    /// Contructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
+    pub fn build(self) -> WordPiece {
+        let vocab = self.config.vocab.unwrap_or_else(HashMap::new);
+        let vocab_r = vocab
+            .iter()
+            .map(|(key, val)| (*val, key.to_owned()))
+            .collect();
+        let unk_token = self
+            .config
+            .unk_token
+            .unwrap_or_else(|| String::from("[UNK]"));
+        let continuing_subword_prefix = self
+            .config
+            .continuing_subword_prefix
+            .unwrap_or_else(|| String::from("##"));
+        let max_input_chars_per_word = self.config.max_input_chars_per_word.unwrap_or(100);
         WordPiece {
-            vocab: HashMap::new(),
-            vocab_r: HashMap::new(),
-            continuing_subword_prefix: String::from("##"),
-            unk_token: String::from("[UNK]"),
-            max_input_chars_per_word: 100,
+            vocab,
+            vocab_r,
+            unk_token,
+            continuing_subword_prefix,
+            max_input_chars_per_word,
         }
     }
 }
 
+/// A
+/// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
+/// model.
+pub struct WordPiece {
+    vocab: HashMap<String, u32>,
+    vocab_r: HashMap<u32, String>,
+    unk_token: String,
+    continuing_subword_prefix: String,
+    max_input_chars_per_word: usize,
+}
+
+impl Default for WordPiece {
+    fn default() -> Self {
+        Self::builder().build()
+    }
+}
+
 impl WordPiece {
+    /// Get a `WordPieceBuilder`.
+    pub fn builder() -> WordPieceBuilder {
+        WordPieceBuilder::new()
+    }
+
+    /// Initialize a `WordPiece` model from a vocab mapping file.
     pub fn from_files(
         vocab: &str,
         unk_token: String,
@@ -64,29 +140,16 @@ impl WordPiece {
             vocab.insert(line.trim_end().to_owned(), index as u32);
         }
 
-        Ok(WordPiece {
-            vocab: vocab.clone(),
-            vocab_r: vocab.into_iter().map(|(token, id)| (id, token)).collect(),
-            unk_token,
-            max_input_chars_per_word: max_input_chars_per_word.unwrap_or(100),
-            ..Default::default()
-        })
+        let mut builder = Self::builder().vocab(vocab).unk_token(unk_token);
+        if let Some(max_chars) = max_input_chars_per_word {
+            builder = builder.max_input_chars_per_word(max_chars);
+        }
+        Ok(builder.build())
     }
 
+    /// Create a `WordPiece` model from a `BPE` model.
     pub fn from_bpe(bpe: &BPE) -> Self {
-        let vocab = bpe.get_vocab().clone();
-        let vocab_r = vocab
-            .clone()
-            .into_iter()
-            .map(|(token, id)| (id, token))
-            .collect();
-
-        let mut wp = WordPiece {
-            vocab,
-            vocab_r,
-            ..Default::default()
-        };
-
+        let mut wp = Self::builder().vocab(bpe.get_vocab().clone()).build();
         if let Some(unk) = bpe.get_unk_token() {
             if let Some(unk_token) = wp.vocab_r.get(&unk) {
                 wp.unk_token = unk_token.to_owned();
@@ -95,7 +158,6 @@ impl WordPiece {
         if let Some(prefix) = bpe.get_continuing_subword_prefix() {
             wp.continuing_subword_prefix = prefix.to_owned();
         }
-
         wp
     }
 }

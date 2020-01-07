@@ -3,6 +3,8 @@ use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder};
 use crate::tokenizer::{Model, Result, Trainer};
 use std::collections::{HashMap, HashSet};
 
+/// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
+/// configuration.
 pub struct WordPieceTrainerBuilder {
     bpe_trainer_builder: BpeTrainerBuilder,
 }
@@ -76,6 +78,7 @@ impl WordPieceTrainerBuilder {
     }
 }
 
+/// Trains a `WordPiece` model.
 #[derive(Default)]
 pub struct WordPieceTrainer {
     bpe_trainer: BpeTrainer,

@@ -1,25 +1,25 @@
 use super::Pair;
 
 #[derive(Clone, Default)]
-pub struct Word {
+pub(super) struct Word {
     chars: Vec<u32>,
     sizes: Vec<usize>,
 }
 
 impl Word {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Word {
             chars: vec![],
             sizes: vec![],
         }
     }
 
-    pub fn add(&mut self, c: u32) {
+    pub(super) fn add(&mut self, c: u32) {
         self.chars.push(c);
         self.sizes.push(1);
     }
 
-    pub fn merge(&mut self, c1: u32, c2: u32, replacement: u32) -> Vec<(Pair, i32)> {
+    pub(super) fn merge(&mut self, c1: u32, c2: u32, replacement: u32) -> Vec<(Pair, i32)> {
         let mut changes: Vec<(Pair, i32)> = vec![];
         let mut i = 0;
         loop {
@@ -61,11 +61,11 @@ impl Word {
         changes
     }
 
-    pub fn get_chars(&self) -> &Vec<u32> {
+    pub(super) fn get_chars(&self) -> &Vec<u32> {
         &self.chars
     }
 
-    pub fn get_offsets(&self) -> Vec<(usize, usize)> {
+    pub(super) fn get_offsets(&self) -> Vec<(usize, usize)> {
         let mut offsets = vec![];
         let mut pos = 0;
         for size in &self.sizes {

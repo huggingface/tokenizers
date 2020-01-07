@@ -13,7 +13,6 @@ use std::{
 #[derive(Default)]
 struct Config {
     vocab: Option<HashMap<String, u32>>,
-    vocab_r: Option<HashMap<u32, String>>,
     merges: Option<HashMap<Pair, (u32, u32)>>,
     cache_capacity: Option<usize>,
     dropout: Option<f32>,
@@ -85,13 +84,10 @@ impl BpeBuilder {
         }
 
         let vocab = self.config.vocab.unwrap_or_else(HashMap::new);
-        let vocab_r = match self.config.vocab_r {
-            Some(vocab_r) => vocab_r,
-            None => vocab
-                .iter()
-                .map(|(key, val)| (*val, key.to_owned()))
-                .collect(),
-        };
+        let vocab_r = vocab
+            .iter()
+            .map(|(key, val)| (*val, key.to_owned()))
+            .collect();
         let merges = self.config.merges.unwrap_or_else(HashMap::new);
         let cache = match self.config.cache_capacity {
             Some(0) => None,
@@ -112,7 +108,7 @@ impl BpeBuilder {
     }
 }
 
-/// A Byte Pair Encoding model.
+/// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 pub struct BPE {
     /// The vocabulary assigns a number to each token.
     vocab: HashMap<String, u32>,

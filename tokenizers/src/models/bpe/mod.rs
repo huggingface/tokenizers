@@ -1,3 +1,4 @@
+//! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 use std::{convert::From, io, iter, mem};
 
 mod cache;
@@ -5,9 +6,9 @@ mod model;
 mod trainer;
 mod word;
 
-pub type Pair = (u32, u32);
+type Pair = (u32, u32);
 
-/// Errors that can be encountered while using BPE.
+/// Errors that can be encountered while using or constructing a `BPE` model.
 #[derive(Debug)]
 pub enum Error {
     /// An error encountered while reading files mainly.
@@ -107,4 +108,4 @@ where
 pub use cache::*;
 pub use model::*;
 pub use trainer::*;
-pub use word::*;
+use word::*;

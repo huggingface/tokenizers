@@ -2,14 +2,14 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::RwLock;
 
-/// The default capacity for a new `Cache`.
+/// The default capacity for a `BPE`'s internal cache.
 pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
 
-/// Provides a simple multithread cache that will try to retrieve values
-/// but won't block if someone else is already using it.
+/// Provides a simple multithread cache to speed up BPE tokenization that will try to read values
+/// concurrently but won't block if another thread is writing.
 /// The goal is clearly not the accuracy of the content, both get and set
 /// are not guaranteed to actually get or set.
-pub struct Cache<K, V>
+pub(super) struct Cache<K, V>
 where
     K: Eq + Hash + Clone,
     V: Clone,
@@ -34,22 +34,22 @@ where
     V: Clone,
 {
     /// Create new `Cache` with the given capacity.
-    pub fn new(capacity: usize) -> Self {
+    pub(super) fn new(capacity: usize) -> Self {
         let map = RwLock::new(HashMap::with_capacity(capacity));
         Cache { map, capacity }
     }
 
     /// Create a fresh `Cache` with the same configuration.
-    pub fn fresh(&self) -> Self {
+    pub(super) fn fresh(&self) -> Self {
         Self::new(self.capacity)
     }
 
     /// Clear the cache.
-    pub fn clear(&self) {
+    pub(super) fn clear(&self) {
         self.map.write().unwrap().clear();
     }
 
-    pub fn get_values<I>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
+    pub(super) fn get_values<I>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
     where
         I: Iterator<Item = K>,
     {
@@ -60,7 +60,7 @@ where
         }
     }
 
-    pub fn set_values<I, J>(&self, keys_iter: I, values_iter: J)
+    pub(super) fn set_values<I, J>(&self, keys_iter: I, values_iter: J)
     where
         I: Iterator<Item = K>,
         J: Iterator<Item = Option<V>>,
