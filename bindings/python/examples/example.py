@@ -86,11 +86,14 @@ elif args.type == "bert":
 else:
     raise Exception(f"Unknown type {args.type}")
 
+
 def tokenize_r():
-    return tok_r.encode_batch(text);
+    return tok_r.encode_batch(text)
+
 
 def tokenize_p():
     return [tok_p.encode(sentence, add_special_tokens=True) for sentence in tqdm(text)]
+
 
 print(f"Tokenizing {len(text)} lines")
 
@@ -110,7 +113,7 @@ print(f"Transformer tokenizer took: {time_p} sec")
 
 print(f"SpeedUp Ratio: {time_p / time_r}")
 
-ids_r = [ sentence.ids for sentence in encoded_r ]
+ids_r = [sentence.ids for sentence in encoded_r]
 diff_ids = 0
 for i in range(0, len(encoded_r)):
     if encoded_r[i].ids != encoded_p[i]:
@@ -124,8 +127,8 @@ for i in range(0, len(encoded_r)):
             print("")
 print(f"Ids differences: {diff_ids}")
 
-decoded_r = tok_r.decode_batch([ sentence.ids for sentence in encoded_r ], False)
-decoded_p = [ tok_p.decode(en) for en in encoded_p ]
+decoded_r = tok_r.decode_batch([sentence.ids for sentence in encoded_r], skip_special_tokens=False)
+decoded_p = [tok_p.decode(en) for en in encoded_p]
 diff_decoded = 0
 for i in range(0, len(text)):
     if decoded_r[i] != decoded_p[i]:

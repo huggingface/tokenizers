@@ -9,6 +9,7 @@ from typing import Optional, Union, List, Tuple
 
 Offsets = Tuple[int, int]
 
+
 class NormalizedString:
     """ A NormalizedString produced during normalization """
 
