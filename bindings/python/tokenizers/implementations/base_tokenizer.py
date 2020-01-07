@@ -1,6 +1,6 @@
-from .tokenizers import Tokenizer
+from ..tokenizers import Tokenizer, Encoding
 
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple, Optional
 
 class BaseTokenizer:
     _tokenizer: Tokenizer

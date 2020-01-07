@@ -15,3 +15,5 @@ pip-wheel-metadata
 *.so
 /bindings/python/build
 /bindings/python/dist
+
+.vscode
