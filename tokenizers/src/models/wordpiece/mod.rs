@@ -32,18 +32,29 @@ impl fmt::Display for Error {
     }
 }
 
-#[derive(Default)]
 struct Config {
-    vocab: Option<HashMap<String, u32>>,
-    unk_token: Option<String>,
-    continuing_subword_prefix: Option<String>,
-    max_input_chars_per_word: Option<usize>,
+    vocab: HashMap<String, u32>,
+    unk_token: String,
+    continuing_subword_prefix: String,
+    max_input_chars_per_word: usize,
 }
 
 /// A `WordPieceBuilder` can be used to create a `WordPiece` model with a custom configuration.
-#[derive(Default)]
 pub struct WordPieceBuilder {
     config: Config,
+}
+
+impl Default for WordPieceBuilder {
+    fn default() -> Self {
+        Self {
+            config: Config {
+                vocab: HashMap::new(),
+                unk_token: String::from("[UNK]"),
+                continuing_subword_prefix: String::from("##"),
+                max_input_chars_per_word: 100,
+            },
+        }
+    }
 }
 
 impl WordPieceBuilder {
@@ -54,50 +65,43 @@ impl WordPieceBuilder {
 
     /// Set the vocab (token -> ID) mapping.
     pub fn vocab(mut self, vocab: HashMap<String, u32>) -> Self {
-        self.config.vocab = Some(vocab);
+        self.config.vocab = vocab;
         self
     }
 
     /// The the `UNK` token for the vocab.
     pub fn unk_token(mut self, unk_token: String) -> Self {
-        self.config.unk_token = Some(unk_token);
+        self.config.unk_token = unk_token;
         self
     }
 
     /// Set the prefix for continuing subwords.
     pub fn continuing_subword_prefix(mut self, continuing_subword_prefix: String) -> Self {
-        self.config.continuing_subword_prefix = Some(continuing_subword_prefix);
+        self.config.continuing_subword_prefix = continuing_subword_prefix;
         self
     }
 
     /// Set the maximum number of input characters per word.
     pub fn max_input_chars_per_word(mut self, max_input_chars_per_word: usize) -> Self {
-        self.config.max_input_chars_per_word = Some(max_input_chars_per_word);
+        self.config.max_input_chars_per_word = max_input_chars_per_word;
         self
     }
 
     /// Contructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
     pub fn build(self) -> WordPiece {
-        let mut wp = WordPiece::default();
-
-        if let Some(vocab) = self.config.vocab {
-            wp.vocab_r = vocab
-                .iter()
-                .map(|(key, val)| (*val, key.to_owned()))
-                .collect();
-            wp.vocab = vocab;
+        let vocab_r = self
+            .config
+            .vocab
+            .iter()
+            .map(|(key, val)| (*val, key.to_owned()))
+            .collect();
+        WordPiece {
+            vocab: self.config.vocab,
+            vocab_r,
+            unk_token: self.config.unk_token,
+            continuing_subword_prefix: self.config.continuing_subword_prefix,
+            max_input_chars_per_word: self.config.max_input_chars_per_word,
         }
-        if let Some(unk_token) = self.config.unk_token {
-            wp.unk_token = unk_token;
-        }
-        if let Some(continuing_subword_prefix) = self.config.continuing_subword_prefix {
-            wp.continuing_subword_prefix = continuing_subword_prefix;
-        }
-        if let Some(max_input_chars_per_word) = self.config.max_input_chars_per_word {
-            wp.max_input_chars_per_word = max_input_chars_per_word;
-        }
-
-        wp
     }
 }
 
