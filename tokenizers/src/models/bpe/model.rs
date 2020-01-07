@@ -102,6 +102,15 @@ impl BpeBuilder {
                 _ => Some(Cache::new(capacity)),
             };
         }
+        if let Some(unk_token) = self.config.unk_token {
+            bpe.unk_token = Some(unk_token);
+        }
+        if let Some(continuing_subword_prefix) = self.config.continuing_subword_prefix {
+            bpe.continuing_subword_prefix = Some(continuing_subword_prefix);
+        }
+        if let Some(end_of_word_suffix) = self.config.end_of_word_suffix {
+            bpe.end_of_word_suffix = Some(end_of_word_suffix);
+        }
 
         Ok(bpe)
     }

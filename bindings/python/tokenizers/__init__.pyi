@@ -352,6 +352,7 @@ class Tokenizer:
         Returns:
             The corresponding id if it exists, None otherwise
         """
+        pass
 
     def id_to_token(self, id: int) -> Optional[str]:
         """ Convert the given token id to its corresponding string
