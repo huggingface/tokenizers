@@ -64,6 +64,10 @@ fn processors(_py: Python, m: &PyModule) -> PyResult<()> {
 fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<normalizers::Normalizer>()?;
     m.add_class::<normalizers::BertNormalizer>()?;
+    m.add_class::<normalizers::NFD>()?;
+    m.add_class::<normalizers::NFKD>()?;
+    m.add_class::<normalizers::NFC>()?;
+    m.add_class::<normalizers::NFKC>()?;
     Ok(())
 }
 

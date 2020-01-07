@@ -44,3 +44,51 @@ impl BertNormalizer {
         })
     }
 }
+
+#[pyclass]
+pub struct NFD {}
+#[pymethods]
+impl NFD {
+    #[staticmethod]
+    fn new() -> PyResult<Normalizer> {
+        Ok(Normalizer {
+            normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFD)),
+        })
+    }
+}
+
+#[pyclass]
+pub struct NFKD {}
+#[pymethods]
+impl NFKD {
+    #[staticmethod]
+    fn new() -> PyResult<Normalizer> {
+        Ok(Normalizer {
+            normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFKD)),
+        })
+    }
+}
+
+#[pyclass]
+pub struct NFC {}
+#[pymethods]
+impl NFC {
+    #[staticmethod]
+    fn new() -> PyResult<Normalizer> {
+        Ok(Normalizer {
+            normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFC)),
+        })
+    }
+}
+
+#[pyclass]
+pub struct NFKC {}
+#[pymethods]
+impl NFKC {
+    #[staticmethod]
+    fn new() -> PyResult<Normalizer> {
+        Ok(Normalizer {
+            normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFKC)),
+        })
+    }
+}

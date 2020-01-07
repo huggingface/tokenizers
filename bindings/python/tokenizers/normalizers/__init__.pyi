@@ -39,3 +39,35 @@ class BertNormalizer:
             Normalizer
         """
         pass
+
+class NFD:
+    """ NFD Unicode Normalizer """
+
+    @staticmethod
+    def new() -> Normalizer:
+        """ Instantiate a new NFD Normalizer """
+        pass
+
+class NFKD:
+    """ NFKD Unicode Normalizer """
+
+    @staticmethod
+    def new() -> Normalizer:
+        """ Instantiate a new NFKD Normalizer """
+        pass
+
+class NFC:
+    """ NFC Unicode Normalizer """
+
+    @staticmethod
+    def new() -> Normalizer:
+        """ Instantiate a new NFC Normalizer """
+        pass
+
+class NFKC:
+    """ NFKC Unicode Normalizer """
+
+    @staticmethod
+    def new() -> Normalizer:
+        """ Instantiate a new NFKC Normalizer """
+        pass

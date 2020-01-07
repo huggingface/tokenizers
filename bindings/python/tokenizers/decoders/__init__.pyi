@@ -20,8 +20,7 @@ class ByteLevel:
         pass
 
 class WordPiece:
-    """WordPiece
-    """
+    """ WordPiece Decoder """
 
     @staticmethod
     def new(prefix: str="##") -> Decoder:
