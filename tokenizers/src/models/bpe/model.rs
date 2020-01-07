@@ -1,4 +1,4 @@
-use super::{Cache, Error, Pair, WithFirstLastIterator, Word};
+use super::{Cache, Error, Pair, WithFirstLastIterator, Word, DEFAULT_CACHE_CAPACITY};
 use crate::tokenizer::{Model, Offsets, Result, Token};
 use rand::{thread_rng, Rng};
 use serde_json::Value;
@@ -10,11 +10,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Default)]
 struct Config {
-    vocab: Option<HashMap<String, u32>>,
-    merges: Option<HashMap<Pair, (u32, u32)>>,
-    cache_capacity: Option<usize>,
+    vocab: HashMap<String, u32>,
+    merges: HashMap<Pair, (u32, u32)>,
+    cache_capacity: usize,
     dropout: Option<f32>,
     unk_token: Option<u32>,
     continuing_subword_prefix: Option<String>,
@@ -22,9 +21,24 @@ struct Config {
 }
 
 /// A `BpeBuilder` can be used to create a `BPE` model with a custom configuration.
-#[derive(Default)]
 pub struct BpeBuilder {
     config: Config,
+}
+
+impl Default for BpeBuilder {
+    fn default() -> Self {
+        Self {
+            config: Config {
+                vocab: HashMap::new(),
+                merges: HashMap::new(),
+                cache_capacity: DEFAULT_CACHE_CAPACITY,
+                dropout: None,
+                unk_token: None,
+                continuing_subword_prefix: None,
+                end_of_word_suffix: None,
+            },
+        }
+    }
 }
 
 impl BpeBuilder {
@@ -39,14 +53,14 @@ impl BpeBuilder {
         vocab: HashMap<String, u32>,
         merges: HashMap<Pair, (u32, u32)>,
     ) -> Self {
-        self.config.vocab = Some(vocab);
-        self.config.merges = Some(merges);
+        self.config.vocab = vocab;
+        self.config.merges = merges;
         self
     }
 
-    /// Set the cache's capacity. If the capacity is set to 0, no cache will be used.
+    /// Set the cache's capacity. Set to 0 if you want to disable caching.
     pub fn cache_capacity(mut self, capacity: usize) -> Self {
-        self.config.cache_capacity = Some(capacity);
+        self.config.cache_capacity = capacity;
         self
     }
 
@@ -76,43 +90,34 @@ impl BpeBuilder {
 
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
     pub fn build(self) -> Result<BPE> {
-        let mut bpe = BPE::default();
-
         // Validate dropout.
         if let Some(p) = self.config.dropout {
-            if p < 0.0 || p > 1.0 {
+            if p <= 0.0 || p > 1.0 {
                 return Err(Error::InvalidDropout.into());
-            } else {
-                bpe.dropout = Some(p);
             }
         }
-        if let Some(vocab) = self.config.vocab {
-            bpe.vocab_r = vocab
-                .iter()
-                .map(|(key, val)| (*val, key.to_owned()))
-                .collect();
-            bpe.vocab = vocab;
-        }
-        if let Some(merges) = self.config.merges {
-            bpe.merges = merges;
-        }
-        if let Some(capacity) = self.config.cache_capacity {
-            bpe.cache = match capacity {
-                0 => None,
-                _ => Some(Cache::new(capacity)),
-            };
-        }
-        if let Some(unk_token) = self.config.unk_token {
-            bpe.unk_token = Some(unk_token);
-        }
-        if let Some(continuing_subword_prefix) = self.config.continuing_subword_prefix {
-            bpe.continuing_subword_prefix = Some(continuing_subword_prefix);
-        }
-        if let Some(end_of_word_suffix) = self.config.end_of_word_suffix {
-            bpe.end_of_word_suffix = Some(end_of_word_suffix);
-        }
 
-        Ok(bpe)
+        let vocab_r = self
+            .config
+            .vocab
+            .iter()
+            .map(|(key, val)| (*val, key.to_owned()))
+            .collect();
+        let cache = match self.config.cache_capacity {
+            0 => None,
+            capacity => Some(Cache::new(capacity)),
+        };
+
+        Ok(BPE {
+            vocab: self.config.vocab,
+            vocab_r,
+            merges: self.config.merges,
+            cache,
+            dropout: self.config.dropout,
+            unk_token: self.config.unk_token,
+            continuing_subword_prefix: self.config.continuing_subword_prefix,
+            end_of_word_suffix: self.config.end_of_word_suffix,
+        })
     }
 }
 
@@ -139,16 +144,7 @@ pub struct BPE {
 
 impl Default for BPE {
     fn default() -> Self {
-        Self {
-            vocab: HashMap::new(),
-            vocab_r: HashMap::new(),
-            merges: HashMap::new(),
-            cache: Some(Cache::default()),
-            dropout: None,
-            unk_token: None,
-            continuing_subword_prefix: None,
-            end_of_word_suffix: None,
-        }
+        Self::builder().build().unwrap()
     }
 }
 
