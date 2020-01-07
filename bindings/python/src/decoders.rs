@@ -2,6 +2,7 @@ extern crate tokenizers as tk;
 
 use super::error::{PyError, ToPyResult};
 use super::utils::Container;
+use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use tk::tokenizer::Result;
@@ -84,7 +85,7 @@ impl Metaspace {
         }
 
         Ok(Decoder {
-            decoder: Container::Owned(Box::new(tk::decoder::metaspace::Metaspace::new(
+            decoder: Container::Owned(Box::new(tk::decoders::metaspace::Metaspace::new(
                 replacement,
                 add_prefix_space,
             ))),
