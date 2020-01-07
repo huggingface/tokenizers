@@ -39,6 +39,7 @@ fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<pre_tokenizers::ByteLevel>()?;
     m.add_class::<pre_tokenizers::Whitespace>()?;
     m.add_class::<pre_tokenizers::BertPreTokenizer>()?;
+    m.add_class::<pre_tokenizers::Metaspace>()?;
     Ok(())
 }
 

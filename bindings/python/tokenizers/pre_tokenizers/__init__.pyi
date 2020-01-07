@@ -26,8 +26,8 @@ class ByteLevel:
 
         Args:
             add_prefix_space: (`optional`) boolean:
-                Whether a space should be added at the very beginning of the sequence
-                if there isn't one already.
+                Whether to add a space to the first word if there isn't already one. This
+                lets us treat `hello` exactly like `say hello`.
 
         Returns:
             PreTokenizer
@@ -65,4 +65,27 @@ class BertPreTokenizer:
     @staticmethod
     def new() -> PreTokenizer:
         """ Instantiate a new BertPreTokenizer """
+        pass
+
+class Metaspace:
+    """ Metaspace pre-tokenizer
+
+    This pre-tokenizer replaces any whitespace by the provided replacement character.
+    It then tries to split on these spaces.
+    """
+
+    @staticmethod
+    def new(replacement: str="▁",
+            add_prefix_space: bool=True) -> PreTokenizer:
+        """ Instantiate a new Metaspace
+
+        Args:
+            replacement: str:
+                The replacement character. Must be exactly one character. By default we
+                use the `▁` (U+2581) meta symbol (Same as in SentencePiece).
+
+            add_prefix_space: boolean:
+                Whether to add a space to the first word if there isn't already one. This
+                lets us treat `hello` exactly like `say hello`.
+        """
         pass

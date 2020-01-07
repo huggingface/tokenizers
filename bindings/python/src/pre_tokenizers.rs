@@ -2,6 +2,7 @@ extern crate tokenizers as tk;
 
 use super::error::{PyError, ToPyResult};
 use super::utils::Container;
+use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use tk::tokenizer::{Offsets, Result};
@@ -80,6 +81,41 @@ impl BertPreTokenizer {
     fn new() -> PyResult<PreTokenizer> {
         Ok(PreTokenizer {
             pretok: Container::Owned(Box::new(tk::pre_tokenizers::bert::BertPreTokenizer)),
+        })
+    }
+}
+
+#[pyclass]
+pub struct Metaspace {}
+#[pymethods]
+impl Metaspace {
+    #[staticmethod]
+    #[args(kwargs = "**")]
+    fn new(kwargs: Option<&PyDict>) -> PyResult<PreTokenizer> {
+        let mut replacement = '▁';
+        let mut add_prefix_space = true;
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "replacement" => {
+                        let s: &str = value.extract()?;
+                        replacement = s.chars().nth(0).ok_or(exceptions::Exception::py_err(
+                            "replacement must be a character",
+                        ))?;
+                    }
+                    "add_prefix_space" => add_prefix_space = value.extract()?,
+                    _ => println!("Ignored unknown kwarg option {}", key),
+                }
+            }
+        }
+
+        Ok(PreTokenizer {
+            pretok: Container::Owned(Box::new(tk::pre_tokenizers::metaspace::Metaspace::new(
+                replacement,
+                add_prefix_space,
+            ))),
         })
     }
 }
