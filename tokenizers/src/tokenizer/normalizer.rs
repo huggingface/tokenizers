@@ -268,13 +268,41 @@ impl NormalizedString {
 
     /// Split off ourselves, returning a new Self that contains the range [at, len).
     /// self will then contain the range [0, at).
+    /// The provided `at` indexes on `char` not bytes.
     ///
     /// Panic if at > len
     pub fn split_off(&mut self, at: usize) -> Self {
-        let normalized = self.normalized.split_off(at);
+        // Split normalized
+        let byte_index = self
+            .normalized
+            .chars()
+            .enumerate()
+            .map(|(i, c)| if i < at { Some(c.len_utf8()) } else { None })
+            .fuse()
+            .filter(|c| c.is_some())
+            .map(|c| c.unwrap())
+            .sum::<usize>();
+        let normalized = self.normalized.split_off(byte_index);
         let alignments = self.alignments.split_off(at);
+
+        // Split original
         let original_at = self.alignments.last().map(|(_, end)| *end).unwrap_or(0);
-        let original = self.original.split_off(original_at);
+        let original_byte_index = self
+            .original
+            .chars()
+            .enumerate()
+            .map(|(i, c)| {
+                if i < original_at {
+                    Some(c.len_utf8())
+                } else {
+                    None
+                }
+            })
+            .fuse()
+            .filter(|c| c.is_some())
+            .map(|c| c.unwrap())
+            .sum::<usize>();
+        let original = self.original.split_off(original_byte_index);
 
         NormalizedString {
             original,
