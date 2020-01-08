@@ -1,9 +1,9 @@
-from tokenizers import Tokenizer, pre_tokenizers, decoders
+from tokenizers import Tokenizer, pre_tokenizers, decoders, trainers
 from tokenizers.models import BPE
 from tokenizers.normalizers import NFKC
 from .base_tokenizer import BaseTokenizer
 
-from typing import Optional
+from typing import Optional, List
 
 class SentencePieceBPETokenizer(BaseTokenizer):
     """ SentencePiece BPE Tokenizer
@@ -41,3 +41,22 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         }
 
         super().__init__(tokenizer, parameters)
+
+    def train(self, files: List[str],
+              vocab_size: int=30000,
+              min_frequency: int=2,
+              special_tokens: List[str]=["<unk>"],
+              limit_alphabet: int=1000,
+              initial_alphabet: List[str]=[],
+              show_progress: bool=True):
+        """ Train the model using the given files """
+
+        trainer = trainers.BpeTrainer.new(
+            vocab_size=vocab_size,
+            min_frequency=min_frequency,
+            special_tokens=special_tokens,
+            limit_alphabet=limit_alphabet,
+            initial_alphabet=initial_alphabet,
+            show_progress=show_progress
+        )
+        self._tokenizer.train(trainer, files)

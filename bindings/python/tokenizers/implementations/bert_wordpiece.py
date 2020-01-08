@@ -1,11 +1,11 @@
-from tokenizers import Tokenizer, decoders
+from tokenizers import Tokenizer, decoders, trainers
 from tokenizers.models import WordPiece
 from tokenizers.normalizers import BertNormalizer
 from tokenizers.pre_tokenizers import BertPreTokenizer
 from tokenizers.processors import BertProcessing
 from .base_tokenizer import BaseTokenizer
 
-from typing import Optional
+from typing import Optional, List
 
 class BertWordPieceTokenizer(BaseTokenizer):
     """ Bert WordPiece Tokenizer """
@@ -61,3 +61,24 @@ class BertWordPieceTokenizer(BaseTokenizer):
         }
 
         super().__init__(tokenizer, parameters)
+
+    def train(self, files: List[str],
+              vocab_size: int=30000,
+              min_frequency: int=2,
+              limit_alphabet: int=1000,
+              initial_alphabet: List[str]=[],
+              special_tokens: List[str]=["[UNK]", "[SEP]", "[CLS]"],
+              show_progress: bool=True,
+              wordpieces_prefix: str="##"):
+        """ Train the model using the given files """
+
+        trainer = trainers.WordPieceTrainer.new(
+            vocab_size=vocab_size,
+            min_frequency=min_frequency,
+            limit_alphabet=limit_alphabet,
+            initial_alphabet=initial_alphabet,
+            special_tokens=special_tokens,
+            show_progress=show_progress,
+            continuing_subword_prefix=wordpieces_prefix
+        )
+        self._tokenizer.train(trainer, files)
