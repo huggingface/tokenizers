@@ -1,6 +1,5 @@
-#
-# Cargo helpers.
-#
+BENCHMARK_DIR = benches
+BENCHMARK_RESOURCES = $(BENCHMARK_DIR)/gpt2-vocab.json $(BENCHMARK_DIR)/gpt2-merges.txt $(BENCHMARK_DIR)/big.txt
 
 .PHONY : build
 build :
@@ -17,7 +16,7 @@ format :
 .PHONY : lint
 lint :
 	cargo fmt -- --check
-	cargo fmt -- ./benches/*.rs --check
+	cargo fmt -- $(BENCHMARK_DIR)/*.rs --check
 	cargo clippy --all-targets --all-features -- -D warnings
 
 .PHONY : test
@@ -28,23 +27,19 @@ test :
 doc :
 	cargo doc
 
+.PHONY : publish
+publish :
+	cargo publish
+
 .PHONY : all-checks
 all-checks : lint test doc
 
 .PHONY : bench
-bench :
-	@echo 'Updating benchmark fixtures...'
-	@test -f ./benches/gpt2-vocab.json \
-		&& echo 'gpt2-vocab.json up-to-date' \
-		|| wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-vocab.json -O ./benches/gpt2-vocab.json
-	@test -f ./benches/gpt2-merges.txt \
-		&& echo 'gpt2-merges.txt up-to-date' \
-		|| wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-merges.txt -O ./benches/gpt2-merges.txt
-	@test -f ./benches/big.txt \
-		&& echo 'big.txt up-to-date' \
-		|| wget https://norvig.com/big.txt -O ./benches/big.txt
+bench : $(BENCHMARK_RESOURCES)
 	cargo bench -- --verbose
 
-.PHONY : publish
-publish :
-	cargo publish
+$(BENCHMARK_DIR)/gpt2-% :
+	wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-$* -O $@
+
+$(BENCHMARK_DIR)/big.txt :
+	wget https://norvig.com/big.txt -O $@
