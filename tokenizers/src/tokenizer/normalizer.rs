@@ -269,11 +269,9 @@ impl NormalizedString {
     /// Split off ourselves, returning a new Self that contains the range [at, len).
     /// self will then contain the range [0, at).
     /// The provided `at` indexes on `char` not bytes.
-    ///
-    /// Panic if at > len
     pub fn split_off(&mut self, at: usize) -> Self {
         if at > self.len() {
-            return;
+            return NormalizedString::from("");
         }
 
         // Split normalized
