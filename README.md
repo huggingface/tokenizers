@@ -5,8 +5,7 @@ versatility.
 
 ## What is a Tokenizer
 
-A Tokenizer works as a pipeline, it processes some raw text as input and outputs an
-`Encoding`.
+A Tokenizer works as a pipeline, it processes some raw text as input and outputs an `Encoding`.
 The various steps of the pipeline are:
 
 1. The `Normalizer`: in charge of normalizing the text. Common examples of normalization are
@@ -17,6 +16,17 @@ The various steps of the pipeline are:
    `BPE` or `WordPiece`.
 4. The `PostProcessor`: in charge of post-processing the `Encoding` to add anything relevant
    that, for example, a language model would need, such as special tokens.
+
+## Main features:
+
+ - Train new vocabularies and tokenize, using todays most used tokenizers.
+ - Extremely fast (both training and tokenization), thanks to the Rust implementation. Takes
+   less than 20 seconds to tokenize a GB of text on a server's CPU.
+ - Easy to use, but also extremely versatile.
+ - Designed for research and production.
+ - Normalization comes with alignments tracking. It's always possible to get the part of the
+   original sentence that corresponds to a given token.
+ - Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
 
 ## Bindings
 

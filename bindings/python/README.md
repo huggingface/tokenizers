@@ -2,12 +2,25 @@
 
 # Tokenizers
 
-A fast and easy to use implementation of today's most used tokenizers.
+Provides an implementation of today's most used tokenizers, with a focus on performance and
+versatility.
 
- - High Level design: [master](https://github.com/huggingface/tokenizers)
+Bindings over the [Rust](https://github.com/huggingface/tokenizers) implementation.
+If you are interested in the High-level design, you can go check it there.
 
-This API is currently in the process of being stabilized. We might introduce breaking changes
-really often in the coming days/weeks, so use at your own risks.
+Otherwise, let's dive in!
+
+## Main features:
+
+ - Train new vocabularies and tokenize using 4 pre-made tokenizers (Bert WordPiece and the 3
+   most common BPE versions).
+ - Extremely fast (both training and tokenization), thanks to the Rust implementation. Takes
+   less than 20 seconds to tokenize a GB of text on a server's CPU.
+ - Easy to use, but also extremely versatile.
+ - Designed for research and production.
+ - Normalization comes with alignments tracking. It's always possible to get the part of the
+   original sentence that corresponds to a given token.
+ - Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
 
 ### Installation
 
@@ -19,18 +32,15 @@ pip install tokenizers
 
 #### From sources:
 
-To use this method, you need to have the Rust nightly toolchain installed.
+To use this method, you need to have the Rust installed:
 
 ```bash
 # Install with:
-curl https://sh.rustup.rs -sSf | sh -s -- -default-toolchain nightly-2019-11-01 -y
+curl https://sh.rustup.rs -sSf | sh -s -- -y
 export PATH="$HOME/.cargo/bin:$PATH"
-
-# Or select the right toolchain:
-rustup default nightly-2019-11-01
 ```
 
-Once Rust is installed and using the right toolchain you can do the following.
+Once Rust is installed, you can compile doing the following
 
 ```bash
 git clone https://github.com/huggingface/tokenizers
@@ -41,11 +51,59 @@ python -m venv .env
 source .env/bin/activate
 
 # Install `tokenizers` in the current virtual env
-pip install maturin
-maturin develop --release
+pip install setuptools_rust
+python setup.py install
 ```
 
-### Usage
+### Using the provided Tokenizers
+
+Using a pre-trained tokenizer is really simple:
+
+```python
+from tokenizers import BPETokenizer
+
+# Initialize a tokenizer
+vocab = "./path/to/vocab.json"
+merges = "./path/to/merges.txt"
+tokenizer = BPETokenizer(vocab, merges)
+
+# And then encode:
+encoded = tokenizer.encode("I can feel the magic, can you?")
+print(encoded.ids)
+print(encoded.tokens)
+```
+
+And you can train yours just as simply:
+
+```python
+from tokenizers import BPETokenizer
+
+# Initialize a tokenizer
+tokenizer = BPETokenizer()
+
+# Then train it!
+tokenizer.train([ "./path/to/files/1.txt", "./path/to/files/2.txt" ])
+
+# And you can use it
+encoded = tokenizer.encode("I can feel the magic, can you?")
+
+# And finally save it somewhere
+tokenizer.save("./path/to/directory", "my-bpe")
+```
+
+### Provided Tokenizers
+
+ - `BPETokenizer`: The original BPE
+ - `ByteLevelBPETokenizer`: The byte level version of the BPE
+ - `SentencePieceBPETokenizer`: A BPE implementation compatible with the one used by SentencePiece
+ - `BertWordPieceTokenizer`: The famous Bert tokenizer, using WordPiece
+
+All of these can be used and trained as explained above!
+
+### Build your own
+
+You can also easily build your own tokenizers, by putting all the different parts
+you need together:
 
 #### Use a pre-trained tokenizer
 
@@ -66,7 +124,8 @@ tokenizer.decoder = decoders.ByteLevel.new()
 
 # And then encode:
 encoded = tokenizer.encode("I can feel the magic, can you?")
-print(encoded)
+print(encoded.ids)
+print(encoded.tokens)
 
 # Or tokenize multiple sentences at once:
 encoded = tokenizer.encode_batch([
