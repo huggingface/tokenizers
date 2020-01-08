@@ -68,7 +68,6 @@ class BaseTokenizer:
         """ Disable truncation """
         return self._tokenizer.without_truncation()
 
-
     def add_tokens(self, tokens: List[Union[str, Tuple[str, bool]]]) -> int:
         """ Add the given tokens to the vocabulary
 
@@ -97,7 +96,7 @@ class BaseTokenizer:
         Returns:
             The number of tokens that were added to the vocabulary
         """
-        return self._tokenizer.add_special_tokens(tokens)
+        return self._tokenizer.add_special_tokens(special_tokens)
 
     def encode(self, sequence: str, pair: Optional[str] = None) -> Encoding:
         """ Encode the given sequence
