@@ -188,3 +188,14 @@ class BaseTokenizer:
         """
         return self._tokenizer.id_to_token(id)
 
+    def save(self, directory: str, name: str):
+        """ Save the current model to the given directory
+
+        Args:
+            directory: str:
+                A path to the destination directory
+
+            name: str:
+                The name of the tokenizer, to be used in the saved files
+        """
+        return self._tokenizer.model.save(directory, name)
