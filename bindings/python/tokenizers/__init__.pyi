@@ -198,11 +198,11 @@ class Tokenizer:
         """
         pass
 
-    def with_truncation(self,
-                        max_length: int,
-                        stride: Optional[int],
-                        strategy: Optional[str]):
-        """ Change the truncation options
+    def enable_truncation(self,
+                          max_length: int,
+                          stride: Optional[int],
+                          strategy: Optional[str]):
+        """ Enable the truncation
 
         Args:
             max_length: unsigned int:
@@ -217,17 +217,17 @@ class Tokenizer:
         """
         pass
 
-    def without_truncation(self):
+    def no_truncation(self):
         """ Disable truncation """
         pass
 
-    def with_padding(self,
-                     direction: Optional[str] = "right",
-                     pad_id: Optional[int] = 0,
-                     pad_type_id: Optional[int] = 0,
-                     pad_token: Optional[str] = "[PAD]",
-                     max_length: Optional[int] = None)
-        """ Change the padding strategy
+    def enable_padding(self,
+                       direction: Optional[str] = "right",
+                       pad_id: Optional[int] = 0,
+                       pad_type_id: Optional[int] = 0,
+                       pad_token: Optional[str] = "[PAD]",
+                       max_length: Optional[int] = None)
+        """ Enable the padding
 
         Args:
             direction: (`optional`) str:
@@ -248,7 +248,7 @@ class Tokenizer:
         """
         pass
 
-    def without_padding(self):
+    def no_padding(self):
         """ Disable padding """
         pass
 
