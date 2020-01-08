@@ -56,7 +56,7 @@ impl Tokenizer {
     }
 
     #[args(kwargs = "**")]
-    fn with_truncation(&mut self, max_length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn enable_truncation(&mut self, max_length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut stride = 0;
         let mut strategy = TruncationStrategy::LongestFirst;
 
@@ -93,12 +93,12 @@ impl Tokenizer {
         Ok(())
     }
 
-    fn without_truncation(&mut self) {
+    fn no_truncation(&mut self) {
         self.tokenizer.with_truncation(None);
     }
 
     #[args(kwargs = "**")]
-    fn with_padding(&mut self, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn enable_padding(&mut self, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut direction = PaddingDirection::Right;
         let mut pad_id: u32 = 0;
         let mut pad_type_id: u32 = 0;
@@ -148,7 +148,7 @@ impl Tokenizer {
         Ok(())
     }
 
-    fn without_padding(&mut self) {
+    fn no_padding(&mut self) {
         self.tokenizer.with_padding(None);
     }
 

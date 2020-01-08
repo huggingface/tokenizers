@@ -20,3 +20,12 @@ impl Normalizer for Sequence {
         Ok(())
     }
 }
+
+/// Lowercases the input
+pub struct Lowercase;
+impl Normalizer for Lowercase {
+    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
+        normalized.lowercase();
+        Ok(())
+    }
+}

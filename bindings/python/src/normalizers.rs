@@ -121,3 +121,15 @@ impl Sequence {
         })
     }
 }
+
+#[pyclass]
+pub struct Lowercase {}
+#[pymethods]
+impl Lowercase {
+    #[staticmethod]
+    fn new() -> PyResult<Normalizer> {
+        Ok(Normalizer {
+            normalizer: Container::Owned(Box::new(tk::normalizers::utils::Lowercase)),
+        })
+    }
+}

@@ -5,64 +5,34 @@ from tokenizers import pre_tokenizers
 from tokenizers import processors
 from tokenizers import trainers
 
+from tokenizers.implementations import (
+    ByteLevelBPETokenizer,
+    BPETokenizer,
+    SentencePieceBPETokenizer
+)
+
 from typing import Optional, Union, List, Tuple
 
 Offsets = Tuple[int, int]
 
-class NormalizedString:
-    """ A NormalizedString produced during normalization """
-
-    @property
-    def original(self) -> str:
-        """ The original string """
-        pass
-
-    @property
-    def normalized(self) -> str:
-        """ The normalized string """
-        pass
-
-    def get_range(self, start: int, end: int) -> Optional[str]:
-        """ Return a range of the normalized string, if the bounds are correct
-
-        Args:
-            start: int:
-                The starting offset in the string
-
-            end: int:
-                The ending offset in the string
-
-        Returns:
-            The substring if the bounds are correct
-        """
-        pass
-
-    def get_range_original(self, start: int, end: int) -> Optional[str]:
-        """ Return a range of the original string, if the bounds are correct
-
-        The given bounds are supposed to be after-normalization-offsets.
-        Provided with the `Encoding.offsets` associated with an `Encoding.ids` unit,
-        this method will return the part of the original string corresponding to the id.
-
-        Args:
-            start: int:
-                The starting offset in the normalized string
-
-            end: int:
-                The ending offset in the normalized string
-
-        Returns:
-            The substring if the bounds are correct
-        """
-        pass
-
+class IndexableString:
+    """
+    Works almost like a `str`, but allows indexing on offsets
+    provided on an `Encoding`
+    """
+    pass
 
 class Encoding:
     """ An Encoding as returned by the Tokenizer """
 
     @property
-    def normalized(self) -> NormalizedString:
-        """ The NormalizedString """
+    def normalized_str(self) -> IndexableString:
+        """ The normalized string """
+        pass
+
+    @property
+    def original_str(self) -> IndexableString:
+        """ The original string """
         pass
 
     @property
@@ -228,11 +198,11 @@ class Tokenizer:
         """
         pass
 
-    def with_truncation(self,
-                        max_length: int,
-                        stride: Optional[int],
-                        strategy: Optional[str]):
-        """ Change the truncation options
+    def enable_truncation(self,
+                          max_length: int,
+                          stride: Optional[int],
+                          strategy: Optional[str]):
+        """ Enable the truncation
 
         Args:
             max_length: unsigned int:
@@ -247,17 +217,17 @@ class Tokenizer:
         """
         pass
 
-    def without_truncation(self):
+    def no_truncation(self):
         """ Disable truncation """
         pass
 
-    def with_padding(self,
-                     direction: Optional[str] = "right",
-                     pad_id: Optional[int] = 0,
-                     pad_type_id: Optional[int] = 0,
-                     pad_token: Optional[str] = "[PAD]",
-                     max_length: Optional[int] = None)
-        """ Change the padding strategy
+    def enable_padding(self,
+                       direction: Optional[str] = "right",
+                       pad_id: Optional[int] = 0,
+                       pad_type_id: Optional[int] = 0,
+                       pad_token: Optional[str] = "[PAD]",
+                       max_length: Optional[int] = None)
+        """ Enable the padding
 
         Args:
             direction: (`optional`) str:
@@ -278,7 +248,7 @@ class Tokenizer:
         """
         pass
 
-    def without_padding(self):
+    def no_padding(self):
         """ Disable padding """
         pass
 

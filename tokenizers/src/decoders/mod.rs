@@ -1,3 +1,4 @@
+pub mod bpe;
 pub mod wordpiece;
 
 // Re-export these as decoders

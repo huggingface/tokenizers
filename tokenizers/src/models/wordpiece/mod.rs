@@ -156,9 +156,7 @@ impl WordPiece {
     pub fn from_bpe(bpe: &BPE) -> Self {
         let mut wp = Self::builder().vocab(bpe.get_vocab().clone()).build();
         if let Some(unk) = bpe.get_unk_token() {
-            if let Some(unk_token) = wp.vocab_r.get(&unk) {
-                wp.unk_token = unk_token.to_owned();
-            }
+            wp.unk_token = unk.to_owned();
         }
         if let Some(prefix) = bpe.get_continuing_subword_prefix() {
             wp.continuing_subword_prefix = prefix.to_owned();

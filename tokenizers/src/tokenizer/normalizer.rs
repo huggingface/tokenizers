@@ -34,21 +34,47 @@ impl NormalizedString {
         }
     }
 
+    /// Return the normalized string
     pub fn get(&self) -> &str {
         &self.normalized
     }
 
+    /// Return the original string
     pub fn get_original(&self) -> &str {
         &self.original
     }
 
-    /// Return a range of the normalized string
-    pub fn get_range(&self, range: std::ops::Range<usize>) -> Option<&str> {
-        self.normalized.get(range)
+    fn get_range_of(&self, s: &str, range: std::ops::Range<usize>) -> Option<String> {
+        let len = s.chars().count();
+        if range.start >= len || range.end > len {
+            None
+        } else {
+            Some(
+                s.chars()
+                    .enumerate()
+                    .skip(range.start)
+                    .map(|(i, c)| {
+                        if i >= range.start && i < range.end {
+                            Some(c)
+                        } else {
+                            None
+                        }
+                    })
+                    .fuse()
+                    .filter(|c| c.is_some())
+                    .map(|c| c.unwrap())
+                    .collect::<String>(),
+            )
+        }
+    }
+
+    /// Return a range of the normalized string (indexing on char not bytes)
+    pub fn get_range(&self, range: std::ops::Range<usize>) -> Option<String> {
+        self.get_range_of(&self.normalized, range)
     }
 
     /// Return a range of the original string, using a range from the normalized string
-    pub fn get_range_original(&self, range: std::ops::Range<usize>) -> Option<&str> {
+    pub fn get_range_original(&self, range: std::ops::Range<usize>) -> Option<String> {
         self.alignments
             .get(range)
             .map(|alignments| {
@@ -57,7 +83,7 @@ impl NormalizedString {
                 } else {
                     let start = alignments[0].0;
                     let end = alignments[alignments.len() - 1].1;
-                    self.original.get(start..end)
+                    self.get_range_of(&self.original, start..end)
                 }
             })
             .flatten()
@@ -270,9 +296,14 @@ impl NormalizedString {
         self.normalized.push_str(&other.normalized);
     }
 
-    /// Returns the length
+    /// Returns the length of the normalized string (counting chars not bytes)
     pub fn len(&self) -> usize {
-        self.normalized.len()
+        self.normalized.chars().count()
+    }
+
+    /// Returns the length of the original string (counting chars not bytes)
+    pub fn len_original(&self) -> usize {
+        self.original.chars().count()
     }
 
     /// Whether empty
@@ -364,17 +395,20 @@ mod tests {
         );
 
         assert_eq!(&n.normalized, " Hello ");
-        assert_eq!(n.get_range_original(0..n.normalized.len()), Some("Hello"));
+        assert_eq!(
+            n.get_range_original(0..n.normalized.len()),
+            Some("Hello".into())
+        );
     }
 
     #[test]
     fn remove_at_beginning() {
         let mut n = NormalizedString::from("     Hello");
         n.filter(|c| !c.is_whitespace());
-        assert_eq!(n.get_range_original(1.."Hello".len()), Some("ello"));
+        assert_eq!(n.get_range_original(1.."Hello".len()), Some("ello".into()));
         assert_eq!(
             n.get_range_original(0..n.normalized.len()),
-            Some("     Hello")
+            Some("     Hello".into())
         );
     }
 
@@ -382,10 +416,10 @@ mod tests {
     fn remove_at_end() {
         let mut n = NormalizedString::from("Hello    ");
         n.filter(|c| !c.is_whitespace());
-        assert_eq!(n.get_range_original(0..4), Some("Hell"));
+        assert_eq!(n.get_range_original(0..4), Some("Hell".into()));
         assert_eq!(
             n.get_range_original(0..n.normalized.len()),
-            Some("Hello    ")
+            Some("Hello    ".into())
         );
     }
 
@@ -395,9 +429,10 @@ mod tests {
         n.filter(|c| !c.is_whitespace());
         assert_eq!(&n.normalized, "Hello");
 
-        println!("{:?}", n.get_range(0.."Hello".len()));
-        println!("{:?}", n.alignments);
-        assert_eq!(n.get_range_original(0.."Hello".len()), Some("  Hello  "));
-        assert_eq!(n.get_range_original(1.."Hell".len()), Some("ell"));
+        assert_eq!(
+            n.get_range_original(0.."Hello".len()),
+            Some("  Hello  ".into())
+        );
+        assert_eq!(n.get_range_original(1.."Hell".len()), Some("ell".into()));
     }
 }

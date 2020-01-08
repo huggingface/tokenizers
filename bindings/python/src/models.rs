@@ -60,8 +60,16 @@ impl BPE {
                 let key: &str = key.extract()?;
                 match key {
                     "cache_capacity" => builder = builder.cache_capacity(value.extract()?),
-                    "dropout" => builder = builder.dropout(value.extract()?),
-                    "unk_token" => builder = builder.unk_token(value.extract()?),
+                    "dropout" => {
+                        if let Some(dropout) = value.extract()? {
+                            builder = builder.dropout(dropout);
+                        }
+                    }
+                    "unk_token" => {
+                        if let Some(unk) = value.extract()? {
+                            builder = builder.unk_token(unk);
+                        }
+                    }
                     "continuing_subword_prefix" => {
                         builder = builder.continuing_subword_prefix(value.extract()?)
                     }

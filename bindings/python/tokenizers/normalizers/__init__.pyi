@@ -87,3 +87,11 @@ class Sequence:
                 A list of Normalizer to be run as a sequence
         """
         pass
+
+class Lowercase:
+    """ Lowercase Normalizer """
+
+    @staticmethod
+    def new() -> Normalizer:
+        """ Instantiate a new Lowercase Normalizer """
+        pass

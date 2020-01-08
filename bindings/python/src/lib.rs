@@ -2,7 +2,6 @@ mod decoders;
 mod encoding;
 mod error;
 mod models;
-mod normalized_string;
 mod normalizers;
 mod pre_tokenizers;
 mod processors;
@@ -50,6 +49,7 @@ fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<decoders::ByteLevel>()?;
     m.add_class::<decoders::WordPiece>()?;
     m.add_class::<decoders::Metaspace>()?;
+    m.add_class::<decoders::BPEDecoder>()?;
     Ok(())
 }
 
@@ -71,6 +71,7 @@ fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<normalizers::NFC>()?;
     m.add_class::<normalizers::NFKC>()?;
     m.add_class::<normalizers::Sequence>()?;
+    m.add_class::<normalizers::Lowercase>()?;
     Ok(())
 }
 
@@ -79,7 +80,6 @@ fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
 fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<tokenizer::Tokenizer>()?;
     m.add_class::<encoding::Encoding>()?;
-    m.add_class::<normalized_string::NormalizedString>()?;
     m.add_wrapped(wrap_pymodule!(models))?;
     m.add_wrapped(wrap_pymodule!(pre_tokenizers))?;
     m.add_wrapped(wrap_pymodule!(decoders))?;

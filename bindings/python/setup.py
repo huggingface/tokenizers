@@ -20,7 +20,8 @@ setup(
         "tokenizers.normalizers",
         "tokenizers.pre_tokenizers",
         "tokenizers.processors",
-        "tokenizers.trainers"
+        "tokenizers.trainers",
+        "tokenizers.implementations",
     ],
     package_data = {
         'tokenizers': [ 'py.typed', '__init__.pyi' ],
@@ -30,6 +31,7 @@ setup(
         'tokenizers.pre_tokenizers': [ 'py.typed', '__init__.pyi' ],
         'tokenizers.processors': [ 'py.typed', '__init__.pyi' ],
         'tokenizers.trainers': [ 'py.typed', '__init__.pyi' ],
+        'tokenizers.implementations': [ 'py.typed' ],
     },
     zip_safe=False,
 )

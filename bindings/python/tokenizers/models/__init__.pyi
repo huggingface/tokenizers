@@ -25,7 +25,7 @@ class BPE:
                    merges: str,
                    cache_capacity: Optional[int],
                    dropout: Optional[float],
-                   unk_token: Optional[int],
+                   unk_token: Optional[str],
                    continuing_subword_prefix: Optional[str],
                    end_of_word_suffix: Optional[str]) -> Model:
         """ Instantiate a BPE Model from the given vocab and merges files.
@@ -45,8 +45,8 @@ class BPE:
             dropout: (`optional`) Optional[float] [0, 1]:
                 The BPE dropout to use. Must be an float between 0 and 1
 
-            unk_token: (`optional`) int:
-                The unknown token id to be used by the model.
+            unk_token: (`optional`) str:
+                The unknown token to be used by the model.
 
             continuing_subword_prefix: (`optional`) str:
                 The prefix to attach to subword units that don't represent a beginning of word.
