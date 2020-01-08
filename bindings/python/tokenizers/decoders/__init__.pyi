@@ -50,3 +50,17 @@ class Metaspace:
                 lets us treat `hello` exactly like `say hello`.
         """
         pass
+
+class BPEDecoder:
+    """ BPEDecoder """
+
+    @staticmethod
+    def new(suffix: str="</w>") -> Decoder:
+        """ Instantiate a new BPEDecoder
+
+        Args:
+            suffix: str:
+                The suffix that was used to caracterize an end-of-word. This suffix will
+                be replaced by whitespaces during the decoding
+        """
+        pass

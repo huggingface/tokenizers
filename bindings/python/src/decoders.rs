@@ -93,6 +93,31 @@ impl Metaspace {
     }
 }
 
+#[pyclass]
+pub struct BPEDecoder {}
+#[pymethods]
+impl BPEDecoder {
+    #[staticmethod]
+    #[args(kwargs = "**")]
+    fn new(kwargs: Option<&PyDict>) -> PyResult<Decoder> {
+        let mut suffix = String::from("</w");
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "suffix" => suffix = value.extract()?,
+                    _ => println!("Ignored unknown kwarg option {}", key),
+                }
+            }
+        }
+
+        Ok(Decoder {
+            decoder: Container::Owned(Box::new(tk::decoders::bpe::BPEDecoder::new(suffix))),
+        })
+    }
+}
+
 struct PyDecoder {
     class: PyObject,
 }
