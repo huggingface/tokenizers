@@ -14,12 +14,12 @@ class BaseTokenizer:
             self._tokenizer.get_vocab_size(),
             ', '.join(k + ': ' + str(v) for k, v in self._parameters.items()))
 
-    def with_padding(self,
-                     direction: Optional[str] = "right",
-                     pad_id: Optional[int] = 0,
-                     pad_type_id: Optional[int] = 0,
-                     pad_token: Optional[str] = "[PAD]",
-                     max_length: Optional[int] = None):
+    def enable_padding(self,
+                       direction: Optional[str] = "right",
+                       pad_id: Optional[int] = 0,
+                       pad_type_id: Optional[int] = 0,
+                       pad_token: Optional[str] = "[PAD]",
+                       max_length: Optional[int] = None):
         """ Change the padding strategy
 
         Args:
@@ -39,20 +39,20 @@ class BaseTokenizer:
                 If specified, the length at which to pad. If not specified
                 we pad using the size of the longest sequence in a batch
         """
-        return self._tokenizer.with_padding(direction=direction,
-                                            pad_id=pad_id,
-                                            pad_type_id=pad_type_id,
-                                            pad_token=pad_token,
-                                            max_length=max_length)
+        return self._tokenizer.enable_padding(direction=direction,
+                                              pad_id=pad_id,
+                                              pad_type_id=pad_type_id,
+                                              pad_token=pad_token,
+                                              max_length=max_length)
 
-    def without_padding(self):
+    def no_padding(self):
         """ Disable padding """
         return self._tokenizer.without_padding()
 
-    def with_truncation(self,
-                        max_length: int,
-                        stride: Optional[int],
-                        strategy: Optional[str]):
+    def enable_truncation(self,
+                          max_length: int,
+                          stride: Optional[int]=0,
+                          strategy: Optional[str]='longest_first'):
         """ Change the truncation options
 
         Args:
@@ -66,11 +66,11 @@ class BaseTokenizer:
             strategy: (`optional) str:
                 Can be one of `longest_first`, `only_first` or `only_second`
         """
-        return self._tokenizer.with_truncation(max_length,
-                                               stride=stride,
-                                               strategy=strategy)
+        return self._tokenizer.enable_truncation(max_length,
+                                                 stride=stride,
+                                                 strategy=strategy)
 
-    def without_truncation(self):
+    def no_truncation(self):
         """ Disable truncation """
         return self._tokenizer.without_truncation()
 

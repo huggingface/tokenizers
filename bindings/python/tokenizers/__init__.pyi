@@ -5,11 +5,7 @@ from tokenizers import pre_tokenizers
 from tokenizers import processors
 from tokenizers import trainers
 
-from tokenizers.implementations import (
-    ByteLevelBPETokenizer,
-    BPETokenizer,
-    SentencePieceBPETokenizer
-)
+from tokenizers.implementations import ByteLevelBPETokenizer, BPETokenizer, SentencePieceBPETokenizer, BertWordPieceTokenizer
 
 from typing import Optional, Union, List, Tuple
 
