@@ -1,6 +1,5 @@
 extern crate tokenizers as tk;
 
-use super::error::ToPyResult;
 use super::utils::Container;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -51,10 +50,8 @@ impl BpeTrainer {
             }
         }
 
-        let trainer: PyResult<_> = ToPyResult(builder.build()).into();
-
         Ok(Trainer {
-            trainer: Container::Owned(Box::new(trainer?)),
+            trainer: Container::Owned(Box::new(builder.build())),
         })
     }
 }
@@ -100,10 +97,8 @@ impl WordPieceTrainer {
             }
         }
 
-        let trainer: PyResult<_> = ToPyResult(builder.build()).into();
-
         Ok(Trainer {
-            trainer: Container::Owned(Box::new(trainer?)),
+            trainer: Container::Owned(Box::new(builder.build())),
         })
     }
 }
