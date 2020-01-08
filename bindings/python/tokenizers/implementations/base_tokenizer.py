@@ -5,8 +5,14 @@ from typing import List, Union, Tuple, Optional
 class BaseTokenizer:
     _tokenizer: Tokenizer
 
-    def __init__(self, tokenizer: Tokenizer):
+    def __init__(self, tokenizer: Tokenizer, parameters=None):
         self._tokenizer = tokenizer
+        self._parameters = parameters if parameters is not None else {}
+
+    def __repr__(self):
+        return "Tokenizer(vocabulary_size={}, {})".format(
+            self._tokenizer.get_vocab_size(),
+            ', '.join(k + ': ' + str(v) for k, v in self._parameters.items()))
 
     def with_padding(self,
                      direction: Optional[str] = "right",
@@ -68,7 +74,6 @@ class BaseTokenizer:
         """ Disable truncation """
         return self._tokenizer.without_truncation()
 
-
     def add_tokens(self, tokens: List[Union[str, Tuple[str, bool]]]) -> int:
         """ Add the given tokens to the vocabulary
 
@@ -97,7 +102,7 @@ class BaseTokenizer:
         Returns:
             The number of tokens that were added to the vocabulary
         """
-        return self._tokenizer.add_special_tokens(tokens)
+        return self._tokenizer.add_special_tokens(special_tokens)
 
     def encode(self, sequence: str, pair: Optional[str] = None) -> Encoding:
         """ Encode the given sequence
