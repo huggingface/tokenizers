@@ -61,7 +61,8 @@ impl PyMappingProtocol for IndexableString {
         }?;
 
         // Find out range from the slice
-        let PySliceIndices { start, stop, .. } = slice.indices(self.s.len() as i64)?;
+        let len: std::os::raw::c_long = (self.s.len() as i32) as _;
+        let PySliceIndices { start, stop, .. } = slice.indices(len)?;
         let range = start as usize..stop as usize;
 
         // Get the range from the relevant string
