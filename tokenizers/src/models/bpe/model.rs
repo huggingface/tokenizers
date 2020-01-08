@@ -444,7 +444,7 @@ impl Model for BPE {
             .map(|(pair, (rank, _))| (pair, rank))
             .collect();
         merges.sort_unstable_by_key(|k| *k.1);
-        merges_file.write_all(b"# Trained by `huggingface/tokenizers`\n")?:
+        merges_file.write_all(b"#version: 0.2 - Trained by `huggingface/tokenizers`\n")?;
         merges_file.write_all(
             &merges
                 .into_iter()
@@ -551,7 +551,7 @@ mod tests {
             .write_all("#version: 0.2\na b".as_bytes())
             .unwrap();
 
-        // Make sure we can instatiate a BPE model from the files.
+        // Make sure we can instantiate a BPE model from the files.
         let result = BPE::from_files(
             vocab_file.path().to_str().unwrap(),
             merges_file.path().to_str().unwrap(),
