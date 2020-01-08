@@ -272,6 +272,10 @@ impl NormalizedString {
     ///
     /// Panic if at > len
     pub fn split_off(&mut self, at: usize) -> Self {
+        if at > self.len() {
+            return;
+        }
+
         // Split normalized
         let byte_index = self
             .normalized
