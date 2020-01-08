@@ -4,6 +4,7 @@ use crate::error::PyError;
 use crate::normalized_string::NormalizedString;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3::PyObjectProtocol;
 use tk::tokenizer::PaddingDirection;
 
 #[pyclass(dict)]
@@ -15,6 +16,17 @@ pub struct Encoding {
 impl Encoding {
     pub fn new(encoding: tk::tokenizer::Encoding) -> Self {
         Encoding { encoding }
+    }
+}
+
+#[pyproto]
+impl PyObjectProtocol for Encoding {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "Encoding(num_tokens={}, attributs=[ids, type_ids, tokens, offsets, \
+             attention_mask, special_tokens_mask, overflowing])",
+            self.encoding.get_ids().len()
+        ))
     }
 }
 
