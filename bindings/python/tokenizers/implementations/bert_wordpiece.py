@@ -12,6 +12,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
 
     def __init__(self,
                  vocab_file: Optional[str]=None,
+                 add_special_tokens: bool=True,
                  unk_token: str="[UNK]",
                  sep_token: str="[SEP]",
                  cls_token: str="[CLS]",
@@ -38,10 +39,11 @@ class BertWordPieceTokenizer(BaseTokenizer):
         if cls_token_id is None:
             raise TypeError("cls_token not found in the vocabulary")
 
-        tokenizer.post_processor = BertProcessing.new(
-            (sep_token, sep_token_id),
-            (cls_token, cls_token_id)
-        )
+        if add_special_tokens:
+            tokenizer.post_processor = BertProcessing.new(
+                (sep_token, sep_token_id),
+                (cls_token, cls_token_id)
+            )
         tokenizer.decoders = decoders.WordPiece.new(prefix=prefix)
 
         super().__init__(tokenizer)
