@@ -33,4 +33,11 @@ class BPETokenizer(BaseTokenizer):
         tokenizer.pre_tokenizer = pre_tokenizers.Whitespace.new()
         tokenizer.decoder = decoders.BPEDecoder.new(suffix=suffix)
 
-        super().__init__(tokenizer)
+        parameters = {
+            "model": "BPE",
+            "unk_token": unk_token,
+            "suffix": suffix,
+            "dropout": dropout,
+        }
+
+        super().__init__(tokenizer, parameters)

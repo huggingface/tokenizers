@@ -20,7 +20,8 @@ class BertWordPieceTokenizer(BaseTokenizer):
                  handle_chinese_chars: bool=True,
                  strip_accents: bool=True,
                  lowercase: bool=True,
-                 prefix: str="##"):
+                 wordpieces_prefix: str="##"):
+
         if vocab_file is not None:
             tokenizer = Tokenizer(WordPiece.from_files(vocab_file, unk_token=unk_token))
         else:
@@ -44,7 +45,19 @@ class BertWordPieceTokenizer(BaseTokenizer):
                 (sep_token, sep_token_id),
                 (cls_token, cls_token_id)
             )
-        tokenizer.decoders = decoders.WordPiece.new(prefix=prefix)
+        tokenizer.decoders = decoders.WordPiece.new(prefix=wordpieces_prefix)
 
-        super().__init__(tokenizer)
+        parameters = {
+            "model": "BertWordPiece",
+            "add_special_tokens": add_special_tokens,
+            "unk_token": unk_token,
+            "sep_token": sep_token,
+            "cls_token": cls_token,
+            "clean_text": clean_text,
+            "handle_chinese_chars": handle_chinese_chars,
+            "strip_accents": strip_accents,
+            "lowercase": lowercase,
+            "wordpieces_prefix": wordpieces_prefix,
+        }
 
+        super().__init__(tokenizer, parameters)

@@ -32,4 +32,12 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         tokenizer.decoder = decoders.Metaspace.new(replacement=replacement,
                                                    add_prefix_space=add_prefix_space)
 
-        super().__init__(tokenizer)
+        parameters = {
+            "model": "SentencePieceBPE",
+            "unk_token": unk_token,
+            "replacement": replacement,
+            "add_prefix_space": add_prefix_space,
+            "dropout": dropout,
+        }
+
+        super().__init__(tokenizer, parameters)

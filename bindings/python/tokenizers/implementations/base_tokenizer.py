@@ -5,8 +5,14 @@ from typing import List, Union, Tuple, Optional
 class BaseTokenizer:
     _tokenizer: Tokenizer
 
-    def __init__(self, tokenizer: Tokenizer):
+    def __init__(self, tokenizer: Tokenizer, parameters=None):
         self._tokenizer = tokenizer
+        self._parameters = parameters if parameters is not None else {}
+
+    def __repr__(self):
+        return "Tokenizer(vocabulary_size={}, {})".format(
+            self._tokenizer.get_vocab_size(),
+            ', '.join(k + ': ' + str(v) for k, v in self._parameters.items()))
 
     def with_padding(self,
                      direction: Optional[str] = "right",

@@ -24,4 +24,9 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel.new(add_prefix_space=add_prefix_space)
         tokenizer.decoder = decoders.ByteLevel.new()
 
-        super().__init__(tokenizer)
+        parameters = {
+            "model": "ByteLevelBPE",
+            "add_prefix_space": add_prefix_space,
+        }
+
+        super().__init__(tokenizer, parameters)
