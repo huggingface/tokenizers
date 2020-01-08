@@ -16,7 +16,7 @@ struct Config {
     merges: Option<HashMap<Pair, (u32, u32)>>,
     cache_capacity: Option<usize>,
     dropout: Option<f32>,
-    unk_token: Option<u32>,
+    unk_token: Option<String>,
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
 }
@@ -57,7 +57,7 @@ impl BpeBuilder {
     }
 
     /// Set the `UNK` token for the vocab.
-    pub fn unk_token(mut self, unk_token: u32) -> Self {
+    pub fn unk_token(mut self, unk_token: String) -> Self {
         self.config.unk_token = Some(unk_token);
         self
     }
@@ -130,7 +130,7 @@ pub struct BPE {
     /// perform no merges, so the result will just be characters.
     dropout: Option<f32>,
     /// The unknown token to be used when we encounter an unknown char
-    unk_token: Option<u32>,
+    unk_token: Option<String>,
     /// An optional prefix to use on any subword that exist only behind another one
     continuing_subword_prefix: Option<String>,
     /// An optional suffix to caracterize and end-of-word subword
@@ -166,7 +166,7 @@ impl Clone for BPE {
             merges: self.merges.clone(),
             cache: fresh_cache,
             dropout: self.dropout,
-            unk_token: self.unk_token,
+            unk_token: self.unk_token.clone(),
             continuing_subword_prefix: self.continuing_subword_prefix.clone(),
             end_of_word_suffix: self.end_of_word_suffix.clone(),
         }
@@ -254,7 +254,7 @@ impl BPE {
         &self.vocab
     }
 
-    pub fn get_unk_token(&self) -> &Option<u32> {
+    pub fn get_unk_token(&self) -> &Option<String> {
         &self.unk_token
     }
 
@@ -262,7 +262,7 @@ impl BPE {
         &self.continuing_subword_prefix
     }
 
-    fn merge_word(&self, w: &str) -> Word {
+    fn merge_word(&self, w: &str) -> Result<Word> {
         let mut word = Word::new();
         for (is_first, is_last, c) in w.chars().with_first_and_last() {
             let mut s = c.to_string();
@@ -283,8 +283,12 @@ impl BPE {
             if let Some(id) = self.vocab.get(&s) {
                 word.add(*id);
             } else if let Some(unk) = &self.unk_token {
+                let unk_id = self
+                    .vocab
+                    .get(unk)
+                    .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk.to_owned()))?;
                 // Handle UNK token
-                word.add(*unk);
+                word.add(*unk_id);
             }
         }
 
@@ -328,7 +332,7 @@ impl BPE {
             word.merge(pair.0, pair.1, *new_id);
         }
 
-        word
+        Ok(word)
     }
 
     fn word_to_tokens(&self, word: &Word, initial_offsets: &(usize, usize)) -> Vec<Token> {
@@ -370,14 +374,14 @@ impl Model for BPE {
             let tokens = match cached_words {
                 None => {
                     // Not using cache since we're using dropout.
-                    let word = self.merge_word(&w);
+                    let word = self.merge_word(&w)?;
                     self.word_to_tokens(&word, initial_offsets)
                 }
                 Some(ref mut cache) => {
                     match cache[i].as_ref() {
                         None => {
                             // No cache hit, so re-compute merges.
-                            let word = self.merge_word(&w);
+                            let word = self.merge_word(&w)?;
                             let tokens = self.word_to_tokens(&word, initial_offsets);
                             // Add to cache.
                             cache[i] = Some(word);

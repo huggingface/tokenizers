@@ -22,6 +22,8 @@ pub enum Error {
     BadMerges(usize),
     /// If a token found in merges, is not in the vocab
     MergeTokenOutOfVocabulary(String),
+    /// If the provided unk token is out of vocabulary
+    UnkTokenOutOfVocabulary(String),
     /// Dropout not between 0 and 1.
     InvalidDropout,
 }
@@ -46,7 +48,10 @@ impl std::fmt::Display for Error {
             Error::BadVocabulary => write!(f, "Bad vocabulary json file"),
             Error::BadMerges(line) => write!(f, "Merges text file invalid at line {}", line),
             Error::MergeTokenOutOfVocabulary(token) => {
-                write!(f, "Token {} out of vocabulary", token)
+                write!(f, "Token `{}` out of vocabulary", token)
+            }
+            Error::UnkTokenOutOfVocabulary(token) => {
+                write!(f, "Unk token `{}` not found in the vocabulary", token)
             }
             Error::InvalidDropout => write!(f, "Dropout should be between 0 and 1"),
         }
