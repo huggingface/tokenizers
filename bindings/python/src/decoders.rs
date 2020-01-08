@@ -43,6 +43,7 @@ pub struct WordPiece {}
 #[pymethods]
 impl WordPiece {
     #[staticmethod]
+    #[args(kwargs="**")]
     fn new(kwargs: Option<&PyDict>) -> PyResult<Decoder> {
         let mut prefix = String::from("##");
 
