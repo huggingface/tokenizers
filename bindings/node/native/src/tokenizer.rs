@@ -14,17 +14,8 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
-    pub fn prepare_for_task(&self) -> Option<WorkingTokenizer> {
-        if std::sync::Arc::strong_count(&self.running_task) > 1 {
-            None
-        } else {
-            unsafe {
-                Some(WorkingTokenizer::new(
-                    &self.tokenizer,
-                    self.running_task.clone(),
-                ))
-            }
-        }
+    pub fn prepare_for_task(&self) -> WorkingTokenizer {
+        unsafe { WorkingTokenizer::new(&self.tokenizer, self.running_task.clone()) }
     }
 }
 
@@ -47,6 +38,17 @@ declare_types! {
             }
         }
 
+        method runningTasks(mut cx) {
+            // runningTasks(): number
+            let running = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
+                count
+            };
+            Ok(cx.number(running as f64).upcast())
+        }
+
         method getVocabSize(mut cx) {
             // getVocabSize(withAddedTokens: bool = true)
             let mut with_added_tokens = true;
@@ -62,6 +64,17 @@ declare_types! {
         }
 
         method withModel(mut cx) {
+            let running = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
+                count
+            };
+            if running > 1 {
+                println!("{} running tasks", running);
+                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
+            }
+
             // with_model(model: JsModel)
             let mut model = cx.argument::<JsModel>(0)?;
             if let Some(instance) = {
@@ -108,14 +121,9 @@ declare_types! {
                 worker
             };
 
-            if let Some(worker) = worker {
-                let task = EncodeTask::Single(worker, Some(input));
-                task.schedule(callback);
-
-                Ok(cx.undefined().upcast())
-            } else {
-                cx.throw_error("Another `encode` or `encode_batch` is already running")
-            }
+            let task = EncodeTask::Single(worker, Some(input));
+            task.schedule(callback);
+            Ok(cx.undefined().upcast())
         }
 
         method encodeBatch(mut cx) {
@@ -144,7 +152,7 @@ declare_types! {
                     cx.throw_error("Input must be an array of `String | [String, String]`")
                 }
             }).collect::<NeonResult<Vec<_>>>()?;
-            let callback = cx.argument::<JsFunction>(2)?;
+            let callback = cx.argument::<JsFunction>(1)?;
 
             let worker = {
                 let this = cx.this();
@@ -153,13 +161,9 @@ declare_types! {
                 worker
             };
 
-            if let Some(worker) = worker {
-                let task = EncodeTask::Batch(worker, Some(inputs));
-                task.schedule(callback);
-                Ok(cx.undefined().upcast())
-            } else {
-                cx.throw_error("Another `encode` or `encode_batch` is already running")
-            }
+            let task = EncodeTask::Batch(worker, Some(inputs));
+            task.schedule(callback);
+            Ok(cx.undefined().upcast())
         }
     }
 }
