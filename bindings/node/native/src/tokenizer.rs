@@ -198,11 +198,35 @@ declare_types! {
         }
 
         method tokenToId(mut cx) {
-            unimplemented!()
+            // tokenToId(token: string): number | undefined
+
+            let token = cx.argument::<JsString>(0)?.value();
+
+            let this = cx.this();
+            let guard = cx.lock();
+            let id = this.borrow(&guard).tokenizer.token_to_id(&token);
+
+            if let Some(id) = id {
+                Ok(cx.number(id).upcast())
+            } else {
+                Ok(cx.undefined().upcast())
+            }
         }
 
         method idToToken(mut cx) {
-            unimplemented!()
+            // idToToken(id: number): string | undefined
+
+            let id = cx.argument::<JsNumber>(0)?.value() as u32;
+
+            let this = cx.this();
+            let guard = cx.lock();
+            let token = this.borrow(&guard).tokenizer.id_to_token(id);
+
+            if let Some(token) = token {
+                Ok(cx.string(token).upcast())
+            } else {
+                Ok(cx.undefined().upcast())
+            }
         }
 
         method addTokens(mut cx) {
