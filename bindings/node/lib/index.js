@@ -1,8 +1,10 @@
 var addon = require('../native');
 
-let s = "Hey man!";
-if (typeof process.argv[2] == 'string') {
-	s = process.argv[2];
+exports.Tokenizer = addon.tokenizer_Tokenizer;
+exports.models = {
+	BPE: {
+		from_files: addon.models_create_BPE_from_files,
+		empty: addon.models_create_BPE_empty,
+	},
+	WordPiece: addon.models_WordPiece,
 }
-
-console.log(addon.WhitespaceTokenizer.tokenize(s));

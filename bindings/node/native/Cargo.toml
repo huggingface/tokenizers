@@ -15,4 +15,4 @@ neon-build = "0.3.3"
 
 [dependencies]
 neon = "0.3.3"
-tokenizers-lib = { path = "../../../tokenizers" }
+tokenizers = { path = "../../../tokenizers" }
