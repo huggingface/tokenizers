@@ -39,7 +39,7 @@ impl Task for EncodeTask {
     fn perform(&self) -> Result<Self::Output, Self::Error> {
         match self {
             EncodeTask::Single(worker, input) => {
-                let mut input = unsafe { std::ptr::read(input) };
+                let mut input = unsafe { std::ptr::replace(&input as *const _ as *mut _, None) };
                 let tokenizer: &Tokenizer = unsafe { &*worker.ptr };
                 tokenizer
                     .encode(input.take().ok_or("No provided input")?)
@@ -47,7 +47,7 @@ impl Task for EncodeTask {
                     .map(|encoding| EncodeOutput::Single(encoding))
             }
             EncodeTask::Batch(worker, input) => {
-                let mut input = unsafe { std::ptr::read(input) };
+                let mut input = unsafe { std::ptr::replace(&input as *const _ as *mut _, None) };
                 let tokenizer: &Tokenizer = unsafe { &*worker.ptr };
                 tokenizer
                     .encode_batch(input.take().ok_or("No provided input")?)

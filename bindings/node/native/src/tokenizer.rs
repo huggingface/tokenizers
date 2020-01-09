@@ -1,6 +1,5 @@
 extern crate tokenizers as tk;
 
-use crate::encoding::*;
 use crate::models::*;
 use crate::tasks::tokenizer::{EncodeTask, WorkingTokenizer};
 use neon::prelude::*;
@@ -16,7 +15,7 @@ pub struct Tokenizer {
 
 impl Tokenizer {
     pub fn prepare_for_task(&self) -> Option<WorkingTokenizer> {
-        if std::sync::Arc::strong_count(&self.running_task) > 0 {
+        if std::sync::Arc::strong_count(&self.running_task) > 1 {
             None
         } else {
             unsafe {
