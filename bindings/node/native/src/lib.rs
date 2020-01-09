@@ -4,6 +4,7 @@ extern crate tokenizers as tk;
 mod decoders;
 mod encoding;
 mod models;
+mod normalizers;
 mod processors;
 mod tasks;
 mod tokenizer;
@@ -20,6 +21,8 @@ register_module!(mut m, {
     decoders::register(&mut m, "decoders")?;
     // Processors
     processors::register(&mut m, "processors")?;
+    // Normalizers
+    normalizers::register(&mut m, "normalizers")?;
 
     Ok(())
 });

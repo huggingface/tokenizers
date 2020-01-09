@@ -23,6 +23,14 @@ where
         Container::Pointer(content as *mut _)
     }
 
+    pub fn is_owned(&self) -> bool {
+        if let Container::Owned(_) = &self {
+            true
+        } else {
+            false
+        }
+    }
+
     /// Consumes ourself and return the Boxed element if we have the ownership, None otherwise.
     pub fn take(self) -> Option<Box<T>> {
         match self {
