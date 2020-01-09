@@ -230,11 +230,66 @@ declare_types! {
         }
 
         method addTokens(mut cx) {
-            unimplemented!()
+            // addTokens(tokens: (string | [string, bool])[]): number
+
+            let tokens = cx.argument::<JsArray>(0)?
+                .to_vec(&mut cx)?
+                .into_iter()
+                .map(|token| {
+                    if let Ok(token) = token.downcast::<JsString>() {
+                        Ok(tk::tokenizer::AddedToken {
+                            content: token.value(),
+                            ..Default::default()
+                        })
+                    } else if let Ok(tuple) = token.downcast::<JsArray>() {
+                        let token = tuple.get(&mut cx, 0)?
+                            .downcast::<JsString>()
+                            .or_throw(&mut cx)?
+                            .value();
+                        let word = tuple.get(&mut cx, 1)?
+                            .downcast::<JsBoolean>()
+                            .or_throw(&mut cx)?
+                            .value();
+
+                        Ok(tk::tokenizer::AddedToken {
+                            content: token,
+                            single_word: word,
+                        })
+                    } else {
+                        cx.throw_error("Input must be `(string | [string, bool])[]`")
+                    }
+                })
+                .collect::<NeonResult<Vec<_>>>()?;
+
+            let mut this = cx.this();
+            let guard = cx.lock();
+            let added = this.borrow_mut(&guard).tokenizer.add_tokens(&tokens);
+
+            Ok(cx.number(added as f64).upcast())
         }
 
         method addSpecialTokens(mut cx) {
-            unimplemented!()
+            // addSpecialTokens(tokens: string[]): number
+
+            let tokens = cx.argument::<JsArray>(0)?
+                .to_vec(&mut cx)?
+                .into_iter()
+                .map(|token| {
+                    Ok(token.downcast::<JsString>().or_throw(&mut cx)?.value())
+                })
+                .collect::<NeonResult<Vec<_>>>()?;
+
+            let mut this = cx.this();
+            let guard = cx.lock();
+            let added = this.borrow_mut(&guard)
+                .tokenizer
+                .add_special_tokens(&tokens
+                    .iter()
+                    .map(|s| &s[..])
+                    .collect::<Vec<_>>()
+            );
+
+            Ok(cx.number(added as f64).upcast())
         }
 
         method train(mut cx) {
