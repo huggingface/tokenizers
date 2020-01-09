@@ -44,7 +44,7 @@ declare_types! {
                 let this = cx.this();
                 let guard = cx.lock();
                 let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                count
+                if count > 0 { count - 1 } else { 0 }
             };
             Ok(cx.number(running as f64).upcast())
         }
@@ -71,7 +71,7 @@ declare_types! {
                 count
             };
             if running > 1 {
-                println!("{} running tasks", running);
+                println!("{} running tasks", running - 1);
                 return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
             }
 
