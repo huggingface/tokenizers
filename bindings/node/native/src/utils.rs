@@ -74,4 +74,21 @@ where
             Container::Empty => closure(None),
         }
     }
+
+    pub fn execute_mut<F, U>(&mut self, closure: F) -> U
+    where
+        F: FnOnce(Option<&mut Box<T>>) -> U,
+    {
+        match self {
+            Container::Owned(val) => closure(Some(val)),
+            Container::Pointer(ptr) => unsafe {
+                let mut val = Box::from_raw(*ptr);
+                let res = closure(Some(&mut val));
+                // We call this to make sure we don't drop the Box
+                Box::into_raw(val);
+                res
+            },
+            Container::Empty => closure(None),
+        }
+    }
 }
