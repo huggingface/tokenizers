@@ -3,6 +3,7 @@ extern crate tokenizers as tk;
 
 mod decoders;
 mod models;
+mod processors;
 mod tokenizer;
 mod utils;
 
@@ -15,6 +16,8 @@ register_module!(mut m, {
     models::register(&mut m, "models")?;
     // Decoders
     decoders::register(&mut m, "decoders")?;
+    // Processors
+    processors::register(&mut m, "processors")?;
 
     Ok(())
 });

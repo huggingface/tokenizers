@@ -14,3 +14,6 @@ exports.decoders = {
 	Metaspace: addon.decoders_Metaspace,
 	BPEDecoder: addon.decoders_BPEDecoder,
 }
+exports.post_processors = {
+	BertProcessing: addon.processors_BertProcessing,
+}
