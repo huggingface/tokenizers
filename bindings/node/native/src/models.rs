@@ -19,14 +19,14 @@ declare_types! {
     }
 }
 
-/// create_BPE(vocab: String, merges: String, options?: {
+/// bpe_from_files(vocab: String, merges: String, options?: {
 ///   cache_capacity?: number,
 ///   dropout?: number,
 ///   unk_token?: String,
 ///   continuing_subword_prefix?: String,
 ///   end_of_word_suffix?: String
 /// })
-pub fn create_bpe_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
+pub fn bpe_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
     let vocab = cx.argument::<JsString>(0)?.value() as String;
     let merges = cx.argument::<JsString>(1)?.value() as String;
     let options = cx.argument_opt(2);
@@ -75,8 +75,8 @@ pub fn create_bpe_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
     Ok(model)
 }
 
-/// create_bpe_empty()
-pub fn create_bpe_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
+/// bpe_empty()
+pub fn bpe_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     let mut model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
     let bpe = tk::models::bpe::BPE::default();
 
@@ -87,11 +87,8 @@ pub fn create_bpe_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
 }
 
 /// Register everything here
-pub fn register(m: &mut ModuleContext, prefix: &str) -> Result<(), neon::result::Throw> {
-    m.export_function(
-        &format!("{}_create_BPE_from_files", prefix),
-        create_bpe_from_files,
-    )?;
-    m.export_function(&format!("{}_create_BPE_empty", prefix), create_bpe_empty)?;
+pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
+    m.export_function(&format!("{}_BPE_from_files", prefix), bpe_from_files)?;
+    m.export_function(&format!("{}_BPE_empty", prefix), bpe_empty)?;
     Ok(())
 }

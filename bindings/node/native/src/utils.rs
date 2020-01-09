@@ -1,13 +1,13 @@
 /// A Container type
 ///
-/// Provides an interface to allow transfer of ownership between Python and Rust.
+/// Provides an interface to allow transfer of ownership between Node and Rust.
 /// It either contains a Box with full ownership of the content, or a pointer to the content.
 ///
-/// The main goal here is to allow Python calling into Rust to initialize some objects. Later
-/// these objects may need to be used by Rust who will expect to take ownership. Since Python
+/// The main goal here is to allow Node calling into Rust to initialize some objects. Later
+/// these objects may need to be used by Rust who will expect to take ownership. Since Node
 /// does not allow any sort of ownership transfer, it will keep a reference to this object
 /// until it gets cleaned up by the GC. In this case, we actually give the ownership to Rust,
-/// and just keep a pointer in the Python object.
+/// and just keep a pointer in the Node object.
 pub enum Container<T: ?Sized> {
     Owned(Box<T>),
     Pointer(*mut T),
