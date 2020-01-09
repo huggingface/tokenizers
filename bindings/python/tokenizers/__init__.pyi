@@ -227,7 +227,7 @@ class Tokenizer:
                        pad_id: Optional[int] = 0,
                        pad_type_id: Optional[int] = 0,
                        pad_token: Optional[str] = "[PAD]",
-                       max_length: Optional[int] = None)
+                       max_length: Optional[int] = None):
         """ Enable the padding
 
         Args:
