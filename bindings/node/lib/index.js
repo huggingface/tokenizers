@@ -12,5 +12,5 @@ exports.decoders = {
 	ByteLevel: addon.decoders_ByteLevel,
 	WordPiece: addon.decoders_WordPiece,
 	Metaspace: addon.decoders_Metaspace,
-	BPEDecoder: addong.decoders_BPEDecoder,
+	BPEDecoder: addon.decoders_BPEDecoder,
 }
