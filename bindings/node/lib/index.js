@@ -8,3 +8,9 @@ exports.models = {
 	},
 	WordPiece: addon.models_WordPiece,
 }
+exports.decoders = {
+	ByteLevel: addon.decoders_ByteLevel,
+	WordPiece: addon.decoders_WordPiece,
+	Metaspace: addon.decoders_Metaspace,
+	BPEDecoder: addong.decoders_BPEDecoder,
+}
