@@ -12,23 +12,15 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@types/node": "^13.1.6",
-    "neon-cli": "^0.3.3",
-    "node-pre-gyp": "github:amilajack/node-pre-gyp#neon-compat"
+    "neon-cli": "^0.3.3"
   },
   "devDependencies": {},
   "scripts": {
     "build": "neon build",
-    "install": "node-pre-gyp install --fallback-to-build=false || neon build --release",
-    "package": "node-pre-gyp package"
+    "install": "neon build --release"
   },
   "files": [
     "native/index.node",
     "lib"
-  ],
-  "binary": {
-    "module_name": "index",
-    "package_name": "{node_abi}-{platform}-{arch}.tar.gz",
-    "module_path": "./native",
-    "pkg_path": "."
-  }
+  ]
 }
