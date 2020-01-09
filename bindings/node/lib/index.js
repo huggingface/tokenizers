@@ -1,19 +1,6 @@
-var addon = require('../native');
-
-exports.Tokenizer = addon.tokenizer_Tokenizer;
-exports.models = {
-	BPE: {
-		fromFiles: addon.models_BPE_from_files,
-		empty: addon.models_BPE_empty,
-	},
-	WordPiece: addon.models_WordPiece,
+"use strict";
+function __export(m) {
+    for (var p in m) if (!exports.hasOwnProperty(p)) exports[p] = m[p];
 }
-exports.decoders = {
-	ByteLevel: addon.decoders_ByteLevel,
-	WordPiece: addon.decoders_WordPiece,
-	Metaspace: addon.decoders_Metaspace,
-	BPEDecoder: addon.decoders_BPEDecoder,
-}
-exports.post_processors = {
-	BertProcessing: addon.processors_BertProcessing,
-}
+Object.defineProperty(exports, "__esModule", { value: true });
+__export(require("./bindings"));

@@ -3,7 +3,7 @@
  * This class is not supposed to be instantiated directly. Instead, any implementation of
  * a PostProcessor will return an instance of this class when instantiated.
  */
-class Processor {}
+declare class Processor {}
 
 export namespace processors {
   /**

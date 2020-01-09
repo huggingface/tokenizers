@@ -3,7 +3,7 @@
  * This class is not supposed to be instantiated directly. Instead, any implementation of
  * a Model will return a instance of this class when instantiated.
  */
-class Model {
+declare class Model {
 
 }
 
