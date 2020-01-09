@@ -2,11 +2,31 @@ extern crate tokenizers as tk;
 
 use crate::encoding::*;
 use crate::models::*;
+use crate::tasks::tokenizer::{EncodeTask, WorkingTokenizer};
 use neon::prelude::*;
 
 /// Tokenizer
 pub struct Tokenizer {
     tokenizer: tk::tokenizer::Tokenizer,
+
+    /// Whether we have a running task. We keep this to make sure we never
+    /// modify the underlying tokenizer while a task is running
+    running_task: std::sync::Arc<()>,
+}
+
+impl Tokenizer {
+    pub fn prepare_for_task(&self) -> Option<WorkingTokenizer> {
+        if std::sync::Arc::strong_count(&self.running_task) > 0 {
+            None
+        } else {
+            unsafe {
+                Some(WorkingTokenizer::new(
+                    &self.tokenizer,
+                    self.running_task.clone(),
+                ))
+            }
+        }
+    }
 }
 
 declare_types! {
@@ -20,7 +40,8 @@ declare_types! {
                 model.model.to_pointer()
             } {
                 Ok(Tokenizer {
-                    tokenizer: tk::tokenizer::Tokenizer::new(instance)
+                    tokenizer: tk::tokenizer::Tokenizer::new(instance),
+                    running_task: std::sync::Arc::new(())
                 })
             } else {
                 cx.throw_error("The Model is already being used in another Tokenizer")
@@ -63,12 +84,17 @@ declare_types! {
         }
 
         method encode(mut cx) {
-            // encode(sentence: String, pair?: String): Encoding
+            // encode(sentence: String, pair: String | null = null, __callback: (err, encoding) -> void)
             let sentence = cx.argument::<JsString>(0)?.value();
             let mut pair: Option<String> = None;
             if let Some(args) = cx.argument_opt(1) {
-                pair = Some(args.downcast::<JsString>().or_throw(&mut cx)?.value());
+                if let Ok(p) = args.downcast::<JsString>() {
+                    pair = Some(p.value());
+                } else if let Err(_) = args.downcast::<JsNull>() {
+                    return cx.throw_error("Second arg must be of type `String | null`");
+                }
             }
+            let callback = cx.argument::<JsFunction>(2)?;
 
             let input = if let Some(pair) = pair {
                 tk::tokenizer::EncodeInput::Dual(sentence, pair)
@@ -76,24 +102,26 @@ declare_types! {
                 tk::tokenizer::EncodeInput::Single(sentence)
             };
 
-            let encoding = {
+            let worker = {
                 let this = cx.this();
                 let guard = cx.lock();
-                let res = this.borrow(&guard).tokenizer.encode(input);
-                res.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?
+                let worker = this.borrow(&guard).prepare_for_task();
+                worker
             };
 
-            let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
-            // Set the actual encoding
-            let guard = cx.lock();
-            js_encoding.borrow_mut(&guard).encoding.to_owned(Box::new(encoding));
+            if let Some(worker) = worker {
+                let task = EncodeTask::Single(worker, Some(input));
+                task.schedule(callback);
 
-            Ok(js_encoding.upcast())
+                Ok(cx.undefined().upcast())
+            } else {
+                cx.throw_error("Another `encode` or `encode_batch` is already running")
+            }
         }
 
         method encodeBatch(mut cx) {
             // type EncodeInput = (String | [String, String])[]
-            // encode_batch(sentences: EncodeInput[]): Encoding[]
+            // encode_batch(sentences: EncodeInput[], __callback: (err, encodings) -> void)
             let inputs = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
             let inputs = inputs.into_iter().map(|value| {
                 if let Ok(s) = value.downcast::<JsString>() {
@@ -117,26 +145,22 @@ declare_types! {
                     cx.throw_error("Input must be an array of `String | [String, String]`")
                 }
             }).collect::<NeonResult<Vec<_>>>()?;
+            let callback = cx.argument::<JsFunction>(2)?;
 
-            let encodings = {
+            let worker = {
                 let this = cx.this();
                 let guard = cx.lock();
-                let res = this.borrow(&guard).tokenizer.encode_batch(inputs);
-                res.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?
+                let worker = this.borrow(&guard).prepare_for_task();
+                worker
             };
 
-            let result = JsArray::new(&mut cx, encodings.len() as u32);
-            for (i, encoding) in encodings.into_iter().enumerate() {
-                let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
-
-                // Set the actual encoding
-                let guard = cx.lock();
-                js_encoding.borrow_mut(&guard).encoding.to_owned(Box::new(encoding));
-
-                result.set(&mut cx, i as u32, js_encoding)?;
+            if let Some(worker) = worker {
+                let task = EncodeTask::Batch(worker, Some(inputs));
+                task.schedule(callback);
+                Ok(cx.undefined().upcast())
+            } else {
+                cx.throw_error("Another `encode` or `encode_batch` is already running")
             }
-
-            Ok(result.upcast())
         }
     }
 }

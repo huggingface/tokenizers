@@ -5,6 +5,7 @@ mod decoders;
 mod encoding;
 mod models;
 mod processors;
+mod tasks;
 mod tokenizer;
 mod utils;
 
