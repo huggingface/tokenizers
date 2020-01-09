@@ -11,6 +11,7 @@
   "author": "Anthony MOI <m.anthony.moi@gmail.com>",
   "license": "Apache-2.0",
   "dependencies": {
+    "@types/node": "^13.1.6",
     "neon-cli": "^0.3.3",
     "node-pre-gyp": "github:amilajack/node-pre-gyp#neon-compat"
   },

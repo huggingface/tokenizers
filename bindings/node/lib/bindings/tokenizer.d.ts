@@ -20,11 +20,11 @@ export class Tokenizer {
   constructor(model: Model);
   
   /**
-   * Encode the given sequence.
+   * Encode the given sequence
    *
    * @param {string} sequence The sequence to encode
    * @param {(string | null)} pair The optional pair sequence
-   * @param {(err: any, encoding: Encoding) => void} __callback Callback to call when encoding is complete
+   * @param {(err: any, encoding: Encoding) => void} __callback Callback called when encoding is complete
    */
   encode(sequence: string, pair: string | null, __callback: (err: any, encoding: Encoding) => void): void;
 
@@ -33,7 +33,7 @@ export class Tokenizer {
    *
    * @param {((string | [string, string])[])} sequences A list of sequences or pair of sequences.
    * The list can contain both at the same time.
-   * @param {(err: any, encodings: Encoding[]) => void} __callback Callback to call when encoding is complete
+   * @param {(err: any, encodings: Encoding[]) => void} __callback Callback called when encoding is complete
    */
   encodeBatch(sequences: (string | [string, string])[], __callback: (err: any, encodings: Encoding[]) => void): void;
 
@@ -54,7 +54,7 @@ export class Tokenizer {
    * @param model New model to use
    * @throws Will throw an error if any task is running
    */
-  withModel(model: Model): void;
+  setModel(model: Model): void;
 }
 
 /**
@@ -77,6 +77,11 @@ declare class Encoding {
   getOffsets(): [number, number][];
 
   /**
+   * Returns the overflowing encoding, after truncation
+   */
+  getOverflowing(): Encoding | undefined;
+
+  /**
    * Returns the special tokens mask
    */
   getSpecialTokensMask(): number;
@@ -90,4 +95,43 @@ declare class Encoding {
    * Returns the type ids
    */
   getTypeIds(): number[];
+
+  /**
+   * Pad the current Encoding at the given length
+   *
+   * @param {number} length The length at which to pad
+   * @param {PaddingOptions} [options] Padding options
+   */
+  pad(length: number, options?: PaddingOptions): void;
+
+  /**
+   * Truncate the current Encoding at the given max_length
+   *
+   * @param {number} length The maximum length to be kept
+   * @param {number} [stride=0] The length of the previous first sequence
+   * to be includedin the overflowing sequence
+   */
+  truncate(length: number, stride?: number): void;
+}
+
+interface PaddingOptions {
+  /**
+   * @default "right"
+   */
+  direction?: 'left' | 'right';
+  /**
+   * The indice to be used when padding
+   * @default 0
+   */
+  padId?: number;
+  /**
+   * The type indice to be used when padding
+   * @default 0
+   */
+  padTypeId?: number;
+  /**
+   * The pad token to be used when padding
+   * @default "[PAD]"
+   */
+  padToken?: string;
 }
