@@ -1,8 +1,9 @@
 {
-  "name": "node",
+  "name": "tokenizers",
   "version": "0.1.0",
   "description": "",
-  "main": "lib/index.js",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
   "repository": {
     "type": "git",
     "url": ".."
@@ -10,9 +11,23 @@
   "author": "Anthony MOI <m.anthony.moi@gmail.com>",
   "license": "Apache-2.0",
   "dependencies": {
-    "neon-cli": "^0.3.3"
+    "neon-cli": "^0.3.3",
+    "node-pre-gyp": "github:amilajack/node-pre-gyp#neon-compat"
   },
+  "devDependencies": {},
   "scripts": {
-    "install": "neon build"
+    "build": "neon build",
+    "install": "node-pre-gyp install --fallback-to-build=false || neon build --release",
+    "package": "node-pre-gyp package"
+  },
+  "files": [
+    "native/index.node",
+    "lib"
+  ],
+  "binary": {
+    "module_name": "index",
+    "package_name": "{node_abi}-{platform}-{arch}.tar.gz",
+    "module_path": "./native",
+    "pkg_path": "."
   }
 }
