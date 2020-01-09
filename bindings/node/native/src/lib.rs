@@ -2,6 +2,7 @@ extern crate neon;
 extern crate tokenizers as tk;
 
 mod decoders;
+mod encoding;
 mod models;
 mod processors;
 mod tokenizer;

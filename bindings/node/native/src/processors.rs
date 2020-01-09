@@ -30,7 +30,7 @@ fn bert_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
         sep.get(&mut cx, 0)?
             .downcast::<JsString>()
             .or_throw(&mut cx)?
-            .value() as String,
+            .value(),
         sep.get(&mut cx, 1)?
             .downcast::<JsNumber>()
             .or_throw(&mut cx)?
@@ -40,7 +40,7 @@ fn bert_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
         cls.get(&mut cx, 0)?
             .downcast::<JsString>()
             .or_throw(&mut cx)?
-            .value() as String,
+            .value(),
         cls.get(&mut cx, 1)?
             .downcast::<JsNumber>()
             .or_throw(&mut cx)?
