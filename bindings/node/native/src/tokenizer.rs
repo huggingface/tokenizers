@@ -63,38 +63,6 @@ declare_types! {
             Ok(cx.number(size as f64).upcast())
         }
 
-        method withModel(mut cx) {
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                count
-            };
-            if running > 1 {
-                println!("{} running tasks", running - 1);
-                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
-            }
-
-            // with_model(model: JsModel)
-            let mut model = cx.argument::<JsModel>(0)?;
-            if let Some(instance) = {
-                let guard = cx.lock();
-                let mut model = model.borrow_mut(&guard);
-                model.model.to_pointer()
-            } {
-                let mut this = cx.this();
-                {
-                    let guard = cx.lock();
-                    let mut tokenizer = this.borrow_mut(&guard);
-                    tokenizer.tokenizer.with_model(instance);
-                }
-
-                Ok(cx.undefined().upcast())
-            } else {
-                cx.throw_error("The Model is already being used in another Tokenizer")
-            }
-        }
-
         method encode(mut cx) {
             // encode(sentence: String, pair: String | null = null, __callback: (err, encoding) -> void)
             let sentence = cx.argument::<JsString>(0)?.value();
@@ -164,6 +132,167 @@ declare_types! {
             let task = EncodeTask::Batch(worker, Some(inputs));
             task.schedule(callback);
             Ok(cx.undefined().upcast())
+        }
+
+        method decode(mut cx) {
+            // decode(ids: number[], skipSpecialTokens: bool = true)
+
+            let ids = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?
+                .into_iter()
+                .map(|id| {
+                    id.downcast::<JsNumber>()
+                        .or_throw(&mut cx)
+                        .map(|v| v.value() as u32)
+                })
+                .collect::<NeonResult<Vec<_>>>()?;
+            let mut skip_special_tokens = true;
+            if let Ok(skip) = cx.argument::<JsBoolean>(1) {
+                skip_special_tokens = skip.value();
+            }
+
+            let this = cx.this();
+            let guard = cx.lock();
+            let res = this.borrow(&guard).tokenizer.decode(ids, skip_special_tokens);
+            let s = res.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+
+            Ok(cx.string(s).upcast())
+        }
+
+        method decodeBatch(mut cx) {
+            // decodeBatch(sequences: number[][], skipSpecialTokens: bool = true)
+
+            let sentences = cx.argument::<JsArray>(0)?
+                .to_vec(&mut cx)?
+                .into_iter()
+                .map(|sentence| {
+                    sentence.downcast::<JsArray>()
+                        .or_throw(&mut cx)?
+                        .to_vec(&mut cx)?
+                        .into_iter()
+                        .map(|id| {
+                            id.downcast::<JsNumber>()
+                                .or_throw(&mut cx)
+                                .map(|v| v.value() as u32)
+                        })
+                        .collect::<NeonResult<Vec<_>>>()
+                }).collect::<NeonResult<Vec<_>>>()?;
+
+            let mut skip_special_tokens = true;
+            if let Ok(skip) = cx.argument::<JsBoolean>(1) {
+                skip_special_tokens = skip.value();
+            }
+
+            let this = cx.this();
+            let guard = cx.lock();
+            let res = this.borrow(&guard).tokenizer.decode_batch(sentences, skip_special_tokens);
+            let sentences = res
+                .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+
+            let js_sentences = JsArray::new(&mut cx, sentences.len() as u32);
+            for (i, sentence) in sentences.into_iter().enumerate() {
+                let s = cx.string(sentence);
+                js_sentences.set(&mut cx, i as u32, s)?;
+            }
+
+            Ok(js_sentences.upcast())
+        }
+
+        method tokenToId(mut cx) {
+            unimplemented!()
+        }
+
+        method idToToken(mut cx) {
+            unimplemented!()
+        }
+
+        method addTokens(mut cx) {
+            unimplemented!()
+        }
+
+        method addSpecialTokens(mut cx) {
+            unimplemented!()
+        }
+
+        method train(mut cx) {
+            unimplemented!()
+        }
+
+        method getModel(mut cx) {
+            // getModel(): Model
+            unimplemented!()
+        }
+
+        method setModel(mut cx) {
+            // setModel(model: JsModel)
+
+            let running = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
+                count
+            };
+            if running > 1 {
+                println!("{} running tasks", running - 1);
+                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
+            }
+
+            let mut model = cx.argument::<JsModel>(0)?;
+            if let Some(instance) = {
+                let guard = cx.lock();
+                let mut model = model.borrow_mut(&guard);
+                model.model.to_pointer()
+            } {
+                let mut this = cx.this();
+                {
+                    let guard = cx.lock();
+                    let mut tokenizer = this.borrow_mut(&guard);
+                    tokenizer.tokenizer.with_model(instance);
+                }
+
+                Ok(cx.undefined().upcast())
+            } else {
+                cx.throw_error("The Model is already being used in another Tokenizer")
+            }
+        }
+
+        method getNormalizer(mut cx) {
+            // getNormalizer(): Normalizer | undefined
+            unimplemented!()
+        }
+
+        method setNormalizer(mut cx) {
+            // setNormalizer(normalizer: Normalizer)
+            unimplemented!()
+        }
+
+        method getPreTokenizer(mut cx) {
+            // getPreTokenizer(): PreTokenizer | undefined
+            unimplemented!()
+        }
+
+        method setPreTokenizer(mut cx) {
+            // setPreTokenizer(pretokenizer: PreTokenizer)
+            unimplemented!()
+        }
+
+        method getPostProcessor(mut cx) {
+            // getPostProcessor(): PostProcessor | undefined
+            unimplemented!()
+        }
+
+        method setPostProcessor(mut cx) {
+            // setPostProcessor(processor: PostProcessor)
+            unimplemented!()
+        }
+
+        method getDecoder(mut cx) {
+            // getDecoder(): Decoder | undefined
+            unimplemented!()
+        }
+
+        method setDecoder(mut cx) {
+            // setDecoder(decoder: Decoder)
+            unimplemented!()
         }
     }
 }
