@@ -2,7 +2,7 @@ import { promisify } from "util";
 import { Encoding, Tokenizer } from "../bindings/tokenizer";
 
 export class BaseTokenizer {
-  constructor(private tokenizer: Tokenizer) {}
+  constructor(protected tokenizer: Tokenizer) {}
 
   /**
    * Encode the given sequence
@@ -11,7 +11,7 @@ export class BaseTokenizer {
    * @param {(string | null)} pair The optional pair sequence
    */
   async encode(sequence: string, pair?: string): Promise<Encoding> {
-    const encode = promisify(this.tokenizer.encode);
+    const encode = promisify(this.tokenizer.encode.bind(this.tokenizer));
     return encode(sequence, pair ?? null);
   }
 
@@ -22,7 +22,7 @@ export class BaseTokenizer {
    * The list can contain both at the same time.
    */
   async encodeBatch(sequences: (string | [string, string])[]): Promise<Encoding[]> {
-    const encodeBatch = promisify(this.tokenizer.encodeBatch);
+    const encodeBatch = promisify(this.tokenizer.encodeBatch.bind(this.tokenizer));
     return encodeBatch(sequences);
   }
 }

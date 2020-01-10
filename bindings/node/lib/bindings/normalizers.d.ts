@@ -4,68 +4,66 @@
  */
 declare class Normalizer {}
 
-export namespace normalizers {
-  interface BertNormalizerOptions {
-    /**
-     * Whether to clean the text, by removing any control characters
-     * and replacing all whitespaces by the classic one.
-     * @default true
-     */
-    cleanText?:          boolean;
-    /**
-     * Whether to handle chinese chars by putting spaces around them.
-     * @default true
-     */
-    handleChineseChars?: boolean;
-    /**
-     * Whether to lowercase.
-     * @default true
-     */
-    lowercase?:          boolean;
-    /**
-     * Whether to strip all accents.
-     * @default true
-     */
-    stripAccents?:       boolean;
-  }
-
+interface BertNormalizerOptions {
   /**
-   * Instantiate a Bert Normalizer with the given options
-   *
-   * @param [options] Normalizer options
-   * @returns {Normalizer} Bert Normalizer. Takes care of normalizing raw text before giving it to a Bert model.
-   * This includes cleaning the text, handling accents, chinese chars and lowercasing
+   * Whether to clean the text, by removing any control characters
+   * and replacing all whitespaces by the classic one.
+   * @default true
    */
-  export function bertNormalizer(options?: BertNormalizerOptions): Normalizer;
-
+  cleanText?:          boolean;
   /**
-   * Returns a new NFD Unicode Normalizer
+   * Whether to handle chinese chars by putting spaces around them.
+   * @default true
    */
-  export function nfd(): Normalizer;
-
+  handleChineseChars?: boolean;
   /**
-   * Returns a new NFKD Unicode Normalizer
+   * Whether to lowercase.
+   * @default true
    */
-  export function nfkd(): Normalizer;
-
+  lowercase?:          boolean;
   /**
-   * Returns a new NFC Unicode Normalizer
+   * Whether to strip all accents.
+   * @default true
    */
-  export function nfc(): Normalizer;
-
-  /**
-   * Returns a new NFKC Unicode Normalizer
-   */
-  export function nfkc(): Normalizer;
-
-  /**
-   * Instantiate a new Normalization Sequence using the given normalizers
-   * @param normalizers A list of Normalizer to be run as a sequence
-   */
-  export function sequence(normalizers: Normalizer[]): Normalizer;
-
-  /**
-   * Returns a new Lowercase Normalizer
-   */
-  export function lowercase(): Normalizer;
+  stripAccents?:       boolean;
 }
+
+/**
+ * Instantiate a Bert Normalizer with the given options
+ *
+ * @param [options] Normalizer options
+ * @returns {Normalizer} Bert Normalizer. Takes care of normalizing raw text before giving it to a Bert model.
+ * This includes cleaning the text, handling accents, chinese chars and lowercasing
+ */
+export function bertNormalizer(options?: BertNormalizerOptions): Normalizer;
+
+/**
+ * Returns a new NFD Unicode Normalizer
+ */
+export function nfdNormalizer(): Normalizer;
+
+/**
+ * Returns a new NFKD Unicode Normalizer
+ */
+export function nfkdNormalizer(): Normalizer;
+
+/**
+ * Returns a new NFC Unicode Normalizer
+ */
+export function nfcNormalizer(): Normalizer;
+
+/**
+ * Returns a new NFKC Unicode Normalizer
+ */
+export function nfkcNormalizer(): Normalizer;
+
+/**
+ * Instantiate a new Normalization Sequence using the given normalizers
+ * @param normalizers A list of Normalizer to be run as a sequence
+ */
+export function sequenceNormalizer(normalizers: Normalizer[]): Normalizer;
+
+/**
+ * Returns a new Lowercase Normalizer
+ */
+export function lowercaseNormalizer(): Normalizer;
