@@ -1,4 +1,4 @@
-var addon = require('../../native');
+var addon = require('../bin-package');
 
 module.exports = {
   byteLevelDecoder: addon.decoders_ByteLevel,
