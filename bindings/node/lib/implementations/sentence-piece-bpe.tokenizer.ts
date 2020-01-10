@@ -6,7 +6,7 @@ import { metaspacePreTokenizer } from "../bindings/pre-tokenizers";
 import { metaspaceDecoder } from "../bindings/decoders";
 import { bpeTrainer } from "../bindings/trainers";
 
-export interface SentencePieceTokenizerOptions extends OptionsWithDefaults {
+export interface SentencePieceBPETokenizerOptions extends OptionsWithDefaults {
   dropout?:    number;
   mergesFile?: string;
   vocabFile?:  string;
@@ -27,7 +27,7 @@ interface OptionsWithDefaults {
   unkToken?:       string;
 }
 
-export interface SentencePieceTrainOptions {
+export interface SentencePieceBPETrainOptions {
   /**
    * @default []
    */
@@ -57,14 +57,14 @@ export interface SentencePieceTrainOptions {
 /**
  * Represents the BPE algorithm, with the pretokenization used by SentencePiece
  */
-export class SentencePieceTokenizer extends BaseTokenizer {
-  private static readonly defaultOptions: SentencePieceTokenizerOptions & Required<OptionsWithDefaults> = {
+export class SentencePieceBPETokenizer extends BaseTokenizer {
+  private static readonly defaultOptions: SentencePieceBPETokenizerOptions & Required<OptionsWithDefaults> = {
     addPrefixSpace: true,
     replacement:    '▁',
     unkToken:       '<unk>'
   };
 
-  private readonly defaultTrainOptions: Required<SentencePieceTrainOptions> = {
+  private readonly defaultTrainOptions: Required<SentencePieceBPETrainOptions> = {
     initialAlphabet: [],
     limitAlphabet:   1000,
     minFrequency:    2,
@@ -77,7 +77,7 @@ export class SentencePieceTokenizer extends BaseTokenizer {
     super(tokenizer);
   }
 
-  static async fromOptions(options?: SentencePieceTokenizerOptions): Promise<SentencePieceTokenizer> {
+  static async fromOptions(options?: SentencePieceBPETokenizerOptions): Promise<SentencePieceBPETokenizer> {
     const mergedOptions = { ...this.defaultOptions, ...options };
 
     let model: Model;
@@ -103,7 +103,7 @@ export class SentencePieceTokenizer extends BaseTokenizer {
     const decoder = metaspaceDecoder(mergedOptions.replacement, mergedOptions.addPrefixSpace);
     tokenizer.setDecoder(decoder);
 
-    return new SentencePieceTokenizer(tokenizer);
+    return new SentencePieceBPETokenizer(tokenizer);
   }
 
   /**
@@ -112,7 +112,7 @@ export class SentencePieceTokenizer extends BaseTokenizer {
    * @param files Files to use for training
    * @param [options] Training options
    */
-  async train(files: string[], options?: SentencePieceTrainOptions): Promise<void> {
+  async train(files: string[], options?: SentencePieceBPETrainOptions): Promise<void> {
     const mergedOptions = { ...this.defaultTrainOptions, ...options };
     const trainer = bpeTrainer(mergedOptions);
 
