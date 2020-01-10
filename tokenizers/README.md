@@ -1,6 +1,8 @@
 # Tokenizers
 
 The core of `tokenizers`, written in Rust.
+Provides an implementation of today's most used tokenizers, with a focus on performance and
+versatility.
 
 ## What is a Tokenizer
 
@@ -15,3 +17,25 @@ The various steps of the pipeline are:
    `BPE` or `WordPiece`.
 4. The `PostProcessor`: in charge of post-processing the `Encoding` to add anything relevant
    that, for example, a language model would need, such as special tokens.
+
+## Quick example
+
+```Rust
+use tokenizers::tokenizer::{Result, Tokenizer, EncodeInput};
+use tokenizers::models::bpe::BPE;
+
+fn main() -> Result<()> {
+	let bpe_builder = BPE::from_files("./path/to/vocab.json", "./path/to/merges.txt")?;
+	let bpe = bpe_builder
+		.dropout(0.1)
+		.unk_token("[UNK]".into())
+		.build()?;
+
+	let mut tokenizer = Tokenizer::new(Box::new(bpe));
+
+	let encoding = tokenizer.encode(EncodeInput::Single("Hey there!".into()))?;
+	println!("{:?}", encoding.get_tokens());
+
+	Ok(())
+}
+```
