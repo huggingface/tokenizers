@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * recrypt-node-binding NPM publish script
+ * Inspired from https://github.com/IronCoreLabs/recrypt-node-binding
  * ==================================
  *
  * This script is responsible for compiling and building the NPM release bundle for this repo. The following steps are taken:

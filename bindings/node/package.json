@@ -1,6 +1,6 @@
 {
   "name": "tokenizers",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
@@ -30,7 +30,7 @@
   "binary": {
     "module_name": "index",
     "module_path": "./bin-package",
-    "host": "https://github.com/huggingface/tokenizers",
+    "host": "https://tokenizers-releases.s3.amazonaws.com/node",
     "package_name": "{module_name}-v{version}-{node_abi}-{platform}-{arch}-{libc}.tar.gz",
     "remote_path": "{version}"
   }
