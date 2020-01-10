@@ -169,7 +169,7 @@ impl BpeTrainer {
             let p = ProgressBar::new(0);
             p.set_style(
                 ProgressStyle::default_bar()
-                    .template("[{elapsed_precise}] {msg:30} {bar:40} {pos:>7}/{len:7}"),
+                    .template("[{elapsed_precise}] {msg:<40!} {wide_bar} {pos:<9!}/{len:>9!}"),
             );
             Some(p)
         } else {
@@ -482,5 +482,10 @@ impl Trainer for BpeTrainer {
                 .and_modify(|c| *c += 1)
                 .or_insert(1);
         }
+    }
+
+    /// Whether we should show progress
+    fn should_show_progress(&self) -> bool {
+        self.show_progress
     }
 }

@@ -104,4 +104,8 @@ impl Trainer for WordPieceTrainer {
     fn process_tokens(&self, mut words: &mut HashMap<String, u32>, tokens: Vec<String>) {
         self.bpe_trainer.process_tokens(&mut words, tokens)
     }
+
+    fn should_show_progress(&self) -> bool {
+        self.bpe_trainer.should_show_progress()
+    }
 }
