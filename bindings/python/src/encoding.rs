@@ -109,7 +109,7 @@ impl Encoding {
 impl PyObjectProtocol for Encoding {
     fn __repr__(&self) -> PyResult<String> {
         Ok(format!(
-            "Encoding(num_tokens={}, attributs=[ids, type_ids, tokens, offsets, \
+            "Encoding(num_tokens={}, attributes=[ids, type_ids, tokens, offsets, \
              attention_mask, special_tokens_mask, overflowing, original_str, normalized_str])",
             self.encoding.get_ids().len()
         ))

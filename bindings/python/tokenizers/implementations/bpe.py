@@ -61,4 +61,6 @@ class BPETokenizer(BaseTokenizer):
             end_of_word_suffix=suffix,
             show_progress=show_progress
         )
+        if isinstance(files, str):
+            files = [files]
         self._tokenizer.train(trainer, files)

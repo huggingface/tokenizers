@@ -59,4 +59,6 @@ class SentencePieceBPETokenizer(BaseTokenizer):
             initial_alphabet=initial_alphabet,
             show_progress=show_progress
         )
+        if isinstance(files, str):
+            files = [files]
         self._tokenizer.train(trainer, files)
