@@ -86,9 +86,59 @@ pub fn bpe_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     Ok(model)
 }
 
+/// wordpiece_from_files(vocab: String, options?: {
+///   unkToken?: String = "[UNK]",
+///   maxInputCharsPerWord?: number = 100,
+/// })
+pub fn wordpiece_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
+    let vocab = cx.argument::<JsString>(0)?.value() as String;
+    let options = cx.argument_opt(1);
+
+    let mut unk_token = String::from("[UNK]");
+    let mut max_input_chars_per_word = Some(100);
+
+    if let Some(options) = options {
+        if let Ok(options) = options.downcast::<JsObject>() {
+            if let Ok(unk) = options.get(&mut cx, "unkToken") {
+                unk_token = unk.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
+            }
+            if let Ok(max) = options.get(&mut cx, "maxInputCharsPerWord") {
+                max_input_chars_per_word =
+                    Some(max.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize);
+            }
+        }
+    }
+
+    let wordpiece =
+        tk::models::wordpiece::WordPiece::from_files(&vocab, unk_token, max_input_chars_per_word)
+            .or_else(|e| cx.throw_error(format!("{}", e)))?;
+
+    let mut model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    model.borrow_mut(&guard).model.to_owned(Box::new(wordpiece));
+
+    Ok(model)
+}
+
+/// wordpiece_empty()
+pub fn wordpiece_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
+    let mut model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+    let wordpiece = tk::models::wordpiece::WordPiece::default();
+
+    let guard = cx.lock();
+    model.borrow_mut(&guard).model.to_owned(Box::new(wordpiece));
+
+    Ok(model)
+}
+
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_BPE_from_files", prefix), bpe_from_files)?;
     m.export_function(&format!("{}_BPE_empty", prefix), bpe_empty)?;
+    m.export_function(
+        &format!("{}_WordPiece_from_files", prefix),
+        wordpiece_from_files,
+    )?;
+    m.export_function(&format!("{}_WordPiece_empty", prefix), wordpiece_empty)?;
     Ok(())
 }
