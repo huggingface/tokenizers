@@ -9,6 +9,7 @@ mod pre_tokenizers;
 mod processors;
 mod tasks;
 mod tokenizer;
+mod trainers;
 mod utils;
 
 use neon::prelude::*;
@@ -26,6 +27,8 @@ register_module!(mut m, {
     normalizers::register(&mut m, "normalizers")?;
     // PreTokenizers
     pre_tokenizers::register(&mut m, "pre_tokenizers")?;
+    // Trainers
+    trainers::register(&mut m, "trainers")?;
 
     Ok(())
 });
