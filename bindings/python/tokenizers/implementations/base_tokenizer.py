@@ -12,7 +12,7 @@ class BaseTokenizer:
     def __repr__(self):
         return "Tokenizer(vocabulary_size={}, {})".format(
             self._tokenizer.get_vocab_size(),
-            ', '.join(k + ': ' + str(v) for k, v in self._parameters.items()))
+            ', '.join(k + '=' + str(v) for k, v in self._parameters.items()))
 
     def enable_padding(self,
                        direction: Optional[str] = "right",
