@@ -8,8 +8,11 @@
     <a href="https://github.com/huggingface/tokenizers/blob/master/LICENSE">
         <img alt="GitHub" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue&cachedrop">
     </a>
+    </a>
+    <img src="https://pepy.tech/badge/tokenizers/week" />
+    <a href="https://pepy.tech/project/tokenizers/week">
+    </a>
 </p>
-<br>
 
 Provides an implementation of today's most used tokenizers, with a focus on performance and
 versatility.
