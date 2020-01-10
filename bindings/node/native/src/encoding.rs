@@ -166,21 +166,29 @@ declare_types! {
             if let Some(options) = options {
                 if let Ok(options) = options.downcast::<JsObject>() {
                     if let Ok(dir) = options.get(&mut cx, "direction") {
-                        let dir = dir.downcast::<JsString>().or_throw(&mut cx)?.value();
-                        match &dir[..] {
-                            "right" => direction = PaddingDirection::Right,
-                            "left" => direction = PaddingDirection::Left,
-                            _ => return cx.throw_error("direction can be 'right' or 'left'"),
+                        if let Err(_) = dir.downcast::<JsUndefined>() {
+                            let dir = dir.downcast::<JsString>().or_throw(&mut cx)?.value();
+                            match &dir[..] {
+                                "right" => direction = PaddingDirection::Right,
+                                "left" => direction = PaddingDirection::Left,
+                                _ => return cx.throw_error("direction can be 'right' or 'left'"),
+                            }
                         }
                     }
                     if let Ok(pid) = options.get(&mut cx, "padId") {
-                        pad_id = pid.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32;
+                        if let Err(_) = pid.downcast::<JsUndefined>() {
+                            pad_id = pid.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32;
+                        }
                     }
                     if let Ok(pid) = options.get(&mut cx, "padTypeId") {
-                        pad_type_id = pid.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32;
+                        if let Err(_) = pid.downcast::<JsUndefined>() {
+                            pad_type_id = pid.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32;
+                        }
                     }
                     if let Ok(token) = options.get(&mut cx, "padToken") {
-                        pad_token = token.downcast::<JsString>().or_throw(&mut cx)?.value();
+                        if let Err(_) = token.downcast::<JsUndefined>() {
+                            pad_token = token.downcast::<JsString>().or_throw(&mut cx)?.value();
+                        }
                     }
                 }
             }

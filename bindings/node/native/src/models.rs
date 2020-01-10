@@ -38,28 +38,38 @@ pub fn bpe_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
     if let Some(options) = options {
         if let Ok(options) = options.downcast::<JsObject>() {
             if let Ok(cache_capacity) = options.get(&mut cx, "cache_capacity") {
-                let cache_capacity = cache_capacity
-                    .downcast::<JsNumber>()
-                    .or_throw(&mut cx)?
-                    .value() as usize;
-                builder = builder.cache_capacity(cache_capacity);
+                if let Err(_) = cache_capacity.downcast::<JsUndefined>() {
+                    let cache_capacity = cache_capacity
+                        .downcast::<JsNumber>()
+                        .or_throw(&mut cx)?
+                        .value() as usize;
+                    builder = builder.cache_capacity(cache_capacity);
+                }
             }
             if let Ok(dropout) = options.get(&mut cx, "dropout") {
-                let dropout = dropout.downcast::<JsNumber>().or_throw(&mut cx)?.value() as f32;
-                builder = builder.dropout(dropout);
+                if let Err(_) = dropout.downcast::<JsUndefined>() {
+                    let dropout = dropout.downcast::<JsNumber>().or_throw(&mut cx)?.value() as f32;
+                    builder = builder.dropout(dropout);
+                }
             }
             if let Ok(unk_token) = options.get(&mut cx, "unk_token") {
-                let unk_token =
-                    unk_token.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
-                builder = builder.unk_token(unk_token);
+                if let Err(_) = unk_token.downcast::<JsUndefined>() {
+                    let unk_token =
+                        unk_token.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
+                    builder = builder.unk_token(unk_token);
+                }
             }
             if let Ok(prefix) = options.get(&mut cx, "continuing_subword_prefix") {
-                let prefix = prefix.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
-                builder = builder.continuing_subword_prefix(prefix);
+                if let Err(_) = prefix.downcast::<JsUndefined>() {
+                    let prefix = prefix.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
+                    builder = builder.continuing_subword_prefix(prefix);
+                }
             }
             if let Ok(suffix) = options.get(&mut cx, "end_of_word_suffix") {
-                let suffix = suffix.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
-                builder = builder.end_of_word_suffix(suffix);
+                if let Err(_) = suffix.downcast::<JsUndefined>() {
+                    let suffix = suffix.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
+                    builder = builder.end_of_word_suffix(suffix);
+                }
             }
         }
     }
@@ -100,11 +110,15 @@ pub fn wordpiece_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
     if let Some(options) = options {
         if let Ok(options) = options.downcast::<JsObject>() {
             if let Ok(unk) = options.get(&mut cx, "unkToken") {
-                unk_token = unk.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
+                if let Err(_) = unk.downcast::<JsUndefined>() {
+                    unk_token = unk.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
+                }
             }
             if let Ok(max) = options.get(&mut cx, "maxInputCharsPerWord") {
-                max_input_chars_per_word =
-                    Some(max.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize);
+                if let Err(_) = max.downcast::<JsUndefined>() {
+                    max_input_chars_per_word =
+                        Some(max.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize);
+                }
             }
         }
     }

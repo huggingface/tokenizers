@@ -38,63 +38,85 @@ fn bpe_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
     if let Some(options) = options {
         if let Ok(options) = options.downcast::<JsObject>() {
             if let Ok(size) = options.get(&mut cx, "vocabSize") {
-                builder = builder
-                    .vocab_size(size.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize);
+                if let Err(_) = size.downcast::<JsUndefined>() {
+                    builder =
+                        builder.vocab_size(
+                            size.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize
+                        );
+                }
             }
             if let Ok(freq) = options.get(&mut cx, "minFrequency") {
-                builder = builder
-                    .min_frequency(freq.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32);
+                if let Err(_) = freq.downcast::<JsUndefined>() {
+                    builder = builder.min_frequency(
+                        freq.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32,
+                    );
+                }
             }
             if let Ok(tokens) = options.get(&mut cx, "specialTokens") {
-                builder = builder.special_tokens(
-                    tokens
-                        .downcast::<JsArray>()
-                        .or_throw(&mut cx)?
-                        .to_vec(&mut cx)?
-                        .into_iter()
-                        .map(|token| Ok(token.downcast::<JsString>().or_throw(&mut cx)?.value()))
-                        .collect::<NeonResult<Vec<_>>>()?,
-                );
+                if let Err(_) = tokens.downcast::<JsUndefined>() {
+                    builder = builder.special_tokens(
+                        tokens
+                            .downcast::<JsArray>()
+                            .or_throw(&mut cx)?
+                            .to_vec(&mut cx)?
+                            .into_iter()
+                            .map(|token| {
+                                Ok(token.downcast::<JsString>().or_throw(&mut cx)?.value())
+                            })
+                            .collect::<NeonResult<Vec<_>>>()?,
+                    );
+                }
             }
             if let Ok(limit) = options.get(&mut cx, "limitAlphabet") {
-                builder = builder.limit_alphabet(
-                    limit.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize,
-                );
+                if let Err(_) = limit.downcast::<JsUndefined>() {
+                    builder = builder.limit_alphabet(
+                        limit.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize,
+                    );
+                }
             }
             if let Ok(alphabet) = options.get(&mut cx, "initialAlphabet") {
-                builder = builder.initial_alphabet(
-                    alphabet
-                        .downcast::<JsArray>()
-                        .or_throw(&mut cx)?
-                        .to_vec(&mut cx)?
-                        .into_iter()
-                        .map(|tokens| {
-                            Ok(tokens
-                                .downcast::<JsString>()
-                                .or_throw(&mut cx)?
-                                .value()
-                                .chars()
-                                .nth(0))
-                        })
-                        .collect::<NeonResult<Vec<_>>>()?
-                        .into_iter()
-                        .filter(|c| c.is_some())
-                        .map(|c| c.unwrap())
-                        .collect::<HashSet<_>>(),
-                );
+                if let Err(_) = alphabet.downcast::<JsUndefined>() {
+                    builder = builder.initial_alphabet(
+                        alphabet
+                            .downcast::<JsArray>()
+                            .or_throw(&mut cx)?
+                            .to_vec(&mut cx)?
+                            .into_iter()
+                            .map(|tokens| {
+                                Ok(tokens
+                                    .downcast::<JsString>()
+                                    .or_throw(&mut cx)?
+                                    .value()
+                                    .chars()
+                                    .nth(0))
+                            })
+                            .collect::<NeonResult<Vec<_>>>()?
+                            .into_iter()
+                            .filter(|c| c.is_some())
+                            .map(|c| c.unwrap())
+                            .collect::<HashSet<_>>(),
+                    );
+                }
             }
             if let Ok(show) = options.get(&mut cx, "showProgress") {
-                builder =
-                    builder.show_progress(show.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+                if let Err(_) = show.downcast::<JsUndefined>() {
+                    builder = builder
+                        .show_progress(show.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+                }
             }
             if let Ok(prefix) = options.get(&mut cx, "continuingSubwordPrefix") {
-                builder = builder.continuing_subword_prefix(
-                    prefix.downcast::<JsString>().or_throw(&mut cx)?.value(),
-                );
+                if let Err(_) = prefix.downcast::<JsUndefined>() {
+                    builder = builder.continuing_subword_prefix(
+                        prefix.downcast::<JsString>().or_throw(&mut cx)?.value(),
+                    );
+                }
             }
             if let Ok(suffix) = options.get(&mut cx, "endOfWordSuffix") {
-                builder = builder
-                    .end_of_word_suffix(suffix.downcast::<JsString>().or_throw(&mut cx)?.value());
+                if let Err(_) = suffix.downcast::<JsUndefined>() {
+                    builder = builder.end_of_word_suffix(
+                        suffix.downcast::<JsString>().or_throw(&mut cx)?.value(),
+                    );
+                }
             }
         }
     }
@@ -125,63 +147,85 @@ fn wordpiece_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
     if let Some(options) = options {
         if let Ok(options) = options.downcast::<JsObject>() {
             if let Ok(size) = options.get(&mut cx, "vocabSize") {
-                builder = builder
-                    .vocab_size(size.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize);
+                if let Err(_) = size.downcast::<JsUndefined>() {
+                    builder =
+                        builder.vocab_size(
+                            size.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize
+                        );
+                }
             }
             if let Ok(freq) = options.get(&mut cx, "minFrequency") {
-                builder = builder
-                    .min_frequency(freq.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32);
+                if let Err(_) = freq.downcast::<JsUndefined>() {
+                    builder = builder.min_frequency(
+                        freq.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32,
+                    );
+                }
             }
             if let Ok(tokens) = options.get(&mut cx, "specialTokens") {
-                builder = builder.special_tokens(
-                    tokens
-                        .downcast::<JsArray>()
-                        .or_throw(&mut cx)?
-                        .to_vec(&mut cx)?
-                        .into_iter()
-                        .map(|token| Ok(token.downcast::<JsString>().or_throw(&mut cx)?.value()))
-                        .collect::<NeonResult<Vec<_>>>()?,
-                );
+                if let Err(_) = tokens.downcast::<JsUndefined>() {
+                    builder = builder.special_tokens(
+                        tokens
+                            .downcast::<JsArray>()
+                            .or_throw(&mut cx)?
+                            .to_vec(&mut cx)?
+                            .into_iter()
+                            .map(|token| {
+                                Ok(token.downcast::<JsString>().or_throw(&mut cx)?.value())
+                            })
+                            .collect::<NeonResult<Vec<_>>>()?,
+                    );
+                }
             }
             if let Ok(limit) = options.get(&mut cx, "limitAlphabet") {
-                builder = builder.limit_alphabet(
-                    limit.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize,
-                );
+                if let Err(_) = limit.downcast::<JsUndefined>() {
+                    builder = builder.limit_alphabet(
+                        limit.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize,
+                    );
+                }
             }
             if let Ok(alphabet) = options.get(&mut cx, "initialAlphabet") {
-                builder = builder.initial_alphabet(
-                    alphabet
-                        .downcast::<JsArray>()
-                        .or_throw(&mut cx)?
-                        .to_vec(&mut cx)?
-                        .into_iter()
-                        .map(|tokens| {
-                            Ok(tokens
-                                .downcast::<JsString>()
-                                .or_throw(&mut cx)?
-                                .value()
-                                .chars()
-                                .nth(0))
-                        })
-                        .collect::<NeonResult<Vec<_>>>()?
-                        .into_iter()
-                        .filter(|c| c.is_some())
-                        .map(|c| c.unwrap())
-                        .collect::<HashSet<_>>(),
-                );
+                if let Err(_) = alphabet.downcast::<JsUndefined>() {
+                    builder = builder.initial_alphabet(
+                        alphabet
+                            .downcast::<JsArray>()
+                            .or_throw(&mut cx)?
+                            .to_vec(&mut cx)?
+                            .into_iter()
+                            .map(|tokens| {
+                                Ok(tokens
+                                    .downcast::<JsString>()
+                                    .or_throw(&mut cx)?
+                                    .value()
+                                    .chars()
+                                    .nth(0))
+                            })
+                            .collect::<NeonResult<Vec<_>>>()?
+                            .into_iter()
+                            .filter(|c| c.is_some())
+                            .map(|c| c.unwrap())
+                            .collect::<HashSet<_>>(),
+                    );
+                }
             }
             if let Ok(show) = options.get(&mut cx, "showProgress") {
-                builder =
-                    builder.show_progress(show.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+                if let Err(_) = show.downcast::<JsUndefined>() {
+                    builder = builder
+                        .show_progress(show.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+                }
             }
             if let Ok(prefix) = options.get(&mut cx, "continuingSubwordPrefix") {
-                builder = builder.continuing_subword_prefix(
-                    prefix.downcast::<JsString>().or_throw(&mut cx)?.value(),
-                );
+                if let Err(_) = prefix.downcast::<JsUndefined>() {
+                    builder = builder.continuing_subword_prefix(
+                        prefix.downcast::<JsString>().or_throw(&mut cx)?.value(),
+                    );
+                }
             }
             if let Ok(suffix) = options.get(&mut cx, "endOfWordSuffix") {
-                builder = builder
-                    .end_of_word_suffix(suffix.downcast::<JsString>().or_throw(&mut cx)?.value());
+                if let Err(_) = suffix.downcast::<JsUndefined>() {
+                    builder = builder.end_of_word_suffix(
+                        suffix.downcast::<JsString>().or_throw(&mut cx)?.value(),
+                    );
+                }
             }
         }
     }

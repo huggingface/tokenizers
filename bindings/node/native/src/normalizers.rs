@@ -34,16 +34,24 @@ fn bert_normalizer(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     if let Some(options) = cx.argument_opt(0) {
         let options = options.downcast::<JsObject>().or_throw(&mut cx)?;
         if let Ok(ct) = options.get(&mut cx, "cleanText") {
-            clean_text = ct.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
+            if let Err(_) = ct.downcast::<JsUndefined>() {
+                clean_text = ct.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
+            }
         }
         if let Ok(hcc) = options.get(&mut cx, "handleChineseChars") {
-            handle_chinese_chars = hcc.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
+            if let Err(_) = hcc.downcast::<JsUndefined>() {
+                handle_chinese_chars = hcc.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
+            }
         }
         if let Ok(sa) = options.get(&mut cx, "stripAccents") {
-            strip_accents = sa.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
+            if let Err(_) = sa.downcast::<JsUndefined>() {
+                strip_accents = sa.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
+            }
         }
         if let Ok(l) = options.get(&mut cx, "lowercase") {
-            lowercase = l.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
+            if let Err(_) = l.downcast::<JsUndefined>() {
+                lowercase = l.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
+            }
         }
     }
 
