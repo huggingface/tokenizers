@@ -1,5 +1,4 @@
 /**
- * Base class for all decoders.
  * This class is not supposed to be instantiated directly. Instead, any implementation of
  * a Decoder will return an instance of this class when instantiated.
  */

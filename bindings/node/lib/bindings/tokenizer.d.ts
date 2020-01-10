@@ -1,5 +1,9 @@
 import { Model } from "./models";
+import { Normalizer } from "./normalizers";
 import { Decoder } from "./decoders";
+import { Trainer } from "./trainers";
+import { PreTokenizer } from "./pre-tokenizers";
+import { PostProcessor } from "./post-processors";
 
 /**
  * A Tokenizer works as a pipeline, it processes some raw text as input and outputs
@@ -111,29 +115,69 @@ export class Tokenizer {
    */
   runningTasks(): number;
 
+  /**
+   * Returns the model in use
+   */
   getModel(): Model;
 
   /**
    * Change the model to use with this Tokenizer
    * @param model New model to use
    * @throws Will throw an error if any task is running
+   * @throws Will throw an error if the model is already used in another Tokenizer
    */
   setModel(model: Model): void;
 
-  getNormalizer(): Normalizer;
+/**
+   * Returns the normalizer in use
+   */
+  getNormalizer(): Normalizer | undefined;
 
+  /**
+   * Change the normalizer to use with this Tokenizer
+   * @param normalizer New normalizer to use
+   * @throws Will throw an error if any task is running
+   * @throws Will throw an error if the normalizer is already used in another Tokenizer
+   */
   setNormalizer(normalizer: Normalizer): void;
 
-  getPreTokenizer(): PreTokenizer;
+  /**
+   * Returns the pre-tokenizer in use
+   */
+  getPreTokenizer(): PreTokenizer | undefined;
 
+  /**
+   * Change the pre-tokenizer to use with this Tokenizer
+   * @param preTokenizer New pre-tokenizer to use
+   * @throws Will throw an error if any task is running
+   * @throws Will throw an error if the pre-tokenizer is already used in another Tokenizer
+   */
   setPreTokenizer(preTokenizer: PreTokenizer): void;
 
-  getPostProcessor(): PostProcessor;
+  /**
+   * Returns the post-processor in use
+   */
+  getPostProcessor(): PostProcessor | undefined;
 
+  /**
+   * Change the post-processor to use with this Tokenizer
+   * @param postProcessor New post-processor to use
+   * @throws Will throw an error if any task is running
+   * @throws Will throw an error if the post-processor is already used in another Tokenizer
+   */
   setPostProcessor(processor: PostProcessor): void;
 
-  getDecoder(): Decoder;
+  /**
+   * Returns the decoder in use
+   */
+  getDecoder(): Decoder | undefined;
 
+  /**
+   * Change the decoder to use with this Tokenizer
+   * @param decoder New decoder to use
+   * @throws Will throw an error if any task is running
+   * @throws Will throw an error if the decoder is already used in another Tokenizer
+   */
   setDecoder(decoder: Decoder): void;
 }
 
