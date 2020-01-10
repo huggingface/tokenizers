@@ -1,4 +1,17 @@
-# Tokenizers
+<p align="center">
+    <br>
+    <img src="https://huggingface.co/landing/assets/tokenizers/tokenizers-logo.png" width="600"/>
+    <br>
+<p>
+<p align="center">
+    <a href="https://circleci.com/gh/huggingface/transformers">
+        <img alt="Build" src="https://github.com/huggingface/tokenizers/workflows/Rust/badge.svg">
+    </a>
+    <a href="https://github.com/huggingface/tokenizers/blob/master/LICENSE">
+        <img alt="GitHub" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue">
+    </a>
+</p>
+
 
 Provides an implementation of today's most used tokenizers, with a focus on performance and
 versatility.
@@ -13,6 +26,12 @@ versatility.
  - Normalization comes with alignments tracking. It's always possible to get the part of the
    original sentence that corresponds to a given token.
  - Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
+
+<p align="center">
+    <br>
+    <img src="https://huggingface.co/landing/assets/tokenizers/tokenizers-repo-example.png" />
+    <br>
+<p>
 
 ## Bindings
 
