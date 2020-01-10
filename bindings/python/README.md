@@ -1,11 +1,24 @@
-[![PyPI version](https://badge.fury.io/py/tokenizers.svg)](https://badge.fury.io/py/tokenizers)
+<p align="center">
+    <br>
+    <img src="https://huggingface.co/landing/assets/tokenizers/tokenizers-logo.png" width="600"/>
+    <br>
+<p>
+<p align="center">
+    <a href="https://badge.fury.io/py/tokenizers">
+         <img alt="Build" src="https://badge.fury.io/py/tokenizers.svg">
+    </a>
+    <a href="https://github.com/huggingface/tokenizers/blob/master/LICENSE">
+        <img alt="GitHub" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue">
+    </a>
+</p>
+<br>
 
 # Tokenizers
 
 Provides an implementation of today's most used tokenizers, with a focus on performance and
 versatility.
 
-Bindings over the [Rust](https://github.com/huggingface/tokenizers) implementation.
+Bindings over the [Rust](https://github.com/huggingface/tokenizers/tree/master/tokenizers) implementation.
 If you are interested in the High-level design, you can go check it there.
 
 Otherwise, let's dive in!
