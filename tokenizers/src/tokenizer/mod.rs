@@ -409,7 +409,7 @@ impl Tokenizer {
     pub fn train(&mut self, trainer: &Box<dyn Trainer>, files: Vec<String>) -> Result<()> {
         let progress = MultiProgress::new();
         let style = ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {msg:<40!} {wide_bar} {pos:<9!}/{len:>9!}");
+            .template("[{elapsed_precise}] {msg:<40!} {wide_bar} {bytes:<9!}/{total_bytes:>9!}");
         let jobs = files
             .into_iter()
             .map(|filename| {
