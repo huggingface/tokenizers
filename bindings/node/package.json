@@ -1,8 +1,9 @@
 {
-  "name": "node",
-  "version": "0.1.0",
+  "name": "tokenizers",
+  "version": "0.2.2",
   "description": "",
-  "main": "lib/index.js",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
   "repository": {
     "type": "git",
     "url": ".."
@@ -10,9 +11,27 @@
   "author": "Anthony MOI <m.anthony.moi@gmail.com>",
   "license": "Apache-2.0",
   "dependencies": {
-    "neon-cli": "^0.3.3"
+    "@types/node": "^13.1.6",
+    "neon-cli": "^0.3.3",
+    "node-pre-gyp": "^0.14.0"
+  },
+  "devDependencies": {
+    "shelljs": "^0.8.3",
+    "typescript": "^3.7.4"
+  },
+  "engines": {
+    "node": ">=12.0.0"
   },
   "scripts": {
-    "install": "neon build"
+    "dev": "neon build",
+    "compile": "neon build --release",
+    "clean": "neon clean"
+  },
+  "binary": {
+    "module_name": "index",
+    "module_path": "./bin-package",
+    "host": "https://tokenizers-releases.s3.amazonaws.com/node",
+    "package_name": "{module_name}-v{version}-{node_abi}-{platform}-{arch}-{libc}.tar.gz",
+    "remote_path": "{version}"
   }
 }

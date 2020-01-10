@@ -1,8 +1,7 @@
-var addon = require('../native');
-
-let s = "Hey man!";
-if (typeof process.argv[2] == 'string') {
-	s = process.argv[2];
+"use strict";
+function __export(m) {
+    for (var p in m) if (!exports.hasOwnProperty(p)) exports[p] = m[p];
 }
-
-console.log(addon.WhitespaceTokenizer.tokenize(s));
+Object.defineProperty(exports, "__esModule", { value: true });
+// export * from './bindings';
+__export(require("./implementations"));
