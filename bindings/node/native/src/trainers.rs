@@ -6,7 +6,7 @@ use std::collections::HashSet;
 
 /// Trainer
 pub struct Trainer {
-    pub trainer: Container<dyn tk::tokenizer::Trainer + Sync>,
+    pub trainer: Container<dyn tk::tokenizer::Trainer>,
 }
 
 declare_types! {

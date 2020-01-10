@@ -1,7 +1,8 @@
 extern crate tokenizers as tk;
 
-use crate::models::*;
+use crate::models::JsModel;
 use crate::tasks::tokenizer::{EncodeTask, WorkingTokenizer};
+use crate::trainers::JsTrainer;
 use neon::prelude::*;
 
 /// Tokenizer
@@ -293,7 +294,22 @@ declare_types! {
         }
 
         method train(mut cx) {
-            unimplemented!()
+            // train(trainer: JsTrainer, files: string[])
+
+            let trainer = cx.argument::<JsTrainer>(0)?;
+            let files = cx.argument::<JsArray>(1)?.to_vec(&mut cx)?.into_iter().map(|file| {
+                Ok(file.downcast::<JsString>().or_throw(&mut cx)?.value())
+            }).collect::<NeonResult<Vec<_>>>()?;
+
+            let mut this = cx.this();
+            let guard = cx.lock();
+            let res = trainer.borrow(&guard).trainer.execute(|trainer| {
+                let res = this.borrow_mut(&guard).tokenizer.train(trainer.unwrap(), files);
+                res
+            });
+            res.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+
+            Ok(cx.undefined().upcast())
         }
 
         method getModel(mut cx) {
