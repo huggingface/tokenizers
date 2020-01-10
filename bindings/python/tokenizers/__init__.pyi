@@ -1,11 +1,16 @@
-from tokenizers import decoders
-from tokenizers import models
-from tokenizers import normalizers
-from tokenizers import pre_tokenizers
-from tokenizers import processors
-from tokenizers import trainers
+from .decoders import *
+from .models import *
+from .normalizers import *
+from .pre_tokenizers import *
+from .processors import *
+from .trainers import *
 
-from tokenizers.implementations import ByteLevelBPETokenizer, BPETokenizer, SentencePieceBPETokenizer, BertWordPieceTokenizer
+from .implementations import (
+    ByteLevelBPETokenizer as ByteLevelBPETokenizer,
+    BPETokenizer as BPETokenizer,
+    SentencePieceBPETokenizer as SentencePieceBPETokenizer,
+    BertWordPieceTokenizer as BertWordPieceTokenizer
+)
 
 from typing import Optional, Union, List, Tuple
 
@@ -222,7 +227,7 @@ class Tokenizer:
                        pad_id: Optional[int] = 0,
                        pad_type_id: Optional[int] = 0,
                        pad_token: Optional[str] = "[PAD]",
-                       max_length: Optional[int] = None)
+                       max_length: Optional[int] = None):
         """ Enable the padding
 
         Args:

@@ -1,4 +1,4 @@
-from ..tokenizers import Tokenizer, Encoding
+from .. import Tokenizer, Encoding
 
 from typing import List, Union, Tuple, Optional
 

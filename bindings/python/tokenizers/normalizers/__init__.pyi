@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 
 class Normalizer:
     """ Base class for all normalizers
