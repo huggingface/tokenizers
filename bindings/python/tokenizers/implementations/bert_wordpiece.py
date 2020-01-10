@@ -5,7 +5,7 @@ from tokenizers.pre_tokenizers import BertPreTokenizer
 from tokenizers.processors import BertProcessing
 from .base_tokenizer import BaseTokenizer
 
-from typing import Optional, List
+from typing import Optional, List, Union
 
 class BertWordPieceTokenizer(BaseTokenizer):
     """ Bert WordPiece Tokenizer """
@@ -62,7 +62,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
 
         super().__init__(tokenizer, parameters)
 
-    def train(self, files: List[str],
+    def train(self, files: Union[str, List[str]],
               vocab_size: int=30000,
               min_frequency: int=2,
               limit_alphabet: int=1000,

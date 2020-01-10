@@ -3,7 +3,7 @@ from tokenizers.models import BPE
 from tokenizers.normalizers import NFKC, Sequence, Lowercase
 from .base_tokenizer import BaseTokenizer
 
-from typing import Optional, List
+from typing import Optional, List, Union
 
 class BPETokenizer(BaseTokenizer):
     """ Original BPE Tokenizer
@@ -42,7 +42,7 @@ class BPETokenizer(BaseTokenizer):
 
         super().__init__(tokenizer, parameters)
 
-    def train(self, files: List[str],
+    def train(self, files: Union[str, List[str]],
               vocab_size: int=30000,
               min_frequency: int=2,
               special_tokens: List[str]=["<unk>"],
