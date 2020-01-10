@@ -1,4 +1,16 @@
-# Tokenizers
+<p align="center">
+    <br>
+    <img src="https://huggingface.co/landing/assets/tokenizers/tokenizers-logo.png" width="600"/>
+    <br>
+<p>
+<p align="center">
+    <img alt="Build" src="https://github.com/huggingface/tokenizers/workflows/Rust/badge.svg">
+    <a href="https://github.com/huggingface/tokenizers/blob/master/LICENSE">
+        <img alt="GitHub" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue">
+    </a>
+</p>
+<br>
+
 
 The core of `tokenizers`, written in Rust.
 Provides an implementation of today's most used tokenizers, with a focus on performance and
