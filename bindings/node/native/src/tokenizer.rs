@@ -1,8 +1,13 @@
 extern crate tokenizers as tk;
 
+use crate::decoders::JsDecoder;
 use crate::models::JsModel;
+use crate::normalizers::JsNormalizer;
+use crate::pre_tokenizers::JsPreTokenizer;
+use crate::processors::JsPostProcessor;
 use crate::tasks::tokenizer::{EncodeTask, WorkingTokenizer};
 use crate::trainers::JsTrainer;
+use crate::utils::Container;
 use neon::prelude::*;
 
 /// Tokenizer
@@ -314,7 +319,19 @@ declare_types! {
 
         method getModel(mut cx) {
             // getModel(): Model
-            unimplemented!()
+
+            let model = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let container = Container::from_ref(this.borrow(&guard).tokenizer.get_model());
+                container
+            };
+
+            let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+            let guard = cx.lock();
+            js_model.borrow_mut(&guard).model = model;
+
+            Ok(js_model.upcast())
         }
 
         method setModel(mut cx) {
@@ -352,42 +369,238 @@ declare_types! {
 
         method getNormalizer(mut cx) {
             // getNormalizer(): Normalizer | undefined
-            unimplemented!()
+
+            let normalizer = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let borrowed = this.borrow(&guard);
+                let normalizer = borrowed.tokenizer.get_normalizer();
+                if let Some(normalizer) = normalizer {
+                    Some(Container::from_ref(normalizer))
+                } else {
+                    None
+                }
+            };
+
+            if let Some(normalizer) = normalizer {
+                let mut js_normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
+                let guard = cx.lock();
+                js_normalizer.borrow_mut(&guard).normalizer = normalizer;
+
+                Ok(js_normalizer.upcast())
+            } else {
+                Ok(cx.undefined().upcast())
+            }
         }
 
         method setNormalizer(mut cx) {
             // setNormalizer(normalizer: Normalizer)
-            unimplemented!()
+
+            let running = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
+                count
+            };
+            if running > 1 {
+                println!("{} running tasks", running - 1);
+                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
+            }
+
+            let mut normalizer = cx.argument::<JsNormalizer>(0)?;
+            if let Some(instance) = {
+                let guard = cx.lock();
+                let mut normalizer = normalizer.borrow_mut(&guard);
+                normalizer.normalizer.to_pointer()
+            } {
+                let mut this = cx.this();
+                {
+                    let guard = cx.lock();
+                    let mut tokenizer = this.borrow_mut(&guard);
+                    tokenizer.tokenizer.with_normalizer(instance);
+                }
+
+                Ok(cx.undefined().upcast())
+            } else {
+                cx.throw_error("The Normalizer is already being used in another Tokenizer")
+            }
         }
 
         method getPreTokenizer(mut cx) {
             // getPreTokenizer(): PreTokenizer | undefined
-            unimplemented!()
+
+            let pretok = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let borrowed = this.borrow(&guard);
+                let pretok = borrowed.tokenizer.get_pre_tokenizer();
+                if let Some(pretok) = pretok {
+                    Some(Container::from_ref(pretok))
+                } else {
+                    None
+                }
+            };
+
+            if let Some(pretok) = pretok {
+                let mut js_pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
+                let guard = cx.lock();
+                js_pretok.borrow_mut(&guard).pretok = pretok;
+
+                Ok(js_pretok.upcast())
+            } else {
+                Ok(cx.undefined().upcast())
+            }
         }
 
         method setPreTokenizer(mut cx) {
             // setPreTokenizer(pretokenizer: PreTokenizer)
-            unimplemented!()
+
+            let running = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
+                count
+            };
+            if running > 1 {
+                println!("{} running tasks", running - 1);
+                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
+            }
+
+            let mut pretok = cx.argument::<JsPreTokenizer>(0)?;
+            if let Some(instance) = {
+                let guard = cx.lock();
+                let mut pretok = pretok.borrow_mut(&guard);
+                pretok.pretok.to_pointer()
+            } {
+                let mut this = cx.this();
+                {
+                    let guard = cx.lock();
+                    let mut tokenizer = this.borrow_mut(&guard);
+                    tokenizer.tokenizer.with_pre_tokenizer(instance);
+                }
+
+                Ok(cx.undefined().upcast())
+            } else {
+                cx.throw_error("The PreTokenizer is already being used in another Tokenizer")
+            }
         }
 
         method getPostProcessor(mut cx) {
             // getPostProcessor(): PostProcessor | undefined
-            unimplemented!()
+
+            let processor = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let borrowed = this.borrow(&guard);
+                let processor = borrowed.tokenizer.get_post_processor();
+                if let Some(processor) = processor {
+                    Some(Container::from_ref(processor))
+                } else {
+                    None
+                }
+            };
+
+            if let Some(processor) = processor {
+                let mut js_processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
+                let guard = cx.lock();
+                js_processor.borrow_mut(&guard).processor = processor;
+
+                Ok(js_processor.upcast())
+            } else {
+                Ok(cx.undefined().upcast())
+            }
         }
 
         method setPostProcessor(mut cx) {
             // setPostProcessor(processor: PostProcessor)
-            unimplemented!()
+
+            let running = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
+                count
+            };
+            if running > 1 {
+                println!("{} running tasks", running - 1);
+                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
+            }
+
+            let mut processor = cx.argument::<JsPostProcessor>(0)?;
+            if let Some(instance) = {
+                let guard = cx.lock();
+                let mut processor = processor.borrow_mut(&guard);
+                processor.processor.to_pointer()
+            } {
+                let mut this = cx.this();
+                {
+                    let guard = cx.lock();
+                    let mut tokenizer = this.borrow_mut(&guard);
+                    tokenizer.tokenizer.with_post_processor(instance);
+                }
+
+                Ok(cx.undefined().upcast())
+            } else {
+                cx.throw_error("The PostProcessor is already being used in another Tokenizer")
+            }
         }
 
         method getDecoder(mut cx) {
             // getDecoder(): Decoder | undefined
-            unimplemented!()
+
+            let decoder = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let borrowed = this.borrow(&guard);
+                let decoder = borrowed.tokenizer.get_decoder();
+                if let Some(decoder) = decoder {
+                    Some(Container::from_ref(decoder))
+                } else {
+                    None
+                }
+            };
+
+            if let Some(decoder) = decoder {
+                let mut js_decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
+                let guard = cx.lock();
+                js_decoder.borrow_mut(&guard).decoder = decoder;
+
+                Ok(js_decoder.upcast())
+            } else {
+                Ok(cx.undefined().upcast())
+            }
         }
 
         method setDecoder(mut cx) {
             // setDecoder(decoder: Decoder)
-            unimplemented!()
+
+            let running = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
+                count
+            };
+            if running > 1 {
+                println!("{} running tasks", running - 1);
+                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
+            }
+
+            let mut decoder = cx.argument::<JsDecoder>(0)?;
+            if let Some(instance) = {
+                let guard = cx.lock();
+                let mut decoder = decoder.borrow_mut(&guard);
+                decoder.decoder.to_pointer()
+            } {
+                let mut this = cx.this();
+                {
+                    let guard = cx.lock();
+                    let mut tokenizer = this.borrow_mut(&guard);
+                    tokenizer.tokenizer.with_decoder(instance);
+                }
+
+                Ok(cx.undefined().upcast())
+            } else {
+                cx.throw_error("The Decoder is already being used in another Tokenizer")
+            }
         }
     }
 }
