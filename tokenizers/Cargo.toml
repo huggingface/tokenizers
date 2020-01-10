@@ -8,7 +8,7 @@ repository = "https://github.com/huggingface/tokenizers"
 documentation = "https://docs.rs/tokenizers/"
 license = "Apache-2.0"
 keywords = ["text", "tokenizer", "tokenization", "NLP", "huggingface", "BPE", "WordPiece"]
-readme = "../README.md"
+readme = "./README.md"
 description = """
 Provides an implementation of today's most used tokenizers,
 with a focus on performances and versatility.
