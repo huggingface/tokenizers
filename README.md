@@ -9,8 +9,8 @@
         <img alt="GitHub" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue&cachedrop">
     </a>
     </a>
-    <img src="https://pepy.tech/badge/tokenizers/week" />
     <a href="https://pepy.tech/project/tokenizers/week">
+        <img src="https://pepy.tech/badge/tokenizers/week" />
     </a>
 </p>
 
