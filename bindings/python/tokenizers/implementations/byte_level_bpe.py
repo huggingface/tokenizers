@@ -45,4 +45,6 @@ class ByteLevelBPETokenizer(BaseTokenizer):
             special_tokens=special_tokens,
             initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
         )
+        if isinstance(files, str):
+            files = [files]
         self._tokenizer.train(trainer, files)

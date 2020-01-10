@@ -33,14 +33,14 @@ class BertWordPieceTokenizer(BaseTokenizer):
                                                   lowercase=lowercase)
         tokenizer.pre_tokenizer = BertPreTokenizer.new()
 
-        sep_token_id = tokenizer.token_to_id(sep_token)
-        if sep_token_id is None:
-            raise TypeError("sep_token not found in the vocabulary")
-        cls_token_id = tokenizer.token_to_id(cls_token)
-        if cls_token_id is None:
-            raise TypeError("cls_token not found in the vocabulary")
+        if add_special_tokens and vocab_file is not None:
+            sep_token_id = tokenizer.token_to_id(sep_token)
+            if sep_token_id is None:
+                raise TypeError("sep_token not found in the vocabulary")
+            cls_token_id = tokenizer.token_to_id(cls_token)
+            if cls_token_id is None:
+                raise TypeError("cls_token not found in the vocabulary")
 
-        if add_special_tokens:
             tokenizer.post_processor = BertProcessing.new(
                 (sep_token, sep_token_id),
                 (cls_token, cls_token_id)
@@ -81,4 +81,6 @@ class BertWordPieceTokenizer(BaseTokenizer):
             show_progress=show_progress,
             continuing_subword_prefix=wordpieces_prefix
         )
+        if isinstance(files, str):
+            files = [files]
         self._tokenizer.train(trainer, files)
