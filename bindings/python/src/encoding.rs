@@ -56,8 +56,18 @@ impl PyMappingProtocol for IndexableString {
             }
         } else if let Ok(slice) = item.cast_as::<PySlice>(py) {
             Ok(slice)
+        } else if let Ok(offset) = item.cast_as::<PyTuple>(py) {
+            if offset.len() == 2 {
+                let start = offset.get_item(0).extract::<isize>()?;
+                let end = offset.get_item(1).extract::<isize>()?;
+                Ok(PySlice::new(py, start, end, 1))
+            } else {
+                Err(exceptions::TypeError::py_err("Expected Tuple[int, int]"))
+            }
         } else {
-            Err(exceptions::TypeError::py_err("Expected number or slice"))
+            Err(exceptions::TypeError::py_err(
+                "Expected number or slice or Tuple[int, int]",
+            ))
         }?;
 
         // Find out range from the slice
