@@ -5,6 +5,7 @@ mod decoders;
 mod encoding;
 mod models;
 mod normalizers;
+mod pre_tokenizers;
 mod processors;
 mod tasks;
 mod tokenizer;
@@ -23,6 +24,8 @@ register_module!(mut m, {
     processors::register(&mut m, "processors")?;
     // Normalizers
     normalizers::register(&mut m, "normalizers")?;
+    // PreTokenizers
+    pre_tokenizers::register(&mut m, "pre_tokenizers")?;
 
     Ok(())
 });
