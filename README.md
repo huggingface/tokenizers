@@ -24,12 +24,48 @@ versatility.
  - Normalization comes with alignments tracking. It's always possible to get the part of the
    original sentence that corresponds to a given token.
  - Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
+ 
+## Quick examples using Python:
 
-<p align="center">
-    <br>
-    <img src="https://huggingface.co/landing/assets/tokenizers/tokenizers-repo-example.png" />
-    <br>
-<p>
+Start using in a matter of seconds:
+
+```python
+# Tokenizers provides ultra-fast implementations of most current tokenizers:
+from tokenizers import (ByteLevelBPETokenizer,
+                        BPETokenizer,
+                        SentencePieceBPETokenizer,
+                        BertWordPieceTokenizer)
+# Ultra-fast => they can encode 1GB of text in ~20sec on a standard server's CPU
+# Tokenizers can be easily instantiated from standard files
+tokenizer = BertWordPieceTokenizer("bert-base-uncased-vocab.txt", lowercase=True)
+>>> Tokenizer(vocabulary_size=30522, model=BertWordPiece, add_special_tokens=True, unk_token=[UNK], 
+              sep_token=[SEP], cls_token=[CLS], clean_text=True, handle_chinese_chars=True, 
+              strip_accents=True, lowercase=True, wordpieces_prefix=##)
+
+# Tokenizers provide exhaustive outputs: tokens, mapping to original string, attention/special token masks.
+# They also handle model's max input lengths as well as padding (to directly encode in padded batches)
+output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+>>> Encoding(num_tokens=13, attributes=[ids, type_ids, tokens, offsets, attention_mask, special_tokens_mask, overflowing, original_str, normalized_str])
+print(output.ids, output.tokens, output.offsets)
+>>> [101, 7592, 1010, 1061, 1005, 2035, 999, 2129, 2024, 2017, 100, 1029, 102]
+>>> ['[CLS]', 'hello', ',', 'y', "'", 'all', '!', 'how', 'are', 'you', '[UNK]', '?', '[SEP]']
+>>> [(0, 0), (0, 5), (5, 6), (7, 8 (8, 9), (9, 12), (12, 13), (14, 17), (18, 21), (22, 25), (26, 27),
+     (28, 29), (0, 0)]
+# Here is an example using the offsets mapping to retrieve the string coresponding to the 10th token:
+output.original_str[output.offsets[10]]
+>>> '😁'
+```
+
+And training an new vocabulary is just as easy:
+
+```python
+# You can also train a BPE/Byte-levelBPE/WordPiece vocabulary on your own files
+tokenizer = ByteLevelBPETokenizer()
+tokenizer.train(["wiki.test.raw"], vocab_size=20000)
+>>> [00:00:00] Tokenize words                 ████████████████████████████████████████   20993/20993
+>>> [00:00:00] Count pairs                    ████████████████████████████████████████   20993/20993
+>>> [00:00:03] Compute merges                 ████████████████████████████████████████   19375/19375
+```
 
 ## Bindings
 
