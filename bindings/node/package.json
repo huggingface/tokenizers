@@ -1,6 +1,6 @@
 {
   "name": "tokenizers",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
@@ -12,15 +12,26 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@types/node": "^13.1.6",
-    "neon-cli": "^0.3.3"
+    "neon-cli": "^0.3.3",
+    "node-pre-gyp": "^0.14.0"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "shelljs": "^0.8.3",
+    "typescript": "^3.7.4"
+  },
+  "engines": {
+    "node": ">=12.0.0"
+  },
   "scripts": {
-    "build": "neon build",
-    "install": "neon build --release"
+    "dev": "neon build",
+    "compile": "neon build --release",
+    "clean": "neon clean"
   },
-  "files": [
-    "native/index.node",
-    "lib"
-  ]
+  "binary": {
+    "module_name": "index",
+    "module_path": "./bin-package",
+    "host": "https://github.com/huggingface/tokenizers",
+    "package_name": "{module_name}-v{version}-{node_abi}-{platform}-{arch}-{libc}.tar.gz",
+    "remote_path": "{version}"
+  }
 }
