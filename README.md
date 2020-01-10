@@ -11,7 +11,7 @@
         <img alt="GitHub" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue">
     </a>
 </p>
-
+<br>
 
 Provides an implementation of today's most used tokenizers, with a focus on performance and
 versatility.
