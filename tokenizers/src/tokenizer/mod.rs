@@ -565,6 +565,8 @@ impl Tokenizer {
             }
         }
 
+        self.refresh_added_tokens();
+
         added
     }
 
@@ -591,11 +593,27 @@ impl Tokenizer {
                 .or_insert_with(|| token.clone());
         }
 
+        self.refresh_added_tokens();
+
+        // Return the number of added tokens
+        tokens.len() - ignored
+    }
+
+    fn refresh_added_tokens(&mut self) {
         // We rebuild the regex here everytime on purpose, because the added tokens may
         // have changed
+        let special_tokens = self
+            .special_tokens
+            .keys()
+            .map(|t| AddedToken {
+                content: t.to_owned(),
+                single_word: true,
+            })
+            .collect::<Vec<_>>();
         let added_tokens = self
             .added_tokens
             .keys()
+            .chain(special_tokens.iter())
             .map(|token| {
                 if token.single_word {
                     let first_b = token
@@ -635,9 +653,6 @@ impl Tokenizer {
             self.split_re =
                 Some(regex::Regex::new(&format!(r"({})", added_tokens.join("|"))).unwrap());
         }
-
-        // Return the number of added tokens
-        tokens.len() - ignored
     }
 
     /// Split the given sentence on multiple parts, finding the added tokens and their id in the process
@@ -677,10 +692,13 @@ impl Tokenizer {
                     .into_iter()
                     .map(|(start, end)| unsafe {
                         let s = sentence.get_unchecked(start..end).to_owned();
-                        let id = self.added_tokens.get(&AddedToken {
-                            content: s.clone(),
-                            ..Default::default()
-                        });
+                        let mut id = self.special_tokens.get(&s);
+                        if id.is_none() {
+                            id = self.added_tokens.get(&AddedToken {
+                                content: s.clone(),
+                                ..Default::default()
+                            });
+                        }
                         (s, id.copied())
                     })
                     .collect()
