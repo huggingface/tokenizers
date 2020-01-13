@@ -19,15 +19,17 @@ const fs = require("fs");
 const path = require("path");
 const shell = require("shelljs");
 
-//Fail this script if any of these commands fail
+// Fail this script if any of these commands fail
 shell.set("-e");
-//Ensure that our directory is set to the root of the repo
+// Ensure that our directory is set to the root of the repo
 const rootDirectory = path.dirname(process.argv[1]);
 shell.cd(rootDirectory);
-const shouldPublish = process.argv.slice(2).indexOf("--publish") !== -1;
 
-//Cleanup the previous build, if it exists
-shell.rm("-rf", "./dist");
+const shouldPublish = process.argv.slice(2).indexOf("--publish") !== -1;
+const distPath = "./dist";
+
+// Cleanup the previous build, if it exists
+shell.rm("-rf", distPath);
 shell.rm("-rf", "./bin-package");
 shell.rm("-rf", "./build");
 
@@ -40,25 +42,35 @@ shell.popd();
 shell.exec("npm run compile");
 
 // shell.exec("npm test");
-shell.mkdir("./dist");
+shell.mkdir(distPath);
+buildJsLib(distPath);
+shell.cp("-r", ["package.json", "../../LICENSE"], distPath);
 
-shell.cp("-r", ["README.md", "package.json", "lib/*", "../../LICENSE"], "./dist");
-shell.rm(["./dist/implementations/.gitignore"]);
-
-//Add a NPM install script to the package.json that we push to NPM so that when consumers pull it down it
-//runs the expected node-pre-gyp step.
-const npmPackageJson = require("./dist/package.json");
+// Add a NPM install script to the package.json that we push to NPM so that when consumers pull it down it
+// runs the expected node-pre-gyp step.
+const npmPackageJson = require(`${distPath}/package.json`);
 npmPackageJson.scripts.install = "node-pre-gyp install";
-fs.writeFileSync("./dist/package.json", JSON.stringify(npmPackageJson, null, 2));
+fs.writeFileSync(`${distPath}/package.json`, JSON.stringify(npmPackageJson, null, 2));
 
 shell.mkdir("./bin-package");
 shell.cp("./native/index.node", "./bin-package");
 shell.exec("./node_modules/.bin/node-pre-gyp package");
 var tgz = shell.exec("find ./build -name *.tar.gz");
 shell.cp(tgz, "./bin-package/");
-shell.pushd("./dist");
+shell.pushd(distPath);
 
 shell.exec(shouldPublish ? "npm publish --access public" : "echo 'Skipping publishing to npm...'");
 shell.popd();
 
 shell.echo("publish.js COMPLETE");
+
+
+/**
+ * Takes care of building the js lib
+ * @param {string} path Location into which build the lib
+ */
+function buildJsLib(path) {
+  shell.exec("tsc");
+  shell.cp("-r", ["lib/bindings"], path);
+  shell.mv([`${path}/bindings/native.prod.js`], [`${path}/bindings/native.js`]);
+}

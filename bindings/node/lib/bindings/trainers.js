@@ -1,6 +1,6 @@
-var addon = require('../bin-package');
+var native = require('./native');
 
 module.exports = {
-  bpeTrainer:       addon.trainers_BPETrainer,
-  wordPieceTrainer: addon.trainers_WordPieceTrainer
+  bpeTrainer:       native.trainers_BPETrainer,
+  wordPieceTrainer: native.trainers_WordPieceTrainer
 };

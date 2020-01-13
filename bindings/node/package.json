@@ -2,8 +2,8 @@
   "name": "tokenizers",
   "version": "0.2.2",
   "description": "",
-  "main": "./lib/index.js",
-  "types": "./lib/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "repository": {
     "type": "git",
     "url": ".."
@@ -12,10 +12,10 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@types/node": "^13.1.6",
-    "neon-cli": "^0.3.3",
     "node-pre-gyp": "^0.14.0"
   },
   "devDependencies": {
+    "neon-cli": "^0.3.3",
     "shelljs": "^0.8.3",
     "typescript": "^3.7.4"
   },
@@ -23,7 +23,8 @@
     "node": ">=12.0.0"
   },
   "scripts": {
-    "dev": "neon build",
+    "dev-ts": "rm -rf dist && tsc && ln -s $(pwd)/lib/bindings dist/bindings",
+    "dev-rs": "neon build",
     "compile": "neon build --release",
     "clean": "neon clean"
   },
