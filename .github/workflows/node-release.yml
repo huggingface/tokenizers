@@ -1,0 +1,22 @@
+name: Node Release
+
+on:
+  push:
+    branches:
+      - node-workflow
+
+jobs:
+  node_pre_gyp:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v1
+
+      - uses: actions/setup-node@v1
+        with:
+          node-version: '10.x'
+
+      - working-directory: ./bindings/node
+        run: npm install
+
+      - working-directory: ./bindings/node
+        run: node publish.js
