@@ -42,8 +42,8 @@ Start using in a matter of seconds:
 # Tokenizers can be easily instantiated from standard files
 >>> tokenizer = BertWordPieceTokenizer("bert-base-uncased-vocab.txt", lowercase=True)
 Tokenizer(vocabulary_size=30522, model=BertWordPiece, add_special_tokens=True, unk_token=[UNK], 
-              sep_token=[SEP], cls_token=[CLS], clean_text=True, handle_chinese_chars=True, 
-              strip_accents=True, lowercase=True, wordpieces_prefix=##)
+          sep_token=[SEP], cls_token=[CLS], clean_text=True, handle_chinese_chars=True, 
+          strip_accents=True, lowercase=True, wordpieces_prefix=##)
 
 # Tokenizers provide exhaustive outputs: tokens, mapping to original string, attention/special token masks.
 # They also handle model's max input lengths as well as padding (to directly encode in padded batches)
@@ -63,11 +63,11 @@ And training an new vocabulary is just as easy:
 
 ```python
 # You can also train a BPE/Byte-levelBPE/WordPiece vocabulary on your own files
-tokenizer = ByteLevelBPETokenizer()
-tokenizer.train(["wiki.test.raw"], vocab_size=20000)
->>> [00:00:00] Tokenize words                 ████████████████████████████████████████   20993/20993
->>> [00:00:00] Count pairs                    ████████████████████████████████████████   20993/20993
->>> [00:00:03] Compute merges                 ████████████████████████████████████████   19375/19375
+>>> tokenizer = ByteLevelBPETokenizer()
+>>> tokenizer.train(["wiki.test.raw"], vocab_size=20000)
+[00:00:00] Tokenize words                 ████████████████████████████████████████   20993/20993
+[00:00:00] Count pairs                    ████████████████████████████████████████   20993/20993
+[00:00:03] Compute merges                 ████████████████████████████████████████   19375/19375
 ```
 
 ## Bindings
