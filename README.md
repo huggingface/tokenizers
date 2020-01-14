@@ -59,7 +59,7 @@ Encoding(num_tokens=13, attributes=[ids, type_ids, tokens, offsets, attention_ma
 '😁'
 ```
 
-And training an new vocabulary is just as easy:
+And training a new vocabulary is just as easy:
 
 ```python
 # You can also train a BPE/Byte-levelBPE/WordPiece vocabulary on your own files
