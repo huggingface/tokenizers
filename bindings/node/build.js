@@ -115,7 +115,7 @@ async function npmPublish() {
   npmPackageJson.scripts.install = "node-pre-gyp install";
   await fs.promises.writeFile(`${distPath}/package.json`, JSON.stringify(npmPackageJson, null, 2));
 
-  shell.exec("npm publish --dry-run --access public");
+  shell.exec(`npm publish ${distPath} --access public`);
 
   shell.echo('PUBLISHING ON NPM COMPLETE...');
 }

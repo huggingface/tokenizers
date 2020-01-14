@@ -9,8 +9,6 @@ on:
   push:
     tags:
       - node-v*
-    branches:
-      - node-workflow
 
 jobs:
   build_all:
@@ -40,7 +38,6 @@ jobs:
         run: node build.js --all
 
   rust_publish:
-    name: Build and publish rust for all environments
     needs: build_all
     strategy:
       matrix:
@@ -80,7 +77,7 @@ jobs:
         shell: bash
         run: |
           pip install awscli
-          aws s3 sync --exact-timestamps --exclude "*" --include "*.tar.gz" --acl public-read ./bin-package "s3://tokenizers-releases/node/$(node -p -e 'require("./package.json").version')-test"
+          aws s3 sync --exact-timestamps --exclude "*" --include "*.tar.gz" --acl public-read ./bin-package "s3://tokenizers-releases/node/$(node -p -e 'require("./package.json").version')"
 
   npm_publish:
     name: Build and publish JS lib
