@@ -1,4 +1,4 @@
-name: Build Node bindings
+name: Node
 
 on: push
 
