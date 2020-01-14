@@ -11,34 +11,7 @@ on:
       - node-v*
 
 jobs:
-  build_all:
-    name: Check everything builds
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v1
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2019-11-01
-          override: true
-
-      - name: Install Node 12.x
-        uses: actions/setup-node@v1
-        with:
-          node-version: 12.x
-
-      - name: Install npm dependencies
-        working-directory: ./bindings/node
-        run: npm ci --ignore-scripts
-
-      - name: Build all
-        working-directory: ./bindings/node
-        run: node build.js --all
-
   rust_publish:
-    needs: build_all
     strategy:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
