@@ -26,7 +26,8 @@
     "dev-ts": "rm -rf dist && tsc && ln -s $(pwd)/lib/bindings dist/bindings",
     "dev-rs": "neon build",
     "compile": "neon build --release",
-    "clean": "neon clean"
+    "clean": "neon clean",
+    "package": "node-pre-gyp package"
   },
   "binary": {
     "module_name": "index",

@@ -54,7 +54,7 @@ fs.writeFileSync(`${distPath}/package.json`, JSON.stringify(npmPackageJson, null
 
 shell.mkdir("./bin-package");
 shell.cp("./native/index.node", "./bin-package");
-shell.exec("./node_modules/.bin/node-pre-gyp package");
+shell.exec("npm run package");
 var tgz = shell.exec("find ./build -name *.tar.gz");
 shell.cp(tgz, "./bin-package/");
 shell.pushd(distPath);
@@ -70,7 +70,7 @@ shell.echo("publish.js COMPLETE");
  * @param {string} path Location into which build the lib
  */
 function buildJsLib(path) {
-  shell.exec("tsc");
+  shell.exec("npx tsc");
   shell.cp("-r", ["lib/bindings"], path);
   shell.mv([`${path}/bindings/native.prod.js`], [`${path}/bindings/native.js`]);
 }
