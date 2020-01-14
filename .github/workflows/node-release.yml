@@ -47,8 +47,9 @@ jobs:
           python-version: 3.x
 
       - name: Upload tarball
+        # if: startsWith(matrix.os, 'windows')
         working-directory: ./bindings/node
         shell: bash
         run: |
           pip install awscli
-          aws s3 sync --exact-timestamps --exclude "*" --include "*.tar.gz" ./bin-package "s3://tokenizers-releases/node/$(npx -c 'echo "%npm_package_version%')"
+          aws s3 sync --exact-timestamps --exclude "*" --include "*.tar.gz" --acl public-read ./bin-package "s3://tokenizers-releases/node/$(node -p -e 'require("./package.json").version')-test"
