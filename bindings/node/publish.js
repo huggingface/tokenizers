@@ -25,7 +25,7 @@ shell.set("-e");
 const rootDirectory = path.dirname(process.argv[1]);
 shell.cd(rootDirectory);
 
-const shouldPublish = process.argv.slice(2).indexOf("--publish") !== -1;
+const npmPublish = process.argv.slice(2).indexOf("--npm-publish") !== -1;
 const distPath = "./dist";
 
 // Cleanup the previous build, if it exists
@@ -34,7 +34,7 @@ shell.rm("-rf", "./bin-package");
 shell.rm("-rf", "./build");
 
 // Cleanup any previous Rust builds, update deps, and compile
-shell.exec("npm install --ignore-scripts");
+shell.exec("npm ci --ignore-scripts");
 shell.exec("npm run clean");
 shell.pushd("./native");
 shell.exec("cargo update");
@@ -59,7 +59,7 @@ var tgz = shell.exec("find ./build -name *.tar.gz");
 shell.cp(tgz, "./bin-package/");
 shell.pushd(distPath);
 
-shell.exec(shouldPublish ? "npm publish --access public" : "echo 'Skipping publishing to npm...'");
+shell.exec(npmPublish ? "npm publish --access public" : "echo 'Skipping publishing to npm...'");
 shell.popd();
 
 shell.echo("publish.js COMPLETE");

@@ -16,8 +16,8 @@ jobs:
   node_pre_gyp:
     strategy:
       matrix:
-        os: [windows-latest]
-        node-version: [12.x]
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        node-version: [10.x, 12.x, 13.x]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
@@ -36,9 +36,10 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./bindings/node
-        run: npm ci
+        run: npm ci --ignore-scripts
 
-      - working-directory: ./bindings/node
+      - name: Run publish.js for build
+        working-directory: ./bindings/node
         run: node publish.js
 
       - name: Install Python
@@ -47,7 +48,6 @@ jobs:
           python-version: 3.x
 
       - name: Upload tarball
-        # if: startsWith(matrix.os, 'windows')
         working-directory: ./bindings/node
         shell: bash
         run: |
