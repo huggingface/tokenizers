@@ -1,8 +1,8 @@
 import argparse
 import glob
+from os.path import join
 
-from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers
-
+from tokenizers import ByteLevelBPETokenizer
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--files",
@@ -29,21 +29,26 @@ if not files:
 
 
 # Initialize an empty tokenizer
-tokenizer = Tokenizer(models.BPE.empty())
-
-# Customize pre-tokenization and decoding
-tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel.new(add_prefix_space=False)
-tokenizer.decoder = decoders.ByteLevel.new()
+tokenizer = ByteLevelBPETokenizer(add_prefix_space=True)
 
 # And then train
-trainer = trainers.BpeTrainer.new(
-    vocab_size=50000,
+tokenizer.train(
+    files,
+    vocab_size=10000,
     min_frequency=2,
     show_progress=True,
-    special_tokens=[ "<s>", "<pad>", "</s>" ],
-    initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
+    special_tokens=["<s>", "<pad>", "</s>"],
 )
-tokenizer.train(trainer, files)
 
 # Save the files
-tokenizer.model.save(args.out, args.name)
+tokenizer.save(args.out, args.name)
+
+# Restoring model from learned vocab/merges
+tokenizer = ByteLevelBPETokenizer(
+    join(args.out, "{}-vocab.json".format(args.name)),
+    join(args.out, "{}-merges.txt".format(args.name)),
+    add_prefix_space=True
+)
+
+# Test encoding
+print(tokenizer.encode("Training ByteLevel BPE is very easy").tokens)
