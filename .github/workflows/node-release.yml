@@ -1,0 +1,77 @@
+name: Node Release
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: us-east-1
+
+on:
+  push:
+    tags:
+      - node-v*
+
+jobs:
+  rust_publish:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        node-version: [10.x, 12.x, 13.x]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2019-11-01
+          override: true
+
+      - name: Install Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install npm dependencies
+        working-directory: ./bindings/node
+        run: npm ci --ignore-scripts
+
+      - name: Build and package rust
+        working-directory: ./bindings/node
+        run: node build.js --package-rust
+
+      - name: Install Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.x
+
+      - name: Upload tarball
+        working-directory: ./bindings/node
+        shell: bash
+        run: |
+          pip install awscli
+          aws s3 sync --exact-timestamps --exclude "*" --include "*.tar.gz" --acl public-read ./bin-package "s3://tokenizers-releases/node/$(node -p -e 'require("./package.json").version')"
+
+  npm_publish:
+    name: Build and publish JS lib
+    needs: rust_publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Install Node 12.x
+        uses: actions/setup-node@v1
+        with:
+          registry-url: https://registry.npmjs.org
+          node-version: 12.x
+
+      - name: Install npm dependencies
+        working-directory: ./bindings/node
+        run: npm ci --ignore-scripts
+
+      - name: Build and publish on NPM
+        working-directory: ./bindings/node
+        run: node build.js --npm-publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

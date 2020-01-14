@@ -1,3 +1,5 @@
-var addon = require('../bin-package');
+var native = require('./native');
 
-module.exports.Tokenizer = addon.tokenizer_Tokenizer;
+module.exports = {
+  Tokenizer: native.tokenizer_Tokenizer
+}

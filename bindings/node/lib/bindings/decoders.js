@@ -1,8 +1,8 @@
-var addon = require('../bin-package');
+var native = require('./native');
 
 module.exports = {
-  byteLevelDecoder: addon.decoders_ByteLevel,
-  wordPieceDecoder: addon.decoders_WordPiece,
-  metaspaceDecoder: addon.decoders_Metaspace,
-  bpeDecoder:       addon.decoders_BPEDecoder
+  byteLevelDecoder: native.decoders_ByteLevel,
+  wordPieceDecoder: native.decoders_WordPiece,
+  metaspaceDecoder: native.decoders_Metaspace,
+  bpeDecoder:       native.decoders_BPEDecoder
 };

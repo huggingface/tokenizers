@@ -1,5 +1,5 @@
-var addon = require('../bin-package');
+var native = require('./native');
 
 module.exports = {
-  bertProcessing: addon.processors_BertProcessing
+  bertProcessing: native.processors_BertProcessing
 };
