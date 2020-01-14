@@ -8,12 +8,40 @@ env:
 on:
   push:
     tags:
-      - tokenizers-node-v*
+      - node-v*
     branches:
       - node-workflow
 
 jobs:
-  node_pre_gyp:
+  build_all:
+    name: Check everything builds
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2019-11-01
+          override: true
+
+      - name: Install Node 12.x
+        uses: actions/setup-node@v1
+        with:
+          node-version: 12.x
+
+      - name: Install npm dependencies
+        working-directory: ./bindings/node
+        run: npm ci --ignore-scripts
+
+      - name: Build all
+        working-directory: ./bindings/node
+        run: node build.js --all
+
+  rust_publish:
+    name: Build and publish rust for all environments
+    needs: build_all
     strategy:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
@@ -34,13 +62,13 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      - name: Install dependencies
+      - name: Install npm dependencies
         working-directory: ./bindings/node
         run: npm ci --ignore-scripts
 
-      - name: Run publish.js for build
+      - name: Build and package rust
         working-directory: ./bindings/node
-        run: node publish.js
+        run: node build.js --package-rust
 
       - name: Install Python
         uses: actions/setup-python@v1
@@ -53,3 +81,27 @@ jobs:
         run: |
           pip install awscli
           aws s3 sync --exact-timestamps --exclude "*" --include "*.tar.gz" --acl public-read ./bin-package "s3://tokenizers-releases/node/$(node -p -e 'require("./package.json").version')-test"
+
+  npm_publish:
+    name: Build and publish JS lib
+    needs: rust_publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Install Node 12.x
+        uses: actions/setup-node@v1
+        with:
+          registry-url: https://registry.npmjs.org
+          node-version: 12.x
+
+      - name: Install npm dependencies
+        working-directory: ./bindings/node
+        run: npm ci --ignore-scripts
+
+      - name: Build and publish on NPM
+        working-directory: ./bindings/node
+        run: node build.js --npm-publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
