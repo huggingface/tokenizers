@@ -1,6 +1,6 @@
 {
   "name": "tokenizers",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,7 +20,7 @@
     "typescript": "^3.7.4"
   },
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=10 < 11 || >=12 <14"
   },
   "scripts": {
     "dev-ts": "rm -rf dist && tsc && ln -s $(pwd)/lib/bindings dist/bindings",
