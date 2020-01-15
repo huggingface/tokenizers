@@ -1,11 +1,11 @@
 var native = require('./native');
 
 module.exports = {
-  bpe: {
+  BPE: {
     fromFiles: native.models_BPE_from_files,
     empty:     native.models_BPE_empty,
   },
-  wordPiece: {
+  WordPiece: {
     fromFiles: native.models_WordPiece_from_files,
     empty:     native.models_WordPiece_empty,
   }
