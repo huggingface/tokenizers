@@ -125,8 +125,8 @@ declare_types! {
             Ok(js_offsets.upcast())
         }
 
-        method getOverflowings(mut cx) {
-            // getOverflowings(): Encoding[]
+        method getOverflowing(mut cx) {
+            // getOverflowing(): Encoding[]
 
             let this = cx.this();
             let guard = cx.lock();
