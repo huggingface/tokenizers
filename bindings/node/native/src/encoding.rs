@@ -125,27 +125,28 @@ declare_types! {
             Ok(js_offsets.upcast())
         }
 
-        method getOverflowing(mut cx) {
-            // getOverflowing(): Encoding | undefined;
+        method getOverflowings(mut cx) {
+            // getOverflowings(): Encoding[]
 
             let this = cx.this();
             let guard = cx.lock();
 
-            let overflowing = this.borrow(&guard).encoding.execute(|encoding| {
-                encoding.unwrap().get_overflowing().cloned()
+            let overflowings = this.borrow(&guard).encoding.execute(|encoding| {
+                encoding.unwrap().get_overflowing().clone()
             });
+            let js_overflowings = JsArray::new(&mut cx, overflowings.len() as u32);
 
-            if let Some(overflowing) = overflowing {
+            for (index, overflowing) in overflowings.iter().enumerate() {
                 let mut js_overflowing = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
 
                 // Set the content
                 let guard = cx.lock();
-                js_overflowing.borrow_mut(&guard).encoding.to_owned(Box::new(overflowing));
+                js_overflowing.borrow_mut(&guard).encoding.to_owned(Box::new(overflowing.clone()));
 
-                Ok(js_overflowing.upcast())
-            } else {
-                Ok(cx.undefined().upcast())
+                js_overflowings.set(&mut cx, index as u32, js_overflowing)?;
             }
+
+            Ok(js_overflowings.upcast())
         }
 
         method getOriginalString(mut cx) {
