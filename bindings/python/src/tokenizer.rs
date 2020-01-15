@@ -189,34 +189,22 @@ impl Tokenizer {
         .into()
     }
 
-    #[args(kwargs = "**")]
-    fn decode(&self, ids: Vec<u32>, kwargs: Option<&PyDict>) -> PyResult<String> {
-        let mut skip_special_tokens = true;
-
-        if let Some(kwargs) = kwargs {
-            if let Some(skip) = kwargs.get_item("skip_special_tokens") {
-                skip_special_tokens = skip.extract()?;
-            }
-        }
-
-        ToPyResult(self.tokenizer.decode(ids, skip_special_tokens)).into()
+    fn decode(&self, ids: Vec<u32>, skip_special_tokens: Option<bool>) -> PyResult<String> {
+        ToPyResult(self.tokenizer.decode(
+            ids,
+            skip_special_tokens.unwrap_or(true),
+        )).into()
     }
 
-    #[args(kwargs = "**")]
     fn decode_batch(
         &self,
         sentences: Vec<Vec<u32>>,
-        kwargs: Option<&PyDict>,
+        skip_special_tokens: Option<bool>,
     ) -> PyResult<Vec<String>> {
-        let mut skip_special_tokens = true;
-
-        if let Some(kwargs) = kwargs {
-            if let Some(skip) = kwargs.get_item("skip_special_tokens") {
-                skip_special_tokens = skip.extract()?;
-            }
-        }
-
-        ToPyResult(self.tokenizer.decode_batch(sentences, skip_special_tokens)).into()
+        ToPyResult(self.tokenizer.decode_batch(
+            sentences,
+            skip_special_tokens.unwrap_or(true),
+        )).into()
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
