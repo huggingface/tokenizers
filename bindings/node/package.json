@@ -16,8 +16,16 @@
   },
   "devDependencies": {
     "@types/jest": "^24.0.25",
+    "@typescript-eslint/eslint-plugin": "^2.16.0",
+    "@typescript-eslint/parser": "^2.16.0",
+    "eslint": "^6.8.0",
+    "eslint-config-prettier": "^6.9.0",
+    "eslint-plugin-jest": "^23.6.0",
+    "eslint-plugin-prettier": "^3.1.2",
+    "eslint-plugin-simple-import-sort": "^5.0.0",
     "jest": "^24.9.0",
     "neon-cli": "^0.3.3",
+    "prettier": "1.19.1",
     "shelljs": "^0.8.3",
     "ts-jest": "^24.3.0",
     "typescript": "^3.7.4"
@@ -26,12 +34,13 @@
     "node": ">=10 < 11 || >=12 <14"
   },
   "scripts": {
-    "dev-ts": "rm -rf dist && tsc && ln -s $(pwd)/lib/bindings dist/bindings",
+    "dev-ts": "rm -rf dist && tsc -p tsconfig.prod.json && ln -s $(pwd)/lib/bindings dist/bindings",
     "dev-rs": "neon build",
     "compile": "neon build --release",
     "clean": "neon clean",
     "package": "node-pre-gyp package",
-    "test": "jest"
+    "test": "jest",
+    "lint": "eslint --fix --ext .js,.ts lib examples"
   },
   "binary": {
     "module_name": "index",
