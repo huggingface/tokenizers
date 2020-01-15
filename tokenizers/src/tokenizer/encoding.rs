@@ -218,6 +218,11 @@ impl Encoding {
                 self.offsets = [&self.offsets[..], &offsets_pad[..]].concat();
             }
         }
+
+        // Also pad each overflowing encoding
+        self.overflowing.iter_mut().for_each(|encoding| {
+            encoding.pad(pad_length, pad_id, pad_type_id, pad_token, direction)
+        });
     }
 }
 
