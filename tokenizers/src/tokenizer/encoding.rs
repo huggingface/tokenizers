@@ -156,7 +156,34 @@ impl Encoding {
         self.overflowing = overflowing;
     }
 
+    /// Merge ourself with the given `Encoding`. Happens in place.
     pub fn merge_with(&mut self, pair: Encoding) {
+        // Handle merging the overflowing parts too: Combine them all
+        // In most of the cases, we expect `pair.overflowing.len() == 0`
+        let mut overflowings = vec![];
+
+        // 1. All our overflowings with all the others
+        for self_o in &self.overflowing {
+            // 1. The pair itself
+            let mut n_encoding = self_o.clone();
+            n_encoding.merge_with(pair.clone());
+            overflowings.push(n_encoding);
+
+            // 2. Its overflowings (this should rarely happen...)
+            for other_o in &pair.overflowing {
+                let mut n_encoding = self_o.clone();
+                n_encoding.merge_with(other_o.clone());
+                overflowings.push(n_encoding);
+            }
+        }
+        // 2. Ourself with all the other overflowings (this should rarely happen too...)
+        for other_o in &pair.overflowing {
+            let mut n_encoding = self.clone();
+            n_encoding.merge_with(other_o.clone());
+            overflowings.push(n_encoding);
+        }
+
+        // Finish by merging ourself with the other encoding
         self.normalized.merge_with(&pair.normalized);
         self.ids.extend(pair.ids);
         self.type_ids.extend(pair.type_ids);
@@ -174,7 +201,7 @@ impl Encoding {
         );
         self.special_tokens_mask.extend(pair.special_tokens_mask);
         self.attention_mask.extend(pair.attention_mask);
-        // TODO: Handle the overflowing
+        self.overflowing = overflowings;
     }
 
     pub fn pad(
