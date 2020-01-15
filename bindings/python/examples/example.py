@@ -18,7 +18,7 @@ parser.add_argument("--type", default="gpt2", type=str, help="The type of tokeni
 parser.add_argument("--file", default=None, type=str, help="The file to encode")
 parser.add_argument("--vocab", default=None, type=str, required=True, help="The vocab file")
 parser.add_argument("--merges", default=None, type=str, help="The merges.txt file")
-parser.add_argument("--debug", default=False, type=bool, help="Verbose output")
+parser.add_argument("--debug", action='store_true', type=bool, help="Verbose output")
 args = parser.parse_args()
 
 if args.type == "gpt2" and args.merges is None:
@@ -53,7 +53,7 @@ Namespaces are one honking great idea -- let's do more of those!
 
 if args.type == "gpt2":
     print("Running GPT-2 tokenizer")
-    tok_p = GPT2Tokenizer.from_pretrained('gpt2')
+    tok_p = GPT2Tokenizer.from_pretrained(args.vocab, args.merges)
 
     # Create a Tokenizer using BPE
     tok_r = Tokenizer(BPE.from_files(args.vocab, args.merges))
@@ -63,7 +63,7 @@ if args.type == "gpt2":
     tok_r.decoder = decoders.ByteLevel.new()
 elif args.type == "bert":
     print("Running Bert tokenizer")
-    tok_p = BertTokenizer.from_pretrained('bert-base-uncased')
+    tok_p = BertTokenizer.from_pretrained(args.vocab)
 
     tok_r = Tokenizer(WordPiece.from_files(
         args.vocab,
