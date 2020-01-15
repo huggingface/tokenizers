@@ -1,6 +1,6 @@
 import { BaseTokenizer } from "./base.tokenizer";
 import { Tokenizer } from "../bindings/tokenizer";
-import { Model, bpe } from "../bindings/models";
+import { Model, BPE, BPEOptions } from "../bindings/models";
 import { nfkcNormalizer } from "../bindings/normalizers";
 import { metaspacePreTokenizer } from "../bindings/pre-tokenizers";
 import { metaspaceDecoder } from "../bindings/decoders";
@@ -78,29 +78,29 @@ export class SentencePieceBPETokenizer extends BaseTokenizer {
   }
 
   static async fromOptions(options?: SentencePieceBPETokenizerOptions): Promise<SentencePieceBPETokenizer> {
-    const mergedOptions = { ...this.defaultOptions, ...options };
+    const opts = { ...this.defaultOptions, ...options };
 
     let model: Model;
-    if (mergedOptions.vocabFile && mergedOptions.mergesFile) {
+    if (opts.vocabFile && opts.mergesFile) {
       // const fromFiles = promisify(BPE.fromFiles);
-      const modelOptions: bpe.BPEModelOptions = {
-        dropout:  mergedOptions.dropout,
-        unkToken: mergedOptions.unkToken
+      const modelOptions: BPEOptions = {
+        dropout:  opts.dropout,
+        unkToken: opts.unkToken
       };
 
-      model = bpe.fromFiles(mergedOptions.vocabFile, mergedOptions.mergesFile, modelOptions);
+      model = BPE.fromFiles(opts.vocabFile, opts.mergesFile, modelOptions);
       // model = await fromFiles(mergedOptions.vocabFile, mergedOptions.mergesFile, null);
     } else {
-      model = bpe.empty();
+      model = BPE.empty();
     }
     
     const tokenizer = new Tokenizer(model);
     tokenizer.setNormalizer(nfkcNormalizer());
 
-    const preTokenizer = metaspacePreTokenizer(mergedOptions.replacement, mergedOptions.addPrefixSpace);
+    const preTokenizer = metaspacePreTokenizer(opts.replacement, opts.addPrefixSpace);
     tokenizer.setPreTokenizer(preTokenizer);
 
-    const decoder = metaspaceDecoder(mergedOptions.replacement, mergedOptions.addPrefixSpace);
+    const decoder = metaspaceDecoder(opts.replacement, opts.addPrefixSpace);
     tokenizer.setDecoder(decoder);
 
     return new SentencePieceBPETokenizer(tokenizer);

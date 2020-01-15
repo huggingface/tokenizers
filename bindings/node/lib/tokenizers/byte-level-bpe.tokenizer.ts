@@ -1,6 +1,6 @@
 import { BaseTokenizer } from "./base.tokenizer";
 import { Tokenizer } from "../bindings/tokenizer";
-import { Model, bpe } from "../bindings/models";
+import { Model, BPE } from "../bindings/models";
 import { nfkcNormalizer } from "../bindings/normalizers";
 import { byteLevelPreTokenizer, byteLevelAlphabet } from "../bindings/pre-tokenizers";
 import { byteLevelDecoder } from "../bindings/decoders";
@@ -55,21 +55,21 @@ export class ByteLevelBPETokenizer extends BaseTokenizer {
   }
 
   static async fromOptions(options?: ByteLevelBPETokenizerOptions): Promise<ByteLevelBPETokenizer> {
-    const mergedOptions = { ...this.defaultOptions, ...options };
+    const opts = { ...this.defaultOptions, ...options };
 
     let model: Model;
-    if (mergedOptions.vocabFile && mergedOptions.mergesFile) {
+    if (opts.vocabFile && opts.mergesFile) {
       // const fromFiles = promisify(BPE.fromFiles);
-      model = bpe.fromFiles(mergedOptions.vocabFile, mergedOptions.mergesFile);
+      model = BPE.fromFiles(opts.vocabFile, opts.mergesFile);
       // model = await fromFiles(mergedOptions.vocabFile, mergedOptions.mergesFile, null);
     } else {
-      model = bpe.empty();
+      model = BPE.empty();
     }
     
     const tokenizer = new Tokenizer(model);
     tokenizer.setNormalizer(nfkcNormalizer());
 
-    const preTokenizer = byteLevelPreTokenizer(mergedOptions.addPrefixSpace);
+    const preTokenizer = byteLevelPreTokenizer(opts.addPrefixSpace);
     tokenizer.setPreTokenizer(preTokenizer);
     tokenizer.setDecoder(byteLevelDecoder());
 

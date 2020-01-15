@@ -1,6 +1,6 @@
 import { promisify } from "util";
 import { BaseTokenizer } from "./base.tokenizer";
-import { Model, bpe } from "../bindings/models";
+import { Model, BPE, BPEOptions } from "../bindings/models";
 import { Tokenizer } from "../bindings/tokenizer";
 import { sequenceNormalizer, nfkcNormalizer, lowercaseNormalizer } from "../bindings/normalizers";
 import { whitespaceSplitPreTokenizer } from "../bindings/pre-tokenizers";
@@ -82,21 +82,21 @@ export class BPETokenizer extends BaseTokenizer {
    * @param [options] Optional tokenizer options
    */
   static async fromOptions(options?: BPETokenizerOptions): Promise<BPETokenizer> {
-    const mergedOptions = { ...this.defaultBPEOptions, ...options };
+    const opts = { ...this.defaultBPEOptions, ...options };
 
     let model: Model;
-    if (mergedOptions.vocabFile && mergedOptions.mergesFile) {
+    if (opts.vocabFile && opts.mergesFile) {
       // const fromFiles = promisify(BPE.fromFiles);
-      const modelOptions: bpe.BPEModelOptions = {
-        dropout:         mergedOptions.dropout,
-        endOfWordSuffix: mergedOptions.suffix,
-        unkToken:        mergedOptions.unkToken
+      const modelOptions: BPEOptions = {
+        dropout:         opts.dropout,
+        endOfWordSuffix: opts.suffix,
+        unkToken:        opts.unkToken
       };
 
-      model = bpe.fromFiles(mergedOptions.vocabFile, mergedOptions.mergesFile, modelOptions);
+      model = BPE.fromFiles(opts.vocabFile, opts.mergesFile, modelOptions);
       // model = await fromFiles(mergedOptions.vocabFile, mergedOptions.mergesFile, modelOptions);
     } else {
-      model = bpe.empty();
+      model = BPE.empty();
     }
   
     const tokenizer = new Tokenizer(model);
@@ -105,7 +105,7 @@ export class BPETokenizer extends BaseTokenizer {
     tokenizer.setNormalizer(normalizer);
     tokenizer.setPreTokenizer(whitespaceSplitPreTokenizer());
 
-    const decoder = bpeDecoder(mergedOptions.suffix);
+    const decoder = bpeDecoder(opts.suffix);
     tokenizer.setDecoder(decoder);
 
     return new BPETokenizer(tokenizer);
