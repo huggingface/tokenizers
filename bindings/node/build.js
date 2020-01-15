@@ -96,16 +96,17 @@ function buildTs() {
 
   shell.exec("npm ci --ignore-scripts");
   shell.mkdir(distPath);
-
-  shell.exec("npx tsc");
-  shell.cp("-r", ["lib/bindings"], distPath);
-  shell.mv([`${distPath}/bindings/native.prod.js`], [`${distPath}/bindings/native.js`]);
+  shell.exec("npx tsc -p tsconfig.prod.json");
 
   shell.echo('BUILDING TS COMPLETE...');
 }
 
 async function npmPublish() {
   shell.echo('PUBLISHING ON NPM...');
+
+  shell.cp("-r", ["lib/bindings"], distPath);
+  shell.mv([`${distPath}/bindings/native.prod.js`], [`${distPath}/bindings/native.js`]);
+  shell.rm("-r", [`${distPath}/**/*.test.ts`]);
 
   shell.cp("-r", ["package.json", "README.md", "../../LICENSE"], distPath);
 

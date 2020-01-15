@@ -6,7 +6,7 @@ on:
       - ./bindings/python
 
 jobs:
-  build_all:
+  build_and_test:
     name: Check everything builds
     runs-on: ubuntu-latest
     steps:
@@ -31,3 +31,7 @@ jobs:
       - name: Build all
         working-directory: ./bindings/node
         run: node build.js --all
+
+      - name: Run JS tests
+        working-directory: ./bindings/node
+        run: npm test

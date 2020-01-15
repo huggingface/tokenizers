@@ -15,8 +15,11 @@
     "node-pre-gyp": "^0.14.0"
   },
   "devDependencies": {
+    "@types/jest": "^24.0.25",
+    "jest": "^24.9.0",
     "neon-cli": "^0.3.3",
     "shelljs": "^0.8.3",
+    "ts-jest": "^24.3.0",
     "typescript": "^3.7.4"
   },
   "engines": {
@@ -27,7 +30,8 @@
     "dev-rs": "neon build",
     "compile": "neon build --release",
     "clean": "neon clean",
-    "package": "node-pre-gyp package"
+    "package": "node-pre-gyp package",
+    "test": "jest"
   },
   "binary": {
     "module_name": "index",
