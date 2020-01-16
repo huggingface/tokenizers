@@ -29,7 +29,7 @@ jobs:
         uses: actions/cache@v1
         with:
           path: tokenizers/target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Build
         uses: actions-rs/cargo@v1
