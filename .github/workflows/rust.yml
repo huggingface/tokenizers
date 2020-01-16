@@ -25,7 +25,7 @@ jobs:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
 
-      - name: Cache Cargo Build Artifacts
+      - name: Cache Cargo Build
         uses: actions/cache@v1
         with:
           path: tokenizers/target
