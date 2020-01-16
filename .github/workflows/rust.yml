@@ -28,7 +28,7 @@ jobs:
       - name: Cache Cargo Build Artifacts
         uses: actions/cache@v1
         with:
-          path: target
+          path: tokenizers/target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Build
