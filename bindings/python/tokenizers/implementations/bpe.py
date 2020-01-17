@@ -30,7 +30,7 @@ class BPETokenizer(BaseTokenizer):
             NFKC.new(),
             Lowercase.new()
         ])
-        tokenizer.pre_tokenizer = pre_tokenizers.Whitespace.new()
+        tokenizer.pre_tokenizer = pre_tokenizers.WhitespaceSplit.new()
         tokenizer.decoder = decoders.BPEDecoder.new(suffix=suffix)
 
         parameters = {

@@ -3,7 +3,7 @@ import { BaseTokenizer } from "./base.tokenizer";
 import { Model, bpe } from "../bindings/models";
 import { Tokenizer } from "../bindings/tokenizer";
 import { sequenceNormalizer, nfkcNormalizer, lowercaseNormalizer } from "../bindings/normalizers";
-import { whitespacePreTokenizer } from "../bindings/pre-tokenizers";
+import { whitespaceSplitPreTokenizer } from "../bindings/pre-tokenizers";
 import { bpeDecoder } from "../bindings/decoders";
 import { bpeTrainer } from "../bindings/trainers";
 
@@ -103,7 +103,7 @@ export class BPETokenizer extends BaseTokenizer {
 
     const normalizer = sequenceNormalizer([nfkcNormalizer(), lowercaseNormalizer()]);
     tokenizer.setNormalizer(normalizer);
-    tokenizer.setPreTokenizer(whitespacePreTokenizer());
+    tokenizer.setPreTokenizer(whitespaceSplitPreTokenizer());
 
     const decoder = bpeDecoder(mergedOptions.suffix);
     tokenizer.setDecoder(decoder);
