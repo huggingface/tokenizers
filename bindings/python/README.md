@@ -158,7 +158,7 @@ tokenizer = Tokenizer(models.BPE.empty())
 
 # Customize pre-tokenization and decoding
 tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel.new(add_prefix_space=True)
-tokenizer.decoder = decoders.ByteLevel.new())
+tokenizer.decoder = decoders.ByteLevel.new()
 
 # And then train
 trainer = trainers.BpeTrainer.new(vocab_size=20000, min_frequency=2)
