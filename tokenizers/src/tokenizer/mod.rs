@@ -62,8 +62,12 @@ pub trait Decoder {
 /// A `Trainer` has the responsibility to train a model. We feed it with lines/sentences
 /// and it returns a `Model` when done.
 pub trait Trainer: Sync {
+    /// Whether we should show progress during the training.
     fn should_show_progress(&self) -> bool;
-    fn train(&self, words: HashMap<String, u32>) -> Result<Box<dyn Model + Sync>>;
+    /// The actual training method. This will return a new trained Model as well as a list
+    /// of `special_tokens` to be added directly to the tokenizer along with the model.
+    fn train(&self, words: HashMap<String, u32>) -> Result<(Box<dyn Model + Sync>, Vec<String>)>;
+    /// Process a bunch of token, counting them as relevant.
     fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>);
 }
 
@@ -466,7 +470,9 @@ impl Tokenizer {
             }
         }
 
-        self.model = trainer.train(words)?;
+        let (model, special_tokens) = trainer.train(words)?;
+        self.model = model;
+        self.add_special_tokens(&special_tokens);
 
         Ok(())
     }
@@ -552,16 +558,18 @@ impl Tokenizer {
 
     /// Register the given tokens as special tokens. This is especially useful for removing
     /// these special tokens while decoding
-    pub fn add_special_tokens(&mut self, tokens: &[&str]) -> usize {
+    pub fn add_special_tokens<T: AsRef<str>>(&mut self, tokens: &[T]) -> usize {
         let added_tokens = tokens
             .iter()
-            .map(|t| AddedToken::from((*t).to_owned()))
+            .map(|t| AddedToken::from(t.as_ref().to_owned()))
             .collect::<Vec<_>>();
 
         let added = self.add_tokens(&added_tokens);
         for token in tokens {
-            if let Some(id) = self.token_to_id(token) {
-                self.special_tokens.entry((*token).to_owned()).or_insert(id);
+            if let Some(id) = self.token_to_id(token.as_ref()) {
+                self.special_tokens
+                    .entry(token.as_ref().to_owned())
+                    .or_insert(id);
             }
         }
 

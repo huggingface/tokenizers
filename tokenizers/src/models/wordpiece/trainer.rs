@@ -89,16 +89,19 @@ impl WordPieceTrainer {
         WordPieceTrainerBuilder::default()
     }
 
-    pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<WordPiece> {
-        let bpe = self.bpe_trainer.train(word_counts)?;
-        Ok(WordPiece::from_bpe(&bpe))
+    pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<(WordPiece, Vec<String>)> {
+        let (bpe, tokens) = self.bpe_trainer.train(word_counts)?;
+        Ok((WordPiece::from_bpe(&bpe), tokens))
     }
 }
 
 impl Trainer for WordPieceTrainer {
-    fn train(&self, word_counts: HashMap<String, u32>) -> Result<Box<dyn Model + Sync>> {
-        let wp = self.train(word_counts)?;
-        Ok(Box::new(wp))
+    fn train(
+        &self,
+        word_counts: HashMap<String, u32>,
+    ) -> Result<(Box<dyn Model + Sync>, Vec<String>)> {
+        let (wp, tokens) = self.train(word_counts)?;
+        Ok((Box::new(wp), tokens))
     }
 
     fn process_tokens(&self, mut words: &mut HashMap<String, u32>, tokens: Vec<String>) {

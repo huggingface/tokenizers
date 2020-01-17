@@ -316,7 +316,7 @@ impl BpeTrainer {
         (words, counts)
     }
 
-    pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<BPE> {
+    pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<(BPE, Vec<String>)> {
         let mut word_to_id: HashMap<String, u32> = HashMap::new();
         let mut id_to_word: Vec<String> = vec![];
 
@@ -456,22 +456,37 @@ impl BpeTrainer {
         }
         self.finalize_progress(&progress, merges.len());
 
-        Ok(BPE::new(
+        let mut builder = BPE::builder().vocab_and_merges(
             word_to_id,
             merges
                 .into_iter()
                 .enumerate()
                 .map(|(index, (pair, new_id))| (pair, (index as u32, new_id)))
                 .collect(),
+        );
+        if let Some(prefix) = &self.continuing_subword_prefix {
+            builder = builder.continuing_subword_prefix(prefix.to_owned());
+        }
+        if let Some(suffix) = &self.end_of_word_suffix {
+            builder = builder.end_of_word_suffix(suffix.to_owned());
+        }
+        Ok((
+            builder
+                .build()
+                .expect("Trainer should know how to build BPE"),
+            self.special_tokens.clone(),
         ))
     }
 }
 
 impl Trainer for BpeTrainer {
     /// Train a BPE model
-    fn train(&self, word_counts: HashMap<String, u32>) -> Result<Box<dyn Model + Sync>> {
-        let bpe = self.train(word_counts)?;
-        Ok(Box::new(bpe))
+    fn train(
+        &self,
+        word_counts: HashMap<String, u32>,
+    ) -> Result<(Box<dyn Model + Sync>, Vec<String>)> {
+        let (bpe, tokens) = self.train(word_counts)?;
+        Ok((Box::new(bpe), tokens))
     }
 
     /// Process a bunch of tokens, counting them
