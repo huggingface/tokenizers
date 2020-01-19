@@ -1,12 +1,35 @@
 extern crate tokenizers as tk;
 
-use super::utils::Container;
+use std::collections::HashMap;
+
+use crate::models::Model;
+use crate::utils::Container;
+use pyo3::exceptions::Exception;
 use pyo3::prelude::*;
 use pyo3::types::*;
 
 #[pyclass]
 pub struct Trainer {
     pub trainer: Container<dyn tk::tokenizer::Trainer>,
+}
+
+#[pymethods]
+impl Trainer {
+    pub fn train(&self, word_counts: &PyDict) -> PyResult<Model> {
+        let mut freqs: HashMap<String, u32> = HashMap::new();
+        for (key, value) in word_counts {
+            let key: &str = key.extract()?;
+            let value: u32 = value.extract()?;
+            freqs.insert(key.into(), value);
+        }
+        let (model, _) = self.trainer.execute(|t| {
+            t.train(freqs)
+                .map_err(|e| Exception::py_err(format!("{}", e)))
+        })?;
+        Ok(Model {
+            model: Container::Owned(model),
+        })
+    }
 }
 
 #[pyclass]

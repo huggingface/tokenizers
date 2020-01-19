@@ -1,4 +1,6 @@
-from typing import Optional, List
+from ..models import Model
+
+from typing import Optional, List, Dict
 
 class Trainer:
     """ Base class for all trainers
@@ -6,6 +8,8 @@ class Trainer:
     This class is not supposed to be instantiated directly. Instead, any implementation of a
     Trainer will return an instance of this class when instantiated.
     """
+    def train(self, word_counts: Dict[str, int]) -> Model:
+        pass
 
 class BpeTrainer:
     """ BpeTrainer
