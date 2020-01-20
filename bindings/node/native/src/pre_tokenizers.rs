@@ -62,6 +62,17 @@ fn whitespace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     Ok(pretok)
 }
 
+/// whitespace_split()
+fn whitespace_split(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
+    let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    pretok
+        .borrow_mut(&guard)
+        .pretok
+        .to_owned(Box::new(tk::pre_tokenizers::whitespace::WhitespaceSplit));
+    Ok(pretok)
+}
+
 /// bert_pre_tokenizer()
 fn bert_pre_tokenizer(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
@@ -105,6 +116,7 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
         byte_level_alphabet,
     )?;
     m.export_function(&format!("{}_Whitespace", prefix), whitespace)?;
+    m.export_function(&format!("{}_WhitespaceSplit", prefix), whitespace_split)?;
     m.export_function(&format!("{}_BertPreTokenizer", prefix), bert_pre_tokenizer)?;
     m.export_function(&format!("{}_Metaspace", prefix), metaspace)?;
     Ok(())

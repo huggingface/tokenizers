@@ -55,6 +55,17 @@ class Whitespace:
         """ Instantiate a new Whitespace PreTokenizer """
         pass
 
+class WhitespaceSplit:
+    """ Whitespace PreTokenizer
+
+    This pre-tokenizer simply splits on the whitespace. Works like `.split()`
+    """
+
+    @staticmethod
+    def new() -> PreTokenizer:
+        """ Instantiate a new WhitespaceSplit PreTokenizer """
+        pass
+
 class BertPreTokenizer:
     """ BertPreTokenizer
 

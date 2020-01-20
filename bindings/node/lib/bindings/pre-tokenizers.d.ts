@@ -30,6 +30,13 @@ export function byteLevelAlphabet(): string[];
 export function whitespacePreTokenizer(): PreTokenizer;
 
 /**
+ * Returns a WhitespaceSplit PreTokenizer
+ * This pre-tokenizer simply splits on whitespaces only. Works almost like the `.split(' ')`
+ * function, except that it accounts for multiple consecutive spaces
+ */
+export function whitespaceSplitPreTokenizer(): PreTokenizer;
+
+/**
  * Returns a new Bert PreTokenizer.
  * This pre-tokenizer splits tokens on spaces, and also on punctuation.
  * Each occurence of a punctuation character will be treated separately.

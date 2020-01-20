@@ -74,6 +74,18 @@ impl Whitespace {
 }
 
 #[pyclass]
+pub struct WhitespaceSplit {}
+#[pymethods]
+impl WhitespaceSplit {
+    #[staticmethod]
+    fn new() -> PyResult<PreTokenizer> {
+        Ok(PreTokenizer {
+            pretok: Container::Owned(Box::new(tk::pre_tokenizers::whitespace::WhitespaceSplit)),
+        })
+    }
+}
+
+#[pyclass]
 pub struct BertPreTokenizer {}
 #[pymethods]
 impl BertPreTokenizer {
