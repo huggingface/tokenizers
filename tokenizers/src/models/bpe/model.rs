@@ -1,6 +1,7 @@
 use super::{Cache, Error, Pair, WithFirstLastIterator, Word, DEFAULT_CACHE_CAPACITY};
 use crate::tokenizer::{Model, Offsets, Result, Token};
 use rand::{thread_rng, Rng};
+use serde::{Serialize, Serializer};
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -426,7 +427,8 @@ impl Model for BPE {
             .iter()
             .collect();
         let mut vocab_file = File::create(&vocab_path)?;
-        let serialized = serde_json::to_string(&self.vocab)?;
+        let order_vocab_iter = OrderedVocabIter::new(&self.vocab_r);
+        let serialized = serde_json::to_string(&order_vocab_iter)?;
         vocab_file.write_all(&serialized.as_bytes())?;
 
         // Write merges.txt
@@ -455,10 +457,48 @@ impl Model for BPE {
     }
 }
 
+/// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
+/// of token ID, smallest to largest.
+struct OrderedVocabIter<'a> {
+    vocab_r: &'a HashMap<u32, String>,
+}
+
+impl<'a> OrderedVocabIter<'a> {
+    fn new(vocab_r: &'a HashMap<u32, String>) -> Self {
+        Self { vocab_r }
+    }
+}
+
+impl<'a> Serialize for OrderedVocabIter<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let iter = (0u32..(self.vocab_r.len() as u32)).map(|i| (&self.vocab_r[&i], i));
+        serializer.collect_map(iter)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_ordered_vocab_iter() {
+        let vocab_r: HashMap<u32, String> = [
+            (0, "a".into()),
+            (1, "b".into()),
+            (2, "c".into()),
+            (3, "ab".into()),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        let order_vocab_iter = OrderedVocabIter::new(&vocab_r);
+        let serialized = serde_json::to_string(&order_vocab_iter).unwrap();
+        assert_eq!(serialized, "{\"a\":0,\"b\":1,\"c\":2,\"ab\":3}");
+    }
 
     #[test]
     // Test tokenization. With dropout set to 0 tokenization is deterministic,
