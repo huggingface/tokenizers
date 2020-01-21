@@ -16,23 +16,43 @@ import { Tokenizer } from "./tokenizer";
 
 // const TokenizerMock = mocked(Tokenizer);
 
-let tokenizer: Tokenizer;
-beforeEach(() => {
-  // Clear all instances and calls to constructor and all methods:
-  // TokenizerMock.mockClear();
-
-  const model = BPE.empty();
-  tokenizer = new Tokenizer(model);
-  tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
-});
-
 describe("Tokenizer", () => {
+  describe("addTokens", () => {
+    it("accepts a list of string as new tokens when initial model is empty", () => {
+      const model = BPE.empty();
+      const tokenizer = new Tokenizer(model);
+
+      const nbAdd = tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
+      expect(nbAdd).toBe(5);
+    });
+  });
+
   describe("encode", () => {
+    let tokenizer: Tokenizer;
+
+    beforeEach(() => {
+      // Clear all instances and calls to constructor and all methods:
+      // TokenizerMock.mockClear();
+
+      const model = BPE.empty();
+      tokenizer = new Tokenizer(model);
+      tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
+    });
+
     it("is a function w/ parameters", async () => {
       expect(typeof tokenizer.encode).toBe("function");
+    });
+
+    it("accepts a pair of strings as parameters", async () => {
       const encode = promisify(tokenizer.encode.bind(tokenizer));
-      await encode("my name is john", null);
-      await encode("my name is john", "pair");
+      const encoding = await encode("my name is john", "pair");
+      expect(encoding).toBeDefined();
+    });
+
+    it("accepts a string with a null pair", async () => {
+      const encode = promisify(tokenizer.encode.bind(tokenizer));
+      const encoding = await encode("my name is john", null);
+      expect(encoding).toBeDefined();
     });
 
     it("returns an Encoding", async () => {
