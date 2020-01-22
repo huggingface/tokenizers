@@ -10,4 +10,7 @@ declare class PostProcessor {}
  * @param {[string, number]} sep A tuple with the string representation of the SEP token, and its id
  * @param {[string, number]} cls A tuple with the string representation of the CLS token, and its id
  */
-export function bertProcessing(sep: [string, number], cls: [string, number]): PostProcessor;
+export function bertProcessing(
+  sep: [string, number],
+  cls: [string, number]
+): PostProcessor;

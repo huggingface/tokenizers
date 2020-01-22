@@ -1,2 +1,2 @@
-const native = require('../bin-package');
+const native = require("../bin-package");
 module.exports = native;

@@ -1,4 +1,5 @@
 import { promisify } from "util";
+
 import { Encoding, Tokenizer } from "../bindings/tokenizer";
 
 export class BaseTokenizer {

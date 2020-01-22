@@ -18,7 +18,7 @@ export function wordPieceDecoder(prefix?: string): Decoder;
 /**
  * Instantiate a new Metaspace
  *
- * @param {string} [replacement='▁'] The replacement character. 
+ * @param {string} [replacement='▁'] The replacement character.
  * Must be exactly one character. By default we use the `▁` (U+2581) meta symbol (same as in SentencePiece).
  * @param {boolean} [addPrefixSpace=true] Whether to add a space to the first word if there isn't already one.
  * This lets us treat `hello` exactly like `say hello`.
