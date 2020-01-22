@@ -587,7 +587,7 @@ impl Tokenizer {
                 continue;
             }
 
-            let new_id = (self.model.get_vocab_size() - 1 + self.added_tokens.len()) as u32;
+            let new_id = (self.model.get_vocab_size() + self.added_tokens.len()) as u32;
             let id = self
                 .added_tokens
                 .entry(token.clone())
