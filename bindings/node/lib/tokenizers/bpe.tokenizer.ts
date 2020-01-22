@@ -1,24 +1,29 @@
 import { promisify } from "util";
-import { BaseTokenizer } from "./base.tokenizer";
-import { Model, BPE, BPEOptions } from "../bindings/models";
-import { Tokenizer } from "../bindings/tokenizer";
-import { sequenceNormalizer, nfkcNormalizer, lowercaseNormalizer } from "../bindings/normalizers";
-import { whitespaceSplitPreTokenizer } from "../bindings/pre-tokenizers";
+
 import { bpeDecoder } from "../bindings/decoders";
+import { BPE, BPEOptions, Model } from "../bindings/models";
+import {
+  lowercaseNormalizer,
+  nfkcNormalizer,
+  sequenceNormalizer
+} from "../bindings/normalizers";
+import { whitespaceSplitPreTokenizer } from "../bindings/pre-tokenizers";
+import { Tokenizer } from "../bindings/tokenizer";
 import { bpeTrainer } from "../bindings/trainers";
+import { BaseTokenizer } from "./base.tokenizer";
 
 export interface BPETokenizerOptions {
-  dropout?:    number;
+  dropout?: number;
   mergesFile?: string;
   /**
    * @default "</w>"
    */
-  suffix?:     string;
+  suffix?: string;
   /**
    * @default "<unk>"
    */
-  unkToken?:   string;
-  vocabFile?:  string;
+  unkToken?: string;
+  vocabFile?: string;
 }
 
 export interface BPETokenizerTrainOptions {
@@ -29,27 +34,27 @@ export interface BPETokenizerTrainOptions {
   /**
    * @default 1000
    */
-  limitAlphabet?:   number;
+  limitAlphabet?: number;
   /**
    * @default 2
    */
-  minFrequency?:    number;
+  minFrequency?: number;
   /**
    * @default true
    */
-  showProgress?:    boolean;
+  showProgress?: boolean;
   /**
    * @default ["<unk>"]
    */
-  specialTokens?:   string[];
+  specialTokens?: string[];
   /**
    * @default "</w>"
    */
-  suffix?:          string;
+  suffix?: string;
   /**
    * @default 30000
    */
-  vocabSize?:       number;
+  vocabSize?: number;
 }
 
 /**
@@ -57,20 +62,20 @@ export interface BPETokenizerTrainOptions {
  * Represents the BPE algorithm, as introduced by Rico Sennrich (https://arxiv.org/abs/1508.07909)
  */
 export class BPETokenizer extends BaseTokenizer {
-  private static readonly defaultBPEOptions:
-    BPETokenizerOptions & Required<Pick<BPETokenizerOptions, "unkToken" | "suffix">> = {
-    suffix:   "</w>",
+  private static readonly defaultBPEOptions: BPETokenizerOptions &
+    Required<Pick<BPETokenizerOptions, "unkToken" | "suffix">> = {
+    suffix: "</w>",
     unkToken: "<unk>"
   };
 
   private readonly defaultTrainOptions: Required<BPETokenizerTrainOptions> = {
     initialAlphabet: [],
-    limitAlphabet:   1000,
-    minFrequency:    2,
-    showProgress:    true,
-    specialTokens:   ["<unk>"],
-    suffix:          "</w>",
-    vocabSize:       30000
+    limitAlphabet: 1000,
+    minFrequency: 2,
+    showProgress: true,
+    specialTokens: ["<unk>"],
+    suffix: "</w>",
+    vocabSize: 30000
   };
 
   private constructor(tokenizer: Tokenizer) {
@@ -88,9 +93,9 @@ export class BPETokenizer extends BaseTokenizer {
     if (opts.vocabFile && opts.mergesFile) {
       // const fromFiles = promisify(BPE.fromFiles);
       const modelOptions: BPEOptions = {
-        dropout:         opts.dropout,
+        dropout: opts.dropout,
         endOfWordSuffix: opts.suffix,
-        unkToken:        opts.unkToken
+        unkToken: opts.unkToken
       };
 
       model = BPE.fromFiles(opts.vocabFile, opts.mergesFile, modelOptions);
@@ -98,7 +103,7 @@ export class BPETokenizer extends BaseTokenizer {
     } else {
       model = BPE.empty();
     }
-  
+
     const tokenizer = new Tokenizer(model);
 
     const normalizer = sequenceNormalizer([nfkcNormalizer(), lowercaseNormalizer()]);

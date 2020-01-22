@@ -1,26 +1,27 @@
 import { promisify } from "util";
-import { BaseTokenizer } from "./base.tokenizer";
-import { Tokenizer } from "../bindings/tokenizer";
+
+import { wordPieceDecoder } from "../bindings/decoders";
 import { Model, WordPiece } from "../bindings/models";
 import { bertNormalizer } from "../bindings/normalizers";
-import { bertPreTokenizer } from "../bindings/pre-tokenizers";
 import { bertProcessing } from "../bindings/post-processors";
-import { wordPieceDecoder } from "../bindings/decoders";
+import { bertPreTokenizer } from "../bindings/pre-tokenizers";
+import { Tokenizer } from "../bindings/tokenizer";
 import { wordPieceTrainer } from "../bindings/trainers";
+import { BaseTokenizer } from "./base.tokenizer";
 
 export interface BertWordPieceOptions {
   /**
    * @default true
    */
-  addSpecialTokens?:   boolean;
+  addSpecialTokens?: boolean;
   /**
    * @default true
    */
-  cleanText?:          boolean;
+  cleanText?: boolean;
   /**
    * @default "[CLS]"
    */
-  clsToken?:           string;
+  clsToken?: string;
   /**
    * @default true
    */
@@ -28,51 +29,51 @@ export interface BertWordPieceOptions {
   /**
    * @default true
    */
-  lowercase?:          boolean;
+  lowercase?: boolean;
   /**
    * @default "[SEP]"
    */
-  sepToken?:           string;
+  sepToken?: string;
   /**
    * @default true
    */
-  stripAccents?:       boolean;
+  stripAccents?: boolean;
   /**
    * @default "[UNK]"
    */
-  unkToken?:           string;
-  vocabFile?:          string;
+  unkToken?: string;
+  vocabFile?: string;
   /**
    * @default "##"
    */
-  wordpiecesPrefix?:   string;
+  wordpiecesPrefix?: string;
 }
 
 export interface BertWordPieceTrainOptions {
   /**
    * @default []
    */
-  initialAlphabet?:  string[];
+  initialAlphabet?: string[];
   /**
    * @default 1000
    */
-  limitAlphabet?:    number;
+  limitAlphabet?: number;
   /**
    * @default 2
    */
-  minFrequency?:     number;
+  minFrequency?: number;
   /**
    * @default true
    */
-  showProgress?:     boolean;
+  showProgress?: boolean;
   /**
    * @default ["[UNK]", "[SEP]", "[CLS]"]
    */
-  specialTokens?:    string[];
+  specialTokens?: string[];
   /**
    * @default 30000
    */
-  vocabSize?:        number;
+  vocabSize?: number;
   /**
    * @default "##"
    */
@@ -83,26 +84,27 @@ export interface BertWordPieceTrainOptions {
  * Bert WordPiece Tokenizer
  */
 export class BertWordPieceTokenizer extends BaseTokenizer {
-  private static readonly defaultBertOptions:
-    Required<Omit<BertWordPieceOptions, "vocabFile">> & { vocabFile?: string } = {
-    addSpecialTokens:   true,
-    cleanText:          true,
-    clsToken:           "[CLS]",
+  private static readonly defaultBertOptions: Required<
+    Omit<BertWordPieceOptions, "vocabFile">
+  > & { vocabFile?: string } = {
+    addSpecialTokens: true,
+    cleanText: true,
+    clsToken: "[CLS]",
     handleChineseChars: true,
-    lowercase:          true,
-    sepToken:           "[SEP]",
-    stripAccents:       true,
-    unkToken:           "[UNK]",
-    wordpiecesPrefix:   "##"
+    lowercase: true,
+    sepToken: "[SEP]",
+    stripAccents: true,
+    unkToken: "[UNK]",
+    wordpiecesPrefix: "##"
   };
 
   private readonly defaultTrainOptions: Required<BertWordPieceTrainOptions> = {
-    initialAlphabet:  [],
-    limitAlphabet:    1000,
-    minFrequency:     2,
-    showProgress:     true,
-    specialTokens:    ['<unk>'],
-    vocabSize:        30000,
+    initialAlphabet: [],
+    limitAlphabet: 1000,
+    minFrequency: 2,
+    showProgress: true,
+    specialTokens: ["<unk>"],
+    vocabSize: 30000,
     wordpiecesPrefix: "##"
   };
 
@@ -112,9 +114,11 @@ export class BertWordPieceTokenizer extends BaseTokenizer {
 
   /**
    * Instantiate and returns a new Bert WordPiece tokenizer
-   * @param [options] Optional tokenizer options 
+   * @param [options] Optional tokenizer options
    */
-  static async fromOptions(options?: BertWordPieceOptions): Promise<BertWordPieceTokenizer> {
+  static async fromOptions(
+    options?: BertWordPieceOptions
+  ): Promise<BertWordPieceTokenizer> {
     const opts = { ...this.defaultBertOptions, ...options };
 
     let model: Model;
@@ -137,14 +141,17 @@ export class BertWordPieceTokenizer extends BaseTokenizer {
       if (sepTokenId === undefined) {
         throw new Error("sepToken not found in the vocabulary");
       }
-  
+
       const clsTokenId = tokenizer.tokenToId(opts.clsToken);
       if (clsTokenId === undefined) {
         throw new Error("clsToken not found in the vocabulary");
       }
 
       if (opts.addSpecialTokens) {
-        const processor = bertProcessing([opts.sepToken, sepTokenId], [opts.clsToken, clsTokenId]);
+        const processor = bertProcessing(
+          [opts.sepToken, sepTokenId],
+          [opts.clsToken, clsTokenId]
+        );
         tokenizer.setPostProcessor(processor);
       }
     }

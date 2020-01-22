@@ -10,7 +10,7 @@ interface BertNormalizerOptions {
    * and replacing all whitespaces by the classic one.
    * @default true
    */
-  cleanText?:          boolean;
+  cleanText?: boolean;
   /**
    * Whether to handle chinese chars by putting spaces around them.
    * @default true
@@ -20,12 +20,12 @@ interface BertNormalizerOptions {
    * Whether to lowercase.
    * @default true
    */
-  lowercase?:          boolean;
+  lowercase?: boolean;
   /**
    * Whether to strip all accents.
    * @default true
    */
-  stripAccents?:       boolean;
+  stripAccents?: boolean;
 }
 
 /**

@@ -1,15 +1,16 @@
-import { BertWordPieceOptions, BertWordPieceTokenizer } from "./bert-wordpiece.tokenizer";
 import { mocked } from "ts-jest/utils";
+
 import { Tokenizer } from "../bindings/tokenizer";
+import { BertWordPieceOptions, BertWordPieceTokenizer } from "./bert-wordpiece.tokenizer";
 
 jest.mock("../bindings/models");
 jest.mock("../bindings/tokenizer");
 
 describe("BertWordPieceTokenizer", () => {
   describe("fromOptions", () => {
-
     it("should not throw any error if no vocabFile is provided", async () => {
-      await BertWordPieceTokenizer.fromOptions();
+      const tokeniser = await BertWordPieceTokenizer.fromOptions();
+      expect(tokeniser).toBeDefined();
     });
 
     describe("when a vocabFile is provided and `addSpecialTokens === true`", () => {
@@ -18,10 +19,11 @@ describe("BertWordPieceTokenizer", () => {
           vocabFile: "./fake.txt",
           sepToken: undefined
         };
-        
+
         expect.assertions(1);
-        BertWordPieceTokenizer.fromOptions(options)
-          .catch(e => expect(e).toBeDefined());
+        return BertWordPieceTokenizer.fromOptions(options).catch(e =>
+          expect(e).toBeDefined()
+        );
       });
 
       it("should throw a `clsToken error` if no `clsToken` is provided", () => {
@@ -31,12 +33,12 @@ describe("BertWordPieceTokenizer", () => {
         };
 
         mocked(Tokenizer.prototype.tokenToId).mockImplementationOnce(() => 10);
-        
+
         expect.assertions(1);
-        BertWordPieceTokenizer.fromOptions(options)
-          .catch(e => expect(e).toBeDefined());
+        return BertWordPieceTokenizer.fromOptions(options).catch(e =>
+          expect(e).toBeDefined()
+        );
       });
     });
-
   });
 });

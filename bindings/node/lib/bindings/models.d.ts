@@ -2,9 +2,7 @@
  * This class is not supposed to be instantiated directly. Instead, any implementation of
  * a Model will return a instance of this class when instantiated.
  */
-declare class Model {
-
-}
+declare class Model {}
 
 export interface BPEOptions {
   /**
@@ -39,11 +37,7 @@ export namespace BPE {
    * @param merges Path to a merge file
    * @param [options] BPE model options
    */
-  export function fromFiles(
-    vocab: string,
-    merges: string,
-    options?: BPEOptions
-  ): Model;
+  export function fromFiles(vocab: string, merges: string, options?: BPEOptions): Model;
 
   /**
    * Instantiate a BPE model from the given vocab and merges files
@@ -76,7 +70,7 @@ export interface WordPieceOptions {
    * The unknown token to be used by the model.
    * @default "[UNK]"
    */
-  unkToken?:             string;
+  unkToken?: string;
 }
 
 export namespace WordPiece {

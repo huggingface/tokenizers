@@ -12,7 +12,7 @@ interface TrainerOptions {
   /**
    * A suffix to be used for every subword that is a end-of-word.
    */
-  endOfWordSuffix?:         string;
+  endOfWordSuffix?: string;
   /**
    * A list of characters to include in the initial alphabet, even
    * if not seen in the training dataset.
@@ -20,31 +20,31 @@ interface TrainerOptions {
    * is kept.
    * @default []
    */
-  initialAlphabet?:         string[];
+  initialAlphabet?: string[];
   /**
    * The maximum different characters to keep in the alphabet.
    */
-  limitAlphabet?:           number;
+  limitAlphabet?: number;
   /**
    * The minimum frequency a pair should have in order to be merged.
    * @default 2
    */
-  minFrequency?:            number;
+  minFrequency?: number;
   /**
    * Whether to show progress bars while training.
    * @default true
    */
-  showProgress?:            boolean;
+  showProgress?: boolean;
   /**
    * A list of special tokens the model should know of.
    * @default []
    */
-  specialTokens?:           string[];
+  specialTokens?: string[];
   /**
    * The size of the final vocabulary, including all tokens and alphabet.
    * @default 30000
    */
-  vocabSize?:               number;
+  vocabSize?: number;
 }
 
 /**

@@ -9,7 +9,7 @@ declare class PreTokenizer {}
  *
  * @param {boolean} [addPrefixSpace=true] Whether to add a space to the first word if there isn't already one.
  * This lets us treat `hello` exactly like `say hello`.
- * @returns {PreTokenizer} ByteLevel PreTokenizer. 
+ * @returns {PreTokenizer} ByteLevel PreTokenizer.
  * This pre-tokenizer takes care of replacing all bytes of the given string
  * with a corresponding representation, as well as splitting into words.
  */
@@ -53,4 +53,7 @@ export function bertPreTokenizer(): PreTokenizer;
  * @param {boolean} [addPrefixSpace] Whether to add a space to the first word if there isn't already one.
  * This lets us treat `hello` exactly like `say hello`.
  */
-export function metaspacePreTokenizer(replacement?: string, addPrefixSpace?: boolean): PreTokenizer;
+export function metaspacePreTokenizer(
+  replacement?: string,
+  addPrefixSpace?: boolean
+): PreTokenizer;

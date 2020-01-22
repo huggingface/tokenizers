@@ -1,4 +1,4 @@
-var native = require('./native');
+const native = require("./native");
 
 module.exports = {
   bertProcessing: native.processors_BertProcessing

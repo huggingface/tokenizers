@@ -1,9 +1,9 @@
+import { Decoder } from "./decoders";
 import { Model } from "./models";
 import { Normalizer } from "./normalizers";
-import { Decoder } from "./decoders";
-import { Trainer } from "./trainers";
-import { PreTokenizer } from "./pre-tokenizers";
 import { PostProcessor } from "./post-processors";
+import { PreTokenizer } from "./pre-tokenizers";
+import { Trainer } from "./trainers";
 
 /**
  * A Tokenizer works as a pipeline, it processes some raw text as input and outputs
@@ -43,7 +43,7 @@ export class Tokenizer {
    * @returns {number} The number of tokens that were added to the vocabulary
    */
   addSpecialTokens(tokens: string[]): number;
-  
+
   /**
    * Encode the given sequence
    *
@@ -51,7 +51,11 @@ export class Tokenizer {
    * @param pair The optional pair sequence
    * @param __callback Callback called when encoding is complete
    */
-  encode(sequence: string, pair: string | null, __callback: (err: any, encoding: Encoding) => void): void;
+  encode(
+    sequence: string,
+    pair: string | null,
+    __callback: (err: any, encoding: Encoding) => void
+  ): void;
 
   /**
    * Encode the given sequences or pair of sequences
@@ -59,7 +63,10 @@ export class Tokenizer {
    * @param sequences A list of sequences or pair of sequences. The list can contain both at the same time.
    * @param __callback Callback called when encoding is complete
    */
-  encodeBatch(sequences: (string | [string, string])[], __callback: (err: any, encodings: Encoding[]) => void): void;
+  encodeBatch(
+    sequences: (string | [string, string])[],
+    __callback: (err: any, encodings: Encoding[]) => void
+  ): void;
 
   /**
    * Decode the given list of ids to a string sequence
@@ -128,7 +135,7 @@ export class Tokenizer {
    */
   setModel(model: Model): void;
 
-/**
+  /**
    * Returns the normalizer in use
    */
   getNormalizer(): Normalizer | undefined;
@@ -242,7 +249,7 @@ interface PaddingOptions {
   /**
    * @default "right"
    */
-  direction?: 'left' | 'right';
+  direction?: "left" | "right";
   /**
    * The indice to be used when padding
    * @default 0

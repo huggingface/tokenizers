@@ -1,15 +1,15 @@
-import { BaseTokenizer } from "./base.tokenizer";
-import { Tokenizer } from "../bindings/tokenizer";
-import { Model, BPE, BPEOptions } from "../bindings/models";
+import { metaspaceDecoder } from "../bindings/decoders";
+import { BPE, BPEOptions, Model } from "../bindings/models";
 import { nfkcNormalizer } from "../bindings/normalizers";
 import { metaspacePreTokenizer } from "../bindings/pre-tokenizers";
-import { metaspaceDecoder } from "../bindings/decoders";
+import { Tokenizer } from "../bindings/tokenizer";
 import { bpeTrainer } from "../bindings/trainers";
+import { BaseTokenizer } from "./base.tokenizer";
 
 export interface SentencePieceBPETokenizerOptions extends OptionsWithDefaults {
-  dropout?:    number;
+  dropout?: number;
   mergesFile?: string;
-  vocabFile?:  string;
+  vocabFile?: string;
 }
 
 interface OptionsWithDefaults {
@@ -20,11 +20,11 @@ interface OptionsWithDefaults {
   /**
    * @default "▁"
    */
-  replacement?:    string;
+  replacement?: string;
   /**
    * @default "<unk>"
    */
-  unkToken?:       string;
+  unkToken?: string;
 }
 
 export interface SentencePieceBPETrainOptions {
@@ -35,56 +35,59 @@ export interface SentencePieceBPETrainOptions {
   /**
    * @default 1000
    */
-  limitAlphabet?:   number;
+  limitAlphabet?: number;
   /**
    * @default 2
    */
-  minFrequency?:    number;
+  minFrequency?: number;
   /**
    * @default true
    */
-  showProgress?:    boolean;
+  showProgress?: boolean;
   /**
    * @default ["<unk>"]
    */
-  specialTokens?:   string[];
+  specialTokens?: string[];
   /**
    * @default 30000
    */
-  vocabSize?:       number;
+  vocabSize?: number;
 }
 
 /**
  * Represents the BPE algorithm, with the pretokenization used by SentencePiece
  */
 export class SentencePieceBPETokenizer extends BaseTokenizer {
-  private static readonly defaultOptions: SentencePieceBPETokenizerOptions & Required<OptionsWithDefaults> = {
+  private static readonly defaultOptions: SentencePieceBPETokenizerOptions &
+    Required<OptionsWithDefaults> = {
     addPrefixSpace: true,
-    replacement:    '▁',
-    unkToken:       '<unk>'
+    replacement: "▁",
+    unkToken: "<unk>"
   };
 
   private readonly defaultTrainOptions: Required<SentencePieceBPETrainOptions> = {
     initialAlphabet: [],
-    limitAlphabet:   1000,
-    minFrequency:    2,
-    showProgress:    true,
-    specialTokens:   ['<unk>'],
-    vocabSize:       30000
+    limitAlphabet: 1000,
+    minFrequency: 2,
+    showProgress: true,
+    specialTokens: ["<unk>"],
+    vocabSize: 30000
   };
 
   private constructor(tokenizer: Tokenizer) {
     super(tokenizer);
   }
 
-  static async fromOptions(options?: SentencePieceBPETokenizerOptions): Promise<SentencePieceBPETokenizer> {
+  static async fromOptions(
+    options?: SentencePieceBPETokenizerOptions
+  ): Promise<SentencePieceBPETokenizer> {
     const opts = { ...this.defaultOptions, ...options };
 
     let model: Model;
     if (opts.vocabFile && opts.mergesFile) {
       // const fromFiles = promisify(BPE.fromFiles);
       const modelOptions: BPEOptions = {
-        dropout:  opts.dropout,
+        dropout: opts.dropout,
         unkToken: opts.unkToken
       };
 
@@ -93,7 +96,7 @@ export class SentencePieceBPETokenizer extends BaseTokenizer {
     } else {
       model = BPE.empty();
     }
-    
+
     const tokenizer = new Tokenizer(model);
     tokenizer.setNormalizer(nfkcNormalizer());
 

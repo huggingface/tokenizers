@@ -1,5 +1,5 @@
-var native = require('./native');
+const native = require("./native");
 
 module.exports = {
   Tokenizer: native.tokenizer_Tokenizer
-}
+};
