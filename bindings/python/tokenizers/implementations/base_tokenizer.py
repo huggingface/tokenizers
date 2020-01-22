@@ -3,7 +3,6 @@ from .. import Tokenizer, Encoding
 from typing import List, Union, Tuple, Optional
 
 class BaseTokenizer:
-    _tokenizer: Tokenizer
 
     def __init__(self, tokenizer: Tokenizer, parameters=None):
         self._tokenizer = tokenizer
