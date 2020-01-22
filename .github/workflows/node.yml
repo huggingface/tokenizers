@@ -16,8 +16,7 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2019-11-01
-          override: true
+          toolchain: stable
 
       - name: Install Node 12.x
         uses: actions/setup-node@v1

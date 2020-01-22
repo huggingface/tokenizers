@@ -24,8 +24,7 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2019-11-01
-          override: true
+          toolchain: stable
 
       - name: Install Node ${{ matrix.node-version }}
         uses: actions/setup-node@v1
