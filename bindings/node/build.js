@@ -28,34 +28,40 @@ shell.set("-e");
 const rootDirectory = path.dirname(process.argv[1]);
 shell.cd(rootDirectory);
 
-const arg = process.argv.slice(2)[0];
-switch (arg) {
-  case "--all":
-    buildRust();
-    buildTs();
-    break;
+run();
 
-  case "--rust":
-    buildRust();
-    break;
+/***************************************/
 
-  case "--typescript":
-    buildTs();
-    break;
+async function run() {
+  const arg = process.argv.slice(2)[0];
+  switch (arg) {
+    case "--all":
+      buildRust();
+      buildTs();
+      break;
 
-  case "--package-rust":
-    buildRust();
-    packageRust();
-    break;
+    case "--rust":
+      buildRust();
+      break;
 
-  case "--npm-publish":
-    buildTs();
-    npmPublish();
-    break;
+    case "--typescript":
+      buildTs();
+      break;
 
-  default:
-    shell.echo("No arg provided, doing nothing...");
-    break;
+    case "--package-rust":
+      buildRust();
+      await packageRust();
+      break;
+
+    case "--npm-publish":
+      buildTs();
+      npmPublish();
+      break;
+
+    default:
+      shell.echo("No arg provided, doing nothing...");
+      break;
+  }
 }
 
 function buildRust() {
@@ -76,14 +82,19 @@ function buildRust() {
   shell.echo("BUILDING RUST COMPLETE...");
 }
 
-function packageRust() {
+async function packageRust() {
   shell.echo("PACKAGING RUST...");
 
   shell.mkdir("./bin-package");
   shell.cp("./native/index.node", "./bin-package");
+
   shell.exec("npm run package");
-  const tgz = shell.exec("find ./build -name *.tar.gz");
-  shell.cp(tgz, "./bin-package/");
+
+  const version = JSON.parse(await fs.promises.readFile("./package.json")).version;
+  const tarPath = `build/stage/${version}`;
+  const tgz = (await fs.promises.readdir(tarPath)).find(f => f.endsWith(".tar.gz"));
+
+  shell.cp(`${tarPath}/${tgz}`, "./bin-package/");
 
   shell.echo("PACKAGING RUST COMPLETE...");
 }
