@@ -73,7 +73,7 @@ function buildRust() {
 
   // Cleanup any previous Rust builds, update deps, and compile
   shell.exec("npm ci --ignore-scripts");
-  shell.exec("npm run clean");
+  shell.exec("npm run clean-rs");
   shell.pushd("./native");
   shell.exec("cargo update");
   shell.popd();

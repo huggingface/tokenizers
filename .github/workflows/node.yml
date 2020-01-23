@@ -1,6 +1,9 @@
 name: Node
 
-on: [push]
+on:
+  push:
+    paths-ignore:
+      - ./bindings/python
 
 jobs:
   build_and_test:
@@ -15,22 +18,16 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install Node 12.x
-        uses: actions/setup-node@v1
-        with:
-          node-version: 12.x
-
       - name: Cache Cargo Registry
         uses: actions/cache@v1
         with:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
 
-      - name: Cache Cargo Build Target
-        uses: actions/cache@v1
+      - name: Install Node 12.x
+        uses: actions/setup-node@v1
         with:
-          path: tokenizers/target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.toml') }}
+          node-version: 12.x
 
       - name: Get NPM cache directory
         id: npm-cache

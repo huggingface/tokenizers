@@ -37,7 +37,7 @@
     "dev-ts": "rm -rf dist && tsc -p tsconfig.prod.json && ln -s $(pwd)/lib/bindings dist/bindings",
     "dev-rs": "neon build",
     "compile": "neon build --release",
-    "clean": "neon clean",
+    "clean-rs": "neon clean",
     "package": "node-pre-gyp package",
     "test": "jest",
     "lint": "eslint --fix --ext .js,.ts lib examples"
