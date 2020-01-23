@@ -1,9 +1,6 @@
 name: Node
 
-on:
-  push:
-    paths-ignore:
-      - ./bindings/python
+on: [push]
 
 jobs:
   build_and_test:
