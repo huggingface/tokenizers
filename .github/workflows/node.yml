@@ -29,8 +29,8 @@ jobs:
       - name: Cache Cargo Build Target
         uses: actions/cache@v1
         with:
-          path: bindings/node/native/target
-          key: ${{ runner.os }}-cargo-node-build-${{ hashFiles('**/Cargo.toml') }}
+          path: tokenizers/target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Get NPM cache directory
         id: npm-cache
