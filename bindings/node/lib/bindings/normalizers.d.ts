@@ -33,7 +33,7 @@ export interface BertNormalizerOptions {
  * Instantiate a Bert Normalizer with the given options
  *
  * @param [options] Normalizer options
- * @returns {Normalizer} Bert Normalizer. Takes care of normalizing raw text before giving it to a Bert model.
+ * @returns Bert Normalizer. Takes care of normalizing raw text before giving it to a Bert model.
  * This includes cleaning the text, handling accents, chinese chars and lowercasing
  */
 export function bertNormalizer(options?: BertNormalizerOptions): Normalizer;

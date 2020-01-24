@@ -78,7 +78,7 @@ export namespace WordPiece {
   /**
    * Instantiate a WordPiece model from the given vocab file
    *
-   * @param {string} vocab Path to a vocabulary file
+   * @param vocab Path to a vocabulary file
    * @param [options] WordPiece model options
    */
   export function fromFiles(vocab: string, options?: WordPieceOptions): Model;

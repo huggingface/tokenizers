@@ -50,12 +50,12 @@ export interface TrainerOptions {
 
 /**
  * Instantiate a new BPE Trainer
- * @param {TrainerOptions} [options] BPE Trainer options
+ * @param [options] BPE Trainer options
  */
 export function bpeTrainer(options?: TrainerOptions): Trainer;
 
 /**
  * Instantiate a new WordPiece Trainer
- * @param {TrainerOptions} [options] WordPiece Trainer options
+ * @param [options] WordPiece Trainer options
  */
 export function wordPieceTrainer(options?: TrainerOptions): Trainer;

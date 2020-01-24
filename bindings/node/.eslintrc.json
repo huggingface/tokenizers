@@ -26,6 +26,7 @@
   "overrides": [
     {
       "files": "**/*.ts",
+      "plugins": ["jsdoc"],
       "extends": [
         "plugin:@typescript-eslint/eslint-recommended",
         "plugin:@typescript-eslint/recommended",
@@ -35,7 +36,8 @@
       ],
       "rules": {
         "@typescript-eslint/no-var-requires": "off",
-        "@typescript-eslint/camelcase": "warn"
+        "@typescript-eslint/camelcase": "warn",
+        "jsdoc/no-types": "error"
       }
     }
   ]

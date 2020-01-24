@@ -8,9 +8,9 @@ interface PreTokenizer {}
 /**
  * Instantiate a new ByteLevel PreTokenizer
  *
- * @param {boolean} [addPrefixSpace=true] Whether to add a space to the first word if there isn't already one.
+ * @param [addPrefixSpace=true] Whether to add a space to the first word if there isn't already one.
  * This lets us treat `hello` exactly like `say hello`.
- * @returns {PreTokenizer} ByteLevel PreTokenizer.
+ * @returns ByteLevel PreTokenizer.
  * This pre-tokenizer takes care of replacing all bytes of the given string
  * with a corresponding representation, as well as splitting into words.
  */
@@ -49,9 +49,9 @@ export function bertPreTokenizer(): PreTokenizer;
  * This pre-tokenizer replaces any whitespace by the provided replacement character.
  * It then tries to split on these spaces.
  *
- * @param {string} [replacement="▁"] The replacement character. Must be exactly one character.
+ * @param [replacement="▁"] The replacement character. Must be exactly one character.
  * By default we use the `▁` (U+2581) meta symbol (Same as in SentencePiece).
- * @param {boolean} [addPrefixSpace] Whether to add a space to the first word if there isn't already one.
+ * @param [addPrefixSpace] Whether to add a space to the first word if there isn't already one.
  * This lets us treat `hello` exactly like `say hello`.
  */
 export function metaspacePreTokenizer(

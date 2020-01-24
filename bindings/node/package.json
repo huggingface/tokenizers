@@ -21,6 +21,7 @@
     "eslint": "^6.8.0",
     "eslint-config-prettier": "^6.9.0",
     "eslint-plugin-jest": "^23.6.0",
+    "eslint-plugin-jsdoc": "^20.4.0",
     "eslint-plugin-prettier": "^3.1.2",
     "eslint-plugin-simple-import-sort": "^5.0.0",
     "jest": "^24.9.0",
@@ -36,6 +37,7 @@
   "scripts": {
     "dev-ts": "rm -rf dist && tsc -p tsconfig.prod.json && ln -s $(pwd)/lib/bindings dist/bindings",
     "dev-rs": "neon build",
+    "dev": "npm run dev-rs && npm run dev-ts",
     "compile": "neon build --release",
     "clean-rs": "neon clean",
     "package": "node-pre-gyp package",

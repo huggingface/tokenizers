@@ -8,8 +8,8 @@ interface PostProcessor {}
 /**
  * Instantiate a new BertProcessing with the given tokens
  *
- * @param {[string, number]} sep A tuple with the string representation of the SEP token, and its id
- * @param {[string, number]} cls A tuple with the string representation of the CLS token, and its id
+ * @param sep A tuple with the string representation of the SEP token, and its id
+ * @param cls A tuple with the string representation of the CLS token, and its id
  */
 export function bertProcessing(
   sep: [string, number],

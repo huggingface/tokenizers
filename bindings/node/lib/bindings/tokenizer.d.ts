@@ -40,7 +40,7 @@ export class Tokenizer {
    * The special tokens will never be processed by the model, and will be removed while decoding.
    *
    * @param tokens The list of special tokens to add
-   * @returns {number} The number of tokens that were added to the vocabulary
+   * @returns The number of tokens that were added to the vocabulary
    */
   addSpecialTokens(tokens: string[]): number;
 
@@ -72,7 +72,7 @@ export class Tokenizer {
    * Decode the given list of ids to a string sequence
    *
    * @param ids A list of ids to be decoded
-   * @param {boolean} [skipSpecialTokens=true] Whether to remove all the special tokens from the output string
+   * @param [skipSpecialTokens=true] Whether to remove all the special tokens from the output string
    * @returns The decoded string
    */
   decode(ids: number[], skipSpecialTokens?: boolean): string;
@@ -81,7 +81,7 @@ export class Tokenizer {
    * Decode the list of sequences to a list of string sequences
    *
    * @param sequences A list of sequence of ids to be decoded
-   * @param {boolean} [skipSpecialTokens] Whether to remove all the special tokens from the output strings
+   * @param [skipSpecialTokens] Whether to remove all the special tokens from the output strings
    * @returns A list of decoded strings
    */
   decodeBatch(sequences: number[][], skipSpecialTokens?: boolean): string[];
@@ -113,7 +113,7 @@ export class Tokenizer {
   /**
    * Returns the size of the vocabulary
    *
-   * @param {boolean} [withAddedTokens=true] Whether to include the added tokens in the vocabulary's size
+   * @param [withAddedTokens=true] Whether to include the added tokens in the vocabulary's size
    */
   getVocabSize(withAddedTokens?: boolean): number;
 
@@ -231,7 +231,7 @@ interface Encoding {
    * Pad the current Encoding at the given length
    *
    * @param length The length at which to pad
-   * @param {PaddingOptions} [options] Padding options
+   * @param [options] Padding options
    */
   pad(length: number, options?: PaddingOptions): void;
 
@@ -239,8 +239,8 @@ interface Encoding {
    * Truncate the current Encoding at the given max_length
    *
    * @param length The maximum length to be kept
-   * @param {number} [stride=0] The length of the previous first sequence
-   * to be includedin the overflowing sequence
+   * @param [stride=0] The length of the previous first sequence
+   * to be included in the overflowing sequence
    */
   truncate(length: number, stride?: number): void;
 }
