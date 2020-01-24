@@ -2,7 +2,8 @@
  * This class is not supposed to be instantiated directly. Instead, any implementation of
  * a PostProcessor will return an instance of this class when instantiated.
  */
-declare class PostProcessor {}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+interface PostProcessor {}
 
 /**
  * Instantiate a new BertProcessing with the given tokens

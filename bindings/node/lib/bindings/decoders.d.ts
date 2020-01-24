@@ -2,7 +2,8 @@
  * This class is not supposed to be instantiated directly. Instead, any implementation of
  * a Decoder will return an instance of this class when instantiated.
  */
-declare class Decoder {}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+interface Decoder {}
 
 /**
  * Instantiate a new ByteLevel Decoder

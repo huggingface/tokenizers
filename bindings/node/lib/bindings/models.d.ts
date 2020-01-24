@@ -2,7 +2,8 @@
  * This class is not supposed to be instantiated directly. Instead, any implementation of
  * a Model will return a instance of this class when instantiated.
  */
-declare class Model {}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+interface Model {}
 
 export interface BPEOptions {
   /**

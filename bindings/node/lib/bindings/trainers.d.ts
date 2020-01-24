@@ -2,9 +2,10 @@
  * This class is not supposed to be instantiated directly. Instead, any implementation of a
  * Trainer will return an instance of this class when instantiated.
  */
-declare class Trainer {}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+interface Trainer {}
 
-interface TrainerOptions {
+export interface TrainerOptions {
   /**
    * A prefix to be used for every subword that is not a beginning-of-word.
    */

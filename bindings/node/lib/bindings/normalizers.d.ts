@@ -2,9 +2,10 @@
  * This class is not supposed to be instantiated directly. Instead, any implementation of a
  * Normalizer will return an instance of this class when instantiated.
  */
-declare class Normalizer {}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+interface Normalizer {}
 
-interface BertNormalizerOptions {
+export interface BertNormalizerOptions {
   /**
    * Whether to clean the text, by removing any control characters
    * and replacing all whitespaces by the classic one.

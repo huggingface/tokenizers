@@ -2,7 +2,8 @@
  * This class is not supposed to be instantiated directly. Instead, any implementation of a
  * PreTokenizer will return an instance of this class when instantiated.
  */
-declare class PreTokenizer {}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+interface PreTokenizer {}
 
 /**
  * Instantiate a new ByteLevel PreTokenizer
@@ -39,7 +40,7 @@ export function whitespaceSplitPreTokenizer(): PreTokenizer;
 /**
  * Returns a new Bert PreTokenizer.
  * This pre-tokenizer splits tokens on spaces, and also on punctuation.
- * Each occurence of a punctuation character will be treated separately.
+ * Each occurrence of a punctuation character will be treated separately.
  */
 export function bertPreTokenizer(): PreTokenizer;
 

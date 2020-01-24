@@ -191,7 +191,7 @@ export class Tokenizer {
 /**
  * An Encoding as returned by the Tokenizer
  */
-declare class Encoding {
+interface Encoding {
   /**
    * Returns the attention mask
    */
@@ -251,12 +251,12 @@ interface PaddingOptions {
    */
   direction?: "left" | "right";
   /**
-   * The indice to be used when padding
+   * The index to be used when padding
    * @default 0
    */
   padId?: number;
   /**
-   * The type indice to be used when padding
+   * The type index to be used when padding
    * @default 0
    */
   padTypeId?: number;
