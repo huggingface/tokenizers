@@ -8,3 +8,6 @@ NFC = normalizers.NFC
 NFKC = normalizers.NFKC
 Sequence = normalizers.Sequence
 Lowercase = normalizers.Lowercase
+
+
+# TODO : factory method creating normalizer
