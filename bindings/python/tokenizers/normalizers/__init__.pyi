@@ -95,3 +95,12 @@ class Lowercase:
     def new() -> Normalizer:
         """ Instantiate a new Lowercase Normalizer """
         pass
+
+
+def unicode_normalizer_from_str(normalizer: str) -> Normalizer:
+    """
+    Instanciate unicode normalizer from the normalizer name
+    :param normalizer: Name of the normalizer
+    :return:
+    """
+    pass
