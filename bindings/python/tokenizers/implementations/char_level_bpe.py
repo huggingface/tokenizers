@@ -5,7 +5,8 @@ from .base_tokenizer import BaseTokenizer
 
 from typing import Optional, List, Union
 
-class BPETokenizer(BaseTokenizer):
+
+class CharBPETokenizer(BaseTokenizer):
     """ Original BPE Tokenizer
 
     Represents the BPE algorithm, as introduced by Rico Sennrich (https://arxiv.org/abs/1508.07909)
