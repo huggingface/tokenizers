@@ -1,7 +1,7 @@
 import { promisify } from "util";
 
 import { Encoding } from "../bindings/encoding";
-import { Tokenizer, TruncationOptions } from "../bindings/tokenizer";
+import { PaddingOptions, Tokenizer, TruncationOptions } from "../bindings/tokenizer";
 
 export { Encoding, TruncationOptions };
 
@@ -38,5 +38,13 @@ export class BaseTokenizer {
    */
   setTruncation(maxLength: number, options?: TruncationOptions): void {
     return this.tokenizer.setTruncation(maxLength, options);
+  }
+
+  /**
+   * Enable/change padding with specified options
+   * @param [options] Padding options
+   */
+  setPadding(options?: PaddingOptions): void {
+    return this.tokenizer.setPadding(options);
   }
 }

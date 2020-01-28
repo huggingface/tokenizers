@@ -23,6 +23,34 @@ export interface TruncationOptions {
   strategy?: "longest_first" | "only_first" | "only_second";
 }
 
+export interface PaddingOptions {
+  /**
+   * @default "right"
+   */
+  direction?: "left" | "right";
+  /**
+   * Padding length. If not provided:
+   * - Will default to the longest sequence when encoding in batch.
+   * - No padding will be applied when single encoding
+   */
+  maxLength?: number;
+  /**
+   * The index to be used when padding
+   * @default 0
+   */
+  padId?: number;
+  /**
+   * The type index to be used when padding
+   * @default 0
+   */
+  padTypeId?: number;
+  /**
+   * The pad token to be used when padding
+   * @default "[PAD]"
+   */
+  padToken?: string;
+}
+
 /**
  * A Tokenizer works as a pipeline, it processes some raw text as input and outputs
  * an `Encoding`.
@@ -119,6 +147,12 @@ export class Tokenizer {
    * @returns The corresponding id if it exists
    */
   tokenToId(token: string): number | undefined;
+
+  /**
+   * Enable/change padding with specified options
+   * @param [options] Padding options
+   */
+  setPadding(options?: PaddingOptions): void;
 
   /**
    * Enable/change truncation with specified options
