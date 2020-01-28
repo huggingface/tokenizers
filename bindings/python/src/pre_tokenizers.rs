@@ -86,6 +86,23 @@ impl WhitespaceSplit {
 }
 
 #[pyclass]
+pub struct CharDelimiterSplit {}
+#[pymethods]
+impl CharDelimiterSplit {
+    #[staticmethod]
+    pub fn new(delimiter: &str) -> PyResult<PreTokenizer> {
+        let chr_delimiter = delimiter.chars().nth(0).ok_or(exceptions::Exception::py_err(
+            "delimiter must be a single character",
+        ))?;
+        Ok(PreTokenizer{
+            pretok:Container::Owned(Box::new(
+                tk::pre_tokenizers::delimiter::CharDelimiterSplit::new(chr_delimiter)
+            ))
+        })
+    }
+}
+
+#[pyclass]
 pub struct BertPreTokenizer {}
 #[pymethods]
 impl BertPreTokenizer {
