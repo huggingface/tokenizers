@@ -46,7 +46,7 @@ class BaseTokenizer:
 
     def no_padding(self):
         """ Disable padding """
-        return self._tokenizer.without_padding()
+        return self._tokenizer.no_padding()
 
     def enable_truncation(self,
                           max_length: int,
@@ -71,7 +71,7 @@ class BaseTokenizer:
 
     def no_truncation(self):
         """ Disable truncation """
-        return self._tokenizer.without_truncation()
+        return self._tokenizer.no_truncation()
 
     def add_tokens(self, tokens: List[Union[str, Tuple[str, bool]]]) -> int:
         """ Add the given tokens to the vocabulary
