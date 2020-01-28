@@ -7,7 +7,7 @@ class Normalizer:
     Normalizer will return an instance of this class when instantiated.
     """
 
-class BertNormalizer:
+class BertNormalizer(Normalizer):
     """ BertNormalizer
 
     Takes care of normalizing raw text before giving it to a Bert model.
@@ -40,7 +40,7 @@ class BertNormalizer:
         """
         pass
 
-class NFD:
+class NFD(Normalizer):
     """ NFD Unicode Normalizer """
 
     @staticmethod
@@ -48,7 +48,7 @@ class NFD:
         """ Instantiate a new NFD Normalizer """
         pass
 
-class NFKD:
+class NFKD(Normalizer):
     """ NFKD Unicode Normalizer """
 
     @staticmethod
@@ -56,7 +56,7 @@ class NFKD:
         """ Instantiate a new NFKD Normalizer """
         pass
 
-class NFC:
+class NFC(Normalizer):
     """ NFC Unicode Normalizer """
 
     @staticmethod
@@ -64,7 +64,7 @@ class NFC:
         """ Instantiate a new NFC Normalizer """
         pass
 
-class NFKC:
+class NFKC(Normalizer):
     """ NFKC Unicode Normalizer """
 
     @staticmethod
@@ -72,7 +72,7 @@ class NFKC:
         """ Instantiate a new NFKC Normalizer """
         pass
 
-class Sequence:
+class Sequence(Normalizer):
     """ Allows concatenating multiple other Normalizer as a Sequence.
 
     All the normalizers run in sequence in the given order
@@ -88,7 +88,7 @@ class Sequence:
         """
         pass
 
-class Lowercase:
+class Lowercase(Normalizer):
     """ Lowercase Normalizer """
 
     @staticmethod
