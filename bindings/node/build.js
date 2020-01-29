@@ -28,7 +28,9 @@ shell.set("-e");
 const rootDirectory = path.dirname(process.argv[1]);
 shell.cd(rootDirectory);
 
-run();
+run()
+  // Prevent "unhandledRejection" events, allowing to actually exit with error
+  .catch(() => {});
 
 /***************************************/
 
