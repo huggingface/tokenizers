@@ -49,6 +49,10 @@ jobs:
         working-directory: ./bindings/node
         run: node build.js --all
 
+      - name: Lint TS
+        working-directory: ./bindings/node
+        run: npm run lint-check
+
       - name: Run JS tests
         working-directory: ./bindings/node
         run: npm test

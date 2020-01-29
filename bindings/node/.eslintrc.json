@@ -19,9 +19,8 @@
   },
   "plugins": ["@typescript-eslint", "jest", "prettier", "simple-import-sort"],
   "rules": {
-    "prettier/prettier": "warn",
-    "simple-import-sort/sort": "warn"
-    // "sort-imports": "warn",
+    "@typescript-eslint/no-use-before-define": ["error", { "functions": false }],
+    "simple-import-sort/sort": "error"
   },
   "overrides": [
     {
@@ -35,8 +34,6 @@
         "prettier/@typescript-eslint"
       ],
       "rules": {
-        "@typescript-eslint/no-var-requires": "off",
-        "@typescript-eslint/camelcase": "warn",
         "jsdoc/no-types": "error"
       }
     }

@@ -42,6 +42,7 @@
     "clean-rs": "neon clean",
     "package": "node-pre-gyp package",
     "test": "jest",
+    "lint-check": "eslint --ext .js,.ts lib examples",
     "lint": "eslint --fix --ext .js,.ts lib examples"
   },
   "binary": {
