@@ -25,6 +25,7 @@ pub enum PaddingStrategy {
 #[derive(Debug)]
 pub enum Error {
     SecondSequenceNotProvided,
+    SequenceShorterThanNumberTokensToRemove,
 }
 
 impl std::fmt::Display for Error {
@@ -33,6 +34,10 @@ impl std::fmt::Display for Error {
             Error::SecondSequenceNotProvided => {
                 write!(fmt, "Truncation error: Second sequence not provided")
             }
+            Error::SequenceShorterThanNumberTokensToRemove => write!(
+                fmt,
+                "Truncation error: Sequence to truncate shorter or equal than number of tokens to remove"
+            ),
         }
     }
 }
@@ -54,19 +59,19 @@ pub fn truncate_encodings(
         return Ok((encoding, pair_encoding));
     }
 
+    let total_length = encoding.get_ids().len()
+        + pair_encoding
+            .as_ref()
+            .map(|e| e.get_ids().len())
+            .unwrap_or(0);
+    let to_remove = if total_length > params.max_length {
+        total_length - params.max_length
+    } else {
+        return Ok((encoding, pair_encoding));
+    };
+
     match params.strategy {
         TruncationStrategy::LongestFirst => {
-            let total_length = encoding.get_ids().len()
-                + pair_encoding
-                    .as_ref()
-                    .map(|e| e.get_ids().len())
-                    .unwrap_or(0);
-            let to_remove = if total_length > params.max_length {
-                total_length - params.max_length
-            } else {
-                0
-            };
-
             let mut n_first = 0;
             let mut n_second = 0;
             for _ in 0..to_remove {
@@ -93,8 +98,11 @@ pub fn truncate_encodings(
                 Err(Box::new(Error::SecondSequenceNotProvided))
             }?;
 
-            if target.get_ids().len() > params.max_length {
-                target.truncate(params.max_length, params.stride);
+            let target_len = target.get_ids().len();
+            if target_len > to_remove {
+                target.truncate(target_len - to_remove, params.stride);
+            } else {
+                return Err(Box::new(Error::SequenceShorterThanNumberTokensToRemove));
             }
         }
     }
