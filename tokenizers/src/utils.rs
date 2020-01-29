@@ -25,7 +25,7 @@ pub enum PaddingStrategy {
 #[derive(Debug)]
 pub enum Error {
     SecondSequenceNotProvided,
-    SequenceShorterThanNumberTokensToRemove,
+    SequenceTooShort,
 }
 
 impl std::fmt::Display for Error {
@@ -34,9 +34,9 @@ impl std::fmt::Display for Error {
             Error::SecondSequenceNotProvided => {
                 write!(fmt, "Truncation error: Second sequence not provided")
             }
-            Error::SequenceShorterThanNumberTokensToRemove => write!(
+            Error::SequenceTooShort => write!(
                 fmt,
-                "Truncation error: Sequence to truncate shorter or equal than number of tokens to remove"
+                "Truncation error: Sequence to truncate too short to respect the provided max_length"
             ),
         }
     }
@@ -102,7 +102,7 @@ pub fn truncate_encodings(
             if target_len > to_remove {
                 target.truncate(target_len - to_remove, params.stride);
             } else {
-                return Err(Box::new(Error::SequenceShorterThanNumberTokensToRemove));
+                return Err(Box::new(Error::SequenceTooShort));
             }
         }
     }
