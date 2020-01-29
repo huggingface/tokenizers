@@ -31,3 +31,29 @@ class BertProcessing:
             PostProcessor
         """
         pass
+
+
+class RobertaProcessing:
+    """ RobertaProcessing
+
+    This post-processor takes care of adding the special tokens needed by
+    a Roberta model:
+        - a SEP token
+        - a CLS token
+    """
+
+    @staticmethod
+    def new(sep: Tuple[str, int], cls: Tuple[str, int]) -> PostProcessor:
+        """ Instantiate a new RobertaProcessing with the given tokens
+
+        Args:
+            sep: Tuple[str, int]:
+                A tuple with the string representation of the SEP token, and its id
+
+            cls: Tuple[str, int]:
+                A tuple with the string representation of the CLS token, and its id
+
+        Returns:
+            PostProcessor
+        """
+        pass
