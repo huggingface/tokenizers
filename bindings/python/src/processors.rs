@@ -25,7 +25,7 @@ impl BertProcessing {
 
 #[pyclass]
 pub struct RobertaProcessing {}
-#[pymethod]
+#[pymethods]
 impl RobertaProcessing {
     #[staticmethod]
     fn new(sep: (String, u32), cls: (String, u32)) -> PyResult<PostProcessor> {
