@@ -55,7 +55,6 @@ fn bert_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     Ok(processor)
 }
 
-
 /// roberta_processing(sep: [String, number], cls: [String, number])
 fn roberta_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     let sep = cx.argument::<JsArray>(0)?;
@@ -87,7 +86,7 @@ fn roberta_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     let mut processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
     let guard = cx.lock();
     processor.borrow_mut(&guard).processor.to_owned(Box::new(
-        tk::processors::roberta::RobertaProcessor::new(sep, cls),
+        tk::processors::roberta::RobertaProcessing::new(sep, cls),
     ));
     Ok(processor)
 }

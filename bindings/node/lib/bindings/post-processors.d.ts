@@ -16,7 +16,6 @@ export function bertProcessing(
   cls: [string, number]
 ): PostProcessor;
 
-
 /**
  * Instantiate a new RobertaProcessing with the given tokens
  *
@@ -24,6 +23,6 @@ export function bertProcessing(
  * @param cls A tuple with the string representation of the CLS token, and its id
  */
 export function robertaProcessing(
-    sep: [string, number],
-    cls: [string, number]
+  sep: [string, number],
+  cls: [string, number]
 ): PostProcessor;
