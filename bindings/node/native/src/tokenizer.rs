@@ -345,6 +345,13 @@ declare_types! {
             Ok(cx.undefined().upcast())
         }
 
+        method disableTruncation(mut cx) {
+            let mut this = cx.this();
+            let guard = cx.lock();
+            this.borrow_mut(&guard).tokenizer.with_truncation(None);
+            Ok(cx.undefined().upcast())
+        }
+
         method setPadding(mut cx) {
             // setPadding(options?: { direction?: "left" | "right"; padId?: number?; padTypeId?: number?; padToken: string; maxLength?: number })
             let mut direction = PaddingDirection::Right;
@@ -408,6 +415,13 @@ declare_types! {
                 }));
             }
 
+            Ok(cx.undefined().upcast())
+        }
+
+        method disablePadding(mut cx) {
+            let mut this = cx.this();
+            let guard = cx.lock();
+            this.borrow_mut(&guard).tokenizer.with_padding(None);
             Ok(cx.undefined().upcast())
         }
 

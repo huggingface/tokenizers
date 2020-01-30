@@ -155,12 +155,22 @@ export class Tokenizer {
   setPadding(options?: PaddingOptions): void;
 
   /**
+   * Disable padding
+   */
+  disablePadding(): void;
+
+  /**
    * Enable/change truncation with specified options
    *
    * @param maxLength The maximum length at which to truncate
    * @param [options] Additional truncation options
    */
   setTruncation(maxLength: number, options?: TruncationOptions): void;
+
+  /**
+   * Disable truncation
+   */
+  disableTruncation(): void;
 
   /**
    * Train the model using the given files

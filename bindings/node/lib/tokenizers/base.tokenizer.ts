@@ -41,10 +41,24 @@ export class BaseTokenizer {
   }
 
   /**
+   * Disable truncation
+   */
+  disableTruncation(): void {
+    return this.tokenizer.disableTruncation();
+  }
+
+  /**
    * Enable/change padding with specified options
    * @param [options] Padding options
    */
   setPadding(options?: PaddingOptions): void {
     return this.tokenizer.setPadding(options);
+  }
+
+  /**
+   * Disable padding
+   */
+  disablePadding(): void {
+    return this.tokenizer.disablePadding();
   }
 }
