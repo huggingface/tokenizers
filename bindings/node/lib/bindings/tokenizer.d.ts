@@ -6,6 +6,23 @@ import { PostProcessor } from "./post-processors";
 import { PreTokenizer } from "./pre-tokenizers";
 import { Trainer } from "./trainers";
 
+export interface TruncationOptions {
+  /**
+   * The length of the previous sequence to be included in the overflowing sequence
+   * @default 0
+   */
+  stride?: number;
+  /**
+   * Strategy to use:
+   * - `longest_first` Iteratively reduce the inputs sequence until the input is under max_length
+   * starting from the longest one at each token (when there is a pair of input sequences).
+   * - `only_first` Only truncate the first sequence.
+   * - `only_second` Only truncate the second sequence.
+   * @default "longest_first"
+   */
+  strategy?: "longest_first" | "only_first" | "only_second";
+}
+
 /**
  * A Tokenizer works as a pipeline, it processes some raw text as input and outputs
  * an `Encoding`.
@@ -102,6 +119,14 @@ export class Tokenizer {
    * @returns The corresponding id if it exists
    */
   tokenToId(token: string): number | undefined;
+
+  /**
+   * Enable/change truncation with specified options
+   *
+   * @param maxLength The maximum length at which to truncate
+   * @param [options] Additional truncation options
+   */
+  setTruncation(maxLength: number, options?: TruncationOptions): void;
 
   /**
    * Train the model using the given files

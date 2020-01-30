@@ -1,9 +1,9 @@
 import { promisify } from "util";
 
 import { Encoding } from "../bindings/encoding";
-import { Tokenizer } from "../bindings/tokenizer";
+import { Tokenizer, TruncationOptions } from "../bindings/tokenizer";
 
-export { Encoding };
+export { Encoding, TruncationOptions };
 
 export class BaseTokenizer {
   constructor(protected tokenizer: Tokenizer) {}
@@ -28,5 +28,15 @@ export class BaseTokenizer {
   async encodeBatch(sequences: (string | [string, string])[]): Promise<Encoding[]> {
     const encodeBatch = promisify(this.tokenizer.encodeBatch.bind(this.tokenizer));
     return encodeBatch(sequences);
+  }
+
+  /**
+   * Enable/change truncation with specified options
+   *
+   * @param maxLength The maximum length at which to truncate
+   * @param options Additional truncation options
+   */
+  setTruncation(maxLength: number, options?: TruncationOptions): void {
+    return this.tokenizer.setTruncation(maxLength, options);
   }
 }

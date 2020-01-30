@@ -10,6 +10,8 @@ use crate::trainers::JsTrainer;
 use crate::utils::Container;
 use neon::prelude::*;
 
+use tk::tokenizer::{TruncationParams, TruncationStrategy};
+
 /// Tokenizer
 pub struct Tokenizer {
     tokenizer: tk::tokenizer::Tokenizer,
@@ -296,6 +298,49 @@ declare_types! {
             );
 
             Ok(cx.number(added as f64).upcast())
+        }
+
+        method setTruncation(mut cx) {
+            // setTruncation(maxLength: number, options?: { stride?: number; strategy?: string })
+            let max_length = cx.argument::<JsNumber>(0)?.value() as usize;
+
+            let mut stride = 0;
+            let mut strategy = TruncationStrategy::LongestFirst;
+
+            let options = cx.argument_opt(1);
+            if let Some(options) = options {
+                if let Ok(options) = options.downcast::<JsObject>() {
+                    if let Ok(stride_opt) = options.get(&mut cx, "stride") {
+                        if stride_opt.downcast::<JsUndefined>().is_err() {
+                            stride = stride_opt.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize;
+                        }
+                    }
+                    if let Ok(strat_opt) = options.get(&mut cx, "strategy") {
+                        if strat_opt.downcast::<JsUndefined>().is_err() {
+                            let strat_opt = strat_opt.downcast::<JsString>().or_throw(&mut cx)?.value();
+                            match &strat_opt[..] {
+                                "longest_first" => strategy = TruncationStrategy::LongestFirst,
+                                "only_first" => strategy = TruncationStrategy::OnlyFirst,
+                                "only_second" => strategy = TruncationStrategy::OnlySecond,
+                                _ => return cx.throw_error("strategy can only be 'longest_first', 'only_first' or 'only_second'"),
+                            }
+                        }
+                    }
+                }
+            }
+
+            let mut this = cx.this();
+            {
+                let guard = cx.lock();
+                let mut tokenizer = this.borrow_mut(&guard);
+                tokenizer.tokenizer.with_truncation(Some(TruncationParams {
+                    max_length,
+                    stride,
+                    strategy,
+                }));
+            }
+
+            Ok(cx.undefined().upcast())
         }
 
         method train(mut cx) {
