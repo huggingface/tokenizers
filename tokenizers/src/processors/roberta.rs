@@ -32,7 +32,7 @@ impl PostProcessor for RobertaProcessing {
             &encoding.get_tokens()[..],
             &[self.sep.0.clone()],
         ]
-            .concat();
+        .concat();
         let offsets = [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
         let special_tokens = [&[1u32], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
         let attention_mask = vec![1; ids.len()];
@@ -51,7 +51,12 @@ impl PostProcessor for RobertaProcessing {
         if let Some(mut encoding) = pair_encoding {
             let pair_ids = [&[self.sep.1], &encoding.get_ids()[..], &[self.sep.1]].concat();
             let pair_type_ids = vec![0; encoding.get_ids().len() + 2];
-            let pair_tokens = [&[self.sep.0.clone()], &encoding.get_tokens()[..], &[self.sep.0.clone()]].concat();
+            let pair_tokens = [
+                &[self.sep.0.clone()],
+                &encoding.get_tokens()[..],
+                &[self.sep.0.clone()],
+            ]
+            .concat();
             let pair_offsets = [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
             let pair_special_tokens =
                 [&[1], &vec![0u32; encoding.get_type_ids().len()][..], &[1]].concat();
