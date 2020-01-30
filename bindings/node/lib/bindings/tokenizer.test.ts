@@ -106,5 +106,56 @@ describe("Tokenizer", () => {
       expect(encoding.getTokens()).toEqual(["my", "name", "is", "john", "pair"]);
       expect(encoding.getTypeIds()).toEqual([0, 0, 0, 0, 1]);
     });
+
+    describe("when truncation is enabled", () => {
+      it("should truncate with default if no truncation options provided", async () => {
+        tokenizer.setTruncation(2);
+
+        const singleEncoding = await encode("my name is john", null);
+        expect(singleEncoding.getTokens()).toEqual(["my", "name"]);
+
+        const pairEncoding = await encode("my name is john", "pair");
+        expect(pairEncoding.getTokens()).toEqual(["my", "pair"]);
+      });
+
+      it("should throw an error with strategy `only_second` and no pair is encoded", async () => {
+        tokenizer.setTruncation(2, { strategy: "only_second" });
+        await expect(encode("my name is john", null)).rejects.toThrow();
+      });
+    });
+
+    describe("when padding is enabled", () => {
+      it("should not pad anything with default options", async () => {
+        tokenizer.setPadding();
+
+        const singleEncoding = await encode("my name", null);
+        expect(singleEncoding.getTokens()).toEqual(["my", "name"]);
+
+        const pairEncoding = await encode("my name", "pair");
+        expect(pairEncoding.getTokens()).toEqual(["my", "name", "pair"]);
+      });
+
+      it("should pad to the right by default", async () => {
+        tokenizer.setPadding({ maxLength: 5 });
+
+        const singleEncoding = await encode("my name", null);
+        expect(singleEncoding.getTokens()).toEqual([
+          "my",
+          "name",
+          "[PAD]",
+          "[PAD]",
+          "[PAD]"
+        ]);
+
+        const pairEncoding = await encode("my name", "pair");
+        expect(pairEncoding.getTokens()).toEqual([
+          "my",
+          "name",
+          "pair",
+          "[PAD]",
+          "[PAD]"
+        ]);
+      });
+    });
   });
 });
