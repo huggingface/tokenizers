@@ -109,6 +109,11 @@ class CharDelimiterSplit(PreTokenizer):
     """
 
     @staticmethod
-    def new() -> PreTokenizer:
-        """ Instantiate a new CharDelimiterSplit PreTokenizer """
+    def new(delimiter: str) -> PreTokenizer:
+        """ Instantiate a new CharDelimiterSplit PreTokenizer
+
+        Args:
+            delimiter: str:
+                The delimiter char that will be used to split input
+        """
         pass
