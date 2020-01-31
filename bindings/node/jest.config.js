@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 // For a detailed explanation regarding each configuration property, visit:
 // https://jestjs.io/docs/en/configuration.html
 
@@ -181,7 +182,12 @@ module.exports = {
   // verbose: null,
 
   // An array of regexp patterns that are matched against all source file paths before re-running tests in watch mode
-  // watchPathIgnorePatterns: [],
+  watchPathIgnorePatterns: [
+    "<rootDir>/node_modules/",
+    "<rootDir>/native/",
+    "<rootDir>/dist/",
+    "<rootDir>/build/"
+  ],
 
   // Whether to use watchman for file crawling
   // watchman: true,
