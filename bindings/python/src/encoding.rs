@@ -77,8 +77,8 @@ impl PyMappingProtocol for IndexableString {
 
         // Get the range from the relevant string
         let s = match self.t {
-            IndexableStringType::Original => self.s.get_range(range),
-            IndexableStringType::Normalized => self.s.get_range_original(range),
+            IndexableStringType::Original => self.s.get_range_original(range),
+            IndexableStringType::Normalized => self.s.get_range(range),
         };
 
         s.map(|s| s.to_owned())
