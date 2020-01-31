@@ -148,6 +148,48 @@ declare_types! {
             }
         }
 
+        method getOriginalString(mut cx) {
+            // getOriginalString(begin?: number, end?: number)
+            let this = cx.this();
+            let guard = cx.lock();
+
+            let normalized = this.borrow(&guard).encoding.execute(|encoding| {
+                encoding.unwrap().get_normalized().clone()
+            });
+
+            let get_index = |x: i32| -> usize {
+                if x >= 0 {
+                    x as usize
+                } else {
+                    (normalized.len_original() as i32 + x) as usize
+                }
+            };
+
+            if let Some(begin_arg) = cx.argument_opt(0) {
+                let begin = begin_arg.downcast::<JsNumber>().or_throw(&mut cx)?.value() as i32;
+                let begin_index = get_index(begin);
+
+                let end_index = if let Some(end_arg) = cx.argument_opt(1) {
+                    let end = end_arg.downcast::<JsNumber>().or_throw(&mut cx)?.value() as i32;
+                    get_index(end)
+                } else {
+                    normalized.len_original()
+                };
+
+
+                let original = normalized.get_range_original(begin_index..end_index);
+
+                if let Some(original) = original {
+                    Ok(cx.string(original).upcast())
+                } else {
+                    cx.throw_error("Error in offsets")
+                }
+            } else {
+                let original = normalized.get_original();
+                Ok(cx.string(original.to_owned()).upcast())
+            }
+        }
+
         method pad(mut cx) {
             // pad(length: number, options?: {
             //   direction?: 'left' | 'right' = 'right',
