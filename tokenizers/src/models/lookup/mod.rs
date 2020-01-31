@@ -1,9 +1,9 @@
+use crate::tokenizer::{Model, Result, Token};
 use std::collections::HashMap;
-use crate::tokenizer::{Model, Token, Result};
-use std::path::{Path, PathBuf};
+use std::fmt;
 use std::fs::File;
 use std::io::Write;
-use std::fmt;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub enum Error {
@@ -27,12 +27,11 @@ struct Config {
     unk_token: String,
 }
 
-/// A `LookupTableModelBuilder` can be used to create a `LookupTableMOdel`
+/// A `LookupTableModelBuilder` can be used to create a `LookupTableModel`
 /// model with a custom configuration.
 pub struct LookupTableBuilder {
     config: Config,
 }
-
 
 impl Default for LookupTableBuilder {
     fn default() -> Self {
@@ -79,7 +78,6 @@ impl LookupTableBuilder {
     }
 }
 
-
 pub struct LookupTable {
     vocab: HashMap<String, u32>,
     vocab_r: HashMap<u32, String>,
@@ -96,7 +94,6 @@ impl Default for LookupTable {
     }
 }
 
-
 impl Model for LookupTable {
     fn tokenize(&self, tokens: Vec<(String, (usize, usize))>) -> Result<Vec<Token>> {
         let mut output_tokens = vec![];
@@ -109,7 +106,7 @@ impl Model for LookupTable {
                     .or(self.vocab.get(&*self.unk_token))
                     .ok_or(Error::MissingUnkToken)?,
                 value: token,
-                offsets: initial_offsets
+                offsets: initial_offsets,
             };
 
             output_tokens.push(t);
