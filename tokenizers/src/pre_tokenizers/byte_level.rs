@@ -65,7 +65,7 @@ impl PreTokenizer for ByteLevel {
                 // if our last character is a whitespace, followed by a non whitespace,
                 // we don't want to return it
                 let last = s[start..end].chars().last();
-                let next = s[end..].chars().nth(0);
+                let next = s[end..].chars().next();
                 if let (Some(last), Some(next)) = (last, next) {
                     if last.is_separator_space() && !next.is_separator_space() {
                         if let Some((_last, others)) =
@@ -80,7 +80,7 @@ impl PreTokenizer for ByteLevel {
                 // if our first char is not a whitespace but the previous one was, we return
                 // a whitespace before our match
                 let prev = s[0..start].chars().last();
-                let current = s[start..end].chars().nth(0).map(|c| c.is_whitespace());
+                let current = s[start..end].chars().next().map(|c| c.is_whitespace());
                 if let (Some(prev), Some(current)) = (prev, current) {
                     if prev.is_separator_space() && !current {
                         let bytes =
