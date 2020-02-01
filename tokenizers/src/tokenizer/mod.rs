@@ -331,7 +331,7 @@ impl Tokenizer {
             }
 
             let others = encodings.split_off(1);
-            let mut first: Encoding = encodings.into_iter().nth(0).unwrap();
+            let mut first: Encoding = encodings.into_iter().next().unwrap();
 
             for encoding in others {
                 first.merge_with(encoding);
@@ -627,7 +627,7 @@ impl Tokenizer {
                     let first_b = token
                         .content
                         .chars()
-                        .nth(0)
+                        .next()
                         .map(|c| {
                             if regex_syntax::is_word_character(c) {
                                 r"\b"
