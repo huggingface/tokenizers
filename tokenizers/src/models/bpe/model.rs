@@ -578,14 +578,12 @@ mod tests {
         // Set up vocab file.
         let mut vocab_file = NamedTempFile::new().unwrap();
         vocab_file
-            .write_all("{\"a\": 0, \"b\": 1, \"c\": 2, \"ab\": 3}".as_bytes())
+            .write_all(b"{\"a\": 0, \"b\": 1, \"c\": 2, \"ab\": 3}")
             .unwrap();
 
         // Set up merges file.
         let mut merges_file = NamedTempFile::new().unwrap();
-        merges_file
-            .write_all("#version: 0.2\na b".as_bytes())
-            .unwrap();
+        merges_file.write_all(b"#version: 0.2\na b").unwrap();
 
         // Make sure we can instantiate a BPE model from the files.
         let result = BPE::from_files(
@@ -612,14 +610,12 @@ mod tests {
         // Set up vocab file.
         let mut vocab_file = NamedTempFile::new().unwrap();
         vocab_file
-            .write_all("{\"a\": 0, \"b\": 1, \"c\": 2, \"ab\": 3}".as_bytes())
+            .write_all(b"{\"a\": 0, \"b\": 1, \"c\": 2, \"ab\": 3}")
             .unwrap();
 
         // Set up merges file.
         let mut merges_file = NamedTempFile::new().unwrap();
-        merges_file
-            .write_all("#version: 0.2\na b\na d".as_bytes())
-            .unwrap();
+        merges_file.write_all(b"#version: 0.2\na b\na d").unwrap();
 
         // Ensure the result of BPE::from_files is a MergeTokenOutOfVocabulary error.
         match BPE::from_files(
@@ -648,9 +644,7 @@ mod tests {
 
         // Set up merges file with a bad line.
         let mut merges_file = NamedTempFile::new().unwrap();
-        merges_file
-            .write_all("#version: 0.2\na b\nc".as_bytes())
-            .unwrap();
+        merges_file.write_all(b"#version: 0.2\na b\nc").unwrap();
 
         // Ensure the result of BPE::from_files is a BadMerges error.
         match BPE::from_files(
