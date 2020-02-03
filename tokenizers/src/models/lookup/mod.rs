@@ -2,12 +2,14 @@ use crate::tokenizer::{Model, Result, Token};
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Write, BufReader, Read};
 use std::path::{Path, PathBuf};
+use serde_json::Value;
 
 #[derive(Debug)]
 pub enum Error {
     MissingUnkToken,
+    BadVocabulary
 }
 impl std::error::Error for Error {}
 
@@ -18,6 +20,10 @@ impl fmt::Display for Error {
                 fmt,
                 "LookupTable error: Missing [UNK] token from the vocabulary"
             ),
+            Error::BadVocabulary => write!(
+                fmt,
+                "Bad vocabulary json file"
+            )
         }
     }
 }
@@ -45,7 +51,7 @@ impl Default for LookupTableBuilder {
 }
 
 impl LookupTableBuilder {
-    /// Construct a new `WordPieceBuilder`.
+    /// Construct a new `LookupTableBuilder`.
     pub fn new() -> Self {
         Self::default()
     }
@@ -82,6 +88,36 @@ pub struct LookupTable {
     vocab: HashMap<String, u32>,
     vocab_r: HashMap<u32, String>,
     unk_token: String,
+}
+
+impl LookupTable {
+    fn builder() -> LookupTableBuilder { LookupTableBuilder::new() }
+
+    /// Initialize a LookupTable model from vocab and merges file.
+    pub fn from_files(vocab_path: &str, unk_token: String) -> Result<LookupTable> {
+        // Read vocab.json
+        let vocab_file = File::open(vocab_path)?;
+        let mut vocab_file = BufReader::new(vocab_file);
+        let mut buffer = String::new();
+        let mut vocab = HashMap::new();
+
+        vocab_file.read_to_string(&mut buffer)?;
+        let json: Value = serde_json::from_str(&buffer)?;
+
+        match json {
+            Value::Object(m) => {
+                for (token, id) in m {
+                    if let Value::Number(id) = id {
+                        let id = id.as_u64().ok_or(Error::BadVocabulary)? as u32;
+                        vocab.insert(token, id);
+                    }
+                }
+            }
+            _ => return Err(Box::new(Error::BadVocabulary)),
+        };
+
+        Ok(Self::builder().vocab(vocab).unk_token(unk_token).build())
+    }
 }
 
 impl Default for LookupTable {

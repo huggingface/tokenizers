@@ -162,7 +162,7 @@ impl LookupTable {
     #[staticmethod]
     #[args(kwargs = "**")]
     fn from_files(vocab: &str, kwargs: Option<&PyDict>) -> PyResult<Model> {
-        let mut unk_token = String::from("[UNK]");
+        let mut unk_token = String::from("<unk>");
 
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -181,11 +181,11 @@ impl LookupTable {
             Err(e) => {
                 println!("Errors: {:?}", e);
                 Err(exceptions::Exception::py_err(
-                    "Error while initializing WordPiece",
+                    "Error while initializing LookupTable",
                 ))
             }
-            Ok(wordpiece) => Ok(Model {
-                model: Container::Owned(Box::new(wordpiece)),
+            Ok(model) => Ok(Model {
+                model: Container::Owned(Box::new(model)),
             }),
         }
     }
