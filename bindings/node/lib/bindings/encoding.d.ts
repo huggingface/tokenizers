@@ -18,9 +18,9 @@ export interface Encoding {
   getOffsets(): [number, number][];
 
   /**
-   * Returns the overflowing encoding, after truncation
+   * Returns the overflowing encodings, after truncation
    */
-  getOverflowing(): Encoding | undefined;
+  getOverflowing(): Encoding[];
 
   /**
    * Returns the special tokens mask
