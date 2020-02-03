@@ -1,3 +1,5 @@
+#![warn(clippy::all)]
+
 extern crate neon;
 extern crate tokenizers as tk;
 

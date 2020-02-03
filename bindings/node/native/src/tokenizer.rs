@@ -10,6 +10,10 @@ use crate::trainers::JsTrainer;
 use crate::utils::Container;
 use neon::prelude::*;
 
+use tk::tokenizer::{
+    PaddingDirection, PaddingParams, PaddingStrategy, TruncationParams, TruncationStrategy,
+};
+
 /// Tokenizer
 pub struct Tokenizer {
     tokenizer: tk::tokenizer::Tokenizer,
@@ -296,6 +300,129 @@ declare_types! {
             );
 
             Ok(cx.number(added as f64).upcast())
+        }
+
+        method setTruncation(mut cx) {
+            // setTruncation(maxLength: number, options?: { stride?: number; strategy?: string })
+            let max_length = cx.argument::<JsNumber>(0)?.value() as usize;
+
+            let mut stride = 0;
+            let mut strategy = TruncationStrategy::LongestFirst;
+
+            let options = cx.argument_opt(1);
+            if let Some(options) = options {
+                if let Ok(options) = options.downcast::<JsObject>() {
+                    if let Ok(stride_opt) = options.get(&mut cx, "stride") {
+                        if stride_opt.downcast::<JsUndefined>().is_err() {
+                            stride = stride_opt.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize;
+                        }
+                    }
+                    if let Ok(strat_opt) = options.get(&mut cx, "strategy") {
+                        if strat_opt.downcast::<JsUndefined>().is_err() {
+                            let strat_opt = strat_opt.downcast::<JsString>().or_throw(&mut cx)?.value();
+                            match &strat_opt[..] {
+                                "longest_first" => strategy = TruncationStrategy::LongestFirst,
+                                "only_first" => strategy = TruncationStrategy::OnlyFirst,
+                                "only_second" => strategy = TruncationStrategy::OnlySecond,
+                                _ => return cx.throw_error("strategy can only be 'longest_first', 'only_first' or 'only_second'"),
+                            }
+                        }
+                    }
+                }
+            }
+
+            let mut this = cx.this();
+            {
+                let guard = cx.lock();
+                let mut tokenizer = this.borrow_mut(&guard);
+                tokenizer.tokenizer.with_truncation(Some(TruncationParams {
+                    max_length,
+                    stride,
+                    strategy,
+                }));
+            }
+
+            Ok(cx.undefined().upcast())
+        }
+
+        method disableTruncation(mut cx) {
+            let mut this = cx.this();
+            let guard = cx.lock();
+            this.borrow_mut(&guard).tokenizer.with_truncation(None);
+            Ok(cx.undefined().upcast())
+        }
+
+        method setPadding(mut cx) {
+            // setPadding(options?: { direction?: "left" | "right"; padId?: number?; padTypeId?: number?; padToken: string; maxLength?: number })
+            let mut direction = PaddingDirection::Right;
+            let mut pad_id: u32 = 0;
+            let mut pad_type_id: u32 = 0;
+            let mut pad_token = String::from("[PAD]");
+            let mut max_length: Option<usize> = None;
+
+            let options = cx.argument_opt(0);
+            if let Some(options) = options {
+                if let Ok(options) = options.downcast::<JsObject>() {
+                    if let Ok(dir) = options.get(&mut cx, "direction") {
+                        if dir.downcast::<JsUndefined>().is_err() {
+                            let dir = dir.downcast::<JsString>().or_throw(&mut cx)?.value();
+                            match &dir[..] {
+                                "left" => direction = PaddingDirection::Left,
+                                "right" => direction = PaddingDirection::Right,
+                                _ => return cx.throw_error("direction can only be 'left' or 'right'"),
+                            }
+                        }
+                    }
+                    if let Ok(p_id) = options.get(&mut cx, "padId") {
+                        if p_id.downcast::<JsUndefined>().is_err() {
+                            pad_id = p_id.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32;
+                        }
+                    }
+                    if let Ok(p_type_id) = options.get(&mut cx, "padTypeId") {
+                        if p_type_id.downcast::<JsUndefined>().is_err() {
+                            pad_type_id = p_type_id.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32;
+                        }
+                    }
+                    if let Ok(p_token) = options.get(&mut cx, "padToken") {
+                        if p_token.downcast::<JsUndefined>().is_err() {
+                            pad_token = p_token.downcast::<JsString>().or_throw(&mut cx)?.value();
+                        }
+                    }
+                    if let Ok(max_l) = options.get(&mut cx, "maxLength") {
+                        if max_l.downcast::<JsUndefined>().is_err() {
+                            max_length = Some(max_l.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize);
+                        }
+                    }
+                }
+            }
+
+            let strategy = if let Some(max_length) = max_length {
+                PaddingStrategy::Fixed(max_length)
+            } else {
+                PaddingStrategy::BatchLongest
+            };
+
+            let mut this = cx.this();
+            {
+                let guard = cx.lock();
+                let mut tokenizer = this.borrow_mut(&guard);
+                tokenizer.tokenizer.with_padding(Some(PaddingParams {
+                    strategy,
+                    direction,
+                    pad_id,
+                    pad_type_id,
+                    pad_token: pad_token.to_owned(),
+                }));
+            }
+
+            Ok(cx.undefined().upcast())
+        }
+
+        method disablePadding(mut cx) {
+            let mut this = cx.this();
+            let guard = cx.lock();
+            this.borrow_mut(&guard).tokenizer.with_padding(None);
+            Ok(cx.undefined().upcast())
         }
 
         method train(mut cx) {

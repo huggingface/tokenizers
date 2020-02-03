@@ -1,9 +1,55 @@
 import { Decoder } from "./decoders";
+import { Encoding } from "./encoding";
 import { Model } from "./models";
 import { Normalizer } from "./normalizers";
 import { PostProcessor } from "./post-processors";
 import { PreTokenizer } from "./pre-tokenizers";
 import { Trainer } from "./trainers";
+
+export interface TruncationOptions {
+  /**
+   * The length of the previous sequence to be included in the overflowing sequence
+   * @default 0
+   */
+  stride?: number;
+  /**
+   * Strategy to use:
+   * - `longest_first` Iteratively reduce the inputs sequence until the input is under max_length
+   * starting from the longest one at each token (when there is a pair of input sequences).
+   * - `only_first` Only truncate the first sequence.
+   * - `only_second` Only truncate the second sequence.
+   * @default "longest_first"
+   */
+  strategy?: "longest_first" | "only_first" | "only_second";
+}
+
+export interface PaddingOptions {
+  /**
+   * @default "right"
+   */
+  direction?: "left" | "right";
+  /**
+   * Padding length. If not provided:
+   * - Will default to the longest sequence when encoding in batch.
+   * - No padding will be applied when single encoding
+   */
+  maxLength?: number;
+  /**
+   * The index to be used when padding
+   * @default 0
+   */
+  padId?: number;
+  /**
+   * The type index to be used when padding
+   * @default 0
+   */
+  padTypeId?: number;
+  /**
+   * The pad token to be used when padding
+   * @default "[PAD]"
+   */
+  padToken?: string;
+}
 
 /**
  * A Tokenizer works as a pipeline, it processes some raw text as input and outputs
@@ -103,6 +149,30 @@ export class Tokenizer {
   tokenToId(token: string): number | undefined;
 
   /**
+   * Enable/change padding with specified options
+   * @param [options] Padding options
+   */
+  setPadding(options?: PaddingOptions): void;
+
+  /**
+   * Disable padding
+   */
+  disablePadding(): void;
+
+  /**
+   * Enable/change truncation with specified options
+   *
+   * @param maxLength The maximum length at which to truncate
+   * @param [options] Additional truncation options
+   */
+  setTruncation(maxLength: number, options?: TruncationOptions): void;
+
+  /**
+   * Disable truncation
+   */
+  disableTruncation(): void;
+
+  /**
    * Train the model using the given files
    *
    * @param trainer Trainer to use
@@ -186,94 +256,4 @@ export class Tokenizer {
    * @throws Will throw an error if the decoder is already used in another Tokenizer
    */
   setDecoder(decoder: Decoder): void;
-}
-
-/**
- * An Encoding as returned by the Tokenizer
- */
-interface Encoding {
-  /**
-   * Returns the attention mask
-   */
-  getAttentionMask(): number[];
-
-  /**
-   * Returns the tokenized ids
-   */
-  getIds(): number[];
-
-  /**
-   * Returns the offsets
-   */
-  getOffsets(): [number, number][];
-
-  /**
-   * Returns the overflowing encoding, after truncation
-   */
-  getOverflowing(): Encoding | undefined;
-
-  /**
-   * Returns the special tokens mask
-   */
-  getSpecialTokensMask(): number;
-
-  /**
-   * Returns the tokenized string
-   */
-  getTokens(): string[];
-
-  /**
-   * Returns the type ids
-   */
-  getTypeIds(): number[];
-
-  /**
-   * Returns the original string
-   *
-   * @param [begin] The index from which to start (can be negative).
-   * @param [end] The index (excluded) to which to stop (can be negative).
-   * Stopping at the end of the string if not provided.
-   * @returns The full original string if no parameter is provided,
-   * otherwise the original string between `begin` and `end`
-   */
-  getOriginalString(begin?: number, end?: number): string;
-
-  /**
-   * Pad the current Encoding at the given length
-   *
-   * @param length The length at which to pad
-   * @param [options] Padding options
-   */
-  pad(length: number, options?: PaddingOptions): void;
-
-  /**
-   * Truncate the current Encoding at the given max_length
-   *
-   * @param length The maximum length to be kept
-   * @param [stride=0] The length of the previous first sequence
-   * to be included in the overflowing sequence
-   */
-  truncate(length: number, stride?: number): void;
-}
-
-interface PaddingOptions {
-  /**
-   * @default "right"
-   */
-  direction?: "left" | "right";
-  /**
-   * The index to be used when padding
-   * @default 0
-   */
-  padId?: number;
-  /**
-   * The type index to be used when padding
-   * @default 0
-   */
-  padTypeId?: number;
-  /**
-   * The pad token to be used when padding
-   * @default "[PAD]"
-   */
-  padToken?: string;
 }

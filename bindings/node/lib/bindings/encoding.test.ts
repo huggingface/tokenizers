@@ -1,7 +1,8 @@
 import { promisify } from "util";
 
+import { Encoding } from "./encoding";
 import { BPE } from "./models";
-import { Encoding, Tokenizer } from "./tokenizer";
+import { Tokenizer } from "./tokenizer";
 
 describe("Encoding", () => {
   const originalString = "my name is john";

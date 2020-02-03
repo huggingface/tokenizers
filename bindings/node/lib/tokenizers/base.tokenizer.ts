@@ -1,6 +1,9 @@
 import { promisify } from "util";
 
-import { Encoding, Tokenizer } from "../bindings/tokenizer";
+import { Encoding } from "../bindings/encoding";
+import { PaddingOptions, Tokenizer, TruncationOptions } from "../bindings/tokenizer";
+
+export { Encoding, TruncationOptions };
 
 export class BaseTokenizer {
   constructor(protected tokenizer: Tokenizer) {}
@@ -25,5 +28,37 @@ export class BaseTokenizer {
   async encodeBatch(sequences: (string | [string, string])[]): Promise<Encoding[]> {
     const encodeBatch = promisify(this.tokenizer.encodeBatch.bind(this.tokenizer));
     return encodeBatch(sequences);
+  }
+
+  /**
+   * Enable/change truncation with specified options
+   *
+   * @param maxLength The maximum length at which to truncate
+   * @param options Additional truncation options
+   */
+  setTruncation(maxLength: number, options?: TruncationOptions): void {
+    return this.tokenizer.setTruncation(maxLength, options);
+  }
+
+  /**
+   * Disable truncation
+   */
+  disableTruncation(): void {
+    return this.tokenizer.disableTruncation();
+  }
+
+  /**
+   * Enable/change padding with specified options
+   * @param [options] Padding options
+   */
+  setPadding(options?: PaddingOptions): void {
+    return this.tokenizer.setPadding(options);
+  }
+
+  /**
+   * Disable padding
+   */
+  disablePadding(): void {
+    return this.tokenizer.disablePadding();
   }
 }
