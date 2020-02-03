@@ -26,6 +26,8 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         else:
             tokenizer = Tokenizer(BPE.empty())
 
+        tokenizer.add_special_tokens([ unk_token ])
+
         tokenizer.normalizer = NFKC.new()
         tokenizer.pre_tokenizer = pre_tokenizers.Metaspace.new(replacement=replacement,
                                                                add_prefix_space=add_prefix_space)
