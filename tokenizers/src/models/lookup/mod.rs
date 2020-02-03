@@ -115,11 +115,11 @@ impl Model for LookupTable {
         Ok(output_tokens)
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> { self.vocab.get(token).copied(); }
+    fn token_to_id(&self, token: &str) -> Option<u32> { self.vocab.get(token).copied() }
 
-    fn id_to_token(&self, id: u32) -> Option<String> { self.vocab_r.get(&id).cloned(); }
+    fn id_to_token(&self, id: u32) -> Option<String> { self.vocab_r.get(&id).cloned() }
 
-    fn get_vocab_size(&self) -> usize { self.vocab.keys().len(); }
+    fn get_vocab_size(&self) -> usize { self.vocab.keys().len() }
 
     fn save(&self, folder: &Path, name: &str) -> Result<Vec<PathBuf>> {
         // Write vocab.txt
