@@ -27,6 +27,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
         else:
             tokenizer = Tokenizer(WordPiece.empty())
 
+        tokenizer.add_special_tokens([ unk_token, sep_token, cls_token ])
         tokenizer.normalizer = BertNormalizer.new(clean_text=clean_text,
                                                   handle_chinese_chars=handle_chinese_chars,
                                                   strip_accents=strip_accents,
