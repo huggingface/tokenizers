@@ -8,13 +8,13 @@ jest.mock("../bindings/tokenizer");
 
 describe("BertWordPieceTokenizer", () => {
   describe("fromOptions", () => {
-    it("should not throw any error if no vocabFile is provided", async () => {
-      const tokeniser = await BertWordPieceTokenizer.fromOptions();
-      expect(tokeniser).toBeDefined();
+    it("does not throw any error if no vocabFile is provided", async () => {
+      const tokenizer = await BertWordPieceTokenizer.fromOptions();
+      expect(tokenizer).toBeDefined();
     });
 
     describe("when a vocabFile is provided and `addSpecialTokens === true`", () => {
-      it("should throw a `sepToken error` if no `sepToken` is provided", () => {
+      it("throws a `sepToken error` if no `sepToken` is provided", () => {
         const options: BertWordPieceOptions = {
           vocabFile: "./fake.txt",
           sepToken: undefined
@@ -26,7 +26,7 @@ describe("BertWordPieceTokenizer", () => {
         );
       });
 
-      it("should throw a `clsToken error` if no `clsToken` is provided", () => {
+      it("throws a `clsToken error` if no `clsToken` is provided", () => {
         const options: BertWordPieceOptions = {
           vocabFile: "./fake.txt",
           clsToken: undefined
