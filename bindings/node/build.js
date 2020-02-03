@@ -30,7 +30,7 @@ shell.cd(rootDirectory);
 
 run()
   // Prevent "unhandledRejection" events, allowing to actually exit with error
-  .catch(() => {});
+  .catch(() => process.exit(1));
 
 /***************************************/
 
