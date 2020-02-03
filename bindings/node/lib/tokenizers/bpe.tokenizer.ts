@@ -105,6 +105,7 @@ export class BPETokenizer extends BaseTokenizer {
     }
 
     const tokenizer = new Tokenizer(model);
+    tokenizer.addSpecialTokens([opts.unkToken]);
 
     const normalizer = sequenceNormalizer([nfkcNormalizer(), lowercaseNormalizer()]);
     tokenizer.setNormalizer(normalizer);

@@ -131,6 +131,7 @@ export class BertWordPieceTokenizer extends BaseTokenizer {
     }
 
     const tokenizer = new Tokenizer(model);
+    tokenizer.addSpecialTokens([opts.clsToken, opts.sepToken, opts.unkToken]);
 
     const normalizer = bertNormalizer(opts);
     tokenizer.setNormalizer(normalizer);
@@ -147,13 +148,11 @@ export class BertWordPieceTokenizer extends BaseTokenizer {
         throw new Error("clsToken not found in the vocabulary");
       }
 
-      if (opts.addSpecialTokens) {
-        const processor = bertProcessing(
-          [opts.sepToken, sepTokenId],
-          [opts.clsToken, clsTokenId]
-        );
-        tokenizer.setPostProcessor(processor);
-      }
+      const processor = bertProcessing(
+        [opts.sepToken, sepTokenId],
+        [opts.clsToken, clsTokenId]
+      );
+      tokenizer.setPostProcessor(processor);
     }
 
     const decoder = wordPieceDecoder(opts.wordpiecesPrefix);
