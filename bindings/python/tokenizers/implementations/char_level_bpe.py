@@ -1,11 +1,12 @@
-from tokenizers import Tokenizer, pre_tokenizers, decoders, trainers
-from tokenizers.models import BPE
-from tokenizers.normalizers import NFKC, Sequence, Lowercase
+from .. import Tokenizer, pre_tokenizers, decoders, trainers
+from ..models import BPE
+from ..normalizers import Sequence, Lowercase, unicode_normalizer_from_str
 from .base_tokenizer import BaseTokenizer
 
 from typing import Optional, List, Union
 
-class BPETokenizer(BaseTokenizer):
+
+class CharBPETokenizer(BaseTokenizer):
     """ Original BPE Tokenizer
 
     Represents the BPE algorithm, as introduced by Rico Sennrich (https://arxiv.org/abs/1508.07909)
@@ -16,20 +17,38 @@ class BPETokenizer(BaseTokenizer):
                  merges_file: Optional[str]=None,
                  unk_token: Optional[str]="<unk>",
                  suffix: Optional[str]="</w>",
-                 dropout: Optional[float]=None):
+                 dropout: Optional[float]=None,
+                 do_lowercase: bool = False,
+                 unicode_normalizer: Optional[str] = None):
         if vocab_file is not None and merges_file is not None:
-            tokenizer = Tokenizer(BPE.from_files(vocab_file,
-                                                 merges_file,
-                                                 dropout=dropout,
-                                                 unk_token=unk_token,
-                                                 end_of_word_suffix=suffix))
+            tokenizer = Tokenizer(
+                BPE.from_files(
+                    vocab_file,
+                    merges_file,
+                    dropout=dropout,
+                    unk_token=unk_token,
+                    end_of_word_suffix=suffix
+                )
+            )
         else:
             tokenizer = Tokenizer(BPE.empty())
 
-        tokenizer.normalizer = Sequence.new([
-            NFKC.new(),
-            Lowercase.new()
-        ])
+        # Check for Unicode normalization first (before everything else)
+        normalizers = []
+
+        if unicode_normalizer:
+            normalizers += [unicode_normalizer_from_str(unicode_normalizer)]
+
+        if do_lowercase:
+            normalizers += [Lowercase.new()]
+
+        # Create the normalizer structure
+        if len(normalizers) > 0:
+            if len(normalizers) > 1:
+                tokenizer.normalizer = Sequence.new(normalizers)
+            else:
+                tokenizer.normalizer = normalizers[0]
+
         tokenizer.pre_tokenizer = pre_tokenizers.WhitespaceSplit.new()
         tokenizer.decoder = decoders.BPEDecoder.new(suffix=suffix)
 

@@ -9,7 +9,7 @@ from .tokenizers import processors
 from .tokenizers import trainers
 from .implementations import (
     ByteLevelBPETokenizer,
-    BPETokenizer,
+    CharBPETokenizer,
     SentencePieceBPETokenizer,
     BertWordPieceTokenizer
 )
