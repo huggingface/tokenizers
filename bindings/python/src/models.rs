@@ -153,3 +153,40 @@ impl WordPiece {
         }
     }
 }
+
+#[pyclass]
+pub struct LookupTable {}
+
+#[pymethods]
+impl LookupTable {
+    #[staticmethod]
+    #[args(kwargs = "**")]
+    fn from_files(vocab: &str, kwargs: Option<&PyDict>) -> PyResult<Model> {
+        let mut unk_token = String::from("[UNK]");
+
+        if let Some(kwargs) = kwargs {
+            for (key, val) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "unk_token" => unk_token = val.extract()?,
+                    _ => println!("Ignored unknown kwargs option {}", key),
+                }
+            }
+        }
+
+        match tk::models::lookup::LookupTable::from_files(
+            vocab,
+            unk_token,
+        ) {
+            Err(e) => {
+                println!("Errors: {:?}", e);
+                Err(exceptions::Exception::py_err(
+                    "Error while initializing WordPiece",
+                ))
+            }
+            Ok(wordpiece) => Ok(Model {
+                model: Container::Owned(Box::new(wordpiece)),
+            }),
+        }
+    }
+}
