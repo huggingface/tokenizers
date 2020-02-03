@@ -1,6 +1,9 @@
 import { promisify } from "util";
 
-import { Encoding, Tokenizer } from "../bindings/tokenizer";
+import { Encoding } from "../bindings/encoding";
+import { Tokenizer } from "../bindings/tokenizer";
+
+export { Encoding };
 
 export class BaseTokenizer {
   constructor(protected tokenizer: Tokenizer) {}
