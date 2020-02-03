@@ -13,6 +13,18 @@ class BaseTokenizer:
             self._tokenizer.get_vocab_size(),
             ', '.join(k + '=' + str(v) for k, v in self._parameters.items()))
 
+    def get_vocab_size(self, with_added_tokens: bool = True):
+        """ Return the size of vocabulary, with or without added tokens.
+
+        Args:
+            with_added_tokens: (`optional`) bool:
+                Whether to count in added special tokens or not
+
+        Returns:
+            Size of vocabulary
+        """
+        return self._tokenizer.get_vocab_size(with_added_tokens=with_added_tokens)
+
     def enable_padding(self,
                        direction: Optional[str] = "right",
                        pad_id: Optional[int] = 0,
