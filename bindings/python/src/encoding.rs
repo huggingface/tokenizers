@@ -193,8 +193,13 @@ impl Encoding {
     }
 
     #[getter]
-    fn get_overflowing(&self) -> Option<Encoding> {
-        self.encoding.get_overflowing().cloned().map(Encoding::new)
+    fn get_overflowing(&self) -> Vec<Encoding> {
+        self.encoding
+            .get_overflowing()
+            .clone()
+            .into_iter()
+            .map(Encoding::new)
+            .collect()
     }
 
     #[args(kwargs = "**")]

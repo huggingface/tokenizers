@@ -101,7 +101,7 @@ describe("Tokenizer", () => {
         [8, 12],
         [12, 16]
       ]);
-      expect(encoding.getOverflowing()).toBeUndefined();
+      expect(encoding.getOverflowing()).toEqual([]);
       expect(encoding.getSpecialTokensMask()).toEqual([0, 0, 0, 0, 0]);
       expect(encoding.getTokens()).toEqual(["my", "name", "is", "john", "pair"]);
       expect(encoding.getTypeIds()).toEqual([0, 0, 0, 0, 1]);
