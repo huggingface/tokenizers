@@ -45,7 +45,7 @@ export function whitespaceSplitPreTokenizer(): PreTokenizer;
 export function bertPreTokenizer(): PreTokenizer;
 
 /**
- * Returns a new Metaspace Tokenizer.
+ * Returns a new Metaspace PreTokenizer.
  * This pre-tokenizer replaces any whitespace by the provided replacement character.
  * It then tries to split on these spaces.
  *
@@ -58,3 +58,12 @@ export function metaspacePreTokenizer(
   replacement?: string,
   addPrefixSpace?: boolean
 ): PreTokenizer;
+
+/**
+ * Returns a CharDelimiterSplit PreTokenizer
+ * This pre-tokenizer simply splits on the provided delimiter. Works almost like the `.split(delimiter)`
+ * function, except that it accounts for multiple consecutive spaces
+ *
+ * @param delimiter The delimiter character on which the sequence will be split.
+ */
+export function charDelimiterSplitPreTokenizer(delimiter: string): PreTokenizer;

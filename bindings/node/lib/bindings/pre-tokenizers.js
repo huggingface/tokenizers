@@ -6,5 +6,6 @@ module.exports = {
   whitespacePreTokenizer: native.pre_tokenizers_Whitespace,
   whitespaceSplitPreTokenizer: native.pre_tokenizers_WhitespaceSplit,
   bertPreTokenizer: native.pre_tokenizers_BertPreTokenizer,
-  metaspacePreTokenizer: native.pre_tokenizers_Metaspace
+  metaspacePreTokenizer: native.pre_tokenizers_Metaspace,
+  charDelimiterSplitPreTokenizer: native.pre_tokenizers_CharDelimiterSplit
 };

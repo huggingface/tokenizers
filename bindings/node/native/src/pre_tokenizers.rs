@@ -108,6 +108,23 @@ fn metaspace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     Ok(pretok)
 }
 
+/// char_delimiter_split(delimiter: string)
+fn char_delimiter_split(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
+    let argument = cx.argument::<JsString>(0)?.value();
+    let delimiter = argument.chars().nth(0).ok_or_else(|| {
+        cx.throw_error::<_, ()>("delimiter must be a character")
+            .unwrap_err()
+    })?;
+
+    let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    pretok.borrow_mut(&guard).pretok.to_owned(Box::new(
+        tk::pre_tokenizers::delimiter::CharDelimiterSplit::new(delimiter),
+    ));
+
+    Ok(pretok)
+}
+
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_ByteLevel", prefix), byte_level)?;
@@ -119,5 +136,9 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_WhitespaceSplit", prefix), whitespace_split)?;
     m.export_function(&format!("{}_BertPreTokenizer", prefix), bert_pre_tokenizer)?;
     m.export_function(&format!("{}_Metaspace", prefix), metaspace)?;
+    m.export_function(
+        &format!("{}_CharDelimiterSplit", prefix),
+        char_delimiter_split,
+    )?;
     Ok(())
 }
