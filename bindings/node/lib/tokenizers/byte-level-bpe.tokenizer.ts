@@ -34,12 +34,14 @@ export interface ByteLevelBPETrainOptions {
   vocabSize?: number;
 }
 
+type ByteLevelBPETokenizerConfig = ByteLevelBPETokenizerOptions &
+  Required<Pick<ByteLevelBPETokenizerOptions, "addPrefixSpace">>;
+
 /**
  * Represents a Byte-level BPE as introduced by OpenAI with their GPT-2 model
  */
-export class ByteLevelBPETokenizer extends BaseTokenizer {
-  private static readonly defaultOptions: ByteLevelBPETokenizerOptions &
-    Required<Pick<ByteLevelBPETokenizerOptions, "addPrefixSpace">> = {
+export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerConfig> {
+  private static readonly defaultOptions: ByteLevelBPETokenizerConfig = {
     addPrefixSpace: false
   };
 
@@ -50,8 +52,8 @@ export class ByteLevelBPETokenizer extends BaseTokenizer {
     vocabSize: 30000
   };
 
-  private constructor(tokenizer: Tokenizer) {
-    super(tokenizer);
+  private constructor(tokenizer: Tokenizer, configuration: ByteLevelBPETokenizerConfig) {
+    super(tokenizer, configuration);
   }
 
   static async fromOptions(
@@ -75,7 +77,7 @@ export class ByteLevelBPETokenizer extends BaseTokenizer {
     tokenizer.setPreTokenizer(preTokenizer);
     tokenizer.setDecoder(byteLevelDecoder());
 
-    return new ByteLevelBPETokenizer(tokenizer);
+    return new ByteLevelBPETokenizer(tokenizer, opts);
   }
 
   /**

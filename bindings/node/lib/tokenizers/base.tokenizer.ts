@@ -3,9 +3,16 @@ import { promisify } from "util";
 import { Encoding } from "../bindings/encoding";
 import { PaddingOptions, Tokenizer, TruncationOptions } from "../bindings/tokenizer";
 
+export class BaseTokenizer<TConfig extends object> {
 
-export class BaseTokenizer {
-  constructor(protected tokenizer: Tokenizer) {}
+  constructor(
+    protected tokenizer: Tokenizer,
+    /**
+     * @since 0.4.0
+     */
+    readonly configuration: Readonly<TConfig>
+  ) {}
+
 
   /**
    * Add the given tokens to the vocabulary
