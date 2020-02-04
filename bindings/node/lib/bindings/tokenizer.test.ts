@@ -1,9 +1,9 @@
 import { promisify } from "util";
 
 import { Encoding } from "./encoding";
-import { TruncationStrategy } from "./enums";
+import { PaddingDirection, TruncationStrategy } from "./enums";
 import { BPE } from "./models";
-import { Tokenizer } from "./tokenizer";
+import { PaddingConfiguration, Tokenizer, TruncationConfiguration } from "./tokenizer";
 
 // jest.mock('../bindings/tokenizer');
 // jest.mock('../bindings/models', () => ({
@@ -156,6 +156,31 @@ describe("Tokenizer", () => {
           "[PAD]",
           "[PAD]"
         ]);
+      });
+    });
+
+    describe("setTruncation", () => {
+      it("returns the full truncation configuration", () => {
+        const truncation = tokenizer.setTruncation(2);
+        const expectedConfig: TruncationConfiguration = {
+          maxLength: 2,
+          strategy: TruncationStrategy.LongestFirst,
+          stride: 0
+        };
+        expect(truncation).toEqual(expectedConfig);
+      });
+    });
+
+    describe("setPadding", () => {
+      it("returns the full padding params", () => {
+        const padding = tokenizer.setPadding();
+        const expectedConfig: PaddingConfiguration = {
+          direction: PaddingDirection.Right,
+          padId: 0,
+          padToken: "[PAD]",
+          padTypeId: 0
+        };
+        expect(padding).toEqual(expectedConfig);
       });
     });
   });

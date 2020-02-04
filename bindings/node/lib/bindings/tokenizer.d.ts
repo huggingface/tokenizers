@@ -24,6 +24,16 @@ export interface TruncationOptions {
   strategy?: TruncationStrategy;
 }
 
+export interface TruncationConfiguration extends Required<TruncationOptions> {
+  /**
+   * The maximum length at which to truncate
+   */
+  maxLength: number;
+}
+
+export type PaddingConfiguration = Required<Omit<PaddingOptions, "maxLength">> &
+  Pick<PaddingOptions, "maxLength">;
+
 export interface PaddingOptions {
   /**
    * @default "right"
@@ -153,7 +163,7 @@ export class Tokenizer {
    * Enable/change padding with specified options
    * @param [options] Padding options
    */
-  setPadding(options?: PaddingOptions): void;
+  setPadding(options?: PaddingOptions): PaddingConfiguration;
 
   /**
    * Disable padding
@@ -166,7 +176,7 @@ export class Tokenizer {
    * @param maxLength The maximum length at which to truncate
    * @param [options] Additional truncation options
    */
-  setTruncation(maxLength: number, options?: TruncationOptions): void;
+  setTruncation(maxLength: number, options?: TruncationOptions): TruncationConfiguration;
 
   /**
    * Disable truncation
