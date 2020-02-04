@@ -3,7 +3,6 @@ import { promisify } from "util";
 import { Encoding } from "../bindings/encoding";
 import { PaddingOptions, Tokenizer, TruncationOptions } from "../bindings/tokenizer";
 
-export { Encoding, TruncationOptions };
 
 export class BaseTokenizer {
   constructor(protected tokenizer: Tokenizer) {}

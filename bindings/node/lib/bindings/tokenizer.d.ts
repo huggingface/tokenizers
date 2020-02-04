@@ -1,5 +1,6 @@
 import { Decoder } from "./decoders";
 import { Encoding } from "./encoding";
+import { PaddingDirection, TruncationStrategy } from "./enums";
 import { Model } from "./models";
 import { Normalizer } from "./normalizers";
 import { PostProcessor } from "./post-processors";
@@ -20,14 +21,14 @@ export interface TruncationOptions {
    * - `only_second` Only truncate the second sequence.
    * @default "longest_first"
    */
-  strategy?: "longest_first" | "only_first" | "only_second";
+  strategy?: TruncationStrategy;
 }
 
 export interface PaddingOptions {
   /**
    * @default "right"
    */
-  direction?: "left" | "right";
+  direction?: PaddingDirection;
   /**
    * Padding length. If not provided:
    * - Will default to the longest sequence when encoding in batch.

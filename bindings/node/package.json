@@ -35,7 +35,7 @@
     "node": ">=10 < 11 || >=12 <14"
   },
   "scripts": {
-    "dev-ts": "rm -rf dist && tsc -p tsconfig.lib.json && ln -s $(pwd)/lib/bindings dist/bindings",
+    "dev-ts": "rm -rf dist && tsc -p tsconfig.lib.json && rsync -a $(pwd)/lib/bindings/ dist/bindings/",
     "dev-rs": "neon build",
     "dev": "npm run dev-rs && npm run dev-ts",
     "compile": "neon build --release",

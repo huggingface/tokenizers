@@ -1,6 +1,7 @@
 import { promisify } from "util";
 
 import { Encoding } from "./encoding";
+import { TruncationStrategy } from "./enums";
 import { BPE } from "./models";
 import { Tokenizer } from "./tokenizer";
 
@@ -119,7 +120,7 @@ describe("Tokenizer", () => {
       });
 
       it("throws an error with strategy `only_second` and no pair is encoded", async () => {
-        tokenizer.setTruncation(2, { strategy: "only_second" });
+        tokenizer.setTruncation(2, { strategy: TruncationStrategy.OnlySecond });
         await expect(encode("my name is john", null)).rejects.toThrow();
       });
     });

@@ -1,3 +1,5 @@
+import { PaddingDirection } from "./enums";
+
 /**
  * An Encoding as returned by the Tokenizer
  */
@@ -70,7 +72,7 @@ interface PaddingOptions {
   /**
    * @default "right"
    */
-  direction?: "left" | "right";
+  direction?: PaddingDirection;
   /**
    * The index to be used when padding
    * @default 0
