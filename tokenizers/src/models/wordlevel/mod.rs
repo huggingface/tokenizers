@@ -138,7 +138,7 @@ impl Model for WordLevel {
                 id: *self
                     .vocab
                     .get(&*token)
-                    .or(self.vocab.get(&*self.unk_token))
+                    .or_else(|| self.vocab.get(&*self.unk_token))
                     .ok_or(Error::MissingUnkToken)?,
                 value: token,
                 offsets: initial_offsets,
