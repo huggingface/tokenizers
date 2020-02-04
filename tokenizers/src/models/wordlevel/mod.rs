@@ -69,14 +69,14 @@ impl LookupTableBuilder {
     }
 
     /// Contructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
-    pub fn build(self) -> LookupTable {
+    pub fn build(self) -> WordLevel {
         let vocab_r = self
             .config
             .vocab
             .iter()
             .map(|(key, val)| (*val, key.to_owned()))
             .collect();
-        LookupTable {
+        WordLevel {
             vocab: self.config.vocab,
             vocab_r,
             unk_token: self.config.unk_token,
@@ -84,17 +84,17 @@ impl LookupTableBuilder {
     }
 }
 
-pub struct LookupTable {
+pub struct WordLevel {
     vocab: HashMap<String, u32>,
     vocab_r: HashMap<u32, String>,
     unk_token: String,
 }
 
-impl LookupTable {
+impl WordLevel {
     fn builder() -> LookupTableBuilder { LookupTableBuilder::new() }
 
     /// Initialize a LookupTable model from vocab and merges file.
-    pub fn from_files(vocab_path: &str, unk_token: String) -> Result<LookupTable> {
+    pub fn from_files(vocab_path: &str, unk_token: String) -> Result<WordLevel> {
         // Read vocab.json
         let vocab_file = File::open(vocab_path)?;
         let mut vocab_file = BufReader::new(vocab_file);
@@ -120,7 +120,7 @@ impl LookupTable {
     }
 }
 
-impl Default for LookupTable {
+impl Default for WordLevel {
     fn default() -> Self {
         Self {
             vocab: HashMap::new(),
@@ -130,7 +130,7 @@ impl Default for LookupTable {
     }
 }
 
-impl Model for LookupTable {
+impl Model for WordLevel {
     fn tokenize(&self, tokens: Vec<(String, (usize, usize))>) -> Result<Vec<Token>> {
         let mut output_tokens = vec![];
 

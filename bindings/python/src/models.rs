@@ -155,10 +155,10 @@ impl WordPiece {
 }
 
 #[pyclass]
-pub struct LookupTable {}
+pub struct WordLevel {}
 
 #[pymethods]
-impl LookupTable {
+impl WordLevel {
     #[staticmethod]
     #[args(kwargs = "**")]
     fn from_files(vocab: &str, kwargs: Option<&PyDict>) -> PyResult<Model> {
@@ -174,7 +174,7 @@ impl LookupTable {
             }
         }
 
-        match tk::models::lookup::LookupTable::from_files(
+        match tk::models::wordlevel::WordLevel::from_files(
             vocab,
             unk_token,
         ) {

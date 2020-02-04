@@ -28,7 +28,7 @@ fn models(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<models::Model>()?;
     m.add_class::<models::BPE>()?;
     m.add_class::<models::WordPiece>()?;
-    m.add_class::<models::LookupTable>()?;
+    m.add_class::<models::WordLevel>()?;
     Ok(())
 }
 

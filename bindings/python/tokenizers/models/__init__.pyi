@@ -89,14 +89,14 @@ class WordPiece(Model):
         pass
 
 
-class LookupTable(Model):
+class WordLevel(Model):
     """
     Most simple tokenizer model based on mapping token from a vocab file to their corresponding id.
     """
 
     @staticmethod
     def from_files(vocab: str, unk_token: str) -> Model:
-        """ Instantiate a LookupTable Model from the given vocab file.
+        """ Instantiate a WordLevel Model from the given vocab file.
 
         Args:
             vocab: string:
