@@ -25,7 +25,7 @@ export interface Encoding {
   /**
    * Returns the special tokens mask
    */
-  getSpecialTokensMask(): number;
+  getSpecialTokensMask(): number[];
 
   /**
    * Returns the tokenized string
