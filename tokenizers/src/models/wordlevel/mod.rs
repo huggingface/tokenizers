@@ -1,15 +1,15 @@
 use crate::tokenizer::{Model, Result, Token};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
-use std::io::{Write, BufReader, Read};
+use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use serde_json::Value;
 
 #[derive(Debug)]
 pub enum Error {
     MissingUnkToken,
-    BadVocabulary
+    BadVocabulary,
 }
 impl std::error::Error for Error {}
 
@@ -20,10 +20,7 @@ impl fmt::Display for Error {
                 fmt,
                 "LookupTable error: Missing [UNK] token from the vocabulary"
             ),
-            Error::BadVocabulary => write!(
-                fmt,
-                "Bad vocabulary json file"
-            )
+            Error::BadVocabulary => write!(fmt, "Bad vocabulary json file"),
         }
     }
 }
@@ -91,7 +88,9 @@ pub struct WordLevel {
 }
 
 impl WordLevel {
-    fn builder() -> LookupTableBuilder { LookupTableBuilder::new() }
+    fn builder() -> LookupTableBuilder {
+        LookupTableBuilder::new()
+    }
 
     /// Initialize a LookupTable model from vocab and merges file.
     pub fn from_files(vocab_path: &str, unk_token: String) -> Result<WordLevel> {
@@ -151,11 +150,17 @@ impl Model for WordLevel {
         Ok(output_tokens)
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> { self.vocab.get(token).copied() }
+    fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.vocab.get(token).copied()
+    }
 
-    fn id_to_token(&self, id: u32) -> Option<String> { self.vocab_r.get(&id).cloned() }
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.vocab_r.get(&id).cloned()
+    }
 
-    fn get_vocab_size(&self) -> usize { self.vocab.keys().len() }
+    fn get_vocab_size(&self) -> usize {
+        self.vocab.keys().len()
+    }
 
     fn save(&self, folder: &Path, name: &str) -> Result<Vec<PathBuf>> {
         // Write vocab.txt
