@@ -342,7 +342,16 @@ declare_types! {
                 }));
             }
 
-            Ok(cx.undefined().upcast())
+            let params_object = JsObject::new(&mut cx);
+            let obj_length = cx.number(max_length as f64);
+            let obj_stride = cx.number(stride as f64);
+            let obj_strat = cx.string(strategy);
+
+            params_object.set(&mut cx, "maxLength", obj_length).unwrap();
+            params_object.set(&mut cx, "stride", obj_stride).unwrap();
+            params_object.set(&mut cx, "strategy", obj_strat).unwrap();
+
+            Ok(params_object.upcast())
         }
 
         method disableTruncation(mut cx) {
@@ -415,7 +424,21 @@ declare_types! {
                 }));
             }
 
-            Ok(cx.undefined().upcast())
+            let params_object = JsObject::new(&mut cx);
+            if let Some(max_length) = max_length {
+                let obj_length = cx.number(max_length as f64);
+                params_object.set(&mut cx, "maxLength", obj_length).unwrap();
+            }
+            let obj_pad_id = cx.number(pad_id);
+            let obj_pad_type_id = cx.number(pad_type_id);
+            let obj_pad_token = cx.string(pad_token);
+            let obj_direction = cx.string(direction);
+            params_object.set(&mut cx, "padId", obj_pad_id).unwrap();
+            params_object.set(&mut cx, "padTypeId", obj_pad_type_id).unwrap();
+            params_object.set(&mut cx, "padToken", obj_pad_token).unwrap();
+            params_object.set(&mut cx, "direction", obj_direction).unwrap();
+
+            Ok(params_object.upcast())
         }
 
         method disablePadding(mut cx) {

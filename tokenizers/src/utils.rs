@@ -50,6 +50,16 @@ pub enum TruncationStrategy {
     OnlySecond,
 }
 
+impl std::convert::AsRef<str> for TruncationStrategy {
+    fn as_ref(&self) -> &str {
+        match self {
+            TruncationStrategy::LongestFirst => "longest_first",
+            TruncationStrategy::OnlyFirst => "only_first",
+            TruncationStrategy::OnlySecond => "only_second",
+        }
+    }
+}
+
 pub fn truncate_encodings(
     mut encoding: Encoding,
     mut pair_encoding: Option<Encoding>,
@@ -129,7 +139,7 @@ pub fn pad_encodings(
             params.pad_id,
             params.pad_type_id,
             &params.pad_token,
-            &params.direction,
+            params.direction,
         );
     }
 

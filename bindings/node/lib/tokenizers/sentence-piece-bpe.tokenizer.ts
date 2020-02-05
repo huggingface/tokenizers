@@ -54,12 +54,16 @@ export interface SentencePieceBPETrainOptions {
   vocabSize?: number;
 }
 
+type SentencePieceBPETokenizerConfig = SentencePieceBPETokenizerOptions &
+  Required<OptionsWithDefaults>;
+
 /**
  * Represents the BPE algorithm, with the pretokenization used by SentencePiece
  */
-export class SentencePieceBPETokenizer extends BaseTokenizer {
-  private static readonly defaultOptions: SentencePieceBPETokenizerOptions &
-    Required<OptionsWithDefaults> = {
+export class SentencePieceBPETokenizer extends BaseTokenizer<
+  SentencePieceBPETokenizerConfig
+> {
+  private static readonly defaultOptions: SentencePieceBPETokenizerConfig = {
     addPrefixSpace: true,
     replacement: "▁",
     unkToken: "<unk>"
@@ -74,8 +78,11 @@ export class SentencePieceBPETokenizer extends BaseTokenizer {
     vocabSize: 30000
   };
 
-  private constructor(tokenizer: Tokenizer) {
-    super(tokenizer);
+  private constructor(
+    tokenizer: Tokenizer,
+    configuration: SentencePieceBPETokenizerConfig
+  ) {
+    super(tokenizer, configuration);
   }
 
   static async fromOptions(
@@ -107,7 +114,7 @@ export class SentencePieceBPETokenizer extends BaseTokenizer {
     const decoder = metaspaceDecoder(opts.replacement, opts.addPrefixSpace);
     tokenizer.setDecoder(decoder);
 
-    return new SentencePieceBPETokenizer(tokenizer);
+    return new SentencePieceBPETokenizer(tokenizer, opts);
   }
 
   /**

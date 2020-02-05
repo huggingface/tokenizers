@@ -80,13 +80,15 @@ export interface BertWordPieceTrainOptions {
   wordpiecesPrefix?: string;
 }
 
+type BertTokenizerConfig = Required<Omit<BertWordPieceOptions, "vocabFile">> & {
+  vocabFile?: string;
+};
+
 /**
  * Bert WordPiece Tokenizer
  */
-export class BertWordPieceTokenizer extends BaseTokenizer {
-  private static readonly defaultBertOptions: Required<
-    Omit<BertWordPieceOptions, "vocabFile">
-  > & { vocabFile?: string } = {
+export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
+  private static readonly defaultBertOptions: BertTokenizerConfig = {
     addSpecialTokens: true,
     cleanText: true,
     clsToken: "[CLS]",
@@ -108,8 +110,8 @@ export class BertWordPieceTokenizer extends BaseTokenizer {
     wordpiecesPrefix: "##"
   };
 
-  private constructor(tokenizer: Tokenizer) {
-    super(tokenizer);
+  private constructor(tokenizer: Tokenizer, configuration: BertTokenizerConfig) {
+    super(tokenizer, configuration);
   }
 
   /**
@@ -158,7 +160,7 @@ export class BertWordPieceTokenizer extends BaseTokenizer {
     const decoder = wordPieceDecoder(opts.wordpiecesPrefix);
     tokenizer.setDecoder(decoder);
 
-    return new BertWordPieceTokenizer(tokenizer);
+    return new BertWordPieceTokenizer(tokenizer, opts);
   }
 
   /**

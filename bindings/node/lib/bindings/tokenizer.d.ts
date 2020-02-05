@@ -1,5 +1,6 @@
 import { Decoder } from "./decoders";
 import { Encoding } from "./encoding";
+import { PaddingDirection, TruncationStrategy } from "./enums";
 import { Model } from "./models";
 import { Normalizer } from "./normalizers";
 import { PostProcessor } from "./post-processors";
@@ -20,14 +21,24 @@ export interface TruncationOptions {
    * - `only_second` Only truncate the second sequence.
    * @default "longest_first"
    */
-  strategy?: "longest_first" | "only_first" | "only_second";
+  strategy?: TruncationStrategy;
 }
+
+export interface TruncationConfiguration extends Required<TruncationOptions> {
+  /**
+   * The maximum length at which to truncate
+   */
+  maxLength: number;
+}
+
+export type PaddingConfiguration = Required<Omit<PaddingOptions, "maxLength">> &
+  Pick<PaddingOptions, "maxLength">;
 
 export interface PaddingOptions {
   /**
    * @default "right"
    */
-  direction?: "left" | "right";
+  direction?: PaddingDirection;
   /**
    * Padding length. If not provided:
    * - Will default to the longest sequence when encoding in batch.
@@ -152,7 +163,7 @@ export class Tokenizer {
    * Enable/change padding with specified options
    * @param [options] Padding options
    */
-  setPadding(options?: PaddingOptions): void;
+  setPadding(options?: PaddingOptions): PaddingConfiguration;
 
   /**
    * Disable padding
@@ -165,7 +176,7 @@ export class Tokenizer {
    * @param maxLength The maximum length at which to truncate
    * @param [options] Additional truncation options
    */
-  setTruncation(maxLength: number, options?: TruncationOptions): void;
+  setTruncation(maxLength: number, options?: TruncationOptions): TruncationConfiguration;
 
   /**
    * Disable truncation

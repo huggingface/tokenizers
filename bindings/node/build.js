@@ -117,9 +117,9 @@ function buildTs() {
 async function npmPublish() {
   shell.echo("PUBLISHING ON NPM...");
 
-  shell.cp("-r", ["lib/bindings"], distPath);
+  shell.cp("-ur", ["lib/bindings/**/*.{js,d.ts}"], `${distPath}/bindings/`);
   shell.mv([`${distPath}/bindings/native.prod.js`], [`${distPath}/bindings/native.js`]);
-  shell.rm("-r", [`${distPath}/**/*.test.ts`]);
+  // shell.rm("-r", [`${distPath}/**/*.test.ts`]); // No more remaining *.test.ts files for now at this step
 
   shell.cp("-r", ["package.json", "README.md", "../../LICENSE"], distPath);
 
