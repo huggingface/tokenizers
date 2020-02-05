@@ -9,7 +9,7 @@ impl PreTokenizer for Whitespace {
         }
         Ok(RE
             .captures_iter(s)
-            .map(|captures| {
+            .flat_map(|captures| {
                 captures
                     .iter()
                     .map(|m| {
@@ -21,7 +21,6 @@ impl PreTokenizer for Whitespace {
                     })
                     .collect::<Vec<(String, Offsets)>>()
             })
-            .flatten()
             .collect())
     }
 }

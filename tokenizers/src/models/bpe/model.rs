@@ -153,10 +153,7 @@ impl Clone for BPE {
     // `Clone` can't be derive because it's not implemented for `Cache`.
     // To keep things simple when we clone, the new BPE will start with a fresh cache.
     fn clone(&self) -> Self {
-        let fresh_cache = match self.cache {
-            Some(ref cache) => Some(cache.fresh()),
-            None => None,
-        };
+        let fresh_cache = self.cache.as_ref().map(|cache| cache.fresh());
         Self {
             vocab: self.vocab.clone(),
             vocab_r: self.vocab_r.clone(),
@@ -359,10 +356,10 @@ impl Model for BPE {
 
         let mut encoded: Vec<Token> = Vec::with_capacity(sentence.len());
         let mut cached_words = match self.dropout {
-            None => match self.cache {
-                Some(ref cache) => cache.get_values(sentence.iter().map(|(s, _)| s.clone())),
-                None => None,
-            },
+            None => self
+                .cache
+                .as_ref()
+                .and_then(|cache| cache.get_values(sentence.iter().map(|(s, _)| s.clone()))),
             Some(_) => None, // If using dropout we don't want to use the cache.
         };
         let mut should_update_cache = false;
@@ -446,10 +443,9 @@ impl Model for BPE {
         merges_file.write_all(
             &merges
                 .into_iter()
-                .map(|(pair, _)| {
+                .flat_map(|(pair, _)| {
                     format!("{} {}\n", self.vocab_r[&pair.0], self.vocab_r[&pair.1]).into_bytes()
                 })
-                .flatten()
                 .collect::<Vec<_>>()[..],
         )?;
 
