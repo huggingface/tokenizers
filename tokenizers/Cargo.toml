@@ -13,7 +13,7 @@ description = """
 Provides an implementation of today's most used tokenizers,
 with a focus on performances and versatility.
 """
-exclude = [ "target/*", "Cargo.lock", "benches/*.txt", "benches/*.json" ]
+exclude = [ "rust-toolchain", "target/*", "Cargo.lock", "benches/*.txt", "benches/*.json" ]
 
 [lib]
 name = "tokenizers"
