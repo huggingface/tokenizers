@@ -48,6 +48,7 @@ console.log(wpEncoded.getIds());
 console.log(wpEncoded.getAttentionMask());
 console.log(wpEncoded.getOffsets());
 console.log(wpEncoded.getOverflowing());
+console.log(wpEncoded.getOriginalString());
 console.log(wpEncoded.getSpecialTokensMask());
 console.log(wpEncoded.getTypeIds());
 ```
