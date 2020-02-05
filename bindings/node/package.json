@@ -6,8 +6,12 @@
   "types": "./dist/index.d.ts",
   "repository": {
     "type": "git",
-    "url": ".."
+    "url": "git+https://github.com/huggingface/tokenizers.git"
   },
+  "bugs": {
+    "url": "https://github.com/huggingface/tokenizers/issues"
+  },
+  "homepage": "https://github.com/huggingface/tokenizers/tree/master/bindings/node",
   "author": "Anthony MOI <m.anthony.moi@gmail.com>",
   "license": "Apache-2.0",
   "dependencies": {
