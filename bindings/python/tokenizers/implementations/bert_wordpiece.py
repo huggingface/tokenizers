@@ -68,7 +68,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
               min_frequency: int=2,
               limit_alphabet: int=1000,
               initial_alphabet: List[str]=[],
-              special_tokens: List[str]=["[UNK]", "[SEP]", "[CLS]"],
+              special_tokens: List[str]=["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"],
               show_progress: bool=True,
               wordpieces_prefix: str="##"):
         """ Train the model using the given files """

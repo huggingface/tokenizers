@@ -42,7 +42,7 @@ trainer = tokenizer.train(
     vocab_size=10000,
     min_frequency=2,
     show_progress=True,
-    special_tokens=["[SEP]", '[UNK]', '[CLS]', "<s>", "<pad>", "</s>"],
+    special_tokens=["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"],
     limit_alphabet=1000,
     wordpieces_prefix="##"
 )
