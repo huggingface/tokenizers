@@ -67,7 +67,7 @@ export interface BertWordPieceTrainOptions {
    */
   showProgress?: boolean;
   /**
-   * @default ["[UNK]", "[SEP]", "[CLS]"]
+   * @default ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"]
    */
   specialTokens?: string[];
   /**
@@ -103,7 +103,7 @@ export class BertWordPieceTokenizer extends BaseTokenizer {
     limitAlphabet: 1000,
     minFrequency: 2,
     showProgress: true,
-    specialTokens: ["<unk>"],
+    specialTokens: ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"],
     vocabSize: 30000,
     wordpiecesPrefix: "##"
   };
