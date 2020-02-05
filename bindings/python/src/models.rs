@@ -181,7 +181,7 @@ impl WordLevel {
             Err(e) => {
                 println!("Errors: {:?}", e);
                 Err(exceptions::Exception::py_err(
-                    "Error while initializing LookupTable",
+                    "Error while initializing WordLevel",
                 ))
             }
             Ok(model) => Ok(Model {
