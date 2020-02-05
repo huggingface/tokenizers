@@ -411,20 +411,6 @@ declare_types! {
                 PaddingStrategy::BatchLongest
             };
 
-            let params_object = JsObject::new(&mut cx);
-            if let Some(max_length) = max_length {
-                let obj_length = cx.number(max_length as f64);
-                params_object.set(&mut cx, "maxLength", obj_length).unwrap();
-            }
-            let obj_pad_id = cx.number(pad_id);
-            let obj_pad_type_id = cx.number(pad_type_id);
-            let obj_pad_token = cx.string(&pad_token);
-            let obj_direction = cx.string(&direction);
-            params_object.set(&mut cx, "padId", obj_pad_id).unwrap();
-            params_object.set(&mut cx, "padTypeId", obj_pad_type_id).unwrap();
-            params_object.set(&mut cx, "padToken", obj_pad_token).unwrap();
-            params_object.set(&mut cx, "direction", obj_direction).unwrap();
-
             let mut this = cx.this();
             {
                 let guard = cx.lock();
@@ -437,6 +423,20 @@ declare_types! {
                     pad_token: pad_token.to_owned(),
                 }));
             }
+
+            let params_object = JsObject::new(&mut cx);
+            if let Some(max_length) = max_length {
+                let obj_length = cx.number(max_length as f64);
+                params_object.set(&mut cx, "maxLength", obj_length).unwrap();
+            }
+            let obj_pad_id = cx.number(pad_id);
+            let obj_pad_type_id = cx.number(pad_type_id);
+            let obj_pad_token = cx.string(pad_token);
+            let obj_direction = cx.string(direction);
+            params_object.set(&mut cx, "padId", obj_pad_id).unwrap();
+            params_object.set(&mut cx, "padTypeId", obj_pad_type_id).unwrap();
+            params_object.set(&mut cx, "padToken", obj_pad_token).unwrap();
+            params_object.set(&mut cx, "direction", obj_direction).unwrap();
 
             Ok(params_object.upcast())
         }

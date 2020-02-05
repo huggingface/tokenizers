@@ -139,7 +139,7 @@ pub fn pad_encodings(
             params.pad_id,
             params.pad_type_id,
             &params.pad_token,
-            &params.direction,
+            params.direction,
         );
     }
 
