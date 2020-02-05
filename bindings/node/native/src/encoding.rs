@@ -244,7 +244,7 @@ declare_types! {
             let mut this = cx.this();
             let guard = cx.lock();
             this.borrow_mut(&guard).encoding.execute_mut(|encoding| {
-                encoding.unwrap().pad(length, pad_id, pad_type_id, &pad_token, &direction);
+                encoding.unwrap().pad(length, pad_id, pad_type_id, &pad_token, direction);
             });
 
             Ok(cx.undefined().upcast())

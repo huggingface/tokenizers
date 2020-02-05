@@ -253,7 +253,7 @@ impl Encoding {
 
         Ok(self
             .encoding
-            .pad(length, pad_id, pad_type_id, pad_token, &direction))
+            .pad(length, pad_id, pad_type_id, pad_token, direction))
     }
 
     #[args(kwargs = "**")]
