@@ -18,7 +18,7 @@ impl fmt::Display for Error {
         match self {
             Error::MissingUnkToken => write!(
                 fmt,
-                "LookupTable error: Missing [UNK] token from the vocabulary"
+                "WordLevel error: Missing [UNK] token from the vocabulary"
             ),
             Error::BadVocabulary => write!(fmt, "Bad vocabulary json file"),
         }
@@ -30,13 +30,13 @@ struct Config {
     unk_token: String,
 }
 
-/// A `LookupTableModelBuilder` can be used to create a `LookupTableModel`
+/// A `WordLevelBuilder` can be used to create a `WordLevel`
 /// model with a custom configuration.
-pub struct LookupTableBuilder {
+pub struct WordLevelBuilder {
     config: Config,
 }
 
-impl Default for LookupTableBuilder {
+impl Default for WordLevelBuilder {
     fn default() -> Self {
         Self {
             config: Config {
@@ -47,8 +47,8 @@ impl Default for LookupTableBuilder {
     }
 }
 
-impl LookupTableBuilder {
-    /// Construct a new `LookupTableBuilder`.
+impl WordLevelBuilder {
+    /// Construct a new `WordLevelBuilder`.
     pub fn new() -> Self {
         Self::default()
     }
@@ -65,7 +65,7 @@ impl LookupTableBuilder {
         self
     }
 
-    /// Contructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
+    /// Contructs a `WordLevel` model that uses the `WordLevelBuilder`'s configuration.
     pub fn build(self) -> WordLevel {
         let vocab_r = self
             .config
@@ -88,11 +88,11 @@ pub struct WordLevel {
 }
 
 impl WordLevel {
-    fn builder() -> LookupTableBuilder {
-        LookupTableBuilder::new()
+    fn builder() -> WordLevelBuilder {
+        WordLevelBuilder::new()
     }
 
-    /// Initialize a LookupTable model from vocab and merges file.
+    /// Initialize a WordLevel model from vocab and merges file.
     pub fn from_files(vocab_path: &str, unk_token: String) -> Result<WordLevel> {
         // Read vocab.json
         let vocab_file = File::open(vocab_path)?;
