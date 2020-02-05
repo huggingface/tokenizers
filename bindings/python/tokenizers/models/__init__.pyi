@@ -17,7 +17,7 @@ class Model:
         pass
 
 
-class BPE:
+class BPE(Model):
     """ BytePairEncoding model class """
 
     @staticmethod
@@ -62,7 +62,7 @@ class BPE:
         pass
 
 
-class WordPiece:
+class WordPiece(Model):
     """ WordPiece model class """
 
     @staticmethod
@@ -86,4 +86,23 @@ class WordPiece:
     @staticmethod
     def empty() -> Model:
         """ Instantiate an empty WordPiece Model. """
+        pass
+
+
+class WordLevel(Model):
+    """
+    Most simple tokenizer model based on mapping token from a vocab file to their corresponding id.
+    """
+
+    @staticmethod
+    def from_files(vocab: str, unk_token: str) -> Model:
+        """ Instantiate a WordLevel Model from the given vocab file.
+
+        Args:
+            vocab: string:
+                Path to a vocabulary file.
+
+            unk_token: str:
+                The unknown token to be used by the model.
+        """
         pass
