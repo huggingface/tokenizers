@@ -194,9 +194,8 @@ mod tests {
         for sample in samples {
             let pre_tokenized = bl.pre_tokenize(&sample).unwrap();
             let separated_tokens = pre_tokenized
-                .into_iter()
-                .map(|(token, _)| token.split("").map(|t| t.into()).collect::<Vec<_>>())
-                .flatten()
+                .iter()
+                .flat_map(|(token, _)| token.split("").map(|t| t.into()))
                 .collect::<Vec<_>>();
             assert_eq!(sample, bl.decode(separated_tokens).unwrap());
         }

@@ -679,7 +679,7 @@ impl Tokenizer {
             let mut start_offset = 0;
             let mut splits = splits
                 .into_iter()
-                .map(|(start, end)| {
+                .flat_map(|(start, end)| {
                     let mut splits = vec![];
                     if start_offset < start {
                         splits.push((start_offset, start));
@@ -689,7 +689,6 @@ impl Tokenizer {
 
                     splits
                 })
-                .flatten()
                 .collect::<Vec<_>>();
             if let Some((_, end)) = splits.iter().last().copied() {
                 if end < sentence.len() {

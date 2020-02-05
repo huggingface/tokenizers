@@ -261,8 +261,7 @@ impl Model for WordPiece {
         vocab_file.write_all(
             &vocab
                 .into_iter()
-                .map(|(token, _)| format!("{}\n", token).as_bytes().to_owned())
-                .flatten()
+                .flat_map(|(token, _)| format!("{}\n", token).as_bytes().to_owned())
                 .collect::<Vec<_>>()[..],
         )?;
 

@@ -57,9 +57,8 @@ impl PreTokenizer for Metaspace {
 impl Decoder for Metaspace {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
         Ok(tokens
-            .into_iter()
-            .map(|t| t.chars().collect::<Vec<_>>())
-            .flatten()
+            .iter()
+            .flat_map(|t| t.chars())
             .enumerate()
             .map(|(i, c)| {
                 if c == self.replacement {

@@ -502,11 +502,7 @@ declare_types! {
                 let guard = cx.lock();
                 let borrowed = this.borrow(&guard);
                 let normalizer = borrowed.tokenizer.get_normalizer();
-                if let Some(normalizer) = normalizer {
-                    Some(Container::from_ref(normalizer))
-                } else {
-                    None
-                }
+                normalizer.map(|normalizer| { Container::from_ref(normalizer) })
             };
 
             if let Some(normalizer) = normalizer {
@@ -561,11 +557,7 @@ declare_types! {
                 let guard = cx.lock();
                 let borrowed = this.borrow(&guard);
                 let pretok = borrowed.tokenizer.get_pre_tokenizer();
-                if let Some(pretok) = pretok {
-                    Some(Container::from_ref(pretok))
-                } else {
-                    None
-                }
+                pretok.map(|pretok| { Container::from_ref(pretok) })
             };
 
             if let Some(pretok) = pretok {
@@ -620,11 +612,7 @@ declare_types! {
                 let guard = cx.lock();
                 let borrowed = this.borrow(&guard);
                 let processor = borrowed.tokenizer.get_post_processor();
-                if let Some(processor) = processor {
-                    Some(Container::from_ref(processor))
-                } else {
-                    None
-                }
+                processor.map(|processor| { Container::from_ref(processor) })
             };
 
             if let Some(processor) = processor {
@@ -679,11 +667,7 @@ declare_types! {
                 let guard = cx.lock();
                 let borrowed = this.borrow(&guard);
                 let decoder = borrowed.tokenizer.get_decoder();
-                if let Some(decoder) = decoder {
-                    Some(Container::from_ref(decoder))
-                } else {
-                    None
-                }
+                decoder.map(|decoder| { Container::from_ref(decoder) })
             };
 
             if let Some(decoder) = decoder {
