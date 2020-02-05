@@ -44,6 +44,26 @@ impl NormalizedString {
         &self.original
     }
 
+    /// Return the range of the original string corresponding to the received range on the
+    /// normalized string. Returns None if out of bounds
+    pub fn get_original_offsets(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Option<std::ops::Range<usize>> {
+        self.alignments
+            .get(range)
+            .map(|alignments| {
+                if alignments.is_empty() {
+                    None
+                } else {
+                    let start = alignments[0].0;
+                    let end = alignments[alignments.len() - 1].1;
+                    Some(start..end)
+                }
+            })
+            .flatten()
+    }
+
     fn get_range_of(&self, s: &str, range: std::ops::Range<usize>) -> Option<String> {
         let len = s.chars().count();
         if range.start >= len || range.end > len {
@@ -75,17 +95,8 @@ impl NormalizedString {
 
     /// Return a range of the original string, using a range from the normalized string
     pub fn get_range_original(&self, range: std::ops::Range<usize>) -> Option<String> {
-        self.alignments
-            .get(range)
-            .map(|alignments| {
-                if alignments.is_empty() {
-                    None
-                } else {
-                    let start = alignments[0].0;
-                    let end = alignments[alignments.len() - 1].1;
-                    self.get_range_of(&self.original, start..end)
-                }
-            })
+        self.get_original_offsets(range)
+            .map(|range| self.get_range_of(&self.original, range))
             .flatten()
     }
 
