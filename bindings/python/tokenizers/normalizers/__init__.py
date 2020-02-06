@@ -25,4 +25,4 @@ def unicode_normalizer_from_str(normalizer: str) -> Normalizer:
                 .format(normalizer, NORMALIZERS.keys())
         )
 
-    return NORMALIZERS[normalizer]()
+    return NORMALIZERS[normalizer].new()
