@@ -27,11 +27,13 @@ class BertWordPieceTokenizer(BaseTokenizer):
         else:
             tokenizer = Tokenizer(WordPiece.empty())
 
-        tokenizer.add_special_tokens([ unk_token, sep_token, cls_token ])
-        tokenizer.normalizer = BertNormalizer.new(clean_text=clean_text,
-                                                  handle_chinese_chars=handle_chinese_chars,
-                                                  strip_accents=strip_accents,
-                                                  lowercase=lowercase)
+        tokenizer.add_special_tokens([unk_token, sep_token, cls_token])
+        tokenizer.normalizer = BertNormalizer(
+            clean_text=clean_text,
+            handle_chinese_chars=handle_chinese_chars,
+            strip_accents=strip_accents,
+            lowercase=lowercase,
+        )
         tokenizer.pre_tokenizer = BertPreTokenizer.new()
 
         if add_special_tokens and vocab_file is not None:

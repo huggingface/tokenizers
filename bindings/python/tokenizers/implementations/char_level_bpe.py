@@ -42,12 +42,12 @@ class CharBPETokenizer(BaseTokenizer):
             normalizers += [unicode_normalizer_from_str(unicode_normalizer)]
 
         if do_lowercase:
-            normalizers += [Lowercase.new()]
+            normalizers += [Lowercase()]
 
         # Create the normalizer structure
         if len(normalizers) > 0:
             if len(normalizers) > 1:
-                tokenizer.normalizer = Sequence.new(normalizers)
+                tokenizer.normalizer = Sequence(normalizers)
             else:
                 tokenizer.normalizer = normalizers[0]
 

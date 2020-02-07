@@ -10,13 +10,13 @@ pub struct Normalizer {
     pub normalizer: Container<dyn tk::tokenizer::Normalizer + Sync>,
 }
 
-#[pyclass]
+#[pyclass(extends=Normalizer)]
 pub struct BertNormalizer {}
 #[pymethods]
 impl BertNormalizer {
-    #[staticmethod]
+    #[new]
     #[args(kwargs = "**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<Normalizer> {
+    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut clean_text = true;
         let mut handle_chinese_chars = true;
         let mut strip_accents = true;
@@ -35,71 +35,71 @@ impl BertNormalizer {
             }
         }
 
-        Ok(Normalizer {
+        Ok(obj.init(Normalizer {
             normalizer: Container::Owned(Box::new(tk::normalizers::bert::BertNormalizer::new(
                 clean_text,
                 handle_chinese_chars,
                 strip_accents,
                 lowercase,
             ))),
-        })
+        }))
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Normalizer)]
 pub struct NFD {}
 #[pymethods]
 impl NFD {
-    #[staticmethod]
-    fn new() -> PyResult<Normalizer> {
-        Ok(Normalizer {
+    #[new]
+    fn new(obj: &PyRawObject) -> PyResult<()> {
+        Ok(obj.init(Normalizer {
             normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFD)),
-        })
+        }))
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Normalizer)]
 pub struct NFKD {}
 #[pymethods]
 impl NFKD {
-    #[staticmethod]
-    fn new() -> PyResult<Normalizer> {
-        Ok(Normalizer {
+    #[new]
+    fn new(obj: &PyRawObject) -> PyResult<()> {
+        Ok(obj.init(Normalizer {
             normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFKD)),
-        })
+        }))
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Normalizer)]
 pub struct NFC {}
 #[pymethods]
 impl NFC {
-    #[staticmethod]
-    fn new() -> PyResult<Normalizer> {
-        Ok(Normalizer {
+    #[new]
+    fn new(obj: &PyRawObject) -> PyResult<()> {
+        Ok(obj.init(Normalizer {
             normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFC)),
-        })
+        }))
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Normalizer)]
 pub struct NFKC {}
 #[pymethods]
 impl NFKC {
-    #[staticmethod]
-    fn new() -> PyResult<Normalizer> {
-        Ok(Normalizer {
+    #[new]
+    fn new(obj: &PyRawObject) -> PyResult<()> {
+        Ok(obj.init(Normalizer {
             normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFKC)),
-        })
+        }))
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Normalizer)]
 pub struct Sequence {}
 #[pymethods]
 impl Sequence {
-    #[staticmethod]
-    fn new(normalizers: &PyList) -> PyResult<Normalizer> {
+    #[new]
+    fn new(obj: &PyRawObject, normalizers: &PyList) -> PyResult<()> {
         let normalizers = normalizers
             .iter()
             .map(|n| {
@@ -114,22 +114,22 @@ impl Sequence {
             })
             .collect::<PyResult<_>>()?;
 
-        Ok(Normalizer {
+        Ok(obj.init(Normalizer {
             normalizer: Container::Owned(Box::new(tk::normalizers::utils::Sequence::new(
                 normalizers,
             ))),
-        })
+        }))
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Normalizer)]
 pub struct Lowercase {}
 #[pymethods]
 impl Lowercase {
-    #[staticmethod]
-    fn new() -> PyResult<Normalizer> {
-        Ok(Normalizer {
+    #[new]
+    fn new(obj: &PyRawObject) -> PyResult<()> {
+        Ok(obj.init(Normalizer {
             normalizer: Container::Owned(Box::new(tk::normalizers::utils::Lowercase)),
-        })
+        }))
     }
 }

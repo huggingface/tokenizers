@@ -14,11 +14,13 @@ class BertNormalizer(Normalizer):
     This includes cleaning the text, handling accents, chinese chars and lowercasing
     """
 
-    @staticmethod
-    def new(clean_text: Optional[bool]=True,
-            handle_chinese_chars: Optional[bool]=True,
-            strip_accents: Optional[bool]=True,
-            lowercase: Optional[bool]=True) -> Normalizer:
+    def __init__(
+        self,
+        clean_text: Optional[bool] = True,
+        handle_chinese_chars: Optional[bool] = True,
+        strip_accents: Optional[bool] = True,
+        lowercase: Optional[bool] = True,
+    ) -> None:
         """ Instantiate a BertNormalizer with the given options.
 
         Args:
@@ -43,32 +45,28 @@ class BertNormalizer(Normalizer):
 class NFD(Normalizer):
     """ NFD Unicode Normalizer """
 
-    @staticmethod
-    def new() -> Normalizer:
+    def __init__(self) -> None:
         """ Instantiate a new NFD Normalizer """
         pass
 
 class NFKD(Normalizer):
     """ NFKD Unicode Normalizer """
 
-    @staticmethod
-    def new() -> Normalizer:
+    def __init__(self) -> None:
         """ Instantiate a new NFKD Normalizer """
         pass
 
 class NFC(Normalizer):
     """ NFC Unicode Normalizer """
 
-    @staticmethod
-    def new() -> Normalizer:
+    def __init__(self) -> None:
         """ Instantiate a new NFC Normalizer """
         pass
 
 class NFKC(Normalizer):
     """ NFKC Unicode Normalizer """
 
-    @staticmethod
-    def new() -> Normalizer:
+    def __init__(self) -> None:
         """ Instantiate a new NFKC Normalizer """
         pass
 
@@ -78,8 +76,7 @@ class Sequence(Normalizer):
     All the normalizers run in sequence in the given order
     """
 
-    @staticmethod
-    def new(normalizers: List[Normalizer]) -> Normalizer:
+    def __init__(self, normalizers: List[Normalizer]) -> None:
         """ Instantiate a new normalization Sequence using the given normalizers
 
         Args:
@@ -91,11 +88,9 @@ class Sequence(Normalizer):
 class Lowercase(Normalizer):
     """ Lowercase Normalizer """
 
-    @staticmethod
-    def new() -> Normalizer:
+    def __init__(self) -> None:
         """ Instantiate a new Lowercase Normalizer """
         pass
-
 
 def unicode_normalizer_from_str(normalizer: str) -> Normalizer:
     """
