@@ -55,19 +55,22 @@ class ByteLevelBPETokenizer(BaseTokenizer):
 
         super().__init__(tokenizer, parameters)
 
-    def train(self, files: Union[str, List[str]],
-              vocab_size: int=30000,
-              min_frequency: int=2,
-              show_progress: bool=True,
-              special_tokens: List[str]=[]):
+    def train(
+        self,
+        files: Union[str, List[str]],
+        vocab_size: int = 30000,
+        min_frequency: int = 2,
+        show_progress: bool = True,
+        special_tokens: List[str] = [],
+    ):
         """ Train the model using the given files """
 
-        trainer = trainers.BpeTrainer.new(
+        trainer = trainers.BpeTrainer(
             vocab_size=vocab_size,
             min_frequency=min_frequency,
             show_progress=show_progress,
             special_tokens=special_tokens,
-            initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
+            initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
         )
         if isinstance(files, str):
             files = [files]

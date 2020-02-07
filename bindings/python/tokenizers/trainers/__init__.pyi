@@ -13,15 +13,17 @@ class BpeTrainer:
     Capable of training a BPE model
     """
 
-    @staticmethod
-    def new(vocab_size: int=30000,
-            min_frequency: int=0,
-            show_progress: bool=True,
-            special_tokens: List[str]=[],
-            limit_alphabet: Optional[int]=None,
-            initial_alphabet: List[str]=[],
-            continuing_subword_prefix: Optional[str]=None,
-            end_of_word_suffix: Optional[str]=None) -> Trainer:
+    def __init__(
+        self,
+        vocab_size: int = 30000,
+        min_frequency: int = 0,
+        show_progress: bool = True,
+        special_tokens: List[str] = [],
+        limit_alphabet: Optional[int] = None,
+        initial_alphabet: List[str] = [],
+        continuing_subword_prefix: Optional[str] = None,
+        end_of_word_suffix: Optional[str] = None,
+    ) -> None:
         """ Instantiate a new BpeTrainer with the given options:
 
         Args:
@@ -63,15 +65,17 @@ class WordPieceTrainer:
     Capable of training a WordPiece model
     """
 
-    @staticmethod
-    def new(vocab_size: int=30000,
-            min_frequency: int=0,
-            show_progress: bool=True,
-            special_tokens: List[str]=[],
-            limit_alphabet: Optional[int]=None,
-            initial_alphabet: List[str]=[],
-            continuing_subword_prefix: Optional[str]="##",
-            end_of_word_suffix: Optional[str]=None) -> Trainer:
+    def __init__(
+        self,
+        vocab_size: int = 30000,
+        min_frequency: int = 0,
+        show_progress: bool = True,
+        special_tokens: List[str] = [],
+        limit_alphabet: Optional[int] = None,
+        initial_alphabet: List[str] = [],
+        continuing_subword_prefix: Optional[str] = "##",
+        end_of_word_suffix: Optional[str] = None,
+    ) -> Trainer:
         """ Instantiate a new WordPieceTrainer with the given options:
 
         Args:

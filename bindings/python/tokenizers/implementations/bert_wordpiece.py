@@ -65,24 +65,27 @@ class BertWordPieceTokenizer(BaseTokenizer):
 
         super().__init__(tokenizer, parameters)
 
-    def train(self, files: Union[str, List[str]],
-              vocab_size: int=30000,
-              min_frequency: int=2,
-              limit_alphabet: int=1000,
-              initial_alphabet: List[str]=[],
-              special_tokens: List[str]=["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"],
-              show_progress: bool=True,
-              wordpieces_prefix: str="##"):
+    def train(
+        self,
+        files: Union[str, List[str]],
+        vocab_size: int = 30000,
+        min_frequency: int = 2,
+        limit_alphabet: int = 1000,
+        initial_alphabet: List[str] = [],
+        special_tokens: List[str] = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"],
+        show_progress: bool = True,
+        wordpieces_prefix: str = "##",
+    ):
         """ Train the model using the given files """
 
-        trainer = trainers.WordPieceTrainer.new(
+        trainer = trainers.WordPieceTrainer(
             vocab_size=vocab_size,
             min_frequency=min_frequency,
             limit_alphabet=limit_alphabet,
             initial_alphabet=initial_alphabet,
             special_tokens=special_tokens,
             show_progress=show_progress,
-            continuing_subword_prefix=wordpieces_prefix
+            continuing_subword_prefix=wordpieces_prefix,
         )
         if isinstance(files, str):
             files = [files]

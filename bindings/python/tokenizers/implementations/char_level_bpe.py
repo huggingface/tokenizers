@@ -63,24 +63,27 @@ class CharBPETokenizer(BaseTokenizer):
 
         super().__init__(tokenizer, parameters)
 
-    def train(self, files: Union[str, List[str]],
-              vocab_size: int=30000,
-              min_frequency: int=2,
-              special_tokens: List[str]=["<unk>"],
-              limit_alphabet: int=1000,
-              initial_alphabet: List[str]=[],
-              suffix: Optional[str]="</w>",
-              show_progress: bool=True):
+    def train(
+        self,
+        files: Union[str, List[str]],
+        vocab_size: int = 30000,
+        min_frequency: int = 2,
+        special_tokens: List[str] = ["<unk>"],
+        limit_alphabet: int = 1000,
+        initial_alphabet: List[str] = [],
+        suffix: Optional[str] = "</w>",
+        show_progress: bool = True,
+    ):
         """ Train the model using the given files """
 
-        trainer = trainers.BpeTrainer.new(
+        trainer = trainers.BpeTrainer(
             vocab_size=vocab_size,
             min_frequency=min_frequency,
             special_tokens=special_tokens,
             limit_alphabet=limit_alphabet,
             initial_alphabet=initial_alphabet,
             end_of_word_suffix=suffix,
-            show_progress=show_progress
+            show_progress=show_progress,
         )
         if isinstance(files, str):
             files = [files]
