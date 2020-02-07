@@ -26,25 +26,25 @@ impl Decoder {
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Decoder)]
 pub struct ByteLevel {}
 #[pymethods]
 impl ByteLevel {
-    #[staticmethod]
-    fn new() -> PyResult<Decoder> {
-        Ok(Decoder {
+    #[new]
+    fn new(obj: &PyRawObject) -> PyResult<()> {
+        Ok(obj.init(Decoder {
             decoder: Container::Owned(Box::new(tk::decoders::byte_level::ByteLevel::new(false))),
-        })
+        }))
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Decoder)]
 pub struct WordPiece {}
 #[pymethods]
 impl WordPiece {
-    #[staticmethod]
+    #[new]
     #[args(kwargs="**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<Decoder> {
+    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut prefix = String::from("##");
 
         if let Some(kwargs) = kwargs {
@@ -53,19 +53,19 @@ impl WordPiece {
             }
         }
 
-        Ok(Decoder {
+        Ok(obj.init(Decoder {
             decoder: Container::Owned(Box::new(tk::decoders::wordpiece::WordPiece::new(prefix))),
-        })
+        }))
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Decoder)]
 pub struct Metaspace {}
 #[pymethods]
 impl Metaspace {
-    #[staticmethod]
+    #[new]
     #[args(kwargs = "**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<Decoder> {
+    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut replacement = '▁';
         let mut add_prefix_space = true;
 
@@ -85,22 +85,22 @@ impl Metaspace {
             }
         }
 
-        Ok(Decoder {
+        Ok(obj.init(Decoder {
             decoder: Container::Owned(Box::new(tk::decoders::metaspace::Metaspace::new(
                 replacement,
                 add_prefix_space,
             ))),
-        })
+        }))
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Decoder)]
 pub struct BPEDecoder {}
 #[pymethods]
 impl BPEDecoder {
-    #[staticmethod]
+    #[new]
     #[args(kwargs = "**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<Decoder> {
+    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut suffix = String::from("</w");
 
         if let Some(kwargs) = kwargs {
@@ -113,9 +113,9 @@ impl BPEDecoder {
             }
         }
 
-        Ok(Decoder {
+        Ok(obj.init(Decoder {
             decoder: Container::Owned(Box::new(tk::decoders::bpe::BPEDecoder::new(suffix))),
-        })
+        }))
     }
 }
 

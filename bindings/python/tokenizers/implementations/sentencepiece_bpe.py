@@ -31,8 +31,9 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         tokenizer.normalizer = NFKC()
         tokenizer.pre_tokenizer = pre_tokenizers.Metaspace.new(replacement=replacement,
                                                                add_prefix_space=add_prefix_space)
-        tokenizer.decoder = decoders.Metaspace.new(replacement=replacement,
-                                                   add_prefix_space=add_prefix_space)
+        tokenizer.decoder = decoders.Metaspace(
+            replacement=replacement, add_prefix_space=add_prefix_space
+        )
 
         parameters = {
             "model": "SentencePieceBPE",

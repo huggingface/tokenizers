@@ -52,7 +52,7 @@ class CharBPETokenizer(BaseTokenizer):
                 tokenizer.normalizer = normalizers[0]
 
         tokenizer.pre_tokenizer = pre_tokenizers.WhitespaceSplit.new()
-        tokenizer.decoder = decoders.BPEDecoder.new(suffix=suffix)
+        tokenizer.decoder = decoders.BPEDecoder(suffix=suffix)
 
         parameters = {
             "model": "BPE",

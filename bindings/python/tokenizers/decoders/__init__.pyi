@@ -14,8 +14,7 @@ class Decoder:
 class ByteLevel:
     """ ByteLevel Decoder """
 
-    @staticmethod
-    def new() -> Decoder:
+    def __init__(self) -> None:
         """ Instantiate a new ByteLevel Decoder """
         pass
 
@@ -23,7 +22,7 @@ class WordPiece:
     """ WordPiece Decoder """
 
     @staticmethod
-    def new(prefix: str="##") -> Decoder:
+    def __init__(self, prefix: str = "##") -> Decoder:
         """ Instantiate a new WordPiece Decoder
 
         Args:
@@ -35,9 +34,7 @@ class WordPiece:
 class Metaspace:
     """ Metaspace decoder """
 
-    @staticmethod
-    def new(replacement: str="▁",
-            add_prefix_space: bool=True) -> Decoder:
+    def __init__(self, replacement: str = "▁", add_prefix_space: bool = True) -> None:
         """ Instantiate a new Metaspace
 
         Args:
@@ -54,8 +51,7 @@ class Metaspace:
 class BPEDecoder:
     """ BPEDecoder """
 
-    @staticmethod
-    def new(suffix: str="</w>") -> Decoder:
+    def __init__(self, suffix: str = "</w>") -> None:
         """ Instantiate a new BPEDecoder
 
         Args:

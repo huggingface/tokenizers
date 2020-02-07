@@ -46,7 +46,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
                 tokenizer.normalizer = normalizers[0]
 
         tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel.new(add_prefix_space=add_prefix_space)
-        tokenizer.decoder = decoders.ByteLevel.new()
+        tokenizer.decoder = decoders.ByteLevel()
 
         parameters = {
             "model": "ByteLevelBPE",
