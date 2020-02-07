@@ -21,7 +21,7 @@ class ByteLevel(PreTokenizer):
     """
 
     @staticmethod
-    def new(add_prefix_space: Optional[bool]=True) -> PreTokenizer:
+    def __init__(self, add_prefix_space: Optional[bool] = True) -> None:
         """ Instantiate a new ByteLevel PreTokenizer
 
         Args:
@@ -50,8 +50,7 @@ class Whitespace(PreTokenizer):
     This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`
     """
 
-    @staticmethod
-    def new() -> PreTokenizer:
+    def __init__(self) -> None:
         """ Instantiate a new Whitespace PreTokenizer """
         pass
 
@@ -61,8 +60,7 @@ class WhitespaceSplit(PreTokenizer):
     This pre-tokenizer simply splits on the whitespace. Works like `.split()`
     """
 
-    @staticmethod
-    def new() -> PreTokenizer:
+    def __init__(self) -> None:
         """ Instantiate a new WhitespaceSplit PreTokenizer """
         pass
 
@@ -73,8 +71,7 @@ class BertPreTokenizer(PreTokenizer):
     Each occurence of a punctuation character will be treated separately.
     """
 
-    @staticmethod
-    def new() -> PreTokenizer:
+    def __init__(self) -> None:
         """ Instantiate a new BertPreTokenizer """
         pass
 
@@ -85,9 +82,7 @@ class Metaspace(PreTokenizer):
     It then tries to split on these spaces.
     """
 
-    @staticmethod
-    def new(replacement: str="▁",
-            add_prefix_space: bool=True) -> PreTokenizer:
+    def __init__(self, replacement: str = "▁", add_prefix_space: bool = True) -> None:
         """ Instantiate a new Metaspace
 
         Args:
@@ -109,7 +104,7 @@ class CharDelimiterSplit(PreTokenizer):
     """
 
     @staticmethod
-    def new(delimiter: str) -> PreTokenizer:
+    def __init__(self, delimiter: str) -> None:
         """ Instantiate a new CharDelimiterSplit PreTokenizer
 
         Args:

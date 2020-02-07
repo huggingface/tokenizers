@@ -37,7 +37,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
             strip_accents=strip_accents,
             lowercase=lowercase,
         )
-        tokenizer.pre_tokenizer = BertPreTokenizer.new()
+        tokenizer.pre_tokenizer = BertPreTokenizer()
 
         if add_special_tokens and vocab_file is not None:
             sep_token_id = tokenizer.token_to_id(sep_token)

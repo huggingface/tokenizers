@@ -51,7 +51,7 @@ class CharBPETokenizer(BaseTokenizer):
             else:
                 tokenizer.normalizer = normalizers[0]
 
-        tokenizer.pre_tokenizer = pre_tokenizers.WhitespaceSplit.new()
+        tokenizer.pre_tokenizer = pre_tokenizers.WhitespaceSplit()
         tokenizer.decoder = decoders.BPEDecoder(suffix=suffix)
 
         parameters = {
