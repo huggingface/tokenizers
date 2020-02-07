@@ -16,8 +16,7 @@ class BertProcessing:
         - a CLS token
     """
 
-    @staticmethod
-    def new(sep: Tuple[str, int], cls: Tuple[str, int]) -> PostProcessor:
+    def __init__(self, sep: Tuple[str, int], cls: Tuple[str, int]) -> None:
         """ Instantiate a new BertProcessing with the given tokens
 
         Args:
@@ -32,7 +31,6 @@ class BertProcessing:
         """
         pass
 
-
 class RobertaProcessing:
     """ RobertaProcessing
 
@@ -42,8 +40,7 @@ class RobertaProcessing:
         - a CLS token
     """
 
-    @staticmethod
-    def new(sep: Tuple[str, int], cls: Tuple[str, int]) -> PostProcessor:
+    def __init__(self, sep: Tuple[str, int], cls: Tuple[str, int]) -> None:
         """ Instantiate a new RobertaProcessing with the given tokens
 
         Args:

@@ -7,20 +7,23 @@ from .base_tokenizer import BaseTokenizer
 
 from typing import Optional, List, Union
 
+
 class BertWordPieceTokenizer(BaseTokenizer):
     """ Bert WordPiece Tokenizer """
 
-    def __init__(self,
-                 vocab_file: Optional[str]=None,
-                 add_special_tokens: bool=True,
-                 unk_token: str="[UNK]",
-                 sep_token: str="[SEP]",
-                 cls_token: str="[CLS]",
-                 clean_text: bool=True,
-                 handle_chinese_chars: bool=True,
-                 strip_accents: bool=True,
-                 lowercase: bool=True,
-                 wordpieces_prefix: str="##"):
+    def __init__(
+        self,
+        vocab_file: Optional[str] = None,
+        add_special_tokens: bool = True,
+        unk_token: str = "[UNK]",
+        sep_token: str = "[SEP]",
+        cls_token: str = "[CLS]",
+        clean_text: bool = True,
+        handle_chinese_chars: bool = True,
+        strip_accents: bool = True,
+        lowercase: bool = True,
+        wordpieces_prefix: str = "##",
+    ):
 
         if vocab_file is not None:
             tokenizer = Tokenizer(WordPiece.from_files(vocab_file, unk_token=unk_token))
@@ -44,9 +47,8 @@ class BertWordPieceTokenizer(BaseTokenizer):
             if cls_token_id is None:
                 raise TypeError("cls_token not found in the vocabulary")
 
-            tokenizer.post_processor = BertProcessing.new(
-                (sep_token, sep_token_id),
-                (cls_token, cls_token_id)
+            tokenizer.post_processor = BertProcessing(
+                (sep_token, sep_token_id), (cls_token, cls_token_id)
             )
         tokenizer.decoders = decoders.WordPiece(prefix=wordpieces_prefix)
 
