@@ -27,6 +27,13 @@ versatility.
  - Normalization comes with alignments tracking. It's always possible to get the part of the
    original sentence that corresponds to a given token.
  - Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
+
+## Bindings
+
+We provide bindings to the following languages (more to come!):
+  - [Rust](https://github.com/huggingface/tokenizers/tree/master/tokenizers) (Original implementation)
+  - [Python](https://github.com/huggingface/tokenizers/tree/master/bindings/python)
+  - [Node.js](https://github.com/huggingface/tokenizers/tree/master/bindings/node)
  
 ## Quick examples using Python:
 
@@ -69,10 +76,8 @@ And training a new vocabulary is just as easy:
 [00:00:00] Count pairs                    ████████████████████████████████████████   20993/20993
 [00:00:03] Compute merges                 ████████████████████████████████████████   19375/19375
 ```
+ 
+## Contributors
+  
+[![](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/images/0)](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/links/0)[![](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/images/1)](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/links/1)[![](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/images/2)](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/links/2)[![](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/images/3)](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/links/3)[![](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/images/4)](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/links/4)[![](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/images/5)](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/links/5)[![](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/images/6)](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/links/6)[![](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/images/7)](https://sourcerer.io/fame/clmnt/huggingface/tokenizers/links/7)
 
-## Bindings
-
-We provide bindings to the following languages (more to come!):
-  - [Rust](https://github.com/huggingface/tokenizers/tree/master/tokenizers) (Original implementation)
-  - [Python](https://github.com/huggingface/tokenizers/tree/master/bindings/python)
-  - [Node.js](https://github.com/huggingface/tokenizers/tree/master/bindings/node)
