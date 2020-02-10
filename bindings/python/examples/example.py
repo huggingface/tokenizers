@@ -53,7 +53,7 @@ Namespaces are one honking great idea -- let's do more of those!
 
 if args.type == "gpt2":
     print("Running GPT-2 tokenizer")
-    tok_p = GPT2Tokenizer.from_pretrained(args.vocab, args.merges)
+    tok_p = GPT2Tokenizer.from_pretrained('gpt2')
 
     # Create a Tokenizer using BPE
     tok_r = Tokenizer(BPE.from_files(args.vocab, args.merges))
