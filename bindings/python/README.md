@@ -132,8 +132,8 @@ bpe = models.BPE.from_files(vocab, merges)
 tokenizer = Tokenizer(bpe)
 
 # Customize pre-tokenization and decoding
-tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel.new(add_prefix_space=True)
-tokenizer.decoder = decoders.ByteLevel.new()
+tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
+tokenizer.decoder = decoders.ByteLevel()
 
 # And then encode:
 encoded = tokenizer.encode("I can feel the magic, can you?")
@@ -157,11 +157,11 @@ from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers
 tokenizer = Tokenizer(models.BPE.empty())
 
 # Customize pre-tokenization and decoding
-tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel.new(add_prefix_space=True)
-tokenizer.decoder = decoders.ByteLevel.new()
+tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
+tokenizer.decoder = decoders.ByteLevel()
 
 # And then train
-trainer = trainers.BpeTrainer.new(vocab_size=20000, min_frequency=2)
+trainer = trainers.BpeTrainer(vocab_size=20000, min_frequency=2)
 tokenizer.train(trainer, [
 	"./path/to/dataset/1.txt",
 	"./path/to/dataset/2.txt",

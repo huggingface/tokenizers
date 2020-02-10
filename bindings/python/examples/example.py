@@ -76,7 +76,7 @@ elif args.type == "bert":
         strip_accents=True,
         lowercase=True,
     )
-    # tok_r.pre_tokenizer = pre_tokenizers.Whitespace.new()
+    # tok_r.pre_tokenizer = pre_tokenizers.Whitespace()
     tok_r.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
     tok_r.decoder = decoders.WordPiece()
     tok_r.post_processor = BertProcessing(
