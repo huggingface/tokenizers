@@ -28,11 +28,14 @@ class SentencePieceBPETokenizer(BaseTokenizer):
 
         tokenizer.add_special_tokens([ unk_token ])
 
-        tokenizer.normalizer = NFKC.new()
-        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace.new(replacement=replacement,
-                                                               add_prefix_space=add_prefix_space)
-        tokenizer.decoder = decoders.Metaspace.new(replacement=replacement,
-                                                   add_prefix_space=add_prefix_space)
+
+        tokenizer.normalizer = NFKC()
+        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(
+            replacement=replacement, add_prefix_space=add_prefix_space
+        )
+        tokenizer.decoder = decoders.Metaspace(
+            replacement=replacement, add_prefix_space=add_prefix_space
+        )
 
         parameters = {
             "model": "SentencePieceBPE",
@@ -44,22 +47,25 @@ class SentencePieceBPETokenizer(BaseTokenizer):
 
         super().__init__(tokenizer, parameters)
 
-    def train(self, files: Union[str, List[str]],
-              vocab_size: int=30000,
-              min_frequency: int=2,
-              special_tokens: List[str]=["<unk>"],
-              limit_alphabet: int=1000,
-              initial_alphabet: List[str]=[],
-              show_progress: bool=True):
+    def train(
+        self,
+        files: Union[str, List[str]],
+        vocab_size: int = 30000,
+        min_frequency: int = 2,
+        special_tokens: List[str] = ["<unk>"],
+        limit_alphabet: int = 1000,
+        initial_alphabet: List[str] = [],
+        show_progress: bool = True,
+    ):
         """ Train the model using the given files """
 
-        trainer = trainers.BpeTrainer.new(
+        trainer = trainers.BpeTrainer(
             vocab_size=vocab_size,
             min_frequency=min_frequency,
             special_tokens=special_tokens,
             limit_alphabet=limit_alphabet,
             initial_alphabet=initial_alphabet,
-            show_progress=show_progress
+            show_progress=show_progress,
         )
         if isinstance(files, str):
             files = [files]

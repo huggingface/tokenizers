@@ -36,38 +36,40 @@ class ByteLevelBPETokenizer(BaseTokenizer):
             normalizers += [unicode_normalizer_from_str(unicode_normalizer)]
 
         if do_lowercase:
-            normalizers += [Lowercase.new()]
+            normalizers += [Lowercase()]
 
         # Create the normalizer structure
         if len(normalizers) > 0:
             if len(normalizers) > 1:
-                tokenizer.normalizer = Sequence.new(normalizers)
+                tokenizer.normalizer = Sequence(normalizers)
             else:
                 tokenizer.normalizer = normalizers[0]
 
-        tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel.new(add_prefix_space=add_prefix_space)
-        tokenizer.decoder = decoders.ByteLevel.new()
+        tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(
+            add_prefix_space=add_prefix_space
+        )
+        tokenizer.decoder = decoders.ByteLevel()
 
-        parameters = {
-            "model": "ByteLevelBPE",
-            "add_prefix_space": add_prefix_space,
-        }
+        parameters = {"model": "ByteLevelBPE", "add_prefix_space": add_prefix_space}
 
         super().__init__(tokenizer, parameters)
 
-    def train(self, files: Union[str, List[str]],
-              vocab_size: int=30000,
-              min_frequency: int=2,
-              show_progress: bool=True,
-              special_tokens: List[str]=[]):
+    def train(
+        self,
+        files: Union[str, List[str]],
+        vocab_size: int = 30000,
+        min_frequency: int = 2,
+        show_progress: bool = True,
+        special_tokens: List[str] = [],
+    ):
         """ Train the model using the given files """
 
-        trainer = trainers.BpeTrainer.new(
+        trainer = trainers.BpeTrainer(
             vocab_size=vocab_size,
             min_frequency=min_frequency,
             show_progress=show_progress,
             special_tokens=special_tokens,
-            initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
+            initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
         )
         if isinstance(files, str):
             files = [files]

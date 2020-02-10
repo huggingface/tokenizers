@@ -9,7 +9,7 @@ pub struct Trainer {
     pub trainer: Container<dyn tk::tokenizer::Trainer>,
 }
 
-#[pyclass]
+#[pyclass(extends=Trainer)]
 pub struct BpeTrainer {}
 #[pymethods]
 impl BpeTrainer {
@@ -17,9 +17,9 @@ impl BpeTrainer {
     /// --
     ///
     /// Create a new BpeTrainer with the given configuration
-    #[staticmethod]
+    #[new]
     #[args(kwargs = "**")]
-    pub fn new(kwargs: Option<&PyDict>) -> PyResult<Trainer> {
+    pub fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut builder = tk::models::bpe::BpeTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -49,10 +49,9 @@ impl BpeTrainer {
                 };
             }
         }
-
-        Ok(Trainer {
+        Ok(obj.init(Trainer {
             trainer: Container::Owned(Box::new(builder.build())),
-        })
+        }))
     }
 }
 
@@ -64,9 +63,9 @@ impl WordPieceTrainer {
     /// --
     ///
     /// Create a new BpeTrainer with the given configuration
-    #[staticmethod]
+    #[new]
     #[args(kwargs = "**")]
-    pub fn new(kwargs: Option<&PyDict>) -> PyResult<Trainer> {
+    pub fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut builder = tk::models::wordpiece::WordPieceTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -97,8 +96,8 @@ impl WordPieceTrainer {
             }
         }
 
-        Ok(Trainer {
+        Ok(obj.init(Trainer {
             trainer: Container::Owned(Box::new(builder.build())),
-        })
+        }))
     }
 }
