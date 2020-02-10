@@ -7,7 +7,7 @@ class Trainer:
     Trainer will return an instance of this class when instantiated.
     """
 
-class BpeTrainer:
+class BpeTrainer(Trainer):
     """ BpeTrainer
 
     Capable of training a BPE model
@@ -59,7 +59,7 @@ class BpeTrainer:
         """
         pass
 
-class WordPieceTrainer:
+class WordPieceTrainer(Trainer):
     """ WordPieceTrainer
 
     Capable of training a WordPiece model

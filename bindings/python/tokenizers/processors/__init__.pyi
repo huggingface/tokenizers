@@ -7,7 +7,7 @@ class PostProcessor:
     a PostProcessor will return an instance of this class when instantiated.
     """
 
-class BertProcessing:
+class BertProcessing(PostProcessor):
     """ BertProcessing
 
     This post-processor takes care of adding the special tokens needed by
@@ -31,7 +31,7 @@ class BertProcessing:
         """
         pass
 
-class RobertaProcessing:
+class RobertaProcessing(PostProcessor):
     """ RobertaProcessing
 
     This post-processor takes care of adding the special tokens needed by

@@ -11,14 +11,14 @@ class Decoder:
         """ Decode the given list of string to a final string """
         pass
 
-class ByteLevel:
+class ByteLevel(Decoder):
     """ ByteLevel Decoder """
 
     def __init__(self) -> None:
         """ Instantiate a new ByteLevel Decoder """
         pass
 
-class WordPiece:
+class WordPiece(Decoder):
     """ WordPiece Decoder """
 
     @staticmethod
@@ -31,7 +31,7 @@ class WordPiece:
         """
         pass
 
-class Metaspace:
+class Metaspace(Decoder):
     """ Metaspace decoder """
 
     def __init__(self, replacement: str = "▁", add_prefix_space: bool = True) -> None:
@@ -48,7 +48,7 @@ class Metaspace:
         """
         pass
 
-class BPEDecoder:
+class BPEDecoder(Decoder):
     """ BPEDecoder """
 
     def __init__(self, suffix: str = "</w>") -> None:

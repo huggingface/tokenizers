@@ -21,7 +21,15 @@ class IndexableString:
     Works almost like a `str`, but allows indexing on offsets
     provided on an `Encoding`
     """
-    pass
+
+    def offsets(self, offsets: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+        """ Convert the Encoding's offsets to the current string.
+
+        `Encoding` provides a list of offsets that are actually offsets to the Normalized
+        version of text. Calling this method with the offsets provided by `Encoding` will make
+        sure that said offsets can be used to index the `str` directly.
+        """
+        pass
 
 class Encoding:
     """ An Encoding as returned by the Tokenizer """
@@ -53,7 +61,11 @@ class Encoding:
 
     @property
     def offsets(self) -> List[Offsets]:
-        """ The offsets """
+        """ The offsets.
+        These offsets can be used to index any `IndexableString` directly. If you want to
+        index the original `str`, make sure to retrieve the converted offsets using the `.offsets`
+        method on the `original_str`.
+        """
         pass
 
     @property
