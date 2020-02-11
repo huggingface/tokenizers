@@ -55,7 +55,7 @@ impl BpeTrainer {
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Trainer)]
 pub struct WordPieceTrainer {}
 #[pymethods]
 impl WordPieceTrainer {
