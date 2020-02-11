@@ -1,4 +1,10 @@
-# [0.4.0](https://github.com/huggingface/tokenizers/compare/node-v0.3.0...node-v0.3.1) (2020-02-05)
+## [0.4.1](https://github.com/huggingface/tokenizers/compare/node-v0.4.0...node-v0.4.1) (2020-02-11)
+
+### Bug Fixes
+
+- Fix punctuation in BertWordPieceTokenizer (Thanks to @Mansterteddy with [#134](https://github.com/huggingface/tokenizers/pull/134))
+
+# [0.4.0](https://github.com/huggingface/tokenizers/compare/node-v0.3.1...node-v0.4.0) (2020-02-05)
 
 ### BREAKING CHANGES
 
