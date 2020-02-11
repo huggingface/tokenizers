@@ -61,7 +61,7 @@ Encoding(num_tokens=13, attributes=[ids, type_ids, tokens, offsets, attention_ma
 ['[CLS]', 'hello', ',', 'y', "'", 'all', '!', 'how', 'are', 'you', '[UNK]', '?', '[SEP]']
 [(0, 0), (0, 5), (5, 6), (7, 8), (8, 9), (9, 12), (12, 13), (14, 17), (18, 21), (22, 25), (26, 27),
  (28, 29), (0, 0)]
-# Here is an example using the offsets mapping to retrieve the string coresponding to the 10th token:
+# Here is an example using the offsets mapping to retrieve the string corresponding to the 10th token:
 >>> output.original_str[output.offsets[10]]
 '😁'
 ```
