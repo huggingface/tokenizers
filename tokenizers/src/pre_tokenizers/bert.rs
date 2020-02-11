@@ -1,8 +1,8 @@
-use unicode_categories::UnicodeCategories;
 use crate::tokenizer::{Offsets, PreTokenizer, Result};
+use unicode_categories::UnicodeCategories;
 
-fn is_bert_punc(x: &char) -> bool{
-    char::is_ascii_punctuation(x) || x.is_punctuation()
+fn is_bert_punc(x: char) -> bool {
+    char::is_ascii_punctuation(&x) || x.is_punctuation()
 }
 
 /// Split the given string as the `should_split` predicate dictates. Keep track of the offsets
@@ -44,7 +44,7 @@ impl PreTokenizer for BertPreTokenizer {
         let mut split_tokens = vec![];
         for (token, offsets) in split_on(&s, |c| char::is_whitespace(*c), false) {
             split_tokens.extend(
-                split_on(&token, is_bert_punc, true)
+                split_on(&token, |c| is_bert_punc(*c), true)
                     .into_iter()
                     .map(|(tok, off)| (tok, (off.0 + offsets.0, off.1 + offsets.0))),
             );
