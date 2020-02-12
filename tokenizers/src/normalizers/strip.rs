@@ -1,23 +1,23 @@
-use crate::tokenizer::{Normalizer, NormalizedString, Result};
+use crate::tokenizer::{NormalizedString, Normalizer, Result};
 
 pub struct Strip {
     strip_left: bool,
-    strip_right: bool
+    strip_right: bool,
 }
 
-impl Strip{
-
+impl Strip {
     pub fn new(strip_left: bool, strip_right: bool) -> Self {
         Strip {
             strip_left,
-            strip_right
+            strip_right,
         }
     }
 
     fn strip_left(&self, normalized: &mut NormalizedString) -> Result<()> {
         let mut removed: usize = 0;
         let mut still_looking: bool = true;
-        let filtered = normalized.get()
+        let filtered = normalized
+            .get()
             .chars()
             // We need to collect here to be able to reverse the iterator because Char is not ended
             .collect::<Vec<_>>()
@@ -27,7 +27,7 @@ impl Strip{
                     if c.is_whitespace() {
                         removed += 1;
                         None
-                    }else {
+                    } else {
                         still_looking = false;
                         Some((c, -(removed as isize)))
                     }
@@ -47,7 +47,8 @@ impl Strip{
     fn strip_right(&self, normalized: &mut NormalizedString) -> Result<()> {
         let mut removed: usize = 0;
         let mut still_looking: bool = true;
-        let mut filtered = normalized.get()
+        let mut filtered = normalized
+            .get()
             .chars()
             // We need to collect here to be able to reverse the iterator because Char is not ended
             .collect::<Vec<_>>()
@@ -58,7 +59,7 @@ impl Strip{
                     if c.is_whitespace() {
                         removed += 1;
                         None
-                    }else {
+                    } else {
                         still_looking = false;
                         Some((c, -(removed as isize)))
                     }
@@ -78,10 +79,9 @@ impl Strip{
 }
 
 impl Normalizer for Strip {
-
     /// Strip the normalized string inplace
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        if self.strip_left{
+        if self.strip_left {
             self.strip_left(normalized).unwrap();
         }
 
@@ -100,10 +100,8 @@ mod tests {
     fn strip_left() {
         let s = &mut NormalizedString::from("  This is an example ");
         let normalizer = Strip::new(true, false);
-        match normalizer.normalize(s){
-            Ok(_) => {
-                assert_eq!(s.get(), "This is an example ")
-            },
+        match normalizer.normalize(s) {
+            Ok(_) => assert_eq!(s.get(), "This is an example "),
             _ => {}
         }
     }
@@ -112,10 +110,8 @@ mod tests {
     fn strip_right() {
         let s = &mut NormalizedString::from("  This is an example ");
         let normalizer = Strip::new(false, true);
-        match normalizer.normalize(s){
-            Ok(_) => {
-                assert_eq!(s.get(), "  This is an example")
-            },
+        match normalizer.normalize(s) {
+            Ok(_) => assert_eq!(s.get(), "  This is an example"),
             _ => {}
         }
     }
@@ -124,10 +120,8 @@ mod tests {
     fn strip_full() {
         let s = &mut NormalizedString::from("  This is an example ");
         let normalizer = Strip::new(true, true);
-        match normalizer.normalize(s){
-            Ok(_) => {
-                assert_eq!(s.get(), "This is an example")
-            },
+        match normalizer.normalize(s) {
+            Ok(_) => assert_eq!(s.get(), "This is an example"),
             _ => {}
         }
     }
