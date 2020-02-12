@@ -76,6 +76,7 @@ fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<normalizers::NFKC>()?;
     m.add_class::<normalizers::Sequence>()?;
     m.add_class::<normalizers::Lowercase>()?;
+    m.add_class::<normalizers::Strip>()?;
     Ok(())
 }
 

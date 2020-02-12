@@ -92,6 +92,13 @@ class Lowercase(Normalizer):
         """ Instantiate a new Lowercase Normalizer """
         pass
 
+class Strip(Normalizer):
+    """ Strip normalizer """
+
+    def __init__(self, strip_left: bool, strip_right: bool) -> Normalizer:
+        pass
+
+
 def unicode_normalizer_from_str(normalizer: str) -> Normalizer:
     """
     Instanciate unicode normalizer from the normalizer name

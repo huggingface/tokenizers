@@ -8,6 +8,7 @@ NFC = normalizers.NFC
 NFKC = normalizers.NFKC
 Sequence = normalizers.Sequence
 Lowercase = normalizers.Lowercase
+Strip = normalizers.Strip
 
 
 NORMALIZERS = {

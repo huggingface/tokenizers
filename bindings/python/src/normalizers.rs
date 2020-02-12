@@ -133,3 +133,18 @@ impl Lowercase {
         }))
     }
 }
+
+#[pyclass]
+pub struct Strip {}
+#[pymethods]
+impl Strip {
+    #[staticmethod]
+    fn new(strip_left: bool, strip_right: bool) -> PyResult<Normalizer> {
+        Ok(Normalizer {
+            normalizer: Container::Owned(Box::new(tk::normalizers::strip::Strip::new(
+                strip_left,
+                strip_right
+            )))
+        })
+    }
+}
