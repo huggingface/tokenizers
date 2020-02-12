@@ -1,12 +1,23 @@
 use crate::tokenizer::{Normalizer, NormalizedString, Result};
 
-pub struct StripNormalizer {}
+pub struct StripNormalizer {
+    strip_left: bool,
+    strip_right: bool
+}
 
 impl StripNormalizer{
+
+    pub fn new(strip_left: bool, strip_right: bool) -> Self {
+        StripNormalizer {
+            strip_left,
+            strip_right
+        }
+    }
+
     fn strip_left(&self, normalized: &mut NormalizedString) -> Result<()> {
         let mut removed: usize = 0;
         let mut still_looking: bool = true;
-        let mut filtered = normalized.get()
+        let filtered = normalized.get()
             .chars()
             // We need to collect here to be able to reverse the iterator because Char is not ended
             .collect::<Vec<_>>()
@@ -70,8 +81,13 @@ impl Normalizer for StripNormalizer {
 
     /// Strip the normalized string inplace
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        self.strip_left(normalized);
-        self.strip_right(normalized);
+        if self.strip_left{
+            self.strip_left(normalized).unwrap();
+        }
+
+        if self.strip_right {
+            self.strip_right(normalized).unwrap();
+        }
         Ok(())
     }
 }
@@ -81,9 +97,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn strip_complete() {
-        let mut s = &mut NormalizedString::from("  This is an example ");
-        let normalizer = StripNormalizer{};
+    fn strip_left() {
+        let s = &mut NormalizedString::from("  This is an example ");
+        let normalizer = StripNormalizer::new(true, false);
+        match normalizer.normalize(s){
+            Ok(_) => {
+                assert_eq!(s.get(), "This is an example ")
+            },
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn strip_right() {
+        let s = &mut NormalizedString::from("  This is an example ");
+        let normalizer = StripNormalizer::new(false, true);
+        match normalizer.normalize(s){
+            Ok(_) => {
+                assert_eq!(s.get(), "  This is an example")
+            },
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn strip_full() {
+        let s = &mut NormalizedString::from("  This is an example ");
+        let normalizer = StripNormalizer::new(true, true);
         match normalizer.normalize(s){
             Ok(_) => {
                 assert_eq!(s.get(), "This is an example")
