@@ -1,14 +1,14 @@
 use crate::tokenizer::{Normalizer, NormalizedString, Result};
 
-pub struct StripNormalizer {
+pub struct Strip {
     strip_left: bool,
     strip_right: bool
 }
 
-impl StripNormalizer{
+impl Strip{
 
     pub fn new(strip_left: bool, strip_right: bool) -> Self {
-        StripNormalizer {
+        Strip {
             strip_left,
             strip_right
         }
@@ -77,7 +77,7 @@ impl StripNormalizer{
     }
 }
 
-impl Normalizer for StripNormalizer {
+impl Normalizer for Strip {
 
     /// Strip the normalized string inplace
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn strip_left() {
         let s = &mut NormalizedString::from("  This is an example ");
-        let normalizer = StripNormalizer::new(true, false);
+        let normalizer = Strip::new(true, false);
         match normalizer.normalize(s){
             Ok(_) => {
                 assert_eq!(s.get(), "This is an example ")
@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn strip_right() {
         let s = &mut NormalizedString::from("  This is an example ");
-        let normalizer = StripNormalizer::new(false, true);
+        let normalizer = Strip::new(false, true);
         match normalizer.normalize(s){
             Ok(_) => {
                 assert_eq!(s.get(), "  This is an example")
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn strip_full() {
         let s = &mut NormalizedString::from("  This is an example ");
-        let normalizer = StripNormalizer::new(true, true);
+        let normalizer = Strip::new(true, true);
         match normalizer.normalize(s){
             Ok(_) => {
                 assert_eq!(s.get(), "This is an example")
