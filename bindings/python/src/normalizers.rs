@@ -138,13 +138,13 @@ impl Lowercase {
 pub struct Strip {}
 #[pymethods]
 impl Strip {
-    #[staticmethod]
-    fn new(strip_left: bool, strip_right: bool) -> PyResult<Normalizer> {
-        Ok(Normalizer {
+    #[new]
+    fn new(obj: &PyRawObject, strip_left: bool, strip_right: bool) -> PyResult<()> {
+        Ok(obj.init(Normalizer {
             normalizer: Container::Owned(Box::new(tk::normalizers::strip::Strip::new(
                 strip_left,
                 strip_right
             )))
-        })
+        }))
     }
 }
