@@ -100,9 +100,8 @@ mod tests {
     fn strip_left() {
         let s = &mut NormalizedString::from("  This is an example ");
         let normalizer = Strip::new(true, false);
-        match normalizer.normalize(s) {
-            Ok(_) => assert_eq!(s.get(), "This is an example "),
-            _ => {}
+        if normalizer.normalize(s).is_ok() {
+            assert_eq!(s.get(), "This is an example ")
         }
     }
 
@@ -110,9 +109,8 @@ mod tests {
     fn strip_right() {
         let s = &mut NormalizedString::from("  This is an example ");
         let normalizer = Strip::new(false, true);
-        match normalizer.normalize(s) {
-            Ok(_) => assert_eq!(s.get(), "  This is an example"),
-            _ => {}
+        if normalizer.normalize(s).is_ok() {
+            assert_eq!(s.get(), "  This is an example")
         }
     }
 
@@ -120,9 +118,8 @@ mod tests {
     fn strip_full() {
         let s = &mut NormalizedString::from("  This is an example ");
         let normalizer = Strip::new(true, true);
-        match normalizer.normalize(s) {
-            Ok(_) => assert_eq!(s.get(), "This is an example"),
-            _ => {}
+        if normalizer.normalize(s).is_ok() {
+            assert_eq!(s.get(), "This is an example")
         }
     }
 }
