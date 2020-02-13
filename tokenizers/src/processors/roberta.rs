@@ -12,15 +12,11 @@ impl RobertaProcessing {
 }
 
 impl PostProcessor for RobertaProcessing {
-    fn added_tokens(
-        &self,
-        _encoding: &Encoding,
-        pair_encoding: &Option<Encoding>,
-    ) -> Result<usize> {
-        if pair_encoding.is_some() {
-            Ok(4)
+    fn added_tokens(&self, is_pair: bool) -> usize {
+        if is_pair {
+            4
         } else {
-            Ok(2)
+            2
         }
     }
 

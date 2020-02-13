@@ -49,7 +49,7 @@ pub trait Model {
 /// It adds any special tokens that a language model would require.
 pub trait PostProcessor {
     /// Returns the number of tokens that will be added during the processing step
-    fn added_tokens(&self, encoding: &Encoding, pair_encoding: &Option<Encoding>) -> Result<usize>;
+    fn added_tokens(&self, is_pair: bool) -> usize;
     /// Process both encodings and returns a new merged one
     fn process(&self, encoding: Encoding, pair_encoding: Option<Encoding>) -> Result<Encoding>;
 }
@@ -264,6 +264,12 @@ impl Tokenizer {
         } else {
             self.model.id_to_token(id)
         }
+    }
+
+    pub fn num_added_tokens(&self, is_pair: bool) -> usize {
+        self.post_processor
+            .as_ref()
+            .map_or(0, |p| p.as_ref().added_tokens(is_pair))
     }
 
     /// Encode the given sentence
@@ -506,7 +512,7 @@ impl Tokenizer {
         let (mut encoding, pair_encoding) = {
             if let Some(trunc) = &self.trunc {
                 let n_added_tokens = if let Some(processor) = &self.post_processor {
-                    processor.added_tokens(&encoding, &pair_encoding)?
+                    processor.added_tokens(pair_encoding.is_some())
                 } else {
                     0
                 };

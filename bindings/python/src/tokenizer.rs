@@ -38,6 +38,13 @@ impl Tokenizer {
         }
     }
 
+    fn num_added_tokens(&self, is_pair: bool) -> PyResult<usize> {
+        Ok(self.tokenizer
+               .get_post_processor()
+               .map_or(0, |p| p.as_ref().added_tokens(is_pair))
+        )
+    }
+
     #[args(kwargs = "**")]
     fn get_vocab_size(&self, kwargs: Option<&PyDict>) -> PyResult<usize> {
         let mut with_added_tokens = true;

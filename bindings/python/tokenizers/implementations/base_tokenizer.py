@@ -13,6 +13,14 @@ class BaseTokenizer:
             self._tokenizer.get_vocab_size(),
             ', '.join(k + '=' + str(v) for k, v in self._parameters.items()))
 
+    def num_added_tokens(self, is_pair: bool) -> int:
+        """
+        Return the number of special tokens that would be added for single/pair sentences.
+        :param is_pair: Boolean indicating if the input would be a single sentence or a pair
+        :return:
+        """
+        return self._tokenizer.num_added_tokens(is_pair)
+
     def get_vocab_size(self, with_added_tokens: bool = True):
         """ Return the size of vocabulary, with or without added tokens.
 
