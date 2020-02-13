@@ -30,11 +30,15 @@ fn byte_level(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     Ok(decoder)
 }
 
-/// wordpiece(prefix: String = "##")
+/// wordpiece(prefix: String = "##", cleanup: bool)
 fn wordpiece(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     let mut prefix = String::from("##");
     if let Some(args) = cx.argument_opt(0) {
         prefix = args.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
+    }
+    let mut cleanup = true;
+    if let Some(args) = cx.argument_opt(1) {
+        cleanup = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
     }
 
     let mut decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
@@ -42,7 +46,9 @@ fn wordpiece(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     decoder
         .borrow_mut(&guard)
         .decoder
-        .to_owned(Box::new(tk::decoders::wordpiece::WordPiece::new(prefix)));
+        .to_owned(Box::new(tk::decoders::wordpiece::WordPiece::new(
+            prefix, cleanup,
+        )));
     Ok(decoder)
 }
 
