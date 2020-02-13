@@ -38,7 +38,7 @@ impl Tokenizer {
         }
     }
 
-    fn num_added_tokens(&self, is_pair: bool) -> PyResult<usize> {
+    fn num_special_tokens_to_add(&self, is_pair: bool) -> PyResult<usize> {
         Ok(self.tokenizer
                .get_post_processor()
                .map_or(0, |p| p.as_ref().added_tokens(is_pair))

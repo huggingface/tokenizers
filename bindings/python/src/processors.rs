@@ -10,7 +10,7 @@ pub struct PostProcessor {
 
 #[pymethods]
 impl PostProcessor {
-    fn num_added_tokens(&self, is_pair: bool) -> usize {
+    fn num_special_tokens_to_add(&self, is_pair: bool) -> usize {
         self.processor.execute(|p| p.added_tokens(is_pair))
     }
 }

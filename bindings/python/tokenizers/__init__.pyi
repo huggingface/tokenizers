@@ -201,7 +201,7 @@ class Tokenizer:
     def normalizer(self, normalizer: normalizers.Normalizer):
         """ Change the normalizer to use with this Tokenizer """
 
-    def num_added_tokens(self, is_pair: bool) -> int:
+    def num_special_tokens_to_add(self, is_pair: bool) -> int:
         """
         Return the number of special tokens that would be added for single/pair sentences.
         :param is_pair: Boolean indicating if the input would be a single sentence or a pair
