@@ -50,7 +50,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
             tokenizer.post_processor = BertProcessing(
                 (sep_token, sep_token_id), (cls_token, cls_token_id)
             )
-        tokenizer.decoders = decoders.WordPiece(prefix=wordpieces_prefix)
+        tokenizer.decoder = decoders.WordPiece(prefix=wordpieces_prefix)
 
         parameters = {
             "model": "BertWordPiece",
