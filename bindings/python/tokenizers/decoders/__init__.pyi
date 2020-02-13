@@ -22,12 +22,15 @@ class WordPiece(Decoder):
     """ WordPiece Decoder """
 
     @staticmethod
-    def __init__(self, prefix: str = "##") -> Decoder:
+    def __init__(self, prefix: str = "##", cleanup: bool = True) -> Decoder:
         """ Instantiate a new WordPiece Decoder
 
         Args:
             prefix: str:
                 The prefix to use for subwords that are not a beginning-of-word
+            cleanup: bool:
+                Whether to cleanup some tokenization artifacts. Mainly spaces before punctuation,
+                and some abbreviated english forms.
         """
         pass
 

@@ -43,18 +43,24 @@ pub struct WordPiece {}
 #[pymethods]
 impl WordPiece {
     #[new]
-    #[args(kwargs="**")]
+    #[args(kwargs = "**")]
     fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut prefix = String::from("##");
+        let mut cleanup = true;
 
         if let Some(kwargs) = kwargs {
             if let Some(p) = kwargs.get_item("prefix") {
                 prefix = p.extract()?;
             }
+            if let Some(c) = kwargs.get_item("cleanup") {
+                cleanup = c.extract()?;
+            }
         }
 
         Ok(obj.init(Decoder {
-            decoder: Container::Owned(Box::new(tk::decoders::wordpiece::WordPiece::new(prefix))),
+            decoder: Container::Owned(Box::new(tk::decoders::wordpiece::WordPiece::new(
+                prefix, cleanup,
+            ))),
         }))
     }
 }
