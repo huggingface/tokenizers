@@ -344,8 +344,6 @@ impl NormalizedString {
         let filtered = self
             .get()
             .chars()
-            // We need to collect here to be able to reverse the iterator because Char is not ended
-            .collect::<Vec<_>>()
             .into_iter()
             .map(|c: char| {
                 if still_looking {
@@ -376,8 +374,6 @@ impl NormalizedString {
         let mut filtered = self
             .get()
             .chars()
-            // We need to collect here to be able to reverse the iterator because Char is not ended
-            .collect::<Vec<_>>()
             .into_iter()
             .rev()
             .map(|c: char| {
@@ -400,6 +396,50 @@ impl NormalizedString {
             filtered.iter().filter(|o| o.is_some()).map(|o| o.unwrap()),
             0,
         );
+        self
+    }
+
+    pub fn strip(&mut self) -> &mut Self {
+        let leading_spaces = self
+            .get()
+            .chars()
+            .into_iter()
+            .take_while(|c| c.is_whitespace())
+            .count() as u32;
+
+        let trailing_spaces = self
+            .get()
+            .chars()
+            .into_iter()
+            .rev()
+            .take_while(|c| c.is_whitespace())
+            .count();
+
+        if leading_spaces > 0 || trailing_spaces > 0 {
+            let transformation: Vec<Option<(char, isize)>> = (0..)
+                .zip(self.get().chars())
+                .map(|(i, c)| {
+                    if (leading_spaces > 0 && i <= (leading_spaces - 1))
+                        || (trailing_spaces > 0 && i >= ((self.len() - trailing_spaces) as u32))
+                    {
+                        None
+                    } else if i == (leading_spaces) {
+                        Some((c, -(leading_spaces as isize)))
+                    } else if i == ((self.len() - trailing_spaces) as u32) {
+                        Some((c, -(trailing_spaces as isize)))
+                    } else {
+                        Some((c, 0))
+                    }
+                })
+                .collect::<Vec<_>>();
+            self.transform(
+                transformation
+                    .into_iter()
+                    .filter(|o| o.is_some())
+                    .map(|o| o.unwrap()),
+                0,
+            );
+        }
         self
     }
 
@@ -555,5 +595,33 @@ mod tests {
         let s = &mut NormalizedString::from("  This is an example ");
         s.rstrip();
         assert_eq!(s.get(), "  This is an example")
+    }
+
+    #[test]
+    fn strip() {
+        assert_eq!(
+            (&mut NormalizedString::from("  This is an example "))
+                .strip()
+                .get(),
+            "This is an example"
+        );
+        assert_eq!(
+            (&mut NormalizedString::from("This is an example "))
+                .strip()
+                .get(),
+            "This is an example"
+        );
+        assert_eq!(
+            (&mut NormalizedString::from("  This is an example"))
+                .strip()
+                .get(),
+            "This is an example"
+        );
+        assert_eq!(
+            (&mut NormalizedString::from("This is an example"))
+                .strip()
+                .get(),
+            "This is an example"
+        );
     }
 }
