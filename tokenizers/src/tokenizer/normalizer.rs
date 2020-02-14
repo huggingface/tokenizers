@@ -339,98 +339,53 @@ impl NormalizedString {
 
     /// Remove any leading space(s) of the normalized string
     pub fn lstrip(&mut self) -> &mut Self {
-        let mut removed: usize = 0;
-        let mut still_looking: bool = true;
-        let filtered = self
-            .get()
-            .chars()
-            .map(|c: char| {
-                if still_looking {
-                    if c.is_whitespace() {
-                        removed += 1;
-                        None
-                    } else {
-                        still_looking = false;
-                        Some((c, -(removed as isize)))
-                    }
-                } else {
-                    Some((c, 0))
-                }
-            })
-            .collect::<Vec<_>>();
-
-        self.transform(
-            filtered.iter().filter(|o| o.is_some()).map(|o| o.unwrap()),
-            0,
-        );
-        self
+        self.lrstrip(true, false)
     }
 
     /// Remove any trailing space(s) of the normalized string
     pub fn rstrip(&mut self) -> &mut Self {
-        let mut removed: usize = 0;
-        let mut still_looking: bool = true;
-        let mut filtered = self
-            .get()
-            .chars()
-            .rev()
-            .map(|c: char| {
-                if still_looking {
-                    if c.is_whitespace() {
-                        removed += 1;
-                        None
-                    } else {
-                        still_looking = false;
-                        Some((c, -(removed as isize)))
-                    }
-                } else {
-                    Some((c, 0))
-                }
-            })
-            .collect::<Vec<_>>();
-
-        filtered.reverse();
-        self.transform(
-            filtered.iter().filter(|o| o.is_some()).map(|o| o.unwrap()),
-            0,
-        );
-        self
+        self.lrstrip(false, true)
     }
 
+    /// Remove any leading and trailing space(s) of the normalized string
     pub fn strip(&mut self) -> &mut Self {
-        let leading_spaces = self.get().chars().take_while(|c| c.is_whitespace()).count() as u32;
+        self.lrstrip(true, true)
+    }
 
-        let trailing_spaces = self
-            .get()
-            .chars()
-            .rev()
-            .take_while(|c| c.is_whitespace())
-            .count();
+    fn lrstrip(&mut self, left: bool, right: bool) -> &mut Self {
+        let leading_spaces = if left {
+            self.get().chars().take_while(|c| c.is_whitespace()).count()
+        } else {
+            0
+        };
+        let trailing_spaces = if right {
+            self.get()
+                .chars()
+                .rev()
+                .take_while(|c| c.is_whitespace())
+                .count()
+        } else {
+            0
+        };
 
         if leading_spaces > 0 || trailing_spaces > 0 {
-            let transformation: Vec<Option<(char, isize)>> = (0..)
-                .zip(self.get().chars())
+            let transformation = self
+                .normalized
+                .chars()
+                .enumerate()
                 .map(|(i, c)| {
-                    if (leading_spaces > 0 && i <= (leading_spaces - 1))
-                        || (trailing_spaces > 0 && i >= ((self.len() - trailing_spaces) as u32))
-                    {
+                    if i < leading_spaces || i >= self.len() - trailing_spaces {
                         None
-                    } else if i == (leading_spaces) {
-                        Some((c, -(leading_spaces as isize)))
-                    } else if i == ((self.len() - trailing_spaces) as u32) {
+                    } else if i == self.len() - trailing_spaces - 1 {
                         Some((c, -(trailing_spaces as isize)))
                     } else {
                         Some((c, 0))
                     }
                 })
+                .filter(|o| o.is_some())
+                .map(|o| o.unwrap())
                 .collect::<Vec<_>>();
-            self.transform(
-                transformation
-                    .into_iter()
-                    .filter(|o| o.is_some())
-                    .map(|o| o.unwrap()),
-                0,
-            );
+            self.transform(transformation.into_iter(), leading_spaces);
         }
         self
     }
@@ -577,73 +532,34 @@ mod tests {
 
     #[test]
     fn lstrip() {
+        let mut n = NormalizedString::from("  This is an example  ");
+        n.lstrip();
+        assert_eq!(&n.normalized, "This is an example  ");
         assert_eq!(
-            (&mut NormalizedString::from("This is an example"))
-                .lstrip()
-                .get(),
-            "This is an example"
-        );
-        assert_eq!(
-            (&mut NormalizedString::from("This is an example "))
-                .lstrip()
-                .get(),
-            "This is an example "
-        );
-        assert_eq!(
-            (&mut NormalizedString::from("  This is an example "))
-                .lstrip()
-                .get(),
-            "This is an example "
+            n.get_range_original(0..n.normalized.len()),
+            Some("  This is an example  ".into())
         );
     }
 
     #[test]
     fn rstrip() {
+        let mut n = NormalizedString::from("  This is an example  ");
+        n.rstrip();
+        assert_eq!(&n.normalized, "  This is an example");
         assert_eq!(
-            (&mut NormalizedString::from("This is an example"))
-                .rstrip()
-                .get(),
-            "This is an example"
-        );
-        assert_eq!(
-            (&mut NormalizedString::from("This is an example "))
-                .rstrip()
-                .get(),
-            "This is an example"
-        );
-        assert_eq!(
-            (&mut NormalizedString::from("  This is an example "))
-                .rstrip()
-                .get(),
-            "  This is an example"
+            n.get_range_original(0..n.normalized.len()),
+            Some("  This is an example  ".into())
         );
     }
 
     #[test]
     fn strip() {
+        let mut n = NormalizedString::from("  This is an example  ");
+        n.strip();
+        assert_eq!(&n.normalized, "This is an example");
         assert_eq!(
-            (&mut NormalizedString::from("  This is an example "))
-                .strip()
-                .get(),
-            "This is an example"
-        );
-        assert_eq!(
-            (&mut NormalizedString::from("This is an example "))
-                .strip()
-                .get(),
-            "This is an example"
-        );
-        assert_eq!(
-            (&mut NormalizedString::from("  This is an example"))
-                .strip()
-                .get(),
-            "This is an example"
-        );
-        assert_eq!(
-            (&mut NormalizedString::from("This is an example"))
-                .strip()
-                .get(),
-            "This is an example"
+            n.get_range_original(0..n.normalized.len()),
+            Some("  This is an example  ".into())
         );
     }
 }
