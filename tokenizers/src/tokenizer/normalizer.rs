@@ -585,16 +585,46 @@ mod tests {
 
     #[test]
     fn lstrip() {
-        let s = &mut NormalizedString::from("  This is an example ");
-        s.lstrip();
-        assert_eq!(s.get(), "This is an example ")
+        assert_eq!(
+            (&mut NormalizedString::from("This is an example"))
+                .lstrip()
+                .get(),
+            "This is an example"
+        );
+        assert_eq!(
+            (&mut NormalizedString::from("This is an example "))
+                .lstrip()
+                .get(),
+            "This is an example "
+        );
+        assert_eq!(
+            (&mut NormalizedString::from("  This is an example "))
+                .lstrip()
+                .get(),
+            "This is an example "
+        );
     }
 
     #[test]
     fn rstrip() {
-        let s = &mut NormalizedString::from("  This is an example ");
-        s.rstrip();
-        assert_eq!(s.get(), "  This is an example")
+        assert_eq!(
+            (&mut NormalizedString::from("This is an example"))
+                .rstrip()
+                .get(),
+            "This is an example"
+        );
+        assert_eq!(
+            (&mut NormalizedString::from("This is an example "))
+                .rstrip()
+                .get(),
+            "This is an example"
+        );
+        assert_eq!(
+            (&mut NormalizedString::from("  This is an example "))
+                .rstrip()
+                .get(),
+            "  This is an example"
+        );
     }
 
     #[test]
