@@ -95,7 +95,7 @@ class Lowercase(Normalizer):
 class Strip(Normalizer):
     """ Strip normalizer """
 
-    def __init__(self, strip_left: bool, strip_right: bool) -> Normalizer:
+    def __init__(self, left: bool = True, right: bool = True) -> Normalizer:
         pass
 
 
