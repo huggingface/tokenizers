@@ -8,6 +8,13 @@ pub struct PostProcessor {
     pub processor: Container<dyn tk::tokenizer::PostProcessor + Sync>,
 }
 
+#[pymethods]
+impl PostProcessor {
+    fn num_special_tokens_to_add(&self, is_pair: bool) -> usize {
+        self.processor.execute(|p| p.added_tokens(is_pair))
+    }
+}
+
 #[pyclass(extends=PostProcessor)]
 pub struct BertProcessing {}
 #[pymethods]

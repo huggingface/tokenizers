@@ -201,6 +201,14 @@ class Tokenizer:
     def normalizer(self, normalizer: normalizers.Normalizer):
         """ Change the normalizer to use with this Tokenizer """
 
+    def num_special_tokens_to_add(self, is_pair: bool) -> int:
+        """
+        Return the number of special tokens that would be added for single/pair sentences.
+        :param is_pair: Boolean indicating if the input would be a single sentence or a pair
+        :return:
+        """
+        pass
+
 
     def get_vocab_size(self, with_added_tokens: Optional[bool]) -> int:
         """ Returns the size of the vocabulary
