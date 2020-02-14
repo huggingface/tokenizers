@@ -337,6 +337,72 @@ impl NormalizedString {
         self.normalized.push_str(&other.normalized);
     }
 
+    /// Remove any leading space(s) of the normalized string
+    pub fn lstrip(&mut self) -> &mut Self {
+        let mut removed: usize = 0;
+        let mut still_looking: bool = true;
+        let filtered = self
+            .get()
+            .chars()
+            // We need to collect here to be able to reverse the iterator because Char is not ended
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|c: char| {
+                if still_looking {
+                    if c.is_whitespace() {
+                        removed += 1;
+                        None
+                    } else {
+                        still_looking = false;
+                        Some((c, -(removed as isize)))
+                    }
+                } else {
+                    Some((c, 0))
+                }
+            })
+            .collect::<Vec<_>>();
+
+        self.transform(
+            filtered.iter().filter(|o| o.is_some()).map(|o| o.unwrap()),
+            0,
+        );
+        self
+    }
+
+    /// Remove any trailing space(s) of the normalized string
+    pub fn rstrip(&mut self) -> &mut Self {
+        let mut removed: usize = 0;
+        let mut still_looking: bool = true;
+        let mut filtered = self
+            .get()
+            .chars()
+            // We need to collect here to be able to reverse the iterator because Char is not ended
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .map(|c: char| {
+                if still_looking {
+                    if c.is_whitespace() {
+                        removed += 1;
+                        None
+                    } else {
+                        still_looking = false;
+                        Some((c, -(removed as isize)))
+                    }
+                } else {
+                    Some((c, 0))
+                }
+            })
+            .collect::<Vec<_>>();
+
+        filtered.reverse();
+        self.transform(
+            filtered.iter().filter(|o| o.is_some()).map(|o| o.unwrap()),
+            0,
+        );
+        self
+    }
+
     /// Returns the length of the normalized string (counting chars not bytes)
     pub fn len(&self) -> usize {
         self.normalized.chars().count()
@@ -475,5 +541,19 @@ mod tests {
             Some("  Hello  ".into())
         );
         assert_eq!(n.get_range_original(1.."Hell".len()), Some("ell".into()));
+    }
+
+    #[test]
+    fn lstrip() {
+        let s = &mut NormalizedString::from("  This is an example ");
+        s.lstrip();
+        assert_eq!(s.get(), "This is an example ")
+    }
+
+    #[test]
+    fn rstrip() {
+        let s = &mut NormalizedString::from("  This is an example ");
+        s.rstrip();
+        assert_eq!(s.get(), "  This is an example")
     }
 }
