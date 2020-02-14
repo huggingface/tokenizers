@@ -344,7 +344,6 @@ impl NormalizedString {
         let filtered = self
             .get()
             .chars()
-            .into_iter()
             .map(|c: char| {
                 if still_looking {
                     if c.is_whitespace() {
@@ -374,7 +373,6 @@ impl NormalizedString {
         let mut filtered = self
             .get()
             .chars()
-            .into_iter()
             .rev()
             .map(|c: char| {
                 if still_looking {
@@ -400,17 +398,11 @@ impl NormalizedString {
     }
 
     pub fn strip(&mut self) -> &mut Self {
-        let leading_spaces = self
-            .get()
-            .chars()
-            .into_iter()
-            .take_while(|c| c.is_whitespace())
-            .count() as u32;
+        let leading_spaces = self.get().chars().take_while(|c| c.is_whitespace()).count() as u32;
 
         let trailing_spaces = self
             .get()
             .chars()
-            .into_iter()
             .rev()
             .take_while(|c| c.is_whitespace())
             .count();
