@@ -13,8 +13,10 @@ export function byteLevelDecoder(): Decoder;
 /**
  * Instantiate a new WordPiece Decoder
  * @param [prefix='##'] The prefix to use for subwords that are not a beginning-of-word
+ * @param [cleanup=true] Whether to cleanup some tokenization artifacts.
+ * Mainly spaces before punctuation, and some abbreviated english forms.
  */
-export function wordPieceDecoder(prefix?: string): Decoder;
+export function wordPieceDecoder(prefix?: string, cleanup?: boolean): Decoder;
 
 /**
  * Instantiate a new Metaspace
