@@ -19,7 +19,7 @@ class BaseTokenizer:
         :param is_pair: Boolean indicating if the input would be a single sentence or a pair
         :return:
         """
-        return self._tokenizer.num_added_tokens(is_pair)
+        return self._tokenizer.num_special_tokens_to_add(is_pair)
 
     def get_vocab_size(self, with_added_tokens: bool = True):
         """ Return the size of vocabulary, with or without added tokens.
