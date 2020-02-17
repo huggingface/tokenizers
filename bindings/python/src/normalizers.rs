@@ -133,3 +133,29 @@ impl Lowercase {
         }))
     }
 }
+
+#[pyclass]
+pub struct Strip {}
+#[pymethods]
+impl Strip {
+    #[new]
+    #[args(kwargs = "**")]
+    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
+        let mut left = true;
+        let mut right = true;
+
+        if let Some(kwargs) = kwargs {
+            if let Some(l) = kwargs.get_item("left") {
+                left = l.extract()?;
+            }
+            if let Some(r) = kwargs.get_item("right") {
+                right = r.extract()?;
+            }
+        }
+
+        Ok(obj.init(Normalizer {
+            normalizer: Container::Owned(Box::new(tk::normalizers::strip::Strip::new(left, right))),
+        }))
+    }
+}
+
