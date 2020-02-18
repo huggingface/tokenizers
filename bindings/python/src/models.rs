@@ -174,10 +174,7 @@ impl WordLevel {
             }
         }
 
-        match tk::models::wordlevel::WordLevel::from_files(
-            vocab,
-            unk_token,
-        ) {
+        match tk::models::wordlevel::WordLevel::from_files(vocab, unk_token) {
             Err(e) => {
                 println!("Errors: {:?}", e);
                 Err(exceptions::Exception::py_err(
