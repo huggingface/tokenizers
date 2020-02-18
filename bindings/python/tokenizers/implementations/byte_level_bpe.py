@@ -15,7 +15,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
                  vocab_file: Optional[str]=None,
                  merges_file: Optional[str]=None,
                  add_prefix_space: bool=False,
-                 do_lowercase: bool=False,
+                 lowercase: bool=False,
                  dropout: Optional[float]=None,
                  unicode_normalizer: Optional[str]=None,
                  continuing_subword_prefix: Optional[str]=None,
@@ -37,7 +37,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         if unicode_normalizer:
             normalizers += [unicode_normalizer_from_str(unicode_normalizer)]
 
-        if do_lowercase:
+        if lowercase:
             normalizers += [Lowercase()]
 
         # Create the normalizer structure
@@ -52,7 +52,15 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         )
         tokenizer.decoder = decoders.ByteLevel()
 
-        parameters = {"model": "ByteLevelBPE", "add_prefix_space": add_prefix_space}
+        parameters = {
+            "model": "ByteLevelBPE",
+            "add_prefix_space": add_prefix_space,
+            "lowercase": lowercase,
+            "dropout": dropout,
+            "unicode_normalizer": unicode_normalizer,
+            "continuing_subword_prefix": continuing_subword_prefix,
+            "end_of_word_suffix": end_of_word_suffix,
+        }
 
         super().__init__(tokenizer, parameters)
 

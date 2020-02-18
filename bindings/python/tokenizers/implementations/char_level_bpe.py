@@ -18,7 +18,7 @@ class CharBPETokenizer(BaseTokenizer):
                  unk_token: Optional[str]="<unk>",
                  suffix: Optional[str]="</w>",
                  dropout: Optional[float]=None,
-                 do_lowercase: bool = False,
+                 lowercase: bool = False,
                  unicode_normalizer: Optional[str] = None):
         if vocab_file is not None and merges_file is not None:
             tokenizer = Tokenizer(
@@ -41,7 +41,7 @@ class CharBPETokenizer(BaseTokenizer):
         if unicode_normalizer:
             normalizers += [unicode_normalizer_from_str(unicode_normalizer)]
 
-        if do_lowercase:
+        if lowercase:
             normalizers += [Lowercase()]
 
         # Create the normalizer structure
@@ -59,6 +59,8 @@ class CharBPETokenizer(BaseTokenizer):
             "unk_token": unk_token,
             "suffix": suffix,
             "dropout": dropout,
+            "lowercase": lowercase,
+            "unicode_normalizer": unicode_normalizer,
         }
 
         super().__init__(tokenizer, parameters)
