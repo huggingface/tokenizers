@@ -1,4 +1,5 @@
 use crate::tokenizer::{Encoding, PaddingDirection, Result};
+use rayon::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct TruncationParams {
@@ -130,18 +131,22 @@ pub fn pad_encodings(
 
     let pad_length = match params.strategy {
         PaddingStrategy::Fixed(size) => size,
-        PaddingStrategy::BatchLongest => encodings.iter().map(|e| e.get_ids().len()).max().unwrap(),
+        PaddingStrategy::BatchLongest => encodings
+            .par_iter()
+            .map(|e| e.get_ids().len())
+            .max()
+            .unwrap(),
     };
 
-    for encoding in encodings.iter_mut() {
+    encodings.par_iter_mut().for_each(|encoding| {
         encoding.pad(
             pad_length,
             params.pad_id,
             params.pad_type_id,
             &params.pad_token,
             params.direction,
-        );
-    }
+        )
+    });
 
     Ok(encodings)
 }
