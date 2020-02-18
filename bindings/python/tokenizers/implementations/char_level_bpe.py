@@ -35,7 +35,8 @@ class CharBPETokenizer(BaseTokenizer):
         else:
             tokenizer = Tokenizer(BPE.empty())
 
-        tokenizer.add_special_tokens([unk_token])
+        if tokenizer.token_to_id(unk_token) is not None:
+            tokenizer.add_special_tokens([unk_token])
 
         # Check for Unicode normalization first (before everything else)
         normalizers = []
