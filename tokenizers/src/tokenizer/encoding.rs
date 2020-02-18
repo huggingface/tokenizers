@@ -1,4 +1,5 @@
 use crate::tokenizer::NormalizedString;
+use rayon::prelude::*;
 
 /// The various possible padding directions.
 #[derive(Debug, Clone, Copy)]
@@ -221,44 +222,55 @@ impl Encoding {
         pad_token: &str,
         direction: PaddingDirection,
     ) {
-        if self.ids.len() > target_length {
+        // Dispatch call to all the overflowings first
+        self.overflowing.par_iter_mut().for_each(|encoding| {
+            encoding.pad(target_length, pad_id, pad_type_id, pad_token, direction)
+        });
+
+        // Then check if we should pad ourself
+        if self.ids.len() >= target_length {
             // We just do nothing if the wanted padding length is smaller than us
             return;
         }
         let pad_length = target_length - self.ids.len();
 
-        let ids_pad = vec![pad_id; pad_length];
-        let type_ids_pad = vec![pad_type_id; pad_length];
-        let tokens_pad = vec![pad_token.to_owned(); pad_length];
-        let attention_pad = vec![0; pad_length];
-        let special_pad = vec![1; pad_length];
-        let offsets_pad = vec![(0, 0); pad_length];
-
         match direction {
             PaddingDirection::Left => {
-                self.ids = [&ids_pad[..], &self.ids[..]].concat();
-                self.type_ids = [&type_ids_pad[..], &self.type_ids[..]].concat();
-                self.tokens = [&tokens_pad[..], &self.tokens[..]].concat();
-                self.attention_mask = [&attention_pad[..], &self.attention_mask[..]].concat();
-                self.special_tokens_mask =
-                    [&special_pad[..], &self.special_tokens_mask[..]].concat();
-                self.offsets = [&offsets_pad[..], &self.offsets[..]].concat();
+                self.ids = (0..pad_length)
+                    .map(|_| pad_id)
+                    .chain(self.ids.drain(..))
+                    .collect();
+                self.type_ids = (0..pad_length)
+                    .map(|_| pad_type_id)
+                    .chain(self.type_ids.drain(..))
+                    .collect();
+                self.tokens = (0..pad_length)
+                    .map(|_| pad_token.to_owned())
+                    .chain(self.tokens.drain(..))
+                    .collect();
+                self.attention_mask = (0..pad_length)
+                    .map(|_| 0)
+                    .chain(self.attention_mask.drain(..))
+                    .collect();
+                self.special_tokens_mask = (0..pad_length)
+                    .map(|_| 1)
+                    .chain(self.special_tokens_mask.drain(..))
+                    .collect();
+                self.offsets = (0..pad_length)
+                    .map(|_| (0, 0))
+                    .chain(self.offsets.drain(..))
+                    .collect();
             }
             PaddingDirection::Right => {
-                self.ids = [&self.ids[..], &ids_pad[..]].concat();
-                self.type_ids = [&self.type_ids[..], &type_ids_pad[..]].concat();
-                self.tokens = [&self.tokens[..], &tokens_pad[..]].concat();
-                self.attention_mask = [&self.attention_mask[..], &attention_pad[..]].concat();
-                self.special_tokens_mask =
-                    [&self.special_tokens_mask[..], &special_pad[..]].concat();
-                self.offsets = [&self.offsets[..], &offsets_pad[..]].concat();
+                self.ids.extend((0..pad_length).map(|_| pad_id));
+                self.type_ids.extend((0..pad_length).map(|_| pad_type_id));
+                self.tokens
+                    .extend((0..pad_length).map(|_| pad_token.to_owned()));
+                self.attention_mask.extend((0..pad_length).map(|_| 0));
+                self.special_tokens_mask.extend((0..pad_length).map(|_| 1));
+                self.offsets.extend((0..pad_length).map(|_| (0, 0)));
             }
         }
-
-        // Also pad each overflowing encoding
-        self.overflowing.iter_mut().for_each(|encoding| {
-            encoding.pad(target_length, pad_id, pad_type_id, pad_token, direction)
-        });
     }
 }
 
