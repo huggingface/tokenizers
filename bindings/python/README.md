@@ -73,12 +73,12 @@ python setup.py install
 Using a pre-trained tokenizer is really simple:
 
 ```python
-from tokenizers import BPETokenizer
+from tokenizers import CharBPETokenizer
 
 # Initialize a tokenizer
 vocab = "./path/to/vocab.json"
 merges = "./path/to/merges.txt"
-tokenizer = BPETokenizer(vocab, merges)
+tokenizer = CharBPETokenizer(vocab, merges)
 
 # And then encode:
 encoded = tokenizer.encode("I can feel the magic, can you?")
@@ -89,10 +89,10 @@ print(encoded.tokens)
 And you can train yours just as simply:
 
 ```python
-from tokenizers import BPETokenizer
+from tokenizers import CharBPETokenizer
 
 # Initialize a tokenizer
-tokenizer = BPETokenizer()
+tokenizer = CharBPETokenizer()
 
 # Then train it!
 tokenizer.train([ "./path/to/files/1.txt", "./path/to/files/2.txt" ])
@@ -106,7 +106,7 @@ tokenizer.save("./path/to/directory", "my-bpe")
 
 ### Provided Tokenizers
 
- - `BPETokenizer`: The original BPE
+ - `CharBPETokenizer`: The original BPE
  - `ByteLevelBPETokenizer`: The byte level version of the BPE
  - `SentencePieceBPETokenizer`: A BPE implementation compatible with the one used by SentencePiece
  - `BertWordPieceTokenizer`: The famous Bert tokenizer, using WordPiece

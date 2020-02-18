@@ -7,7 +7,7 @@ from .trainers import *
 
 from .implementations import (
     ByteLevelBPETokenizer as ByteLevelBPETokenizer,
-    BPETokenizer as BPETokenizer,
+    CharBPETokenizer as CharBPETokenizer,
     SentencePieceBPETokenizer as SentencePieceBPETokenizer,
     BertWordPieceTokenizer as BertWordPieceTokenizer,
 )

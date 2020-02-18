@@ -42,7 +42,7 @@ Start using in a matter of seconds:
 ```python
 # Tokenizers provides ultra-fast implementations of most current tokenizers:
 >>> from tokenizers import (ByteLevelBPETokenizer,
-                            BPETokenizer,
+                            CharBPETokenizer,
                             SentencePieceBPETokenizer,
                             BertWordPieceTokenizer)
 # Ultra-fast => they can encode 1GB of text in ~20sec on a standard server's CPU
