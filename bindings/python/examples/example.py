@@ -3,8 +3,9 @@ import argparse
 from tqdm import tqdm
 
 import logging
-logging.getLogger('transformers').disabled = True
-logging.getLogger('transformers.tokenization_utils').disabled = True
+
+logging.getLogger("transformers").disabled = True
+logging.getLogger("transformers.tokenization_utils").disabled = True
 
 from tokenizers import Tokenizer, pre_tokenizers, decoders
 from tokenizers.models import BPE, WordPiece
@@ -18,7 +19,7 @@ parser.add_argument("--type", default="gpt2", type=str, help="The type of tokeni
 parser.add_argument("--file", default=None, type=str, help="The file to encode")
 parser.add_argument("--vocab", default=None, type=str, required=True, help="The vocab file")
 parser.add_argument("--merges", default=None, type=str, help="The merges.txt file")
-parser.add_argument("--debug", action='store_true', help="Verbose output")
+parser.add_argument("--debug", action="store_true", help="Verbose output")
 args = parser.parse_args()
 
 if args.type == "gpt2" and args.merges is None:
@@ -26,7 +27,7 @@ if args.type == "gpt2" and args.merges is None:
 
 if args.file is not None:
     with open(args.file, "r") as fp:
-        text = [ line.strip() for line in fp ]
+        text = [line.strip() for line in fp]
 else:
     text = """
 The Zen of Python, by Tim Peters
@@ -49,11 +50,13 @@ Although never is often better than *right* now.
 If the implementation is hard to explain, it's a bad idea.
 If the implementation is easy to explain, it may be a good idea.
 Namespaces are one honking great idea -- let's do more of those!
-""".split("\n")
+""".split(
+        "\n"
+    )
 
 if args.type == "gpt2":
     print("Running GPT-2 tokenizer")
-    tok_p = GPT2Tokenizer.from_pretrained('gpt2')
+    tok_p = GPT2Tokenizer.from_pretrained("gpt2")
 
     # Create a Tokenizer using BPE
     tok_r = Tokenizer(BPE.from_files(args.vocab, args.merges))
@@ -65,32 +68,29 @@ elif args.type == "bert":
     print("Running Bert tokenizer")
     tok_p = BertTokenizer.from_pretrained(args.vocab)
 
-    tok_r = Tokenizer(WordPiece.from_files(
-        args.vocab,
-        unk_token="[UNK]",
-        max_input_chars_per_word=100)
+    tok_r = Tokenizer(
+        WordPiece.from_files(args.vocab, unk_token="[UNK]", max_input_chars_per_word=100)
     )
     tok_r.normalizer = BertNormalizer(
-        clean_text=True,
-        handle_chinese_chars=True,
-        strip_accents=True,
-        lowercase=True,
+        clean_text=True, handle_chinese_chars=True, strip_accents=True, lowercase=True,
     )
     # tok_r.pre_tokenizer = pre_tokenizers.Whitespace()
     tok_r.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
     tok_r.decoder = decoders.WordPiece()
     tok_r.post_processor = BertProcessing(
-        ("[SEP]", tok_r.token_to_id("[SEP]")),
-        ("[CLS]", tok_r.token_to_id("[CLS]")),
+        ("[SEP]", tok_r.token_to_id("[SEP]")), ("[CLS]", tok_r.token_to_id("[CLS]")),
     )
 else:
     raise Exception(f"Unknown type {args.type}")
 
+
 def tokenize_r():
-    return tok_r.encode_batch(text);
+    return tok_r.encode_batch(text)
+
 
 def tokenize_p():
     return [tok_p.encode(sentence, add_special_tokens=True) for sentence in tqdm(text)]
+
 
 print(f"Tokenizing {len(text)} lines")
 
@@ -110,7 +110,7 @@ print(f"Transformer tokenizer took: {time_p} sec")
 
 print(f"SpeedUp Ratio: {time_p / time_r}")
 
-ids_r = [ sentence.ids for sentence in encoded_r ]
+ids_r = [sentence.ids for sentence in encoded_r]
 diff_ids = 0
 for i in range(0, len(encoded_r)):
     if encoded_r[i].ids != encoded_p[i]:
@@ -124,8 +124,8 @@ for i in range(0, len(encoded_r)):
             print("")
 print(f"Ids differences: {diff_ids}")
 
-decoded_r = tok_r.decode_batch([ sentence.ids for sentence in encoded_r ], False)
-decoded_p = [ tok_p.decode(en) for en in encoded_p ]
+decoded_r = tok_r.decode_batch([sentence.ids for sentence in encoded_r], False)
+decoded_p = [tok_p.decode(en) for en in encoded_p]
 diff_decoded = 0
 for i in range(0, len(text)):
     if decoded_r[i] != decoded_p[i]:

@@ -7,27 +7,32 @@ parser.add_argument("--vocab", default=None, type=str, required=True, help="The 
 parser.add_argument("--merges", default=None, type=str, required=True, help="The merges.txt file")
 args = parser.parse_args()
 
+
 class GoodCustom:
     """GoodCustom
     This class represents a good custom PreTokenizer that will be called
     by `tokenizers` when needed
     """
+
     def pre_tokenize(self, sentence):
         return sentence.split(" ")
 
     def decode(self, tokens):
         return ", ".join(tokens)
 
+
 class BadCustom:
     """Bad Pretok
     This class represents a bad custom PreTokenizer that will trigger an exception
     when called by `tokenizers`
     """
+
     def pre_tokenize(self, sentence):
         return None
 
     def decode(self, tokens):
         return None
+
 
 def tokenize(sentence):
     output = tokenizer.encode(sentence).tokens
@@ -66,4 +71,3 @@ try:
     encoding = tokenizer.encode("Hey friend!")
 except:
     print("Bad tokenizer didn't work")
-

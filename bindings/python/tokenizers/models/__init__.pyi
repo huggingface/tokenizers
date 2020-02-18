@@ -16,18 +16,19 @@ class Model:
         """
         pass
 
-
 class BPE(Model):
     """ BytePairEncoding model class """
 
     @staticmethod
-    def from_files(vocab: str,
-                   merges: str,
-                   cache_capacity: Optional[int],
-                   dropout: Optional[float],
-                   unk_token: Optional[str],
-                   continuing_subword_prefix: Optional[str],
-                   end_of_word_suffix: Optional[str]) -> Model:
+    def from_files(
+        vocab: str,
+        merges: str,
+        cache_capacity: Optional[int],
+        dropout: Optional[float],
+        unk_token: Optional[str],
+        continuing_subword_prefix: Optional[str],
+        end_of_word_suffix: Optional[str],
+    ) -> Model:
         """ Instantiate a BPE Model from the given vocab and merges files.
 
         Args:
@@ -55,20 +56,18 @@ class BPE(Model):
                 The suffix to attach to subword units that represent an end of word.
         """
         pass
-
     @staticmethod
     def empty() -> Model:
         """ Instantiate an empty BPE Model. """
         pass
 
-
 class WordPiece(Model):
     """ WordPiece model class """
 
     @staticmethod
-    def from_files(vocab: str,
-                   unk_token: Optional[str],
-                   max_input_chars_per_word: Optional[int]) -> Model:
+    def from_files(
+        vocab: str, unk_token: Optional[str], max_input_chars_per_word: Optional[int]
+    ) -> Model:
         """ Instantiate a WordPiece Model from the given vocab file.
 
         Args:
@@ -82,12 +81,10 @@ class WordPiece(Model):
                 The maximum number of characters to authorize in a single word.
         """
         pass
-
     @staticmethod
     def empty() -> Model:
         """ Instantiate an empty WordPiece Model. """
         pass
-
 
 class WordLevel(Model):
     """

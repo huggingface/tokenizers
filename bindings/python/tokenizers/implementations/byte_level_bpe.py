@@ -5,29 +5,34 @@ from .base_tokenizer import BaseTokenizer
 
 from typing import Optional, List, Union
 
+
 class ByteLevelBPETokenizer(BaseTokenizer):
     """ ByteLevelBPETokenizer
 
     Represents a Byte-level BPE as introduced by OpenAI with their GPT-2 model
     """
 
-    def __init__(self,
-                 vocab_file: Optional[str]=None,
-                 merges_file: Optional[str]=None,
-                 add_prefix_space: bool=False,
-                 lowercase: bool=False,
-                 dropout: Optional[float]=None,
-                 unicode_normalizer: Optional[str]=None,
-                 continuing_subword_prefix: Optional[str]=None,
-                 end_of_word_suffix: Optional[str]=None
-                 ):
+    def __init__(
+        self,
+        vocab_file: Optional[str] = None,
+        merges_file: Optional[str] = None,
+        add_prefix_space: bool = False,
+        lowercase: bool = False,
+        dropout: Optional[float] = None,
+        unicode_normalizer: Optional[str] = None,
+        continuing_subword_prefix: Optional[str] = None,
+        end_of_word_suffix: Optional[str] = None,
+    ):
         if vocab_file is not None and merges_file is not None:
-            tokenizer = Tokenizer(BPE.from_files(
-                vocab_file, merges_file,
-                dropout=dropout,
-                continuing_subword_prefix=continuing_subword_prefix or "",
-                end_of_word_suffix=end_of_word_suffix or "",
-            ))
+            tokenizer = Tokenizer(
+                BPE.from_files(
+                    vocab_file,
+                    merges_file,
+                    dropout=dropout,
+                    continuing_subword_prefix=continuing_subword_prefix or "",
+                    end_of_word_suffix=end_of_word_suffix or "",
+                )
+            )
         else:
             tokenizer = Tokenizer(BPE.empty())
 
@@ -47,9 +52,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
             else:
                 tokenizer.normalizer = normalizers[0]
 
-        tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(
-            add_prefix_space=add_prefix_space
-        )
+        tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=add_prefix_space)
         tokenizer.decoder = decoders.ByteLevel()
 
         parameters = {

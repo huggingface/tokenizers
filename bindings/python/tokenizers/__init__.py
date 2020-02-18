@@ -11,5 +11,5 @@ from .implementations import (
     ByteLevelBPETokenizer,
     CharBPETokenizer,
     SentencePieceBPETokenizer,
-    BertWordPieceTokenizer
+    BertWordPieceTokenizer,
 )
