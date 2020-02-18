@@ -39,10 +39,10 @@ impl Tokenizer {
     }
 
     fn num_special_tokens_to_add(&self, is_pair: bool) -> PyResult<usize> {
-        Ok(self.tokenizer
-               .get_post_processor()
-               .map_or(0, |p| p.as_ref().added_tokens(is_pair))
-        )
+        Ok(self
+            .tokenizer
+            .get_post_processor()
+            .map_or(0, |p| p.as_ref().added_tokens(is_pair)))
     }
 
     #[args(kwargs = "**")]
@@ -197,10 +197,11 @@ impl Tokenizer {
     }
 
     fn decode(&self, ids: Vec<u32>, skip_special_tokens: Option<bool>) -> PyResult<String> {
-        ToPyResult(self.tokenizer.decode(
-            ids,
-            skip_special_tokens.unwrap_or(true),
-        )).into()
+        ToPyResult(
+            self.tokenizer
+                .decode(ids, skip_special_tokens.unwrap_or(true)),
+        )
+        .into()
     }
 
     fn decode_batch(
@@ -208,10 +209,11 @@ impl Tokenizer {
         sentences: Vec<Vec<u32>>,
         skip_special_tokens: Option<bool>,
     ) -> PyResult<Vec<String>> {
-        ToPyResult(self.tokenizer.decode_batch(
-            sentences,
-            skip_special_tokens.unwrap_or(true),
-        )).into()
+        ToPyResult(
+            self.tokenizer
+                .decode_batch(sentences, skip_special_tokens.unwrap_or(true)),
+        )
+        .into()
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {

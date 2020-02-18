@@ -29,7 +29,6 @@ impl BertProcessing {
     }
 }
 
-
 #[pyclass(extends=PostProcessor)]
 pub struct RobertaProcessing {}
 #[pymethods]

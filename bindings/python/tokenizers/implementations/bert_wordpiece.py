@@ -30,7 +30,14 @@ class BertWordPieceTokenizer(BaseTokenizer):
         else:
             tokenizer = Tokenizer(WordPiece.empty())
 
-        tokenizer.add_special_tokens([unk_token, sep_token, cls_token])
+        # Let the tokenizer know about special tokens if they are part of the vocab
+        if tokenizer.token_to_id(unk_token) is not None:
+            tokenizer.add_special_tokens([unk_token])
+        if tokenizer.token_to_id(sep_token) is not None:
+            tokenizer.add_special_tokens([sep_token])
+        if tokenizer.token_to_id(cls_token) is not None:
+            tokenizer.add_special_tokens([cls_token])
+
         tokenizer.normalizer = BertNormalizer(
             clean_text=clean_text,
             handle_chinese_chars=handle_chinese_chars,

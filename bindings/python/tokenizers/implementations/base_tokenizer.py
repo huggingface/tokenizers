@@ -2,8 +2,8 @@ from .. import Tokenizer, Encoding
 
 from typing import List, Union, Tuple, Optional
 
-class BaseTokenizer:
 
+class BaseTokenizer:
     def __init__(self, tokenizer: Tokenizer, parameters=None):
         self._tokenizer = tokenizer
         self._parameters = parameters if parameters is not None else {}
@@ -11,7 +11,8 @@ class BaseTokenizer:
     def __repr__(self):
         return "Tokenizer(vocabulary_size={}, {})".format(
             self._tokenizer.get_vocab_size(),
-            ', '.join(k + '=' + str(v) for k, v in self._parameters.items()))
+            ", ".join(k + "=" + str(v) for k, v in self._parameters.items()),
+        )
 
     def num_special_tokens_to_add(self, is_pair: bool) -> int:
         """
@@ -33,12 +34,14 @@ class BaseTokenizer:
         """
         return self._tokenizer.get_vocab_size(with_added_tokens=with_added_tokens)
 
-    def enable_padding(self,
-                       direction: Optional[str] = "right",
-                       pad_id: Optional[int] = 0,
-                       pad_type_id: Optional[int] = 0,
-                       pad_token: Optional[str] = "[PAD]",
-                       max_length: Optional[int] = None):
+    def enable_padding(
+        self,
+        direction: Optional[str] = "right",
+        pad_id: Optional[int] = 0,
+        pad_type_id: Optional[int] = 0,
+        pad_token: Optional[str] = "[PAD]",
+        max_length: Optional[int] = None,
+    ):
         """ Change the padding strategy
 
         Args:
@@ -58,20 +61,21 @@ class BaseTokenizer:
                 If specified, the length at which to pad. If not specified
                 we pad using the size of the longest sequence in a batch
         """
-        return self._tokenizer.enable_padding(direction=direction,
-                                              pad_id=pad_id,
-                                              pad_type_id=pad_type_id,
-                                              pad_token=pad_token,
-                                              max_length=max_length)
+        return self._tokenizer.enable_padding(
+            direction=direction,
+            pad_id=pad_id,
+            pad_type_id=pad_type_id,
+            pad_token=pad_token,
+            max_length=max_length,
+        )
 
     def no_padding(self):
         """ Disable padding """
         return self._tokenizer.no_padding()
 
-    def enable_truncation(self,
-                          max_length: int,
-                          stride: Optional[int]=0,
-                          strategy: Optional[str]='longest_first'):
+    def enable_truncation(
+        self, max_length: int, stride: Optional[int] = 0, strategy: Optional[str] = "longest_first"
+    ):
         """ Change the truncation options
 
         Args:
@@ -85,9 +89,7 @@ class BaseTokenizer:
             strategy: (`optional) str:
                 Can be one of `longest_first`, `only_first` or `only_second`
         """
-        return self._tokenizer.enable_truncation(max_length,
-                                                 stride=stride,
-                                                 strategy=strategy)
+        return self._tokenizer.enable_truncation(max_length, stride=stride, strategy=strategy)
 
     def no_truncation(self):
         """ Disable truncation """
@@ -166,9 +168,9 @@ class BaseTokenizer:
         """
         return self._tokenizer.decode(ids, skip_special_tokens=skip_special_tokens)
 
-    def decode_batch(self,
-                     sequences: List[List[int]],
-                     skip_special_tokens: Optional[bool] = True) -> str:
+    def decode_batch(
+        self, sequences: List[List[int]], skip_special_tokens: Optional[bool] = True
+    ) -> str:
         """ Decode the list of sequences to a list of string sequences
 
         Args:

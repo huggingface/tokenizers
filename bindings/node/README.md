@@ -55,7 +55,7 @@ console.log(wpEncoded.getTypeIds());
 
 ## Provided Tokenizers
 
- - `BPETokenizer`: The original BPE
+ - `CharBPETokenizer`: The original BPE
  - `ByteLevelBPETokenizer`: The byte level version of the BPE
  - `SentencePieceBPETokenizer`: A BPE implementation compatible with the one used by SentencePiece
  - `BertWordPieceTokenizer`: The famous Bert tokenizer, using WordPiece

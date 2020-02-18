@@ -5,29 +5,31 @@ from .base_tokenizer import BaseTokenizer
 
 from typing import Optional, List, Union
 
+
 class SentencePieceBPETokenizer(BaseTokenizer):
     """ SentencePiece BPE Tokenizer
 
     Represents the BPE algorithm, with the pretokenization used by SentencePiece
     """
 
-    def __init__(self,
-                 vocab_file: Optional[str]=None,
-                 merges_file: Optional[str]=None,
-                 unk_token: str="<unk>",
-                 replacement: str="▁",
-                 add_prefix_space: bool=True,
-                 dropout: Optional[float]=None):
+    def __init__(
+        self,
+        vocab_file: Optional[str] = None,
+        merges_file: Optional[str] = None,
+        unk_token: str = "<unk>",
+        replacement: str = "▁",
+        add_prefix_space: bool = True,
+        dropout: Optional[float] = None,
+    ):
         if vocab_file is not None and merges_file is not None:
-            tokenizer = Tokenizer(BPE.from_files(vocab_file,
-                                                 merges_file,
-                                                 dropout=dropout,
-                                                 unk_token=unk_token))
+            tokenizer = Tokenizer(
+                BPE.from_files(vocab_file, merges_file, dropout=dropout, unk_token=unk_token)
+            )
         else:
             tokenizer = Tokenizer(BPE.empty())
 
-        tokenizer.add_special_tokens([ unk_token ])
-
+        if tokenizer.token_to_id(unk_token) is not None:
+            tokenizer.add_special_tokens([unk_token])
 
         tokenizer.normalizer = NFKC()
         tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(

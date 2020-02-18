@@ -12,14 +12,16 @@ class CharBPETokenizer(BaseTokenizer):
     Represents the BPE algorithm, as introduced by Rico Sennrich (https://arxiv.org/abs/1508.07909)
     """
 
-    def __init__(self,
-                 vocab_file: Optional[str]=None,
-                 merges_file: Optional[str]=None,
-                 unk_token: Optional[str]="<unk>",
-                 suffix: Optional[str]="</w>",
-                 dropout: Optional[float]=None,
-                 do_lowercase: bool = False,
-                 unicode_normalizer: Optional[str] = None):
+    def __init__(
+        self,
+        vocab_file: Optional[str] = None,
+        merges_file: Optional[str] = None,
+        unk_token: Optional[str] = "<unk>",
+        suffix: Optional[str] = "</w>",
+        dropout: Optional[float] = None,
+        lowercase: bool = False,
+        unicode_normalizer: Optional[str] = None,
+    ):
         if vocab_file is not None and merges_file is not None:
             tokenizer = Tokenizer(
                 BPE.from_files(
@@ -27,13 +29,14 @@ class CharBPETokenizer(BaseTokenizer):
                     merges_file,
                     dropout=dropout,
                     unk_token=unk_token,
-                    end_of_word_suffix=suffix
+                    end_of_word_suffix=suffix,
                 )
             )
         else:
             tokenizer = Tokenizer(BPE.empty())
 
-        tokenizer.add_special_tokens([ unk_token ])
+        if tokenizer.token_to_id(unk_token) is not None:
+            tokenizer.add_special_tokens([unk_token])
 
         # Check for Unicode normalization first (before everything else)
         normalizers = []
@@ -41,7 +44,7 @@ class CharBPETokenizer(BaseTokenizer):
         if unicode_normalizer:
             normalizers += [unicode_normalizer_from_str(unicode_normalizer)]
 
-        if do_lowercase:
+        if lowercase:
             normalizers += [Lowercase()]
 
         # Create the normalizer structure
@@ -59,6 +62,8 @@ class CharBPETokenizer(BaseTokenizer):
             "unk_token": unk_token,
             "suffix": suffix,
             "dropout": dropout,
+            "lowercase": lowercase,
+            "unicode_normalizer": unicode_normalizer,
         }
 
         super().__init__(tokenizer, parameters)

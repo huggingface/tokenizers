@@ -33,7 +33,6 @@ class ByteLevel(PreTokenizer):
             PreTokenizer
         """
         pass
-
     @staticmethod
     def alphabet() -> List[str]:
         """ Returns the alphabet used by this PreTokenizer.
@@ -95,7 +94,6 @@ class Metaspace(PreTokenizer):
                 lets us treat `hello` exactly like `say hello`.
         """
         pass
-
 
 class CharDelimiterSplit(PreTokenizer):
     """ CharDelimiterSplit PreTokenizer

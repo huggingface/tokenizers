@@ -91,13 +91,16 @@ pub struct CharDelimiterSplit {}
 impl CharDelimiterSplit {
     #[new]
     pub fn new(obj: &PyRawObject, delimiter: &str) -> PyResult<()> {
-        let chr_delimiter = delimiter.chars().nth(0).ok_or(exceptions::Exception::py_err(
-            "delimiter must be a single character",
-        ))?;
-        Ok(obj.init(PreTokenizer{
-            pretok:Container::Owned(Box::new(
-                tk::pre_tokenizers::delimiter::CharDelimiterSplit::new(chr_delimiter)
-            ))
+        let chr_delimiter = delimiter
+            .chars()
+            .nth(0)
+            .ok_or(exceptions::Exception::py_err(
+                "delimiter must be a single character",
+            ))?;
+        Ok(obj.init(PreTokenizer {
+            pretok: Container::Owned(Box::new(
+                tk::pre_tokenizers::delimiter::CharDelimiterSplit::new(chr_delimiter),
+            )),
         }))
     }
 }
