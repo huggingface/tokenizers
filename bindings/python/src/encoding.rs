@@ -4,7 +4,7 @@ use crate::error::PyError;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3::{PyMappingProtocol, PyObjectProtocol};
+use pyo3::{PyMappingProtocol, PyObjectProtocol, PySequenceProtocol};
 use tk::tokenizer::PaddingDirection;
 
 fn get_range(item: PyObject, max_len: usize) -> PyResult<std::ops::Range<usize>> {
@@ -130,6 +130,13 @@ impl PyObjectProtocol for Encoding {
              attention_mask, special_tokens_mask, overflowing, original_str, normalized_str])",
             self.encoding.get_ids().len()
         ))
+    }
+}
+
+#[pyproto]
+impl PySequenceProtocol for Encoding {
+    fn __len__(self) -> PyResult<usize> {
+        Ok(self.encoding.get_ids().len())
     }
 }
 
