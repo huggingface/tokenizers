@@ -30,14 +30,11 @@ impl Model {
             for (key, value) in kwargs {
                 let key: &str = key.extract()?;
                 match key {
-                    "name" => {
-                        name = value.extract()?
-                    }
+                    "name" => name = value.extract()?,
                     _ => println!("Ignored unknown kwarg option {}", key),
                 }
             }
         }
-
 
         let saved: PyResult<Vec<_>> = ToPyResult(
             self.model
