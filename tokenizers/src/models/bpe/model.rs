@@ -420,7 +420,7 @@ impl Model for BPE {
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let vocab_file_name = match name {
-            Some(name) => format!("{}-vocab.json", name).to_string(),
+            Some(name) => format!("{}-vocab.json", name),
             None => "vocab.json".to_string(),
         };
 
@@ -435,7 +435,7 @@ impl Model for BPE {
 
         // Write merges.txt
         let merges_file_name = match name {
-            Some(name) => format!("{}-merges.txt", name).to_string(),
+            Some(name) => format!("{}-merges.txt", name),
             None => "merges.txt".to_string(),
         };
 

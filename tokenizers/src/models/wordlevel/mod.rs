@@ -164,7 +164,7 @@ impl Model for WordLevel {
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let vocab_file_name = match name {
-            Some(name) => format!("{}-vocab.json", name).to_string(),
+            Some(name) => format!("{}-vocab.json", name),
             None => "vocab.json".to_string(),
         };
 
