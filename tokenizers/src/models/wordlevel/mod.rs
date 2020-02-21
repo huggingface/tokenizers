@@ -162,9 +162,14 @@ impl Model for WordLevel {
         self.vocab.keys().len()
     }
 
-    fn save(&self, folder: &Path, name: &str) -> Result<Vec<PathBuf>> {
+    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
+        let vocab_file_name = match name {
+            Some(name) => format!("{}-vocab.json", name).to_string(),
+            None => "vocab.json".to_string()
+        };
+
         // Write vocab.txt
-        let vocab_path: PathBuf = [folder, Path::new(&format!("{}-vocab.txt", name))]
+        let vocab_path: PathBuf = [folder, Path::new(vocab_file_name.as_str())]
             .iter()
             .collect();
         let mut vocab_file = File::create(&vocab_path)?;

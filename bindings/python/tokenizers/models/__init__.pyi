@@ -7,7 +7,7 @@ class Model:
     a Model will return a instance of this class when instantiated.
     """
 
-    def save(self, folder: str, name: str) -> List[str]:
+    def save(self, folder: str, name: Optional[str] = None) -> List[str]:
         """ Save the current model
 
         Save the current model in the given folder, using the given name for the various
