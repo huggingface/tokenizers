@@ -23,19 +23,7 @@ impl Model {
         ))
     }
 
-    #[args(kwargs = "**")]
-    fn save(&self, folder: &str, kwargs: Option<&PyDict>) -> PyResult<Vec<String>> {
-        let mut name: Option<&str> = None;
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
-                    "name" => name = value.extract()?,
-                    _ => println!("Ignored unknown kwarg option {}", key),
-                }
-            }
-        }
-
+    fn save(&self, folder: &str, name: Option<&str>) -> PyResult<Vec<String>> {
         let saved: PyResult<Vec<_>> = ToPyResult(
             self.model
                 .execute(|model| model.save(Path::new(folder), name)),
