@@ -209,7 +209,7 @@ class BaseTokenizer:
         """
         return self._tokenizer.id_to_token(id)
 
-    def save(self, directory: str, name: str = None):
+    def save(self, directory: str, name: Optional[str] = None):
         """ Save the current model to the given directory
 
         Args:
