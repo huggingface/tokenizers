@@ -507,7 +507,7 @@ impl Trainer for BpeTrainer {
 
 #[cfg(test)]
 mod tests {
-    use super::{BpeTrainer, Pair};
+    use super::BpeTrainer;
     use std::collections::HashMap;
 
     #[test]
