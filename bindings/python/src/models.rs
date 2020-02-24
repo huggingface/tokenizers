@@ -23,7 +23,7 @@ impl Model {
         ))
     }
 
-    fn save(&self, folder: &str, name: &str) -> PyResult<Vec<String>> {
+    fn save(&self, folder: &str, name: Option<&str>) -> PyResult<Vec<String>> {
         let saved: PyResult<Vec<_>> = ToPyResult(
             self.model
                 .execute(|model| model.save(Path::new(folder), name)),

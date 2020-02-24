@@ -418,9 +418,14 @@ impl Model for BPE {
         self.vocab_r.get(&id).cloned()
     }
 
-    fn save(&self, folder: &Path, name: &str) -> Result<Vec<PathBuf>> {
+    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
+        let vocab_file_name = match name {
+            Some(name) => format!("{}-vocab.json", name),
+            None => "vocab.json".to_string(),
+        };
+
         // Write vocab.json
-        let vocab_path: PathBuf = [folder, Path::new(&format!("{}-vocab.json", name))]
+        let vocab_path: PathBuf = [folder, Path::new(vocab_file_name.as_str())]
             .iter()
             .collect();
         let mut vocab_file = File::create(&vocab_path)?;
@@ -429,7 +434,12 @@ impl Model for BPE {
         vocab_file.write_all(&serialized.as_bytes())?;
 
         // Write merges.txt
-        let merges_path: PathBuf = [folder, Path::new(&format!("{}-merges.txt", name))]
+        let merges_file_name = match name {
+            Some(name) => format!("{}-merges.txt", name),
+            None => "merges.txt".to_string(),
+        };
+
+        let merges_path: PathBuf = [folder, Path::new(merges_file_name.as_str())]
             .iter()
             .collect();
         let mut merges_file = File::create(&merges_path)?;
