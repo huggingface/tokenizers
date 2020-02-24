@@ -520,6 +520,8 @@ impl BpeTrainer {
                 .par_iter()
                 .flat_map(|i| {
                     let w = &words[*i] as *const _ as *mut _;
+                    // We can merge each of these words in parallel here because each position
+                    // can be there only once (HashSet). So this is safe.
                     unsafe {
                         let word: &mut Word = &mut (*w);
                         word.merge(top.pair.0, top.pair.1, new_token_id)
