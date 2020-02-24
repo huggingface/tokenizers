@@ -346,14 +346,18 @@ impl BpeTrainer {
 
     fn count_pairs(
         &self,
-        words: &[Word], //&Vec<Word>,
-        counts: &[u32], //&Vec<u32>,
+        words: &[Word],
+        counts: &[u32],
         p: &Option<ProgressBar>,
     ) -> (HashMap<Pair, i32>, HashMap<Pair, HashSet<usize>>) {
         let mut pair_counts: HashMap<Pair, i32> = HashMap::with_capacity(self.vocab_size * 2);
         let mut where_to_update: HashMap<Pair, HashSet<usize>> =
             HashMap::with_capacity(self.vocab_size * 2);
-        let n_threads = rayon::current_num_threads();
+        let n_threads = if words.len() > rayon::current_num_threads() * 5 {
+            rayon::current_num_threads()
+        } else {
+            1
+        };
         let batch = words.len() / n_threads;
         let results = (0..n_threads)
             .into_par_iter()
@@ -482,7 +486,6 @@ impl BpeTrainer {
             }
 
             let mut top = queue.pop().unwrap();
-            // TODO: Maybe use a u32 instead of i32 for pair_counts
             if top.count != pair_counts[&top.pair] as u32 {
                 top.count = pair_counts[&top.pair] as u32;
                 queue.push(top);
