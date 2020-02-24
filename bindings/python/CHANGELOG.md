@@ -1,3 +1,10 @@
+# v0.5.2
+
+## Fixes:
+- We introduced a bug related to the saving of the WordPiece model in 0.5.2: The `vocab.txt` file was named
+`vocab.json`. This is now fixed.
+- The `WordLevel` model was also saving its vocabulary to the wrong format.
+
 # v0.5.1
 
 ## Changes:
