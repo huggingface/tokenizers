@@ -122,7 +122,7 @@ impl BpeTrainerBuilder {
 ///     (String::from("World"), 1),
 /// ].iter().cloned().collect();
 /// let trainer = BpeTrainer::default();
-/// let model = trainer.train(word_counts);
+/// let (model, special_tokens) = trainer.train(word_counts).unwrap();
 /// ```
 pub struct BpeTrainer {
     /// The minimum frequency a pair must have to produce a merge operation
@@ -502,5 +502,72 @@ impl Trainer for BpeTrainer {
     /// Whether we should show progress
     fn should_show_progress(&self) -> bool {
         self.show_progress
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BpeTrainer, Pair};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_train() {
+        let word_counts: HashMap<String, u32> = [
+            ("roses".into(), 1),
+            ("are".into(), 2),
+            ("red".into(), 1),
+            ("voilets".into(), 1),
+            ("blue".into(), 1),
+            ("BERT".into(), 1),
+            ("is".into(), 2),
+            ("big".into(), 1),
+            ("and".into(), 1),
+            ("so".into(), 1),
+            ("GPT-2".into(), 1),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        let trainer = BpeTrainer::builder().min_frequency(2).build();
+        let (model, _) = trainer.train(word_counts).unwrap();
+
+        let expected_vocab: HashMap<String, u32> = [
+            ("o".into(), 16),
+            ("a".into(), 8),
+            ("T".into(), 7),
+            ("i".into(), 13),
+            ("s".into(), 18),
+            ("are".into(), 23),
+            ("P".into(), 5),
+            ("l".into(), 14),
+            ("E".into(), 3),
+            ("-".into(), 0),
+            ("B".into(), 2),
+            ("e".into(), 11),
+            ("re".into(), 22),
+            ("is".into(), 24),
+            ("G".into(), 4),
+            ("r".into(), 17),
+            ("t".into(), 19),
+            ("2".into(), 1),
+            ("n".into(), 15),
+            ("u".into(), 20),
+            ("b".into(), 9),
+            ("v".into(), 21),
+            ("g".into(), 12),
+            ("R".into(), 6),
+            ("d".into(), 10),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        assert_eq!(model.vocab, expected_vocab);
+
+        let expected_merges: HashMap<Pair, (u32, u32)> =
+            [((17, 11), (0, 22)), ((8, 22), (1, 23)), ((13, 18), (2, 24))]
+                .iter()
+                .cloned()
+                .collect();
+        assert_eq!(model.merges, expected_merges);
     }
 }

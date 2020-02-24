@@ -127,11 +127,11 @@ impl BpeBuilder {
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 pub struct BPE {
     /// The vocabulary assigns a number to each token.
-    vocab: HashMap<String, u32>,
+    pub(crate) vocab: HashMap<String, u32>,
     /// Reversed vocabulary, to rebuild sentences.
-    vocab_r: HashMap<u32, String>,
+    pub(crate) vocab_r: HashMap<u32, String>,
     /// Contains the mapping between Pairs and their (rank, new_id).
-    merges: HashMap<Pair, (u32, u32)>,
+    pub(crate) merges: HashMap<Pair, (u32, u32)>,
     /// Contains the cache for optimizing the encoding step.
     cache: Option<Cache<String, Word>>,
     /// Dropout probability for merges. 0 = no dropout is the default. At 1.0, tokenization will
