@@ -531,43 +531,22 @@ mod tests {
         let trainer = BpeTrainer::builder().min_frequency(2).build();
         let (model, _) = trainer.train(word_counts).unwrap();
 
-        let expected_vocab: HashMap<String, u32> = [
-            ("-".into(), 0),
-            ("2".into(), 1),
-            ("B".into(), 2),
-            ("E".into(), 3),
-            ("G".into(), 4),
-            ("P".into(), 5),
-            ("R".into(), 6),
-            ("T".into(), 7),
-            ("a".into(), 8),
-            ("b".into(), 9),
-            ("d".into(), 10),
-            ("e".into(), 11),
-            ("g".into(), 12),
-            ("i".into(), 13),
-            ("l".into(), 14),
-            ("n".into(), 15),
-            ("o".into(), 16),
-            ("r".into(), 17),
-            ("s".into(), 18),
-            ("t".into(), 19),
-            ("u".into(), 20),
-            ("v".into(), 21),
-            ("re".into(), 22),
-            ("are".into(), 23),
-            ("is".into(), 24),
-        ]
-        .iter()
-        .cloned()
-        .collect();
-        assert_eq!(model.vocab, expected_vocab);
+        // Vocab should consist of all characters from the tokens above as well
+        // as the following merged characters:
+        assert_eq!(model.vocab.len(), 25);
+        assert!(model.vocab.contains_key("re"));
+        assert!(model.vocab.contains_key("are"));
+        assert!(model.vocab.contains_key("is"));
 
-        let expected_merges: HashMap<Pair, (u32, u32)> =
-            [((17, 11), (0, 22)), ((8, 22), (1, 23)), ((13, 18), (2, 24))]
-                .iter()
-                .cloned()
-                .collect();
-        assert_eq!(model.merges, expected_merges);
+        assert_eq!(model.merges.len(), 3);
+        assert!(model
+            .merges
+            .contains_key(&(model.vocab["r"], model.vocab["e"])));
+        assert!(model
+            .merges
+            .contains_key(&(model.vocab["a"], model.vocab["re"])));
+        assert!(model
+            .merges
+            .contains_key(&(model.vocab["i"], model.vocab["s"])));
     }
 }
