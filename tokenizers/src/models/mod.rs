@@ -28,4 +28,3 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
         serializer.collect_map(iter)
     }
 }
-
