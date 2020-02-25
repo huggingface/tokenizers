@@ -13,16 +13,16 @@ env:
 
 jobs:
 
-  # create_wheels_manylinux:
-  #   runs-on: ubuntu-latest
-  #   name: Create wheels for manylinux
-  #   container: quay.io/pypa/manylinux1_x86_64
-  #   steps:
-  #     - uses: actions/checkout@v1
+  create_wheels_manylinux:
+    runs-on: ubuntu-latest
+    name: Create wheels for manylinux
+    container: quay.io/pypa/manylinux1_x86_64
+    steps:
+      - uses: actions/checkout@v1
 
-  #     - name: Build and audit wheels
-  #       working-directory: ./bindings/python
-  #       run: sh build-wheels.sh
+      - name: Build and audit wheels
+        working-directory: ./bindings/python
+        run: sh build-wheels.sh
 
   create_wheels_windows_32bit:
     name: Create wheels for windows 32-bit
@@ -67,48 +67,48 @@ jobs:
           aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$GITHUB_SHA"
 
 
-          # create_wheels_others_64bit:
-          #   name: Create wheels for other OSes
-          #   runs-on: ${{ matrix.os }}
-          #   strategy:
-          #     matrix:
-          #       os: [windows-latest, macos-10.15]
-          #       python: [3.5, 3.6, 3.7, 3.8]
-          #   steps:
-          #     - name: Checkout repository
-          #       uses: actions/checkout@v1
+  create_wheels_others_64bit:
+    name: Create wheels for other OSes
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-10.15]
+        python: [3.5, 3.6, 3.7, 3.8]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
 
-          #     - name: Install Rust
-          #       uses: actions-rs/toolchain@v1
-          #       with:
-          #         toolchain: nightly-2019-11-01
-          #         override: true
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
 
-          #     - name: Install Python
-          #       uses: actions/setup-python@v1
-          #       with:
-          #         python-version: ${{ matrix.python }}
-          #         architecture: x64
+      - name: Install Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
 
-          #     - name: Install dependencies
-          #       run: |
-          #         # On old versions of python there is an old version of setuptools already installed
-          #         pip install setuptools wheel setuptools-rust --ignore-installed --force-reinstall
+      - name: Install dependencies
+        run: |
+          # On old versions of python there is an old version of setuptools already installed
+          pip install setuptools wheel setuptools-rust --ignore-installed --force-reinstall
 
-          #     - name: Build wheel
-          #       working-directory: ./bindings/python
-          #       run: python setup.py bdist_wheel
+      - name: Build wheel
+        working-directory: ./bindings/python
+        run: python setup.py bdist_wheel
 
-          #     - name: Rename wheels
-          #       shell: bash
-          #       working-directory: ./bindings/python/dist
-          #       run: for file in *.whl ; do mv $file ${file//macosx_10_15/macosx_10_10} ; done
+      - name: Rename wheels
+        shell: bash
+        working-directory: ./bindings/python/dist
+        run: for file in *.whl ; do mv $file ${file//macosx_10_15/macosx_10_10} ; done
 
-          #     - name: Upload wheels
-          #       shell: bash
-          #       run: |
-          #         pip install awscli
-          #         aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$GITHUB_SHA"
+      - name: Upload wheels
+        shell: bash
+        run: |
+          pip install awscli
+          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$GITHUB_SHA"
 
           #   upload_package:
           #     name: Upload package to PyPi
