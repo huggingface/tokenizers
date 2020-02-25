@@ -529,24 +529,44 @@ mod tests {
         .cloned()
         .collect();
         let trainer = BpeTrainer::builder().min_frequency(2).build();
-        let (model, _) = trainer.train(word_counts).unwrap();
+        let (model, _) = trainer.train(word_counts.clone()).unwrap();
 
         // Vocab should consist of all characters from the tokens above as well
-        // as the following merged characters:
+        // as the following merged characters: 're', 'are', and 'is'.
         assert_eq!(model.vocab.len(), 25);
+        for word in word_counts.keys() {
+            for c in word.chars() {
+                assert!(model.vocab.contains_key(&c.to_string()));
+            }
+        }
         assert!(model.vocab.contains_key("re"));
         assert!(model.vocab.contains_key("are"));
         assert!(model.vocab.contains_key("is"));
 
         assert_eq!(model.merges.len(), 3);
+
+        // merge 'r' + 'e' -> 're'
         assert!(model
             .merges
             .contains_key(&(model.vocab["r"], model.vocab["e"])));
+        let (merge_re_rank, merge_re_id) = model.merges[&(model.vocab["r"], model.vocab["e"])];
+        assert_eq!(merge_re_id, model.vocab["re"]);
+
+        // merge 'a' + 're' -> 'are'
         assert!(model
             .merges
             .contains_key(&(model.vocab["a"], model.vocab["re"])));
+        let (merge_are_rank, merge_are_id) = model.merges[&(model.vocab["a"], model.vocab["re"])];
+        assert_eq!(merge_are_id, model.vocab["are"]);
+
+        // merge 'i' + 's' -> 'is'
         assert!(model
             .merges
             .contains_key(&(model.vocab["i"], model.vocab["s"])));
+        let (_, merge_is_id) = model.merges[&(model.vocab["i"], model.vocab["s"])];
+        assert_eq!(merge_is_id, model.vocab["is"]);
+
+        // the 're' merge should have priority over the 'are' merge.
+        assert!(merge_re_rank < merge_are_rank);
     }
 }
