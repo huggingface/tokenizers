@@ -61,6 +61,7 @@ jobs:
         run: python setup.py bdist_wheel
 
       - name: Rename wheels
+        shell: bash
         working-directory: ./bindings/python/dist
         run: for file in *.whl ; do mv $file ${file//macosx_10_15/macosx_10_10} ; done
 
