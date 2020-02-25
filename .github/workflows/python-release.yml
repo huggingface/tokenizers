@@ -1,9 +1,9 @@
-name: Python Release
+name: Python Release - Debug
 
-on:
-  push:
-    tags:
-      - python-v*
+on: [push]
+  #   push:
+  #     tags:
+  #       - python-v*
 
 env:
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -29,8 +29,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-10.15]
         python: [3.5, 3.6, 3.7, 3.8]
+        architecture: [x64, x86]
+        exclude:
+          - os: macos-10.15
+            architecture: x86
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
@@ -45,7 +49,7 @@ jobs:
         uses: actions/setup-python@v1
         with:
           python-version: ${{ matrix.python }}
-          architecture: 'x64'
+          architecture: ${{ matrix.architecture }}
 
       - name: Install dependencies
         run: |
@@ -56,39 +60,43 @@ jobs:
         working-directory: ./bindings/python
         run: python setup.py bdist_wheel
 
+      - name: Rename wheels
+        wordking-directory: ./bindings/python/dist
+        run: rename -s 'macosx_10_15' 'macosx_10_10' *.whl
+
       - name: Upload wheels
         shell: bash
         run: |
           pip install awscli
           aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$GITHUB_SHA"
 
-  upload_package:
-    name: Upload package to PyPi
-    runs-on: ubuntu-latest
-    needs: [create_wheels_manylinux, create_wheels_others]
-
-    steps:
-      - uses: actions/checkout@v1
-
-      - name: Install Python
-        uses: actions/setup-python@v1
-
-      - name: Retrieve all wheels
-        shell: bash
-        run: |
-          pip install awscli
-          aws s3 sync "s3://tokenizers-releases/python/$GITHUB_SHA" ./bindings/python/dist
-
-      - name: Install dependencies
-        run: |
-          pip install setuptools wheel setuptools-rust
-
-      - name: Create source distribution
-        working-directory: ./bindings/python
-        run: sh build-sdist.sh
-
-      - name: Upload to PyPi
-        working-directory: ./bindings/python
-        run: |
-          pip install twine
-          twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
+          #   upload_package:
+          #     name: Upload package to PyPi
+          #     runs-on: ubuntu-latest
+          #     needs: [create_wheels_manylinux, create_wheels_others]
+          # 
+          #     steps:
+          #       - uses: actions/checkout@v1
+          # 
+          #       - name: Install Python
+          #         uses: actions/setup-python@v1
+          # 
+          #       - name: Retrieve all wheels
+          #         shell: bash
+          #         run: |
+          #           pip install awscli
+          #           aws s3 sync "s3://tokenizers-releases/python/$GITHUB_SHA" ./bindings/python/dist
+          # 
+          #       - name: Install dependencies
+          #         run: |
+          #           pip install setuptools wheel setuptools-rust
+          # 
+          #       - name: Create source distribution
+          #         working-directory: ./bindings/python
+          #         run: sh build-sdist.sh
+          # 
+          #       - name: Upload to PyPi
+          #         working-directory: ./bindings/python
+          #         run: |
+          #           pip install twine
+          #           twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
