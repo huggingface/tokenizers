@@ -61,7 +61,7 @@ jobs:
         run: python setup.py bdist_wheel
 
       - name: Rename wheels
-        wordking-directory: ./bindings/python/dist
+        working-directory: ./bindings/python/dist
         run: rename -s 'macosx_10_15' 'macosx_10_10' *.whl
 
       - name: Upload wheels
