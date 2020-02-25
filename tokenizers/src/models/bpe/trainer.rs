@@ -507,7 +507,7 @@ impl Trainer for BpeTrainer {
 
 #[cfg(test)]
 mod tests {
-    use super::BpeTrainer;
+    use super::{BpeTrainer, Pair};
     use std::collections::HashMap;
 
     #[test]
@@ -529,44 +529,54 @@ mod tests {
         .cloned()
         .collect();
         let trainer = BpeTrainer::builder().min_frequency(2).build();
-        let (model, _) = trainer.train(word_counts.clone()).unwrap();
+        let (model, _) = trainer.train(word_counts).unwrap();
 
-        // Vocab should consist of all characters from the tokens above as well
-        // as the following merged characters: 're', 'are', and 'is'.
-        assert_eq!(model.vocab.len(), 25);
-        for word in word_counts.keys() {
-            for c in word.chars() {
-                assert!(model.vocab.contains_key(&c.to_string()));
-            }
-        }
-        assert!(model.vocab.contains_key("re"));
-        assert!(model.vocab.contains_key("are"));
-        assert!(model.vocab.contains_key("is"));
+        // Vocab should contain all of the characters from the `word_counts` mapping
+        // as well as three merges: 're', 'are', and 'is'.
+        let expected_vocab: HashMap<String, u32> = [
+            ("-".into(), 0),
+            ("2".into(), 1),
+            ("B".into(), 2),
+            ("E".into(), 3),
+            ("G".into(), 4),
+            ("P".into(), 5),
+            ("R".into(), 6),
+            ("T".into(), 7),
+            ("a".into(), 8),
+            ("b".into(), 9),
+            ("d".into(), 10),
+            ("e".into(), 11),
+            ("g".into(), 12),
+            ("i".into(), 13),
+            ("l".into(), 14),
+            ("n".into(), 15),
+            ("o".into(), 16),
+            ("r".into(), 17),
+            ("s".into(), 18),
+            ("t".into(), 19),
+            ("u".into(), 20),
+            ("v".into(), 21),
+            ("re".into(), 22),
+            ("are".into(), 23),
+            ("is".into(), 24),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        assert_eq!(model.vocab, expected_vocab);
 
-        assert_eq!(model.merges.len(), 3);
-
-        // merge 'r' + 'e' -> 're'
-        assert!(model
-            .merges
-            .contains_key(&(model.vocab["r"], model.vocab["e"])));
-        let (merge_re_rank, merge_re_id) = model.merges[&(model.vocab["r"], model.vocab["e"])];
-        assert_eq!(merge_re_id, model.vocab["re"]);
-
-        // merge 'a' + 're' -> 'are'
-        assert!(model
-            .merges
-            .contains_key(&(model.vocab["a"], model.vocab["re"])));
-        let (merge_are_rank, merge_are_id) = model.merges[&(model.vocab["a"], model.vocab["re"])];
-        assert_eq!(merge_are_id, model.vocab["are"]);
-
-        // merge 'i' + 's' -> 'is'
-        assert!(model
-            .merges
-            .contains_key(&(model.vocab["i"], model.vocab["s"])));
-        let (_, merge_is_id) = model.merges[&(model.vocab["i"], model.vocab["s"])];
-        assert_eq!(merge_is_id, model.vocab["is"]);
-
-        // the 're' merge should have priority over the 'are' merge.
-        assert!(merge_re_rank < merge_are_rank);
+        // The keys in `merges` are pairs of symbols, the values are tuples of (rank, id),
+        // where 'rank' determines the order in which this merge will be applied during
+        // tokenization, and 'id' is the vocab id of the symbol resulting from merging
+        // the pair of symbols in the corresponding key.
+        let expected_merges: HashMap<Pair, (u32, u32)> = [
+            ((17, 11), (0, 22)), // 'r' + 'e'  -> 're'
+            ((8, 22), (1, 23)),  // 'a' + 're' -> 'are'
+            ((13, 18), (2, 24)), // 'i' + 's'  -> 'is'
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        assert_eq!(model.merges, expected_merges);
     }
 }
