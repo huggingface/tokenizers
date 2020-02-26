@@ -39,14 +39,9 @@ export interface BertNormalizerOptions {
 export function bertNormalizer(options?: BertNormalizerOptions): Normalizer;
 
 /**
- * Returns a new NFD Unicode Normalizer
+ * Returns a new Lowercase Normalizer
  */
-export function nfdNormalizer(): Normalizer;
-
-/**
- * Returns a new NFKD Unicode Normalizer
- */
-export function nfkdNormalizer(): Normalizer;
+export function lowercaseNormalizer(): Normalizer;
 
 /**
  * Returns a new NFC Unicode Normalizer
@@ -54,9 +49,19 @@ export function nfkdNormalizer(): Normalizer;
 export function nfcNormalizer(): Normalizer;
 
 /**
+ * Returns a new NFD Unicode Normalizer
+ */
+export function nfdNormalizer(): Normalizer;
+
+/**
  * Returns a new NFKC Unicode Normalizer
  */
 export function nfkcNormalizer(): Normalizer;
+
+/**
+ * Returns a new NFKD Unicode Normalizer
+ */
+export function nfkdNormalizer(): Normalizer;
 
 /**
  * Instantiate a new Normalization Sequence using the given normalizers
@@ -65,6 +70,8 @@ export function nfkcNormalizer(): Normalizer;
 export function sequenceNormalizer(normalizers: Normalizer[]): Normalizer;
 
 /**
- * Returns a new Lowercase Normalizer
+ *  Returns a new Strip Normalizer
+ * @param [left=true] Whether or not to strip on the left (defaults to `true`)
+ * @param [right=true] Whether or not to strip on the right (defaults to `true`)
  */
-export function lowercaseNormalizer(): Normalizer;
+export function stripNormalizer(left?: boolean, right?: boolean): Normalizer;

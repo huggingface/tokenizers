@@ -112,6 +112,31 @@ fn nfkc(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     Ok(normalizer)
 }
 
+/// strip(left?: boolean, right?: boolean)
+fn strip(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
+    let mut left = true;
+    let mut right = true;
+
+    if let Some(left_arg) = cx.argument_opt(0) {
+        left = left_arg.downcast_or_throw::<JsBoolean, _>(&mut cx)?.value();
+
+        if let Some(right_arg) = cx.argument_opt(1) {
+            right = right_arg
+                .downcast_or_throw::<JsBoolean, _>(&mut cx)?
+                .value();
+        }
+    }
+
+    let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    normalizer
+        .borrow_mut(&guard)
+        .normalizer
+        .to_owned(Box::new(tk::normalizers::strip::Strip::new(left, right)));
+
+    Ok(normalizer)
+}
+
 /// sequence(normalizers: Normalizer[])
 fn sequence(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     let normalizers = cx
@@ -177,5 +202,6 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_NFKC", prefix), nfkc)?;
     m.export_function(&format!("{}_Sequence", prefix), sequence)?;
     m.export_function(&format!("{}_Lowercase", prefix), lowercase)?;
+    m.export_function(&format!("{}_Strip", prefix), strip)?;
     Ok(())
 }
