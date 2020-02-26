@@ -19,6 +19,16 @@ declare_types! {
             })
         }
 
+        method getLength(mut cx) {
+            let this = cx.this();
+            let guard = cx.lock();
+            let ids = this.borrow(&guard).encoding.execute(|encoding| {
+                encoding.unwrap().get_ids().to_vec()
+            });
+
+            Ok(cx.number(ids.len() as f64).upcast())
+        }
+
         method getIds(mut cx) {
             // getIds(): number[]
 

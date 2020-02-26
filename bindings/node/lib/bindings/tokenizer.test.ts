@@ -1,8 +1,8 @@
 import { promisify } from "util";
 
-import { Encoding } from "./encoding";
 import { PaddingDirection, TruncationStrategy } from "./enums";
 import { BPE } from "./models";
+import { RawEncoding } from "./raw-encoding";
 import { PaddingConfiguration, Tokenizer, TruncationConfiguration } from "./tokenizer";
 
 // jest.mock('../bindings/tokenizer');
@@ -61,7 +61,7 @@ describe("Tokenizer", () => {
 
   describe("encode", () => {
     let tokenizer: Tokenizer;
-    let encode: (sequence: string, pair: string | null) => Promise<Encoding>;
+    let encode: (sequence: string, pair: string | null) => Promise<RawEncoding>;
 
     beforeEach(() => {
       // Clear all instances and calls to constructor and all methods:

@@ -1,15 +1,15 @@
 import { promisify } from "util";
 
-import { bpeDecoder } from "../bindings/decoders";
-import { BPE, BPEOptions, Model } from "../bindings/models";
+import { bpeDecoder } from "../../bindings/decoders";
+import { BPE, BPEOptions, Model } from "../../bindings/models";
 import {
   lowercaseNormalizer,
   nfkcNormalizer,
   sequenceNormalizer
-} from "../bindings/normalizers";
-import { whitespaceSplitPreTokenizer } from "../bindings/pre-tokenizers";
-import { Tokenizer } from "../bindings/tokenizer";
-import { bpeTrainer } from "../bindings/trainers";
+} from "../../bindings/normalizers";
+import { whitespaceSplitPreTokenizer } from "../../bindings/pre-tokenizers";
+import { Tokenizer } from "../../bindings/tokenizer";
+import { bpeTrainer } from "../../bindings/trainers";
 import { BaseTokenizer } from "./base.tokenizer";
 
 export interface BPETokenizerOptions {

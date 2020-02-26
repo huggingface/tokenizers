@@ -3,7 +3,7 @@ import { PaddingDirection } from "./enums";
 /**
  * An Encoding as returned by the Tokenizer
  */
-export interface Encoding {
+export interface RawEncoding {
   /**
    * Returns the attention mask
    */
@@ -15,6 +15,11 @@ export interface Encoding {
   getIds(): number[];
 
   /**
+   * Returns the number of tokens
+   */
+  getLength(): number;
+
+  /**
    * Returns the offsets
    */
   getOffsets(): [number, number][];
@@ -22,7 +27,7 @@ export interface Encoding {
   /**
    * Returns the overflowing encodings, after truncation
    */
-  getOverflowing(): Encoding[];
+  getOverflowing(): RawEncoding[];
 
   /**
    * Returns the special tokens mask

@@ -1,12 +1,12 @@
 import { promisify } from "util";
 
-import { wordPieceDecoder } from "../bindings/decoders";
-import { Model, WordPiece } from "../bindings/models";
-import { bertNormalizer } from "../bindings/normalizers";
-import { bertProcessing } from "../bindings/post-processors";
-import { bertPreTokenizer } from "../bindings/pre-tokenizers";
-import { Tokenizer } from "../bindings/tokenizer";
-import { wordPieceTrainer } from "../bindings/trainers";
+import { wordPieceDecoder } from "../../bindings/decoders";
+import { Model, WordPiece } from "../../bindings/models";
+import { bertNormalizer } from "../../bindings/normalizers";
+import { bertProcessing } from "../../bindings/post-processors";
+import { bertPreTokenizer } from "../../bindings/pre-tokenizers";
+import { Tokenizer } from "../../bindings/tokenizer";
+import { wordPieceTrainer } from "../../bindings/trainers";
 import { BaseTokenizer } from "./base.tokenizer";
 
 export interface BertWordPieceOptions {

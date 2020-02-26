@@ -1,13 +1,13 @@
 import { promisify } from "util";
 
-import { Encoding } from "../bindings/encoding";
 import {
   PaddingConfiguration,
   PaddingOptions,
   Tokenizer,
   TruncationConfiguration,
   TruncationOptions
-} from "../bindings/tokenizer";
+} from "../../bindings/tokenizer";
+import { Encoding } from "../encoding";
 
 export class BaseTokenizer<TConfig extends object> {
   private _truncation?: TruncationConfiguration;
@@ -75,7 +75,8 @@ export class BaseTokenizer<TConfig extends object> {
    */
   async encode(sequence: string, pair?: string): Promise<Encoding> {
     const encode = promisify(this.tokenizer.encode.bind(this.tokenizer));
-    return encode(sequence, pair ?? null);
+    const rawEncoding = await encode(sequence, pair ?? null);
+    return new Encoding(rawEncoding);
   }
 
   /**
@@ -86,7 +87,8 @@ export class BaseTokenizer<TConfig extends object> {
    */
   async encodeBatch(sequences: (string | [string, string])[]): Promise<Encoding[]> {
     const encodeBatch = promisify(this.tokenizer.encodeBatch.bind(this.tokenizer));
-    return encodeBatch(sequences);
+    const rawEncodings = await encodeBatch(sequences);
+    return rawEncodings.map(e => new Encoding(e));
   }
 
   /**

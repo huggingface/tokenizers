@@ -1,10 +1,10 @@
 import { Decoder } from "./decoders";
-import { Encoding } from "./encoding";
 import { PaddingDirection, TruncationStrategy } from "./enums";
 import { Model } from "./models";
 import { Normalizer } from "./normalizers";
 import { PostProcessor } from "./post-processors";
 import { PreTokenizer } from "./pre-tokenizers";
+import { RawEncoding } from "./raw-encoding";
 import { Trainer } from "./trainers";
 
 export interface TruncationOptions {
@@ -111,7 +111,7 @@ export class Tokenizer {
   encode(
     sequence: string,
     pair: string | null,
-    __callback: (err: any, encoding: Encoding) => void
+    __callback: (err: any, encoding: RawEncoding) => void
   ): void;
 
   /**
@@ -122,7 +122,7 @@ export class Tokenizer {
    */
   encodeBatch(
     sequences: (string | [string, string])[],
-    __callback: (err: any, encodings: Encoding[]) => void
+    __callback: (err: any, encodings: RawEncoding[]) => void
   ): void;
 
   /**

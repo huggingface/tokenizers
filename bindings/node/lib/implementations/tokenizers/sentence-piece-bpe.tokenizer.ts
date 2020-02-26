@@ -1,9 +1,9 @@
-import { metaspaceDecoder } from "../bindings/decoders";
-import { BPE, BPEOptions, Model } from "../bindings/models";
-import { nfkcNormalizer } from "../bindings/normalizers";
-import { metaspacePreTokenizer } from "../bindings/pre-tokenizers";
-import { Tokenizer } from "../bindings/tokenizer";
-import { bpeTrainer } from "../bindings/trainers";
+import { metaspaceDecoder } from "../../bindings/decoders";
+import { BPE, BPEOptions, Model } from "../../bindings/models";
+import { nfkcNormalizer } from "../../bindings/normalizers";
+import { metaspacePreTokenizer } from "../../bindings/pre-tokenizers";
+import { Tokenizer } from "../../bindings/tokenizer";
+import { bpeTrainer } from "../../bindings/trainers";
 import { BaseTokenizer } from "./base.tokenizer";
 
 export interface SentencePieceBPETokenizerOptions extends OptionsWithDefaults {

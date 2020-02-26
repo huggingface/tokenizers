@@ -1,13 +1,13 @@
-import { byteLevelDecoder } from "../bindings/decoders";
-import { BPE, Model } from "../bindings/models";
+import { byteLevelDecoder } from "../../bindings/decoders";
+import { BPE, Model } from "../../bindings/models";
 import {
   lowercaseNormalizer,
   nfkcNormalizer,
   sequenceNormalizer
-} from "../bindings/normalizers";
-import { byteLevelAlphabet, byteLevelPreTokenizer } from "../bindings/pre-tokenizers";
-import { Tokenizer } from "../bindings/tokenizer";
-import { bpeTrainer } from "../bindings/trainers";
+} from "../../bindings/normalizers";
+import { byteLevelAlphabet, byteLevelPreTokenizer } from "../../bindings/pre-tokenizers";
+import { Tokenizer } from "../../bindings/tokenizer";
+import { bpeTrainer } from "../../bindings/trainers";
 import { BaseTokenizer } from "./base.tokenizer";
 
 export interface ByteLevelBPETokenizerOptions {
@@ -95,7 +95,7 @@ export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerCo
 
     if (opts.lowercase) {
       tokenizer.setNormalizer(
-        sequenceNormalizer([lowercaseNormalizer(), nfkcNormalizer()])
+        sequenceNormalizer([nfkcNormalizer(), lowercaseNormalizer()])
       );
     } else {
       tokenizer.setNormalizer(nfkcNormalizer());
