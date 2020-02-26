@@ -421,7 +421,7 @@ impl Tokenizer {
         let style = ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {msg:<40!} {wide_bar} {bytes:<9!}/{total_bytes:>9!}");
         let jobs = files
-            .into_iter()
+            .into_par_iter()
             .map(|filename| {
                 let file = File::open(filename.clone())?;
                 let len = file.metadata().map(|c| c.len()).unwrap_or(0);
@@ -431,15 +431,16 @@ impl Tokenizer {
                 }
                 pbar.set_style(style.clone());
                 pbar.set_message(&filename);
-                Ok((file, pbar))
+                Ok((filename, pbar))
             })
             .collect::<Result<Vec<_>>>()?;
 
         let handle = std::thread::spawn(move || progress.join().unwrap());
         let results = jobs
             .par_iter()
-            .map(|(file, pbar)| -> Result<HashMap<String, u32>> {
+            .map(|(filename, pbar)| -> Result<HashMap<String, u32>> {
                 let mut words = HashMap::new();
+                let file = File::open(filename.clone())?;
                 let mut file = BufReader::new(pbar.wrap_read(file));
 
                 let mut buf = String::new();
