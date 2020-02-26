@@ -3,6 +3,7 @@
 Fixes:
 - Some default tokens were missing from `BertWordPieceTokenizer` (cf [#160](https://github.com/huggingface/tokenizers/issues/160))
 # v0.5.2
+- Do not open all files directly while training ([#163](https://github.com/huggingface/tokenizers/issues/163))
 
 ## Fixes:
 - We introduced a bug related to the saving of the WordPiece model in 0.5.2: The `vocab.txt` file was named
