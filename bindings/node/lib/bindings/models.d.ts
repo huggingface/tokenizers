@@ -2,8 +2,17 @@
  * This class is not supposed to be instantiated directly. Instead, any implementation of
  * a Model will return a instance of this class when instantiated.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-interface Model {}
+interface Model {
+  /**
+   * Save the current model in the given folder, using the given name
+   * for the various files that will get created.
+   * Any file with the same name that already exist in this folder will be overwritten.
+   *
+   * @param folder Name of the destination folder
+   * @param name Prefix to use in the name of created files
+   */
+  save(folder: string, name?: string): string[];
+}
 
 export interface BPEOptions {
   /**
