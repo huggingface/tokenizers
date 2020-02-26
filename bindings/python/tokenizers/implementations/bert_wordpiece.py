@@ -18,6 +18,8 @@ class BertWordPieceTokenizer(BaseTokenizer):
         unk_token: str = "[UNK]",
         sep_token: str = "[SEP]",
         cls_token: str = "[CLS]",
+        pad_token: str = "[PAD]",
+        mask_token: str = "[MASK]",
         clean_text: bool = True,
         handle_chinese_chars: bool = True,
         strip_accents: bool = True,
@@ -37,6 +39,10 @@ class BertWordPieceTokenizer(BaseTokenizer):
             tokenizer.add_special_tokens([sep_token])
         if tokenizer.token_to_id(cls_token) is not None:
             tokenizer.add_special_tokens([cls_token])
+        if tokenizer.token_to_id(pad_token) is not None:
+            tokenizer.add_special_tokens([pad_token])
+        if tokenizer.token_to_id(mask_token) is not None:
+            tokenizer.add_special_tokens([mask_token])
 
         tokenizer.normalizer = BertNormalizer(
             clean_text=clean_text,
@@ -65,6 +71,8 @@ class BertWordPieceTokenizer(BaseTokenizer):
             "unk_token": unk_token,
             "sep_token": sep_token,
             "cls_token": cls_token,
+            "pad_token": pad_token,
+            "mask_token": mask_token,
             "clean_text": clean_text,
             "handle_chinese_chars": handle_chinese_chars,
             "strip_accents": strip_accents,
