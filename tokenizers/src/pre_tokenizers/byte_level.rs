@@ -55,6 +55,7 @@ impl PreTokenizer for ByteLevel {
             s.to_owned()
         };
 
+        let mut total_len = 0;
         Ok(RE
             .captures_iter(&s)
             .map(|capture| {
@@ -72,8 +73,7 @@ impl PreTokenizer for ByteLevel {
                             s[start..end].chars().collect::<Vec<_>>().split_last()
                         {
                             let bytes = others.iter().collect::<String>().as_bytes().to_vec();
-                            let offsets = (start, end - 1);
-                            return (bytes, offsets);
+                            return (bytes, others.len());
                         }
                     }
                 }
@@ -85,14 +85,23 @@ impl PreTokenizer for ByteLevel {
                     if prev.is_separator_space() && !current {
                         let bytes =
                             [format!("{}", prev).as_bytes(), s[start..end].as_bytes()].concat();
-                        let offsets = (start - prev.len_utf8(), end);
-                        return (bytes, offsets);
+                        let len = s[start..end].chars().count() + 1;
+                        return (bytes, len);
                     }
                 }
 
-                (s[start..end].as_bytes().to_vec(), (start, end))
+                (
+                    s[start..end].as_bytes().to_vec(),
+                    s[start..end].chars().count(),
+                )
             })
-            .map(|(s, offsets)| (s.iter().map(|b| BYTES_CHAR[b]).collect(), offsets))
+            .map(|(s, len)| {
+                total_len += len;
+                (
+                    s.iter().map(|b| BYTES_CHAR[b]).collect(),
+                    (total_len - len, total_len),
+                )
+            })
             .collect())
     }
 }
@@ -232,6 +241,22 @@ mod tests {
                 ("Ġthere".into(), (5, 11)),
                 ("ĠĠĠĠĠĠ".into(), (11, 17)),
                 ("Ġdear".into(), (17, 22))
+            ]
+        );
+    }
+
+    #[test]
+    fn offsets_when_char_split_up() {
+        let s = String::from("i⭢j");
+        let pretok = ByteLevel::new(false);
+        let p = pretok.pre_tokenize(&s).unwrap();
+
+        assert_eq!(
+            p,
+            vec![
+                ("i".into(), (0, 1)),
+                ("âŃ¢".into(), (1, 2)),
+                ("j".into(), (2, 3)),
             ]
         );
     }
