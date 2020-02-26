@@ -31,6 +31,14 @@ export interface BertWordPieceOptions {
    */
   lowercase?: boolean;
   /**
+   * @default "[MASK]"
+   */
+  maskToken?: string;
+  /**
+   * @default "[PAD]"
+   */
+  padToken?: string;
+  /**
    * @default "[SEP]"
    */
   sepToken?: string;
@@ -94,6 +102,8 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
     clsToken: "[CLS]",
     handleChineseChars: true,
     lowercase: true,
+    maskToken: "[MASK]",
+    padToken: "[PAD]",
     sepToken: "[SEP]",
     stripAccents: true,
     unkToken: "[UNK]",
@@ -133,7 +143,18 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
     }
 
     const tokenizer = new Tokenizer(model);
-    tokenizer.addSpecialTokens([opts.clsToken, opts.sepToken, opts.unkToken]);
+
+    for (const token of [
+      opts.clsToken,
+      opts.sepToken,
+      opts.unkToken,
+      opts.padToken,
+      opts.maskToken
+    ]) {
+      if (tokenizer.tokenToId(token) !== undefined) {
+        tokenizer.addSpecialTokens([token]);
+      }
+    }
 
     const normalizer = bertNormalizer(opts);
     tokenizer.setNormalizer(normalizer);

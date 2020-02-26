@@ -105,7 +105,10 @@ export class SentencePieceBPETokenizer extends BaseTokenizer<
     }
 
     const tokenizer = new Tokenizer(model);
-    tokenizer.addSpecialTokens([opts.unkToken]);
+    if (tokenizer.tokenToId(opts.unkToken) !== undefined) {
+      tokenizer.addSpecialTokens([opts.unkToken]);
+    }
+
     tokenizer.setNormalizer(nfkcNormalizer());
 
     const preTokenizer = metaspacePreTokenizer(opts.replacement, opts.addPrefixSpace);

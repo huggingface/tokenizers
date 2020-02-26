@@ -115,7 +115,9 @@ export class BPETokenizer extends BaseTokenizer<BPETokenizerConfig> {
     }
 
     const tokenizer = new Tokenizer(model);
-    tokenizer.addSpecialTokens([opts.unkToken]);
+    if (tokenizer.tokenToId(opts.unkToken) !== undefined) {
+      tokenizer.addSpecialTokens([opts.unkToken]);
+    }
 
     if (opts.lowercase) {
       tokenizer.setNormalizer(
