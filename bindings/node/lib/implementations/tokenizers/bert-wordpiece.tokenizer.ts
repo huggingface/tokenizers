@@ -1,12 +1,12 @@
 import { promisify } from "util";
 
-import { wordPieceDecoder } from "../bindings/decoders";
-import { Model, WordPiece } from "../bindings/models";
-import { bertNormalizer } from "../bindings/normalizers";
-import { bertProcessing } from "../bindings/post-processors";
-import { bertPreTokenizer } from "../bindings/pre-tokenizers";
-import { Tokenizer } from "../bindings/tokenizer";
-import { wordPieceTrainer } from "../bindings/trainers";
+import { wordPieceDecoder } from "../../bindings/decoders";
+import { Model, WordPiece } from "../../bindings/models";
+import { bertNormalizer } from "../../bindings/normalizers";
+import { bertProcessing } from "../../bindings/post-processors";
+import { bertPreTokenizer } from "../../bindings/pre-tokenizers";
+import { Tokenizer } from "../../bindings/tokenizer";
+import { wordPieceTrainer } from "../../bindings/trainers";
 import { BaseTokenizer } from "./base.tokenizer";
 
 export interface BertWordPieceOptions {
@@ -30,6 +30,14 @@ export interface BertWordPieceOptions {
    * @default true
    */
   lowercase?: boolean;
+  /**
+   * @default "[MASK]"
+   */
+  maskToken?: string;
+  /**
+   * @default "[PAD]"
+   */
+  padToken?: string;
   /**
    * @default "[SEP]"
    */
@@ -94,6 +102,8 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
     clsToken: "[CLS]",
     handleChineseChars: true,
     lowercase: true,
+    maskToken: "[MASK]",
+    padToken: "[PAD]",
     sepToken: "[SEP]",
     stripAccents: true,
     unkToken: "[UNK]",
@@ -133,7 +143,18 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
     }
 
     const tokenizer = new Tokenizer(model);
-    tokenizer.addSpecialTokens([opts.clsToken, opts.sepToken, opts.unkToken]);
+
+    for (const token of [
+      opts.clsToken,
+      opts.sepToken,
+      opts.unkToken,
+      opts.padToken,
+      opts.maskToken
+    ]) {
+      if (tokenizer.tokenToId(token) !== undefined) {
+        tokenizer.addSpecialTokens([token]);
+      }
+    }
 
     const normalizer = bertNormalizer(opts);
     tokenizer.setNormalizer(normalizer);

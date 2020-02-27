@@ -63,7 +63,9 @@ declare_types! {
             // getVocabSize(withAddedTokens: bool = true)
             let mut with_added_tokens = true;
             if let Some(args) = cx.argument_opt(0) {
-                with_added_tokens = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value() as bool;
+                if args.downcast::<JsUndefined>().is_err() {
+                    with_added_tokens = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value() as bool;
+                }
             }
 
             let mut this = cx.this();

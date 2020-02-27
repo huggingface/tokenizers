@@ -16,6 +16,39 @@ declare_types! {
                 model: Container::Empty
             })
         }
+
+        /// save(folder: string, name?: string)
+        method save(mut cx) {
+            let folder = cx.argument::<JsString>(0)?.value();
+
+            let name = if let Some(name_arg) = cx.argument_opt(1) {
+                if args.downcast::<JsUndefined>().is_err() {
+                    Some(name_arg.downcast_or_throw::<JsString, _>(&mut cx)?.value())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let this = cx.this();
+            let guard = cx.lock();
+            let result = this.borrow(&guard).model.execute(|model| {
+                model.unwrap().save(Path::new(&folder), name.as_deref())
+            });
+
+            match result {
+                Ok(r) => {
+                    let array = JsArray::new(&mut cx, r.len() as u32);
+                    for (i, path) in r.into_iter().enumerate() {
+                        let n = JsString::new(&mut cx, path.to_string_lossy().into_owned());
+                        array.set(&mut cx, i as u32, n)?;
+                    }
+                    Ok(array.upcast())
+                },
+                Err(e) => cx.throw_error(format!("{}", e))
+            }
+        }
     }
 }
 

@@ -1,10 +1,10 @@
-import { PaddingDirection, TruncationStrategy } from "../bindings/enums";
-import { BPE } from "../bindings/models";
+import { PaddingDirection, TruncationStrategy } from "../../bindings/enums";
+import { BPE } from "../../bindings/models";
 import {
   PaddingConfiguration,
   Tokenizer,
   TruncationConfiguration
-} from "../bindings/tokenizer";
+} from "../../bindings/tokenizer";
 import { BaseTokenizer } from "./base.tokenizer";
 
 describe("BaseTokenizer", () => {

@@ -19,6 +19,16 @@ declare_types! {
             })
         }
 
+        method getLength(mut cx) {
+            let this = cx.this();
+            let guard = cx.lock();
+            let ids = this.borrow(&guard).encoding.execute(|encoding| {
+                encoding.unwrap().get_ids().to_vec()
+            });
+
+            Ok(cx.number(ids.len() as f64).upcast())
+        }
+
         method getIds(mut cx) {
             // getIds(): number[]
 
@@ -170,14 +180,23 @@ declare_types! {
             };
 
             let begin_index = if let Some(begin_arg) = cx.argument_opt(0) {
-                let begin = begin_arg.downcast::<JsNumber>().or_throw(&mut cx)?.value() as i32;
-                get_index(begin)
+                if begin_arg.downcast::<JsUndefined>().is_err() {
+                    let begin = begin_arg.downcast::<JsNumber>().or_throw(&mut cx)?.value() as i32;
+                    get_index(begin)
+                } else {
+                    0
+                }
             } else {
                 0
             };
+
             let end_index = if let Some(end_arg) = cx.argument_opt(1) {
-                let end = end_arg.downcast::<JsNumber>().or_throw(&mut cx)?.value() as i32;
-                get_index(end)
+                if end_arg.downcast::<JsUndefined>().is_err() {
+                    let end = end_arg.downcast::<JsNumber>().or_throw(&mut cx)?.value() as i32;
+                    get_index(end)
+                } else {
+                    len_original
+                }
             } else {
                 len_original
             };
@@ -256,7 +275,9 @@ declare_types! {
             let length = cx.argument::<JsNumber>(0)?.value() as usize;
             let mut stride = 0;
             if let Some(args) = cx.argument_opt(1) {
-                stride = args.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize;
+                if args.downcast::<JsUndefined>().is_err() {
+                    stride = args.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize;
+                }
             }
 
             let mut this = cx.this();

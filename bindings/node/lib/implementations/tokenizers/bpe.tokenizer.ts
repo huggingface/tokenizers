@@ -1,25 +1,33 @@
 import { promisify } from "util";
 
-import { bpeDecoder } from "../bindings/decoders";
-import { BPE, BPEOptions, Model } from "../bindings/models";
+import { bpeDecoder } from "../../bindings/decoders";
+import { BPE, BPEOptions, Model } from "../../bindings/models";
 import {
   lowercaseNormalizer,
   nfkcNormalizer,
   sequenceNormalizer
-} from "../bindings/normalizers";
-import { whitespaceSplitPreTokenizer } from "../bindings/pre-tokenizers";
-import { Tokenizer } from "../bindings/tokenizer";
-import { bpeTrainer } from "../bindings/trainers";
+} from "../../bindings/normalizers";
+import { whitespaceSplitPreTokenizer } from "../../bindings/pre-tokenizers";
+import { Tokenizer } from "../../bindings/tokenizer";
+import { bpeTrainer } from "../../bindings/trainers";
 import { BaseTokenizer } from "./base.tokenizer";
 
 export interface BPETokenizerOptions {
+  /**
+   * The BPE dropout to use. Must be an float between 0 and 1
+   */
   dropout?: number;
+  /**
+   * @default false
+   */
+  lowercase?: boolean;
   mergesFile?: string;
   /**
    * @default "</w>"
    */
   suffix?: string;
   /**
+   * The unknown token to be used by the model
    * @default "<unk>"
    */
   unkToken?: string;
@@ -107,10 +115,18 @@ export class BPETokenizer extends BaseTokenizer<BPETokenizerConfig> {
     }
 
     const tokenizer = new Tokenizer(model);
-    tokenizer.addSpecialTokens([opts.unkToken]);
+    if (tokenizer.tokenToId(opts.unkToken) !== undefined) {
+      tokenizer.addSpecialTokens([opts.unkToken]);
+    }
 
-    const normalizer = sequenceNormalizer([nfkcNormalizer(), lowercaseNormalizer()]);
-    tokenizer.setNormalizer(normalizer);
+    if (opts.lowercase) {
+      tokenizer.setNormalizer(
+        sequenceNormalizer([nfkcNormalizer(), lowercaseNormalizer()])
+      );
+    } else {
+      tokenizer.setNormalizer(nfkcNormalizer());
+    }
+
     tokenizer.setPreTokenizer(whitespaceSplitPreTokenizer());
 
     const decoder = bpeDecoder(opts.suffix);

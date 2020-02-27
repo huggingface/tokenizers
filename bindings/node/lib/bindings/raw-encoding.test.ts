@@ -1,12 +1,12 @@
 import { promisify } from "util";
 
-import { Encoding } from "./encoding";
 import { BPE } from "./models";
+import { RawEncoding } from "./raw-encoding";
 import { Tokenizer } from "./tokenizer";
 
-describe("Encoding", () => {
+describe("RawEncoding", () => {
   const originalString = "my name is john";
-  let encoding: Encoding;
+  let encoding: RawEncoding;
 
   beforeEach(async () => {
     const model = BPE.empty();
@@ -20,6 +20,7 @@ describe("Encoding", () => {
   it("has a list of defined methods", async () => {
     expect(typeof encoding.getAttentionMask).toBe("function");
     expect(typeof encoding.getIds).toBe("function");
+    expect(typeof encoding.getLength).toBe("function");
     expect(typeof encoding.getOffsets).toBe("function");
     expect(typeof encoding.getOriginalString).toBe("function");
     expect(typeof encoding.getOverflowing).toBe("function");
@@ -33,6 +34,16 @@ describe("Encoding", () => {
   describe("getOriginalString", () => {
     it("returns the full original string when no params", () => {
       const original = encoding.getOriginalString();
+      expect(original).toEqual(originalString);
+    });
+
+    it("accepts `undefined` as first parameter", () => {
+      const original = encoding.getOriginalString(undefined);
+      expect(original).toEqual(originalString);
+    });
+
+    it("accepts `undefined` as second parameter", () => {
+      const original = encoding.getOriginalString(0, undefined);
       expect(original).toEqual(originalString);
     });
 
@@ -120,6 +131,12 @@ describe("Encoding", () => {
       it("throws an error when resulting `end` index is out of range", () => {
         expect(() => encoding.getOriginalString(-10, -1000)).toThrow();
       });
+    });
+  });
+
+  describe("truncate", () => {
+    it("accepts `undefined` as second parameter", () => {
+      expect(encoding.truncate(10, undefined)).toBeUndefined();
     });
   });
 });

@@ -1,10 +1,10 @@
 import { mocked } from "ts-jest/utils";
 
-import { Tokenizer } from "../bindings/tokenizer";
+import { Tokenizer } from "../../bindings/tokenizer";
 import { BertWordPieceOptions, BertWordPieceTokenizer } from "./bert-wordpiece.tokenizer";
 
-jest.mock("../bindings/models");
-jest.mock("../bindings/tokenizer");
+jest.mock("../../bindings/models");
+jest.mock("../../bindings/tokenizer");
 
 describe("BertWordPieceTokenizer", () => {
   describe("fromOptions", () => {

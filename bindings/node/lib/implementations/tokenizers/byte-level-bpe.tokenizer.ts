@@ -1,9 +1,13 @@
-import { byteLevelDecoder } from "../bindings/decoders";
-import { BPE, Model } from "../bindings/models";
-import { nfkcNormalizer } from "../bindings/normalizers";
-import { byteLevelAlphabet, byteLevelPreTokenizer } from "../bindings/pre-tokenizers";
-import { Tokenizer } from "../bindings/tokenizer";
-import { bpeTrainer } from "../bindings/trainers";
+import { byteLevelDecoder } from "../../bindings/decoders";
+import { BPE, Model } from "../../bindings/models";
+import {
+  lowercaseNormalizer,
+  nfkcNormalizer,
+  sequenceNormalizer
+} from "../../bindings/normalizers";
+import { byteLevelAlphabet, byteLevelPreTokenizer } from "../../bindings/pre-tokenizers";
+import { Tokenizer } from "../../bindings/tokenizer";
+import { bpeTrainer } from "../../bindings/trainers";
 import { BaseTokenizer } from "./base.tokenizer";
 
 export interface ByteLevelBPETokenizerOptions {
@@ -11,7 +15,24 @@ export interface ByteLevelBPETokenizerOptions {
    * @default false
    */
   addPrefixSpace?: boolean;
+  /**
+   * The prefix to attach to subword units that don't represent a beginning of word
+   */
+  continuingSubwordPrefix?: string;
+  /**
+   * @default false
+   */
+  lowercase?: boolean;
+  /**
+   * The BPE dropout to use. Must be an float between 0 and 1
+   */
+  dropout?: number;
+  /**
+   * The suffix to attach to subword units that represent an end of word
+   */
+  endOfWordSuffix?: string;
   mergesFile?: string;
+  unicodeNormalizer?: string;
   vocabFile?: string;
 }
 
@@ -64,14 +85,21 @@ export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerCo
     let model: Model;
     if (opts.vocabFile && opts.mergesFile) {
       // const fromFiles = promisify(BPE.fromFiles);
-      model = BPE.fromFiles(opts.vocabFile, opts.mergesFile);
+      model = BPE.fromFiles(opts.vocabFile, opts.mergesFile, opts);
       // model = await fromFiles(mergedOptions.vocabFile, mergedOptions.mergesFile, null);
     } else {
       model = BPE.empty();
     }
 
     const tokenizer = new Tokenizer(model);
-    tokenizer.setNormalizer(nfkcNormalizer());
+
+    if (opts.lowercase) {
+      tokenizer.setNormalizer(
+        sequenceNormalizer([nfkcNormalizer(), lowercaseNormalizer()])
+      );
+    } else {
+      tokenizer.setNormalizer(nfkcNormalizer());
+    }
 
     const preTokenizer = byteLevelPreTokenizer(opts.addPrefixSpace);
     tokenizer.setPreTokenizer(preTokenizer);
