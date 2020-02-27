@@ -1,4 +1,4 @@
-# [0.5.0](https://github.com/huggingface/tokenizers/compare/node-v0.4.1...node-v0.5.0) (2020-02-26)
+# [0.5.0](https://github.com/huggingface/tokenizers/compare/node-v0.4.1...node-v0.5.0) (2020-02-27)
 
 ### BREAKING CHANGES
 
@@ -18,6 +18,8 @@
 - Methods accepting optional arguments now handle explicit `undefined` correctly ([0fe22a7](https://github.com/huggingface/tokenizers/commit/0fe22a7c1c23f8d992f502a3a582e5212b8281ac))
 - Special tokens are now declared only if present in the vocabulary ([b70283c](https://github.com/huggingface/tokenizers/commit/b70283c3050056958e8ba020b0386451cc6df80c))
 - Add missing mask/padding special tokens in wordpiece tokenizer ([b70283c](https://github.com/huggingface/tokenizers/commit/b70283c3050056958e8ba020b0386451cc6df80c))
+- Fix a bug in `ByteLevelBPETokenizer` that caused offsets to be wrong if a char got split up
+in multiple bytes ([#156](https://github.com/huggingface/tokenizers/pull/156))
 
 ## [0.4.1](https://github.com/huggingface/tokenizers/compare/node-v0.4.0...node-v0.4.1) (2020-02-11)
 
