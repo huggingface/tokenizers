@@ -37,6 +37,16 @@ describe("RawEncoding", () => {
       expect(original).toEqual(originalString);
     });
 
+    it("accepts `undefined` as first parameter", () => {
+      const original = encoding.getOriginalString(undefined);
+      expect(original).toEqual(originalString);
+    });
+
+    it("accepts `undefined` as second parameter", () => {
+      const original = encoding.getOriginalString(0, undefined);
+      expect(original).toEqual(originalString);
+    });
+
     it("throws an error when `begin` is out of range", () => {
       expect(() => encoding.getOriginalString(1000)).toThrow();
     });
@@ -121,6 +131,12 @@ describe("RawEncoding", () => {
       it("throws an error when resulting `end` index is out of range", () => {
         expect(() => encoding.getOriginalString(-10, -1000)).toThrow();
       });
+    });
+  });
+
+  describe("truncate", () => {
+    it("accepts `undefined` as second parameter", () => {
+      expect(encoding.truncate(10, undefined)).toBeUndefined();
     });
   });
 });

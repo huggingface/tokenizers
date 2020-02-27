@@ -22,7 +22,11 @@ declare_types! {
             let folder = cx.argument::<JsString>(0)?.value();
 
             let name = if let Some(name_arg) = cx.argument_opt(1) {
-                Some(name_arg.downcast_or_throw::<JsString, _>(&mut cx)?.value())
+                if args.downcast::<JsUndefined>().is_err() {
+                    Some(name_arg.downcast_or_throw::<JsString, _>(&mut cx)?.value())
+                } else {
+                    None
+                }
             } else {
                 None
             };

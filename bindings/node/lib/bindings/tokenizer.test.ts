@@ -158,30 +158,45 @@ describe("Tokenizer", () => {
         ]);
       });
     });
+  });
 
-    describe("setTruncation", () => {
-      it("returns the full truncation configuration", () => {
-        const truncation = tokenizer.setTruncation(2);
-        const expectedConfig: TruncationConfiguration = {
-          maxLength: 2,
-          strategy: TruncationStrategy.LongestFirst,
-          stride: 0
-        };
-        expect(truncation).toEqual(expectedConfig);
-      });
+  describe("getVocabSize", () => {
+    it("accepts `undefined` as parameter", () => {
+      const model = BPE.empty();
+      const tokenizer = new Tokenizer(model);
+
+      expect(tokenizer.getVocabSize(undefined)).toBeDefined();
     });
+  });
 
-    describe("setPadding", () => {
-      it("returns the full padding params", () => {
-        const padding = tokenizer.setPadding();
-        const expectedConfig: PaddingConfiguration = {
-          direction: PaddingDirection.Right,
-          padId: 0,
-          padToken: "[PAD]",
-          padTypeId: 0
-        };
-        expect(padding).toEqual(expectedConfig);
-      });
+  describe("setTruncation", () => {
+    it("returns the full truncation configuration", () => {
+      const model = BPE.empty();
+      const tokenizer = new Tokenizer(model);
+
+      const truncation = tokenizer.setTruncation(2);
+      const expectedConfig: TruncationConfiguration = {
+        maxLength: 2,
+        strategy: TruncationStrategy.LongestFirst,
+        stride: 0
+      };
+      expect(truncation).toEqual(expectedConfig);
+    });
+  });
+
+  describe("setPadding", () => {
+    it("returns the full padding params", () => {
+      const model = BPE.empty();
+      const tokenizer = new Tokenizer(model);
+
+      const padding = tokenizer.setPadding();
+      const expectedConfig: PaddingConfiguration = {
+        direction: PaddingDirection.Right,
+        padId: 0,
+        padToken: "[PAD]",
+        padTypeId: 0
+      };
+      expect(padding).toEqual(expectedConfig);
     });
   });
 });

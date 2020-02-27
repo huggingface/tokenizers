@@ -24,7 +24,9 @@ fn byte_level(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let mut add_prefix_space = true;
 
     if let Some(args) = cx.argument_opt(0) {
-        add_prefix_space = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
+        if args.downcast::<JsUndefined>().is_err() {
+            add_prefix_space = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
+        }
     }
 
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
@@ -88,16 +90,20 @@ fn bert_pre_tokenizer(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
 fn metaspace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let mut replacement = '▁';
     if let Some(args) = cx.argument_opt(0) {
-        let rep = args.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
-        replacement = rep.chars().nth(0).ok_or_else(|| {
-            cx.throw_error::<_, ()>("replacement must be a character")
-                .unwrap_err()
-        })?;
+        if args.downcast::<JsUndefined>().is_err() {
+            let rep = args.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
+            replacement = rep.chars().nth(0).ok_or_else(|| {
+                cx.throw_error::<_, ()>("replacement must be a character")
+                    .unwrap_err()
+            })?;
+        }
     };
 
     let mut add_prefix_space = true;
     if let Some(args) = cx.argument_opt(1) {
-        add_prefix_space = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value() as bool;
+        if args.downcast::<JsUndefined>().is_err() {
+            add_prefix_space = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value() as bool;
+        }
     }
 
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;

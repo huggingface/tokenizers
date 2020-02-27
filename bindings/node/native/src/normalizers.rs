@@ -118,12 +118,16 @@ fn strip(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     let mut right = true;
 
     if let Some(left_arg) = cx.argument_opt(0) {
-        left = left_arg.downcast_or_throw::<JsBoolean, _>(&mut cx)?.value();
+        if left_arg.downcast::<JsUndefined>().is_err() {
+            left = left_arg.downcast_or_throw::<JsBoolean, _>(&mut cx)?.value();
+        }
 
         if let Some(right_arg) = cx.argument_opt(1) {
-            right = right_arg
-                .downcast_or_throw::<JsBoolean, _>(&mut cx)?
-                .value();
+            if right_arg.downcast::<JsUndefined>().is_err() {
+                right = right_arg
+                    .downcast_or_throw::<JsBoolean, _>(&mut cx)?
+                    .value();
+            }
         }
     }
 
