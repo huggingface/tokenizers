@@ -1,3 +1,24 @@
+# [0.5.0](https://github.com/huggingface/tokenizers/compare/node-v0.4.1...node-v0.5.0) (2020-02-26)
+
+### BREAKING CHANGES
+
+- The `Encoding` object now exposes getters instead of `get...` methods (except for `getOriginalString`) ([9179968](https://github.com/huggingface/tokenizers/commit/917996841df2b3385e0212c9d7e9910d4e0d3fbf))
+- `BertWordPieceTokenizer` now cleans up some tokenization artifacts by default while decoding ([#145](https://github.com/huggingface/tokenizers/issues/145)) ([#147](https://github.com/huggingface/tokenizers/pull/147))
+
+### Features
+
+- `Encoding` exposes a new `length` property ([9179968](https://github.com/huggingface/tokenizers/commit/917996841df2b3385e0212c9d7e9910d4e0d3fbf))
+- Add a new `stripNormalizer` ([#140](https://github.com/huggingface/tokenizers/pull/140)) ([815d743](https://github.com/huggingface/tokenizers/commit/815d743461f9067ab38237862b7be8114d422300))
+- `ByteLevelBPETokenizer` and `BPETokenizer` accept more options ([946ac1a](https://github.com/huggingface/tokenizers/commit/946ac1a9517c3090064e9a972ad71a5cf25b7e7f))
+- Add `save` method to `Model` class ([aebc97e](https://github.com/huggingface/tokenizers/commit/aebc97eaf34260c9ed7689dd5e087bf8c8af59fc))
+- Improved padding performances ([b30be3b](https://github.com/huggingface/tokenizers/commit/b30be3b2bda977b65f9bdb384258829b2bd91e3d)) ([0dc857e](https://github.com/huggingface/tokenizers/commit/0dc857ea8c557532a52628a6bc80141e65e6d974))
+
+### Fixes
+
+- Methods accepting optional arguments now handle explicit `undefined` correctly ([0fe22a7](https://github.com/huggingface/tokenizers/commit/0fe22a7c1c23f8d992f502a3a582e5212b8281ac))
+- Special tokens are now declared only if present in the vocabulary ([b70283c](https://github.com/huggingface/tokenizers/commit/b70283c3050056958e8ba020b0386451cc6df80c))
+- Add missing mask/padding special tokens in wordpiece tokenizer ([b70283c](https://github.com/huggingface/tokenizers/commit/b70283c3050056958e8ba020b0386451cc6df80c))
+
 ## [0.4.1](https://github.com/huggingface/tokenizers/compare/node-v0.4.0...node-v0.4.1) (2020-02-11)
 
 ### Bug Fixes
