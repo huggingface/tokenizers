@@ -91,11 +91,13 @@ impl Encoding {
 
     /// Truncate the current `Encoding`.
     ///
-    /// Panic if `stride >= max_len`.
+    /// Panic if `stride >= max_len` or `max_len == 0`.
     pub fn truncate(&mut self, max_len: usize, stride: usize) {
         if max_len >= self.ids.len() {
             return;
         }
+        // We only truncate if max_len > 0, it makes no sense otherwise
+        assert!(max_len > 0);
 
         // Get the main overflowing part
         let o_ids = self.ids.split_off(max_len);
@@ -105,7 +107,7 @@ impl Encoding {
         let o_spe_toks = self.special_tokens_mask.split_off(max_len);
         let o_attent = self.attention_mask.split_off(max_len);
 
-        // Now we need to separate each overflowing part into as many Encoding as needed
+        // Now we need to separate the overflowing part into as many Encoding as needed
         assert!(stride < max_len);
         let part_size = max_len - stride;
         let mut overflowing = vec![];

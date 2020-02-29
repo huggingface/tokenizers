@@ -4,6 +4,7 @@ Fixes:
 - Some default tokens were missing from `BertWordPieceTokenizer` (cf [#160](https://github.com/huggingface/tokenizers/issues/160))
 - There was a bug in ByteLevel PreTokenizer that caused offsets to be wrong if a char got split up
 in multiple bytes. (cf [#156](https://github.com/huggingface/tokenizers/pull/156))
+- The `longest_first` truncation strategy had a bug ([#174](https://github.com/huggingface/tokenizers/issues/174))
 
 # v0.5.2
 - Do not open all files directly while training ([#163](https://github.com/huggingface/tokenizers/issues/163))

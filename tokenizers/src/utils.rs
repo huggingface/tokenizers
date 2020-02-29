@@ -83,21 +83,19 @@ pub fn truncate_encodings(
 
     match params.strategy {
         TruncationStrategy::LongestFirst => {
-            let mut n_first = 0;
-            let mut n_second = 0;
+            let mut n_first = encoding.get_ids().len();
+            let mut n_second = pair_encoding.as_ref().map_or(0, |e| e.get_ids().len());
             for _ in 0..to_remove {
-                if pair_encoding.is_none()
-                    || encoding.get_ids().len() > pair_encoding.as_ref().unwrap().get_ids().len()
-                {
-                    n_first += 1;
+                if n_first > n_second {
+                    n_first -= 1;
                 } else {
-                    n_second += 1;
+                    n_second -= 1;
                 }
             }
 
-            encoding.truncate(encoding.get_ids().len() - n_first, params.stride);
+            encoding.truncate(n_first, params.stride);
             if let Some(encoding) = pair_encoding.as_mut() {
-                encoding.truncate(encoding.get_ids().len() - n_second, params.stride);
+                encoding.truncate(n_second, params.stride);
             }
         }
         TruncationStrategy::OnlyFirst | TruncationStrategy::OnlySecond => {
