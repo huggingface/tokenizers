@@ -3,7 +3,6 @@ use super::{
     DEFAULT_CACHE_CAPACITY,
 };
 use crate::tokenizer::{Model, Offsets, Result, Token};
-use rand::{thread_rng, Rng};
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -288,45 +287,7 @@ impl BPE {
             }
         }
 
-        loop {
-            if word.get_chars().len() < 2 {
-                break;
-            }
-
-            let ((rank, new_id), pair) = word
-                .get_chars()
-                .windows(2)
-                .map(|window| {
-                    let pair = (window[0], window[1]);
-                    let rank = self
-                        .merges
-                        .get(&pair)
-                        .map(|rank| {
-                            if let Some(dropout) = self.dropout {
-                                // With probability `dropout` we'll ignore this merge.
-                                if thread_rng().gen::<f32>() < dropout {
-                                    &(std::u32::MAX, std::u32::MAX)
-                                } else {
-                                    rank
-                                }
-                            } else {
-                                rank
-                            }
-                        })
-                        .unwrap_or(&(std::u32::MAX, std::u32::MAX));
-                    (rank, pair)
-                })
-                .min()
-                .unwrap();
-
-            if *rank == std::u32::MAX {
-                // We are done merging this word
-                break;
-            }
-
-            // Let's merge
-            word.merge(pair.0, pair.1, *new_id);
-        }
+        word.merge_all(&self.merges, self.dropout);
 
         Ok(word)
     }
