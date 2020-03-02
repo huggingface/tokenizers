@@ -358,7 +358,11 @@ impl BpeTrainer {
         } else {
             1
         };
-        let batch = words.len() / n_threads;
+        let batch = if words.len() % n_threads > 0 {
+            (words.len() + (n_threads - words.len() % n_threads)) / n_threads
+        } else {
+            words.len() / n_threads
+        };
         let results = (0..n_threads)
             .into_par_iter()
             .map(|n| {
@@ -641,7 +645,10 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        let trainer = BpeTrainer::builder().min_frequency(2).build();
+        let trainer = BpeTrainer::builder()
+            .show_progress(false)
+            .min_frequency(2)
+            .build();
         let (model, _) = trainer.train(word_counts).unwrap();
 
         // Vocab should contain all of the characters from the `word_counts` mapping
