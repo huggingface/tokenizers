@@ -291,8 +291,6 @@ impl BpeTrainer {
                 w2id.insert(s, (id2w.len() - 1) as u32);
             }
         });
-
-        println!("Alphabet: {:?}", w2id);
     }
 
     /// Tokenize words and add subwords to the vocabulary when relevant
@@ -343,8 +341,6 @@ impl BpeTrainer {
             }
         }
 
-        println!("Words: {:#?}", words);
-        println!("Counts: {:#?}", counts);
         (words, counts)
     }
 
@@ -362,7 +358,11 @@ impl BpeTrainer {
         } else {
             1
         };
-        let batch = words.len() / n_threads;
+        let batch = if words.len() % n_threads > 0 {
+            (words.len() + (n_threads - words.len() % n_threads)) / n_threads
+        } else {
+            words.len() / n_threads
+        };
         let results = (0..n_threads)
             .into_par_iter()
             .map(|n| {
@@ -472,7 +472,6 @@ impl BpeTrainer {
                 });
             }
         });
-        println!("Queue: {:#?}", queue);
         self.finalize_progress(&progress, words.len());
 
         //
@@ -496,7 +495,6 @@ impl BpeTrainer {
                 queue.push(top);
                 continue;
             }
-            println!("Top: {:?}", top);
 
             if top.count < 1 || self.min_frequency > top.count {
                 break;
@@ -513,7 +511,6 @@ impl BpeTrainer {
                 }
             }
             let new_token = format!("{}{}", part_a, part_b);
-            println!("New token: {}", new_token);
 
             // Insert new token
             let new_token_id = id_to_word.len() as u32;
@@ -648,7 +645,10 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        let trainer = BpeTrainer::builder().min_frequency(2).build();
+        let trainer = BpeTrainer::builder()
+            .show_progress(false)
+            .min_frequency(2)
+            .build();
         let (model, _) = trainer.train(word_counts).unwrap();
 
         // Vocab should contain all of the characters from the `word_counts` mapping
