@@ -291,6 +291,8 @@ impl BpeTrainer {
                 w2id.insert(s, (id2w.len() - 1) as u32);
             }
         });
+
+        println!("Alphabet: {:?}", w2id);
     }
 
     /// Tokenize words and add subwords to the vocabulary when relevant
@@ -341,6 +343,8 @@ impl BpeTrainer {
             }
         }
 
+        println!("Words: {:#?}", words);
+        println!("Counts: {:#?}", counts);
         (words, counts)
     }
 
@@ -468,6 +472,7 @@ impl BpeTrainer {
                 });
             }
         });
+        println!("Queue: {:#?}", queue);
         self.finalize_progress(&progress, words.len());
 
         //
@@ -491,6 +496,7 @@ impl BpeTrainer {
                 queue.push(top);
                 continue;
             }
+            println!("Top: {:?}", top);
 
             if top.count < 1 || self.min_frequency > top.count {
                 break;
@@ -507,6 +513,7 @@ impl BpeTrainer {
                 }
             }
             let new_token = format!("{}{}", part_a, part_b);
+            println!("New token: {}", new_token);
 
             // Insert new token
             let new_token_id = id_to_word.len() as u32;

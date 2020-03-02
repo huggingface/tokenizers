@@ -56,6 +56,22 @@ impl Symbol {
 pub(super) struct Word {
     symbols: Vec<Symbol>,
 }
+impl std::fmt::Debug for Word {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        fmt.debug_struct("Word")
+            .field(
+                "chars",
+                &self
+                    .symbols
+                    .iter()
+                    .map(|s| s.c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            )
+            .field("symbols", &self.symbols)
+            .finish()
+    }
+}
 
 impl Word {
     pub(super) fn new() -> Self {
