@@ -248,6 +248,14 @@ impl NormalizedString {
         self
     }
 
+    /// Append the given string to ourself
+    pub fn append(&mut self, s: &str) -> &mut Self {
+        self.normalized.push_str(s);
+        let last_offset = self.alignments.last().map_or((0, 0), |o| (o.1, o.1));
+        self.alignments.extend(s.chars().map(|_| last_offset));
+        self
+    }
+
     /// Map our characters
     pub fn map<F: Fn(char) -> char>(&mut self, map: F) -> &mut Self {
         self.normalized = self.normalized.chars().map(map).collect::<String>();
@@ -590,5 +598,27 @@ mod tests {
             ]
         );
         assert_eq!(n.get_original_offsets(0..4), Some(0..0));
+    }
+
+    #[test]
+    fn append() {
+        let mut n = NormalizedString::from("Hey");
+        n.append(" there");
+        assert_eq!(&n.normalized, "Hey there");
+        assert_eq!(
+            n.alignments,
+            vec![
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 3),
+                (3, 3),
+                (3, 3),
+                (3, 3),
+                (3, 3),
+                (3, 3)
+            ]
+        );
+        assert_eq!(n.get_original_offsets(3.." there".len()), Some(3..3));
     }
 }
