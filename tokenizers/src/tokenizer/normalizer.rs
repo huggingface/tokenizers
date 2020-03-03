@@ -241,6 +241,13 @@ impl NormalizedString {
         self
     }
 
+    /// Prepend the given string to ourself
+    pub fn prepend(&mut self, s: &str) -> &mut Self {
+        self.normalized.insert_str(0, s);
+        self.alignments.splice(0..0, s.chars().map(|_| (0, 0)));
+        self
+    }
+
     /// Map our characters
     pub fn map<F: Fn(char) -> char>(&mut self, map: F) -> &mut Self {
         self.normalized = self.normalized.chars().map(map).collect::<String>();
@@ -561,5 +568,27 @@ mod tests {
             n.get_range_original(0..n.normalized.len()),
             Some("  This is an example  ".into())
         );
+    }
+
+    #[test]
+    fn prepend() {
+        let mut n = NormalizedString::from("there");
+        n.prepend("Hey ");
+        assert_eq!(&n.normalized, "Hey there");
+        assert_eq!(
+            n.alignments,
+            vec![
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5)
+            ]
+        );
+        assert_eq!(n.get_original_offsets(0..4), Some(0..0));
     }
 }
