@@ -2,6 +2,7 @@ extern crate tokenizers as tk;
 
 use crate::utils::Container;
 use neon::prelude::*;
+use std::path::Path;
 
 /// Model
 pub struct Model {
@@ -17,12 +18,12 @@ declare_types! {
             })
         }
 
-        /// save(folder: string, name?: string)
         method save(mut cx) {
+            /// save(folder: string, name?: string)
             let folder = cx.argument::<JsString>(0)?.value();
 
             let name = if let Some(name_arg) = cx.argument_opt(1) {
-                if args.downcast::<JsUndefined>().is_err() {
+                if name_arg.downcast::<JsUndefined>().is_err() {
                     Some(name_arg.downcast_or_throw::<JsString, _>(&mut cx)?.value())
                 } else {
                     None
