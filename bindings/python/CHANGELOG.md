@@ -1,3 +1,9 @@
+# Not released yet
+
+## Changes:
+- Keep only one progress bar while reading files during training. This is better for use-cases with
+a high number of files as it avoids having too many progress bar on screen.
+
 # v0.6.0
 
 ## Changes:
