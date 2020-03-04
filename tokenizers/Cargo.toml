@@ -25,6 +25,11 @@ name = "cli"
 path = "src/cli.rs"
 bench = false
 
+[[bin]]
+name = "train"
+path = "src/train.rs"
+bench = false
+
 [[bench]]
 name = "bpe_benchmark"
 harness = false
