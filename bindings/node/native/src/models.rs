@@ -1,6 +1,6 @@
 extern crate tokenizers as tk;
 
-use crate::tasks::models::WordPieceFromFileTask;
+use crate::tasks::models::WordPieceFromFilesTask;
 use crate::utils::Container;
 use neon::prelude::*;
 use std::path::Path;
@@ -175,7 +175,7 @@ pub fn wordpiece_from_files(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         }
     }
 
-    let task = WordPieceFromFileTask::new(builder);
+    let task = WordPieceFromFilesTask::new(builder);
     task.schedule(callback);
     Ok(cx.undefined())
 }
