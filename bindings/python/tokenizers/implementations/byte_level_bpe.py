@@ -1,4 +1,5 @@
-from tokenizers import Tokenizer, pre_tokenizers, decoders, trainers, normalizers
+import tokenizers
+from tokenizers import Tokenizer, pre_tokenizers, decoders, trainers
 from tokenizers.models import BPE
 from tokenizers.normalizers import unicode_normalizer_from_str, Lowercase, Sequence
 from .base_tokenizer import BaseTokenizer
@@ -36,7 +37,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         else:
             tokenizer = Tokenizer(BPE.empty())
 
-        normalizers = [normalizers.ByteLevel(add_prefix_space=add_prefix_space)]
+        normalizers = [tokenizers.normalizers.ByteLevel(add_prefix_space=add_prefix_space)]
 
         # Check for Unicode normalization first (before everything else)
         if unicode_normalizer:
