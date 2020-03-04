@@ -3,7 +3,7 @@ name: Node
 on:
   push:
     paths-ignore:
-      - ./bindings/python
+      - bindings/python/**
 
 jobs:
   build_and_test:

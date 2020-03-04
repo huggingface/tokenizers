@@ -3,7 +3,7 @@ name: Python
 on:
   push:
     paths-ignore:
-      - ./bindings/node
+      - bindings/node/**
 
 jobs:
   code_quality:
