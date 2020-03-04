@@ -31,23 +31,10 @@ pub struct ByteLevel {}
 #[pymethods]
 impl ByteLevel {
     #[new]
-    #[args(kwargs = "**")]
-    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
-        let mut add_prefix_space = true;
-
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
-                    "add_prefix_space" => add_prefix_space = value.extract()?,
-                    _ => println!("Ignored unknown kwargs option {}", key),
-                }
-            }
-        }
-
+    fn new(obj: &PyRawObject) -> PyResult<()> {
         Ok(obj.init(PreTokenizer {
             pretok: Container::Owned(Box::new(tk::pre_tokenizers::byte_level::ByteLevel::new(
-                add_prefix_space,
+                false,
             ))),
         }))
     }
