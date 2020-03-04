@@ -1,4 +1,4 @@
-use crate::tokenizer::{Decoder, Offsets, PreTokenizer, Result};
+use crate::tokenizer::{Decoder, NormalizedString, Normalizer, Offsets, PreTokenizer, Result};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use unicode_categories::UnicodeCategories;
@@ -47,14 +47,17 @@ impl ByteLevel {
     }
 }
 
+impl Normalizer for ByteLevel {
+    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
+        if self.add_prefix_space && !normalized.get().starts_with(' ') {
+            normalized.prepend(" ");
+        }
+        Ok(())
+    }
+}
+
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, s: &str) -> Result<Vec<(String, Offsets)>> {
-        let s = if self.add_prefix_space && !s.starts_with(' ') {
-            format!(" {}", s)
-        } else {
-            s.to_owned()
-        };
-
         let mut total_len = 0;
         Ok(RE
             .captures_iter(&s)
@@ -122,13 +125,13 @@ impl Decoder for ByteLevel {
 #[cfg(test)]
 mod tests {
     use super::ByteLevel;
-    use crate::tokenizer::{Decoder, PreTokenizer};
+    use crate::tokenizer::{Decoder, NormalizedString, Normalizer, PreTokenizer};
 
     #[test]
     fn pre_tokenization() {
-        let pre_tok = ByteLevel::new(false);
+        let bytelevel = ByteLevel::new(false);
         assert_eq!(
-            pre_tok
+            bytelevel
                 .pre_tokenize("Hello my friend, how is your day going?")
                 .unwrap(),
             vec![
@@ -148,10 +151,10 @@ mod tests {
 
     #[test]
     fn decoding() {
-        let decoder = ByteLevel::new(false);
+        let bytelevel = ByteLevel::new(false);
         assert_eq!(
             "Hello my friend, how is your day going?",
-            decoder
+            bytelevel
                 .decode(
                     vec![
                         "Hello", "Ġmy", "Ġfriend", ",", "Ġhow", "Ġis", "Ġyour", "Ġday", "Ġgoing",
@@ -167,24 +170,30 @@ mod tests {
 
     #[test]
     fn add_prefix_space() {
-        let pre_tok = ByteLevel::new(true);
-        assert_eq!(
-            pre_tok
-                .pre_tokenize("Hello my friend, how is your day going?")
-                .unwrap(),
-            vec![
-                ("ĠHello".into(), (0, 6)),
-                ("Ġmy".into(), (6, 9)),
-                ("Ġfriend".into(), (9, 16)),
-                (",".into(), (16, 17)),
-                ("Ġhow".into(), (17, 21)),
-                ("Ġis".into(), (21, 24)),
-                ("Ġyour".into(), (24, 29)),
-                ("Ġday".into(), (29, 33)),
-                ("Ġgoing".into(), (33, 39)),
-                ("?".into(), (39, 40))
-            ]
-        );
+        let bytelevel = ByteLevel::new(true);
+        for s in &[
+            " Hello my friend, how is your day going?",
+            "Hello my friend, how is your day going?",
+        ] {
+            let mut normalized = NormalizedString::from(s);
+            bytelevel.normalize(&mut normalized).unwrap();
+            assert_eq!(normalized.get(), " Hello my friend, how is your day going?");
+            assert_eq!(
+                bytelevel.pre_tokenize(normalized.get()).unwrap(),
+                vec![
+                    ("ĠHello".into(), (0, 6)),
+                    ("Ġmy".into(), (6, 9)),
+                    ("Ġfriend".into(), (9, 16)),
+                    (",".into(), (16, 17)),
+                    ("Ġhow".into(), (17, 21)),
+                    ("Ġis".into(), (21, 24)),
+                    ("Ġyour".into(), (24, 29)),
+                    ("Ġday".into(), (29, 33)),
+                    ("Ġgoing".into(), (33, 39)),
+                    ("?".into(), (39, 40))
+                ]
+            );
+        }
     }
 
     #[test]
@@ -199,22 +208,22 @@ mod tests {
             ),
         ];
 
-        let bl = ByteLevel::new(false);
+        let bytelevel = ByteLevel::new(false);
         for sample in samples {
-            let pre_tokenized = bl.pre_tokenize(&sample).unwrap();
+            let pre_tokenized = bytelevel.pre_tokenize(&sample).unwrap();
             let separated_tokens = pre_tokenized
                 .iter()
                 .flat_map(|(token, _)| token.split("").map(|t| t.into()))
                 .collect::<Vec<_>>();
-            assert_eq!(sample, bl.decode(separated_tokens).unwrap());
+            assert_eq!(sample, bytelevel.decode(separated_tokens).unwrap());
         }
     }
 
     #[test]
     fn handling_of_newlines() {
         let s = String::from("Hello there\nHello there");
-        let pretok = ByteLevel::new(false);
-        let p = pretok.pre_tokenize(&s).unwrap();
+        let bytelevel = ByteLevel::new(false);
+        let p = bytelevel.pre_tokenize(&s).unwrap();
 
         assert_eq!(
             p,
@@ -231,8 +240,8 @@ mod tests {
     #[test]
     fn handling_of_multiple_whitespaces() {
         let s = String::from("Hello there       dear");
-        let pretok = ByteLevel::new(false);
-        let p = pretok.pre_tokenize(&s).unwrap();
+        let bytelevel = ByteLevel::new(false);
+        let p = bytelevel.pre_tokenize(&s).unwrap();
 
         assert_eq!(
             p,
@@ -248,8 +257,8 @@ mod tests {
     #[test]
     fn offsets_when_char_split_up() {
         let s = String::from("i⭢j");
-        let pretok = ByteLevel::new(false);
-        let p = pretok.pre_tokenize(&s).unwrap();
+        let bytelevel = ByteLevel::new(false);
+        let p = bytelevel.pre_tokenize(&s).unwrap();
 
         assert_eq!(
             p,
