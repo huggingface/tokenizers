@@ -88,9 +88,24 @@ export namespace WordPiece {
    * Instantiate a WordPiece model from the given vocab file
    *
    * @param vocab Path to a vocabulary file
-   * @param [options] WordPiece model options
+   * @param options WordPiece model options
+   * @param __callback Callback called when model is loaded
    */
-  export function fromFiles(vocab: string, options?: WordPieceOptions): Model;
+  export function fromFiles(
+    vocab: string,
+    options: WordPieceOptions,
+    __callback: (err: any, encoding: Model) => void
+  ): void;
+  /**
+   * Instantiate a WordPiece model from the given vocab file
+   *
+   * @param vocab Path to a vocabulary file
+   * @param __callback Callback called when model is loaded
+   */
+  export function fromFiles(
+    vocab: string,
+    __callback: (err: any, encoding: Model) => void
+  ): void;
 
   /**
    * Instantiate a WordPiece model from the given vocab file

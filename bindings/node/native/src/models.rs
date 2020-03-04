@@ -1,5 +1,6 @@
 extern crate tokenizers as tk;
 
+use crate::tasks::models::WordPieceFromFileTask;
 use crate::utils::Container;
 use neon::prelude::*;
 use std::path::Path;
@@ -129,14 +130,23 @@ pub fn bpe_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     Ok(model)
 }
 
-/// wordpiece_from_files(vocab: String, options?: {
+/// wordpiece_from_files(vocab: String, options: {
 ///   unkToken?: String = "[UNK]",
 ///   maxInputCharsPerWord?: number = 100,
 ///   continuingSubwordPrefix?: "##",
-/// })
-pub fn wordpiece_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
+/// }, callback)
+pub fn wordpiece_from_files(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let vocab = cx.argument::<JsString>(0)?.value() as String;
-    let options = cx.argument_opt(1);
+    let options: Option<Handle<JsObject>>;
+    let callback: Handle<JsFunction>;
+
+    if cx.len() == 2 {
+        options = None;
+        callback = cx.argument::<JsFunction>(1)?;
+    } else {
+        options = Some(cx.argument::<JsObject>(1)?);
+        callback = cx.argument::<JsFunction>(2)?;
+    };
 
     let mut builder = tk::models::wordpiece::WordPiece::from_files(&vocab);
 
@@ -165,15 +175,9 @@ pub fn wordpiece_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
         }
     }
 
-    let wordpiece = builder
-        .build()
-        .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
-
-    let mut model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
-    let guard = cx.lock();
-    model.borrow_mut(&guard).model.to_owned(Box::new(wordpiece));
-
-    Ok(model)
+    let task = WordPieceFromFileTask::new(builder);
+    task.schedule(callback);
+    Ok(cx.undefined())
 }
 
 /// wordpiece_empty()

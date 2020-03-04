@@ -135,9 +135,10 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
 
     let model: Model;
     if (opts.vocabFile) {
-      // const fromFiles = promisify(WordPiece.fromFiles);
-      model = WordPiece.fromFiles(opts.vocabFile, { unkToken: opts.unkToken });
-      // model = await fromFiles(mergedOptions.vocabFile, mergedOptions.unkToken, null);
+      const fromFiles = promisify<string, BertWordPieceOptions, Model>(
+        WordPiece.fromFiles
+      );
+      model = await fromFiles(opts.vocabFile, { unkToken: opts.unkToken });
     } else {
       model = WordPiece.empty();
     }
