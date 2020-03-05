@@ -24,7 +24,7 @@ fn byte_level(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
     pretok.borrow_mut(&guard).pretok.to_owned(Box::new(
-        tk::pre_tokenizers::byte_level::ByteLevel::new(add_prefix_space),
+        tk::pre_tokenizers::byte_level::ByteLevel::new(false),
     ));
     Ok(pretok)
 }

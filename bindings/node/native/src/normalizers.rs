@@ -207,7 +207,7 @@ fn bytelevel(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
         }
     }
 
-    let mut normalizers = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
+    let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
     normalizer.borrow_mut(&guard).normalizer.to_owned(Box::new(
         tk::normalizers::byte_level::ByteLevel::new(add_prefix_space),
