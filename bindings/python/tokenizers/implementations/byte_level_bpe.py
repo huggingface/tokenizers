@@ -1,5 +1,5 @@
 import tokenizers
-from tokenizers import Tokenizer, pre_tokenizers, decoders, trainers
+from tokenizers import Tokenizer, pre_tokenizers, decoders, trainers, processors
 from tokenizers.models import BPE
 from tokenizers.normalizers import unicode_normalizer_from_str, Lowercase, Sequence
 from .base_tokenizer import BaseTokenizer
@@ -55,6 +55,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
 
         tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
         tokenizer.decoder = decoders.ByteLevel()
+        tokenizer.post_processor = processors.ByteLevel()
 
         parameters = {
             "model": "ByteLevelBPE",
