@@ -1,4 +1,6 @@
-use crate::tokenizer::{Decoder, NormalizedString, Normalizer, Offsets, PreTokenizer, Result};
+use crate::tokenizer::{
+    Decoder, Encoding, NormalizedString, Normalizer, Offsets, PostProcessor, PreTokenizer, Result,
+};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use unicode_categories::UnicodeCategories;
@@ -34,6 +36,9 @@ lazy_static! {
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
 }
 
+/// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
+/// of all the required processing steps to transform a UTF-8 string as needed before and after the
+/// BPE model does its job.
 pub struct ByteLevel {
     add_prefix_space: bool,
 }
@@ -47,6 +52,9 @@ impl ByteLevel {
     }
 }
 
+/// As a `Normalizer`, `ByteLevel` is in charge of adding a prefix space if needed. This prefix
+/// space let's the BPE model treat all words the same way (A word at the beginning of a sentence
+/// should be treated exactly like a word in the middle of a sentence).
 impl Normalizer for ByteLevel {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         if self.add_prefix_space && !normalized.get().starts_with(' ') {
@@ -56,6 +64,9 @@ impl Normalizer for ByteLevel {
     }
 }
 
+/// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
+/// their byte-level counterpart. It also splits the input according to the configured regex.
+// TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, s: &str) -> Result<Vec<(String, Offsets)>> {
         let mut total_len = 0;
@@ -109,6 +120,8 @@ impl PreTokenizer for ByteLevel {
     }
 }
 
+/// As a `Decoder`, `ByteLevel` is in charge of converting any byte-level characters to their
+/// unicode counterpart, before merging everything back into a single String.
 impl Decoder for ByteLevel {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
         Ok(String::from_utf8_lossy(
@@ -122,10 +135,63 @@ impl Decoder for ByteLevel {
     }
 }
 
+/// As a `PostProcessor`, `ByteLevel` is in charge of fixing any offsets produced by the BPE Model
+/// that end up wrong. This happens because the BPE model is not aware that some characters get
+/// split up in multiple other characters. So it treats all of them as single characters and
+/// then increase the offsets when merging them.
+impl PostProcessor for ByteLevel {
+    fn added_tokens(&self, _is_pair: bool) -> usize {
+        0
+    }
+
+    fn process(&self, mut encoding: Encoding, pair_encoding: Option<Encoding>) -> Result<Encoding> {
+        let process_offsets = |encoding: &mut Encoding| {
+            let len = encoding.get_offsets().len();
+            let mut i = 0;
+            let mut from_i = None;
+            while i < len {
+                if i + 1 < len {
+                    let offsets = encoding.get_offsets();
+                    if offsets[i + 1] < offsets[i] {
+                        let mut j = i;
+                        while j > 0 && offsets[j] >= offsets[i + 1] {
+                            j -= 1;
+                        }
+                        from_i = Some(j);
+                    }
+                }
+
+                if let Some(from_i) = from_i.take() {
+                    let offsets = encoding.get_offsets_mut();
+                    for j in from_i + 1..=i {
+                        offsets[j] = offsets[from_i];
+                    }
+                }
+
+                i += 1;
+            }
+        };
+
+        process_offsets(&mut encoding);
+        let final_encoding = match pair_encoding {
+            None => encoding,
+            Some(mut pair) => {
+                process_offsets(&mut pair);
+                encoding.merge_with(pair);
+                encoding
+            }
+        };
+
+        Ok(final_encoding)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::ByteLevel;
-    use crate::tokenizer::{Decoder, NormalizedString, Normalizer, PreTokenizer};
+    use crate::tokenizer::{
+        Decoder, Encoding, NormalizedString, Normalizer, PostProcessor, PreTokenizer,
+    };
 
     #[test]
     fn pre_tokenization() {
@@ -268,5 +334,41 @@ mod tests {
                 ("j".into(), (2, 3)),
             ]
         );
+    }
+
+    #[test]
+    fn processor_fixes_offsets() {
+        let bad_encoding = Encoding::new(
+            NormalizedString::from(""),
+            vec![],
+            vec![],
+            vec![],
+            vec![(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (3, 4), (4, 5)],
+            vec![],
+            vec![],
+            vec![],
+        );
+        let fixed_encoding = Encoding::new(
+            NormalizedString::from(""),
+            vec![],
+            vec![],
+            vec![],
+            vec![(0, 1), (1, 2), (2, 3), (2, 3), (2, 3), (3, 4), (4, 5)],
+            vec![],
+            vec![],
+            vec![],
+        );
+
+        let bytelevel = ByteLevel::new(false);
+
+        let fixed_single = bytelevel.process(bad_encoding.clone(), None).unwrap();
+        assert_eq!(fixed_single, fixed_encoding);
+
+        let fixed_pair = bytelevel
+            .process(bad_encoding.clone(), Some(bad_encoding))
+            .unwrap();
+        let mut fixed_encoding_pair = fixed_encoding.clone();
+        fixed_encoding_pair.merge_with(fixed_encoding);
+        assert_eq!(fixed_pair, fixed_encoding_pair);
     }
 }
