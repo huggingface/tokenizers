@@ -4,11 +4,14 @@
 - Keep only one progress bar while reading files during training. This is better for use-cases with
 a high number of files as it avoids having too many progress bar on screen.
 - `add_prefix_space` option of the `ByteLevel` `PreTokenizer` has been moved to a `Normalizer`
+- Added the `ByteLevel` `PostProcessor` to take care of fixing the offsets when a unicode character
+gets split up as multiple byte-level characters.
 
 ## How to migrate:
 - Use the `ByteLevel` `Normalizer` with `add_prefix_space=True` in addition to the `PreTokenizer`.
 The `PreTokenizer` does not handle this option anymore. This fixes some issues with the offsets
 being wrong if this option was on.
+- Add the `ByteLevel` `PostProcessor` to your byte-level BPE tokenizers.
 
 # v0.6.0
 
