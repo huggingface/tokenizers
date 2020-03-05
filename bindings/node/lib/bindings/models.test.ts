@@ -65,7 +65,7 @@ describe("BPE", () => {
   });
 
   describe("when called with 3 correct arguments", () => {
-    it("returns `undefined` ", () => {
+    it("returns `undefined`", () => {
       expect(
         BPE.fromFiles(`${MOCKS_DIR}/vocab.json`, `${MOCKS_DIR}/merges.txt`, () => {})
       ).toBeUndefined();
