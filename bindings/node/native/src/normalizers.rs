@@ -197,6 +197,24 @@ fn lowercase(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     Ok(normalizer)
 }
 
+/// bytelevel(addPrefixSpace: bool = true)
+fn bytelevel(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
+    let mut add_prefix_space = true;
+
+    if let Some(args) = cx.argument_opt(0) {
+        if args.downcast::<JsUndefined>().is_err() {
+            add_prefix_space = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
+        }
+    }
+
+    let mut normalizers = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    normalizer.borrow_mut(&guard).normalizer.to_owned(Box::new(
+        tk::normalizers::byte_level::ByteLevel::new(add_prefix_space),
+    ));
+    Ok(normalizer)
+}
+
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_BertNormalizer", prefix), bert_normalizer)?;
@@ -207,5 +225,6 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_Sequence", prefix), sequence)?;
     m.export_function(&format!("{}_Lowercase", prefix), lowercase)?;
     m.export_function(&format!("{}_Strip", prefix), strip)?;
+    m.export_function(&format!("{}_ByteLevel", prefix), bytelevel)?;
     Ok(())
 }
