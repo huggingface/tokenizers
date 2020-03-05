@@ -4,6 +4,11 @@
 - Keep only one progress bar while reading files during training. This is better for use-cases with
 a high number of files as it avoids having too many progress bar on screen.
 - Improve BPE and WordPiece builders.
+- `ByteLevel` is also a `Normalizer` and handles the `add_prefix_space` option at this level now.
+This fixes some issues with the offsets being wrong if this option was on.
+
+## How to migrate:
+- Use the `ByteLevel` as a `Normalizer` if `add_prefix_space` is required.
 
 # v0.8.0
 
