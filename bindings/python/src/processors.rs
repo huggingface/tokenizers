@@ -42,3 +42,17 @@ impl RobertaProcessing {
         }))
     }
 }
+
+#[pyclass(extends=PostProcessor)]
+pub struct ByteLevel {}
+#[pymethods]
+impl ByteLevel {
+    #[new]
+    fn new(obj: &PyRawObject) -> PyResult<()> {
+        Ok(obj.init(PostProcessor {
+            processor: Container::Owned(Box::new(tk::processors::byte_level::ByteLevel::new(
+                false,
+            ))),
+        }))
+    }
+}

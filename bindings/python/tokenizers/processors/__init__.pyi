@@ -62,3 +62,15 @@ class RobertaProcessing(PostProcessor):
             PostProcessor
         """
         pass
+
+class ByteLevel(PostProcessor):
+    """ ByteLevel Post processing
+
+    This post-processor takes care of fixing the offsets after the BPE Model may have
+    produced some bad offsets while merging. This happens for any unicode character that
+    get split up in many byte-level characters.
+    """
+
+    def __init(self) -> None:
+        """ Instantiate a new ByteLevel """
+        pass
