@@ -23,7 +23,6 @@ class ByteLevel(PreTokenizer):
     def __init__(self) -> None:
         """ Instantiate a new ByteLevel PreTokenizer """
         pass
-
     @staticmethod
     def alphabet() -> List[str]:
         """ Returns the alphabet used by this PreTokenizer.
