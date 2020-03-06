@@ -3,6 +3,7 @@
 ## Changes:
 - Keep only one progress bar while reading files during training. This is better for use-cases with
 a high number of files as it avoids having too many progress bar on screen.
+- Improve BPE and WordPiece builders.
 
 # v0.8.0
 

@@ -29,7 +29,7 @@
 //! use tokenizers::models::bpe::BPE;
 //!
 //! fn main() -> Result<()> {
-//!     let bpe_builder = BPE::from_files("./path/to/vocab.json", "./path/to/merges.txt")?;
+//!     let bpe_builder = BPE::from_files("./path/to/vocab.json", "./path/to/merges.txt");
 //!     let bpe = bpe_builder
 //!         .dropout(0.1)
 //!         .unk_token("[UNK]".into())

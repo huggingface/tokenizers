@@ -12,9 +12,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
+type Vocab = HashMap<String, u32>;
+type VocabR = HashMap<u32, String>;
+type Merges = HashMap<Pair, (u32, u32)>;
+
 struct Config {
-    vocab: HashMap<String, u32>,
-    merges: HashMap<Pair, (u32, u32)>,
+    files: Option<(String, String)>,
+    vocab: Vocab,
+    merges: Merges,
     cache_capacity: usize,
     dropout: Option<f32>,
     unk_token: Option<String>,
@@ -31,6 +36,7 @@ impl Default for BpeBuilder {
     fn default() -> Self {
         Self {
             config: Config {
+                files: None,
                 vocab: HashMap::new(),
                 merges: HashMap::new(),
                 cache_capacity: DEFAULT_CACHE_CAPACITY,
@@ -49,12 +55,14 @@ impl BpeBuilder {
         Self::default()
     }
 
+    /// Set the input files.
+    pub fn files(mut self, vocab: String, merges: String) -> Self {
+        self.config.files = Some((vocab, merges));
+        self
+    }
+
     /// Set the vocab (token -> ID) and merges mappings.
-    pub fn vocab_and_merges(
-        mut self,
-        vocab: HashMap<String, u32>,
-        merges: HashMap<Pair, (u32, u32)>,
-    ) -> Self {
+    pub fn vocab_and_merges(mut self, vocab: Vocab, merges: Merges) -> Self {
         self.config.vocab = vocab;
         self.config.merges = merges;
         self
@@ -91,12 +99,19 @@ impl BpeBuilder {
     }
 
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
-    pub fn build(self) -> Result<BPE> {
+    pub fn build(mut self) -> Result<BPE> {
         // Validate dropout.
         if let Some(p) = self.config.dropout {
             if p <= 0.0 || p > 1.0 {
                 return Err(Error::InvalidDropout.into());
             }
+        }
+
+        // Read files if necessary
+        if let Some((vocab, merges)) = self.config.files {
+            let (v, m) = BPE::read_files(&vocab, &merges)?;
+            self.config.vocab = v;
+            self.config.merges = m;
         }
 
         let vocab_r = self
@@ -126,11 +141,11 @@ impl BpeBuilder {
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 pub struct BPE {
     /// The vocabulary assigns a number to each token.
-    pub(crate) vocab: HashMap<String, u32>,
+    pub(crate) vocab: Vocab,
     /// Reversed vocabulary, to rebuild sentences.
-    pub(crate) vocab_r: HashMap<u32, String>,
+    pub(crate) vocab_r: VocabR,
     /// Contains the mapping between Pairs and their (rank, new_id).
-    pub(crate) merges: HashMap<Pair, (u32, u32)>,
+    pub(crate) merges: Merges,
     /// Contains the cache for optimizing the encoding step.
     cache: Option<Cache<String, Word>>,
     /// Dropout probability for merges. 0 = no dropout is the default. At 1.0, tokenization will
@@ -175,15 +190,20 @@ impl BPE {
     }
 
     /// Create a new BPE model with the given vocab and merges.
-    pub fn new(vocab: HashMap<String, u32>, merges: HashMap<Pair, (u32, u32)>) -> Self {
+    pub fn new(vocab: Vocab, merges: Merges) -> Self {
         Self::builder()
             .vocab_and_merges(vocab, merges)
             .build()
             .unwrap()
     }
 
-    /// Initialize a BPE model from vocab and merges file.
-    pub fn from_files(vocab: &str, merges: &str) -> Result<BpeBuilder> {
+    /// Initialize a BpeBuilder model from vocab and merges files
+    pub fn from_files(vocab: &str, merges: &str) -> BpeBuilder {
+        BPE::builder().files(vocab.to_owned(), merges.to_owned())
+    }
+
+    /// Read the given files to extract the vocab and merges
+    pub fn read_files(vocab: &str, merges: &str) -> Result<(Vocab, Merges)> {
         // Read vocab.json
         let vocab_file = File::open(vocab)?;
         let mut vocab_file = BufReader::new(vocab_file);
@@ -207,7 +227,7 @@ impl BPE {
         // Read merges file
         let merge_file = File::open(merges)?;
         let merge_file = BufReader::new(merge_file);
-        let mut merges = HashMap::<Pair, (u32, u32)>::new();
+        let mut merges = HashMap::new();
         for (rank, line) in merge_file.lines().enumerate() {
             let line = line?;
             if line.starts_with("#version") {
@@ -235,7 +255,7 @@ impl BPE {
             merges.insert(pair, (rank as u32, *new_id));
         }
 
-        Ok(BPE::builder().vocab_and_merges(vocab, merges))
+        Ok((vocab, merges))
     }
 
     /// Reset the cache.
@@ -245,7 +265,7 @@ impl BPE {
         }
     }
 
-    pub fn get_vocab(&self) -> &HashMap<String, u32> {
+    pub fn get_vocab(&self) -> &Vocab {
         &self.vocab
     }
 
@@ -433,7 +453,7 @@ mod tests {
 
     #[test]
     fn test_ordered_vocab_iter() {
-        let vocab_r: HashMap<u32, String> = [
+        let vocab_r: VocabR = [
             (0, "a".into()),
             (1, "b".into()),
             (2, "c".into()),
@@ -453,7 +473,7 @@ mod tests {
     //
     // To test this, we'll build a simple model to tokenize the word 'unrelated'.
     fn test_tokenize_with_and_without_dropout() {
-        let vocab: HashMap<String, u32> = [
+        let vocab: Vocab = [
             ("u".into(), 0),
             ("n".into(), 1),
             ("r".into(), 2),
@@ -474,7 +494,7 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        let merges: HashMap<Pair, (u32, u32)> = [
+        let merges: Merges = [
             ((vocab["r"], vocab["e"]), (1u32, vocab["re"])), // 'r-e' -> 're'
             ((vocab["a"], vocab["t"]), (2u32, vocab["at"])), // 'a-t' -> 'at'
             ((vocab["e"], vocab["d"]), (3u32, vocab["ed"])), // 'e-d' -> 'ed'
@@ -533,13 +553,11 @@ mod tests {
         merges_file.write_all(b"#version: 0.2\na b").unwrap();
 
         // Make sure we can instantiate a BPE model from the files.
-        let result = BPE::from_files(
+        let builder = BPE::from_files(
             vocab_file.path().to_str().unwrap(),
             merges_file.path().to_str().unwrap(),
         );
-        assert!(result.is_ok());
-
-        let bpe = result.unwrap().build().unwrap();
+        let bpe = builder.build().unwrap();
 
         // Check merges.
         assert_eq!(bpe.merges.get(&(0u32, 1u32)).unwrap(), &(1u32, 3u32));
@@ -568,7 +586,9 @@ mod tests {
         match BPE::from_files(
             vocab_file.path().to_str().unwrap(),
             merges_file.path().to_str().unwrap(),
-        ) {
+        )
+        .build()
+        {
             Ok(_) => unreachable!(),
             Err(err) => match err.downcast_ref::<Error>() {
                 Some(Error::MergeTokenOutOfVocabulary(token)) => {
@@ -597,7 +617,9 @@ mod tests {
         match BPE::from_files(
             vocab_file.path().to_str().unwrap(),
             merges_file.path().to_str().unwrap(),
-        ) {
+        )
+        .build()
+        {
             Ok(_) => unreachable!(),
             Err(err) => match err.downcast_ref::<Error>() {
                 Some(Error::BadMerges(line)) => assert_eq!(*line, 3usize),
