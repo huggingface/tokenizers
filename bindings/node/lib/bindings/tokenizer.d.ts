@@ -111,7 +111,7 @@ export class Tokenizer {
   encode(
     sequence: string,
     pair: string | null,
-    __callback: (err: any, encoding: RawEncoding) => void
+    __callback: (err: Error, encoding: RawEncoding) => void
   ): void;
 
   /**
@@ -122,7 +122,7 @@ export class Tokenizer {
    */
   encodeBatch(
     sequences: (string | [string, string])[],
-    __callback: (err: any, encodings: RawEncoding[]) => void
+    __callback: (err: Error, encodings: RawEncoding[]) => void
   ): void;
 
   /**
@@ -135,7 +135,7 @@ export class Tokenizer {
   decode(
     ids: number[],
     skipSpecialTokens: boolean,
-    __callback: (err: any, encodings: string) => void
+    __callback: (err: Error, encodings: string) => void
   ): void;
 
   /**
@@ -148,7 +148,7 @@ export class Tokenizer {
   decodeBatch(
     sequences: number[][],
     skipSpecialTokens: boolean,
-    __callback: (err: any, encodings: string[]) => void
+    __callback: (err: Error, encodings: string[]) => void
   ): void[];
 
   /**

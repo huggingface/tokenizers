@@ -53,7 +53,7 @@ export namespace BPE {
     vocab: string,
     merges: string,
     options: BPEOptions,
-    __callback: (err: any, encoding: Model) => void
+    __callback: (err: Error, encoding: Model) => void
   ): void;
   /**
    * Instantiate a BPE model from the given vocab and merges files
@@ -65,7 +65,7 @@ export namespace BPE {
   export function fromFiles(
     vocab: string,
     merges: string,
-    __callback: (err: any, encoding: Model) => void
+    __callback: (err: Error, encoding: Model) => void
   ): void;
 
   /**
@@ -103,7 +103,7 @@ export namespace WordPiece {
   export function fromFiles(
     vocab: string,
     options: WordPieceOptions,
-    __callback: (err: any, encoding: Model) => void
+    __callback: (err: Error, encoding: Model) => void
   ): void;
   /**
    * Instantiate a WordPiece model from the given vocab file
@@ -113,7 +113,7 @@ export namespace WordPiece {
    */
   export function fromFiles(
     vocab: string,
-    __callback: (err: any, encoding: Model) => void
+    __callback: (err: Error, encoding: Model) => void
   ): void;
 
   /**

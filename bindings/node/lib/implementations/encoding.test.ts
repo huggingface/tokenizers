@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { RawEncoding } from "../bindings/raw-encoding";
 import { Encoding } from "./encoding";
 
