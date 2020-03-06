@@ -1,5 +1,7 @@
+import { promisify } from "util";
+
 import { byteLevelDecoder } from "../../bindings/decoders";
-import { BPE, Model } from "../../bindings/models";
+import { BPE, BPEOptions, Model } from "../../bindings/models";
 import {
   lowercaseNormalizer,
   nfkcNormalizer,
@@ -84,9 +86,8 @@ export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerCo
 
     let model: Model;
     if (opts.vocabFile && opts.mergesFile) {
-      // const fromFiles = promisify(BPE.fromFiles);
-      model = BPE.fromFiles(opts.vocabFile, opts.mergesFile, opts);
-      // model = await fromFiles(mergedOptions.vocabFile, mergedOptions.mergesFile, null);
+      const fromFiles = promisify<string, string, BPEOptions, Model>(BPE.fromFiles);
+      model = await fromFiles(opts.vocabFile, opts.mergesFile, opts);
     } else {
       model = BPE.empty();
     }

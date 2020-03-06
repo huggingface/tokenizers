@@ -129,19 +129,27 @@ export class Tokenizer {
    * Decode the given list of ids to a string sequence
    *
    * @param ids A list of ids to be decoded
-   * @param [skipSpecialTokens=true] Whether to remove all the special tokens from the output string
-   * @returns The decoded string
+   * @param skipSpecialTokens Whether to remove all the special tokens from the output string
+   * @param __callback Callback called with decoded string
    */
-  decode(ids: number[], skipSpecialTokens?: boolean): string;
+  decode(
+    ids: number[],
+    skipSpecialTokens: boolean,
+    __callback: (err: any, encodings: string) => void
+  ): void;
 
   /**
    * Decode the list of sequences to a list of string sequences
    *
    * @param sequences A list of sequence of ids to be decoded
-   * @param [skipSpecialTokens] Whether to remove all the special tokens from the output strings
-   * @returns A list of decoded strings
+   * @param skipSpecialTokens Whether to remove all the special tokens from the output strings
+   * @param __callback Callback called with decoded strings
    */
-  decodeBatch(sequences: number[][], skipSpecialTokens?: boolean): string[];
+  decodeBatch(
+    sequences: number[][],
+    skipSpecialTokens: boolean,
+    __callback: (err: any, encodings: string[]) => void
+  ): void[];
 
   /**
    * Convert the given token id to its corresponding string

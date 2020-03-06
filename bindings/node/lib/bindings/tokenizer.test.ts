@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-empty-function */
+
 import { promisify } from "util";
 
 import { PaddingDirection, TruncationStrategy } from "./enums";
@@ -157,6 +159,47 @@ describe("Tokenizer", () => {
           "[PAD]"
         ]);
       });
+    });
+  });
+
+  describe("decode", () => {
+    let tokenizer: Tokenizer;
+
+    beforeEach(() => {
+      const model = BPE.empty();
+      tokenizer = new Tokenizer(model);
+      tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
+    });
+
+    it("returns `undefined`", () => {
+      expect(tokenizer.decode([0, 1, 2, 3], true, () => {})).toBeUndefined();
+    });
+
+    it("has its callback called with the decoded string", async () => {
+      const decode = promisify(tokenizer.decode.bind(tokenizer));
+      await expect(decode([0, 1, 2, 3], true)).resolves.toEqual("my name is john");
+    });
+  });
+
+  describe("decodeBatch", () => {
+    let tokenizer: Tokenizer;
+
+    beforeEach(() => {
+      const model = BPE.empty();
+      tokenizer = new Tokenizer(model);
+      tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
+    });
+
+    it("returns `undefined`", () => {
+      expect(tokenizer.decodeBatch([[0, 1, 2, 3], [4]], true, () => {})).toBeUndefined();
+    });
+
+    it("has its callback called with the decoded string", async () => {
+      const decodeBatch = promisify(tokenizer.decodeBatch.bind(tokenizer));
+      await expect(decodeBatch([[0, 1, 2, 3], [4]], true)).resolves.toEqual([
+        "my name is john",
+        "pair"
+      ]);
     });
   });
 

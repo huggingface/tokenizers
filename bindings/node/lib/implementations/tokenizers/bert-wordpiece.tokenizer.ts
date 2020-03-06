@@ -1,7 +1,7 @@
 import { promisify } from "util";
 
 import { wordPieceDecoder } from "../../bindings/decoders";
-import { Model, WordPiece } from "../../bindings/models";
+import { Model, WordPiece, WordPieceOptions } from "../../bindings/models";
 import { bertNormalizer } from "../../bindings/normalizers";
 import { bertProcessing } from "../../bindings/post-processors";
 import { bertPreTokenizer } from "../../bindings/pre-tokenizers";
@@ -52,6 +52,7 @@ export interface BertWordPieceOptions {
   unkToken?: string;
   vocabFile?: string;
   /**
+   * The prefix to attach to subword units that don't represent a beginning of word
    * @default "##"
    */
   wordpiecesPrefix?: string;
@@ -83,6 +84,7 @@ export interface BertWordPieceTrainOptions {
    */
   vocabSize?: number;
   /**
+   * The prefix to attach to subword units that don't represent a beginning of word
    * @default "##"
    */
   wordpiecesPrefix?: string;
@@ -135,9 +137,11 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
 
     let model: Model;
     if (opts.vocabFile) {
-      // const fromFiles = promisify(WordPiece.fromFiles);
-      model = WordPiece.fromFiles(opts.vocabFile, { unkToken: opts.unkToken });
-      // model = await fromFiles(mergedOptions.vocabFile, mergedOptions.unkToken, null);
+      const fromFiles = promisify<string, WordPieceOptions, Model>(WordPiece.fromFiles);
+      model = await fromFiles(opts.vocabFile, {
+        unkToken: opts.unkToken,
+        continuingSubwordPrefix: opts.wordpiecesPrefix
+      });
     } else {
       model = WordPiece.empty();
     }

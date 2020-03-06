@@ -1,5 +1,6 @@
 extern crate tokenizers as tk;
 
+use crate::tasks::models::{BPEFromFilesTask, WordPieceFromFilesTask};
 use crate::utils::Container;
 use neon::prelude::*;
 use std::path::Path;
@@ -59,19 +60,27 @@ declare_types! {
 ///   unkToken?: String,
 ///   continuingSubwordPrefix?: String,
 ///   endOfWordSuffix?: String
-/// })
-pub fn bpe_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
+/// }, callback)
+pub fn bpe_from_files(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let vocab = cx.argument::<JsString>(0)?.value() as String;
     let merges = cx.argument::<JsString>(1)?.value() as String;
-    let options = cx.argument_opt(2);
+    let options: Option<Handle<JsObject>>;
+    let callback: Handle<JsFunction>;
 
-    let mut model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+    if cx.len() == 3 {
+        options = None;
+        callback = cx.argument::<JsFunction>(2)?;
+    } else {
+        options = Some(cx.argument::<JsObject>(2)?);
+        callback = cx.argument::<JsFunction>(3)?;
+    };
+
     let mut builder = tk::models::bpe::BPE::from_files(&vocab, &merges);
 
     if let Some(options) = options {
         if let Ok(options) = options.downcast::<JsObject>() {
             if let Ok(cache_capacity) = options.get(&mut cx, "cacheCapacity") {
-                if let Err(_) = cache_capacity.downcast::<JsUndefined>() {
+                if cache_capacity.downcast::<JsUndefined>().is_err() {
                     let cache_capacity = cache_capacity
                         .downcast::<JsNumber>()
                         .or_throw(&mut cx)?
@@ -80,26 +89,26 @@ pub fn bpe_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
                 }
             }
             if let Ok(dropout) = options.get(&mut cx, "dropout") {
-                if let Err(_) = dropout.downcast::<JsUndefined>() {
+                if dropout.downcast::<JsUndefined>().is_err() {
                     let dropout = dropout.downcast::<JsNumber>().or_throw(&mut cx)?.value() as f32;
                     builder = builder.dropout(dropout);
                 }
             }
             if let Ok(unk_token) = options.get(&mut cx, "unkToken") {
-                if let Err(_) = unk_token.downcast::<JsUndefined>() {
+                if unk_token.downcast::<JsUndefined>().is_err() {
                     let unk_token =
                         unk_token.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
                     builder = builder.unk_token(unk_token);
                 }
             }
             if let Ok(prefix) = options.get(&mut cx, "continuingSubwordPrefix") {
-                if let Err(_) = prefix.downcast::<JsUndefined>() {
+                if prefix.downcast::<JsUndefined>().is_err() {
                     let prefix = prefix.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
                     builder = builder.continuing_subword_prefix(prefix);
                 }
             }
             if let Ok(suffix) = options.get(&mut cx, "endOfWordSuffix") {
-                if let Err(_) = suffix.downcast::<JsUndefined>() {
+                if suffix.downcast::<JsUndefined>().is_err() {
                     let suffix = suffix.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
                     builder = builder.end_of_word_suffix(suffix);
                 }
@@ -107,15 +116,9 @@ pub fn bpe_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
         }
     }
 
-    match builder.build() {
-        Ok(bpe) => {
-            let guard = cx.lock();
-            model.borrow_mut(&guard).model.to_owned(Box::new(bpe));
-        }
-        Err(e) => return cx.throw_error(format!("{}", e)),
-    };
-
-    Ok(model)
+    let task = BPEFromFilesTask::new(builder);
+    task.schedule(callback);
+    Ok(cx.undefined())
 }
 
 /// bpe_empty()
@@ -129,14 +132,23 @@ pub fn bpe_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     Ok(model)
 }
 
-/// wordpiece_from_files(vocab: String, options?: {
+/// wordpiece_from_files(vocab: String, options: {
 ///   unkToken?: String = "[UNK]",
 ///   maxInputCharsPerWord?: number = 100,
 ///   continuingSubwordPrefix?: "##",
-/// })
-pub fn wordpiece_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
+/// }, callback)
+pub fn wordpiece_from_files(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let vocab = cx.argument::<JsString>(0)?.value() as String;
-    let options = cx.argument_opt(1);
+    let options: Option<Handle<JsObject>>;
+    let callback: Handle<JsFunction>;
+
+    if cx.len() == 2 {
+        options = None;
+        callback = cx.argument::<JsFunction>(1)?;
+    } else {
+        options = Some(cx.argument::<JsObject>(1)?);
+        callback = cx.argument::<JsFunction>(2)?;
+    };
 
     let mut builder = tk::models::wordpiece::WordPiece::from_files(&vocab);
 
@@ -165,15 +177,9 @@ pub fn wordpiece_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
         }
     }
 
-    let wordpiece = builder
-        .build()
-        .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
-
-    let mut model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
-    let guard = cx.lock();
-    model.borrow_mut(&guard).model.to_owned(Box::new(wordpiece));
-
-    Ok(model)
+    let task = WordPieceFromFilesTask::new(builder);
+    task.schedule(callback);
+    Ok(cx.undefined())
 }
 
 /// wordpiece_empty()

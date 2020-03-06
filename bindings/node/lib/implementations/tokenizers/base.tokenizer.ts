@@ -92,6 +92,28 @@ export class BaseTokenizer<TConfig extends object> {
   }
 
   /**
+   * Decode the given list of ids to a string sequence
+   *
+   * @param ids A list of ids to be decoded
+   * @param [skipSpecialTokens=true] Whether to remove all the special tokens from the output string
+   */
+  decode(ids: number[], skipSpecialTokens = true): Promise<string> {
+    const decode = promisify(this.tokenizer.decode.bind(this.tokenizer));
+    return decode(ids, skipSpecialTokens);
+  }
+
+  /**
+   * Decode the list of sequences to a list of string sequences
+   *
+   * @param sequences A list of sequences of ids to be decoded
+   * @param [skipSpecialTokens=true] Whether to remove all the special tokens from the output strings
+   */
+  decodeBatch(ids: number[][], skipSpecialTokens = true): Promise<string[]> {
+    const decodeBatch = promisify(this.tokenizer.decodeBatch.bind(this.tokenizer));
+    return decodeBatch(ids, skipSpecialTokens);
+  }
+
+  /**
    * Enable/change truncation with specified options
    *
    * @param maxLength The maximum length at which to truncate

@@ -19,6 +19,7 @@ export interface BPEOptions {
    * The number of words that the BPE cache can contain. The cache allows
    * to speed-up the process by keeping the result of the merge operations
    * for a number of words.
+   * @default 10_000
    */
   cacheCapacity?: number;
   /**
@@ -45,24 +46,27 @@ export namespace BPE {
    *
    * @param vocab Path to a vocabulary JSON file
    * @param merges Path to a merge file
-   * @param [options] BPE model options
+   * @param options BPE model options
+   * @param __callback Callback called when model is loaded
    */
-  export function fromFiles(vocab: string, merges: string, options?: BPEOptions): Model;
-
+  export function fromFiles(
+    vocab: string,
+    merges: string,
+    options: BPEOptions,
+    __callback: (err: any, encoding: Model) => void
+  ): void;
   /**
    * Instantiate a BPE model from the given vocab and merges files
    *
    * @param vocab Path to a vocabulary JSON file
    * @param merges Path to a merge file
-   * @param options BPE model options
    * @param __callback Callback called when model is loaded
    */
-  // export function fromFiles(
-  //   vocab: string,
-  //   merges: string,
-  //   options: BPEModelOptions | null,
-  //   __callback: (err: any, model: Model) => void
-  // ): void;
+  export function fromFiles(
+    vocab: string,
+    merges: string,
+    __callback: (err: any, encoding: Model) => void
+  ): void;
 
   /**
    * Instantiate an empty BPE Model
@@ -71,6 +75,11 @@ export namespace BPE {
 }
 
 export interface WordPieceOptions {
+  /**
+   * The prefix to attach to subword units that don't represent a beginning of word
+   * @default "##"
+   */
+  continuingSubwordPrefix?: string;
   /**
    * The maximum number of characters to authorize in a single word.
    * @default 100
@@ -88,22 +97,24 @@ export namespace WordPiece {
    * Instantiate a WordPiece model from the given vocab file
    *
    * @param vocab Path to a vocabulary file
-   * @param [options] WordPiece model options
+   * @param options WordPiece model options
+   * @param __callback Callback called when model is loaded
    */
-  export function fromFiles(vocab: string, options?: WordPieceOptions): Model;
-
+  export function fromFiles(
+    vocab: string,
+    options: WordPieceOptions,
+    __callback: (err: any, encoding: Model) => void
+  ): void;
   /**
    * Instantiate a WordPiece model from the given vocab file
    *
    * @param vocab Path to a vocabulary file
-   * @param options WordPiece model options
    * @param __callback Callback called when model is loaded
    */
-  // export function fromFiles(
-  //   vocab: string,
-  //   options: WordPieceModelOptions | null,
-  //   __callback: (err: any, model: Model) => void
-  // ): void;
+  export function fromFiles(
+    vocab: string,
+    __callback: (err: any, encoding: Model) => void
+  ): void;
 
   /**
    * Instantiate an empty WordPiece model

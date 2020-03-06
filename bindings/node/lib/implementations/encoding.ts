@@ -136,7 +136,7 @@ export class Encoding {
   }
 
   /**
-   * Truncate the current Encoding at the given max_length
+   * Truncate the current Encoding at the given max length
    *
    * @param length The maximum length to be kept
    * @param [stride=0] The length of the previous first sequence

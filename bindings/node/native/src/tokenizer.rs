@@ -5,7 +5,7 @@ use crate::models::JsModel;
 use crate::normalizers::JsNormalizer;
 use crate::pre_tokenizers::JsPreTokenizer;
 use crate::processors::JsPostProcessor;
-use crate::tasks::tokenizer::{EncodeTask, WorkingTokenizer};
+use crate::tasks::tokenizer::{DecodeTask, EncodeTask, WorkingTokenizer};
 use crate::trainers::JsTrainer;
 use crate::utils::Container;
 use neon::prelude::*;
@@ -147,7 +147,7 @@ declare_types! {
         }
 
         method decode(mut cx) {
-            // decode(ids: number[], skipSpecialTokens: bool = true)
+            // decode(ids: number[], skipSpecialTokens: bool, callback)
 
             let ids = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?
                 .into_iter()
@@ -157,21 +157,23 @@ declare_types! {
                         .map(|v| v.value() as u32)
                 })
                 .collect::<NeonResult<Vec<_>>>()?;
-            let mut skip_special_tokens = true;
-            if let Ok(skip) = cx.argument::<JsBoolean>(1) {
-                skip_special_tokens = skip.value();
-            }
+            let skip_special_tokens = cx.argument::<JsBoolean>(1)?.value();
+            let callback = cx.argument::<JsFunction>(2)?;
 
-            let this = cx.this();
-            let guard = cx.lock();
-            let res = this.borrow(&guard).tokenizer.decode(ids, skip_special_tokens);
-            let s = res.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+            let worker = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let worker = this.borrow(&guard).prepare_for_task();
+                worker
+            };
 
-            Ok(cx.string(s).upcast())
+            let task = DecodeTask::Single(worker, ids, skip_special_tokens);
+            task.schedule(callback);
+            Ok(cx.undefined().upcast())
         }
 
         method decodeBatch(mut cx) {
-            // decodeBatch(sequences: number[][], skipSpecialTokens: bool = true)
+            // decodeBatch(sequences: number[][], skipSpecialTokens: bool, callback)
 
             let sentences = cx.argument::<JsArray>(0)?
                 .to_vec(&mut cx)?
@@ -189,24 +191,19 @@ declare_types! {
                         .collect::<NeonResult<Vec<_>>>()
                 }).collect::<NeonResult<Vec<_>>>()?;
 
-            let mut skip_special_tokens = true;
-            if let Ok(skip) = cx.argument::<JsBoolean>(1) {
-                skip_special_tokens = skip.value();
-            }
+            let skip_special_tokens = cx.argument::<JsBoolean>(1)?.value();
+            let callback = cx.argument::<JsFunction>(2)?;
 
-            let this = cx.this();
-            let guard = cx.lock();
-            let res = this.borrow(&guard).tokenizer.decode_batch(sentences, skip_special_tokens);
-            let sentences = res
-                .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+            let worker = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let worker = this.borrow(&guard).prepare_for_task();
+                worker
+            };
 
-            let js_sentences = JsArray::new(&mut cx, sentences.len() as u32);
-            for (i, sentence) in sentences.into_iter().enumerate() {
-                let s = cx.string(sentence);
-                js_sentences.set(&mut cx, i as u32, s)?;
-            }
-
-            Ok(js_sentences.upcast())
+            let task = DecodeTask::Batch(worker, sentences, skip_special_tokens);
+            task.schedule(callback);
+            Ok(cx.undefined().upcast())
         }
 
         method tokenToId(mut cx) {

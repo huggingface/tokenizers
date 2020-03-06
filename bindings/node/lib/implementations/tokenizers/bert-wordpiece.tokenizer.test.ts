@@ -1,10 +1,8 @@
 import { mocked } from "ts-jest/utils";
 
-import { Tokenizer } from "../../bindings/tokenizer";
 import { BertWordPieceOptions, BertWordPieceTokenizer } from "./bert-wordpiece.tokenizer";
 
-jest.mock("../../bindings/models");
-jest.mock("../../bindings/tokenizer");
+const MOCKS_DIR = __dirname + "/__mocks__";
 
 describe("BertWordPieceTokenizer", () => {
   describe("fromOptions", () => {
@@ -14,29 +12,23 @@ describe("BertWordPieceTokenizer", () => {
     });
 
     describe("when a vocabFile is provided and `addSpecialTokens === true`", () => {
-      it("throws a `sepToken error` if no `sepToken` is provided", () => {
+      it("throws a `sepToken error` if no `sepToken` is provided", async () => {
         const options: BertWordPieceOptions = {
-          vocabFile: "./fake.txt",
-          sepToken: undefined
+          vocabFile: MOCKS_DIR + "/bert-vocab-empty.txt"
         };
 
-        expect.assertions(1);
-        return BertWordPieceTokenizer.fromOptions(options).catch(e =>
-          expect(e).toBeDefined()
+        await expect(BertWordPieceTokenizer.fromOptions(options)).rejects.toThrow(
+          "sepToken not found in the vocabulary"
         );
       });
 
-      it("throws a `clsToken error` if no `clsToken` is provided", () => {
+      it("throws a `clsToken error` if no `clsToken` is provided", async () => {
         const options: BertWordPieceOptions = {
-          vocabFile: "./fake.txt",
-          clsToken: undefined
+          vocabFile: MOCKS_DIR + "/bert-vocab-without-cls.txt"
         };
 
-        mocked(Tokenizer.prototype.tokenToId).mockImplementationOnce(() => 10);
-
-        expect.assertions(1);
-        return BertWordPieceTokenizer.fromOptions(options).catch(e =>
-          expect(e).toBeDefined()
+        await expect(BertWordPieceTokenizer.fromOptions(options)).rejects.toThrow(
+          "clsToken not found in the vocabulary"
         );
       });
     });
