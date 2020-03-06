@@ -66,8 +66,7 @@ pub fn bpe_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
     let options = cx.argument_opt(2);
 
     let mut model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
-    let mut builder = tk::models::bpe::BPE::from_files(&vocab, &merges)
-        .or_else(|e| cx.throw_error(format!("{}", e)))?;
+    let mut builder = tk::models::bpe::BPE::from_files(&vocab, &merges);
 
     if let Some(options) = options {
         if let Ok(options) = options.downcast::<JsObject>() {
@@ -133,33 +132,42 @@ pub fn bpe_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
 /// wordpiece_from_files(vocab: String, options?: {
 ///   unkToken?: String = "[UNK]",
 ///   maxInputCharsPerWord?: number = 100,
+///   continuingSubwordPrefix?: "##",
 /// })
 pub fn wordpiece_from_files(mut cx: FunctionContext) -> JsResult<JsModel> {
     let vocab = cx.argument::<JsString>(0)?.value() as String;
     let options = cx.argument_opt(1);
 
-    let mut unk_token = String::from("[UNK]");
-    let mut max_input_chars_per_word = Some(100);
+    let mut builder = tk::models::wordpiece::WordPiece::from_files(&vocab);
 
     if let Some(options) = options {
         if let Ok(options) = options.downcast::<JsObject>() {
             if let Ok(unk) = options.get(&mut cx, "unkToken") {
-                if let Err(_) = unk.downcast::<JsUndefined>() {
-                    unk_token = unk.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
+                if unk.downcast::<JsUndefined>().is_err() {
+                    builder = builder
+                        .unk_token(unk.downcast::<JsString>().or_throw(&mut cx)?.value() as String);
                 }
             }
             if let Ok(max) = options.get(&mut cx, "maxInputCharsPerWord") {
-                if let Err(_) = max.downcast::<JsUndefined>() {
-                    max_input_chars_per_word =
-                        Some(max.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize);
+                if max.downcast::<JsUndefined>().is_err() {
+                    builder = builder.max_input_chars_per_word(
+                        max.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize,
+                    );
+                }
+            }
+            if let Ok(prefix) = options.get(&mut cx, "continuingSubwordPrefix") {
+                if prefix.downcast::<JsUndefined>().is_err() {
+                    builder = builder.continuing_subword_prefix(
+                        prefix.downcast::<JsString>().or_throw(&mut cx)?.value() as String,
+                    );
                 }
             }
         }
     }
 
-    let wordpiece =
-        tk::models::wordpiece::WordPiece::from_files(&vocab, unk_token, max_input_chars_per_word)
-            .or_else(|e| cx.throw_error(format!("{}", e)))?;
+    let wordpiece = builder
+        .build()
+        .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
 
     let mut model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
     let guard = cx.lock();
