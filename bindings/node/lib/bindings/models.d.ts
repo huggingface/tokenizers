@@ -19,6 +19,7 @@ export interface BPEOptions {
    * The number of words that the BPE cache can contain. The cache allows
    * to speed-up the process by keeping the result of the merge operations
    * for a number of words.
+   * @default 10_000
    */
   cacheCapacity?: number;
   /**
@@ -74,6 +75,11 @@ export namespace BPE {
 }
 
 export interface WordPieceOptions {
+  /**
+   * The prefix to attach to subword units that don't represent a beginning of word
+   * @default "##"
+   */
+  continuingSubwordPrefix?: string;
   /**
    * The maximum number of characters to authorize in a single word.
    * @default 100
