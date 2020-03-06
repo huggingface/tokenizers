@@ -32,8 +32,12 @@ impl fmt::Display for Error {
     }
 }
 
+type Vocab = HashMap<String, u32>;
+type VocabR = HashMap<u32, String>;
+
 struct Config {
-    vocab: HashMap<String, u32>,
+    files: Option<String>,
+    vocab: Vocab,
     unk_token: String,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
@@ -48,6 +52,7 @@ impl Default for WordPieceBuilder {
     fn default() -> Self {
         Self {
             config: Config {
+                files: None,
                 vocab: HashMap::new(),
                 unk_token: String::from("[UNK]"),
                 continuing_subword_prefix: String::from("##"),
@@ -63,8 +68,14 @@ impl WordPieceBuilder {
         Self::default()
     }
 
+    /// Set the input files.
+    pub fn files(mut self, vocab: String) -> Self {
+        self.config.files = Some(vocab);
+        self
+    }
+
     /// Set the vocab (token -> ID) mapping.
-    pub fn vocab(mut self, vocab: HashMap<String, u32>) -> Self {
+    pub fn vocab(mut self, vocab: Vocab) -> Self {
         self.config.vocab = vocab;
         self
     }
@@ -88,20 +99,25 @@ impl WordPieceBuilder {
     }
 
     /// Contructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
-    pub fn build(self) -> WordPiece {
+    pub fn build(mut self) -> Result<WordPiece> {
+        if let Some(vocab) = self.config.files {
+            self.config.vocab = WordPiece::read_files(&vocab)?;
+        }
+
         let vocab_r = self
             .config
             .vocab
             .iter()
             .map(|(key, val)| (*val, key.to_owned()))
             .collect();
-        WordPiece {
+
+        Ok(WordPiece {
             vocab: self.config.vocab,
             vocab_r,
             unk_token: self.config.unk_token,
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             max_input_chars_per_word: self.config.max_input_chars_per_word,
-        }
+        })
     }
 }
 
@@ -109,8 +125,8 @@ impl WordPieceBuilder {
 /// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 /// model.
 pub struct WordPiece {
-    vocab: HashMap<String, u32>,
-    vocab_r: HashMap<u32, String>,
+    vocab: Vocab,
+    vocab_r: VocabR,
     unk_token: String,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
@@ -134,12 +150,8 @@ impl WordPiece {
         WordPieceBuilder::new()
     }
 
-    /// Initialize a `WordPiece` model from a vocab mapping file.
-    pub fn from_files(
-        vocab: &str,
-        unk_token: String,
-        max_input_chars_per_word: Option<usize>,
-    ) -> std::io::Result<Self> {
+    /// Read the given files to extract the vocab
+    pub fn read_files(vocab: &str) -> Result<Vocab> {
         let file = File::open(vocab)?;
         let file = BufReader::new(file);
 
@@ -149,16 +161,20 @@ impl WordPiece {
             vocab.insert(line.trim_end().to_owned(), index as u32);
         }
 
-        let mut builder = Self::builder().vocab(vocab).unk_token(unk_token);
-        if let Some(max_chars) = max_input_chars_per_word {
-            builder = builder.max_input_chars_per_word(max_chars);
-        }
-        Ok(builder.build())
+        Ok(vocab)
+    }
+
+    /// Initialize a `WordPiece` model from a vocab mapping file.
+    pub fn from_files(vocab: &str) -> WordPieceBuilder {
+        WordPiece::builder().files(vocab.to_owned())
     }
 
     /// Create a `WordPiece` model from a `BPE` model.
     pub fn from_bpe(bpe: &BPE) -> Self {
-        let mut wp = Self::builder().vocab(bpe.get_vocab().clone()).build();
+        let mut wp = Self::builder()
+            .vocab(bpe.get_vocab().clone())
+            .build()
+            .unwrap();
         if let Some(unk) = bpe.get_unk_token() {
             wp.unk_token = unk.to_owned();
         }
