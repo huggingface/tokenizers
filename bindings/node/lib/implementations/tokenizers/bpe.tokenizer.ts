@@ -101,15 +101,14 @@ export class BPETokenizer extends BaseTokenizer<BPETokenizerConfig> {
 
     let model: Model;
     if (opts.vocabFile && opts.mergesFile) {
-      // const fromFiles = promisify(BPE.fromFiles);
       const modelOptions: BPEOptions = {
         dropout: opts.dropout,
         endOfWordSuffix: opts.suffix,
         unkToken: opts.unkToken
       };
 
-      model = BPE.fromFiles(opts.vocabFile, opts.mergesFile, modelOptions);
-      // model = await fromFiles(mergedOptions.vocabFile, mergedOptions.mergesFile, modelOptions);
+      const fromFiles = promisify<string, string, BPEOptions, Model>(BPE.fromFiles);
+      model = await fromFiles(opts.vocabFile, opts.mergesFile, modelOptions);
     } else {
       model = BPE.empty();
     }

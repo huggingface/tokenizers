@@ -1,3 +1,5 @@
+import { promisify } from "util";
+
 import { metaspaceDecoder } from "../../bindings/decoders";
 import { BPE, BPEOptions, Model } from "../../bindings/models";
 import { nfkcNormalizer } from "../../bindings/normalizers";
@@ -92,14 +94,13 @@ export class SentencePieceBPETokenizer extends BaseTokenizer<
 
     let model: Model;
     if (opts.vocabFile && opts.mergesFile) {
-      // const fromFiles = promisify(BPE.fromFiles);
       const modelOptions: BPEOptions = {
         dropout: opts.dropout,
         unkToken: opts.unkToken
       };
 
-      model = BPE.fromFiles(opts.vocabFile, opts.mergesFile, modelOptions);
-      // model = await fromFiles(mergedOptions.vocabFile, mergedOptions.mergesFile, null);
+      const fromFiles = promisify<string, string, BPEOptions, Model>(BPE.fromFiles);
+      model = await fromFiles(opts.vocabFile, opts.mergesFile, modelOptions);
     } else {
       model = BPE.empty();
     }
