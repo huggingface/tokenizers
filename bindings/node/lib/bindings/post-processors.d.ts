@@ -17,6 +17,15 @@ export function bertProcessing(
 ): PostProcessor;
 
 /**
+ * Instantiate a new ByteLevelProcessing.
+ *
+ * Takes care of fixing the offsets when a unicode character
+ * gets split up as multiple byte-level characters.
+ * @since 0.6.0
+ */
+export function byteLevelProcessing(): PostProcessor;
+
+/**
  * Instantiate a new RobertaProcessing with the given tokens
  *
  * @param sep A tuple with the string representation of the SEP token, and its id
