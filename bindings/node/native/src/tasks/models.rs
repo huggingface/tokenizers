@@ -69,6 +69,7 @@ impl Task for BPEFromFilesTask {
         let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
         let guard = cx.lock();
         js_model.borrow_mut(&guard).model.to_owned(Box::new(bpe));
+
         Ok(js_model.upcast())
     }
 }
