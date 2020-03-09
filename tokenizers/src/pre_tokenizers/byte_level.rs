@@ -1,6 +1,7 @@
 use crate::tokenizer::{
     Decoder, Encoding, NormalizedString, Normalizer, Offsets, PostProcessor, PreTokenizer, Result,
 };
+use rayon::prelude::*;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use unicode_categories::UnicodeCategories;
@@ -68,11 +69,11 @@ impl Normalizer for ByteLevel {
 /// their byte-level counterpart. It also splits the input according to the configured regex.
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
-    fn pre_tokenize(&self, s: &str) -> Result<Vec<(String, Offsets)>> {
-        let mut total_len = 0;
-        Ok(RE
-            .captures_iter(&s)
+    fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
+        let positions = RE
+            .captures_iter(normalized.get())
             .map(|capture| {
+                let s = normalized.get();
                 let capture = capture.get(0).unwrap();
                 let start = capture.start();
                 let end = capture.end();
@@ -83,12 +84,7 @@ impl PreTokenizer for ByteLevel {
                 let next = s[end..].chars().next();
                 if let (Some(last), Some(next)) = (last, next) {
                     if last.is_separator_space() && !next.is_separator_space() {
-                        if let Some((_last, others)) =
-                            s[start..end].chars().collect::<Vec<_>>().split_last()
-                        {
-                            let bytes = others.iter().collect::<String>().as_bytes().to_vec();
-                            return (bytes, others.len());
-                        }
+                        return start..end - last.len_utf8();
                     }
                 }
                 // if our first char is not a whitespace but the previous one was, we return
@@ -97,24 +93,62 @@ impl PreTokenizer for ByteLevel {
                 let current = s[start..end].chars().next().map(|c| c.is_whitespace());
                 if let (Some(prev), Some(current)) = (prev, current) {
                     if prev.is_separator_space() && !current {
-                        let bytes =
-                            [format!("{}", prev).as_bytes(), s[start..end].as_bytes()].concat();
-                        let len = s[start..end].chars().count() + 1;
-                        return (bytes, len);
+                        return start - prev.len_utf8()..end;
                     }
                 }
 
-                (
-                    s[start..end].as_bytes().to_vec(),
-                    s[start..end].chars().count(),
-                )
+                start..end
             })
-            .map(|(s, len)| {
+            .collect::<Vec<_>>();
+
+        let splits = positions
+            .into_par_iter()
+            .map(|range| {
+                // Process one of the splits
+                let slice = &normalized.get()[range];
+                let mut chars: Vec<(char, u8)> = Vec::with_capacity(slice.len());
+
+                let mut i = 0;
+                for cur_char in slice.chars() {
+                    let size = cur_char.len_utf8();
+                    let bytes = slice[i..i + size].as_bytes();
+                    i += size;
+                    chars.extend(
+                        bytes
+                            .iter()
+                            .enumerate()
+                            .map(|(i, b)| (BYTES_CHAR[b], if i > 0 { 1 } else { 0 })),
+                    );
+                }
+
+                chars
+            })
+            .collect::<Vec<_>>();
+
+        // Update the NormalizedString
+        normalized.transform(
+            splits
+                .iter()
+                .flatten()
+                .map(|(c, changes)| (*c, *changes as isize)),
+            0,
+        );
+
+        // Collect splits and their offsets
+        let mut total_len = 0;
+        Ok(splits
+            .into_iter()
+            .map(|s| {
+                let mut len = 0;
+                let s = s
+                    .into_iter()
+                    .map(|(c, _)| {
+                        len += 1;
+                        c
+                    })
+                    .collect::<String>();
                 total_len += len;
-                (
-                    s.iter().map(|b| BYTES_CHAR[b]).collect(),
-                    (total_len - len, total_len),
-                )
+                (s, (total_len - len, total_len))
             })
             .collect())
     }
@@ -196,10 +230,9 @@ mod tests {
     #[test]
     fn pre_tokenization() {
         let bytelevel = ByteLevel::new(false);
+        let mut input = NormalizedString::from("Hello my friend, how is your day going?");
         assert_eq!(
-            bytelevel
-                .pre_tokenize("Hello my friend, how is your day going?")
-                .unwrap(),
+            bytelevel.pre_tokenize(&mut input).unwrap(),
             vec![
                 ("Hello".into(), (0, 5)),
                 ("Ġmy".into(), (5, 8)),
@@ -245,7 +278,7 @@ mod tests {
             bytelevel.normalize(&mut normalized).unwrap();
             assert_eq!(normalized.get(), " Hello my friend, how is your day going?");
             assert_eq!(
-                bytelevel.pre_tokenize(normalized.get()).unwrap(),
+                bytelevel.pre_tokenize(&mut normalized).unwrap(),
                 vec![
                     ("ĠHello".into(), (0, 6)),
                     ("Ġmy".into(), (6, 9)),
@@ -265,18 +298,15 @@ mod tests {
     #[test]
     fn decode_works_on_separated_tokens() {
         let samples = vec![
-            String::from(
-                "A Nuskhuri abbreviation of იესუ ქრისტე ( iesu kriste ) \" Jesus Christ \"",
-            ),
-            String::from(
-                "An equal number have descenders , like p or q in English \
+            "A Nuskhuri abbreviation of იესუ ქრისტე ( iesu kriste ) \" Jesus Christ \"",
+            "An equal number have descenders , like p or q in English \
                  : გ , დ , ე , ვ , კ , ლ , ჟ , ტ , უ , ფ , ღ , ყ , ც",
-            ),
         ];
 
         let bytelevel = ByteLevel::new(false);
         for sample in samples {
-            let pre_tokenized = bytelevel.pre_tokenize(&sample).unwrap();
+            let mut input = NormalizedString::from(sample);
+            let pre_tokenized = bytelevel.pre_tokenize(&mut input).unwrap();
             let separated_tokens = pre_tokenized
                 .iter()
                 .flat_map(|(token, _)| token.split("").map(|t| t.into()))
@@ -287,9 +317,9 @@ mod tests {
 
     #[test]
     fn handling_of_newlines() {
-        let s = String::from("Hello there\nHello there");
+        let mut input = NormalizedString::from("Hello there\nHello there");
         let bytelevel = ByteLevel::new(false);
-        let p = bytelevel.pre_tokenize(&s).unwrap();
+        let p = bytelevel.pre_tokenize(&mut input).unwrap();
 
         assert_eq!(
             p,
@@ -305,9 +335,9 @@ mod tests {
 
     #[test]
     fn handling_of_multiple_whitespaces() {
-        let s = String::from("Hello there       dear");
+        let mut input = NormalizedString::from("Hello there       dear");
         let bytelevel = ByteLevel::new(false);
-        let p = bytelevel.pre_tokenize(&s).unwrap();
+        let p = bytelevel.pre_tokenize(&mut input).unwrap();
 
         assert_eq!(
             p,
@@ -322,18 +352,20 @@ mod tests {
 
     #[test]
     fn offsets_when_char_split_up() {
-        let s = String::from("i⭢j");
+        let mut input = NormalizedString::from("i⭢j");
         let bytelevel = ByteLevel::new(false);
-        let p = bytelevel.pre_tokenize(&s).unwrap();
+        let p = bytelevel.pre_tokenize(&mut input).unwrap();
 
         assert_eq!(
             p,
             vec![
                 ("i".into(), (0, 1)),
-                ("âŃ¢".into(), (1, 2)),
-                ("j".into(), (2, 3)),
+                ("âŃ¢".into(), (1, 4)),
+                ("j".into(), (4, 5)),
             ]
         );
+        assert_eq!(input.get(), "iâŃ¢j");
+        assert_eq!(input.get_range_original(1..4), Some("⭢".into()));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::tokenizer::{Decoder, Offsets, PreTokenizer, Result};
+use crate::tokenizer::{Decoder, NormalizedString, Offsets, PreTokenizer, Result};
 
 /// Replaces all the whitespaces by the provided meta character and then
 /// splits on this character
@@ -23,17 +23,15 @@ impl Default for Metaspace {
 }
 
 impl PreTokenizer for Metaspace {
-    fn pre_tokenize(&self, s: &str) -> Result<Vec<(String, Offsets)>> {
-        let s = if self.add_prefix_space && !s.starts_with(' ') {
-            format!(" {}", s)
-        } else {
-            s.to_owned()
-        };
+    fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
+        if self.add_prefix_space && !normalized.get().starts_with(' ') {
+            normalized.prepend(" ");
+        }
 
         let mut words = vec![];
         let mut word = Vec::with_capacity(1000);
         let mut offset = 0;
-        s.chars().for_each(|c| {
+        normalized.get().chars().for_each(|c| {
             if c.is_whitespace() {
                 if !word.is_empty() {
                     let offsets = (offset - word.len(), offset);
@@ -84,7 +82,8 @@ mod tests {
     #[test]
     fn basic() {
         let pretok = Metaspace::new('▁', true);
-        let res = pretok.pre_tokenize("Hey friend!").unwrap();
+        let mut input = NormalizedString::from("Hey friend!");
+        let res = pretok.pre_tokenize(&mut input).unwrap();
         assert_eq!(
             &res,
             &[("▁Hey".into(), (0, 4)), ("▁friend!".into(), (4, 12)),]
@@ -94,7 +93,8 @@ mod tests {
     #[test]
     fn multiple_spaces() {
         let pretok = Metaspace::new('▁', true);
-        let res = pretok.pre_tokenize("Hey   friend!").unwrap();
+        let mut input = NormalizedString::from("Hey   friend!");
+        let res = pretok.pre_tokenize(&mut input).unwrap();
         assert_eq!(
             &res,
             &[

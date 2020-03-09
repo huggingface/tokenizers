@@ -1,4 +1,4 @@
-use crate::tokenizer::{Offsets, PreTokenizer, Result};
+use crate::tokenizer::{NormalizedString, Offsets, PreTokenizer, Result};
 
 pub struct CharDelimiterSplit {
     delimiter: char,
@@ -11,12 +11,12 @@ impl CharDelimiterSplit {
 }
 
 impl PreTokenizer for CharDelimiterSplit {
-    fn pre_tokenize(&self, s: &str) -> Result<Vec<(String, Offsets)>> {
+    fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
         let mut words = vec![];
         let mut word = Vec::with_capacity(1000);
         let mut offset = 0;
 
-        s.chars().for_each(|c| {
+        normalized.get().chars().for_each(|c| {
             if c == self.delimiter {
                 if !word.is_empty() {
                     let offsets = (offset - word.len(), offset);
