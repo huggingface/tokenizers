@@ -1,7 +1,6 @@
 const native = require("./native");
 
 module.exports = {
-  byteLevelNormalizer: native.normalizers_ByteLevel,
   bertNormalizer: native.normalizers_BertNormalizer,
   lowercaseNormalizer: native.normalizers_Lowercase,
   nfcNormalizer: native.normalizers_NFC,

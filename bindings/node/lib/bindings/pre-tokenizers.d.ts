@@ -8,11 +8,13 @@ interface PreTokenizer {}
 /**
  * Instantiate a new ByteLevel PreTokenizer
  *
+ * @param [addPrefixSpace=true] Whether to add a space to the first word if there isn't already one.
+ * This lets us treat `hello` exactly like `say hello`.
  * @returns ByteLevel PreTokenizer.
  * This pre-tokenizer takes care of replacing all bytes of the given string
  * with a corresponding representation, as well as splitting into words.
  */
-export function byteLevelPreTokenizer(): PreTokenizer;
+export function byteLevelPreTokenizer(addPrefixSpace?: boolean): PreTokenizer;
 
 /**
  * Returns the alphabet used by the ByteLevel PreTokenizer.

@@ -3,10 +3,8 @@ import { promisify } from "util";
 import { byteLevelDecoder } from "../../bindings/decoders";
 import { BPE, BPEOptions, Model } from "../../bindings/models";
 import {
-  byteLevelNormalizer,
   lowercaseNormalizer,
   nfkcNormalizer,
-  Normalizer,
   sequenceNormalizer
 } from "../../bindings/normalizers";
 import { byteLevelProcessing } from "../../bindings/post-processors";
@@ -96,18 +94,18 @@ export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerCo
     }
 
     const tokenizer = new Tokenizer(model);
-    const normalizers: Normalizer[] = [
-      byteLevelNormalizer(opts.addPrefixSpace),
-      nfkcNormalizer()
-    ];
 
     if (opts.lowercase) {
-      normalizers.push(lowercaseNormalizer());
+      tokenizer.setNormalizer(
+        sequenceNormalizer([nfkcNormalizer(), lowercaseNormalizer()]);
+      );
+    } else {
+      tokenizer.setNormalizer(nfkcNormalizer());
     }
 
     tokenizer.setNormalizer(sequenceNormalizer(normalizers));
 
-    const preTokenizer = byteLevelPreTokenizer();
+    const preTokenizer = byteLevelPreTokenizer(opts.addPrefixSpace);
     tokenizer.setPreTokenizer(preTokenizer);
     tokenizer.setDecoder(byteLevelDecoder());
     tokenizer.setPostProcessor(byteLevelProcessing());

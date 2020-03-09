@@ -30,15 +30,6 @@ export interface BertNormalizerOptions {
 }
 
 /**
- * Instantiate a ByteLevel Normalizer
- *
- * @param [addPrefixSpace=true] Whether to add a space to the first word if there isn't already one.
- * This allows to treat `hello` exactly like `say hello`.
- * @since 0.6.0
- */
-export function byteLevelNormalizer(addPrefixSpace?: boolean): Normalizer;
-
-/**
  * Instantiate a Bert Normalizer with the given options
  *
  * @param [options] Normalizer options
