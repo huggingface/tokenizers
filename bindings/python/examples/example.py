@@ -60,10 +60,8 @@ if args.type == "gpt2":
 
     # Create a Tokenizer using BPE
     tok_r = Tokenizer(BPE.from_files(args.vocab, args.merges))
-    # Use ByteLevel Normalizer
-    tok_r.normalizer = normalizers.ByteLevel(add_prefix_space=False)
     # Use ByteLevel PreTokenizer
-    tok_r.pre_tokenizer = pre_tokenizers.ByteLevel()
+    tok_r.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
     # Use ByteLevel Decoder
     tok_r.decoder = decoders.ByteLevel()
 elif args.type == "bert":

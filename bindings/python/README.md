@@ -121,7 +121,7 @@ you need together:
 #### Use a pre-trained tokenizer
 
 ```python
-from tokenizers import Tokenizer, models, pre_tokenizers, decoders, normalizers, processors
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders, processors
 
 # Load a BPE Model
 vocab = "./path/to/vocab.json"
@@ -132,8 +132,7 @@ bpe = models.BPE.from_files(vocab, merges)
 tokenizer = Tokenizer(bpe)
 
 # Customize pre-tokenization and decoding
-tokenizer.normalizer = normalizers.ByteLevel(add_prefix_space=True)
-tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
+tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
 tokenizer.decoder = decoders.ByteLevel()
 tokenizer.post_processor = processors.ByteLevel()
 
@@ -159,8 +158,7 @@ from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers, pr
 tokenizer = Tokenizer(models.BPE.empty())
 
 # Customize pre-tokenization and decoding
-tokenizer.normalizer = normalizers.ByteLevel(add_prefix_space=True)
-tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
+tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
 tokenizer.decoder = decoders.ByteLevel()
 tokenizer.post_processor = processors.ByteLevel()
 

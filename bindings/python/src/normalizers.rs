@@ -158,30 +158,3 @@ impl Strip {
         }))
     }
 }
-
-#[pyclass(extends=Normalizer)]
-pub struct ByteLevel {}
-#[pymethods]
-impl ByteLevel {
-    #[new]
-    #[args(kwargs = "**")]
-    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
-        let mut add_prefix_space = true;
-
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
-                    "add_prefix_space" => add_prefix_space = value.extract()?,
-                    _ => println!("Ignored unknown kwargs option {}", key),
-                }
-            }
-        }
-
-        Ok(obj.init(Normalizer {
-            normalizer: Container::Owned(Box::new(tk::normalizers::byte_level::ByteLevel::new(
-                add_prefix_space,
-            ))),
-        }))
-    }
-}

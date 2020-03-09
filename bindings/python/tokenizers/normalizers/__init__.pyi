@@ -98,22 +98,6 @@ class Strip(Normalizer):
     def __init__(self, left: bool = True, right: bool = True) -> Normalizer:
         pass
 
-class ByteLevel(Normalizer):
-    """ ByteLevel normalizer """
-
-    def __init__(self, add_prefix_space: bool = True) -> Normalizer:
-        """ Instantiate a new ByteLevel Normalizer
-
-        Args:
-            add_prefix_space: (`optional`) boolean:
-                Whether to add a space to the first word if there isn't already one. This
-                lets us treat `hello` exactly like `say hello`.
-
-        Returns:
-            Normalizer
-        """
-        pass
-
 def unicode_normalizer_from_str(normalizer: str) -> Normalizer:
     """
     Instanciate unicode normalizer from the normalizer name
