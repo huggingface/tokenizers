@@ -1,5 +1,5 @@
 use crate::tokenizer::{
-    Decoder, Encoding, NormalizedString, Normalizer, Offsets, PostProcessor, PreTokenizer, Result,
+    Decoder, Encoding, NormalizedString, Offsets, PostProcessor, PreTokenizer, Result,
 };
 use rayon::prelude::*;
 use regex::Regex;
@@ -53,23 +53,15 @@ impl ByteLevel {
     }
 }
 
-/// As a `Normalizer`, `ByteLevel` is in charge of adding a prefix space if needed. This prefix
-/// space let's the BPE model treat all words the same way (A word at the beginning of a sentence
-/// should be treated exactly like a word in the middle of a sentence).
-impl Normalizer for ByteLevel {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        if self.add_prefix_space && !normalized.get().starts_with(' ') {
-            normalized.prepend(" ");
-        }
-        Ok(())
-    }
-}
-
 /// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
 /// their byte-level counterpart. It also splits the input according to the configured regex.
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
+        if self.add_prefix_space && !normalized.get().starts_with(' ') {
+            normalized.prepend(" ");
+        }
+
         let positions = RE
             .captures_iter(normalized.get())
             .map(|capture| {
@@ -223,9 +215,7 @@ impl PostProcessor for ByteLevel {
 #[cfg(test)]
 mod tests {
     use super::ByteLevel;
-    use crate::tokenizer::{
-        Decoder, Encoding, NormalizedString, Normalizer, PostProcessor, PreTokenizer,
-    };
+    use crate::tokenizer::{Decoder, Encoding, NormalizedString, PostProcessor, PreTokenizer};
 
     #[test]
     fn pre_tokenization() {
@@ -275,10 +265,10 @@ mod tests {
             "Hello my friend, how is your day going?",
         ] {
             let mut normalized = NormalizedString::from(s);
-            bytelevel.normalize(&mut normalized).unwrap();
-            assert_eq!(normalized.get(), " Hello my friend, how is your day going?");
+            let pretok = bytelevel.pre_tokenize(&mut normalized).unwrap();
+            assert_eq!(normalized.get(), "ĠHelloĠmyĠfriend,ĠhowĠisĠyourĠdayĠgoing?");
             assert_eq!(
-                bytelevel.pre_tokenize(&mut normalized).unwrap(),
+                pretok,
                 vec![
                     ("ĠHello".into(), (0, 6)),
                     ("Ġmy".into(), (6, 9)),
