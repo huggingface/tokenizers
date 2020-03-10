@@ -71,7 +71,7 @@ class ByteLevel(PostProcessor):
     want the offsets to include these whitespaces, then this PostProcessor must be used.
     """
 
-    def __init(self, trim_offsets: bool = False) -> None:
+    def __init(self, trim_offsets: bool = True) -> None:
         """ Instantiate a new ByteLevel
 
         Args:
