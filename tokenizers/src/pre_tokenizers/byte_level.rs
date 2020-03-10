@@ -41,15 +41,41 @@ lazy_static! {
 /// of all the required processing steps to transform a UTF-8 string as needed before and after the
 /// BPE model does its job.
 pub struct ByteLevel {
+    /// Whether to add a leading space to the first word. This allows to treat the leading word
+    /// just as any other word.
     add_prefix_space: bool,
+    /// Whether the post processing step should trim offsets to avoid including whitespaces.
+    trim_offsets: bool,
 }
+impl Default for ByteLevel {
+    fn default() -> Self {
+        Self {
+            add_prefix_space: true,
+            trim_offsets: true,
+        }
+    }
+}
+
 impl ByteLevel {
-    pub fn new(add_prefix_space: bool) -> Self {
-        ByteLevel { add_prefix_space }
+    pub fn new(add_prefix_space: bool, trim_offsets: bool) -> Self {
+        ByteLevel {
+            add_prefix_space,
+            trim_offsets,
+        }
     }
 
     pub fn alphabet() -> HashSet<char> {
         BYTES_CHAR.values().copied().collect()
+    }
+
+    pub fn add_prefix_space(mut self, v: bool) -> Self {
+        self.add_prefix_space = v;
+        self
+    }
+
+    pub fn trim_offsets(mut self, v: bool) -> Self {
+        self.trim_offsets = v;
+        self
     }
 }
 
@@ -161,10 +187,7 @@ impl Decoder for ByteLevel {
     }
 }
 
-/// As a `PostProcessor`, `ByteLevel` is in charge of fixing any offsets produced by the BPE Model
-/// that end up wrong. This happens because the BPE model is not aware that some characters get
-/// split up in multiple other characters. So it treats all of them as single characters and
-/// then increase the offsets when merging them.
+/// As a `PostProcessor`, `ByteLevel` is in charge of trimming the offsets if necessary.
 impl PostProcessor for ByteLevel {
     fn added_tokens(&self, _is_pair: bool) -> usize {
         0
@@ -172,30 +195,38 @@ impl PostProcessor for ByteLevel {
 
     fn process(&self, mut encoding: Encoding, pair_encoding: Option<Encoding>) -> Result<Encoding> {
         let process_offsets = |encoding: &mut Encoding| {
-            let len = encoding.get_offsets().len();
-            let mut i = 0;
-            let mut from_i = None;
-            while i < len {
-                if i + 1 < len {
-                    let offsets = encoding.get_offsets();
-                    if offsets[i + 1] < offsets[i] {
-                        let mut j = i;
-                        while j > 0 && offsets[j] >= offsets[i + 1] {
-                            j -= 1;
-                        }
-                        from_i = Some(j);
-                    }
-                }
-
-                if let Some(from_i) = from_i.take() {
-                    let offsets = encoding.get_offsets_mut();
-                    for j in from_i + 1..=i {
-                        offsets[j] = offsets[from_i];
-                    }
-                }
-
-                i += 1;
+            if !self.trim_offsets {
+                return;
             }
+
+            let modifs = encoding
+                .get_tokens()
+                .iter()
+                .map(|token| {
+                    let leading_spaces = token
+                        .chars()
+                        .take_while(|c| *c == BYTES_CHAR[&b' '])
+                        .count();
+                    let trailing_spaces = token
+                        .chars()
+                        .rev()
+                        .take_while(|c| *c == BYTES_CHAR[&b' '])
+                        .count();
+                    (leading_spaces, trailing_spaces)
+                })
+                .enumerate()
+                .filter(|(_, v)| v.0 > 0 || v.1 > 0)
+                .collect::<Vec<_>>();
+
+            modifs.into_iter().for_each(|(i, (ld, tl))| {
+                let mut offsets = &mut encoding.get_offsets_mut()[i];
+                if ld > 0 {
+                    offsets.0 = std::cmp::min(offsets.0 + ld, offsets.1);
+                }
+                if tl > 0 {
+                    offsets.1 = std::cmp::max(offsets.1 - tl, offsets.0);
+                }
+            });
         };
 
         process_offsets(&mut encoding);
@@ -219,7 +250,7 @@ mod tests {
 
     #[test]
     fn pre_tokenization() {
-        let bytelevel = ByteLevel::new(false);
+        let bytelevel = ByteLevel::default().add_prefix_space(false);
         let mut input = NormalizedString::from("Hello my friend, how is your day going?");
         assert_eq!(
             bytelevel.pre_tokenize(&mut input).unwrap(),
@@ -240,7 +271,7 @@ mod tests {
 
     #[test]
     fn decoding() {
-        let bytelevel = ByteLevel::new(false);
+        let bytelevel = ByteLevel::default().add_prefix_space(false);
         assert_eq!(
             "Hello my friend, how is your day going?",
             bytelevel
@@ -259,7 +290,7 @@ mod tests {
 
     #[test]
     fn add_prefix_space() {
-        let bytelevel = ByteLevel::new(true);
+        let bytelevel = ByteLevel::default().add_prefix_space(true);
         for s in &[
             " Hello my friend, how is your day going?",
             "Hello my friend, how is your day going?",
@@ -293,7 +324,7 @@ mod tests {
                  : გ , დ , ე , ვ , კ , ლ , ჟ , ტ , უ , ფ , ღ , ყ , ც",
         ];
 
-        let bytelevel = ByteLevel::new(false);
+        let bytelevel = ByteLevel::default().add_prefix_space(false);
         for sample in samples {
             let mut input = NormalizedString::from(sample);
             let pre_tokenized = bytelevel.pre_tokenize(&mut input).unwrap();
@@ -308,7 +339,7 @@ mod tests {
     #[test]
     fn handling_of_newlines() {
         let mut input = NormalizedString::from("Hello there\nHello there");
-        let bytelevel = ByteLevel::new(false);
+        let bytelevel = ByteLevel::default().add_prefix_space(false);
         let p = bytelevel.pre_tokenize(&mut input).unwrap();
 
         assert_eq!(
@@ -326,7 +357,7 @@ mod tests {
     #[test]
     fn handling_of_multiple_whitespaces() {
         let mut input = NormalizedString::from("Hello there       dear");
-        let bytelevel = ByteLevel::new(false);
+        let bytelevel = ByteLevel::default().add_prefix_space(false);
         let p = bytelevel.pre_tokenize(&mut input).unwrap();
 
         assert_eq!(
@@ -343,7 +374,7 @@ mod tests {
     #[test]
     fn offsets_when_char_split_up() {
         let mut input = NormalizedString::from("i⭢j");
-        let bytelevel = ByteLevel::new(false);
+        let bytelevel = ByteLevel::default().add_prefix_space(false);
         let p = bytelevel.pre_tokenize(&mut input).unwrap();
 
         assert_eq!(
@@ -359,38 +390,46 @@ mod tests {
     }
 
     #[test]
-    fn processor_fixes_offsets() {
-        let bad_encoding = Encoding::new(
+    fn processor_trims_offsets() {
+        let start = Encoding::new(
             NormalizedString::from(""),
             vec![],
             vec![],
-            vec![],
-            vec![(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (3, 4), (4, 5)],
+            vec![
+                "ĠĠĠĠHelloĠĠ".into(),
+                "ĠĠHello".into(),
+                "HelloĠĠ".into(),
+                "ĠĠĠĠ".into(),
+            ],
+            vec![(0, 11), (11, 18), (18, 25), (25, 29)],
             vec![],
             vec![],
             vec![],
         );
-        let fixed_encoding = Encoding::new(
+        let expected = Encoding::new(
             NormalizedString::from(""),
             vec![],
             vec![],
-            vec![],
-            vec![(0, 1), (1, 2), (2, 3), (2, 3), (2, 3), (3, 4), (4, 5)],
+            vec![
+                "ĠĠĠĠHelloĠĠ".into(),
+                "ĠĠHello".into(),
+                "HelloĠĠ".into(),
+                "ĠĠĠĠ".into(),
+            ],
+            vec![(4, 9), (13, 18), (18, 23), (29, 29)],
             vec![],
             vec![],
             vec![],
         );
 
-        let bytelevel = ByteLevel::new(false);
+        let bytelevel = ByteLevel::default().trim_offsets(true);
+        assert_eq!(expected, bytelevel.process(start.clone(), None).unwrap());
 
-        let fixed_single = bytelevel.process(bad_encoding.clone(), None).unwrap();
-        assert_eq!(fixed_single, fixed_encoding);
-
-        let fixed_pair = bytelevel
-            .process(bad_encoding.clone(), Some(bad_encoding))
-            .unwrap();
-        let mut fixed_encoding_pair = fixed_encoding.clone();
-        fixed_encoding_pair.merge_with(fixed_encoding);
-        assert_eq!(fixed_pair, fixed_encoding_pair);
+        let mut pair_expected = expected.clone();
+        pair_expected.merge_with(expected);
+        assert_eq!(
+            pair_expected,
+            bytelevel.process(start.clone(), Some(start)).unwrap()
+        );
     }
 }

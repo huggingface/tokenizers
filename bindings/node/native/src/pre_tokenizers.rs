@@ -21,19 +21,21 @@ declare_types! {
 
 /// byte_level(addPrefixSpace: bool = true)
 fn byte_level(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
-    let mut add_prefix_space = true;
+    let mut byte_level = tk::pre_tokenizers::byte_level::ByteLevel::default();
 
     if let Some(args) = cx.argument_opt(0) {
         if args.downcast::<JsUndefined>().is_err() {
-            add_prefix_space = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
+            byte_level = byte_level
+                .add_prefix_space(args.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
         }
     }
 
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    pretok.borrow_mut(&guard).pretok.to_owned(Box::new(
-        tk::pre_tokenizers::byte_level::ByteLevel::new(add_prefix_space),
-    ));
+    pretok
+        .borrow_mut(&guard)
+        .pretok
+        .to_owned(Box::new(byte_level));
     Ok(pretok)
 }
 

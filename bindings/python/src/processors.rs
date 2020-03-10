@@ -2,6 +2,7 @@ extern crate tokenizers as tk;
 
 use super::utils::Container;
 use pyo3::prelude::*;
+use pyo3::types::*;
 
 #[pyclass(dict)]
 pub struct PostProcessor {
@@ -48,11 +49,21 @@ pub struct ByteLevel {}
 #[pymethods]
 impl ByteLevel {
     #[new]
-    fn new(obj: &PyRawObject) -> PyResult<()> {
+    #[args(kwargs = "**")]
+    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
+        let mut byte_level = tk::processors::byte_level::ByteLevel::default();
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "trim_offsets" => byte_level = byte_level.trim_offsets(value.extract()?),
+                    _ => println!("Ignored unknown kwargs option {}", key),
+                }
+            }
+        }
         Ok(obj.init(PostProcessor {
-            processor: Container::Owned(Box::new(tk::processors::byte_level::ByteLevel::new(
-                false,
-            ))),
+            processor: Container::Owned(Box::new(byte_level)),
         }))
     }
 }

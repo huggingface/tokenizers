@@ -33,7 +33,7 @@ impl ByteLevel {
     #[new]
     fn new(obj: &PyRawObject) -> PyResult<()> {
         Ok(obj.init(Decoder {
-            decoder: Container::Owned(Box::new(tk::decoders::byte_level::ByteLevel::new(false))),
+            decoder: Container::Owned(Box::new(tk::decoders::byte_level::ByteLevel::default())),
         }))
     }
 }

@@ -98,7 +98,7 @@ fn bytelevel(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     processor
         .borrow_mut(&guard)
         .processor
-        .to_owned(Box::new(tk::processors::byte_level::ByteLevel::new(false)));
+        .to_owned(Box::new(tk::processors::byte_level::ByteLevel::default()));
     Ok(processor)
 }
 

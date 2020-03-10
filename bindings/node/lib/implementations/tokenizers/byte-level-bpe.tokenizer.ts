@@ -97,13 +97,11 @@ export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerCo
 
     if (opts.lowercase) {
       tokenizer.setNormalizer(
-        sequenceNormalizer([nfkcNormalizer(), lowercaseNormalizer()]);
+        sequenceNormalizer([nfkcNormalizer(), lowercaseNormalizer()])
       );
     } else {
       tokenizer.setNormalizer(nfkcNormalizer());
     }
-
-    tokenizer.setNormalizer(sequenceNormalizer(normalizers));
 
     const preTokenizer = byteLevelPreTokenizer(opts.addPrefixSpace);
     tokenizer.setPreTokenizer(preTokenizer);

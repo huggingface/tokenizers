@@ -39,22 +39,22 @@ impl ByteLevel {
     #[new]
     #[args(kwargs = "**")]
     fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
-        let mut add_prefix_space = true;
+        let mut byte_level = tk::pre_tokenizers::byte_level::ByteLevel::default();
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
                 let key: &str = key.extract()?;
                 match key {
-                    "add_prefix_space" => add_prefix_space = value.extract()?,
+                    "add_prefix_space" => {
+                        byte_level = byte_level.add_prefix_space(value.extract()?)
+                    }
                     _ => println!("Ignored unknown kwargs option {}", key),
                 }
             }
         }
 
         Ok(obj.init(PreTokenizer {
-            pretok: Container::Owned(Box::new(tk::pre_tokenizers::byte_level::ByteLevel::new(
-                add_prefix_space,
-            ))),
+            pretok: Container::Owned(Box::new(byte_level)),
         }))
     }
 
