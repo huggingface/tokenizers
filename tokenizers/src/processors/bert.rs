@@ -20,7 +20,16 @@ impl PostProcessor for BertProcessing {
         }
     }
 
-    fn process(&self, mut encoding: Encoding, pair_encoding: Option<Encoding>) -> Result<Encoding> {
+    fn process(
+        &self,
+        mut encoding: Encoding,
+        pair_encoding: Option<Encoding>,
+        add_special_tokens: bool,
+    ) -> Result<Encoding> {
+        if !add_special_tokens {
+            return PostProcessor::default_process(encoding, pair_encoding, add_special_tokens);
+        }
+
         let ids = [&[self.cls.1], &encoding.get_ids()[..], &[self.sep.1]].concat();
         let type_ids = [&[0], &encoding.get_type_ids()[..], &[0]].concat();
         let tokens = [

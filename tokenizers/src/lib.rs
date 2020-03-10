@@ -37,7 +37,7 @@
 //!
 //!     let mut tokenizer = Tokenizer::new(Box::new(bpe));
 //!
-//!     let encoding = tokenizer.encode(EncodeInput::Single("Hey there!".into()))?;
+//!     let encoding = tokenizer.encode(EncodeInput::Single("Hey there!".into()), false)?;
 //!     println!("{:?}", encoding.get_tokens());
 //!
 //!     Ok(())
