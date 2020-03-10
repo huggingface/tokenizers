@@ -66,7 +66,8 @@ type ByteLevelBPETokenizerConfig = ByteLevelBPETokenizerOptions &
  */
 export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerConfig> {
   private static readonly defaultOptions: ByteLevelBPETokenizerConfig = {
-    addPrefixSpace: false
+    addPrefixSpace: false,
+    trimOffsets: false,
   };
 
   private readonly defaultTrainOptions: Required<ByteLevelBPETrainOptions> = {
@@ -106,7 +107,7 @@ export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerCo
     const preTokenizer = byteLevelPreTokenizer(opts.addPrefixSpace);
     tokenizer.setPreTokenizer(preTokenizer);
     tokenizer.setDecoder(byteLevelDecoder());
-    tokenizer.setPostProcessor(byteLevelProcessing());
+    tokenizer.setPostProcessor(byteLevelProcessing(opts.trimOffsets));
 
     return new ByteLevelBPETokenizer(tokenizer, opts);
   }

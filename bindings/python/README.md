@@ -134,7 +134,7 @@ tokenizer = Tokenizer(bpe)
 # Customize pre-tokenization and decoding
 tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
 tokenizer.decoder = decoders.ByteLevel()
-tokenizer.post_processor = processors.ByteLevel()
+tokenizer.post_processor = processors.ByteLevel(trim_offsets=True)
 
 # And then encode:
 encoded = tokenizer.encode("I can feel the magic, can you?")
@@ -160,7 +160,7 @@ tokenizer = Tokenizer(models.BPE.empty())
 # Customize pre-tokenization and decoding
 tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
 tokenizer.decoder = decoders.ByteLevel()
-tokenizer.post_processor = processors.ByteLevel()
+tokenizer.post_processor = processors.ByteLevel(trim_offsets=True)
 
 # And then train
 trainer = trainers.BpeTrainer(vocab_size=20000, min_frequency=2)

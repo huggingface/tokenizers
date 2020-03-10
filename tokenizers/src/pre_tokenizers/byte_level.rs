@@ -50,8 +50,8 @@ pub struct ByteLevel {
 impl Default for ByteLevel {
     fn default() -> Self {
         Self {
-            add_prefix_space: true,
-            trim_offsets: true,
+            add_prefix_space: false,
+            trim_offsets: false,
         }
     }
 }

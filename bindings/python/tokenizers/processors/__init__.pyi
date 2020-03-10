@@ -66,11 +66,16 @@ class RobertaProcessing(PostProcessor):
 class ByteLevel(PostProcessor):
     """ ByteLevel Post processing
 
-    This post-processor takes care of fixing the offsets after the BPE Model may have
-    produced some bad offsets while merging. This happens for any unicode character that
-    get split up in many byte-level characters.
+    This post-processor takes care of trimming the offsets.
+    By default, the ByteLevel BPE might include whitespaces in the produced tokens. If you don't
+    want the offsets to include these whitespaces, then this PostProcessor must be used.
     """
 
-    def __init(self) -> None:
-        """ Instantiate a new ByteLevel """
+    def __init(self, trim_offsets: bool = False) -> None:
+        """ Instantiate a new ByteLevel
+
+        Args:
+            trim_offsets: bool:
+                Whether to trim the whitespaces from the produced offsets.
+        """
         pass

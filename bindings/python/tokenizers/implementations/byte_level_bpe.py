@@ -22,6 +22,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         unicode_normalizer: Optional[str] = None,
         continuing_subword_prefix: Optional[str] = None,
         end_of_word_suffix: Optional[str] = None,
+        trim_offsets: bool = False,
     ):
         if vocab_file is not None and merges_file is not None:
             tokenizer = Tokenizer(
@@ -54,7 +55,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
 
         tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=add_prefix_space)
         tokenizer.decoder = decoders.ByteLevel()
-        tokenizer.post_processor = processors.ByteLevel()
+        tokenizer.post_processor = processors.ByteLevel(trim_offsets=trim_offsets)
 
         parameters = {
             "model": "ByteLevelBPE",
@@ -64,6 +65,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
             "unicode_normalizer": unicode_normalizer,
             "continuing_subword_prefix": continuing_subword_prefix,
             "end_of_word_suffix": end_of_word_suffix,
+            "trim_offsets": trim_offsets,
         }
 
         super().__init__(tokenizer, parameters)

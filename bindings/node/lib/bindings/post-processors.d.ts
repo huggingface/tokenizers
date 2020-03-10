@@ -19,11 +19,13 @@ export function bertProcessing(
 /**
  * Instantiate a new ByteLevelProcessing.
  *
- * Takes care of fixing the offsets when a unicode character
- * gets split up as multiple byte-level characters.
+ * @param [trimOffsets=false] Whether to trim the whitespaces from the produced offsets.
+ * Takes care of trimming the produced offsets to avoid whitespaces.
+ * By default, the ByteLevel BPE might include whitespaces in the produced tokens. If you
+ * don't want the offsets to include these whitespaces, then this processing step must be used.
  * @since 0.6.0
  */
-export function byteLevelProcessing(): PostProcessor;
+export function byteLevelProcessing(trimOffsets?: boolean): PostProcessor;
 
 /**
  * Instantiate a new RobertaProcessing with the given tokens
