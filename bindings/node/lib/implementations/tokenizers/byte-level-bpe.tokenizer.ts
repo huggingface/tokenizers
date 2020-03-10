@@ -36,6 +36,11 @@ export interface ByteLevelBPETokenizerOptions {
   endOfWordSuffix?: string;
   mergesFile?: string;
   unicodeNormalizer?: string;
+  /**
+   * Whether to trim the whitespaces from the produced offsets
+   * @default false
+   */
+  trimOffsets?: boolean;
   vocabFile?: string;
 }
 
@@ -67,7 +72,7 @@ type ByteLevelBPETokenizerConfig = ByteLevelBPETokenizerOptions &
 export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerConfig> {
   private static readonly defaultOptions: ByteLevelBPETokenizerConfig = {
     addPrefixSpace: false,
-    trimOffsets: false,
+    trimOffsets: false
   };
 
   private readonly defaultTrainOptions: Required<ByteLevelBPETrainOptions> = {
