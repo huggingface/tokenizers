@@ -159,20 +159,34 @@ impl Tokenizer {
         self.tokenizer.with_padding(None);
     }
 
-    fn encode(&self, sentence: &str, pair: Option<&str>) -> PyResult<Encoding> {
+    #[args(add_special_tokens = true)]
+    fn encode(
+        &self,
+        sentence: &str,
+        pair: Option<&str>,
+        add_special_tokens: bool,
+    ) -> PyResult<Encoding> {
         ToPyResult(
             self.tokenizer
-                .encode(if let Some(pair) = pair {
-                    tk::tokenizer::EncodeInput::Dual(sentence.to_owned(), pair.to_owned())
-                } else {
-                    tk::tokenizer::EncodeInput::Single(sentence.to_owned())
-                })
+                .encode(
+                    if let Some(pair) = pair {
+                        tk::tokenizer::EncodeInput::Dual(sentence.to_owned(), pair.to_owned())
+                    } else {
+                        tk::tokenizer::EncodeInput::Single(sentence.to_owned())
+                    },
+                    add_special_tokens,
+                )
                 .map(Encoding::new),
         )
         .into()
     }
 
-    fn encode_batch(&self, sentences: &PyList) -> PyResult<Vec<Encoding>> {
+    #[args(add_special_tokens = true)]
+    fn encode_batch(
+        &self,
+        sentences: &PyList,
+        add_special_tokens: bool,
+    ) -> PyResult<Vec<Encoding>> {
         let inputs = sentences
             .into_iter()
             .map(|item| {
@@ -190,7 +204,7 @@ impl Tokenizer {
 
         ToPyResult(
             self.tokenizer
-                .encode_batch(inputs)
+                .encode_batch(inputs, add_special_tokens)
                 .map(|encodings| encodings.into_iter().map(Encoding::new).collect()),
         )
         .into()
