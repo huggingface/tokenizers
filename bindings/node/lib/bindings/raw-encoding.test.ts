@@ -14,7 +14,7 @@ describe("RawEncoding", () => {
     tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
 
     const encode = promisify(tokenizer.encode.bind(tokenizer));
-    encoding = await encode(originalString, null);
+    encoding = await encode(originalString, null, false);
   });
 
   it("has a list of defined methods", async () => {

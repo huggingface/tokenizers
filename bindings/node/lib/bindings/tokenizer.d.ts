@@ -106,11 +106,13 @@ export class Tokenizer {
    *
    * @param sequence The sequence to encode
    * @param pair The optional pair sequence
+   * @param addSpecialTokens Whether to add the special tokens while encoding
    * @param __callback Callback called when encoding is complete
    */
   encode(
     sequence: string,
     pair: string | null,
+    addSpecialTokens: boolean,
     __callback: (err: Error, encoding: RawEncoding) => void
   ): void;
 
@@ -118,10 +120,12 @@ export class Tokenizer {
    * Encode the given sequences or pair of sequences
    *
    * @param sequences A list of sequences or pair of sequences. The list can contain both at the same time.
+   * @param addSpecialTokens Whether to add the special tokens while encoding
    * @param __callback Callback called when encoding is complete
    */
   encodeBatch(
     sequences: (string | [string, string])[],
+    addSpecialTokens: boolean,
     __callback: (err: Error, encodings: RawEncoding[]) => void
   ): void;
 
