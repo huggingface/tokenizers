@@ -17,6 +17,17 @@ export function bertProcessing(
 ): PostProcessor;
 
 /**
+ * Instantiate a new ByteLevelProcessing.
+ *
+ * @param [trimOffsets=true] Whether to trim the whitespaces from the produced offsets.
+ * Takes care of trimming the produced offsets to avoid whitespaces.
+ * By default, the ByteLevel BPE might include whitespaces in the produced tokens. If you
+ * don't want the offsets to include these whitespaces, then this processing step must be used.
+ * @since 0.6.0
+ */
+export function byteLevelProcessing(trimOffsets?: boolean): PostProcessor;
+
+/**
  * Instantiate a new RobertaProcessing with the given tokens
  *
  * @param sep A tuple with the string representation of the SEP token, and its id

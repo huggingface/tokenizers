@@ -1,21 +1,21 @@
-use crate::tokenizer::{Offsets, PreTokenizer, Result};
+use crate::tokenizer::{NormalizedString, Offsets, PreTokenizer, Result};
 use regex::Regex;
 
 pub struct Whitespace;
 impl PreTokenizer for Whitespace {
-    fn pre_tokenize(&self, s: &str) -> Result<Vec<(String, Offsets)>> {
+    fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"\w+|[^\w\s]+").unwrap();
         }
         Ok(RE
-            .captures_iter(s)
+            .captures_iter(normalized.get())
             .flat_map(|captures| {
                 captures
                     .iter()
                     .map(|m| {
                         m.map(|capture| {
                             let (start, end) = (capture.start(), capture.end());
-                            (s[start..end].to_owned(), (start, end))
+                            (normalized.get()[start..end].to_owned(), (start, end))
                         })
                         .unwrap_or_else(|| (String::from(""), (0, 0)))
                     })
@@ -27,12 +27,12 @@ impl PreTokenizer for Whitespace {
 
 pub struct WhitespaceSplit;
 impl PreTokenizer for WhitespaceSplit {
-    fn pre_tokenize(&self, s: &str) -> Result<Vec<(String, Offsets)>> {
+    fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
         let mut words = vec![];
         let mut word = Vec::with_capacity(1000);
         let mut offset = 0;
 
-        s.chars().for_each(|c| {
+        normalized.get().chars().for_each(|c| {
             if c.is_whitespace() {
                 if !word.is_empty() {
                     let offsets = (offset - word.len(), offset);
@@ -81,7 +81,8 @@ mod tests {
         ];
         let pretok = Whitespace;
         for (s, res) in tests {
-            assert_eq!(pretok.pre_tokenize(s).unwrap(), res);
+            let mut input = NormalizedString::from(s);
+            assert_eq!(pretok.pre_tokenize(&mut input).unwrap(), res);
         }
     }
 
@@ -103,7 +104,8 @@ mod tests {
         ];
         let pretok = WhitespaceSplit;
         for (s, res) in tests {
-            assert_eq!(pretok.pre_tokenize(s).unwrap(), res);
+            let mut input = NormalizedString::from(s);
+            assert_eq!(pretok.pre_tokenize(&mut input).unwrap(), res);
         }
     }
 }

@@ -73,6 +73,10 @@ impl Encoding {
         &self.offsets
     }
 
+    pub fn get_offsets_mut(&mut self) -> &mut [(usize, usize)] {
+        &mut self.offsets
+    }
+
     pub fn get_special_tokens_mask(&self) -> &[u32] {
         &self.special_tokens_mask
     }

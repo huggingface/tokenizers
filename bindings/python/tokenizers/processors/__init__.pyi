@@ -62,3 +62,20 @@ class RobertaProcessing(PostProcessor):
             PostProcessor
         """
         pass
+
+class ByteLevel(PostProcessor):
+    """ ByteLevel Post processing
+
+    This post-processor takes care of trimming the offsets.
+    By default, the ByteLevel BPE might include whitespaces in the produced tokens. If you don't
+    want the offsets to include these whitespaces, then this PostProcessor must be used.
+    """
+
+    def __init(self, trim_offsets: bool = True) -> None:
+        """ Instantiate a new ByteLevel
+
+        Args:
+            trim_offsets: bool:
+                Whether to trim the whitespaces from the produced offsets.
+        """
+        pass

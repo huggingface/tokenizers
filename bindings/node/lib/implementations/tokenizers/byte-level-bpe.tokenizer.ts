@@ -7,6 +7,7 @@ import {
   nfkcNormalizer,
   sequenceNormalizer
 } from "../../bindings/normalizers";
+import { byteLevelProcessing } from "../../bindings/post-processors";
 import { byteLevelAlphabet, byteLevelPreTokenizer } from "../../bindings/pre-tokenizers";
 import { Tokenizer } from "../../bindings/tokenizer";
 import { bpeTrainer } from "../../bindings/trainers";
@@ -35,6 +36,11 @@ export interface ByteLevelBPETokenizerOptions {
   endOfWordSuffix?: string;
   mergesFile?: string;
   unicodeNormalizer?: string;
+  /**
+   * Whether to trim the whitespaces from the produced offsets
+   * @default false
+   */
+  trimOffsets?: boolean;
   vocabFile?: string;
 }
 
@@ -65,7 +71,8 @@ type ByteLevelBPETokenizerConfig = ByteLevelBPETokenizerOptions &
  */
 export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerConfig> {
   private static readonly defaultOptions: ByteLevelBPETokenizerConfig = {
-    addPrefixSpace: false
+    addPrefixSpace: false,
+    trimOffsets: false
   };
 
   private readonly defaultTrainOptions: Required<ByteLevelBPETrainOptions> = {
@@ -105,6 +112,7 @@ export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerCo
     const preTokenizer = byteLevelPreTokenizer(opts.addPrefixSpace);
     tokenizer.setPreTokenizer(preTokenizer);
     tokenizer.setDecoder(byteLevelDecoder());
+    tokenizer.setPostProcessor(byteLevelProcessing(opts.trimOffsets));
 
     return new ByteLevelBPETokenizer(tokenizer, opts);
   }

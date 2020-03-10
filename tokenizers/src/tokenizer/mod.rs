@@ -31,9 +31,13 @@ pub use normalizer::*;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 pub type Offsets = (usize, usize);
 
-/// Takes care of pre-tokenizing strings before this goes to the model.
+/// The `PreTokenizer` is in charge of doing the pre-segmentation step. It splits the given string
+/// in multiple substrings, keeping track of the offsets of said substrings from the
+/// `NormalizedString`. In some occasions, the `PreTokenizer` might need to modify the given
+/// `NormalizedString` to ensure we can entirely keep track of the offsets and the mapping with
+/// the original string.
 pub trait PreTokenizer {
-    fn pre_tokenize(&self, s: &str) -> Result<Vec<(String, Offsets)>>;
+    fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>>;
 }
 
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
@@ -296,10 +300,10 @@ impl Tokenizer {
                     }
 
                     // 1. Normalization
-                    let normalized = self.normalize(&sentence)?;
+                    let mut normalized = self.normalize(&sentence)?;
 
                     // 2. Pre tokenization
-                    let pre_tokenized = self.pre_tokenize(&normalized.get())?;
+                    let pre_tokenized = self.pre_tokenize(&mut normalized)?;
 
                     // 3. Model
                     let output = self.model.tokenize(pre_tokenized)?;
@@ -443,8 +447,8 @@ impl Tokenizer {
                     match file.read_line(&mut buf)? {
                         0 => break,
                         b => {
-                            let normalized = self.normalize(&buf)?;
-                            let pre_tokenized = self.pre_tokenize(normalized.get())?;
+                            let mut normalized = self.normalize(&buf)?;
+                            let pre_tokenized = self.pre_tokenize(&mut normalized)?;
                             trainer.process_tokens(
                                 &mut words,
                                 pre_tokenized.into_iter().map(|(t, _)| t).collect(),
@@ -483,10 +487,13 @@ impl Tokenizer {
     }
 
     /// PreTokenization logic, handling the case where there is no PreTokenizer set
-    fn pre_tokenize(&self, sentence: &str) -> Result<Vec<(String, Offsets)>> {
+    fn pre_tokenize(
+        &self,
+        mut normalized: &mut NormalizedString,
+    ) -> Result<Vec<(String, Offsets)>> {
         match &self.pre_tokenizer {
-            None => Ok(vec![(sentence.to_owned(), (0, sentence.len()))]),
-            Some(pre_tokenizer) => pre_tokenizer.pre_tokenize(sentence),
+            None => Ok(vec![(normalized.get().to_owned(), (0, normalized.len()))]),
+            Some(pre_tokenizer) => pre_tokenizer.pre_tokenize(&mut normalized),
         }
     }
 

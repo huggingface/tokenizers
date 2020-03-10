@@ -317,6 +317,7 @@ impl BPE {
             .iter()
             .zip(word.get_offsets())
             .map(|(id, offsets)| {
+                assert!(initial_offsets.0 + offsets.0 < initial_offsets.1);
                 Token::new(
                     *id,
                     self.vocab_r[id].clone(),

@@ -62,6 +62,7 @@ fn processors(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<processors::PostProcessor>()?;
     m.add_class::<processors::BertProcessing>()?;
     m.add_class::<processors::RobertaProcessing>()?;
+    m.add_class::<processors::ByteLevel>()?;
     Ok(())
 }
 

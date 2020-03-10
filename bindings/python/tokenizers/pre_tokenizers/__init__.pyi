@@ -20,15 +20,12 @@ class ByteLevel(PreTokenizer):
     with a corresponding representation, as well as splitting into words.
     """
 
-    @staticmethod
-    def __init__(self, add_prefix_space: Optional[bool] = True) -> None:
+    def __init__(self, add_prefix_space: bool = True) -> None:
         """ Instantiate a new ByteLevel PreTokenizer
-
         Args:
             add_prefix_space: (`optional`) boolean:
                 Whether to add a space to the first word if there isn't already one. This
                 lets us treat `hello` exactly like `say hello`.
-
         Returns:
             PreTokenizer
         """

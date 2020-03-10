@@ -26,7 +26,7 @@ fn byte_level(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     decoder
         .borrow_mut(&guard)
         .decoder
-        .to_owned(Box::new(tk::decoders::byte_level::ByteLevel::new(false)));
+        .to_owned(Box::new(tk::decoders::byte_level::ByteLevel::default()));
     Ok(decoder)
 }
 

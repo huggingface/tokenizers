@@ -121,7 +121,7 @@ you need together:
 #### Use a pre-trained tokenizer
 
 ```python
-from tokenizers import Tokenizer, models, pre_tokenizers, decoders
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders, processors
 
 # Load a BPE Model
 vocab = "./path/to/vocab.json"
@@ -134,6 +134,7 @@ tokenizer = Tokenizer(bpe)
 # Customize pre-tokenization and decoding
 tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
 tokenizer.decoder = decoders.ByteLevel()
+tokenizer.post_processor = processors.ByteLevel(trim_offsets=True)
 
 # And then encode:
 encoded = tokenizer.encode("I can feel the magic, can you?")
@@ -151,7 +152,7 @@ print(encoded)
 #### Train a new tokenizer
 
 ```python
-from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers, processors
 
 # Initialize a tokenizer
 tokenizer = Tokenizer(models.BPE.empty())
@@ -159,6 +160,7 @@ tokenizer = Tokenizer(models.BPE.empty())
 # Customize pre-tokenization and decoding
 tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
 tokenizer.decoder = decoders.ByteLevel()
+tokenizer.post_processor = processors.ByteLevel(trim_offsets=True)
 
 # And then train
 trainer = trainers.BpeTrainer(vocab_size=20000, min_frequency=2)

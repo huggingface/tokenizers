@@ -91,9 +91,30 @@ fn roberta_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     Ok(processor)
 }
 
+/// bytelevel(trimOffsets?: boolean)
+fn bytelevel(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
+    let mut byte_level = tk::processors::byte_level::ByteLevel::default();
+
+    if let Some(args) = cx.argument_opt(0) {
+        if args.downcast::<JsUndefined>().is_err() {
+            byte_level =
+                byte_level.trim_offsets(args.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+        }
+    }
+
+    let mut processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    processor
+        .borrow_mut(&guard)
+        .processor
+        .to_owned(Box::new(byte_level));
+    Ok(processor)
+}
+
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_BertProcessing", prefix), bert_processing)?;
     m.export_function(&format!("{}_RobertaProcessing", prefix), roberta_processing)?;
+    m.export_function(&format!("{}_ByteLevel", prefix), bytelevel)?;
     Ok(())
 }

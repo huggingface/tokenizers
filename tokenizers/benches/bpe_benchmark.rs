@@ -14,8 +14,8 @@ static BATCH_SIZE: usize = 1_000;
 
 fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer {
     let mut tokenizer = Tokenizer::new(Box::new(bpe));
-    tokenizer.with_pre_tokenizer(Box::new(ByteLevel::new(true)));
-    tokenizer.with_decoder(Box::new(ByteLevel::new(false)));
+    tokenizer.with_pre_tokenizer(Box::new(ByteLevel::default()));
+    tokenizer.with_decoder(Box::new(ByteLevel::default()));
     tokenizer.add_tokens(&[
         AddedToken {
             content: String::from("ing"),

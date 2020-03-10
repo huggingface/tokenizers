@@ -18,8 +18,8 @@ fn shell(matches: &ArgMatches) -> Result<()> {
 
     let bpe = BPE::from_files(vocab, merges).build()?;
     let mut tokenizer = Tokenizer::new(Box::new(bpe));
-    tokenizer.with_pre_tokenizer(Box::new(ByteLevel::new(true)));
-    tokenizer.with_decoder(Box::new(ByteLevel::new(false)));
+    tokenizer.with_pre_tokenizer(Box::new(ByteLevel::default()));
+    tokenizer.with_decoder(Box::new(ByteLevel::default()));
 
     tokenizer.add_tokens(&[
         AddedToken {

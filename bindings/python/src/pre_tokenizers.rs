@@ -22,7 +22,13 @@ impl PreTokenizer {
     }
 
     fn pre_tokenize(&self, s: &str) -> PyResult<Vec<(String, Offsets)>> {
-        ToPyResult(self.pretok.execute(|pretok| pretok.pre_tokenize(s))).into()
+        // TODO: Expose the NormalizedString
+        let mut normalized = tk::tokenizer::NormalizedString::from(s);
+        ToPyResult(
+            self.pretok
+                .execute(|pretok| pretok.pre_tokenize(&mut normalized)),
+        )
+        .into()
     }
 }
 
@@ -33,22 +39,22 @@ impl ByteLevel {
     #[new]
     #[args(kwargs = "**")]
     fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
-        let mut add_prefix_space = true;
+        let mut byte_level = tk::pre_tokenizers::byte_level::ByteLevel::default();
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
                 let key: &str = key.extract()?;
                 match key {
-                    "add_prefix_space" => add_prefix_space = value.extract()?,
+                    "add_prefix_space" => {
+                        byte_level = byte_level.add_prefix_space(value.extract()?)
+                    }
                     _ => println!("Ignored unknown kwargs option {}", key),
                 }
             }
         }
 
         Ok(obj.init(PreTokenizer {
-            pretok: Container::Owned(Box::new(tk::pre_tokenizers::byte_level::ByteLevel::new(
-                add_prefix_space,
-            ))),
+            pretok: Container::Owned(Box::new(byte_level)),
         }))
     }
 
@@ -164,11 +170,14 @@ impl PyPreTokenizer {
 }
 
 impl tk::tokenizer::PreTokenizer for PyPreTokenizer {
-    fn pre_tokenize(&self, sentence: &str) -> Result<Vec<(String, Offsets)>> {
+    fn pre_tokenize(
+        &self,
+        sentence: &mut tk::tokenizer::NormalizedString,
+    ) -> Result<Vec<(String, Offsets)>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
 
-        let args = PyTuple::new(py, &[sentence]);
+        let args = PyTuple::new(py, &[sentence.get()]);
         match self.class.call_method(py, "pre_tokenize", args, None) {
             Ok(res) => Ok(res
                 .cast_as::<PyList>(py)

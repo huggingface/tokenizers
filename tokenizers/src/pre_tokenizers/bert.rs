@@ -1,4 +1,4 @@
-use crate::tokenizer::{Offsets, PreTokenizer, Result};
+use crate::tokenizer::{NormalizedString, Offsets, PreTokenizer, Result};
 use unicode_categories::UnicodeCategories;
 
 fn is_bert_punc(x: char) -> bool {
@@ -40,9 +40,9 @@ fn split_on<F: Fn(&char) -> bool>(
 pub struct BertPreTokenizer;
 
 impl PreTokenizer for BertPreTokenizer {
-    fn pre_tokenize(&self, s: &str) -> Result<Vec<(String, Offsets)>> {
+    fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
         let mut split_tokens = vec![];
-        for (token, offsets) in split_on(&s, |c| char::is_whitespace(*c), false) {
+        for (token, offsets) in split_on(normalized.get(), |c| char::is_whitespace(*c), false) {
             split_tokens.extend(
                 split_on(&token, |c| is_bert_punc(*c), true)
                     .into_iter()
@@ -60,9 +60,8 @@ mod tests {
     #[test]
     fn basic() {
         let pretok = BertPreTokenizer;
-        let res = pretok
-            .pre_tokenize("Hey friend!     How are you?!?")
-            .unwrap();
+        let mut input = NormalizedString::from("Hey friend!     How are you?!?");
+        let res = pretok.pre_tokenize(&mut input).unwrap();
         assert_eq!(
             &res,
             &[
