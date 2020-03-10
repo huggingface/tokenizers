@@ -2,16 +2,20 @@
 
 ## Changes:
 - Keep only one progress bar while reading files during training. This is better for use-cases with
-a high number of files as it avoids having too many progress bar on screen.
-- `add_prefix_space` option of the `ByteLevel` `PreTokenizer` has been moved to a `Normalizer`
-- Added the `ByteLevel` `PostProcessor` to take care of fixing the offsets when a unicode character
-gets split up as multiple byte-level characters.
+a high number of files as it avoids having too many progress bars on screen.
+- `ByteLevel` is also a `PostProcessor` now and handles trimming the offsets if activated. This
+avoids the unintuitive inclusion of the whitespaces in the produced offsets, even if these
+whitespaces are part of the actual token.
+It has been added to `ByteLevelBPETokenizer` and but it is off by default (`trim_offsets=False`).
+
+## Fixes:
+- Fix some issues with the offsets being wrong with the `ByteLevel` BPE:
+	- when `add_prefix_space=True`
+	- when a Unicode character gets split-up in multiple byte-level characters ([#156](https://github.com/huggingface/tokenizers/issues/156))
 
 ## How to migrate:
-- Use the `ByteLevel` `Normalizer` with `add_prefix_space=True` in addition to the `PreTokenizer`.
-The `PreTokenizer` does not handle this option anymore. This fixes some issues with the offsets
-being wrong if this option was on.
-- Add the `ByteLevel` `PostProcessor` to your byte-level BPE tokenizers.
+- Add the `ByteLevel` `PostProcessor` to your byte-level BPE tokenizers if relevant. If you are
+using `ByteLevelBPETokenizer`, this option is disabled by default (`trim_offsets=False`).
 
 # v0.6.0
 
