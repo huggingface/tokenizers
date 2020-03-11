@@ -42,7 +42,7 @@ fn iter_bench_encode(iters: u64, tokenizer: &Tokenizer, lines: &[EncodeInput]) -
         }
         let input = lines[line_index].clone();
         let start = Instant::now();
-        let _ = black_box(tokenizer.encode(input));
+        let _ = black_box(tokenizer.encode(input, false));
         duration = duration.checked_add(start.elapsed()).unwrap();
     }
     duration
@@ -61,7 +61,7 @@ fn iter_bench_encode_batch(
         }
         let batch = batches[batch_index].clone();
         let start = Instant::now();
-        let _ = black_box(tokenizer.encode_batch(batch));
+        let _ = black_box(tokenizer.encode_batch(batch, false));
         duration = duration.checked_add(start.elapsed()).unwrap();
     }
     duration

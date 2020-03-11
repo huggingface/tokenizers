@@ -63,7 +63,11 @@ describe("Tokenizer", () => {
 
   describe("encode", () => {
     let tokenizer: Tokenizer;
-    let encode: (sequence: string, pair: string | null) => Promise<RawEncoding>;
+    let encode: (
+      sequence: string,
+      pair: string | null,
+      addSpecialTokens: boolean
+    ) => Promise<RawEncoding>;
 
     beforeEach(() => {
       // Clear all instances and calls to constructor and all methods:
@@ -76,17 +80,23 @@ describe("Tokenizer", () => {
     });
 
     it("accepts a pair of strings as parameters", async () => {
-      const encoding = await encode("my name is john", "pair");
+      const encoding = await encode("my name is john", "pair", false);
       expect(encoding).toBeDefined();
     });
 
     it("accepts a string with a null pair", async () => {
-      const encoding = await encode("my name is john", null);
+      const encoding = await encode("my name is john", null, false);
       expect(encoding).toBeDefined();
     });
 
+    it("throws if called with only two arguments", async () => {
+      await expect((encode as any)("my name is john", null)).rejects.toThrow(
+        "failed downcast to boolean"
+      );
+    });
+
     it("returns an Encoding", async () => {
-      const encoding = await encode("my name is john", "pair");
+      const encoding = await encode("my name is john", "pair", false);
 
       expect(encoding.getAttentionMask()).toEqual([1, 1, 1, 1, 1]);
 
@@ -114,16 +124,16 @@ describe("Tokenizer", () => {
       it("truncates with default if no truncation options provided", async () => {
         tokenizer.setTruncation(2);
 
-        const singleEncoding = await encode("my name is john", null);
+        const singleEncoding = await encode("my name is john", null, false);
         expect(singleEncoding.getTokens()).toEqual(["my", "name"]);
 
-        const pairEncoding = await encode("my name is john", "pair");
+        const pairEncoding = await encode("my name is john", "pair", false);
         expect(pairEncoding.getTokens()).toEqual(["my", "pair"]);
       });
 
       it("throws an error with strategy `only_second` and no pair is encoded", async () => {
         tokenizer.setTruncation(2, { strategy: TruncationStrategy.OnlySecond });
-        await expect(encode("my name is john", null)).rejects.toThrow();
+        await expect(encode("my name is john", null, false)).rejects.toThrow();
       });
     });
 
@@ -131,17 +141,17 @@ describe("Tokenizer", () => {
       it("does not pad anything with default options", async () => {
         tokenizer.setPadding();
 
-        const singleEncoding = await encode("my name", null);
+        const singleEncoding = await encode("my name", null, false);
         expect(singleEncoding.getTokens()).toEqual(["my", "name"]);
 
-        const pairEncoding = await encode("my name", "pair");
+        const pairEncoding = await encode("my name", "pair", false);
         expect(pairEncoding.getTokens()).toEqual(["my", "name", "pair"]);
       });
 
       it("pads to the right by default", async () => {
         tokenizer.setPadding({ maxLength: 5 });
 
-        const singleEncoding = await encode("my name", null);
+        const singleEncoding = await encode("my name", null, false);
         expect(singleEncoding.getTokens()).toEqual([
           "my",
           "name",
@@ -150,7 +160,7 @@ describe("Tokenizer", () => {
           "[PAD]"
         ]);
 
-        const pairEncoding = await encode("my name", "pair");
+        const pairEncoding = await encode("my name", "pair", false);
         expect(pairEncoding.getTokens()).toEqual([
           "my",
           "name",

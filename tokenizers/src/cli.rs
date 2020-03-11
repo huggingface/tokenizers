@@ -45,7 +45,7 @@ fn shell(matches: &ArgMatches) -> Result<()> {
         let buffer = buffer.trim_end();
 
         let timer = std::time::Instant::now();
-        let encoded = tokenizer.encode(EncodeInput::Single(buffer.to_owned()))?;
+        let encoded = tokenizer.encode(EncodeInput::Single(buffer.to_owned()), false)?;
         let elapsed = timer.elapsed();
         println!("\nInput:\t\t{}", buffer);
         println!("Tokens:\t\t{:?}", encoded.get_tokens());

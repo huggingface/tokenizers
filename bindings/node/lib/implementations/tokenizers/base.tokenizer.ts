@@ -71,11 +71,16 @@ export class BaseTokenizer<TConfig extends object> {
    * Encode the given sequence
    *
    * @param sequence The sequence to encode
-   * @param pair The optional pair sequence
+   * @param [pair] The optional pair sequence
+   * @param [addSpecialTokens=true] Whether to add the special tokens while encoding
    */
-  async encode(sequence: string, pair?: string): Promise<Encoding> {
+  async encode(
+    sequence: string,
+    pair?: string,
+    addSpecialTokens = true
+  ): Promise<Encoding> {
     const encode = promisify(this.tokenizer.encode.bind(this.tokenizer));
-    const rawEncoding = await encode(sequence, pair ?? null);
+    const rawEncoding = await encode(sequence, pair ?? null, addSpecialTokens);
     return new Encoding(rawEncoding);
   }
 
@@ -84,10 +89,14 @@ export class BaseTokenizer<TConfig extends object> {
    *
    * @param sequences A list of sequences or pair of sequences.
    * The list can contain both at the same time.
+   * @param [addSpecialTokens=true] Whether to add the special tokens while encoding
    */
-  async encodeBatch(sequences: (string | [string, string])[]): Promise<Encoding[]> {
+  async encodeBatch(
+    sequences: (string | [string, string])[],
+    addSpecialTokens = true
+  ): Promise<Encoding[]> {
     const encodeBatch = promisify(this.tokenizer.encodeBatch.bind(this.tokenizer));
-    const rawEncodings = await encodeBatch(sequences);
+    const rawEncodings = await encodeBatch(sequences, addSpecialTokens);
     return rawEncodings.map(e => new Encoding(e));
   }
 
@@ -117,7 +126,7 @@ export class BaseTokenizer<TConfig extends object> {
    * Enable/change truncation with specified options
    *
    * @param maxLength The maximum length at which to truncate
-   * @param options Additional truncation options
+   * @param [options] Additional truncation options
    * @returns Full truncation configuration
    */
   setTruncation(

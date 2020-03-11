@@ -7,6 +7,8 @@ a high number of files as it avoids having too many progress bars on screen.
 - `ByteLevel` is also a `PostProcessor` now and handles trimming the offsets if activated. This
 avoids the unintuitive inclusion of the whitespaces in the produced offsets, even if these
 whitespaces are part of the actual token.
+- `encode` and `encode_batch` now take a new argument, specifying whether we should add the
+special tokens.
 
 ## Fixes:
 - Fix some issues with the offsets being wrong with the `ByteLevel` BPE:

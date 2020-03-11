@@ -193,7 +193,12 @@ impl PostProcessor for ByteLevel {
         0
     }
 
-    fn process(&self, mut encoding: Encoding, pair_encoding: Option<Encoding>) -> Result<Encoding> {
+    fn process(
+        &self,
+        mut encoding: Encoding,
+        pair_encoding: Option<Encoding>,
+        _add_special_tokens: bool,
+    ) -> Result<Encoding> {
         let process_offsets = |encoding: &mut Encoding| {
             if !self.trim_offsets {
                 return;
@@ -423,13 +428,18 @@ mod tests {
         );
 
         let bytelevel = ByteLevel::default().trim_offsets(true);
-        assert_eq!(expected, bytelevel.process(start.clone(), None).unwrap());
+        assert_eq!(
+            expected,
+            bytelevel.process(start.clone(), None, false).unwrap()
+        );
 
         let mut pair_expected = expected.clone();
         pair_expected.merge_with(expected);
         assert_eq!(
             pair_expected,
-            bytelevel.process(start.clone(), Some(start)).unwrap()
+            bytelevel
+                .process(start.clone(), Some(start), false)
+                .unwrap()
         );
     }
 }

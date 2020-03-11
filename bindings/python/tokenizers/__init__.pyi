@@ -244,7 +244,9 @@ class Tokenizer:
     def no_padding(self):
         """ Disable padding """
         pass
-    def encode(self, sequence: str, pair: Optional[str] = None) -> Encoding:
+    def encode(
+        self, sequence: str, pair: Optional[str] = None, add_special_tokens: bool = True
+    ) -> Encoding:
         """ Encode the given sequence
 
         Args:
@@ -254,17 +256,25 @@ class Tokenizer:
             pair: (`optional`) Optional[str]:
                 The optional pair sequence
 
+            add_special_tokens: bool:
+                Whether to add the special tokens while encoding
+
         Returns:
             An Encoding
         """
         pass
-    def encode_batch(self, sequences: List[Union[str, Tuple[str, str]]]) -> List[Encoding]:
+    def encode_batch(
+        self, sequences: List[Union[str, Tuple[str, str]]], add_special_tokens: bool = True
+    ) -> List[Encoding]:
         """ Encode the given sequences or pair of sequences
 
         Args:
             sequences: List[Union[str, Tuple[str, str]]]:
                 A list of sequences or pair of sequences. The list can contain both
                 at the same time.
+
+            add_special_tokens: bool:
+                Whether to add the special tokens while encoding
 
         Returns:
             A list of Encoding

@@ -125,7 +125,9 @@ class BaseTokenizer:
         """
         return self._tokenizer.add_special_tokens(special_tokens)
 
-    def encode(self, sequence: str, pair: Optional[str] = None) -> Encoding:
+    def encode(
+        self, sequence: str, pair: Optional[str] = None, add_special_tokens: bool = True
+    ) -> Encoding:
         """ Encode the given sequence
 
         Args:
@@ -135,12 +137,17 @@ class BaseTokenizer:
             pair: (`optional`) Optional[str]:
                 The optional pair sequence
 
+            add_special_tokens: bool:
+                Whether to add the special tokens while encoding.
+
         Returns:
             An Encoding
         """
-        return self._tokenizer.encode(sequence, pair)
+        return self._tokenizer.encode(sequence, pair, add_special_tokens)
 
-    def encode_batch(self, sequences: List[Union[str, Tuple[str, str]]]) -> List[Encoding]:
+    def encode_batch(
+        self, sequences: List[Union[str, Tuple[str, str]]], add_special_tokens: bool = True
+    ) -> List[Encoding]:
         """ Encode the given sequences or pair of sequences
 
         Args:
@@ -148,10 +155,13 @@ class BaseTokenizer:
                 A list of sequences or pair of sequences. The list can contain both
                 at the same time.
 
+            add_special_tokens: bool:
+                Whether to add the special tokens while encoding.
+
         Returns:
             A list of Encoding
         """
-        return self._tokenizer.encode_batch(sequences)
+        return self._tokenizer.encode_batch(sequences, add_special_tokens)
 
     def decode(self, ids: List[int], skip_special_tokens: Optional[bool] = True) -> str:
         """ Decode the given list of ids to a string sequence

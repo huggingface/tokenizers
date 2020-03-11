@@ -7,6 +7,8 @@ a high number of files as it avoids having too many progress bars on screen.
 avoids the unintuitive inclusion of the whitespaces in the produced offsets, even if these
 whitespaces are part of the actual token.
 It has been added to `ByteLevelBPETokenizer` and but it is off by default (`trim_offsets=False`).
+- `encode` and `encode_batch` no take a new optional argument, specifying whether we should add the
+special tokens. This stays activated by default.
 
 ## Fixes:
 - Fix some issues with the offsets being wrong with the `ByteLevel` BPE:

@@ -76,17 +76,23 @@ declare_types! {
         }
 
         method encode(mut cx) {
-            // encode(sentence: String, pair: String | null = null, __callback: (err, encoding) -> void)
+            // encode(
+            //   sentence: String,
+            //   pair: String | null,
+            //   add_special_tokens: boolean,
+            //   __callback: (err, encoding) -> void
+            // )
             let sentence = cx.argument::<JsString>(0)?.value();
             let mut pair: Option<String> = None;
             if let Some(args) = cx.argument_opt(1) {
                 if let Ok(p) = args.downcast::<JsString>() {
                     pair = Some(p.value());
-                } else if let Err(_) = args.downcast::<JsNull>() {
+                } else if args.downcast::<JsNull>().is_err() {
                     return cx.throw_error("Second arg must be of type `String | null`");
                 }
             }
-            let callback = cx.argument::<JsFunction>(2)?;
+            let add_special_tokens = cx.argument::<JsBoolean>(2)?.value();
+            let callback = cx.argument::<JsFunction>(3)?;
 
             let input = if let Some(pair) = pair {
                 tk::tokenizer::EncodeInput::Dual(sentence, pair)
@@ -101,14 +107,18 @@ declare_types! {
                 worker
             };
 
-            let task = EncodeTask::Single(worker, Some(input));
+            let task = EncodeTask::Single(worker, Some(input), add_special_tokens);
             task.schedule(callback);
             Ok(cx.undefined().upcast())
         }
 
         method encodeBatch(mut cx) {
             // type EncodeInput = (String | [String, String])[]
-            // encode_batch(sentences: EncodeInput[], __callback: (err, encodings) -> void)
+            // encode_batch(
+            //   sentences: EncodeInput[],
+            //   add_special_tokens: boolean,
+            //   __callback: (err, encodings) -> void
+            // )
             let inputs = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
             let inputs = inputs.into_iter().map(|value| {
                 if let Ok(s) = value.downcast::<JsString>() {
@@ -132,7 +142,8 @@ declare_types! {
                     cx.throw_error("Input must be an array of `String | [String, String]`")
                 }
             }).collect::<NeonResult<Vec<_>>>()?;
-            let callback = cx.argument::<JsFunction>(1)?;
+            let add_special_tokens = cx.argument::<JsBoolean>(1)?.value();
+            let callback = cx.argument::<JsFunction>(2)?;
 
             let worker = {
                 let this = cx.this();
@@ -141,7 +152,7 @@ declare_types! {
                 worker
             };
 
-            let task = EncodeTask::Batch(worker, Some(inputs));
+            let task = EncodeTask::Batch(worker, Some(inputs), add_special_tokens);
             task.schedule(callback);
             Ok(cx.undefined().upcast())
         }

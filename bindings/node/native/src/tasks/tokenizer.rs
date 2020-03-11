@@ -22,8 +22,8 @@ impl WorkingTokenizer {
 unsafe impl Send for WorkingTokenizer {}
 
 pub enum EncodeTask {
-    Single(WorkingTokenizer, Option<EncodeInput>),
-    Batch(WorkingTokenizer, Option<Vec<EncodeInput>>),
+    Single(WorkingTokenizer, Option<EncodeInput>, bool),
+    Batch(WorkingTokenizer, Option<Vec<EncodeInput>>, bool),
 }
 
 pub enum EncodeOutput {
@@ -38,19 +38,25 @@ impl Task for EncodeTask {
 
     fn perform(&self) -> Result<Self::Output, Self::Error> {
         match self {
-            EncodeTask::Single(worker, input) => {
+            EncodeTask::Single(worker, input, add_special_tokens) => {
                 let mut input = unsafe { std::ptr::replace(input as *const _ as *mut _, None) };
                 let tokenizer: &Tokenizer = unsafe { &*worker.ptr };
                 tokenizer
-                    .encode(input.take().ok_or("No provided input")?)
+                    .encode(
+                        input.take().ok_or("No provided input")?,
+                        *add_special_tokens,
+                    )
                     .map_err(|e| format!("{}", e))
                     .map(|encoding| EncodeOutput::Single(encoding))
             }
-            EncodeTask::Batch(worker, input) => {
+            EncodeTask::Batch(worker, input, add_special_tokens) => {
                 let mut input = unsafe { std::ptr::replace(input as *const _ as *mut _, None) };
                 let tokenizer: &Tokenizer = unsafe { &*worker.ptr };
                 tokenizer
-                    .encode_batch(input.take().ok_or("No provided input")?)
+                    .encode_batch(
+                        input.take().ok_or("No provided input")?,
+                        *add_special_tokens,
+                    )
                     .map_err(|e| format!("{}", e))
                     .map(|encodings| EncodeOutput::Batch(encodings))
             }
