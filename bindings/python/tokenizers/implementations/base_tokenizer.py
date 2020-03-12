@@ -143,6 +143,10 @@ class BaseTokenizer:
         Returns:
             An Encoding
         """
+        if sequence is None:
+            raise ValueError(
+                "Input is not valid. Should be a string, a list/tuple of strings or a list/tuple of integers."
+            )
         return self._tokenizer.encode(sequence, pair, add_special_tokens)
 
     def encode_batch(
@@ -161,6 +165,12 @@ class BaseTokenizer:
         Returns:
             A list of Encoding
         """
+
+        if sequences is None:
+            raise ValueError(
+                "Input is not valid. Should be a string, a list/tuple of strings or a list/tuple of integers."
+            )
+
         return self._tokenizer.encode_batch(sequences, add_special_tokens)
 
     def decode(self, ids: List[int], skip_special_tokens: Optional[bool] = True) -> str:
@@ -176,6 +186,10 @@ class BaseTokenizer:
         Returns:
             The decoded string
         """
+        if ids is None:
+            raise ValueError(
+                "Input is not valid. Should be a string, a list/tuple of strings or a list/tuple of integers."
+            )
         return self._tokenizer.decode(ids, skip_special_tokens=skip_special_tokens)
 
     def decode_batch(
@@ -193,6 +207,10 @@ class BaseTokenizer:
         Returns:
             A list of decoded strings
         """
+        if sequences is None:
+            raise ValueError(
+                "Input is not valid. Should be a string, a list/tuple of strings or a list/tuple of integers."
+            )
         return self._tokenizer.decode_batch(sequences, skip_special_tokens=skip_special_tokens)
 
     def token_to_id(self, token: str) -> Optional[int]:
