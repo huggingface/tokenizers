@@ -1,15 +1,25 @@
+use crate::tokenizer::Offsets;
 use crate::utils::padding::PaddingDirection;
 use rayon::prelude::*;
 
 /// Represents the output of a `Tokenizer`.
 #[derive(Default, PartialEq, Debug, Clone)]
 pub struct Encoding {
+    /// IDs produced by the `Tokenizer`
     ids: Vec<u32>,
+    /// Type of the IDs
     type_ids: Vec<u32>,
+    /// Tokens associated to each ID
     tokens: Vec<String>,
-    offsets: Vec<(usize, usize)>,
+    /// Indice of the word associated to each token/ID
+    words: Vec<u32>,
+    /// Offsets of the token/ID from the NormalizedString
+    offsets: Vec<Offsets>,
+    /// Mask identifying special tokens
     special_tokens_mask: Vec<u32>,
+    /// Mask identifying padding tokens for the attention mechanism
     attention_mask: Vec<u32>,
+    /// A list of overflowing Encoding generated when we got truncated
     overflowing: Vec<Encoding>,
 }
 impl Encoding {
@@ -18,7 +28,8 @@ impl Encoding {
         ids: Vec<u32>,
         type_ids: Vec<u32>,
         tokens: Vec<String>,
-        offsets: Vec<(usize, usize)>,
+        words: Vec<u32>,
+        offsets: Vec<Offsets>,
         special_tokens_mask: Vec<u32>,
         attention_mask: Vec<u32>,
         overflowing: Vec<Encoding>,
@@ -27,6 +38,7 @@ impl Encoding {
             ids,
             type_ids,
             tokens,
+            words,
             offsets,
             special_tokens_mask,
             attention_mask,
@@ -38,6 +50,10 @@ impl Encoding {
         &self.tokens[..]
     }
 
+    pub fn get_words(&self) -> &[u32] {
+        &self.words
+    }
+
     pub fn get_ids(&self) -> &[u32] {
         &self.ids
     }
@@ -46,11 +62,11 @@ impl Encoding {
         &self.type_ids
     }
 
-    pub fn get_offsets(&self) -> &[(usize, usize)] {
+    pub fn get_offsets(&self) -> &[Offsets] {
         &self.offsets
     }
 
-    pub fn get_offsets_mut(&mut self) -> &mut [(usize, usize)] {
+    pub fn get_offsets_mut(&mut self) -> &mut [Offsets] {
         &mut self.offsets
     }
 
@@ -70,6 +86,48 @@ impl Encoding {
         std::mem::replace(&mut self.overflowing, vec![])
     }
 
+    /// Find the boundaries of the word at the given index (Indices in the various Vec).
+    pub fn word_boundaries(&self, index: usize) -> Option<(usize, usize)> {
+        self.words.get(index).map(|word_id| {
+            let start = (0..=index)
+                .rev()
+                .take_while(|i| self.words[index - i - 1] == *word_id)
+                .min()
+                .unwrap();
+
+            let end = (index..self.words.len())
+                .take_while(|i| self.words[index + i] == *word_id)
+                .max()
+                .unwrap();
+
+            (start, end)
+        })
+    }
+
+    /// Find the Offsets of the word that contains the character at the specified position
+    pub fn char_to_word(&self, pos: usize) -> Option<Offsets> {
+        self.offsets
+            .iter()
+            .enumerate()
+            .find(|(_, (start, end))| pos >= *start && pos < *end)
+            .map(|(index, _)| self.token_to_word(index))
+            .flatten()
+    }
+
+    /// Find the Offsets of the token that contains the character at the specified position
+    pub fn char_to_token(&self, pos: usize) -> Option<Offsets> {
+        self.offsets
+            .iter()
+            .find(|(start, end)| pos >= *start && pos < *end)
+            .copied()
+    }
+
+    /// Find the Offsets of the word that contains the token at the given index
+    pub fn token_to_word(&self, index: usize) -> Option<Offsets> {
+        self.word_boundaries(index)
+            .map(|(min, max)| (self.offsets[min].0, self.offsets[max].1))
+    }
+
     /// Truncate the current `Encoding`.
     ///
     /// Panic if `stride >= max_len` or `max_len == 0`.
@@ -84,6 +142,7 @@ impl Encoding {
         let o_ids = self.ids.split_off(max_len);
         let o_type_ids = self.type_ids.split_off(max_len);
         let o_tokens = self.tokens.split_off(max_len);
+        let o_words = self.words.split_off(max_len);
         let o_offsets = self.offsets.split_off(max_len);
         let o_spe_toks = self.special_tokens_mask.split_off(max_len);
         let o_attent = self.attention_mask.split_off(max_len);
@@ -116,6 +175,7 @@ impl Encoding {
                     part_id,
                     stride,
                 ),
+                words: get_current_part(&prev_encoding.words, &o_words, part_size, part_id, stride),
                 offsets: get_current_part(
                     &prev_encoding.offsets,
                     &o_offsets,
@@ -180,6 +240,14 @@ impl Encoding {
         self.type_ids.extend(pair.type_ids);
         self.tokens.extend(pair.tokens);
 
+        let starting_word = self.words.last().map_or(0, |w| *w + 1);
+        self.words.extend(
+            pair.words
+                .into_iter()
+                .map(|w| w + starting_word)
+                .collect::<Vec<_>>(),
+        );
+
         let starting_offset = if growing_offsets {
             self.offsets.last().map_or(0, |o| o.1)
         } else {
@@ -230,6 +298,10 @@ impl Encoding {
                     .map(|_| pad_token.to_owned())
                     .chain(self.tokens.drain(..))
                     .collect();
+                self.words = (0..pad_length)
+                    .map(|_| 0)
+                    .chain(self.words.drain(..).map(|w| w + 1))
+                    .collect();
                 self.attention_mask = (0..pad_length)
                     .map(|_| 0)
                     .chain(self.attention_mask.drain(..))
@@ -248,6 +320,8 @@ impl Encoding {
                 self.type_ids.extend((0..pad_length).map(|_| pad_type_id));
                 self.tokens
                     .extend((0..pad_length).map(|_| pad_token.to_owned()));
+                let padding_word = self.words.last().map_or(0, |w| *w + 1);
+                self.words.extend((0..pad_length).map(|_| padding_word));
                 self.attention_mask.extend((0..pad_length).map(|_| 0));
                 self.special_tokens_mask.extend((0..pad_length).map(|_| 1));
                 self.offsets.extend((0..pad_length).map(|_| (0, 0)));
@@ -283,6 +357,7 @@ mod tests {
             ids: vec![1],
             type_ids: vec![0],
             tokens: vec![String::from("Hello ")],
+            words: vec![0],
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],
             attention_mask: vec![1],
@@ -292,6 +367,7 @@ mod tests {
             ids: vec![2],
             type_ids: vec![1],
             tokens: vec![String::from("World!")],
+            words: vec![0],
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],
             attention_mask: vec![1],
@@ -305,6 +381,7 @@ mod tests {
                 ids: vec![1, 2],
                 type_ids: vec![0, 1],
                 tokens: vec![String::from("Hello "), String::from("World!")],
+                words: vec![0, 1],
                 offsets: vec![(0, 6), (6, 12)],
                 special_tokens_mask: vec![0, 0],
                 attention_mask: vec![1, 1],
@@ -323,6 +400,7 @@ mod tests {
                 String::from("World"),
                 String::from("!"),
             ],
+            words: vec![0, 1, 2],
             offsets: vec![(0, 5), (6, 11), (11, 12)],
             special_tokens_mask: vec![0, 0, 0],
             attention_mask: vec![1, 1, 1],
@@ -336,6 +414,7 @@ mod tests {
                 ids: vec![1, 2],
                 type_ids: vec![0, 0],
                 tokens: vec![String::from("Hello"), String::from("World")],
+                words: vec![0, 1],
                 offsets: vec![(0, 5), (6, 11)],
                 special_tokens_mask: vec![0, 0],
                 attention_mask: vec![1, 1],
@@ -343,6 +422,7 @@ mod tests {
                     ids: vec![3],
                     type_ids: vec![0],
                     tokens: vec![String::from("!")],
+                    words: vec![2],
                     offsets: vec![(11, 12)],
                     special_tokens_mask: vec![0],
                     attention_mask: vec![1],

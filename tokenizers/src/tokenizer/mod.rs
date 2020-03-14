@@ -107,10 +107,16 @@ pub struct Token {
     pub id: u32,
     pub value: String,
     pub offsets: (usize, usize),
+    pub word: u32,
 }
 impl Token {
-    pub fn new(id: u32, value: String, offsets: (usize, usize)) -> Self {
-        Token { id, value, offsets }
+    pub fn new(id: u32, value: String, offsets: (usize, usize), word: u32) -> Self {
+        Token {
+            id,
+            value,
+            offsets,
+            word,
+        }
     }
 }
 
@@ -410,6 +416,7 @@ impl Tokenizer {
                                     vec![id],
                                     vec![type_id],
                                     vec![sentence.get().to_owned()],
+                                    vec![0],
                                     vec![(0, sentence.len())],
                                     vec![0],
                                     vec![1],
@@ -429,17 +436,19 @@ impl Tokenizer {
                         let output = self.model.tokenize(pre_tokenized)?;
                         let length = output.len();
 
-                        let (ids, tokens, offsets) = output.into_iter().fold(
+                        let (ids, tokens, offsets, words) = output.into_iter().fold(
                             (
                                 Vec::with_capacity(length),
                                 Vec::with_capacity(length),
                                 Vec::with_capacity(length),
+                                Vec::with_capacity(length),
                             ),
-                            |(mut ids, mut tokens, mut offsets), t| {
+                            |(mut ids, mut tokens, mut offsets, mut words), t| {
                                 ids.push(t.id);
                                 tokens.push(t.value);
                                 offsets.push(t.offsets);
-                                (ids, tokens, offsets)
+                                words.push(t.word);
+                                (ids, tokens, offsets, words)
                             },
                         );
 
@@ -448,6 +457,7 @@ impl Tokenizer {
                                 ids,
                                 vec![type_id; length],
                                 tokens,
+                                words,
                                 offsets,
                                 vec![0; length],
                                 vec![1; length],

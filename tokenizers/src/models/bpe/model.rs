@@ -312,7 +312,12 @@ impl BPE {
         Ok(word)
     }
 
-    fn word_to_tokens(&self, word: &Word, initial_offsets: &(usize, usize)) -> Vec<Token> {
+    fn word_to_tokens(
+        &self,
+        index: u32,
+        word: &Word,
+        initial_offsets: &(usize, usize),
+    ) -> Vec<Token> {
         word.get_chars()
             .iter()
             .zip(word.get_offsets())
@@ -322,6 +327,7 @@ impl BPE {
                     *id,
                     self.vocab_r[id].clone(),
                     (initial_offsets.0 + offsets.0, initial_offsets.0 + offsets.1),
+                    index,
                 )
             })
             .collect::<Vec<_>>()
@@ -353,21 +359,21 @@ impl Model for BPE {
                 None => {
                     // Not using cache since we're using dropout.
                     let word = self.merge_word(&w)?;
-                    self.word_to_tokens(&word, initial_offsets)
+                    self.word_to_tokens(i as u32, &word, initial_offsets)
                 }
                 Some(ref mut cache) => {
                     match cache[i].as_ref() {
                         None => {
                             // No cache hit, so re-compute merges.
                             let word = self.merge_word(&w)?;
-                            let tokens = self.word_to_tokens(&word, initial_offsets);
+                            let tokens = self.word_to_tokens(i as u32, &word, initial_offsets);
                             // Add to cache.
                             cache[i] = Some(word);
                             should_update_cache = true;
                             tokens
                         }
                         Some(word) => {
-                            let tokens = self.word_to_tokens(word, initial_offsets);
+                            let tokens = self.word_to_tokens(i as u32, word, initial_offsets);
                             // Remove this entry so we don't needlesly try to update
                             // it in the cache below.
                             cache[i] = None;
@@ -514,7 +520,10 @@ mod tests {
 
         // With no dropout:
         let tokens = bpe.tokenize(sentence.clone()).unwrap();
-        assert_eq!(tokens, vec![Token::new(15u32, "unrelated".into(), (0, 9))]);
+        assert_eq!(
+            tokens,
+            vec![Token::new(15u32, "unrelated".into(), (0, 9), 0)]
+        );
 
         // Now set dropout to 1.0. Result should be no merges performed.
         bpe.dropout = Some(1.0);
@@ -522,15 +531,15 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(0u32, "u".into(), (0, 1)),
-                Token::new(1u32, "n".into(), (1, 2)),
-                Token::new(2u32, "r".into(), (2, 3)),
-                Token::new(3u32, "e".into(), (3, 4)),
-                Token::new(4u32, "l".into(), (4, 5)),
-                Token::new(5u32, "a".into(), (5, 6)),
-                Token::new(6u32, "t".into(), (6, 7)),
-                Token::new(3u32, "e".into(), (7, 8)),
-                Token::new(7u32, "d".into(), (8, 9)),
+                Token::new(0u32, "u".into(), (0, 1), 0),
+                Token::new(1u32, "n".into(), (1, 2), 0),
+                Token::new(2u32, "r".into(), (2, 3), 0),
+                Token::new(3u32, "e".into(), (3, 4), 0),
+                Token::new(4u32, "l".into(), (4, 5), 0),
+                Token::new(5u32, "a".into(), (5, 6), 0),
+                Token::new(6u32, "t".into(), (6, 7), 0),
+                Token::new(3u32, "e".into(), (7, 8), 0),
+                Token::new(7u32, "d".into(), (8, 9), 0),
             ]
         );
 
