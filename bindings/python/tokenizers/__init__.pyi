@@ -28,6 +28,10 @@ class Encoding:
         """ The tokenized strings """
         pass
     @property
+    def words(self) -> List[int]:
+        """ The tokenized words index """
+        pass
+    @property
     def type_ids(self) -> List[int]:
         """ The type ids """
         pass
@@ -50,6 +54,18 @@ class Encoding:
     @property
     def overflowing(self) -> Optional[Encoding]:
         """ The overflowing encoding, after truncation """
+        pass
+    def word_boundaries(self, pos: int) -> Optional[Tuple[int, int]]:
+        """ Find the boundaries of the word at the given index (Indices in the variious List). """
+        pass
+    def char_to_word(self, pos: int) -> Option[Tuple[int, int]]:
+        """ Find the offsets of the word that contaiins the character at the specified position """
+        pass
+    def char_to_token(self, pos: int) -> Option[Tuple[int, int]]:
+        """ Find the offsets of the token that contains the character at the specified position """
+        pass
+    def token_to_word(self, index: int) -> Optional[Tuple[int, int]]:
+        """ Find the offsets of the word that contains the token at the given index """
         pass
     def pad(
         self,

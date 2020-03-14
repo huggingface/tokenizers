@@ -49,6 +49,11 @@ impl Encoding {
     }
 
     #[getter]
+    fn get_words(&self) -> Vec<u32> {
+        self.encoding.get_words().to_vec()
+    }
+
+    #[getter]
     fn get_type_ids(&self) -> Vec<u32> {
         self.encoding.get_type_ids().to_vec()
     }
@@ -76,6 +81,22 @@ impl Encoding {
             .into_iter()
             .map(Encoding::new)
             .collect()
+    }
+
+    fn word_boundaries(&self, index: usize) -> Option<(usize, usize)> {
+        self.encoding.word_boundaries(index)
+    }
+
+    fn char_to_word(&self, pos: usize) -> Option<Offsets> {
+        self.encoding.char_to_word(pos)
+    }
+
+    fn char_to_token(&self, pos: usize) -> Option<Offsets> {
+        self.encoding.char_to_token(pos)
+    }
+
+    fn token_to_word(&self, index: usize) -> Option<Offsets> {
+        self.encoding.token_to_word(index)
     }
 
     #[args(kwargs = "**")]
