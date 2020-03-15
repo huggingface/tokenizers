@@ -64,39 +64,15 @@ impl NormalizedString {
             .flatten()
     }
 
-    fn get_range_of(&self, s: &str, range: std::ops::Range<usize>) -> Option<String> {
-        let len = s.chars().count();
-        if range.start >= len || range.end > len {
-            None
-        } else {
-            Some(
-                s.chars()
-                    .enumerate()
-                    .skip(range.start)
-                    .map(|(i, c)| {
-                        if i >= range.start && i < range.end {
-                            Some(c)
-                        } else {
-                            None
-                        }
-                    })
-                    .fuse()
-                    .filter(|c| c.is_some())
-                    .map(|c| c.unwrap())
-                    .collect::<String>(),
-            )
-        }
-    }
-
     /// Return a range of the normalized string (indexing on char not bytes)
     pub fn get_range(&self, range: std::ops::Range<usize>) -> Option<String> {
-        self.get_range_of(&self.normalized, range)
+        get_range_of(&self.normalized, range)
     }
 
     /// Return a range of the original string, using a range from the normalized string
     pub fn get_range_original(&self, range: std::ops::Range<usize>) -> Option<String> {
         self.get_original_offsets(range)
-            .map(|range| self.get_range_of(&self.original, range))
+            .map(|range| get_range_of(&self.original, range))
             .flatten()
     }
 
@@ -418,6 +394,30 @@ impl NormalizedString {
     /// Whether empty
     pub fn is_empty(&self) -> bool {
         self.normalized.len() == 0
+    }
+}
+
+pub fn get_range_of(s: &str, range: std::ops::Range<usize>) -> Option<String> {
+    let len = s.chars().count();
+    if range.start >= len || range.end > len {
+        None
+    } else {
+        Some(
+            s.chars()
+                .enumerate()
+                .skip(range.start)
+                .map(|(i, c)| {
+                    if i >= range.start && i < range.end {
+                        Some(c)
+                    } else {
+                        None
+                    }
+                })
+                .fuse()
+                .filter(|c| c.is_some())
+                .map(|c| c.unwrap())
+                .collect::<String>(),
+        )
     }
 }
 
