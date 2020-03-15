@@ -1,20 +1,5 @@
+use crate::utils::padding::PaddingDirection;
 use rayon::prelude::*;
-
-/// The various possible padding directions.
-#[derive(Debug, Clone, Copy)]
-pub enum PaddingDirection {
-    Left,
-    Right,
-}
-
-impl std::convert::AsRef<str> for PaddingDirection {
-    fn as_ref(&self) -> &str {
-        match self {
-            PaddingDirection::Left => "left",
-            PaddingDirection::Right => "right",
-        }
-    }
-}
 
 /// Represents the output of a `Tokenizer`.
 #[derive(Default, PartialEq, Debug, Clone)]

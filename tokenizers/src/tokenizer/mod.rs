@@ -9,10 +9,9 @@
 //!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
 //!   ...).
 
-pub use crate::utils::{
-    pad_encodings, truncate_encodings, PaddingParams, PaddingStrategy, TruncationParams,
-    TruncationStrategy,
-};
+use crate::utils::iter::ResultShunt;
+pub use crate::utils::padding::{pad_encodings, PaddingParams, PaddingStrategy};
+pub use crate::utils::truncation::{truncate_encodings, TruncationParams, TruncationStrategy};
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::{
@@ -302,10 +301,8 @@ impl Tokenizer {
             move |sentence: String, type_id: u32| -> Result<(Encoding, NormalizedString)> {
                 // First we need to split into as many sequences as needed to avoid splitting
                 // on our added tokens
-                let (mut encodings, mut normalized) = self
-                    .split_on_added_tokens(&sentence)
-                    .into_iter()
-                    .map(|(sentence, id)| -> Result<(Encoding, NormalizedString)> {
+                let results = self.split_on_added_tokens(&sentence).into_iter().map(
+                    |(sentence, id)| -> Result<(Encoding, NormalizedString)> {
                         // If this is one of our added tokens, lets return an encoding directly
                         if let Some(id) = id {
                             return Ok((
@@ -358,11 +355,11 @@ impl Tokenizer {
                             ),
                             normalized,
                         ))
-                    })
-                    // TODO: Improve this and avoid collecting first...
-                    .collect::<Result<Vec<(Encoding, NormalizedString)>>>()?
-                    .into_iter()
-                    .unzip::<_, _, Vec<_>, Vec<_>>();
+                    },
+                );
+
+                let (mut encodings, mut normalized) =
+                    ResultShunt::process(results, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>())?;
 
                 if encodings.is_empty() {
                     return Ok((Encoding::default(), NormalizedString::from("")));
