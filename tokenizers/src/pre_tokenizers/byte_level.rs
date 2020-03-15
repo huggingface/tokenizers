@@ -239,7 +239,7 @@ impl PostProcessor for ByteLevel {
             None => encoding,
             Some(mut pair) => {
                 process_offsets(&mut pair);
-                encoding.merge_with(pair);
+                encoding.merge_with(pair, false);
                 encoding
             }
         };
@@ -397,7 +397,6 @@ mod tests {
     #[test]
     fn processor_trims_offsets() {
         let start = Encoding::new(
-            NormalizedString::from(""),
             vec![],
             vec![],
             vec![
@@ -412,7 +411,6 @@ mod tests {
             vec![],
         );
         let expected = Encoding::new(
-            NormalizedString::from(""),
             vec![],
             vec![],
             vec![
@@ -434,7 +432,7 @@ mod tests {
         );
 
         let mut pair_expected = expected.clone();
-        pair_expected.merge_with(expected);
+        pair_expected.merge_with(expected, false);
         assert_eq!(
             pair_expected,
             bytelevel
