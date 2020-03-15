@@ -1,5 +1,12 @@
+DATA_DIR = data
 BENCHMARK_DIR = benches
-BENCHMARK_RESOURCES = $(BENCHMARK_DIR)/gpt2-vocab.json $(BENCHMARK_DIR)/gpt2-merges.txt $(BENCHMARK_DIR)/big.txt
+TESTS_DIR = tests
+
+dir_guard=@mkdir -p $(@D)
+
+SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt
+BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/big.txt
+TESTS_RESOURCES = $(SHARED_RESOURCES)
 
 .PHONY : build
 build :
@@ -20,7 +27,7 @@ lint :
 	cargo clippy --all-targets --all-features -- -D warnings
 
 .PHONY : test
-test :
+test : $(TESTS_RESOURCES)
 	cargo test
 
 .PHONY : doc
@@ -38,8 +45,10 @@ all-checks : lint test doc
 bench : $(BENCHMARK_RESOURCES)
 	cargo bench -- --verbose
 
-$(BENCHMARK_DIR)/gpt2-% :
+$(DATA_DIR)/gpt2-% :
+	$(dir_guard)
 	wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-$* -O $@
 
-$(BENCHMARK_DIR)/big.txt :
+$(DATA_DIR)/big.txt :
+	$(dir_guard)
 	wget https://norvig.com/big.txt -O $@
