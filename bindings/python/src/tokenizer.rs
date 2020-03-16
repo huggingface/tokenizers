@@ -159,6 +159,15 @@ impl Tokenizer {
         self.tokenizer.with_padding(None);
     }
 
+    fn normalize(&self, sentence: &str) -> PyResult<String> {
+        ToPyResult(
+            self.tokenizer
+                .normalize(sentence)
+                .map(|s| s.get().to_owned()),
+        )
+        .into()
+    }
+
     #[args(add_special_tokens = true)]
     fn encode(
         &self,
