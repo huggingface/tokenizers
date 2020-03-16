@@ -10,7 +10,7 @@
 //!   ...).
 
 use crate::utils::iter::ResultShunt;
-pub use crate::utils::padding::{pad_encodings, PaddingParams, PaddingStrategy};
+pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, PaddingStrategy};
 pub use crate::utils::truncation::{truncate_encodings, TruncationParams, TruncationStrategy};
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
@@ -289,10 +289,30 @@ impl Tokenizer {
         }
     }
 
-    pub fn num_added_tokens(&self, is_pair: bool) -> usize {
-        self.post_processor
-            .as_ref()
-            .map_or(0, |p| p.as_ref().added_tokens(is_pair))
+    /// Normalize the given sentence and return the corresponding normalized string
+    pub fn normalize(&self, sentence: &str) -> Result<NormalizedString> {
+        let mut normalized = self
+            .split_on_added_tokens(sentence)
+            .into_iter()
+            .map(|(sentence, id)| -> Result<NormalizedString> {
+                if id.is_some() {
+                    Ok(NormalizedString::from(&sentence))
+                } else {
+                    let mut normalized = self.do_normalize(&sentence)?;
+                    let _ = self.pre_tokenize(&mut normalized)?;
+
+                    Ok(normalized)
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let others = normalized.split_off(1);
+        let mut normalized: NormalizedString = normalized.into_iter().next().unwrap();
+        for n in others {
+            normalized.merge_with(&n);
+        }
+
+        Ok(normalized)
     }
 
     /// Encode the given sentence
@@ -320,7 +340,7 @@ impl Tokenizer {
                         }
 
                         // 1. Normalization
-                        let mut normalized = self.normalize(&sentence)?;
+                        let mut normalized = self.do_normalize(&sentence)?;
 
                         // 2. Pre tokenization
                         let pre_tokenized = self.pre_tokenize(&mut normalized)?;
@@ -505,7 +525,7 @@ impl Tokenizer {
                     match file.read_line(&mut buf)? {
                         0 => break,
                         b => {
-                            let mut normalized = self.normalize(&buf)?;
+                            let mut normalized = self.do_normalize(&buf)?;
                             let pre_tokenized = self.pre_tokenize(&mut normalized)?;
                             trainer.process_tokens(
                                 &mut words,
@@ -556,7 +576,7 @@ impl Tokenizer {
     }
 
     /// Normalization logic, go through all normalizers
-    fn normalize(&self, sequence: &str) -> Result<NormalizedString> {
+    fn do_normalize(&self, sequence: &str) -> Result<NormalizedString> {
         let mut normalized = NormalizedString::from(sequence);
 
         if let Some(normalizer) = &self.normalizer {
