@@ -1,7 +1,7 @@
 extern crate tokenizers as tk;
 
+use crate::container::Container;
 use crate::tasks::models::{BPEFromFilesTask, WordPieceFromFilesTask};
-use crate::utils::Container;
 use neon::prelude::*;
 use std::path::Path;
 

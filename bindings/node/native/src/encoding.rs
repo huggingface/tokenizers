@@ -2,7 +2,7 @@ extern crate tokenizers as tk;
 
 use tk::tokenizer::PaddingDirection;
 
-use crate::utils::Container;
+use crate::container::Container;
 use neon::prelude::*;
 
 /// Encoding

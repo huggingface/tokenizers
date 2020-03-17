@@ -1,6 +1,6 @@
 extern crate tokenizers as tk;
 
-use crate::utils::Container;
+use crate::container::Container;
 use neon::prelude::*;
 
 /// Normalizer

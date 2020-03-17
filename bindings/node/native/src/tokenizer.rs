@@ -1,5 +1,6 @@
 extern crate tokenizers as tk;
 
+use crate::container::Container;
 use crate::decoders::JsDecoder;
 use crate::models::JsModel;
 use crate::normalizers::JsNormalizer;
@@ -7,7 +8,6 @@ use crate::pre_tokenizers::JsPreTokenizer;
 use crate::processors::JsPostProcessor;
 use crate::tasks::tokenizer::{DecodeTask, EncodeTask, WorkingTokenizer};
 use crate::trainers::JsTrainer;
-use crate::utils::Container;
 use neon::prelude::*;
 
 use tk::tokenizer::{
