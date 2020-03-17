@@ -1,10 +1,47 @@
 use super::Result;
 use std::cmp::Ordering;
+use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
 
 /// Takes care of pre-processing strings.
 pub trait Normalizer {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
+}
+
+/// Represents a Range usable by the NormalizedString to index its content.
+#[derive(Debug, Clone, Copy)]
+pub enum Range<T: RangeBounds<usize>> {
+    Original(T),
+    Normalized(T),
+}
+
+impl<T> Range<T>
+where
+    T: RangeBounds<usize>,
+{
+    fn unwrap(self) -> T {
+        match self {
+            Range::Original(r) => r,
+            Range::Normalized(r) => r,
+        }
+    }
+
+    fn into_full_range(self, max_len: usize) -> std::ops::Range<usize> {
+        let range = self.unwrap();
+
+        let start = match range.start_bound() {
+            Bound::Unbounded => 0,
+            Bound::Included(i) => *i,
+            Bound::Excluded(i) => *i + 1,
+        };
+        let end = match range.end_bound() {
+            Bound::Unbounded => max_len,
+            Bound::Included(i) => *i + 1,
+            Bound::Excluded(i) => *i,
+        };
+
+        start..end
+    }
 }
 
 /// A normalized string takes care of keeping both versions of a `String`, and
@@ -44,36 +81,68 @@ impl NormalizedString {
         &self.original
     }
 
-    /// Return the range of the original string corresponding to the received range on the
-    /// normalized string. Returns None if out of bounds
-    pub fn get_original_offsets(
+    /// Convert the given offsets range to the other one:
+    /// `Original => Normalized` or `Normalized => Original`
+    pub fn convert_offsets<T: RangeBounds<usize>>(
         &self,
-        range: std::ops::Range<usize>,
+        range: Range<T>,
     ) -> Option<std::ops::Range<usize>> {
-        self.alignments
-            .get(range)
-            .map(|alignments| {
-                if alignments.is_empty() {
-                    None
-                } else {
-                    let start = alignments[0].0;
-                    let end = alignments[alignments.len() - 1].1;
-                    Some(start..end)
-                }
-            })
-            .flatten()
+        match range {
+            Range::Original(_) => {
+                let (mut start, mut end) = (0, 0);
+                let r = range.into_full_range(self.alignments.last().map_or(0, |(_, e)| *e));
+                println!("{:?}\t{:?}", r, self.alignments);
+                self.alignments
+                    .iter()
+                    .enumerate()
+                    .take_while(|(_, alignment)| r.end >= alignment.1)
+                    .for_each(|(i, alignment)| {
+                        println!("{:?}", alignment);
+                        if alignment.0 <= r.start {
+                            start = i;
+                        }
+                        if alignment.1 <= r.end {
+                            end = i + 1;
+                        }
+                    });
+                Some(start..end)
+            }
+            Range::Normalized(_) => self
+                .alignments
+                .get(range.into_full_range(self.alignments.len()))
+                .map(|alignments| {
+                    if alignments.is_empty() {
+                        None
+                    } else {
+                        let start = alignments[0].0;
+                        let end = alignments[alignments.len() - 1].1;
+                        Some(start..end)
+                    }
+                })
+                .flatten(),
+        }
     }
 
     /// Return a range of the normalized string (indexing on char not bytes)
-    pub fn get_range(&self, range: std::ops::Range<usize>) -> Option<String> {
-        get_range_of(&self.normalized, range)
+    pub fn get_range<T: RangeBounds<usize>>(&self, range: Range<T>) -> Option<&str> {
+        match range {
+            Range::Original(_) => self
+                .convert_offsets(range)
+                .map(|r| get_range_of(&self.normalized, r))
+                .flatten(),
+            Range::Normalized(r) => get_range_of(&self.normalized, r),
+        }
     }
 
-    /// Return a range of the original string, using a range from the normalized string
-    pub fn get_range_original(&self, range: std::ops::Range<usize>) -> Option<String> {
-        self.get_original_offsets(range)
-            .map(|range| get_range_of(&self.original, range))
-            .flatten()
+    /// Return a range of the original string (indexing on char not bytes)
+    pub fn get_range_original<T: RangeBounds<usize>>(&self, range: Range<T>) -> Option<&str> {
+        match range {
+            Range::Original(r) => get_range_of(&self.original, r),
+            Range::Normalized(_) => self
+                .convert_offsets(range)
+                .map(|r| get_range_of(&self.original, r))
+                .flatten(),
+        }
     }
 
     /// Applies transformations to the current normalized version, updating the current
@@ -397,27 +466,34 @@ impl NormalizedString {
     }
 }
 
-pub fn get_range_of(s: &str, range: std::ops::Range<usize>) -> Option<String> {
+/// Returns a range of the given string slice, by indexing chars instead of bytes
+pub fn get_range_of<T: RangeBounds<usize>>(s: &str, range: T) -> Option<&str> {
     let len = s.chars().count();
-    if range.start >= len || range.end > len {
+    let start = match range.start_bound() {
+        Bound::Unbounded => 0,
+        Bound::Included(i) => *i,
+        Bound::Excluded(i) => *i + 1,
+    };
+    let end = match range.end_bound() {
+        Bound::Unbounded => len,
+        Bound::Included(i) => *i + 1,
+        Bound::Excluded(i) => *i,
+    };
+
+    if start >= len || end > len || start >= end {
         None
     } else {
-        Some(
-            s.chars()
-                .enumerate()
-                .skip(range.start)
-                .map(|(i, c)| {
-                    if i >= range.start && i < range.end {
-                        Some(c)
-                    } else {
-                        None
-                    }
-                })
-                .fuse()
-                .filter(|c| c.is_some())
-                .map(|c| c.unwrap())
-                .collect::<String>(),
-        )
+        let start_b = s
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(start as usize)
+            .unwrap_or(0);
+        let end_b = s
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(end as usize)
+            .unwrap_or(len);
+        Some(&s[start_b..end_b])
     }
 }
 
@@ -477,11 +553,30 @@ mod tests {
     }
 
     #[test]
+    fn range_conversion() {
+        let mut n = NormalizedString::from("    __Hello__   ");
+        n.filter(|c| !c.is_whitespace()).lowercase();
+        let hello_n = n.convert_offsets(Range::Original(6..11));
+        println!("{}", n.get());
+        assert_eq!(hello_n, Some(2..7));
+        assert_eq!(
+            n.get_range(Range::Normalized(hello_n.clone().unwrap())),
+            Some("hello")
+        );
+        assert_eq!(
+            n.get_range_original(Range::Normalized(hello_n.unwrap())),
+            Some("Hello")
+        );
+        assert_eq!(n.get_range(Range::Original(6..11)), Some("hello"));
+        assert_eq!(n.get_range_original(Range::Original(6..11)), Some("Hello"));
+    }
+
+    #[test]
     fn original_range() {
         let mut n = NormalizedString::from("Hello_______ World!");
         n.filter(|c| *c != '_').lowercase();
-        let world_n = n.get_range(6..11).unwrap();
-        let world_o = n.get_range_original(6..11).unwrap();
+        let world_n = n.get_range(Range::Normalized(6..11)).unwrap();
+        let world_o = n.get_range_original(Range::Normalized(6..11)).unwrap();
         assert_eq!(world_n, "world");
         assert_eq!(world_o, "World");
     }
@@ -505,8 +600,8 @@ mod tests {
 
         assert_eq!(&n.normalized, " Hello ");
         assert_eq!(
-            n.get_range_original(0..n.normalized.len()),
-            Some("Hello".into())
+            n.get_range_original(Range::Normalized(0..n.normalized.len())),
+            Some("Hello")
         );
     }
 
@@ -514,10 +609,13 @@ mod tests {
     fn remove_at_beginning() {
         let mut n = NormalizedString::from("     Hello");
         n.filter(|c| !c.is_whitespace());
-        assert_eq!(n.get_range_original(1.."Hello".len()), Some("ello".into()));
         assert_eq!(
-            n.get_range_original(0..n.normalized.len()),
-            Some("     Hello".into())
+            n.get_range_original(Range::Normalized(1.."Hello".len())),
+            Some("ello")
+        );
+        assert_eq!(
+            n.get_range_original(Range::Normalized(0..n.normalized.len())),
+            Some("     Hello")
         );
     }
 
@@ -525,10 +623,10 @@ mod tests {
     fn remove_at_end() {
         let mut n = NormalizedString::from("Hello    ");
         n.filter(|c| !c.is_whitespace());
-        assert_eq!(n.get_range_original(0..4), Some("Hell".into()));
+        assert_eq!(n.get_range_original(Range::Normalized(0..4)), Some("Hell"));
         assert_eq!(
-            n.get_range_original(0..n.normalized.len()),
-            Some("Hello    ".into())
+            n.get_range_original(Range::Normalized(0..n.normalized.len())),
+            Some("Hello    ")
         );
     }
 
@@ -539,10 +637,13 @@ mod tests {
         assert_eq!(&n.normalized, "Hello");
 
         assert_eq!(
-            n.get_range_original(0.."Hello".len()),
-            Some("  Hello  ".into())
+            n.get_range_original(Range::Normalized(0.."Hello".len())),
+            Some("  Hello  ")
         );
-        assert_eq!(n.get_range_original(1.."Hell".len()), Some("ell".into()));
+        assert_eq!(
+            n.get_range_original(Range::Normalized(1.."Hell".len())),
+            Some("ell")
+        );
     }
 
     #[test]
@@ -551,8 +652,8 @@ mod tests {
         n.lstrip();
         assert_eq!(&n.normalized, "This is an example  ");
         assert_eq!(
-            n.get_range_original(0..n.normalized.len()),
-            Some("  This is an example  ".into())
+            n.get_range_original(Range::Normalized(0..n.normalized.len())),
+            Some("  This is an example  ")
         );
     }
 
@@ -562,8 +663,8 @@ mod tests {
         n.rstrip();
         assert_eq!(&n.normalized, "  This is an example");
         assert_eq!(
-            n.get_range_original(0..n.normalized.len()),
-            Some("  This is an example  ".into())
+            n.get_range_original(Range::Normalized(0..n.normalized.len())),
+            Some("  This is an example  ")
         );
     }
 
@@ -573,8 +674,8 @@ mod tests {
         n.strip();
         assert_eq!(&n.normalized, "This is an example");
         assert_eq!(
-            n.get_range_original(0..n.normalized.len()),
-            Some("  This is an example  ".into())
+            n.get_range_original(Range::Normalized(0..n.normalized.len())),
+            Some("  This is an example  ")
         );
     }
 
@@ -597,7 +698,7 @@ mod tests {
                 (4, 5)
             ]
         );
-        assert_eq!(n.get_original_offsets(0..4), Some(0..0));
+        assert_eq!(n.convert_offsets(Range::Normalized(0..4)), Some(0..0));
     }
 
     #[test]
@@ -619,6 +720,9 @@ mod tests {
                 (3, 3)
             ]
         );
-        assert_eq!(n.get_original_offsets(3.." there".len()), Some(3..3));
+        assert_eq!(
+            n.convert_offsets(Range::Normalized(3.." there".len())),
+            Some(3..3)
+        );
     }
 }

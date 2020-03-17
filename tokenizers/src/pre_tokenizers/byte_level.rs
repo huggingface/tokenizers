@@ -251,7 +251,9 @@ impl PostProcessor for ByteLevel {
 #[cfg(test)]
 mod tests {
     use super::ByteLevel;
-    use crate::tokenizer::{Decoder, Encoding, NormalizedString, PostProcessor, PreTokenizer};
+    use crate::tokenizer::{
+        Decoder, Encoding, NormalizedString, PostProcessor, PreTokenizer, Range,
+    };
 
     #[test]
     fn pre_tokenization() {
@@ -391,7 +393,7 @@ mod tests {
             ]
         );
         assert_eq!(input.get(), "iâŃ¢j");
-        assert_eq!(input.get_range_original(1..4), Some("⭢".into()));
+        assert_eq!(input.get_range_original(Range::Normalized(1..4)), Some("⭢"));
     }
 
     #[test]

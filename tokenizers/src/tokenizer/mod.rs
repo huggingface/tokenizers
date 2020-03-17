@@ -430,7 +430,7 @@ impl Tokenizer {
                 }
                 current_offset = (*start, *end);
                 let (s, e) = n_source
-                    .get_original_offsets(*start..*end)
+                    .convert_offsets(Range::Normalized(*start..*end))
                     .map_or((*start, *end), |range| (range.start, range.end));
                 *start = s;
                 *end = e;
