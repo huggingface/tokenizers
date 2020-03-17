@@ -160,19 +160,10 @@ impl NormalizedString {
     /// them has a `change` of `1`, but more doesn't make any sense.
     /// We treat any value above `1` as `1`.
     pub fn transform<I: Iterator<Item = (char, isize)>>(&mut self, dest: I, initial_offset: usize) {
-        let mut offset = 0;
-        let mut remaining_offset = initial_offset;
+        let mut offset = -(initial_offset as isize);
         let (ch, alignments): (Vec<_>, Vec<_>) = dest
             .enumerate()
             .map(|(index, (c, changes))| {
-                let changes = if remaining_offset != 0 {
-                    let c = changes - remaining_offset as isize;
-                    remaining_offset = 0;
-                    c
-                } else {
-                    changes
-                };
-
                 let uof = if offset < 0 {
                     -offset as usize
                 } else {
@@ -194,24 +185,10 @@ impl NormalizedString {
                     }
                     // No changes required here
                     Ordering::Equal => self.alignments.get(idx).copied(),
-                    // Some characters where removed, so we merge our range with the one from the
-                    // removed characters as the new alignment
+                    // Some characters where removed, nothing to change in alignments
                     Ordering::Less => {
-                        let uch = -changes as usize;
                         offset += changes;
-                        self.alignments.get(idx..=idx + uch).map(|alignments| {
-                            let min = alignments
-                                .iter()
-                                .map(|(start, end)| usize::min(*start, *end))
-                                .min()
-                                .unwrap();
-                            let max = alignments
-                                .iter()
-                                .map(|(start, end)| usize::max(*start, *end))
-                                .max()
-                                .unwrap();
-                            (min, max)
-                        })
+                        self.alignments.get(idx).copied()
                     }
                 };
 
@@ -538,7 +515,7 @@ mod tests {
         n.filter(|c| *c != 'n');
         assert_eq!(
             &n.alignments,
-            &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 6), (6, 7)]
+            &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (6, 7)]
         );
     }
 
@@ -548,7 +525,7 @@ mod tests {
         n.nfd().filter(|c| !c.is_mark_nonspacing() && *c != 'n');
         assert_eq!(
             &n.alignments,
-            &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 6), (6, 7)]
+            &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (6, 7)]
         );
     }
 
@@ -557,7 +534,6 @@ mod tests {
         let mut n = NormalizedString::from("    __Hello__   ");
         n.filter(|c| !c.is_whitespace()).lowercase();
         let hello_n = n.convert_offsets(Range::Original(6..11));
-        println!("{}", n.get());
         assert_eq!(hello_n, Some(2..7));
         assert_eq!(
             n.get_range(Range::Normalized(hello_n.clone().unwrap())),
@@ -579,6 +555,13 @@ mod tests {
         let world_o = n.get_range_original(Range::Normalized(6..11)).unwrap();
         assert_eq!(world_n, "world");
         assert_eq!(world_o, "World");
+        let original_range = Range::Original(n.convert_offsets(Range::Normalized(6..11)).unwrap());
+        assert_eq!(n.get_range(original_range.clone()).unwrap(), "world");
+        assert_eq!(
+            n.get_range_original(original_range.clone()).unwrap(),
+            "World"
+        );
+        assert_eq!(original_range.into_full_range(n.len_original()), 13..18);
     }
 
     #[test]
@@ -600,7 +583,7 @@ mod tests {
 
         assert_eq!(&n.normalized, " Hello ");
         assert_eq!(
-            n.get_range_original(Range::Normalized(0..n.normalized.len())),
+            n.get_range_original(Range::Normalized(1..n.normalized.len() - 1)),
             Some("Hello")
         );
     }
@@ -615,7 +598,7 @@ mod tests {
         );
         assert_eq!(
             n.get_range_original(Range::Normalized(0..n.normalized.len())),
-            Some("     Hello")
+            Some("Hello")
         );
     }
 
@@ -626,7 +609,7 @@ mod tests {
         assert_eq!(n.get_range_original(Range::Normalized(0..4)), Some("Hell"));
         assert_eq!(
             n.get_range_original(Range::Normalized(0..n.normalized.len())),
-            Some("Hello    ")
+            Some("Hello")
         );
     }
 
@@ -638,7 +621,7 @@ mod tests {
 
         assert_eq!(
             n.get_range_original(Range::Normalized(0.."Hello".len())),
-            Some("  Hello  ")
+            Some("Hello")
         );
         assert_eq!(
             n.get_range_original(Range::Normalized(1.."Hell".len())),
@@ -653,7 +636,7 @@ mod tests {
         assert_eq!(&n.normalized, "This is an example  ");
         assert_eq!(
             n.get_range_original(Range::Normalized(0..n.normalized.len())),
-            Some("  This is an example  ")
+            Some("This is an example  ")
         );
     }
 
@@ -664,7 +647,7 @@ mod tests {
         assert_eq!(&n.normalized, "  This is an example");
         assert_eq!(
             n.get_range_original(Range::Normalized(0..n.normalized.len())),
-            Some("  This is an example  ")
+            Some("  This is an example")
         );
     }
 
@@ -675,7 +658,7 @@ mod tests {
         assert_eq!(&n.normalized, "This is an example");
         assert_eq!(
             n.get_range_original(Range::Normalized(0..n.normalized.len())),
-            Some("  This is an example  ")
+            Some("This is an example")
         );
     }
 
