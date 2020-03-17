@@ -35,32 +35,26 @@ fn byte_level_basic() {
     let offsets = output.get_offsets();
     assert_eq!(
         get_range_of(&input, offset_as_range(offsets[0])),
-        Some("Hello".into())
+        Some("Hello")
     );
     assert_eq!(
         get_range_of(&input, offset_as_range(offsets[1])),
-        Some(" there".into())
+        Some(" there")
     );
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[2])),
-        Some(",".into())
-    );
+    assert_eq!(get_range_of(&input, offset_as_range(offsets[2])), Some(","));
     assert_eq!(
         get_range_of(&input, offset_as_range(offsets[3])),
-        Some(" how".into())
+        Some(" how")
     );
     assert_eq!(
         get_range_of(&input, offset_as_range(offsets[4])),
-        Some(" are".into())
+        Some(" are")
     );
     assert_eq!(
         get_range_of(&input, offset_as_range(offsets[5])),
-        Some(" you".into())
+        Some(" you")
     );
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[6])),
-        Some("?".into())
-    );
+    assert_eq!(get_range_of(&input, offset_as_range(offsets[6])), Some("?"));
 
     // And when trimming offsets:
     let tokenizer = get_byte_level(true, true);
@@ -73,32 +67,26 @@ fn byte_level_basic() {
     let offsets = output.get_offsets();
     assert_eq!(
         get_range_of(&input, offset_as_range(offsets[0])),
-        Some("Hello".into())
+        Some("Hello")
     );
     assert_eq!(
         get_range_of(&input, offset_as_range(offsets[1])),
-        Some("there".into())
+        Some("there")
     );
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[2])),
-        Some(",".into())
-    );
+    assert_eq!(get_range_of(&input, offset_as_range(offsets[2])), Some(","));
     assert_eq!(
         get_range_of(&input, offset_as_range(offsets[3])),
-        Some("how".into())
+        Some("how")
     );
     assert_eq!(
         get_range_of(&input, offset_as_range(offsets[4])),
-        Some("are".into())
+        Some("are")
     );
     assert_eq!(
         get_range_of(&input, offset_as_range(offsets[5])),
-        Some("you".into())
+        Some("you")
     );
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[6])),
-        Some("?".into())
-    );
+    assert_eq!(get_range_of(&input, offset_as_range(offsets[6])), Some("?"));
 }
 
 #[test]
@@ -111,18 +99,9 @@ fn byte_level_unicode() {
         .unwrap();
 
     let offsets = output.get_offsets();
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[1])),
-        Some("⭢".into())
-    );
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[2])),
-        Some("⭢".into())
-    );
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[3])),
-        Some("⭢".into())
-    );
+    assert_eq!(get_range_of(&input, offset_as_range(offsets[1])), Some("⭢"));
+    assert_eq!(get_range_of(&input, offset_as_range(offsets[2])), Some("⭢"));
+    assert_eq!(get_range_of(&input, offset_as_range(offsets[3])), Some("⭢"));
 }
 
 #[test]
