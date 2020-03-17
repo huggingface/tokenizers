@@ -30,6 +30,11 @@ pub use normalizer::*;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 pub type Offsets = (usize, usize);
 
+/// Takes care of pre-processing strings.
+pub trait Normalizer {
+    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
+}
+
 /// The `PreTokenizer` is in charge of doing the pre-segmentation step. It splits the given string
 /// in multiple substrings, keeping track of the offsets of said substrings from the
 /// `NormalizedString`. In some occasions, the `PreTokenizer` might need to modify the given

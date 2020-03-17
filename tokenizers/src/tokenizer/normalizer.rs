@@ -1,14 +1,9 @@
-use super::Result;
 use std::cmp::Ordering;
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
 
-/// Takes care of pre-processing strings.
-pub trait Normalizer {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
-}
-
 /// Represents a Range usable by the NormalizedString to index its content.
+/// A Range can use indices relative to either the `Original` or the `Normalized` string
 #[derive(Debug, Clone, Copy)]
 pub enum Range<T: RangeBounds<usize>> {
     Original(T),
@@ -19,6 +14,7 @@ impl<T> Range<T>
 where
     T: RangeBounds<usize>,
 {
+    /// Unwrap the underlying range
     fn unwrap(self) -> T {
         match self {
             Range::Original(r) => r,
@@ -26,6 +22,9 @@ where
         }
     }
 
+    /// Converts the current Range to a `std::ops::Range<usize>`. This requires the `max_len`
+    /// of the represented string (in chars, not bytes) in order to cover the case where the
+    /// original provided range was unbounded
     fn into_full_range(self, max_len: usize) -> std::ops::Range<usize> {
         let range = self.unwrap();
 
@@ -44,15 +43,21 @@ where
     }
 }
 
-/// A normalized string takes care of keeping both versions of a `String`, and
-/// provides necessary alignments to retrieve ranges of both strings.
+/// A `NormalizedString` takes care of processing an "original" string to modify it and obtain a
+/// "normalized" string. It keeps both version of the string, alignments information between both
+/// and provides an interface to retrieve ranges of each string, using offsets from any of them.
+///
+/// It is possible to retrieve a part of the original string, by indexing it with offsets from the
+/// normalized one, and the other way around too. It is also possible to convert offsets from one
+/// referential to the other one easily.
 #[derive(Default, Debug, Clone)]
 pub struct NormalizedString {
+    /// The original version of the string, before any modification
     original: String,
+    /// The normalized version of the string, after all modifications
     normalized: String,
-    /// Mapping from normalized string to original one
-    /// (pos, changes) where pos is the position in the modified string, and changes an isize
-    /// representing the number of insertions or deletions
+    /// Mapping from normalized string to original one: (start, end) for each character of the
+    /// normalized string
     alignments: Vec<(usize, usize)>,
 }
 
@@ -63,6 +68,7 @@ impl std::cmp::PartialEq for NormalizedString {
 }
 
 impl NormalizedString {
+    /// Create a NormalizedString from the given str
     pub fn from(s: &str) -> Self {
         NormalizedString {
             original: s.to_owned(),
@@ -81,7 +87,7 @@ impl NormalizedString {
         &self.original
     }
 
-    /// Convert the given offsets range to the other one:
+    /// Convert the given offsets range from one referential to the other one:
     /// `Original => Normalized` or `Normalized => Original`
     pub fn convert_offsets<T: RangeBounds<usize>>(
         &self,
