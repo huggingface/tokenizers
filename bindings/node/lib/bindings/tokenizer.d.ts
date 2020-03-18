@@ -156,6 +156,14 @@ export class Tokenizer {
   ): void[];
 
   /**
+   * Normalize the given sequence
+   * @param text The sequence to normalize
+   * @returns The normalized string
+   * @since 0.6.0
+   */
+  normalize(text: string): string;
+
+  /**
    * Convert the given token id to its corresponding string
    *
    * @param id The token id to convert

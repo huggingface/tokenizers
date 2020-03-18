@@ -5,6 +5,7 @@ import { promisify } from "util";
 
 import { PaddingDirection, TruncationStrategy } from "./enums";
 import { BPE } from "./models";
+import { lowercaseNormalizer } from "./normalizers";
 import { RawEncoding } from "./raw-encoding";
 import { PaddingConfiguration, Tokenizer, TruncationConfiguration } from "./tokenizer";
 
@@ -251,6 +252,16 @@ describe("Tokenizer", () => {
         padTypeId: 0
       };
       expect(padding).toEqual(expectedConfig);
+    });
+  });
+
+  describe("normalize", () => {
+    it("normalizes a string correctly", () => {
+      const model = BPE.empty();
+      const tokenizer = new Tokenizer(model);
+      tokenizer.setNormalizer(lowercaseNormalizer());
+
+      expect(tokenizer.normalize("MY NAME IS JOHN")).toEqual("my name is john");
     });
   });
 });

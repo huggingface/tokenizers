@@ -123,6 +123,16 @@ export class BaseTokenizer<TConfig extends object> {
   }
 
   /**
+   * Normalize the given sequence
+   * @param text The sequence to normalize
+   * @returns The normalized string
+   * @since 0.6.0
+   */
+  normalize(text: string): string {
+    return this.tokenizer.normalize(text);
+  }
+
+  /**
    * Enable/change truncation with specified options
    *
    * @param maxLength The maximum length at which to truncate
