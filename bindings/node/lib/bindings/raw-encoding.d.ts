@@ -45,17 +45,6 @@ export interface RawEncoding {
   getTypeIds(): number[];
 
   /**
-   * Returns the original string
-   *
-   * @param [begin] The index from which to start (can be negative).
-   * @param [end] The index (excluded) to which to stop (can be negative).
-   * Stopping at the end of the string if not provided.
-   * @returns The full original string if no parameter is provided,
-   * otherwise the original string between `begin` and `end`
-   */
-  getOriginalString(begin?: number, end?: number): string;
-
-  /**
    * Pad the current Encoding at the given length
    *
    * @param length The length at which to pad

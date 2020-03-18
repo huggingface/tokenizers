@@ -112,7 +112,7 @@ describe("Tokenizer", () => {
         [2, 6],
         [6, 8],
         [8, 12],
-        [12, 16]
+        [0, 4]
       ]);
       expect(encoding.getOverflowing()).toEqual([]);
       expect(encoding.getSpecialTokensMask()).toEqual([0, 0, 0, 0, 0]);
