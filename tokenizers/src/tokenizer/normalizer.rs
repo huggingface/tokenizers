@@ -475,7 +475,7 @@ pub fn get_range_of<T: RangeBounds<usize>>(s: &str, range: T) -> Option<&str> {
             .char_indices()
             .map(|(i, _)| i)
             .nth(end as usize)
-            .unwrap_or(len);
+            .unwrap_or_else(|| s.len());
         Some(&s[start_b..end_b])
     }
 }
@@ -713,5 +713,12 @@ mod tests {
             n.convert_offsets(Range::Normalized(3.." there".len())),
             Some(3..3)
         );
+    }
+
+    #[test]
+    fn get_range() {
+        let s = String::from("Hello my name is John 👋");
+        assert_eq!(get_range_of(&s, ..), Some(&s[..]));
+        assert_eq!(get_range_of(&s, 17..), Some("John 👋"));
     }
 }
