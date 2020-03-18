@@ -125,6 +125,18 @@ class BaseTokenizer:
         """
         return self._tokenizer.add_special_tokens(special_tokens)
 
+    def normalize(self, sequence: str) -> str:
+        """ Normalize the given sequence
+
+        Args:
+            sequence: str:
+                The sequence to normalize
+
+        Returns:
+            The normalized string
+        """
+        return self._tokenizer.normalize(sequence)
+
     def encode(
         self, sequence: str, pair: Optional[str] = None, add_special_tokens: bool = True
     ) -> Encoding:

@@ -3,6 +3,7 @@
 extern crate neon;
 extern crate tokenizers as tk;
 
+mod container;
 mod decoders;
 mod encoding;
 mod models;
@@ -31,6 +32,8 @@ register_module!(mut m, {
     pre_tokenizers::register(&mut m, "pre_tokenizers")?;
     // Trainers
     trainers::register(&mut m, "trainers")?;
+    // Utils
+    utils::register(&mut m, "utils")?;
 
     Ok(())
 });

@@ -1,26 +1,9 @@
-use crate::tokenizer::NormalizedString;
+use crate::utils::padding::PaddingDirection;
 use rayon::prelude::*;
-
-/// The various possible padding directions.
-#[derive(Debug, Clone, Copy)]
-pub enum PaddingDirection {
-    Left,
-    Right,
-}
-
-impl std::convert::AsRef<str> for PaddingDirection {
-    fn as_ref(&self) -> &str {
-        match self {
-            PaddingDirection::Left => "left",
-            PaddingDirection::Right => "right",
-        }
-    }
-}
 
 /// Represents the output of a `Tokenizer`.
 #[derive(Default, PartialEq, Debug, Clone)]
 pub struct Encoding {
-    normalized: NormalizedString,
     ids: Vec<u32>,
     type_ids: Vec<u32>,
     tokens: Vec<String>,
@@ -32,7 +15,6 @@ pub struct Encoding {
 impl Encoding {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        normalized: NormalizedString,
         ids: Vec<u32>,
         type_ids: Vec<u32>,
         tokens: Vec<String>,
@@ -42,7 +24,6 @@ impl Encoding {
         overflowing: Vec<Encoding>,
     ) -> Self {
         Encoding {
-            normalized,
             ids,
             type_ids,
             tokens,
@@ -51,10 +32,6 @@ impl Encoding {
             attention_mask,
             overflowing,
         }
-    }
-
-    pub fn get_normalized(&self) -> &NormalizedString {
-        &self.normalized
     }
 
     pub fn get_tokens(&self) -> &[String] {
@@ -124,7 +101,6 @@ impl Encoding {
             }
 
             let o = Encoding {
-                normalized: self.normalized.clone(),
                 ids: get_current_part(&prev_encoding.ids, &o_ids, part_size, part_id, stride),
                 type_ids: get_current_part(
                     &prev_encoding.type_ids,
@@ -173,7 +149,7 @@ impl Encoding {
     }
 
     /// Merge ourself with the given `Encoding`. Happens in place.
-    pub fn merge_with(&mut self, pair: Encoding) {
+    pub fn merge_with(&mut self, pair: Encoding, growing_offsets: bool) {
         // Handle merging the overflowing parts too: Combine them all
         // In most of the cases, we expect `pair.overflowing.len() == 0`
         let mut overflowings = vec![];
@@ -182,33 +158,33 @@ impl Encoding {
         for self_o in &self.overflowing {
             // 1. The pair itself
             let mut n_encoding = self_o.clone();
-            n_encoding.merge_with(pair.clone());
+            n_encoding.merge_with(pair.clone(), growing_offsets);
             overflowings.push(n_encoding);
 
             // 2. Its overflowings (this should rarely happen...)
             for other_o in &pair.overflowing {
                 let mut n_encoding = self_o.clone();
-                n_encoding.merge_with(other_o.clone());
+                n_encoding.merge_with(other_o.clone(), growing_offsets);
                 overflowings.push(n_encoding);
             }
         }
         // 2. Ourself with all the other overflowings (this should rarely happen too...)
         for other_o in &pair.overflowing {
             let mut n_encoding = self.clone();
-            n_encoding.merge_with(other_o.clone());
+            n_encoding.merge_with(other_o.clone(), growing_offsets);
             overflowings.push(n_encoding);
         }
 
         // Finish by merging ourself with the other encoding
-        self.normalized.merge_with(&pair.normalized);
         self.ids.extend(pair.ids);
         self.type_ids.extend(pair.type_ids);
         self.tokens.extend(pair.tokens);
 
-        let starting_offset = self
-            .offsets
-            .iter()
-            .fold(0, |max, (_, end)| if *end > max { *end } else { max });
+        let starting_offset = if growing_offsets {
+            self.offsets.last().map_or(0, |o| o.1)
+        } else {
+            0
+        };
         self.offsets.extend(
             pair.offsets
                 .into_iter()
@@ -304,7 +280,6 @@ mod tests {
     #[test]
     fn merge_encodings() {
         let mut a = Encoding {
-            normalized: NormalizedString::from("Hello "),
             ids: vec![1],
             type_ids: vec![0],
             tokens: vec![String::from("Hello ")],
@@ -314,7 +289,6 @@ mod tests {
             overflowing: vec![],
         };
         let b = Encoding {
-            normalized: NormalizedString::from("World!"),
             ids: vec![2],
             type_ids: vec![1],
             tokens: vec![String::from("World!")],
@@ -323,12 +297,11 @@ mod tests {
             attention_mask: vec![1],
             overflowing: vec![],
         };
-        a.merge_with(b);
+        a.merge_with(b, true);
 
         assert_eq!(
             a,
             Encoding {
-                normalized: NormalizedString::from("Hello World!"),
                 ids: vec![1, 2],
                 type_ids: vec![0, 1],
                 tokens: vec![String::from("Hello "), String::from("World!")],
@@ -343,7 +316,6 @@ mod tests {
     #[test]
     fn truncate() {
         let mut a = Encoding {
-            normalized: NormalizedString::from("Hello World!"),
             ids: vec![1, 2, 3],
             type_ids: vec![0, 0, 0],
             tokens: vec![
@@ -361,7 +333,6 @@ mod tests {
         assert_eq!(
             a,
             Encoding {
-                normalized: NormalizedString::from("Hello World!"),
                 ids: vec![1, 2],
                 type_ids: vec![0, 0],
                 tokens: vec![String::from("Hello"), String::from("World")],
@@ -369,7 +340,6 @@ mod tests {
                 special_tokens_mask: vec![0, 0],
                 attention_mask: vec![1, 1],
                 overflowing: vec![Encoding {
-                    normalized: NormalizedString::from("Hello World!"),
                     ids: vec![3],
                     type_ids: vec![0],
                     tokens: vec![String::from("!")],

@@ -1,5 +1,6 @@
 extern crate tokenizers as tk;
 
+use crate::container::Container;
 use crate::decoders::JsDecoder;
 use crate::models::JsModel;
 use crate::normalizers::JsNormalizer;
@@ -7,7 +8,6 @@ use crate::pre_tokenizers::JsPreTokenizer;
 use crate::processors::JsPostProcessor;
 use crate::tasks::tokenizer::{DecodeTask, EncodeTask, WorkingTokenizer};
 use crate::trainers::JsTrainer;
-use crate::utils::Container;
 use neon::prelude::*;
 
 use tk::tokenizer::{
@@ -64,15 +64,41 @@ declare_types! {
             let mut with_added_tokens = true;
             if let Some(args) = cx.argument_opt(0) {
                 if args.downcast::<JsUndefined>().is_err() {
-                    with_added_tokens = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value() as bool;
+                    with_added_tokens = args.downcast::<JsBoolean>()
+                        .or_throw(&mut cx)?
+                        .value() as bool;
                 }
             }
 
             let mut this = cx.this();
             let guard = cx.lock();
-            let size = this.borrow_mut(&guard).tokenizer.get_vocab_size(with_added_tokens);
+            let size = this.borrow_mut(&guard)
+                .tokenizer
+                .get_vocab_size(with_added_tokens);
 
             Ok(cx.number(size as f64).upcast())
+        }
+
+        method normalize(mut cx) {
+            // normalize(sentence: String) -> String
+            let sentence = cx.argument::<JsString>(0)?.value();
+
+            let this = cx.this();
+            let guard = cx.lock();
+
+            let result = {
+                this.borrow(&guard)
+                    .tokenizer
+                    .normalize(&sentence)
+                    .map(|s| s.get().to_owned())
+            };
+            let normalized = result
+                .map_err(|e| {
+                    cx.throw_error::<_, ()>(format!("{}", e))
+                        .unwrap_err()
+                })?;
+
+            Ok(cx.string(normalized).upcast())
         }
 
         method encode(mut cx) {

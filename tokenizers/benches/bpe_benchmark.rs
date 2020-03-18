@@ -68,13 +68,13 @@ fn iter_bench_encode_batch(
 }
 
 fn bench_gpt2(c: &mut Criterion) {
-    let bpe = BPE::from_files("benches/gpt2-vocab.json", "benches/gpt2-merges.txt")
+    let bpe = BPE::from_files("data/gpt2-vocab.json", "data/gpt2-merges.txt")
         .build()
         .unwrap();
     let tokenizer = create_gpt2_tokenizer(bpe);
     let mut lines: Vec<EncodeInput> = vec![];
     let mut batches: Vec<Vec<EncodeInput>> = vec![vec![]];
-    for line in BufReader::new(File::open(Path::new("benches/big.txt")).unwrap())
+    for line in BufReader::new(File::open(Path::new("data/big.txt")).unwrap())
         .lines()
         .map(line_to_input)
     {
@@ -93,7 +93,7 @@ fn bench_gpt2(c: &mut Criterion) {
         b.iter_custom(|iters| iter_bench_encode_batch(iters, &tokenizer, &batches))
     });
 
-    let bpe = BPE::from_files("benches/gpt2-vocab.json", "benches/gpt2-merges.txt")
+    let bpe = BPE::from_files("data/gpt2-vocab.json", "data/gpt2-merges.txt")
         .cache_capacity(0)
         .build()
         .unwrap();

@@ -43,7 +43,6 @@ impl PostProcessor for BertProcessing {
         let attention_mask = vec![1; ids.len()];
 
         let mut new_encoding = Encoding::new(
-            encoding.get_normalized().clone(),
             ids,
             type_ids,
             tokens,
@@ -68,7 +67,6 @@ impl PostProcessor for BertProcessing {
                     let attention_mask = vec![1; ids.len()];
 
                     Encoding::new(
-                        encoding.get_normalized().clone(),
                         ids,
                         type_ids,
                         tokens,
@@ -91,7 +89,6 @@ impl PostProcessor for BertProcessing {
             let pair_attention_mask = vec![1; pair_ids.len()];
 
             let new_pair_encoding = Encoding::new(
-                encoding.get_normalized().clone(),
                 pair_ids,
                 pair_type_ids,
                 pair_tokens,
@@ -112,7 +109,6 @@ impl PostProcessor for BertProcessing {
                         let pair_attention_mask = vec![1; pair_ids.len()];
 
                         Encoding::new(
-                            encoding.get_normalized().clone(),
                             pair_ids,
                             pair_type_ids,
                             pair_tokens,
@@ -125,7 +121,7 @@ impl PostProcessor for BertProcessing {
                     .collect(),
             );
 
-            new_encoding.merge_with(new_pair_encoding);
+            new_encoding.merge_with(new_pair_encoding, false);
         }
 
         Ok(new_encoding)

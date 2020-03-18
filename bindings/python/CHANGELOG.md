@@ -6,18 +6,28 @@ a high number of files as it avoids having too many progress bars on screen.
 - `ByteLevel` is also a `PostProcessor` now and handles trimming the offsets if activated. This
 avoids the unintuitive inclusion of the whitespaces in the produced offsets, even if these
 whitespaces are part of the actual token.
-It has been added to `ByteLevelBPETokenizer` and but it is off by default (`trim_offsets=False`).
-- `encode` and `encode_batch` no take a new optional argument, specifying whether we should add the
-special tokens. This stays activated by default.
+It has been added to `ByteLevelBPETokenizer` but it is off by default (`trim_offsets=False`).
+([#188](https://github.com/huggingface/tokenizers/pull/188))
+- `encode` and `encode_batch` now take a new optional argument, specifying whether we should add the
+special tokens. This is activated by default. ([#193](https://github.com/huggingface/tokenizers/pull/193))
+- `original_str` and `normalized_str` have been removed from the `Encoding` returned by `encode` and
+`encode_batch`. This brings a reduction of 70% the memory footprint.
+([#197](https://github.com/huggingface/tokenizers/pull/197))
 
 ## Fixes:
-- Fix some issues with the offsets being wrong with the `ByteLevel` BPE:
+- Fix some issues with the offsets being wrong with the `ByteLevel` BPE ([#193](https://github.com/huggingface/tokenizers/pull/193)):
 	- when `add_prefix_space=True`
 	- when a Unicode character gets split-up in multiple byte-level characters ([#156](https://github.com/huggingface/tokenizers/issues/156))
 
 ## How to migrate:
 - Add the `ByteLevel` `PostProcessor` to your byte-level BPE tokenizers if relevant. If you are
 using `ByteLevelBPETokenizer`, this option is disabled by default (`trim_offsets=False`).
+- Access to the `original_str` on the `Encoding` has been removed. The original string is the input
+of `encode` so it didn't make sense to keep it here.
+- No need to call `original_str.offsets(offsets[N])` to convert offsets to the original string. They
+are now relative to the original string by default.
+- Access to the `normalized_str` on the `Encoding` has been removed. Can be retrieved by calling
+`normalize(sequence)` on the `Tokenizer`
 
 # v0.6.0
 

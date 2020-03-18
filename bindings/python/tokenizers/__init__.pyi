@@ -16,32 +16,9 @@ from typing import Optional, Union, List, Tuple
 
 Offsets = Tuple[int, int]
 
-class IndexableString:
-    """
-    Works almost like a `str`, but allows indexing on offsets
-    provided on an `Encoding`
-    """
-
-    def offsets(self, offsets: Tuple[int, int]) -> Optional[Tuple[int, int]]:
-        """ Convert the Encoding's offsets to the current string.
-
-        `Encoding` provides a list of offsets that are actually offsets to the Normalized
-        version of text. Calling this method with the offsets provided by `Encoding` will make
-        sure that said offsets can be used to index the `str` directly.
-        """
-        pass
-
 class Encoding:
     """ An Encoding as returned by the Tokenizer """
 
-    @property
-    def normalized_str(self) -> IndexableString:
-        """ The normalized string """
-        pass
-    @property
-    def original_str(self) -> IndexableString:
-        """ The original string """
-        pass
     @property
     def ids(self) -> List[int]:
         """ The tokenized ids """
@@ -243,6 +220,17 @@ class Tokenizer:
         pass
     def no_padding(self):
         """ Disable padding """
+        pass
+    def normalize(self, sequence: str) -> str:
+        """ Normalize the given sequence
+
+        Args:
+            sequence: str:
+                The sequence to normalize
+
+        Returns:
+            The normalized string
+        """
         pass
     def encode(
         self, sequence: str, pair: Optional[str] = None, add_special_tokens: bool = True

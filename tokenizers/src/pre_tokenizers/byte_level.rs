@@ -239,7 +239,7 @@ impl PostProcessor for ByteLevel {
             None => encoding,
             Some(mut pair) => {
                 process_offsets(&mut pair);
-                encoding.merge_with(pair);
+                encoding.merge_with(pair, false);
                 encoding
             }
         };
@@ -251,7 +251,9 @@ impl PostProcessor for ByteLevel {
 #[cfg(test)]
 mod tests {
     use super::ByteLevel;
-    use crate::tokenizer::{Decoder, Encoding, NormalizedString, PostProcessor, PreTokenizer};
+    use crate::tokenizer::{
+        Decoder, Encoding, NormalizedString, PostProcessor, PreTokenizer, Range,
+    };
 
     #[test]
     fn pre_tokenization() {
@@ -391,13 +393,12 @@ mod tests {
             ]
         );
         assert_eq!(input.get(), "iâŃ¢j");
-        assert_eq!(input.get_range_original(1..4), Some("⭢".into()));
+        assert_eq!(input.get_range_original(Range::Normalized(1..4)), Some("⭢"));
     }
 
     #[test]
     fn processor_trims_offsets() {
         let start = Encoding::new(
-            NormalizedString::from(""),
             vec![],
             vec![],
             vec![
@@ -412,7 +413,6 @@ mod tests {
             vec![],
         );
         let expected = Encoding::new(
-            NormalizedString::from(""),
             vec![],
             vec![],
             vec![
@@ -434,7 +434,7 @@ mod tests {
         );
 
         let mut pair_expected = expected.clone();
-        pair_expected.merge_with(expected);
+        pair_expected.merge_with(expected, false);
         assert_eq!(
             pair_expected,
             bytelevel

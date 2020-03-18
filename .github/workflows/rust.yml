@@ -60,7 +60,22 @@ jobs:
           args: --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Run Tests
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        working-directory: ./tokenizers
+        run: make test
+
+      # Skip integration tests for now on Windows
+      - name: Run lib Tests on Windows
+        if: matrix.os == 'windows-latest'
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --manifest-path ./tokenizers/Cargo.toml
+          args: --verbose --manifest-path ./tokenizers/Cargo.toml --lib
+
+      - name: Run doc Tests on Windows
+        if: matrix.os == 'windows-latest'
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --verbose --manifest-path ./tokenizers/Cargo.toml --doc

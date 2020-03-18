@@ -5,7 +5,6 @@ export class Encoding {
   private _ids?: number[];
   private _length?: number;
   private _offsets?: [number, number][];
-  private _originalString?: string;
   private _overflowing?: Encoding[];
   private _specialTokensMask?: number[];
   private _tokens?: string[];
@@ -104,27 +103,6 @@ export class Encoding {
   }
 
   /**
-   * Returns the original string
-   *
-   * @param [begin] The index from which to start (can be negative).
-   * @param [end] The index (excluded) to which to stop (can be negative).
-   * Stopping at the end of the string if not provided.
-   * @returns The full original string if no parameter is provided,
-   * otherwise the original string between `begin` and `end`
-   */
-  getOriginalString(begin?: number, end?: number): string {
-    if (begin === undefined && end === undefined) {
-      if (this._originalString !== undefined) {
-        return this._originalString;
-      } else {
-        return (this._originalString = this.rawEncoding.getOriginalString());
-      }
-    }
-
-    return this.rawEncoding.getOriginalString(begin, end);
-  }
-
-  /**
    * Pad the current Encoding at the given length
    *
    * @param length The length at which to pad
@@ -153,7 +131,6 @@ export class Encoding {
       "_ids",
       "_length",
       "_offsets",
-      "_originalString",
       "_overflowing",
       "_specialTokensMask",
       "_tokens",
