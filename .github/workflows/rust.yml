@@ -19,6 +19,10 @@ jobs:
           components: rustfmt, clippy
           override: true
 
+      # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
+      - if: matrix.os == 'ubuntu-latest'
+        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
+
       - name: Cache Cargo Registry
         uses: actions/cache@v1
         with:
@@ -41,19 +45,19 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args:  --manifest-path ./tokenizers/Cargo.toml -- --check
+          args: --manifest-path ./tokenizers/Cargo.toml -- --check
 
       - name: Lint Benchmarks with RustFmt
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args:  --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/bpe_benchmark.rs --check
+          args: --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/bpe_benchmark.rs --check
 
       - name: Lint with Clippy
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args:  --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
+          args: --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Run Tests
         uses: actions-rs/cargo@v1

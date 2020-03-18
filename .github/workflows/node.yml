@@ -18,6 +18,9 @@ jobs:
         with:
           toolchain: stable
 
+      # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
+      - run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
+
       - name: Cache Cargo Registry
         uses: actions/cache@v1
         with:
