@@ -1,5 +1,10 @@
+use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 use tokenizers::models::bpe::BPE;
+use tokenizers::models::wordpiece::WordPiece;
+use tokenizers::normalizers::bert::BertNormalizer;
+use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::processors::bert::BertProcessing;
 use tokenizers::tokenizer::{get_range_of, EncodeInput, Tokenizer};
 
 fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
@@ -13,6 +18,29 @@ fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
     ));
     tokenizer.with_decoder(Box::new(ByteLevel::default()));
     tokenizer.with_post_processor(Box::new(ByteLevel::default().trim_offsets(trim_offsets)));
+
+    tokenizer
+}
+
+fn get_bert() -> Tokenizer {
+    let mut tokenizer = Tokenizer::new(Box::new(
+        WordPiece::from_files("data/bert-base-uncased-vocab.txt")
+            .build()
+            .expect("Files not found, run `make test` to download these files"),
+    ));
+    tokenizer.with_normalizer(Box::new(BertNormalizer::default()));
+    tokenizer.with_pre_tokenizer(Box::new(BertPreTokenizer));
+    tokenizer.with_decoder(Box::new(WordPieceDecoder::default()));
+    tokenizer.with_post_processor(Box::new(BertProcessing::new(
+        (
+            String::from("[SEP]"),
+            tokenizer.get_model().token_to_id("[SEP]").unwrap(),
+        ),
+        (
+            String::from("[CLS]"),
+            tokenizer.get_model().token_to_id("[CLS]").unwrap(),
+        ),
+    )));
 
     tokenizer
 }
@@ -149,6 +177,28 @@ fn byte_level_double_sequence() {
             (8, 10),
             (11, 15),
             (15, 16)
+        ]
+    );
+}
+
+#[test]
+fn split_on_added_tokens_bert() {
+    let input = String::from("Yesterday I saw a [MASK] far away");
+
+    let mut tokenizer = get_bert();
+    tokenizer.add_special_tokens(&["[MASK]"]);
+    let output = tokenizer.encode(EncodeInput::Single(input), false).unwrap();
+
+    assert_eq!(
+        output.get_offsets(),
+        &[
+            (0, 9),
+            (10, 11),
+            (12, 15),
+            (16, 17),
+            (18, 24),
+            (25, 28),
+            (29, 33)
         ]
     );
 }

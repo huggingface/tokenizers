@@ -390,20 +390,29 @@ impl Tokenizer {
                     return Ok((Encoding::default(), NormalizedString::from("")));
                 }
 
+                // Merge encodings and normalized strings
                 let others = encodings.split_off(1);
-                let mut first: Encoding = encodings.into_iter().next().unwrap();
+                let n_others = normalized.split_off(1);
 
-                for encoding in others {
-                    first.merge_with(encoding, true);
+                let mut final_encoding: Encoding = encodings.into_iter().next().unwrap();
+                let mut final_normalized: NormalizedString = normalized.into_iter().next().unwrap();
+
+                let mut offset = final_normalized.len_original();
+                for (mut encoding, normalized) in others.into_iter().zip(n_others) {
+                    encoding
+                        .get_offsets_mut()
+                        .iter_mut()
+                        .for_each(|(start, end)| {
+                            *start += offset;
+                            *end += offset;
+                        });
+                    offset += normalized.len();
+
+                    final_encoding.merge_with(encoding, false);
+                    final_normalized.merge_with(&normalized);
                 }
 
-                let others = normalized.split_off(1);
-                let mut normalized: NormalizedString = normalized.into_iter().next().unwrap();
-                for n in others {
-                    normalized.merge_with(&n);
-                }
-
-                Ok((first, normalized))
+                Ok((final_encoding, final_normalized))
             };
 
         let (sentence, pair) = match input {

@@ -6,7 +6,7 @@ dir_guard=@mkdir -p $(@D)
 
 SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/big.txt
-TESTS_RESOURCES = $(SHARED_RESOURCES)
+TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/bert-base-uncased-vocab.txt
 
 .PHONY : build
 build :
@@ -48,6 +48,10 @@ bench : $(BENCHMARK_RESOURCES)
 $(DATA_DIR)/gpt2-% :
 	$(dir_guard)
 	wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-$* -O $@
+
+$(DATA_DIR)/bert-% :
+	$(dir_guard)
+	wget https://s3.amazonaws.com/models.huggingface.co/bert/bert-$* -O $@
 
 $(DATA_DIR)/big.txt :
 	$(dir_guard)
