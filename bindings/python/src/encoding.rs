@@ -4,7 +4,7 @@ use crate::error::PyError;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3::{PyObjectProtocol, PySequenceProtocol};
-use tk::tokenizer::PaddingDirection;
+use tk::tokenizer::{Offsets, PaddingDirection};
 
 #[pyclass(dict)]
 #[repr(transparent)]

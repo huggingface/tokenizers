@@ -2,6 +2,8 @@ from .. import Tokenizer, Encoding
 
 from typing import List, Union, Tuple, Optional
 
+Offsets = Tuple[int, int]
+
 
 class BaseTokenizer:
     def __init__(self, tokenizer: Tokenizer, parameters=None):
@@ -135,6 +137,25 @@ class BaseTokenizer:
             The normalized string
         """
         return self._tokenizer.normalize(sequence)
+
+    def encode_tokenized(
+        self, sequence: Union[List[str], List[Tuple[str, Offsets]]], type_id: int = 0
+    ) -> Encoding:
+        """ Encode the given tokenized sequence. Let us skip the Normalizer and PreTokenizer
+        by providing already tokenized substrings.
+
+        Args:
+            sequence: Union[List[str], List[Tuple[str, Offsets]]]:
+                Either a list of strings, or a list of tuples (string, offsets) where offset
+                is a tuple (int, int)
+
+            type_id: int:
+                The type id of the given sequence
+
+        Returns:
+            An Encoding
+        """
+        return self._tokenizer.model.encode(sequence)
 
     def encode(
         self, sequence: str, pair: Optional[str] = None, add_special_tokens: bool = True

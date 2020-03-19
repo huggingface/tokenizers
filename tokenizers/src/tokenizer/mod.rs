@@ -433,38 +433,10 @@ impl Tokenizer {
                         let pre_tokenized = self.pre_tokenize(&mut normalized)?;
 
                         // 3. Model
-                        let output = self.model.tokenize(pre_tokenized)?;
-                        let length = output.len();
+                        let tokens = self.model.tokenize(pre_tokenized)?;
+                        let encoding = Encoding::from_tokens(tokens, type_id);
 
-                        let (ids, tokens, offsets, words) = output.into_iter().fold(
-                            (
-                                Vec::with_capacity(length),
-                                Vec::with_capacity(length),
-                                Vec::with_capacity(length),
-                                Vec::with_capacity(length),
-                            ),
-                            |(mut ids, mut tokens, mut offsets, mut words), t| {
-                                ids.push(t.id);
-                                tokens.push(t.value);
-                                offsets.push(t.offsets);
-                                words.push(t.word);
-                                (ids, tokens, offsets, words)
-                            },
-                        );
-
-                        Ok((
-                            Encoding::new(
-                                ids,
-                                vec![type_id; length],
-                                tokens,
-                                words,
-                                offsets,
-                                vec![0; length],
-                                vec![1; length],
-                                vec![],
-                            ),
-                            normalized,
-                        ))
+                        Ok((encoding, normalized))
                     },
                 );
 

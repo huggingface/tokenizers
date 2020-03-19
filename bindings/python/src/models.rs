@@ -1,5 +1,6 @@
 extern crate tokenizers as tk;
 
+use super::encoding::Encoding;
 use super::error::ToPyResult;
 use super::utils::Container;
 use pyo3::exceptions;
@@ -34,6 +35,67 @@ impl Model {
             .into_iter()
             .map(|path| path.to_string_lossy().into_owned())
             .collect())
+    }
+
+    #[args(type_id = 0)]
+    fn encode(&self, sequence: &PyList, type_id: u32) -> PyResult<Encoding> {
+        if sequence.is_empty() {
+            return Ok(Encoding::new(tk::tokenizer::Encoding::default()));
+        }
+
+        enum Mode {
+            NoOffsets,
+            Offsets,
+        };
+        let mode = sequence
+            .iter()
+            .next()
+            .map(|item| {
+                if item.extract::<String>().is_ok() {
+                    Ok(Mode::NoOffsets)
+                } else if item.extract::<(String, (usize, usize))>().is_ok() {
+                    Ok(Mode::Offsets)
+                } else {
+                    Err(exceptions::ValueError::py_err(
+                        "Input must be a list[str] or list[(str, (int, int))]",
+                    ))
+                }
+            })
+            .unwrap()?;
+
+        let mut total_len = 0;
+        let sequence = sequence
+            .iter()
+            .enumerate()
+            .map(|(i, item)| match mode {
+                Mode::NoOffsets => item
+                    .extract::<String>()
+                    .map_err(|_| {
+                        exceptions::ValueError::py_err(format!(
+                            "Value at index {} should be a `str`",
+                            i
+                        ))
+                    })
+                    .map(|s| {
+                        let len = s.chars().count();
+                        total_len += len;
+                        (s, (total_len - len, total_len))
+                    }),
+                Mode::Offsets => item.extract::<(String, (usize, usize))>().map_err(|_| {
+                    exceptions::ValueError::py_err(format!(
+                        "Value at index {} should be a `(str, (int, int))`",
+                        i
+                    ))
+                }),
+            })
+            .collect::<Result<Vec<_>, PyErr>>()?;
+
+        ToPyResult(self.model.execute(|model| {
+            model
+                .tokenize(sequence)
+                .map(|tokens| Encoding::new(tk::tokenizer::Encoding::from_tokens(tokens, type_id)))
+        }))
+        .into()
     }
 }
 

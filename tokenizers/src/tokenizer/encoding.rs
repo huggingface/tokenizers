@@ -1,4 +1,4 @@
-use crate::tokenizer::Offsets;
+use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use rayon::prelude::*;
 
@@ -43,6 +43,36 @@ impl Encoding {
             special_tokens_mask,
             attention_mask,
             overflowing,
+        }
+    }
+
+    pub fn from_tokens(tokens: Vec<Token>, type_id: u32) -> Self {
+        let length = tokens.len();
+        let (ids, tokens, offsets, words) = tokens.into_iter().fold(
+            (
+                Vec::with_capacity(length),
+                Vec::with_capacity(length),
+                Vec::with_capacity(length),
+                Vec::with_capacity(length),
+            ),
+            |(mut ids, mut tokens, mut offsets, mut words), t| {
+                ids.push(t.id);
+                tokens.push(t.value);
+                offsets.push(t.offsets);
+                words.push(t.word);
+                (ids, tokens, offsets, words)
+            },
+        );
+
+        Encoding {
+            ids,
+            tokens,
+            offsets,
+            words,
+            type_ids: vec![type_id; length],
+            attention_mask: vec![1; length],
+            special_tokens_mask: vec![0; length],
+            overflowing: vec![],
         }
     }
 

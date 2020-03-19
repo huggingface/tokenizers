@@ -1,4 +1,7 @@
-from typing import List, Optional
+from .. import Encoding
+from typing import List, Optional, Union, Tuple
+
+Offsets = Tuple[int, int]
 
 class Model:
     """ Base class for all models
@@ -13,6 +16,23 @@ class Model:
         Save the current model in the given folder, using the given name for the various
         files that will get created.
         Any file with the same name that already exist in this folder will be overwritten.
+        """
+        pass
+    def encode(
+        self, sequence: Union[List[str], List[Tuple[str, Offsets]]], type_id: int = 0
+    ) -> Encoding:
+        """ Encode the given list of string or tuples (string, offsets)
+
+        Args:
+            sequence: Union[List[str], List[Tuple[str, Tuple[int, int]]]]:
+                Either a list of strings, or a list of tuples (string, offsets) where offset
+                is a tuple (int, int)
+
+            type_id: int:
+                The type id of the given sequence
+
+        Returns:
+            An Encoding
         """
         pass
 
