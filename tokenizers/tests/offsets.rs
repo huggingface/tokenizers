@@ -5,7 +5,7 @@ use tokenizers::normalizers::bert::BertNormalizer;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::processors::bert::BertProcessing;
-use tokenizers::tokenizer::{get_range_of, EncodeInput, Tokenizer};
+use tokenizers::tokenizer::{get_range_of, AddedToken, EncodeInput, Tokenizer};
 
 fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
     let mut tokenizer = Tokenizer::new(Box::new(
@@ -186,7 +186,7 @@ fn split_on_added_tokens_bert() {
     let input = String::from("Yesterday I saw a [MASK] far away");
 
     let mut tokenizer = get_bert();
-    tokenizer.add_special_tokens(&["[MASK]"]);
+    tokenizer.add_special_tokens(&[AddedToken::from("[MASK]".into())]);
     let output = tokenizer.encode(EncodeInput::Single(input), false).unwrap();
 
     assert_eq!(
