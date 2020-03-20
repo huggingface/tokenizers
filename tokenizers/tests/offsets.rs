@@ -1,53 +1,13 @@
-use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
-use tokenizers::models::bpe::BPE;
-use tokenizers::models::wordpiece::WordPiece;
-use tokenizers::normalizers::bert::BertNormalizer;
-use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
-use tokenizers::pre_tokenizers::byte_level::ByteLevel;
-use tokenizers::processors::bert::BertProcessing;
-use tokenizers::tokenizer::{get_range_of, AddedToken, EncodeInput, Tokenizer};
+mod common;
 
-fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
-    let mut tokenizer = Tokenizer::new(Box::new(
-        BPE::from_files("data/gpt2-vocab.json", "data/gpt2-merges.txt")
-            .build()
-            .expect("Files not found, run `make test` to download these files"),
-    ));
-    tokenizer.with_pre_tokenizer(Box::new(
-        ByteLevel::default().add_prefix_space(add_prefix_space),
-    ));
-    tokenizer.with_decoder(Box::new(ByteLevel::default()));
-    tokenizer.with_post_processor(Box::new(ByteLevel::default().trim_offsets(trim_offsets)));
+use common::*;
+use tokenizers::tokenizer::{get_range_of, AddedToken, EncodeInput};
 
-    tokenizer
-}
-
-fn get_bert() -> Tokenizer {
-    let mut tokenizer = Tokenizer::new(Box::new(
-        WordPiece::from_files("data/bert-base-uncased-vocab.txt")
-            .build()
-            .expect("Files not found, run `make test` to download these files"),
-    ));
-    tokenizer.with_normalizer(Box::new(BertNormalizer::default()));
-    tokenizer.with_pre_tokenizer(Box::new(BertPreTokenizer));
-    tokenizer.with_decoder(Box::new(WordPieceDecoder::default()));
-    tokenizer.with_post_processor(Box::new(BertProcessing::new(
-        (
-            String::from("[SEP]"),
-            tokenizer.get_model().token_to_id("[SEP]").unwrap(),
-        ),
-        (
-            String::from("[CLS]"),
-            tokenizer.get_model().token_to_id("[CLS]").unwrap(),
-        ),
-    )));
-
-    tokenizer
-}
-
-#[inline]
-fn offset_as_range(offset: (usize, usize)) -> std::ops::Range<usize> {
-    offset.0..offset.1
+macro_rules! check_offsets {
+    ($input: expr, $output:expr, $offset:expr, $result:expr) => {
+        let offsets = $output.get_offsets()[$offset];
+        assert_eq!(get_range_of(&$input, offsets.0..offsets.1), Some($result));
+    };
 }
 
 #[test]
@@ -60,29 +20,13 @@ fn byte_level_basic() {
         .encode(EncodeInput::Single(input.clone()), false)
         .unwrap();
 
-    let offsets = output.get_offsets();
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[0])),
-        Some("Hello")
-    );
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[1])),
-        Some(" there")
-    );
-    assert_eq!(get_range_of(&input, offset_as_range(offsets[2])), Some(","));
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[3])),
-        Some(" how")
-    );
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[4])),
-        Some(" are")
-    );
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[5])),
-        Some(" you")
-    );
-    assert_eq!(get_range_of(&input, offset_as_range(offsets[6])), Some("?"));
+    check_offsets!(input, output, 0, "Hello");
+    check_offsets!(input, output, 1, " there");
+    check_offsets!(input, output, 2, ",");
+    check_offsets!(input, output, 3, " how");
+    check_offsets!(input, output, 4, " are");
+    check_offsets!(input, output, 5, " you");
+    check_offsets!(input, output, 6, "?");
 
     // And when trimming offsets:
     let tokenizer = get_byte_level(true, true);
@@ -92,29 +36,13 @@ fn byte_level_basic() {
         .encode(EncodeInput::Single(input.clone()), false)
         .unwrap();
 
-    let offsets = output.get_offsets();
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[0])),
-        Some("Hello")
-    );
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[1])),
-        Some("there")
-    );
-    assert_eq!(get_range_of(&input, offset_as_range(offsets[2])), Some(","));
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[3])),
-        Some("how")
-    );
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[4])),
-        Some("are")
-    );
-    assert_eq!(
-        get_range_of(&input, offset_as_range(offsets[5])),
-        Some("you")
-    );
-    assert_eq!(get_range_of(&input, offset_as_range(offsets[6])), Some("?"));
+    check_offsets!(input, output, 0, "Hello");
+    check_offsets!(input, output, 1, "there");
+    check_offsets!(input, output, 2, ",");
+    check_offsets!(input, output, 3, "how");
+    check_offsets!(input, output, 4, "are");
+    check_offsets!(input, output, 5, "you");
+    check_offsets!(input, output, 6, "?");
 }
 
 #[test]
@@ -126,10 +54,9 @@ fn byte_level_unicode() {
         .encode(EncodeInput::Single(input.clone()), false)
         .unwrap();
 
-    let offsets = output.get_offsets();
-    assert_eq!(get_range_of(&input, offset_as_range(offsets[1])), Some("⭢"));
-    assert_eq!(get_range_of(&input, offset_as_range(offsets[2])), Some("⭢"));
-    assert_eq!(get_range_of(&input, offset_as_range(offsets[3])), Some("⭢"));
+    check_offsets!(input, output, 1, "⭢");
+    check_offsets!(input, output, 2, "⭢");
+    check_offsets!(input, output, 3, "⭢");
 }
 
 #[test]
