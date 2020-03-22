@@ -117,20 +117,21 @@ impl Encoding {
     }
 
     /// Find the boundaries of the word at the given index (Indices in the various Vec).
+    /// The upper value is excluded, just like for offsets.
     pub fn word_boundaries(&self, index: usize) -> Option<(usize, usize)> {
         self.words.get(index).map(|word_id| {
             let start = (0..=index)
                 .rev()
-                .take_while(|i| self.words[index - i - 1] == *word_id)
+                .take_while(|i| self.words[*i] == *word_id)
                 .min()
                 .unwrap();
 
             let end = (index..self.words.len())
-                .take_while(|i| self.words[index + i] == *word_id)
+                .take_while(|i| self.words[*i] == *word_id)
                 .max()
                 .unwrap();
 
-            (start, end)
+            (start, end + 1)
         })
     }
 
@@ -155,7 +156,7 @@ impl Encoding {
     /// Find the Offsets of the word that contains the token at the given index
     pub fn token_to_word(&self, index: usize) -> Option<Offsets> {
         self.word_boundaries(index)
-            .map(|(min, max)| (self.offsets[min].0, self.offsets[max].1))
+            .map(|(min, max)| (self.offsets[min].0, self.offsets[max - 1].1))
     }
 
     /// Truncate the current `Encoding`.
@@ -460,5 +461,54 @@ mod tests {
                 }]
             }
         );
+    }
+
+    #[test]
+    fn word_boundaries() {
+        let encoding = Encoding {
+            words: vec![0, 0, 1, 1, 1, 2, 3, 4, 4],
+            ..Default::default()
+        };
+        assert_eq!(encoding.word_boundaries(0), Some((0, 2)));
+        assert_eq!(encoding.word_boundaries(1), Some((0, 2)));
+        assert_eq!(encoding.word_boundaries(2), Some((2, 5)));
+        assert_eq!(encoding.word_boundaries(3), Some((2, 5)));
+        assert_eq!(encoding.word_boundaries(5), Some((5, 6)));
+        assert_eq!(encoding.word_boundaries(8), Some((7, 9)));
+    }
+
+    #[test]
+    fn mappings() {
+        let encoding = Encoding {
+            words: vec![0, 0, 1, 1, 1, 2, 3, 4, 4],
+            offsets: vec![
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (6, 7),
+                (7, 10),
+                (10, 12),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(encoding.char_to_token(0), Some((0, 1)));
+        assert_eq!(encoding.char_to_token(1), Some((1, 2)));
+        assert_eq!(encoding.char_to_token(2), Some((2, 3)));
+        assert_eq!(encoding.char_to_token(8), Some((7, 10)));
+        assert_eq!(encoding.char_to_token(10), Some((10, 12)));
+        assert_eq!(encoding.char_to_word(0), Some((0, 2)));
+        assert_eq!(encoding.char_to_word(1), Some((0, 2)));
+        assert_eq!(encoding.char_to_word(2), Some((2, 5)));
+        assert_eq!(encoding.char_to_word(8), Some((7, 12)));
+        assert_eq!(encoding.char_to_word(10), Some((7, 12)));
+        assert_eq!(encoding.token_to_word(0), Some((0, 2)));
+        assert_eq!(encoding.token_to_word(1), Some((0, 2)));
+        assert_eq!(encoding.token_to_word(2), Some((2, 5)));
+        assert_eq!(encoding.token_to_word(3), Some((2, 5)));
+        assert_eq!(encoding.token_to_word(7), Some((7, 12)));
+        assert_eq!(encoding.token_to_word(8), Some((7, 12)));
     }
 }
