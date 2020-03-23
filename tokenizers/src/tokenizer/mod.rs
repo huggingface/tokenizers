@@ -94,7 +94,10 @@ pub trait Trainer: Sync {
     fn should_show_progress(&self) -> bool;
     /// The actual training method. This will return a new trained Model as well as a list
     /// of `special_tokens` to be added directly to the tokenizer along with the model.
-    fn train(&self, words: HashMap<String, u32>) -> Result<(Box<dyn Model + Sync>, Vec<String>)>;
+    fn train(
+        &self,
+        words: HashMap<String, u32>,
+    ) -> Result<(Box<dyn Model + Sync>, Vec<AddedToken>)>;
     /// Process a bunch of token, counting them as relevant.
     fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>);
 }
@@ -645,13 +648,7 @@ impl Tokenizer {
 
         let (model, special_tokens) = trainer.train(words)?;
         self.model = model;
-        // TODO: Trainer should give added tokens directly
-        self.add_special_tokens(
-            &special_tokens
-                .iter()
-                .map(|s| AddedToken::from(s.to_owned()))
-                .collect::<Vec<_>>(),
-        );
+        self.add_special_tokens(&special_tokens);
 
         Ok(())
     }

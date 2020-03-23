@@ -1,6 +1,6 @@
 use super::WordPiece;
 use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder};
-use crate::tokenizer::{Model, Result, Trainer};
+use crate::tokenizer::{AddedToken, Model, Result, Trainer};
 use std::collections::{HashMap, HashSet};
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
@@ -42,7 +42,7 @@ impl WordPieceTrainerBuilder {
     }
 
     /// Set the special tokens
-    pub fn special_tokens(mut self, tokens: Vec<String>) -> Self {
+    pub fn special_tokens(mut self, tokens: Vec<AddedToken>) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.special_tokens(tokens);
         self
     }
@@ -89,7 +89,7 @@ impl WordPieceTrainer {
         WordPieceTrainerBuilder::default()
     }
 
-    pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<(WordPiece, Vec<String>)> {
+    pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<(WordPiece, Vec<AddedToken>)> {
         let (bpe, tokens) = self.bpe_trainer.train(word_counts)?;
         Ok((WordPiece::from_bpe(&bpe), tokens))
     }
@@ -99,7 +99,7 @@ impl Trainer for WordPieceTrainer {
     fn train(
         &self,
         word_counts: HashMap<String, u32>,
-    ) -> Result<(Box<dyn Model + Sync>, Vec<String>)> {
+    ) -> Result<(Box<dyn Model + Sync>, Vec<AddedToken>)> {
         let (wp, tokens) = self.train(word_counts)?;
         Ok((Box::new(wp), tokens))
     }

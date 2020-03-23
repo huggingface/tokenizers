@@ -1,7 +1,7 @@
 #![allow(clippy::map_entry)]
 
 use super::{Pair, WithFirstLastIterator, Word, BPE};
-use crate::tokenizer::{Model, Result, Trainer};
+use crate::tokenizer::{AddedToken, Model, Result, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::cmp::Ordering;
@@ -38,7 +38,7 @@ struct Config {
     min_frequency: u32,
     vocab_size: usize,
     show_progress: bool,
-    special_tokens: Vec<String>,
+    special_tokens: Vec<AddedToken>,
     limit_alphabet: Option<usize>,
     initial_alphabet: HashSet<char>,
     continuing_subword_prefix: Option<String>,
@@ -93,7 +93,7 @@ impl BpeTrainerBuilder {
     }
 
     /// Set the special tokens
-    pub fn special_tokens(mut self, tokens: Vec<String>) -> Self {
+    pub fn special_tokens(mut self, tokens: Vec<AddedToken>) -> Self {
         self.config.special_tokens = tokens;
         self
     }
@@ -161,7 +161,7 @@ pub struct BpeTrainer {
     /// Whether to show progress while training
     show_progress: bool,
     /// A list of special tokens that the model should know of
-    special_tokens: Vec<String>,
+    special_tokens: Vec<AddedToken>,
     /// Whether to limit the number of initial tokens that can be kept before computing merges
     limit_alphabet: Option<usize>,
     /// The initial alphabet we want absolutely to include. This allows to cover
@@ -227,9 +227,9 @@ impl BpeTrainer {
     /// Add the provided special tokens to the initial vocabulary
     fn add_special_tokens(&self, w2id: &mut HashMap<String, u32>, id2w: &mut Vec<String>) {
         for token in &self.special_tokens {
-            if !w2id.contains_key(token) {
-                id2w.push(token.to_owned());
-                w2id.insert(token.to_owned(), (id2w.len() - 1) as u32);
+            if !w2id.contains_key(&token.content) {
+                id2w.push(token.content.to_owned());
+                w2id.insert(token.content.to_owned(), (id2w.len() - 1) as u32);
             }
         }
     }
@@ -431,7 +431,7 @@ impl BpeTrainer {
         (pair_counts, where_to_update)
     }
 
-    pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<(BPE, Vec<String>)> {
+    pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<(BPE, Vec<AddedToken>)> {
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
 
@@ -601,7 +601,7 @@ impl Trainer for BpeTrainer {
     fn train(
         &self,
         word_counts: HashMap<String, u32>,
-    ) -> Result<(Box<dyn Model + Sync>, Vec<String>)> {
+    ) -> Result<(Box<dyn Model + Sync>, Vec<AddedToken>)> {
         let (bpe, tokens) = self.train(word_counts)?;
         Ok((Box::new(bpe), tokens))
     }
