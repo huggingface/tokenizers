@@ -1,4 +1,5 @@
-from typing import Optional, List
+from .. import AddedToken
+from typing import Optional, List, Union
 
 class Trainer:
     """ Base class for all trainers
@@ -18,7 +19,7 @@ class BpeTrainer(Trainer):
         vocab_size: int = 30000,
         min_frequency: int = 0,
         show_progress: bool = True,
-        special_tokens: List[str] = [],
+        special_tokens: List[Union[str, AddedToken]] = [],
         limit_alphabet: Optional[int] = None,
         initial_alphabet: List[str] = [],
         continuing_subword_prefix: Optional[str] = None,
@@ -36,7 +37,7 @@ class BpeTrainer(Trainer):
             show_progress: boolean:
                 Whether to show progress bars while training.
 
-            special_tokens: List[str]:
+            special_tokens: List[Union[str, AddedToken]]:
                 A list of special tokens the model should know of.
 
             limit_alphabet: unsigned int:
@@ -70,7 +71,7 @@ class WordPieceTrainer(Trainer):
         vocab_size: int = 30000,
         min_frequency: int = 0,
         show_progress: bool = True,
-        special_tokens: List[str] = [],
+        special_tokens: List[Union[str, AddedToken]] = [],
         limit_alphabet: Optional[int] = None,
         initial_alphabet: List[str] = [],
         continuing_subword_prefix: Optional[str] = "##",
@@ -88,7 +89,7 @@ class WordPieceTrainer(Trainer):
             show_progress: boolean:
                 Whether to show progress bars while training.
 
-            special_tokens: List[str]:
+            special_tokens: List[Union[str, AddedToken]]:
                 A list of special tokens the model should know of.
 
             limit_alphabet: unsigned int:

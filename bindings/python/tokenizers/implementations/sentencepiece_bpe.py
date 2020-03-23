@@ -1,4 +1,4 @@
-from tokenizers import Tokenizer, pre_tokenizers, decoders, trainers
+from tokenizers import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers
 from tokenizers.models import BPE
 from tokenizers.normalizers import NFKC
 from .base_tokenizer import BaseTokenizer
@@ -16,7 +16,7 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         self,
         vocab_file: Optional[str] = None,
         merges_file: Optional[str] = None,
-        unk_token: str = "<unk>",
+        unk_token: Union[str, AddedToken] = "<unk>",
         replacement: str = "▁",
         add_prefix_space: bool = True,
         dropout: Optional[float] = None,
@@ -54,7 +54,7 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         files: Union[str, List[str]],
         vocab_size: int = 30000,
         min_frequency: int = 2,
-        special_tokens: List[str] = ["<unk>"],
+        special_tokens: List[Union[str, AddedToken]] = ["<unk>"],
         limit_alphabet: int = 1000,
         initial_alphabet: List[str] = [],
         show_progress: bool = True,

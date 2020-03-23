@@ -1,4 +1,4 @@
-from .. import Tokenizer, pre_tokenizers, decoders, trainers
+from .. import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers
 from ..models import BPE
 from ..normalizers import Sequence, Lowercase, unicode_normalizer_from_str
 from .base_tokenizer import BaseTokenizer
@@ -16,8 +16,8 @@ class CharBPETokenizer(BaseTokenizer):
         self,
         vocab_file: Optional[str] = None,
         merges_file: Optional[str] = None,
-        unk_token: Optional[str] = "<unk>",
-        suffix: Optional[str] = "</w>",
+        unk_token: Union[str, AddedToken] = "<unk>",
+        suffix: str = "</w>",
         dropout: Optional[float] = None,
         lowercase: bool = False,
         unicode_normalizer: Optional[str] = None,
@@ -73,7 +73,7 @@ class CharBPETokenizer(BaseTokenizer):
         files: Union[str, List[str]],
         vocab_size: int = 30000,
         min_frequency: int = 2,
-        special_tokens: List[str] = ["<unk>"],
+        special_tokens: List[Union[str, AddedToken]] = ["<unk>"],
         limit_alphabet: int = 1000,
         initial_alphabet: List[str] = [],
         suffix: Optional[str] = "</w>",

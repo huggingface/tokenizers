@@ -1,4 +1,4 @@
-from tokenizers import Tokenizer, pre_tokenizers, decoders, trainers, processors
+from tokenizers import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers, processors
 from tokenizers.models import BPE
 from tokenizers.normalizers import unicode_normalizer_from_str, Lowercase, Sequence
 from .base_tokenizer import BaseTokenizer
@@ -76,7 +76,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         vocab_size: int = 30000,
         min_frequency: int = 2,
         show_progress: bool = True,
-        special_tokens: List[str] = [],
+        special_tokens: List[Union[str, AddedToken]] = [],
     ):
         """ Train the model using the given files """
 

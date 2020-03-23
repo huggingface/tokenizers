@@ -1,4 +1,4 @@
-from tokenizers import Tokenizer, decoders, trainers
+from tokenizers import Tokenizer, AddedToken, decoders, trainers
 from tokenizers.models import WordPiece
 from tokenizers.normalizers import BertNormalizer
 from tokenizers.pre_tokenizers import BertPreTokenizer
@@ -15,11 +15,11 @@ class BertWordPieceTokenizer(BaseTokenizer):
         self,
         vocab_file: Optional[str] = None,
         add_special_tokens: bool = True,
-        unk_token: str = "[UNK]",
-        sep_token: str = "[SEP]",
-        cls_token: str = "[CLS]",
-        pad_token: str = "[PAD]",
-        mask_token: str = "[MASK]",
+        unk_token: Union[str, AddedToken] = "[UNK]",
+        sep_token: Union[str, AddedToken] = "[SEP]",
+        cls_token: Union[str, AddedToken] = "[CLS]",
+        pad_token: Union[str, AddedToken] = "[PAD]",
+        mask_token: Union[str, AddedToken] = "[MASK]",
         clean_text: bool = True,
         handle_chinese_chars: bool = True,
         strip_accents: bool = True,
@@ -89,7 +89,13 @@ class BertWordPieceTokenizer(BaseTokenizer):
         min_frequency: int = 2,
         limit_alphabet: int = 1000,
         initial_alphabet: List[str] = [],
-        special_tokens: List[str] = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"],
+        special_tokens: List[Union[str, AddedToken]] = [
+            "[PAD]",
+            "[UNK]",
+            "[CLS]",
+            "[SEP]",
+            "[MASK]",
+        ],
         show_progress: bool = True,
         wordpieces_prefix: str = "##",
     ):

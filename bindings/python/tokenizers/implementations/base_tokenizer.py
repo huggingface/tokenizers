@@ -95,30 +95,29 @@ class BaseTokenizer:
         """ Disable truncation """
         return self._tokenizer.no_truncation()
 
-    def add_tokens(self, tokens: List[Union[str, Tuple[str, bool]]]) -> int:
+    def add_tokens(self, tokens: List[Union[str, AddedToken]]) -> int:
         """ Add the given tokens to the vocabulary
 
         Args:
-            tokens: List[Union[str, Tuple[str, bool]]]:
+            tokens: List[Union[str, AddedToken]]:
                 A list of tokens to add to the vocabulary. Each token can either be
-                a string, or a tuple with a string representing the token, and a boolean
-                option representing whether to match on single words only.
-                If the boolean is not included, it defaults to False
+                a string, or an instance of AddedToken
 
         Returns:
             The number of tokens that were added to the vocabulary
         """
         return self._tokenizer.add_tokens(tokens)
 
-    def add_special_tokens(self, special_tokens: List[str]) -> int:
+    def add_special_tokens(self, special_tokens: List[Union[str, AddedToken]]) -> int:
         """ Add the given special tokens to the vocabulary, and treat them as special tokens.
 
         The special tokens will never be processed by the model, and will be
         removed while decoding.
 
         Args:
-            tokens: List[str]:
-                The list of special tokens to add
+            tokens: List[Union[str, AddedToken]]:
+                A list of special tokens to add to the vocabulary. Each token can either be
+                a string, or an instance of AddedToken
 
         Returns:
             The number of tokens that were added to the vocabulary

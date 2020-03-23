@@ -85,6 +85,7 @@ fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
 #[pymodule]
 fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<tokenizer::Tokenizer>()?;
+    m.add_class::<tokenizer::AddedToken>()?;
     m.add_class::<encoding::Encoding>()?;
     m.add_wrapped(wrap_pymodule!(models))?;
     m.add_wrapped(wrap_pymodule!(pre_tokenizers))?;
