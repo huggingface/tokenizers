@@ -1,7 +1,6 @@
 extern crate tokenizers as tk;
 
 use crate::container::Container;
-use crate::encoding::JsEncoding;
 use crate::tasks::models::{BPEFromFilesTask, WordPieceFromFilesTask};
 use neon::prelude::*;
 use std::path::Path;
@@ -51,83 +50,6 @@ declare_types! {
                 },
                 Err(e) => cx.throw_error(format!("{}", e))
             }
-        }
-
-        method encode(mut cx) {
-            /// encode(sequence: (String | [String, [number, number]])[], typeId?: number = 0):
-            ///   Encoding
-            let sequence = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
-            let type_id = cx.argument_opt(1)
-                .map_or(Some(0), |arg| arg.downcast::<JsNumber>()
-                    .ok()
-                    .map(|h| h.value() as u32)
-                ).unwrap();
-
-            enum Mode {
-                NoOffsets,
-                Offsets,
-            };
-            let mode  = sequence.iter().next().map(|item| {
-                if item.downcast::<JsString>().is_ok() {
-                    Ok(Mode::NoOffsets)
-                } else if item.downcast::<JsArray>().is_ok() {
-                    Ok(Mode::Offsets)
-                } else {
-                    Err("Input must be (String | [String, [number, number]])[]")
-                }
-            })
-            .unwrap()
-            .map_err(|e| cx.throw_error::<_, ()>(e.to_string()).unwrap_err())?;
-
-            let mut total_len = 0;
-            let sequence = sequence.iter().map(|item| match mode {
-                Mode::NoOffsets => {
-                    let s = item.downcast::<JsString>().or_throw(&mut cx)?.value();
-                    let len = s.chars().count();
-                    total_len += len;
-                    Ok((s, (total_len - len, total_len)))
-                },
-                Mode::Offsets => {
-                    let tuple = item.downcast::<JsArray>().or_throw(&mut cx)?;
-                    let s = tuple.get(&mut cx, 0)?
-                        .downcast::<JsString>()
-                        .or_throw(&mut cx)?
-                        .value();
-                    let offsets = tuple.get(&mut cx, 1)?
-                        .downcast::<JsArray>()
-                        .or_throw(&mut cx)?;
-                    let (start, end) = (
-                        offsets.get(&mut cx, 0)?
-                            .downcast::<JsNumber>()
-                            .or_throw(&mut cx)?
-                            .value() as usize,
-                        offsets.get(&mut cx, 1)?
-                            .downcast::<JsNumber>().
-                            or_throw(&mut cx)?
-                            .value() as usize,
-                    );
-                    Ok((s, (start, end)))
-                }
-            }).collect::<Result<Vec<_>, _>>()?;
-
-            let encoding = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let res = this.borrow(&guard)
-                    .model
-                    .execute(|model| model.unwrap()
-                        .tokenize(sequence)
-                        .map(|tokens| tk::tokenizer::Encoding::from_tokens(tokens, type_id))
-                    );
-                res.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?
-            };
-
-            let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
-
-            let guard = cx.lock();
-            js_encoding.borrow_mut(&guard).encoding.to_owned(Box::new(encoding));
-
-            Ok(js_encoding.upcast())
         }
     }
 }
