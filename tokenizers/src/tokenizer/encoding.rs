@@ -136,27 +136,31 @@ impl Encoding {
     }
 
     /// Find the Offsets of the word that contains the character at the specified position
-    pub fn char_to_word(&self, pos: usize) -> Option<Offsets> {
+    pub fn char_to_word_offsets(&self, pos: usize) -> Option<Offsets> {
         self.offsets
             .iter()
             .enumerate()
             .find(|(_, (start, end))| pos >= *start && pos < *end)
-            .map(|(index, _)| self.token_to_word(index))
+            .map(|(index, _)| self.token_to_word_offsets(index))
             .flatten()
     }
 
     /// Find the Offsets of the token that contains the character at the specified position
-    pub fn char_to_token(&self, pos: usize) -> Option<Offsets> {
-        self.offsets
-            .iter()
-            .find(|(start, end)| pos >= *start && pos < *end)
-            .copied()
+    pub fn char_to_token_offsets(&self, pos: usize) -> Option<Offsets> {
+        self.char_to_token(pos).map(|i| self.offsets[i])
     }
 
     /// Find the Offsets of the word that contains the token at the given index
-    pub fn token_to_word(&self, index: usize) -> Option<Offsets> {
+    pub fn token_to_word_offsets(&self, index: usize) -> Option<Offsets> {
         self.word_boundaries(index)
             .map(|(min, max)| (self.offsets[min].0, self.offsets[max - 1].1))
+    }
+
+    /// Return the index of the token at position of the given char.
+    pub fn char_to_token(&self, pos: usize) -> Option<usize> {
+        self.offsets
+            .iter()
+            .position(|(start, end)| pos >= *start && pos < *end)
     }
 
     /// Truncate the current `Encoding`.
@@ -494,21 +498,21 @@ mod tests {
             ],
             ..Default::default()
         };
-        assert_eq!(encoding.char_to_token(0), Some((0, 1)));
-        assert_eq!(encoding.char_to_token(1), Some((1, 2)));
-        assert_eq!(encoding.char_to_token(2), Some((2, 3)));
-        assert_eq!(encoding.char_to_token(8), Some((7, 10)));
-        assert_eq!(encoding.char_to_token(10), Some((10, 12)));
-        assert_eq!(encoding.char_to_word(0), Some((0, 2)));
-        assert_eq!(encoding.char_to_word(1), Some((0, 2)));
-        assert_eq!(encoding.char_to_word(2), Some((2, 5)));
-        assert_eq!(encoding.char_to_word(8), Some((7, 12)));
-        assert_eq!(encoding.char_to_word(10), Some((7, 12)));
-        assert_eq!(encoding.token_to_word(0), Some((0, 2)));
-        assert_eq!(encoding.token_to_word(1), Some((0, 2)));
-        assert_eq!(encoding.token_to_word(2), Some((2, 5)));
-        assert_eq!(encoding.token_to_word(3), Some((2, 5)));
-        assert_eq!(encoding.token_to_word(7), Some((7, 12)));
-        assert_eq!(encoding.token_to_word(8), Some((7, 12)));
+        assert_eq!(encoding.char_to_token_offsets(0), Some((0, 1)));
+        assert_eq!(encoding.char_to_token_offsets(1), Some((1, 2)));
+        assert_eq!(encoding.char_to_token_offsets(2), Some((2, 3)));
+        assert_eq!(encoding.char_to_token_offsets(8), Some((7, 10)));
+        assert_eq!(encoding.char_to_token_offsets(10), Some((10, 12)));
+        assert_eq!(encoding.char_to_word_offsets(0), Some((0, 2)));
+        assert_eq!(encoding.char_to_word_offsets(1), Some((0, 2)));
+        assert_eq!(encoding.char_to_word_offsets(2), Some((2, 5)));
+        assert_eq!(encoding.char_to_word_offsets(8), Some((7, 12)));
+        assert_eq!(encoding.char_to_word_offsets(10), Some((7, 12)));
+        assert_eq!(encoding.token_to_word_offsets(0), Some((0, 2)));
+        assert_eq!(encoding.token_to_word_offsets(1), Some((0, 2)));
+        assert_eq!(encoding.token_to_word_offsets(2), Some((2, 5)));
+        assert_eq!(encoding.token_to_word_offsets(3), Some((2, 5)));
+        assert_eq!(encoding.token_to_word_offsets(7), Some((7, 12)));
+        assert_eq!(encoding.token_to_word_offsets(8), Some((7, 12)));
     }
 }
