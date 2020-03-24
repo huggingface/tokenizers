@@ -176,66 +176,36 @@ declare_types! {
             Ok(js_overflowings.upcast())
         }
 
-        method wordBoundaries(mut cx) {
-            // wordBoundaries(index: number): [number, number]
-
-            let index = cx.argument::<JsNumber>(0)?.value() as usize;
-
-            let this = cx.this();
-            let guard = cx.lock();
-
-            let res = this.borrow(&guard).encoding.execute(|encoding| {
-                encoding.unwrap().word_boundaries(index)
-            });
-
-            if let Some(boundaries) = res {
-                let js_tuple = JsArray::new(&mut cx, 2);
-                let n = cx.number(boundaries.0 as f64);
-                js_tuple.set(&mut cx, 0, n)?;
-                let n = cx.number(boundaries.1 as f64);
-                js_tuple.set(&mut cx, 1, n)?;
-                Ok(js_tuple.upcast())
-            } else {
-                Ok(cx.undefined().upcast())
-            }
-        }
-
-        method charToWord(mut cx) {
-            // charToWord(pos: number): [number, number]
-
-            let pos = cx.argument::<JsNumber>(0)?.value() as usize;
-
-            let this = cx.this();
-            let guard = cx.lock();
-
-            let res = this.borrow(&guard).encoding.execute(|encoding| {
-                encoding.unwrap().char_to_word(pos)
-            });
-
-            if let Some(offsets) = res {
-                let js_tuple = JsArray::new(&mut cx, 2);
-                let n = cx.number(offsets.0 as f64);
-                js_tuple.set(&mut cx, 0, n)?;
-                let n = cx.number(offsets.1 as f64);
-                js_tuple.set(&mut cx, 1, n)?;
-                Ok(js_tuple.upcast())
-            } else {
-                Ok(cx.undefined().upcast())
-            }
-        }
-
         method charToToken(mut cx) {
-            // charToToken(pos: number): [number, number]
+            // charToToken(pos: number): number | undefined
 
             let pos = cx.argument::<JsNumber>(0)?.value() as usize;
 
             let this = cx.this();
             let guard = cx.lock();
-
-            let res = this.borrow(&guard).encoding.execute(|encoding| {
+            let index = this.borrow(&guard).encoding.execute(|encoding| {
                 encoding.unwrap().char_to_token(pos)
             });
 
+            if let Some(index) = index {
+                Ok(cx.number(index as f64).upcast())
+            } else {
+                Ok(cx.undefined().upcast())
+            }
+        }
+
+        method charToWordOffsets(mut cx) {
+            // charToWordOffsets(pos: number): [number, number] | undefined
+
+            let pos = cx.argument::<JsNumber>(0)?.value() as usize;
+
+            let this = cx.this();
+            let guard = cx.lock();
+
+            let res = this.borrow(&guard).encoding.execute(|encoding| {
+                encoding.unwrap().char_to_word_offsets(pos)
+            });
+
             if let Some(offsets) = res {
                 let js_tuple = JsArray::new(&mut cx, 2);
                 let n = cx.number(offsets.0 as f64);
@@ -248,8 +218,32 @@ declare_types! {
             }
         }
 
-        method tokenToWord(mut cx) {
-            // tokenToWord(index: number): [number, number]
+        method charToTokenOffsets(mut cx) {
+            // charToTokenOffsets(pos: number): [number, number] | undefined
+
+            let pos = cx.argument::<JsNumber>(0)?.value() as usize;
+
+            let this = cx.this();
+            let guard = cx.lock();
+
+            let res = this.borrow(&guard).encoding.execute(|encoding| {
+                encoding.unwrap().char_to_token_offsets(pos)
+            });
+
+            if let Some(offsets) = res {
+                let js_tuple = JsArray::new(&mut cx, 2);
+                let n = cx.number(offsets.0 as f64);
+                js_tuple.set(&mut cx, 0, n)?;
+                let n = cx.number(offsets.1 as f64);
+                js_tuple.set(&mut cx, 1, n)?;
+                Ok(js_tuple.upcast())
+            } else {
+                Ok(cx.undefined().upcast())
+            }
+        }
+
+        method tokenToWordOffsets(mut cx) {
+            // tokenToWordOffsets(index: number): [number, number] | undefined
 
             let index = cx.argument::<JsNumber>(0)?.value() as usize;
 
@@ -257,7 +251,7 @@ declare_types! {
             let guard = cx.lock();
 
             let res = this.borrow(&guard).encoding.execute(|encoding| {
-                encoding.unwrap().token_to_word(index)
+                encoding.unwrap().token_to_word_offsets(index)
             });
 
             if let Some(offsets) = res {
