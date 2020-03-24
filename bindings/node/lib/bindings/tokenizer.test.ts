@@ -7,7 +7,12 @@ import { PaddingDirection, TruncationStrategy } from "./enums";
 import { BPE } from "./models";
 import { lowercaseNormalizer } from "./normalizers";
 import { RawEncoding } from "./raw-encoding";
-import { PaddingConfiguration, Tokenizer, TruncationConfiguration } from "./tokenizer";
+import {
+  AddedToken,
+  PaddingConfiguration,
+  Tokenizer,
+  TruncationConfiguration
+} from "./tokenizer";
 
 // jest.mock('../bindings/tokenizer');
 // jest.mock('../bindings/models', () => ({
@@ -21,6 +26,27 @@ import { PaddingConfiguration, Tokenizer, TruncationConfiguration } from "./toke
 // });
 
 // const TokenizerMock = mocked(Tokenizer);
+
+describe("AddedToken", () => {
+  it("instantiates with only content", () => {
+    const addToken = new AddedToken("test");
+    expect(addToken.constructor.name).toEqual("AddedToken");
+  });
+
+  it("instantiates with empty options", () => {
+    const addToken = new AddedToken("test", {});
+    expect(addToken.constructor.name).toEqual("AddedToken");
+  });
+
+  it("instantiates with options", () => {
+    const addToken = new AddedToken("test", {
+      leftStrip: true,
+      rightStrip: true,
+      singleWord: true
+    });
+    expect(addToken.constructor.name).toEqual("AddedToken");
+  });
+});
 
 describe("Tokenizer", () => {
   it("has expected methods", () => {
@@ -61,6 +87,15 @@ describe("Tokenizer", () => {
       const nbAdd = tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
       expect(nbAdd).toBe(5);
     });
+
+    it("accepts a list of AddedToken as new tokens when initial model is empty", () => {
+      const model = BPE.empty();
+      const tokenizer = new Tokenizer(model);
+      const addedToken = new AddedToken("test");
+
+      const nbAdd = tokenizer.addTokens([addedToken]);
+      expect(nbAdd).toBe(1);
+    });
   });
 
   describe("encode", () => {
@@ -78,6 +113,14 @@ describe("Tokenizer", () => {
       const model = BPE.empty();
       tokenizer = new Tokenizer(model);
       tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
+
+      // const my = new AddedToken("my");
+      // const name = new AddedToken("name");
+      // const is = new AddedToken("is");
+      // const john = new AddedToken("john");
+      // const pair = new AddedToken("pair");
+      // tokenizer.addTokens([my, name, is, john, pair]);
+
       encode = promisify(tokenizer.encode.bind(tokenizer));
     });
 

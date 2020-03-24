@@ -14,6 +14,47 @@ use tk::tokenizer::{
     PaddingDirection, PaddingParams, PaddingStrategy, TruncationParams, TruncationStrategy,
 };
 
+pub struct AddedToken {
+    pub token: tk::tokenizer::AddedToken,
+}
+
+declare_types! {
+    pub class JsAddedToken for AddedToken {
+        init(mut cx) {
+            // init(content: string,
+            //    options?: { singleWord?: boolean = False, leftStrip?: boolean = False, rightStrip?: boolean = False }
+            // )
+
+            let mut token = tk::tokenizer::AddedToken::from(cx.argument::<JsString>(0)?.value());
+
+            let options = cx.argument_opt(1);
+            if let Some(options) = options {
+                if let Ok(options) = options.downcast::<JsObject>() {
+                    if let Ok(single_word) = options.get(&mut cx, "singleWord") {
+                        if single_word.downcast::<JsUndefined>().is_err() {
+                            token = token.single_word(single_word.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+                        }
+                    }
+
+                    if let Ok(left_strip) = options.get(&mut cx, "leftStrip") {
+                        if left_strip.downcast::<JsUndefined>().is_err() {
+                            token = token.single_word(left_strip.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+                        }
+                    }
+
+                    if let Ok(right_strip) = options.get(&mut cx, "rightStrip") {
+                        if right_strip.downcast::<JsUndefined>().is_err() {
+                            token = token.single_word(right_strip.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+                        }
+                    }
+                }
+            }
+
+            Ok(AddedToken { token })
+        }
+    }
+}
+
 /// Tokenizer
 pub struct Tokenizer {
     tokenizer: tk::tokenizer::Tokenizer,
@@ -276,33 +317,20 @@ declare_types! {
         }
 
         method addTokens(mut cx) {
-            // addTokens(tokens: (string | [string, bool])[]): number
+            // addTokens(tokens: (string | AddedToken)[]): number
 
             let tokens = cx.argument::<JsArray>(0)?
                 .to_vec(&mut cx)?
                 .into_iter()
                 .map(|token| {
                     if let Ok(token) = token.downcast::<JsString>() {
-                        Ok(tk::tokenizer::AddedToken {
-                            content: token.value(),
-                            ..Default::default()
-                        })
-                    } else if let Ok(tuple) = token.downcast::<JsArray>() {
-                        let token = tuple.get(&mut cx, 0)?
-                            .downcast::<JsString>()
-                            .or_throw(&mut cx)?
-                            .value();
-                        let word = tuple.get(&mut cx, 1)?
-                            .downcast::<JsBoolean>()
-                            .or_throw(&mut cx)?
-                            .value();
-
-                        Ok(tk::tokenizer::AddedToken {
-                            content: token,
-                            single_word: word,
-                        })
+                        Ok(tk::tokenizer::AddedToken::from(token.value()))
+                    } else if let Ok(token) = token.downcast::<JsAddedToken>() {
+                        let guard = cx.lock();
+                        let token = token.borrow(&guard);
+                        Ok(token.token.clone())
                     } else {
-                        cx.throw_error("Input must be `(string | [string, bool])[]`")
+                        cx.throw_error("Input must be `(string | AddedToken)[]`")
                     }
                 })
                 .collect::<NeonResult<Vec<_>>>()?;
@@ -315,13 +343,21 @@ declare_types! {
         }
 
         method addSpecialTokens(mut cx) {
-            // addSpecialTokens(tokens: string[]): number
+            // addSpecialTokens(tokens: (string | AddedToken)[]): number
 
             let tokens = cx.argument::<JsArray>(0)?
                 .to_vec(&mut cx)?
                 .into_iter()
                 .map(|token| {
-                    Ok(token.downcast::<JsString>().or_throw(&mut cx)?.value())
+                    if let Ok(token) = token.downcast::<JsString>() {
+                        Ok(tk::tokenizer::AddedToken::from(token.value()))
+                    } else if let Ok(token) = token.downcast::<JsAddedToken>() {
+                        let guard = cx.lock();
+                        let token = token.borrow(&guard);
+                        Ok(token.token.clone())
+                    } else {
+                        cx.throw_error("Input must be `(string | AddedToken)[]`")
+                    }
                 })
                 .collect::<NeonResult<Vec<_>>>()?;
 
@@ -329,11 +365,7 @@ declare_types! {
             let guard = cx.lock();
             let added = this.borrow_mut(&guard)
                 .tokenizer
-                .add_special_tokens(&tokens
-                    .iter()
-                    .map(|s| &s[..])
-                    .collect::<Vec<_>>()
-            );
+                .add_special_tokens(&tokens);
 
             Ok(cx.number(added as f64).upcast())
         }
@@ -776,6 +808,7 @@ declare_types! {
 }
 
 pub fn register(m: &mut ModuleContext, prefix: &str) -> Result<(), neon::result::Throw> {
+    m.export_class::<JsAddedToken>(&format!("{}_AddedToken", prefix))?;
     m.export_class::<JsTokenizer>(&format!("{}_Tokenizer", prefix))?;
     Ok(())
 }

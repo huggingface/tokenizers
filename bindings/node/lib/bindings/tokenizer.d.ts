@@ -85,21 +85,20 @@ export class Tokenizer {
    * Add the given tokens to the vocabulary
    *
    * @param tokens A list of tokens to add to the vocabulary.
-   * Each token can either be a string, or a tuple with a string representing the token,
-   * and a boolean option representing whether to match on single words only.
-   * If the boolean is not included, it defaults to False
+   * Each token can either be a string, or an instance of {@link AddedToken}.
    * @returns The number of tokens that were added to the vocabulary
    */
-  addTokens(tokens: (string | [string, boolean])[]): number;
+  addTokens(tokens: (string | AddedToken)[]): number;
 
   /**
    * Add the given special tokens to the vocabulary, and treat them as special tokens.
    * The special tokens will never be processed by the model, and will be removed while decoding.
    *
-   * @param tokens The list of special tokens to add
+   * @param tokens The list of special tokens to add.
+   * Each token can either be a string or an instance of {@link AddedToken}.
    * @returns The number of tokens that were added to the vocabulary
    */
-  addSpecialTokens(tokens: string[]): number;
+  addSpecialTokens(tokens: (string | AddedToken)[]): number;
 
   /**
    * Encode the given sequence
@@ -287,4 +286,46 @@ export class Tokenizer {
    * @throws Will throw an error if the decoder is already used in another Tokenizer
    */
   setDecoder(decoder: Decoder): void;
+}
+
+/**
+ * Options used to construct an AddedToken
+ * @since 0.6.0
+ */
+export interface AddedTokenOptions {
+  /**
+   * Whether this token should strip all potential whitespaces on the left side.
+   * If True, this token will greedily match any whitespace on the left and then strip
+   * them out.
+   * @default False
+   */
+  leftStrip?: boolean;
+  /**
+   * Whether this token should strip all potential whitespaces on the right side.
+   * If True, this token will greedily match any whitespace on the right and then strip
+   * them out.
+   * @default False
+   */
+  rightStrip?: boolean;
+  /**
+   * Whether this token should only match against single word.
+   * If True, this token will never match inside of a word.
+   * @default False
+   */
+  singleWord?: boolean;
+}
+
+/**
+ * AddedToken represents a token to be added to a Tokenizer.
+ * An AddedToken can have special options defining the way it should behave.
+ *
+ * @since 0.6.0
+ */
+export class AddedToken {
+  /**
+   * Instantiate a new AddedToken
+   * @param content The content of the token
+   * @param [options] Options for the token
+   */
+  constructor(content: string, options?: AddedTokenOptions);
 }
