@@ -1,4 +1,5 @@
-from .. import Tokenizer, Encoding
+from tokenizers import Tokenizer, Encoding
+from tokenizers.models import TokenizedSequence, TokenizedSequenceWithOffsets
 
 from typing import List, Union, Tuple, Optional
 
@@ -139,15 +140,22 @@ class BaseTokenizer:
         return self._tokenizer.normalize(sequence)
 
     def encode_tokenized(
-        self, sequence: Union[List[str], List[Tuple[str, Offsets]]], type_id: int = 0
+        self, sequence: Union[TokenizedSequence, TokenizedSequenceWithOffsets], type_id: int = 0
     ) -> Encoding:
-        """ Encode the given tokenized sequence. Let us skip the Normalizer and PreTokenizer
-        by providing already tokenized substrings.
+        """ Encode the given sequence. Let us skip the Normalizer and PreTokenizer by providing
+        already tokenized substrings.
+
+        A sequence can either be:
+            - `TokenizedSequence`: (`List[str]`)
+            - `TokenizedSequenceWithOffsets: (`List[Tuple[str, Offsets]]`) where Offsets is
+            a Tuple[int, int].
+
+        If the Offsets are not provided, they will be automatically generated, making the hypothesis
+        that all the tokens in the `TokenizedSequence` are contiguous in the original string.
 
         Args:
-            sequence: Union[List[str], List[Tuple[str, Offsets]]]:
-                Either a list of strings, or a list of tuples (string, offsets) where offset
-                is a tuple (int, int)
+            sequence: Union[TokenizedSequence, TokenizedSequenceWithOffsets]
+                Either a TokenizedSequence or a TokenizedSequenceWithOffsets
 
             type_id: int:
                 The type id of the given sequence
@@ -156,6 +164,35 @@ class BaseTokenizer:
             An Encoding
         """
         return self._tokenizer.model.encode(sequence)
+
+    def encode_tokenized_batch(
+        self,
+        sequences: Union[List[TokenizedSequence], List[TokenizedSequenceWithOffsets]],
+        type_id: int = 0,
+    ) -> List[Encoding]:
+        """ Encode the given batch of sequence. Let us skip the Normalizer and PreTokenizer by
+        providing already tokenized substrings.
+
+        A sequence can either be:
+            - `TokenizedSequence`: (`List[str]`)
+            - `TokenizedSequenceWithOffsets: (`List[Tuple[str, Offsets]]`) where Offsets is
+            a Tuple[int, int].
+
+        If the Offsets are not provided, they will be automatically generated, making the hypothesis
+        that all the tokens in the `TokenizedSequence` are contiguous in the original string.
+
+        Args:
+            sequences: Union[List[TokenizedSequence], List[TokenizedSequenceWithOffsets]]
+                A list of sequence. Each sequence is either a TokenizedSequence or a
+                TokenizedSequenceWithOffsets
+
+            type_id: int:
+                The type if of the given sequence
+
+        Returns:
+            A list of Encoding
+        """
+        return self._tokenizer.model.encode_batch(sequences)
 
     def encode(
         self, sequence: str, pair: Optional[str] = None, add_special_tokens: bool = True

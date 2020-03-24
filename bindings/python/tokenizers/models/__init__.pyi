@@ -1,7 +1,8 @@
-from .. import Encoding
+from .. import Encoding, Offsets
 from typing import List, Optional, Union, Tuple
 
-Offsets = Tuple[int, int]
+TokenizedSequence = List[str]
+TokenizedSequenceWithOffsets = List[Tuple[str, Offsets]]
 
 class Model:
     """ Base class for all models
@@ -19,20 +20,54 @@ class Model:
         """
         pass
     def encode(
-        self, sequence: Union[List[str], List[Tuple[str, Offsets]]], type_id: int = 0
+        self, sequence: Union[TokenizedSequence, TokenizedSequenceWithOffsets], type_id: int = 0
     ) -> Encoding:
-        """ Encode the given list of string or tuples (string, offsets)
+        """ Encode the given sequence.
+
+        A sequence can either be:
+            - `TokenizedSequence`: (`List[str]`)
+            - `TokenizedSequenceWithOffsets: (`List[Tuple[str, Offsets]]`) where Offsets is
+            a Tuple[int, int].
+
+        If the Offsets are not provided, they will be automatically generated, making the hypothesis
+        that all the tokens in the `TokenizedSequence` are contiguous in the original string.
 
         Args:
-            sequence: Union[List[str], List[Tuple[str, Tuple[int, int]]]]:
-                Either a list of strings, or a list of tuples (string, offsets) where offset
-                is a tuple (int, int)
+            sequence: Union[TokenizedSequence, TokenizedSequenceWithOffsets]
+                Either a TokenizedSequence or a TokenizedSequenceWithOffsets
 
             type_id: int:
                 The type id of the given sequence
 
         Returns:
             An Encoding
+        """
+        pass
+    def encode_batch(
+        self,
+        sequences: Union[List[TokenizedSequence], List[TokenizedSequenceWithOffsets]],
+        type_id: int = 0,
+    ) -> List[Encoding]:
+        """ Encode the given batch of sequence.
+
+        A sequence can either be:
+            - `TokenizedSequence`: (`List[str]`)
+            - `TokenizedSequenceWithOffsets: (`List[Tuple[str, Offsets]]`) where Offsets is
+            a Tuple[int, int].
+
+        If the Offsets are not provided, they will be automatically generated, making the hypothesis
+        that all the tokens in the `TokenizedSequence` are contiguous in the original string.
+
+        Args:
+            sequences: Union[List[TokenizedSequence], List[TokenizedSequenceWithOffsets]]
+                A list of sequence. Each sequence is either a TokenizedSequence or a
+                TokenizedSequenceWithOffsets
+
+            type_id: int:
+                The type if of the given sequence
+
+        Returns:
+            A list of Encoding
         """
         pass
 

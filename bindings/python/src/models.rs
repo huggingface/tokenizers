@@ -6,42 +6,22 @@ use super::utils::Container;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use rayon::prelude::*;
 use std::path::Path;
 
-/// A Model represents some tokenization algorithm like BPE or Word
-/// This class cannot be constructed directly. Please use one of the concrete models.
 #[pyclass]
-pub struct Model {
-    pub model: Container<dyn tk::tokenizer::Model + Sync>,
+struct EncodeInput {
+    sequence: Vec<(String, (usize, usize))>,
+}
+impl EncodeInput {
+    pub fn into_input(self) -> Vec<(String, (usize, usize))> {
+        self.sequence
+    }
 }
 
-#[pymethods]
-impl Model {
-    #[new]
-    fn new(_obj: &PyRawObject) -> PyResult<()> {
-        Err(exceptions::Exception::py_err(
-            "Cannot create a Model directly. Use a concrete subclass",
-        ))
-    }
-
-    fn save(&self, folder: &str, name: Option<&str>) -> PyResult<Vec<String>> {
-        let saved: PyResult<Vec<_>> = ToPyResult(
-            self.model
-                .execute(|model| model.save(Path::new(folder), name)),
-        )
-        .into();
-
-        Ok(saved?
-            .into_iter()
-            .map(|path| path.to_string_lossy().into_owned())
-            .collect())
-    }
-
-    #[args(type_id = 0)]
-    fn encode(&self, sequence: &PyList, type_id: u32) -> PyResult<Encoding> {
-        if sequence.is_empty() {
-            return Ok(Encoding::new(tk::tokenizer::Encoding::default()));
-        }
+impl<'source> FromPyObject<'source> for EncodeInput {
+    fn extract(ob: &'source PyAny) -> PyResult<Self> {
+        let sequence: &PyList = ob.downcast_ref()?;
 
         enum Mode {
             NoOffsets,
@@ -90,10 +70,71 @@ impl Model {
             })
             .collect::<Result<Vec<_>, PyErr>>()?;
 
+        Ok(EncodeInput { sequence })
+    }
+}
+
+/// A Model represents some tokenization algorithm like BPE or Word
+/// This class cannot be constructed directly. Please use one of the concrete models.
+#[pyclass]
+pub struct Model {
+    pub model: Container<dyn tk::tokenizer::Model + Sync>,
+}
+
+#[pymethods]
+impl Model {
+    #[new]
+    fn new(_obj: &PyRawObject) -> PyResult<()> {
+        Err(exceptions::Exception::py_err(
+            "Cannot create a Model directly. Use a concrete subclass",
+        ))
+    }
+
+    fn save(&self, folder: &str, name: Option<&str>) -> PyResult<Vec<String>> {
+        let saved: PyResult<Vec<_>> = ToPyResult(
+            self.model
+                .execute(|model| model.save(Path::new(folder), name)),
+        )
+        .into();
+
+        Ok(saved?
+            .into_iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect())
+    }
+
+    #[args(type_id = 0)]
+    fn encode(&self, sequence: EncodeInput, type_id: u32) -> PyResult<Encoding> {
+        let sequence = sequence.into_input();
+
+        if sequence.is_empty() {
+            return Ok(Encoding::new(tk::tokenizer::Encoding::default()));
+        }
+
         ToPyResult(self.model.execute(|model| {
             model
                 .tokenize(sequence)
                 .map(|tokens| Encoding::new(tk::tokenizer::Encoding::from_tokens(tokens, type_id)))
+        }))
+        .into()
+    }
+
+    #[args(type_id = 0)]
+    fn encode_batch(&self, sequences: Vec<EncodeInput>, type_id: u32) -> PyResult<Vec<Encoding>> {
+        ToPyResult(self.model.execute(|model| {
+            sequences
+                .into_par_iter()
+                .map(|sequence| {
+                    let sequence = sequence.into_input();
+                    if sequence.is_empty() {
+                        Ok(Encoding::new(tk::tokenizer::Encoding::default()))
+                    } else {
+                        model.tokenize(sequence).map(|tokens| {
+                            Encoding::new(tk::tokenizer::Encoding::from_tokens(tokens, type_id))
+                        })
+                    }
+                })
+                .collect::<Result<_, _>>()
         }))
         .into()
     }
