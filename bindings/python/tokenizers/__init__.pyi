@@ -55,17 +55,50 @@ class Encoding:
     def overflowing(self) -> Optional[Encoding]:
         """ The overflowing encoding, after truncation """
         pass
-    def word_boundaries(self, pos: int) -> Optional[Tuple[int, int]]:
-        """ Find the boundaries of the word at the given index (Indices in the variious List). """
-        pass
     def char_to_word(self, pos: int) -> Option[Tuple[int, int]]:
-        """ Find the offsets of the word that contaiins the character at the specified position """
+        """ Find the offsets of the word that contains the character at the specified position
+
+        Args:
+            pos: int:
+                The position of a char in the input string
+
+        Returns:
+            The offsets of the word that contains this char
+
+        """
         pass
     def char_to_token(self, pos: int) -> Option[Tuple[int, int]]:
-        """ Find the offsets of the token that contains the character at the specified position """
+        """ Find the offsets of the token that contains the character at the specified position
+
+        Args:
+            pos: int:
+                The position of a char in the input string
+
+        Returns:
+            The offsets of the token that contains this char
+        """
         pass
-    def token_to_word(self, index: int) -> Optional[Tuple[int, int]]:
-        """ Find the offsets of the word that contains the token at the given index """
+    def token_to_word_offsets(self, index: int) -> Optional[Tuple[int, int]]:
+        """ Find the offsets of the word that contains the token at the given index
+
+        Args:
+            index: int:
+                The index of a token
+
+        Returns:
+            The offsets of the word that contains this token
+        """
+        pass
+    def char_to_token(self, pos: int) -> Optional[int]:
+        """ Find the index of the token at the position of the given char
+
+        Args:
+            pos: int:
+                The position of a char in the input string
+
+        Returns:
+            The index of the token that contains this char
+        """
         pass
     def pad(
         self,

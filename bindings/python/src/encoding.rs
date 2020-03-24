@@ -83,20 +83,20 @@ impl Encoding {
             .collect()
     }
 
-    fn word_boundaries(&self, index: usize) -> Option<(usize, usize)> {
-        self.encoding.word_boundaries(index)
+    fn char_to_word_offsets(&self, pos: usize) -> Option<Offsets> {
+        self.encoding.char_to_word_offsets(pos)
     }
 
-    fn char_to_word(&self, pos: usize) -> Option<Offsets> {
-        self.encoding.char_to_word(pos)
+    fn char_to_token_offsets(&self, pos: usize) -> Option<Offsets> {
+        self.encoding.char_to_token_offsets(pos)
     }
 
-    fn char_to_token(&self, pos: usize) -> Option<Offsets> {
+    fn token_to_word_offsets(&self, index: usize) -> Option<Offsets> {
+        self.encoding.token_to_word_offsets(index)
+    }
+
+    fn char_to_token(&self, pos: usize) -> Option<usize> {
         self.encoding.char_to_token(pos)
-    }
-
-    fn token_to_word(&self, index: usize) -> Option<Offsets> {
-        self.encoding.token_to_word(index)
     }
 
     #[args(kwargs = "**")]
