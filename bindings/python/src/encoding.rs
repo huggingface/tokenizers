@@ -9,7 +9,7 @@ use tk::tokenizer::{Offsets, PaddingDirection};
 #[pyclass(dict)]
 #[repr(transparent)]
 pub struct Encoding {
-    encoding: tk::tokenizer::Encoding,
+    pub encoding: tk::tokenizer::Encoding,
 }
 
 impl Encoding {

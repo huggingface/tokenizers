@@ -343,6 +343,25 @@ impl Tokenizer {
         })
     }
 
+    #[args(pair = "None", add_special_tokens = true)]
+    fn post_process(
+        &self,
+        encoding: &Encoding,
+        pair: Option<&Encoding>,
+        add_special_tokens: bool,
+    ) -> PyResult<Encoding> {
+        ToPyResult(
+            self.tokenizer
+                .post_process(
+                    encoding.encoding.clone(),
+                    pair.map(|p| p.encoding.clone()),
+                    add_special_tokens,
+                )
+                .map(Encoding::new),
+        )
+        .into()
+    }
+
     #[getter]
     fn get_model(&self) -> PyResult<Model> {
         Ok(Model {

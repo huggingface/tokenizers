@@ -33,6 +33,7 @@ class Encoding:
         Returns:
             The resulting Encoding
         """
+        pass
     @property
     def ids(self) -> List[int]:
         """ The tokenized ids """
@@ -439,5 +440,29 @@ class Tokenizer:
 
         Returns:
             The number of tokens that were added to the vocabulary
+        """
+        pass
+    def post_process(
+        self, encoding: Encoding, pair: Optional[Encoding] = None, add_special_tokens: bool = True
+    ) -> Encoding:
+        """ Apply all the post-processing steps to the given encodings.
+
+        The various steps are:
+            1. Truncate according to global params (provided to `enable_truncation`)
+            2. Apply the PostProcessor
+            3. Pad according to global params. (provided to `enable_padding`)
+
+        Args:
+            encoding: Encoding:
+                The main Encoding to post process
+
+            pair: Optional[Encoding]:
+                An optional pair Encoding
+
+            add_special_tokens: bool:
+                Whether to add special tokens
+
+        Returns:
+            The resulting Encoding
         """
         pass

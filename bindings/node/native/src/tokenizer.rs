@@ -2,6 +2,7 @@ extern crate tokenizers as tk;
 
 use crate::container::Container;
 use crate::decoders::JsDecoder;
+use crate::encoding::JsEncoding;
 use crate::models::JsModel;
 use crate::normalizers::JsNormalizer;
 use crate::pre_tokenizers::JsPreTokenizer;
@@ -710,6 +711,60 @@ declare_types! {
             res.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
 
             Ok(cx.undefined().upcast())
+        }
+
+        method postProcess(mut cx) {
+            // postProcess(
+            //   encoding: Encoding,
+            //   pair?: Encoding,
+            //   addSpecialTokens: boolean = true
+            // ): Encoding
+
+            let encoding = {
+                let encoding = cx.argument::<JsEncoding>(0)?;
+                let guard = cx.lock();
+                let encoding = encoding
+                    .borrow(&guard)
+                    .encoding
+                    .execute(|e| *e.unwrap().clone());
+                encoding
+            };
+            let pair = cx.argument_opt(1).map(|item| {
+                if item.downcast::<JsUndefined>().is_ok() {
+                    None
+                } else {
+                    item.downcast::<JsEncoding>().map(|e| {
+                        let guard = cx.lock();
+                        let encoding = e.borrow(&guard)
+                            .encoding
+                            .execute(|e| *e.unwrap().clone());
+                        encoding
+                    }).ok()
+                }
+            }).flatten();
+            let add_special_tokens = cx
+                .argument_opt(2)
+                .map(|arg| Ok(arg.downcast::<JsBoolean>().or_throw(&mut cx)?.value()))
+                .unwrap_or(Ok(true))?;
+
+            let encoding = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let encoding = this.borrow(&guard)
+                    .tokenizer.post_process(encoding, pair, add_special_tokens);
+                encoding
+            };
+            let encoding = encoding
+                .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+
+            let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
+            let guard = cx.lock();
+            js_encoding
+                .borrow_mut(&guard)
+                .encoding
+                .to_owned(Box::new(encoding));
+
+            Ok(js_encoding.upcast())
         }
 
         method getModel(mut cx) {

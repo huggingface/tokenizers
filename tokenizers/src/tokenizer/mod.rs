@@ -656,7 +656,7 @@ impl Tokenizer {
     }
 
     /// Post processing logic, handling the case where there is no PostProcessor set
-    fn post_process(
+    pub fn post_process(
         &self,
         encoding: Encoding,
         pair_encoding: Option<Encoding>,
