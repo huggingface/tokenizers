@@ -9,6 +9,7 @@ export class Encoding {
   private _specialTokensMask?: number[];
   private _tokens?: string[];
   private _typeIds?: number[];
+  private _wordIndexes?: number[];
 
   constructor(private rawEncoding: RawEncoding) {}
 
@@ -103,6 +104,41 @@ export class Encoding {
   }
 
   /**
+   * The tokenized words indexes
+   */
+  get wordIndexes(): number[] {
+    if (this._wordIndexes) {
+      return this._wordIndexes;
+    }
+
+    return (this._wordIndexes = this.rawEncoding.getWords());
+  }
+
+  /**
+   * Find the index of the token at the position of the given char
+   * @param pos The position of a char in the input string
+   */
+  charToToken(pos: number): number | undefined {
+    return this.rawEncoding.charToToken(pos);
+  }
+
+  /**
+   * Find the offsets of the token that contains the character at the specified position
+   * @param pos The position of a char in the input string
+   */
+  charToTokenOffsets(pos: number): [number, number] | undefined {
+    return this.rawEncoding.charToTokenOffsets(pos);
+  }
+
+  /**
+   * Find the offsets of the word that contains the character at the specified position
+   * @param pos The position of a char in the input string
+   */
+  charToWordOffsets(pos: number): [number, number] | undefined {
+    return this.rawEncoding.charToWordOffsets(pos);
+  }
+
+  /**
    * Pad the current Encoding at the given length
    *
    * @param length The length at which to pad
@@ -111,6 +147,14 @@ export class Encoding {
   pad(length: number, options?: PaddingOptions): void {
     this.rawEncoding.pad(length, options);
     this.resetInternalProperties();
+  }
+
+  /**
+   * Find the offsets of the word that contains the token at the given index
+   * @param index The index of a token
+   */
+  tokenToWordOffsets(index: number): [number, number] | undefined {
+    return this.rawEncoding.tokenToWordOffsets(index);
   }
 
   /**
@@ -134,7 +178,8 @@ export class Encoding {
       "_overflowing",
       "_specialTokensMask",
       "_tokens",
-      "_typeIds"
+      "_typeIds",
+      "_wordIndexes"
     ]) {
       delete this[prop as keyof this];
     }
