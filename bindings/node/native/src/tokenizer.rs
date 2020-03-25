@@ -246,11 +246,13 @@ declare_types! {
             /// )
 
             let sequence = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
-            let type_id = cx.argument_opt(1)
-                .map_or(Some(0), |arg| arg.downcast::<JsNumber>()
-                    .ok()
-                    .map(|h| h.value() as u32)
-                ).unwrap();
+
+            let type_arg = cx.argument::<JsValue>(1)?;
+            let type_id = if type_arg.downcast::<JsUndefined>().is_err() {
+                type_arg.downcast_or_throw::<JsNumber, _>(&mut cx)?.value() as u32
+            } else {
+                0
+            };
 
             enum Mode {
                 NoOffsets,
@@ -320,11 +322,13 @@ declare_types! {
             /// )
 
             let sequences = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
-            let type_id = cx.argument_opt(1)
-                .map_or(Some(0), |arg| arg.downcast::<JsNumber>()
-                    .ok()
-                    .map(|h| h.value() as u32)
-                ).unwrap();
+
+            let type_arg = cx.argument::<JsValue>(1)?;
+            let type_id = if type_arg.downcast::<JsUndefined>().is_err() {
+                type_arg.downcast_or_throw::<JsNumber, _>(&mut cx)?.value() as u32
+            } else {
+                0
+            };
 
             enum Mode {
                 NoOffsets,

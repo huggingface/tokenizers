@@ -6,6 +6,8 @@ export {
   AddedToken,
   AddedTokenOptions,
   PaddingOptions,
+  TokenizedSequence,
+  TokenizedSequenceWithOffsets,
   TruncationOptions
 } from "./bindings/tokenizer";
 export { Encoding } from "./implementations/encoding";
