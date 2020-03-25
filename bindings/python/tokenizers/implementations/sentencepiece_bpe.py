@@ -28,8 +28,8 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         else:
             tokenizer = Tokenizer(BPE.empty())
 
-        if tokenizer.token_to_id(unk_token) is not None:
-            tokenizer.add_special_tokens([unk_token])
+        if tokenizer.token_to_id(str(unk_token)) is not None:
+            tokenizer.add_special_tokens([str(unk_token)])
 
         tokenizer.normalizer = NFKC()
         tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(

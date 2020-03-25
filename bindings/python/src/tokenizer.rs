@@ -3,6 +3,7 @@ extern crate tokenizers as tk;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3::PyObjectProtocol;
 
 use super::decoders::Decoder;
 use super::encoding::Encoding;
@@ -43,6 +44,19 @@ impl AddedToken {
 
         obj.init({ AddedToken { token } });
         Ok(())
+    }
+}
+#[pyproto]
+impl PyObjectProtocol for AddedToken {
+    fn __str__(&'p self) -> PyResult<&'p str> {
+        Ok(&self.token.content)
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "AddedToken(\"{}\", rstrip={}, lstrip={}, single_word={})",
+            self.token.content, self.token.rstrip, self.token.lstrip, self.token.single_word
+        ))
     }
 }
 

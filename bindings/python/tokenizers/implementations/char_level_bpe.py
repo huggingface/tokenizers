@@ -28,15 +28,15 @@ class CharBPETokenizer(BaseTokenizer):
                     vocab_file,
                     merges_file,
                     dropout=dropout,
-                    unk_token=unk_token,
+                    unk_token=str(unk_token),
                     end_of_word_suffix=suffix,
                 )
             )
         else:
             tokenizer = Tokenizer(BPE.empty())
 
-        if tokenizer.token_to_id(unk_token) is not None:
-            tokenizer.add_special_tokens([unk_token])
+        if tokenizer.token_to_id(str(unk_token)) is not None:
+            tokenizer.add_special_tokens([str(unk_token)])
 
         # Check for Unicode normalization first (before everything else)
         normalizers = []
