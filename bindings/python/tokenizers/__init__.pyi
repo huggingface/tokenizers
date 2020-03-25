@@ -19,6 +19,20 @@ Offsets = Tuple[int, int]
 class Encoding:
     """ An Encoding as returned by the Tokenizer """
 
+    @staticmethod
+    def merge(encodings: List[Encoding], growing_offsets: bool = False) -> Encoding:
+        """ Merge the list of Encoding into one final Encoding
+
+        Args:
+            encodings: List[Encoding]:
+                The list of encodings
+
+            growing_offsets: bool:
+                Whether the offsets should accumulate while merging
+
+        Returns:
+            The resulting Encoding
+        """
     @property
     def ids(self) -> List[int]:
         """ The tokenized ids """

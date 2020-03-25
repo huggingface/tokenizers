@@ -243,6 +243,22 @@ impl Encoding {
         self.overflowing = overflowing;
     }
 
+    /// Merge all Encodings together
+    pub fn merge(encodings: &[Encoding], growing_offsets: bool) -> Encoding {
+        if encodings.is_empty() {
+            return Encoding::default();
+        }
+
+        let (firsts, others) = encodings.split_at(1);
+        let mut first: Encoding = firsts[0].clone();
+
+        for encoding in others {
+            first.merge_with(encoding.clone(), growing_offsets);
+        }
+
+        first
+    }
+
     /// Merge ourself with the given `Encoding`. Happens in place.
     pub fn merge_with(&mut self, pair: Encoding, growing_offsets: bool) {
         // Handle merging the overflowing parts too: Combine them all

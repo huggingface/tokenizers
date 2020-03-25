@@ -38,6 +38,18 @@ impl PySequenceProtocol for Encoding {
 
 #[pymethods]
 impl Encoding {
+    #[staticmethod]
+    fn merge(encodings: Vec<&Encoding>, growing_offsets: bool) -> Encoding {
+        Encoding::new(tk::tokenizer::Encoding::merge(
+            encodings
+                .into_iter()
+                .map(|e| e.encoding.clone())
+                .collect::<Vec<_>>()
+                .as_slice(),
+            growing_offsets,
+        ))
+    }
+
     #[getter]
     fn get_ids(&self) -> Vec<u32> {
         self.encoding.get_ids().to_vec()
