@@ -52,6 +52,19 @@ declare_types! {
 
             Ok(AddedToken { token })
         }
+
+        method getContent(mut cx) {
+            // getContent()
+
+            let this = cx.this();
+            let content = {
+                let guard = cx.lock();
+                let token = this.borrow(&guard);
+                token.token.content.clone()
+            };
+
+            Ok(cx.string(content).upcast())
+        }
     }
 }
 

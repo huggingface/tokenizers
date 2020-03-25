@@ -9,7 +9,7 @@ import {
 } from "../../bindings/normalizers";
 import { byteLevelProcessing } from "../../bindings/post-processors";
 import { byteLevelAlphabet, byteLevelPreTokenizer } from "../../bindings/pre-tokenizers";
-import { Tokenizer } from "../../bindings/tokenizer";
+import { AddedToken, Tokenizer } from "../../bindings/tokenizer";
 import { bpeTrainer } from "../../bindings/trainers";
 import { BaseTokenizer } from "./base.tokenizer";
 
@@ -56,7 +56,7 @@ export interface ByteLevelBPETrainOptions {
   /**
    * @default []
    */
-  specialTokens?: string[];
+  specialTokens?: (string | AddedToken)[];
   /**
    * @default 30000
    */

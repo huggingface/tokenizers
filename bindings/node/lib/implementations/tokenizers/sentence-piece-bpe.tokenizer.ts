@@ -4,9 +4,9 @@ import { metaspaceDecoder } from "../../bindings/decoders";
 import { BPE, BPEOptions, Model } from "../../bindings/models";
 import { nfkcNormalizer } from "../../bindings/normalizers";
 import { metaspacePreTokenizer } from "../../bindings/pre-tokenizers";
-import { Tokenizer } from "../../bindings/tokenizer";
+import { AddedToken, Tokenizer } from "../../bindings/tokenizer";
 import { bpeTrainer } from "../../bindings/trainers";
-import { BaseTokenizer } from "./base.tokenizer";
+import { BaseTokenizer, getTokenContent } from "./base.tokenizer";
 
 export interface SentencePieceBPETokenizerOptions extends OptionsWithDefaults {
   dropout?: number;
@@ -26,7 +26,7 @@ interface OptionsWithDefaults {
   /**
    * @default "<unk>"
    */
-  unkToken?: string;
+  unkToken?: string | AddedToken;
 }
 
 export interface SentencePieceBPETrainOptions {
@@ -49,7 +49,7 @@ export interface SentencePieceBPETrainOptions {
   /**
    * @default ["<unk>"]
    */
-  specialTokens?: string[];
+  specialTokens?: (string | AddedToken)[];
   /**
    * @default 30000
    */
@@ -91,12 +91,13 @@ export class SentencePieceBPETokenizer extends BaseTokenizer<
     options?: SentencePieceBPETokenizerOptions
   ): Promise<SentencePieceBPETokenizer> {
     const opts = { ...this.defaultOptions, ...options };
+    const unkToken = getTokenContent(opts.unkToken);
 
     let model: Model;
     if (opts.vocabFile && opts.mergesFile) {
       const modelOptions: BPEOptions = {
         dropout: opts.dropout,
-        unkToken: opts.unkToken
+        unkToken: unkToken
       };
 
       const fromFiles = promisify<string, string, BPEOptions, Model>(BPE.fromFiles);
@@ -106,7 +107,7 @@ export class SentencePieceBPETokenizer extends BaseTokenizer<
     }
 
     const tokenizer = new Tokenizer(model);
-    if (tokenizer.tokenToId(opts.unkToken) !== undefined) {
+    if (tokenizer.tokenToId(unkToken) !== undefined) {
       tokenizer.addSpecialTokens([opts.unkToken]);
     }
 

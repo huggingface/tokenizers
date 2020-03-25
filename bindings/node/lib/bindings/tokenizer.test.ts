@@ -46,6 +46,13 @@ describe("AddedToken", () => {
     });
     expect(addToken.constructor.name).toEqual("AddedToken");
   });
+
+  describe("getContent", () => {
+    it("returns the string content of AddedToken", () => {
+      const addedToken = new AddedToken("test");
+      expect(addedToken.getContent()).toEqual("test");
+    });
+  });
 });
 
 describe("Tokenizer", () => {

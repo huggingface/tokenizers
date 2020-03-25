@@ -328,4 +328,9 @@ export class AddedToken {
    * @param [options] Options for the token
    */
   constructor(content: string, options?: AddedTokenOptions);
+
+  /**
+   * Get the content of the AddedToken
+   */
+  getContent(): string;
 }

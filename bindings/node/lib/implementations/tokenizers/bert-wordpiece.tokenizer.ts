@@ -7,7 +7,7 @@ import { bertProcessing } from "../../bindings/post-processors";
 import { bertPreTokenizer } from "../../bindings/pre-tokenizers";
 import { AddedToken, Tokenizer } from "../../bindings/tokenizer";
 import { wordPieceTrainer } from "../../bindings/trainers";
-import { BaseTokenizer } from "./base.tokenizer";
+import { BaseTokenizer, getTokenContent } from "./base.tokenizer";
 
 export interface BertWordPieceOptions {
   /**
@@ -139,7 +139,7 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
     if (opts.vocabFile) {
       const fromFiles = promisify<string, WordPieceOptions, Model>(WordPiece.fromFiles);
       model = await fromFiles(opts.vocabFile, {
-        unkToken: opts.unkToken,
+        unkToken: getTokenContent(opts.unkToken),
         continuingSubwordPrefix: opts.wordpiecesPrefix
       });
     } else {
@@ -155,7 +155,7 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
       opts.padToken,
       opts.maskToken
     ]) {
-      if (tokenizer.tokenToId(token) !== undefined) {
+      if (tokenizer.tokenToId(getTokenContent(token)) !== undefined) {
         tokenizer.addSpecialTokens([token]);
       }
     }
@@ -165,19 +165,19 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
     tokenizer.setPreTokenizer(bertPreTokenizer());
 
     if (opts.vocabFile && opts.addSpecialTokens) {
-      const sepTokenId = tokenizer.tokenToId(opts.sepToken);
+      const sepTokenId = tokenizer.tokenToId(getTokenContent(opts.sepToken));
       if (sepTokenId === undefined) {
         throw new Error("sepToken not found in the vocabulary");
       }
 
-      const clsTokenId = tokenizer.tokenToId(opts.clsToken);
+      const clsTokenId = tokenizer.tokenToId(getTokenContent(opts.clsToken));
       if (clsTokenId === undefined) {
         throw new Error("clsToken not found in the vocabulary");
       }
 
       const processor = bertProcessing(
-        [opts.sepToken, sepTokenId],
-        [opts.clsToken, clsTokenId]
+        [getTokenContent(opts.sepToken), sepTokenId],
+        [getTokenContent(opts.clsToken), clsTokenId]
       );
       tokenizer.setPostProcessor(processor);
     }

@@ -192,3 +192,11 @@ export class BaseTokenizer<TConfig extends object> {
     return this.tokenizer.tokenToId(token);
   }
 }
+
+/**
+ * Get the string content from a token, which can be a string or AddedToken
+ * @param token The token from which get the content
+ */
+export function getTokenContent(token: string | AddedToken): string {
+  return typeof token === "string" ? token : token.getContent();
+}
