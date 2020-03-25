@@ -112,14 +112,7 @@ describe("Tokenizer", () => {
 
       const model = BPE.empty();
       tokenizer = new Tokenizer(model);
-      tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
-
-      // const my = new AddedToken("my");
-      // const name = new AddedToken("name");
-      // const is = new AddedToken("is");
-      // const john = new AddedToken("john");
-      // const pair = new AddedToken("pair");
-      // tokenizer.addTokens([my, name, is, john, pair]);
+      tokenizer.addTokens(["my", "name", "is", "john", new AddedToken("pair")]);
 
       encode = promisify(tokenizer.encode.bind(tokenizer));
     });
@@ -154,9 +147,9 @@ describe("Tokenizer", () => {
 
       expect(encoding.getOffsets()).toEqual([
         [0, 2],
-        [2, 6],
-        [6, 8],
-        [8, 12],
+        [3, 7],
+        [8, 10],
+        [11, 15],
         [0, 4]
       ]);
       expect(encoding.getOverflowing()).toEqual([]);
