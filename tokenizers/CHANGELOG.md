@@ -12,8 +12,8 @@ a high number of files as it avoids having too many progress bars on screen. Als
 size of each file before starting to actually read these files, as this process could take really
 long.
 - [#190]: Improved BPE and WordPiece builders
-- `encode` and `encode_batch` now take a new argument, specifying whether we should add the
-special tokens. ([#193])
+- [#193]: `encode` and `encode_batch` now take a new argument, specifying whether we should add the
+special tokens
 - [#197]: The `NormalizedString` has been removed from the `Encoding`. It is now possible to
 retrieve it by calling `normalize` on the `Tokenizer`. This brings a reduction of 70% of the memory
 footprint
