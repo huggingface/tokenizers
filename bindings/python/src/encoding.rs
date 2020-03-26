@@ -4,12 +4,12 @@ use crate::error::PyError;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3::{PyObjectProtocol, PySequenceProtocol};
-use tk::tokenizer::PaddingDirection;
+use tk::tokenizer::{Offsets, PaddingDirection};
 
 #[pyclass(dict)]
 #[repr(transparent)]
 pub struct Encoding {
-    encoding: tk::tokenizer::Encoding,
+    pub encoding: tk::tokenizer::Encoding,
 }
 
 impl Encoding {
@@ -38,6 +38,19 @@ impl PySequenceProtocol for Encoding {
 
 #[pymethods]
 impl Encoding {
+    #[staticmethod]
+    #[args(growing_offsets = true)]
+    fn merge(encodings: Vec<&Encoding>, growing_offsets: bool) -> Encoding {
+        Encoding::new(tk::tokenizer::Encoding::merge(
+            encodings
+                .into_iter()
+                .map(|e| e.encoding.clone())
+                .collect::<Vec<_>>()
+                .as_slice(),
+            growing_offsets,
+        ))
+    }
+
     #[getter]
     fn get_ids(&self) -> Vec<u32> {
         self.encoding.get_ids().to_vec()
@@ -46,6 +59,11 @@ impl Encoding {
     #[getter]
     fn get_tokens(&self) -> Vec<String> {
         self.encoding.get_tokens().to_vec()
+    }
+
+    #[getter]
+    fn get_words(&self) -> Vec<u32> {
+        self.encoding.get_words().to_vec()
     }
 
     #[getter]
@@ -76,6 +94,22 @@ impl Encoding {
             .into_iter()
             .map(Encoding::new)
             .collect()
+    }
+
+    fn char_to_word_offsets(&self, pos: usize) -> Option<Offsets> {
+        self.encoding.char_to_word_offsets(pos)
+    }
+
+    fn char_to_token_offsets(&self, pos: usize) -> Option<Offsets> {
+        self.encoding.char_to_token_offsets(pos)
+    }
+
+    fn token_to_word_offsets(&self, index: usize) -> Option<Offsets> {
+        self.encoding.token_to_word_offsets(index)
+    }
+
+    fn char_to_token(&self, pos: usize) -> Option<usize> {
+        self.encoding.char_to_token(pos)
     }
 
     #[args(kwargs = "**")]

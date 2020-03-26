@@ -4,6 +4,8 @@ import {
   AddedToken,
   PaddingConfiguration,
   PaddingOptions,
+  TokenizedSequence,
+  TokenizedSequenceWithOffsets,
   Tokenizer,
   TruncationConfiguration,
   TruncationOptions
@@ -100,6 +102,42 @@ export class BaseTokenizer<TConfig extends object> {
   }
 
   /**
+   * Encode the given tokens sequence
+   * @param sequence A sequence of tokens to encode.
+   * If the sequence is a `TokenizedSequence`, offsets will be automatically generated,
+   * making the hypothesis that all the tokens in the sequence are contiguous in the original string
+   * @param [typeId=0] The type id of the given sequence. Defaults to 0.
+   * @since 0.6.0
+   */
+  async encodeTokenized(
+    sequence: TokenizedSequence | TokenizedSequenceWithOffsets,
+    typeId?: number
+  ): Promise<Encoding> {
+    const encode = promisify(this.tokenizer.encodeTokenized.bind(this.tokenizer));
+    const rawEncoding = await encode(sequence, typeId);
+    return new Encoding(rawEncoding);
+  }
+
+  /**
+   * Encode the given tokens sequences
+   * @param sequences A list of sequences to encode.
+   * If a sequence is a `TokenizedSequence`, offsets will be automatically generated,
+   * making the hypothesis that all the tokens in the sequence are contiguous in the original string
+   * @param [typeId=0] The type id of the given sequences. Defaults to 0.
+   * @since 0.6.0
+   */
+  async encodeTokenizedBatch(
+    sequences: (TokenizedSequence | TokenizedSequenceWithOffsets)[],
+    typeId?: number
+  ): Promise<Encoding[]> {
+    const encodeBatch = promisify(
+      this.tokenizer.encodeTokenizedBatch.bind(this.tokenizer)
+    );
+    const rawEncodings = await encodeBatch(sequences, typeId);
+    return rawEncodings.map(e => new Encoding(e));
+  }
+
+  /**
    * Decode the given list of ids to a string sequence
    *
    * @param ids A list of ids to be decoded
@@ -190,6 +228,27 @@ export class BaseTokenizer<TConfig extends object> {
    */
   tokenToId(token: string): number | undefined {
     return this.tokenizer.tokenToId(token);
+  }
+
+  /**
+   * Apply all the post-processing steps to the given encodings.
+   * The various steps are:
+   * 1. Truncate according to global params (@see setTruncation)
+   * 2. Apply the PostProcessor
+   * 3. Pad according to global params (@see setPadding)
+   * @param encoding The main Encoding to post process
+   * @param [pair] An optional pair Encoding
+   * @param [addSpecialTokens=true] Whether to add special tokens. Default to `true`.
+   * @since 0.6.0
+   */
+  postProcess(encoding: Encoding, pair?: Encoding, addSpecialTokens?: boolean): Encoding {
+    const rawEncoding = this.tokenizer.postProcess(
+      encoding.rawEncoding,
+      pair?.rawEncoding,
+      addSpecialTokens
+    );
+
+    return new Encoding(rawEncoding);
   }
 }
 

@@ -10,6 +10,8 @@ import { RawEncoding } from "./raw-encoding";
 import {
   AddedToken,
   PaddingConfiguration,
+  TokenizedSequence,
+  TokenizedSequenceWithOffsets,
   Tokenizer,
   TruncationConfiguration
 } from "./tokenizer";
@@ -217,6 +219,49 @@ describe("Tokenizer", () => {
     });
   });
 
+  describe("encodeTokenized", () => {
+    let tokenizer: Tokenizer;
+    let encodeTokenized: (
+      sequence: TokenizedSequence | TokenizedSequenceWithOffsets,
+      pair: number | undefined
+    ) => Promise<RawEncoding>;
+
+    beforeEach(() => {
+      const model = BPE.empty();
+      tokenizer = new Tokenizer(model);
+      tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
+      encodeTokenized = promisify(tokenizer.encodeTokenized.bind(tokenizer));
+    });
+
+    it("accepts `undefined` as a second parameter", async () => {
+      const encoding = await encodeTokenized(["my", "name", "is", "john"], undefined);
+      expect(encoding).toBeDefined();
+    });
+  });
+
+  describe("encodeTokenizedBatch", () => {
+    let tokenizer: Tokenizer;
+    let encodeTokenizedBatch: (
+      sequence: (TokenizedSequence | TokenizedSequenceWithOffsets)[],
+      pair: number | undefined
+    ) => Promise<RawEncoding[]>;
+
+    beforeEach(() => {
+      const model = BPE.empty();
+      tokenizer = new Tokenizer(model);
+      tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
+      encodeTokenizedBatch = promisify(tokenizer.encodeTokenizedBatch.bind(tokenizer));
+    });
+
+    it("accepts `undefined` as a second parameter", async () => {
+      const encoding = await encodeTokenizedBatch(
+        [["my", "name", "is", "john"]],
+        undefined
+      );
+      expect(encoding).toBeDefined();
+    });
+  });
+
   describe("decode", () => {
     let tokenizer: Tokenizer;
 
@@ -305,6 +350,48 @@ describe("Tokenizer", () => {
       tokenizer.setNormalizer(lowercaseNormalizer());
 
       expect(tokenizer.normalize("MY NAME IS JOHN")).toEqual("my name is john");
+    });
+  });
+
+  describe("postProcess", () => {
+    let tokenizer: Tokenizer;
+    let encode: (
+      sequence: string,
+      pair: string | null,
+      addSpecialTokens: boolean
+    ) => Promise<RawEncoding>;
+    let firstEncoding: RawEncoding;
+    let secondEncoding: RawEncoding;
+
+    beforeAll(() => {
+      const model = BPE.empty();
+      tokenizer = new Tokenizer(model);
+      tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
+
+      encode = promisify(tokenizer.encode.bind(tokenizer));
+    });
+
+    beforeEach(async () => {
+      firstEncoding = await encode("my name is john", null, false);
+      secondEncoding = await encode("pair", null, false);
+
+      tokenizer.setTruncation(2);
+      tokenizer.setPadding({ maxLength: 5 });
+    });
+
+    it("returns correctly with a single Encoding param", () => {
+      const encoding = tokenizer.postProcess(firstEncoding);
+      expect(encoding.getTokens()).toEqual(["my", "name", "[PAD]", "[PAD]", "[PAD]"]);
+    });
+
+    it("returns correctly with `undefined` as second and third parameters", () => {
+      const encoding = tokenizer.postProcess(firstEncoding, undefined, undefined);
+      expect(encoding.getTokens()).toEqual(["my", "name", "[PAD]", "[PAD]", "[PAD]"]);
+    });
+
+    it("returns correctly with 2 encodings", () => {
+      const encoding = tokenizer.postProcess(firstEncoding, secondEncoding);
+      expect(encoding.getTokens()).toEqual(["my", "pair", "[PAD]", "[PAD]", "[PAD]"]);
     });
   });
 });

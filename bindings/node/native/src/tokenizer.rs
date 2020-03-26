@@ -2,11 +2,12 @@ extern crate tokenizers as tk;
 
 use crate::container::Container;
 use crate::decoders::JsDecoder;
+use crate::encoding::JsEncoding;
 use crate::models::JsModel;
 use crate::normalizers::JsNormalizer;
 use crate::pre_tokenizers::JsPreTokenizer;
 use crate::processors::JsPostProcessor;
-use crate::tasks::tokenizer::{DecodeTask, EncodeTask, WorkingTokenizer};
+use crate::tasks::tokenizer::{DecodeTask, EncodeTask, EncodeTokenizedTask, WorkingTokenizer};
 use crate::trainers::JsTrainer;
 use neon::prelude::*;
 
@@ -233,6 +234,174 @@ declare_types! {
             };
 
             let task = EncodeTask::Batch(worker, Some(inputs), add_special_tokens);
+            task.schedule(callback);
+            Ok(cx.undefined().upcast())
+        }
+
+        method encodeTokenized(mut cx) {
+            /// encodeTokenized(
+            ///   sequence: (String | [String, [number, number]])[],
+            ///   typeId?: number = 0,
+            ///   callback: (err, Encoding)
+            /// )
+
+            let sequence = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
+
+            let type_arg = cx.argument::<JsValue>(1)?;
+            let type_id = if type_arg.downcast::<JsUndefined>().is_err() {
+                type_arg.downcast_or_throw::<JsNumber, _>(&mut cx)?.value() as u32
+            } else {
+                0
+            };
+
+            enum Mode {
+                NoOffsets,
+                Offsets,
+            };
+            let mode  = sequence.iter().next().map(|item| {
+                if item.downcast::<JsString>().is_ok() {
+                    Ok(Mode::NoOffsets)
+                } else if item.downcast::<JsArray>().is_ok() {
+                    Ok(Mode::Offsets)
+                } else {
+                    Err("Input must be (String | [String, [number, number]])[]")
+                }
+            })
+            .unwrap()
+            .map_err(|e| cx.throw_error::<_, ()>(e.to_string()).unwrap_err())?;
+
+            let mut total_len = 0;
+            let sequence = sequence.iter().map(|item| match mode {
+                Mode::NoOffsets => {
+                    let s = item.downcast::<JsString>().or_throw(&mut cx)?.value();
+                    let len = s.chars().count();
+                    total_len += len;
+                    Ok((s, (total_len - len, total_len)))
+                },
+                Mode::Offsets => {
+                    let tuple = item.downcast::<JsArray>().or_throw(&mut cx)?;
+                    let s = tuple.get(&mut cx, 0)?
+                        .downcast::<JsString>()
+                        .or_throw(&mut cx)?
+                        .value();
+                    let offsets = tuple.get(&mut cx, 1)?
+                        .downcast::<JsArray>()
+                        .or_throw(&mut cx)?;
+                    let (start, end) = (
+                        offsets.get(&mut cx, 0)?
+                            .downcast::<JsNumber>()
+                            .or_throw(&mut cx)?
+                            .value() as usize,
+                        offsets.get(&mut cx, 1)?
+                            .downcast::<JsNumber>().
+                            or_throw(&mut cx)?
+                            .value() as usize,
+                    );
+                    Ok((s, (start, end)))
+                }
+            }).collect::<Result<Vec<_>, _>>()?;
+            let callback = cx.argument::<JsFunction>(2)?;
+
+            let worker = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let worker = this.borrow(&guard).prepare_for_task();
+                worker
+            };
+
+            let task = EncodeTokenizedTask::Single(worker, Some(sequence), type_id);
+            task.schedule(callback);
+            Ok(cx.undefined().upcast())
+        }
+
+        method encodeTokenizedBatch(mut cx) {
+            /// encodeTokenizedBatch(
+            ///   sequences: (String | [String, [number, number]])[][],
+            ///   typeId?: number = 0,
+            ///   callback: (err, Encoding)
+            /// )
+
+            let sequences = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
+
+            let type_arg = cx.argument::<JsValue>(1)?;
+            let type_id = if type_arg.downcast::<JsUndefined>().is_err() {
+                type_arg.downcast_or_throw::<JsNumber, _>(&mut cx)?.value() as u32
+            } else {
+                0
+            };
+
+            enum Mode {
+                NoOffsets,
+                Offsets,
+            };
+            let mode  = sequences.iter().next().map(|sequence| {
+                if let Ok(sequence) = sequence.downcast::<JsArray>().or_throw(&mut cx) {
+                    sequence.to_vec(&mut cx).ok().map(|s| s.iter().next().map(|item| {
+                        if item.downcast::<JsString>().is_ok() {
+                            Some(Mode::NoOffsets)
+                        } else if item.downcast::<JsArray>().is_ok() {
+                            Some(Mode::Offsets)
+                        } else {
+                            None
+                        }
+                    }).flatten()).flatten()
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .ok_or_else(||
+                cx.throw_error::<_, ()>(
+                    "Input must be (String | [String, [number, number]])[]"
+                ).unwrap_err()
+            )?;
+
+            let sequences = sequences.into_iter().map(|sequence| {
+                let mut total_len = 0;
+                sequence.downcast::<JsArray>().or_throw(&mut cx)?
+                    .to_vec(&mut cx)?
+                    .into_iter()
+                    .map(|item| match mode {
+                        Mode::NoOffsets => {
+                            let s = item.downcast::<JsString>().or_throw(&mut cx)?.value();
+                            let len = s.chars().count();
+                            total_len += len;
+                            Ok((s, (total_len - len, total_len)))
+                        },
+                        Mode::Offsets => {
+                            let tuple = item.downcast::<JsArray>().or_throw(&mut cx)?;
+                            let s = tuple.get(&mut cx, 0)?
+                                .downcast::<JsString>()
+                                .or_throw(&mut cx)?
+                                .value();
+                            let offsets = tuple.get(&mut cx, 1)?
+                                .downcast::<JsArray>()
+                                .or_throw(&mut cx)?;
+                            let (start, end) = (
+                                offsets.get(&mut cx, 0)?
+                                    .downcast::<JsNumber>()
+                                    .or_throw(&mut cx)?
+                                    .value() as usize,
+                                offsets.get(&mut cx, 1)?
+                                    .downcast::<JsNumber>().
+                                    or_throw(&mut cx)?
+                                    .value() as usize,
+                            );
+                            Ok((s, (start, end)))
+                        }
+                    }).collect::<Result<Vec<_>, _>>()
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let callback = cx.argument::<JsFunction>(2)?;
+
+            let worker = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let worker = this.borrow(&guard).prepare_for_task();
+                worker
+            };
+
+            let task = EncodeTokenizedTask::Batch(worker, Some(sequences), type_id);
             task.schedule(callback);
             Ok(cx.undefined().upcast())
         }
@@ -546,6 +715,71 @@ declare_types! {
             res.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
 
             Ok(cx.undefined().upcast())
+        }
+
+        method postProcess(mut cx) {
+            // postProcess(
+            //   encoding: Encoding,
+            //   pair?: Encoding,
+            //   addSpecialTokens: boolean = true
+            // ): Encoding
+
+            let encoding = {
+                let encoding = cx.argument::<JsEncoding>(0)?;
+                let guard = cx.lock();
+                let encoding = encoding
+                    .borrow(&guard)
+                    .encoding
+                    .execute(|e| *e.unwrap().clone());
+                encoding
+            };
+
+            let default_pair = None;
+            let pair = if let Some(arg) = cx.argument_opt(1) {
+                if arg.downcast::<JsUndefined>().is_ok() {
+                    default_pair
+                } else {
+                    arg.downcast_or_throw::<JsEncoding, _>(&mut cx).map(|e| {
+                        let guard = cx.lock();
+                        let encoding = e.borrow(&guard)
+                            .encoding
+                            .execute(|e| *e.unwrap().clone());
+                        encoding
+                    }).ok()
+                }
+            } else {
+                default_pair
+            };
+
+            let default_add_special_tokens = true;
+            let add_special_tokens = if let Some(arg) = cx.argument_opt(2) {
+                if arg.downcast::<JsUndefined>().is_ok() {
+                    default_add_special_tokens
+                } else {
+                    arg.downcast_or_throw::<JsBoolean, _>(&mut cx)?.value()
+                }
+            } else {
+                default_add_special_tokens
+            };
+
+            let encoding = {
+                let this = cx.this();
+                let guard = cx.lock();
+                let encoding = this.borrow(&guard)
+                    .tokenizer.post_process(encoding, pair, add_special_tokens);
+                encoding
+            };
+            let encoding = encoding
+                .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+
+            let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
+            let guard = cx.lock();
+            js_encoding
+                .borrow_mut(&guard)
+                .encoding
+                .to_owned(Box::new(encoding));
+
+            Ok(js_encoding.upcast())
         }
 
         method getModel(mut cx) {

@@ -5,6 +5,27 @@ import { PaddingDirection } from "./enums";
  */
 export interface RawEncoding {
   /**
+   * Find the index of the token at the position of the given char
+   * @param pos The position of a char in the input string
+   * @since 0.6.0
+   */
+  charToToken(pos: number): number | undefined;
+
+  /**
+   * Find the offsets of the token that contains the character at the specified position
+   * @param pos The position of a char in the input string
+   * @since 0.6.0
+   */
+  charToTokenOffsets(pos: number): [number, number] | undefined;
+
+  /**
+   * Find the offsets of the word that contains the character at the specified position
+   * @param pos The position of a char in the input string
+   * @since 0.6.0
+   */
+  charToWordOffsets(pos: number): [number, number] | undefined;
+
+  /**
    * Returns the attention mask
    */
   getAttentionMask(): number[];
@@ -45,12 +66,25 @@ export interface RawEncoding {
   getTypeIds(): number[];
 
   /**
+   * The tokenized words indexes
+   * @since 0.6.0
+   */
+  getWords(): number[];
+
+  /**
    * Pad the current Encoding at the given length
    *
    * @param length The length at which to pad
    * @param [options] Padding options
    */
   pad(length: number, options?: PaddingOptions): void;
+
+  /**
+   * Find the offsets of the word that contains the token at the given index
+   * @param index The index of a token
+   * @since 0.6.0
+   */
+  tokenToWordOffsets(index: number): [number, number] | undefined;
 
   /**
    * Truncate the current Encoding at the given max_length

@@ -1,6 +1,7 @@
 #![warn(clippy::all)]
 
 extern crate neon;
+extern crate rayon;
 extern crate tokenizers as tk;
 
 mod container;

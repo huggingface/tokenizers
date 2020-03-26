@@ -1,6 +1,9 @@
-from .. import Tokenizer, Encoding
+from tokenizers import Tokenizer, Encoding
+from tokenizers.models import TokenizedSequence, TokenizedSequenceWithOffsets
 
 from typing import List, Union, Tuple, Optional
+
+Offsets = Tuple[int, int]
 
 
 class BaseTokenizer:
@@ -136,6 +139,61 @@ class BaseTokenizer:
         """
         return self._tokenizer.normalize(sequence)
 
+    def encode_tokenized(
+        self, sequence: Union[TokenizedSequence, TokenizedSequenceWithOffsets], type_id: int = 0
+    ) -> Encoding:
+        """ Encode the given sequence. Let us skip the Normalizer and PreTokenizer by providing
+        already tokenized substrings.
+
+        A sequence can either be:
+            - `TokenizedSequence`: (`List[str]`)
+            - `TokenizedSequenceWithOffsets: (`List[Tuple[str, Offsets]]`) where Offsets is
+            a Tuple[int, int].
+
+        If the Offsets are not provided, they will be automatically generated, making the hypothesis
+        that all the tokens in the `TokenizedSequence` are contiguous in the original string.
+
+        Args:
+            sequence: Union[TokenizedSequence, TokenizedSequenceWithOffsets]
+                Either a TokenizedSequence or a TokenizedSequenceWithOffsets
+
+            type_id: int:
+                The type id of the given sequence
+
+        Returns:
+            An Encoding
+        """
+        return self._tokenizer.model.encode(sequence, type_id)
+
+    def encode_tokenized_batch(
+        self,
+        sequences: Union[List[TokenizedSequence], List[TokenizedSequenceWithOffsets]],
+        type_id: int = 0,
+    ) -> List[Encoding]:
+        """ Encode the given batch of sequence. Let us skip the Normalizer and PreTokenizer by
+        providing already tokenized substrings.
+
+        A sequence can either be:
+            - `TokenizedSequence`: (`List[str]`)
+            - `TokenizedSequenceWithOffsets: (`List[Tuple[str, Offsets]]`) where Offsets is
+            a Tuple[int, int].
+
+        If the Offsets are not provided, they will be automatically generated, making the hypothesis
+        that all the tokens in the `TokenizedSequence` are contiguous in the original string.
+
+        Args:
+            sequences: Union[List[TokenizedSequence], List[TokenizedSequenceWithOffsets]]
+                A list of sequence. Each sequence is either a TokenizedSequence or a
+                TokenizedSequenceWithOffsets
+
+            type_id: int:
+                The type if of the given sequence
+
+        Returns:
+            A list of Encoding
+        """
+        return self._tokenizer.model.encode_batch(sequences, type_id)
+
     def encode(
         self, sequence: str, pair: Optional[str] = None, add_special_tokens: bool = True
     ) -> Encoding:
@@ -256,3 +314,28 @@ class BaseTokenizer:
                 The name of the tokenizer, to be used in the saved files
         """
         return self._tokenizer.model.save(directory, name=name)
+
+    def post_process(
+        self, encoding: Encoding, pair: Optional[Encoding] = None, add_special_tokens: bool = True
+    ) -> Encoding:
+        """ Apply all the post-processing steps to the given encodings.
+
+        The various steps are:
+            1. Truncate according to global params (provided to `enable_truncation`)
+            2. Apply the PostProcessor
+            3. Pad according to global params. (provided to `enable_padding`)
+
+        Args:
+            encoding: Encoding:
+                The main Encoding to post process
+
+            pair: Optional[Encoding]:
+                An optional pair Encoding
+
+            add_special_tokens: bool:
+                Whether to add special tokens
+
+        Returns:
+            The resulting Encoding
+        """
+        return self._tokenizer.post_process(encoding, pair, add_special_tokens)

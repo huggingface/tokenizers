@@ -8,6 +8,9 @@ edition = "2018"
 name = "tokenizers"
 crate-type = ["cdylib"]
 
+[dependencies]
+rayon = "1.2.0"
+
 [dependencies.pyo3]
 version = "0.8.4"
 features = ["extension-module"]

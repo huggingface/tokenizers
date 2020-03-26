@@ -63,6 +63,16 @@ export interface PaddingOptions {
 }
 
 /**
+ * A list of tokens
+ */
+export type TokenizedSequence = string[];
+
+/**
+ * A list of tokens, each associated with its offsets
+ */
+export type TokenizedSequenceWithOffsets = [string, [number, number]][];
+
+/**
  * A Tokenizer works as a pipeline, it processes some raw text as input and outputs
  * an `Encoding`.
  * The various steps of the pipeline are:
@@ -125,6 +135,36 @@ export class Tokenizer {
   encodeBatch(
     sequences: (string | [string, string])[],
     addSpecialTokens: boolean,
+    __callback: (err: Error, encodings: RawEncoding[]) => void
+  ): void;
+
+  /**
+   * Encode the given tokens sequence
+   * @param sequence A sequence of tokens to encode.
+   * If the sequence is a {@link TokenizedSequence}, offsets will be automatically generated,
+   * making the hypothesis that all the tokens in the sequence are contiguous in the original string
+   * @param [typeId=0] The type id of the given sequence. Defaults to 0.
+   * @param __callback Callback called when encoding is complete
+   * @since 0.6.0
+   */
+  encodeTokenized(
+    sequence: TokenizedSequence | TokenizedSequenceWithOffsets,
+    typeId: number | undefined,
+    __callback: (err: Error, encoding: RawEncoding) => void
+  ): void;
+
+  /**
+   * Encode the given tokens sequences
+   * @param sequences A list of sequences to encode.
+   * If a sequence is a {@link TokenizedSequence}, offsets will be automatically generated,
+   * making the hypothesis that all the tokens in the sequence are contiguous in the original string
+   * @param [typeId=0] The type id of the given sequences. Defaults to 0.
+   * @param __callback Callback called when encoding is complete
+   * @since 0.6.0
+   */
+  encodeTokenizedBatch(
+    sequences: (TokenizedSequence | TokenizedSequenceWithOffsets)[],
+    typeId: number | undefined,
     __callback: (err: Error, encodings: RawEncoding[]) => void
   ): void;
 
@@ -286,6 +326,23 @@ export class Tokenizer {
    * @throws Will throw an error if the decoder is already used in another Tokenizer
    */
   setDecoder(decoder: Decoder): void;
+
+  /**
+   * Apply all the post-processing steps to the given encodings.
+   * The various steps are:
+   * 1. Truncate according to global params (@see setTruncation)
+   * 2. Apply the PostProcessor
+   * 3. Pad according to global params (@see setPadding)
+   * @param encoding The main Encoding to post process
+   * @param [pair] An optional pair Encoding
+   * @param [addSpecialTokens=true] Whether to add special tokens. Default to `true`.
+   * @since 0.6.0
+   */
+  postProcess(
+    encoding: RawEncoding,
+    pair?: RawEncoding,
+    addSpecialTokens?: boolean
+  ): RawEncoding;
 }
 
 /**

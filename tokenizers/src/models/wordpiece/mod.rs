@@ -193,7 +193,7 @@ impl Model for WordPiece {
     fn tokenize(&self, sentence: Vec<(String, Offsets)>) -> Result<Vec<Token>> {
         let mut output_tokens = vec![];
 
-        for (token, initial_offsets) in sentence {
+        for (index, (token, initial_offsets)) in sentence.into_iter().enumerate() {
             let char_len = token.chars().count();
             if char_len > self.max_input_chars_per_word {
                 output_tokens.push(Token {
@@ -203,6 +203,7 @@ impl Model for WordPiece {
                         .get(&self.unk_token)
                         .ok_or(Error::MissingUnkToken)?,
                     offsets: initial_offsets,
+                    word: index as u32,
                 });
                 continue;
             }
@@ -226,6 +227,7 @@ impl Model for WordPiece {
                             id: self.vocab[&substr],
                             value: substr,
                             offsets: (initial_offsets.0 + start, initial_offsets.0 + end),
+                            word: index as u32,
                         });
                         break;
                     }
@@ -249,6 +251,7 @@ impl Model for WordPiece {
                         .get(&self.unk_token)
                         .ok_or(Error::MissingUnkToken)?,
                     offsets: initial_offsets,
+                    word: index as u32,
                 });
             } else {
                 output_tokens.extend(sub_tokens);

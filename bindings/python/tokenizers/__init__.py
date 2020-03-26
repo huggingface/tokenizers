@@ -1,5 +1,9 @@
 __version__ = "0.6.0"
 
+from typing import Tuple
+
+Offsets = Tuple[int, int]
+
 from .tokenizers import Tokenizer, Encoding, AddedToken
 from .tokenizers import decoders
 from .tokenizers import models

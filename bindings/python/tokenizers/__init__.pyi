@@ -19,6 +19,21 @@ Offsets = Tuple[int, int]
 class Encoding:
     """ An Encoding as returned by the Tokenizer """
 
+    @staticmethod
+    def merge(encodings: List[Encoding], growing_offsets: bool = True) -> Encoding:
+        """ Merge the list of Encoding into one final Encoding
+
+        Args:
+            encodings: List[Encoding]:
+                The list of encodings
+
+            growing_offsets: bool:
+                Whether the offsets should accumulate while merging
+
+        Returns:
+            The resulting Encoding
+        """
+        pass
     @property
     def ids(self) -> List[int]:
         """ The tokenized ids """
@@ -26,6 +41,10 @@ class Encoding:
     @property
     def tokens(self) -> List[str]:
         """ The tokenized strings """
+        pass
+    @property
+    def words(self) -> List[int]:
+        """ The tokenized words index """
         pass
     @property
     def type_ids(self) -> List[int]:
@@ -50,6 +69,50 @@ class Encoding:
     @property
     def overflowing(self) -> Optional[Encoding]:
         """ The overflowing encoding, after truncation """
+        pass
+    def char_to_word_offsets(self, pos: int) -> Option[Offsets]:
+        """ Find the offsets of the word that contains the character at the specified position
+
+        Args:
+            pos: int:
+                The position of a char in the input string
+
+        Returns:
+            The offsets of the word that contains this char
+        """
+        pass
+    def char_to_token_offsets(self, pos: int) -> Option[Offsets]:
+        """ Find the offsets of the token that contains the character at the specified position
+
+        Args:
+            pos: int:
+                The position of a char in the input string
+
+        Returns:
+            The offsets of the token that contains this char
+        """
+        pass
+    def token_to_word_offsets(self, index: int) -> Optional[Offsets]:
+        """ Find the offsets of the word that contains the token at the given index
+
+        Args:
+            index: int:
+                The index of a token
+
+        Returns:
+            The offsets of the word that contains this token
+        """
+        pass
+    def char_to_token(self, pos: int) -> Optional[int]:
+        """ Find the index of the token at the position of the given char
+
+        Args:
+            pos: int:
+                The position of a char in the input string
+
+        Returns:
+            The index of the token that contains this char
+        """
         pass
     def pad(
         self,
@@ -376,5 +439,29 @@ class Tokenizer:
 
         Returns:
             The number of tokens that were added to the vocabulary
+        """
+        pass
+    def post_process(
+        self, encoding: Encoding, pair: Optional[Encoding] = None, add_special_tokens: bool = True
+    ) -> Encoding:
+        """ Apply all the post-processing steps to the given encodings.
+
+        The various steps are:
+            1. Truncate according to global params (provided to `enable_truncation`)
+            2. Apply the PostProcessor
+            3. Pad according to global params. (provided to `enable_padding`)
+
+        Args:
+            encoding: Encoding:
+                The main Encoding to post process
+
+            pair: Optional[Encoding]:
+                An optional pair Encoding
+
+            add_special_tokens: bool:
+                Whether to add special tokens
+
+        Returns:
+            The resulting Encoding
         """
         pass

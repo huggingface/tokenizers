@@ -107,10 +107,16 @@ pub struct Token {
     pub id: u32,
     pub value: String,
     pub offsets: (usize, usize),
+    pub word: u32,
 }
 impl Token {
-    pub fn new(id: u32, value: String, offsets: (usize, usize)) -> Self {
-        Token { id, value, offsets }
+    pub fn new(id: u32, value: String, offsets: (usize, usize), word: u32) -> Self {
+        Token {
+            id,
+            value,
+            offsets,
+            word,
+        }
     }
 }
 
@@ -410,6 +416,7 @@ impl Tokenizer {
                                     vec![id],
                                     vec![type_id],
                                     vec![sentence.get().to_owned()],
+                                    vec![0],
                                     vec![(0, sentence.len())],
                                     vec![0],
                                     vec![1],
@@ -426,35 +433,10 @@ impl Tokenizer {
                         let pre_tokenized = self.pre_tokenize(&mut normalized)?;
 
                         // 3. Model
-                        let output = self.model.tokenize(pre_tokenized)?;
-                        let length = output.len();
+                        let tokens = self.model.tokenize(pre_tokenized)?;
+                        let encoding = Encoding::from_tokens(tokens, type_id);
 
-                        let (ids, tokens, offsets) = output.into_iter().fold(
-                            (
-                                Vec::with_capacity(length),
-                                Vec::with_capacity(length),
-                                Vec::with_capacity(length),
-                            ),
-                            |(mut ids, mut tokens, mut offsets), t| {
-                                ids.push(t.id);
-                                tokens.push(t.value);
-                                offsets.push(t.offsets);
-                                (ids, tokens, offsets)
-                            },
-                        );
-
-                        Ok((
-                            Encoding::new(
-                                ids,
-                                vec![type_id; length],
-                                tokens,
-                                offsets,
-                                vec![0; length],
-                                vec![1; length],
-                                vec![],
-                            ),
-                            normalized,
-                        ))
+                        Ok((encoding, normalized))
                     },
                 );
 
@@ -674,7 +656,7 @@ impl Tokenizer {
     }
 
     /// Post processing logic, handling the case where there is no PostProcessor set
-    fn post_process(
+    pub fn post_process(
         &self,
         encoding: Encoding,
         pair_encoding: Option<Encoding>,

@@ -15,4 +15,5 @@ neon-build = "0.3.3"
 
 [dependencies]
 neon = "0.3.3"
+rayon = "1.2.0"
 tokenizers = { path = "../../../tokenizers" }
