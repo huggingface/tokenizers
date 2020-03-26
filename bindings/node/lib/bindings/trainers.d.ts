@@ -2,6 +2,9 @@
  * This class is not supposed to be instantiated directly. Instead, any implementation of a
  * Trainer will return an instance of this class when instantiated.
  */
+
+import { AddedToken } from "./tokenizer";
+
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface Trainer {}
 
@@ -40,7 +43,7 @@ export interface TrainerOptions {
    * A list of special tokens the model should know of.
    * @default []
    */
-  specialTokens?: string[];
+  specialTokens?: (string | AddedToken)[];
   /**
    * The size of the final vocabulary, including all tokens and alphabet.
    * @default 30000

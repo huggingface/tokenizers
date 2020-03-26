@@ -18,6 +18,7 @@ special tokens. This is activated by default. ([#193](https://github.com/hugging
 - Fix some issues with the offsets being wrong with the `ByteLevel` BPE ([#193](https://github.com/huggingface/tokenizers/pull/193)):
 	- when `add_prefix_space=True`
 	- when a Unicode character gets split-up in multiple byte-level characters ([#156](https://github.com/huggingface/tokenizers/issues/156))
+- Fix a bug where offsets were wrong when there was any added tokens in the sequence being encoded.
 
 ## How to migrate:
 - Add the `ByteLevel` `PostProcessor` to your byte-level BPE tokenizers if relevant. If you are

@@ -60,6 +60,17 @@ pub struct BertNormalizer {
     lowercase: bool,
 }
 
+impl Default for BertNormalizer {
+    fn default() -> Self {
+        Self {
+            clean_text: true,
+            handle_chinese_chars: true,
+            strip_accents: true,
+            lowercase: true,
+        }
+    }
+}
+
 impl BertNormalizer {
     pub fn new(
         clean_text: bool,

@@ -21,6 +21,7 @@ one anymore. ([#197](https://github.com/huggingface/tokenizers/pull/197))
 - Fix some issues with the offsets being wrong with the `ByteLevel` BPE:
 	- when `add_prefix_space` is activated
 	- when a Unicode character gets split-up in multiple byte-level characters ([#156](https://github.com/huggingface/tokenizers/issues/156))
+- Fix a bug where offsets were wrong when there was any added tokens in the sequence being encoded.
 
 ## How to migrate:
 - Add the `ByteLevel` `PostProcessor` to your byte-level BPE tokenizers if relevant.

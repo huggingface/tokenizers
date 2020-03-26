@@ -3,6 +3,7 @@ extern crate tokenizers as tk;
 use crate::container::Container;
 use neon::prelude::*;
 use std::collections::HashSet;
+use tokenizer::JsAddedToken;
 
 /// Trainer
 pub struct Trainer {
@@ -23,7 +24,7 @@ declare_types! {
 /// bpe_trainer(options?: {
 ///   vocabSize?: number = 30000,
 ///   minFrequency?: number = 2,
-///   specialTokens?: string[] = [],
+///   specialTokens?: (string | AddedToken)[] = [],
 ///   limitAlphabet?: number = undefined,
 ///   initialAlphabet?: string[] = [],
 ///   showProgress?: bool = true,
@@ -61,7 +62,15 @@ fn bpe_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
                             .to_vec(&mut cx)?
                             .into_iter()
                             .map(|token| {
-                                Ok(token.downcast::<JsString>().or_throw(&mut cx)?.value())
+                                if let Ok(token) = token.downcast::<JsString>() {
+                                    Ok(tk::tokenizer::AddedToken::from(token.value()))
+                                } else if let Ok(token) = token.downcast::<JsAddedToken>() {
+                                    let guard = cx.lock();
+                                    let token = token.borrow(&guard);
+                                    Ok(token.token.clone())
+                                } else {
+                                    cx.throw_error("Input must be `(string | AddedToken)[]`")
+                                }
                             })
                             .collect::<NeonResult<Vec<_>>>()?,
                     );
@@ -170,7 +179,15 @@ fn wordpiece_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
                             .to_vec(&mut cx)?
                             .into_iter()
                             .map(|token| {
-                                Ok(token.downcast::<JsString>().or_throw(&mut cx)?.value())
+                                if let Ok(token) = token.downcast::<JsString>() {
+                                    Ok(tk::tokenizer::AddedToken::from(token.value()))
+                                } else if let Ok(token) = token.downcast::<JsAddedToken>() {
+                                    let guard = cx.lock();
+                                    let token = token.borrow(&guard);
+                                    Ok(token.token.clone())
+                                } else {
+                                    cx.throw_error("Input must be `(string | AddedToken)[]`")
+                                }
                             })
                             .collect::<NeonResult<Vec<_>>>()?,
                     );

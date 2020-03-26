@@ -1,6 +1,6 @@
 __version__ = "0.6.0"
 
-from .tokenizers import Tokenizer, Encoding
+from .tokenizers import Tokenizer, Encoding, AddedToken
 from .tokenizers import decoders
 from .tokenizers import models
 from .tokenizers import normalizers

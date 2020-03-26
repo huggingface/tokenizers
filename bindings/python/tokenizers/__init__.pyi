@@ -91,6 +91,37 @@ class Encoding:
         """
         pass
 
+class AddedToken:
+    """ AddedToken represents a token to be added to a Tokenizer
+
+    An AddedToken can have special options defining the way it should behave.
+    """
+
+    def __new__(
+        cls, content: str, single_word: bool = False, lstrip: bool = False, rstrip: bool = False
+    ) -> AddedToken:
+        """ Instantiate a new AddedToken
+
+        Args:
+            content: str:
+                The content of the token
+
+            single_word: bool
+                Whether this token should only match against single word. If True,
+                this token will never match inside of a word.
+
+            lstrip: bool
+                Whether this token should strip all potential whitespaces on the left side.
+                If True, this token will greedily match any whitespace on the left and then strip
+                them out.
+
+            rstrip: bool
+                Whether this token should strip all potential whitespaces on the right side.
+                If True, this token will greedily match any whitespace on the right and then strip
+                them out.
+        """
+        pass
+
 class Tokenizer:
     """ Tokenizer
 
@@ -320,29 +351,28 @@ class Tokenizer:
             The corresponding string if it exists, None otherwise
         """
         pass
-    def add_tokens(self, tokens: List[Union[str, Tuple[str, bool]]]) -> int:
+    def add_tokens(self, tokens: List[Union[str, AddedToken]]) -> int:
         """ Add the given tokens to the vocabulary
 
         Args:
-            tokens: List[Union[str, Tuple[str, bool]]]:
+            tokens: List[Union[str, AddedToken]]:
                 A list of tokens to add to the vocabulary. Each token can either be
-                a string, or a tuple with a string representing the token, and a boolean
-                option representing whether to match on single words only.
-                If the boolean is not included, it defaults to False
+                a string, or an instance of AddedToken
 
         Returns:
             The number of tokens that were added to the vocabulary
         """
         pass
-    def add_special_tokens(self, tokens: List[str]) -> int:
+    def add_special_tokens(self, tokens: List[Union[str, AddedToken]]) -> int:
         """ Add the given special tokens to the vocabulary, and treat them as special tokens.
 
         The special tokens will never be processed by the model, and will be
         removed while decoding.
 
         Args:
-            tokens: List[str]:
-                The list of special tokens to add
+            tokens: List[Union[str, AddedToken]]:
+                The list of special tokens to add. Each token can either be a string
+                or an instance of AddedToken
 
         Returns:
             The number of tokens that were added to the vocabulary

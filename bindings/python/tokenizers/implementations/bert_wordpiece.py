@@ -1,4 +1,4 @@
-from tokenizers import Tokenizer, decoders, trainers
+from tokenizers import Tokenizer, AddedToken, decoders, trainers
 from tokenizers.models import WordPiece
 from tokenizers.normalizers import BertNormalizer
 from tokenizers.pre_tokenizers import BertPreTokenizer
@@ -15,11 +15,11 @@ class BertWordPieceTokenizer(BaseTokenizer):
         self,
         vocab_file: Optional[str] = None,
         add_special_tokens: bool = True,
-        unk_token: str = "[UNK]",
-        sep_token: str = "[SEP]",
-        cls_token: str = "[CLS]",
-        pad_token: str = "[PAD]",
-        mask_token: str = "[MASK]",
+        unk_token: Union[str, AddedToken] = "[UNK]",
+        sep_token: Union[str, AddedToken] = "[SEP]",
+        cls_token: Union[str, AddedToken] = "[CLS]",
+        pad_token: Union[str, AddedToken] = "[PAD]",
+        mask_token: Union[str, AddedToken] = "[MASK]",
         clean_text: bool = True,
         handle_chinese_chars: bool = True,
         strip_accents: bool = True,
@@ -28,21 +28,21 @@ class BertWordPieceTokenizer(BaseTokenizer):
     ):
 
         if vocab_file is not None:
-            tokenizer = Tokenizer(WordPiece.from_files(vocab_file, unk_token=unk_token))
+            tokenizer = Tokenizer(WordPiece.from_files(vocab_file, unk_token=str(unk_token)))
         else:
             tokenizer = Tokenizer(WordPiece.empty())
 
         # Let the tokenizer know about special tokens if they are part of the vocab
-        if tokenizer.token_to_id(unk_token) is not None:
-            tokenizer.add_special_tokens([unk_token])
-        if tokenizer.token_to_id(sep_token) is not None:
-            tokenizer.add_special_tokens([sep_token])
-        if tokenizer.token_to_id(cls_token) is not None:
-            tokenizer.add_special_tokens([cls_token])
-        if tokenizer.token_to_id(pad_token) is not None:
-            tokenizer.add_special_tokens([pad_token])
-        if tokenizer.token_to_id(mask_token) is not None:
-            tokenizer.add_special_tokens([mask_token])
+        if tokenizer.token_to_id(str(unk_token)) is not None:
+            tokenizer.add_special_tokens([str(unk_token)])
+        if tokenizer.token_to_id(str(sep_token)) is not None:
+            tokenizer.add_special_tokens([str(sep_token)])
+        if tokenizer.token_to_id(str(cls_token)) is not None:
+            tokenizer.add_special_tokens([str(cls_token)])
+        if tokenizer.token_to_id(str(pad_token)) is not None:
+            tokenizer.add_special_tokens([str(pad_token)])
+        if tokenizer.token_to_id(str(mask_token)) is not None:
+            tokenizer.add_special_tokens([str(mask_token)])
 
         tokenizer.normalizer = BertNormalizer(
             clean_text=clean_text,
@@ -53,15 +53,15 @@ class BertWordPieceTokenizer(BaseTokenizer):
         tokenizer.pre_tokenizer = BertPreTokenizer()
 
         if add_special_tokens and vocab_file is not None:
-            sep_token_id = tokenizer.token_to_id(sep_token)
+            sep_token_id = tokenizer.token_to_id(str(sep_token))
             if sep_token_id is None:
                 raise TypeError("sep_token not found in the vocabulary")
-            cls_token_id = tokenizer.token_to_id(cls_token)
+            cls_token_id = tokenizer.token_to_id(str(cls_token))
             if cls_token_id is None:
                 raise TypeError("cls_token not found in the vocabulary")
 
             tokenizer.post_processor = BertProcessing(
-                (sep_token, sep_token_id), (cls_token, cls_token_id)
+                (str(sep_token), sep_token_id), (str(cls_token), cls_token_id)
             )
         tokenizer.decoder = decoders.WordPiece(prefix=wordpieces_prefix)
 
@@ -89,7 +89,13 @@ class BertWordPieceTokenizer(BaseTokenizer):
         min_frequency: int = 2,
         limit_alphabet: int = 1000,
         initial_alphabet: List[str] = [],
-        special_tokens: List[str] = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"],
+        special_tokens: List[Union[str, AddedToken]] = [
+            "[PAD]",
+            "[UNK]",
+            "[CLS]",
+            "[SEP]",
+            "[MASK]",
+        ],
         show_progress: bool = True,
         wordpieces_prefix: str = "##",
     ):

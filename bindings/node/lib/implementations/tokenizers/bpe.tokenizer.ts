@@ -8,9 +8,9 @@ import {
   sequenceNormalizer
 } from "../../bindings/normalizers";
 import { whitespaceSplitPreTokenizer } from "../../bindings/pre-tokenizers";
-import { Tokenizer } from "../../bindings/tokenizer";
+import { AddedToken, Tokenizer } from "../../bindings/tokenizer";
 import { bpeTrainer } from "../../bindings/trainers";
-import { BaseTokenizer } from "./base.tokenizer";
+import { BaseTokenizer, getTokenContent } from "./base.tokenizer";
 
 export interface BPETokenizerOptions {
   /**
@@ -30,7 +30,7 @@ export interface BPETokenizerOptions {
    * The unknown token to be used by the model
    * @default "<unk>"
    */
-  unkToken?: string;
+  unkToken?: string | AddedToken;
   vocabFile?: string;
 }
 
@@ -54,7 +54,7 @@ export interface BPETokenizerTrainOptions {
   /**
    * @default ["<unk>"]
    */
-  specialTokens?: string[];
+  specialTokens?: (string | AddedToken)[];
   /**
    * @default "</w>"
    */
@@ -98,13 +98,14 @@ export class BPETokenizer extends BaseTokenizer<BPETokenizerConfig> {
    */
   static async fromOptions(options?: BPETokenizerOptions): Promise<BPETokenizer> {
     const opts = { ...this.defaultBPEOptions, ...options };
+    const unkToken = getTokenContent(opts.unkToken);
 
     let model: Model;
     if (opts.vocabFile && opts.mergesFile) {
       const modelOptions: BPEOptions = {
         dropout: opts.dropout,
         endOfWordSuffix: opts.suffix,
-        unkToken: opts.unkToken
+        unkToken: unkToken
       };
 
       const fromFiles = promisify<string, string, BPEOptions, Model>(BPE.fromFiles);
@@ -114,7 +115,7 @@ export class BPETokenizer extends BaseTokenizer<BPETokenizerConfig> {
     }
 
     const tokenizer = new Tokenizer(model);
-    if (tokenizer.tokenToId(opts.unkToken) !== undefined) {
+    if (tokenizer.tokenToId(unkToken) !== undefined) {
       tokenizer.addSpecialTokens([opts.unkToken]);
     }
 
