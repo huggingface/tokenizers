@@ -735,13 +735,13 @@ impl Tokenizer {
     /// Register the given tokens as special tokens. This is especially useful for removing
     /// these special tokens while decoding
     pub fn add_special_tokens(&mut self, tokens: &[AddedToken]) -> usize {
-        let added = self.add_tokens(&tokens);
         for token in tokens {
             if !self.special_tokens_set.contains(&token.content) {
                 self.special_tokens.push(token.to_owned());
                 self.special_tokens_set.insert(token.content.clone());
             }
         }
+        let added = self.add_tokens(&tokens);
 
         self.refresh_added_tokens();
 
@@ -761,8 +761,12 @@ impl Tokenizer {
                 id
             } else {
                 let new_id = (self.model.get_vocab_size() + self.added_tokens.len()) as u32;
-                self.added_tokens.push(token.clone());
                 self.added_tokens_map.insert(token.content.clone(), new_id);
+
+                if !self.special_tokens_set.contains(&token.content) {
+                    self.added_tokens.push(token.clone());
+                }
+
                 new_id
             };
 
@@ -833,9 +837,9 @@ impl Tokenizer {
             // idx, and apply it, then continue. All others will be skipped since `current_offset`
             // will have been increased
             if i + 1 < matches.len() {
-                if let Some((_, (s, e))) = matches[i + 1..]
+                if let Some((idx, (s, e))) = matches[i..]
                     .iter()
-                    .take_while(|(_, (s, e))| start > *e && *s < end)
+                    .take_while(|(_, (s, e))| *s < end && start < *e)
                     .min() // Order on idx first
                     .copied()
                 {
