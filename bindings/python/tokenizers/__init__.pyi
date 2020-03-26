@@ -20,7 +20,7 @@ class Encoding:
     """ An Encoding as returned by the Tokenizer """
 
     @staticmethod
-    def merge(encodings: List[Encoding], growing_offsets: bool = False) -> Encoding:
+    def merge(encodings: List[Encoding], growing_offsets: bool = True) -> Encoding:
         """ Merge the list of Encoding into one final Encoding
 
         Args:
@@ -70,7 +70,7 @@ class Encoding:
     def overflowing(self) -> Optional[Encoding]:
         """ The overflowing encoding, after truncation """
         pass
-    def char_to_word(self, pos: int) -> Option[Tuple[int, int]]:
+    def char_to_word_offsets(self, pos: int) -> Option[Offsets]:
         """ Find the offsets of the word that contains the character at the specified position
 
         Args:
@@ -79,10 +79,9 @@ class Encoding:
 
         Returns:
             The offsets of the word that contains this char
-
         """
         pass
-    def char_to_token(self, pos: int) -> Option[Tuple[int, int]]:
+    def char_to_token_offsets(self, pos: int) -> Option[Offsets]:
         """ Find the offsets of the token that contains the character at the specified position
 
         Args:
@@ -93,7 +92,7 @@ class Encoding:
             The offsets of the token that contains this char
         """
         pass
-    def token_to_word_offsets(self, index: int) -> Optional[Tuple[int, int]]:
+    def token_to_word_offsets(self, index: int) -> Optional[Offsets]:
         """ Find the offsets of the word that contains the token at the given index
 
         Args:
