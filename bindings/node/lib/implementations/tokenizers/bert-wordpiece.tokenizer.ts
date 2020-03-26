@@ -13,10 +13,6 @@ export interface BertWordPieceOptions {
   /**
    * @default true
    */
-  addSpecialTokens?: boolean;
-  /**
-   * @default true
-   */
   cleanText?: boolean;
   /**
    * @default "[CLS]"
@@ -99,7 +95,6 @@ type BertTokenizerConfig = Required<Omit<BertWordPieceOptions, "vocabFile">> & {
  */
 export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
   private static readonly defaultBertOptions: BertTokenizerConfig = {
-    addSpecialTokens: true,
     cleanText: true,
     clsToken: "[CLS]",
     handleChineseChars: true,
@@ -164,7 +159,7 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
     tokenizer.setNormalizer(normalizer);
     tokenizer.setPreTokenizer(bertPreTokenizer());
 
-    if (opts.vocabFile && opts.addSpecialTokens) {
+    if (opts.vocabFile) {
       const sepTokenId = tokenizer.tokenToId(getTokenContent(opts.sepToken));
       if (sepTokenId === undefined) {
         throw new Error("sepToken not found in the vocabulary");
