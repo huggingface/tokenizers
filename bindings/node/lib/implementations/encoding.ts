@@ -1,4 +1,5 @@
 import { PaddingOptions, RawEncoding } from "../bindings/raw-encoding";
+import { mergeEncodings } from "../bindings/utils";
 
 export class Encoding {
   private _attentionMask?: number[];
@@ -12,6 +13,20 @@ export class Encoding {
   private _wordIndexes?: number[];
 
   constructor(private rawEncoding: RawEncoding) {}
+
+  /**
+   * Merge a list of Encoding into one final Encoding
+   * @param encodings The list of encodings to merge
+   * @param [growingOffsets=false] Whether the offsets should accumulate while merging
+   */
+  static merge(encodings: Encoding[], growingOffsets?: boolean): Encoding {
+    const mergedRaw = mergeEncodings(
+      encodings.map(e => e.rawEncoding),
+      growingOffsets
+    );
+
+    return new Encoding(mergedRaw);
+  }
 
   /**
    * Attention mask

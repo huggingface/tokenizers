@@ -64,10 +64,16 @@ fn merge_encodings(mut cx: FunctionContext) -> JsResult<JsEncoding> {
         })
         .collect::<Result<Vec<_>, neon::result::Throw>>()
         .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
-    let growing_offsets = cx
-        .argument_opt(1)
-        .map(|arg| Ok(arg.downcast::<JsBoolean>().or_throw(&mut cx)?.value()))
-        .unwrap_or(Ok(false))?;
+
+    let growing_offsets = if let Some(arg) = cx.argument_opt(1) {
+        if arg.downcast::<JsUndefined>().is_err() {
+            arg.downcast::<JsBoolean>().or_throw(&mut cx)?.value()
+        } else {
+            false
+        }
+    } else {
+        false
+    };
 
     let new_encoding = tk::tokenizer::Encoding::merge(encodings.as_slice(), growing_offsets);
     let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;

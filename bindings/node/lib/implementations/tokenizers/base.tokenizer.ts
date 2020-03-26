@@ -1,6 +1,5 @@
 import { promisify } from "util";
 
-import { RawEncoding } from "../../bindings/raw-encoding";
 import {
   AddedToken,
   PaddingConfiguration,

@@ -1,3 +1,5 @@
+import { RawEncoding } from "./raw-encoding";
+
 /**
  * Returns a subpart of a string according to specified indexes, and respecting unicode characters
  *
@@ -10,3 +12,13 @@
  * @since 0.6.0
  */
 export function slice(text: string, start?: number, end?: number): string;
+
+/**
+ * Merge the list of RawEncoding into one final RawEncoding
+ * @param encodings The list of encodings to merge
+ * @param [growingOffsets=false] Whether the offsets should accumulate while merging
+ */
+export function mergeEncodings(
+  encodings: RawEncoding[],
+  growingOffsets?: boolean
+): RawEncoding;

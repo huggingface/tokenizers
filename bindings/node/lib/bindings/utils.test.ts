@@ -1,4 +1,9 @@
-import { slice } from "./utils";
+import { promisify } from "util";
+
+import { BPE } from "./models";
+import { RawEncoding } from "./raw-encoding";
+import { Tokenizer } from "./tokenizer";
+import { mergeEncodings, slice } from "./utils";
 
 describe("slice", () => {
   const text = "My name is John 👋";
@@ -103,5 +108,68 @@ describe("slice", () => {
     it("throws an error when resulting `end` index is out of range", () => {
       expect(() => sliceText(-10, -1000)).toThrow();
     });
+  });
+});
+
+describe("mergeEncodings", () => {
+  let encode: (
+    sequence: string,
+    pair: string | null,
+    addSpecialTokens: boolean
+  ) => Promise<RawEncoding>;
+
+  beforeEach(async () => {
+    const model = BPE.empty();
+    const tokenizer = new Tokenizer(model);
+    tokenizer.addTokens(["my", "name", "is", "john"]);
+
+    encode = promisify(tokenizer.encode.bind(tokenizer));
+  });
+
+  it("accepts `undefined` as a second parameter", () => {
+    const encoding = mergeEncodings([], undefined);
+    expect(encoding.constructor.name).toEqual("Encoding");
+  });
+
+  it("returns correct result with `growingOffsets` not provided", async () => {
+    const firstEncoding = await encode("my name is", null, false);
+    const secondEncoding = await encode("john", null, false);
+    const encoding = mergeEncodings([firstEncoding, secondEncoding]);
+
+    expect(encoding.getTokens()).toEqual(["my", "name", "is", "john"]);
+    expect(encoding.getOffsets()).toEqual([
+      [0, 2],
+      [3, 7],
+      [8, 10],
+      [0, 4]
+    ]);
+  });
+
+  it("returns correct result when `growingOffsets` is `false`", async () => {
+    const firstEncoding = await encode("my name is", null, false);
+    const secondEncoding = await encode("john", null, false);
+    const encoding = mergeEncodings([firstEncoding, secondEncoding], false);
+
+    expect(encoding.getTokens()).toEqual(["my", "name", "is", "john"]);
+    expect(encoding.getOffsets()).toEqual([
+      [0, 2],
+      [3, 7],
+      [8, 10],
+      [0, 4]
+    ]);
+  });
+
+  it("returns correct result when `growingOffsets` is `true`", async () => {
+    const firstEncoding = await encode("my name is", null, false);
+    const secondEncoding = await encode("john", null, false);
+    const encoding = mergeEncodings([firstEncoding, secondEncoding], true);
+
+    expect(encoding.getTokens()).toEqual(["my", "name", "is", "john"]);
+    expect(encoding.getOffsets()).toEqual([
+      [0, 2],
+      [3, 7],
+      [8, 10],
+      [10, 14]
+    ]);
   });
 });
