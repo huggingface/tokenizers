@@ -14,7 +14,6 @@ class BertWordPieceTokenizer(BaseTokenizer):
     def __init__(
         self,
         vocab_file: Optional[str] = None,
-        add_special_tokens: bool = True,
         unk_token: Union[str, AddedToken] = "[UNK]",
         sep_token: Union[str, AddedToken] = "[SEP]",
         cls_token: Union[str, AddedToken] = "[CLS]",
@@ -52,7 +51,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
         )
         tokenizer.pre_tokenizer = BertPreTokenizer()
 
-        if add_special_tokens and vocab_file is not None:
+        if vocab_file is not None:
             sep_token_id = tokenizer.token_to_id(str(sep_token))
             if sep_token_id is None:
                 raise TypeError("sep_token not found in the vocabulary")
@@ -67,7 +66,6 @@ class BertWordPieceTokenizer(BaseTokenizer):
 
         parameters = {
             "model": "BertWordPiece",
-            "add_special_tokens": add_special_tokens,
             "unk_token": unk_token,
             "sep_token": sep_token,
             "cls_token": cls_token,
