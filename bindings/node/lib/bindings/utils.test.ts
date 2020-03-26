@@ -118,7 +118,7 @@ describe("mergeEncodings", () => {
     addSpecialTokens: boolean
   ) => Promise<RawEncoding>;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const model = BPE.empty();
     const tokenizer = new Tokenizer(model);
     tokenizer.addTokens(["my", "name", "is", "john"]);

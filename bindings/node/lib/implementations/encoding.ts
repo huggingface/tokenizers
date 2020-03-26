@@ -12,7 +12,7 @@ export class Encoding {
   private _typeIds?: number[];
   private _wordIndexes?: number[];
 
-  constructor(private rawEncoding: RawEncoding) {}
+  constructor(private _rawEncoding: RawEncoding) {}
 
   /**
    * Merge a list of Encoding into one final Encoding
@@ -36,7 +36,7 @@ export class Encoding {
       return this._attentionMask;
     }
 
-    return (this._attentionMask = this.rawEncoding.getAttentionMask());
+    return (this._attentionMask = this._rawEncoding.getAttentionMask());
   }
 
   /**
@@ -47,7 +47,7 @@ export class Encoding {
       return this._ids;
     }
 
-    return (this._ids = this.rawEncoding.getIds());
+    return (this._ids = this._rawEncoding.getIds());
   }
 
   /**
@@ -58,7 +58,7 @@ export class Encoding {
       return this._length;
     }
 
-    return (this._length = this.rawEncoding.getLength());
+    return (this._length = this._rawEncoding.getLength());
   }
 
   /**
@@ -69,7 +69,7 @@ export class Encoding {
       return this._offsets;
     }
 
-    return (this._offsets = this.rawEncoding.getOffsets());
+    return (this._offsets = this._rawEncoding.getOffsets());
   }
 
   /**
@@ -80,9 +80,20 @@ export class Encoding {
       return this._overflowing;
     }
 
-    return (this._overflowing = this.rawEncoding
+    return (this._overflowing = this._rawEncoding
       .getOverflowing()
       .map(e => new Encoding(e)));
+  }
+
+  /**
+   * __⚠️ DANGER ZONE: do not touch unless you know what you're doing ⚠️__
+   * Access to the `rawEncoding` returned by the internal Rust code.
+   * @private
+   * @ignore
+   * @since 0.6.0
+   */
+  get rawEncoding(): Readonly<RawEncoding> {
+    return this._rawEncoding;
   }
 
   /**
@@ -93,7 +104,7 @@ export class Encoding {
       return this._specialTokensMask;
     }
 
-    return (this._specialTokensMask = this.rawEncoding.getSpecialTokensMask());
+    return (this._specialTokensMask = this._rawEncoding.getSpecialTokensMask());
   }
 
   /**
@@ -104,7 +115,7 @@ export class Encoding {
       return this._tokens;
     }
 
-    return (this._tokens = this.rawEncoding.getTokens());
+    return (this._tokens = this._rawEncoding.getTokens());
   }
 
   /**
@@ -115,7 +126,7 @@ export class Encoding {
       return this._typeIds;
     }
 
-    return (this._typeIds = this.rawEncoding.getTypeIds());
+    return (this._typeIds = this._rawEncoding.getTypeIds());
   }
 
   /**
@@ -126,7 +137,7 @@ export class Encoding {
       return this._wordIndexes;
     }
 
-    return (this._wordIndexes = this.rawEncoding.getWords());
+    return (this._wordIndexes = this._rawEncoding.getWords());
   }
 
   /**
@@ -134,7 +145,7 @@ export class Encoding {
    * @param pos The position of a char in the input string
    */
   charToToken(pos: number): number | undefined {
-    return this.rawEncoding.charToToken(pos);
+    return this._rawEncoding.charToToken(pos);
   }
 
   /**
@@ -142,7 +153,7 @@ export class Encoding {
    * @param pos The position of a char in the input string
    */
   charToTokenOffsets(pos: number): [number, number] | undefined {
-    return this.rawEncoding.charToTokenOffsets(pos);
+    return this._rawEncoding.charToTokenOffsets(pos);
   }
 
   /**
@@ -150,7 +161,7 @@ export class Encoding {
    * @param pos The position of a char in the input string
    */
   charToWordOffsets(pos: number): [number, number] | undefined {
-    return this.rawEncoding.charToWordOffsets(pos);
+    return this._rawEncoding.charToWordOffsets(pos);
   }
 
   /**
@@ -160,7 +171,7 @@ export class Encoding {
    * @param [options] Padding options
    */
   pad(length: number, options?: PaddingOptions): void {
-    this.rawEncoding.pad(length, options);
+    this._rawEncoding.pad(length, options);
     this.resetInternalProperties();
   }
 
@@ -169,7 +180,7 @@ export class Encoding {
    * @param index The index of a token
    */
   tokenToWordOffsets(index: number): [number, number] | undefined {
-    return this.rawEncoding.tokenToWordOffsets(index);
+    return this._rawEncoding.tokenToWordOffsets(index);
   }
 
   /**
@@ -180,7 +191,7 @@ export class Encoding {
    * to be included in the overflowing sequence
    */
   truncate(length: number, stride?: number): void {
-    this.rawEncoding.truncate(length, stride);
+    this._rawEncoding.truncate(length, stride);
     this.resetInternalProperties();
   }
 

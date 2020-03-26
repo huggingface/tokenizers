@@ -733,11 +733,13 @@ declare_types! {
                     .execute(|e| *e.unwrap().clone());
                 encoding
             };
-            let pair = cx.argument_opt(1).map(|item| {
-                if item.downcast::<JsUndefined>().is_ok() {
-                    None
+
+            let default_pair = None;
+            let pair = if let Some(arg) = cx.argument_opt(1) {
+                if arg.downcast::<JsUndefined>().is_ok() {
+                    default_pair
                 } else {
-                    item.downcast::<JsEncoding>().map(|e| {
+                    arg.downcast_or_throw::<JsEncoding, _>(&mut cx).map(|e| {
                         let guard = cx.lock();
                         let encoding = e.borrow(&guard)
                             .encoding
@@ -745,11 +747,20 @@ declare_types! {
                         encoding
                     }).ok()
                 }
-            }).flatten();
-            let add_special_tokens = cx
-                .argument_opt(2)
-                .map(|arg| Ok(arg.downcast::<JsBoolean>().or_throw(&mut cx)?.value()))
-                .unwrap_or(Ok(true))?;
+            } else {
+                default_pair
+            };
+
+            let default_add_special_tokens = true;
+            let add_special_tokens = if let Some(arg) = cx.argument_opt(2) {
+                if arg.downcast::<JsUndefined>().is_ok() {
+                    default_add_special_tokens
+                } else {
+                    arg.downcast_or_throw::<JsBoolean, _>(&mut cx)?.value()
+                }
+            } else {
+                default_add_special_tokens
+            };
 
             let encoding = {
                 let this = cx.this();

@@ -10,8 +10,13 @@ const MOCKS_DIR = __dirname + "/__mocks__";
 describe("RawEncoding", () => {
   const originalString = "my name is john";
   let encoding: RawEncoding;
+  let encode: (
+    sequence: string,
+    pair: string | null,
+    addSpecialTokens: boolean
+  ) => Promise<RawEncoding>;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const model = await promisify<string, WordPieceOptions, Model>(WordPiece.fromFiles)(
       `${MOCKS_DIR}/vocab.txt`,
       {
@@ -21,8 +26,10 @@ describe("RawEncoding", () => {
 
     const tokenizer = new Tokenizer(model);
     tokenizer.setPreTokenizer(whitespacePreTokenizer());
+    encode = promisify(tokenizer.encode.bind(tokenizer));
+  });
 
-    const encode = promisify(tokenizer.encode.bind(tokenizer));
+  beforeEach(async () => {
     encoding = await encode(originalString, null, false);
   });
 

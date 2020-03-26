@@ -229,6 +229,27 @@ export class BaseTokenizer<TConfig extends object> {
   tokenToId(token: string): number | undefined {
     return this.tokenizer.tokenToId(token);
   }
+
+  /**
+   * Apply all the post-processing steps to the given encodings.
+   * The various steps are:
+   * 1. Truncate according to global params (@see setTruncation)
+   * 2. Apply the PostProcessor
+   * 3. Pad according to global params (@see setPadding)
+   * @param encoding The main Encoding to post process
+   * @param [pair] An optional pair Encoding
+   * @param [addSpecialTokens=true] Whether to add special tokens. Default to `true`.
+   * @since 0.6.0
+   */
+  postProcess(encoding: Encoding, pair?: Encoding, addSpecialTokens?: boolean): Encoding {
+    const rawEncoding = this.tokenizer.postProcess(
+      encoding.rawEncoding,
+      pair?.rawEncoding,
+      addSpecialTokens
+    );
+
+    return new Encoding(rawEncoding);
+  }
 }
 
 /**

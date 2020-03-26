@@ -326,6 +326,23 @@ export class Tokenizer {
    * @throws Will throw an error if the decoder is already used in another Tokenizer
    */
   setDecoder(decoder: Decoder): void;
+
+  /**
+   * Apply all the post-processing steps to the given encodings.
+   * The various steps are:
+   * 1. Truncate according to global params (@see setTruncation)
+   * 2. Apply the PostProcessor
+   * 3. Pad according to global params (@see setPadding)
+   * @param encoding The main Encoding to post process
+   * @param [pair] An optional pair Encoding
+   * @param [addSpecialTokens=true] Whether to add special tokens. Default to `true`.
+   * @since 0.6.0
+   */
+  postProcess(
+    encoding: RawEncoding,
+    pair?: RawEncoding,
+    addSpecialTokens?: boolean
+  ): RawEncoding;
 }
 
 /**
