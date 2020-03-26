@@ -163,7 +163,7 @@ class BaseTokenizer:
         Returns:
             An Encoding
         """
-        return self._tokenizer.model.encode(sequence)
+        return self._tokenizer.model.encode(sequence, type_id)
 
     def encode_tokenized_batch(
         self,
@@ -192,7 +192,7 @@ class BaseTokenizer:
         Returns:
             A list of Encoding
         """
-        return self._tokenizer.model.encode_batch(sequences)
+        return self._tokenizer.model.encode_batch(sequences, type_id)
 
     def encode(
         self, sequence: str, pair: Optional[str] = None, add_special_tokens: bool = True
