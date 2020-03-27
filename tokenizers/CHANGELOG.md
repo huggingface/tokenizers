@@ -30,6 +30,7 @@ the unintuitive inclusion of the whitespaces in the produced offsets, even if th
 part of the actual token
 - More alignment mappings on the `Encoding`.
 - `post_process` can be called on the `Tokenizer`
+- [#208]: Ability to retrieve the vocabulary from the `Tokenizer` & `Model`
 
 ### Fixed
 - [#193]: Fix some issues with the offsets being wrong with the `ByteLevel` BPE:
@@ -53,6 +54,7 @@ advised, but that's not the question)
 split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
+[#208]: https://github.com/huggingface/tokenizers/pull/208
 [#197]: https://github.com/huggingface/tokenizers/pull/197
 [#193]: https://github.com/huggingface/tokenizers/pull/193
 [#190]: https://github.com/huggingface/tokenizers/pull/190
