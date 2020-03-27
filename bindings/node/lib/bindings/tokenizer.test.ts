@@ -74,6 +74,7 @@ describe("Tokenizer", () => {
     expect(typeof tokenizer.getNormalizer).toBe("function");
     expect(typeof tokenizer.getPostProcessor).toBe("function");
     expect(typeof tokenizer.getPreTokenizer).toBe("function");
+    expect(typeof tokenizer.getVocab).toBe("function");
     expect(typeof tokenizer.getVocabSize).toBe("function");
     expect(typeof tokenizer.idToToken).toBe("function");
     expect(typeof tokenizer.runningTasks).toBe("function");
@@ -300,6 +301,28 @@ describe("Tokenizer", () => {
         "my name is john",
         "pair"
       ]);
+    });
+  });
+
+  describe("getVocab", () => {
+    it("accepts `undefined` as parameter", () => {
+      const model = BPE.empty();
+      const tokenizer = new Tokenizer(model);
+
+      expect(tokenizer.getVocab(undefined)).toBeDefined();
+    });
+
+    it("returns the vocabulary", () => {
+      const model = BPE.empty();
+      const tokenizer = new Tokenizer(model);
+      tokenizer.addTokens(["my", "name", "is", "john"]);
+
+      expect(tokenizer.getVocab(true)).toEqual({
+        my: 0,
+        name: 1,
+        is: 2,
+        john: 3
+      });
     });
   });
 

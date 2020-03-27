@@ -251,6 +251,13 @@ export class Tokenizer {
   train(trainer: Trainer, files: string[]): void;
 
   /**
+   * Returns the vocabulary
+   *
+   * @param [withAddedTokens=true] Whether to include the added tokens in the vocabulary
+   */
+  getVocab(withAddedTokens?: boolean): { [token: string]: number };
+
+  /**
    * Returns the size of the vocabulary
    *
    * @param [withAddedTokens=true] Whether to include the added tokens in the vocabulary's size

@@ -114,20 +114,47 @@ declare_types! {
             Ok(cx.number(running as f64).upcast())
         }
 
-        method getVocabSize(mut cx) {
-            // getVocabSize(withAddedTokens: bool = true)
+        method getVocab(mut cx) {
+            // getVocab(withAddedTokens: bool = true)
             let mut with_added_tokens = true;
-            if let Some(args) = cx.argument_opt(0) {
-                if args.downcast::<JsUndefined>().is_err() {
-                    with_added_tokens = args.downcast::<JsBoolean>()
+            if let Some(arg) = cx.argument_opt(0) {
+                if arg.downcast::<JsUndefined>().is_err() {
+                    with_added_tokens = arg.downcast::<JsBoolean>()
                         .or_throw(&mut cx)?
                         .value() as bool;
                 }
             }
 
-            let mut this = cx.this();
+            let this = cx.this();
             let guard = cx.lock();
-            let size = this.borrow_mut(&guard)
+            let vocab = this.borrow(&guard)
+                .tokenizer
+                .get_vocab(with_added_tokens);
+
+            let js_vocab = JsObject::new(&mut cx);
+            for (token, id) in vocab {
+                let js_token = cx.string(token);
+                let js_id = cx.number(id as f64);
+                js_vocab.set(&mut cx, js_token, js_id)?;
+            }
+
+            Ok(js_vocab.upcast())
+        }
+
+        method getVocabSize(mut cx) {
+            // getVocabSize(withAddedTokens: bool = true)
+            let mut with_added_tokens = true;
+            if let Some(arg) = cx.argument_opt(0) {
+                if arg.downcast::<JsUndefined>().is_err() {
+                    with_added_tokens = arg.downcast::<JsBoolean>()
+                        .or_throw(&mut cx)?
+                        .value() as bool;
+                }
+            }
+
+            let this = cx.this();
+            let guard = cx.lock();
+            let size = this.borrow(&guard)
                 .tokenizer
                 .get_vocab_size(with_added_tokens);
 
