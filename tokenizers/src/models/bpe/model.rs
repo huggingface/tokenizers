@@ -335,6 +335,10 @@ impl BPE {
 }
 
 impl Model for BPE {
+    fn get_vocab(&self) -> &HashMap<String, u32> {
+        &self.vocab
+    }
+
     fn get_vocab_size(&self) -> usize {
         self.vocab.len()
     }

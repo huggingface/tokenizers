@@ -186,6 +186,10 @@ impl WordPiece {
 }
 
 impl Model for WordPiece {
+    fn get_vocab(&self) -> &HashMap<String, u32> {
+        &self.vocab
+    }
+
     fn get_vocab_size(&self) -> usize {
         self.vocab.len()
     }

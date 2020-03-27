@@ -160,6 +160,10 @@ impl Model for WordLevel {
         self.vocab_r.get(&id).cloned()
     }
 
+    fn get_vocab(&self) -> &HashMap<String, u32> {
+        &self.vocab
+    }
+
     fn get_vocab_size(&self) -> usize {
         self.vocab.keys().len()
     }
