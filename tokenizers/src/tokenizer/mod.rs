@@ -49,6 +49,7 @@ pub trait Model {
     fn tokenize(&self, tokens: Vec<(String, Offsets)>) -> Result<Vec<Token>>;
     fn token_to_id(&self, token: &str) -> Option<u32>;
     fn id_to_token(&self, id: u32) -> Option<String>;
+    fn get_vocab(&self) -> &HashMap<String, u32>;
     fn get_vocab_size(&self) -> usize;
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>>;
 }
@@ -345,6 +346,20 @@ impl Tokenizer {
     pub fn with_padding(&mut self, padding: Option<PaddingParams>) -> &Self {
         self.padding = padding;
         self
+    }
+
+    /// Get the vocabulary
+    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+        let mut final_vocab = self.model.get_vocab().clone();
+
+        if with_added_tokens && !self.added_tokens_map.is_empty() {
+            final_vocab.reserve(self.added_tokens_map.len());
+            for (token, id) in &self.added_tokens_map {
+                final_vocab.insert(token.clone(), *id);
+            }
+        }
+
+        final_vocab
     }
 
     /// Get the size of the vocabulary
