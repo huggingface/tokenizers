@@ -258,12 +258,26 @@ class Tokenizer:
         :return:
         """
         pass
-    def get_vocab_size(self, with_added_tokens: Optional[bool]) -> int:
+    def get_vocab(self, with_added_tokens: bool = True) -> Dict[str, int]:
+        """ Returns the vocabulary
+
+        Args:
+            with_added_tokens: boolean:
+                Whether to include the added tokens in the vocabulary
+
+        Returns:
+            The vocabulary
+        """
+        pass
+    def get_vocab_size(self, with_added_tokens: bool = True) -> int:
         """ Returns the size of the vocabulary
 
         Args:
-            with_added_tokens: (`optional`) boolean:
+            with_added_tokens: boolean:
                 Whether to include the added tokens in the vocabulary's size
+
+        Returns:
+            The size of the vocabulary
         """
         pass
     def enable_truncation(self, max_length: int, stride: Optional[int], strategy: Optional[str]):
