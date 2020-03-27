@@ -1,4 +1,4 @@
-from tokenizers import Tokenizer, Encoding
+from tokenizers import Tokenizer, Encoding, AddedToken
 from tokenizers.models import TokenizedSequence, TokenizedSequenceWithOffsets
 
 from typing import List, Union, Tuple, Optional
