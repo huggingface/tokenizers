@@ -39,6 +39,7 @@ part of the actual token
 - Fix a bug where offsets were wrong when there was any added tokens in the sequence being encoded.
 - [#175]: Fix a bug that prevented the addition of more than a certain amount of tokens (even if not
 advised, but that's not the question)
+- [#205]: Trim the decoded string in `BPEDecoder`
 
 ### How to migrate
 - Add the `ByteLevel` `PostProcessor` to your byte-level BPE tokenizers if relevant.
@@ -55,6 +56,7 @@ split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
 [#208]: https://github.com/huggingface/tokenizers/pull/208
+[#205]: https://github.com/huggingface/tokenizers/issues/205
 [#197]: https://github.com/huggingface/tokenizers/pull/197
 [#193]: https://github.com/huggingface/tokenizers/pull/193
 [#190]: https://github.com/huggingface/tokenizers/pull/190

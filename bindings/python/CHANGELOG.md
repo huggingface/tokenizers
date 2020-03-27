@@ -38,6 +38,7 @@ It has been added to `ByteLevelBPETokenizer` but it is off by default (`trim_off
 - Fix a bug where offsets were wrong when there was any added tokens in the sequence being encoded.
 - [#175]: Fix a bug that prevented the addition of more than a certain amount of tokens (even if
 not advised, but that's not the question).
+- [#205]: Trim the decoded string in `BPEDecoder` used by `CharBPETokenizer`
 
 ### How to migrate
 - Add the `ByteLevel` `PostProcessor` to your byte-level BPE tokenizers if relevant. If you are
