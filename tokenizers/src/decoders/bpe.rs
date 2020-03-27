@@ -20,6 +20,6 @@ impl Default for BPEDecoder {
 
 impl Decoder for BPEDecoder {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
-        Ok(tokens.join("").replace(&self.suffix, " "))
+        Ok(tokens.join("").replace(&self.suffix, " ").trim().to_owned())
     }
 }
