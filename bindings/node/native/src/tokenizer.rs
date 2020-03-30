@@ -39,13 +39,13 @@ declare_types! {
 
                     if let Ok(left_strip) = options.get(&mut cx, "leftStrip") {
                         if left_strip.downcast::<JsUndefined>().is_err() {
-                            token = token.single_word(left_strip.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+                            token = token.lstrip(left_strip.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
                         }
                     }
 
                     if let Ok(right_strip) = options.get(&mut cx, "rightStrip") {
                         if right_strip.downcast::<JsUndefined>().is_err() {
-                            token = token.single_word(right_strip.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+                            token = token.rstrip(right_strip.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
                         }
                     }
                 }
