@@ -1,3 +1,31 @@
+# [0.6.0](https://github.com/huggingface/tokenizers/compare/node-v0.5.0...node-v0.6.0) (2020-03-30)
+
+### BREAKING CHANGES
+
+- The `getOriginalString` method on `Encoding`s has been removed: this brings a reduction of 70% of the memory footprint. You can use the provided new `slice` function as a replacement to get a subpart of a string according to specified indexes while respecting unicode characters. ([#197](https://github.com/huggingface/tokenizers/pull/197))
+- The offsets provided on `Encoding` are now relative to the original string, and not the normalized one anymore ([#197](https://github.com/huggingface/tokenizers/pull/197))
+- The added tokens given to `addTokens`, `addSpecialTokens` or `train` methods of a tokenizer can now be instances of `AddedToken` to provide more control over these tokens. The support of the `[string, boolean]` format in `addTokens` method is removed. ([#202](https://github.com/huggingface/tokenizers/pull/202))
+- The `addSpecialTokens` option for `BertWordpieceTokenizer` has been removed, and must now be passed to `encode` and `encodeBatch` functions ([7dd2400](https://github.com/huggingface/tokenizers/commit/7dd24002148a452f4d9fc55966e181c2dc699203)) ([#193](https://github.com/huggingface/tokenizers/pull/193))
+
+### Features
+
+- `encode` and `encodeBatch` methods on `BaseTokenizer` now take a new optional argument, specifying whether to add the special tokens (activated by default) ([#193](https://github.com/huggingface/tokenizers/pull/193))
+- Methods `decode` and `decodeBatch` exposed in `BaseTokenizer` instances ([#184](https://github.com/huggingface/tokenizers/pull/184))
+- The `fromFiles` methods for `BPE` and `WordPiece` models are now `async` ([#184](https://github.com/huggingface/tokenizers/pull/184))
+- Big improvements in speed for BPE (both training and tokenization) ([#165](https://github.com/huggingface/tokenizers/pull/165))
+- `ByteLevel` is also a `PostProcessor` now and handles trimming the offsets if activated. This avoids the unintuitive inclusion of the whitespaces in the produced offsets, even if these whitespaces are part of the actual token. It has been added to `ByteLevelBPETokenizer` but it is off by default. ([#188](https://github.com/huggingface/tokenizers/pull/188))
+- New `postProcess`, `encodeTokenized`, `encodeTokenizedBatch` and `normalize` methods on `BaseTokenizer` ([#200](https://github.com/huggingface/tokenizers/pull/200)) ([2aeae55](https://github.com/huggingface/tokenizers/commit/2aeae555e22ac58b11b4956aa3f601bb168e8c3f))
+- New `mergeEncodings` static method on `Encoding` class ([#200](https://github.com/huggingface/tokenizers/pull/200)) ([0408567](https://github.com/huggingface/tokenizers/commit/0408567f23d938952f45192a3eff54d48f828882))
+- New `wordIndexes` getter and new `charToToken`, `charToTokenOffsets`, `charToWordOffsets` and `tokenToWordOffsets` helper functions on `Encoding` instances ([#200](https://github.com/huggingface/tokenizers/pull/200)) ([ce3cf78](https://github.com/huggingface/tokenizers/commit/ce3cf78ea5423d483895f51f77ff0c7df07f9b0a))
+
+### Fixes
+
+- Fix `longest_first` truncation strategy ([#174](https://github.com/huggingface/tokenizers/issues/174))
+- Fix options names in `BPE.fromFiles` ([306f427](https://github.com/huggingface/tokenizers/commit/35540d2e0715e88299f8f04f842e23b5a306f427))
+- Actually expose `save` method in `Model` ([ddcf8e8](https://github.com/huggingface/tokenizers/commit/3d143a911bde8d15e1431156fe3cf7676ddcf8e8))
+- The errors in async functions are now typed ([7aa6c13](https://github.com/huggingface/tokenizers/commit/4510ea5ce37d84754bb782a99353ac5627aa6c13))
+- Trim the decoded string in `bpeDecoder` used by `BPETokenizer` ([#205](https://github.com/huggingface/tokenizers/issues/205)) ([3f4a6b7](https://github.com/huggingface/tokenizers/commit/3f4a6b746b921f339de3279d073b29e019ee2e5a))
+
 # [0.5.0](https://github.com/huggingface/tokenizers/compare/node-v0.4.1...node-v0.5.0) (2020-02-27)
 
 ### BREAKING CHANGES
@@ -18,8 +46,7 @@
 - Methods accepting optional arguments now handle explicit `undefined` correctly ([0fe22a7](https://github.com/huggingface/tokenizers/commit/0fe22a7c1c23f8d992f502a3a582e5212b8281ac))
 - Special tokens are now declared only if present in the vocabulary ([b70283c](https://github.com/huggingface/tokenizers/commit/b70283c3050056958e8ba020b0386451cc6df80c))
 - Add missing mask/padding special tokens in wordpiece tokenizer ([b70283c](https://github.com/huggingface/tokenizers/commit/b70283c3050056958e8ba020b0386451cc6df80c))
-- Fix a bug in `ByteLevelBPETokenizer` that caused offsets to be wrong if a char got split up
-in multiple bytes ([#156](https://github.com/huggingface/tokenizers/pull/156))
+- Fix a bug in `ByteLevelBPETokenizer` that caused offsets to be wrong if a char got split up in multiple bytes ([#156](https://github.com/huggingface/tokenizers/pull/156))
 
 ## [0.4.1](https://github.com/huggingface/tokenizers/compare/node-v0.4.0...node-v0.4.1) (2020-02-11)
 

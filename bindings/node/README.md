@@ -51,7 +51,7 @@ console.log(wpEncoded.offsets);
 console.log(wpEncoded.overflowing);
 console.log(wpEncoded.specialTokensMask);
 console.log(wpEncoded.typeIds);
-console.log(wpEncoded.getOriginalString());
+console.log(wpEncoded.wordIndexes);
 ```
 
 ## Provided Tokenizers
