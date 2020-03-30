@@ -32,7 +32,7 @@ If you are interested in the High-level design, you can go check it there.
 ## Installation
 
 ```bash
-npm install tokenizers
+npm install tokenizers@latest
 ```
 
 ## Basic example
