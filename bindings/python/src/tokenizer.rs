@@ -46,6 +46,26 @@ impl AddedToken {
         obj.init({ AddedToken { token } });
         Ok(())
     }
+
+    #[getter]
+    fn get_content(&self) -> &str {
+        &self.token.content
+    }
+
+    #[getter]
+    fn get_rstrip(&self) -> bool {
+        self.token.rstrip
+    }
+
+    #[getter]
+    fn get_lstrip(&self) -> bool {
+        self.token.lstrip
+    }
+
+    #[getter]
+    fn get_single_word(&self) -> bool {
+        self.token.single_word
+    }
 }
 #[pyproto]
 impl PyObjectProtocol for AddedToken {
