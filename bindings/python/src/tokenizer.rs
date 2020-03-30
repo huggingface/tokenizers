@@ -74,9 +74,17 @@ impl PyObjectProtocol for AddedToken {
     }
 
     fn __repr__(&self) -> PyResult<String> {
+        let bool_to_python = |p| match p {
+            true => "True",
+            false => "False",
+        };
+
         Ok(format!(
             "AddedToken(\"{}\", rstrip={}, lstrip={}, single_word={})",
-            self.token.content, self.token.rstrip, self.token.lstrip, self.token.single_word
+            self.token.content,
+            bool_to_python(self.token.rstrip),
+            bool_to_python(self.token.lstrip),
+            bool_to_python(self.token.single_word)
         ))
     }
 }
