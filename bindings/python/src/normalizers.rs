@@ -134,7 +134,7 @@ impl Lowercase {
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Normalizer)]
 pub struct Strip {}
 #[pymethods]
 impl Strip {
