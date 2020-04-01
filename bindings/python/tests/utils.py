@@ -35,3 +35,12 @@ def roberta_files(data_dir):
             "https://s3.amazonaws.com/models.huggingface.co/bert/roberta-base-merges.txt"
         ),
     }
+
+
+@pytest.fixture(scope="session")
+def bert_files(data_dir):
+    return {
+        "vocab": download(
+            "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-vocab.txt"
+        ),
+    }

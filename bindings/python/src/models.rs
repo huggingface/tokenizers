@@ -288,4 +288,11 @@ impl WordLevel {
             }),
         }
     }
+
+    #[staticmethod]
+    fn empty() -> Model {
+        Model {
+            model: Container::Owned(Box::new(tk::models::wordlevel::WordLevel::default())),
+        }
+    }
 }
