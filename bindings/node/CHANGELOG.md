@@ -3,7 +3,7 @@
 ### Fixes
 
 - Fix special tokens with wrong id ([b770f36](https://github.com/huggingface/tokenizers/commit/b770f364280af33efeffea8f0003102cda8cf1b7))
-- Fix `AddedTokens`' `leftStrip` and `rightStrip` params (thanks @thirdwing) ([85488dd](https://github.com/huggingface/tokenizers/commit/85488dd6330ec7fa64aeb78c1a86b221f77c5ebb))
+- Fix `AddedToken`'s `leftStrip` and `rightStrip` params (thanks @thirdwing) ([85488dd](https://github.com/huggingface/tokenizers/commit/85488dd6330ec7fa64aeb78c1a86b221f77c5ebb))
 
 # [0.6.0](https://github.com/huggingface/tokenizers/compare/node-v0.5.0...node-v0.6.0) (2020-03-30)
 
