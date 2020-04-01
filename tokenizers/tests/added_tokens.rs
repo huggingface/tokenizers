@@ -4,6 +4,31 @@ use common::*;
 use tokenizers::tokenizer::{AddedToken, EncodeInput};
 
 #[test]
+fn add_tokens() {
+    let mut tokenizer = get_empty();
+
+    assert_eq!(
+        tokenizer.add_special_tokens(&[
+            AddedToken::from("<cls>".into()),
+            AddedToken::from("<sep>".into())
+        ]),
+        2
+    );
+    assert_eq!(tokenizer.token_to_id("<cls>"), Some(0));
+    assert_eq!(tokenizer.token_to_id("<sep>"), Some(1));
+
+    assert_eq!(
+        tokenizer.add_tokens(&[
+            AddedToken::from("hello".into()),
+            AddedToken::from("world".into())
+        ]),
+        2
+    );
+    assert_eq!(tokenizer.token_to_id("hello"), Some(2));
+    assert_eq!(tokenizer.token_to_id("world"), Some(3));
+}
+
+#[test]
 fn lstrip_tokens() {
     let mut tokenizer = get_byte_level(true, false);
     tokenizer.add_special_tokens(&[AddedToken::from("<mask>".into()).lstrip(true)]);

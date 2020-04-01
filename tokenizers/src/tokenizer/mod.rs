@@ -757,7 +757,7 @@ impl Tokenizer {
             let id = if let Some(id) = self.token_to_id(&token.content) {
                 id
             } else {
-                let new_id = (self.model.get_vocab_size() + self.added_tokens.len()) as u32;
+                let new_id = (self.model.get_vocab_size() + self.added_tokens_map.len()) as u32;
                 self.added_tokens_map.insert(token.content.clone(), new_id);
 
                 if !self.special_tokens_set.contains(&token.content) {

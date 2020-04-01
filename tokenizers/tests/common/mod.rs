@@ -8,6 +8,11 @@ use tokenizers::processors::bert::BertProcessing;
 use tokenizers::tokenizer::Tokenizer;
 
 #[allow(dead_code)]
+pub fn get_empty() -> Tokenizer {
+    Tokenizer::new(Box::new(BPE::default()))
+}
+
+#[allow(dead_code)]
 pub fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
     let mut tokenizer = Tokenizer::new(Box::new(
         BPE::from_files("data/gpt2-vocab.json", "data/gpt2-merges.txt")
