@@ -2,6 +2,8 @@ name: Node
 
 on:
   push:
+    branches:
+      - master
     paths-ignore:
       - bindings/python/**
   pull_request:
