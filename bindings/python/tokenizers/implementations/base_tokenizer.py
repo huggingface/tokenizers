@@ -25,7 +25,19 @@ class BaseTokenizer:
         """
         return self._tokenizer.num_special_tokens_to_add(is_pair)
 
-    def get_vocab_size(self, with_added_tokens: bool = True):
+    def get_vocab(self, with_added_tokens: bool = True) -> Dict[str, int]:
+        """ Returns the vocabulary
+
+        Args:
+            with_added_tokens: boolean:
+                Whether to include the added tokens in the vocabulary
+
+        Returns:
+            The vocabulary
+        """
+        return self._tokenizer.get_vocab(with_added_tokens=with_added_tokens)
+
+    def get_vocab_size(self, with_added_tokens: bool = True) -> int:
         """ Return the size of vocabulary, with or without added tokens.
 
         Args:
