@@ -1,7 +1,7 @@
 from tokenizers import Tokenizer, Encoding, AddedToken
 from tokenizers.models import TokenizedSequence, TokenizedSequenceWithOffsets
 
-from typing import List, Union, Tuple, Optional
+from typing import List, Union, Tuple, Optional, Dict
 
 Offsets = Tuple[int, int]
 
