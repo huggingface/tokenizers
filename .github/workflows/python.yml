@@ -40,6 +40,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
+          components: rustfmt
 
       # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
       - run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
