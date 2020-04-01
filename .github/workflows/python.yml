@@ -4,6 +4,9 @@ on:
   push:
     paths-ignore:
       - bindings/node/**
+  pull_request:
+    paths-ignore:
+      - bindings/node/**
 
 jobs:
   code_quality:
