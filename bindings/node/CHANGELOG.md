@@ -1,3 +1,10 @@
+## [0.6.1](https://github.com/huggingface/tokenizers/compare/node-v0.6.0...node-v0.6.1) (2020-04-01)
+
+### Fixes
+
+- Fix special tokens with wrong id ([b770f36](https://github.com/huggingface/tokenizers/commit/b770f364280af33efeffea8f0003102cda8cf1b7))
+- Fix `AddedTokens`' `leftStrip` and `rightStrip` params (thanks @thirdwing) ([85488dd](https://github.com/huggingface/tokenizers/commit/85488dd6330ec7fa64aeb78c1a86b221f77c5ebb))
+
 # [0.6.0](https://github.com/huggingface/tokenizers/compare/node-v0.5.0...node-v0.6.0) (2020-03-30)
 
 ### BREAKING CHANGES
@@ -50,7 +57,7 @@
 
 ## [0.4.1](https://github.com/huggingface/tokenizers/compare/node-v0.4.0...node-v0.4.1) (2020-02-11)
 
-### Bug Fixes
+### Fixes
 
 - Fix punctuation in BertWordPieceTokenizer (Thanks to @Mansterteddy with [#134](https://github.com/huggingface/tokenizers/pull/134))
 
@@ -69,7 +76,7 @@
 - Add `charDelimiterSplitPreTokenizer`: a new `PreTokenizer` that allows splitting sequences on the given delimiter (works like `.split(delimiter)`) ([#114](https://github.com/huggingface/tokenizers/pull/114)) ([6165910](https://github.com/huggingface/tokenizers/commit/6165910ca66b6bfd9fd996aa38c4c0b2b6505953))
 - Add `robertaProcessing` as a new `PostProcessor` ([#111](https://github.com/huggingface/tokenizers/pull/111)) ([6524f09](https://github.com/huggingface/tokenizers/commit/6524f09e991c3a52c839d8eb01bfa41e81fde1d1))
 
-### Bug Fixes
+### Fixes
 
 - Correctly truncate with `OnlyFirst` and `OnlySecond` strategies ([#108](https://github.com/huggingface/tokenizers/issues/108)) ([6d532fe](https://github.com/huggingface/tokenizers/commit/6d532fedb1d3626328828304a5c39807733d2fa1))
 - Fix default special tokens in `BertWordPieceTokenizer` ([10e2d28](https://github.com/huggingface/tokenizers/commit/10e2d286caf517f0977c04cf8e1924aed90403c9))
