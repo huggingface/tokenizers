@@ -44,3 +44,15 @@ def bert_files(data_dir):
             "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-vocab.txt"
         ),
     }
+
+
+@pytest.fixture(scope="session")
+def openai_files(data_dir):
+    return {
+        "vocab": download(
+            "https://s3.amazonaws.com/models.huggingface.co/bert/openai-gpt-vocab.json"
+        ),
+        "merges": download(
+            "https://s3.amazonaws.com/models.huggingface.co/bert/openai-gpt-merges.txt"
+        ),
+    }
