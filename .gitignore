@@ -8,6 +8,7 @@ Cargo.lock
 
 /data
 tokenizers/data
+bindings/python/tests/data
 /docs
 
 __pycache__

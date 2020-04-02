@@ -107,7 +107,7 @@ impl BPEDecoder {
     #[new]
     #[args(kwargs = "**")]
     fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
-        let mut suffix = String::from("</w");
+        let mut suffix = String::from("</w>");
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {

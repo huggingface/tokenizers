@@ -158,3 +158,7 @@ class WordLevel(Model):
                 The unknown token to be used by the model.
         """
         pass
+    @staticmethod
+    def empty() -> Model:
+        """ Instantiate an empty WordLevel Model. """
+        pass

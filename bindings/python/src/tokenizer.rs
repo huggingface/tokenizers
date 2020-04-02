@@ -46,6 +46,26 @@ impl AddedToken {
         obj.init({ AddedToken { token } });
         Ok(())
     }
+
+    #[getter]
+    fn get_content(&self) -> &str {
+        &self.token.content
+    }
+
+    #[getter]
+    fn get_rstrip(&self) -> bool {
+        self.token.rstrip
+    }
+
+    #[getter]
+    fn get_lstrip(&self) -> bool {
+        self.token.lstrip
+    }
+
+    #[getter]
+    fn get_single_word(&self) -> bool {
+        self.token.single_word
+    }
 }
 #[pyproto]
 impl PyObjectProtocol for AddedToken {
@@ -54,9 +74,17 @@ impl PyObjectProtocol for AddedToken {
     }
 
     fn __repr__(&self) -> PyResult<String> {
+        let bool_to_python = |p| match p {
+            true => "True",
+            false => "False",
+        };
+
         Ok(format!(
             "AddedToken(\"{}\", rstrip={}, lstrip={}, single_word={})",
-            self.token.content, self.token.rstrip, self.token.lstrip, self.token.single_word
+            self.token.content,
+            bool_to_python(self.token.rstrip),
+            bool_to_python(self.token.lstrip),
+            bool_to_python(self.token.single_word)
         ))
     }
 }

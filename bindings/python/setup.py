@@ -1,6 +1,9 @@
 from setuptools import setup
 from setuptools_rust import Binding, RustExtension
 
+extras = {}
+extras["testing"] = ["pytest"]
+
 setup(
     name="tokenizers",
     version="0.7.0-rc3",
@@ -13,6 +16,7 @@ setup(
     url="https://github.com/huggingface/tokenizers",
     license="Apache License 2.0",
     rust_extensions=[RustExtension("tokenizers.tokenizers", binding=Binding.PyO3)],
+    extras_require=extras,
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
