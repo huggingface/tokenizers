@@ -26,7 +26,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
     ):
         if vocab_file is not None and merges_file is not None:
             tokenizer = Tokenizer(
-                BPE.from_files(
+                BPE(
                     vocab_file,
                     merges_file,
                     dropout=dropout,
@@ -35,7 +35,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
                 )
             )
         else:
-            tokenizer = Tokenizer(BPE.empty())
+            tokenizer = Tokenizer(BPE())
 
         # Check for Unicode normalization first (before everything else)
         normalizers = []

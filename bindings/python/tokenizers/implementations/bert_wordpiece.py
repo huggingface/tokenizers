@@ -27,9 +27,9 @@ class BertWordPieceTokenizer(BaseTokenizer):
     ):
 
         if vocab_file is not None:
-            tokenizer = Tokenizer(WordPiece.from_files(vocab_file, unk_token=str(unk_token)))
+            tokenizer = Tokenizer(WordPiece(vocab_file, unk_token=str(unk_token)))
         else:
-            tokenizer = Tokenizer(WordPiece.empty())
+            tokenizer = Tokenizer(WordPiece())
 
         # Let the tokenizer know about special tokens if they are part of the vocab
         if tokenizer.token_to_id(str(unk_token)) is not None:
