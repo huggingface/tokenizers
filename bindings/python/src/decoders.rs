@@ -31,10 +31,13 @@ pub struct ByteLevel {}
 #[pymethods]
 impl ByteLevel {
     #[new]
-    fn new(obj: &PyRawObject) -> PyResult<()> {
-        Ok(obj.init(Decoder {
-            decoder: Container::Owned(Box::new(tk::decoders::byte_level::ByteLevel::default())),
-        }))
+    fn new() -> PyResult<(Self, Decoder)> {
+        Ok((
+            ByteLevel {},
+            Decoder {
+                decoder: Container::Owned(Box::new(tk::decoders::byte_level::ByteLevel::default())),
+            },
+        ))
     }
 }
 
@@ -44,7 +47,7 @@ pub struct WordPiece {}
 impl WordPiece {
     #[new]
     #[args(kwargs = "**")]
-    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, Decoder)> {
         let mut prefix = String::from("##");
         let mut cleanup = true;
 
@@ -57,11 +60,14 @@ impl WordPiece {
             }
         }
 
-        Ok(obj.init(Decoder {
-            decoder: Container::Owned(Box::new(tk::decoders::wordpiece::WordPiece::new(
-                prefix, cleanup,
-            ))),
-        }))
+        Ok((
+            WordPiece {},
+            Decoder {
+                decoder: Container::Owned(Box::new(tk::decoders::wordpiece::WordPiece::new(
+                    prefix, cleanup,
+                ))),
+            },
+        ))
     }
 }
 
@@ -71,7 +77,7 @@ pub struct Metaspace {}
 impl Metaspace {
     #[new]
     #[args(kwargs = "**")]
-    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, Decoder)> {
         let mut replacement = '▁';
         let mut add_prefix_space = true;
 
@@ -91,12 +97,15 @@ impl Metaspace {
             }
         }
 
-        Ok(obj.init(Decoder {
-            decoder: Container::Owned(Box::new(tk::decoders::metaspace::Metaspace::new(
-                replacement,
-                add_prefix_space,
-            ))),
-        }))
+        Ok((
+            Metaspace {},
+            Decoder {
+                decoder: Container::Owned(Box::new(tk::decoders::metaspace::Metaspace::new(
+                    replacement,
+                    add_prefix_space,
+                ))),
+            },
+        ))
     }
 }
 
@@ -106,7 +115,7 @@ pub struct BPEDecoder {}
 impl BPEDecoder {
     #[new]
     #[args(kwargs = "**")]
-    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, Decoder)> {
         let mut suffix = String::from("</w>");
 
         if let Some(kwargs) = kwargs {
@@ -119,9 +128,12 @@ impl BPEDecoder {
             }
         }
 
-        Ok(obj.init(Decoder {
-            decoder: Container::Owned(Box::new(tk::decoders::bpe::BPEDecoder::new(suffix))),
-        }))
+        Ok((
+            BPEDecoder {},
+            Decoder {
+                decoder: Container::Owned(Box::new(tk::decoders::bpe::BPEDecoder::new(suffix))),
+            },
+        ))
     }
 }
 

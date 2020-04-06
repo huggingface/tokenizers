@@ -40,7 +40,7 @@ impl PySequenceProtocol for Encoding {
 impl Encoding {
     #[staticmethod]
     #[args(growing_offsets = true)]
-    fn merge(encodings: Vec<&Encoding>, growing_offsets: bool) -> Encoding {
+    fn merge(encodings: Vec<PyRef<Encoding>>, growing_offsets: bool) -> Encoding {
         Encoding::new(tk::tokenizer::Encoding::merge(
             encodings
                 .into_iter()

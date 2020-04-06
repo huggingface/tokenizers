@@ -16,7 +16,7 @@ pub struct BertNormalizer {}
 impl BertNormalizer {
     #[new]
     #[args(kwargs = "**")]
-    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, Normalizer)> {
         let mut clean_text = true;
         let mut handle_chinese_chars = true;
         let mut strip_accents = true;
@@ -35,14 +35,17 @@ impl BertNormalizer {
             }
         }
 
-        Ok(obj.init(Normalizer {
-            normalizer: Container::Owned(Box::new(tk::normalizers::bert::BertNormalizer::new(
-                clean_text,
-                handle_chinese_chars,
-                strip_accents,
-                lowercase,
-            ))),
-        }))
+        Ok((
+            BertNormalizer {},
+            Normalizer {
+                normalizer: Container::Owned(Box::new(tk::normalizers::bert::BertNormalizer::new(
+                    clean_text,
+                    handle_chinese_chars,
+                    strip_accents,
+                    lowercase,
+                ))),
+            },
+        ))
     }
 }
 
@@ -51,10 +54,13 @@ pub struct NFD {}
 #[pymethods]
 impl NFD {
     #[new]
-    fn new(obj: &PyRawObject) -> PyResult<()> {
-        Ok(obj.init(Normalizer {
-            normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFD)),
-        }))
+    fn new() -> PyResult<(Self, Normalizer)> {
+        Ok((
+            NFD {},
+            Normalizer {
+                normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFD)),
+            },
+        ))
     }
 }
 
@@ -63,10 +69,13 @@ pub struct NFKD {}
 #[pymethods]
 impl NFKD {
     #[new]
-    fn new(obj: &PyRawObject) -> PyResult<()> {
-        Ok(obj.init(Normalizer {
-            normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFKD)),
-        }))
+    fn new() -> PyResult<(Self, Normalizer)> {
+        Ok((
+            NFKD {},
+            Normalizer {
+                normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFKD)),
+            },
+        ))
     }
 }
 
@@ -75,10 +84,13 @@ pub struct NFC {}
 #[pymethods]
 impl NFC {
     #[new]
-    fn new(obj: &PyRawObject) -> PyResult<()> {
-        Ok(obj.init(Normalizer {
-            normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFC)),
-        }))
+    fn new() -> PyResult<(Self, Normalizer)> {
+        Ok((
+            NFC {},
+            Normalizer {
+                normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFC)),
+            },
+        ))
     }
 }
 
@@ -87,10 +99,13 @@ pub struct NFKC {}
 #[pymethods]
 impl NFKC {
     #[new]
-    fn new(obj: &PyRawObject) -> PyResult<()> {
-        Ok(obj.init(Normalizer {
-            normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFKC)),
-        }))
+    fn new() -> PyResult<(Self, Normalizer)> {
+        Ok((
+            NFKC {},
+            Normalizer {
+                normalizer: Container::Owned(Box::new(tk::normalizers::unicode::NFKC)),
+            },
+        ))
     }
 }
 
@@ -99,11 +114,11 @@ pub struct Sequence {}
 #[pymethods]
 impl Sequence {
     #[new]
-    fn new(obj: &PyRawObject, normalizers: &PyList) -> PyResult<()> {
+    fn new(normalizers: &PyList) -> PyResult<(Self, Normalizer)> {
         let normalizers = normalizers
             .iter()
             .map(|n| {
-                let normalizer: &mut Normalizer = n.extract()?;
+                let mut normalizer: PyRefMut<Normalizer> = n.extract()?;
                 if let Some(normalizer) = normalizer.normalizer.to_pointer() {
                     Ok(normalizer)
                 } else {
@@ -114,11 +129,14 @@ impl Sequence {
             })
             .collect::<PyResult<_>>()?;
 
-        Ok(obj.init(Normalizer {
-            normalizer: Container::Owned(Box::new(tk::normalizers::utils::Sequence::new(
-                normalizers,
-            ))),
-        }))
+        Ok((
+            Sequence {},
+            Normalizer {
+                normalizer: Container::Owned(Box::new(tk::normalizers::utils::Sequence::new(
+                    normalizers,
+                ))),
+            },
+        ))
     }
 }
 
@@ -127,10 +145,13 @@ pub struct Lowercase {}
 #[pymethods]
 impl Lowercase {
     #[new]
-    fn new(obj: &PyRawObject) -> PyResult<()> {
-        Ok(obj.init(Normalizer {
-            normalizer: Container::Owned(Box::new(tk::normalizers::utils::Lowercase)),
-        }))
+    fn new() -> PyResult<(Self, Normalizer)> {
+        Ok((
+            Lowercase {},
+            Normalizer {
+                normalizer: Container::Owned(Box::new(tk::normalizers::utils::Lowercase)),
+            },
+        ))
     }
 }
 
@@ -140,7 +161,7 @@ pub struct Strip {}
 impl Strip {
     #[new]
     #[args(kwargs = "**")]
-    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, Normalizer)> {
         let mut left = true;
         let mut right = true;
 
@@ -153,8 +174,13 @@ impl Strip {
             }
         }
 
-        Ok(obj.init(Normalizer {
-            normalizer: Container::Owned(Box::new(tk::normalizers::strip::Strip::new(left, right))),
-        }))
+        Ok((
+            Strip {},
+            Normalizer {
+                normalizer: Container::Owned(Box::new(tk::normalizers::strip::Strip::new(
+                    left, right,
+                ))),
+            },
+        ))
     }
 }

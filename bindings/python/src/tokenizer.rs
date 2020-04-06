@@ -28,7 +28,7 @@ pub struct AddedToken {
 impl AddedToken {
     #[new]
     #[args(kwargs = "**")]
-    fn new(obj: &PyRawObject, content: &str, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn new(content: &str, kwargs: Option<&PyDict>) -> PyResult<Self> {
         let mut token = tk::tokenizer::AddedToken::from(content.to_owned());
 
         if let Some(kwargs) = kwargs {
@@ -43,8 +43,7 @@ impl AddedToken {
             }
         }
 
-        obj.init({ AddedToken { token } });
-        Ok(())
+        Ok(AddedToken { token })
     }
 
     #[getter]
@@ -97,11 +96,10 @@ pub struct Tokenizer {
 #[pymethods]
 impl Tokenizer {
     #[new]
-    fn new(obj: &PyRawObject, model: &mut Model) -> PyResult<()> {
+    fn new(mut model: PyRefMut<Model>) -> PyResult<Self> {
         if let Some(model) = model.model.to_pointer() {
             let tokenizer = tk::tokenizer::Tokenizer::new(model);
-            obj.init({ Tokenizer { tokenizer } });
-            Ok(())
+            Ok(Tokenizer { tokenizer })
         } else {
             Err(exceptions::Exception::py_err(
                 "The Model is already being used in another Tokenizer",
@@ -320,7 +318,7 @@ impl Tokenizer {
                         content,
                         ..Default::default()
                     })
-                } else if let Ok(token) = token.cast_as::<AddedToken>() {
+                } else if let Ok(token) = token.extract::<PyRef<AddedToken>>() {
                     Ok(token.token.clone())
                 } else {
                     Err(exceptions::Exception::py_err(
@@ -342,7 +340,7 @@ impl Tokenizer {
                         content,
                         ..Default::default()
                     })
-                } else if let Ok(token) = token.cast_as::<AddedToken>() {
+                } else if let Ok(token) = token.extract::<PyRef<AddedToken>>() {
                     Ok(token.token.clone())
                 } else {
                     Err(exceptions::Exception::py_err(
@@ -392,7 +390,7 @@ impl Tokenizer {
     }
 
     #[setter]
-    fn set_model(&mut self, model: &mut Model) -> PyResult<()> {
+    fn set_model(&mut self, mut model: PyRefMut<Model>) -> PyResult<()> {
         if let Some(model) = model.model.to_pointer() {
             self.tokenizer.with_model(model);
             Ok(())
@@ -414,7 +412,7 @@ impl Tokenizer {
     }
 
     #[setter]
-    fn set_normalizer(&mut self, normalizer: &mut Normalizer) -> PyResult<()> {
+    fn set_normalizer(&mut self, mut normalizer: PyRefMut<Normalizer>) -> PyResult<()> {
         if let Some(normalizer) = normalizer.normalizer.to_pointer() {
             self.tokenizer.with_normalizer(normalizer);
             Ok(())
@@ -436,7 +434,7 @@ impl Tokenizer {
     }
 
     #[setter]
-    fn set_pre_tokenizer(&mut self, pretok: &mut PreTokenizer) -> PyResult<()> {
+    fn set_pre_tokenizer(&mut self, mut pretok: PyRefMut<PreTokenizer>) -> PyResult<()> {
         if let Some(pretok) = pretok.pretok.to_pointer() {
             self.tokenizer.with_pre_tokenizer(pretok);
             Ok(())
@@ -458,7 +456,7 @@ impl Tokenizer {
     }
 
     #[setter]
-    fn set_post_processor(&mut self, processor: &mut PostProcessor) -> PyResult<()> {
+    fn set_post_processor(&mut self, mut processor: PyRefMut<PostProcessor>) -> PyResult<()> {
         if let Some(processor) = processor.processor.to_pointer() {
             self.tokenizer.with_post_processor(processor);
             Ok(())
@@ -477,7 +475,7 @@ impl Tokenizer {
     }
 
     #[setter]
-    fn set_decoder(&mut self, decoder: &mut Decoder) -> PyResult<()> {
+    fn set_decoder(&mut self, mut decoder: PyRefMut<Decoder>) -> PyResult<()> {
         if let Some(decoder) = decoder.decoder.to_pointer() {
             self.tokenizer.with_decoder(decoder);
             Ok(())

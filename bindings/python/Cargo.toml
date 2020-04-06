@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 rayon = "1.2.0"
 
 [dependencies.pyo3]
-version = "0.8.4"
+version = "0.9.1"
 features = ["extension-module"]
 
 [dependencies.tokenizers]
