@@ -59,7 +59,7 @@ if args.type == "gpt2":
     tok_p = GPT2Tokenizer.from_pretrained("gpt2")
 
     # Create a Tokenizer using BPE
-    tok_r = Tokenizer(BPE.from_files(args.vocab, args.merges))
+    tok_r = Tokenizer(BPE(args.vocab, args.merges))
     # Use ByteLevel PreTokenizer
     tok_r.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
     # Use ByteLevel Decoder
@@ -68,9 +68,7 @@ elif args.type == "bert":
     print("Running Bert tokenizer")
     tok_p = BertTokenizer.from_pretrained(args.vocab)
 
-    tok_r = Tokenizer(
-        WordPiece.from_files(args.vocab, unk_token="[UNK]", max_input_chars_per_word=100)
-    )
+    tok_r = Tokenizer(WordPiece(args.vocab, unk_token="[UNK]", max_input_chars_per_word=100))
     tok_r.normalizer = BertNormalizer(
         clean_text=True, handle_chinese_chars=True, strip_accents=True, lowercase=True,
     )

@@ -41,8 +41,8 @@ def tokenize(sentence):
 
 
 # Create a Tokenizer using a BPE model
-bpe = models.BPE.from_files(args.vocab, args.merges)
-tokenizer = Tokenizer(models.BPE.from_files(args.vocab, args.merges))
+bpe = models.BPE(args.vocab, args.merges)
+tokenizer = Tokenizer(bpe)
 
 # Test the good custom classes
 good_custom = GoodCustom()
