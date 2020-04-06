@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unrelease]
+### [Changed]
+- [#136] Updated Pyo3 version
+
+### [Added]
+- [#136] Models can now be instantiated through object constructors.
+
+### [Removed]
+- [#136] Static methods `Model.from_files` and `Model.empty` are removed in favor of using
+constructors.
+
+### [How to migrate]
+- Change `Model.from_files` and `Model.empty` to use constructor. The model constructor should take
+the same arguments as the old methods.
+
 ## [0.7.0-rc3]
 
 ### Changed
