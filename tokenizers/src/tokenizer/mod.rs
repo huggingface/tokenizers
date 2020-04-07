@@ -505,22 +505,30 @@ impl Tokenizer {
         let mut output = self.post_process(encoding, pair_encoding, add_special_tokens)?;
 
         // 5. Convert offsets back to original string
-        let mut current_offset = (0, 0);
-        let mut n_source = &normalized;
-        output
-            .get_offsets_mut()
-            .iter_mut()
-            .for_each(|(start, end)| {
-                if (*start, *end) < current_offset {
-                    n_source = &pair_normalized.as_ref().unwrap_or(&normalized);
-                }
-                current_offset = (*start, *end);
-                let (s, e) = n_source
-                    .convert_offsets(Range::Normalized(*start..*end))
-                    .map_or((*start, *end), |range| (range.start, range.end));
-                *start = s;
-                *end = e;
-            });
+        let convert_offsets_back = |encoding: &mut Encoding| {
+            let mut current_offset = (0, 0);
+            let mut n_source = &normalized;
+
+            encoding
+                .get_offsets_mut()
+                .iter_mut()
+                .for_each(|(start, end)| {
+                    if (*start, *end) < current_offset {
+                        n_source = &pair_normalized.as_ref().unwrap_or(&normalized);
+                    }
+                    current_offset = (*start, *end);
+                    let (s, e) = n_source
+                        .convert_offsets(Range::Normalized(*start..*end))
+                        .map_or((*start, *end), |range| (range.start, range.end));
+                    *start = s;
+                    *end = e;
+                });
+        };
+
+        convert_offsets_back(&mut output);
+        for o in output.get_overflowing_mut() {
+            convert_offsets_back(o);
+        }
 
         Ok(output)
     }
