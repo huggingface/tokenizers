@@ -112,6 +112,10 @@ impl Encoding {
         &self.overflowing
     }
 
+    pub fn get_overflowing_mut(&mut self) -> &mut Vec<Encoding> {
+        &mut self.overflowing
+    }
+
     pub fn take_overflowing(&mut self) -> Vec<Encoding> {
         std::mem::replace(&mut self.overflowing, vec![])
     }
