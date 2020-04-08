@@ -12,7 +12,8 @@ crate-type = ["cdylib"]
 rayon = "1.2.0"
 
 [dependencies.pyo3]
-version = "=0.9.0"
+git = "https://github.com/PyO3/pyo3"
+rev = "a9357ef8a11048b349b777f83aeae1a856fb4cb1"
 features = ["extension-module"]
 
 [dependencies.tokenizers]
