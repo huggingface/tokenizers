@@ -1,5 +1,7 @@
 use crate::tokenizer::{NormalizedString, Offsets, PreTokenizer, Result};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct CharDelimiterSplit {
     delimiter: char,
 }
@@ -10,6 +12,7 @@ impl CharDelimiterSplit {
     }
 }
 
+#[typetag::serde]
 impl PreTokenizer for CharDelimiterSplit {
     fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
         let mut words = vec![];

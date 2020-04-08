@@ -1,6 +1,8 @@
 use crate::processors::byte_level::process_offsets;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct RobertaProcessing {
     sep: (String, u32),
     cls: (String, u32),
@@ -37,6 +39,7 @@ impl RobertaProcessing {
     }
 }
 
+#[typetag::serde]
 impl PostProcessor for RobertaProcessing {
     fn added_tokens(&self, is_pair: bool) -> usize {
         if is_pair {

@@ -1,7 +1,10 @@
 use crate::tokenizer::{NormalizedString, Offsets, PreTokenizer, Result};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct Whitespace;
+#[typetag::serde]
 impl PreTokenizer for Whitespace {
     fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
         lazy_static! {
@@ -25,7 +28,9 @@ impl PreTokenizer for Whitespace {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct WhitespaceSplit;
+#[typetag::serde]
 impl PreTokenizer for WhitespaceSplit {
     fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
         let mut words = vec![];

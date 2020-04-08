@@ -1,5 +1,7 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct Strip {
     strip_left: bool,
     strip_right: bool,
@@ -14,6 +16,7 @@ impl Strip {
     }
 }
 
+#[typetag::serde]
 impl Normalizer for Strip {
     /// Strip the normalized string inplace
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {

@@ -15,6 +15,7 @@ pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, 
 pub use crate::utils::truncation::{truncate_encodings, TruncationParams, TruncationStrategy};
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
@@ -24,6 +25,7 @@ use std::{
 
 mod encoding;
 mod normalizer;
+mod serialization;
 
 pub use encoding::*;
 pub use normalizer::*;
@@ -31,11 +33,13 @@ pub use normalizer::*;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 pub type Offsets = (usize, usize);
 
+#[typetag::serde(tag = "type")]
 /// Takes care of pre-processing strings.
 pub trait Normalizer: Send + Sync {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
 }
 
+#[typetag::serde(tag = "type")]
 /// The `PreTokenizer` is in charge of doing the pre-segmentation step. It splits the given string
 /// in multiple substrings, keeping track of the offsets of said substrings from the
 /// `NormalizedString`. In some occasions, the `PreTokenizer` might need to modify the given
@@ -45,6 +49,7 @@ pub trait PreTokenizer: Send + Sync {
     fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>>;
 }
 
+// #[typetag::serde(tag = "type")]
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
 pub trait Model: Send + Sync {
     fn tokenize(&self, tokens: Vec<(String, Offsets)>) -> Result<Vec<Token>>;
@@ -55,6 +60,7 @@ pub trait Model: Send + Sync {
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>>;
 }
 
+#[typetag::serde(tag = "type")]
 /// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
 /// It adds any special tokens that a language model would require.
 pub trait PostProcessor: Send + Sync {
@@ -84,6 +90,7 @@ impl dyn PostProcessor {
     }
 }
 
+#[typetag::serde(tag = "type")]
 /// A `Decoder` has the responsibility to merge the given `Vec<String>` in a `String`.
 pub trait Decoder: Send + Sync {
     fn decode(&self, tokens: Vec<String>) -> Result<String>;

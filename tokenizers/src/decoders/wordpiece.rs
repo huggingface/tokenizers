@@ -1,5 +1,7 @@
 use crate::tokenizer::{Decoder, Result};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 /// The WordPiece decoder takes care of decoding a list of wordpiece tokens
 /// back into a readable string.
 pub struct WordPiece {
@@ -24,6 +26,7 @@ impl Default for WordPiece {
     }
 }
 
+#[typetag::serde]
 impl Decoder for WordPiece {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
         let mut output = tokens.join(" ").replace(&format!(" {}", self.prefix), "");
