@@ -6,7 +6,7 @@ use pyo3::types::*;
 
 #[pyclass(dict)]
 pub struct PostProcessor {
-    pub processor: Container<dyn tk::tokenizer::PostProcessor + Sync>,
+    pub processor: Container<dyn tk::tokenizer::PostProcessor>,
 }
 
 #[pymethods]

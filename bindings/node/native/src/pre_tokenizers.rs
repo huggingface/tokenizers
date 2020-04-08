@@ -5,7 +5,7 @@ use neon::prelude::*;
 
 /// PreTokenizers
 pub struct PreTokenizer {
-    pub pretok: Container<dyn tk::tokenizer::PreTokenizer + Sync>,
+    pub pretok: Container<dyn tk::tokenizer::PreTokenizer>,
 }
 
 declare_types! {

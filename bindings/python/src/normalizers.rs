@@ -7,7 +7,7 @@ use pyo3::types::*;
 
 #[pyclass(dict)]
 pub struct Normalizer {
-    pub normalizer: Container<dyn tk::tokenizer::Normalizer + Sync>,
+    pub normalizer: Container<dyn tk::tokenizer::Normalizer>,
 }
 
 #[pyclass(extends=Normalizer)]

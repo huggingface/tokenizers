@@ -31,7 +31,7 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 pub type Offsets = (usize, usize);
 
 /// Takes care of pre-processing strings.
-pub trait Normalizer {
+pub trait Normalizer: Send + Sync {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
 }
 
@@ -40,12 +40,12 @@ pub trait Normalizer {
 /// `NormalizedString`. In some occasions, the `PreTokenizer` might need to modify the given
 /// `NormalizedString` to ensure we can entirely keep track of the offsets and the mapping with
 /// the original string.
-pub trait PreTokenizer {
+pub trait PreTokenizer: Send + Sync {
     fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>>;
 }
 
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
-pub trait Model {
+pub trait Model: Send + Sync {
     fn tokenize(&self, tokens: Vec<(String, Offsets)>) -> Result<Vec<Token>>;
     fn token_to_id(&self, token: &str) -> Option<u32>;
     fn id_to_token(&self, id: u32) -> Option<String>;
@@ -56,7 +56,7 @@ pub trait Model {
 
 /// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
 /// It adds any special tokens that a language model would require.
-pub trait PostProcessor {
+pub trait PostProcessor: Send + Sync {
     /// Returns the number of tokens that will be added during the processing step
     fn added_tokens(&self, is_pair: bool) -> usize;
     /// Process both encodings and returns a new merged one
@@ -84,7 +84,7 @@ impl dyn PostProcessor {
 }
 
 /// A `Decoder` has the responsibility to merge the given `Vec<String>` in a `String`.
-pub trait Decoder {
+pub trait Decoder: Send + Sync {
     fn decode(&self, tokens: Vec<String>) -> Result<String>;
 }
 
@@ -95,10 +95,7 @@ pub trait Trainer: Sync {
     fn should_show_progress(&self) -> bool;
     /// The actual training method. This will return a new trained Model as well as a list
     /// of `special_tokens` to be added directly to the tokenizer along with the model.
-    fn train(
-        &self,
-        words: HashMap<String, u32>,
-    ) -> Result<(Box<dyn Model + Sync>, Vec<AddedToken>)>;
+    fn train(&self, words: HashMap<String, u32>) -> Result<(Box<dyn Model>, Vec<AddedToken>)>;
     /// Process a bunch of token, counting them as relevant.
     fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>);
 }
@@ -226,11 +223,11 @@ impl std::cmp::Eq for AddedToken {}
 /// A `Tokenizer` is capable of encoding/decoding any text.
 pub struct Tokenizer {
     // Tokenizer parts
-    normalizer: Option<Box<dyn Normalizer + Sync>>,
-    pre_tokenizer: Option<Box<dyn PreTokenizer + Sync>>,
-    model: Box<dyn Model + Sync>,
-    post_processor: Option<Box<dyn PostProcessor + Sync>>,
-    decoder: Option<Box<dyn Decoder + Sync>>,
+    normalizer: Option<Box<dyn Normalizer>>,
+    pre_tokenizer: Option<Box<dyn PreTokenizer>>,
+    model: Box<dyn Model>,
+    post_processor: Option<Box<dyn PostProcessor>>,
+    decoder: Option<Box<dyn Decoder>>,
 
     // Added Vocabulary capabilities
     /// Contains the mapping from String to ID as the user intended it. This map
@@ -256,7 +253,7 @@ pub struct Tokenizer {
 
 impl Tokenizer {
     /// Instanciate a new Tokenizer, with the given Model
-    pub fn new(model: Box<dyn Model + Sync>) -> Self {
+    pub fn new(model: Box<dyn Model>) -> Self {
         Tokenizer {
             normalizer: None,
             pre_tokenizer: None,
@@ -277,62 +274,62 @@ impl Tokenizer {
     }
 
     /// Set the normalizer
-    pub fn with_normalizer(&mut self, normalizer: Box<dyn Normalizer + Sync>) -> &Self {
+    pub fn with_normalizer(&mut self, normalizer: Box<dyn Normalizer>) -> &Self {
         self.normalizer = Some(normalizer);
         self
     }
 
     /// Get the normalizer
     #[allow(clippy::borrowed_box)]
-    pub fn get_normalizer(&self) -> Option<&Box<dyn Normalizer + Sync>> {
+    pub fn get_normalizer(&self) -> Option<&Box<dyn Normalizer>> {
         self.normalizer.as_ref()
     }
 
     /// Set the pre tokenizer
-    pub fn with_pre_tokenizer(&mut self, pre_tokenizer: Box<dyn PreTokenizer + Sync>) -> &Self {
+    pub fn with_pre_tokenizer(&mut self, pre_tokenizer: Box<dyn PreTokenizer>) -> &Self {
         self.pre_tokenizer = Some(pre_tokenizer);
         self
     }
 
     /// Get the pre tokenizer
     #[allow(clippy::borrowed_box)]
-    pub fn get_pre_tokenizer(&self) -> Option<&Box<dyn PreTokenizer + Sync>> {
+    pub fn get_pre_tokenizer(&self) -> Option<&Box<dyn PreTokenizer>> {
         self.pre_tokenizer.as_ref()
     }
 
     /// Set the post processor
-    pub fn with_post_processor(&mut self, post_processor: Box<dyn PostProcessor + Sync>) -> &Self {
+    pub fn with_post_processor(&mut self, post_processor: Box<dyn PostProcessor>) -> &Self {
         self.post_processor = Some(post_processor);
         self
     }
 
     /// Get the post processor
     #[allow(clippy::borrowed_box)]
-    pub fn get_post_processor(&self) -> Option<&Box<dyn PostProcessor + Sync>> {
+    pub fn get_post_processor(&self) -> Option<&Box<dyn PostProcessor>> {
         self.post_processor.as_ref()
     }
 
     /// Set the decoder
-    pub fn with_decoder(&mut self, decoder: Box<dyn Decoder + Sync>) -> &Self {
+    pub fn with_decoder(&mut self, decoder: Box<dyn Decoder>) -> &Self {
         self.decoder = Some(decoder);
         self
     }
 
     /// Get the decoder
     #[allow(clippy::borrowed_box)]
-    pub fn get_decoder(&self) -> Option<&Box<dyn Decoder + Sync>> {
+    pub fn get_decoder(&self) -> Option<&Box<dyn Decoder>> {
         self.decoder.as_ref()
     }
 
     /// Set the model
-    pub fn with_model(&mut self, model: Box<dyn Model + Sync>) -> &Self {
+    pub fn with_model(&mut self, model: Box<dyn Model>) -> &Self {
         self.model = model;
         self
     }
 
     /// Get the model
     #[allow(clippy::borrowed_box)]
-    pub fn get_model(&self) -> &Box<dyn Model + Sync> {
+    pub fn get_model(&self) -> &Box<dyn Model> {
         &self.model
     }
 

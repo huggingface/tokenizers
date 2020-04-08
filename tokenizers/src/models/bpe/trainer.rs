@@ -601,7 +601,7 @@ impl Trainer for BpeTrainer {
     fn train(
         &self,
         word_counts: HashMap<String, u32>,
-    ) -> Result<(Box<dyn Model + Sync>, Vec<AddedToken>)> {
+    ) -> Result<(Box<dyn Model>, Vec<AddedToken>)> {
         let (bpe, tokens) = self.train(word_counts)?;
         Ok((Box::new(bpe), tokens))
     }

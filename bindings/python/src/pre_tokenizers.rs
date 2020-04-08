@@ -9,7 +9,7 @@ use tk::tokenizer::{Offsets, Result};
 
 #[pyclass(dict)]
 pub struct PreTokenizer {
-    pub pretok: Container<dyn tk::tokenizer::PreTokenizer + Sync>,
+    pub pretok: Container<dyn tk::tokenizer::PreTokenizer>,
 }
 #[pymethods]
 impl PreTokenizer {

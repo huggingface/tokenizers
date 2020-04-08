@@ -99,7 +99,7 @@ impl Trainer for WordPieceTrainer {
     fn train(
         &self,
         word_counts: HashMap<String, u32>,
-    ) -> Result<(Box<dyn Model + Sync>, Vec<AddedToken>)> {
+    ) -> Result<(Box<dyn Model>, Vec<AddedToken>)> {
         let (wp, tokens) = self.train(word_counts)?;
         Ok((Box::new(wp), tokens))
     }
