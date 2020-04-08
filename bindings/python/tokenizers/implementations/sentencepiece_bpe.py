@@ -23,10 +23,10 @@ class SentencePieceBPETokenizer(BaseTokenizer):
     ):
         if vocab_file is not None and merges_file is not None:
             tokenizer = Tokenizer(
-                BPE.from_files(vocab_file, merges_file, dropout=dropout, unk_token=unk_token)
+                BPE(vocab_file, merges_file, dropout=dropout, unk_token=unk_token)
             )
         else:
-            tokenizer = Tokenizer(BPE.empty())
+            tokenizer = Tokenizer(BPE())
 
         if tokenizer.token_to_id(str(unk_token)) is not None:
             tokenizer.add_special_tokens([str(unk_token)])

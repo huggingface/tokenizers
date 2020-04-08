@@ -21,12 +21,15 @@ pub struct BertProcessing {}
 #[pymethods]
 impl BertProcessing {
     #[new]
-    fn new(obj: &PyRawObject, sep: (String, u32), cls: (String, u32)) -> PyResult<()> {
-        Ok(obj.init(PostProcessor {
-            processor: Container::Owned(Box::new(tk::processors::bert::BertProcessing::new(
-                sep, cls,
-            ))),
-        }))
+    fn new(sep: (String, u32), cls: (String, u32)) -> PyResult<(Self, PostProcessor)> {
+        Ok((
+            BertProcessing {},
+            PostProcessor {
+                processor: Container::Owned(Box::new(tk::processors::bert::BertProcessing::new(
+                    sep, cls,
+                ))),
+            },
+        ))
     }
 }
 
@@ -35,12 +38,15 @@ pub struct RobertaProcessing {}
 #[pymethods]
 impl RobertaProcessing {
     #[new]
-    fn new(obj: &PyRawObject, sep: (String, u32), cls: (String, u32)) -> PyResult<()> {
-        Ok(obj.init(PostProcessor {
-            processor: Container::Owned(Box::new(tk::processors::roberta::RobertaProcessing::new(
-                sep, cls,
-            ))),
-        }))
+    fn new(sep: (String, u32), cls: (String, u32)) -> PyResult<(Self, PostProcessor)> {
+        Ok((
+            RobertaProcessing {},
+            PostProcessor {
+                processor: Container::Owned(Box::new(
+                    tk::processors::roberta::RobertaProcessing::new(sep, cls),
+                )),
+            },
+        ))
     }
 }
 
@@ -50,7 +56,7 @@ pub struct ByteLevel {}
 impl ByteLevel {
     #[new]
     #[args(kwargs = "**")]
-    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PostProcessor)> {
         let mut byte_level = tk::processors::byte_level::ByteLevel::default();
 
         if let Some(kwargs) = kwargs {
@@ -62,8 +68,11 @@ impl ByteLevel {
                 }
             }
         }
-        Ok(obj.init(PostProcessor {
-            processor: Container::Owned(Box::new(byte_level)),
-        }))
+        Ok((
+            ByteLevel {},
+            PostProcessor {
+                processor: Container::Owned(Box::new(byte_level)),
+            },
+        ))
     }
 }

@@ -38,9 +38,8 @@ pub struct ByteLevel {}
 impl ByteLevel {
     #[new]
     #[args(kwargs = "**")]
-    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PreTokenizer)> {
         let mut byte_level = tk::pre_tokenizers::byte_level::ByteLevel::default();
-
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
                 let key: &str = key.extract()?;
@@ -53,9 +52,12 @@ impl ByteLevel {
             }
         }
 
-        Ok(obj.init(PreTokenizer {
-            pretok: Container::Owned(Box::new(byte_level)),
-        }))
+        Ok((
+            ByteLevel {},
+            PreTokenizer {
+                pretok: Container::Owned(Box::new(byte_level)),
+            },
+        ))
     }
 
     #[staticmethod]
@@ -72,10 +74,13 @@ pub struct Whitespace {}
 #[pymethods]
 impl Whitespace {
     #[new]
-    fn new(obj: &PyRawObject) -> PyResult<()> {
-        Ok(obj.init(PreTokenizer {
-            pretok: Container::Owned(Box::new(tk::pre_tokenizers::whitespace::Whitespace)),
-        }))
+    fn new() -> PyResult<(Self, PreTokenizer)> {
+        Ok((
+            Whitespace {},
+            PreTokenizer {
+                pretok: Container::Owned(Box::new(tk::pre_tokenizers::whitespace::Whitespace)),
+            },
+        ))
     }
 }
 
@@ -84,10 +89,13 @@ pub struct WhitespaceSplit {}
 #[pymethods]
 impl WhitespaceSplit {
     #[new]
-    fn new(obj: &PyRawObject) -> PyResult<()> {
-        Ok(obj.init(PreTokenizer {
-            pretok: Container::Owned(Box::new(tk::pre_tokenizers::whitespace::WhitespaceSplit)),
-        }))
+    fn new() -> PyResult<(Self, PreTokenizer)> {
+        Ok((
+            WhitespaceSplit {},
+            PreTokenizer {
+                pretok: Container::Owned(Box::new(tk::pre_tokenizers::whitespace::WhitespaceSplit)),
+            },
+        ))
     }
 }
 
@@ -96,18 +104,21 @@ pub struct CharDelimiterSplit {}
 #[pymethods]
 impl CharDelimiterSplit {
     #[new]
-    pub fn new(obj: &PyRawObject, delimiter: &str) -> PyResult<()> {
+    pub fn new(delimiter: &str) -> PyResult<(Self, PreTokenizer)> {
         let chr_delimiter = delimiter
             .chars()
             .nth(0)
             .ok_or(exceptions::Exception::py_err(
                 "delimiter must be a single character",
             ))?;
-        Ok(obj.init(PreTokenizer {
-            pretok: Container::Owned(Box::new(
-                tk::pre_tokenizers::delimiter::CharDelimiterSplit::new(chr_delimiter),
-            )),
-        }))
+        Ok((
+            CharDelimiterSplit {},
+            PreTokenizer {
+                pretok: Container::Owned(Box::new(
+                    tk::pre_tokenizers::delimiter::CharDelimiterSplit::new(chr_delimiter),
+                )),
+            },
+        ))
     }
 }
 
@@ -116,10 +127,13 @@ pub struct BertPreTokenizer {}
 #[pymethods]
 impl BertPreTokenizer {
     #[new]
-    fn new(obj: &PyRawObject) -> PyResult<()> {
-        Ok(obj.init(PreTokenizer {
-            pretok: Container::Owned(Box::new(tk::pre_tokenizers::bert::BertPreTokenizer)),
-        }))
+    fn new() -> PyResult<(Self, PreTokenizer)> {
+        Ok((
+            BertPreTokenizer {},
+            PreTokenizer {
+                pretok: Container::Owned(Box::new(tk::pre_tokenizers::bert::BertPreTokenizer)),
+            },
+        ))
     }
 }
 
@@ -129,7 +143,7 @@ pub struct Metaspace {}
 impl Metaspace {
     #[new]
     #[args(kwargs = "**")]
-    fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PreTokenizer)> {
         let mut replacement = '▁';
         let mut add_prefix_space = true;
 
@@ -149,12 +163,15 @@ impl Metaspace {
             }
         }
 
-        Ok(obj.init(PreTokenizer {
-            pretok: Container::Owned(Box::new(tk::pre_tokenizers::metaspace::Metaspace::new(
-                replacement,
-                add_prefix_space,
-            ))),
-        }))
+        Ok((
+            Metaspace {},
+            PreTokenizer {
+                pretok: Container::Owned(Box::new(tk::pre_tokenizers::metaspace::Metaspace::new(
+                    replacement,
+                    add_prefix_space,
+                ))),
+            },
+        ))
     }
 }
 

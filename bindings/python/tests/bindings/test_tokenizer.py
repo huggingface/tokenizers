@@ -41,7 +41,7 @@ class TestAddedToken:
 
 class TestTokenizer:
     def test_has_expected_type_and_methods(self):
-        tokenizer = Tokenizer(BPE.empty())
+        tokenizer = Tokenizer(BPE())
         assert type(tokenizer) == Tokenizer
         assert callable(tokenizer.num_special_tokens_to_add)
         assert callable(tokenizer.get_vocab)
@@ -68,7 +68,7 @@ class TestTokenizer:
         assert tokenizer.decoder is None
 
     def test_add_tokens(self):
-        tokenizer = Tokenizer(BPE.empty())
+        tokenizer = Tokenizer(BPE())
         added = tokenizer.add_tokens(["my", "name", "is", "john"])
         assert added == 4
 
@@ -76,7 +76,7 @@ class TestTokenizer:
         assert added == 2
 
     def test_add_special_tokens(self):
-        tokenizer = Tokenizer(BPE.empty())
+        tokenizer = Tokenizer(BPE())
 
         # Can add special tokens as `str`
         added = tokenizer.add_special_tokens(["my", "name", "is", "john"])
@@ -87,7 +87,7 @@ class TestTokenizer:
         assert added == 2
 
     def test_encode(self):
-        tokenizer = Tokenizer(BPE.empty())
+        tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
 
         # Can encode single sequence
@@ -110,7 +110,7 @@ class TestTokenizer:
         assert len(output) == 2
 
     def test_encode_add_special_tokens(self, roberta_files):
-        tokenizer = Tokenizer(BPE.from_files(roberta_files["vocab"], roberta_files["merges"]))
+        tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
         tokenizer.add_special_tokens(["<s>", "</s>"])
 
         tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=True)
@@ -127,7 +127,7 @@ class TestTokenizer:
         assert output_without_specials.tokens == ["ĠMy", "Ġname", "Ġis", "ĠJohn"]
 
     def test_truncation(self):
-        tokenizer = Tokenizer(BPE.empty())
+        tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.enable_truncation(2)
 
@@ -140,7 +140,7 @@ class TestTokenizer:
         assert output.tokens == ["my", "pair"]
 
     def test_padding(self):
-        tokenizer = Tokenizer(BPE.empty())
+        tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
 
         # By default it does nothing when encoding single sequence
@@ -160,7 +160,7 @@ class TestTokenizer:
         assert output.tokens == ["my", "name", "pair", "[PAD]"]
 
     def test_decode(self):
-        tokenizer = Tokenizer(BPE.empty())
+        tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
 
         # Can decode single sequences
@@ -172,7 +172,7 @@ class TestTokenizer:
         assert output == ["my name is john", "pair"]
 
     def test_get_vocab(self):
-        tokenizer = Tokenizer(BPE.empty())
+        tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
 
         # Can retrieve vocab with added tokens
@@ -184,7 +184,7 @@ class TestTokenizer:
         assert vocab == {}
 
     def test_get_vocab_size(self):
-        tokenizer = Tokenizer(BPE.empty())
+        tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
 
         # Can retrieve vocab's size with added tokens
@@ -196,7 +196,7 @@ class TestTokenizer:
         assert size == 0
 
     def test_normalize(self):
-        tokenizer = Tokenizer(BPE.empty())
+        tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.normalizer = Lowercase()
 
@@ -204,7 +204,7 @@ class TestTokenizer:
         assert output == "my name is john"
 
     def test_post_process(self):
-        tokenizer = Tokenizer(BPE.empty())
+        tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.enable_truncation(2)
         tokenizer.enable_padding(max_length=4)

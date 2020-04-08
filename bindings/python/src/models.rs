@@ -21,7 +21,7 @@ impl EncodeInput {
 
 impl<'source> FromPyObject<'source> for EncodeInput {
     fn extract(ob: &'source PyAny) -> PyResult<Self> {
-        let sequence: &PyList = ob.downcast_ref()?;
+        let sequence: &PyList = ob.downcast()?;
 
         enum Mode {
             NoOffsets,
@@ -84,7 +84,7 @@ pub struct Model {
 #[pymethods]
 impl Model {
     #[new]
-    fn new(_obj: &PyRawObject) -> PyResult<()> {
+    fn new() -> PyResult<Self> {
         Err(exceptions::Exception::py_err(
             "Cannot create a Model directly. Use a concrete subclass",
         ))
@@ -142,19 +142,29 @@ impl Model {
 
 /// BPE Model
 /// Allows the creation of a BPE Model to be used with a Tokenizer
-#[pyclass]
+#[pyclass(extends=Model)]
 pub struct BPE {}
 
 #[pymethods]
 impl BPE {
-    /// from_files(vocab, merges, /)
-    /// --
-    ///
-    /// Instanciate a new BPE model using the provided vocab and merges files
-    #[staticmethod]
+    #[new]
     #[args(kwargs = "**")]
-    fn from_files(vocab: &str, merges: &str, kwargs: Option<&PyDict>) -> PyResult<Model> {
-        let mut builder = tk::models::bpe::BPE::from_files(vocab, merges);
+    fn new(
+        vocab: Option<&str>,
+        merges: Option<&str>,
+        kwargs: Option<&PyDict>,
+    ) -> PyResult<(Self, Model)> {
+        let mut builder = tk::models::bpe::BPE::builder();
+        if let Some(vocab) = vocab {
+            if let Some(merges) = merges {
+                builder = builder.files(vocab.to_owned(), merges.to_owned());
+            } else {
+                return Err(exceptions::Exception::py_err(format!(
+                    "Got vocab file ({}), but missing merges",
+                    vocab
+                )));
+            }
+        }
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
                 let key: &str = key.extract()?;
@@ -184,38 +194,30 @@ impl BPE {
                 "Error while initializing BPE: {}",
                 e
             ))),
-            Ok(bpe) => Ok(Model {
-                model: Container::Owned(Box::new(bpe)),
-            }),
-        }
-    }
-
-    /// empty()
-    /// --
-    ///
-    /// Instanciate a new BPE model with empty vocab and merges
-    #[staticmethod]
-    fn empty() -> Model {
-        Model {
-            model: Container::Owned(Box::new(tk::models::bpe::BPE::default())),
+            Ok(bpe) => Ok((
+                BPE {},
+                Model {
+                    model: Container::Owned(Box::new(bpe)),
+                },
+            )),
         }
     }
 }
 
 /// WordPiece Model
-#[pyclass]
+#[pyclass(extends=Model)]
 pub struct WordPiece {}
 
 #[pymethods]
 impl WordPiece {
-    /// from_files(vocab, /)
-    /// --
-    ///
-    /// Instantiate a new WordPiece model using the provided vocabulary file
-    #[staticmethod]
+    #[new]
     #[args(kwargs = "**")]
-    fn from_files(vocab: &str, kwargs: Option<&PyDict>) -> PyResult<Model> {
-        let mut builder = tk::models::wordpiece::WordPiece::from_files(vocab);
+    fn new(vocab: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<(Self, Model)> {
+        let mut builder = tk::models::wordpiece::WordPiece::builder();
+
+        if let Some(vocab) = vocab {
+            builder = builder.files(vocab.to_owned());
+        }
 
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -242,28 +244,24 @@ impl WordPiece {
                     "Error while initializing WordPiece",
                 ))
             }
-            Ok(wordpiece) => Ok(Model {
-                model: Container::Owned(Box::new(wordpiece)),
-            }),
-        }
-    }
-
-    #[staticmethod]
-    fn empty() -> Model {
-        Model {
-            model: Container::Owned(Box::new(tk::models::wordpiece::WordPiece::default())),
+            Ok(wordpiece) => Ok((
+                WordPiece {},
+                Model {
+                    model: Container::Owned(Box::new(wordpiece)),
+                },
+            )),
         }
     }
 }
 
-#[pyclass]
+#[pyclass(extends=Model)]
 pub struct WordLevel {}
 
 #[pymethods]
 impl WordLevel {
-    #[staticmethod]
+    #[new]
     #[args(kwargs = "**")]
-    fn from_files(vocab: &str, kwargs: Option<&PyDict>) -> PyResult<Model> {
+    fn new(vocab: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<(Self, Model)> {
         let mut unk_token = String::from("<unk>");
 
         if let Some(kwargs) = kwargs {
@@ -276,23 +274,28 @@ impl WordLevel {
             }
         }
 
-        match tk::models::wordlevel::WordLevel::from_files(vocab, unk_token) {
-            Err(e) => {
-                println!("Errors: {:?}", e);
-                Err(exceptions::Exception::py_err(
-                    "Error while initializing WordLevel",
-                ))
+        if let Some(vocab) = vocab {
+            match tk::models::wordlevel::WordLevel::from_files(vocab, unk_token) {
+                Err(e) => {
+                    println!("Errors: {:?}", e);
+                    Err(exceptions::Exception::py_err(
+                        "Error while initializing WordLevel",
+                    ))
+                }
+                Ok(model) => Ok((
+                    WordLevel {},
+                    Model {
+                        model: Container::Owned(Box::new(model)),
+                    },
+                )),
             }
-            Ok(model) => Ok(Model {
-                model: Container::Owned(Box::new(model)),
-            }),
-        }
-    }
-
-    #[staticmethod]
-    fn empty() -> Model {
-        Model {
-            model: Container::Owned(Box::new(tk::models::wordlevel::WordLevel::default())),
+        } else {
+            Ok((
+                WordLevel {},
+                Model {
+                    model: Container::Owned(Box::new(tk::models::wordlevel::WordLevel::default())),
+                },
+            ))
         }
     }
 }

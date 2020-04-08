@@ -21,7 +21,7 @@ impl BpeTrainer {
     /// Create a new BpeTrainer with the given configuration
     #[new]
     #[args(kwargs = "**")]
-    pub fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
+    pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, Trainer)> {
         let mut builder = tk::models::bpe::BpeTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -40,7 +40,7 @@ impl BpeTrainer {
                                             content,
                                             ..Default::default()
                                         })
-                                    } else if let Ok(token) = token.cast_as::<AddedToken>() {
+                                    } else if let Ok(token) = token.extract::<PyRef<AddedToken>>() {
                                         Ok(token.token.clone())
                                     } else {
                                         Err(exceptions::Exception::py_err(
@@ -71,9 +71,12 @@ impl BpeTrainer {
                 };
             }
         }
-        Ok(obj.init(Trainer {
-            trainer: Container::Owned(Box::new(builder.build())),
-        }))
+        Ok((
+            BpeTrainer {},
+            Trainer {
+                trainer: Container::Owned(Box::new(builder.build())),
+            },
+        ))
     }
 }
 
@@ -87,7 +90,7 @@ impl WordPieceTrainer {
     /// Create a new BpeTrainer with the given configuration
     #[new]
     #[args(kwargs = "**")]
-    pub fn new(obj: &PyRawObject, kwargs: Option<&PyDict>) -> PyResult<()> {
+    pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, Trainer)> {
         let mut builder = tk::models::wordpiece::WordPieceTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -106,7 +109,7 @@ impl WordPieceTrainer {
                                             content,
                                             ..Default::default()
                                         })
-                                    } else if let Ok(token) = token.cast_as::<AddedToken>() {
+                                    } else if let Ok(token) = token.extract::<PyRef<AddedToken>>() {
                                         Ok(token.token.clone())
                                     } else {
                                         Err(exceptions::Exception::py_err(
@@ -138,8 +141,11 @@ impl WordPieceTrainer {
             }
         }
 
-        Ok(obj.init(Trainer {
-            trainer: Container::Owned(Box::new(builder.build())),
-        }))
+        Ok((
+            WordPieceTrainer {},
+            Trainer {
+                trainer: Container::Owned(Box::new(builder.build())),
+            },
+        ))
     }
 }
