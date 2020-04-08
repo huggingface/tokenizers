@@ -7,6 +7,7 @@ class TestByteLevel:
     def test_instantiate(self):
         assert ByteLevel() is not None
         assert isinstance(ByteLevel(), Decoder)
+        assert isinstance(ByteLevel(), ByteLevel)
 
     def test_decoding(self):
         decoder = ByteLevel()
@@ -19,6 +20,7 @@ class TestWordPiece:
         assert WordPiece(prefix="__") is not None
         assert WordPiece(cleanup=True) is not None
         assert isinstance(WordPiece(), Decoder)
+        assert isinstance(WordPiece(), WordPiece)
 
     def test_decoding(self):
         decoder = WordPiece()
@@ -37,6 +39,7 @@ class TestMetaspace:
             Metaspace(replacement="")
         assert Metaspace(add_prefix_space=True) is not None
         assert isinstance(Metaspace(), Decoder)
+        assert isinstance(Metaspace(), Metaspace)
 
     def test_decoding(self):
         decoder = Metaspace()
@@ -50,6 +53,7 @@ class TestBPEDecoder:
         assert BPEDecoder() is not None
         assert BPEDecoder(suffix="_") is not None
         assert isinstance(BPEDecoder(), Decoder)
+        assert isinstance(BPEDecoder(), BPEDecoder)
 
     def test_decoding(self):
         decoder = BPEDecoder()

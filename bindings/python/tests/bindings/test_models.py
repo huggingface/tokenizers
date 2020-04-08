@@ -1,3 +1,5 @@
+import pytest
+
 from ..utils import data_dir, roberta_files, bert_files
 
 from tokenizers.models import Model, BPE, WordPiece, WordLevel
@@ -8,6 +10,9 @@ class TestBPE:
         assert isinstance(BPE(), Model)
         assert isinstance(BPE(), BPE)
         assert isinstance(BPE(roberta_files["vocab"], roberta_files["merges"]), Model)
+        with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):
+            BPE(vocab=roberta_files["vocab"])
+            BPE(merges=roberta_files["merges"])
 
 
 class TestWordPiece:

@@ -1,9 +1,13 @@
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
-from tokenizers.normalizers import BertNormalizer, Sequence, Lowercase, Strip
+from tokenizers.normalizers import Normalizer, BertNormalizer, Sequence, Lowercase, Strip
 
 
 class TestBertNormalizer:
+    def test_instantiate(self):
+        assert isinstance(BertNormalizer(), Normalizer)
+        assert isinstance(BertNormalizer(), BertNormalizer)
+
     def test_strip_accents(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.normalizer = BertNormalizer(
@@ -42,6 +46,10 @@ class TestBertNormalizer:
 
 
 class TestSequence:
+    def test_instantiate(self):
+        assert isinstance(Sequence([]), Normalizer)
+        assert isinstance(Sequence([]), Sequence)
+
     def test_can_make_sequences(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.normalizer = Sequence([Lowercase(), Strip()])
@@ -51,6 +59,10 @@ class TestSequence:
 
 
 class TestLowercase:
+    def test_instantiate(self):
+        assert isinstance(Lowercase(), Normalizer)
+        assert isinstance(Lowercase(), Lowercase)
+
     def test_lowercase(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.normalizer = Lowercase()
@@ -60,6 +72,10 @@ class TestLowercase:
 
 
 class TestStrip:
+    def test_instantiate(self):
+        assert isinstance(Strip(), Normalizer)
+        assert isinstance(Strip(), Strip)
+
     def test_left_strip(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.normalizer = Strip(left=True, right=False)

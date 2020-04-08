@@ -154,16 +154,15 @@ impl BPE {
         merges: Option<&str>,
         kwargs: Option<&PyDict>,
     ) -> PyResult<(Self, Model)> {
+        if (vocab.is_some() && merges.is_none()) || (vocab.is_none() && merges.is_some()) {
+            return Err(exceptions::ValueError::py_err(
+                "`vocab` and `merges` must be both specified",
+            ));
+        }
+
         let mut builder = tk::models::bpe::BPE::builder();
-        if let Some(vocab) = vocab {
-            if let Some(merges) = merges {
-                builder = builder.files(vocab.to_owned(), merges.to_owned());
-            } else {
-                return Err(exceptions::Exception::py_err(format!(
-                    "Got vocab file ({}), but missing merges",
-                    vocab
-                )));
-            }
+        if let (Some(vocab), Some(merges)) = (vocab, merges) {
+            builder = builder.files(vocab.to_owned(), merges.to_owned());
         }
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {

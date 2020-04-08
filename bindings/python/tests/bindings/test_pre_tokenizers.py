@@ -17,6 +17,7 @@ class TestByteLevel:
         assert ByteLevel(add_prefix_space=True) is not None
         assert ByteLevel(add_prefix_space=False) is not None
         assert isinstance(ByteLevel(), PreTokenizer)
+        assert isinstance(ByteLevel(), ByteLevel)
 
     def test_has_alphabet(self):
         assert isinstance(ByteLevel.alphabet(), list)
@@ -27,18 +28,21 @@ class TestWhitespace:
     def test_instantiate(self):
         assert Whitespace() is not None
         assert isinstance(Whitespace(), PreTokenizer)
+        assert isinstance(Whitespace(), Whitespace)
 
 
 class TestWhitespaceSplit:
     def test_instantiate(self):
         assert WhitespaceSplit() is not None
         assert isinstance(WhitespaceSplit(), PreTokenizer)
+        assert isinstance(WhitespaceSplit(), WhitespaceSplit)
 
 
 class TestBertPreTokenizer:
     def test_instantiate(self):
         assert BertPreTokenizer() is not None
         assert isinstance(BertPreTokenizer(), PreTokenizer)
+        assert isinstance(BertPreTokenizer(), BertPreTokenizer)
 
 
 class TestMetaspace:
@@ -49,6 +53,7 @@ class TestMetaspace:
             Metaspace(replacement="")
         assert Metaspace(add_prefix_space=True) is not None
         assert isinstance(Metaspace(), PreTokenizer)
+        assert isinstance(Metaspace(), Metaspace)
 
 
 class TestCharDelimiterSplit:
@@ -57,3 +62,4 @@ class TestCharDelimiterSplit:
         with pytest.raises(Exception, match="delimiter must be a single character"):
             CharDelimiterSplit("")
         assert isinstance(CharDelimiterSplit(" "), PreTokenizer)
+        assert isinstance(CharDelimiterSplit(" "), CharDelimiterSplit)
