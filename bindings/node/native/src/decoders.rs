@@ -5,7 +5,7 @@ use neon::prelude::*;
 
 /// Decoder
 pub struct Decoder {
-    pub decoder: Container<dyn tk::tokenizer::Decoder + Sync>,
+    pub decoder: Container<dyn tk::tokenizer::Decoder>,
 }
 
 declare_types! {

@@ -78,7 +78,7 @@ impl<'source> FromPyObject<'source> for EncodeInput {
 /// This class cannot be constructed directly. Please use one of the concrete models.
 #[pyclass]
 pub struct Model {
-    pub model: Container<dyn tk::tokenizer::Model + Sync>,
+    pub model: Container<dyn tk::tokenizer::Model>,
 }
 
 #[pymethods]

@@ -7,7 +7,7 @@ use std::path::Path;
 
 /// Model
 pub struct Model {
-    pub model: Container<dyn tk::tokenizer::Model + Sync>,
+    pub model: Container<dyn tk::tokenizer::Model>,
 }
 
 declare_types! {

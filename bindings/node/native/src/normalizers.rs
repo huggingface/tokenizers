@@ -5,7 +5,7 @@ use neon::prelude::*;
 
 /// Normalizer
 pub struct Normalizer {
-    pub normalizer: Container<dyn tk::tokenizer::Normalizer + Sync>,
+    pub normalizer: Container<dyn tk::tokenizer::Normalizer>,
 }
 
 declare_types! {

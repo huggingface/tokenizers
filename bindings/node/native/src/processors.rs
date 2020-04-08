@@ -5,7 +5,7 @@ use neon::prelude::*;
 
 /// Processor
 pub struct Processor {
-    pub processor: Container<dyn tk::tokenizer::PostProcessor + Sync>,
+    pub processor: Container<dyn tk::tokenizer::PostProcessor>,
 }
 
 declare_types! {

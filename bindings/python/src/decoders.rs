@@ -9,7 +9,7 @@ use tk::tokenizer::Result;
 
 #[pyclass(dict)]
 pub struct Decoder {
-    pub decoder: Container<dyn tk::tokenizer::Decoder + Sync>,
+    pub decoder: Container<dyn tk::tokenizer::Decoder>,
 }
 #[pymethods]
 impl Decoder {

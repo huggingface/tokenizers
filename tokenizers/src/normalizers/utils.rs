@@ -3,11 +3,11 @@ use crate::tokenizer::{NormalizedString, Normalizer, Result};
 /// Allows concatenating multiple other Normalizer as a Sequence.
 /// All the normalizers run in sequence in the given order against the same NormalizedString.
 pub struct Sequence {
-    normalizers: Vec<Box<dyn Normalizer + Sync>>,
+    normalizers: Vec<Box<dyn Normalizer>>,
 }
 
 impl Sequence {
-    pub fn new(normalizers: Vec<Box<dyn Normalizer + Sync>>) -> Self {
+    pub fn new(normalizers: Vec<Box<dyn Normalizer>>) -> Self {
         Self { normalizers }
     }
 }
