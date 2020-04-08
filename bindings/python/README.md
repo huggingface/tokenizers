@@ -126,7 +126,7 @@ from tokenizers import Tokenizer, models, pre_tokenizers, decoders, processors
 # Load a BPE Model
 vocab = "./path/to/vocab.json"
 merges = "./path/to/merges.txt"
-bpe = models.BPE.from_files(vocab, merges)
+bpe = models.BPE(vocab, merges)
 
 # Initialize a tokenizer
 tokenizer = Tokenizer(bpe)
@@ -155,7 +155,7 @@ print(encoded)
 from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers, processors
 
 # Initialize a tokenizer
-tokenizer = Tokenizer(models.BPE.empty())
+tokenizer = Tokenizer(models.BPE())
 
 # Customize pre-tokenization and decoding
 tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
