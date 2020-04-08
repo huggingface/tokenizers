@@ -31,8 +31,41 @@ jobs:
         working-directory: ./bindings/python
         run: make check-style
 
+  build_win_32:
+    name: Check it builds for Windows 32-bit
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python: [3.5, 3.6, 3.7, 3.8]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-i686-pc-windows-msvc
+          override: true
+
+      - name: Override toolchain
+        shell: bash
+        working-directory: ./bindings/python
+        run: echo "nightly-i686-pc-windows-msvc" > rust-toolchain
+
+      - name: Install Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x86
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --manifest-path ./bindings/python/Cargo.toml
+
   build_and_test:
-    name: Check everything builds
+    name: Check everything builds & tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
