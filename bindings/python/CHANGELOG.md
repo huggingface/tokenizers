@@ -4,22 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unrelease]
-### [Changed]
-- [#136] Updated Pyo3 version
-
-### [Added]
-- [#136] Models can now be instantiated through object constructors.
-
-### [Removed]
-- [#136] Static methods `Model.from_files` and `Model.empty` are removed in favor of using
-constructors.
-
-### [How to migrate]
-- Change `Model.from_files` and `Model.empty` to use constructor. The model constructor should take
-the same arguments as the old methods.
-
-## [0.7.0-rc3]
+## [0.7.0-rc4]
 
 ### Changed
 - Only one progress bar while reading files during training. This is better for use-cases with
@@ -35,6 +20,9 @@ normalized one anymore.
 - The added token given to `add_special_tokens` or `add_tokens` on a `Tokenizer`, or while using
 `train(special_tokens=...)` can now be instances of `AddedToken` to provide more control over these
 tokens.
+- [#136] Updated Pyo3 version
+- [#136] Static methods `Model.from_files` and `Model.empty` are removed in favor of using
+constructors.
 
 ### Added
 - [#188]: `ByteLevel` is also a `PostProcessor` now and handles trimming the offsets if activated.
@@ -45,6 +33,7 @@ It has been added to `ByteLevelBPETokenizer` but it is off by default (`trim_off
 - `post_process` can be called on the `Tokenizer`
 - [#208]: Ability to retrieve the vocabulary from the `Tokenizer` with
 `get_vocab(with_added_tokens: bool)`
+- [#136] Models can now be instantiated through object constructors.
 
 ### Fixed
 - [#193]: Fix some issues with the offsets being wrong with the `ByteLevel` BPE:
@@ -66,6 +55,8 @@ of `encode` so it didn't make sense to keep it here.
 are now relative to the original string by default.
 - Access to the `normalized_str` on the `Encoding` has been removed. Can be retrieved by calling
 `normalize(sequence)` on the `Tokenizer`
+- Change `Model.from_files` and `Model.empty` to use constructor. The model constructor should take
+the same arguments as the old methods. (ie `BPE(vocab, merges)` or `BPE()`)
 
 ## [0.6.0]
 

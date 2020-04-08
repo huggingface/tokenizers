@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0]
+
+### Changed
+- [#222]: All Tokenizer's subparts must now be `Send + Sync`
+
+### Added
+- [#208]: Ability to retrieve the vocabulary from the `Tokenizer` & `Model`
+
+### Fixed
+- [#205]: Trim the decoded string in `BPEDecoder`
+- [b770f36]: Fix a bug with added tokens generated IDs
+
 ## [0.9.0]
 
 ### Changed
@@ -30,7 +42,6 @@ the unintuitive inclusion of the whitespaces in the produced offsets, even if th
 part of the actual token
 - More alignment mappings on the `Encoding`.
 - `post_process` can be called on the `Tokenizer`
-- [#208]: Ability to retrieve the vocabulary from the `Tokenizer` & `Model`
 
 ### Fixed
 - [#193]: Fix some issues with the offsets being wrong with the `ByteLevel` BPE:
@@ -39,7 +50,6 @@ part of the actual token
 - Fix a bug where offsets were wrong when there was any added tokens in the sequence being encoded.
 - [#175]: Fix a bug that prevented the addition of more than a certain amount of tokens (even if not
 advised, but that's not the question)
-- [#205]: Trim the decoded string in `BPEDecoder`
 
 ### How to migrate
 - Add the `ByteLevel` `PostProcessor` to your byte-level BPE tokenizers if relevant.
@@ -55,6 +65,8 @@ advised, but that's not the question)
 split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
+[b770f36](https://github.com/huggingface/tokenizers/commit/b770f364280af33efeffea8f0003102cda8cf1b7)
+[#222]: https://github.com/huggingface/tokenizers/pull/222
 [#208]: https://github.com/huggingface/tokenizers/pull/208
 [#205]: https://github.com/huggingface/tokenizers/issues/205
 [#197]: https://github.com/huggingface/tokenizers/pull/197
