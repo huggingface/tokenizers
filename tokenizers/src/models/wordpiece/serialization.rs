@@ -16,6 +16,7 @@ impl Serialize for WordPiece {
         // Then large ones
         let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
         model.serialize_field("vocab", &ordered_vocab)?;
+
         model.end()
     }
 }

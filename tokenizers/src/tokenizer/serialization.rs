@@ -3,10 +3,13 @@ use serde::{self, ser::SerializeStruct, Deserialize, Serialize, Serializer};
 
 static SERIALIZATION_VERSION: &str = "1.0";
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct AddedTokenWithId {
-    id: u32,
+    /// The id assigned to this token. If None, it means this token exists in the
+    /// initial vocabulary
+    custom_id: Option<u32>,
     #[serde(flatten)]
+    /// The target AddedToken
     token: AddedToken,
 }
 
@@ -29,7 +32,7 @@ impl Serialize for Tokenizer {
             .added_tokens
             .iter()
             .map(|token| AddedTokenWithId {
-                id: self.added_tokens_map[&token.content],
+                custom_id: self.added_tokens_map.get(&token.content).copied(),
                 token: token.clone(),
             })
             .collect::<Vec<_>>();
@@ -38,7 +41,7 @@ impl Serialize for Tokenizer {
             .special_tokens
             .iter()
             .map(|token| AddedTokenWithId {
-                id: self.added_tokens_map[&token.content],
+                custom_id: self.added_tokens_map.get(&token.content).copied(),
                 token: token.clone(),
             })
             .collect::<Vec<_>>();
