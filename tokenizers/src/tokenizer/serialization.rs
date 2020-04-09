@@ -20,12 +20,9 @@ impl Serialize for Tokenizer {
         // Start by adding the current version
         tokenizer.serialize_field("version", SERIALIZATION_VERSION)?;
 
-        // Then add our parts
-        tokenizer.serialize_field("model", &self.model)?;
-        tokenizer.serialize_field("normalizer", &self.normalizer)?;
-        tokenizer.serialize_field("pre_tokenizer", &self.pre_tokenizer)?;
-        tokenizer.serialize_field("post_processor", &self.post_processor)?;
-        tokenizer.serialize_field("decoder", &self.decoder)?;
+        // Params
+        tokenizer.serialize_field("truncation", &self.truncation)?;
+        tokenizer.serialize_field("padding", &self.padding)?;
 
         // Added tokens
         let added_tokens = self
@@ -47,9 +44,12 @@ impl Serialize for Tokenizer {
             .collect::<Vec<_>>();
         tokenizer.serialize_field("special_tokens", &special_tokens)?;
 
-        // Params
-        tokenizer.serialize_field("truncation", &self.truncation)?;
-        tokenizer.serialize_field("padding", &self.padding)?;
+        // Then add our parts
+        tokenizer.serialize_field("normalizer", &self.normalizer)?;
+        tokenizer.serialize_field("pre_tokenizer", &self.pre_tokenizer)?;
+        tokenizer.serialize_field("post_processor", &self.post_processor)?;
+        tokenizer.serialize_field("decoder", &self.decoder)?;
+        tokenizer.serialize_field("model", &self.model)?;
 
         tokenizer.end()
     }

@@ -1,4 +1,4 @@
-use super::WordLevel;
+use super::{super::OrderedVocabIter, WordLevel};
 use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
 
 impl Serialize for WordLevel {
@@ -7,7 +7,8 @@ impl Serialize for WordLevel {
         S: Serializer,
     {
         let mut model = serializer.serialize_struct("WordLevel", 2)?;
-        model.serialize_field("vocab", &self.vocab)?;
+        let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
+        model.serialize_field("vocab", &ordered_vocab)?;
         model.serialize_field("unk_token", &self.unk_token)?;
         model.end()
     }
