@@ -13,13 +13,13 @@ pub struct PreTokenizer {
 }
 #[pymethods]
 impl PreTokenizer {
-    #[staticmethod]
-    fn custom(pretok: PyObject) -> PyResult<Self> {
-        let py_pretok = PyPreTokenizer::new(pretok)?;
-        Ok(PreTokenizer {
-            pretok: Container::Owned(Box::new(py_pretok)),
-        })
-    }
+    // #[staticmethod]
+    // fn custom(pretok: PyObject) -> PyResult<Self> {
+    //     let py_pretok = PyPreTokenizer::new(pretok)?;
+    //     Ok(PreTokenizer {
+    //         pretok: Container::Owned(Box::new(py_pretok)),
+    //     })
+    // }
 
     fn pre_tokenize(&self, s: &str) -> PyResult<Vec<(String, Offsets)>> {
         // TODO: Expose the NormalizedString
@@ -175,44 +175,43 @@ impl Metaspace {
     }
 }
 
-/// Attempt at providing Python the ability to give its own PreTokenizer
-struct PyPreTokenizer {
-    class: PyObject,
-}
-
-impl PyPreTokenizer {
-    pub fn new(class: PyObject) -> PyResult<Self> {
-        Ok(PyPreTokenizer { class })
-    }
-}
-
-impl tk::tokenizer::PreTokenizer for PyPreTokenizer {
-    fn pre_tokenize(
-        &self,
-        sentence: &mut tk::tokenizer::NormalizedString,
-    ) -> Result<Vec<(String, Offsets)>> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        let args = PyTuple::new(py, &[sentence.get()]);
-        match self.class.call_method(py, "pre_tokenize", args, None) {
-            Ok(res) => Ok(res
-                .cast_as::<PyList>(py)
-                .map_err(|_| {
-                    PyError::from("`pre_tokenize is expected to return a List[(str, (uint, uint))]")
-                })?
-                .extract::<Vec<(String, Offsets)>>()
-                .map_err(|_| {
-                    PyError::from(
-                        "`pre_tokenize` is expected to return a List[(str, (uint, uint))]",
-                    )
-                })?),
-            Err(e) => {
-                e.print(py);
-                Err(Box::new(PyError::from(
-                    "Error while calling `pre_tokenize`",
-                )))
-            }
-        }
-    }
-}
+// struct PyPreTokenizer {
+//     class: PyObject,
+// }
+//
+// impl PyPreTokenizer {
+//     pub fn new(class: PyObject) -> PyResult<Self> {
+//         Ok(PyPreTokenizer { class })
+//     }
+// }
+//
+// impl tk::tokenizer::PreTokenizer for PyPreTokenizer {
+//     fn pre_tokenize(
+//         &self,
+//         sentence: &mut tk::tokenizer::NormalizedString,
+//     ) -> Result<Vec<(String, Offsets)>> {
+//         let gil = Python::acquire_gil();
+//         let py = gil.python();
+//
+//         let args = PyTuple::new(py, &[sentence.get()]);
+//         match self.class.call_method(py, "pre_tokenize", args, None) {
+//             Ok(res) => Ok(res
+//                 .cast_as::<PyList>(py)
+//                 .map_err(|_| {
+//                     PyError::from("`pre_tokenize is expected to return a List[(str, (uint, uint))]")
+//                 })?
+//                 .extract::<Vec<(String, Offsets)>>()
+//                 .map_err(|_| {
+//                     PyError::from(
+//                         "`pre_tokenize` is expected to return a List[(str, (uint, uint))]",
+//                     )
+//                 })?),
+//             Err(e) => {
+//                 e.print(py);
+//                 Err(Box::new(PyError::from(
+//                     "Error while calling `pre_tokenize`",
+//                 )))
+//             }
+//         }
+//     }
+// }
