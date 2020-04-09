@@ -38,12 +38,7 @@ impl PostProcessor for RobertaProcessing {
             &[self.sep.0.clone()],
         ]
         .concat();
-        let words = [
-            &[0],
-            &encoding.get_words()[..],
-            &[encoding.get_words().last().map_or(0, |w| *w + 2)],
-        ]
-        .concat();
+        let words = [&[None], &encoding.get_words()[..], &[None]].concat();
         let offsets = [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
         let special_tokens = [&[1u32], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
         let attention_mask = vec![1; ids.len()];
@@ -68,12 +63,7 @@ impl PostProcessor for RobertaProcessing {
                         &[self.sep.0.clone()],
                     ]
                     .concat();
-                    let words = [
-                        &[0],
-                        &encoding.get_words()[..],
-                        &[encoding.get_words().last().map_or(0, |w| *w + 2)],
-                    ]
-                    .concat();
+                    let words = [&[None], &encoding.get_words()[..], &[None]].concat();
                     let offsets = [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
                     let special_tokens =
                         [&[1u32], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
@@ -102,12 +92,7 @@ impl PostProcessor for RobertaProcessing {
                 &[self.sep.0.clone()],
             ]
             .concat();
-            let pair_words = [
-                &[0],
-                &encoding.get_words()[..],
-                &[encoding.get_words().last().map_or(0, |w| *w + 2)],
-            ]
-            .concat();
+            let pair_words = [&[None], &encoding.get_words()[..], &[None]].concat();
             let pair_offsets = [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
             let pair_special_tokens =
                 [&[1], &vec![0u32; encoding.get_type_ids().len()][..], &[1]].concat();
@@ -134,12 +119,7 @@ impl PostProcessor for RobertaProcessing {
                             &[self.sep.0.clone()],
                         ]
                         .concat();
-                        let pair_words = [
-                            &[0],
-                            &encoding.get_words()[..],
-                            &[encoding.get_words().last().map_or(0, |w| *w + 2)],
-                        ]
-                        .concat();
+                        let pair_words = [&[None], &encoding.get_words()[..], &[None]].concat();
                         let pair_offsets =
                             [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
                         let pair_special_tokens =

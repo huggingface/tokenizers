@@ -10,7 +10,7 @@ export class Encoding {
   private _specialTokensMask?: number[];
   private _tokens?: string[];
   private _typeIds?: number[];
-  private _wordIndexes?: number[];
+  private _wordIndexes?: (number | undefined)[];
 
   constructor(private _rawEncoding: RawEncoding) {}
 
@@ -132,7 +132,7 @@ export class Encoding {
   /**
    * The tokenized words indexes
    */
-  get wordIndexes(): number[] {
+  get wordIndexes(): (number | undefined)[] {
     if (this._wordIndexes) {
       return this._wordIndexes;
     }
