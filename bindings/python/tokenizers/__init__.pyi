@@ -43,7 +43,7 @@ class Encoding:
         """ The tokenized strings """
         pass
     @property
-    def words(self) -> List[int]:
+    def words(self) -> List[Optional[int]]:
         """ The tokenized words index """
         pass
     @property

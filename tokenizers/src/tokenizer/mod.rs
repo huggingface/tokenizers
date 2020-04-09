@@ -428,7 +428,7 @@ impl Tokenizer {
                                     vec![id],
                                     vec![type_id],
                                     vec![sentence.get().to_owned()],
-                                    vec![0],
+                                    vec![Some(0)],
                                     vec![(0, sentence.len())],
                                     vec![0],
                                     vec![1],

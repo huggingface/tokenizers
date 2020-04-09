@@ -252,7 +252,7 @@ dependencies = [
  "neon 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "neon-build 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "rayon 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tokenizers 0.9.0",
+ "tokenizers 0.10.0",
 ]
 
 [[package]]
@@ -431,7 +431,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "indicatif 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",

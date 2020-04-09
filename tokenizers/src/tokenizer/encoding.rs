@@ -12,7 +12,7 @@ pub struct Encoding {
     /// Tokens associated to each ID
     tokens: Vec<String>,
     /// Indice of the word associated to each token/ID
-    words: Vec<u32>,
+    words: Vec<Option<u32>>,
     /// Offsets of the token/ID from the NormalizedString
     offsets: Vec<Offsets>,
     /// Mask identifying special tokens
@@ -28,7 +28,7 @@ impl Encoding {
         ids: Vec<u32>,
         type_ids: Vec<u32>,
         tokens: Vec<String>,
-        words: Vec<u32>,
+        words: Vec<Option<u32>>,
         offsets: Vec<Offsets>,
         special_tokens_mask: Vec<u32>,
         attention_mask: Vec<u32>,
@@ -59,7 +59,7 @@ impl Encoding {
                 ids.push(t.id);
                 tokens.push(t.value);
                 offsets.push(t.offsets);
-                words.push(t.word);
+                words.push(Some(t.word));
                 (ids, tokens, offsets, words)
             },
         );
@@ -80,7 +80,7 @@ impl Encoding {
         &self.tokens[..]
     }
 
-    pub fn get_words(&self) -> &[u32] {
+    pub fn get_words(&self) -> &[Option<u32>] {
         &self.words
     }
 
@@ -295,11 +295,17 @@ impl Encoding {
         self.type_ids.extend(pair.type_ids);
         self.tokens.extend(pair.tokens);
 
-        let starting_word = self.words.last().map_or(0, |w| *w + 1);
+        let starting_word = self
+            .words
+            .iter()
+            .filter(|w| w.is_some())
+            .map(|w| w.unwrap())
+            .max()
+            .map_or(0, |w| w + 1);
         self.words.extend(
             pair.words
                 .into_iter()
-                .map(|w| w + starting_word)
+                .map(|w| w.map(|w| w + starting_word))
                 .collect::<Vec<_>>(),
         );
 
@@ -354,8 +360,8 @@ impl Encoding {
                     .chain(self.tokens.drain(..))
                     .collect();
                 self.words = (0..pad_length)
-                    .map(|_| 0)
-                    .chain(self.words.drain(..).map(|w| w + 1))
+                    .map(|_| None)
+                    .chain(self.words.drain(..))
                     .collect();
                 self.attention_mask = (0..pad_length)
                     .map(|_| 0)
@@ -375,8 +381,7 @@ impl Encoding {
                 self.type_ids.extend((0..pad_length).map(|_| pad_type_id));
                 self.tokens
                     .extend((0..pad_length).map(|_| pad_token.to_owned()));
-                let padding_word = self.words.last().map_or(0, |w| *w + 1);
-                self.words.extend((0..pad_length).map(|_| padding_word));
+                self.words.extend((0..pad_length).map(|_| None));
                 self.attention_mask.extend((0..pad_length).map(|_| 0));
                 self.special_tokens_mask.extend((0..pad_length).map(|_| 1));
                 self.offsets.extend((0..pad_length).map(|_| (0, 0)));
@@ -412,7 +417,7 @@ mod tests {
             ids: vec![1],
             type_ids: vec![0],
             tokens: vec![String::from("Hello ")],
-            words: vec![0],
+            words: vec![Some(0)],
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],
             attention_mask: vec![1],
@@ -422,7 +427,7 @@ mod tests {
             ids: vec![2],
             type_ids: vec![1],
             tokens: vec![String::from("World!")],
-            words: vec![0],
+            words: vec![Some(0)],
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],
             attention_mask: vec![1],
@@ -436,7 +441,7 @@ mod tests {
                 ids: vec![1, 2],
                 type_ids: vec![0, 1],
                 tokens: vec![String::from("Hello "), String::from("World!")],
-                words: vec![0, 1],
+                words: vec![Some(0), Some(1)],
                 offsets: vec![(0, 6), (6, 12)],
                 special_tokens_mask: vec![0, 0],
                 attention_mask: vec![1, 1],
@@ -455,7 +460,7 @@ mod tests {
                 String::from("World"),
                 String::from("!"),
             ],
-            words: vec![0, 1, 2],
+            words: vec![Some(0), Some(1), Some(2)],
             offsets: vec![(0, 5), (6, 11), (11, 12)],
             special_tokens_mask: vec![0, 0, 0],
             attention_mask: vec![1, 1, 1],
@@ -469,7 +474,7 @@ mod tests {
                 ids: vec![1, 2],
                 type_ids: vec![0, 0],
                 tokens: vec![String::from("Hello"), String::from("World")],
-                words: vec![0, 1],
+                words: vec![Some(0), Some(1)],
                 offsets: vec![(0, 5), (6, 11)],
                 special_tokens_mask: vec![0, 0],
                 attention_mask: vec![1, 1],
@@ -477,7 +482,7 @@ mod tests {
                     ids: vec![3],
                     type_ids: vec![0],
                     tokens: vec![String::from("!")],
-                    words: vec![2],
+                    words: vec![Some(2)],
                     offsets: vec![(11, 12)],
                     special_tokens_mask: vec![0],
                     attention_mask: vec![1],
@@ -490,7 +495,17 @@ mod tests {
     #[test]
     fn word_boundaries() {
         let encoding = Encoding {
-            words: vec![0, 0, 1, 1, 1, 2, 3, 4, 4],
+            words: vec![
+                Some(0),
+                Some(0),
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(4),
+            ],
             ..Default::default()
         };
         assert_eq!(encoding.word_boundaries(0), Some((0, 2)));
@@ -504,7 +519,17 @@ mod tests {
     #[test]
     fn mappings() {
         let encoding = Encoding {
-            words: vec![0, 0, 1, 1, 1, 2, 3, 4, 4],
+            words: vec![
+                Some(0),
+                Some(0),
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(4),
+            ],
             offsets: vec![
                 (0, 1),
                 (1, 2),

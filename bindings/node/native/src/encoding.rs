@@ -124,8 +124,13 @@ declare_types! {
             });
             let js_ids = JsArray::new(&mut cx, ids.len() as u32);
             for (i, id) in ids.into_iter().enumerate() {
-                let n = JsNumber::new(&mut cx, id as f64);
-                js_ids.set(&mut cx, i as u32, n)?;
+                if let Some(id) = id {
+                    let n = JsNumber::new(&mut cx, id as f64);
+                    js_ids.set(&mut cx, i as u32, n)?;
+                } else {
+                    let v = cx.undefined();
+                    js_ids.set(&mut cx, i as u32, v)?;
+                }
             }
 
             Ok(js_ids.upcast())

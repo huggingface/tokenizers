@@ -69,7 +69,7 @@ export interface RawEncoding {
    * The tokenized words indexes
    * @since 0.6.0
    */
-  getWords(): number[];
+  getWords(): (number | undefined)[];
 
   /**
    * Pad the current Encoding at the given length

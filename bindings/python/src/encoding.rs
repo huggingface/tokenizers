@@ -62,7 +62,7 @@ impl Encoding {
     }
 
     #[getter]
-    fn get_words(&self) -> Vec<u32> {
+    fn get_words(&self) -> Vec<Option<u32>> {
         self.encoding.get_words().to_vec()
     }
 
