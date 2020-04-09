@@ -150,13 +150,13 @@ pub struct BPE {
     cache: Option<Cache<String, Word>>,
     /// Dropout probability for merges. 0 = no dropout is the default. At 1.0, tokenization will
     /// perform no merges, so the result will just be characters.
-    dropout: Option<f32>,
+    pub(super) dropout: Option<f32>,
     /// The unknown token to be used when we encounter an unknown char
-    unk_token: Option<String>,
+    pub(super) unk_token: Option<String>,
     /// An optional prefix to use on any subword that exist only behind another one
-    continuing_subword_prefix: Option<String>,
+    pub(super) continuing_subword_prefix: Option<String>,
     /// An optional suffix to caracterize and end-of-word subword
-    end_of_word_suffix: Option<String>,
+    pub(super) end_of_word_suffix: Option<String>,
 }
 
 impl Default for BPE {
@@ -334,6 +334,7 @@ impl BPE {
     }
 }
 
+#[typetag::serde]
 impl Model for BPE {
     fn get_vocab(&self) -> &HashMap<String, u32> {
         &self.vocab

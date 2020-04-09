@@ -12,6 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod serialization;
 mod trainer;
 pub use trainer::*;
 
@@ -185,6 +186,7 @@ impl WordPiece {
     }
 }
 
+#[typetag::serde]
 impl Model for WordPiece {
     fn get_vocab(&self) -> &HashMap<String, u32> {
         &self.vocab

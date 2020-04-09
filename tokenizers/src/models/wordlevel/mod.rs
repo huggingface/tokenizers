@@ -7,6 +7,8 @@ use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
+mod serialization;
+
 #[derive(Debug)]
 pub enum Error {
     MissingUnkToken,
@@ -130,6 +132,7 @@ impl Default for WordLevel {
     }
 }
 
+#[typetag::serde]
 impl Model for WordLevel {
     fn tokenize(&self, tokens: Vec<(String, (usize, usize))>) -> Result<Vec<Token>> {
         let mut output_tokens = vec![];
