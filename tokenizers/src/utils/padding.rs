@@ -1,8 +1,9 @@
 use crate::tokenizer::{Encoding, Result};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 /// The various possible padding directions.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum PaddingDirection {
     Left,
     Right,
@@ -17,7 +18,7 @@ impl std::convert::AsRef<str> for PaddingDirection {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaddingParams {
     pub strategy: PaddingStrategy,
     pub direction: PaddingDirection,
@@ -26,7 +27,7 @@ pub struct PaddingParams {
     pub pad_token: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PaddingStrategy {
     BatchLongest,
     Fixed(usize),
