@@ -604,4 +604,9 @@ impl Tokenizer {
             ))
         }
     }
+
+    #[args(pretty = true)]
+    fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
+        ToPyResult(self.tokenizer.save(path, pretty)).into()
+    }
 }
