@@ -33,12 +33,12 @@ class SentencePieceExtractor:
         merges = []
         for piece_l in tqdm(vocab.keys(), total=sp.GetPieceSize()):
             for piece_r in vocab.keys():
-                if piece_l != piece_r:
-                    merge = sp.PieceToId(f"{piece_l}{piece_r}")
-                    score = sp.GetScore(merge)
-
-                    if score != 0.:
-                        merges += [(piece_l, piece_r)]
+                merge = f"{piece_l}{piece_r}"
+                piece_id = vocab.get(merge, None)
+                if piece_id:
+                    merges += [(piece_l, piece_r, piece_id)]
+        merges = sorted(merges, key=lambda val: val[2])
+        merges = [(val[0], val[1]) for val in merges]
 
         return vocab, merges
 
