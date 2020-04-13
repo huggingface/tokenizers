@@ -1,5 +1,6 @@
 import { promisify } from "util";
 
+import { PostProcessor } from "../../bindings/post-processors";
 import {
   AddedToken,
   PaddingConfiguration,
@@ -11,6 +12,8 @@ import {
   TruncationOptions
 } from "../../bindings/tokenizer";
 import { Encoding } from "../encoding";
+
+export type Token = string | AddedToken;
 
 export class BaseTokenizer<TConfig extends object> {
   private _truncation?: TruncationConfiguration;
@@ -52,7 +55,7 @@ export class BaseTokenizer<TConfig extends object> {
    * @param tokens A list of tokens to add to the vocabulary.
    * Each token can either be a string, or an instance of AddedToken.
    */
-  addTokens(tokens: (string | AddedToken)[]): number {
+  addTokens(tokens: Token[]): number {
     return this.tokenizer.addTokens(tokens);
   }
 
@@ -64,7 +67,7 @@ export class BaseTokenizer<TConfig extends object> {
    * Each token can either be a string, or an instance of AddedToken
    * @returns The number of tokens that were added to the vocabulary
    */
-  addSpecialTokens(tokens: (string | AddedToken)[]): number {
+  addSpecialTokens(tokens: Token[]): number {
     return this.tokenizer.addSpecialTokens(tokens);
   }
 
@@ -250,12 +253,22 @@ export class BaseTokenizer<TConfig extends object> {
 
     return new Encoding(rawEncoding);
   }
+
+  /**
+   * Change the post-processor to use with this Tokenizer
+   * @param postProcessor New post-processor to use
+   * @throws Will throw an error if any task is running
+   * @throws Will throw an error if the post-processor is already used in another Tokenizer
+   */
+  setPostProcessor(processor: PostProcessor): void {
+    return this.tokenizer.setPostProcessor(processor);
+  }
 }
 
 /**
  * Get the string content from a token, which can be a string or AddedToken
  * @param token The token from which get the content
  */
-export function getTokenContent(token: string | AddedToken): string {
+export function getTokenContent(token: Token): string {
   return typeof token === "string" ? token : token.getContent();
 }

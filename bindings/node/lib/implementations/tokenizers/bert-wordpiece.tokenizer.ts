@@ -5,9 +5,9 @@ import { Model, WordPiece, WordPieceOptions } from "../../bindings/models";
 import { bertNormalizer } from "../../bindings/normalizers";
 import { bertProcessing } from "../../bindings/post-processors";
 import { bertPreTokenizer } from "../../bindings/pre-tokenizers";
-import { AddedToken, Tokenizer } from "../../bindings/tokenizer";
+import { Tokenizer } from "../../bindings/tokenizer";
 import { wordPieceTrainer } from "../../bindings/trainers";
-import { BaseTokenizer, getTokenContent } from "./base.tokenizer";
+import { BaseTokenizer, getTokenContent, Token } from "./base.tokenizer";
 
 export interface BertWordPieceOptions {
   /**
@@ -17,7 +17,7 @@ export interface BertWordPieceOptions {
   /**
    * @default "[CLS]"
    */
-  clsToken?: string | AddedToken;
+  clsToken?: Token;
   /**
    * @default true
    */
@@ -29,15 +29,15 @@ export interface BertWordPieceOptions {
   /**
    * @default "[MASK]"
    */
-  maskToken?: string | AddedToken;
+  maskToken?: Token;
   /**
    * @default "[PAD]"
    */
-  padToken?: string | AddedToken;
+  padToken?: Token;
   /**
    * @default "[SEP]"
    */
-  sepToken?: string | AddedToken;
+  sepToken?: Token;
   /**
    * @default true
    */
@@ -45,7 +45,7 @@ export interface BertWordPieceOptions {
   /**
    * @default "[UNK]"
    */
-  unkToken?: string | AddedToken;
+  unkToken?: Token;
   vocabFile?: string;
   /**
    * The prefix to attach to subword units that don't represent a beginning of word
@@ -74,7 +74,7 @@ export interface BertWordPieceTrainOptions {
   /**
    * @default ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"]
    */
-  specialTokens?: (string | AddedToken)[];
+  specialTokens?: Token[];
   /**
    * @default 30000
    */

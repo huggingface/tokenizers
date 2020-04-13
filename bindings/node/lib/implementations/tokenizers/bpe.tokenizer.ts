@@ -8,9 +8,9 @@ import {
   sequenceNormalizer
 } from "../../bindings/normalizers";
 import { whitespaceSplitPreTokenizer } from "../../bindings/pre-tokenizers";
-import { AddedToken, Tokenizer } from "../../bindings/tokenizer";
+import { Tokenizer } from "../../bindings/tokenizer";
 import { bpeTrainer } from "../../bindings/trainers";
-import { BaseTokenizer, getTokenContent } from "./base.tokenizer";
+import { BaseTokenizer, getTokenContent, Token } from "./base.tokenizer";
 
 export interface BPETokenizerOptions {
   /**
@@ -30,7 +30,7 @@ export interface BPETokenizerOptions {
    * The unknown token to be used by the model
    * @default "<unk>"
    */
-  unkToken?: string | AddedToken;
+  unkToken?: Token;
   vocabFile?: string;
 }
 
@@ -54,7 +54,7 @@ export interface BPETokenizerTrainOptions {
   /**
    * @default ["<unk>"]
    */
-  specialTokens?: (string | AddedToken)[];
+  specialTokens?: Token[];
   /**
    * @default "</w>"
    */
