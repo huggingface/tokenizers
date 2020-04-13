@@ -1,3 +1,16 @@
+## [0.6.2](https://github.com/huggingface/tokenizers/compare/node-v0.6.1...node-v0.6.2) (2020-04-13)
+
+### Features
+
+- More symbols exposed: `Token`, `BaseTokenizer`, `PaddingConfiguration`, `TruncationConfiguration` ([38d53a7](https://github.com/huggingface/tokenizers/commit/38d53a7b84b2ee86b262eee2de6121351fe03889))
+- Expose `setPostProcessor` in `BaseTokenizer` ([38d53a7](https://github.com/huggingface/tokenizers/commit/38d53a7b84b2ee86b262eee2de6121351fe03889))
+
+### Fixes
+
+- Fix the word indexes when there are special tokens ([#226](https://github.com/huggingface/tokenizers/pull/226))
+- Fix encoding overflowing offsets ([695ab83](https://github.com/huggingface/tokenizers/commit/695ab8388f5f1a7d63d8aaab9b3762312e0d5ac3))
+- Fix Roberta overflowings ([c4ecc6f](https://github.com/huggingface/tokenizers/commit/c4ecc6f7ce7af40c558401a3ec9500732a17f9da))
+
 ## [0.6.1](https://github.com/huggingface/tokenizers/compare/node-v0.6.0...node-v0.6.1) (2020-04-01)
 
 ### Fixes
