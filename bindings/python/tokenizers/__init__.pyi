@@ -70,41 +70,58 @@ class Encoding:
     def overflowing(self) -> Optional[Encoding]:
         """ The overflowing encoding, after truncation """
         pass
-    def char_to_word_offsets(self, pos: int) -> Option[Offsets]:
-        """ Find the offsets of the word that contains the character at the specified position
+    def word_to_tokens(self, word_index: int) -> Optional[Tuple[int, int]]:
+        """
+        Get the encoded tokens corresponding to the word at the given index in the input
+        sequence, with the form [start_token, end_token + 1]
 
         Args:
-            pos: int:
-                The position of a char in the input string
+            word_index: int:
+                The index of the word in the input sequence.
 
         Returns:
-            The offsets of the word that contains this char
+            The range of tokens with the form [start_token, end_token + 1]
         """
         pass
-    def char_to_token_offsets(self, pos: int) -> Option[Offsets]:
-        """ Find the offsets of the token that contains the character at the specified position
+    def word_to_chars(self, word_index: int) -> Optional[Offsets]:
+        """
+        Get the offsets of the word at the given index in the input sequence.
 
         Args:
-            pos: int:
-                The position of a char in the input string
+            word_index: int:
+                The index of the word in the input sequence.
 
         Returns:
-            The offsets of the token that contains this char
+            The word offsets
         """
         pass
-    def token_to_word_offsets(self, index: int) -> Optional[Offsets]:
-        """ Find the offsets of the word that contains the token at the given index
+    def token_to_chars(self, token_index: int) -> Optional[Offsets]:
+        """
+        Get the offsets of the token at the given index
 
         Args:
-            index: int:
-                The index of a token
+            token_index: int:
+                The index of the token in the encoded sequence.
 
         Returns:
-            The offsets of the word that contains this token
+            The token offsets
+        """
+        pass
+    def token_to_word(self, token_index: int) -> Optional[int]:
+        """
+        Get the word that contains the token at the given index
+
+        Args:
+            token_index: int:
+                The index of the token in the encoded sequence.
+
+        Returns:
+            The index of the word in the input sequence.
         """
         pass
     def char_to_token(self, pos: int) -> Optional[int]:
-        """ Find the index of the token at the position of the given char
+        """
+        Get the token that contains the char at the given position
 
         Args:
             pos: int:
