@@ -141,27 +141,48 @@ export class Encoding {
   }
 
   /**
+   * Get the encoded tokens corresponding to the word at the given index in the input
+   * sequence, with the form [startToken, endToken+1]
+   * @param word The position of a word in the input sequence
+   * @since 0.7.0
+   */
+  wordToTokens(word: number): [number, number] | undefined {
+    return this._rawEncoding.wordToTokens(word);
+  }
+
+  /**
+   * Get the offsets of the word at the given index in the input sequence
+   * @param word The index of the word in the input sequence
+   * @since 0.7.0
+   */
+  wordToChars(word: number): [number, number] | undefined {
+    return this._rawEncoding.wordToChars(word);
+  }
+
+  /**
+   * Get the offsets of the token at the given index
+   * @param token The index of the token in the encoded sequence
+   * @since 0.7.0
+   */
+  tokenToChars(token: number): [number, number] | undefined {
+    return this._rawEncoding.tokenToChars(token);
+  }
+
+  /**
+   * Get the word that contains the token at the given index
+   * @param token The index of the token  in the encoded sequence
+   * @since 0.7.0
+   */
+  tokenToWord(token: number): number | undefined {
+    return this._rawEncoding.tokenToWord(token);
+  }
+
+  /**
    * Find the index of the token at the position of the given char
    * @param pos The position of a char in the input string
    */
   charToToken(pos: number): number | undefined {
     return this._rawEncoding.charToToken(pos);
-  }
-
-  /**
-   * Find the offsets of the token that contains the character at the specified position
-   * @param pos The position of a char in the input string
-   */
-  charToTokenOffsets(pos: number): [number, number] | undefined {
-    return this._rawEncoding.charToTokenOffsets(pos);
-  }
-
-  /**
-   * Find the offsets of the word that contains the character at the specified position
-   * @param pos The position of a char in the input string
-   */
-  charToWordOffsets(pos: number): [number, number] | undefined {
-    return this._rawEncoding.charToWordOffsets(pos);
   }
 
   /**
@@ -173,14 +194,6 @@ export class Encoding {
   pad(length: number, options?: PaddingOptions): void {
     this._rawEncoding.pad(length, options);
     this.resetInternalProperties();
-  }
-
-  /**
-   * Find the offsets of the word that contains the token at the given index
-   * @param index The index of a token
-   */
-  tokenToWordOffsets(index: number): [number, number] | undefined {
-    return this._rawEncoding.tokenToWordOffsets(index);
   }
 
   /**
