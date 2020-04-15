@@ -120,44 +120,51 @@ impl Encoding {
         std::mem::replace(&mut self.overflowing, vec![])
     }
 
-    /// Find the boundaries of the word at the given index (Indices in the various Vec).
-    /// The upper value is excluded, just like for offsets.
-    pub fn word_boundaries(&self, index: usize) -> Option<(usize, usize)> {
-        self.words.get(index).map(|word_id| {
-            let start = (0..=index)
-                .rev()
-                .take_while(|i| self.words[*i] == *word_id)
-                .min()
-                .unwrap();
-
-            let end = (index..self.words.len())
-                .take_while(|i| self.words[*i] == *word_id)
-                .max()
-                .unwrap();
-
-            (start, end + 1)
-        })
-    }
-
-    /// Find the Offsets of the word that contains the character at the specified position
-    pub fn char_to_word_offsets(&self, pos: usize) -> Option<Offsets> {
-        self.offsets
+    /// Convert the given word index, to the corresponding tokens [start, end)
+    pub fn word_to_tokens(&self, word: u32) -> Option<(usize, usize)> {
+        let (mut start, mut end) = (None, None);
+        self.words
             .iter()
             .enumerate()
-            .find(|(_, (start, end))| pos >= *start && pos < *end)
-            .map(|(index, _)| self.token_to_word_offsets(index))
+            .take_while(|(_, w)| **w <= Some(word))
+            .filter(|(_, w)| **w == Some(word))
+            .for_each(|(i, _)| {
+                if start.is_none() || Some(i) < start {
+                    start = Some(i);
+                }
+                if end.is_none() || Some(i) >= end {
+                    end = Some(i + 1);
+                }
+            });
+
+        if let (Some(start), Some(end)) = (start, end) {
+            Some((start, end))
+        } else {
+            None
+        }
+    }
+
+    /// Find the offsets of the given word
+    pub fn word_to_chars(&self, word: u32) -> Option<Offsets> {
+        self.word_to_tokens(word)
+            .map(|(start, end)| {
+                if end == 0 {
+                    None
+                } else {
+                    Some((self.offsets[start].0, self.offsets[end - 1].1))
+                }
+            })
             .flatten()
     }
 
-    /// Find the Offsets of the token that contains the character at the specified position
-    pub fn char_to_token_offsets(&self, pos: usize) -> Option<Offsets> {
-        self.char_to_token(pos).map(|i| self.offsets[i])
+    /// Find the offsets of the given token
+    pub fn token_to_chars(&self, token: usize) -> Option<Offsets> {
+        self.offsets.get(token).copied()
     }
 
-    /// Find the Offsets of the word that contains the token at the given index
-    pub fn token_to_word_offsets(&self, index: usize) -> Option<Offsets> {
-        self.word_boundaries(index)
-            .map(|(min, max)| (self.offsets[min].0, self.offsets[max - 1].1))
+    /// Find the index of the word that contains the token at the given index
+    pub fn token_to_word(&self, token: usize) -> Option<u32> {
+        self.words.get(token).copied().flatten()
     }
 
     /// Return the index of the token at position of the given char.
@@ -493,32 +500,26 @@ mod tests {
     }
 
     #[test]
-    fn word_boundaries() {
-        let encoding = Encoding {
-            words: vec![
-                Some(0),
-                Some(0),
-                Some(1),
-                Some(1),
-                Some(1),
-                Some(2),
-                Some(3),
-                Some(4),
-                Some(4),
-            ],
-            ..Default::default()
-        };
-        assert_eq!(encoding.word_boundaries(0), Some((0, 2)));
-        assert_eq!(encoding.word_boundaries(1), Some((0, 2)));
-        assert_eq!(encoding.word_boundaries(2), Some((2, 5)));
-        assert_eq!(encoding.word_boundaries(3), Some((2, 5)));
-        assert_eq!(encoding.word_boundaries(5), Some((5, 6)));
-        assert_eq!(encoding.word_boundaries(8), Some((7, 9)));
-    }
-
-    #[test]
     fn mappings() {
         let encoding = Encoding {
+            tokens: vec![
+                "He".into(),
+                "llo".into(),
+                "won".into(),
+                "der".into(),
+                "ful".into(),
+                "friend".into(),
+                "!".into(),
+            ],
+            offsets: vec![
+                (0, 2),
+                (2, 5),
+                (7, 10),
+                (10, 13),
+                (13, 16),
+                (17, 23),
+                (23, 24),
+            ],
             words: vec![
                 Some(0),
                 Some(0),
@@ -527,37 +528,27 @@ mod tests {
                 Some(1),
                 Some(2),
                 Some(3),
-                Some(4),
-                Some(4),
-            ],
-            offsets: vec![
-                (0, 1),
-                (1, 2),
-                (2, 3),
-                (3, 4),
-                (4, 5),
-                (5, 6),
-                (6, 7),
-                (7, 10),
-                (10, 12),
             ],
             ..Default::default()
         };
-        assert_eq!(encoding.char_to_token_offsets(0), Some((0, 1)));
-        assert_eq!(encoding.char_to_token_offsets(1), Some((1, 2)));
-        assert_eq!(encoding.char_to_token_offsets(2), Some((2, 3)));
-        assert_eq!(encoding.char_to_token_offsets(8), Some((7, 10)));
-        assert_eq!(encoding.char_to_token_offsets(10), Some((10, 12)));
-        assert_eq!(encoding.char_to_word_offsets(0), Some((0, 2)));
-        assert_eq!(encoding.char_to_word_offsets(1), Some((0, 2)));
-        assert_eq!(encoding.char_to_word_offsets(2), Some((2, 5)));
-        assert_eq!(encoding.char_to_word_offsets(8), Some((7, 12)));
-        assert_eq!(encoding.char_to_word_offsets(10), Some((7, 12)));
-        assert_eq!(encoding.token_to_word_offsets(0), Some((0, 2)));
-        assert_eq!(encoding.token_to_word_offsets(1), Some((0, 2)));
-        assert_eq!(encoding.token_to_word_offsets(2), Some((2, 5)));
-        assert_eq!(encoding.token_to_word_offsets(3), Some((2, 5)));
-        assert_eq!(encoding.token_to_word_offsets(7), Some((7, 12)));
-        assert_eq!(encoding.token_to_word_offsets(8), Some((7, 12)));
+        assert_eq!(encoding.word_to_tokens(0), Some((0, 2)));
+        assert_eq!(encoding.word_to_tokens(1), Some((2, 5)));
+        assert_eq!(encoding.word_to_tokens(2), Some((5, 6)));
+        assert_eq!(encoding.word_to_tokens(3), Some((6, 7)));
+
+        assert_eq!(encoding.word_to_chars(0), Some((0, 5)));
+        assert_eq!(encoding.word_to_chars(1), Some((7, 16)));
+
+        assert_eq!(encoding.token_to_chars(0), Some((0, 2)));
+        assert_eq!(encoding.token_to_chars(1), Some((2, 5)));
+
+        assert_eq!(encoding.token_to_word(1), Some(0));
+        assert_eq!(encoding.token_to_word(2), Some(1));
+        assert_eq!(encoding.token_to_word(7), None);
+
+        assert_eq!(encoding.char_to_token(3), Some(1));
+        assert_eq!(encoding.char_to_token(8), Some(2));
+        assert_eq!(encoding.char_to_token(16), None);
+        assert_eq!(encoding.char_to_token(23), Some(6));
     }
 }
