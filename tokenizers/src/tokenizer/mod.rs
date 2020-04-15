@@ -415,119 +415,88 @@ impl Tokenizer {
 
     /// Encode the given sentence
     pub fn encode(&self, input: EncodeInput, add_special_tokens: bool) -> Result<Encoding> {
-        let generate_output =
-            move |sentence: String, type_id: u32| -> Result<(Encoding, NormalizedString)> {
-                // First we need to split into as many sequences as needed to avoid splitting
-                // on our added tokens
-                let results = self.split_on_added_tokens(&sentence).into_iter().map(
-                    |(sentence, id)| -> Result<(Encoding, NormalizedString)> {
-                        // If this is one of our added tokens, lets return an encoding directly
-                        if let Some(id) = id {
-                            return Ok((
-                                Encoding::new(
-                                    vec![id],
-                                    vec![type_id],
-                                    vec![sentence.get().to_owned()],
-                                    vec![Some(0)],
-                                    vec![(0, sentence.len())],
-                                    vec![0],
-                                    vec![1],
-                                    vec![],
-                                ),
-                                sentence,
-                            ));
-                        }
+        let generate_output = move |sentence: String, type_id: u32| -> Result<Encoding> {
+            // First we need to split into as many sequences as needed to avoid splitting
+            // on our added tokens
+            let results = self.split_on_added_tokens(&sentence).into_iter().map(
+                |(sentence, id)| -> Result<(Encoding, NormalizedString)> {
+                    // If this is one of our added tokens, lets return an encoding directly
+                    if let Some(id) = id {
+                        return Ok((
+                            Encoding::new(
+                                vec![id],
+                                vec![type_id],
+                                vec![sentence.get().to_owned()],
+                                vec![Some(0)],
+                                vec![(0, sentence.len())],
+                                vec![0],
+                                vec![1],
+                                vec![],
+                            ),
+                            sentence,
+                        ));
+                    }
 
-                        // 1. Normalization
-                        let mut normalized = self.do_normalize(sentence)?;
+                    // 1. Normalization
+                    let mut normalized = self.do_normalize(sentence)?;
 
-                        // 2. Pre tokenization
-                        let pre_tokenized = self.pre_tokenize(&mut normalized)?;
+                    // 2. Pre tokenization
+                    let pre_tokenized = self.pre_tokenize(&mut normalized)?;
 
-                        // 3. Model
-                        let tokens = self.model.tokenize(pre_tokenized)?;
-                        let encoding = Encoding::from_tokens(tokens, type_id);
+                    // 3. Model
+                    let tokens = self.model.tokenize(pre_tokenized)?;
+                    let encoding = Encoding::from_tokens(tokens, type_id);
 
-                        Ok((encoding, normalized))
-                    },
-                );
+                    Ok((encoding, normalized))
+                },
+            );
 
-                let (mut encodings, mut normalized) =
-                    ResultShunt::process(results, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>())?;
+            let (encodings, normalized) =
+                ResultShunt::process(results, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>())?;
+            if encodings.is_empty() {
+                return Ok(Encoding::default());
+            }
 
-                if encodings.is_empty() {
-                    return Ok((Encoding::default(), NormalizedString::from("")));
-                }
+            let mut final_encoding = Encoding::default();
+            let mut final_normalized = NormalizedString::default();
 
-                // Merge encodings and normalized strings
-                let others = encodings.split_off(1);
-                let n_others = normalized.split_off(1);
+            let mut offset = final_normalized.len_original();
+            for (mut encoding, normalized) in encodings.into_iter().zip(normalized) {
+                encoding
+                    .get_offsets_mut()
+                    .iter_mut()
+                    .for_each(|(start, end)| {
+                        // We convert offsets back to original before merging
+                        let (s, e) = normalized
+                            .convert_offsets(Range::Normalized(*start..*end))
+                            .map_or((*start, *end), |range| (range.start, range.end));
+                        *start = s + offset;
+                        *end = e + offset;
+                    });
+                // We use the original length because we are merging offsets back to the
+                // original referential
+                offset += normalized.len_original();
 
-                let mut final_encoding: Encoding = encodings.into_iter().next().unwrap();
-                let mut final_normalized: NormalizedString = normalized.into_iter().next().unwrap();
+                final_encoding.merge_with(encoding, false);
+                final_normalized.merge_with(&normalized);
+            }
 
-                let mut offset = final_normalized.len_original();
-                for (mut encoding, normalized) in others.into_iter().zip(n_others) {
-                    encoding
-                        .get_offsets_mut()
-                        .iter_mut()
-                        .for_each(|(start, end)| {
-                            *start += offset;
-                            *end += offset;
-                        });
-                    offset += normalized.len();
-
-                    final_encoding.merge_with(encoding, false);
-                    final_normalized.merge_with(&normalized);
-                }
-
-                Ok((final_encoding, final_normalized))
-            };
+            Ok(final_encoding)
+        };
 
         let (sentence, pair) = match input {
             EncodeInput::Single(s1) => (s1, None),
             EncodeInput::Dual(s1, s2) => (s1, Some(s2)),
         };
 
-        let (encoding, normalized) = generate_output(sentence, 0)?;
-        let (pair_encoding, pair_normalized) = match pair {
-            Some(pair) => {
-                let (e, n) = generate_output(pair, 1)?;
-                (Some(e), Some(n))
-            }
-            None => (None, None),
+        let encoding = generate_output(sentence, 0)?;
+        let pair_encoding = match pair {
+            Some(pair) => Some(generate_output(pair, 1)?),
+            None => None,
         };
 
         // 4. Post processing
-        let mut output = self.post_process(encoding, pair_encoding, add_special_tokens)?;
-
-        // 5. Convert offsets back to original string
-        let convert_offsets_back = |encoding: &mut Encoding| {
-            let mut current_offset = (0, 0);
-            let mut n_source = &normalized;
-
-            encoding
-                .get_offsets_mut()
-                .iter_mut()
-                .for_each(|(start, end)| {
-                    if (*start, *end) < current_offset {
-                        n_source = &pair_normalized.as_ref().unwrap_or(&normalized);
-                    }
-                    current_offset = (*start, *end);
-                    let (s, e) = n_source
-                        .convert_offsets(Range::Normalized(*start..*end))
-                        .map_or((*start, *end), |range| (range.start, range.end));
-                    *start = s;
-                    *end = e;
-                });
-        };
-
-        convert_offsets_back(&mut output);
-        for o in output.get_overflowing_mut() {
-            convert_offsets_back(o);
-        }
-
-        Ok(output)
+        self.post_process(encoding, pair_encoding, add_special_tokens)
     }
 
     /// Encode all the sentences in parallel, using multiple threads
@@ -886,7 +855,7 @@ impl Tokenizer {
                 .into_iter()
                 .map(|(idx, (start, end))| unsafe {
                     let s = sentence.get_unchecked(start..end).to_owned();
-                    let mut normalized = NormalizedString::from(&s);
+                    let normalized = NormalizedString::from(&s);
 
                     // Find out the associated AddedToken, and its id
                     let id = if let Some(idx) = idx {
@@ -895,14 +864,6 @@ impl Tokenizer {
                         } else {
                             &self.special_tokens[idx]
                         };
-
-                        if added.lstrip && added.rstrip {
-                            normalized.strip();
-                        } else if added.lstrip {
-                            normalized.lstrip();
-                        } else if added.rstrip {
-                            normalized.rstrip();
-                        }
 
                         self.token_to_id(&added.content)
                     } else {

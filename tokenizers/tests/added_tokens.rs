@@ -38,7 +38,11 @@ fn lstrip_tokens() {
 
     assert_eq!(
         output.get_tokens(),
-        &["ĠI", "Ġsaw", "Ġa", "<mask>", "ĠðŁĺ", "º"]
+        &["ĠI", "Ġsaw", "Ġa", " <mask>", "ĠðŁĺ", "º"]
+    );
+    assert_eq!(
+        output.get_offsets(),
+        &[(0, 1), (1, 5), (5, 7), (7, 14), (14, 16), (15, 16)]
     );
 }
 
@@ -52,7 +56,7 @@ fn rstrip_tokens() {
 
     assert_eq!(
         output.get_tokens(),
-        &["I", "Ġsaw", "Ġa", "Ġ", "<mask>", "ðŁĺ", "º"]
+        &["I", "Ġsaw", "Ġa", "Ġ", "<mask> ", "ðŁĺ", "º"]
     );
 
     // When `add_prefix_space = true` rstrip cannot work as a prefix space is added
@@ -65,7 +69,7 @@ fn rstrip_tokens() {
 
     assert_eq!(
         output.get_tokens(),
-        &["ĠI", "Ġsaw", "Ġa", "Ġ", "<mask>", "ĠðŁĺ", "º"]
+        &["ĠI", "Ġsaw", "Ġa", "Ġ", "<mask> ", "ĠðŁĺ", "º"]
     );
 }
 
