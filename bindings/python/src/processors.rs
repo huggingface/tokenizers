@@ -38,12 +38,20 @@ pub struct RobertaProcessing {}
 #[pymethods]
 impl RobertaProcessing {
     #[new]
-    fn new(sep: (String, u32), cls: (String, u32)) -> PyResult<(Self, PostProcessor)> {
+    #[args(trim_offsets = true, add_prefix_space = true)]
+    fn new(
+        sep: (String, u32),
+        cls: (String, u32),
+        trim_offsets: bool,
+        add_prefix_space: bool,
+    ) -> PyResult<(Self, PostProcessor)> {
         Ok((
             RobertaProcessing {},
             PostProcessor {
                 processor: Container::Owned(Box::new(
-                    tk::processors::roberta::RobertaProcessing::new(sep, cls),
+                    tk::processors::roberta::RobertaProcessing::new(sep, cls)
+                        .trim_offsets(trim_offsets)
+                        .add_prefix_space(add_prefix_space),
                 )),
             },
         ))
