@@ -242,10 +242,19 @@ impl PostProcessor for ByteLevel {
         };
 
         process_offsets(&mut encoding);
+        encoding
+            .get_overflowing_mut()
+            .iter_mut()
+            .for_each(|mut encoding| process_offsets(&mut encoding));
+
         let final_encoding = match pair_encoding {
             None => encoding,
             Some(mut pair) => {
                 process_offsets(&mut pair);
+                pair.get_overflowing_mut()
+                    .iter_mut()
+                    .for_each(|mut encoding| process_offsets(&mut encoding));
+
                 encoding.merge_with(pair, false);
                 encoding
             }
