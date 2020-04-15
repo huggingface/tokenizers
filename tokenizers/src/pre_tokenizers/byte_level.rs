@@ -223,9 +223,16 @@ impl PostProcessor for ByteLevel {
                 .filter(|(_, v)| v.0 > 0 || v.1 > 0)
                 .collect::<Vec<_>>();
 
-            modifs.into_iter().for_each(|(i, (ld, tl))| {
+            modifs.into_iter().for_each(|(i, (mut ld, tl))| {
                 let mut offsets = &mut encoding.get_offsets_mut()[i];
                 if ld > 0 {
+                    if i == 0 && self.add_prefix_space && ld == 1 {
+                        // If we are processing the first pair of offsets, with `add_prefix_space`,
+                        // then we shouldn't remove anything we added. If there are more than one
+                        // leading spaces though, it means we didn't add them, and they should be
+                        // removed.
+                        ld = 0;
+                    }
                     offsets.0 = std::cmp::min(offsets.0 + ld, offsets.1);
                 }
                 if tl > 0 {
