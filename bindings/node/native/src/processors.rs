@@ -55,7 +55,12 @@ fn bert_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     Ok(processor)
 }
 
-/// roberta_processing(sep: [String, number], cls: [String, number])
+/// roberta_processing(
+///   sep: [String, number],
+///   cls: [String, number],
+///   trimOffsets: boolean = true,
+///   addPrefixSpace: boolean = true
+/// )
 fn roberta_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     let sep = cx.argument::<JsArray>(0)?;
     let cls = cx.argument::<JsArray>(1)?;
@@ -83,12 +88,27 @@ fn roberta_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
             .value() as u32,
     );
 
-    let mut processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
+    let mut processor = tk::processors::roberta::RobertaProcessing::new(sep, cls);
+    if let Some(args) = cx.argument_opt(2) {
+        if args.downcast::<JsUndefined>().is_err() {
+            processor =
+                processor.trim_offsets(args.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+        }
+    }
+    if let Some(args) = cx.argument_opt(3) {
+        if args.downcast::<JsUndefined>().is_err() {
+            processor =
+                processor.add_prefix_space(args.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+        }
+    }
+
+    let mut js_processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    processor.borrow_mut(&guard).processor.to_owned(Box::new(
-        tk::processors::roberta::RobertaProcessing::new(sep, cls),
-    ));
-    Ok(processor)
+    js_processor
+        .borrow_mut(&guard)
+        .processor
+        .to_owned(Box::new(processor));
+    Ok(js_processor)
 }
 
 /// bytelevel(trimOffsets?: boolean)
