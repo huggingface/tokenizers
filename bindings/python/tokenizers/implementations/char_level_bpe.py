@@ -81,7 +81,7 @@ class CharBPETokenizer(BaseTokenizer):
             "dropout": dropout,
             "lowercase": lowercase,
             "unicode_normalizer": unicode_normalizer,
-            "bert_normalizer":bert_normalizer,
+            "bert_normalizer": bert_normalizer,
             "split_on_whitespace_only": split_on_whitespace_only,
         }
 
