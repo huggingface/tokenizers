@@ -46,9 +46,20 @@ class RobertaProcessing(PostProcessor):
     a Roberta model:
         - a SEP token
         - a CLS token
+
+    It also takes care of trimming the offsets.
+    By default, the ByteLevel BPE might include whitespaces in the produced tokens. If you don't
+    want the offsets to include these whitespaces, then this PostProcessor should be initialized
+    with `trim_offsets=True`
     """
 
-    def __init__(self, sep: Tuple[str, int], cls: Tuple[str, int]) -> None:
+    def __init__(
+        self,
+        sep: Tuple[str, int],
+        cls: Tuple[str, int],
+        trim_offsets: bool = True,
+        add_prefix_space: bool = True,
+    ) -> None:
         """ Instantiate a new RobertaProcessing with the given tokens
 
         Args:
@@ -57,6 +68,13 @@ class RobertaProcessing(PostProcessor):
 
             cls: Tuple[str, int]:
                 A tuple with the string representation of the CLS token, and its id
+
+            trim_offsets: bool:
+                Whether to trim the whitespaces from the produced offsets.
+
+            add_prefix_space: bool:
+                Whether the add_prefix_space option was enabled during pre-tokenization. This
+                is relevant because it defines the way the offsets are trimmed out.
 
         Returns:
             PostProcessor

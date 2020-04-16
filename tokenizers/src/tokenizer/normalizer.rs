@@ -721,4 +721,19 @@ mod tests {
         assert_eq!(get_range_of(&s, ..), Some(&s[..]));
         assert_eq!(get_range_of(&s, 17..), Some("John 👋"));
     }
+
+    #[test]
+    fn merge() {
+        let mut s = NormalizedString::from("A sentence that will be merged");
+        s.prepend(" ");
+
+        let mut merged = NormalizedString::from("A sentence");
+        let s2 = NormalizedString::from(" that will");
+        let s3 = NormalizedString::from(" be merged");
+        merged.prepend(" ");
+        merged.merge_with(&s2);
+        merged.merge_with(&s3);
+
+        assert_eq!(s, merged);
+    }
 }

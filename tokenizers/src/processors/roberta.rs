@@ -1,13 +1,39 @@
+use crate::processors::byte_level::process_offsets;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
 
 pub struct RobertaProcessing {
     sep: (String, u32),
     cls: (String, u32),
+    trim_offsets: bool,
+    add_prefix_space: bool,
+}
+
+impl Default for RobertaProcessing {
+    fn default() -> Self {
+        Self {
+            sep: ("</s>".into(), 2),
+            cls: ("<s>".into(), 0),
+            trim_offsets: true,
+            add_prefix_space: true,
+        }
+    }
 }
 
 impl RobertaProcessing {
     pub fn new(sep: (String, u32), cls: (String, u32)) -> Self {
-        RobertaProcessing { sep, cls }
+        RobertaProcessing {
+            sep,
+            cls,
+            ..Default::default()
+        }
+    }
+    pub fn trim_offsets(mut self, v: bool) -> Self {
+        self.trim_offsets = v;
+        self
+    }
+    pub fn add_prefix_space(mut self, v: bool) -> Self {
+        self.add_prefix_space = v;
+        self
     }
 }
 
@@ -23,9 +49,25 @@ impl PostProcessor for RobertaProcessing {
     fn process(
         &self,
         mut encoding: Encoding,
-        pair_encoding: Option<Encoding>,
+        mut pair_encoding: Option<Encoding>,
         add_special_tokens: bool,
     ) -> Result<Encoding> {
+        if self.trim_offsets {
+            process_offsets(&mut encoding, self.add_prefix_space);
+            encoding
+                .get_overflowing_mut()
+                .iter_mut()
+                .for_each(|mut encoding| process_offsets(&mut encoding, self.add_prefix_space));
+
+            if let Some(mut encoding) = pair_encoding.as_mut() {
+                process_offsets(&mut encoding, self.add_prefix_space);
+                encoding
+                    .get_overflowing_mut()
+                    .iter_mut()
+                    .for_each(|mut encoding| process_offsets(&mut encoding, self.add_prefix_space));
+            }
+        }
+
         if !add_special_tokens {
             return PostProcessor::default_process(encoding, pair_encoding, add_special_tokens);
         }

@@ -196,56 +196,65 @@ impl PostProcessor for ByteLevel {
     fn process(
         &self,
         mut encoding: Encoding,
-        pair_encoding: Option<Encoding>,
-        _add_special_tokens: bool,
+        mut pair_encoding: Option<Encoding>,
+        add_special_tokens: bool,
     ) -> Result<Encoding> {
-        let process_offsets = |encoding: &mut Encoding| {
-            if !self.trim_offsets {
-                return;
-            }
+        if self.trim_offsets {
+            process_offsets(&mut encoding, self.add_prefix_space);
+            encoding
+                .get_overflowing_mut()
+                .iter_mut()
+                .for_each(|mut encoding| process_offsets(&mut encoding, self.add_prefix_space));
 
-            let modifs = encoding
-                .get_tokens()
-                .iter()
-                .map(|token| {
-                    let leading_spaces = token
-                        .chars()
-                        .take_while(|c| *c == BYTES_CHAR[&b' '])
-                        .count();
-                    let trailing_spaces = token
-                        .chars()
-                        .rev()
-                        .take_while(|c| *c == BYTES_CHAR[&b' '])
-                        .count();
-                    (leading_spaces, trailing_spaces)
-                })
-                .enumerate()
-                .filter(|(_, v)| v.0 > 0 || v.1 > 0)
-                .collect::<Vec<_>>();
-
-            modifs.into_iter().for_each(|(i, (ld, tl))| {
-                let mut offsets = &mut encoding.get_offsets_mut()[i];
-                if ld > 0 {
-                    offsets.0 = std::cmp::min(offsets.0 + ld, offsets.1);
-                }
-                if tl > 0 {
-                    offsets.1 = std::cmp::max(offsets.1 - tl, offsets.0);
-                }
-            });
-        };
-
-        process_offsets(&mut encoding);
-        let final_encoding = match pair_encoding {
-            None => encoding,
-            Some(mut pair) => {
-                process_offsets(&mut pair);
-                encoding.merge_with(pair, false);
+            if let Some(mut encoding) = pair_encoding.as_mut() {
+                process_offsets(&mut encoding, self.add_prefix_space);
                 encoding
+                    .get_overflowing_mut()
+                    .iter_mut()
+                    .for_each(|mut encoding| process_offsets(&mut encoding, self.add_prefix_space));
             }
-        };
+        }
 
-        Ok(final_encoding)
+        PostProcessor::default_process(encoding, pair_encoding, add_special_tokens)
     }
+}
+
+pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
+    let modifs = encoding
+        .get_tokens()
+        .iter()
+        .map(|token| {
+            let leading_spaces = token
+                .chars()
+                .take_while(|c| *c == BYTES_CHAR[&b' '])
+                .count();
+            let trailing_spaces = token
+                .chars()
+                .rev()
+                .take_while(|c| *c == BYTES_CHAR[&b' '])
+                .count();
+            (leading_spaces, trailing_spaces)
+        })
+        .enumerate()
+        .filter(|(_, v)| v.0 > 0 || v.1 > 0)
+        .collect::<Vec<_>>();
+
+    modifs.into_iter().for_each(|(i, (mut ld, tl))| {
+        let mut offsets = &mut encoding.get_offsets_mut()[i];
+        if ld > 0 {
+            if i == 0 && add_prefix_space && ld == 1 {
+                // If we are processing the first pair of offsets, with `add_prefix_space`,
+                // then we shouldn't remove anything we added. If there are more than one
+                // leading spaces though, it means we didn't add them, and they should be
+                // removed.
+                ld = 0;
+            }
+            offsets.0 = std::cmp::min(offsets.0 + ld, offsets.1);
+        }
+        if tl > 0 {
+            offsets.1 = std::cmp::max(offsets.1 - tl, offsets.0);
+        }
+    });
 }
 
 #[cfg(test)]
