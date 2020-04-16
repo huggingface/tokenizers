@@ -20,9 +20,10 @@ normalized one anymore.
 - The added token given to `add_special_tokens` or `add_tokens` on a `Tokenizer`, or while using
 `train(special_tokens=...)` can now be instances of `AddedToken` to provide more control over these
 tokens.
-- [#136] Updated Pyo3 version
-- [#136] Static methods `Model.from_files` and `Model.empty` are removed in favor of using
+- [#136]: Updated Pyo3 version
+- [#136]: Static methods `Model.from_files` and `Model.empty` are removed in favor of using
 constructors.
+- [#239]: `CharBPETokenizer` now corresponds to OpenAI GPT BPE implementation by default.
 
 ### Added
 - [#188]: `ByteLevel` is also a `PostProcessor` now and handles trimming the offsets if activated.
@@ -59,6 +60,8 @@ are now relative to the original string by default.
 `normalize(sequence)` on the `Tokenizer`
 - Change `Model.from_files` and `Model.empty` to use constructor. The model constructor should take
 the same arguments as the old methods. (ie `BPE(vocab, merges)` or `BPE()`)
+- If you were using the `CharBPETokenizer` and want to keep the same behavior as before, set
+`bert_normalizer=False` and `split_on_whitespace_only=True`.
 
 ## [0.6.0]
 
@@ -159,6 +162,7 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug with the IDs associated with added tokens.
 - Fix a bug that was causing crashes in Python 3.5
 
+[#239]: https://github.com/huggingface/tokenizers/pull/239
 [#236]: https://github.com/huggingface/tokenizers/pull/236
 [#234]: https://github.com/huggingface/tokenizers/pull/234
 [#208]: https://github.com/huggingface/tokenizers/pull/208
