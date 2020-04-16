@@ -9,15 +9,17 @@ from typing import Optional, List, Union
 class CharBPETokenizer(BaseTokenizer):
     """ Original BPE Tokenizer
 
-        Represents the BPE algorithm, as introduced by Rico Sennrich (https://arxiv.org/abs/1508.07909)
+        Represents the BPE algorithm, as introduced by Rico Sennrich
+        (https://arxiv.org/abs/1508.07909)
 
-        The defaults settings corresponds to OpenAI GPT BPE tokenizers and differs from
-        the original Sennrich subword-nmt implementation by the following options that you can deactivate:
-            - adding a normalizer to clean up the text (deactivate it with `bert_normalizer=False`) by:
+        The defaults settings corresponds to OpenAI GPT BPE tokenizers and differs from the original
+        Sennrich subword-nmt implementation by the following options that you can deactivate:
+            - adding a normalizer to clean up the text (deactivate with `bert_normalizer=False`) by:
                 * removing any control characters and replacing all whitespaces by the classic one.
                 * handle chinese chars by putting spaces around them.
                 * strip all accents.
-            - spitting on punctuation in addition to whitespaces (deactivate it with `split_on_whitespace_only=True`)
+            - spitting on punctuation in addition to whitespaces (deactivate it with
+              `split_on_whitespace_only=True`)
     """
 
     def __init__(
