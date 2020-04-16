@@ -1,6 +1,6 @@
 from .. import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers
 from ..models import BPE
-from ..normalizers import Sequence, Lowercase, unicode_normalizer_from_str
+from ..normalizers import Sequence, Lowercase, unicode_normalizer_from_str, BertNormalizer
 from .base_tokenizer import BaseTokenizer
 
 from typing import Optional, List, Union
@@ -9,7 +9,15 @@ from typing import Optional, List, Union
 class CharBPETokenizer(BaseTokenizer):
     """ Original BPE Tokenizer
 
-    Represents the BPE algorithm, as introduced by Rico Sennrich (https://arxiv.org/abs/1508.07909)
+        Represents the BPE algorithm, as introduced by Rico Sennrich (https://arxiv.org/abs/1508.07909)
+
+        The defaults settings corresponds to OpenAI GPT BPE tokenizers and differs from
+        the original Sennrich subword-nmt implementation by the following options that you can deactivate:
+            - adding a normalizer to clean up the text (deactivate it with `bert_normalizer=False`) by:
+                * removing any control characters and replacing all whitespaces by the classic one.
+                * handle chinese chars by putting spaces around them.
+                * strip all accents.
+            - spitting on punctuation in addition to whitespaces (deactivate it with `split_on_whitespace_only=True`)
     """
 
     def __init__(
@@ -21,6 +29,8 @@ class CharBPETokenizer(BaseTokenizer):
         dropout: Optional[float] = None,
         lowercase: bool = False,
         unicode_normalizer: Optional[str] = None,
+        bert_normalizer: bool = True,
+        split_on_whitespace_only: bool = False,
     ):
         if vocab_file is not None and merges_file is not None:
             tokenizer = Tokenizer(
@@ -44,6 +54,9 @@ class CharBPETokenizer(BaseTokenizer):
         if unicode_normalizer:
             normalizers += [unicode_normalizer_from_str(unicode_normalizer)]
 
+        if bert_normalizer:
+            normalizers += [BertNormalizer(lowercase=False)]
+
         if lowercase:
             normalizers += [Lowercase()]
 
@@ -54,7 +67,11 @@ class CharBPETokenizer(BaseTokenizer):
             else:
                 tokenizer.normalizer = normalizers[0]
 
-        tokenizer.pre_tokenizer = pre_tokenizers.WhitespaceSplit()
+        if split_on_whitespace_only:
+            tokenizer.pre_tokenizer = pre_tokenizers.WhitespaceSplit()
+        else:
+            tokenizer.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
+
         tokenizer.decoder = decoders.BPEDecoder(suffix=suffix)
 
         parameters = {
@@ -64,6 +81,8 @@ class CharBPETokenizer(BaseTokenizer):
             "dropout": dropout,
             "lowercase": lowercase,
             "unicode_normalizer": unicode_normalizer,
+            "bert_normalizer":bert_normalizer,
+            "split_on_whitespace_only": split_on_whitespace_only,
         }
 
         super().__init__(tokenizer, parameters)
