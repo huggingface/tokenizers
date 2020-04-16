@@ -289,6 +289,24 @@ declare_types! {
             }
         }
 
+        method charToWord(mut cx) {
+            // charToWord(pos: number): number | undefined
+
+            let pos = cx.argument::<JsNumber>(0)?.value() as usize;
+
+            let this = cx.this();
+            let guard = cx.lock();
+            let index = this.borrow(&guard).encoding.execute(|encoding| {
+                encoding.unwrap().char_to_word(pos)
+            });
+
+            if let Some(index) = index {
+                Ok(cx.number(index as f64).upcast())
+            } else {
+                Ok(cx.undefined().upcast())
+            }
+        }
+
         method pad(mut cx) {
             // pad(length: number, options?: {
             //   direction?: 'left' | 'right' = 'right',

@@ -131,6 +131,18 @@ class Encoding:
             The index of the token that contains this char
         """
         pass
+    def char_to_word(self, pos: int) -> Optional[int]:
+        """
+        Get the word that contains the given char.
+
+        Args:
+            pos: int:
+                The position of a char in the input string
+
+        Returns:
+            The index of the word that contains this char
+        """
+        pass
     def pad(
         self,
         length: int,

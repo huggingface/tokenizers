@@ -41,6 +41,13 @@ export interface RawEncoding {
   charToToken(pos: number): number | undefined;
 
   /**
+   * Get the word that contains the given char
+   * @param pos The position of a char in the input string
+   * @since 0.7.0
+   */
+  charToWord(pos: number): number | undefined;
+
+  /**
    * Returns the attention mask
    */
   getAttentionMask(): number[];

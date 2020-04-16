@@ -39,6 +39,7 @@ describe("RawEncoding", () => {
     expect(typeof encoding.tokenToChars).toBe("function");
     expect(typeof encoding.tokenToWord).toBe("function");
     expect(typeof encoding.charToToken).toBe("function");
+    expect(typeof encoding.charToWord).toBe("function");
     expect(typeof encoding.getAttentionMask).toBe("function");
     expect(typeof encoding.getIds).toBe("function");
     expect(typeof encoding.getLength).toBe("function");
@@ -121,6 +122,18 @@ describe("RawEncoding", () => {
 
     it("returns undefined when out of range char", () => {
       const index = encoding.charToToken(100);
+      expect(index).toBeUndefined();
+    });
+  });
+
+  describe("charToWord", () => {
+    it("returns the correct index", () => {
+      const index = encoding.charToWord(3);
+      expect(index).toEqual(1);
+    });
+
+    it("returns undefined when out of range char", () => {
+      const index = encoding.charToWord(100);
       expect(index).toBeUndefined();
     });
   });

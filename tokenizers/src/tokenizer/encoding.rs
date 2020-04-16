@@ -120,7 +120,8 @@ impl Encoding {
         std::mem::replace(&mut self.overflowing, vec![])
     }
 
-    /// Convert the given word index, to the corresponding tokens [start, end)
+    /// Get the encoded tokens corresponding to the word at the given index in the input sequence,
+    /// with the form (start_token, end_token + 1)
     pub fn word_to_tokens(&self, word: u32) -> Option<(usize, usize)> {
         let (mut start, mut end) = (None, None);
         self.words
@@ -144,7 +145,7 @@ impl Encoding {
         }
     }
 
-    /// Find the offsets of the given word
+    /// Get the offsets of the word at the given index in the input sequence.
     pub fn word_to_chars(&self, word: u32) -> Option<Offsets> {
         self.word_to_tokens(word)
             .map(|(start, end)| {
@@ -157,21 +158,28 @@ impl Encoding {
             .flatten()
     }
 
-    /// Find the offsets of the given token
+    /// Get the offsets of the token at the given index.
     pub fn token_to_chars(&self, token: usize) -> Option<Offsets> {
         self.offsets.get(token).copied()
     }
 
-    /// Find the index of the word that contains the token at the given index
+    /// Get the word that contains the token at the given index.
     pub fn token_to_word(&self, token: usize) -> Option<u32> {
         self.words.get(token).copied().flatten()
     }
 
-    /// Return the index of the token at position of the given char.
+    /// Get the token that contains the given char.
     pub fn char_to_token(&self, pos: usize) -> Option<usize> {
         self.offsets
             .iter()
             .position(|(start, end)| pos >= *start && pos < *end)
+    }
+
+    /// Get the word that contains the given char.
+    pub fn char_to_word(&self, pos: usize) -> Option<u32> {
+        self.char_to_token(pos)
+            .map(|token| self.token_to_word(token))
+            .flatten()
     }
 
     /// Truncate the current `Encoding`.
@@ -550,5 +558,10 @@ mod tests {
         assert_eq!(encoding.char_to_token(8), Some(2));
         assert_eq!(encoding.char_to_token(16), None);
         assert_eq!(encoding.char_to_token(23), Some(6));
+
+        assert_eq!(encoding.char_to_word(3), Some(0));
+        assert_eq!(encoding.char_to_word(8), Some(1));
+        assert_eq!(encoding.char_to_word(16), None);
+        assert_eq!(encoding.char_to_word(23), Some(3));
     }
 }
