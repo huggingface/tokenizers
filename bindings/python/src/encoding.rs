@@ -116,6 +116,10 @@ impl Encoding {
         self.encoding.char_to_token(char_pos)
     }
 
+    fn char_to_word(&self, char_pos: usize) -> Option<u32> {
+        self.encoding.char_to_word(char_pos)
+    }
+
     #[args(kwargs = "**")]
     fn pad(&mut self, length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut pad_id = 0;
