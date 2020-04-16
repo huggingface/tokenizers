@@ -251,7 +251,7 @@ pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
             }
             offsets.0 = std::cmp::min(offsets.0 + ld, offsets.1);
         }
-        if tl > 0 {
+        if tl > 0 && offsets.1 >= tl {
             offsets.1 = std::cmp::max(offsets.1 - tl, offsets.0);
         }
     });
@@ -411,13 +411,14 @@ mod tests {
             vec![],
             vec![],
             vec![
+                "Ġ".into(),
                 "ĠĠĠĠHelloĠĠ".into(),
                 "ĠĠHello".into(),
                 "HelloĠĠ".into(),
                 "ĠĠĠĠ".into(),
             ],
             vec![],
-            vec![(0, 11), (11, 18), (18, 25), (25, 29)],
+            vec![(0, 1), (0, 11), (11, 18), (18, 25), (25, 29)],
             vec![],
             vec![],
             vec![],
@@ -426,13 +427,14 @@ mod tests {
             vec![],
             vec![],
             vec![
+                "Ġ".into(),
                 "ĠĠĠĠHelloĠĠ".into(),
                 "ĠĠHello".into(),
                 "HelloĠĠ".into(),
                 "ĠĠĠĠ".into(),
             ],
             vec![],
-            vec![(4, 9), (13, 18), (18, 23), (29, 29)],
+            vec![(0, 0), (4, 9), (13, 18), (18, 23), (29, 29)],
             vec![],
             vec![],
             vec![],
