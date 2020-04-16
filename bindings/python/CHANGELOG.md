@@ -29,6 +29,7 @@ constructors.
 This avoids the unintuitive inclusion of the whitespaces in the produced offsets, even if these
 whitespaces are part of the actual token.
 It has been added to `ByteLevelBPETokenizer` but it is off by default (`trim_offsets=False`).
+- [#236]: `RobertaProcessing` also handles trimming the offsets.
 - More alignment mappings on the `Encoding`.
 - `post_process` can be called on the `Tokenizer`
 - [#208]: Ability to retrieve the vocabulary from the `Tokenizer` with
@@ -157,7 +158,9 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug with the IDs associated with added tokens.
 - Fix a bug that was causing crashes in Python 3.5
 
+[#236]: https://github.com/huggingface/tokenizers/pull/236
 [#208]: https://github.com/huggingface/tokenizers/pull/208
+[#205]: https://github.com/huggingface/tokenizers/issues/205
 [#197]: https://github.com/huggingface/tokenizers/pull/197
 [#193]: https://github.com/huggingface/tokenizers/pull/193
 [#190]: https://github.com/huggingface/tokenizers/pull/190

@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- [#236]: Fix a bug with offsets being shifted when there are sub-sequences (Usually with
+special tokens and/or added tokens in the sequence).
+
+### Changed
+- [#236]: `AddedToken` with special options like `rstrip` will keep the matched whitespaces
+in the textual representation of the token, exposed in `tokens` on the `Encoding`. The ID stays
+the same as usual. This fixes the offsets for said tokens.
+- [#236]: Offsets are now converted back to the original referential before we merge the
+sub-sequences together and then do the post-processing. This also fixes some offsets bugs.
+- [#236]: ByteLevel PostProcessor now uses the `add_prefix_space` attribute to determine how to
+trim offsets.
+
+### Added
+- [#236]: RobertaProcessing is now also taking care of trimming offsets, and works just as ByteLevel
+on this front.
+
+### How to migrate
+- Specify the `add_prefix_space` and `trim_offsets` options on `RobertaProcessing` if you don't
+want the offsets trimmed out.
+- Any custom `PostProcessor` now handles offsets relative to the original string (as opposed to the
+normalized one).
+
 ## [0.10.1]
 
 ### Fixed
@@ -71,6 +96,8 @@ split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
 [b770f36]: https://github.com/huggingface/tokenizers/commit/b770f364280af33efeffea8f0003102cda8cf1b7
+[#236]: https://github.com/huggingface/tokenizers/pull/236
+[#226]: https://github.com/huggingface/tokenizers/pull/226
 [#222]: https://github.com/huggingface/tokenizers/pull/222
 [#208]: https://github.com/huggingface/tokenizers/pull/208
 [#205]: https://github.com/huggingface/tokenizers/issues/205
