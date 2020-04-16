@@ -5,6 +5,35 @@ import { PaddingDirection } from "./enums";
  */
 export interface RawEncoding {
   /**
+   * Get the encoded tokens corresponding to the word at the given index in the input
+   * sequence, with the form [startToken, endToken+1]
+   * @param word The position of a word in the input sequence
+   * @since 0.7.0
+   */
+  wordToTokens(word: number): [number, number] | undefined;
+
+  /**
+   * Get the offsets of the word at the given index in the input sequence
+   * @param word The index of the word in the input sequence
+   * @since 0.7.0
+   */
+  wordToChars(word: number): [number, number] | undefined;
+
+  /**
+   * Get the offsets of the token at the given index
+   * @param token The index of the token in the encoded sequence
+   * @since 0.7.0
+   */
+  tokenToChars(token: number): [number, number] | undefined;
+
+  /**
+   * Get the word that contains the token at the given index
+   * @param token The index of the token  in the encoded sequence
+   * @since 0.7.0
+   */
+  tokenToWord(token: number): number | undefined;
+
+  /**
    * Find the index of the token at the position of the given char
    * @param pos The position of a char in the input string
    * @since 0.6.0
@@ -12,18 +41,11 @@ export interface RawEncoding {
   charToToken(pos: number): number | undefined;
 
   /**
-   * Find the offsets of the token that contains the character at the specified position
+   * Get the word that contains the given char
    * @param pos The position of a char in the input string
-   * @since 0.6.0
+   * @since 0.7.0
    */
-  charToTokenOffsets(pos: number): [number, number] | undefined;
-
-  /**
-   * Find the offsets of the word that contains the character at the specified position
-   * @param pos The position of a char in the input string
-   * @since 0.6.0
-   */
-  charToWordOffsets(pos: number): [number, number] | undefined;
+  charToWord(pos: number): number | undefined;
 
   /**
    * Returns the attention mask
@@ -78,13 +100,6 @@ export interface RawEncoding {
    * @param [options] Padding options
    */
   pad(length: number, options?: PaddingOptions): void;
-
-  /**
-   * Find the offsets of the word that contains the token at the given index
-   * @param index The index of a token
-   * @since 0.6.0
-   */
-  tokenToWordOffsets(index: number): [number, number] | undefined;
 
   /**
    * Truncate the current Encoding at the given max_length

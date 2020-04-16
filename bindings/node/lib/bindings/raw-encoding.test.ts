@@ -34,9 +34,12 @@ describe("RawEncoding", () => {
   });
 
   it("has a list of defined methods", async () => {
+    expect(typeof encoding.wordToTokens).toBe("function");
+    expect(typeof encoding.wordToChars).toBe("function");
+    expect(typeof encoding.tokenToChars).toBe("function");
+    expect(typeof encoding.tokenToWord).toBe("function");
     expect(typeof encoding.charToToken).toBe("function");
-    expect(typeof encoding.charToTokenOffsets).toBe("function");
-    expect(typeof encoding.charToWordOffsets).toBe("function");
+    expect(typeof encoding.charToWord).toBe("function");
     expect(typeof encoding.getAttentionMask).toBe("function");
     expect(typeof encoding.getIds).toBe("function");
     expect(typeof encoding.getLength).toBe("function");
@@ -47,7 +50,6 @@ describe("RawEncoding", () => {
     expect(typeof encoding.getTypeIds).toBe("function");
     expect(typeof encoding.getWords).toBe("function");
     expect(typeof encoding.pad).toBe("function");
-    expect(typeof encoding.tokenToWordOffsets).toBe("function");
     expect(typeof encoding.truncate).toBe("function");
   });
 
@@ -64,6 +66,54 @@ describe("RawEncoding", () => {
     });
   });
 
+  describe("wordToTokens", () => {
+    it("returns the correct indexes", () => {
+      const indexes = encoding.wordToTokens(3);
+      expect(indexes).toEqual([3, 5]);
+    });
+
+    it("returns undefined when out of range word", () => {
+      const index = encoding.wordToTokens(100);
+      expect(index).toBeUndefined();
+    });
+  });
+
+  describe("wordToChars", () => {
+    it("returns the correct offsets", () => {
+      const offsets = encoding.wordToChars(3);
+      expect(offsets).toEqual([11, 15]);
+    });
+
+    it("returns undefined when out of range word", () => {
+      const offsets = encoding.wordToChars(100);
+      expect(offsets).toBeUndefined();
+    });
+  });
+
+  describe("tokenToChars", () => {
+    it("returns the correct offsets", () => {
+      const offsets = encoding.tokenToChars(3);
+      expect(offsets).toEqual([11, 13]);
+    });
+
+    it("returns undefined when out of range token", () => {
+      const offsets = encoding.tokenToChars(100);
+      expect(offsets).toBeUndefined();
+    });
+  });
+
+  describe("tokenToWord", () => {
+    it("returns the correct index", () => {
+      const index = encoding.tokenToWord(3);
+      expect(index).toEqual(3);
+    });
+
+    it("returns undefined when out of range token", () => {
+      const index = encoding.tokenToWord(100);
+      expect(index).toBeUndefined();
+    });
+  });
+
   describe("charToToken", () => {
     it("returns the correct index", () => {
       const index = encoding.charToToken(3);
@@ -76,39 +126,15 @@ describe("RawEncoding", () => {
     });
   });
 
-  describe("charToTokenOffsets", () => {
-    it("returns the correct offset", () => {
-      const offset = encoding.charToTokenOffsets(11);
-      expect(offset).toEqual([11, 13]);
+  describe("charToWord", () => {
+    it("returns the correct index", () => {
+      const index = encoding.charToWord(3);
+      expect(index).toEqual(1);
     });
 
     it("returns undefined when out of range char", () => {
-      const offset = encoding.charToTokenOffsets(100);
-      expect(offset).toBeUndefined();
-    });
-  });
-
-  describe("charToWordOffsets", () => {
-    it("returns the correct offset", () => {
-      const offset = encoding.charToWordOffsets(11);
-      expect(offset).toEqual([11, 15]);
-    });
-
-    it("returns undefined when out of range char", () => {
-      const offset = encoding.charToWordOffsets(100);
-      expect(offset).toBeUndefined();
-    });
-  });
-
-  describe("tokenToWordOffsets", () => {
-    it("returns the correct offset", () => {
-      const offset = encoding.tokenToWordOffsets(3);
-      expect(offset).toEqual([11, 15]);
-    });
-
-    it("returns undefined when out of range char", () => {
-      const offset = encoding.tokenToWordOffsets(100);
-      expect(offset).toBeUndefined();
+      const index = encoding.charToWord(100);
+      expect(index).toBeUndefined();
     });
   });
 });

@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 special tokens and/or added tokens in the sequence).
 
 ### Changed
+- [#234]: Completely changed the alignement mappings available on `Encoding`. Previous mappings
+were misleading and only providing offsets. New ones provide methods to easily convert between
+`char` or `word` (input space) and `token` (output space)
 - [#236]: `AddedToken` with special options like `rstrip` will keep the matched whitespaces
 in the textual representation of the token, exposed in `tokens` on the `Encoding`. The ID stays
 the same as usual. This fixes the offsets for said tokens.
@@ -24,6 +27,7 @@ trim offsets.
 on this front.
 
 ### How to migrate
+- Replace any `XXX_to_YYY_offsets()` method call by any of the new ones.
 - Specify the `add_prefix_space` and `trim_offsets` options on `RobertaProcessing` if you don't
 want the offsets trimmed out.
 - Any custom `PostProcessor` now handles offsets relative to the original string (as opposed to the
@@ -97,6 +101,7 @@ split up in multiple bytes
 
 [b770f36]: https://github.com/huggingface/tokenizers/commit/b770f364280af33efeffea8f0003102cda8cf1b7
 [#236]: https://github.com/huggingface/tokenizers/pull/236
+[#234]: https://github.com/huggingface/tokenizers/pull/234
 [#226]: https://github.com/huggingface/tokenizers/pull/226
 [#222]: https://github.com/huggingface/tokenizers/pull/222
 [#208]: https://github.com/huggingface/tokenizers/pull/208
