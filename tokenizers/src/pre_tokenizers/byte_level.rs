@@ -226,12 +226,12 @@ pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
         .map(|token| {
             let leading_spaces = token
                 .chars()
-                .take_while(|c| *c == BYTES_CHAR[&b' '])
+                .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
                 .count();
             let trailing_spaces = token
                 .chars()
                 .rev()
-                .take_while(|c| *c == BYTES_CHAR[&b' '])
+                .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
                 .count();
             (leading_spaces, trailing_spaces)
         })
