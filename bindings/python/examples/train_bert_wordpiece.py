@@ -36,7 +36,7 @@ tokenizer = BertWordPieceTokenizer(
 )
 
 # And then train
-trainer = tokenizer.train(
+tokenizer.train(
     files,
     vocab_size=10000,
     min_frequency=2,
