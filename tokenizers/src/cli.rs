@@ -6,7 +6,7 @@ use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use std::io::{self, BufRead, Write};
 use tokenizers::models::bpe::BPE;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
-use tokenizers::tokenizer::{AddedToken, EncodeInput, Result, Tokenizer};
+use tokenizers::tokenizer::{AddedToken, Result, Tokenizer};
 
 fn shell(matches: &ArgMatches) -> Result<()> {
     let vocab = matches
@@ -39,7 +39,7 @@ fn shell(matches: &ArgMatches) -> Result<()> {
         let buffer = buffer.trim_end();
 
         let timer = std::time::Instant::now();
-        let encoded = tokenizer.encode(EncodeInput::Single(buffer.to_owned()), false)?;
+        let encoded = tokenizer.encode(buffer.to_owned(), false)?;
         let elapsed = timer.elapsed();
         println!("\nInput:\t\t{}", buffer);
         println!("Tokens:\t\t{:?}", encoded.get_tokens());

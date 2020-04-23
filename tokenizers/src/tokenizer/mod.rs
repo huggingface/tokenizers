@@ -120,8 +120,50 @@ impl Token {
 
 #[derive(Debug, Clone)]
 pub enum EncodeInput {
-    Single(String),
-    Dual(String, String),
+    Single(Vec<String>),
+    Dual(Vec<String>, Vec<String>),
+}
+
+impl From<String> for EncodeInput {
+    fn from(input: String) -> Self {
+        EncodeInput::Single(vec![input])
+    }
+}
+
+impl From<&str> for EncodeInput {
+    fn from(input: &str) -> Self {
+        EncodeInput::Single(vec![input.to_owned()])
+    }
+}
+
+impl From<Vec<String>> for EncodeInput {
+    fn from(input: Vec<String>) -> Self {
+        EncodeInput::Single(input)
+    }
+}
+
+impl From<&[String]> for EncodeInput {
+    fn from(input: &[String]) -> Self {
+        EncodeInput::Single(input.to_vec())
+    }
+}
+
+impl From<(String, String)> for EncodeInput {
+    fn from(input: (String, String)) -> Self {
+        EncodeInput::Dual(vec![input.0], vec![input.1])
+    }
+}
+
+impl From<(&str, &str)> for EncodeInput {
+    fn from(input: (&str, &str)) -> Self {
+        EncodeInput::Dual(vec![input.0.to_owned()], vec![input.1.to_owned()])
+    }
+}
+
+impl From<(Vec<String>, Vec<String>)> for EncodeInput {
+    fn from(input: (Vec<String>, Vec<String>)) -> Self {
+        EncodeInput::Dual(input.0, input.1)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -413,8 +455,30 @@ impl Tokenizer {
         Ok(normalized)
     }
 
-    /// Encode the given sentence
-    pub fn encode(&self, input: EncodeInput, add_special_tokens: bool) -> Result<Encoding> {
+    /// Encode the given input. This method accepts both single sequences, as well as pair
+    /// sequences. Also, a sequence can be a string, or already pre-tokenized input directly:
+    ///
+    /// ```
+    /// # use tokenizers::Tokenizer;
+    /// # use tokenizers::models::bpe::BPE;
+    /// # let tokenizer = Tokenizer::new(Box::new(BPE::default()));
+    /// #
+    /// // Sequences:
+    /// tokenizer.encode("Single sequence", false);
+    /// tokenizer.encode(("Sequence A", "Sequence B"), false);
+    ///
+    /// // Pre-tokenized sequences:
+    /// tokenizer.encode(vec![String::from("Single"), String::from("sequence")], false);
+    /// tokenizer.encode((
+    ///     vec![String::from("Sequence"), String::from("A")],
+    ///     vec![String::from("Sequence"), String::from("B")]
+    /// ), false);
+    /// ```
+    pub fn encode<E: Into<EncodeInput>>(
+        &self,
+        input: E,
+        add_special_tokens: bool,
+    ) -> Result<Encoding> {
         let generate_output = move |sentence: String, type_id: u32| -> Result<Encoding> {
             // First we need to split into as many sequences as needed to avoid splitting
             // on our added tokens
@@ -458,9 +522,9 @@ impl Tokenizer {
             }
 
             let mut final_encoding = Encoding::default();
-            let mut final_normalized = NormalizedString::default();
+            //let mut final_normalized = NormalizedString::default();
 
-            let mut offset = final_normalized.len_original();
+            let mut offset = 0; //final_normalized.len_original();
             for (mut encoding, normalized) in encodings.into_iter().zip(normalized) {
                 encoding
                     .get_offsets_mut()
@@ -478,22 +542,23 @@ impl Tokenizer {
                 offset += normalized.len_original();
 
                 final_encoding.merge_with(encoding, false);
-                final_normalized.merge_with(&normalized);
+                //final_normalized.merge_with(&normalized);
             }
 
             Ok(final_encoding)
         };
 
-        let (sentence, pair) = match input {
+        let (sentence, pair) = match input.into() {
             EncodeInput::Single(s1) => (s1, None),
             EncodeInput::Dual(s1, s2) => (s1, Some(s2)),
         };
 
-        let encoding = generate_output(sentence, 0)?;
-        let pair_encoding = match pair {
-            Some(pair) => Some(generate_output(pair, 1)?),
-            None => None,
-        };
+        let encoding = generate_output(sentence[0].to_owned(), 0)?;
+        let pair_encoding = None;
+        // match pair {
+        //     Some(pair) => Some(generate_output(pair, 1)?),
+        //     None => None,
+        // };
 
         // 4. Post processing
         self.post_process(encoding, pair_encoding, add_special_tokens)
