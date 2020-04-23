@@ -119,50 +119,56 @@ impl Token {
 }
 
 #[derive(Debug, Clone)]
-pub enum EncodeInput {
-    Single(Vec<String>),
-    Dual(Vec<String>, Vec<String>),
+pub enum InputSequence {
+    Raw(String),
+    PreTokenized(Vec<String>),
 }
 
-impl From<String> for EncodeInput {
+impl From<String> for InputSequence {
     fn from(input: String) -> Self {
-        EncodeInput::Single(vec![input])
+        InputSequence::Raw(input)
     }
 }
 
-impl From<&str> for EncodeInput {
+impl From<&str> for InputSequence {
     fn from(input: &str) -> Self {
-        EncodeInput::Single(vec![input.to_owned()])
+        InputSequence::Raw(input.to_owned())
     }
 }
 
-impl From<Vec<String>> for EncodeInput {
+impl From<Vec<String>> for InputSequence {
     fn from(input: Vec<String>) -> Self {
-        EncodeInput::Single(input)
+        InputSequence::PreTokenized(input)
     }
 }
 
-impl From<&[String]> for EncodeInput {
+impl From<&[String]> for InputSequence {
     fn from(input: &[String]) -> Self {
-        EncodeInput::Single(input.to_vec())
+        InputSequence::PreTokenized(input.to_vec())
     }
 }
 
-impl From<(String, String)> for EncodeInput {
-    fn from(input: (String, String)) -> Self {
-        EncodeInput::Dual(vec![input.0], vec![input.1])
+impl From<&[&str]> for InputSequence {
+    fn from(input: &[&str]) -> Self {
+        InputSequence::PreTokenized(input.iter().map(|&i| i.to_string()).collect())
     }
 }
 
-impl From<(&str, &str)> for EncodeInput {
-    fn from(input: (&str, &str)) -> Self {
-        EncodeInput::Dual(vec![input.0.to_owned()], vec![input.1.to_owned()])
+#[derive(Debug, Clone)]
+pub enum EncodeInput {
+    Single(InputSequence),
+    Dual(InputSequence, InputSequence),
+}
+
+impl<I: Into<InputSequence>> From<I> for EncodeInput {
+    fn from(input: I) -> Self {
+        EncodeInput::Single(input.into())
     }
 }
 
-impl From<(Vec<String>, Vec<String>)> for EncodeInput {
-    fn from(input: (Vec<String>, Vec<String>)) -> Self {
-        EncodeInput::Dual(input.0, input.1)
+impl<I1: Into<InputSequence>, I2: Into<InputSequence>> From<(I1, I2)> for EncodeInput {
+    fn from(input: (I1, I2)) -> Self {
+        EncodeInput::Dual(input.0.into(), input.1.into())
     }
 }
 
