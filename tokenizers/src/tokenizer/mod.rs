@@ -591,9 +591,9 @@ impl Tokenizer {
     }
 
     /// Encode all the sentences in parallel, using multiple threads
-    pub fn encode_batch(
+    pub fn encode_batch<E: Into<EncodeInput> + Send>(
         &self,
-        inputs: Vec<EncodeInput>,
+        inputs: Vec<E>,
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>> {
         let encodings = inputs
