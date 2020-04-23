@@ -531,20 +531,7 @@ impl Tokenizer {
             sequence_encodings.push(final_encoding);
         }
 
-        // For pre-tokenized inputs, we want to keep the word indexes that we initially received
-        if pre_tokenized {
-            sequence_encodings
-                .iter_mut()
-                .enumerate()
-                .for_each(|(i, encoding)| {
-                    encoding
-                        .get_words_mut()
-                        .iter_mut()
-                        .for_each(|w| *w = Some(i as u32))
-                });
-        }
-
-        Ok(Encoding::merge(&sequence_encodings, true))
+        Ok(Encoding::merge(&sequence_encodings, !pre_tokenized))
     }
 
     /// Encode the given input. This method accepts both single sequences, as well as pair
@@ -565,6 +552,7 @@ impl Tokenizer {
     ///     &["Sequence", "A"][..],
     ///     &["Sequence", "B"][..]
     /// ), false);
+    ///
     /// // or even both types together:
     /// tokenizer.encode(("A complete sequence", &["And", "a", "tokenized"][..]), false);
     /// ```
