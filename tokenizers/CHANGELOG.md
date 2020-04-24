@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Improved `TruncationError` to handle cases where provided max length is too low.
+
 ### Fixed
 - [#236]: Fix a bug with offsets being shifted when there are sub-sequences (Usually with
 special tokens and/or added tokens in the sequence).
