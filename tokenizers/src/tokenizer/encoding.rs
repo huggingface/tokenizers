@@ -76,6 +76,14 @@ impl Encoding {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.ids.len()
+    }
+
     pub fn get_tokens(&self) -> &[String] {
         &self.tokens[..]
     }
