@@ -15,6 +15,8 @@ from .implementations import (
 from typing import Optional, Union, List, Tuple
 
 Offsets = Tuple[int, int]
+InputSequence = Union[str, List[str]]
+EncodeInput = Union[InputSequence, Tuple[InputSequence, InputSequence]]
 
 class Encoding:
     """ An Encoding as returned by the Tokenizer """
@@ -369,37 +371,43 @@ class Tokenizer:
             The normalized string
         """
         pass
-    def encode(
-        self, sequence: str, pair: Optional[str] = None, add_special_tokens: bool = True
-    ) -> Encoding:
-        """ Encode the given sequence
+    def encode(self, input: EncodeInput, add_special_tokens: bool = True) -> Encoding:
+        """ Encode the given input. This method accept both string sequences and already
+        pre-tokenized sequences.
 
         Args:
-            sequence: str:
-                The sequence to encode
-
-            pair: (`optional`) Optional[str]:
-                The optional pair sequence
+            input: EncodeInput:
+                This content to encode. This can be either:
+                    - A single sequence: InputSequence
+                    - A pair of sequences: Tuple[InputSequence, InputSequence]
+                And a InputSequence can be either:
+                    - A string: str
+                    - A pre-tokenized string: List[str]
 
             add_special_tokens: bool:
-                Whether to add the special tokens while encoding
+                Whether to add the special tokens while encoding.
 
         Returns:
             An Encoding
         """
         pass
     def encode_batch(
-        self, sequences: List[Union[str, Tuple[str, str]]], add_special_tokens: bool = True
+        self, inputs: List[EncodeInput], add_special_tokens: bool = True
     ) -> List[Encoding]:
-        """ Encode the given sequences or pair of sequences
+        """ Encode the given inputs. This method accept both string sequences and already
+        pre-tokenized sequences.
 
         Args:
-            sequences: List[Union[str, Tuple[str, str]]]:
-                A list of sequences or pair of sequences. The list can contain both
-                at the same time.
+            inputs: List[EncodeInput]:
+                A list of inputs to encode. Each input can be either:
+                    - A single sequence: InputSequence
+                    - A pair of sequences: Tuple[InputSequence, InputSequence]
+                And a InputSequence can be either:
+                    - A string: str
+                    - A pre-tokenized string: List[str]
 
             add_special_tokens: bool:
-                Whether to add the special tokens while encoding
+                Whether to add the special tokens while encoding.
 
         Returns:
             A list of Encoding
