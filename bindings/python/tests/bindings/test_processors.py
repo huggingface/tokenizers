@@ -19,7 +19,7 @@ class TestBertProcessing:
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.post_processor = BertProcessing(("[SEP]", 0), ("[CLS]", 1))
 
-        output = tokenizer.encode("my name", "pair")
+        output = tokenizer.encode(("my name", "pair"))
         assert output.tokens == ["[CLS]", "my", "name", "[SEP]", "pair", "[SEP]"]
         assert output.ids == [1, 2, 3, 0, 6, 0]
 
@@ -37,7 +37,7 @@ class TestRobertaProcessing:
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.post_processor = RobertaProcessing(("</s>", 1), ("<s>", 0))
 
-        output = tokenizer.encode("my name", "pair")
+        output = tokenizer.encode(("my name", "pair"))
         assert output.tokens == ["<s>", "my", "name", "</s>", "</s>", "pair", "</s>"]
         assert output.ids == [0, 2, 3, 1, 1, 6, 1]
 

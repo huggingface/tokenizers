@@ -102,8 +102,12 @@ class TestTokenizer:
         assert type(output.overflowing) == list
 
         # Can encode a pair of sequences
-        output = tokenizer.encode("my name is john", "pair")
+        output = tokenizer.encode(("my name is john", "pair"))
         assert output.tokens == ["my", "name", "is", "john", "pair"]
+
+        # Can encode a single pre-tokenized sequence
+        output = tokenizer.encode(["my", "name", "is", "john"])
+        assert output.tokens == ["my", "name", "is", "john"]
 
         # Can encode a batch with both a single sequence and a pair of sequences
         output = tokenizer.encode_batch(["my name is john", ("my name is john", "pair")])
@@ -136,7 +140,7 @@ class TestTokenizer:
         assert output.tokens == ["my", "name"]
 
         # Can truncate pair sequences as well
-        output = tokenizer.encode("my name is john", "pair")
+        output = tokenizer.encode(("my name is john", "pair"))
         assert output.tokens == ["my", "pair"]
 
     def test_padding(self):
@@ -156,7 +160,7 @@ class TestTokenizer:
         tokenizer.enable_padding(max_length=4)
         output = tokenizer.encode("my name")
         assert output.tokens == ["my", "name", "[PAD]", "[PAD]"]
-        output = tokenizer.encode("my name", "pair")
+        output = tokenizer.encode(("my name", "pair"))
         assert output.tokens == ["my", "name", "pair", "[PAD]"]
 
     def test_decode(self):
