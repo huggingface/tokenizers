@@ -1,6 +1,7 @@
 .DS_Store
 *~
 
+.vim
 .env
 target
 
