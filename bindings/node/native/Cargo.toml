@@ -14,6 +14,9 @@ crate-type = ["cdylib"]
 neon-build = "0.3.3"
 
 [dependencies]
-neon = "0.3.3"
-rayon = "1.2.0"
+neon = "0.3"
+neon-runtime = "0.3"
+neon-serde = "0.3"
+serde = "1.0"
+serde_derive = "1.0"
 tokenizers = { path = "../../../tokenizers" }

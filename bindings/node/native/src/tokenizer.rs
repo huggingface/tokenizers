@@ -7,9 +7,10 @@ use crate::models::JsModel;
 use crate::normalizers::JsNormalizer;
 use crate::pre_tokenizers::JsPreTokenizer;
 use crate::processors::JsPostProcessor;
-use crate::tasks::tokenizer::{DecodeTask, EncodeTask, EncodeTokenizedTask, WorkingTokenizer};
+use crate::tasks::tokenizer::{DecodeTask, EncodeTask, WorkingTokenizer};
 use crate::trainers::JsTrainer;
 use neon::prelude::*;
+use serde::de::DeserializeOwned;
 
 use tk::tokenizer::{
     PaddingDirection, PaddingParams, PaddingStrategy, TruncationParams, TruncationStrategy,
@@ -65,6 +66,190 @@ declare_types! {
             };
 
             Ok(cx.string(content).upcast())
+        }
+    }
+}
+
+pub struct Error(String);
+impl<T> From<T> for Error
+where
+    T: std::fmt::Display,
+{
+    fn from(e: T) -> Self {
+        Self(format!("{}", e))
+    }
+}
+impl From<Error> for neon::result::Throw {
+    fn from(err: Error) -> Self {
+        let msg = err.0;
+        unsafe {
+            neon_runtime::error::throw_error_from_utf8(msg.as_ptr(), msg.len() as i32);
+            neon::result::Throw
+        }
+    }
+}
+
+pub type LibResult<T> = std::result::Result<T, Error>;
+
+trait FromJsValue: Sized {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self>;
+}
+
+impl<T> FromJsValue for T
+where
+    T: DeserializeOwned,
+{
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
+        let val: T = neon_serde::from_value(cx, from)?;
+        Ok(val)
+    }
+}
+
+trait Extract {
+    fn extract<T: FromJsValue>(&mut self, pos: i32) -> LibResult<T>;
+    fn extract_opt<T: FromJsValue>(&mut self, pos: i32) -> LibResult<Option<T>>;
+    fn extract_vec<T: FromJsValue>(&mut self, pos: i32) -> LibResult<Vec<T>>;
+    fn extract_vec_opt<T: FromJsValue>(&mut self, pos: i32) -> LibResult<Option<Vec<T>>>;
+}
+
+impl<'c, T: neon::object::This> Extract for CallContext<'c, T> {
+    fn extract<E: FromJsValue>(&mut self, pos: i32) -> LibResult<E> {
+        let val = self
+            .argument_opt(pos)
+            .ok_or_else(|| Error(format!("Argument {} is missing", pos)))?;
+        let ext = E::from_value(val, self)?;
+        Ok(ext)
+    }
+
+    fn extract_opt<E: FromJsValue>(&mut self, pos: i32) -> LibResult<Option<E>> {
+        let val = self.argument_opt(pos);
+        match val {
+            None => Ok(None),
+            Some(v) => {
+                // For any optional value, we accept both `undefined` and `null`
+                if v.downcast::<JsNull>().is_ok() || v.downcast::<JsUndefined>().is_ok() {
+                    Ok(None)
+                } else {
+                    Ok(Some(E::from_value(v, self)?))
+                }
+            }
+        }
+    }
+
+    fn extract_vec<E: FromJsValue>(&mut self, pos: i32) -> LibResult<Vec<E>> {
+        let vec = self
+            .argument_opt(pos)
+            .ok_or_else(|| Error(format!("Argument {} is missing", pos)))?
+            .downcast::<JsArray>()?
+            .to_vec(self)?;
+
+        vec.into_iter().map(|v| E::from_value(v, self)).collect()
+    }
+
+    fn extract_vec_opt<E: FromJsValue>(&mut self, pos: i32) -> LibResult<Option<Vec<E>>> {
+        self.argument_opt(pos)
+            .map(|v| {
+                let vec = v.downcast::<JsArray>()?.to_vec(self)?;
+                Ok(vec
+                    .into_iter()
+                    .map(|v| E::from_value(v, self))
+                    .collect::<LibResult<Vec<_>>>()?)
+            })
+            .map_or(Ok(None), |v| v.map(Some))
+    }
+}
+
+struct TextInputSequence(tk::InputSequence);
+struct PreTokenizedInputSequence(tk::InputSequence);
+impl FromJsValue for PreTokenizedInputSequence {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
+        let sequence = from
+            .downcast::<JsArray>()?
+            .to_vec(cx)?
+            .into_iter()
+            .map(|v| Ok(v.downcast::<JsString>()?.value()))
+            .collect::<LibResult<Vec<_>>>()?;
+        Ok(Self(sequence.into()))
+    }
+}
+impl From<PreTokenizedInputSequence> for tk::InputSequence {
+    fn from(v: PreTokenizedInputSequence) -> Self {
+        v.0
+    }
+}
+impl FromJsValue for TextInputSequence {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, _cx: &mut C) -> LibResult<Self> {
+        Ok(Self(from.downcast::<JsString>()?.value().into()))
+    }
+}
+impl From<TextInputSequence> for tk::InputSequence {
+    fn from(v: TextInputSequence) -> Self {
+        v.0
+    }
+}
+
+struct TextEncodeInput(tk::EncodeInput);
+struct PreTokenizedEncodeInput(tk::EncodeInput);
+impl FromJsValue for PreTokenizedEncodeInput {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
+        // If array is of size 2, and the first element is also an array, we'll parse a pair
+        let array = from.downcast::<JsArray>()?;
+        let is_pair = array.len() == 2
+            && array
+                .get(cx, 0)
+                .map_or(false, |a| a.downcast::<JsArray>().is_ok());
+
+        if is_pair {
+            let first_seq: tk::InputSequence =
+                PreTokenizedInputSequence::from_value(array.get(cx, 0)?, cx)?.into();
+            let pair_seq: tk::InputSequence =
+                PreTokenizedInputSequence::from_value(array.get(cx, 1)?, cx)?.into();
+            Ok(Self((first_seq, pair_seq).into()))
+        } else {
+            Ok(Self(
+                PreTokenizedInputSequence::from_value(from, cx)?.into(),
+            ))
+        }
+    }
+}
+impl From<PreTokenizedEncodeInput> for tk::EncodeInput {
+    fn from(v: PreTokenizedEncodeInput) -> Self {
+        v.0
+    }
+}
+impl FromJsValue for TextEncodeInput {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
+        // If we get an array, it's a pair of sequences
+        if let Ok(array) = from.downcast::<JsArray>() {
+            let first_seq: tk::InputSequence =
+                TextInputSequence::from_value(array.get(cx, 0)?, cx)?.into();
+            let pair_seq: tk::InputSequence =
+                TextInputSequence::from_value(array.get(cx, 1)?, cx)?.into();
+            Ok(Self((first_seq, pair_seq).into()))
+        } else {
+            Ok(Self(TextInputSequence::from_value(from, cx)?.into()))
+        }
+    }
+}
+impl From<TextEncodeInput> for tk::EncodeInput {
+    fn from(v: TextEncodeInput) -> Self {
+        v.0
+    }
+}
+
+#[allow(non_snake_case)]
+#[derive(Debug, Serialize, Deserialize)]
+struct EncodeOptions {
+    #[serde(default)]
+    isPretokenized: bool,
+    #[serde(default)]
+    addSpecialTokens: bool,
+}
+impl Default for EncodeOptions {
+    fn default() -> Self {
+        Self {
+            isPretokenized: false,
+            addSpecialTokens: true,
         }
     }
 }
@@ -184,28 +369,47 @@ declare_types! {
         }
 
         method encode(mut cx) {
+            // type InputSequence = string | string[];
             // encode(
-            //   sentence: String,
-            //   pair: String | null,
-            //   add_special_tokens: boolean,
+            //   sentence: InputSequence,
+            //   pair?: InputSequence,
+            //   options?: {
+            //     addSpecialTokens?: boolean,
+            //     isPretokenized?: boolean,
+            //   } | (err, encoding) -> void,
             //   __callback: (err, encoding) -> void
             // )
-            let sentence = cx.argument::<JsString>(0)?.value();
-            let mut pair: Option<String> = None;
-            if let Some(args) = cx.argument_opt(1) {
-                if let Ok(p) = args.downcast::<JsString>() {
-                    pair = Some(p.value());
-                } else if args.downcast::<JsNull>().is_err() {
-                    return cx.throw_error("Second arg must be of type `String | null`");
-                }
-            }
-            let add_special_tokens = cx.argument::<JsBoolean>(2)?.value();
-            let callback = cx.argument::<JsFunction>(3)?;
 
-            let input = if let Some(pair) = pair {
-                tk::tokenizer::EncodeInput::Dual(sentence, pair)
+            // Start by extracting options and callback
+            let (options, callback) = match cx.extract_opt::<EncodeOptions>(2) {
+                // Options were there, and extracted
+                Ok(Some(options)) => {
+                    (options, cx.argument::<JsFunction>(3)?)
+                },
+                // Options were undefined or null
+                Ok(None) => {
+                    (EncodeOptions::default(), cx.argument::<JsFunction>(3)?)
+                }
+                // Options not specified, callback instead
+                Err(_) => {
+                    (EncodeOptions::default(), cx.argument::<JsFunction>(2)?)
+                }
+            };
+
+            // Then we extract our input sequences
+            let sentence: tk::InputSequence = if options.isPretokenized {
+                cx.extract::<PreTokenizedInputSequence>(0)?.into()
             } else {
-                tk::tokenizer::EncodeInput::Single(sentence)
+                cx.extract::<TextInputSequence>(0)?.into()
+            };
+            let pair: Option<tk::InputSequence> = if options.isPretokenized {
+                cx.extract_opt::<PreTokenizedInputSequence>(1)?.map(|v| v.into())
+            } else {
+                cx.extract_opt::<TextInputSequence>(1)?.map(|v| v.into())
+            };
+            let input: tk::EncodeInput = match pair {
+                Some(pair) => (sentence, pair).into(),
+                None => sentence.into()
             };
 
             let worker = {
@@ -215,211 +419,46 @@ declare_types! {
                 worker
             };
 
-            let task = EncodeTask::Single(worker, Some(input), add_special_tokens);
+            let task = EncodeTask::Single(worker, Some(input), options.addSpecialTokens);
             task.schedule(callback);
             Ok(cx.undefined().upcast())
         }
 
         method encodeBatch(mut cx) {
-            // type EncodeInput = (String | [String, String])[]
+            // type InputSequence = string | string[];
+            // type EncodeInput = (InputSequence | [InputSequence, InputSequence])[]
             // encode_batch(
-            //   sentences: EncodeInput[],
-            //   add_special_tokens: boolean,
+            //   inputs: EncodeInput[],
+            //   options?: {
+            //     addSpecialTokens?: boolean,
+            //     isPretokenized?: boolean,
+            //   } | (err, encodings) -> void,
             //   __callback: (err, encodings) -> void
             // )
-            let inputs = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
-            let inputs = inputs.into_iter().map(|value| {
-                if let Ok(s) = value.downcast::<JsString>() {
-                    Ok(tk::tokenizer::EncodeInput::Single(s.value()))
-                } else if let Ok(arr) = value.downcast::<JsArray>() {
-                    if arr.len() != 2 {
-                        cx.throw_error("Input must be an array of `String | [String, String]`")
-                    } else {
-                        Ok(tk::tokenizer::EncodeInput::Dual(
-                            arr.get(&mut cx, 0)?
-                                .downcast::<JsString>()
-                                .or_throw(&mut cx)?
-                                .value(),
-                            arr.get(&mut cx, 1)?
-                                .downcast::<JsString>()
-                                .or_throw(&mut cx)?
-                                .value())
-                        )
-                    }
-                } else {
-                    cx.throw_error("Input must be an array of `String | [String, String]`")
-                }
-            }).collect::<NeonResult<Vec<_>>>()?;
-            let add_special_tokens = cx.argument::<JsBoolean>(1)?.value();
-            let callback = cx.argument::<JsFunction>(2)?;
 
-            let worker = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let worker = this.borrow(&guard).prepare_for_task();
-                worker
-            };
-
-            let task = EncodeTask::Batch(worker, Some(inputs), add_special_tokens);
-            task.schedule(callback);
-            Ok(cx.undefined().upcast())
-        }
-
-        method encodeTokenized(mut cx) {
-            /// encodeTokenized(
-            ///   sequence: (String | [String, [number, number]])[],
-            ///   typeId?: number = 0,
-            ///   callback: (err, Encoding)
-            /// )
-
-            let sequence = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
-
-            let type_arg = cx.argument::<JsValue>(1)?;
-            let type_id = if type_arg.downcast::<JsUndefined>().is_err() {
-                type_arg.downcast_or_throw::<JsNumber, _>(&mut cx)?.value() as u32
-            } else {
-                0
-            };
-
-            enum Mode {
-                NoOffsets,
-                Offsets,
-            };
-            let mode  = sequence.iter().next().map(|item| {
-                if item.downcast::<JsString>().is_ok() {
-                    Ok(Mode::NoOffsets)
-                } else if item.downcast::<JsArray>().is_ok() {
-                    Ok(Mode::Offsets)
-                } else {
-                    Err("Input must be (String | [String, [number, number]])[]")
-                }
-            })
-            .unwrap()
-            .map_err(|e| cx.throw_error::<_, ()>(e.to_string()).unwrap_err())?;
-
-            let mut total_len = 0;
-            let sequence = sequence.iter().map(|item| match mode {
-                Mode::NoOffsets => {
-                    let s = item.downcast::<JsString>().or_throw(&mut cx)?.value();
-                    let len = s.chars().count();
-                    total_len += len;
-                    Ok((s, (total_len - len, total_len)))
+            // Start by extracting options and callback
+            let (options, callback) = match cx.extract_opt::<EncodeOptions>(1) {
+                // Options were there, and extracted
+                Ok(Some(options)) => {
+                    (options, cx.argument::<JsFunction>(2)?)
                 },
-                Mode::Offsets => {
-                    let tuple = item.downcast::<JsArray>().or_throw(&mut cx)?;
-                    let s = tuple.get(&mut cx, 0)?
-                        .downcast::<JsString>()
-                        .or_throw(&mut cx)?
-                        .value();
-                    let offsets = tuple.get(&mut cx, 1)?
-                        .downcast::<JsArray>()
-                        .or_throw(&mut cx)?;
-                    let (start, end) = (
-                        offsets.get(&mut cx, 0)?
-                            .downcast::<JsNumber>()
-                            .or_throw(&mut cx)?
-                            .value() as usize,
-                        offsets.get(&mut cx, 1)?
-                            .downcast::<JsNumber>().
-                            or_throw(&mut cx)?
-                            .value() as usize,
-                    );
-                    Ok((s, (start, end)))
+                // Options were undefined or null
+                Ok(None) => {
+                    (EncodeOptions::default(), cx.argument::<JsFunction>(2)?)
                 }
-            }).collect::<Result<Vec<_>, _>>()?;
-            let callback = cx.argument::<JsFunction>(2)?;
-
-            let worker = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let worker = this.borrow(&guard).prepare_for_task();
-                worker
+                // Options not specified, callback instead
+                Err(_) => {
+                    (EncodeOptions::default(), cx.argument::<JsFunction>(1)?)
+                }
             };
 
-            let task = EncodeTokenizedTask::Single(worker, Some(sequence), type_id);
-            task.schedule(callback);
-            Ok(cx.undefined().upcast())
-        }
-
-        method encodeTokenizedBatch(mut cx) {
-            /// encodeTokenizedBatch(
-            ///   sequences: (String | [String, [number, number]])[][],
-            ///   typeId?: number = 0,
-            ///   callback: (err, Encoding)
-            /// )
-
-            let sequences = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
-
-            let type_arg = cx.argument::<JsValue>(1)?;
-            let type_id = if type_arg.downcast::<JsUndefined>().is_err() {
-                type_arg.downcast_or_throw::<JsNumber, _>(&mut cx)?.value() as u32
+            let inputs: Vec<tk::EncodeInput> = if options.isPretokenized {
+                cx.extract_vec::<PreTokenizedEncodeInput>(0)?
+                    .into_iter().map(|v| v.into()).collect()
             } else {
-                0
+                cx.extract_vec::<TextEncodeInput>(0)?
+                    .into_iter().map(|v| v.into()).collect()
             };
-
-            enum Mode {
-                NoOffsets,
-                Offsets,
-            };
-            let mode  = sequences.iter().next().map(|sequence| {
-                if let Ok(sequence) = sequence.downcast::<JsArray>().or_throw(&mut cx) {
-                    sequence.to_vec(&mut cx).ok().map(|s| s.iter().next().map(|item| {
-                        if item.downcast::<JsString>().is_ok() {
-                            Some(Mode::NoOffsets)
-                        } else if item.downcast::<JsArray>().is_ok() {
-                            Some(Mode::Offsets)
-                        } else {
-                            None
-                        }
-                    }).flatten()).flatten()
-                } else {
-                    None
-                }
-            })
-            .flatten()
-            .ok_or_else(||
-                cx.throw_error::<_, ()>(
-                    "Input must be (String | [String, [number, number]])[]"
-                ).unwrap_err()
-            )?;
-
-            let sequences = sequences.into_iter().map(|sequence| {
-                let mut total_len = 0;
-                sequence.downcast::<JsArray>().or_throw(&mut cx)?
-                    .to_vec(&mut cx)?
-                    .into_iter()
-                    .map(|item| match mode {
-                        Mode::NoOffsets => {
-                            let s = item.downcast::<JsString>().or_throw(&mut cx)?.value();
-                            let len = s.chars().count();
-                            total_len += len;
-                            Ok((s, (total_len - len, total_len)))
-                        },
-                        Mode::Offsets => {
-                            let tuple = item.downcast::<JsArray>().or_throw(&mut cx)?;
-                            let s = tuple.get(&mut cx, 0)?
-                                .downcast::<JsString>()
-                                .or_throw(&mut cx)?
-                                .value();
-                            let offsets = tuple.get(&mut cx, 1)?
-                                .downcast::<JsArray>()
-                                .or_throw(&mut cx)?;
-                            let (start, end) = (
-                                offsets.get(&mut cx, 0)?
-                                    .downcast::<JsNumber>()
-                                    .or_throw(&mut cx)?
-                                    .value() as usize,
-                                offsets.get(&mut cx, 1)?
-                                    .downcast::<JsNumber>().
-                                    or_throw(&mut cx)?
-                                    .value() as usize,
-                            );
-                            Ok((s, (start, end)))
-                        }
-                    }).collect::<Result<Vec<_>, _>>()
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let callback = cx.argument::<JsFunction>(2)?;
 
             let worker = {
                 let this = cx.this();
@@ -428,7 +467,7 @@ declare_types! {
                 worker
             };
 
-            let task = EncodeTokenizedTask::Batch(worker, Some(sequences), type_id);
+            let task = EncodeTask::Batch(worker, Some(inputs), options.addSpecialTokens);
             task.schedule(callback);
             Ok(cx.undefined().upcast())
         }

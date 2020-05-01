@@ -2,7 +2,6 @@ extern crate tokenizers as tk;
 
 use crate::encoding::*;
 use neon::prelude::*;
-use rayon::prelude::*;
 use tk::tokenizer::{EncodeInput, Encoding, Tokenizer};
 
 pub struct WorkingTokenizer {
@@ -40,7 +39,8 @@ impl Task for EncodeTask {
     fn perform(&self) -> Result<Self::Output, Self::Error> {
         match self {
             EncodeTask::Single(worker, input, add_special_tokens) => {
-                let mut input = unsafe { std::ptr::replace(input as *const _ as *mut _, None) };
+                let mut input: Option<EncodeInput> =
+                    unsafe { std::ptr::replace(input as *const _ as *mut _, None) };
                 let tokenizer: &Tokenizer = unsafe { &*worker.ptr };
                 tokenizer
                     .encode(
@@ -51,7 +51,8 @@ impl Task for EncodeTask {
                     .map(|encoding| EncodeOutput::Single(encoding))
             }
             EncodeTask::Batch(worker, input, add_special_tokens) => {
-                let mut input = unsafe { std::ptr::replace(input as *const _ as *mut _, None) };
+                let mut input: Option<Vec<EncodeInput>> =
+                    unsafe { std::ptr::replace(input as *const _ as *mut _, None) };
                 let tokenizer: &Tokenizer = unsafe { &*worker.ptr };
                 tokenizer
                     .encode_batch(
@@ -82,97 +83,6 @@ impl Task for EncodeTask {
                 Ok(js_encoding.upcast())
             }
             EncodeOutput::Batch(encodings) => {
-                let result = JsArray::new(&mut cx, encodings.len() as u32);
-                for (i, encoding) in encodings.into_iter().enumerate() {
-                    let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
-
-                    // Set the actual encoding
-                    let guard = cx.lock();
-                    js_encoding
-                        .borrow_mut(&guard)
-                        .encoding
-                        .to_owned(Box::new(encoding));
-
-                    result.set(&mut cx, i as u32, js_encoding)?;
-                }
-                Ok(result.upcast())
-            }
-        }
-    }
-}
-
-pub enum EncodeTokenizedTask {
-    Single(WorkingTokenizer, Option<Vec<(String, (usize, usize))>>, u32),
-    Batch(
-        WorkingTokenizer,
-        Option<Vec<Vec<(String, (usize, usize))>>>,
-        u32,
-    ),
-}
-
-pub enum EncodeTokenizedOutput {
-    Single(Encoding),
-    Batch(Vec<Encoding>),
-}
-
-impl Task for EncodeTokenizedTask {
-    type Output = EncodeTokenizedOutput;
-    type Error = String;
-    type JsEvent = JsValue;
-
-    fn perform(&self) -> Result<Self::Output, Self::Error> {
-        match self {
-            EncodeTokenizedTask::Single(worker, input, type_id) => {
-                let input = unsafe { std::ptr::replace(input as *const _ as *mut _, None) };
-                let tokenizer: &Tokenizer = unsafe { &*worker.ptr };
-
-                tokenizer
-                    .get_model()
-                    .tokenize(input.unwrap())
-                    .map_err(|e| format!("{}", e))
-                    .map(|tokens| {
-                        EncodeTokenizedOutput::Single(Encoding::from_tokens(tokens, *type_id))
-                    })
-            }
-            EncodeTokenizedTask::Batch(worker, input, type_id) => {
-                let input: Option<Vec<_>> =
-                    unsafe { std::ptr::replace(input as *const _ as *mut _, None) };
-                let tokenizer: &Tokenizer = unsafe { &*worker.ptr };
-
-                input
-                    .unwrap()
-                    .into_par_iter()
-                    .map(|input| {
-                        tokenizer
-                            .get_model()
-                            .tokenize(input)
-                            .map_err(|e| format!("{}", e))
-                            .map(|tokens| Encoding::from_tokens(tokens, *type_id))
-                    })
-                    .collect::<Result<_, _>>()
-                    .map(EncodeTokenizedOutput::Batch)
-            }
-        }
-    }
-
-    fn complete(
-        self,
-        mut cx: TaskContext,
-        result: Result<Self::Output, Self::Error>,
-    ) -> JsResult<Self::JsEvent> {
-        match result.map_err(|e| cx.throw_error::<_, ()>(e).unwrap_err())? {
-            EncodeTokenizedOutput::Single(encoding) => {
-                let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
-                // Set the actual encoding
-                let guard = cx.lock();
-                js_encoding
-                    .borrow_mut(&guard)
-                    .encoding
-                    .to_owned(Box::new(encoding));
-
-                Ok(js_encoding.upcast())
-            }
-            EncodeTokenizedOutput::Batch(encodings) => {
                 let result = JsArray::new(&mut cx, encodings.len() as u32);
                 for (i, encoding) in encodings.into_iter().enumerate() {
                     let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
