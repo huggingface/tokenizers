@@ -129,6 +129,9 @@ impl<'c, T: neon::object::This> Extract for CallContext<'c, T> {
                 // For any optional value, we accept both `undefined` and `null`
                 if v.downcast::<JsNull>().is_ok() || v.downcast::<JsUndefined>().is_ok() {
                     Ok(None)
+                } else if v.downcast::<JsFunction>().is_ok() {
+                    // Could be parsed as an empty object, so we don't accept JsFunction here
+                    Err(Error("Cannot extract from JsFunction".into()))
                 } else {
                     Ok(Some(E::from_value(v, self)?))
                 }
@@ -221,6 +224,14 @@ impl FromJsValue for TextEncodeInput {
     fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
         // If we get an array, it's a pair of sequences
         if let Ok(array) = from.downcast::<JsArray>() {
+            if array.len() != 2 {
+                return Err(Error(
+                    "TextEncodeInput should be \
+                    `TextInputSequence | [TextInputSequence, TextInputSequence]`"
+                        .into(),
+                ));
+            }
+
             let first_seq: tk::InputSequence =
                 TextInputSequence::from_value(array.get(cx, 0)?, cx)?.into();
             let pair_seq: tk::InputSequence =
@@ -398,14 +409,22 @@ declare_types! {
 
             // Then we extract our input sequences
             let sentence: tk::InputSequence = if options.isPretokenized {
-                cx.extract::<PreTokenizedInputSequence>(0)?.into()
+                cx.extract::<PreTokenizedInputSequence>(0)
+                    .map_err(|_| Error("encode with isPretokenized=true expect string[]".into()))?
+                    .into()
             } else {
-                cx.extract::<TextInputSequence>(0)?.into()
+                cx.extract::<TextInputSequence>(0)
+                    .map_err(|_| Error("encode with isPreTokenized=false expect string".into()))?
+                    .into()
             };
             let pair: Option<tk::InputSequence> = if options.isPretokenized {
-                cx.extract_opt::<PreTokenizedInputSequence>(1)?.map(|v| v.into())
+                cx.extract_opt::<PreTokenizedInputSequence>(1)
+                    .map_err(|_| Error("encode with isPretokenized=true expect string[]".into()))?
+                    .map(|v| v.into())
             } else {
-                cx.extract_opt::<TextInputSequence>(1)?.map(|v| v.into())
+                cx.extract_opt::<TextInputSequence>(1)
+                    .map_err(|_| Error("encode with isPreTokenized=false expect string".into()))?
+                    .map(|v| v.into())
             };
             let input: tk::EncodeInput = match pair {
                 Some(pair) => (sentence, pair).into(),
@@ -453,10 +472,16 @@ declare_types! {
             };
 
             let inputs: Vec<tk::EncodeInput> = if options.isPretokenized {
-                cx.extract_vec::<PreTokenizedEncodeInput>(0)?
+                cx.extract_vec::<PreTokenizedEncodeInput>(0)
+                    .map_err(|_| Error(
+                        "encodeBatch with isPretokenized=true expects input to be `EncodeInput[]` \
+                        with `EncodeInput = string[] | [string[], string[]]`".into()))?
                     .into_iter().map(|v| v.into()).collect()
             } else {
-                cx.extract_vec::<TextEncodeInput>(0)?
+                cx.extract_vec::<TextEncodeInput>(0)
+                    .map_err(|_| Error(
+                        "encodeBatch with isPretokenized=false expects input to be `EncodeInput[]` \
+                        with `EncodeInput = string | [string, string]`".into()))?
                     .into_iter().map(|v| v.into()).collect()
             };
 
