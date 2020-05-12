@@ -132,6 +132,12 @@ fn byte_level_pre_tokenized_sequence() {
         output.get_offsets(),
         &[(0, 2), (0, 4), (0, 2), (0, 4), (4, 6), (6, 9)]
     );
+}
+
+#[test]
+#[ignore]
+fn byte_level_pre_tokenized_sequence_with_trimming() {
+    let input = ["My", "name", "is", "Anthonino"];
 
     // When trimming offsets (expect same result)
     let tokenizer = get_byte_level(true, true);
