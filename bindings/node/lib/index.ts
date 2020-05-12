@@ -7,8 +7,9 @@ export {
   AddedTokenOptions,
   PaddingConfiguration,
   PaddingOptions,
-  TokenizedSequence,
-  TokenizedSequenceWithOffsets,
+  InputSequence,
+  EncodeInput,
+  EncodeOptions,
   TruncationConfiguration,
   TruncationOptions
 } from "./bindings/tokenizer";
