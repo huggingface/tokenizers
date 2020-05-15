@@ -1,5 +1,9 @@
-use super::{super::OrderedVocabIter, WordLevel};
-use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
+use super::{super::OrderedVocabIter, WordLevel, WordLevelBuilder};
+use serde::{
+    de::{MapAccess, Visitor},
+    ser::SerializeStruct,
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 
 impl Serialize for WordLevel {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -19,6 +23,30 @@ impl<'de> Deserialize<'de> for WordLevel {
     where
         D: Deserializer<'de>,
     {
-        unimplemented!()
+        deserializer.deserialize_struct("WordLevel", &["vocab", "unk_token"], WordLevelVisitor)
+    }
+}
+
+struct WordLevelVisitor;
+impl<'de> Visitor<'de> for WordLevelVisitor {
+    type Value = WordLevel;
+
+    fn expecting(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(fmt, "struct WordLevel")
+    }
+
+    fn visit_map<V>(self, mut map: V) -> std::result::Result<Self::Value, V::Error>
+    where
+        V: MapAccess<'de>,
+    {
+        let mut builder = WordLevelBuilder::new();
+        while let Some(key) = map.next_key()? {
+            match key {
+                "vocab" => builder = builder.vocab(map.next_value()?),
+                "unk_token" => builder = builder.unk_token(map.next_value()?),
+                _ => {}
+            }
+        }
+        Ok(builder.build())
     }
 }

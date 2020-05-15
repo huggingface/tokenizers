@@ -1,5 +1,9 @@
-use super::{super::OrderedVocabIter, WordPiece};
-use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
+use super::{super::OrderedVocabIter, WordPiece, WordPieceBuilder};
+use serde::{
+    de::{MapAccess, Visitor},
+    ser::SerializeStruct,
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 
 impl Serialize for WordPiece {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -26,6 +30,45 @@ impl<'de> Deserialize<'de> for WordPiece {
     where
         D: Deserializer<'de>,
     {
-        unimplemented!()
+        deserializer.deserialize_struct(
+            "WordPiece",
+            &[
+                "unk_token",
+                "continuing_subword_prefix",
+                "max_input_chars_per_word",
+                "vocab",
+            ],
+            WordPieceVisitor,
+        )
+    }
+}
+
+struct WordPieceVisitor;
+impl<'de> Visitor<'de> for WordPieceVisitor {
+    type Value = WordPiece;
+
+    fn expecting(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(fmt, "struct WordPiece")
+    }
+
+    fn visit_map<V>(self, mut map: V) -> std::result::Result<Self::Value, V::Error>
+    where
+        V: MapAccess<'de>,
+    {
+        let mut builder = WordPieceBuilder::new();
+        while let Some(key) = map.next_key()? {
+            match key {
+                "unk_token" => builder = builder.unk_token(map.next_value()?),
+                "continuing_subword_prefix" => {
+                    builder = builder.continuing_subword_prefix(map.next_value()?)
+                }
+                "max_input_chars_per_word" => {
+                    builder = builder.max_input_chars_per_word(map.next_value()?)
+                }
+                "vocab" => builder = builder.vocab(map.next_value()?),
+                _ => {}
+            }
+        }
+        Ok(builder.build().map_err(serde::de::Error::custom)?)
     }
 }

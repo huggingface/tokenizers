@@ -1,5 +1,9 @@
-use super::{super::OrderedVocabIter, Pair, BPE};
-use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
+use super::{super::OrderedVocabIter, BpeBuilder, Pair, BPE};
+use serde::{
+    de::{MapAccess, Visitor},
+    ser::SerializeStruct,
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 
 impl Serialize for BPE {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -39,6 +43,54 @@ impl<'de> Deserialize<'de> for BPE {
     where
         D: Deserializer<'de>,
     {
-        unimplemented!()
+        deserializer.deserialize_struct(
+            "BPE",
+            &[
+                "dropout",
+                "unk_token",
+                "continuing_subword_prefix",
+                "end_of_word_suffix",
+                "vocab",
+                "merges",
+            ],
+            BPEVisitor,
+        )
+    }
+}
+
+struct BPEVisitor;
+impl<'de> Visitor<'de> for BPEVisitor {
+    type Value = BPE;
+
+    fn expecting(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(fmt, "struct BPE")
+    }
+
+    fn visit_map<V>(self, mut map: V) -> std::result::Result<Self::Value, V::Error>
+    where
+        V: MapAccess<'de>,
+    {
+        let mut builder = BpeBuilder::new();
+        let mut vocab = None;
+        let mut merges = None;
+        while let Some(key) = map.next_key()? {
+            match key {
+                "dropout" => builder = builder.dropout(map.next_value()?),
+                "unk_token" => builder = builder.unk_token(map.next_value()?),
+                "continuing_subword_prefix" => {
+                    builder = builder.continuing_subword_prefix(map.next_value()?)
+                }
+                "end_of_word_suffix" => builder = builder.end_of_word_suffix(map.next_value()?),
+                "vocab" => vocab = Some(map.next_value()?),
+                "merges" => merges = Some(map.next_value()?),
+                _ => {}
+            }
+        }
+        if let (Some(vocab), Some(merges)) = (vocab, merges) {
+            builder = builder.vocab_and_merges(vocab, merges);
+            Ok(builder.build().map_err(serde::de::Error::custom)?)
+        } else {
+            Err(serde::de::Error::custom("Missing vocab/merges"))
+        }
     }
 }
