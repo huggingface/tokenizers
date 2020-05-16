@@ -84,10 +84,20 @@ impl WordLevelBuilder {
     }
 }
 
+#[derive(PartialEq)]
 pub struct WordLevel {
     vocab: HashMap<String, u32>,
     vocab_r: HashMap<u32, String>,
     unk_token: String,
+}
+
+impl std::fmt::Debug for WordLevel {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        fmt.debug_struct("WordLevel")
+            .field("unk_token", &self.unk_token)
+            .field("vocab", &self.vocab.len())
+            .finish()
+    }
 }
 
 impl WordLevel {
