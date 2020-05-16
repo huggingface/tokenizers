@@ -3,6 +3,7 @@ use super::{
     DEFAULT_CACHE_CAPACITY,
 };
 use crate::tokenizer::{Model, Offsets, Result, Token};
+use crate::utils::iter::ResultShunt;
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -139,6 +140,7 @@ impl BpeBuilder {
 }
 
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
+#[derive(PartialEq)]
 pub struct BPE {
     /// The vocabulary assigns a number to each token.
     pub(crate) vocab: Vocab,
@@ -157,6 +159,19 @@ pub struct BPE {
     pub(super) continuing_subword_prefix: Option<String>,
     /// An optional suffix to caracterize and end-of-word subword
     pub(super) end_of_word_suffix: Option<String>,
+}
+
+impl std::fmt::Debug for BPE {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        fmt.debug_struct("BPE")
+            .field("dropout", &self.dropout)
+            .field("unk_token", &self.unk_token)
+            .field("continuing_subword_prefix", &self.continuing_subword_prefix)
+            .field("end_of_word_suffix", &self.end_of_word_suffix)
+            .field("vocab", &self.vocab.len())
+            .field("merges", &self.merges.len())
+            .finish()
+    }
 }
 
 impl Default for BPE {
@@ -181,6 +196,39 @@ impl Clone for BPE {
             end_of_word_suffix: self.end_of_word_suffix.clone(),
         }
     }
+}
+
+/// Converts the merges strings (for example from `merges.txt` file) with the format
+/// "{pair_a} {pair_b}" into the format expected by the BPE struct
+pub(crate) fn convert_merges_to_hashmap<I: Iterator<Item = String>>(
+    iter: I,
+    vocab: &Vocab,
+) -> Result<Merges> {
+    let mut merges = HashMap::new();
+
+    let lines = iter.filter(|l| !l.starts_with("#version"));
+    for (rank, line) in lines.enumerate() {
+        let parts = line.split(' ').collect::<Vec<_>>();
+        if parts.len() != 2 {
+            return Err(Error::BadMerges(rank + 1).into());
+        }
+
+        let a = vocab
+            .get(parts[0])
+            .ok_or_else(|| Error::MergeTokenOutOfVocabulary(parts[0].to_owned()))?;
+        let b = vocab
+            .get(parts[1])
+            .ok_or_else(|| Error::MergeTokenOutOfVocabulary(parts[1].to_owned()))?;
+        let pair = (*a, *b);
+        let new_token = format!("{}{}", parts[0], parts[1]);
+        let new_id = vocab
+            .get(&new_token)
+            .ok_or(Error::MergeTokenOutOfVocabulary(new_token))?;
+
+        merges.insert(pair, (rank as u32, *new_id));
+    }
+
+    Ok(merges)
 }
 
 impl BPE {
@@ -227,33 +275,9 @@ impl BPE {
         // Read merges file
         let merge_file = File::open(merges)?;
         let merge_file = BufReader::new(merge_file);
-        let mut merges = HashMap::new();
-        for (rank, line) in merge_file.lines().enumerate() {
-            let line = line?;
-            if line.starts_with("#version") {
-                // Skip line with: #version
-                continue;
-            }
-
-            let parts = line.split(' ').collect::<Vec<_>>();
-            if parts.len() != 2 {
-                return Err(Error::BadMerges(rank + 1).into());
-            }
-
-            let a = vocab
-                .get(parts[0])
-                .ok_or_else(|| Error::MergeTokenOutOfVocabulary(parts[0].to_owned()))?;
-            let b = vocab
-                .get(parts[1])
-                .ok_or_else(|| Error::MergeTokenOutOfVocabulary(parts[1].to_owned()))?;
-            let pair = (*a, *b);
-            let new_token = format!("{}{}", parts[0], parts[1]);
-            let new_id = vocab
-                .get(&new_token)
-                .ok_or(Error::MergeTokenOutOfVocabulary(new_token))?;
-
-            merges.insert(pair, (rank as u32, *new_id));
-        }
+        let merges = ResultShunt::process(merge_file.lines(), |iter| {
+            convert_merges_to_hashmap(iter, &vocab)
+        })??;
 
         Ok((vocab, merges))
     }
@@ -575,7 +599,7 @@ mod tests {
         let bpe = builder.build().unwrap();
 
         // Check merges.
-        assert_eq!(bpe.merges.get(&(0u32, 1u32)).unwrap(), &(1u32, 3u32));
+        assert_eq!(bpe.merges.get(&(0, 1)).unwrap(), &(0u32, 3u32));
 
         // Check vocab.
         assert_eq!(bpe.vocab.get("a").unwrap(), &0u32);
@@ -637,7 +661,7 @@ mod tests {
         {
             Ok(_) => unreachable!(),
             Err(err) => match err.downcast_ref::<Error>() {
-                Some(Error::BadMerges(line)) => assert_eq!(*line, 3usize),
+                Some(Error::BadMerges(line)) => assert_eq!(*line, 2),
                 _ => unreachable!(),
             },
         }

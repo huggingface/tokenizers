@@ -1,9 +1,10 @@
-use super::{super::OrderedVocabIter, BpeBuilder, Pair, BPE};
+use super::{super::OrderedVocabIter, convert_merges_to_hashmap, BpeBuilder, Pair, BPE};
 use serde::{
-    de::{MapAccess, Visitor},
+    de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
     Deserialize, Deserializer, Serialize, Serializer,
 };
+use std::collections::HashMap;
 
 impl Serialize for BPE {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -27,7 +28,7 @@ impl Serialize for BPE {
         merges.sort_unstable_by_key(|k| *k.1);
         let merges_str = merges
             .into_iter()
-            .map(|(pair, _)| format!("{} {}\n", self.vocab_r[&pair.0], self.vocab_r[&pair.1]))
+            .map(|(pair, _)| format!("{} {}", self.vocab_r[&pair.0], self.vocab_r[&pair.1]))
             .collect::<Vec<_>>();
         let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
 
@@ -71,26 +72,42 @@ impl<'de> Visitor<'de> for BPEVisitor {
         V: MapAccess<'de>,
     {
         let mut builder = BpeBuilder::new();
-        let mut vocab = None;
-        let mut merges = None;
+        let mut vocab: Option<HashMap<String, u32>> = None;
+        let mut merges: Option<Vec<String>> = None;
         while let Some(key) = map.next_key()? {
             match key {
-                "dropout" => builder = builder.dropout(map.next_value()?),
-                "unk_token" => builder = builder.unk_token(map.next_value()?),
-                "continuing_subword_prefix" => {
-                    builder = builder.continuing_subword_prefix(map.next_value()?)
+                "dropout" => {
+                    if let Some(dropout) = map.next_value()? {
+                        builder = builder.dropout(dropout);
+                    }
                 }
-                "end_of_word_suffix" => builder = builder.end_of_word_suffix(map.next_value()?),
+                "unk_token" => {
+                    if let Some(unk) = map.next_value()? {
+                        builder = builder.unk_token(unk);
+                    }
+                }
+                "continuing_subword_prefix" => {
+                    if let Some(prefix) = map.next_value()? {
+                        builder = builder.continuing_subword_prefix(prefix);
+                    }
+                }
+                "end_of_word_suffix" => {
+                    if let Some(suffix) = map.next_value()? {
+                        builder = builder.end_of_word_suffix(suffix);
+                    }
+                }
                 "vocab" => vocab = Some(map.next_value()?),
                 "merges" => merges = Some(map.next_value()?),
                 _ => {}
             }
         }
         if let (Some(vocab), Some(merges)) = (vocab, merges) {
+            let merges =
+                convert_merges_to_hashmap(merges.into_iter(), &vocab).map_err(Error::custom)?;
             builder = builder.vocab_and_merges(vocab, merges);
-            Ok(builder.build().map_err(serde::de::Error::custom)?)
+            Ok(builder.build().map_err(Error::custom)?)
         } else {
-            Err(serde::de::Error::custom("Missing vocab/merges"))
+            Err(Error::custom("Missing vocab/merges"))
         }
     }
 }
