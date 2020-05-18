@@ -46,7 +46,7 @@ impl PostProcessor {
     }
 }
 
-#[pyclass(extends=PostProcessor)]
+#[pyclass(extends=PostProcessor, module = "tokenizers.processors")]
 pub struct BertProcessing {}
 #[pymethods]
 impl BertProcessing {
@@ -61,9 +61,13 @@ impl BertProcessing {
             },
         ))
     }
+
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
+        Ok(PyTuple::new(py, &[("", 0), ("", 0)]))
+    }
 }
 
-#[pyclass(extends=PostProcessor)]
+#[pyclass(extends=PostProcessor, module = "tokenizers.processors")]
 pub struct RobertaProcessing {}
 #[pymethods]
 impl RobertaProcessing {
@@ -86,9 +90,13 @@ impl RobertaProcessing {
             },
         ))
     }
+
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
+        Ok(PyTuple::new(py, &[("", 0), ("", 0)]))
+    }
 }
 
-#[pyclass(extends=PostProcessor)]
+#[pyclass(extends=PostProcessor, module = "tokenizers.processors")]
 pub struct ByteLevel {}
 #[pymethods]
 impl ByteLevel {

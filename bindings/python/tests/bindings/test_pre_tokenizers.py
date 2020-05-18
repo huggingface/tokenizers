@@ -1,4 +1,5 @@
 import pytest
+import pickle
 
 from tokenizers.pre_tokenizers import (
     PreTokenizer,
@@ -18,6 +19,7 @@ class TestByteLevel:
         assert ByteLevel(add_prefix_space=False) is not None
         assert isinstance(ByteLevel(), PreTokenizer)
         assert isinstance(ByteLevel(), ByteLevel)
+        assert isinstance(pickle.loads(pickle.dumps(ByteLevel())), ByteLevel)
 
     def test_has_alphabet(self):
         assert isinstance(ByteLevel.alphabet(), list)
@@ -29,6 +31,7 @@ class TestWhitespace:
         assert Whitespace() is not None
         assert isinstance(Whitespace(), PreTokenizer)
         assert isinstance(Whitespace(), Whitespace)
+        assert isinstance(pickle.loads(pickle.dumps(Whitespace())), Whitespace)
 
 
 class TestWhitespaceSplit:
@@ -36,6 +39,7 @@ class TestWhitespaceSplit:
         assert WhitespaceSplit() is not None
         assert isinstance(WhitespaceSplit(), PreTokenizer)
         assert isinstance(WhitespaceSplit(), WhitespaceSplit)
+        assert isinstance(pickle.loads(pickle.dumps(WhitespaceSplit())), WhitespaceSplit)
 
 
 class TestBertPreTokenizer:
@@ -43,6 +47,7 @@ class TestBertPreTokenizer:
         assert BertPreTokenizer() is not None
         assert isinstance(BertPreTokenizer(), PreTokenizer)
         assert isinstance(BertPreTokenizer(), BertPreTokenizer)
+        assert isinstance(pickle.loads(pickle.dumps(BertPreTokenizer())), BertPreTokenizer)
 
 
 class TestMetaspace:
@@ -54,6 +59,7 @@ class TestMetaspace:
         assert Metaspace(add_prefix_space=True) is not None
         assert isinstance(Metaspace(), PreTokenizer)
         assert isinstance(Metaspace(), Metaspace)
+        assert isinstance(pickle.loads(pickle.dumps(Metaspace())), Metaspace)
 
 
 class TestCharDelimiterSplit:
@@ -63,3 +69,4 @@ class TestCharDelimiterSplit:
             CharDelimiterSplit("")
         assert isinstance(CharDelimiterSplit(" "), PreTokenizer)
         assert isinstance(CharDelimiterSplit(" "), CharDelimiterSplit)
+        assert isinstance(pickle.loads(pickle.dumps(CharDelimiterSplit("-"))), CharDelimiterSplit)

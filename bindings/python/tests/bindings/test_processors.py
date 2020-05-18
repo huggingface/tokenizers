@@ -1,3 +1,5 @@
+import pickle
+
 from ..utils import data_dir, roberta_files
 
 from tokenizers import Tokenizer
@@ -12,6 +14,9 @@ class TestBertProcessing:
         assert processor is not None
         assert isinstance(processor, PostProcessor)
         assert isinstance(processor, BertProcessing)
+        assert isinstance(
+            pickle.loads(pickle.dumps(BertProcessing(("[SEP]", 0), ("[CLS]", 1)))), BertProcessing
+        )
 
     def test_processing(self):
         tokenizer = Tokenizer(BPE())
@@ -30,6 +35,10 @@ class TestRobertaProcessing:
         assert processor is not None
         assert isinstance(processor, PostProcessor)
         assert isinstance(processor, RobertaProcessing)
+        assert isinstance(
+            pickle.loads(pickle.dumps(RobertaProcessing(("</s>", 1), ("<s>", 0)))),
+            RobertaProcessing,
+        )
 
     def test_processing(self):
         tokenizer = Tokenizer(BPE())
@@ -48,6 +57,7 @@ class TestByteLevelProcessing:
         assert ByteLevel(trim_offsets=True) is not None
         assert isinstance(ByteLevel(), PostProcessor)
         assert isinstance(ByteLevel(), ByteLevel)
+        assert isinstance(pickle.loads(pickle.dumps(ByteLevel())), ByteLevel)
 
     def test_processing(self, roberta_files):
         tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))

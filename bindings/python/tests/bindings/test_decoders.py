@@ -1,4 +1,5 @@
 import pytest
+import pickle
 
 from tokenizers.decoders import Decoder, ByteLevel, WordPiece, Metaspace, BPEDecoder
 
@@ -8,6 +9,7 @@ class TestByteLevel:
         assert ByteLevel() is not None
         assert isinstance(ByteLevel(), Decoder)
         assert isinstance(ByteLevel(), ByteLevel)
+        assert isinstance(pickle.loads(pickle.dumps(ByteLevel())), ByteLevel)
 
     def test_decoding(self):
         decoder = ByteLevel()
@@ -21,6 +23,7 @@ class TestWordPiece:
         assert WordPiece(cleanup=True) is not None
         assert isinstance(WordPiece(), Decoder)
         assert isinstance(WordPiece(), WordPiece)
+        assert isinstance(pickle.loads(pickle.dumps(WordPiece())), WordPiece)
 
     def test_decoding(self):
         decoder = WordPiece()
@@ -40,6 +43,7 @@ class TestMetaspace:
         assert Metaspace(add_prefix_space=True) is not None
         assert isinstance(Metaspace(), Decoder)
         assert isinstance(Metaspace(), Metaspace)
+        assert isinstance(pickle.loads(pickle.dumps(Metaspace())), Metaspace)
 
     def test_decoding(self):
         decoder = Metaspace()
@@ -54,6 +58,7 @@ class TestBPEDecoder:
         assert BPEDecoder(suffix="_") is not None
         assert isinstance(BPEDecoder(), Decoder)
         assert isinstance(BPEDecoder(), BPEDecoder)
+        assert isinstance(pickle.loads(pickle.dumps(BPEDecoder())), BPEDecoder)
 
     def test_decoding(self):
         decoder = BPEDecoder()

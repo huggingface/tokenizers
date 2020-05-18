@@ -56,7 +56,7 @@ impl Decoder {
     }
 }
 
-#[pyclass(extends=Decoder)]
+#[pyclass(extends=Decoder, module = "tokenizers.decoders")]
 pub struct ByteLevel {}
 #[pymethods]
 impl ByteLevel {
@@ -71,7 +71,7 @@ impl ByteLevel {
     }
 }
 
-#[pyclass(extends=Decoder)]
+#[pyclass(extends=Decoder, module = "tokenizers.decoders")]
 pub struct WordPiece {}
 #[pymethods]
 impl WordPiece {
@@ -101,7 +101,7 @@ impl WordPiece {
     }
 }
 
-#[pyclass(extends=Decoder)]
+#[pyclass(extends=Decoder, module = "tokenizers.decoders")]
 pub struct Metaspace {}
 #[pymethods]
 impl Metaspace {
@@ -139,7 +139,7 @@ impl Metaspace {
     }
 }
 
-#[pyclass(extends=Decoder)]
+#[pyclass(extends=Decoder, module = "tokenizers.decoders")]
 pub struct BPEDecoder {}
 #[pymethods]
 impl BPEDecoder {

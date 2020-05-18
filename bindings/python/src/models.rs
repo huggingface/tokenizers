@@ -173,7 +173,7 @@ impl Model {
 
 /// BPE Model
 /// Allows the creation of a BPE Model to be used with a Tokenizer
-#[pyclass(extends=Model)]
+#[pyclass(extends=Model, module = "tokenizers.models")]
 pub struct BPE {}
 
 #[pymethods]
@@ -235,7 +235,7 @@ impl BPE {
 }
 
 /// WordPiece Model
-#[pyclass(extends=Model)]
+#[pyclass(extends=Model, module = "tokenizers.models")]
 pub struct WordPiece {}
 
 #[pymethods]
@@ -284,7 +284,7 @@ impl WordPiece {
     }
 }
 
-#[pyclass(extends=Model)]
+#[pyclass(extends=Model, module = "tokenizers.models")]
 pub struct WordLevel {}
 
 #[pymethods]

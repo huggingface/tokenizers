@@ -1,3 +1,5 @@
+import pickle
+
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tokenizers.normalizers import Normalizer, BertNormalizer, Sequence, Lowercase, Strip
@@ -7,6 +9,7 @@ class TestBertNormalizer:
     def test_instantiate(self):
         assert isinstance(BertNormalizer(), Normalizer)
         assert isinstance(BertNormalizer(), BertNormalizer)
+        assert isinstance(pickle.loads(pickle.dumps(BertNormalizer())), BertNormalizer)
 
     def test_strip_accents(self):
         tokenizer = Tokenizer(BPE())
@@ -49,6 +52,7 @@ class TestSequence:
     def test_instantiate(self):
         assert isinstance(Sequence([]), Normalizer)
         assert isinstance(Sequence([]), Sequence)
+        assert isinstance(pickle.loads(pickle.dumps(Sequence([]))), Sequence)
 
     def test_can_make_sequences(self):
         tokenizer = Tokenizer(BPE())
@@ -62,6 +66,7 @@ class TestLowercase:
     def test_instantiate(self):
         assert isinstance(Lowercase(), Normalizer)
         assert isinstance(Lowercase(), Lowercase)
+        assert isinstance(pickle.loads(pickle.dumps(Lowercase())), Lowercase)
 
     def test_lowercase(self):
         tokenizer = Tokenizer(BPE())
@@ -75,6 +80,7 @@ class TestStrip:
     def test_instantiate(self):
         assert isinstance(Strip(), Normalizer)
         assert isinstance(Strip(), Strip)
+        assert isinstance(pickle.loads(pickle.dumps(Strip())), Strip)
 
     def test_left_strip(self):
         tokenizer = Tokenizer(BPE())

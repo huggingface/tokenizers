@@ -62,7 +62,7 @@ impl PreTokenizer {
     }
 }
 
-#[pyclass(extends=PreTokenizer)]
+#[pyclass(extends=PreTokenizer, module = "tokenizers.pre_tokenizers")]
 pub struct ByteLevel {}
 #[pymethods]
 impl ByteLevel {
@@ -99,7 +99,7 @@ impl ByteLevel {
     }
 }
 
-#[pyclass(extends=PreTokenizer)]
+#[pyclass(extends=PreTokenizer, module = "tokenizers.pre_tokenizers")]
 pub struct Whitespace {}
 #[pymethods]
 impl Whitespace {
@@ -114,7 +114,7 @@ impl Whitespace {
     }
 }
 
-#[pyclass(extends=PreTokenizer)]
+#[pyclass(extends=PreTokenizer, module = "tokenizers.pre_tokenizers")]
 pub struct WhitespaceSplit {}
 #[pymethods]
 impl WhitespaceSplit {
@@ -129,7 +129,7 @@ impl WhitespaceSplit {
     }
 }
 
-#[pyclass(extends=PreTokenizer)]
+#[pyclass(extends=PreTokenizer, module = "tokenizers.pre_tokenizers")]
 pub struct CharDelimiterSplit {}
 #[pymethods]
 impl CharDelimiterSplit {
@@ -150,9 +150,13 @@ impl CharDelimiterSplit {
             },
         ))
     }
+
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
+        Ok(PyTuple::new(py, &[" "]))
+    }
 }
 
-#[pyclass(extends=PreTokenizer)]
+#[pyclass(extends=PreTokenizer, module = "tokenizers.pre_tokenizers")]
 pub struct BertPreTokenizer {}
 #[pymethods]
 impl BertPreTokenizer {
@@ -167,7 +171,7 @@ impl BertPreTokenizer {
     }
 }
 
-#[pyclass(extends=PreTokenizer)]
+#[pyclass(extends=PreTokenizer, module = "tokenizers.pre_tokenizers")]
 pub struct Metaspace {}
 #[pymethods]
 impl Metaspace {

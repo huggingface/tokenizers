@@ -42,7 +42,7 @@ impl Normalizer {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct BertNormalizer {}
 #[pymethods]
 impl BertNormalizer {
@@ -81,7 +81,7 @@ impl BertNormalizer {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct NFD {}
 #[pymethods]
 impl NFD {
@@ -96,7 +96,7 @@ impl NFD {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct NFKD {}
 #[pymethods]
 impl NFKD {
@@ -111,7 +111,7 @@ impl NFKD {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct NFC {}
 #[pymethods]
 impl NFC {
@@ -126,7 +126,7 @@ impl NFC {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct NFKC {}
 #[pymethods]
 impl NFKC {
@@ -141,7 +141,7 @@ impl NFKC {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct Sequence {}
 #[pymethods]
 impl Sequence {
@@ -170,9 +170,13 @@ impl Sequence {
             },
         ))
     }
+
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
+        Ok(PyTuple::new(py, &[PyList::empty(py)]))
+    }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct Lowercase {}
 #[pymethods]
 impl Lowercase {
@@ -187,7 +191,7 @@ impl Lowercase {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct Strip {}
 #[pymethods]
 impl Strip {
