@@ -76,7 +76,7 @@ impl<'source> FromPyObject<'source> for EncodeInput {
 
 /// A Model represents some tokenization algorithm like BPE or Word
 /// This class cannot be constructed directly. Please use one of the concrete models.
-#[pyclass]
+#[pyclass(module = "tokenizers.models")]
 pub struct Model {
     pub model: Container<dyn tk::tokenizer::Model>,
 }
@@ -85,9 +85,40 @@ pub struct Model {
 impl Model {
     #[new]
     fn new() -> PyResult<Self> {
-        Err(exceptions::Exception::py_err(
-            "Cannot create a Model directly. Use a concrete subclass",
-        ))
+        // Instantiate a default empty model. This doesn't really make sense, but we need
+        // to be able to instantiate an empty model for pickle capabilities.
+        Ok(Model {
+            model: Container::Owned(Box::new(tk::models::bpe::BPE::default())),
+        })
+    }
+
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        let data = self
+            .model
+            .execute(|model| serde_json::to_string(&model))
+            .map_err(|e| {
+                exceptions::Exception::py_err(format!(
+                    "Error while attempting to pickle Model: {}",
+                    e.to_string()
+                ))
+            })?;
+        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+    }
+
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                self.model =
+                    Container::Owned(serde_json::from_slice(s.as_bytes()).map_err(|e| {
+                        exceptions::Exception::py_err(format!(
+                            "Error while attempting to unpickle Model: {}",
+                            e.to_string()
+                        ))
+                    })?);
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 
     fn save(&self, folder: &str, name: Option<&str>) -> PyResult<Vec<String>> {

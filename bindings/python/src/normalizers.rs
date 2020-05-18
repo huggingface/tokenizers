@@ -5,9 +5,41 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 
-#[pyclass(dict)]
+#[pyclass(dict, module = "tokenizers.normalizers")]
 pub struct Normalizer {
     pub normalizer: Container<dyn tk::tokenizer::Normalizer>,
+}
+
+#[pymethods]
+impl Normalizer {
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        let data = self
+            .normalizer
+            .execute(|normalizer| serde_json::to_string(&normalizer))
+            .map_err(|e| {
+                exceptions::Exception::py_err(format!(
+                    "Error while attempting to pickle Normalizer: {}",
+                    e.to_string()
+                ))
+            })?;
+        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+    }
+
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                self.normalizer =
+                    Container::Owned(serde_json::from_slice(s.as_bytes()).map_err(|e| {
+                        exceptions::Exception::py_err(format!(
+                            "Error while attempting to unpickle Normalizer: {}",
+                            e.to_string()
+                        ))
+                    })?);
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
 }
 
 #[pyclass(extends=Normalizer)]
