@@ -36,7 +36,7 @@ impl Serialize for Tokenizer {
         tokenizer.serialize_field("padding", &self.padding)?;
 
         // Added tokens
-        let added_tokens = self
+        let mut added_tokens = self
             .added_tokens_map_r
             .iter()
             .map(|(id, token)| AddedTokenWithId {
@@ -45,6 +45,8 @@ impl Serialize for Tokenizer {
                 token: token.clone(),
             })
             .collect::<Vec<_>>();
+        // We need to have these added tokens ordered by ascending ID
+        added_tokens.sort_unstable_by_key(|o| o.id);
         tokenizer.serialize_field("added_tokens", &added_tokens)?;
 
         // Then add our parts

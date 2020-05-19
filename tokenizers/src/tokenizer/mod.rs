@@ -31,7 +31,8 @@ mod serialization;
 pub use encoding::*;
 pub use normalizer::*;
 
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
+pub type Result<T> = std::result::Result<T, Error>;
 pub type Offsets = (usize, usize);
 
 #[typetag::serde(tag = "type")]
@@ -308,8 +309,16 @@ pub struct Tokenizer {
     padding: Option<PaddingParams>,
 }
 
+impl std::str::FromStr for Tokenizer {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Ok(serde_json::from_str(s)?)
+    }
+}
+
 impl Tokenizer {
-    /// Instanciate a new Tokenizer, with the given Model
+    /// Instantiate a new Tokenizer, with the given Model
     pub fn new(model: Box<dyn Model>) -> Self {
         Tokenizer {
             normalizer: None,
@@ -328,6 +337,32 @@ impl Tokenizer {
             truncation: None,
             padding: None,
         }
+    }
+
+    /// Instantiate a new Tokenizer from the given file
+    pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
+        let file = File::open(file)?;
+        let buf = BufReader::new(file);
+        Ok(serde_json::from_reader(buf)?)
+    }
+
+    /// Serialize the current tokenizer as a String
+    pub fn to_string(&self, pretty: bool) -> Result<String> {
+        Ok(if pretty {
+            serde_json::to_string_pretty(self)?
+        } else {
+            serde_json::to_string(self)?
+        })
+    }
+
+    /// Save the current tokenizer at the given path
+    pub fn save(&self, path: &str, pretty: bool) -> Result<()> {
+        let serialized = self.to_string(pretty)?;
+
+        let mut file = File::create(path)?;
+        file.write_all(&serialized.as_bytes())?;
+
+        Ok(())
     }
 
     /// Set the normalizer
@@ -986,24 +1021,5 @@ impl Tokenizer {
                 })
                 .collect()
         }
-    }
-
-    /// Serialize the current tokenizer as a String
-    pub fn to_string(&self, pretty: bool) -> Result<String> {
-        Ok(if pretty {
-            serde_json::to_string_pretty(self)?
-        } else {
-            serde_json::to_string(self)?
-        })
-    }
-
-    /// Save the current tokenizer at the given path
-    pub fn save(&self, path: &str, pretty: bool) -> Result<()> {
-        let serialized = self.to_string(pretty)?;
-
-        let mut file = File::create(path)?;
-        file.write_all(&serialized.as_bytes())?;
-
-        Ok(())
     }
 }
