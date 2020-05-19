@@ -13,9 +13,9 @@ pub struct Encoding {
     pub encoding: tk::tokenizer::Encoding,
 }
 
-impl Encoding {
-    pub fn new(encoding: tk::tokenizer::Encoding) -> Self {
-        Encoding { encoding }
+impl From<tk::tokenizer::Encoding> for Encoding {
+    fn from(v: tk::tokenizer::Encoding) -> Self {
+        Self { encoding: v }
     }
 }
 
@@ -39,6 +39,13 @@ impl PySequenceProtocol for Encoding {
 
 #[pymethods]
 impl Encoding {
+    #[new]
+    fn new() -> PyResult<Self> {
+        Ok(Self {
+            encoding: tk::tokenizer::Encoding::default(),
+        })
+    }
+
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.encoding).map_err(|e| {
             exceptions::Exception::py_err(format!(
@@ -67,14 +74,15 @@ impl Encoding {
     #[staticmethod]
     #[args(growing_offsets = true)]
     fn merge(encodings: Vec<PyRef<Encoding>>, growing_offsets: bool) -> Encoding {
-        Encoding::new(tk::tokenizer::Encoding::merge(
+        tk::tokenizer::Encoding::merge(
             encodings
                 .into_iter()
                 .map(|e| e.encoding.clone())
                 .collect::<Vec<_>>()
                 .as_slice(),
             growing_offsets,
-        ))
+        )
+        .into()
     }
 
     #[getter]
@@ -118,7 +126,7 @@ impl Encoding {
             .get_overflowing()
             .clone()
             .into_iter()
-            .map(Encoding::new)
+            .map(|e| e.into())
             .collect()
     }
 

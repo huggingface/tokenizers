@@ -139,13 +139,13 @@ impl Model {
         let sequence = sequence.into_input();
 
         if sequence.is_empty() {
-            return Ok(Encoding::new(tk::tokenizer::Encoding::default()));
+            return Ok(tk::tokenizer::Encoding::default().into());
         }
 
         ToPyResult(self.model.execute(|model| {
             model
                 .tokenize(sequence)
-                .map(|tokens| Encoding::new(tk::tokenizer::Encoding::from_tokens(tokens, type_id)))
+                .map(|tokens| tk::tokenizer::Encoding::from_tokens(tokens, type_id).into())
         }))
         .into()
     }
@@ -158,10 +158,10 @@ impl Model {
                 .map(|sequence| {
                     let sequence = sequence.into_input();
                     if sequence.is_empty() {
-                        Ok(Encoding::new(tk::tokenizer::Encoding::default()))
+                        Ok(tk::tokenizer::Encoding::default().into())
                     } else {
                         model.tokenize(sequence).map(|tokens| {
-                            Encoding::new(tk::tokenizer::Encoding::from_tokens(tokens, type_id))
+                            tk::tokenizer::Encoding::from_tokens(tokens, type_id).into()
                         })
                     }
                 })

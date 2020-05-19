@@ -108,6 +108,7 @@ class TestTokenizer:
         # Can encode a pair of sequences
         output = tokenizer.encode("my name is john", "pair")
         assert output.tokens == ["my", "name", "is", "john", "pair"]
+        assert isinstance(pickle.loads(pickle.dumps(output)), Encoding)
 
         # Can encode a single pre-tokenized sequence
         output = tokenizer.encode(["my", "name", "is", "john"], is_pretokenized=True)

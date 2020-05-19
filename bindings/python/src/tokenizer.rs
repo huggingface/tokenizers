@@ -556,7 +556,7 @@ impl Tokenizer {
                     pair.map(|p| p.encoding.clone()),
                     add_special_tokens,
                 )
-                .map(Encoding::new),
+                .map(|e| e.into()),
         )
         .into()
     }
