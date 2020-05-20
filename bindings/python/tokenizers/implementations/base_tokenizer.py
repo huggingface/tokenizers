@@ -295,7 +295,7 @@ class BaseTokenizer:
         """
         return self._tokenizer.model.save(directory, name=name)
 
-    def save(self, path: str, pretty: bool = True):
+    def save(self, path: str, pretty: bool = False):
         """ Save the current Tokenizer at the given path
 
         Args:
@@ -303,6 +303,18 @@ class BaseTokenizer:
                 A path to the destination Tokenizer file
         """
         return self._tokenizer.save(path, pretty)
+
+    def to_str(self, pretty: bool = False):
+        """ Get a serialized JSON version of the Tokenizer as a str
+
+        Args:
+            pretty: bool:
+                Whether the JSON string should be prettified
+
+        Returns:
+            str
+        """
+        return self._tokenizer.to_str(pretty)
 
     def post_process(
         self, encoding: Encoding, pair: Optional[Encoding] = None, add_special_tokens: bool = True

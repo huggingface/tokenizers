@@ -252,6 +252,49 @@ class Tokenizer:
             Tokenizer
         """
         pass
+    @staticmethod
+    def from_str(s: str) -> Tokenizer:
+        """ Instantiate a new Tokenizer from the given JSON string
+
+        Args:
+            s: str:
+                A JSON string representation of the Tokenizer
+
+        Returns:
+            Tokenizer
+        """
+        pass
+    @staticmethod
+    def from_file(path: str) -> Tokenizer:
+        """ Instantiate a new Tokenizer from the given file
+
+        Args:
+            path: str:
+                Path to a file containing a Tokenizer
+
+        Returns:
+            Tokenizer
+        """
+        pass
+    def to_str(self, pretty: bool = False) -> str:
+        """ Get a serialized JSON version of the Tokenizer as a str
+
+        Args:
+            pretty: bool:
+                Whether the JSON string should be prettified
+
+        Returns:
+            str
+        """
+        pass
+    def save(self, path: str, pretty: bool = False):
+        """ Save the Tokenizer as JSON to the given path
+
+        Args:
+            pretty: bool:
+                Whether the JSON string should be prettified
+        """
+        pass
     @property
     def model(self) -> Model:
         """ Get the model in use with this Tokenizer """

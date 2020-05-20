@@ -203,6 +203,32 @@ impl Tokenizer {
         }
     }
 
+    #[staticmethod]
+    fn from_str(s: &str) -> PyResult<Self> {
+        let tokenizer: PyResult<tk::tokenizer::Tokenizer> = ToPyResult(s.parse()).into();
+        Ok(Self {
+            tokenizer: tokenizer?,
+        })
+    }
+
+    #[staticmethod]
+    fn from_file(path: &str) -> PyResult<Self> {
+        let tokenizer: PyResult<_> = ToPyResult(tk::tokenizer::Tokenizer::from_file(path)).into();
+        Ok(Self {
+            tokenizer: tokenizer?,
+        })
+    }
+
+    #[args(pretty = false)]
+    fn to_str(&self, pretty: bool) -> PyResult<String> {
+        ToPyResult(self.tokenizer.to_string(pretty)).into()
+    }
+
+    #[args(pretty = false)]
+    fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
+        ToPyResult(self.tokenizer.save(path, pretty)).into()
+    }
+
     fn num_special_tokens_to_add(&self, is_pair: bool) -> PyResult<usize> {
         Ok(self
             .tokenizer
@@ -603,10 +629,5 @@ impl Tokenizer {
                 "The Decoder is already being used in another Tokenizer",
             ))
         }
-    }
-
-    #[args(pretty = false)]
-    fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
-        ToPyResult(self.tokenizer.save(path, pretty)).into()
     }
 }
