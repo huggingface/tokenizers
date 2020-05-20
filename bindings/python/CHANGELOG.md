@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0-dev]
 
+### Added
+- [#272]: Serialization of the `Tokenizer` and all the parts (`PreTokenizer`, `Normalizer`, ...).
+This adds some methods to easily save/load an entire tokenizer (`from_str`, `from_file`).
+
 ### Changed
 - Improved errors generated during truncation: When the provided max length is too low are
 now handled properly.

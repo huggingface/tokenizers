@@ -24,10 +24,13 @@ trim offsets.
 - Improved `TruncationError` to handle cases where provided max length is too low.
 - [#249]: `encode` and `encode_batch` input has been greatly improved, and it now also accept
 pre-tokenized inputs.
+- Improved `TruncationError` to handle cases where provided max length is too low.
 
 ### Added
 - [#236]: RobertaProcessing is now also taking care of trimming offsets, and works just as ByteLevel
 on this front.
+- [#272]: Serialization of the `Tokenizer` and all the parts (`PreTokenizer`, `Normalizer`, ...)
+using serde. It is now easy to save/load an entire tokenizer.
 
 ### How to migrate
 - Replace any `XXX_to_YYY_offsets()` method call by any of the new ones.
