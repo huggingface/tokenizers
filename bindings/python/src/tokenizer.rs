@@ -253,6 +253,18 @@ impl Tokenizer {
         })
     }
 
+    #[staticmethod]
+    fn from_buffer(buffer: &PyBytes) -> PyResult<Self> {
+        let tokenizer: tk::tokenizer::Tokenizer = serde_json::from_slice(buffer.as_bytes())
+            .map_err(|e| {
+                exceptions::Exception::py_err(format!(
+                    "Cannot instantiate Tokenizer from buffer: {}",
+                    e.to_string()
+                ))
+            })?;
+        Ok(Self { tokenizer })
+    }
+
     #[args(pretty = false)]
     fn to_str(&self, pretty: bool) -> PyResult<String> {
         ToPyResult(self.tokenizer.to_string(pretty)).into()

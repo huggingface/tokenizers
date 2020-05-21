@@ -276,6 +276,18 @@ class Tokenizer:
             Tokenizer
         """
         pass
+    @staticmethod
+    def from_buffer(buffer: bytes) -> Tokenizer:
+        """ Instantiate a new Tokenizer from the given buffer
+
+        Args:
+            buffer: bytes:
+                A buffer used to instantiate a new Tokenizer
+
+        Returns:
+            Tokenizer
+        """
+        pass
     def to_str(self, pretty: bool = False) -> str:
         """ Get a serialized JSON version of the Tokenizer as a str
 
