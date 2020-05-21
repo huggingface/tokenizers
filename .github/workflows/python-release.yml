@@ -37,13 +37,8 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-i686-pc-windows-msvc
+          toolchain: nightly-2020-05-18-i686-pc-windows-msvc
           override: true
-
-      - name: Override toolchain
-        shell: bash
-        working-directory: ./bindings/python
-        run: echo "nightly-i686-pc-windows-msvc" > rust-toolchain
 
       - name: Install Python
         uses: actions/setup-python@v1
