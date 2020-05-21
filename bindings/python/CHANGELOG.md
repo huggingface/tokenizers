@@ -4,11 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.0-dev]
 
 ### Changed
 - Improved errors generated during truncation: When the provided max length is too low are
 now handled properly.
+- [#249] `encode` and `encode_batch` now accept pre-tokenized inputs. When the input is pre-tokenized,
+the argument `is_pretokenized=True` must be specified.
 
 ## [0.7.0]
 
@@ -168,6 +170,7 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug with the IDs associated with added tokens.
 - Fix a bug that was causing crashes in Python 3.5
 
+[#249]: https://github.com/huggingface/tokenizers/pull/249
 [#239]: https://github.com/huggingface/tokenizers/pull/239
 [#236]: https://github.com/huggingface/tokenizers/pull/236
 [#234]: https://github.com/huggingface/tokenizers/pull/234

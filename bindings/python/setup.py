@@ -6,7 +6,7 @@ extras["testing"] = ["pytest"]
 
 setup(
     name="tokenizers",
-    version="0.7.0",
+    version="0.8.0-dev",
     description="Fast and Customizable Tokenizers",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
@@ -41,15 +41,15 @@ setup(
         "tokenizers.trainers",
         "tokenizers.implementations",
     ],
-    package_data = {
-        'tokenizers': [ 'py.typed', '__init__.pyi' ],
-        'tokenizers.models': [ 'py.typed', '__init__.pyi' ],
-        'tokenizers.decoders': [ 'py.typed', '__init__.pyi' ],
-        'tokenizers.normalizers': [ 'py.typed', '__init__.pyi' ],
-        'tokenizers.pre_tokenizers': [ 'py.typed', '__init__.pyi' ],
-        'tokenizers.processors': [ 'py.typed', '__init__.pyi' ],
-        'tokenizers.trainers': [ 'py.typed', '__init__.pyi' ],
-        'tokenizers.implementations': [ 'py.typed' ],
+    package_data={
+        "tokenizers": ["py.typed", "__init__.pyi"],
+        "tokenizers.models": ["py.typed", "__init__.pyi"],
+        "tokenizers.decoders": ["py.typed", "__init__.pyi"],
+        "tokenizers.normalizers": ["py.typed", "__init__.pyi"],
+        "tokenizers.pre_tokenizers": ["py.typed", "__init__.pyi"],
+        "tokenizers.processors": ["py.typed", "__init__.pyi"],
+        "tokenizers.trainers": ["py.typed", "__init__.pyi"],
+        "tokenizers.implementations": ["py.typed"],
     },
     zip_safe=False,
 )

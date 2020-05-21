@@ -1,4 +1,4 @@
-__version__ = "0.7.0"
+__version__ = "0.8.0-dev"
 
 from typing import Tuple, Union, Tuple, List
 

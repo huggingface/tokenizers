@@ -6,9 +6,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- Improved `TruncationError` to handle cases where provided max length is too low.
-
 ### Fixed
 - [#236]: Fix a bug with offsets being shifted when there are sub-sequences (Usually with
 special tokens and/or added tokens in the sequence).
@@ -24,6 +21,9 @@ the same as usual. This fixes the offsets for said tokens.
 sub-sequences together and then do the post-processing. This also fixes some offsets bugs.
 - [#236]: ByteLevel PostProcessor now uses the `add_prefix_space` attribute to determine how to
 trim offsets.
+- Improved `TruncationError` to handle cases where provided max length is too low.
+- [#249]: `encode` and `encode_batch` input has been greatly improved, and it now also accept
+pre-tokenized inputs.
 
 ### Added
 - [#236]: RobertaProcessing is now also taking care of trimming offsets, and works just as ByteLevel
@@ -102,6 +102,7 @@ advised, but that's not the question)
 split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
+[#249]: https://github.com/huggingface/tokenizers/pull/249
 [b770f36]: https://github.com/huggingface/tokenizers/commit/b770f364280af33efeffea8f0003102cda8cf1b7
 [#236]: https://github.com/huggingface/tokenizers/pull/236
 [#234]: https://github.com/huggingface/tokenizers/pull/234
