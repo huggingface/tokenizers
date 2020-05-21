@@ -3,7 +3,7 @@ import { promisify } from "util";
 import { Model, WordPiece, WordPieceOptions } from "./models";
 import { whitespacePreTokenizer } from "./pre-tokenizers";
 import { RawEncoding } from "./raw-encoding";
-import { Tokenizer } from "./tokenizer";
+import { EncodeOptions, InputSequence, Tokenizer } from "./tokenizer";
 
 const MOCKS_DIR = __dirname + "/__mocks__";
 
@@ -11,9 +11,9 @@ describe("RawEncoding", () => {
   const originalString = "my name is john";
   let encoding: RawEncoding;
   let encode: (
-    sequence: string,
-    pair: string | null,
-    addSpecialTokens: boolean
+    sequence: InputSequence,
+    pair?: InputSequence | null,
+    options?: EncodeOptions | null
   ) => Promise<RawEncoding>;
 
   beforeAll(async () => {
@@ -30,7 +30,7 @@ describe("RawEncoding", () => {
   });
 
   beforeEach(async () => {
-    encoding = await encode(originalString, null, false);
+    encoding = await encode(originalString, null);
   });
 
   it("has a list of defined methods", async () => {

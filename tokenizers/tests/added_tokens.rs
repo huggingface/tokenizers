@@ -1,7 +1,7 @@
 mod common;
 
 use common::*;
-use tokenizers::tokenizer::{AddedToken, EncodeInput};
+use tokenizers::tokenizer::AddedToken;
 
 #[test]
 fn add_tokens() {
@@ -33,8 +33,8 @@ fn lstrip_tokens() {
     let mut tokenizer = get_byte_level(true, false);
     tokenizer.add_special_tokens(&[AddedToken::from("<mask>".into()).lstrip(true)]);
 
-    let input = String::from("I saw a <mask> 😺");
-    let output = tokenizer.encode(EncodeInput::Single(input), false).unwrap();
+    let input = "I saw a <mask> 😺";
+    let output = tokenizer.encode(input, false).unwrap();
 
     assert_eq!(
         output.get_tokens(),
@@ -51,8 +51,8 @@ fn rstrip_tokens() {
     let mut tokenizer = get_byte_level(false, false);
     tokenizer.add_special_tokens(&[AddedToken::from("<mask>".into()).rstrip(true)]);
 
-    let input = String::from("I saw a <mask> 😺");
-    let output = tokenizer.encode(EncodeInput::Single(input), false).unwrap();
+    let input = "I saw a <mask> 😺";
+    let output = tokenizer.encode(input, false).unwrap();
 
     assert_eq!(
         output.get_tokens(),
@@ -64,8 +64,8 @@ fn rstrip_tokens() {
     let mut tokenizer = get_byte_level(true, false);
     tokenizer.add_special_tokens(&[AddedToken::from("<mask>".into()).rstrip(true)]);
 
-    let input = String::from("I saw a <mask> 😺");
-    let output = tokenizer.encode(EncodeInput::Single(input), false).unwrap();
+    let input = "I saw a <mask> 😺";
+    let output = tokenizer.encode(input, false).unwrap();
 
     assert_eq!(
         output.get_tokens(),
@@ -79,8 +79,8 @@ fn single_word_tokens() {
     let mut tokenizer = get_byte_level(false, false);
     tokenizer.add_special_tokens(&[AddedToken::from("ing".into()).single_word(true)]);
 
-    let input = String::from("I like dancing");
-    let output = tokenizer.encode(EncodeInput::Single(input), false).unwrap();
+    let input = "I like dancing";
+    let output = tokenizer.encode(input, false).unwrap();
 
     assert_eq!(output.get_tokens(), &["I", "Ġlike", "Ġdancing"]);
 
@@ -88,8 +88,8 @@ fn single_word_tokens() {
     let mut tokenizer = get_byte_level(false, false);
     tokenizer.add_special_tokens(&[AddedToken::from("ing".into()).single_word(false)]);
 
-    let input = String::from("I like dancing");
-    let output = tokenizer.encode(EncodeInput::Single(input), false).unwrap();
+    let input = "I like dancing";
+    let output = tokenizer.encode(input, false).unwrap();
 
     assert_eq!(output.get_tokens(), &["I", "Ġlike", "Ġd", "anc", "ing"]);
 }
@@ -102,8 +102,8 @@ fn overlapping_tokens() {
     tokenizer.add_special_tokens(&[AddedToken::from("nci".into())]);
     tokenizer.add_special_tokens(&[AddedToken::from("ing".into())]);
 
-    let input = String::from("I like dancing");
-    let output = tokenizer.encode(EncodeInput::Single(input), false).unwrap();
+    let input = "I like dancing";
+    let output = tokenizer.encode(input, false).unwrap();
 
     assert_eq!(output.get_tokens(), &["I", "Ġlike", "Ġ", "danc", "ing"]);
 
@@ -114,8 +114,7 @@ fn overlapping_tokens() {
     tokenizer.add_special_tokens(&[AddedToken::from("ing".into())]);
     tokenizer.add_special_tokens(&[AddedToken::from("ike".into())]);
 
-    let input = String::from("I like dancing");
-    let output = tokenizer.encode(EncodeInput::Single(input), false).unwrap();
+    let output = tokenizer.encode(input, false).unwrap();
 
     assert_eq!(output.get_tokens(), &["I", "Ġl", "ike", "Ġda", "nci", "ng"]);
 }

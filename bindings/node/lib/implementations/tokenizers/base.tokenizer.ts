@@ -3,10 +3,11 @@ import { promisify } from "util";
 import { PostProcessor } from "../../bindings/post-processors";
 import {
   AddedToken,
+  EncodeInput,
+  EncodeOptions,
+  InputSequence,
   PaddingConfiguration,
   PaddingOptions,
-  TokenizedSequence,
-  TokenizedSequenceWithOffsets,
   Tokenizer,
   TruncationConfiguration,
   TruncationOptions
@@ -76,15 +77,15 @@ export class BaseTokenizer<TConfig extends object> {
    *
    * @param sequence The sequence to encode
    * @param [pair] The optional pair sequence
-   * @param [addSpecialTokens=true] Whether to add the special tokens while encoding
+   * @param [options] Some options to customize the encoding
    */
   async encode(
-    sequence: string,
-    pair?: string,
-    addSpecialTokens = true
+    sequence: InputSequence,
+    pair?: InputSequence,
+    options?: EncodeOptions
   ): Promise<Encoding> {
     const encode = promisify(this.tokenizer.encode.bind(this.tokenizer));
-    const rawEncoding = await encode(sequence, pair ?? null, addSpecialTokens);
+    const rawEncoding = await encode(sequence, pair ?? null, options ?? null);
     return new Encoding(rawEncoding);
   }
 
@@ -93,50 +94,14 @@ export class BaseTokenizer<TConfig extends object> {
    *
    * @param sequences A list of sequences or pair of sequences.
    * The list can contain both at the same time.
-   * @param [addSpecialTokens=true] Whether to add the special tokens while encoding
+   * @param [options] Sope options to customize the encoding
    */
   async encodeBatch(
-    sequences: (string | [string, string])[],
-    addSpecialTokens = true
+    sequences: EncodeInput[],
+    options?: EncodeOptions
   ): Promise<Encoding[]> {
     const encodeBatch = promisify(this.tokenizer.encodeBatch.bind(this.tokenizer));
-    const rawEncodings = await encodeBatch(sequences, addSpecialTokens);
-    return rawEncodings.map(e => new Encoding(e));
-  }
-
-  /**
-   * Encode the given tokens sequence
-   * @param sequence A sequence of tokens to encode.
-   * If the sequence is a `TokenizedSequence`, offsets will be automatically generated,
-   * making the hypothesis that all the tokens in the sequence are contiguous in the original string
-   * @param [typeId=0] The type id of the given sequence. Defaults to 0.
-   * @since 0.6.0
-   */
-  async encodeTokenized(
-    sequence: TokenizedSequence | TokenizedSequenceWithOffsets,
-    typeId?: number
-  ): Promise<Encoding> {
-    const encode = promisify(this.tokenizer.encodeTokenized.bind(this.tokenizer));
-    const rawEncoding = await encode(sequence, typeId);
-    return new Encoding(rawEncoding);
-  }
-
-  /**
-   * Encode the given tokens sequences
-   * @param sequences A list of sequences to encode.
-   * If a sequence is a `TokenizedSequence`, offsets will be automatically generated,
-   * making the hypothesis that all the tokens in the sequence are contiguous in the original string
-   * @param [typeId=0] The type id of the given sequences. Defaults to 0.
-   * @since 0.6.0
-   */
-  async encodeTokenizedBatch(
-    sequences: (TokenizedSequence | TokenizedSequenceWithOffsets)[],
-    typeId?: number
-  ): Promise<Encoding[]> {
-    const encodeBatch = promisify(
-      this.tokenizer.encodeTokenizedBatch.bind(this.tokenizer)
-    );
-    const rawEncodings = await encodeBatch(sequences, typeId);
+    const rawEncodings = await encodeBatch(sequences, options);
     return rawEncodings.map(e => new Encoding(e));
   }
 

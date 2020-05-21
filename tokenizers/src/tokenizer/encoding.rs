@@ -92,6 +92,10 @@ impl Encoding {
         &self.words
     }
 
+    pub fn get_words_mut(&mut self) -> &mut [Option<u32>] {
+        &mut self.words
+    }
+
     pub fn get_ids(&self) -> &[u32] {
         &self.ids
     }

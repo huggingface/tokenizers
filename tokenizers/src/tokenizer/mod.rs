@@ -119,9 +119,57 @@ impl Token {
 }
 
 #[derive(Debug, Clone)]
+pub enum InputSequence {
+    Raw(String),
+    PreTokenized(Vec<String>),
+}
+
+impl From<String> for InputSequence {
+    fn from(input: String) -> Self {
+        InputSequence::Raw(input)
+    }
+}
+
+impl From<&str> for InputSequence {
+    fn from(input: &str) -> Self {
+        InputSequence::Raw(input.to_owned())
+    }
+}
+
+impl From<Vec<String>> for InputSequence {
+    fn from(input: Vec<String>) -> Self {
+        InputSequence::PreTokenized(input)
+    }
+}
+
+impl From<&[String]> for InputSequence {
+    fn from(input: &[String]) -> Self {
+        InputSequence::PreTokenized(input.to_vec())
+    }
+}
+
+impl From<&[&str]> for InputSequence {
+    fn from(input: &[&str]) -> Self {
+        InputSequence::PreTokenized(input.iter().map(|&i| i.to_string()).collect())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum EncodeInput {
-    Single(String),
-    Dual(String, String),
+    Single(InputSequence),
+    Dual(InputSequence, InputSequence),
+}
+
+impl<I: Into<InputSequence>> From<I> for EncodeInput {
+    fn from(input: I) -> Self {
+        EncodeInput::Single(input.into())
+    }
+}
+
+impl<I1: Into<InputSequence>, I2: Into<InputSequence>> From<(I1, I2)> for EncodeInput {
+    fn from(input: (I1, I2)) -> Self {
+        EncodeInput::Dual(input.0.into(), input.1.into())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -413,16 +461,19 @@ impl Tokenizer {
         Ok(normalized)
     }
 
-    /// Encode the given sentence
-    pub fn encode(&self, input: EncodeInput, add_special_tokens: bool) -> Result<Encoding> {
-        let generate_output = move |sentence: String, type_id: u32| -> Result<Encoding> {
-            // First we need to split into as many sequences as needed to avoid splitting
-            // on our added tokens
-            let results = self.split_on_added_tokens(&sentence).into_iter().map(
+    /// Encode a single sequence
+    fn encode_single_sequence(&self, sequence: InputSequence, type_id: u32) -> Result<Encoding> {
+        let (sequence, pre_tokenized) = match sequence {
+            InputSequence::PreTokenized(seq) => (seq, true),
+            InputSequence::Raw(seq) => (vec![seq], false),
+        };
+
+        let mut sequence_encodings = vec![];
+        for subseq in sequence {
+            let results = self.split_on_added_tokens(&subseq).into_iter().map(
                 |(sentence, id)| -> Result<(Encoding, NormalizedString)> {
-                    // If this is one of our added tokens, lets return an encoding directly
                     if let Some(id) = id {
-                        return Ok((
+                        Ok((
                             Encoding::new(
                                 vec![id],
                                 vec![type_id],
@@ -434,34 +485,31 @@ impl Tokenizer {
                                 vec![],
                             ),
                             sentence,
-                        ));
+                        ))
+                    } else {
+                        // 1. Normalization
+                        let mut normalized = self.do_normalize(sentence)?;
+                        // 2. Pre tokenization
+                        let pre_tokenized = self.pre_tokenize(&mut normalized)?;
+                        // 3. Model
+                        let tokens = self.model.tokenize(pre_tokenized)?;
+                        let encoding = Encoding::from_tokens(tokens, type_id);
+
+                        Ok((encoding, normalized))
                     }
-
-                    // 1. Normalization
-                    let mut normalized = self.do_normalize(sentence)?;
-
-                    // 2. Pre tokenization
-                    let pre_tokenized = self.pre_tokenize(&mut normalized)?;
-
-                    // 3. Model
-                    let tokens = self.model.tokenize(pre_tokenized)?;
-                    let encoding = Encoding::from_tokens(tokens, type_id);
-
-                    Ok((encoding, normalized))
                 },
             );
 
-            let (encodings, normalized) =
+            let (all_encodings, all_normalized) =
                 ResultShunt::process(results, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>())?;
-            if encodings.is_empty() {
+            if all_encodings.is_empty() {
                 return Ok(Encoding::default());
             }
 
             let mut final_encoding = Encoding::default();
-            let mut final_normalized = NormalizedString::default();
 
-            let mut offset = final_normalized.len_original();
-            for (mut encoding, normalized) in encodings.into_iter().zip(normalized) {
+            let mut offset = 0; //final_normalized.len_original();
+            for (mut encoding, normalized) in all_encodings.into_iter().zip(all_normalized) {
                 encoding
                     .get_offsets_mut()
                     .iter_mut()
@@ -478,31 +526,62 @@ impl Tokenizer {
                 offset += normalized.len_original();
 
                 final_encoding.merge_with(encoding, false);
-                final_normalized.merge_with(&normalized);
             }
 
-            Ok(final_encoding)
-        };
+            sequence_encodings.push(final_encoding);
+        }
 
-        let (sentence, pair) = match input {
+        Ok(Encoding::merge(&sequence_encodings, !pre_tokenized))
+    }
+
+    /// Encode the given input. This method accepts both single sequences, as well as pair
+    /// sequences. Also, a sequence can be a string, or already pre-tokenized input directly:
+    ///
+    /// ```
+    /// # use tokenizers::Tokenizer;
+    /// # use tokenizers::models::bpe::BPE;
+    /// # let tokenizer = Tokenizer::new(Box::new(BPE::default()));
+    /// #
+    /// // Sequences:
+    /// tokenizer.encode("Single sequence", false);
+    /// tokenizer.encode(("Sequence A", "Sequence B"), false);
+    ///
+    /// // Pre-tokenized sequences:
+    /// tokenizer.encode(&["Single", "sequence"][..], false);
+    /// tokenizer.encode((
+    ///     &["Sequence", "A"][..],
+    ///     &["Sequence", "B"][..]
+    /// ), false);
+    ///
+    /// // or even both types together:
+    /// tokenizer.encode(("A complete sequence", &["And", "a", "tokenized"][..]), false);
+    /// ```
+    pub fn encode<E: Into<EncodeInput>>(
+        &self,
+        input: E,
+        add_special_tokens: bool,
+    ) -> Result<Encoding> {
+        // Extract sequences from the EncodeInput
+        let (sequence, pair) = match input.into() {
             EncodeInput::Single(s1) => (s1, None),
             EncodeInput::Dual(s1, s2) => (s1, Some(s2)),
         };
 
-        let encoding = generate_output(sentence, 0)?;
+        // Encode each sequence
+        let encoding = self.encode_single_sequence(sequence, 0)?;
         let pair_encoding = match pair {
-            Some(pair) => Some(generate_output(pair, 1)?),
+            Some(sequence) => Some(self.encode_single_sequence(sequence, 1)?),
             None => None,
         };
 
-        // 4. Post processing
+        // And finally post process
         self.post_process(encoding, pair_encoding, add_special_tokens)
     }
 
     /// Encode all the sentences in parallel, using multiple threads
-    pub fn encode_batch(
+    pub fn encode_batch<E: Into<EncodeInput> + Send>(
         &self,
-        inputs: Vec<EncodeInput>,
+        inputs: Vec<E>,
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>> {
         let encodings = inputs

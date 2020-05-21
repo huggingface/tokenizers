@@ -2,7 +2,7 @@ import { promisify } from "util";
 
 import { BPE } from "./models";
 import { RawEncoding } from "./raw-encoding";
-import { Tokenizer } from "./tokenizer";
+import { EncodeOptions, InputSequence, Tokenizer } from "./tokenizer";
 import { mergeEncodings, slice } from "./utils";
 
 describe("slice", () => {
@@ -113,9 +113,9 @@ describe("slice", () => {
 
 describe("mergeEncodings", () => {
   let encode: (
-    sequence: string,
-    pair: string | null,
-    addSpecialTokens: boolean
+    sequence: InputSequence,
+    pair?: InputSequence | null,
+    options?: EncodeOptions | null
   ) => Promise<RawEncoding>;
 
   beforeAll(async () => {
@@ -132,8 +132,8 @@ describe("mergeEncodings", () => {
   });
 
   it("returns correct result with `growingOffsets` not provided", async () => {
-    const firstEncoding = await encode("my name is", null, false);
-    const secondEncoding = await encode("john", null, false);
+    const firstEncoding = await encode("my name is", null);
+    const secondEncoding = await encode("john", null);
     const encoding = mergeEncodings([firstEncoding, secondEncoding]);
 
     expect(encoding.getTokens()).toEqual(["my", "name", "is", "john"]);
@@ -146,8 +146,8 @@ describe("mergeEncodings", () => {
   });
 
   it("returns correct result when `growingOffsets` is `false`", async () => {
-    const firstEncoding = await encode("my name is", null, false);
-    const secondEncoding = await encode("john", null, false);
+    const firstEncoding = await encode("my name is", null);
+    const secondEncoding = await encode("john", null);
     const encoding = mergeEncodings([firstEncoding, secondEncoding], false);
 
     expect(encoding.getTokens()).toEqual(["my", "name", "is", "john"]);
@@ -160,8 +160,8 @@ describe("mergeEncodings", () => {
   });
 
   it("returns correct result when `growingOffsets` is `true`", async () => {
-    const firstEncoding = await encode("my name is", null, false);
-    const secondEncoding = await encode("john", null, false);
+    const firstEncoding = await encode("my name is", null);
+    const secondEncoding = await encode("john", null);
     const encoding = mergeEncodings([firstEncoding, secondEncoding], true);
 
     expect(encoding.getTokens()).toEqual(["my", "name", "is", "john"]);

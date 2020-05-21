@@ -3,7 +3,7 @@ extern crate criterion;
 
 use criterion::{black_box, Criterion};
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::time::{Duration, Instant};
 use tokenizers::models::bpe::BPE;
@@ -21,10 +21,6 @@ fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer {
         AddedToken::from(String::from("[ENT]")).single_word(true),
     ]);
     tokenizer
-}
-
-fn line_to_input(line: io::Result<String>) -> EncodeInput {
-    EncodeInput::Single(line.unwrap())
 }
 
 fn iter_bench_encode(iters: u64, tokenizer: &Tokenizer, lines: &[EncodeInput]) -> Duration {
@@ -68,10 +64,8 @@ fn bench_gpt2(c: &mut Criterion) {
     let tokenizer = create_gpt2_tokenizer(bpe);
     let mut lines: Vec<EncodeInput> = vec![];
     let mut batches: Vec<Vec<EncodeInput>> = vec![vec![]];
-    for line in BufReader::new(File::open(Path::new("data/big.txt")).unwrap())
-        .lines()
-        .map(line_to_input)
-    {
+    for line in BufReader::new(File::open(Path::new("data/big.txt")).unwrap()).lines() {
+        let line: EncodeInput = line.unwrap().into();
         lines.push(line.clone());
         if batches.last().unwrap().len() >= BATCH_SIZE {
             batches.push(vec![]);

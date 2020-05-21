@@ -1,4 +1,4 @@
-from tokenizers import Tokenizer, Encoding, AddedToken
+from tokenizers import Tokenizer, Encoding, AddedToken, InputSequence, EncodeInput
 from tokenizers.models import TokenizedSequence, TokenizedSequenceWithOffsets
 
 from typing import List, Union, Tuple, Optional, Dict
@@ -151,72 +151,27 @@ class BaseTokenizer:
         """
         return self._tokenizer.normalize(sequence)
 
-    def encode_tokenized(
-        self, sequence: Union[TokenizedSequence, TokenizedSequenceWithOffsets], type_id: int = 0
-    ) -> Encoding:
-        """ Encode the given sequence. Let us skip the Normalizer and PreTokenizer by providing
-        already tokenized substrings.
-
-        A sequence can either be:
-            - `TokenizedSequence`: (`List[str]`)
-            - `TokenizedSequenceWithOffsets: (`List[Tuple[str, Offsets]]`) where Offsets is
-            a Tuple[int, int].
-
-        If the Offsets are not provided, they will be automatically generated, making the hypothesis
-        that all the tokens in the `TokenizedSequence` are contiguous in the original string.
-
-        Args:
-            sequence: Union[TokenizedSequence, TokenizedSequenceWithOffsets]
-                Either a TokenizedSequence or a TokenizedSequenceWithOffsets
-
-            type_id: int:
-                The type id of the given sequence
-
-        Returns:
-            An Encoding
-        """
-        return self._tokenizer.model.encode(sequence, type_id)
-
-    def encode_tokenized_batch(
-        self,
-        sequences: Union[List[TokenizedSequence], List[TokenizedSequenceWithOffsets]],
-        type_id: int = 0,
-    ) -> List[Encoding]:
-        """ Encode the given batch of sequence. Let us skip the Normalizer and PreTokenizer by
-        providing already tokenized substrings.
-
-        A sequence can either be:
-            - `TokenizedSequence`: (`List[str]`)
-            - `TokenizedSequenceWithOffsets: (`List[Tuple[str, Offsets]]`) where Offsets is
-            a Tuple[int, int].
-
-        If the Offsets are not provided, they will be automatically generated, making the hypothesis
-        that all the tokens in the `TokenizedSequence` are contiguous in the original string.
-
-        Args:
-            sequences: Union[List[TokenizedSequence], List[TokenizedSequenceWithOffsets]]
-                A list of sequence. Each sequence is either a TokenizedSequence or a
-                TokenizedSequenceWithOffsets
-
-            type_id: int:
-                The type if of the given sequence
-
-        Returns:
-            A list of Encoding
-        """
-        return self._tokenizer.model.encode_batch(sequences, type_id)
-
     def encode(
-        self, sequence: str, pair: Optional[str] = None, add_special_tokens: bool = True
+        self,
+        sequence: InputSequence,
+        pair: Optional[InputSequence] = None,
+        is_pretokenized: bool = False,
+        add_special_tokens: bool = True,
     ) -> Encoding:
-        """ Encode the given sequence
+        """ Encode the given sequence and pair. This method can process raw text sequences as well
+        as already pre-tokenized sequences.
 
         Args:
-            sequence: str:
-                The sequence to encode
+            sequence: InputSequence:
+                The sequence we want to encode. This sequence can be either raw text or
+                pre-tokenized, according to the `is_pretokenized` argument:
 
-            pair: (`optional`) Optional[str]:
-                The optional pair sequence
+                - If `is_pretokenized=False`: `InputSequence` is expected to be `str`
+                - If `is_pretokenized=True`: `InputSequence` is expected to be
+                    `Union[List[str], Tuple[str]]`
+
+            is_pretokenized: bool:
+                Whether the input is already pre-tokenized.
 
             add_special_tokens: bool:
                 Whether to add the special tokens while encoding.
@@ -225,19 +180,34 @@ class BaseTokenizer:
             An Encoding
         """
         if sequence is None:
-            raise ValueError("None input is not valid. Should be a string.")
+            raise ValueError("encode: `sequence` can't be `None`")
 
-        return self._tokenizer.encode(sequence, pair, add_special_tokens)
+        return self._tokenizer.encode(sequence, pair, is_pretokenized, add_special_tokens)
 
     def encode_batch(
-        self, sequences: List[Union[str, Tuple[str, str]]], add_special_tokens: bool = True
+        self,
+        inputs: List[EncodeInput],
+        is_pretokenized: bool = False,
+        add_special_tokens: bool = True,
     ) -> List[Encoding]:
-        """ Encode the given sequences or pair of sequences
+        """ Encode the given inputs. This method accept both raw text sequences as well as already
+        pre-tokenized sequences.
 
         Args:
-            sequences: List[Union[str, Tuple[str, str]]]:
-                A list of sequences or pair of sequences. The list can contain both
-                at the same time.
+            inputs: List[EncodeInput]:
+                A list of single sequences or pair sequences to encode. Each `EncodeInput` is
+                expected to be of the following form:
+                    `Union[InputSequence, Tuple[InputSequence, InputSequence]]`
+
+                Each `InputSequence` can either be raw text or pre-tokenized,
+                according to the `is_pretokenized` argument:
+
+                - If `is_pretokenized=False`: `InputSequence` is expected to be `str`
+                - If `is_pretokenized=True`: `InputSequence` is expected to be
+                    `Union[List[str], Tuple[str]]`
+
+            is_pretokenized: bool:
+                Whether the input is already pre-tokenized.
 
             add_special_tokens: bool:
                 Whether to add the special tokens while encoding.
@@ -246,12 +216,10 @@ class BaseTokenizer:
             A list of Encoding
         """
 
-        if sequences is None:
-            raise ValueError(
-                "None input is not valid. Should be a list of strings or a list of tuple of strings."
-            )
+        if inputs is None:
+            raise ValueError("encode_batch: `inputs` can't be `None`")
 
-        return self._tokenizer.encode_batch(sequences, add_special_tokens)
+        return self._tokenizer.encode_batch(inputs, is_pretokenized, add_special_tokens)
 
     def decode(self, ids: List[int], skip_special_tokens: Optional[bool] = True) -> str:
         """ Decode the given list of ids to a string sequence

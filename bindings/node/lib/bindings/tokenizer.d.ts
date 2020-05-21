@@ -62,15 +62,28 @@ export interface PaddingOptions {
   padToken?: string;
 }
 
-/**
- * A list of tokens
- */
-export type TokenizedSequence = string[];
+export type TextInputSequence = string;
+export type PreTokenizedInputSequence = string[];
+export type InputSequence = TextInputSequence | PreTokenizedInputSequence;
 
-/**
- * A list of tokens, each associated with its offsets
- */
-export type TokenizedSequenceWithOffsets = [string, [number, number]][];
+export type TextEncodeInput = TextInputSequence | [TextInputSequence, TextInputSequence];
+export type PreTokenizedEncodeInput =
+  | PreTokenizedInputSequence
+  | [PreTokenizedInputSequence, PreTokenizedInputSequence];
+export type EncodeInput = TextEncodeInput | PreTokenizedEncodeInput;
+
+export interface EncodeOptions {
+  /**
+   * Whether the given sequence is pre-tokenized
+   * @default false
+   */
+  isPretokenized?: boolean;
+  /**
+   * Whether we should add special tokens
+   * @default true
+   */
+  addSpecialTokens?: boolean;
+}
 
 /**
  * A Tokenizer works as a pipeline, it processes some raw text as input and outputs
@@ -119,10 +132,10 @@ export class Tokenizer {
    * @param __callback Callback called when encoding is complete
    */
   encode(
-    sequence: string,
-    pair: string | null,
-    addSpecialTokens: boolean,
-    __callback: (err: Error, encoding: RawEncoding) => void
+    sequence: InputSequence,
+    pair?: InputSequence | null,
+    options?: EncodeOptions | null, // |(err: Error, encoding: RawEncoding) => void,
+    __callback?: (err: Error, encoding: RawEncoding) => void
   ): void;
 
   /**
@@ -133,39 +146,9 @@ export class Tokenizer {
    * @param __callback Callback called when encoding is complete
    */
   encodeBatch(
-    sequences: (string | [string, string])[],
-    addSpecialTokens: boolean,
-    __callback: (err: Error, encodings: RawEncoding[]) => void
-  ): void;
-
-  /**
-   * Encode the given tokens sequence
-   * @param sequence A sequence of tokens to encode.
-   * If the sequence is a {@link TokenizedSequence}, offsets will be automatically generated,
-   * making the hypothesis that all the tokens in the sequence are contiguous in the original string
-   * @param [typeId=0] The type id of the given sequence. Defaults to 0.
-   * @param __callback Callback called when encoding is complete
-   * @since 0.6.0
-   */
-  encodeTokenized(
-    sequence: TokenizedSequence | TokenizedSequenceWithOffsets,
-    typeId: number | undefined,
-    __callback: (err: Error, encoding: RawEncoding) => void
-  ): void;
-
-  /**
-   * Encode the given tokens sequences
-   * @param sequences A list of sequences to encode.
-   * If a sequence is a {@link TokenizedSequence}, offsets will be automatically generated,
-   * making the hypothesis that all the tokens in the sequence are contiguous in the original string
-   * @param [typeId=0] The type id of the given sequences. Defaults to 0.
-   * @param __callback Callback called when encoding is complete
-   * @since 0.6.0
-   */
-  encodeTokenizedBatch(
-    sequences: (TokenizedSequence | TokenizedSequenceWithOffsets)[],
-    typeId: number | undefined,
-    __callback: (err: Error, encodings: RawEncoding[]) => void
+    inputs: EncodeInput[],
+    options?: EncodeOptions | null, // (err: Error, encodings: RawEncoding[]) => void,
+    __callback?: (err: Error, encodings: RawEncoding[]) => void
   ): void;
 
   /**

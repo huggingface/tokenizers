@@ -16,6 +16,16 @@ from typing import Optional, Union, List, Tuple
 
 Offsets = Tuple[int, int]
 
+TextInputSequence = str
+PreTokenizedInputSequence = Union[List[str], Tuple[str]]
+TextEncodeInput = Union[TextInputSequence, Tuple[TextInputSequence, TextInputSequence]]
+PreTokenizedEncodeInput = Union[
+    PreTokenizedInputSequence, Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence],
+]
+
+InputSequence = Union[TextInputSequence, PreTokenizedInputSequence]
+EncodeInput = Union[TextEncodeInput, PreTokenizedEncodeInput]
+
 class Encoding:
     """ An Encoding as returned by the Tokenizer """
 
@@ -190,7 +200,7 @@ class AddedToken:
     """
 
     def __new__(
-        cls, content: str, single_word: bool = False, lstrip: bool = False, rstrip: bool = False
+        cls, content: str, single_word: bool = False, lstrip: bool = False, rstrip: bool = False,
     ) -> AddedToken:
         """ Instantiate a new AddedToken
 
@@ -370,36 +380,61 @@ class Tokenizer:
         """
         pass
     def encode(
-        self, sequence: str, pair: Optional[str] = None, add_special_tokens: bool = True
+        self,
+        sequence: InputSequence,
+        pair: Optional[InputSequence],
+        is_pretokenized: bool = False,
+        add_special_tokens: bool = True,
     ) -> Encoding:
-        """ Encode the given sequence
+        """ Encode the given sequence and pair. This method can process raw text sequences as well
+        as already pre-tokenized sequences.
 
         Args:
-            sequence: str:
-                The sequence to encode
+            sequence: InputSequence:
+                The sequence we want to encode. This sequence can be either raw text or
+                pre-tokenized, according to the `is_pretokenized` argument:
 
-            pair: (`optional`) Optional[str]:
-                The optional pair sequence
+                - If `is_pretokenized=False`: `InputSequence` is expected to be `str`
+                - If `is_pretokenized=True`: `InputSequence` is expected to be
+                    `Union[List[str], Tuple[str]]`
+
+            is_pretokenized: bool:
+                Whether the input is already pre-tokenized
 
             add_special_tokens: bool:
-                Whether to add the special tokens while encoding
+                Whether to add the special tokens while encoding.
 
         Returns:
             An Encoding
         """
         pass
     def encode_batch(
-        self, sequences: List[Union[str, Tuple[str, str]]], add_special_tokens: bool = True
+        self,
+        inputs: List[EncodeInput],
+        is_pretokenized: bool = False,
+        add_special_tokens: bool = True,
     ) -> List[Encoding]:
-        """ Encode the given sequences or pair of sequences
+        """ Encode the given inputs. This method accept both raw text sequences as well as already
+        pre-tokenized sequences.
 
         Args:
-            sequences: List[Union[str, Tuple[str, str]]]:
-                A list of sequences or pair of sequences. The list can contain both
-                at the same time.
+            inputs: List[EncodeInput]:
+                A list of single sequences or pair sequences to encode. Each `EncodeInput` is
+                expected to be of the following form:
+                    `Union[InputSequence, Tuple[InputSequence, InputSequence]]`
+
+                Each `InputSequence` can either be raw text or pre-tokenized,
+                according to the `is_pretokenized` argument:
+
+                - If `is_pretokenized=False`: `InputSequence` is expected to be `str`
+                - If `is_pretokenized=True`: `InputSequence` is expected to be
+                    `Union[List[str], Tuple[str]]`
+
+            is_pretokenized: bool:
+                Whether the input is already pre-tokenized.
 
             add_special_tokens: bool:
-                Whether to add the special tokens while encoding
+                Whether to add the special tokens while encoding.
 
         Returns:
             A list of Encoding
@@ -485,7 +520,7 @@ class Tokenizer:
         """
         pass
     def post_process(
-        self, encoding: Encoding, pair: Optional[Encoding] = None, add_special_tokens: bool = True
+        self, encoding: Encoding, pair: Optional[Encoding] = None, add_special_tokens: bool = True,
     ) -> Encoding:
         """ Apply all the post-processing steps to the given encodings.
 

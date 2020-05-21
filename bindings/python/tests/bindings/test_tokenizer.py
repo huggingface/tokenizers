@@ -1,10 +1,12 @@
-from ..utils import data_dir, roberta_files
+import pytest
+from ..utils import data_dir, roberta_files, bert_files
 
-from tokenizers import AddedToken, Tokenizer
-from tokenizers.models import Model, BPE
+from tokenizers import AddedToken, Tokenizer, Encoding
+from tokenizers.models import Model, BPE, WordPiece
 from tokenizers.pre_tokenizers import ByteLevel
-from tokenizers.processors import RobertaProcessing
+from tokenizers.processors import RobertaProcessing, BertProcessing
 from tokenizers.normalizers import Lowercase
+from tokenizers.implementations import BertWordPieceTokenizer
 
 
 class TestAddedToken:
@@ -105,9 +107,46 @@ class TestTokenizer:
         output = tokenizer.encode("my name is john", "pair")
         assert output.tokens == ["my", "name", "is", "john", "pair"]
 
+        # Can encode a single pre-tokenized sequence
+        output = tokenizer.encode(["my", "name", "is", "john"], is_pretokenized=True)
+        assert output.tokens == ["my", "name", "is", "john"]
+
         # Can encode a batch with both a single sequence and a pair of sequences
         output = tokenizer.encode_batch(["my name is john", ("my name is john", "pair")])
         assert len(output) == 2
+
+    def test_encode_formats(self, bert_files):
+        tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
+
+        # Well formed
+        output = tokenizer.encode("my name is john")
+        assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
+        output = tokenizer.encode("my name is john", "pair")
+        assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]", "pair", "[SEP]"]
+        output = tokenizer.encode(["my", "name", "is", "john"], is_pretokenized=True)
+        assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
+        output = tokenizer.encode(["my", "name", "is", "john"], ["pair"], is_pretokenized=True)
+        assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]", "pair", "[SEP]"]
+
+        output = tokenizer.encode_batch(["My name is John", "My name is Georges"])
+        assert output[0].tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
+        assert output[1].tokens == ["[CLS]", "my", "name", "is", "georges", "[SEP]"]
+        output = tokenizer.encode_batch([("my name is john", "pair"), ("my name is john", "pair")])
+        assert output[0].tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]", "pair", "[SEP]"]
+        assert output[1].tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]", "pair", "[SEP]"]
+        output = tokenizer.encode_batch([["my", "name", "is", "john"]], is_pretokenized=True)
+        assert output[0].tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
+
+        # Mal formed
+        with pytest.raises(ValueError, match="InputSequence must be str"):
+            tokenizer.encode([["my", "name"]])
+            tokenizer.encode("My name is john", [["pair"]])
+            tokenizer.encode("my name is john", ["pair"])
+
+        with pytest.raises(ValueError, match="InputSequence must be Union[List[str]"):
+            tokenizer.encode("My name is john", is_pretokenized=True)
+            tokenizer.encode("My name is john", ["pair"], is_pretokenized=True)
+            tokenizer.encode(["My", "name", "is", "John"], "pair", is_pretokenized=True)
 
     def test_encode_add_special_tokens(self, roberta_files):
         tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))

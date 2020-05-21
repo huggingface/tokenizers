@@ -1,8 +1,18 @@
 __version__ = "0.7.0"
 
-from typing import Tuple
+from typing import Tuple, Union, Tuple, List
 
 Offsets = Tuple[int, int]
+
+TextInputSequence = str
+PreTokenizedInputSequence = Union[List[str], Tuple[str]]
+TextEncodeInput = Union[TextInputSequence, Tuple[TextInputSequence, TextInputSequence]]
+PreTokenizedEncodeInput = Union[
+    PreTokenizedInputSequence, Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence]
+]
+
+InputSequence = Union[TextInputSequence, PreTokenizedInputSequence]
+EncodeInput = Union[TextEncodeInput, PreTokenizedEncodeInput]
 
 from .tokenizers import Tokenizer, Encoding, AddedToken
 from .tokenizers import decoders
