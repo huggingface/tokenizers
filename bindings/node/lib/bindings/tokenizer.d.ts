@@ -105,6 +105,18 @@ export class Tokenizer {
   constructor(model: Model);
 
   /**
+   * Instantiate a new Tokenizer from the given file
+   * @param path Path to a file containing a Tokenizer
+   */
+  static fromFile(path: string): Tokenizer;
+
+  /**
+   * Instantiate a new Tokenizer from the given JSON string
+   * @param s A JSON string representation of the Tokenizer
+   */
+  static fromString(s: string): Tokenizer;
+
+  /**
    * Add the given tokens to the vocabulary
    *
    * @param tokens A list of tokens to add to the vocabulary.
@@ -333,6 +345,19 @@ export class Tokenizer {
     pair?: RawEncoding,
     addSpecialTokens?: boolean
   ): RawEncoding;
+
+  /**
+   * Save the Tokenizer as JSON to the given path
+   * @param path Path to the JSON file to write
+   * @param [pretty=false] Whether the JSON string should be prettified
+   */
+  save(path: string, pretty?: boolean): void;
+
+  /**
+   * Get a serialized JSON version of the Tokenizer as a string
+   * @param [pretty=false] Whether the JSON string should be prettified
+   */
+  toString(pretty?: boolean): string;
 }
 
 /**

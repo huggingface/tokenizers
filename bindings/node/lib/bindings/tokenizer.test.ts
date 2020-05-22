@@ -63,6 +63,9 @@ describe("Tokenizer", () => {
     const model = BPE.empty();
     const tokenizer = new Tokenizer(model);
 
+    expect(typeof Tokenizer.fromFile).toBe("function");
+    expect(typeof Tokenizer.fromString).toBe("function");
+
     expect(typeof tokenizer.addSpecialTokens).toBe("function");
     expect(typeof tokenizer.addTokens).toBe("function");
     expect(typeof tokenizer.decode).toBe("function");
@@ -79,6 +82,7 @@ describe("Tokenizer", () => {
     expect(typeof tokenizer.getVocabSize).toBe("function");
     expect(typeof tokenizer.idToToken).toBe("function");
     expect(typeof tokenizer.runningTasks).toBe("function");
+    expect(typeof tokenizer.save).toBe("function");
     expect(typeof tokenizer.setDecoder).toBe("function");
     expect(typeof tokenizer.setModel).toBe("function");
     expect(typeof tokenizer.setNormalizer).toBe("function");
@@ -87,6 +91,7 @@ describe("Tokenizer", () => {
     expect(typeof tokenizer.setPreTokenizer).toBe("function");
     expect(typeof tokenizer.setTruncation).toBe("function");
     expect(typeof tokenizer.tokenToId).toBe("function");
+    expect(typeof tokenizer.toString).toBe("function");
     expect(typeof tokenizer.train).toBe("function");
   });
 
