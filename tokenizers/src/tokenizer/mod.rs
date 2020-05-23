@@ -17,6 +17,7 @@ use rayon::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
 
@@ -557,41 +558,40 @@ impl Tokenizer {
 
     /// Train a model and replace our current Model, using the given Trainer
     #[allow(clippy::borrowed_box)]
-    pub fn train(&mut self, trainer: &Box<dyn Trainer>, files: Vec<String>) -> Result<()> {
+    pub fn word_count(
+        &mut self,
+        trainer: &Box<dyn Trainer>,
+        files: Vec<String>,
+    ) -> Result<HashMap<String, u32>> {
+        let max_read = 100_000_000;
         let len: u64 = files
             .iter()
             .map(|filename| File::open(filename).unwrap().metadata().unwrap().len() as u64)
             .sum();
 
-        let (sender, receiver) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
+        let progress = if trainer.should_show_progress() {
             let progress = ProgressBar::new(len);
             progress.set_style(
                 ProgressStyle::default_bar()
                     .template("[{elapsed_precise}] {msg:<40!} {wide_bar} {percent:>19!}"),
             );
             progress.set_message(&format!("Reading files ({:.2} Mo)", len / 1_000_000));
-            let mut read = 0;
-            for b in receiver.iter() {
-                read += b as u64;
-                progress.inc(b as u64);
-                if read == len {
-                    break;
-                }
-            }
-            progress.finish();
-        });
-        let results = files
+            Some(progress)
+        } else {
+            None
+        };
+        let words = files
             .into_iter()
             .map(|filename| -> Result<HashMap<String, u32>> {
-                let buf = std::fs::read_to_string(filename)?;
-
-                let words = buf
-                    .par_split('\n')
+                let file = File::open(filename)?;
+                let file = BufReader::with_capacity(max_read, file);
+                let words = file
+                    .lines()
+                    .par_bridge()
                     .map_with(
-                        sender.clone(),
-                        |sender, line| -> Result<HashMap<String, u32>> {
-                            let mut new_line = line.to_string();
+                        &progress,
+                        |progress, line| -> Result<HashMap<String, u32>> {
+                            let mut new_line = line?;
                             new_line.push_str(&"\n");
                             let mut words = HashMap::new();
                             let mut normalized =
@@ -603,25 +603,16 @@ impl Tokenizer {
                             );
 
                             let b = new_line.len();
-                            sender.send(b)?;
-                            Ok(words)
-                        },
-                    )
-                    .try_fold(
-                        HashMap::new,
-                        |mut acc, ws| -> Result<HashMap<String, u32>> {
-                            {
-                                for (k, v) in ws? {
-                                    *acc.entry(k).or_insert(0) += v;
-                                }
+                            if let Some(pbar) = progress {
+                                pbar.inc(b as u64);
                             }
-                            Ok(acc)
+                            Ok(words)
                         },
                     )
                     .try_reduce(HashMap::new, |mut acc, ws| {
                         {
                             for (k, v) in ws {
-                                *acc.entry(k).or_insert(0) += v;
+                                acc.entry(k).and_modify(|c| *c += v).or_insert(v);
                             }
                         }
                         Ok(acc)
@@ -629,18 +620,25 @@ impl Tokenizer {
 
                 Ok(words)
             })
-            .collect::<Vec<_>>();
-        drop(sender);
-
-        let mut words = HashMap::new();
-        for result in results {
-            for (word, count) in result? {
-                words
-                    .entry(word)
-                    .and_modify(|c| *c += count)
-                    .or_insert(count);
-            }
+            .try_fold(
+                HashMap::new(),
+                |mut acc, ws| -> Result<HashMap<String, u32>> {
+                    for (k, v) in ws? {
+                        acc.entry(k).and_modify(|c| *c += v).or_insert(v);
+                    }
+                    Ok(acc)
+                },
+            )?;
+        if let Some(pbar) = progress {
+            pbar.finish();
         }
+        Ok(words)
+    }
+
+    /// Train a model and replace our current Model, using the given Trainer
+    #[allow(clippy::borrowed_box)]
+    pub fn train(&mut self, trainer: &Box<dyn Trainer>, files: Vec<String>) -> Result<()> {
+        let words = self.word_count(trainer, files)?;
 
         let (model, special_tokens) = trainer.train(words)?;
         self.model = model;
@@ -899,5 +897,27 @@ impl Tokenizer {
                 })
                 .collect()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::bpe::{BpeTrainerBuilder, BPE};
+    use crate::pre_tokenizers::byte_level::ByteLevel;
+
+    #[test]
+    fn test_word_count() {
+        let mut tokenizer = Tokenizer::new(Box::new(BPE::default()));
+        tokenizer.with_pre_tokenizer(Box::new(ByteLevel::default()));
+
+        let trainer: Box<dyn Trainer> =
+            Box::new(BpeTrainerBuilder::default().show_progress(false).build());
+        let words = tokenizer
+            .word_count(&trainer, vec!["data/small.txt".to_string()])
+            .unwrap();
+        assert_eq!(words.get(&"1520".to_string()), Some(&1));
+        assert_eq!(words.len(), 1503);
+        assert_eq!(words.into_iter().map(|(_, v)| v).sum::<u32>(), 3085);
     }
 }
