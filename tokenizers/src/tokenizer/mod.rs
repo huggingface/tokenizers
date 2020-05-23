@@ -904,20 +904,20 @@ impl Tokenizer {
 mod tests {
     use super::*;
     use crate::models::bpe::{BpeTrainerBuilder, BPE};
-    use crate::pre_tokenizers::byte_level::ByteLevel;
+    use crate::pre_tokenizers::whitespace::Whitespace;
 
     #[test]
     fn test_word_count() {
         let mut tokenizer = Tokenizer::new(Box::new(BPE::default()));
-        tokenizer.with_pre_tokenizer(Box::new(ByteLevel::default()));
+        tokenizer.with_pre_tokenizer(Box::new(Whitespace));
 
         let trainer: Box<dyn Trainer> =
             Box::new(BpeTrainerBuilder::default().show_progress(false).build());
         let words = tokenizer
             .word_count(&trainer, vec!["data/small.txt".to_string()])
             .unwrap();
-        assert_eq!(words.get(&"1520".to_string()), Some(&1));
-        assert_eq!(words.len(), 1503);
-        assert_eq!(words.into_iter().map(|(_, v)| v).sum::<u32>(), 3085);
+        assert_eq!(words.get(&"Holmes".to_string()), Some(&7));
+        assert_eq!(words.len(), 680);
+        assert_eq!(words.into_iter().map(|(_, v)| v).sum::<u32>(), 1541);
     }
 }

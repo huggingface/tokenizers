@@ -6,7 +6,7 @@ dir_guard=@mkdir -p $(@D)
 
 SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/big.txt
-TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/bert-base-uncased-vocab.txt
+TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/bert-base-uncased-vocab.txt $(DATA_DIR)/small.txt
 
 .PHONY : build
 build :
@@ -56,3 +56,6 @@ $(DATA_DIR)/bert-% :
 $(DATA_DIR)/big.txt :
 	$(dir_guard)
 	wget https://norvig.com/big.txt -O $@
+
+$(DATA_DIR)/small.txt : $(DATA_DIR)/big.txt
+	head -100 $(DATA_DIR)/big.txt > $@
