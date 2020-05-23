@@ -103,6 +103,7 @@ fn bench_gpt2(c: &mut Criterion) {
     });
 }
 
+#[allow(clippy::borrowed_box)]
 fn iter_bench_train(
     iters: u64,
     tokenizer: &mut Tokenizer,
@@ -130,7 +131,7 @@ fn bench_gpt2_train(c: &mut Criterion) {
                 iters,
                 &mut tokenizer,
                 &trainer,
-                vec!["data/small.txt".to_string()].clone(),
+                vec!["data/small.txt".to_string()],
             )
         })
     });
@@ -141,7 +142,7 @@ fn bench_gpt2_train(c: &mut Criterion) {
                 iters,
                 &mut tokenizer,
                 &trainer,
-                vec!["data/big.txt".to_string()].clone(),
+                vec!["data/big.txt".to_string()],
             )
         })
     });
