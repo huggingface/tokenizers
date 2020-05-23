@@ -563,7 +563,7 @@ impl Tokenizer {
         trainer: &Box<dyn Trainer>,
         files: Vec<String>,
     ) -> Result<HashMap<String, u32>> {
-        let max_read = 100_000_000;
+        let max_read = 1_000_000;
         let len: u64 = files
             .iter()
             .map(|filename| File::open(filename).unwrap().metadata().unwrap().len() as u64)
@@ -585,24 +585,25 @@ impl Tokenizer {
             .map(|filename| -> Result<HashMap<String, u32>> {
                 let file = File::open(filename)?;
                 let file = BufReader::with_capacity(max_read, file);
-                let words = file
-                    .lines()
+                // We read new lines using this API instead of the Lines Iterator
+                // on purpose. We want to keep the `\n` and potential `\r` between each lines
+                // We use an iterator to be able to chain with par_bridge.
+                let words = lines_with_ending(file)
                     .par_bridge()
                     .map_with(
                         &progress,
                         |progress, line| -> Result<HashMap<String, u32>> {
-                            let mut new_line = line?;
-                            new_line.push_str(&"\n");
+                            let newline = line?;
                             let mut words = HashMap::new();
                             let mut normalized =
-                                self.do_normalize(NormalizedString::from(&new_line))?;
+                                self.do_normalize(NormalizedString::from(&newline))?;
                             let pre_tokenized = self.pre_tokenize(&mut normalized)?;
                             trainer.process_tokens(
                                 &mut words,
                                 pre_tokenized.into_iter().map(|(t, _)| t).collect(),
                             );
 
-                            let b = new_line.len();
+                            let b = newline.len();
                             if let Some(pbar) = progress {
                                 pbar.inc(b as u64);
                             }
@@ -900,24 +901,34 @@ impl Tokenizer {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::bpe::{BpeTrainerBuilder, BPE};
-    use crate::pre_tokenizers::whitespace::Whitespace;
+#[derive(Debug)]
+pub struct Lines<B> {
+    buf: B,
+}
+impl<B: BufRead> Iterator for Lines<B> {
+    type Item = std::io::Result<String>;
 
-    #[test]
-    fn test_word_count() {
-        let mut tokenizer = Tokenizer::new(Box::new(BPE::default()));
-        tokenizer.with_pre_tokenizer(Box::new(Whitespace));
-
-        let trainer: Box<dyn Trainer> =
-            Box::new(BpeTrainerBuilder::default().show_progress(false).build());
-        let words = tokenizer
-            .word_count(&trainer, vec!["data/small.txt".to_string()])
-            .unwrap();
-        assert_eq!(words.get(&"Holmes".to_string()), Some(&7));
-        assert_eq!(words.len(), 680);
-        assert_eq!(words.into_iter().map(|(_, v)| v).sum::<u32>(), 1541);
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut buf = String::new();
+        match self.buf.read_line(&mut buf) {
+            Ok(0) => None,
+            Ok(_n) => {
+                // if buf.ends_with('\n') {
+                //     buf.pop();
+                //     if buf.ends_with('\r') {
+                //         buf.pop();
+                //     }
+                // }
+                Some(Ok(buf))
+            }
+            Err(e) => Some(Err(e)),
+        }
     }
+}
+
+fn lines_with_ending<B>(buf: B) -> Lines<B>
+where
+    B: BufRead,
+{
+    Lines { buf }
 }

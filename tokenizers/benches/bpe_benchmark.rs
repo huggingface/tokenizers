@@ -6,9 +6,10 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 use std::time::{Duration, Instant};
-use tokenizers::models::bpe::BPE;
+use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
-use tokenizers::tokenizer::{AddedToken, EncodeInput, Tokenizer};
+use tokenizers::pre_tokenizers::whitespace::Whitespace;
+use tokenizers::tokenizer::{AddedToken, EncodeInput, Tokenizer, Trainer};
 
 static BATCH_SIZE: usize = 1_000;
 
@@ -102,9 +103,58 @@ fn bench_gpt2(c: &mut Criterion) {
     });
 }
 
+fn iter_bench_train(
+    iters: u64,
+    tokenizer: &mut Tokenizer,
+    trainer: &Box<dyn Trainer>,
+    files: Vec<String>,
+) -> Duration {
+    let mut duration = Duration::new(0, 0);
+    for _i in 0..iters {
+        let start = Instant::now();
+        let _ = black_box(tokenizer.train(&trainer, files.clone()));
+        duration = duration.checked_add(start.elapsed()).unwrap();
+    }
+    duration
+}
+
+fn bench_gpt2_train(c: &mut Criterion) {
+    let mut tokenizer = Tokenizer::new(Box::new(BPE::default()));
+    tokenizer.with_pre_tokenizer(Box::new(Whitespace));
+
+    let trainer: Box<dyn Trainer> =
+        Box::new(BpeTrainerBuilder::default().show_progress(false).build());
+    c.bench_function("BPE Train vocabulary (small)", |b| {
+        b.iter_custom(|iters| {
+            iter_bench_train(
+                iters,
+                &mut tokenizer,
+                &trainer,
+                vec!["data/small.txt".to_string()].clone(),
+            )
+        })
+    });
+
+    c.bench_function("BPE Train vocabulary (big)", |b| {
+        b.iter_custom(|iters| {
+            iter_bench_train(
+                iters,
+                &mut tokenizer,
+                &trainer,
+                vec!["data/big.txt".to_string()].clone(),
+            )
+        })
+    });
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(20);
     targets = bench_gpt2
 }
-criterion_main!(benches);
+criterion_group! {
+    name = benches_train;
+    config = Criterion::default().sample_size(10);
+    targets = bench_gpt2_train
+}
+criterion_main!(benches, benches_train);
