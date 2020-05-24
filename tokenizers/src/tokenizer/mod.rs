@@ -9,6 +9,7 @@
 //!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
 //!   ...).
 
+pub use crate::utils::iter::LinesWithEnding;
 use crate::utils::iter::ResultShunt;
 pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, PaddingStrategy};
 pub use crate::utils::truncation::{truncate_encodings, TruncationParams, TruncationStrategy};
@@ -17,7 +18,7 @@ use rayon::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
-    io::{BufRead, BufReader},
+    io::BufReader,
     path::{Path, PathBuf},
 };
 
@@ -558,7 +559,7 @@ impl Tokenizer {
 
     /// Train a model and replace our current Model, using the given Trainer
     #[allow(clippy::borrowed_box)]
-    pub fn word_count(
+    fn word_count(
         &mut self,
         trainer: &Box<dyn Trainer>,
         files: Vec<String>,
@@ -576,6 +577,7 @@ impl Tokenizer {
                     .template("[{elapsed_precise}] {msg:<40!} {wide_bar} {percent:>19!}"),
             );
             progress.set_message(&format!("Reading files ({:.2} Mo)", len / 1_000_000));
+            progress.set_draw_delta(len / 100); // Redraw only every 2%
             Some(progress)
         } else {
             None
@@ -588,7 +590,8 @@ impl Tokenizer {
                 // We read new lines using this API instead of the Lines Iterator
                 // on purpose. We want to keep the `\n` and potential `\r` between each lines
                 // We use an iterator to be able to chain with par_bridge.
-                let words = lines_with_ending(file)
+                let words = file
+                    .lines_with_ending()
                     .par_bridge()
                     .map_with(
                         &progress,
@@ -611,10 +614,8 @@ impl Tokenizer {
                         },
                     )
                     .try_reduce(HashMap::new, |mut acc, ws| {
-                        {
-                            for (k, v) in ws {
-                                acc.entry(k).and_modify(|c| *c += v).or_insert(v);
-                            }
+                        for (k, v) in ws {
+                            acc.entry(k).and_modify(|c| *c += v).or_insert(v);
                         }
                         Ok(acc)
                     })?;
@@ -899,36 +900,4 @@ impl Tokenizer {
                 .collect()
         }
     }
-}
-
-#[derive(Debug)]
-pub struct Lines<B> {
-    buf: B,
-}
-impl<B: BufRead> Iterator for Lines<B> {
-    type Item = std::io::Result<String>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut buf = String::new();
-        match self.buf.read_line(&mut buf) {
-            Ok(0) => None,
-            Ok(_n) => {
-                // if buf.ends_with('\n') {
-                //     buf.pop();
-                //     if buf.ends_with('\r') {
-                //         buf.pop();
-                //     }
-                // }
-                Some(Ok(buf))
-            }
-            Err(e) => Some(Err(e)),
-        }
-    }
-}
-
-fn lines_with_ending<B>(buf: B) -> Lines<B>
-where
-    B: BufRead,
-{
-    Lines { buf }
 }

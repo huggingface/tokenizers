@@ -220,6 +220,7 @@ impl BpeTrainer {
         if let Some(p) = p {
             p.set_message(message);
             p.set_length(len as u64);
+            p.set_draw_delta(len as u64 / 100);
             p.reset();
         }
     }

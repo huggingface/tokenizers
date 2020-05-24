@@ -119,7 +119,7 @@ fn iter_bench_train(
     duration
 }
 
-fn bench_gpt2_train(c: &mut Criterion) {
+fn bench_train(c: &mut Criterion) {
     let mut tokenizer = Tokenizer::new(Box::new(BPE::default()));
     tokenizer.with_pre_tokenizer(Box::new(Whitespace));
 
@@ -156,6 +156,6 @@ criterion_group! {
 criterion_group! {
     name = benches_train;
     config = Criterion::default().sample_size(10);
-    targets = bench_gpt2_train
+    targets = bench_train
 }
 criterion_main!(benches, benches_train);
