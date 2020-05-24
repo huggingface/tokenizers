@@ -9,6 +9,7 @@
 //!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
 //!   ...).
 
+pub use crate::utils::iter::LinesWithEnding;
 use crate::utils::iter::ResultShunt;
 pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, PaddingStrategy};
 pub use crate::utils::truncation::{truncate_encodings, TruncationParams, TruncationStrategy};
@@ -17,7 +18,7 @@ use rayon::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
-    io::{BufRead, BufReader},
+    io::BufReader,
     path::{Path, PathBuf},
 };
 
@@ -637,64 +638,88 @@ impl Tokenizer {
 
     /// Train a model and replace our current Model, using the given Trainer
     #[allow(clippy::borrowed_box)]
-    pub fn train(&mut self, trainer: &Box<dyn Trainer>, files: Vec<String>) -> Result<()> {
-        let progress = ProgressBar::new(100 * files.len() as u64);
-        progress.set_style(
-            ProgressStyle::default_bar()
-                .template("[{elapsed_precise}] {msg:<40!} {wide_bar} {percent:>19!}"),
-        );
-        progress.set_message("Reading files");
+    fn word_count(
+        &mut self,
+        trainer: &Box<dyn Trainer>,
+        files: Vec<String>,
+    ) -> Result<HashMap<String, u32>> {
+        let max_read = 1_000_000;
+        let len: u64 = files
+            .iter()
+            .map(|filename| File::open(filename).unwrap().metadata().unwrap().len() as u64)
+            .sum();
 
-        let results = files
-            .into_par_iter()
+        let progress = if trainer.should_show_progress() {
+            let progress = ProgressBar::new(len);
+            progress.set_style(
+                ProgressStyle::default_bar()
+                    .template("[{elapsed_precise}] {msg:<40!} {wide_bar} {percent:>19!}"),
+            );
+            progress.set_message(&format!("Reading files ({:.2} Mo)", len / 1_000_000));
+            progress.set_draw_delta(len / 100); // Redraw only every 2%
+            Some(progress)
+        } else {
+            None
+        };
+        let words = files
+            .into_iter()
             .map(|filename| -> Result<HashMap<String, u32>> {
-                let mut words = HashMap::new();
                 let file = File::open(filename)?;
-                let len = file.metadata().map_or(0, |c| c.len());
-                let mut file = BufReader::new(file);
-                let mut prev_prog = 0;
-                let mut read = 0;
-                let mut curr_prog;
-
-                let mut buf = String::new();
-                loop {
-                    buf.clear();
-                    // We read new lines using this API instead of the Lines Iterator
-                    // on purpose. We want to keep the `\n` and potential `\r` between each lines
-                    match file.read_line(&mut buf)? {
-                        0 => break,
-                        b => {
-                            let mut normalized = self.do_normalize(NormalizedString::from(&buf))?;
+                let file = BufReader::with_capacity(max_read, file);
+                // We read new lines using this API instead of the Lines Iterator
+                // on purpose. We want to keep the `\n` and potential `\r` between each lines
+                // We use an iterator to be able to chain with par_bridge.
+                let words = file
+                    .lines_with_ending()
+                    .par_bridge()
+                    .map_with(
+                        &progress,
+                        |progress, line| -> Result<HashMap<String, u32>> {
+                            let newline = line?;
+                            let mut words = HashMap::new();
+                            let mut normalized =
+                                self.do_normalize(NormalizedString::from(&newline))?;
                             let pre_tokenized = self.pre_tokenize(&mut normalized)?;
                             trainer.process_tokens(
                                 &mut words,
                                 pre_tokenized.into_iter().map(|(t, _)| t).collect(),
                             );
 
-                            read += b as u64;
-                            curr_prog = ((read as f64 / len as f64) * 100.0) as u64;
-                            if curr_prog > prev_prog {
-                                progress.inc(curr_prog - prev_prog);
-                                prev_prog = curr_prog;
+                            let b = newline.len();
+                            if let Some(pbar) = progress {
+                                pbar.inc(b as u64);
                             }
+                            Ok(words)
+                        },
+                    )
+                    .try_reduce(HashMap::new, |mut acc, ws| {
+                        for (k, v) in ws {
+                            acc.entry(k).and_modify(|c| *c += v).or_insert(v);
                         }
-                    }
-                }
+                        Ok(acc)
+                    })?;
 
                 Ok(words)
             })
-            .collect::<Vec<_>>();
-        progress.finish();
-
-        let mut words = HashMap::new();
-        for result in results {
-            for (word, count) in result? {
-                words
-                    .entry(word)
-                    .and_modify(|c| *c += count)
-                    .or_insert(count);
-            }
+            .try_fold(
+                HashMap::new(),
+                |mut acc, ws| -> Result<HashMap<String, u32>> {
+                    for (k, v) in ws? {
+                        acc.entry(k).and_modify(|c| *c += v).or_insert(v);
+                    }
+                    Ok(acc)
+                },
+            )?;
+        if let Some(pbar) = progress {
+            pbar.finish();
         }
+        Ok(words)
+    }
+
+    /// Train a model and replace our current Model, using the given Trainer
+    #[allow(clippy::borrowed_box)]
+    pub fn train(&mut self, trainer: &Box<dyn Trainer>, files: Vec<String>) -> Result<()> {
+        let words = self.word_count(trainer, files)?;
 
         let (model, special_tokens) = trainer.train(words)?;
         self.model = model;
