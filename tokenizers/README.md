@@ -50,6 +50,7 @@ The various steps of the pipeline are:
     "ey": 9,
     "th": 10
 }
+```
 
 `merges.txt`
 ```
