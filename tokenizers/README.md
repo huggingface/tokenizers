@@ -35,8 +35,32 @@ The various steps of the pipeline are:
 
 ## Quick example
 
+`vocab.json`
+```json
+{
+    "[UNK]": 0,
+    "e": 1,
+    "h": 2,
+    "H": 3,
+    "r": 4,
+    "t": 5,
+    "y": 6,
+    "!": 7,
+    "er": 8,
+    "ey": 9,
+    "th": 10
+}
+
+`merges.txt`
+```
+#version: 0.2
+e r
+e y
+t h
+```
+
 ```Rust
-use tokenizers::tokenizer::{Result, Tokenizer, EncodeInput};
+use tokenizers::tokenizer::{Result, Tokenizer};
 use tokenizers::models::bpe::BPE;
 
 fn main() -> Result<()> {
@@ -48,12 +72,14 @@ fn main() -> Result<()> {
 
     let mut tokenizer = Tokenizer::new(Box::new(bpe));
 
-    let encoding = tokenizer.encode(EncodeInput::Single("Hey there!".into()))?;
+    let encoding = tokenizer.encode(EncodeInput::Single("Hey there!".into()), false)?;
     println!("{:?}", encoding.get_tokens());
 
     Ok(())
 }
 ```
+
+output: `["H", "ey", "th", "er", "e", "!"]`
 
 ## Additional information
 
