@@ -3,6 +3,7 @@ use std::{convert::From, io, iter, mem};
 
 mod cache;
 mod model;
+mod serialization;
 mod trainer;
 mod word;
 

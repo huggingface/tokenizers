@@ -70,7 +70,8 @@ python setup.py install
 
 ### Using the provided Tokenizers
 
-Using a pre-trained tokenizer is really simple:
+We provide some pre-build tokenizers to cover the most common cases. You can easily load one of
+these using some `vocab.json` and `merges.txt` files:
 
 ```python
 from tokenizers import CharBPETokenizer
@@ -86,7 +87,7 @@ print(encoded.ids)
 print(encoded.tokens)
 ```
 
-And you can train yours just as simply:
+And you can train them just as simply:
 
 ```python
 from tokenizers import CharBPETokenizer
@@ -97,14 +98,14 @@ tokenizer = CharBPETokenizer()
 # Then train it!
 tokenizer.train([ "./path/to/files/1.txt", "./path/to/files/2.txt" ])
 
-# And you can use it
+# Now, let's use it:
 encoded = tokenizer.encode("I can feel the magic, can you?")
 
 # And finally save it somewhere
-tokenizer.save("./path/to/directory", "my-bpe")
+tokenizer.save("./path/to/directory/my-bpe.tokenizer.json")
 ```
 
-### Provided Tokenizers
+#### Provided Tokenizers
 
  - `CharBPETokenizer`: The original BPE
  - `ByteLevelBPETokenizer`: The byte level version of the BPE
@@ -115,41 +116,14 @@ All of these can be used and trained as explained above!
 
 ### Build your own
 
-You can also easily build your own tokenizers, by putting all the different parts
-you need together:
+Whenever these provided tokenizers don't give you enough freedom, you can build your own tokenizer,
+by putting all the different parts you need together.
+You can how we implemented the [provided tokenizers](https://github.com/huggingface/tokenizers/tree/master/bindings/python/tokenizers/implementations) and adapt them easily to your own needs.
 
-#### Use a pre-trained tokenizer
+#### Building a byte-level BPE
 
-```python
-from tokenizers import Tokenizer, models, pre_tokenizers, decoders, processors
-
-# Load a BPE Model
-vocab = "./path/to/vocab.json"
-merges = "./path/to/merges.txt"
-bpe = models.BPE(vocab, merges)
-
-# Initialize a tokenizer
-tokenizer = Tokenizer(bpe)
-
-# Customize pre-tokenization and decoding
-tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
-tokenizer.decoder = decoders.ByteLevel()
-tokenizer.post_processor = processors.ByteLevel(trim_offsets=True)
-
-# And then encode:
-encoded = tokenizer.encode("I can feel the magic, can you?")
-print(encoded.ids)
-print(encoded.tokens)
-
-# Or tokenize multiple sentences at once:
-encoded = tokenizer.encode_batch([
-	"I can feel the magic, can you?",
-	"The quick brown fox jumps over the lazy dog"
-])
-print(encoded)
-```
-
-#### Train a new tokenizer
+Here is an example showing how to build your own byte-level BPE by putting all the different pieces
+together, and then saving it to a single file:
 
 ```python
 from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers, processors
@@ -170,7 +144,16 @@ tokenizer.train(trainer, [
 	"./path/to/dataset/3.txt"
 ])
 
-# Now we can encode
+# And Save it
+tokenizer.save("byte-level-bpe.tokenizer.json", pretty=True)
+```
+
+Now, when you want to use this tokenizer, this is as simple as:
+
+```python
+from tokenizers import Tokenizer
+
+tokenizer = Tokenizer.from_file("byte-level-bpe.tokenizer.json")
+
 encoded = tokenizer.encode("I can feel the magic, can you?")
-print(encoded)
 ```

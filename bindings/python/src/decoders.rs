@@ -5,6 +5,7 @@ use super::utils::Container;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::tokenizer::Result;
 
 #[pyclass(dict)]
@@ -147,6 +148,7 @@ impl PyDecoder {
     }
 }
 
+#[typetag::serde]
 impl tk::tokenizer::Decoder for PyDecoder {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
         let gil = Python::acquire_gil();
@@ -165,5 +167,25 @@ impl tk::tokenizer::Decoder for PyDecoder {
                 Err(Box::new(PyError::from("Error while calling `decode`")))
             }
         }
+    }
+}
+
+impl Serialize for PyDecoder {
+    fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Err(serde::ser::Error::custom(
+            "Custom PyDecoder cannot be serialized",
+        ))
+    }
+}
+
+impl<'de> Deserialize<'de> for PyDecoder {
+    fn deserialize<D>(_deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        unimplemented!("PyDecoder cannot be deserialized")
     }
 }

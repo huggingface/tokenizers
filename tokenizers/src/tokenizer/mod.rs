@@ -15,27 +15,33 @@ pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, 
 pub use crate::utils::truncation::{truncate_encodings, TruncationParams, TruncationStrategy};
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
+    io::prelude::*,
     io::BufReader,
     path::{Path, PathBuf},
 };
 
 mod encoding;
 mod normalizer;
+mod serialization;
 
 pub use encoding::*;
 pub use normalizer::*;
 
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
+pub type Result<T> = std::result::Result<T, Error>;
 pub type Offsets = (usize, usize);
 
+#[typetag::serde(tag = "type")]
 /// Takes care of pre-processing strings.
 pub trait Normalizer: Send + Sync {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
 }
 
+#[typetag::serde(tag = "type")]
 /// The `PreTokenizer` is in charge of doing the pre-segmentation step. It splits the given string
 /// in multiple substrings, keeping track of the offsets of said substrings from the
 /// `NormalizedString`. In some occasions, the `PreTokenizer` might need to modify the given
@@ -45,6 +51,7 @@ pub trait PreTokenizer: Send + Sync {
     fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>>;
 }
 
+#[typetag::serde(tag = "type")]
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
 pub trait Model: Send + Sync {
     fn tokenize(&self, tokens: Vec<(String, Offsets)>) -> Result<Vec<Token>>;
@@ -55,6 +62,7 @@ pub trait Model: Send + Sync {
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>>;
 }
 
+#[typetag::serde(tag = "type")]
 /// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
 /// It adds any special tokens that a language model would require.
 pub trait PostProcessor: Send + Sync {
@@ -84,6 +92,7 @@ impl dyn PostProcessor {
     }
 }
 
+#[typetag::serde(tag = "type")]
 /// A `Decoder` has the responsibility to merge the given `Vec<String>` in a `String`.
 pub trait Decoder: Send + Sync {
     fn decode(&self, tokens: Vec<String>) -> Result<String>;
@@ -173,7 +182,7 @@ impl<I1: Into<InputSequence>, I2: Into<InputSequence>> From<(I1, I2)> for Encode
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddedToken {
     /// The content of the added token
     pub content: String,
@@ -296,12 +305,20 @@ pub struct Tokenizer {
     split_re: regex::RegexSet,
 
     // General processing parameters
-    trunc: Option<TruncationParams>,
+    truncation: Option<TruncationParams>,
     padding: Option<PaddingParams>,
 }
 
+impl std::str::FromStr for Tokenizer {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Ok(serde_json::from_str(s)?)
+    }
+}
+
 impl Tokenizer {
-    /// Instanciate a new Tokenizer, with the given Model
+    /// Instantiate a new Tokenizer, with the given Model
     pub fn new(model: Box<dyn Model>) -> Self {
         Tokenizer {
             normalizer: None,
@@ -317,9 +334,35 @@ impl Tokenizer {
             special_tokens_set: HashSet::new(),
             split_re: regex::RegexSet::new::<_, &&str>(&[]).unwrap(),
 
-            trunc: None,
+            truncation: None,
             padding: None,
         }
+    }
+
+    /// Instantiate a new Tokenizer from the given file
+    pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
+        let file = File::open(file)?;
+        let buf = BufReader::new(file);
+        Ok(serde_json::from_reader(buf)?)
+    }
+
+    /// Serialize the current tokenizer as a String
+    pub fn to_string(&self, pretty: bool) -> Result<String> {
+        Ok(if pretty {
+            serde_json::to_string_pretty(self)?
+        } else {
+            serde_json::to_string(self)?
+        })
+    }
+
+    /// Save the current tokenizer at the given path
+    pub fn save(&self, path: &str, pretty: bool) -> Result<()> {
+        let serialized = self.to_string(pretty)?;
+
+        let mut file = File::create(path)?;
+        file.write_all(&serialized.as_bytes())?;
+
+        Ok(())
     }
 
     /// Set the normalizer
@@ -384,7 +427,7 @@ impl Tokenizer {
 
     /// Set the truncation parameters
     pub fn with_truncation(&mut self, trunc: Option<TruncationParams>) -> &Self {
-        self.trunc = trunc;
+        self.truncation = trunc;
         self
     }
 
@@ -757,7 +800,7 @@ impl Tokenizer {
     ) -> Result<Encoding> {
         // 1. First we truncate if needed
         let (encoding, pair_encoding) = {
-            if let Some(trunc) = &self.trunc {
+            if let Some(trunc) = &self.truncation {
                 let n_added_tokens = if let Some(processor) = &self.post_processor {
                     processor.added_tokens(pair_encoding.is_some())
                 } else {

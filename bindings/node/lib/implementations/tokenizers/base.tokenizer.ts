@@ -29,6 +29,18 @@ export class BaseTokenizer<TConfig extends object> {
   ) {}
 
   /**
+   * Instantiate a new Tokenizer from the given file
+   * @param path Path to a file containing a Tokenizer
+   */
+  static fromFile = Tokenizer.fromFile;
+
+  /**
+   * Instantiate a new Tokenizer from the given JSON string
+   * @param s A JSON string representation of the Tokenizer
+   */
+  static fromString = Tokenizer.fromString;
+
+  /**
    * Truncation configuration if enabled, `null` otherwise.
    *
    * @see {@link BaseTokenizer#setTruncation} to change truncation configuration
@@ -227,6 +239,23 @@ export class BaseTokenizer<TConfig extends object> {
    */
   setPostProcessor(processor: PostProcessor): void {
     return this.tokenizer.setPostProcessor(processor);
+  }
+
+  /**
+   * Save the Tokenizer as JSON to the given path
+   * @param path Path to the JSON file to write
+   * @param [pretty=false] Whether the JSON string should be prettified
+   */
+  save(path: string, pretty?: boolean): void {
+    return this.tokenizer.save(path, pretty);
+  }
+
+  /**
+   * Get a serialized JSON version of the Tokenizer as a string
+   * @param [pretty=false] Whether the JSON string should be prettified
+   */
+  toString(pretty?: boolean): string {
+    return this.tokenizer.toString(pretty);
   }
 }
 

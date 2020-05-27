@@ -9,6 +9,7 @@ pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
 /// concurrently but won't block if another thread is writing.
 /// The goal is clearly not the accuracy of the content, both get and set
 /// are not guaranteed to actually get or set.
+#[derive(Debug)]
 pub(super) struct Cache<K, V>
 where
     K: Eq + Hash + Clone,
@@ -16,6 +17,17 @@ where
 {
     map: RwLock<HashMap<K, V>>,
     pub capacity: usize,
+}
+
+// We dont really care about Cache comparison, so let's make them always equal
+impl<K, V> PartialEq for Cache<K, V>
+where
+    K: Eq + Hash + Clone,
+    V: Clone,
+{
+    fn eq(&self, _other: &Cache<K, V>) -> bool {
+        true
+    }
 }
 
 impl<K, V> Default for Cache<K, V>

@@ -1,4 +1,5 @@
 use crate::tokenizer::{NormalizedString, Offsets, PreTokenizer, Result};
+use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 
 fn is_bert_punc(x: char) -> bool {
@@ -37,8 +38,10 @@ fn split_on<F: Fn(&char) -> bool>(
     words
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct BertPreTokenizer;
 
+#[typetag::serde]
 impl PreTokenizer for BertPreTokenizer {
     fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
         let mut split_tokens = vec![];

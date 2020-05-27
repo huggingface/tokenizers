@@ -1,5 +1,7 @@
 use crate::tokenizer::{Decoder, NormalizedString, Offsets, PreTokenizer, Result};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 /// Replaces all the whitespaces by the provided meta character and then
 /// splits on this character
 pub struct Metaspace {
@@ -22,6 +24,7 @@ impl Default for Metaspace {
     }
 }
 
+#[typetag::serde]
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
         if self.add_prefix_space && !normalized.get().starts_with(' ') {
@@ -52,6 +55,7 @@ impl PreTokenizer for Metaspace {
     }
 }
 
+#[typetag::serde]
 impl Decoder for Metaspace {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
         Ok(tokens

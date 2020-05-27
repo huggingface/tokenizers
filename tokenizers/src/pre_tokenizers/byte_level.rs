@@ -3,6 +3,7 @@ use crate::tokenizer::{
 };
 use rayon::prelude::*;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use unicode_categories::UnicodeCategories;
 
@@ -37,6 +38,7 @@ lazy_static! {
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
 }
 
+#[derive(Serialize, Deserialize)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
 /// of all the required processing steps to transform a UTF-8 string as needed before and after the
 /// BPE model does its job.
@@ -82,6 +84,7 @@ impl ByteLevel {
 /// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
 /// their byte-level counterpart. It also splits the input according to the configured regex.
 // TODO: Give the ability to modify this regex
+#[typetag::serde]
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
         if self.add_prefix_space && !normalized.get().starts_with(' ') {
@@ -174,6 +177,7 @@ impl PreTokenizer for ByteLevel {
 
 /// As a `Decoder`, `ByteLevel` is in charge of converting any byte-level characters to their
 /// unicode counterpart, before merging everything back into a single String.
+#[typetag::serde]
 impl Decoder for ByteLevel {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
         Ok(String::from_utf8_lossy(
@@ -188,6 +192,7 @@ impl Decoder for ByteLevel {
 }
 
 /// As a `PostProcessor`, `ByteLevel` is in charge of trimming the offsets if necessary.
+#[typetag::serde]
 impl PostProcessor for ByteLevel {
     fn added_tokens(&self, _is_pair: bool) -> usize {
         0

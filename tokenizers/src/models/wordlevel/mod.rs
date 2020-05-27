@@ -7,6 +7,8 @@ use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
+mod serialization;
+
 #[derive(Debug)]
 pub enum Error {
     MissingUnkToken,
@@ -82,10 +84,20 @@ impl WordLevelBuilder {
     }
 }
 
+#[derive(PartialEq)]
 pub struct WordLevel {
     vocab: HashMap<String, u32>,
     vocab_r: HashMap<u32, String>,
     unk_token: String,
+}
+
+impl std::fmt::Debug for WordLevel {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        fmt.debug_struct("WordLevel")
+            .field("unk_token", &self.unk_token)
+            .field("vocab", &self.vocab.len())
+            .finish()
+    }
 }
 
 impl WordLevel {
@@ -130,6 +142,7 @@ impl Default for WordLevel {
     }
 }
 
+#[typetag::serde]
 impl Model for WordLevel {
     fn tokenize(&self, tokens: Vec<(String, (usize, usize))>) -> Result<Vec<Token>> {
         let mut output_tokens = vec![];

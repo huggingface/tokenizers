@@ -12,6 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod serialization;
 mod trainer;
 pub use trainer::*;
 
@@ -124,12 +125,24 @@ impl WordPieceBuilder {
 /// A
 /// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 /// model.
+#[derive(PartialEq)]
 pub struct WordPiece {
     vocab: Vocab,
     vocab_r: VocabR,
     unk_token: String,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
+}
+
+impl std::fmt::Debug for WordPiece {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        fmt.debug_struct("WordPiece")
+            .field("unk_token", &self.unk_token)
+            .field("continuing_subword_prefix", &self.continuing_subword_prefix)
+            .field("max_input_chars_per_word", &self.max_input_chars_per_word)
+            .field("vocab", &self.vocab.len())
+            .finish()
+    }
 }
 
 impl Default for WordPiece {
@@ -185,6 +198,7 @@ impl WordPiece {
     }
 }
 
+#[typetag::serde]
 impl Model for WordPiece {
     fn get_vocab(&self) -> &HashMap<String, u32> {
         &self.vocab

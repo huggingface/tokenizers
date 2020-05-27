@@ -209,6 +209,46 @@ declare_types! {
             }
         }
 
+        method toString(mut cx) {
+            // toString(pretty?: bool): string
+            let mut pretty = false;
+            if let Some(arg) = cx.argument_opt(0) {
+                if arg.downcast::<JsUndefined>().is_err() {
+                    pretty = arg.downcast::<JsBoolean>()
+                        .or_throw(&mut cx)?
+                        .value() as bool;
+                }
+            }
+
+            let this = cx.this();
+            let guard = cx.lock();
+            let s = this.borrow(&guard).tokenizer.to_string(pretty);
+            let s = s.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+
+            Ok(cx.string(s).upcast())
+        }
+
+        method save(mut cx) {
+            // save(path: striing, pretty?: bool): undefined
+
+            let path = cx.argument::<JsString>(0)?.value();
+            let mut pretty = false;
+            if let Some(arg) = cx.argument_opt(1) {
+                if arg.downcast::<JsUndefined>().is_err() {
+                    pretty = arg.downcast::<JsBoolean>()
+                        .or_throw(&mut cx)?
+                        .value() as bool;
+                }
+            }
+
+            let this = cx.this();
+            let guard = cx.lock();
+            let res = this.borrow(&guard).tokenizer.save(&path, pretty);
+            res.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+
+            Ok(cx.undefined().upcast())
+        }
+
         method runningTasks(mut cx) {
             // runningTasks(): number
             let running = {
@@ -1055,8 +1095,43 @@ declare_types! {
     }
 }
 
+pub fn tokenizer_from_string(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
+    let s = cx.argument::<JsString>(0)?.value();
+
+    let tokenizer: tk::tokenizer::Tokenizer = s
+        .parse()
+        .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+
+    let mut js_tokenizer = JsTokenizer::new::<_, JsTokenizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    js_tokenizer.borrow_mut(&guard).tokenizer = tokenizer;
+
+    Ok(js_tokenizer)
+}
+
+pub fn tokenizer_from_file(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
+    let s = cx.argument::<JsString>(0)?.value();
+
+    let tokenizer = tk::tokenizer::Tokenizer::from_file(s)
+        .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+
+    let mut js_tokenizer = JsTokenizer::new::<_, JsTokenizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    js_tokenizer.borrow_mut(&guard).tokenizer = tokenizer;
+
+    Ok(js_tokenizer)
+}
+
 pub fn register(m: &mut ModuleContext, prefix: &str) -> Result<(), neon::result::Throw> {
     m.export_class::<JsAddedToken>(&format!("{}_AddedToken", prefix))?;
     m.export_class::<JsTokenizer>(&format!("{}_Tokenizer", prefix))?;
+    m.export_function(
+        &format!("{}_Tokenizer_from_string", prefix),
+        tokenizer_from_string,
+    )?;
+    m.export_function(
+        &format!("{}_Tokenizer_from_file", prefix),
+        tokenizer_from_file,
+    )?;
     Ok(())
 }

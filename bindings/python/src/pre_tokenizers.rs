@@ -5,6 +5,7 @@ use super::utils::Container;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::tokenizer::{Offsets, Result};
 
 #[pyclass(dict)]
@@ -175,7 +176,6 @@ impl Metaspace {
     }
 }
 
-/// Attempt at providing Python the ability to give its own PreTokenizer
 struct PyPreTokenizer {
     class: PyObject,
 }
@@ -186,6 +186,7 @@ impl PyPreTokenizer {
     }
 }
 
+#[typetag::serde]
 impl tk::tokenizer::PreTokenizer for PyPreTokenizer {
     fn pre_tokenize(
         &self,
@@ -214,5 +215,25 @@ impl tk::tokenizer::PreTokenizer for PyPreTokenizer {
                 )))
             }
         }
+    }
+}
+
+impl Serialize for PyPreTokenizer {
+    fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Err(serde::ser::Error::custom(
+            "Custom PyPreTokenizer cannot be serialized",
+        ))
+    }
+}
+
+impl<'de> Deserialize<'de> for PyPreTokenizer {
+    fn deserialize<D>(_deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        unimplemented!("PyPreTokenizer cannot be deserialized")
     }
 }

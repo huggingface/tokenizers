@@ -13,12 +13,15 @@ pub fn get_empty() -> Tokenizer {
 }
 
 #[allow(dead_code)]
+pub fn get_byte_level_bpe() -> BPE {
+    BPE::from_files("data/gpt2-vocab.json", "data/gpt2-merges.txt")
+        .build()
+        .expect("Files not found, run `make test` to download these files")
+}
+
+#[allow(dead_code)]
 pub fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
-    let mut tokenizer = Tokenizer::new(Box::new(
-        BPE::from_files("data/gpt2-vocab.json", "data/gpt2-merges.txt")
-            .build()
-            .expect("Files not found, run `make test` to download these files"),
-    ));
+    let mut tokenizer = Tokenizer::new(Box::new(get_byte_level_bpe()));
     tokenizer.with_pre_tokenizer(Box::new(
         ByteLevel::default().add_prefix_space(add_prefix_space),
     ));
@@ -29,12 +32,15 @@ pub fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
 }
 
 #[allow(dead_code)]
+pub fn get_bert_wordpiece() -> WordPiece {
+    WordPiece::from_files("data/bert-base-uncased-vocab.txt")
+        .build()
+        .expect("Files not found, run `make test` to download these files")
+}
+
+#[allow(dead_code)]
 pub fn get_bert() -> Tokenizer {
-    let mut tokenizer = Tokenizer::new(Box::new(
-        WordPiece::from_files("data/bert-base-uncased-vocab.txt")
-            .build()
-            .expect("Files not found, run `make test` to download these files"),
-    ));
+    let mut tokenizer = Tokenizer::new(Box::new(get_bert_wordpiece()));
     tokenizer.with_normalizer(Box::new(BertNormalizer::default()));
     tokenizer.with_pre_tokenizer(Box::new(BertPreTokenizer));
     tokenizer.with_decoder(Box::new(WordPieceDecoder::default()));

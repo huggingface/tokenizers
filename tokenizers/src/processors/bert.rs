@@ -1,5 +1,7 @@
 use crate::tokenizer::{Encoding, PostProcessor, Result};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct BertProcessing {
     sep: (String, u32),
     cls: (String, u32),
@@ -11,6 +13,7 @@ impl BertProcessing {
     }
 }
 
+#[typetag::serde]
 impl PostProcessor for BertProcessing {
     fn added_tokens(&self, is_pair: bool) -> usize {
         if is_pair {
