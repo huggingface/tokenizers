@@ -105,6 +105,7 @@ advised, but that's not the question)
 split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
+[#272]: https://github.com/huggingface/tokenizers/pull/272
 [#249]: https://github.com/huggingface/tokenizers/pull/249
 [b770f36]: https://github.com/huggingface/tokenizers/commit/b770f364280af33efeffea8f0003102cda8cf1b7
 [#236]: https://github.com/huggingface/tokenizers/pull/236

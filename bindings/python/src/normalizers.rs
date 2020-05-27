@@ -5,12 +5,44 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 
-#[pyclass(dict)]
+#[pyclass(dict, module = "tokenizers.normalizers")]
 pub struct Normalizer {
     pub normalizer: Container<dyn tk::tokenizer::Normalizer>,
 }
 
-#[pyclass(extends=Normalizer)]
+#[pymethods]
+impl Normalizer {
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        let data = self
+            .normalizer
+            .execute(|normalizer| serde_json::to_string(&normalizer))
+            .map_err(|e| {
+                exceptions::Exception::py_err(format!(
+                    "Error while attempting to pickle Normalizer: {}",
+                    e.to_string()
+                ))
+            })?;
+        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+    }
+
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                self.normalizer =
+                    Container::Owned(serde_json::from_slice(s.as_bytes()).map_err(|e| {
+                        exceptions::Exception::py_err(format!(
+                            "Error while attempting to unpickle Normalizer: {}",
+                            e.to_string()
+                        ))
+                    })?);
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct BertNormalizer {}
 #[pymethods]
 impl BertNormalizer {
@@ -49,7 +81,7 @@ impl BertNormalizer {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct NFD {}
 #[pymethods]
 impl NFD {
@@ -64,7 +96,7 @@ impl NFD {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct NFKD {}
 #[pymethods]
 impl NFKD {
@@ -79,7 +111,7 @@ impl NFKD {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct NFC {}
 #[pymethods]
 impl NFC {
@@ -94,7 +126,7 @@ impl NFC {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct NFKC {}
 #[pymethods]
 impl NFKC {
@@ -109,7 +141,7 @@ impl NFKC {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct Sequence {}
 #[pymethods]
 impl Sequence {
@@ -138,9 +170,13 @@ impl Sequence {
             },
         ))
     }
+
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
+        Ok(PyTuple::new(py, &[PyList::empty(py)]))
+    }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct Lowercase {}
 #[pymethods]
 impl Lowercase {
@@ -155,7 +191,7 @@ impl Lowercase {
     }
 }
 
-#[pyclass(extends=Normalizer)]
+#[pyclass(extends=Normalizer, module = "tokenizers.normalizers")]
 pub struct Strip {}
 #[pymethods]
 impl Strip {

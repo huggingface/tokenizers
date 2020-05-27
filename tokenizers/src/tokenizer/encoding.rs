@@ -1,9 +1,10 @@
 use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 /// Represents the output of a `Tokenizer`.
-#[derive(Default, PartialEq, Debug, Clone)]
+#[derive(Default, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct Encoding {
     /// IDs produced by the `Tokenizer`
     ids: Vec<u32>,

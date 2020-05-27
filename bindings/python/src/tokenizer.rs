@@ -184,7 +184,7 @@ impl From<PreTokenizedEncodeInput> for tk::tokenizer::EncodeInput {
     }
 }
 
-#[pyclass(dict)]
+#[pyclass(dict, module = "tokenizers")]
 pub struct Tokenizer {
     tokenizer: tk::tokenizer::Tokenizer,
 }
@@ -203,6 +203,40 @@ impl Tokenizer {
         }
     }
 
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        let data = serde_json::to_string(&self.tokenizer).map_err(|e| {
+            exceptions::Exception::py_err(format!(
+                "Error while attempting to pickle Tokenizer: {}",
+                e.to_string()
+            ))
+        })?;
+        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+    }
+
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                self.tokenizer = serde_json::from_slice(s.as_bytes()).map_err(|e| {
+                    exceptions::Exception::py_err(format!(
+                        "Error while attempting to unpickle Tokenizer: {}",
+                        e.to_string()
+                    ))
+                })?;
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
+        let model: PyObject = crate::models::Model {
+            model: Container::Owned(Box::new(tk::models::bpe::BPE::default())),
+        }
+        .into_py(py);
+        let args = PyTuple::new(py, vec![model]);
+        Ok(args)
+    }
+
     #[staticmethod]
     fn from_str(s: &str) -> PyResult<Self> {
         let tokenizer: PyResult<tk::tokenizer::Tokenizer> = ToPyResult(s.parse()).into();
@@ -217,6 +251,18 @@ impl Tokenizer {
         Ok(Self {
             tokenizer: tokenizer?,
         })
+    }
+
+    #[staticmethod]
+    fn from_buffer(buffer: &PyBytes) -> PyResult<Self> {
+        let tokenizer: tk::tokenizer::Tokenizer = serde_json::from_slice(buffer.as_bytes())
+            .map_err(|e| {
+                exceptions::Exception::py_err(format!(
+                    "Cannot instantiate Tokenizer from buffer: {}",
+                    e.to_string()
+                ))
+            })?;
+        Ok(Self { tokenizer })
     }
 
     #[args(pretty = false)]
@@ -388,7 +434,7 @@ impl Tokenizer {
         ToPyResult(
             self.tokenizer
                 .encode(input, add_special_tokens)
-                .map(Encoding::new),
+                .map(|e| e.into()),
         )
         .into()
     }
@@ -421,7 +467,7 @@ impl Tokenizer {
         ToPyResult(
             self.tokenizer
                 .encode_batch(input, add_special_tokens)
-                .map(|encodings| encodings.into_iter().map(Encoding::new).collect()),
+                .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
         )
         .into()
     }
@@ -522,7 +568,7 @@ impl Tokenizer {
                     pair.map(|p| p.encoding.clone()),
                     add_special_tokens,
                 )
-                .map(Encoding::new),
+                .map(|e| e.into()),
         )
         .into()
     }
