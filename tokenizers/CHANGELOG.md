@@ -25,6 +25,10 @@ trim offsets.
 - [#249]: `encode` and `encode_batch` input has been greatly improved, and it now also accept
 pre-tokenized inputs.
 - Improved `TruncationError` to handle cases where provided max length is too low.
+- [#276]: Improve BPE training speeds, by reading files sequentially, but parallelizing the
+processing of each file
+- [#280]: Use `onig` for byte-level pre-tokenization to remove all the differences with the original
+implementation from GPT-2
 
 ### Added
 - [#236]: RobertaProcessing is now also taking care of trimming offsets, and works just as ByteLevel
@@ -105,6 +109,8 @@ advised, but that's not the question)
 split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
+[#280]: https://github.com/huggingface/tokenizers/pull/280
+[#276]: https://github.com/huggingface/tokenizers/pull/276
 [#272]: https://github.com/huggingface/tokenizers/pull/272
 [#249]: https://github.com/huggingface/tokenizers/pull/249
 [b770f36]: https://github.com/huggingface/tokenizers/commit/b770f364280af33efeffea8f0003102cda8cf1b7

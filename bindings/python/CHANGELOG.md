@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0-dev]
+## [0.8.0.dev1]
 
 ### Added
 - [#272]: Serialization of the `Tokenizer` and all the parts (`PreTokenizer`, `Normalizer`, ...).
@@ -20,6 +20,10 @@ This adds some methods to easily save/load an entire tokenizer (`from_str`, `fro
 now handled properly.
 - [#249] `encode` and `encode_batch` now accept pre-tokenized inputs. When the input is pre-tokenized,
 the argument `is_pretokenized=True` must be specified.
+- [#276]: Improve BPE training speeds, by reading files sequentially, but parallelizing the
+processing of each file
+- [#280]: Use `onig` for byte-level pre-tokenization to remove all the differences with the original
+implementation from GPT-2
 
 ## [0.7.0]
 
@@ -179,6 +183,8 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug with the IDs associated with added tokens.
 - Fix a bug that was causing crashes in Python 3.5
 
+[#280]: https://github.com/huggingface/tokenizers/pull/280
+[#276]: https://github.com/huggingface/tokenizers/pull/276
 [#273]: https://github.com/huggingface/tokenizers/pull/273
 [#272]: https://github.com/huggingface/tokenizers/pull/272
 [#249]: https://github.com/huggingface/tokenizers/pull/249

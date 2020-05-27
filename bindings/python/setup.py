@@ -6,7 +6,7 @@ extras["testing"] = ["pytest"]
 
 setup(
     name="tokenizers",
-    version="0.8.0-dev",
+    version="0.8.0.dev1",
     description="Fast and Customizable Tokenizers",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
