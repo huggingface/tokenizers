@@ -37,7 +37,7 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2020-05-18-i686-pc-windows-msvc
+          toolchain: nightly-2020-05-14-i686-pc-windows-msvc
           override: true
 
       - name: Override toolchain
