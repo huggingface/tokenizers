@@ -97,11 +97,11 @@ impl<'de> Visitor<'de> for TokenizerVisitor {
     {
         let mut tokenizer = Tokenizer::new(Box::new(BPE::default()));
         let mut tokens: Vec<AddedTokenWithId> = vec![];
-        while let Some(key) = map.next_key()? {
-            match key {
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_ref() {
                 "version" => {
-                    let v: &str = map.next_value()?;
-                    if v != "1.0" {
+                    let v: String = map.next_value()?;
+                    if &v != "1.0" {
                         return Err(Error::custom(format!("Unknown tokenizer version '{}'", v)));
                     }
                 }

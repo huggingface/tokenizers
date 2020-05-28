@@ -74,8 +74,8 @@ impl<'de> Visitor<'de> for BPEVisitor {
         let mut builder = BpeBuilder::new();
         let mut vocab: Option<HashMap<String, u32>> = None;
         let mut merges: Option<Vec<String>> = None;
-        while let Some(key) = map.next_key()? {
-            match key {
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_ref() {
                 "dropout" => {
                     if let Some(dropout) = map.next_value()? {
                         builder = builder.dropout(dropout);

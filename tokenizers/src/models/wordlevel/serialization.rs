@@ -40,8 +40,8 @@ impl<'de> Visitor<'de> for WordLevelVisitor {
         V: MapAccess<'de>,
     {
         let mut builder = WordLevelBuilder::new();
-        while let Some(key) = map.next_key()? {
-            match key {
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_ref() {
                 "vocab" => builder = builder.vocab(map.next_value()?),
                 "unk_token" => builder = builder.unk_token(map.next_value()?),
                 _ => {}

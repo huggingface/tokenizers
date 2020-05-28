@@ -56,8 +56,8 @@ impl<'de> Visitor<'de> for WordPieceVisitor {
         V: MapAccess<'de>,
     {
         let mut builder = WordPieceBuilder::new();
-        while let Some(key) = map.next_key()? {
-            match key {
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_ref() {
                 "unk_token" => builder = builder.unk_token(map.next_value()?),
                 "continuing_subword_prefix" => {
                     builder = builder.continuing_subword_prefix(map.next_value()?)
