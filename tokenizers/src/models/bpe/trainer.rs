@@ -485,10 +485,15 @@ impl BpeTrainer {
             }
             let new_token = format!("{}{}", part_a, part_b);
 
-            // Insert new token
-            let new_token_id = id_to_word.len() as u32;
-            id_to_word.push(new_token.clone());
-            word_to_id.insert(new_token.clone(), new_token_id);
+            // Insert new token if it does not already exist
+            let new_token_id = word_to_id
+                .get(&new_token)
+                .copied()
+                .unwrap_or_else(|| id_to_word.len() as u32);
+            if word_to_id.get(&new_token).is_none() {
+                id_to_word.push(new_token.clone());
+                word_to_id.insert(new_token.clone(), new_token_id);
+            }
             merges.push((top.pair, new_token_id));
 
             // Merge the new pair in every words
