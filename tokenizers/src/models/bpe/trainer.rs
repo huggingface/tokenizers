@@ -351,85 +351,57 @@ impl BpeTrainer {
         counts: &[u32],
         p: &Option<ProgressBar>,
     ) -> (HashMap<Pair, i32>, HashMap<Pair, HashSet<usize>>) {
-        let mut pair_counts: HashMap<Pair, i32> = HashMap::with_capacity(self.vocab_size * 2);
-        let mut where_to_update: HashMap<Pair, HashSet<usize>> =
-            HashMap::with_capacity(self.vocab_size * 2);
-        let n_threads = if words.len() > rayon::current_num_threads() * 5 {
-            rayon::current_num_threads()
-        } else {
-            1
-        };
-        let batch = if words.len() % n_threads > 0 {
-            (words.len() + (n_threads - words.len() % n_threads)) / n_threads
-        } else {
-            words.len() / n_threads
-        };
-        let results = (0..n_threads)
-            .into_par_iter()
-            .map(|n| {
+        words
+            .par_iter()
+            .enumerate()
+            .map(|(i, word)| {
                 let mut pair_counts = HashMap::new();
                 let mut where_to_update: HashMap<Pair, HashSet<usize>> = HashMap::new();
 
-                let mut done = 0;
-                for (i, word) in words.chunks(batch).nth(n).unwrap().iter().enumerate() {
-                    let index = i + (n * batch);
-                    for window in word.get_chars().windows(2) {
-                        let cur_pair: Pair = (window[0], window[1]);
+                for window in word.get_chars().windows(2) {
+                    let cur_pair: Pair = (window[0], window[1]);
 
-                        // Initialize pair_counts and where_to_update for this pair if we just saw it
-                        if !pair_counts.contains_key(&cur_pair) {
-                            pair_counts.insert(cur_pair, 0);
-                        }
-
-                        // Then update counts
-                        let count = counts[index];
-                        where_to_update
-                            .entry(cur_pair)
-                            .and_modify(|h| {
-                                h.insert(index);
-                            })
-                            .or_insert_with(|| {
-                                let mut h = HashSet::new();
-                                h.insert(index);
-                                h
-                            });
-                        *pair_counts.get_mut(&cur_pair).unwrap() += count as i32;
+                    // Initialize pair_counts and where_to_update for this pair if we just saw it
+                    if !pair_counts.contains_key(&cur_pair) {
+                        pair_counts.insert(cur_pair, 0);
                     }
 
-                    done += 1;
+                    // Then update counts
+                    let count = counts[i];
+                    where_to_update
+                        .entry(cur_pair)
+                        .and_modify(|h| {
+                            h.insert(i);
+                        })
+                        .or_insert_with(|| {
+                            let mut h = HashSet::new();
+                            h.insert(i);
+                            h
+                        });
+                    *pair_counts.get_mut(&cur_pair).unwrap() += count as i32;
 
-                    if done % 1000 == 0 {
-                        if let Some(p) = &p {
-                            p.inc(1000);
-                        }
+                    if let Some(p) = &p {
+                        p.inc(1);
                     }
-                }
-
-                if let Some(p) = &p {
-                    p.inc(done % 1000);
                 }
 
                 (pair_counts, where_to_update)
             })
-            .collect::<Vec<_>>();
-
-        // Aggregate results
-        results.into_iter().for_each(|(pc, wt)| {
-            pc.into_iter().for_each(|(p, c)| {
-                pair_counts
-                    .entry(p)
-                    .and_modify(|count| *count += c)
-                    .or_insert(c);
-            });
-            wt.into_iter().for_each(|(p, s)| {
-                where_to_update
-                    .entry(p)
-                    .and_modify(|set| *set = set.union(&s).copied().collect())
-                    .or_insert(s);
-            });
-        });
-
-        (pair_counts, where_to_update)
+            .reduce(
+                || (HashMap::new(), HashMap::new()),
+                |(mut pair_counts, mut where_to_update), (pc, wtu)| {
+                    for (k, v) in pc {
+                        pair_counts.entry(k).and_modify(|c| *c += v).or_insert(v);
+                    }
+                    for (k, v) in wtu {
+                        where_to_update
+                            .entry(k)
+                            .and_modify(|set| *set = set.union(&v).copied().collect())
+                            .or_insert(v);
+                    }
+                    (pair_counts, where_to_update)
+                },
+            )
     }
 
     pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<(BPE, Vec<AddedToken>)> {
