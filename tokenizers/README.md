@@ -35,30 +35,35 @@ The various steps of the pipeline are:
 
 ## Quick example
 
-`vocab.json`
-```json
-{
-    "[UNK]": 0,
-    "e": 1,
-    "h": 2,
-    "H": 3,
-    "r": 4,
-    "t": 5,
-    "y": 6,
-    "!": 7,
-    "er": 8,
-    "ey": 9,
-    "th": 10
+Train and save a Byte Pair Encoder.
+
+```Rust
+use std::collections::HashMap;
+use std::path::Path;
+use tokenizers::{Model, Result};
+use tokenizers::models::bpe::BpeTrainer;
+
+fn main() -> Result<()> {
+    let word_counts: HashMap<String, u32> = [
+        (String::from("[UNK]"), 1),
+        (String::from(" "), 1),
+        (String::from("Hey"), 1),
+        (String::from("there"), 1),
+    ].iter().cloned().collect();
+
+    let trainer = BpeTrainer::default();
+    let (model, _special_tokens) = trainer
+        .train(word_counts)
+        .unwrap();
+
+    // save model information in vocab.json and merges.txt
+    model.save(Path::new("./path/to/"), None)?;
+
+    Ok(())
 }
 ```
 
-`merges.txt`
-```
-#version: 0.2
-e r
-e y
-t h
-```
+Restore a Byte Pair Encoder from `vocab.json` and `merges.txt`.
 
 ```Rust
 use tokenizers::tokenizer::{Result, Tokenizer};
@@ -80,7 +85,7 @@ fn main() -> Result<()> {
 }
 ```
 
-output: `["H", "ey", "th", "er", "e", "!"]`
+output: `["Hey", " ", "there", "[UNK]"]`
 
 ## Additional information
 
