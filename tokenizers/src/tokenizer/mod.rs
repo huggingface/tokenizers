@@ -628,17 +628,17 @@ impl Tokenizer {
         inputs: Vec<E>,
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>> {
-        let encodings = inputs
+        let mut encodings = inputs
             .into_par_iter()
             .map(|input| self.encode(input, add_special_tokens))
             .collect::<Result<Vec<Encoding>>>()?;
 
         if let Some(params) = &self.padding {
             // We do the padding here to make sure we handle the batch padding
-            pad_encodings(encodings, &params)
-        } else {
-            Ok(encodings)
+            pad_encodings(&mut encodings, &params)?;
         }
+
+        Ok(encodings)
     }
 
     /// Decode the given ids, back to a String
@@ -822,30 +822,20 @@ impl Tokenizer {
         };
 
         // 2. Then We post process
-        let mut final_encoding = if let Some(processor) = &self.post_processor {
+        let final_encoding = if let Some(processor) = &self.post_processor {
             processor.process(encoding, pair_encoding, add_special_tokens)?
         } else {
             PostProcessor::default_process(encoding, pair_encoding, add_special_tokens)?
         };
 
         // 3. Then we pad if needed
-        if let Some(params) = &self.padding {
-            // We can only pad for a given size. If the Strategy is BatchLongest, it will be done
-            // when we handle a batch
-            let size = if let PaddingStrategy::Fixed(size) = params.strategy {
-                size
-            } else {
-                final_encoding.get_ids().len()
-            };
-
-            final_encoding.pad(
-                size,
-                params.pad_id,
-                params.pad_type_id,
-                &params.pad_token,
-                params.direction,
-            );
-        }
+        let [final_encoding] = if let Some(params) = &self.padding {
+            let mut arr = [final_encoding];
+            pad_encodings(&mut arr, params)?;
+            arr
+        } else {
+            [final_encoding]
+        };
 
         Ok(final_encoding)
     }
