@@ -84,6 +84,7 @@ class BaseTokenizer:
         """
         return self._tokenizer.enable_padding(
             direction=direction,
+            pad_to_multiple_of=pad_to_multiple_of,
             pad_id=pad_id,
             pad_type_id=pad_type_id,
             pad_token=pad_token,
