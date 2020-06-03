@@ -655,6 +655,7 @@ declare_types! {
         method setPadding(mut cx) {
             // setPadding(options?: { direction?: "left" | "right"; padId?: number?; padTypeId?: number?; padToken: string; maxLength?: number })
             let mut direction = PaddingDirection::Right;
+            let mut pad_to_multiple_of: Option<usize> = None;
             let mut pad_id: u32 = 0;
             let mut pad_type_id: u32 = 0;
             let mut pad_token = String::from("[PAD]");
@@ -671,6 +672,12 @@ declare_types! {
                                 "right" => direction = PaddingDirection::Right,
                                 _ => return cx.throw_error("direction can only be 'left' or 'right'"),
                             }
+                        }
+                    }
+                    if let Ok(p_multiple) = options.get(&mut cx, "padToMultipleOf") {
+                        if p_multiple.downcast::<JsUndefined>().is_err() {
+                            pad_to_multiple_of = Some(p_multiple.downcast::<JsNumber>()
+                                .or_throw(&mut cx)?.value() as usize);
                         }
                     }
                     if let Ok(p_id) = options.get(&mut cx, "padId") {
@@ -709,6 +716,7 @@ declare_types! {
                 tokenizer.tokenizer.with_padding(Some(PaddingParams {
                     strategy,
                     direction,
+                    pad_to_multiple_of,
                     pad_id,
                     pad_type_id,
                     pad_token: pad_token.to_owned(),
@@ -719,6 +727,10 @@ declare_types! {
             if let Some(max_length) = max_length {
                 let obj_length = cx.number(max_length as f64);
                 params_object.set(&mut cx, "maxLength", obj_length).unwrap();
+            }
+            if let Some(multiple) = pad_to_multiple_of {
+                let obj_multiple = cx.number(multiple as f64);
+                params_object.set(&mut cx, "padToMultipleOf", obj_multiple).unwrap();
             }
             let obj_pad_id = cx.number(pad_id);
             let obj_pad_type_id = cx.number(pad_type_id);

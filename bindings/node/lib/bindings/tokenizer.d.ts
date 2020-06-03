@@ -31,8 +31,10 @@ export interface TruncationConfiguration extends Required<TruncationOptions> {
   maxLength: number;
 }
 
-export type PaddingConfiguration = Required<Omit<PaddingOptions, "maxLength">> &
-  Pick<PaddingOptions, "maxLength">;
+export type PaddingConfiguration = Required<
+  Omit<PaddingOptions, "maxLength" | "padToMultipleOf">
+> &
+  Pick<PaddingOptions, "maxLength" | "padToMultipleOf">;
 
 export interface PaddingOptions {
   /**
@@ -45,6 +47,11 @@ export interface PaddingOptions {
    * - No padding will be applied when single encoding
    */
   maxLength?: number;
+  /**
+   * If specified, the padding will snap to a multiple of the given value.
+   * @default undefined
+   */
+  padToMultipleOf?: number;
   /**
    * The index to be used when padding
    * @default 0

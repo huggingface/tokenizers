@@ -255,6 +255,16 @@ describe("Tokenizer", () => {
           "[PAD]"
         ]);
       });
+
+      it("pads to multiple of the given value", async () => {
+        tokenizer.setPadding({ padToMultipleOf: 8 });
+
+        const singleEncoding = await encode("my name", null);
+        expect(singleEncoding.getTokens()).toHaveLength(8);
+
+        const pairEncoding = await encode("my name", "pair");
+        expect(pairEncoding.getTokens()).toHaveLength(8);
+      });
     });
   });
 
