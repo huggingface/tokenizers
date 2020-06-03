@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - [#236]: Fix a bug with offsets being shifted when there are sub-sequences (Usually with
 special tokens and/or added tokens in the sequence).
+- [#286]: Fix various crash when training a BPE model
 
 ### Changed
 - [#234]: Completely changed the alignement mappings available on `Encoding`. Previous mappings
@@ -35,6 +36,8 @@ implementation from GPT-2
 on this front.
 - [#272]: Serialization of the `Tokenizer` and all the parts (`PreTokenizer`, `Normalizer`, ...)
 using serde. It is now easy to save/load an entire tokenizer.
+- [#289]: Ability to pad to a multiple of a specified value. This is especially useful to ensure
+activation of the Tensor Cores, while ensuring padding to a multiple of 8.
 
 ### How to migrate
 - Replace any `XXX_to_YYY_offsets()` method call by any of the new ones.
@@ -109,6 +112,8 @@ advised, but that's not the question)
 split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
+[#289]: https://github.com/huggingface/tokenizers/pull/289
+[#286]: https://github.com/huggingface/tokenizers/pull/286
 [#280]: https://github.com/huggingface/tokenizers/pull/280
 [#276]: https://github.com/huggingface/tokenizers/pull/276
 [#272]: https://github.com/huggingface/tokenizers/pull/272

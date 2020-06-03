@@ -4,16 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0.dev1]
+## [0.8.0.dev2]
 
-### Added
-- [#272]: Serialization of the `Tokenizer` and all the parts (`PreTokenizer`, `Normalizer`, ...).
-This adds some methods to easily save/load an entire tokenizer (`from_str`, `from_file`).
+### Fixed
+- [#286]: Fix various crash when training a BPE model
 
 ### Added
 - [#272]: Serialization of the `Tokenizer` and all the parts (`PreTokenizer`, `Normalizer`, ...).
 This adds some methods to easily save/load an entire tokenizer (`from_str`, `from_file`).
 - [#273]: `Tokenizer` and its parts are now pickable
+- [#289]: Ability to pad to a multiple of a specified value. This is especially useful to ensure
+activation of the Tensor Cores, while ensuring padding to a multiple of 8. Use with
+`enable_padding(pad_to_multiple_of=8)` for example.
 
 ### Changed
 - Improved errors generated during truncation: When the provided max length is too low are
@@ -183,6 +185,8 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug with the IDs associated with added tokens.
 - Fix a bug that was causing crashes in Python 3.5
 
+[#289]: https://github.com/huggingface/tokenizers/pull/289
+[#286]: https://github.com/huggingface/tokenizers/pull/286
 [#280]: https://github.com/huggingface/tokenizers/pull/280
 [#276]: https://github.com/huggingface/tokenizers/pull/276
 [#273]: https://github.com/huggingface/tokenizers/pull/273
