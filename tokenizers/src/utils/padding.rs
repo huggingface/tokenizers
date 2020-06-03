@@ -22,6 +22,7 @@ impl std::convert::AsRef<str> for PaddingDirection {
 pub struct PaddingParams {
     pub strategy: PaddingStrategy,
     pub direction: PaddingDirection,
+    pub pad_to_multiple_of: Option<usize>,
     pub pad_id: u32,
     pub pad_type_id: u32,
     pub pad_token: String,
@@ -33,15 +34,12 @@ pub enum PaddingStrategy {
     Fixed(usize),
 }
 
-pub fn pad_encodings(
-    mut encodings: Vec<Encoding>,
-    params: &PaddingParams,
-) -> Result<Vec<Encoding>> {
+pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Result<()> {
     if encodings.is_empty() {
-        return Ok(encodings);
+        return Ok(());
     }
 
-    let pad_length = match params.strategy {
+    let mut pad_length = match params.strategy {
         PaddingStrategy::Fixed(size) => size,
         PaddingStrategy::BatchLongest => encodings
             .par_iter()
@@ -49,6 +47,12 @@ pub fn pad_encodings(
             .max()
             .unwrap(),
     };
+
+    if let Some(multiple) = params.pad_to_multiple_of {
+        if multiple > 0 && pad_length % multiple > 0 {
+            pad_length += multiple - pad_length % multiple;
+        }
+    }
 
     encodings.par_iter_mut().for_each(|encoding| {
         encoding.pad(
@@ -60,5 +64,63 @@ pub fn pad_encodings(
         )
     });
 
-    Ok(encodings)
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tokenizer::Encoding;
+
+    #[test]
+    fn pad_to_multiple() {
+        fn get_encodings() -> [Encoding; 2] {
+            [
+                Encoding::new(
+                    vec![0, 1, 2, 3, 4],
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![],
+                ),
+                Encoding::new(
+                    vec![0, 1, 2],
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![],
+                ),
+            ]
+        }
+
+        // Test fixed
+        let mut encodings = get_encodings();
+        let mut params = PaddingParams {
+            strategy: PaddingStrategy::Fixed(7),
+            direction: PaddingDirection::Right,
+            pad_to_multiple_of: Some(8),
+            pad_id: 0,
+            pad_type_id: 0,
+            pad_token: String::from("[PAD]"),
+        };
+        pad_encodings(&mut encodings, &params).unwrap();
+        assert!(encodings.iter().all(|e| e.get_ids().len() == 8));
+
+        // Test batch
+        let mut encodings = get_encodings();
+        params.strategy = PaddingStrategy::BatchLongest;
+        params.pad_to_multiple_of = Some(6);
+        pad_encodings(&mut encodings, &params).unwrap();
+        assert!(encodings.iter().all(|e| e.get_ids().len() == 6));
+
+        // Do not crash with 0
+        params.pad_to_multiple_of = Some(0);
+        pad_encodings(&mut encodings, &params).unwrap();
+    }
 }

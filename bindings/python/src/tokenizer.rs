@@ -337,6 +337,7 @@ impl Tokenizer {
     #[args(kwargs = "**")]
     fn enable_padding(&mut self, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut direction = PaddingDirection::Right;
+        let mut pad_to_multiple_of: Option<usize> = None;
         let mut pad_id: u32 = 0;
         let mut pad_type_id: u32 = 0;
         let mut pad_token = String::from("[PAD]");
@@ -359,6 +360,7 @@ impl Tokenizer {
                             .into_pyerr()),
                         }?;
                     }
+                    "pad_to_multiple_of" => pad_to_multiple_of = value.extract()?,
                     "pad_id" => pad_id = value.extract()?,
                     "pad_type_id" => pad_type_id = value.extract()?,
                     "pad_token" => pad_token = value.extract()?,
@@ -377,6 +379,7 @@ impl Tokenizer {
         self.tokenizer.with_padding(Some(PaddingParams {
             strategy,
             direction,
+            pad_to_multiple_of,
             pad_id,
             pad_type_id,
             pad_token: pad_token.to_owned(),
