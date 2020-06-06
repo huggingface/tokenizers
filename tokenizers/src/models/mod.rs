@@ -1,6 +1,7 @@
 //! Popular tokenizer models.
 
 pub mod bpe;
+pub mod unigram;
 pub mod wordlevel;
 pub mod wordpiece;
 
