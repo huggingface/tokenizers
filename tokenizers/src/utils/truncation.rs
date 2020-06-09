@@ -8,6 +8,16 @@ pub struct TruncationParams {
     pub stride: usize,
 }
 
+impl Default for TruncationParams {
+    fn default() -> Self {
+        Self {
+            max_length: 512,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 0,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum TruncationError {
     /// We are supposed to truncate the pair sequence, but it has not been provided.
