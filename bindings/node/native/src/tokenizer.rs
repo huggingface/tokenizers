@@ -337,6 +337,19 @@ impl Tokenizer {
     }
 }
 
+macro_rules! check_tokenizer_can_be_modified {
+    ($cx: expr) => {
+        let this = $cx.this();
+        let guard = $cx.lock();
+        let running = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
+        if running > 1 {
+            return Err(
+                Error("Cannot modify the tokenizer while there are running tasks".into()).into(),
+            );
+        }
+    };
+}
+
 declare_types! {
     pub class JsTokenizer for Tokenizer {
         init(mut cx) {
@@ -383,12 +396,10 @@ declare_types! {
 
         method runningTasks(mut cx) {
             // runningTasks(): number
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                if count > 0 { count - 1 } else { 0 }
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
+            let running = if count > 0 { count - 1 } else { 0 };
             Ok(cx.number(running as f64).upcast())
         }
 
@@ -777,17 +788,7 @@ declare_types! {
 
         method setModel(mut cx) {
             // setModel(model: JsModel)
-
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                count
-            };
-            if running > 1 {
-                println!("{} running tasks", running - 1);
-                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
-            }
+            check_tokenizer_can_be_modified!(cx);
 
             let mut model = cx.argument::<JsModel>(0)?;
             if let Some(instance) = {
@@ -832,17 +833,7 @@ declare_types! {
 
         method setNormalizer(mut cx) {
             // setNormalizer(normalizer: Normalizer)
-
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                count
-            };
-            if running > 1 {
-                println!("{} running tasks", running - 1);
-                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
-            }
+            check_tokenizer_can_be_modified!(cx);
 
             let mut normalizer = cx.argument::<JsNormalizer>(0)?;
             if let Some(instance) = {
@@ -887,17 +878,7 @@ declare_types! {
 
         method setPreTokenizer(mut cx) {
             // setPreTokenizer(pretokenizer: PreTokenizer)
-
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                count
-            };
-            if running > 1 {
-                println!("{} running tasks", running - 1);
-                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
-            }
+            check_tokenizer_can_be_modified!(cx);
 
             let mut pretok = cx.argument::<JsPreTokenizer>(0)?;
             if let Some(instance) = {
@@ -943,17 +924,7 @@ declare_types! {
 
         method setPostProcessor(mut cx) {
             // setPostProcessor(processor: PostProcessor)
-
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                count
-            };
-            if running > 1 {
-                println!("{} running tasks", running - 1);
-                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
-            }
+            check_tokenizer_can_be_modified!(cx);
 
             let mut processor = cx.argument::<JsPostProcessor>(0)?;
             if let Some(instance) = {
@@ -998,17 +969,7 @@ declare_types! {
 
         method setDecoder(mut cx) {
             // setDecoder(decoder: Decoder)
-
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                count
-            };
-            if running > 1 {
-                println!("{} running tasks", running - 1);
-                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
-            }
+            check_tokenizer_can_be_modified!(cx);
 
             let mut decoder = cx.argument::<JsDecoder>(0)?;
             if let Some(instance) = {
