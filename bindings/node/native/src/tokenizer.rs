@@ -15,42 +15,58 @@ use neon::prelude::*;
 use tk::tokenizer::{
     PaddingDirection, PaddingParams, PaddingStrategy, TruncationParams, TruncationStrategy,
 };
+// AddedToken
 
+#[derive(Clone)]
 pub struct AddedToken {
-    pub token: tk::tokenizer::AddedToken,
+    pub token: tk::AddedToken,
+}
+impl From<AddedToken> for tk::AddedToken {
+    fn from(v: AddedToken) -> Self {
+        v.token
+    }
+}
+
+#[allow(non_snake_case)]
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct AddedTokenOptions {
+    singleWord: Option<bool>,
+    leftStrip: Option<bool>,
+    rightStrip: Option<bool>,
+}
+impl AddedTokenOptions {
+    fn into_added_token(self, content: String) -> tk::AddedToken {
+        let mut token = tk::AddedToken::from(content);
+        if let Some(sw) = self.singleWord {
+            token = token.single_word(sw);
+        }
+        if let Some(ls) = self.leftStrip {
+            token = token.lstrip(ls);
+        }
+        if let Some(rs) = self.rightStrip {
+            token = token.rstrip(rs);
+        }
+        token
+    }
 }
 
 declare_types! {
     pub class JsAddedToken for AddedToken {
         init(mut cx) {
-            // init(content: string,
-            //    options?: { singleWord?: boolean = False, leftStrip?: boolean = False, rightStrip?: boolean = False }
+            // init(
+            //  content: string,
+            //  options?: {
+            //    singleWord?: boolean = false,
+            //    leftStrip?: boolean = false,
+            //    rightStrip?: boolean = false
+            //  }
             // )
 
-            let mut token = tk::tokenizer::AddedToken::from(cx.argument::<JsString>(0)?.value());
-
-            let options = cx.argument_opt(1);
-            if let Some(options) = options {
-                if let Ok(options) = options.downcast::<JsObject>() {
-                    if let Ok(single_word) = options.get(&mut cx, "singleWord") {
-                        if single_word.downcast::<JsUndefined>().is_err() {
-                            token = token.single_word(single_word.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
-                        }
-                    }
-
-                    if let Ok(left_strip) = options.get(&mut cx, "leftStrip") {
-                        if left_strip.downcast::<JsUndefined>().is_err() {
-                            token = token.lstrip(left_strip.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
-                        }
-                    }
-
-                    if let Ok(right_strip) = options.get(&mut cx, "rightStrip") {
-                        if right_strip.downcast::<JsUndefined>().is_err() {
-                            token = token.rstrip(right_strip.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
-                        }
-                    }
-                }
-            }
+            let content = cx.extract::<String>(0)
+                .map_err(|_| Error("First argument must be string".into()))?;
+            let token = cx.extract_opt::<AddedTokenOptions>(1)?
+                .unwrap_or_else(AddedTokenOptions::default)
+                .into_added_token(content);
 
             Ok(AddedToken { token })
         }
@@ -66,6 +82,22 @@ declare_types! {
             };
 
             Ok(cx.string(content).upcast())
+        }
+    }
+}
+
+impl FromJsValue for AddedToken {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
+        if let Ok(token) = from.downcast::<JsString>() {
+            Ok(AddedToken {
+                token: tk::AddedToken::from(token.value()),
+            })
+        } else if let Ok(token) = from.downcast::<JsAddedToken>() {
+            let guard = cx.lock();
+            let token = token.borrow(&guard);
+            Ok(token.clone())
+        } else {
+            Err(Error("Expected `string | AddedToken`".into()))
         }
     }
 }
@@ -542,21 +574,10 @@ declare_types! {
         method addTokens(mut cx) {
             // addTokens(tokens: (string | AddedToken)[]): number
 
-            let tokens = cx.argument::<JsArray>(0)?
-                .to_vec(&mut cx)?
+            let tokens = cx.extract_vec::<AddedToken>(0)?
                 .into_iter()
-                .map(|token| {
-                    if let Ok(token) = token.downcast::<JsString>() {
-                        Ok(tk::tokenizer::AddedToken::from(token.value()))
-                    } else if let Ok(token) = token.downcast::<JsAddedToken>() {
-                        let guard = cx.lock();
-                        let token = token.borrow(&guard);
-                        Ok(token.token.clone())
-                    } else {
-                        cx.throw_error("Input must be `(string | AddedToken)[]`")
-                    }
-                })
-                .collect::<NeonResult<Vec<_>>>()?;
+                .map(|token| token.into())
+                .collect::<Vec<_>>();
 
             let mut this = cx.this();
             let guard = cx.lock();
@@ -568,21 +589,10 @@ declare_types! {
         method addSpecialTokens(mut cx) {
             // addSpecialTokens(tokens: (string | AddedToken)[]): number
 
-            let tokens = cx.argument::<JsArray>(0)?
-                .to_vec(&mut cx)?
+            let tokens = cx.extract_vec::<AddedToken>(0)?
                 .into_iter()
-                .map(|token| {
-                    if let Ok(token) = token.downcast::<JsString>() {
-                        Ok(tk::tokenizer::AddedToken::from(token.value()))
-                    } else if let Ok(token) = token.downcast::<JsAddedToken>() {
-                        let guard = cx.lock();
-                        let token = token.borrow(&guard);
-                        Ok(token.token.clone())
-                    } else {
-                        cx.throw_error("Input must be `(string | AddedToken)[]`")
-                    }
-                })
-                .collect::<NeonResult<Vec<_>>>()?;
+                .map(|token| token.into())
+                .collect::<Vec<_>>();
 
             let mut this = cx.this();
             let guard = cx.lock();
