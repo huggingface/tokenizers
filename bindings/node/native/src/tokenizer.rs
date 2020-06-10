@@ -229,7 +229,7 @@ impl From<Encoding> for tk::Encoding {
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "tk::TruncationStrategy", rename_all = "snake_case")]
-enum TruncationStrategyDef {
+pub enum TruncationStrategyDef {
     LongestFirst,
     OnlyFirst,
     OnlySecond,
@@ -241,7 +241,7 @@ enum TruncationStrategyDef {
     rename_all = "camelCase",
     default = "tk::TruncationParams::default"
 )]
-struct TruncationParamsDef {
+pub struct TruncationParamsDef {
     max_length: usize,
     #[serde(with = "TruncationStrategyDef")]
     strategy: tk::TruncationStrategy,
@@ -250,13 +250,13 @@ struct TruncationParamsDef {
 
 #[derive(Serialize, Deserialize)]
 #[serde(transparent)]
-struct TruncationParams(#[serde(with = "TruncationParamsDef")] tk::TruncationParams);
+pub struct TruncationParams(#[serde(with = "TruncationParamsDef")] pub tk::TruncationParams);
 
 // Padding
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "tk::PaddingDirection", rename_all = "camelCase")]
-enum PaddingDirectionDef {
+pub enum PaddingDirectionDef {
     Left,
     Right,
 }
@@ -265,7 +265,7 @@ enum PaddingDirectionDef {
 // we want it to actually be very different from the classic representation.
 // In Rust, we use an enum to define the strategy, but in JS, we just want to have a optional
 // length number => If defined we use the Fixed(n) strategy and otherwise the BatchLongest.
-mod padding_strategy_serde {
+pub mod padding_strategy_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     #[derive(Serialize, Deserialize)]
@@ -307,7 +307,7 @@ mod padding_strategy_serde {
     rename_all = "camelCase",
     default = "tk::PaddingParams::default"
 )]
-struct PaddingParamsDef {
+pub struct PaddingParamsDef {
     #[serde(flatten, with = "padding_strategy_serde")]
     strategy: tk::PaddingStrategy,
     #[serde(with = "PaddingDirectionDef")]
@@ -320,7 +320,7 @@ struct PaddingParamsDef {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(transparent)]
-struct PaddingParams(#[serde(with = "PaddingParamsDef")] tk::PaddingParams);
+pub struct PaddingParams(#[serde(with = "PaddingParamsDef")] pub tk::PaddingParams);
 
 /// Tokenizer
 pub struct Tokenizer {
