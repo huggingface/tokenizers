@@ -1,6 +1,7 @@
 extern crate tokenizers as tk;
 
 use crate::container::Container;
+use crate::extraction::*;
 use neon::prelude::*;
 
 /// Decoder
@@ -32,19 +33,10 @@ fn byte_level(mut cx: FunctionContext) -> JsResult<JsDecoder> {
 
 /// wordpiece(prefix: String = "##", cleanup: bool)
 fn wordpiece(mut cx: FunctionContext) -> JsResult<JsDecoder> {
-    let mut prefix = String::from("##");
-    if let Some(args) = cx.argument_opt(0) {
-        if args.downcast::<JsUndefined>().is_err() {
-            prefix = args.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
-        }
-    }
-
-    let mut cleanup = true;
-    if let Some(args) = cx.argument_opt(1) {
-        if args.downcast::<JsUndefined>().is_err() {
-            cleanup = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value();
-        }
-    }
+    let prefix = cx
+        .extract_opt::<String>(0)?
+        .unwrap_or_else(|| String::from("##"));
+    let cleanup = cx.extract_opt::<bool>(1)?.unwrap_or(true);
 
     let mut decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
     let guard = cx.lock();
@@ -59,23 +51,8 @@ fn wordpiece(mut cx: FunctionContext) -> JsResult<JsDecoder> {
 
 /// metaspace(replacement: String = "_", add_prefix_space: bool = true)
 fn metaspace(mut cx: FunctionContext) -> JsResult<JsDecoder> {
-    let mut replacement = '▁';
-    if let Some(args) = cx.argument_opt(0) {
-        if args.downcast::<JsUndefined>().is_err() {
-            let rep = args.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
-            replacement = rep.chars().nth(0).ok_or_else(|| {
-                cx.throw_error::<_, ()>("replacement must be a character")
-                    .unwrap_err()
-            })?;
-        }
-    };
-
-    let mut add_prefix_space = true;
-    if let Some(args) = cx.argument_opt(1) {
-        if args.downcast::<JsUndefined>().is_err() {
-            add_prefix_space = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value() as bool;
-        }
-    }
+    let replacement = cx.extract_opt::<char>(0)?.unwrap_or('▁');
+    let add_prefix_space = cx.extract_opt::<bool>(1)?.unwrap_or(true);
 
     let mut decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
     let guard = cx.lock();
@@ -91,12 +68,9 @@ fn metaspace(mut cx: FunctionContext) -> JsResult<JsDecoder> {
 
 /// bpe_decoder(suffix: String = "</w>")
 fn bpe_decoder(mut cx: FunctionContext) -> JsResult<JsDecoder> {
-    let mut suffix = String::from("</w>");
-    if let Some(args) = cx.argument_opt(0) {
-        if args.downcast::<JsUndefined>().is_err() {
-            suffix = args.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
-        }
-    }
+    let suffix = cx
+        .extract_opt::<String>(0)?
+        .unwrap_or_else(|| String::from("</w>"));
 
     let mut decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
     let guard = cx.lock();
