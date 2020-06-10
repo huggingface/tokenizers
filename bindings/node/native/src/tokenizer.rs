@@ -12,9 +12,6 @@ use crate::tasks::tokenizer::{DecodeTask, EncodeTask, WorkingTokenizer};
 use crate::trainers::JsTrainer;
 use neon::prelude::*;
 
-use tk::tokenizer::{
-    PaddingDirection, PaddingParams, PaddingStrategy,
-};
 // AddedToken
 
 #[derive(Clone)]
@@ -233,6 +230,76 @@ struct TruncationParamsDef {
 #[derive(Serialize, Deserialize)]
 #[serde(transparent)]
 struct TruncationParams(#[serde(with = "TruncationParamsDef")] tk::TruncationParams);
+
+// Padding
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "tk::PaddingDirection", rename_all = "camelCase")]
+enum PaddingDirectionDef {
+    Left,
+    Right,
+}
+
+// Here we define a custom method of serializing and deserializing a PaddingStrategy because
+// we want it to actually be very different from the classic representation.
+// In Rust, we use an enum to define the strategy, but in JS, we just want to have a optional
+// length number => If defined we use the Fixed(n) strategy and otherwise the BatchLongest.
+mod padding_strategy_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Strategy {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_length: Option<usize>,
+    }
+
+    pub fn serialize<S>(value: &tk::PaddingStrategy, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s = Strategy {
+            max_length: match value {
+                tk::PaddingStrategy::BatchLongest => None,
+                tk::PaddingStrategy::Fixed(s) => Some(*s),
+            },
+        };
+        s.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<tk::PaddingStrategy, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let v = Strategy::deserialize(deserializer)?;
+        if let Some(length) = v.max_length {
+            Ok(tk::PaddingStrategy::Fixed(length))
+        } else {
+            Ok(tk::PaddingStrategy::BatchLongest)
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(
+    remote = "tk::PaddingParams",
+    rename_all = "camelCase",
+    default = "tk::PaddingParams::default"
+)]
+struct PaddingParamsDef {
+    #[serde(flatten, with = "padding_strategy_serde")]
+    strategy: tk::PaddingStrategy,
+    #[serde(with = "PaddingDirectionDef")]
+    direction: tk::PaddingDirection,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pad_to_multiple_of: Option<usize>,
+    pad_id: u32,
+    pad_type_id: u32,
+    pad_token: String,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(transparent)]
+struct PaddingParams(#[serde(with = "PaddingParamsDef")] tk::PaddingParams);
 
 /// Tokenizer
 pub struct Tokenizer {
@@ -660,95 +727,26 @@ declare_types! {
         }
 
         method setPadding(mut cx) {
-            // setPadding(options?: { direction?: "left" | "right"; padId?: number?; padTypeId?: number?; padToken: string; maxLength?: number })
-            let mut direction = PaddingDirection::Right;
-            let mut pad_to_multiple_of: Option<usize> = None;
-            let mut pad_id: u32 = 0;
-            let mut pad_type_id: u32 = 0;
-            let mut pad_token = String::from("[PAD]");
-            let mut max_length: Option<usize> = None;
+            // setPadding(options?: {
+            //   direction?: "left" | "right",
+            //   padId?: number,
+            //   padTypeId?: number,
+            //   padToken?: string,
+            //   maxLength?: number
+            //  })
 
-            let options = cx.argument_opt(0);
-            if let Some(options) = options {
-                if let Ok(options) = options.downcast::<JsObject>() {
-                    if let Ok(dir) = options.get(&mut cx, "direction") {
-                        if dir.downcast::<JsUndefined>().is_err() {
-                            let dir = dir.downcast::<JsString>().or_throw(&mut cx)?.value();
-                            match &dir[..] {
-                                "left" => direction = PaddingDirection::Left,
-                                "right" => direction = PaddingDirection::Right,
-                                _ => return cx.throw_error("direction can only be 'left' or 'right'"),
-                            }
-                        }
-                    }
-                    if let Ok(p_multiple) = options.get(&mut cx, "padToMultipleOf") {
-                        if p_multiple.downcast::<JsUndefined>().is_err() {
-                            pad_to_multiple_of = Some(p_multiple.downcast::<JsNumber>()
-                                .or_throw(&mut cx)?.value() as usize);
-                        }
-                    }
-                    if let Ok(p_id) = options.get(&mut cx, "padId") {
-                        if p_id.downcast::<JsUndefined>().is_err() {
-                            pad_id = p_id.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32;
-                        }
-                    }
-                    if let Ok(p_type_id) = options.get(&mut cx, "padTypeId") {
-                        if p_type_id.downcast::<JsUndefined>().is_err() {
-                            pad_type_id = p_type_id.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32;
-                        }
-                    }
-                    if let Ok(p_token) = options.get(&mut cx, "padToken") {
-                        if p_token.downcast::<JsUndefined>().is_err() {
-                            pad_token = p_token.downcast::<JsString>().or_throw(&mut cx)?.value();
-                        }
-                    }
-                    if let Ok(max_l) = options.get(&mut cx, "maxLength") {
-                        if max_l.downcast::<JsUndefined>().is_err() {
-                            max_length = Some(max_l.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize);
-                        }
-                    }
-                }
-            }
+            let options = cx.extract_opt::<PaddingParams>(0)?
+                .map_or_else(tk::PaddingParams::default, |p| p.0);
 
-            let strategy = if let Some(max_length) = max_length {
-                PaddingStrategy::Fixed(max_length)
-            } else {
-                PaddingStrategy::BatchLongest
-            };
-
+            let params_obj = neon_serde::to_value(&mut cx, &PaddingParams(options.clone()))?;
             let mut this = cx.this();
             {
                 let guard = cx.lock();
                 let mut tokenizer = this.borrow_mut(&guard);
-                tokenizer.tokenizer.with_padding(Some(PaddingParams {
-                    strategy,
-                    direction,
-                    pad_to_multiple_of,
-                    pad_id,
-                    pad_type_id,
-                    pad_token: pad_token.to_owned(),
-                }));
+                tokenizer.tokenizer.with_padding(Some(options));
             }
 
-            let params_object = JsObject::new(&mut cx);
-            if let Some(max_length) = max_length {
-                let obj_length = cx.number(max_length as f64);
-                params_object.set(&mut cx, "maxLength", obj_length).unwrap();
-            }
-            if let Some(multiple) = pad_to_multiple_of {
-                let obj_multiple = cx.number(multiple as f64);
-                params_object.set(&mut cx, "padToMultipleOf", obj_multiple).unwrap();
-            }
-            let obj_pad_id = cx.number(pad_id);
-            let obj_pad_type_id = cx.number(pad_type_id);
-            let obj_pad_token = cx.string(pad_token);
-            let obj_direction = cx.string(direction);
-            params_object.set(&mut cx, "padId", obj_pad_id).unwrap();
-            params_object.set(&mut cx, "padTypeId", obj_pad_type_id).unwrap();
-            params_object.set(&mut cx, "padToken", obj_pad_token).unwrap();
-            params_object.set(&mut cx, "direction", obj_direction).unwrap();
-
-            Ok(params_object.upcast())
+            Ok(params_obj)
         }
 
         method disablePadding(mut cx) {
