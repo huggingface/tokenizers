@@ -187,20 +187,41 @@ impl From<TextEncodeInput> for tk::EncodeInput {
     }
 }
 
-#[allow(non_snake_case)]
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct EncodeOptions {
     #[serde(default)]
-    isPretokenized: bool,
+    is_pretokenized: bool,
     #[serde(default)]
-    addSpecialTokens: bool,
+    add_special_tokens: bool,
 }
 impl Default for EncodeOptions {
     fn default() -> Self {
         Self {
-            isPretokenized: false,
-            addSpecialTokens: true,
+            is_pretokenized: false,
+            add_special_tokens: true,
         }
+    }
+}
+
+// Encoding
+
+#[repr(transparent)]
+struct Encoding(tk::Encoding);
+impl FromJsValue for Encoding {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
+        from.downcast::<JsEncoding>()
+            .map(|e| {
+                let guard = cx.lock();
+                let enc = e.borrow(&guard);
+                Self(enc.encoding.execute(|e| *e.unwrap().clone()))
+            })
+            .map_err(|_| Error("Expected Encoding".into()))
+    }
+}
+impl From<Encoding> for tk::Encoding {
+    fn from(v: Encoding) -> Self {
+        v.0
     }
 }
 
@@ -303,7 +324,7 @@ struct PaddingParams(#[serde(with = "PaddingParamsDef")] tk::PaddingParams);
 
 /// Tokenizer
 pub struct Tokenizer {
-    tokenizer: tk::tokenizer::Tokenizer,
+    tokenizer: tk::Tokenizer,
 
     /// Whether we have a running task. We keep this to make sure we never
     /// modify the underlying tokenizer while a task is running
@@ -327,7 +348,7 @@ declare_types! {
                 model.model.to_pointer()
             } {
                 Ok(Tokenizer {
-                    tokenizer: tk::tokenizer::Tokenizer::new(instance),
+                    tokenizer: tk::Tokenizer::new(instance),
                     running_task: std::sync::Arc::new(())
                 })
             } else {
@@ -337,14 +358,7 @@ declare_types! {
 
         method toString(mut cx) {
             // toString(pretty?: bool): string
-            let mut pretty = false;
-            if let Some(arg) = cx.argument_opt(0) {
-                if arg.downcast::<JsUndefined>().is_err() {
-                    pretty = arg.downcast::<JsBoolean>()
-                        .or_throw(&mut cx)?
-                        .value() as bool;
-                }
-            }
+            let pretty = cx.extract_opt::<bool>(0)?.unwrap_or(false);
 
             let this = cx.this();
             let guard = cx.lock();
@@ -356,16 +370,8 @@ declare_types! {
 
         method save(mut cx) {
             // save(path: striing, pretty?: bool): undefined
-
-            let path = cx.argument::<JsString>(0)?.value();
-            let mut pretty = false;
-            if let Some(arg) = cx.argument_opt(1) {
-                if arg.downcast::<JsUndefined>().is_err() {
-                    pretty = arg.downcast::<JsBoolean>()
-                        .or_throw(&mut cx)?
-                        .value() as bool;
-                }
-            }
+            let path = cx.extract::<String>(0)?;
+            let pretty = cx.extract_opt::<bool>(1)?.unwrap_or(false);
 
             let this = cx.this();
             let guard = cx.lock();
@@ -388,14 +394,7 @@ declare_types! {
 
         method getVocab(mut cx) {
             // getVocab(withAddedTokens: bool = true)
-            let mut with_added_tokens = true;
-            if let Some(arg) = cx.argument_opt(0) {
-                if arg.downcast::<JsUndefined>().is_err() {
-                    with_added_tokens = arg.downcast::<JsBoolean>()
-                        .or_throw(&mut cx)?
-                        .value() as bool;
-                }
-            }
+            let with_added_tokens = cx.extract_opt::<bool>(0)?.unwrap_or(true);
 
             let this = cx.this();
             let guard = cx.lock();
@@ -415,14 +414,7 @@ declare_types! {
 
         method getVocabSize(mut cx) {
             // getVocabSize(withAddedTokens: bool = true)
-            let mut with_added_tokens = true;
-            if let Some(arg) = cx.argument_opt(0) {
-                if arg.downcast::<JsUndefined>().is_err() {
-                    with_added_tokens = arg.downcast::<JsBoolean>()
-                        .or_throw(&mut cx)?
-                        .value() as bool;
-                }
-            }
+            let with_added_tokens = cx.extract_opt::<bool>(0)?.unwrap_or(true);
 
             let this = cx.this();
             let guard = cx.lock();
@@ -435,22 +427,16 @@ declare_types! {
 
         method normalize(mut cx) {
             // normalize(sentence: String) -> String
-            let sentence = cx.argument::<JsString>(0)?.value();
+            let sentence = cx.extract::<String>(0)?;
 
             let this = cx.this();
             let guard = cx.lock();
 
-            let result = {
-                this.borrow(&guard)
-                    .tokenizer
-                    .normalize(&sentence)
-                    .map(|s| s.get().to_owned())
-            };
-            let normalized = result
-                .map_err(|e| {
-                    cx.throw_error::<_, ()>(format!("{}", e))
-                        .unwrap_err()
-                })?;
+            let normalized = this.borrow(&guard)
+                .tokenizer
+                .normalize(&sentence)
+                .map(|s| s.get().to_owned())
+                .map_err(|e| Error(format!("{}", e)))?;
 
             Ok(cx.string(normalized).upcast())
         }
@@ -484,7 +470,7 @@ declare_types! {
             };
 
             // Then we extract our input sequences
-            let sentence: tk::InputSequence = if options.isPretokenized {
+            let sentence: tk::InputSequence = if options.is_pretokenized {
                 cx.extract::<PreTokenizedInputSequence>(0)
                     .map_err(|_| Error("encode with isPretokenized=true expect string[]".into()))?
                     .into()
@@ -493,7 +479,7 @@ declare_types! {
                     .map_err(|_| Error("encode with isPreTokenized=false expect string".into()))?
                     .into()
             };
-            let pair: Option<tk::InputSequence> = if options.isPretokenized {
+            let pair: Option<tk::InputSequence> = if options.is_pretokenized {
                 cx.extract_opt::<PreTokenizedInputSequence>(1)
                     .map_err(|_| Error("encode with isPretokenized=true expect string[]".into()))?
                     .map(|v| v.into())
@@ -507,15 +493,13 @@ declare_types! {
                 None => sentence.into()
             };
 
-            let worker = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let worker = this.borrow(&guard).prepare_for_task();
-                worker
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let worker = this.borrow(&guard).prepare_for_task();
 
-            let task = EncodeTask::Single(worker, Some(input), options.addSpecialTokens);
+            let task = EncodeTask::Single(worker, Some(input), options.add_special_tokens);
             task.schedule(callback);
+
             Ok(cx.undefined().upcast())
         }
 
@@ -547,7 +531,7 @@ declare_types! {
                 }
             };
 
-            let inputs: Vec<tk::EncodeInput> = if options.isPretokenized {
+            let inputs: Vec<tk::EncodeInput> = if options.is_pretokenized {
                 cx.extract_vec::<PreTokenizedEncodeInput>(0)
                     .map_err(|_| Error(
                         "encodeBatch with isPretokenized=true expects input to be `EncodeInput[]` \
@@ -561,82 +545,54 @@ declare_types! {
                     .into_iter().map(|v| v.into()).collect()
             };
 
-            let worker = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let worker = this.borrow(&guard).prepare_for_task();
-                worker
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let worker = this.borrow(&guard).prepare_for_task();
 
-            let task = EncodeTask::Batch(worker, Some(inputs), options.addSpecialTokens);
+            let task = EncodeTask::Batch(worker, Some(inputs), options.add_special_tokens);
             task.schedule(callback);
+
             Ok(cx.undefined().upcast())
         }
 
         method decode(mut cx) {
             // decode(ids: number[], skipSpecialTokens: bool, callback)
 
-            let ids = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?
-                .into_iter()
-                .map(|id| {
-                    id.downcast::<JsNumber>()
-                        .or_throw(&mut cx)
-                        .map(|v| v.value() as u32)
-                })
-                .collect::<NeonResult<Vec<_>>>()?;
-            let skip_special_tokens = cx.argument::<JsBoolean>(1)?.value();
+            let ids = cx.extract_vec::<u32>(0)?;
+            let skip_special_tokens = cx.extract::<bool>(1)?;
             let callback = cx.argument::<JsFunction>(2)?;
 
-            let worker = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let worker = this.borrow(&guard).prepare_for_task();
-                worker
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let worker = this.borrow(&guard).prepare_for_task();
 
             let task = DecodeTask::Single(worker, ids, skip_special_tokens);
             task.schedule(callback);
+
             Ok(cx.undefined().upcast())
         }
 
         method decodeBatch(mut cx) {
             // decodeBatch(sequences: number[][], skipSpecialTokens: bool, callback)
 
-            let sentences = cx.argument::<JsArray>(0)?
-                .to_vec(&mut cx)?
-                .into_iter()
-                .map(|sentence| {
-                    sentence.downcast::<JsArray>()
-                        .or_throw(&mut cx)?
-                        .to_vec(&mut cx)?
-                        .into_iter()
-                        .map(|id| {
-                            id.downcast::<JsNumber>()
-                                .or_throw(&mut cx)
-                                .map(|v| v.value() as u32)
-                        })
-                        .collect::<NeonResult<Vec<_>>>()
-                }).collect::<NeonResult<Vec<_>>>()?;
-
-            let skip_special_tokens = cx.argument::<JsBoolean>(1)?.value();
+            let sentences = cx.extract_vec::<Vec<u32>>(0)?;
+            let skip_special_tokens = cx.extract::<bool>(1)?;
             let callback = cx.argument::<JsFunction>(2)?;
 
-            let worker = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let worker = this.borrow(&guard).prepare_for_task();
-                worker
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let worker = this.borrow(&guard).prepare_for_task();
 
             let task = DecodeTask::Batch(worker, sentences, skip_special_tokens);
             task.schedule(callback);
+
             Ok(cx.undefined().upcast())
         }
 
         method tokenToId(mut cx) {
             // tokenToId(token: string): number | undefined
 
-            let token = cx.argument::<JsString>(0)?.value();
+            let token = cx.extract::<String>(0)?;
 
             let this = cx.this();
             let guard = cx.lock();
@@ -652,7 +608,7 @@ declare_types! {
         method idToToken(mut cx) {
             // idToToken(id: number): string | undefined
 
-            let id = cx.argument::<JsNumber>(0)?.value() as u32;
+            let id = cx.extract::<u32>(0)?;
 
             let this = cx.this();
             let guard = cx.lock();
@@ -710,19 +666,20 @@ declare_types! {
 
             let params_obj = neon_serde::to_value(&mut cx, &TruncationParams(options.clone()))?;
             let mut this = cx.this();
-            {
-                let guard = cx.lock();
-                let mut tokenizer = this.borrow_mut(&guard);
-                tokenizer.tokenizer.with_truncation(Some(options));
-            }
+            let guard = cx.lock();
+            let mut tokenizer = this.borrow_mut(&guard);
+            tokenizer.tokenizer.with_truncation(Some(options));
 
             Ok(params_obj)
         }
 
         method disableTruncation(mut cx) {
+            // disableTruncation()
+
             let mut this = cx.this();
             let guard = cx.lock();
             this.borrow_mut(&guard).tokenizer.with_truncation(None);
+
             Ok(cx.undefined().upcast())
         }
 
@@ -740,19 +697,20 @@ declare_types! {
 
             let params_obj = neon_serde::to_value(&mut cx, &PaddingParams(options.clone()))?;
             let mut this = cx.this();
-            {
-                let guard = cx.lock();
-                let mut tokenizer = this.borrow_mut(&guard);
-                tokenizer.tokenizer.with_padding(Some(options));
-            }
+            let guard = cx.lock();
+            let mut tokenizer = this.borrow_mut(&guard);
+            tokenizer.tokenizer.with_padding(Some(options));
 
             Ok(params_obj)
         }
 
         method disablePadding(mut cx) {
+            // disablePadding()
+
             let mut this = cx.this();
             let guard = cx.lock();
             this.borrow_mut(&guard).tokenizer.with_padding(None);
+
             Ok(cx.undefined().upcast())
         }
 
@@ -760,17 +718,17 @@ declare_types! {
             // train(trainer: JsTrainer, files: string[])
 
             let trainer = cx.argument::<JsTrainer>(0)?;
-            let files = cx.argument::<JsArray>(1)?.to_vec(&mut cx)?.into_iter().map(|file| {
-                Ok(file.downcast::<JsString>().or_throw(&mut cx)?.value())
-            }).collect::<NeonResult<Vec<_>>>()?;
+            let files = cx.extract::<Vec<String>>(1)?;
 
             let mut this = cx.this();
             let guard = cx.lock();
-            let res = trainer.borrow(&guard).trainer.execute(|trainer| {
-                let res = this.borrow_mut(&guard).tokenizer.train(trainer.unwrap(), files);
-                res
-            });
-            res.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+
+            trainer.borrow(&guard).trainer.execute(|trainer| {
+                this.borrow_mut(&guard)
+                    .tokenizer
+                    .train(trainer.unwrap(), files)
+                    .map_err(|e| Error(format!("{}", e)))
+            })?;
 
             Ok(cx.undefined().upcast())
         }
@@ -782,53 +740,16 @@ declare_types! {
             //   addSpecialTokens: boolean = true
             // ): Encoding
 
-            let encoding = {
-                let encoding = cx.argument::<JsEncoding>(0)?;
-                let guard = cx.lock();
-                let encoding = encoding
-                    .borrow(&guard)
-                    .encoding
-                    .execute(|e| *e.unwrap().clone());
-                encoding
-            };
+            let encoding = cx.extract::<Encoding>(0)?;
+            let pair = cx.extract_opt::<Encoding>(1)?;
+            let add_special_tokens = cx.extract_opt::<bool>(2)?.unwrap_or(true);
 
-            let default_pair = None;
-            let pair = if let Some(arg) = cx.argument_opt(1) {
-                if arg.downcast::<JsUndefined>().is_ok() {
-                    default_pair
-                } else {
-                    arg.downcast_or_throw::<JsEncoding, _>(&mut cx).map(|e| {
-                        let guard = cx.lock();
-                        let encoding = e.borrow(&guard)
-                            .encoding
-                            .execute(|e| *e.unwrap().clone());
-                        encoding
-                    }).ok()
-                }
-            } else {
-                default_pair
-            };
-
-            let default_add_special_tokens = true;
-            let add_special_tokens = if let Some(arg) = cx.argument_opt(2) {
-                if arg.downcast::<JsUndefined>().is_ok() {
-                    default_add_special_tokens
-                } else {
-                    arg.downcast_or_throw::<JsBoolean, _>(&mut cx)?.value()
-                }
-            } else {
-                default_add_special_tokens
-            };
-
-            let encoding = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let encoding = this.borrow(&guard)
-                    .tokenizer.post_process(encoding, pair, add_special_tokens);
-                encoding
-            };
-            let encoding = encoding
-                .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+            let this = cx.this();
+            let guard = cx.lock();
+            let encoding = this.borrow(&guard)
+                .tokenizer
+                .post_process(encoding.into(), pair.map(|p| p.into()), add_special_tokens)
+                .map_err(|e| Error(format!("{}", e)))?;
 
             let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
             let guard = cx.lock();
@@ -843,12 +764,9 @@ declare_types! {
         method getModel(mut cx) {
             // getModel(): Model
 
-            let model = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let container = Container::from_ref(this.borrow(&guard).tokenizer.get_model());
-                container
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let model = Container::from_ref(this.borrow(&guard).tokenizer.get_model());
 
             let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
             let guard = cx.lock();
@@ -1012,7 +930,8 @@ declare_types! {
             };
 
             if let Some(processor) = processor {
-                let mut js_processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
+                let mut js_processor =
+                    JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
                 let guard = cx.lock();
                 js_processor.borrow_mut(&guard).processor = processor;
 
@@ -1113,7 +1032,7 @@ declare_types! {
 }
 
 pub fn tokenizer_from_string(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
-    let s = cx.argument::<JsString>(0)?.value();
+    let s = cx.extract::<String>(0)?;
 
     let tokenizer: tk::tokenizer::Tokenizer = s
         .parse()
@@ -1127,7 +1046,7 @@ pub fn tokenizer_from_string(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
 }
 
 pub fn tokenizer_from_file(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
-    let s = cx.argument::<JsString>(0)?.value();
+    let s = cx.extract::<String>(0)?;
 
     let tokenizer = tk::tokenizer::Tokenizer::from_file(s)
         .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
