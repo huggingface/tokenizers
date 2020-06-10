@@ -1,6 +1,7 @@
 extern crate tokenizers as tk;
 
 use crate::container::Container;
+use crate::extraction::*;
 use neon::prelude::*;
 
 /// PreTokenizers
@@ -22,12 +23,8 @@ declare_types! {
 /// byte_level(addPrefixSpace: bool = true)
 fn byte_level(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let mut byte_level = tk::pre_tokenizers::byte_level::ByteLevel::default();
-
-    if let Some(args) = cx.argument_opt(0) {
-        if args.downcast::<JsUndefined>().is_err() {
-            byte_level = byte_level
-                .add_prefix_space(args.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
-        }
+    if let Some(add_prefix_space) = cx.extract_opt::<bool>(0)? {
+        byte_level = byte_level.add_prefix_space(add_prefix_space);
     }
 
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
@@ -40,19 +37,13 @@ fn byte_level(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
 }
 
 /// byte_level_alphabet()
-fn byte_level_alphabet(mut cx: FunctionContext) -> JsResult<JsArray> {
+fn byte_level_alphabet(mut cx: FunctionContext) -> JsResult<JsValue> {
     let chars = tk::pre_tokenizers::byte_level::ByteLevel::alphabet()
         .into_iter()
         .map(|c| c.to_string())
         .collect::<Vec<_>>();
 
-    let js_chars = JsArray::new(&mut cx, chars.len() as u32);
-    for (i, c) in chars.into_iter().enumerate() {
-        let s = cx.string(c);
-        js_chars.set(&mut cx, i as u32, s)?;
-    }
-
-    Ok(js_chars)
+    Ok(neon_serde::to_value(&mut cx, &chars)?)
 }
 
 /// whitespace()
@@ -90,23 +81,8 @@ fn bert_pre_tokenizer(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
 
 /// metaspace(replacement: string = '_', addPrefixSpace: bool = true)
 fn metaspace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
-    let mut replacement = '▁';
-    if let Some(args) = cx.argument_opt(0) {
-        if args.downcast::<JsUndefined>().is_err() {
-            let rep = args.downcast::<JsString>().or_throw(&mut cx)?.value() as String;
-            replacement = rep.chars().nth(0).ok_or_else(|| {
-                cx.throw_error::<_, ()>("replacement must be a character")
-                    .unwrap_err()
-            })?;
-        }
-    };
-
-    let mut add_prefix_space = true;
-    if let Some(args) = cx.argument_opt(1) {
-        if args.downcast::<JsUndefined>().is_err() {
-            add_prefix_space = args.downcast::<JsBoolean>().or_throw(&mut cx)?.value() as bool;
-        }
-    }
+    let replacement = cx.extract_opt::<char>(0)?.unwrap_or('▁');
+    let add_prefix_space = cx.extract_opt::<bool>(1)?.unwrap_or(true);
 
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
@@ -118,11 +94,7 @@ fn metaspace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
 
 /// char_delimiter_split(delimiter: string)
 fn char_delimiter_split(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
-    let argument = cx.argument::<JsString>(0)?.value();
-    let delimiter = argument.chars().nth(0).ok_or_else(|| {
-        cx.throw_error::<_, ()>("delimiter must be a character")
-            .unwrap_err()
-    })?;
+    let delimiter = cx.extract::<char>(0)?;
 
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
