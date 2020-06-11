@@ -475,7 +475,7 @@ impl Tokenizer {
     pub fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
         self.model.get_vocab_size()
             + if with_added_tokens {
-                self.added_tokens.len()
+                self.added_tokens_map.len()
             } else {
                 0
             }
