@@ -181,6 +181,10 @@ class TestTokenizer:
         output = tokenizer.encode("my name is john", "pair")
         assert output.tokens == ["my", "pair"]
 
+        # Can get the params and give them to enable_truncation
+        trunc = tokenizer.truncation
+        tokenizer.enable_truncation(**trunc)
+
     def test_padding(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
@@ -194,12 +198,16 @@ class TestTokenizer:
         output = tokenizer.encode_batch(["my name", "my name is john"])
         assert all([len(encoding) == 4 for encoding in output])
 
-        # Can pad to the specified max length otherwise
-        tokenizer.enable_padding(max_length=4)
+        # Can pad to the specified length otherwise
+        tokenizer.enable_padding(length=4)
         output = tokenizer.encode("my name")
         assert output.tokens == ["my", "name", "[PAD]", "[PAD]"]
         output = tokenizer.encode("my name", "pair")
         assert output.tokens == ["my", "name", "pair", "[PAD]"]
+
+        # Can get the params and give them to enable_padding
+        padding = tokenizer.padding
+        tokenizer.enable_padding(**padding)
 
     def test_decode(self):
         tokenizer = Tokenizer(BPE())
@@ -249,7 +257,7 @@ class TestTokenizer:
         tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.enable_truncation(2)
-        tokenizer.enable_padding(max_length=4)
+        tokenizer.enable_padding(length=4)
 
         encoding = tokenizer.encode("my name is john")
         pair_encoding = tokenizer.encode("pair")

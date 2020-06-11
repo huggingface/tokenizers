@@ -392,6 +392,15 @@ class Tokenizer:
     def no_truncation(self):
         """ Disable truncation """
         pass
+    @property
+    def truncation(self) -> Optional[dict]:
+        """ Get the current truncation parameters
+
+        Returns:
+            None if truncation is disabled, a dict with the current truncation parameters if
+            truncation is enabled
+        """
+        pass
     def enable_padding(
         self,
         direction: Optional[str] = "right",
@@ -399,7 +408,7 @@ class Tokenizer:
         pad_id: Optional[int] = 0,
         pad_type_id: Optional[int] = 0,
         pad_token: Optional[str] = "[PAD]",
-        max_length: Optional[int] = None,
+        length: Optional[int] = None,
     ):
         """ Enable the padding
 
@@ -421,13 +430,22 @@ class Tokenizer:
             pad_token: (`optional`) str:
                 The pad token to be used when padding
 
-            max_length: (`optional`) unsigned int:
+            length: (`optional`) unsigned int:
                 If specified, the length at which to pad. If not specified
                 we pad using the size of the longest sequence in a batch
         """
         pass
     def no_padding(self):
         """ Disable padding """
+        pass
+    @property
+    def padding(self) -> Optional[dict]:
+        """ Get the current padding parameters
+
+        Returns:
+            None if padding is disabled, a dict with the currently set parameters
+            if the padding is enabled.
+        """
         pass
     def normalize(self, sequence: str) -> str:
         """ Normalize the given sequence

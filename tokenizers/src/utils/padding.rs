@@ -28,6 +28,19 @@ pub struct PaddingParams {
     pub pad_token: String,
 }
 
+impl Default for PaddingParams {
+    fn default() -> Self {
+        Self {
+            strategy: PaddingStrategy::BatchLongest,
+            direction: PaddingDirection::Right,
+            pad_to_multiple_of: None,
+            pad_id: 0,
+            pad_type_id: 0,
+            pad_token: String::from("[PAD]"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PaddingStrategy {
     BatchLongest,

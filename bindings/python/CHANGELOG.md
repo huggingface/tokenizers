@@ -16,6 +16,7 @@ This adds some methods to easily save/load an entire tokenizer (`from_str`, `fro
 - [#289]: Ability to pad to a multiple of a specified value. This is especially useful to ensure
 activation of the Tensor Cores, while ensuring padding to a multiple of 8. Use with
 `enable_padding(pad_to_multiple_of=8)` for example.
+- [#298]: Ability to get the currently set truncation/padding params
 
 ### Changed
 - Improved errors generated during truncation: When the provided max length is too low are
