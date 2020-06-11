@@ -97,4 +97,3 @@ impl<'c, T: neon::object::This> Extract for CallContext<'c, T> {
             .map_or(Ok(None), |v| v.map(Some))
     }
 }
-
