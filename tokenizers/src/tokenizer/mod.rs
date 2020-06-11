@@ -886,6 +886,7 @@ impl Tokenizer {
             }
 
             let id = if let Some(id) = self.token_to_id(&token.content) {
+                ignored += 1;
                 id
             } else {
                 let new_id = (self.model.get_vocab_size() + self.added_tokens_map.len()) as u32;
