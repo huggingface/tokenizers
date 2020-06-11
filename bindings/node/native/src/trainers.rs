@@ -1,9 +1,10 @@
 extern crate tokenizers as tk;
 
 use crate::container::Container;
+use crate::extraction::*;
+use crate::tokenizer::AddedToken;
 use neon::prelude::*;
-use std::collections::HashSet;
-use tokenizer::JsAddedToken;
+use tk::models::{bpe::BpeTrainer, wordpiece::WordPieceTrainer};
 
 /// Trainer
 pub struct Trainer {
@@ -21,6 +22,76 @@ declare_types! {
     }
 }
 
+// BPE
+
+struct BpeTrainerOptions(BpeTrainer);
+impl From<BpeTrainerOptions> for BpeTrainer {
+    fn from(v: BpeTrainerOptions) -> Self {
+        v.0
+    }
+}
+impl FromJsValue for BpeTrainerOptions {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
+        if let Ok(options) = from.downcast::<JsObject>() {
+            let mut builder = BpeTrainer::builder();
+
+            if let Ok(size) = options.get(cx, "vocabSize") {
+                if let Some(size) = Option::from_value(size, cx)? {
+                    builder = builder.vocab_size(size);
+                }
+            }
+            if let Ok(freq) = options.get(cx, "minFrequency") {
+                if let Some(freq) = Option::from_value(freq, cx)? {
+                    builder = builder.min_frequency(freq);
+                }
+            }
+            if let Ok(tokens) = options.get(cx, "specialTokens") {
+                if tokens.downcast::<JsNull>().is_err() && tokens.downcast::<JsUndefined>().is_err()
+                {
+                    builder = builder.special_tokens(
+                        tokens
+                            .downcast::<JsArray>()
+                            .map_err(|e| Error(format!("{}", e)))?
+                            .to_vec(cx)?
+                            .into_iter()
+                            .map(|token| Ok(AddedToken::from_value(token, cx)?.into()))
+                            .collect::<Result<Vec<_>, Error>>()?,
+                    );
+                }
+            }
+            if let Ok(limit) = options.get(cx, "limitAlphabet") {
+                if let Some(limit) = Option::from_value(limit, cx)? {
+                    builder = builder.limit_alphabet(limit);
+                }
+            }
+            if let Ok(alphabet) = options.get(cx, "initialAlphabet") {
+                if let Some(alphabet) = Option::from_value(alphabet, cx)? {
+                    builder = builder.initial_alphabet(alphabet);
+                }
+            }
+            if let Ok(show) = options.get(cx, "showProgress") {
+                if let Some(show) = Option::from_value(show, cx)? {
+                    builder = builder.show_progress(show);
+                }
+            }
+            if let Ok(prefix) = options.get(cx, "continuingSubwordPrefix") {
+                if let Some(prefix) = Option::from_value(prefix, cx)? {
+                    builder = builder.continuing_subword_prefix(prefix);
+                }
+            }
+            if let Ok(suffix) = options.get(cx, "endOfWordSuffix") {
+                if let Some(suffix) = Option::from_value(suffix, cx)? {
+                    builder = builder.end_of_word_suffix(suffix);
+                }
+            }
+
+            Ok(Self(builder.build()))
+        } else {
+            Err(Error("Expected options type: object".into()))
+        }
+    }
+}
+
 /// bpe_trainer(options?: {
 ///   vocabSize?: number = 30000,
 ///   minFrequency?: number = 2,
@@ -32,112 +103,90 @@ declare_types! {
 ///   endOfWordSuffix?: string = undefined,
 /// })
 fn bpe_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
-    let options = cx.argument_opt(0);
+    let trainer = cx
+        .extract_opt::<BpeTrainerOptions>(0)?
+        .map_or_else(|| BpeTrainer::builder().build(), |o| o.into());
 
-    let mut builder = tk::models::bpe::BpeTrainer::builder();
+    let mut js_trainer = JsTrainer::new::<_, JsTrainer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    js_trainer
+        .borrow_mut(&guard)
+        .trainer
+        .to_owned(Box::new(trainer));
 
-    if let Some(options) = options {
-        if let Ok(options) = options.downcast::<JsObject>() {
-            if let Ok(size) = options.get(&mut cx, "vocabSize") {
-                if let Err(_) = size.downcast::<JsUndefined>() {
-                    builder =
-                        builder.vocab_size(
-                            size.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize
-                        );
+    Ok(js_trainer)
+}
+
+// WordPiece
+
+struct WordPieceTrainerOptions(WordPieceTrainer);
+impl From<WordPieceTrainerOptions> for WordPieceTrainer {
+    fn from(v: WordPieceTrainerOptions) -> Self {
+        v.0
+    }
+}
+impl FromJsValue for WordPieceTrainerOptions {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
+        if let Ok(options) = from.downcast::<JsObject>() {
+            let mut builder = WordPieceTrainer::builder();
+
+            if let Ok(size) = options.get(cx, "vocabSize") {
+                if let Some(size) = Option::from_value(size, cx)? {
+                    builder = builder.vocab_size(size);
                 }
             }
-            if let Ok(freq) = options.get(&mut cx, "minFrequency") {
-                if let Err(_) = freq.downcast::<JsUndefined>() {
-                    builder = builder.min_frequency(
-                        freq.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32,
-                    );
+            if let Ok(freq) = options.get(cx, "minFrequency") {
+                if let Some(freq) = Option::from_value(freq, cx)? {
+                    builder = builder.min_frequency(freq);
                 }
             }
-            if let Ok(tokens) = options.get(&mut cx, "specialTokens") {
-                if let Err(_) = tokens.downcast::<JsUndefined>() {
+            if let Ok(tokens) = options.get(cx, "specialTokens") {
+                if tokens.downcast::<JsNull>().is_err() && tokens.downcast::<JsUndefined>().is_err()
+                {
                     builder = builder.special_tokens(
                         tokens
                             .downcast::<JsArray>()
-                            .or_throw(&mut cx)?
-                            .to_vec(&mut cx)?
+                            .map_err(|e| Error(format!("{}", e)))?
+                            .to_vec(cx)?
                             .into_iter()
-                            .map(|token| {
-                                if let Ok(token) = token.downcast::<JsString>() {
-                                    Ok(tk::tokenizer::AddedToken::from(token.value()))
-                                } else if let Ok(token) = token.downcast::<JsAddedToken>() {
-                                    let guard = cx.lock();
-                                    let token = token.borrow(&guard);
-                                    Ok(token.token.clone())
-                                } else {
-                                    cx.throw_error("Input must be `(string | AddedToken)[]`")
-                                }
-                            })
-                            .collect::<NeonResult<Vec<_>>>()?,
+                            .map(|token| Ok(AddedToken::from_value(token, cx)?.into()))
+                            .collect::<Result<Vec<_>, Error>>()?,
                     );
                 }
             }
-            if let Ok(limit) = options.get(&mut cx, "limitAlphabet") {
-                if let Err(_) = limit.downcast::<JsUndefined>() {
-                    builder = builder.limit_alphabet(
-                        limit.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize,
-                    );
+            if let Ok(limit) = options.get(cx, "limitAlphabet") {
+                if let Some(limit) = Option::from_value(limit, cx)? {
+                    builder = builder.limit_alphabet(limit);
                 }
             }
-            if let Ok(alphabet) = options.get(&mut cx, "initialAlphabet") {
-                if let Err(_) = alphabet.downcast::<JsUndefined>() {
-                    builder = builder.initial_alphabet(
-                        alphabet
-                            .downcast::<JsArray>()
-                            .or_throw(&mut cx)?
-                            .to_vec(&mut cx)?
-                            .into_iter()
-                            .map(|tokens| {
-                                Ok(tokens
-                                    .downcast::<JsString>()
-                                    .or_throw(&mut cx)?
-                                    .value()
-                                    .chars()
-                                    .nth(0))
-                            })
-                            .collect::<NeonResult<Vec<_>>>()?
-                            .into_iter()
-                            .filter(|c| c.is_some())
-                            .map(|c| c.unwrap())
-                            .collect::<HashSet<_>>(),
-                    );
+            if let Ok(alphabet) = options.get(cx, "initialAlphabet") {
+                if let Some(alphabet) = Option::from_value(alphabet, cx)? {
+                    builder = builder.initial_alphabet(alphabet);
                 }
             }
-            if let Ok(show) = options.get(&mut cx, "showProgress") {
-                if let Err(_) = show.downcast::<JsUndefined>() {
-                    builder = builder
-                        .show_progress(show.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
+            if let Ok(show) = options.get(cx, "showProgress") {
+                if let Some(show) = Option::from_value(show, cx)? {
+                    builder = builder.show_progress(show);
                 }
             }
-            if let Ok(prefix) = options.get(&mut cx, "continuingSubwordPrefix") {
-                if let Err(_) = prefix.downcast::<JsUndefined>() {
-                    builder = builder.continuing_subword_prefix(
-                        prefix.downcast::<JsString>().or_throw(&mut cx)?.value(),
-                    );
+            if let Ok(prefix) = options.get(cx, "continuingSubwordPrefix") {
+                if let Some(prefix) = Option::from_value(prefix, cx)? {
+                    builder = builder.continuing_subword_prefix(prefix);
                 }
             }
-            if let Ok(suffix) = options.get(&mut cx, "endOfWordSuffix") {
-                if let Err(_) = suffix.downcast::<JsUndefined>() {
-                    builder = builder.end_of_word_suffix(
-                        suffix.downcast::<JsString>().or_throw(&mut cx)?.value(),
-                    );
+            if let Ok(suffix) = options.get(cx, "endOfWordSuffix") {
+                if let Some(suffix) = Option::from_value(suffix, cx)? {
+                    builder = builder.end_of_word_suffix(suffix);
                 }
             }
+
+            Ok(Self(builder.build()))
+        } else {
+            Err(Error("Expected options type: object".into()))
         }
     }
-
-    let mut trainer = JsTrainer::new::<_, JsTrainer, _>(&mut cx, vec![])?;
-    let guard = cx.lock();
-    trainer
-        .borrow_mut(&guard)
-        .trainer
-        .to_owned(Box::new(builder.build()));
-    Ok(trainer)
 }
+
 /// wordpiece_trainer(options?: {
 ///   vocabSize?: number = 30000,
 ///   minFrequency?: number = 2,
@@ -149,111 +198,18 @@ fn bpe_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
 ///   endOfWordSuffix?: string = undefined,
 /// })
 fn wordpiece_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
-    let options = cx.argument_opt(0);
+    let trainer = cx
+        .extract_opt::<WordPieceTrainerOptions>(0)?
+        .map_or_else(|| WordPieceTrainer::builder().build(), |o| o.into());
 
-    let mut builder = tk::models::wordpiece::WordPieceTrainer::builder();
-
-    if let Some(options) = options {
-        if let Ok(options) = options.downcast::<JsObject>() {
-            if let Ok(size) = options.get(&mut cx, "vocabSize") {
-                if let Err(_) = size.downcast::<JsUndefined>() {
-                    builder =
-                        builder.vocab_size(
-                            size.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize
-                        );
-                }
-            }
-            if let Ok(freq) = options.get(&mut cx, "minFrequency") {
-                if let Err(_) = freq.downcast::<JsUndefined>() {
-                    builder = builder.min_frequency(
-                        freq.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32,
-                    );
-                }
-            }
-            if let Ok(tokens) = options.get(&mut cx, "specialTokens") {
-                if let Err(_) = tokens.downcast::<JsUndefined>() {
-                    builder = builder.special_tokens(
-                        tokens
-                            .downcast::<JsArray>()
-                            .or_throw(&mut cx)?
-                            .to_vec(&mut cx)?
-                            .into_iter()
-                            .map(|token| {
-                                if let Ok(token) = token.downcast::<JsString>() {
-                                    Ok(tk::tokenizer::AddedToken::from(token.value()))
-                                } else if let Ok(token) = token.downcast::<JsAddedToken>() {
-                                    let guard = cx.lock();
-                                    let token = token.borrow(&guard);
-                                    Ok(token.token.clone())
-                                } else {
-                                    cx.throw_error("Input must be `(string | AddedToken)[]`")
-                                }
-                            })
-                            .collect::<NeonResult<Vec<_>>>()?,
-                    );
-                }
-            }
-            if let Ok(limit) = options.get(&mut cx, "limitAlphabet") {
-                if let Err(_) = limit.downcast::<JsUndefined>() {
-                    builder = builder.limit_alphabet(
-                        limit.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize,
-                    );
-                }
-            }
-            if let Ok(alphabet) = options.get(&mut cx, "initialAlphabet") {
-                if let Err(_) = alphabet.downcast::<JsUndefined>() {
-                    builder = builder.initial_alphabet(
-                        alphabet
-                            .downcast::<JsArray>()
-                            .or_throw(&mut cx)?
-                            .to_vec(&mut cx)?
-                            .into_iter()
-                            .map(|tokens| {
-                                Ok(tokens
-                                    .downcast::<JsString>()
-                                    .or_throw(&mut cx)?
-                                    .value()
-                                    .chars()
-                                    .nth(0))
-                            })
-                            .collect::<NeonResult<Vec<_>>>()?
-                            .into_iter()
-                            .filter(|c| c.is_some())
-                            .map(|c| c.unwrap())
-                            .collect::<HashSet<_>>(),
-                    );
-                }
-            }
-            if let Ok(show) = options.get(&mut cx, "showProgress") {
-                if let Err(_) = show.downcast::<JsUndefined>() {
-                    builder = builder
-                        .show_progress(show.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
-                }
-            }
-            if let Ok(prefix) = options.get(&mut cx, "continuingSubwordPrefix") {
-                if let Err(_) = prefix.downcast::<JsUndefined>() {
-                    builder = builder.continuing_subword_prefix(
-                        prefix.downcast::<JsString>().or_throw(&mut cx)?.value(),
-                    );
-                }
-            }
-            if let Ok(suffix) = options.get(&mut cx, "endOfWordSuffix") {
-                if let Err(_) = suffix.downcast::<JsUndefined>() {
-                    builder = builder.end_of_word_suffix(
-                        suffix.downcast::<JsString>().or_throw(&mut cx)?.value(),
-                    );
-                }
-            }
-        }
-    }
-
-    let mut trainer = JsTrainer::new::<_, JsTrainer, _>(&mut cx, vec![])?;
+    let mut js_trainer = JsTrainer::new::<_, JsTrainer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    trainer
+    js_trainer
         .borrow_mut(&guard)
         .trainer
-        .to_owned(Box::new(builder.build()));
-    Ok(trainer)
+        .to_owned(Box::new(trainer));
+
+    Ok(js_trainer)
 }
 
 /// Register everything here
