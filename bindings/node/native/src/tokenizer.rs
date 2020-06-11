@@ -207,7 +207,7 @@ impl Default for EncodeOptions {
 // Encoding
 
 #[repr(transparent)]
-struct Encoding(tk::Encoding);
+pub struct Encoding(tk::Encoding);
 impl FromJsValue for Encoding {
     fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
         from.downcast::<JsEncoding>()
