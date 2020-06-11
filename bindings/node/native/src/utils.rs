@@ -44,7 +44,7 @@ fn merge_encodings(mut cx: FunctionContext) -> JsResult<JsEncoding> {
     js_encoding
         .borrow_mut(&guard)
         .encoding
-        .to_owned(Box::new(new_encoding));
+        .make_owned(Box::new(new_encoding));
 
     Ok(js_encoding)
 }

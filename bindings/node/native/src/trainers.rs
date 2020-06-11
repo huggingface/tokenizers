@@ -112,7 +112,7 @@ fn bpe_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
     js_trainer
         .borrow_mut(&guard)
         .trainer
-        .to_owned(Box::new(trainer));
+        .make_owned(Box::new(trainer));
 
     Ok(js_trainer)
 }
@@ -207,7 +207,7 @@ fn wordpiece_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
     js_trainer
         .borrow_mut(&guard)
         .trainer
-        .to_owned(Box::new(trainer));
+        .make_owned(Box::new(trainer));
 
     Ok(js_trainer)
 }

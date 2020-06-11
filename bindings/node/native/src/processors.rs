@@ -27,7 +27,7 @@ fn bert_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
 
     let mut processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    processor.borrow_mut(&guard).processor.to_owned(Box::new(
+    processor.borrow_mut(&guard).processor.make_owned(Box::new(
         tk::processors::bert::BertProcessing::new(sep, cls),
     ));
     Ok(processor)
@@ -56,7 +56,7 @@ fn roberta_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     js_processor
         .borrow_mut(&guard)
         .processor
-        .to_owned(Box::new(processor));
+        .make_owned(Box::new(processor));
     Ok(js_processor)
 }
 
@@ -73,7 +73,7 @@ fn bytelevel(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     processor
         .borrow_mut(&guard)
         .processor
-        .to_owned(Box::new(byte_level));
+        .make_owned(Box::new(byte_level));
     Ok(processor)
 }
 

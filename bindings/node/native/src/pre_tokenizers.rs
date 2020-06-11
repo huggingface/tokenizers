@@ -32,7 +32,7 @@ fn byte_level(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     pretok
         .borrow_mut(&guard)
         .pretok
-        .to_owned(Box::new(byte_level));
+        .make_owned(Box::new(byte_level));
     Ok(pretok)
 }
 
@@ -53,7 +53,7 @@ fn whitespace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     pretok
         .borrow_mut(&guard)
         .pretok
-        .to_owned(Box::new(tk::pre_tokenizers::whitespace::Whitespace));
+        .make_owned(Box::new(tk::pre_tokenizers::whitespace::Whitespace));
     Ok(pretok)
 }
 
@@ -64,7 +64,7 @@ fn whitespace_split(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     pretok
         .borrow_mut(&guard)
         .pretok
-        .to_owned(Box::new(tk::pre_tokenizers::whitespace::WhitespaceSplit));
+        .make_owned(Box::new(tk::pre_tokenizers::whitespace::WhitespaceSplit));
     Ok(pretok)
 }
 
@@ -75,7 +75,7 @@ fn bert_pre_tokenizer(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     pretok
         .borrow_mut(&guard)
         .pretok
-        .to_owned(Box::new(tk::pre_tokenizers::bert::BertPreTokenizer));
+        .make_owned(Box::new(tk::pre_tokenizers::bert::BertPreTokenizer));
     Ok(pretok)
 }
 
@@ -86,7 +86,7 @@ fn metaspace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
 
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    pretok.borrow_mut(&guard).pretok.to_owned(Box::new(
+    pretok.borrow_mut(&guard).pretok.make_owned(Box::new(
         tk::pre_tokenizers::metaspace::Metaspace::new(replacement, add_prefix_space),
     ));
     Ok(pretok)
@@ -98,7 +98,7 @@ fn char_delimiter_split(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
 
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    pretok.borrow_mut(&guard).pretok.to_owned(Box::new(
+    pretok.borrow_mut(&guard).pretok.make_owned(Box::new(
         tk::pre_tokenizers::delimiter::CharDelimiterSplit::new(delimiter),
     ));
 

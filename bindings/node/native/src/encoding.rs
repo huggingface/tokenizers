@@ -130,7 +130,7 @@ declare_types! {
 
                 // Set the content
                 let guard = cx.lock();
-                js_overflowing.borrow_mut(&guard).encoding.to_owned(Box::new(overflowing.clone()));
+                js_overflowing.borrow_mut(&guard).encoding.make_owned(Box::new(overflowing.clone()));
 
                 js_overflowings.set(&mut cx, index as u32, js_overflowing)?;
             }

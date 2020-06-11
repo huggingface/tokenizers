@@ -91,7 +91,7 @@ pub fn bpe_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     let bpe = tk::models::bpe::BPE::default();
 
     let guard = cx.lock();
-    model.borrow_mut(&guard).model.to_owned(Box::new(bpe));
+    model.borrow_mut(&guard).model.make_owned(Box::new(bpe));
 
     Ok(model)
 }
@@ -150,7 +150,10 @@ pub fn wordpiece_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     let wordpiece = tk::models::wordpiece::WordPiece::default();
 
     let guard = cx.lock();
-    model.borrow_mut(&guard).model.to_owned(Box::new(wordpiece));
+    model
+        .borrow_mut(&guard)
+        .model
+        .make_owned(Box::new(wordpiece));
 
     Ok(model)
 }

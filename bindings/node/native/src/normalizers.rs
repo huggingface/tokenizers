@@ -52,14 +52,15 @@ fn bert_normalizer(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
 
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    normalizer.borrow_mut(&guard).normalizer.to_owned(Box::new(
-        tk::normalizers::bert::BertNormalizer::new(
+    normalizer
+        .borrow_mut(&guard)
+        .normalizer
+        .make_owned(Box::new(tk::normalizers::bert::BertNormalizer::new(
             options.clean_text,
             options.handle_chinese_chars,
             options.strip_accents,
             options.lowercase,
-        ),
-    ));
+        )));
     Ok(normalizer)
 }
 
@@ -70,7 +71,7 @@ fn nfd(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     normalizer
         .borrow_mut(&guard)
         .normalizer
-        .to_owned(Box::new(tk::normalizers::unicode::NFD));
+        .make_owned(Box::new(tk::normalizers::unicode::NFD));
     Ok(normalizer)
 }
 
@@ -81,7 +82,7 @@ fn nfkd(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     normalizer
         .borrow_mut(&guard)
         .normalizer
-        .to_owned(Box::new(tk::normalizers::unicode::NFKD));
+        .make_owned(Box::new(tk::normalizers::unicode::NFKD));
     Ok(normalizer)
 }
 
@@ -92,7 +93,7 @@ fn nfc(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     normalizer
         .borrow_mut(&guard)
         .normalizer
-        .to_owned(Box::new(tk::normalizers::unicode::NFC));
+        .make_owned(Box::new(tk::normalizers::unicode::NFC));
     Ok(normalizer)
 }
 
@@ -103,7 +104,7 @@ fn nfkc(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     normalizer
         .borrow_mut(&guard)
         .normalizer
-        .to_owned(Box::new(tk::normalizers::unicode::NFKC));
+        .make_owned(Box::new(tk::normalizers::unicode::NFKC));
     Ok(normalizer)
 }
 
@@ -117,7 +118,7 @@ fn strip(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     normalizer
         .borrow_mut(&guard)
         .normalizer
-        .to_owned(Box::new(tk::normalizers::strip::Strip::new(left, right)));
+        .make_owned(Box::new(tk::normalizers::strip::Strip::new(left, right)));
 
     Ok(normalizer)
 }
@@ -153,7 +154,7 @@ fn sequence(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
         .map(|mut normalizer| {
             let guard = cx.lock();
             let mut n = normalizer.borrow_mut(&guard);
-            n.normalizer.to_pointer().unwrap()
+            n.normalizer.make_pointer().unwrap()
         })
         .collect::<Vec<_>>();
 
@@ -162,7 +163,7 @@ fn sequence(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     normalizer
         .borrow_mut(&guard)
         .normalizer
-        .to_owned(Box::new(tk::normalizers::utils::Sequence::new(normalizers)));
+        .make_owned(Box::new(tk::normalizers::utils::Sequence::new(normalizers)));
     Ok(normalizer)
 }
 
@@ -173,7 +174,7 @@ fn lowercase(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     normalizer
         .borrow_mut(&guard)
         .normalizer
-        .to_owned(Box::new(tk::normalizers::utils::Lowercase));
+        .make_owned(Box::new(tk::normalizers::utils::Lowercase));
     Ok(normalizer)
 }
 

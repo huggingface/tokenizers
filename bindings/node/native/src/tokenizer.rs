@@ -358,7 +358,7 @@ declare_types! {
             if let Some(instance) = {
                 let guard = cx.lock();
                 let mut model = model.borrow_mut(&guard);
-                model.model.to_pointer()
+                model.model.make_pointer()
             } {
                 Ok(Tokenizer {
                     tokenizer: tk::Tokenizer::new(instance),
@@ -767,7 +767,7 @@ declare_types! {
             js_encoding
                 .borrow_mut(&guard)
                 .encoding
-                .to_owned(Box::new(encoding));
+                .make_owned(Box::new(encoding));
 
             Ok(js_encoding.upcast())
         }
@@ -794,7 +794,7 @@ declare_types! {
             if let Some(instance) = {
                 let guard = cx.lock();
                 let mut model = model.borrow_mut(&guard);
-                model.model.to_pointer()
+                model.model.make_pointer()
             } {
                 let mut this = cx.this();
                 {
@@ -839,7 +839,7 @@ declare_types! {
             if let Some(instance) = {
                 let guard = cx.lock();
                 let mut normalizer = normalizer.borrow_mut(&guard);
-                normalizer.normalizer.to_pointer()
+                normalizer.normalizer.make_pointer()
             } {
                 let mut this = cx.this();
                 {
@@ -884,7 +884,7 @@ declare_types! {
             if let Some(instance) = {
                 let guard = cx.lock();
                 let mut pretok = pretok.borrow_mut(&guard);
-                pretok.pretok.to_pointer()
+                pretok.pretok.make_pointer()
             } {
                 let mut this = cx.this();
                 {
@@ -930,7 +930,7 @@ declare_types! {
             if let Some(instance) = {
                 let guard = cx.lock();
                 let mut processor = processor.borrow_mut(&guard);
-                processor.processor.to_pointer()
+                processor.processor.make_pointer()
             } {
                 let mut this = cx.this();
                 {
@@ -975,7 +975,7 @@ declare_types! {
             if let Some(instance) = {
                 let guard = cx.lock();
                 let mut decoder = decoder.borrow_mut(&guard);
-                decoder.decoder.to_pointer()
+                decoder.decoder.make_pointer()
             } {
                 let mut this = cx.this();
                 {

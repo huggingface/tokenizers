@@ -27,7 +27,7 @@ fn byte_level(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     decoder
         .borrow_mut(&guard)
         .decoder
-        .to_owned(Box::new(tk::decoders::byte_level::ByteLevel::default()));
+        .make_owned(Box::new(tk::decoders::byte_level::ByteLevel::default()));
     Ok(decoder)
 }
 
@@ -40,12 +40,9 @@ fn wordpiece(mut cx: FunctionContext) -> JsResult<JsDecoder> {
 
     let mut decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    decoder
-        .borrow_mut(&guard)
-        .decoder
-        .to_owned(Box::new(tk::decoders::wordpiece::WordPiece::new(
-            prefix, cleanup,
-        )));
+    decoder.borrow_mut(&guard).decoder.make_owned(Box::new(
+        tk::decoders::wordpiece::WordPiece::new(prefix, cleanup),
+    ));
     Ok(decoder)
 }
 
@@ -56,13 +53,9 @@ fn metaspace(mut cx: FunctionContext) -> JsResult<JsDecoder> {
 
     let mut decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    decoder
-        .borrow_mut(&guard)
-        .decoder
-        .to_owned(Box::new(tk::decoders::metaspace::Metaspace::new(
-            replacement,
-            add_prefix_space,
-        )));
+    decoder.borrow_mut(&guard).decoder.make_owned(Box::new(
+        tk::decoders::metaspace::Metaspace::new(replacement, add_prefix_space),
+    ));
     Ok(decoder)
 }
 
@@ -77,7 +70,7 @@ fn bpe_decoder(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     decoder
         .borrow_mut(&guard)
         .decoder
-        .to_owned(Box::new(tk::decoders::bpe::BPEDecoder::new(suffix)));
+        .make_owned(Box::new(tk::decoders::bpe::BPEDecoder::new(suffix)));
     Ok(decoder)
 }
 

@@ -48,7 +48,7 @@ impl Task for EncodeTask {
                         *add_special_tokens,
                     )
                     .map_err(|e| format!("{}", e))
-                    .map(|encoding| EncodeOutput::Single(encoding))
+                    .map(EncodeOutput::Single)
             }
             EncodeTask::Batch(worker, input, add_special_tokens) => {
                 let mut input: Option<Vec<EncodeInput>> =
@@ -60,7 +60,7 @@ impl Task for EncodeTask {
                         *add_special_tokens,
                     )
                     .map_err(|e| format!("{}", e))
-                    .map(|encodings| EncodeOutput::Batch(encodings))
+                    .map(EncodeOutput::Batch)
             }
         }
     }
@@ -78,7 +78,7 @@ impl Task for EncodeTask {
                 js_encoding
                     .borrow_mut(&guard)
                     .encoding
-                    .to_owned(Box::new(encoding));
+                    .make_owned(Box::new(encoding));
 
                 Ok(js_encoding.upcast())
             }
@@ -92,7 +92,7 @@ impl Task for EncodeTask {
                     js_encoding
                         .borrow_mut(&guard)
                         .encoding
-                        .to_owned(Box::new(encoding));
+                        .make_owned(Box::new(encoding));
 
                     result.set(&mut cx, i as u32, js_encoding)?;
                 }
