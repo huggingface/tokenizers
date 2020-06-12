@@ -1,4 +1,4 @@
-use super::{AddedToken, Tokenizer};
+use super::{added_vocabulary::AddedTokenWithId, Tokenizer};
 use crate::models::bpe::BPE;
 use serde::{
     self,
@@ -8,18 +8,6 @@ use serde::{
 };
 
 static SERIALIZATION_VERSION: &str = "1.0";
-
-#[derive(Debug, Serialize, Deserialize)]
-struct AddedTokenWithId {
-    /// The id assigned to this token
-    id: u32,
-    /// Whether this is a special token
-    special: bool,
-
-    #[serde(flatten)]
-    /// The target AddedToken
-    token: AddedToken,
-}
 
 impl Serialize for Tokenizer {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -36,18 +24,7 @@ impl Serialize for Tokenizer {
         tokenizer.serialize_field("padding", &self.padding)?;
 
         // Added tokens
-        let mut added_tokens = self
-            .added_tokens_map_r
-            .iter()
-            .map(|(id, token)| AddedTokenWithId {
-                id: *id,
-                special: self.special_tokens_set.contains(&token.content),
-                token: token.clone(),
-            })
-            .collect::<Vec<_>>();
-        // We need to have these added tokens ordered by ascending ID
-        added_tokens.sort_unstable_by_key(|o| o.id);
-        tokenizer.serialize_field("added_tokens", &added_tokens)?;
+        tokenizer.serialize_field("added_tokens", &self.added_vocabulary)?;
 
         // Then add our parts
         tokenizer.serialize_field("normalizer", &self.normalizer)?;
@@ -141,6 +118,8 @@ impl<'de> Visitor<'de> for TokenizerVisitor {
             };
         }
 
+        // We take care of deserializing the added_tokens (instead of `AddedVocabulary` directly
+        // because it let us check that associated IDs are still good, and warn the user otherwise
         for token in tokens {
             let tk = token.token.content.clone();
             if token.special {

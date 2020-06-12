@@ -283,8 +283,8 @@ impl Model for WordPiece {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab_r.get(&id).cloned()
+    fn id_to_token(&self, id: u32) -> Option<&str> {
+        self.vocab_r.get(&id).map(String::as_ref)
     }
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
