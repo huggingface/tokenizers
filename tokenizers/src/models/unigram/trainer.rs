@@ -348,7 +348,7 @@ impl UnigramTrainer {
 
         // TODO reparallelize this.
         for (string, freq) in sentences {
-            let lattice = Lattice::from(string);
+            let mut lattice = Lattice::from(string);
             model.populate_node(&lattice);
             let z: f64 = lattice.populate_marginal(*freq, &mut expected);
             ntokens += lattice.viterbi().len() as u32;

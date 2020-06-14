@@ -1,4 +1,6 @@
+use std::rc::Rc;
 use unicode_segmentation::UnicodeSegmentation;
+
 pub struct Lattice<'a> {
     sentence: &'a str,
     graphemes: Vec<&'a str>,
@@ -12,13 +14,29 @@ pub struct Node {
     id: usize,
     pos: usize,
     length: usize,
+    prev: Option<Rc<Node>>,
+    backtrace_score: f64,
+    score: f64,
+}
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Node) -> bool {
+        self.id == other.id
+    }
 }
 
 static mut CURRENT_ID: usize = 0;
 
 impl Node {
     pub fn new(id: usize, pos: usize, length: usize) -> Node {
-        Node { id, pos, length }
+        Node {
+            id,
+            pos,
+            length,
+            prev: None,
+            score: 0.0,
+            backtrace_score: 0.0,
+        }
     }
 }
 
@@ -61,9 +79,56 @@ impl<'a> Lattice<'a> {
         node
     }
 
-    pub fn viterbi(&self) -> Vec<Node> {
-        //TODO
-        vec![]
+    pub fn viterbi(&mut self) -> Vec<Node> {
+        //TODO Remove this mut it's probably unnecessary
+        //  const int len = size();
+        let len = self.graphemes.len();
+        for pos in 0..len {
+            // println!("Pos {:?}", pos);
+            // println!("n {:?}", self.begin_nodes[pos]);
+            if self.begin_nodes[pos].is_empty() {
+                return vec![];
+            }
+            for rnode in self.begin_nodes[pos].iter_mut() {
+                // ??
+                // rnode->prev = nullptr;
+                // println!("Node {:?}", rnode);
+                rnode.prev = None;
+                let mut best_score = 0.0;
+                let mut best_node: Option<Node> = None;
+                for lnode in &self.end_nodes[pos] {
+                    let score = lnode.backtrace_score + rnode.score;
+                    if best_node.is_none() || score > best_score {
+                        // TODO can we remove this clone ?
+                        best_node = Some(lnode.clone());
+                        best_score = score
+                    }
+                }
+                // println!("Best node {:?}", best_node);
+                match best_node {
+                    Some(bnode) => {
+                        rnode.prev = Some(Rc::new(bnode));
+                        rnode.backtrace_score = best_score;
+                    }
+                    None => return vec![],
+                }
+            }
+        }
+        // println!("Here");
+
+        let mut results: Vec<Node> = vec![];
+        println!("prev {:?}", self.begin_nodes[len]);
+        let prev = (&self.begin_nodes[len][0].prev).as_ref();
+        if prev.is_none() {
+            return vec![];
+        }
+        let mut node: Rc<Node> = prev.unwrap().clone();
+        while !node.prev.is_none() {
+            results.push(Rc::make_mut(&mut node).clone());
+            node = node.prev.as_ref().unwrap().clone();
+        }
+        results.reverse();
+        results
     }
 
     pub fn len(&self) -> usize {
@@ -216,5 +281,18 @@ mod tests {
         assert_eq!(node5.id, lattice.end_nodes[3][1].id);
         assert_eq!(node3.id, lattice.end_nodes[4][0].id);
         assert_eq!(node6.id, lattice.end_nodes[4][1].id);
+    }
+
+    #[test]
+    fn test_viterbi() {
+        let mut lattice = Lattice::from("ABC");
+        assert_eq!(lattice.viterbi(), vec![]);
+        // Still incomplete
+        lattice.insert(0, 1);
+        assert_eq!(lattice.viterbi(), vec![]);
+        lattice.insert(1, 1);
+        lattice.insert(2, 1);
+        // XXX: In sentence piece this is not tested, still incomplete ?
+        // assert_eq!(lattice.viterbi(), vec![]);
     }
 }
