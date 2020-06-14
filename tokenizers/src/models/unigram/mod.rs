@@ -1,1 +1,2 @@
+mod lattice;
 mod trainer;
