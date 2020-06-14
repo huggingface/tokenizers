@@ -1,3 +1,4 @@
+use crate::models::unigram::lattice::Lattice;
 use crate::tokenizer::{AddedToken, Model, Offsets, Result, Token, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
@@ -9,7 +10,8 @@ type SentencePiece = (String, f64);
 type Vocab = HashMap<String, u32>;
 
 fn digamma(x: f64) -> f64 {
-    let result = 0.0;
+    let mut x = x;
+    let mut result = 0.0;
     while x < 7.0 {
         result -= 1.0 / x;
         x += 1.0;
@@ -26,12 +28,70 @@ fn digamma(x: f64) -> f64 {
 #[derive(PartialEq, Serialize, Deserialize)]
 struct Unigram {
     vocab: Vocab,
+    min_score: f64,
 }
 impl std::fmt::Debug for Unigram {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         fmt.debug_struct("BPE")
             .field("vocab", &self.vocab.len())
             .finish()
+    }
+}
+
+static K_UNK_PENALTY: f64 = 10.0;
+
+impl Unigram {
+    pub fn populate_node(&mut self, lattice: &Lattice) {
+        //TODO
+        //  auto get_chars_length = [&lattice](int begin_pos, const char *end) {
+        //   int pos = begin_pos;
+        //   while (lattice->surface(pos) < end) ++pos;
+        //   return pos - begin_pos;
+        // };
+        let unk_score = self.min_score - K_UNK_PENALTY;
+
+        // const float unk_score = min_score() - kUnkPenalty;
+
+        // const int len = lattice->size();
+        // const char *end = lattice->sentence() + lattice->utf8_size();
+
+        // // +1 just in case.
+        // std::vector<Darts::DoubleArray::result_pair_type> trie_results(
+        //     trie_results_size_ + 1);
+
+        // for (int begin_pos = 0; begin_pos < len; ++begin_pos) {
+        //   const char *begin = lattice->surface(begin_pos);
+
+        //   // Finds all pieces which are prefix of surface(begin_pos).
+        //   const size_t num_nodes = trie_->commonPrefixSearch(
+        //       begin, trie_results.data(), trie_results.size(),
+        //       static_cast<int>(end - begin));
+        //   CHECK_LT(num_nodes, trie_results.size());
+
+        //   bool has_single_node = false;
+
+        //   // Inserts pieces to the lattice.
+        //   for (size_t k = 0; k < num_nodes; ++k) {
+        //     const int length =
+        //         get_chars_length(begin_pos, begin + trie_results[k].length);
+        //     const int id = trie_results[k].value;
+        //     if (IsUnusedInlined(id)) continue;
+        //     Lattice::Node *node = lattice->Insert(begin_pos, length);
+        //     node->id = id;  // the value of Trie stores vocab_id.
+        //     // User defined symbol receives extra bonus to always be selected.
+        //     node->score = IsUserDefinedInlined(id) ? (length * max_score_ - 0.1)
+        //                                            : GetScoreInlined(id);
+        //     if (!has_single_node && node->length == 1) {
+        //       has_single_node = true;
+        //     }
+        //   }
+
+        //   if (!has_single_node) {
+        //     Lattice::Node *node = lattice->Insert(begin_pos, 1);
+        //     node->id = unk_id_;  // add UNK node.
+        //     node->score = unk_score;
+        //   }
+        // }
     }
 }
 
@@ -61,6 +121,26 @@ impl Model for Unigram {
         Ok(vec![])
     }
 }
+struct UnigramTrainerBuilder {
+    show_progress: bool,
+}
+
+impl UnigramTrainerBuilder {
+    fn new() -> UnigramTrainerBuilder {
+        UnigramTrainerBuilder {
+            show_progress: true,
+        }
+    }
+
+    fn with_progress(mut self, progress: bool) -> Self {
+        self.show_progress = progress;
+        self
+    }
+
+    fn build(&self) -> UnigramTrainer {
+        UnigramTrainer::new(self.show_progress)
+    }
+}
 
 struct UnigramTrainer {
     show_progress: bool,
@@ -88,6 +168,15 @@ fn is_valid_sentencepiece(char_string: &[char]) -> bool {
 }
 
 impl UnigramTrainer {
+    fn new(show_progress: bool) -> UnigramTrainer {
+        UnigramTrainer {
+            show_progress,
+            vocab_size: 8_000,
+            n_iterations: 10,
+            special_tokens: vec![],
+        }
+    }
+
     /// Setup a progress bar if asked to show progress
     fn setup_progress(&self) -> Option<ProgressBar> {
         if self.show_progress {
@@ -246,31 +335,35 @@ impl UnigramTrainer {
         }
     }
 
-    fn run_e_step(&self, sentences: &mut Vec<(String, f64)>) -> (f64, u32, Vec<f64>) {
+    fn run_e_step(
+        &self,
+        model: &mut Unigram,
+        sentences: &mut Vec<(String, f64)>,
+    ) -> (f64, u32, Vec<f64>) {
         let mut expected: Vec<f64> = vec![0.0; self.vocab_size as usize];
-        let objs: f64 = 0.0;
-        let ntokens: u32 = 0;
+        let mut objs: f64 = 0.0;
+        let mut ntokens: u32 = 0;
 
         let all_sentence_freq: f64 = sentences.iter().map(|(a, b)| *b).sum();
 
         // TODO reparallelize this.
-        let lattice = Lattice::new();
         for (string, freq) in sentences {
-            lattice.set_sentence(string);
+            let lattice = Lattice::from(string);
             model.populate_node(&lattice);
-            let Z: f64 = lattice.populate_marginal(freq, &mut expected);
-            ntokens += lattice.Viterbi().size();
-            if Z.is_nan() {
+            let z: f64 = lattice.populate_marginal(*freq, &mut expected);
+            ntokens += lattice.viterbi().len() as u32;
+            if z.is_nan() {
                 panic!("likelihood is NAN. Input sentence may be too long.");
             }
 
-            objs -= Z / (all_sentence_freq as f64);
+            objs -= z / (all_sentence_freq as f64);
         }
 
         (objs, ntokens, expected)
     }
     fn run_m_step(
         &self,
+        molde: &mut Unigram,
         sentences: &Vec<(String, f64)>,
         expected: &Vec<f64>,
     ) -> Vec<SentencePiece> {
@@ -278,7 +371,7 @@ impl UnigramTrainer {
         // CHECK_EQ(sentencepieces.size(), expected.size());
         // TrainerModel::SentencePieces new_sentencepieces;
         //
-        let new_sentencepieces: Vec<(String, f64)> =
+        let mut new_sentencepieces: Vec<(String, f64)> =
             Vec::with_capacity(self.vocab_size.try_into().unwrap());
 
         let mut sum = 0.0;
@@ -287,7 +380,7 @@ impl UnigramTrainer {
             if freq < &expected_frequency_threshold {
                 continue;
             }
-            new_sentencepieces.push((sentences[i].0, *freq));
+            new_sentencepieces.push((sentences[i].0.clone(), *freq));
             sum += freq;
         }
         // // Here we do not use the original EM, but use the
@@ -317,14 +410,20 @@ impl UnigramTrainer {
 
         let desired_vocab_size_ = (self.vocab_size * 11) / 10; // * 1.1
 
+        // TODO make the model correctly ?
+        let mut model = Unigram {
+            vocab: HashMap::new(),
+            min_score: 0.0,
+        };
+
         loop {
             // Sub-EM iteration.
             for iter in 0..self.n_iterations {
                 // Executes E step
-                let (objective, num_tokens, expected) = self.run_e_step(&mut table);
+                let (objective, num_tokens, expected) = self.run_e_step(&mut model, &mut table);
 
                 // // Executes M step.
-                let new_sentencepieces = self.run_m_step(&table, &expected);
+                let new_sentencepieces = self.run_m_step(&mut model, &table, &expected);
                 // self.sentence_pieces = new_sentencepieces;
 
                 // LOG(INFO) << "EM sub_iter=" << iter << " size=" << model.GetPieceSize()
@@ -346,12 +445,7 @@ impl UnigramTrainer {
         // Finally, adjusts the size of sentencepices to be |vocab_size|.
         self.finalize();
 
-        Ok((
-            Unigram {
-                vocab: HashMap::new(),
-            },
-            self.special_tokens.clone(),
-        ))
+        Ok((model, self.special_tokens.clone()))
     }
 }
 
@@ -387,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_unigram_chars() {
-        let trainer = UnigramTrainer::default();
+        let trainer = UnigramTrainerBuilder::new().with_progress(false).build();
         let mut word_count: HashMap<String, u32> = HashMap::new();
         word_count.insert("This is a".to_string(), 1);
         word_count.insert("こんにちは友達".to_string(), 1);
