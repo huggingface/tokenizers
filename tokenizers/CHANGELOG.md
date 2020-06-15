@@ -39,6 +39,8 @@ using serde. It is now easy to save/load an entire tokenizer.
 - [#289]: Ability to pad to a multiple of a specified value. This is especially useful to ensure
 activation of the Tensor Cores, while ensuring padding to a multiple of 8.
 - [#298]: Ability to get the currently set truncation/padding params
+- [#187]: Added an option to the `Tokenizer` struct to disable parallelism through `rayon`. This can be used
+to avoid the dead-locking issue with Python subprocesses.
 
 ### How to migrate
 - Replace any `XXX_to_YYY_offsets()` method call by any of the new ones.

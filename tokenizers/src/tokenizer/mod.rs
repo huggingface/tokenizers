@@ -49,6 +49,8 @@ pub trait Normalizer: Send + Sync {
 /// the original string.
 pub trait PreTokenizer: Send + Sync {
     fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>>;
+
+    fn with_parallelism(&mut self, _parallelism: bool) {}
 }
 
 #[typetag::serde(tag = "type")]
@@ -76,6 +78,7 @@ pub trait PostProcessor: Send + Sync {
         add_special_tokens: bool,
     ) -> Result<Encoding>;
 }
+
 impl dyn PostProcessor {
     pub fn default_process(
         mut encoding: Encoding,
@@ -307,6 +310,8 @@ pub struct Tokenizer {
     // General processing parameters
     truncation: Option<TruncationParams>,
     padding: Option<PaddingParams>,
+    /// Whether or not to enable parallel processing for encoding/decoding.
+    parallelism: bool,
 }
 
 impl std::str::FromStr for Tokenizer {
@@ -336,6 +341,7 @@ impl Tokenizer {
 
             truncation: None,
             padding: None,
+            parallelism: true,
         }
     }
 
@@ -378,7 +384,8 @@ impl Tokenizer {
     }
 
     /// Set the pre tokenizer
-    pub fn with_pre_tokenizer(&mut self, pre_tokenizer: Box<dyn PreTokenizer>) -> &Self {
+    pub fn with_pre_tokenizer(&mut self, mut pre_tokenizer: Box<dyn PreTokenizer>) -> &Self {
+        pre_tokenizer.with_parallelism(self.parallelism);
         self.pre_tokenizer = Some(pre_tokenizer);
         self
     }
@@ -455,6 +462,18 @@ impl Tokenizer {
     /// Get a mutable reference to the currently set padding parameters
     pub fn get_padding_mut(&mut self) -> Option<&mut PaddingParams> {
         self.padding.as_mut()
+    }
+
+    pub fn with_parallelism(&mut self, parallelism: bool) -> &Self {
+        self.parallelism = parallelism;
+        if let Some(pre_tokenizer) = &mut self.pre_tokenizer {
+            pre_tokenizer.with_parallelism(parallelism);
+        }
+        self
+    }
+
+    pub fn get_parallelism(&self) -> bool {
+        self.parallelism
     }
 
     /// Get the vocabulary
@@ -648,14 +667,21 @@ impl Tokenizer {
         inputs: Vec<E>,
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>> {
-        let mut encodings = inputs
-            .into_par_iter()
-            .map(|input| self.encode(input, add_special_tokens))
-            .collect::<Result<Vec<Encoding>>>()?;
+        let mut encodings = if self.parallelism {
+            inputs
+                .into_par_iter()
+                .map(|input| self.encode(input, add_special_tokens))
+                .collect::<Result<Vec<Encoding>>>()?
+        } else {
+            inputs
+                .into_iter()
+                .map(|input| self.encode(input, add_special_tokens))
+                .collect::<Result<Vec<Encoding>>>()?
+        };
 
         if let Some(params) = &self.padding {
             // We do the padding here to make sure we handle the batch padding
-            pad_encodings(&mut encodings, &params)?;
+            pad_encodings(&mut encodings, &params, self.parallelism)?;
         }
 
         Ok(encodings)
@@ -693,10 +719,17 @@ impl Tokenizer {
         sentences: Vec<Vec<u32>>,
         skip_special_tokens: bool,
     ) -> Result<Vec<String>> {
-        sentences
-            .into_par_iter()
-            .map(|sentence| self.decode(sentence, skip_special_tokens))
-            .collect()
+        if self.parallelism {
+            sentences
+                .into_par_iter()
+                .map(|sentence| self.decode(sentence, skip_special_tokens))
+                .collect()
+        } else {
+            sentences
+                .into_iter()
+                .map(|sentence| self.decode(sentence, skip_special_tokens))
+                .collect()
+        }
     }
 
     /// Train a model and replace our current Model, using the given Trainer
@@ -851,7 +884,7 @@ impl Tokenizer {
         // 3. Then we pad if needed
         let [final_encoding] = if let Some(params) = &self.padding {
             let mut arr = [final_encoding];
-            pad_encodings(&mut arr, params)?;
+            pad_encodings(&mut arr, params, self.parallelism)?;
             arr
         } else {
             [final_encoding]

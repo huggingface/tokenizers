@@ -17,6 +17,8 @@ This adds some methods to easily save/load an entire tokenizer (`from_str`, `fro
 activation of the Tensor Cores, while ensuring padding to a multiple of 8. Use with
 `enable_padding(pad_to_multiple_of=8)` for example.
 - [#298]: Ability to get the currently set truncation/padding params
+- [#187]: Added the ability to disable parallelism in the Rust lib, which will
+avoid the dead-locking issue with Python subprocesses.
 
 ### Changed
 - Improved errors generated during truncation: When the provided max length is too low are

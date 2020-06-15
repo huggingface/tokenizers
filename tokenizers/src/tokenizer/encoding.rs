@@ -360,11 +360,32 @@ impl Encoding {
         pad_type_id: u32,
         pad_token: &str,
         direction: PaddingDirection,
+        parallelism: bool,
     ) {
         // Dispatch call to all the overflowings first
-        self.overflowing.par_iter_mut().for_each(|encoding| {
-            encoding.pad(target_length, pad_id, pad_type_id, pad_token, direction)
-        });
+        if parallelism {
+            self.overflowing.par_iter_mut().for_each(|encoding| {
+                encoding.pad(
+                    target_length,
+                    pad_id,
+                    pad_type_id,
+                    pad_token,
+                    direction,
+                    parallelism,
+                )
+            });
+        } else {
+            self.overflowing.iter_mut().for_each(|encoding| {
+                encoding.pad(
+                    target_length,
+                    pad_id,
+                    pad_type_id,
+                    pad_token,
+                    direction,
+                    parallelism,
+                )
+            });
+        }
 
         // Then check if we should pad ourself
         if self.ids.len() >= target_length {

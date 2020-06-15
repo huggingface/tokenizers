@@ -47,18 +47,28 @@ pub enum PaddingStrategy {
     Fixed(usize),
 }
 
-pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Result<()> {
+pub fn pad_encodings(
+    encodings: &mut [Encoding],
+    params: &PaddingParams,
+    parallelism: bool,
+) -> Result<()> {
     if encodings.is_empty() {
         return Ok(());
     }
 
     let mut pad_length = match params.strategy {
         PaddingStrategy::Fixed(size) => size,
-        PaddingStrategy::BatchLongest => encodings
-            .par_iter()
-            .map(|e| e.get_ids().len())
-            .max()
-            .unwrap(),
+        PaddingStrategy::BatchLongest => {
+            if parallelism {
+                encodings
+                    .par_iter()
+                    .map(|e| e.get_ids().len())
+                    .max()
+                    .unwrap()
+            } else {
+                encodings.iter().map(|e| e.get_ids().len()).max().unwrap()
+            }
+        }
     };
 
     if let Some(multiple) = params.pad_to_multiple_of {
@@ -67,15 +77,22 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
         }
     }
 
-    encodings.par_iter_mut().for_each(|encoding| {
+    let pad = |encoding: &mut Encoding| {
         encoding.pad(
             pad_length,
             params.pad_id,
             params.pad_type_id,
             &params.pad_token,
             params.direction,
+            parallelism,
         )
-    });
+    };
+
+    if parallelism {
+        encodings.par_iter_mut().for_each(pad);
+    } else {
+        encodings.iter_mut().for_each(pad);
+    }
 
     Ok(())
 }
@@ -122,18 +139,18 @@ mod tests {
             pad_type_id: 0,
             pad_token: String::from("[PAD]"),
         };
-        pad_encodings(&mut encodings, &params).unwrap();
+        pad_encodings(&mut encodings, &params, true).unwrap();
         assert!(encodings.iter().all(|e| e.get_ids().len() == 8));
 
         // Test batch
         let mut encodings = get_encodings();
         params.strategy = PaddingStrategy::BatchLongest;
         params.pad_to_multiple_of = Some(6);
-        pad_encodings(&mut encodings, &params).unwrap();
+        pad_encodings(&mut encodings, &params, true).unwrap();
         assert!(encodings.iter().all(|e| e.get_ids().len() == 6));
 
         // Do not crash with 0
         params.pad_to_multiple_of = Some(0);
-        pad_encodings(&mut encodings, &params).unwrap();
+        pad_encodings(&mut encodings, &params, true).unwrap();
     }
 }

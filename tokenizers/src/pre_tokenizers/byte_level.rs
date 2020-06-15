@@ -48,12 +48,15 @@ pub struct ByteLevel {
     add_prefix_space: bool,
     /// Whether the post processing step should trim offsets to avoid including whitespaces.
     trim_offsets: bool,
+    /// Whether or not to enable parallel processing.
+    parallelism: bool,
 }
 impl Default for ByteLevel {
     fn default() -> Self {
         Self {
             add_prefix_space: true,
             trim_offsets: true,
+            parallelism: true,
         }
     }
 }
@@ -63,6 +66,7 @@ impl ByteLevel {
         ByteLevel {
             add_prefix_space,
             trim_offsets,
+            parallelism: true,
         }
     }
 
@@ -96,29 +100,38 @@ impl PreTokenizer for ByteLevel {
             .map(|(start, end)| start..end)
             .collect::<Vec<_>>();
 
-        let splits = positions
-            .into_par_iter()
-            .map(|range| {
-                // Process one of the splits
-                let slice = &normalized.get()[range];
-                let mut chars: Vec<(char, u8)> = Vec::with_capacity(slice.len());
+        let process_splits = |range: std::ops::Range<usize>| {
+            // Process one of the splits
+            let slice = &normalized.get()[range];
+            let mut chars: Vec<(char, u8)> = Vec::with_capacity(slice.len());
 
-                let mut i = 0;
-                for cur_char in slice.chars() {
-                    let size = cur_char.len_utf8();
-                    let bytes = slice[i..i + size].as_bytes();
-                    i += size;
-                    chars.extend(
-                        bytes
-                            .iter()
-                            .enumerate()
-                            .map(|(i, b)| (BYTES_CHAR[b], if i > 0 { 1 } else { 0 })),
-                    );
-                }
+            let mut i = 0;
+            for cur_char in slice.chars() {
+                let size = cur_char.len_utf8();
+                let bytes = slice[i..i + size].as_bytes();
+                i += size;
+                chars.extend(
+                    bytes
+                        .iter()
+                        .enumerate()
+                        .map(|(i, b)| (BYTES_CHAR[b], if i > 0 { 1 } else { 0 })),
+                );
+            }
 
-                chars
-            })
-            .collect::<Vec<_>>();
+            chars
+        };
+
+        let splits = if self.parallelism {
+            positions
+                .into_par_iter()
+                .map(process_splits)
+                .collect::<Vec<_>>()
+        } else {
+            positions
+                .into_iter()
+                .map(process_splits)
+                .collect::<Vec<_>>()
+        };
 
         // Update the NormalizedString
         normalized.transform(
@@ -146,6 +159,10 @@ impl PreTokenizer for ByteLevel {
                 (s, (total_len - len, total_len))
             })
             .collect())
+    }
+
+    fn with_parallelism(&mut self, parallelism: bool) {
+        self.parallelism = parallelism;
     }
 }
 

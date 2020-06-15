@@ -160,6 +160,7 @@ impl Encoding {
         let mut pad_type_id = 0;
         let mut pad_token = "[PAD]";
         let mut direction = PaddingDirection::Right;
+        let mut parallelism = false;
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
@@ -182,13 +183,19 @@ impl Encoding {
                     "pad_type_id" => pad_type_id = value.extract()?,
                     "pad_token" => pad_token = value.extract()?,
                     _ => println!("Ignored unknown kwarg option {}", key),
+                    "parallelism" => parallelism = value.extract()?,
                 }
             }
         }
 
-        Ok(self
-            .encoding
-            .pad(length, pad_id, pad_type_id, pad_token, direction))
+        Ok(self.encoding.pad(
+            length,
+            pad_id,
+            pad_type_id,
+            pad_token,
+            direction,
+            parallelism,
+        ))
     }
 
     #[args(kwargs = "**")]

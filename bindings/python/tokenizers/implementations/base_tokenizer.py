@@ -106,7 +106,7 @@ class BaseTokenizer:
         return self._tokenizer.padding
 
     def enable_truncation(
-        self, max_length: int, stride: Optional[int] = 0, strategy: Optional[str] = "longest_first"
+        self, max_length: int, stride: Optional[int] = 0, strategy: Optional[str] = "longest_first",
     ):
         """ Change the truncation options
 
@@ -344,7 +344,7 @@ class BaseTokenizer:
         return self._tokenizer.to_str(pretty)
 
     def post_process(
-        self, encoding: Encoding, pair: Optional[Encoding] = None, add_special_tokens: bool = True
+        self, encoding: Encoding, pair: Optional[Encoding] = None, add_special_tokens: bool = True,
     ) -> Encoding:
         """ Apply all the post-processing steps to the given encodings.
 
@@ -367,3 +367,11 @@ class BaseTokenizer:
             The resulting Encoding
         """
         return self._tokenizer.post_process(encoding, pair, add_special_tokens)
+
+    @property
+    def parallelism(self) -> bool:
+        return self._tokenizer.parallelism
+
+    @parallelism.setter
+    def parallelism(self, parallelism: bool) -> None:
+        self._tokenizer.parallelism = parallelism

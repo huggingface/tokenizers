@@ -713,4 +713,14 @@ impl Tokenizer {
             ))
         }
     }
+
+    #[getter]
+    fn get_parallelism(&self) -> bool {
+        self.tokenizer.get_parallelism()
+    }
+
+    #[setter]
+    fn set_parallelism(&mut self, parallelism: bool) {
+        self.tokenizer.with_parallelism(parallelism);
+    }
 }

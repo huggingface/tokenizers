@@ -622,3 +622,11 @@ class Tokenizer:
             The resulting Encoding
         """
         pass
+    @property
+    def parallelism(self) -> bool:
+        """ Check whether or not parallelism is enabled """
+        pass
+    @parallelism.setter
+    def parallelism(self, parallelism: bool):
+        """ Enable or disable parallelism """
+        pass
