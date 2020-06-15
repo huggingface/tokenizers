@@ -160,6 +160,7 @@ class Encoding:
         pad_type_id: Optional[int] = 0,
         pad_token: Optional[str] = "[PAD]",
         direction: Optional[str] = "right",
+        parallelism: bool = True,
     ):
         """ Pad the current Encoding at the given length
 
@@ -178,6 +179,9 @@ class Encoding:
 
             pad_token: (`optional`) str:
                 The pad token to be used when padding
+
+            parallelism: (`optional`) bool:
+                Whether or not to enable parallelism.
         """
         pass
     def truncate(self, max_length: int, stride: Optional[int] = 0):

@@ -1,7 +1,11 @@
-from multiprocessing import Process
 import pickle
 import pytest
-from ..utils import data_dir, roberta_files, bert_files
+from ..utils import (
+    data_dir,
+    roberta_files,
+    bert_files,
+    encode_in_subprocess_with_parallelism_disabled,
+)
 
 from tokenizers import AddedToken, Tokenizer, Encoding
 from tokenizers.models import Model, BPE, WordPiece
@@ -77,7 +81,9 @@ class TestTokenizer:
         added = tokenizer.add_tokens(["my", "name", "is", "john"])
         assert added == 4
 
-        added = tokenizer.add_tokens([AddedToken("the"), AddedToken("quick", rstrip=True)])
+        added = tokenizer.add_tokens(
+            [AddedToken("the"), AddedToken("quick", rstrip=True)]
+        )
         assert added == 2
 
     def test_add_special_tokens(self):
@@ -88,7 +94,9 @@ class TestTokenizer:
         assert added == 4
 
         # Can add special tokens as `AddedToken`
-        added = tokenizer.add_special_tokens([AddedToken("the"), AddedToken("quick", rstrip=True)])
+        added = tokenizer.add_special_tokens(
+            [AddedToken("the"), AddedToken("quick", rstrip=True)]
+        )
         assert added == 2
 
     def test_encode(self):
@@ -116,7 +124,9 @@ class TestTokenizer:
         assert output.tokens == ["my", "name", "is", "john"]
 
         # Can encode a batch with both a single sequence and a pair of sequences
-        output = tokenizer.encode_batch(["my name is john", ("my name is john", "pair")])
+        output = tokenizer.encode_batch(
+            ["my name is john", ("my name is john", "pair")]
+        )
         assert len(output) == 2
 
     def test_encode_formats(self, bert_files):
@@ -138,7 +148,9 @@ class TestTokenizer:
         ]
         output = tokenizer.encode(["my", "name", "is", "john"], is_pretokenized=True)
         assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
-        output = tokenizer.encode(["my", "name", "is", "john"], ["pair"], is_pretokenized=True)
+        output = tokenizer.encode(
+            ["my", "name", "is", "john"], ["pair"], is_pretokenized=True
+        )
         assert output.tokens == [
             "[CLS]",
             "my",
@@ -153,7 +165,9 @@ class TestTokenizer:
         output = tokenizer.encode_batch(["My name is John", "My name is Georges"])
         assert output[0].tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
         assert output[1].tokens == ["[CLS]", "my", "name", "is", "georges", "[SEP]"]
-        output = tokenizer.encode_batch([("my name is john", "pair"), ("my name is john", "pair")])
+        output = tokenizer.encode_batch(
+            [("my name is john", "pair"), ("my name is john", "pair")]
+        )
         assert output[0].tokens == [
             "[CLS]",
             "my",
@@ -174,7 +188,9 @@ class TestTokenizer:
             "pair",
             "[SEP]",
         ]
-        output = tokenizer.encode_batch([["my", "name", "is", "john"]], is_pretokenized=True)
+        output = tokenizer.encode_batch(
+            [["my", "name", "is", "john"]], is_pretokenized=True
+        )
         assert output[0].tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
 
         # Mal formed
@@ -194,11 +210,14 @@ class TestTokenizer:
 
         tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=True)
         tokenizer.post_processor = RobertaProcessing(
-            ("</s>", tokenizer.token_to_id("</s>")), ("<s>", tokenizer.token_to_id("<s>")),
+            ("</s>", tokenizer.token_to_id("</s>")),
+            ("<s>", tokenizer.token_to_id("<s>")),
         )
 
         # Can encode with special tokens
-        output_with_specials = tokenizer.encode("My name is John", add_special_tokens=True)
+        output_with_specials = tokenizer.encode(
+            "My name is John", add_special_tokens=True
+        )
         assert output_with_specials.tokens == [
             "<s>",
             "ĠMy",
@@ -209,7 +228,9 @@ class TestTokenizer:
         ]
 
         # Can encode without special tokens
-        output_without_specials = tokenizer.encode("My name is John", add_special_tokens=False)
+        output_without_specials = tokenizer.encode(
+            "My name is John", add_special_tokens=False
+        )
         assert output_without_specials.tokens == ["ĠMy", "Ġname", "Ġis", "ĠJohn"]
 
     def test_truncation(self):
@@ -314,32 +335,6 @@ class TestTokenizer:
         output = tokenizer.post_process(encoding, pair_encoding)
         assert output.tokens == ["my", "pair", "[PAD]", "[PAD]"]
 
-    def test_encode_in_subprocess_with_disable_parallelism(self):
-        """
-        This test ensures that disabling parallelism avoid dead locks when the
-        same tokenizer is used after forking.
-        """
+    def test_encode_in_subprocess_with_parallelism_disabled(self):
         tokenizer = Tokenizer(BPE())
-        # It's essential to this test that we call 'encode' or 'encode_batch'
-        # before the fork. This causes the main process to "lock" some resources
-        # provided by the Rust "rayon" crate that are needed for parallel processing.
-        tokenizer.encode("Hi")
-        tokenizer.encode_batch(["hi", "there"])
-
-        def encode():
-            tokenizer.parallelism = False  # Comment out this line to see how this test can fail.
-            tokenizer.encode("Hi")
-            tokenizer.encode_batch(["hi", "there"])
-
-        p = Process(target=encode)
-        p.start()
-        p.join(timeout=1)
-
-        # At this point the process should have successfully exited.
-        # If the subprocess is still alive, the test have failed.
-        # But we want terminate that process anyway otherwise pytest might hang forever.
-        if p.is_alive():
-            p.terminate()
-            assert False, "tokenizer in sub process caused dead lock"
-
-        assert p.exitcode == 0
+        encode_in_subprocess_with_parallelism_disabled(tokenizer)

@@ -1,3 +1,4 @@
+from multiprocessing import Process
 import os
 import requests
 import pytest
@@ -56,3 +57,35 @@ def openai_files(data_dir):
             "https://s3.amazonaws.com/models.huggingface.co/bert/openai-gpt-merges.txt"
         ),
     }
+
+
+def encode_in_subprocess_with_parallelism_disabled(tokenizer):
+    """
+    This helper can be used to test that disabling parallelism avoids dead locks when the
+    same tokenizer is used after forking.
+    """
+    # It's essential to this test that we call 'encode' or 'encode_batch'
+    # before the fork. This causes the main process to "lock" some resources
+    # provided by the Rust "rayon" crate that are needed for parallel processing.
+    tokenizer.encode("Hi")
+    tokenizer.encode_batch(["hi", "there"])
+
+    def encode():
+        tokenizer.parallelism = (
+            False  # Comment out this line to see how this test can fail.
+        )
+        tokenizer.encode("Hi")
+        tokenizer.encode_batch(["hi", "there"])
+
+    p = Process(target=encode)
+    p.start()
+    p.join(timeout=1)
+
+    # At this point the process should have successfully exited.
+    # If the subprocess is still alive, the test have failed.
+    # But we want terminate that process anyway otherwise pytest might hang forever.
+    if p.is_alive():
+        p.terminate()
+        assert False, "tokenizer in sub process caused dead lock"
+
+    assert p.exitcode == 0
