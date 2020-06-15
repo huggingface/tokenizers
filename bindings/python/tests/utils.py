@@ -71,9 +71,7 @@ def encode_in_subprocess_with_parallelism_disabled(tokenizer):
     tokenizer.encode_batch(["hi", "there"])
 
     def encode():
-        tokenizer.parallelism = (
-            False  # Comment out this line to see how this test can fail.
-        )
+        tokenizer.parallelism = False  # Comment out this line to see how this test can fail.
         tokenizer.encode("Hi")
         tokenizer.encode_batch(["hi", "there"])
 

@@ -81,9 +81,7 @@ class TestTokenizer:
         added = tokenizer.add_tokens(["my", "name", "is", "john"])
         assert added == 4
 
-        added = tokenizer.add_tokens(
-            [AddedToken("the"), AddedToken("quick", rstrip=True)]
-        )
+        added = tokenizer.add_tokens([AddedToken("the"), AddedToken("quick", rstrip=True)])
         assert added == 2
 
     def test_add_special_tokens(self):
@@ -94,9 +92,7 @@ class TestTokenizer:
         assert added == 4
 
         # Can add special tokens as `AddedToken`
-        added = tokenizer.add_special_tokens(
-            [AddedToken("the"), AddedToken("quick", rstrip=True)]
-        )
+        added = tokenizer.add_special_tokens([AddedToken("the"), AddedToken("quick", rstrip=True)])
         assert added == 2
 
     def test_encode(self):
@@ -124,9 +120,7 @@ class TestTokenizer:
         assert output.tokens == ["my", "name", "is", "john"]
 
         # Can encode a batch with both a single sequence and a pair of sequences
-        output = tokenizer.encode_batch(
-            ["my name is john", ("my name is john", "pair")]
-        )
+        output = tokenizer.encode_batch(["my name is john", ("my name is john", "pair")])
         assert len(output) == 2
 
     def test_encode_formats(self, bert_files):
@@ -148,9 +142,7 @@ class TestTokenizer:
         ]
         output = tokenizer.encode(["my", "name", "is", "john"], is_pretokenized=True)
         assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
-        output = tokenizer.encode(
-            ["my", "name", "is", "john"], ["pair"], is_pretokenized=True
-        )
+        output = tokenizer.encode(["my", "name", "is", "john"], ["pair"], is_pretokenized=True)
         assert output.tokens == [
             "[CLS]",
             "my",
@@ -165,9 +157,7 @@ class TestTokenizer:
         output = tokenizer.encode_batch(["My name is John", "My name is Georges"])
         assert output[0].tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
         assert output[1].tokens == ["[CLS]", "my", "name", "is", "georges", "[SEP]"]
-        output = tokenizer.encode_batch(
-            [("my name is john", "pair"), ("my name is john", "pair")]
-        )
+        output = tokenizer.encode_batch([("my name is john", "pair"), ("my name is john", "pair")])
         assert output[0].tokens == [
             "[CLS]",
             "my",
@@ -188,9 +178,7 @@ class TestTokenizer:
             "pair",
             "[SEP]",
         ]
-        output = tokenizer.encode_batch(
-            [["my", "name", "is", "john"]], is_pretokenized=True
-        )
+        output = tokenizer.encode_batch([["my", "name", "is", "john"]], is_pretokenized=True)
         assert output[0].tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
 
         # Mal formed
@@ -210,14 +198,11 @@ class TestTokenizer:
 
         tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=True)
         tokenizer.post_processor = RobertaProcessing(
-            ("</s>", tokenizer.token_to_id("</s>")),
-            ("<s>", tokenizer.token_to_id("<s>")),
+            ("</s>", tokenizer.token_to_id("</s>")), ("<s>", tokenizer.token_to_id("<s>")),
         )
 
         # Can encode with special tokens
-        output_with_specials = tokenizer.encode(
-            "My name is John", add_special_tokens=True
-        )
+        output_with_specials = tokenizer.encode("My name is John", add_special_tokens=True)
         assert output_with_specials.tokens == [
             "<s>",
             "ĠMy",
@@ -228,9 +213,7 @@ class TestTokenizer:
         ]
 
         # Can encode without special tokens
-        output_without_specials = tokenizer.encode(
-            "My name is John", add_special_tokens=False
-        )
+        output_without_specials = tokenizer.encode("My name is John", add_special_tokens=False)
         assert output_without_specials.tokens == ["ĠMy", "Ġname", "Ġis", "ĠJohn"]
 
     def test_truncation(self):
