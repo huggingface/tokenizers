@@ -182,8 +182,8 @@ impl Encoding {
                     "pad_id" => pad_id = value.extract()?,
                     "pad_type_id" => pad_type_id = value.extract()?,
                     "pad_token" => pad_token = value.extract()?,
-                    _ => println!("Ignored unknown kwarg option {}", key),
                     "parallelism" => parallelism = value.extract()?,
+                    _ => println!("Ignored unknown kwarg option {}", key),
                 }
             }
         }
