@@ -35,21 +35,63 @@ The various steps of the pipeline are:
 
 ## Quick example
 
+Train and serialize a Tokenizer.
+
+
 ```Rust
-use tokenizers::tokenizer::{Result, Tokenizer, EncodeInput};
-use tokenizers::models::bpe::BPE;
+use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
+use tokenizers::Result;
+use tokenizers::normalizers::{strip::Strip, unicode::NFC, utils::Sequence};
+use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::tokenizer::{AddedToken, Tokenizer, Trainer};
 
-fn main() -> Result<()> {
-    let bpe_builder = BPE::from_files("./path/to/vocab.json", "./path/to/merges.txt");
-    let bpe = bpe_builder
-        .dropout(0.1)
-        .unk_token("[UNK]".into())
-        .build()?;
+use std::path::Path;
 
-    let mut tokenizer = Tokenizer::new(Box::new(bpe));
+fn main() -> Result<()>{
+    let vocab_size: usize = 100;
 
-    let encoding = tokenizer.encode(EncodeInput::Single("Hey there!".into()))?;
-    println!("{:?}", encoding.get_tokens());
+    let trainer: Box<dyn Trainer> = Box::new(
+        BpeTrainerBuilder::new()
+            .show_progress(true)
+            .vocab_size(vocab_size)
+            .min_frequency(0)
+            .special_tokens(vec![
+                AddedToken::from("<s>".into()),
+                AddedToken::from("<pad>".into()),
+                AddedToken::from("</s>".into()),
+                AddedToken::from("<unk>".into()),
+                AddedToken::from("<mask>".into()),
+            ])
+            .build(),
+    );
+                                                                  
+    let mut tokenizer = Tokenizer::new(Box::new(BPE::default()));
+    tokenizer.with_normalizer(Box::new(Sequence::new(vec![
+        Box::new(Strip::new(true, true)),
+        Box::new(NFC),
+    ])));
+    tokenizer.with_pre_tokenizer(Box::new(ByteLevel::default()));
+                                                                  
+    tokenizer.train(&trainer, vec!["/path/to/train.txt".to_string()])?;
+    tokenizer.save("/path/to/trained_tokenizer", true)?;
+
+    Ok(())
+}
+```
+
+Deserialize a pretrained Tokenizer.
+
+```Rust
+use tokenizers::Result;
+use tokenizers::tokenizer::Tokenizer;
+
+fn main() -> Result<()>{
+                                                                  
+    let tokenizer = Tokenizer::from_file("/path/to/trained_tokenizer")?;
+
+    let sample_encoding = tokenizer.encode("Huggingface", false)?;
+
+    println!("{:?}", sample_encoding);
 
     Ok(())
 }
