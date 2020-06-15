@@ -15,11 +15,11 @@ export interface TruncationOptions {
   stride?: number;
   /**
    * Strategy to use:
-   * - `longest_first` Iteratively reduce the inputs sequence until the input is under max_length
+   * - `TruncationStrategy.LongestFirst` Iteratively reduce the inputs sequence until the input is under max_length
    * starting from the longest one at each token (when there is a pair of input sequences).
-   * - `only_first` Only truncate the first sequence.
-   * - `only_second` Only truncate the second sequence.
-   * @default "longest_first"
+   * - `TruncationStrategy.OnlyFirst` Only truncate the first sequence.
+   * - `TruncationStrategy.OnlySecond` Only truncate the second sequence.
+   * @default TruncationStrategy.LongestFirst
    */
   strategy?: TruncationStrategy;
 }
@@ -38,7 +38,7 @@ export type PaddingConfiguration = Required<
 
 export interface PaddingOptions {
   /**
-   * @default "right"
+   * @default PaddingDirection.Right
    */
   direction?: PaddingDirection;
   /**
