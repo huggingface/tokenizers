@@ -160,7 +160,7 @@ impl Encoding {
         let mut pad_type_id = 0;
         let mut pad_token = "[PAD]";
         let mut direction = PaddingDirection::Right;
-        let mut parallelism = false;
+        let mut parallelism = true;
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
