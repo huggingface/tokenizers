@@ -1,8 +1,52 @@
-use std::cell::{Ref, RefCell};
+use rand::distributions::WeightedIndex;
+use rand::prelude::*;
+use std::cell::RefCell;
+use std::cmp::{min, Ordering};
+use std::collections::{BinaryHeap, HashMap};
 use std::rc::Rc;
 use unicode_segmentation::UnicodeSegmentation;
 
 type NodeRef = Rc<RefCell<Node>>;
+type HypothesisRef = Rc<RefCell<Hypothesis>>;
+type Agenda = BinaryHeap<Hypothesis>;
+
+struct Hypothesis {
+    node_ref: NodeRef,
+    next: Option<HypothesisRef>,
+    fx: f64,
+    gx: f64,
+}
+impl Hypothesis {
+    pub fn new(node_ref: NodeRef, next: Option<HypothesisRef>, fx: f64, gx: f64) -> Hypothesis {
+        Hypothesis {
+            node_ref,
+            next,
+            fx,
+            gx,
+        }
+    }
+}
+impl PartialEq for Hypothesis {
+    fn eq(&self, other: &Hypothesis) -> bool {
+        self.fx == other.fx
+    }
+}
+impl Eq for Hypothesis {}
+impl PartialOrd for Hypothesis {
+    fn partial_cmp(&self, other: &Hypothesis) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+// TODO Maybe use Ordered Floats (https://docs.rs/ordered-float/1.0.2/ordered_float/)
+impl Ord for Hypothesis {
+    fn cmp(&self, other: &Hypothesis) -> Ordering {
+        if self.fx < other.fx {
+            Ordering::Less
+        } else {
+            Ordering::Greater
+        }
+    }
+}
 
 pub struct Lattice<'a> {
     sentence: &'a str,
@@ -44,6 +88,25 @@ impl Node {
 
 fn piece<'a>(lattice: &'a Lattice, node: &Node) -> String {
     lattice.graphemes[node.pos..node.pos + node.length].concat()
+}
+
+/// Returns log(exp(x) + exp(y)).
+/// if init_mode is true, returns log(exp(y)) == y.
+/// log(\sum_i exp(a[i])) can be computed as
+/// for (int i = 0; i < a.size(); ++i)
+///   x = LogSumExp(x, a[i], i == 0);
+fn log_sum_exp(x: f64, y: f64, init_mode: bool) -> f64 {
+    if init_mode {
+        y
+    } else {
+        let (vmin, vmax) = if x > y { (y, x) } else { (x, y) };
+        let k_minus_log_epsilon = 50.0;
+        if vmax > vmin + k_minus_log_epsilon {
+            vmax
+        } else {
+            vmax + ((vmin - vmax).exp() + 1.0).ln()
+        }
+    }
 }
 
 impl<'a> Lattice<'a> {
@@ -157,6 +220,76 @@ impl<'a> Lattice<'a> {
             .collect()
     }
 
+    fn nbest(&mut self, n: usize) -> Vec<Vec<NodeRef>> {
+        match n {
+            n if n < 1 => vec![],
+            n if n == 1 => vec![self.viterbi()],
+            _ => {
+                let k_reserved_hypothesis_size = 512;
+                let mut agenda: Agenda = BinaryHeap::new();
+                let mut hypotheses: Vec<Vec<NodeRef>> = vec![];
+                let eos = self.eos_node();
+                let score = eos.borrow().score;
+                let hypo = Hypothesis::new(eos, None, score, score);
+                agenda.push(hypo);
+
+                // Fill backtrace scores
+                self.viterbi();
+
+                while !agenda.is_empty() {
+                    let top = Rc::new(RefCell::new(agenda.pop().unwrap()));
+                    let node = Rc::clone(&top.borrow().node_ref);
+                    // println!("Node {:?}, bos_node {:?}", node, self.bos_node());
+                    if node.borrow().id == self.bos_node().borrow().id {
+                        let mut hypothesis = vec![];
+                        let mut next: HypothesisRef =
+                            Rc::clone(&top.borrow().next.as_ref().unwrap());
+                        while next.borrow().next.is_some() {
+                            hypothesis.push(next.borrow().node_ref.clone());
+                            let c: HypothesisRef = next.clone();
+                            // let c: Ref<Hypothesis> = next.clone().borrow();
+                            next = Rc::clone(c.borrow().next.as_ref().unwrap());
+                        }
+                        hypotheses.push(hypothesis);
+                        if hypotheses.len() == n {
+                            return hypotheses;
+                        }
+                    } else {
+                        for lnode in &self.end_nodes[node.borrow().pos] {
+                            let top_gx = top.borrow().gx;
+                            let fx = lnode.borrow().backtrace_score + top_gx;
+                            let gx = lnode.borrow().score + top_gx;
+                            let hyp =
+                                Hypothesis::new(Rc::clone(lnode), Some(Rc::clone(&top)), fx, gx);
+                            agenda.push(hyp);
+                        }
+                        // When the input is too long or contains duplicated phrases,
+                        // `agenda` will get extremely big. Here we avoid this case by
+                        // dynamically shrinking the agenda.
+                        let k_max_agenda_size = 100_000;
+                        let k_min_agenda_size = 512;
+                        if agenda.len() > k_max_agenda_size {
+                            let mut new_agenda = BinaryHeap::new();
+                            let len = min(k_min_agenda_size, n * 10);
+                            for i in 0..len {
+                                new_agenda.push(agenda.pop().unwrap());
+                            }
+                            agenda = new_agenda;
+                        }
+                    }
+                }
+                hypotheses
+            }
+        }
+    }
+
+    fn nbest_tokens(&mut self, n: usize) -> Vec<Vec<String>> {
+        self.nbest(n)
+            .iter()
+            .map(|v| v.iter().map(|node| piece(self, &node.borrow())).collect())
+            .collect()
+    }
+
     pub fn len(&self) -> usize {
         self.graphemes.len()
     }
@@ -164,11 +297,11 @@ impl<'a> Lattice<'a> {
         self.sentence.len()
     }
 
-    pub fn bos_node(&self) -> Ref<Node> {
-        self.end_nodes[0][0].borrow()
+    pub fn bos_node(&self) -> NodeRef {
+        Rc::clone(&self.end_nodes[0][0])
     }
-    pub fn eos_node(&self) -> Ref<Node> {
-        self.begin_nodes[self.graphemes.len()][0].borrow()
+    pub fn eos_node(&self) -> NodeRef {
+        Rc::clone(&self.begin_nodes[self.graphemes.len()][0])
     }
 
     pub fn surface(&self, n: usize) -> &str {
@@ -181,13 +314,110 @@ impl<'a> Lattice<'a> {
     }
 
     pub fn populate_marginal(&self, freq: f64, expected: &mut Vec<f64>) -> f64 {
-        0.0
+        let len = self.len();
+        let mut alpha = vec![0.0; self.nodes.len()];
+        let mut beta = vec![0.0; self.nodes.len()];
+        // let mut marginal = vec![0.0, self.nodes.len()];
+        for pos in 0..=len {
+            for rnode in &self.begin_nodes[pos] {
+                for lnode in &self.end_nodes[pos] {
+                    let lid = lnode.borrow().id;
+                    let rid = rnode.borrow().id;
+                    alpha[rid] = log_sum_exp(
+                        alpha[rid],
+                        lnode.borrow().score + alpha[lid],
+                        *lnode == self.end_nodes[pos][0],
+                    );
+                }
+            }
+            let rpos = len - pos;
+            for lnode in &self.end_nodes[rpos] {
+                for rnode in &self.begin_nodes[rpos] {
+                    let lid = lnode.borrow().id;
+                    let rid = rnode.borrow().id;
+                    beta[lid] = log_sum_exp(
+                        beta[lid],
+                        rnode.borrow().score + beta[rid],
+                        *rnode == self.begin_nodes[rpos][0],
+                    );
+                }
+            }
+        }
+
+        let z = alpha[self.begin_nodes[len][0].borrow().id];
+        for pos in 0..len {
+            for node in &self.begin_nodes[pos] {
+                // TODO node.id is -1 for OOV, but we don't support this yet.
+                if node.borrow().id > 1 {
+                    let a = alpha[node.borrow().id];
+                    let b = beta[node.borrow().id];
+                    // Unigram uses -1 id for bos and eos, we don't so just substract 2 here.
+                    // as bos, eos are 0 and 1.
+                    expected[node.borrow().id - 2] +=
+                        freq * (a + node.borrow().score + b - z).exp();
+                }
+            }
+        }
+        freq * z
+    }
+
+    fn sample(&self, theta: f64) -> Vec<NodeRef> {
+        let len = self.len();
+        if (len == 0) {
+            return vec![];
+        }
+        let mut alpha = vec![0.0; self.nodes.len()];
+        for pos in 0..=len {
+            for rnode in &self.begin_nodes[pos] {
+                for lnode in &self.end_nodes[pos] {
+                    let lid = lnode.borrow().id;
+                    let rid = lnode.borrow().id;
+                    alpha[rid] = log_sum_exp(
+                        alpha[rid],
+                        theta * (lnode.borrow().score + alpha[lid]),
+                        *lnode == self.end_nodes[pos][0],
+                    );
+                }
+            }
+        }
+
+        let mut results: Vec<NodeRef> = vec![];
+        let mut probs: Vec<f64> = vec![];
+        let mut z = alpha[self.eos_node().borrow().id];
+        let mut node = self.eos_node();
+        loop {
+            probs.clear();
+            let pos = node.borrow().pos;
+            for lnode in &self.end_nodes[pos] {
+                let lid = lnode.borrow().id;
+                probs.push((alpha[lid] + theta * lnode.borrow().score - z).exp())
+            }
+            let dist = WeightedIndex::new(&probs).unwrap();
+            let mut rng = thread_rng();
+            let index = dist.sample(&mut rng);
+            node = Rc::clone(&self.end_nodes[pos][index]);
+            if node == self.bos_node() {
+                break;
+            }
+            z = alpha[node.borrow().id];
+            results.push(Rc::clone(&node));
+        }
+        results.reverse();
+        results
+    }
+
+    fn sample_token(&self, theta: f64) -> Vec<String> {
+        self.sample(theta)
+            .iter()
+            .map(|node| piece(self, &node.borrow()))
+            .collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_approx_eq::assert_approx_eq;
 
     #[test]
     fn set_sentence() {
@@ -215,10 +445,16 @@ mod tests {
         let bos = lattice.bos_node();
         let eos = lattice.eos_node();
 
-        assert_eq!(bos.id, 0);
-        assert_eq!(eos.id, 1);
-        assert_eq!(lattice.end_nodes[0].first().unwrap().borrow().id, bos.id);
-        assert_eq!(lattice.begin_nodes[4].first().unwrap().borrow().id, eos.id);
+        assert_eq!(bos.borrow().id, 0);
+        assert_eq!(eos.borrow().id, 1);
+        assert_eq!(
+            lattice.end_nodes[0].first().unwrap().borrow().id,
+            bos.borrow().id
+        );
+        assert_eq!(
+            lattice.begin_nodes[4].first().unwrap().borrow().id,
+            eos.borrow().id
+        );
 
         let lattice = Lattice::from("テストab");
         assert_eq!(lattice.len(), 5);
@@ -275,8 +511,8 @@ mod tests {
         assert_eq!(node5.length, 2);
         assert_eq!(node6.length, 2);
 
-        assert_eq!(lattice.bos_node().id, 0);
-        assert_eq!(lattice.eos_node().id, 1);
+        assert_eq!(lattice.bos_node().borrow().id, 0);
+        assert_eq!(lattice.eos_node().borrow().id, 1);
         assert_eq!(node0.id, 2);
         assert_eq!(node1.id, 3);
         assert_eq!(node2.id, 4);
@@ -304,9 +540,15 @@ mod tests {
         assert_eq!(lattice.begin_nodes[2][0].borrow().id, node2.id);
         assert_eq!(lattice.begin_nodes[2][1].borrow().id, node6.id);
         assert_eq!(lattice.begin_nodes[3][0].borrow().id, node3.id);
-        assert_eq!(lattice.eos_node().id, lattice.begin_nodes[4][0].borrow().id);
+        assert_eq!(
+            lattice.eos_node().borrow().id,
+            lattice.begin_nodes[4][0].borrow().id
+        );
 
-        assert_eq!(lattice.bos_node().id, lattice.end_nodes[0][0].borrow().id);
+        assert_eq!(
+            lattice.bos_node().borrow().id,
+            lattice.end_nodes[0][0].borrow().id
+        );
         assert_eq!(node0.id, lattice.end_nodes[1][0].borrow().id);
         assert_eq!(node1.id, lattice.end_nodes[2][0].borrow().id);
         assert_eq!(node4.id, lattice.end_nodes[2][1].borrow().id);
@@ -347,5 +589,113 @@ mod tests {
 
         lattice.insert(0, 3, 10.0);
         assert_eq!(lattice.tokens(), ["ABC"]);
+    }
+
+    #[test]
+    fn test_nbest() {
+        let mut lattice = Lattice::from("ABC");
+        lattice.insert(0, 1, 0.0);
+        lattice.insert(1, 1, 0.0);
+        lattice.insert(2, 1, 0.0);
+        lattice.insert(0, 2, 2.0);
+        lattice.insert(1, 2, 5.0);
+        lattice.insert(0, 3, 10.0);
+
+        let nbests = lattice.nbest_tokens(10);
+        assert_eq!(
+            nbests,
+            vec![
+                vec!["ABC"],
+                vec!["A", "BC"],
+                vec!["AB", "C"],
+                vec!["A", "B", "C"]
+            ]
+        );
+
+        assert!(lattice.nbest_tokens(0).is_empty());
+        assert_eq!(lattice.nbest_tokens(1), vec![vec!["ABC"]]);
+    }
+    #[test]
+    fn test_log_sum_exp() {
+        let mut x = 0.0;
+
+        let v: Vec<f64> = vec![1.0, 2.0, 3.0];
+        for i in 0..v.len() {
+            x = log_sum_exp(x, v[i], i == 0);
+        }
+        assert_approx_eq!(x, v.iter().map(|n| n.exp()).sum::<f64>().ln(), 0.001);
+    }
+
+    #[test]
+    fn test_populate() {
+        let mut lattice = Lattice::from("ABC");
+        lattice.insert(0, 1, 1.0); // A
+        lattice.insert(1, 1, 1.2); // B
+        lattice.insert(2, 1, 2.5); // C
+        lattice.insert(0, 2, 3.0); // AB
+        lattice.insert(1, 2, 4.0); // BC
+        lattice.insert(0, 3, 2.0); // ABC
+
+        let mut probs = vec![0.0; 6];
+        let p1 = (1.0_f64 + 1.2 + 2.5).exp();
+        let p2 = (3.0_f64 + 2.5).exp();
+        let p3 = (1.0_f64 + 4.0).exp();
+        let p4 = 2.0_f64.exp();
+        let z = p1 + p2 + p3 + p4;
+
+        let log_z = lattice.populate_marginal(1.0, &mut probs);
+
+        assert_approx_eq!(log_z, z.ln(), 0.001);
+        assert_approx_eq!(probs[0], (p1 + p3) / z, 0.001);
+        assert_approx_eq!(probs[1], (p1) / z, 0.001);
+        assert_approx_eq!(probs[2], (p1 + p2) / z, 0.001);
+        assert_approx_eq!(probs[3], (p2) / z, 0.001);
+        assert_approx_eq!(probs[4], (p3) / z, 0.001);
+        assert_approx_eq!(probs[5], (p4) / z, 0.001);
+    }
+
+    #[test]
+    fn test_sample() {
+        let mut lattice = Lattice::from("ABC");
+        lattice.insert(0, 1, 1.0); // A
+        lattice.insert(1, 1, 1.2); // B
+        lattice.insert(2, 1, 1.5); // C
+        lattice.insert(0, 2, 1.6); // AB
+        lattice.insert(1, 2, 1.7); // BC
+        lattice.insert(0, 3, 1.8); // ABC
+
+        let k_theta: Vec<f64> = vec![0.0, 0.1, 0.5, 0.7, 1.0];
+
+        for theta in k_theta {
+            let mut probs: HashMap<String, f64> = HashMap::new();
+            probs.insert("A B C".to_string(), (theta * (1.0 + 1.2 + 1.5)).exp());
+            probs.insert("AB C".to_string(), (theta * (1.6 + 1.5)).exp());
+            probs.insert("A BC".to_string(), (theta * (1.0 + 1.7)).exp());
+            probs.insert("ABC".to_string(), (theta * (1.8)).exp());
+
+            // Computes expected probabilities.
+            let mut z = 0.0;
+
+            for (_, p) in probs.iter() {
+                z += p;
+            }
+            for (_, p) in probs.iter_mut() {
+                *p /= z;
+            }
+
+            let k_trial = 100_000;
+            let mut freq: HashMap<String, u32> = HashMap::new();
+            for i in 0..k_trial {
+                let string = lattice.sample_token(theta).join(" ");
+                *freq.entry(string).or_insert(0) += 1;
+            }
+
+            println!("Freq {:?}", freq);
+
+            assert_eq!(freq.len(), probs.len());
+            for (s, p) in probs.iter() {
+                assert_approx_eq!(1.0 * (freq[s] as f64) / (k_trial as f64), p, 0.02)
+            }
+        }
     }
 }

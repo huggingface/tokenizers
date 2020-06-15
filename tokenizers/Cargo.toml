@@ -55,3 +55,4 @@ esaxx-rs = "0.1"
 [dev-dependencies]
 criterion = "0.3"
 tempfile = "3.1"
+assert_approx_eq = "1.1"
