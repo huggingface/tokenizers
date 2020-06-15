@@ -257,7 +257,7 @@ declare_types! {
             //   padToken?: string = "[PAD]"
             // }
             let length = cx.extract::<usize>(0)?;
-            let params = cx.extract_opt::<PaddingParams>(0)?
+            let params = cx.extract_opt::<PaddingParams>(1)?
                 .map_or_else(tk::PaddingParams::default, |p| p.0);
 
             let mut this = cx.this();
