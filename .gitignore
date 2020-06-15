@@ -20,3 +20,4 @@ pip-wheel-metadata
 /bindings/python/dist
 
 .vscode
+*.code-workspace
