@@ -211,6 +211,7 @@ impl std::str::FromStr for Tokenizer {
 impl Tokenizer {
     /// Instantiate a new Tokenizer, with the given Model
     pub fn new(model: Box<dyn Model>) -> Self {
+        let original_vocab_size = model.get_vocab_size();
         Tokenizer {
             normalizer: None,
             pre_tokenizer: None,
@@ -218,7 +219,7 @@ impl Tokenizer {
             post_processor: None,
             decoder: None,
 
-            added_vocabulary: AddedVocabulary::new(),
+            added_vocabulary: AddedVocabulary::new(original_vocab_size),
 
             truncation: None,
             padding: None,
@@ -302,6 +303,8 @@ impl Tokenizer {
     /// Set the model
     pub fn with_model(&mut self, model: Box<dyn Model>) -> &Self {
         self.model = model;
+        self.added_vocabulary
+            .update_original_vocab_size(self.model.get_vocab_size());
         self
     }
 
@@ -389,16 +392,14 @@ impl Tokenizer {
     pub fn normalize(&self, sentence: &str) -> Result<NormalizedString> {
         let mut normalized = self
             .added_vocabulary
-            .extract(sentence)
+            .extract_and_normalize(self.normalizer.as_deref(), sentence)
             .into_iter()
-            .map(|(sentence, id)| -> Result<NormalizedString> {
+            .map(|(mut sentence, id)| -> Result<NormalizedString> {
                 if id.is_some() {
                     Ok(sentence)
                 } else {
-                    let mut normalized = self.do_normalize(sentence)?;
-                    let _ = self.pre_tokenize(&mut normalized)?;
-
-                    Ok(normalized)
+                    self.pre_tokenize(&mut sentence)?;
+                    Ok(sentence)
                 }
             })
             .collect::<Result<Vec<_>>>()?;
@@ -421,35 +422,37 @@ impl Tokenizer {
 
         let mut sequence_encodings = vec![];
         for subseq in sequence {
-            let results = self.added_vocabulary.extract(&subseq).into_iter().map(
-                |(sentence, id)| -> Result<(Encoding, NormalizedString)> {
-                    if let Some(id) = id {
-                        Ok((
-                            Encoding::new(
-                                vec![id],
-                                vec![type_id],
-                                vec![sentence.get().to_owned()],
-                                vec![Some(0)],
-                                vec![(0, sentence.len())],
-                                vec![0],
-                                vec![1],
-                                vec![],
-                            ),
-                            sentence,
-                        ))
-                    } else {
-                        // 1. Normalization
-                        let mut normalized = self.do_normalize(sentence)?;
-                        // 2. Pre tokenization
-                        let pre_tokenized = self.pre_tokenize(&mut normalized)?;
-                        // 3. Model
-                        let tokens = self.model.tokenize(pre_tokenized)?;
-                        let encoding = Encoding::from_tokens(tokens, type_id);
+            let results = self
+                .added_vocabulary
+                .extract_and_normalize(self.normalizer.as_deref(), &subseq)
+                .into_iter()
+                .map(
+                    |(mut normalized, id)| -> Result<(Encoding, NormalizedString)> {
+                        if let Some(id) = id {
+                            Ok((
+                                Encoding::new(
+                                    vec![id],
+                                    vec![type_id],
+                                    vec![normalized.get().to_owned()],
+                                    vec![Some(0)],
+                                    vec![(0, normalized.len())],
+                                    vec![0],
+                                    vec![1],
+                                    vec![],
+                                ),
+                                normalized,
+                            ))
+                        } else {
+                            // 1. Pre tokenization
+                            let pre_tokenized = self.pre_tokenize(&mut normalized)?;
+                            // 2. Model
+                            let tokens = self.model.tokenize(pre_tokenized)?;
+                            let encoding = Encoding::from_tokens(tokens, type_id);
 
-                        Ok((encoding, normalized))
-                    }
-                },
-            );
+                            Ok((encoding, normalized))
+                        }
+                    },
+                );
 
             let (all_encodings, all_normalized) =
                 ResultShunt::process(results, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>())?;
@@ -675,6 +678,8 @@ impl Tokenizer {
 
         let (model, special_tokens) = trainer.train(words)?;
         self.model = model;
+        self.added_vocabulary
+            .update_original_vocab_size(self.model.get_vocab_size());
         self.add_special_tokens(&special_tokens);
 
         Ok(())
@@ -752,13 +757,16 @@ impl Tokenizer {
     /// Register the given tokens as special tokens. This is especially useful for removing
     /// these special tokens while decoding
     pub fn add_special_tokens(&mut self, tokens: &[AddedToken]) -> usize {
-        self.added_vocabulary
-            .add_special_tokens(tokens, self.model.as_ref())
+        self.added_vocabulary.add_special_tokens(
+            tokens,
+            self.model.as_ref(),
+            self.normalizer.as_deref(),
+        )
     }
 
     /// Add the given tokens to the added vocabulary
     pub fn add_tokens(&mut self, tokens: &[AddedToken]) -> usize {
         self.added_vocabulary
-            .add_tokens(tokens, self.model.as_ref())
+            .add_tokens(tokens, self.model.as_ref(), self.normalizer.as_deref())
     }
 }
