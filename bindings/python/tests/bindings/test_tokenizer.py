@@ -12,7 +12,7 @@ from tokenizers.implementations import BertWordPieceTokenizer
 
 class TestAddedToken:
     def test_instantiate_with_content_only(self):
-        added_token = AddedToken("<mask>")
+        added_token = AddedToken("<mask>", True)
         assert type(added_token) == AddedToken
         assert str(added_token) == "<mask>"
         assert (
@@ -24,19 +24,19 @@ class TestAddedToken:
         assert added_token.single_word == False
 
     def test_can_set_rstrip(self):
-        added_token = AddedToken("<mask>", rstrip=True)
+        added_token = AddedToken("<mask>", True, rstrip=True)
         assert added_token.rstrip == True
         assert added_token.lstrip == False
         assert added_token.single_word == False
 
     def test_can_set_lstrip(self):
-        added_token = AddedToken("<mask>", lstrip=True)
+        added_token = AddedToken("<mask>", True, lstrip=True)
         assert added_token.rstrip == False
         assert added_token.lstrip == True
         assert added_token.single_word == False
 
     def test_can_set_single_world(self):
-        added_token = AddedToken("<mask>", single_word=True)
+        added_token = AddedToken("<mask>", True, single_word=True)
         assert added_token.rstrip == False
         assert added_token.lstrip == False
         assert added_token.single_word == True
@@ -76,7 +76,9 @@ class TestTokenizer:
         added = tokenizer.add_tokens(["my", "name", "is", "john"])
         assert added == 4
 
-        added = tokenizer.add_tokens([AddedToken("the"), AddedToken("quick", rstrip=True)])
+        added = tokenizer.add_tokens(
+            [AddedToken("the", False), AddedToken("quick", False, rstrip=True)]
+        )
         assert added == 2
 
     def test_add_special_tokens(self):
@@ -87,7 +89,9 @@ class TestTokenizer:
         assert added == 4
 
         # Can add special tokens as `AddedToken`
-        added = tokenizer.add_special_tokens([AddedToken("the"), AddedToken("quick", rstrip=True)])
+        added = tokenizer.add_special_tokens(
+            [AddedToken("the", False), AddedToken("quick", False, rstrip=True)]
+        )
         assert added == 2
 
     def test_encode(self):

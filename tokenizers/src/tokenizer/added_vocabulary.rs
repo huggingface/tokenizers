@@ -197,13 +197,19 @@ impl AddedVocabulary {
     }
 
     /// Get the id matching one of our token if it exists
-    pub fn token_to_id(&self, token: &str) -> Option<&u32> {
-        self.added_tokens_map.get(token)
+    pub fn token_to_id(&self, token: &str, model: &dyn Model) -> Option<u32> {
+        self.added_tokens_map
+            .get(token)
+            .copied()
+            .or_else(|| model.token_to_id(token))
     }
 
     /// Get the token matching the given id if it exists
-    pub fn id_to_token(&self, id: u32) -> Option<&str> {
-        self.added_tokens_map_r.get(&id).map(|t| t.content.as_ref())
+    pub fn id_to_token<'s>(&'s self, id: u32, model: &'s dyn Model) -> Option<&'s str> {
+        self.added_tokens_map_r
+            .get(&id)
+            .map(|t| t.content.as_ref())
+            .or_else(|| model.id_to_token(id))
     }
 
     /// Check if a token is a special token
@@ -224,11 +230,8 @@ impl AddedVocabulary {
                 self.special_tokens_set.insert(token.content.clone());
             }
         }
-        let added = self.add_tokens(&tokens, model, normalizer);
-
-        self.refresh_added_tokens(normalizer);
-
-        added
+        // Then we delegate to `add_tokens`, that will take care of refreshing added tokens too.
+        self.add_tokens(&tokens, model, normalizer)
     }
 
     /// Add some tokens to the vocabulary
@@ -245,7 +248,7 @@ impl AddedVocabulary {
                 continue;
             }
 
-            let id = if let Some(id) = model.token_to_id(&token.content) {
+            let id = if let Some(id) = self.token_to_id(&token.content, model) {
                 ignored += 1;
                 id
             } else {
@@ -266,7 +269,7 @@ impl AddedVocabulary {
                 .or_insert_with(|| token.clone());
         }
 
-        self.refresh_added_tokens(normalizer);
+        self.refresh_added_tokens(model, normalizer);
 
         // Return the number of added tokens
         tokens.len() - ignored
@@ -276,15 +279,19 @@ impl AddedVocabulary {
     ///
     /// We keep two different RegexSet, one that will take care of matching against the
     /// non-normalized string, and one matching against the normalized one.
-    fn refresh_added_tokens(&mut self, normalizer: Option<&dyn Normalizer>) {
+    fn refresh_added_tokens(&mut self, model: &dyn Model, normalizer: Option<&dyn Normalizer>) {
         type TupleTokenId<'a> = (&'a AddedToken, u32);
         let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
             .special_tokens
             .iter()
             .chain(self.added_tokens.iter())
-            // TODO: Fix this: special tokens that are part of the original vocabulary are
-            // not part of the `self.added_tokens_map` and so it crashes.
-            .map(|token| (token, self.added_tokens_map[&token.content]))
+            .map(|token| {
+                (
+                    token,
+                    self.token_to_id(&token.content, model)
+                        .expect("Missing additional token"),
+                )
+            })
             .partition(|(token, _)| token.normalized);
 
         let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
@@ -300,7 +307,7 @@ impl AddedVocabulary {
         );
     }
 
-    /// TODO: Add doc string here
+    /// Extract any AddedToken from the sentence, using the provided MatchingSet
     fn extract(
         &self,
         sentence: NormalizedString,
@@ -393,7 +400,7 @@ impl AddedVocabulary {
             splits
                 .into_iter()
                 .map(|(idx, (start, end))| {
-                    // TODO: Check this works
+                    // TODO: Check this works (especially for offsets)
                     let normalized = sentence
                         .slice_bytes(Range::Normalized(start..end))
                         .expect("Error while extracting normalized Range");
@@ -465,6 +472,7 @@ impl Serialize for AddedVocabulary {
             .added_tokens_map_r
             .iter()
             .map(|(id, token)| AddedTokenWithId {
+                // TODO: Make sure these are the right IDs (related to the model)
                 id: *id,
                 special: self.special_tokens_set.contains(&token.content),
                 token: token.clone(),

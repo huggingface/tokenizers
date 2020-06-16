@@ -376,16 +376,12 @@ impl Tokenizer {
     /// Converts a token in the corresponding id.
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.added_vocabulary
-            .token_to_id(token)
-            .copied()
-            .or_else(|| self.model.token_to_id(token))
+            .token_to_id(token, self.model.as_ref())
     }
 
     /// Converts an id to the corresponding token.
     pub fn id_to_token(&self, id: u32) -> Option<&str> {
-        self.added_vocabulary
-            .id_to_token(id)
-            .or_else(|| self.model.id_to_token(id))
+        self.added_vocabulary.id_to_token(id, self.model.as_ref())
     }
 
     /// Normalize the given sentence and return the corresponding normalized string
@@ -556,13 +552,8 @@ impl Tokenizer {
         let tokens = ids
             .into_iter()
             .map(|id| {
-                let token = if let Some(token) = self.added_vocabulary.id_to_token(id) {
-                    Some(token)
-                } else {
-                    self.model.id_to_token(id)
-                };
-
-                token
+                self.added_vocabulary
+                    .id_to_token(id, self.model.as_ref())
                     .filter(|token| {
                         !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
                     })
