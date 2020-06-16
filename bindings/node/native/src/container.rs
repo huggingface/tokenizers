@@ -18,8 +18,8 @@ impl<T> Container<T>
 where
     T: ?Sized,
 {
-    pub fn from_ref(reference: &Box<T>) -> Self {
-        let content: *const T = &**reference;
+    pub fn from_ref<R: AsRef<T>>(reference: R) -> Self {
+        let content: *const T = reference.as_ref();
         Container::Pointer(content as *mut _)
     }
 
@@ -41,7 +41,7 @@ where
     }
 
     /// Replace an empty content by the new provided owned one, otherwise do nothing
-    pub fn to_owned(&mut self, o: Box<T>) {
+    pub fn make_owned(&mut self, o: Box<T>) {
         if let Container::Empty = self {
             unsafe {
                 let new_container = Container::Owned(o);
@@ -51,7 +51,7 @@ where
     }
 
     /// Return the owned T, keeping a Pointer to it if we currently own it. None otherwise
-    pub fn to_pointer(&mut self) -> Option<Box<T>> {
+    pub fn make_pointer(&mut self) -> Option<Box<T>> {
         if let Container::Owned(_) = self {
             unsafe {
                 let old_container = std::ptr::read(self);

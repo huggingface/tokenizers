@@ -18,6 +18,6 @@ describe("metaspacePreTokenizer", () => {
   });
 
   it("accepts `undefined` as second parameter", () => {
-    expect(metaspacePreTokenizer("test", undefined)).toBeDefined();
+    expect(metaspacePreTokenizer("t", undefined)).toBeDefined();
   });
 });

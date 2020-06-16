@@ -12,45 +12,58 @@ use crate::tasks::tokenizer::{DecodeTask, EncodeTask, WorkingTokenizer};
 use crate::trainers::JsTrainer;
 use neon::prelude::*;
 
-use tk::tokenizer::{
-    PaddingDirection, PaddingParams, PaddingStrategy, TruncationParams, TruncationStrategy,
-};
+// AddedToken
 
+#[derive(Clone)]
 pub struct AddedToken {
-    pub token: tk::tokenizer::AddedToken,
+    pub token: tk::AddedToken,
+}
+impl From<AddedToken> for tk::AddedToken {
+    fn from(v: AddedToken) -> Self {
+        v.token
+    }
+}
+
+#[allow(non_snake_case)]
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct AddedTokenOptions {
+    singleWord: Option<bool>,
+    leftStrip: Option<bool>,
+    rightStrip: Option<bool>,
+}
+impl AddedTokenOptions {
+    fn into_added_token(self, content: String) -> tk::AddedToken {
+        let mut token = tk::AddedToken::from(content);
+        if let Some(sw) = self.singleWord {
+            token = token.single_word(sw);
+        }
+        if let Some(ls) = self.leftStrip {
+            token = token.lstrip(ls);
+        }
+        if let Some(rs) = self.rightStrip {
+            token = token.rstrip(rs);
+        }
+        token
+    }
 }
 
 declare_types! {
     pub class JsAddedToken for AddedToken {
         init(mut cx) {
-            // init(content: string,
-            //    options?: { singleWord?: boolean = False, leftStrip?: boolean = False, rightStrip?: boolean = False }
+            // init(
+            //  content: string,
+            //  options?: {
+            //    singleWord?: boolean = false,
+            //    leftStrip?: boolean = false,
+            //    rightStrip?: boolean = false
+            //  }
             // )
 
-            let mut token = tk::tokenizer::AddedToken::from(cx.argument::<JsString>(0)?.value());
-
-            let options = cx.argument_opt(1);
-            if let Some(options) = options {
-                if let Ok(options) = options.downcast::<JsObject>() {
-                    if let Ok(single_word) = options.get(&mut cx, "singleWord") {
-                        if single_word.downcast::<JsUndefined>().is_err() {
-                            token = token.single_word(single_word.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
-                        }
-                    }
-
-                    if let Ok(left_strip) = options.get(&mut cx, "leftStrip") {
-                        if left_strip.downcast::<JsUndefined>().is_err() {
-                            token = token.lstrip(left_strip.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
-                        }
-                    }
-
-                    if let Ok(right_strip) = options.get(&mut cx, "rightStrip") {
-                        if right_strip.downcast::<JsUndefined>().is_err() {
-                            token = token.rstrip(right_strip.downcast::<JsBoolean>().or_throw(&mut cx)?.value());
-                        }
-                    }
-                }
-            }
+            let content = cx.extract::<String>(0)
+                .map_err(|_| Error("First argument must be string".into()))?;
+            let token = cx.extract_opt::<AddedTokenOptions>(1)?
+                .unwrap_or_else(AddedTokenOptions::default)
+                .into_added_token(content);
 
             Ok(AddedToken { token })
         }
@@ -66,6 +79,22 @@ declare_types! {
             };
 
             Ok(cx.string(content).upcast())
+        }
+    }
+}
+
+impl FromJsValue for AddedToken {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
+        if let Ok(token) = from.downcast::<JsString>() {
+            Ok(AddedToken {
+                token: tk::AddedToken::from(token.value()),
+            })
+        } else if let Ok(token) = from.downcast::<JsAddedToken>() {
+            let guard = cx.lock();
+            let token = token.borrow(&guard);
+            Ok(token.clone())
+        } else {
+            Err(Error("Expected `string | AddedToken`".into()))
         }
     }
 }
@@ -158,26 +187,144 @@ impl From<TextEncodeInput> for tk::EncodeInput {
     }
 }
 
-#[allow(non_snake_case)]
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct EncodeOptions {
     #[serde(default)]
-    isPretokenized: bool,
+    is_pretokenized: bool,
     #[serde(default)]
-    addSpecialTokens: bool,
+    add_special_tokens: bool,
 }
 impl Default for EncodeOptions {
     fn default() -> Self {
         Self {
-            isPretokenized: false,
-            addSpecialTokens: true,
+            is_pretokenized: false,
+            add_special_tokens: true,
         }
     }
 }
 
+// Encoding
+
+#[repr(transparent)]
+pub struct Encoding(tk::Encoding);
+impl FromJsValue for Encoding {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
+        from.downcast::<JsEncoding>()
+            .map(|e| {
+                let guard = cx.lock();
+                let enc = e.borrow(&guard);
+                Self(enc.encoding.execute(|e| *e.unwrap().clone()))
+            })
+            .map_err(|_| Error("Expected Encoding".into()))
+    }
+}
+impl From<Encoding> for tk::Encoding {
+    fn from(v: Encoding) -> Self {
+        v.0
+    }
+}
+
+// Truncation
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "tk::TruncationStrategy", rename_all = "snake_case")]
+pub enum TruncationStrategyDef {
+    LongestFirst,
+    OnlyFirst,
+    OnlySecond,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(
+    remote = "tk::TruncationParams",
+    rename_all = "camelCase",
+    default = "tk::TruncationParams::default"
+)]
+pub struct TruncationParamsDef {
+    max_length: usize,
+    #[serde(with = "TruncationStrategyDef")]
+    strategy: tk::TruncationStrategy,
+    stride: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TruncationParams(#[serde(with = "TruncationParamsDef")] pub tk::TruncationParams);
+
+// Padding
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "tk::PaddingDirection", rename_all = "camelCase")]
+pub enum PaddingDirectionDef {
+    Left,
+    Right,
+}
+
+// Here we define a custom method of serializing and deserializing a PaddingStrategy because
+// we want it to actually be very different from the classic representation.
+// In Rust, we use an enum to define the strategy, but in JS, we just want to have a optional
+// length number => If defined we use the Fixed(n) strategy and otherwise the BatchLongest.
+pub mod padding_strategy_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Strategy {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_length: Option<usize>,
+    }
+
+    pub fn serialize<S>(value: &tk::PaddingStrategy, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s = Strategy {
+            max_length: match value {
+                tk::PaddingStrategy::BatchLongest => None,
+                tk::PaddingStrategy::Fixed(s) => Some(*s),
+            },
+        };
+        s.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<tk::PaddingStrategy, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let v = Strategy::deserialize(deserializer)?;
+        if let Some(length) = v.max_length {
+            Ok(tk::PaddingStrategy::Fixed(length))
+        } else {
+            Ok(tk::PaddingStrategy::BatchLongest)
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(
+    remote = "tk::PaddingParams",
+    rename_all = "camelCase",
+    default = "tk::PaddingParams::default"
+)]
+pub struct PaddingParamsDef {
+    #[serde(flatten, with = "padding_strategy_serde")]
+    strategy: tk::PaddingStrategy,
+    #[serde(with = "PaddingDirectionDef")]
+    direction: tk::PaddingDirection,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pad_to_multiple_of: Option<usize>,
+    pad_id: u32,
+    pad_type_id: u32,
+    pad_token: String,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PaddingParams(#[serde(with = "PaddingParamsDef")] pub tk::PaddingParams);
+
 /// Tokenizer
 pub struct Tokenizer {
-    tokenizer: tk::tokenizer::Tokenizer,
+    tokenizer: tk::Tokenizer,
 
     /// Whether we have a running task. We keep this to make sure we never
     /// modify the underlying tokenizer while a task is running
@@ -190,6 +337,19 @@ impl Tokenizer {
     }
 }
 
+macro_rules! check_tokenizer_can_be_modified {
+    ($cx: expr) => {
+        let this = $cx.this();
+        let guard = $cx.lock();
+        let running = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
+        if running > 1 {
+            return Err(
+                Error("Cannot modify the tokenizer while there are running tasks".into()).into(),
+            );
+        }
+    };
+}
+
 declare_types! {
     pub class JsTokenizer for Tokenizer {
         init(mut cx) {
@@ -198,10 +358,10 @@ declare_types! {
             if let Some(instance) = {
                 let guard = cx.lock();
                 let mut model = model.borrow_mut(&guard);
-                model.model.to_pointer()
+                model.model.make_pointer()
             } {
                 Ok(Tokenizer {
-                    tokenizer: tk::tokenizer::Tokenizer::new(instance),
+                    tokenizer: tk::Tokenizer::new(instance),
                     running_task: std::sync::Arc::new(())
                 })
             } else {
@@ -211,14 +371,7 @@ declare_types! {
 
         method toString(mut cx) {
             // toString(pretty?: bool): string
-            let mut pretty = false;
-            if let Some(arg) = cx.argument_opt(0) {
-                if arg.downcast::<JsUndefined>().is_err() {
-                    pretty = arg.downcast::<JsBoolean>()
-                        .or_throw(&mut cx)?
-                        .value() as bool;
-                }
-            }
+            let pretty = cx.extract_opt::<bool>(0)?.unwrap_or(false);
 
             let this = cx.this();
             let guard = cx.lock();
@@ -230,16 +383,8 @@ declare_types! {
 
         method save(mut cx) {
             // save(path: striing, pretty?: bool): undefined
-
-            let path = cx.argument::<JsString>(0)?.value();
-            let mut pretty = false;
-            if let Some(arg) = cx.argument_opt(1) {
-                if arg.downcast::<JsUndefined>().is_err() {
-                    pretty = arg.downcast::<JsBoolean>()
-                        .or_throw(&mut cx)?
-                        .value() as bool;
-                }
-            }
+            let path = cx.extract::<String>(0)?;
+            let pretty = cx.extract_opt::<bool>(1)?.unwrap_or(false);
 
             let this = cx.this();
             let guard = cx.lock();
@@ -251,25 +396,16 @@ declare_types! {
 
         method runningTasks(mut cx) {
             // runningTasks(): number
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                if count > 0 { count - 1 } else { 0 }
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
+            let running = if count > 0 { count - 1 } else { 0 };
             Ok(cx.number(running as f64).upcast())
         }
 
         method getVocab(mut cx) {
             // getVocab(withAddedTokens: bool = true)
-            let mut with_added_tokens = true;
-            if let Some(arg) = cx.argument_opt(0) {
-                if arg.downcast::<JsUndefined>().is_err() {
-                    with_added_tokens = arg.downcast::<JsBoolean>()
-                        .or_throw(&mut cx)?
-                        .value() as bool;
-                }
-            }
+            let with_added_tokens = cx.extract_opt::<bool>(0)?.unwrap_or(true);
 
             let this = cx.this();
             let guard = cx.lock();
@@ -289,14 +425,7 @@ declare_types! {
 
         method getVocabSize(mut cx) {
             // getVocabSize(withAddedTokens: bool = true)
-            let mut with_added_tokens = true;
-            if let Some(arg) = cx.argument_opt(0) {
-                if arg.downcast::<JsUndefined>().is_err() {
-                    with_added_tokens = arg.downcast::<JsBoolean>()
-                        .or_throw(&mut cx)?
-                        .value() as bool;
-                }
-            }
+            let with_added_tokens = cx.extract_opt::<bool>(0)?.unwrap_or(true);
 
             let this = cx.this();
             let guard = cx.lock();
@@ -309,22 +438,16 @@ declare_types! {
 
         method normalize(mut cx) {
             // normalize(sentence: String) -> String
-            let sentence = cx.argument::<JsString>(0)?.value();
+            let sentence = cx.extract::<String>(0)?;
 
             let this = cx.this();
             let guard = cx.lock();
 
-            let result = {
-                this.borrow(&guard)
-                    .tokenizer
-                    .normalize(&sentence)
-                    .map(|s| s.get().to_owned())
-            };
-            let normalized = result
-                .map_err(|e| {
-                    cx.throw_error::<_, ()>(format!("{}", e))
-                        .unwrap_err()
-                })?;
+            let normalized = this.borrow(&guard)
+                .tokenizer
+                .normalize(&sentence)
+                .map(|s| s.get().to_owned())
+                .map_err(|e| Error(format!("{}", e)))?;
 
             Ok(cx.string(normalized).upcast())
         }
@@ -358,7 +481,7 @@ declare_types! {
             };
 
             // Then we extract our input sequences
-            let sentence: tk::InputSequence = if options.isPretokenized {
+            let sentence: tk::InputSequence = if options.is_pretokenized {
                 cx.extract::<PreTokenizedInputSequence>(0)
                     .map_err(|_| Error("encode with isPretokenized=true expect string[]".into()))?
                     .into()
@@ -367,7 +490,7 @@ declare_types! {
                     .map_err(|_| Error("encode with isPreTokenized=false expect string".into()))?
                     .into()
             };
-            let pair: Option<tk::InputSequence> = if options.isPretokenized {
+            let pair: Option<tk::InputSequence> = if options.is_pretokenized {
                 cx.extract_opt::<PreTokenizedInputSequence>(1)
                     .map_err(|_| Error("encode with isPretokenized=true expect string[]".into()))?
                     .map(|v| v.into())
@@ -381,15 +504,13 @@ declare_types! {
                 None => sentence.into()
             };
 
-            let worker = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let worker = this.borrow(&guard).prepare_for_task();
-                worker
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let worker = this.borrow(&guard).prepare_for_task();
 
-            let task = EncodeTask::Single(worker, Some(input), options.addSpecialTokens);
+            let task = EncodeTask::Single(worker, Some(input), options.add_special_tokens);
             task.schedule(callback);
+
             Ok(cx.undefined().upcast())
         }
 
@@ -421,7 +542,7 @@ declare_types! {
                 }
             };
 
-            let inputs: Vec<tk::EncodeInput> = if options.isPretokenized {
+            let inputs: Vec<tk::EncodeInput> = if options.is_pretokenized {
                 cx.extract_vec::<PreTokenizedEncodeInput>(0)
                     .map_err(|_| Error(
                         "encodeBatch with isPretokenized=true expects input to be `EncodeInput[]` \
@@ -435,82 +556,54 @@ declare_types! {
                     .into_iter().map(|v| v.into()).collect()
             };
 
-            let worker = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let worker = this.borrow(&guard).prepare_for_task();
-                worker
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let worker = this.borrow(&guard).prepare_for_task();
 
-            let task = EncodeTask::Batch(worker, Some(inputs), options.addSpecialTokens);
+            let task = EncodeTask::Batch(worker, Some(inputs), options.add_special_tokens);
             task.schedule(callback);
+
             Ok(cx.undefined().upcast())
         }
 
         method decode(mut cx) {
             // decode(ids: number[], skipSpecialTokens: bool, callback)
 
-            let ids = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?
-                .into_iter()
-                .map(|id| {
-                    id.downcast::<JsNumber>()
-                        .or_throw(&mut cx)
-                        .map(|v| v.value() as u32)
-                })
-                .collect::<NeonResult<Vec<_>>>()?;
-            let skip_special_tokens = cx.argument::<JsBoolean>(1)?.value();
+            let ids = cx.extract_vec::<u32>(0)?;
+            let skip_special_tokens = cx.extract::<bool>(1)?;
             let callback = cx.argument::<JsFunction>(2)?;
 
-            let worker = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let worker = this.borrow(&guard).prepare_for_task();
-                worker
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let worker = this.borrow(&guard).prepare_for_task();
 
             let task = DecodeTask::Single(worker, ids, skip_special_tokens);
             task.schedule(callback);
+
             Ok(cx.undefined().upcast())
         }
 
         method decodeBatch(mut cx) {
             // decodeBatch(sequences: number[][], skipSpecialTokens: bool, callback)
 
-            let sentences = cx.argument::<JsArray>(0)?
-                .to_vec(&mut cx)?
-                .into_iter()
-                .map(|sentence| {
-                    sentence.downcast::<JsArray>()
-                        .or_throw(&mut cx)?
-                        .to_vec(&mut cx)?
-                        .into_iter()
-                        .map(|id| {
-                            id.downcast::<JsNumber>()
-                                .or_throw(&mut cx)
-                                .map(|v| v.value() as u32)
-                        })
-                        .collect::<NeonResult<Vec<_>>>()
-                }).collect::<NeonResult<Vec<_>>>()?;
-
-            let skip_special_tokens = cx.argument::<JsBoolean>(1)?.value();
+            let sentences = cx.extract_vec::<Vec<u32>>(0)?;
+            let skip_special_tokens = cx.extract::<bool>(1)?;
             let callback = cx.argument::<JsFunction>(2)?;
 
-            let worker = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let worker = this.borrow(&guard).prepare_for_task();
-                worker
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let worker = this.borrow(&guard).prepare_for_task();
 
             let task = DecodeTask::Batch(worker, sentences, skip_special_tokens);
             task.schedule(callback);
+
             Ok(cx.undefined().upcast())
         }
 
         method tokenToId(mut cx) {
             // tokenToId(token: string): number | undefined
 
-            let token = cx.argument::<JsString>(0)?.value();
+            let token = cx.extract::<String>(0)?;
 
             let this = cx.this();
             let guard = cx.lock();
@@ -526,7 +619,7 @@ declare_types! {
         method idToToken(mut cx) {
             // idToToken(id: number): string | undefined
 
-            let id = cx.argument::<JsNumber>(0)?.value() as u32;
+            let id = cx.extract::<u32>(0)?;
 
             let this = cx.this();
             let guard = cx.lock();
@@ -542,21 +635,10 @@ declare_types! {
         method addTokens(mut cx) {
             // addTokens(tokens: (string | AddedToken)[]): number
 
-            let tokens = cx.argument::<JsArray>(0)?
-                .to_vec(&mut cx)?
+            let tokens = cx.extract_vec::<AddedToken>(0)?
                 .into_iter()
-                .map(|token| {
-                    if let Ok(token) = token.downcast::<JsString>() {
-                        Ok(tk::tokenizer::AddedToken::from(token.value()))
-                    } else if let Ok(token) = token.downcast::<JsAddedToken>() {
-                        let guard = cx.lock();
-                        let token = token.borrow(&guard);
-                        Ok(token.token.clone())
-                    } else {
-                        cx.throw_error("Input must be `(string | AddedToken)[]`")
-                    }
-                })
-                .collect::<NeonResult<Vec<_>>>()?;
+                .map(|token| token.into())
+                .collect::<Vec<_>>();
 
             let mut this = cx.this();
             let guard = cx.lock();
@@ -568,21 +650,10 @@ declare_types! {
         method addSpecialTokens(mut cx) {
             // addSpecialTokens(tokens: (string | AddedToken)[]): number
 
-            let tokens = cx.argument::<JsArray>(0)?
-                .to_vec(&mut cx)?
+            let tokens = cx.extract_vec::<AddedToken>(0)?
                 .into_iter()
-                .map(|token| {
-                    if let Ok(token) = token.downcast::<JsString>() {
-                        Ok(tk::tokenizer::AddedToken::from(token.value()))
-                    } else if let Ok(token) = token.downcast::<JsAddedToken>() {
-                        let guard = cx.lock();
-                        let token = token.borrow(&guard);
-                        Ok(token.token.clone())
-                    } else {
-                        cx.throw_error("Input must be `(string | AddedToken)[]`")
-                    }
-                })
-                .collect::<NeonResult<Vec<_>>>()?;
+                .map(|token| token.into())
+                .collect::<Vec<_>>();
 
             let mut this = cx.this();
             let guard = cx.lock();
@@ -594,160 +665,63 @@ declare_types! {
         }
 
         method setTruncation(mut cx) {
-            // setTruncation(maxLength: number, options?: { stride?: number; strategy?: string })
-            let max_length = cx.argument::<JsNumber>(0)?.value() as usize;
+            // setTruncation(
+            //   maxLength: number,
+            //   options?: { stride?: number; strategy?: string }
+            // )
 
-            let mut stride = 0;
-            let mut strategy = TruncationStrategy::LongestFirst;
+            let max_length = cx.extract::<usize>(0)?;
+            let mut options = cx.extract_opt::<TruncationParams>(1)?
+                .map_or_else(tk::TruncationParams::default, |p| p.0);
+            options.max_length = max_length;
 
-            let options = cx.argument_opt(1);
-            if let Some(options) = options {
-                if let Ok(options) = options.downcast::<JsObject>() {
-                    if let Ok(stride_opt) = options.get(&mut cx, "stride") {
-                        if stride_opt.downcast::<JsUndefined>().is_err() {
-                            stride = stride_opt.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize;
-                        }
-                    }
-                    if let Ok(strat_opt) = options.get(&mut cx, "strategy") {
-                        if strat_opt.downcast::<JsUndefined>().is_err() {
-                            let strat_opt = strat_opt.downcast::<JsString>().or_throw(&mut cx)?.value();
-                            match &strat_opt[..] {
-                                "longest_first" => strategy = TruncationStrategy::LongestFirst,
-                                "only_first" => strategy = TruncationStrategy::OnlyFirst,
-                                "only_second" => strategy = TruncationStrategy::OnlySecond,
-                                _ => return cx.throw_error("strategy can only be 'longest_first', 'only_first' or 'only_second'"),
-                            }
-                        }
-                    }
-                }
-            }
-
+            let params_obj = neon_serde::to_value(&mut cx, &TruncationParams(options.clone()))?;
             let mut this = cx.this();
-            {
-                let guard = cx.lock();
-                let mut tokenizer = this.borrow_mut(&guard);
-                tokenizer.tokenizer.with_truncation(Some(TruncationParams {
-                    max_length,
-                    stride,
-                    strategy,
-                }));
-            }
+            let guard = cx.lock();
+            let mut tokenizer = this.borrow_mut(&guard);
+            tokenizer.tokenizer.with_truncation(Some(options));
 
-            let params_object = JsObject::new(&mut cx);
-            let obj_length = cx.number(max_length as f64);
-            let obj_stride = cx.number(stride as f64);
-            let obj_strat = cx.string(strategy);
-
-            params_object.set(&mut cx, "maxLength", obj_length).unwrap();
-            params_object.set(&mut cx, "stride", obj_stride).unwrap();
-            params_object.set(&mut cx, "strategy", obj_strat).unwrap();
-
-            Ok(params_object.upcast())
+            Ok(params_obj)
         }
 
         method disableTruncation(mut cx) {
+            // disableTruncation()
+
             let mut this = cx.this();
             let guard = cx.lock();
             this.borrow_mut(&guard).tokenizer.with_truncation(None);
+
             Ok(cx.undefined().upcast())
         }
 
         method setPadding(mut cx) {
-            // setPadding(options?: { direction?: "left" | "right"; padId?: number?; padTypeId?: number?; padToken: string; maxLength?: number })
-            let mut direction = PaddingDirection::Right;
-            let mut pad_to_multiple_of: Option<usize> = None;
-            let mut pad_id: u32 = 0;
-            let mut pad_type_id: u32 = 0;
-            let mut pad_token = String::from("[PAD]");
-            let mut max_length: Option<usize> = None;
+            // setPadding(options?: {
+            //   direction?: "left" | "right",
+            //   padId?: number,
+            //   padTypeId?: number,
+            //   padToken?: string,
+            //   maxLength?: number
+            //  })
 
-            let options = cx.argument_opt(0);
-            if let Some(options) = options {
-                if let Ok(options) = options.downcast::<JsObject>() {
-                    if let Ok(dir) = options.get(&mut cx, "direction") {
-                        if dir.downcast::<JsUndefined>().is_err() {
-                            let dir = dir.downcast::<JsString>().or_throw(&mut cx)?.value();
-                            match &dir[..] {
-                                "left" => direction = PaddingDirection::Left,
-                                "right" => direction = PaddingDirection::Right,
-                                _ => return cx.throw_error("direction can only be 'left' or 'right'"),
-                            }
-                        }
-                    }
-                    if let Ok(p_multiple) = options.get(&mut cx, "padToMultipleOf") {
-                        if p_multiple.downcast::<JsUndefined>().is_err() {
-                            pad_to_multiple_of = Some(p_multiple.downcast::<JsNumber>()
-                                .or_throw(&mut cx)?.value() as usize);
-                        }
-                    }
-                    if let Ok(p_id) = options.get(&mut cx, "padId") {
-                        if p_id.downcast::<JsUndefined>().is_err() {
-                            pad_id = p_id.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32;
-                        }
-                    }
-                    if let Ok(p_type_id) = options.get(&mut cx, "padTypeId") {
-                        if p_type_id.downcast::<JsUndefined>().is_err() {
-                            pad_type_id = p_type_id.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32;
-                        }
-                    }
-                    if let Ok(p_token) = options.get(&mut cx, "padToken") {
-                        if p_token.downcast::<JsUndefined>().is_err() {
-                            pad_token = p_token.downcast::<JsString>().or_throw(&mut cx)?.value();
-                        }
-                    }
-                    if let Ok(max_l) = options.get(&mut cx, "maxLength") {
-                        if max_l.downcast::<JsUndefined>().is_err() {
-                            max_length = Some(max_l.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize);
-                        }
-                    }
-                }
-            }
+            let options = cx.extract_opt::<PaddingParams>(0)?
+                .map_or_else(tk::PaddingParams::default, |p| p.0);
 
-            let strategy = if let Some(max_length) = max_length {
-                PaddingStrategy::Fixed(max_length)
-            } else {
-                PaddingStrategy::BatchLongest
-            };
-
+            let params_obj = neon_serde::to_value(&mut cx, &PaddingParams(options.clone()))?;
             let mut this = cx.this();
-            {
-                let guard = cx.lock();
-                let mut tokenizer = this.borrow_mut(&guard);
-                tokenizer.tokenizer.with_padding(Some(PaddingParams {
-                    strategy,
-                    direction,
-                    pad_to_multiple_of,
-                    pad_id,
-                    pad_type_id,
-                    pad_token: pad_token.to_owned(),
-                }));
-            }
+            let guard = cx.lock();
+            let mut tokenizer = this.borrow_mut(&guard);
+            tokenizer.tokenizer.with_padding(Some(options));
 
-            let params_object = JsObject::new(&mut cx);
-            if let Some(max_length) = max_length {
-                let obj_length = cx.number(max_length as f64);
-                params_object.set(&mut cx, "maxLength", obj_length).unwrap();
-            }
-            if let Some(multiple) = pad_to_multiple_of {
-                let obj_multiple = cx.number(multiple as f64);
-                params_object.set(&mut cx, "padToMultipleOf", obj_multiple).unwrap();
-            }
-            let obj_pad_id = cx.number(pad_id);
-            let obj_pad_type_id = cx.number(pad_type_id);
-            let obj_pad_token = cx.string(pad_token);
-            let obj_direction = cx.string(direction);
-            params_object.set(&mut cx, "padId", obj_pad_id).unwrap();
-            params_object.set(&mut cx, "padTypeId", obj_pad_type_id).unwrap();
-            params_object.set(&mut cx, "padToken", obj_pad_token).unwrap();
-            params_object.set(&mut cx, "direction", obj_direction).unwrap();
-
-            Ok(params_object.upcast())
+            Ok(params_obj)
         }
 
         method disablePadding(mut cx) {
+            // disablePadding()
+
             let mut this = cx.this();
             let guard = cx.lock();
             this.borrow_mut(&guard).tokenizer.with_padding(None);
+
             Ok(cx.undefined().upcast())
         }
 
@@ -755,17 +729,17 @@ declare_types! {
             // train(trainer: JsTrainer, files: string[])
 
             let trainer = cx.argument::<JsTrainer>(0)?;
-            let files = cx.argument::<JsArray>(1)?.to_vec(&mut cx)?.into_iter().map(|file| {
-                Ok(file.downcast::<JsString>().or_throw(&mut cx)?.value())
-            }).collect::<NeonResult<Vec<_>>>()?;
+            let files = cx.extract::<Vec<String>>(1)?;
 
             let mut this = cx.this();
             let guard = cx.lock();
-            let res = trainer.borrow(&guard).trainer.execute(|trainer| {
-                let res = this.borrow_mut(&guard).tokenizer.train(trainer.unwrap(), files);
-                res
-            });
-            res.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+
+            trainer.borrow(&guard).trainer.execute(|trainer| {
+                this.borrow_mut(&guard)
+                    .tokenizer
+                    .train(trainer.unwrap(), files)
+                    .map_err(|e| Error(format!("{}", e)))
+            })?;
 
             Ok(cx.undefined().upcast())
         }
@@ -777,60 +751,23 @@ declare_types! {
             //   addSpecialTokens: boolean = true
             // ): Encoding
 
-            let encoding = {
-                let encoding = cx.argument::<JsEncoding>(0)?;
-                let guard = cx.lock();
-                let encoding = encoding
-                    .borrow(&guard)
-                    .encoding
-                    .execute(|e| *e.unwrap().clone());
-                encoding
-            };
+            let encoding = cx.extract::<Encoding>(0)?;
+            let pair = cx.extract_opt::<Encoding>(1)?;
+            let add_special_tokens = cx.extract_opt::<bool>(2)?.unwrap_or(true);
 
-            let default_pair = None;
-            let pair = if let Some(arg) = cx.argument_opt(1) {
-                if arg.downcast::<JsUndefined>().is_ok() {
-                    default_pair
-                } else {
-                    arg.downcast_or_throw::<JsEncoding, _>(&mut cx).map(|e| {
-                        let guard = cx.lock();
-                        let encoding = e.borrow(&guard)
-                            .encoding
-                            .execute(|e| *e.unwrap().clone());
-                        encoding
-                    }).ok()
-                }
-            } else {
-                default_pair
-            };
-
-            let default_add_special_tokens = true;
-            let add_special_tokens = if let Some(arg) = cx.argument_opt(2) {
-                if arg.downcast::<JsUndefined>().is_ok() {
-                    default_add_special_tokens
-                } else {
-                    arg.downcast_or_throw::<JsBoolean, _>(&mut cx)?.value()
-                }
-            } else {
-                default_add_special_tokens
-            };
-
-            let encoding = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let encoding = this.borrow(&guard)
-                    .tokenizer.post_process(encoding, pair, add_special_tokens);
-                encoding
-            };
-            let encoding = encoding
-                .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+            let this = cx.this();
+            let guard = cx.lock();
+            let encoding = this.borrow(&guard)
+                .tokenizer
+                .post_process(encoding.into(), pair.map(|p| p.into()), add_special_tokens)
+                .map_err(|e| Error(format!("{}", e)))?;
 
             let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
             let guard = cx.lock();
             js_encoding
                 .borrow_mut(&guard)
                 .encoding
-                .to_owned(Box::new(encoding));
+                .make_owned(Box::new(encoding));
 
             Ok(js_encoding.upcast())
         }
@@ -838,12 +775,9 @@ declare_types! {
         method getModel(mut cx) {
             // getModel(): Model
 
-            let model = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let container = Container::from_ref(this.borrow(&guard).tokenizer.get_model());
-                container
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let model = Container::from_ref(this.borrow(&guard).tokenizer.get_model());
 
             let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
             let guard = cx.lock();
@@ -854,23 +788,13 @@ declare_types! {
 
         method setModel(mut cx) {
             // setModel(model: JsModel)
-
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                count
-            };
-            if running > 1 {
-                println!("{} running tasks", running - 1);
-                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
-            }
+            check_tokenizer_can_be_modified!(cx);
 
             let mut model = cx.argument::<JsModel>(0)?;
             if let Some(instance) = {
                 let guard = cx.lock();
                 let mut model = model.borrow_mut(&guard);
-                model.model.to_pointer()
+                model.model.make_pointer()
             } {
                 let mut this = cx.this();
                 {
@@ -909,23 +833,13 @@ declare_types! {
 
         method setNormalizer(mut cx) {
             // setNormalizer(normalizer: Normalizer)
-
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                count
-            };
-            if running > 1 {
-                println!("{} running tasks", running - 1);
-                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
-            }
+            check_tokenizer_can_be_modified!(cx);
 
             let mut normalizer = cx.argument::<JsNormalizer>(0)?;
             if let Some(instance) = {
                 let guard = cx.lock();
                 let mut normalizer = normalizer.borrow_mut(&guard);
-                normalizer.normalizer.to_pointer()
+                normalizer.normalizer.make_pointer()
             } {
                 let mut this = cx.this();
                 {
@@ -964,23 +878,13 @@ declare_types! {
 
         method setPreTokenizer(mut cx) {
             // setPreTokenizer(pretokenizer: PreTokenizer)
-
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                count
-            };
-            if running > 1 {
-                println!("{} running tasks", running - 1);
-                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
-            }
+            check_tokenizer_can_be_modified!(cx);
 
             let mut pretok = cx.argument::<JsPreTokenizer>(0)?;
             if let Some(instance) = {
                 let guard = cx.lock();
                 let mut pretok = pretok.borrow_mut(&guard);
-                pretok.pretok.to_pointer()
+                pretok.pretok.make_pointer()
             } {
                 let mut this = cx.this();
                 {
@@ -1007,7 +911,8 @@ declare_types! {
             };
 
             if let Some(processor) = processor {
-                let mut js_processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
+                let mut js_processor =
+                    JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
                 let guard = cx.lock();
                 js_processor.borrow_mut(&guard).processor = processor;
 
@@ -1019,23 +924,13 @@ declare_types! {
 
         method setPostProcessor(mut cx) {
             // setPostProcessor(processor: PostProcessor)
-
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                count
-            };
-            if running > 1 {
-                println!("{} running tasks", running - 1);
-                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
-            }
+            check_tokenizer_can_be_modified!(cx);
 
             let mut processor = cx.argument::<JsPostProcessor>(0)?;
             if let Some(instance) = {
                 let guard = cx.lock();
                 let mut processor = processor.borrow_mut(&guard);
-                processor.processor.to_pointer()
+                processor.processor.make_pointer()
             } {
                 let mut this = cx.this();
                 {
@@ -1074,23 +969,13 @@ declare_types! {
 
         method setDecoder(mut cx) {
             // setDecoder(decoder: Decoder)
-
-            let running = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-                count
-            };
-            if running > 1 {
-                println!("{} running tasks", running - 1);
-                return cx.throw_error("Cannot modify the tokenizer while there are running tasks");
-            }
+            check_tokenizer_can_be_modified!(cx);
 
             let mut decoder = cx.argument::<JsDecoder>(0)?;
             if let Some(instance) = {
                 let guard = cx.lock();
                 let mut decoder = decoder.borrow_mut(&guard);
-                decoder.decoder.to_pointer()
+                decoder.decoder.make_pointer()
             } {
                 let mut this = cx.this();
                 {
@@ -1108,7 +993,7 @@ declare_types! {
 }
 
 pub fn tokenizer_from_string(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
-    let s = cx.argument::<JsString>(0)?.value();
+    let s = cx.extract::<String>(0)?;
 
     let tokenizer: tk::tokenizer::Tokenizer = s
         .parse()
@@ -1122,7 +1007,7 @@ pub fn tokenizer_from_string(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
 }
 
 pub fn tokenizer_from_file(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
-    let s = cx.argument::<JsString>(0)?.value();
+    let s = cx.extract::<String>(0)?;
 
     let tokenizer = tk::tokenizer::Tokenizer::from_file(s)
         .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;

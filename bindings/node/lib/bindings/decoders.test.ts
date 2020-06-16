@@ -16,7 +16,7 @@ describe("metaspaceDecoder", () => {
   });
 
   it("accepts `undefined` as second parameter", () => {
-    expect(metaspaceDecoder("test", undefined)).toBeDefined();
+    expect(metaspaceDecoder("t", undefined)).toBeDefined();
   });
 });
 

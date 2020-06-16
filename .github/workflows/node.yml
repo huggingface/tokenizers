@@ -22,6 +22,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+          components: rustfmt, clippy
 
       # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
       - run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
@@ -56,6 +57,18 @@ jobs:
       - name: Build all
         working-directory: ./bindings/node
         run: node build.js --all
+
+      - name: Lint Rust formatting
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --manifest-path ./bindings/node/native/Cargo.toml -- --check
+
+      - name: Lint Rust with Clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path ./bindings/node/native/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Lint TS
         working-directory: ./bindings/node

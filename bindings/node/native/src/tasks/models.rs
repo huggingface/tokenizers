@@ -35,7 +35,7 @@ impl Task for WordPieceFromFilesTask {
         js_model
             .borrow_mut(&guard)
             .model
-            .to_owned(Box::new(wordpiece));
+            .make_owned(Box::new(wordpiece));
 
         Ok(js_model.upcast())
     }
@@ -68,7 +68,7 @@ impl Task for BPEFromFilesTask {
 
         let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
         let guard = cx.lock();
-        js_model.borrow_mut(&guard).model.to_owned(Box::new(bpe));
+        js_model.borrow_mut(&guard).model.make_owned(Box::new(bpe));
 
         Ok(js_model.upcast())
     }

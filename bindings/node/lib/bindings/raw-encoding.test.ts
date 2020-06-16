@@ -1,5 +1,6 @@
 import { promisify } from "util";
 
+import { PaddingDirection } from "./enums";
 import { Model, WordPiece, WordPieceOptions } from "./models";
 import { whitespacePreTokenizer } from "./pre-tokenizers";
 import { RawEncoding } from "./raw-encoding";
@@ -135,6 +136,33 @@ describe("RawEncoding", () => {
     it("returns undefined when out of range char", () => {
       const index = encoding.charToWord(100);
       expect(index).toBeUndefined();
+    });
+  });
+
+  describe("pad", () => {
+    it("works correctly with only one parameter", () => {
+      encoding.pad(10);
+      expect(encoding.getTokens()).toHaveLength(10);
+    });
+
+    it("accepts `undefined` as second parameter", () => {
+      encoding.pad(10, undefined);
+      expect(encoding.getTokens()).toHaveLength(10);
+    });
+
+    it("accepts options as second parameter", () => {
+      encoding.pad(10, {
+        direction: PaddingDirection.Left,
+        padToken: "[PA]",
+        padTypeId: 10,
+        padId: 400
+      });
+
+      const tokens = encoding.getTokens();
+      expect(tokens).toHaveLength(10);
+      expect(tokens[0]).toBe("[PA]");
+      expect(encoding.getTypeIds()[0]).toBe(10);
+      expect(encoding.getIds()[0]).toBe(400);
     });
   });
 });

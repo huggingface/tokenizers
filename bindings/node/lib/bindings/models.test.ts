@@ -11,9 +11,9 @@ describe("WordPiece", () => {
       expect(() => (WordPiece as any).fromFiles("test")).toThrow("not enough arguments");
     });
 
-    it("throws if called with 2 arguments without a callback as second argument", () => {
+    it("throws if called with 2 arguments without a callback as third argument", () => {
       expect(() => (WordPiece as any).fromFiles("test", {})).toThrow(
-        "failed downcast to function"
+        "not enough arguments"
       );
     });
 
@@ -57,9 +57,9 @@ describe("BPE", () => {
       expect(() => (BPE as any).fromFiles("test", "bis")).toThrow("not enough arguments");
     });
 
-    it("throws if called with 3 arguments without a callback as third argument", () => {
+    it("throws if called with 3 arguments without a callback as last argument", () => {
       expect(() => (BPE as any).fromFiles("test", "bis", {})).toThrow(
-        "failed downcast to function"
+        "not enough arguments"
       );
     });
   });
