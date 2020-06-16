@@ -1,8 +1,8 @@
 extern crate tokenizers as tk;
 
-use tk::tokenizer::PaddingDirection;
-
 use crate::container::Container;
+use crate::extraction::*;
+use crate::tokenizer::PaddingParams;
 use neon::prelude::*;
 
 /// Encoding
@@ -22,11 +22,11 @@ declare_types! {
         method getLength(mut cx) {
             let this = cx.this();
             let guard = cx.lock();
-            let ids = this.borrow(&guard).encoding.execute(|encoding| {
-                encoding.unwrap().get_ids().to_vec()
+            let length = this.borrow(&guard).encoding.execute(|encoding| {
+                encoding.unwrap().get_ids().len()
             });
 
-            Ok(cx.number(ids.len() as f64).upcast())
+            Ok(cx.number(length as f64).upcast())
         }
 
         method getIds(mut cx) {
@@ -37,13 +37,8 @@ declare_types! {
             let ids = this.borrow(&guard).encoding.execute(|encoding| {
                 encoding.unwrap().get_ids().to_vec()
             });
-            let js_ids = JsArray::new(&mut cx, ids.len() as u32);
-            for (i, id) in ids.into_iter().enumerate() {
-                let n = JsNumber::new(&mut cx, id as f64);
-                js_ids.set(&mut cx, i as u32, n)?;
-            }
 
-            Ok(js_ids.upcast())
+            Ok(neon_serde::to_value(&mut cx, &ids)?)
         }
 
         method getTypeIds(mut cx) {
@@ -54,13 +49,8 @@ declare_types! {
             let ids = this.borrow(&guard).encoding.execute(|encoding| {
                 encoding.unwrap().get_type_ids().to_vec()
             });
-            let js_ids = JsArray::new(&mut cx, ids.len() as u32);
-            for (i, id) in ids.into_iter().enumerate() {
-                let n = JsNumber::new(&mut cx, id as f64);
-                js_ids.set(&mut cx, i as u32, n)?;
-            }
 
-            Ok(js_ids.upcast())
+            Ok(neon_serde::to_value(&mut cx, &ids)?)
         }
 
         method getAttentionMask(mut cx) {
@@ -71,13 +61,8 @@ declare_types! {
             let ids = this.borrow(&guard).encoding.execute(|encoding| {
                 encoding.unwrap().get_attention_mask().to_vec()
             });
-            let js_ids = JsArray::new(&mut cx, ids.len() as u32);
-            for (i, id) in ids.into_iter().enumerate() {
-                let n = JsNumber::new(&mut cx, id as f64);
-                js_ids.set(&mut cx, i as u32, n)?;
-            }
 
-            Ok(js_ids.upcast())
+            Ok(neon_serde::to_value(&mut cx, &ids)?)
         }
 
         method getSpecialTokensMask(mut cx) {
@@ -88,13 +73,8 @@ declare_types! {
             let ids = this.borrow(&guard).encoding.execute(|encoding| {
                 encoding.unwrap().get_special_tokens_mask().to_vec()
             });
-            let js_ids = JsArray::new(&mut cx, ids.len() as u32);
-            for (i, id) in ids.into_iter().enumerate() {
-                let n = JsNumber::new(&mut cx, id as f64);
-                js_ids.set(&mut cx, i as u32, n)?;
-            }
 
-            Ok(js_ids.upcast())
+            Ok(neon_serde::to_value(&mut cx, &ids)?)
         }
 
         method getTokens(mut cx) {
@@ -105,13 +85,8 @@ declare_types! {
             let tokens = this.borrow(&guard).encoding.execute(|encoding| {
                 encoding.unwrap().get_tokens().to_vec()
             });
-            let js_tokens = JsArray::new(&mut cx, tokens.len() as u32);
-            for (i, token) in tokens.into_iter().enumerate() {
-                let n = JsString::new(&mut cx, token);
-                js_tokens.set(&mut cx, i as u32, n)?;
-            }
 
-            Ok(js_tokens.upcast())
+            Ok(neon_serde::to_value(&mut cx, &tokens)?)
         }
 
         method getWords(mut cx) {
@@ -122,18 +97,8 @@ declare_types! {
             let ids = this.borrow(&guard).encoding.execute(|encoding| {
                 encoding.unwrap().get_words().to_vec()
             });
-            let js_ids = JsArray::new(&mut cx, ids.len() as u32);
-            for (i, id) in ids.into_iter().enumerate() {
-                if let Some(id) = id {
-                    let n = JsNumber::new(&mut cx, id as f64);
-                    js_ids.set(&mut cx, i as u32, n)?;
-                } else {
-                    let v = cx.undefined();
-                    js_ids.set(&mut cx, i as u32, v)?;
-                }
-            }
 
-            Ok(js_ids.upcast())
+            Ok(neon_serde::to_value(&mut cx, &ids)?)
         }
 
         method getOffsets(mut cx) {
@@ -144,17 +109,9 @@ declare_types! {
             let offsets = this.borrow(&guard).encoding.execute(|encoding| {
                 encoding.unwrap().get_offsets().to_vec()
             });
-            let js_offsets = JsArray::new(&mut cx, offsets.len() as u32);
-            for (i, offsets) in offsets.into_iter().enumerate() {
-                let n = JsArray::new(&mut cx, 2);
-                let o_0 = JsNumber::new(&mut cx, offsets.0 as f64);
-                let o_1 = JsNumber::new(&mut cx, offsets.1 as f64);
-                n.set(&mut cx, 0, o_0)?;
-                n.set(&mut cx, 1, o_1)?;
-                js_offsets.set(&mut cx, i as u32, n)?;
-            }
+            let js_offsets = neon_serde::to_value(&mut cx, &offsets)?;
 
-            Ok(js_offsets.upcast())
+            Ok(js_offsets)
         }
 
         method getOverflowing(mut cx) {
@@ -173,7 +130,7 @@ declare_types! {
 
                 // Set the content
                 let guard = cx.lock();
-                js_overflowing.borrow_mut(&guard).encoding.to_owned(Box::new(overflowing.clone()));
+                js_overflowing.borrow_mut(&guard).encoding.make_owned(Box::new(overflowing.clone()));
 
                 js_overflowings.set(&mut cx, index as u32, js_overflowing)?;
             }
@@ -184,7 +141,7 @@ declare_types! {
         method wordToTokens(mut cx) {
             // wordToTokens(word: number): [number, number] | undefined
 
-            let word = cx.argument::<JsNumber>(0)?.value() as u32;
+            let word = cx.extract::<u32>(0)?;
 
             let this = cx.this();
             let guard = cx.lock();
@@ -194,12 +151,7 @@ declare_types! {
             });
 
             if let Some(tokens) = res {
-                let js_tuple = JsArray::new(&mut cx, 2);
-                let n = cx.number(tokens.0 as f64);
-                js_tuple.set(&mut cx, 0, n)?;
-                let n = cx.number(tokens.1 as f64);
-                js_tuple.set(&mut cx, 1, n)?;
-                Ok(js_tuple.upcast())
+                Ok(neon_serde::to_value(&mut cx, &tokens)?)
             } else {
                 Ok(cx.undefined().upcast())
             }
@@ -218,12 +170,7 @@ declare_types! {
             });
 
             if let Some(offsets) = res {
-                let js_tuple = JsArray::new(&mut cx, 2);
-                let n = cx.number(offsets.0 as f64);
-                js_tuple.set(&mut cx, 0, n)?;
-                let n = cx.number(offsets.1 as f64);
-                js_tuple.set(&mut cx, 1, n)?;
-                Ok(js_tuple.upcast())
+                Ok(neon_serde::to_value(&mut cx, &offsets)?)
             } else {
                 Ok(cx.undefined().upcast())
             }
@@ -242,12 +189,7 @@ declare_types! {
             });
 
             if let Some(offsets) = res {
-                let js_tuple = JsArray::new(&mut cx, 2);
-                let n = cx.number(offsets.0 as f64);
-                js_tuple.set(&mut cx, 0, n)?;
-                let n = cx.number(offsets.1 as f64);
-                js_tuple.set(&mut cx, 1, n)?;
-                Ok(js_tuple.upcast())
+                Ok(neon_serde::to_value(&mut cx, &offsets)?)
             } else {
                 Ok(cx.undefined().upcast())
             }
@@ -314,48 +256,21 @@ declare_types! {
             //   padTypeId?: number = 0,
             //   padToken?: string = "[PAD]"
             // }
-
-            let length = cx.argument::<JsNumber>(0)?.value() as usize;
-            let mut direction = PaddingDirection::Right;
-            let mut pad_id = 0;
-            let mut pad_type_id = 0;
-            let mut pad_token = String::from("[PAD]");
-
-            let options = cx.argument_opt(1);
-            if let Some(options) = options {
-                if let Ok(options) = options.downcast::<JsObject>() {
-                    if let Ok(dir) = options.get(&mut cx, "direction") {
-                        if let Err(_) = dir.downcast::<JsUndefined>() {
-                            let dir = dir.downcast::<JsString>().or_throw(&mut cx)?.value();
-                            match &dir[..] {
-                                "right" => direction = PaddingDirection::Right,
-                                "left" => direction = PaddingDirection::Left,
-                                _ => return cx.throw_error("direction can be 'right' or 'left'"),
-                            }
-                        }
-                    }
-                    if let Ok(pid) = options.get(&mut cx, "padId") {
-                        if let Err(_) = pid.downcast::<JsUndefined>() {
-                            pad_id = pid.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32;
-                        }
-                    }
-                    if let Ok(pid) = options.get(&mut cx, "padTypeId") {
-                        if let Err(_) = pid.downcast::<JsUndefined>() {
-                            pad_type_id = pid.downcast::<JsNumber>().or_throw(&mut cx)?.value() as u32;
-                        }
-                    }
-                    if let Ok(token) = options.get(&mut cx, "padToken") {
-                        if let Err(_) = token.downcast::<JsUndefined>() {
-                            pad_token = token.downcast::<JsString>().or_throw(&mut cx)?.value();
-                        }
-                    }
-                }
-            }
+            let length = cx.extract::<usize>(0)?;
+            let params = cx.extract_opt::<PaddingParams>(1)?
+                .map_or_else(tk::PaddingParams::default, |p| p.0);
 
             let mut this = cx.this();
             let guard = cx.lock();
             this.borrow_mut(&guard).encoding.execute_mut(|encoding| {
-                encoding.unwrap().pad(length, pad_id, pad_type_id, &pad_token, direction, true);
+                encoding.unwrap().pad(
+                    length,
+                    params.pad_id,
+                    params.pad_type_id,
+                    &params.pad_token,
+                    params.direction
+                    true
+                );
             });
 
             Ok(cx.undefined().upcast())
@@ -364,13 +279,8 @@ declare_types! {
         method truncate(mut cx) {
             // truncate(length: number, stride: number = 0)
 
-            let length = cx.argument::<JsNumber>(0)?.value() as usize;
-            let mut stride = 0;
-            if let Some(args) = cx.argument_opt(1) {
-                if args.downcast::<JsUndefined>().is_err() {
-                    stride = args.downcast::<JsNumber>().or_throw(&mut cx)?.value() as usize;
-                }
-            }
+            let length = cx.extract::<usize>(0)?;
+            let stride = cx.extract_opt::<usize>(1)?.unwrap_or(0);
 
             let mut this = cx.this();
             let guard = cx.lock();
