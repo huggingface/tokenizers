@@ -1,6 +1,6 @@
 import pickle
 import pytest
-from ..utils import data_dir, roberta_files, bert_files
+from ..utils import data_dir, roberta_files, bert_files, encode_decode_in_subprocess
 
 from tokenizers import AddedToken, Tokenizer, Encoding
 from tokenizers.models import Model, BPE, WordPiece
@@ -125,18 +125,54 @@ class TestTokenizer:
         output = tokenizer.encode("my name is john")
         assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
         output = tokenizer.encode("my name is john", "pair")
-        assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]", "pair", "[SEP]"]
+        assert output.tokens == [
+            "[CLS]",
+            "my",
+            "name",
+            "is",
+            "john",
+            "[SEP]",
+            "pair",
+            "[SEP]",
+        ]
         output = tokenizer.encode(["my", "name", "is", "john"], is_pretokenized=True)
         assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
         output = tokenizer.encode(["my", "name", "is", "john"], ["pair"], is_pretokenized=True)
-        assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]", "pair", "[SEP]"]
+        assert output.tokens == [
+            "[CLS]",
+            "my",
+            "name",
+            "is",
+            "john",
+            "[SEP]",
+            "pair",
+            "[SEP]",
+        ]
 
         output = tokenizer.encode_batch(["My name is John", "My name is Georges"])
         assert output[0].tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
         assert output[1].tokens == ["[CLS]", "my", "name", "is", "georges", "[SEP]"]
         output = tokenizer.encode_batch([("my name is john", "pair"), ("my name is john", "pair")])
-        assert output[0].tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]", "pair", "[SEP]"]
-        assert output[1].tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]", "pair", "[SEP]"]
+        assert output[0].tokens == [
+            "[CLS]",
+            "my",
+            "name",
+            "is",
+            "john",
+            "[SEP]",
+            "pair",
+            "[SEP]",
+        ]
+        assert output[1].tokens == [
+            "[CLS]",
+            "my",
+            "name",
+            "is",
+            "john",
+            "[SEP]",
+            "pair",
+            "[SEP]",
+        ]
         output = tokenizer.encode_batch([["my", "name", "is", "john"]], is_pretokenized=True)
         assert output[0].tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
 
@@ -162,7 +198,14 @@ class TestTokenizer:
 
         # Can encode with special tokens
         output_with_specials = tokenizer.encode("My name is John", add_special_tokens=True)
-        assert output_with_specials.tokens == ["<s>", "ĠMy", "Ġname", "Ġis", "ĠJohn", "</s>"]
+        assert output_with_specials.tokens == [
+            "<s>",
+            "ĠMy",
+            "Ġname",
+            "Ġis",
+            "ĠJohn",
+            "</s>",
+        ]
 
         # Can encode without special tokens
         output_without_specials = tokenizer.encode("My name is John", add_special_tokens=False)
@@ -269,3 +312,7 @@ class TestTokenizer:
         # Can post process a pair of encodings
         output = tokenizer.post_process(encoding, pair_encoding)
         assert output.tokens == ["my", "pair", "[PAD]", "[PAD]"]
+
+    def test_encode_decode_in_subprocess(self):
+        tokenizer = Tokenizer(BPE())
+        encode_decode_in_subprocess(tokenizer)

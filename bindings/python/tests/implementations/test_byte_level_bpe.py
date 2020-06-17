@@ -1,4 +1,8 @@
-from ..utils import data_dir, roberta_files
+from ..utils import (
+    data_dir,
+    roberta_files,
+    encode_decode_in_subprocess,
+)
 from tokenizers import ByteLevelBPETokenizer
 
 
@@ -63,7 +67,7 @@ class TestByteLevelBPE:
 
     def test_lowerspace(self, roberta_files):
         tokenizer = ByteLevelBPETokenizer(
-            roberta_files["vocab"], roberta_files["merges"], add_prefix_space=True, lowercase=True
+            roberta_files["vocab"], roberta_files["merges"], add_prefix_space=True, lowercase=True,
         )
         output = tokenizer.encode("The Quick Brown Fox Jumps Over The Lazy Dog")
 
@@ -79,3 +83,9 @@ class TestByteLevelBPE:
             "Ġlazy",
             "Ġdog",
         ]
+
+    def test_encode_decode_in_subprocess(self, roberta_files):
+        tokenizer = ByteLevelBPETokenizer(
+            roberta_files["vocab"], roberta_files["merges"], add_prefix_space=True, lowercase=True,
+        )
+        encode_decode_in_subprocess(tokenizer)
