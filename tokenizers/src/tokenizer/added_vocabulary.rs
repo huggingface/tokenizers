@@ -20,13 +20,14 @@ pub struct AddedToken {
     /// Whether this token should be normalized
     pub normalized: bool,
 }
+
 impl AddedToken {
     /// Build this token from the given content, specifying if it is intented to be a
     /// special token. Special tokens are not normalized by default.
-    pub fn from(content: String, special_token: bool) -> Self {
+    pub fn from<S: Into<String>>(content: S, special: bool) -> Self {
         AddedToken {
-            content,
-            normalized: !special_token,
+            content: content.into(),
+            normalized: !special,
             ..Default::default()
         }
     }
@@ -48,7 +49,7 @@ impl AddedToken {
         self.rstrip = rstrip;
         self
     }
-    /// Specify whether this token should be normalized, and/or match against its normalized
+    /// Specify whether this token should be normalized and match against its normalized
     /// version in the input text.
     pub fn normalized(mut self, normalized: bool) -> Self {
         self.normalized = normalized;
@@ -108,7 +109,7 @@ impl Default for AddedToken {
             single_word: false,
             lstrip: false,
             rstrip: false,
-            normalized: false,
+            normalized: true,
         }
     }
 }
@@ -144,22 +145,22 @@ type MatchingSet = (regex::RegexSet, Vec<u32>);
 /// exist as required.
 ///
 pub(super) struct AddedVocabulary {
-    /// The size of the original vocabulary. This is what we use to determine the new
-    /// ids we need to generate
-    original_vocab_size: usize,
-    /// Contains the mapping from String to ID as the user intended it. This map
-    /// contains both special tokens and classic added tokens.
+    /// Contains the mapping from String (token content) to ID. This map contains both special
+    /// tokens and classic added tokens that were added to the this vocabulary.
     added_tokens_map: HashMap<String, u32>,
     /// Contains the mapping from ID to AddedToken for all the added tokens, both special
     /// and classic.
     added_tokens_map_r: HashMap<u32, AddedToken>,
+
     /// Contains only the classic AddedToken, in the specific order the user gave them.
     added_tokens: Vec<AddedToken>,
     /// Contains only the special AddedToken, in the specific order the user gave them.
     special_tokens: Vec<AddedToken>,
+
     /// A Set, containing all the special token for easy access while decoding. This let's
-    /// use remove them easily with an O(1) complexity.
+    /// us remove them easily with an O(1) complexity.
     special_tokens_set: HashSet<String>,
+
     /// A RegexSet containing all the non-normalized patterns used to split on AddedTokens
     split_re: MatchingSet,
     /// A RegexSet containing all the normalized patterns used to split on AddedTokens
@@ -167,9 +168,8 @@ pub(super) struct AddedVocabulary {
 }
 
 impl AddedVocabulary {
-    pub fn new(original_vocab_size: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            original_vocab_size,
             added_tokens_map: HashMap::new(),
             added_tokens_map_r: HashMap::new(),
             added_tokens: vec![],
@@ -178,12 +178,6 @@ impl AddedVocabulary {
             split_re: (regex::RegexSet::new::<_, &&str>(&[]).unwrap(), vec![]),
             split_normalized_re: (regex::RegexSet::new::<_, &&str>(&[]).unwrap(), vec![]),
         }
-    }
-
-    /// Sets the original vocabulary size. We need this value to return IDs that
-    /// are shifted according to the original vocabulary.
-    pub fn update_original_vocab_size(&mut self, size: usize) {
-        self.original_vocab_size = size;
     }
 
     /// Size of the additional vocabulary
@@ -252,7 +246,7 @@ impl AddedVocabulary {
                 ignored += 1;
                 id
             } else {
-                let new_id = (self.original_vocab_size + self.added_tokens_map.len()) as u32;
+                let new_id = (model.get_vocab_size() + self.added_tokens_map.len()) as u32;
                 self.added_tokens_map.insert(token.content.clone(), new_id);
 
                 if !self.special_tokens_set.contains(&token.content) {
@@ -400,7 +394,6 @@ impl AddedVocabulary {
             splits
                 .into_iter()
                 .map(|(idx, (start, end))| {
-                    // TODO: Check this works (especially for offsets)
                     let normalized = sentence
                         .slice_bytes(Range::Normalized(start..end))
                         .expect("Error while extracting normalized Range");
@@ -472,7 +465,6 @@ impl Serialize for AddedVocabulary {
             .added_tokens_map_r
             .iter()
             .map(|(id, token)| AddedTokenWithId {
-                // TODO: Make sure these are the right IDs (related to the model)
                 id: *id,
                 special: self.special_tokens_set.contains(&token.content),
                 token: token.clone(),
@@ -486,5 +478,213 @@ impl Serialize for AddedVocabulary {
         }
 
         vocabulary.end()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::normalizers::utils::Lowercase;
+    use crate::{Offsets, Result, Token};
+    use std::path::{Path, PathBuf};
+
+    #[derive(Serialize, Deserialize)]
+    struct ModelMock {
+        vocab: HashMap<String, u32>,
+        vocab_r: HashMap<u32, String>,
+    }
+    impl ModelMock {
+        pub fn new<I>(iter: I) -> Self
+        where
+            I: IntoIterator<Item = &'static (&'static str, u32)>,
+        {
+            let vocab: HashMap<String, u32> = iter
+                .into_iter()
+                .map(|&(tok, id)| (tok.to_string(), id))
+                .collect();
+            Self {
+                vocab_r: vocab
+                    .iter()
+                    .map(|(tok, id)| (*id, tok.to_owned()))
+                    .collect(),
+                vocab,
+            }
+        }
+    }
+    #[typetag::serde]
+    impl Model for ModelMock {
+        fn tokenize(&self, _tokens: Vec<(String, Offsets)>) -> Result<Vec<Token>> {
+            unimplemented!()
+        }
+        fn token_to_id(&self, token: &str) -> Option<u32> {
+            self.vocab.get(token).copied()
+        }
+        fn id_to_token(&self, id: u32) -> Option<&str> {
+            self.vocab_r.get(&id).map(String::as_ref)
+        }
+        fn get_vocab(&self) -> &HashMap<String, u32> {
+            &self.vocab
+        }
+        fn get_vocab_size(&self) -> usize {
+            self.vocab.len()
+        }
+        fn save(&self, _folder: &Path, _name: Option<&str>) -> Result<Vec<PathBuf>> {
+            unimplemented!()
+        }
+    }
+
+    #[test]
+    fn can_add_tokens() {
+        let model = ModelMock::new(&[("test", 0), ("tost", 1)]);
+        let mut vocab = AddedVocabulary::new();
+
+        // Add tokens normally
+        assert_eq!(
+            vocab.add_tokens(&[AddedToken::from("added_token_1", false)], &model, None),
+            1
+        );
+        assert_eq!(vocab.len(), 1);
+
+        // Does not add multiple time the same token
+        assert_eq!(
+            vocab.add_tokens(
+                &[
+                    AddedToken::from("added_token_2", false),
+                    AddedToken::from("added_token_2", false)
+                ],
+                &model,
+                None
+            ),
+            1
+        );
+        assert_eq!(vocab.len(), 2);
+
+        // Does not add tokens already covered by the model
+        assert_eq!(
+            vocab.add_tokens(&[AddedToken::from("test", false)], &model, None),
+            0
+        );
+        assert_eq!(vocab.len(), 2);
+    }
+
+    #[test]
+    fn can_add_special_tokens() {
+        let model = ModelMock::new(&[("test", 0), ("tost", 1)]);
+        let mut vocab = AddedVocabulary::new();
+
+        // Add tokens normally
+        assert_eq!(
+            vocab.add_special_tokens(&[AddedToken::from("added_token_1", true)], &model, None),
+            1
+        );
+        assert_eq!(vocab.len(), 1);
+
+        // Does not add multiple time the same token
+        assert_eq!(
+            vocab.add_special_tokens(
+                &[
+                    AddedToken::from("added_token_2", true),
+                    AddedToken::from("added_token_2", true)
+                ],
+                &model,
+                None
+            ),
+            1
+        );
+        assert_eq!(vocab.len(), 2);
+
+        // Can add tokens already covered by the model
+        assert_eq!(
+            vocab.add_special_tokens(&[AddedToken::from("test", true)], &model, None),
+            0
+        );
+        assert_eq!(vocab.len(), 2); // Did not add a new token, since it exist in the original model
+        assert_eq!(vocab.is_special_token("test"), true);
+        assert_eq!(vocab.added_tokens_map.contains_key("test"), false);
+    }
+
+    #[test]
+    fn can_extract_added_tokens() {
+        // Is able to extract both normal and special tokens
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+
+        vocab.add_tokens(
+            &[
+                AddedToken::from("my", false),
+                AddedToken::from("name", false),
+            ],
+            &model,
+            None,
+        );
+        vocab.add_special_tokens(
+            &[
+                AddedToken::from("[CLS]", true),
+                AddedToken::from("[SEP]", true),
+            ],
+            &model,
+            None,
+        );
+
+        let result = vocab.extract_and_normalize(None, "[CLS] My name is Anthony [SEP]");
+        assert_eq!(
+            result
+                .iter()
+                .map(|(normalized, id)| (normalized.get(), *id))
+                .collect::<Vec<_>>(),
+            vec![
+                ("[CLS]", Some(2)),
+                (" My ", None),
+                ("name", Some(1)),
+                (" is Anthony ", None),
+                ("[SEP]", Some(3))
+            ]
+        );
+    }
+
+    #[test]
+    fn options_use_cases() {
+        // Is able to extract both normal and special tokens, with various options (lstrip, rstrip,
+        // single_word, normalized)
+        let model = ModelMock::new(&[]);
+        let normalizer = Lowercase;
+        let mut vocab = AddedVocabulary::new();
+
+        vocab.add_tokens(
+            &[
+                AddedToken::from("my", false).lstrip(true).rstrip(true),
+                AddedToken::from("name", false),
+                AddedToken::from("ony", false).single_word(true),
+            ],
+            &model,
+            Some(&normalizer),
+        );
+        vocab.add_special_tokens(
+            &[
+                AddedToken::from("[CLS]", true),
+                AddedToken::from("[SEP]", true),
+            ],
+            &model,
+            Some(&normalizer),
+        );
+
+        let result =
+            vocab.extract_and_normalize(Some(&normalizer), "[CLS] My name is Anthony [SEP]");
+        assert_eq!(
+            result
+                .iter()
+                .map(|(normalized, id)| (normalized.get(), *id))
+                .collect::<Vec<_>>(),
+            vec![
+                ("[CLS]", Some(3)),
+                // This one includes both spaces because of the lstrip & rstrip
+                // And it matches because normalized == true
+                (" my ", Some(0)),
+                ("name", Some(1)),
+                // `ony` is not extracted here thanks to single_word
+                (" is anthony ", None),
+                ("[SEP]", Some(4))
+            ]
+        );
     }
 }

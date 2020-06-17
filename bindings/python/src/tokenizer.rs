@@ -29,7 +29,7 @@ impl AddedToken {
     #[new]
     #[args(kwargs = "**")]
     fn new(content: &str, is_special_token: bool, kwargs: Option<&PyDict>) -> PyResult<Self> {
-        let mut token = tk::tokenizer::AddedToken::from(content.to_owned(), is_special_token);
+        let mut token = tk::tokenizer::AddedToken::from(content, is_special_token);
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {

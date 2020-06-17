@@ -50,7 +50,7 @@ where
 /// It is possible to retrieve a part of the original string, by indexing it with offsets from the
 /// normalized one, and the other way around too. It is also possible to convert offsets from one
 /// referential to the other one easily.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct NormalizedString {
     /// The original version of the string, before any modification
     original: String,
@@ -59,12 +59,6 @@ pub struct NormalizedString {
     /// Mapping from normalized string to original one: (start, end) for each character of the
     /// normalized string
     alignments: Vec<(usize, usize)>,
-}
-
-impl std::cmp::PartialEq for NormalizedString {
-    fn eq(&self, other: &NormalizedString) -> bool {
-        self.normalized == other.normalized
-    }
 }
 
 impl NormalizedString {
@@ -441,7 +435,7 @@ impl NormalizedString {
     /// Merge with the given NormalizedString by appending it to self
     pub fn merge_with(&mut self, other: &NormalizedString) {
         self.original.push_str(&other.original);
-        let len = self.len();
+        let len = self.len() - 1;
         self.alignments.extend(
             other
                 .alignments
@@ -879,7 +873,7 @@ mod tests {
             Some(NormalizedString {
                 original: "𝕞𝕠𝕣𝕟𝕚𝕟𝕘".to_string(),
                 normalized: "morning".to_string(),
-                alignments: vec![(5, 6), (6, 7), (7, 8), (8, 9), (9, 10), (10, 11), (11, 12)]
+                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)]
             })
         );
         assert_eq!(

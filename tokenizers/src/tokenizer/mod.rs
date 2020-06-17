@@ -211,7 +211,6 @@ impl std::str::FromStr for Tokenizer {
 impl Tokenizer {
     /// Instantiate a new Tokenizer, with the given Model
     pub fn new(model: Box<dyn Model>) -> Self {
-        let original_vocab_size = model.get_vocab_size();
         Tokenizer {
             normalizer: None,
             pre_tokenizer: None,
@@ -219,7 +218,7 @@ impl Tokenizer {
             post_processor: None,
             decoder: None,
 
-            added_vocabulary: AddedVocabulary::new(original_vocab_size),
+            added_vocabulary: AddedVocabulary::new(),
 
             truncation: None,
             padding: None,
@@ -303,8 +302,6 @@ impl Tokenizer {
     /// Set the model
     pub fn with_model(&mut self, model: Box<dyn Model>) -> &Self {
         self.model = model;
-        self.added_vocabulary
-            .update_original_vocab_size(self.model.get_vocab_size());
         self
     }
 
@@ -669,8 +666,6 @@ impl Tokenizer {
 
         let (model, special_tokens) = trainer.train(words)?;
         self.model = model;
-        self.added_vocabulary
-            .update_original_vocab_size(self.model.get_vocab_size());
         self.add_special_tokens(&special_tokens);
 
         Ok(())

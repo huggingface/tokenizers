@@ -9,8 +9,8 @@ fn add_tokens() {
 
     assert_eq!(
         tokenizer.add_special_tokens(&[
-            AddedToken::from("<cls>".into(), true),
-            AddedToken::from("<sep>".into(), true)
+            AddedToken::from("<cls>", true),
+            AddedToken::from("<sep>", true)
         ]),
         2
     );
@@ -19,8 +19,8 @@ fn add_tokens() {
 
     assert_eq!(
         tokenizer.add_tokens(&[
-            AddedToken::from("hello".into(), false),
-            AddedToken::from("world".into(), false)
+            AddedToken::from("hello", false),
+            AddedToken::from("world", false)
         ]),
         2
     );
@@ -31,7 +31,7 @@ fn add_tokens() {
 #[test]
 fn lstrip_tokens() {
     let mut tokenizer = get_byte_level(true, false);
-    tokenizer.add_special_tokens(&[AddedToken::from("<mask>".into(), true).lstrip(true)]);
+    tokenizer.add_special_tokens(&[AddedToken::from("<mask>", true).lstrip(true)]);
 
     let input = "I saw a <mask> 😺";
     let output = tokenizer.encode(input, false).unwrap();
@@ -49,7 +49,7 @@ fn lstrip_tokens() {
 #[test]
 fn rstrip_tokens() {
     let mut tokenizer = get_byte_level(false, false);
-    tokenizer.add_special_tokens(&[AddedToken::from("<mask>".into(), true).rstrip(true)]);
+    tokenizer.add_special_tokens(&[AddedToken::from("<mask>", true).rstrip(true)]);
 
     let input = "I saw a <mask> 😺";
     let output = tokenizer.encode(input, false).unwrap();
@@ -62,7 +62,7 @@ fn rstrip_tokens() {
     // When `add_prefix_space = true` rstrip cannot work as a prefix space is added
     // to the next token
     let mut tokenizer = get_byte_level(true, false);
-    tokenizer.add_special_tokens(&[AddedToken::from("<mask>".into(), true).rstrip(true)]);
+    tokenizer.add_special_tokens(&[AddedToken::from("<mask>", true).rstrip(true)]);
 
     let input = "I saw a <mask> 😺";
     let output = tokenizer.encode(input, false).unwrap();
@@ -77,7 +77,7 @@ fn rstrip_tokens() {
 fn single_word_tokens() {
     // If `single_word = true` it shouldn't split `dancing`
     let mut tokenizer = get_byte_level(false, false);
-    tokenizer.add_special_tokens(&[AddedToken::from("ing".into(), true).single_word(true)]);
+    tokenizer.add_special_tokens(&[AddedToken::from("ing", true).single_word(true)]);
 
     let input = "I like dancing";
     let output = tokenizer.encode(input, false).unwrap();
@@ -86,7 +86,7 @@ fn single_word_tokens() {
 
     // If `single_word = false` it should split `dancing`
     let mut tokenizer = get_byte_level(false, false);
-    tokenizer.add_special_tokens(&[AddedToken::from("ing".into(), true).single_word(false)]);
+    tokenizer.add_special_tokens(&[AddedToken::from("ing", true).single_word(false)]);
 
     let input = "I like dancing";
     let output = tokenizer.encode(input, false).unwrap();
@@ -98,9 +98,9 @@ fn single_word_tokens() {
 fn overlapping_tokens() {
     let mut tokenizer = get_byte_level(false, false);
 
-    tokenizer.add_special_tokens(&[AddedToken::from("danc".into(), true)]);
-    tokenizer.add_special_tokens(&[AddedToken::from("nci".into(), true)]);
-    tokenizer.add_special_tokens(&[AddedToken::from("ing".into(), true)]);
+    tokenizer.add_special_tokens(&[AddedToken::from("danc", true)]);
+    tokenizer.add_special_tokens(&[AddedToken::from("nci", true)]);
+    tokenizer.add_special_tokens(&[AddedToken::from("ing", true)]);
 
     let input = "I like dancing";
     let output = tokenizer.encode(input, false).unwrap();
@@ -109,10 +109,10 @@ fn overlapping_tokens() {
 
     let mut tokenizer = get_byte_level(false, false);
 
-    tokenizer.add_special_tokens(&[AddedToken::from("nci".into(), true)]);
-    tokenizer.add_special_tokens(&[AddedToken::from("danc".into(), true)]);
-    tokenizer.add_special_tokens(&[AddedToken::from("ing".into(), true)]);
-    tokenizer.add_special_tokens(&[AddedToken::from("ike".into(), true)]);
+    tokenizer.add_special_tokens(&[AddedToken::from("nci", true)]);
+    tokenizer.add_special_tokens(&[AddedToken::from("danc", true)]);
+    tokenizer.add_special_tokens(&[AddedToken::from("ing", true)]);
+    tokenizer.add_special_tokens(&[AddedToken::from("ike", true)]);
 
     let output = tokenizer.encode(input, false).unwrap();
 
