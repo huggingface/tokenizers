@@ -20,6 +20,7 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         replacement: str = "▁",
         add_prefix_space: bool = True,
         dropout: Optional[float] = None,
+        parallelism: bool = True,
     ):
         if vocab_file is not None and merges_file is not None:
             tokenizer = Tokenizer(
@@ -45,6 +46,7 @@ class SentencePieceBPETokenizer(BaseTokenizer):
             "replacement": replacement,
             "add_prefix_space": add_prefix_space,
             "dropout": dropout,
+            "parallelism": parallelism,
         }
 
         super().__init__(tokenizer, parameters)

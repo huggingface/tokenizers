@@ -10,6 +10,8 @@ class BaseTokenizer:
     def __init__(self, tokenizer: Tokenizer, parameters=None):
         self._tokenizer = tokenizer
         self._parameters = parameters if parameters is not None else {}
+        if "parallelism" in self._parameters:
+            self._tokenizer.parallelism = self._parameters["parallelism"]
 
     def __repr__(self):
         return "Tokenizer(vocabulary_size={}, {})".format(

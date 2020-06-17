@@ -1,6 +1,11 @@
 from .. import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers
 from ..models import BPE
-from ..normalizers import Sequence, Lowercase, unicode_normalizer_from_str, BertNormalizer
+from ..normalizers import (
+    Sequence,
+    Lowercase,
+    unicode_normalizer_from_str,
+    BertNormalizer,
+)
 from .base_tokenizer import BaseTokenizer
 
 from typing import Optional, List, Union
@@ -33,6 +38,7 @@ class CharBPETokenizer(BaseTokenizer):
         unicode_normalizer: Optional[str] = None,
         bert_normalizer: bool = True,
         split_on_whitespace_only: bool = False,
+        parallelism: bool = True,
     ):
         if vocab_file is not None and merges_file is not None:
             tokenizer = Tokenizer(
@@ -85,6 +91,7 @@ class CharBPETokenizer(BaseTokenizer):
             "unicode_normalizer": unicode_normalizer,
             "bert_normalizer": bert_normalizer,
             "split_on_whitespace_only": split_on_whitespace_only,
+            "parallelism": parallelism,
         }
 
         super().__init__(tokenizer, parameters)

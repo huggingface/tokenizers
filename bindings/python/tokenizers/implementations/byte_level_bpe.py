@@ -1,4 +1,11 @@
-from tokenizers import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers, processors
+from tokenizers import (
+    Tokenizer,
+    AddedToken,
+    pre_tokenizers,
+    decoders,
+    trainers,
+    processors,
+)
 from tokenizers.models import BPE
 from tokenizers.normalizers import unicode_normalizer_from_str, Lowercase, Sequence
 from .base_tokenizer import BaseTokenizer
@@ -23,6 +30,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         continuing_subword_prefix: Optional[str] = None,
         end_of_word_suffix: Optional[str] = None,
         trim_offsets: bool = False,
+        parallelism: bool = True,
     ):
         if vocab_file is not None and merges_file is not None:
             tokenizer = Tokenizer(
@@ -66,6 +74,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
             "continuing_subword_prefix": continuing_subword_prefix,
             "end_of_word_suffix": end_of_word_suffix,
             "trim_offsets": trim_offsets,
+            "parallelism": parallelism,
         }
 
         super().__init__(tokenizer, parameters)

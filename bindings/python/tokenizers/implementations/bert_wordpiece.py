@@ -24,6 +24,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
         strip_accents: bool = True,
         lowercase: bool = True,
         wordpieces_prefix: str = "##",
+        parallelism: bool = True,
     ):
 
         if vocab_file is not None:
@@ -76,6 +77,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
             "strip_accents": strip_accents,
             "lowercase": lowercase,
             "wordpieces_prefix": wordpieces_prefix,
+            "parallelism": parallelism,
         }
 
         super().__init__(tokenizer, parameters)

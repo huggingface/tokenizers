@@ -41,3 +41,7 @@ class TestBertWordPieceBPE:
     def test_encode_in_subprocess_with_parallelism_disabled(self, bert_files):
         tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
         encode_in_subprocess_with_parallelism_disabled(tokenizer)
+
+    def test_init_with_parallism_disabled(self, bert_files):
+        tokenizer = BertWordPieceTokenizer(bert_files["vocab"], parallelism=False)
+        assert tokenizer._tokenizer.parallelism is False
