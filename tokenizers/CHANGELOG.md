@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [#236]: Fix a bug with offsets being shifted when there are sub-sequences (Usually with
 special tokens and/or added tokens in the sequence).
 - [#286]: Fix various crash when training a BPE model
+- [#309]: Fixed a few bugs related to additional vocabulary/tokens
 
 ### Changed
 - [#234]: Completely changed the alignement mappings available on `Encoding`. Previous mappings
@@ -30,6 +31,9 @@ pre-tokenized inputs.
 processing of each file
 - [#280]: Use `onig` for byte-level pre-tokenization to remove all the differences with the original
 implementation from GPT-2
+- [#309]: Improved the management of the additional vocabulary. This introduces an option
+`normalized`, controlling whether a token should be extracted from the normalized version of the
+input text.
 
 ### Added
 - [#236]: RobertaProcessing is now also taking care of trimming offsets, and works just as ByteLevel
@@ -113,6 +117,7 @@ advised, but that's not the question)
 split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
+[#309]: https://github.com/huggingface/tokenizers/pull/309
 [#298]: https://github.com/huggingface/tokenizers/pull/298
 [#289]: https://github.com/huggingface/tokenizers/pull/289
 [#286]: https://github.com/huggingface/tokenizers/pull/286
