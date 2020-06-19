@@ -22,6 +22,8 @@ class TestAddedToken:
         assert added_token.rstrip == False
         assert added_token.lstrip == False
         assert added_token.single_word == False
+        assert added_token.normalized == False
+        assert isinstance(pickle.loads(pickle.dumps(added_token)), AddedToken)
 
     def test_can_set_rstrip(self):
         added_token = AddedToken("<mask>", True, rstrip=True)
@@ -40,6 +42,19 @@ class TestAddedToken:
         assert added_token.rstrip == False
         assert added_token.lstrip == False
         assert added_token.single_word == True
+
+    def test_can_set_normalized(self):
+        added_token = AddedToken("<mask>", True, normalized=True)
+        assert added_token.rstrip == False
+        assert added_token.lstrip == False
+        assert added_token.single_word == False
+        assert added_token.normalized == True
+
+    def test_second_argument_defines_normalized(self):
+        added_token = AddedToken("<mask>", True)
+        assert added_token.normalized == False
+        added_token = AddedToken("<mask>", False)
+        assert added_token.normalized == True
 
 
 class TestTokenizer:
