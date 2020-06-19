@@ -20,7 +20,7 @@ use tk::tokenizer::{
     PaddingDirection, PaddingParams, PaddingStrategy, TruncationParams, TruncationStrategy,
 };
 
-#[pyclass(dict)]
+#[pyclass(dict, module = "tokenizers")]
 pub struct AddedToken {
     pub token: tk::tokenizer::AddedToken,
 }
@@ -28,8 +28,8 @@ pub struct AddedToken {
 impl AddedToken {
     #[new]
     #[args(kwargs = "**")]
-    fn new(content: &str, kwargs: Option<&PyDict>) -> PyResult<Self> {
-        let mut token = tk::tokenizer::AddedToken::from(content.to_owned());
+    fn new(content: &str, is_special_token: bool, kwargs: Option<&PyDict>) -> PyResult<Self> {
+        let mut token = tk::tokenizer::AddedToken::from(content, is_special_token);
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
@@ -38,12 +38,47 @@ impl AddedToken {
                     "single_word" => token = token.single_word(value.extract()?),
                     "lstrip" => token = token.lstrip(value.extract()?),
                     "rstrip" => token = token.rstrip(value.extract()?),
+                    "normalized" => token = token.normalized(value.extract()?),
                     _ => println!("Ignored unknown kwarg option {}", key),
                 }
             }
         }
 
         Ok(AddedToken { token })
+    }
+
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        let data = serde_json::to_string(&self.token).map_err(|e| {
+            exceptions::Exception::py_err(format!(
+                "Error while attempting to pickle AddedToken: {}",
+                e.to_string()
+            ))
+        })?;
+        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+    }
+
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                self.token = serde_json::from_slice(s.as_bytes()).map_err(|e| {
+                    exceptions::Exception::py_err(format!(
+                        "Error while attempting to unpickle AddedToken: {}",
+                        e.to_string()
+                    ))
+                })?;
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
+        // We don't really care about the values of `content` & `is_special_token` here because
+        // they will get overriden by `__setstate__`
+        let content: PyObject = "".into_py(py);
+        let is_special_token: PyObject = false.into_py(py);
+        let args = PyTuple::new(py, vec![content, is_special_token]);
+        Ok(args)
     }
 
     #[getter]
@@ -65,6 +100,11 @@ impl AddedToken {
     fn get_single_word(&self) -> bool {
         self.token.single_word
     }
+
+    #[getter]
+    fn get_normalized(&self) -> bool {
+        self.token.normalized
+    }
 }
 #[pyproto]
 impl PyObjectProtocol for AddedToken {
@@ -79,11 +119,12 @@ impl PyObjectProtocol for AddedToken {
         };
 
         Ok(format!(
-            "AddedToken(\"{}\", rstrip={}, lstrip={}, single_word={})",
+            "AddedToken(\"{}\", rstrip={}, lstrip={}, single_word={}, normalized={})",
             self.token.content,
             bool_to_python(self.token.rstrip),
             bool_to_python(self.token.lstrip),
-            bool_to_python(self.token.single_word)
+            bool_to_python(self.token.single_word),
+            bool_to_python(self.token.normalized)
         ))
     }
 }
@@ -533,7 +574,7 @@ impl Tokenizer {
         self.tokenizer.token_to_id(token)
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    fn id_to_token(&self, id: u32) -> Option<&str> {
         self.tokenizer.id_to_token(id)
     }
 
@@ -542,10 +583,7 @@ impl Tokenizer {
             .into_iter()
             .map(|token| {
                 if let Ok(content) = token.extract::<String>() {
-                    Ok(tk::tokenizer::AddedToken {
-                        content,
-                        ..Default::default()
-                    })
+                    Ok(tk::tokenizer::AddedToken::from(content, false))
                 } else if let Ok(token) = token.extract::<PyRef<AddedToken>>() {
                     Ok(token.token.clone())
                 } else {
@@ -564,10 +602,7 @@ impl Tokenizer {
             .into_iter()
             .map(|token| {
                 if let Ok(content) = token.extract::<String>() {
-                    Ok(tk::tokenizer::AddedToken {
-                        content,
-                        ..Default::default()
-                    })
+                    Ok(tk::tokenizer::AddedToken::from(content, true))
                 } else if let Ok(token) = token.extract::<PyRef<AddedToken>>() {
                     Ok(token.token.clone())
                 } else {

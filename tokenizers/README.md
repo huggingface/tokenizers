@@ -9,7 +9,7 @@
         <img alt="GitHub" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue">
     </a>
     <a href="https://docs.rs/tokenizers/">
-        <img alt="Doc" src="https://docs.rs/tokenizers/badge.svg">    
+        <img alt="Doc" src="https://docs.rs/tokenizers/badge.svg">
     </a>
 </p>
 <br>
@@ -56,22 +56,22 @@ fn main() -> Result<()>{
             .vocab_size(vocab_size)
             .min_frequency(0)
             .special_tokens(vec![
-                AddedToken::from("<s>".into()),
-                AddedToken::from("<pad>".into()),
-                AddedToken::from("</s>".into()),
-                AddedToken::from("<unk>".into()),
-                AddedToken::from("<mask>".into()),
+                AddedToken::from("<s>", true),
+                AddedToken::from("<pad>", true),
+                AddedToken::from("</s>", true),
+                AddedToken::from("<unk>", true),
+                AddedToken::from("<mask>", true),
             ])
             .build(),
     );
-                                                                  
+
     let mut tokenizer = Tokenizer::new(Box::new(BPE::default()));
     tokenizer.with_normalizer(Box::new(Sequence::new(vec![
         Box::new(Strip::new(true, true)),
         Box::new(NFC),
     ])));
     tokenizer.with_pre_tokenizer(Box::new(ByteLevel::default()));
-                                                                  
+
     tokenizer.train(&trainer, vec!["/path/to/train.txt".to_string()])?;
     tokenizer.save("/path/to/trained_tokenizer", true)?;
 
@@ -86,7 +86,7 @@ use tokenizers::Result;
 use tokenizers::tokenizer::Tokenizer;
 
 fn main() -> Result<()>{
-                                                                  
+
     let tokenizer = Tokenizer::from_file("/path/to/trained_tokenizer")?;
 
     let sample_encoding = tokenizer.encode("Huggingface", false)?;

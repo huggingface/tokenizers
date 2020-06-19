@@ -4,15 +4,15 @@ use unicode_normalization_alignments::UnicodeNormalization;
 
 /// Represents a Range usable by the NormalizedString to index its content.
 /// A Range can use indices relative to either the `Original` or the `Normalized` string
-#[derive(Debug, Clone, Copy)]
-pub enum Range<T: RangeBounds<usize>> {
+#[derive(Debug, Clone)]
+pub enum Range<T: RangeBounds<usize> + Clone> {
     Original(T),
     Normalized(T),
 }
 
 impl<T> Range<T>
 where
-    T: RangeBounds<usize>,
+    T: RangeBounds<usize> + Clone,
 {
     /// Unwrap the underlying range
     fn unwrap(self) -> T {
@@ -50,7 +50,7 @@ where
 /// It is possible to retrieve a part of the original string, by indexing it with offsets from the
 /// normalized one, and the other way around too. It is also possible to convert offsets from one
 /// referential to the other one easily.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct NormalizedString {
     /// The original version of the string, before any modification
     original: String,
@@ -59,12 +59,6 @@ pub struct NormalizedString {
     /// Mapping from normalized string to original one: (start, end) for each character of the
     /// normalized string
     alignments: Vec<(usize, usize)>,
-}
-
-impl std::cmp::PartialEq for NormalizedString {
-    fn eq(&self, other: &NormalizedString) -> bool {
-        self.normalized == other.normalized
-    }
 }
 
 impl NormalizedString {
@@ -89,21 +83,19 @@ impl NormalizedString {
 
     /// Convert the given offsets range from one referential to the other one:
     /// `Original => Normalized` or `Normalized => Original`
-    pub fn convert_offsets<T: RangeBounds<usize>>(
-        &self,
-        range: Range<T>,
-    ) -> Option<std::ops::Range<usize>> {
+    pub fn convert_offsets<T>(&self, range: Range<T>) -> Option<std::ops::Range<usize>>
+    where
+        T: RangeBounds<usize> + Clone,
+    {
         match range {
             Range::Original(_) => {
                 let (mut start, mut end) = (0, 0);
                 let r = range.into_full_range(self.alignments.last().map_or(0, |(_, e)| *e));
-                println!("{:?}\t{:?}", r, self.alignments);
                 self.alignments
                     .iter()
                     .enumerate()
                     .take_while(|(_, alignment)| r.end >= alignment.1)
                     .for_each(|(i, alignment)| {
-                        println!("{:?}", alignment);
                         if alignment.0 <= r.start {
                             start = i;
                         }
@@ -130,7 +122,10 @@ impl NormalizedString {
     }
 
     /// Return a range of the normalized string (indexing on char not bytes)
-    pub fn get_range<T: RangeBounds<usize>>(&self, range: Range<T>) -> Option<&str> {
+    pub fn get_range<T>(&self, range: Range<T>) -> Option<&str>
+    where
+        T: RangeBounds<usize> + Clone,
+    {
         match range {
             Range::Original(_) => self
                 .convert_offsets(range)
@@ -141,7 +136,10 @@ impl NormalizedString {
     }
 
     /// Return a range of the original string (indexing on char not bytes)
-    pub fn get_range_original<T: RangeBounds<usize>>(&self, range: Range<T>) -> Option<&str> {
+    pub fn get_range_original<T>(&self, range: Range<T>) -> Option<&str>
+    where
+        T: RangeBounds<usize> + Clone,
+    {
         match range {
             Range::Original(r) => get_range_of(&self.original, r),
             Range::Normalized(_) => self
@@ -149,6 +147,73 @@ impl NormalizedString {
                 .map(|r| get_range_of(&self.original, r))
                 .flatten(),
         }
+    }
+
+    /// Return a new NormalizedString that contains only the specified range, indexing on bytes
+    pub fn slice_bytes<T>(&self, range: Range<T>) -> Option<NormalizedString>
+    where
+        T: RangeBounds<usize> + Clone,
+    {
+        let (r, s) = match range {
+            Range::Original(_) => (
+                range.clone().into_full_range(self.original.len()),
+                &self.original,
+            ),
+            Range::Normalized(_) => (
+                range.clone().into_full_range(self.normalized.len()),
+                &self.normalized,
+            ),
+        };
+
+        let (mut start, mut end) = (None, None);
+        s.char_indices()
+            .enumerate()
+            .take_while(|(_, (b, _))| *b < r.end)
+            .filter(|(_, (b, _))| *b >= r.start)
+            .for_each(|(i, (b, c))| {
+                if b == r.start {
+                    start = Some(i);
+                }
+                if b + c.len_utf8() == r.end {
+                    end = Some(i + 1);
+                }
+            });
+
+        match range {
+            Range::Original(_) => self.slice(Range::Original(start?..end?)),
+            Range::Normalized(_) => self.slice(Range::Normalized(start?..end?)),
+        }
+    }
+
+    /// Return a new NormalizedString that contains only the specified range, indexing on char
+    pub fn slice<T>(&self, range: Range<T>) -> Option<NormalizedString>
+    where
+        T: RangeBounds<usize> + Clone,
+    {
+        let r_original = match range {
+            Range::Original(_) => range.clone().into_full_range(self.len_original()),
+            Range::Normalized(_) => self.convert_offsets(range.clone())?,
+        };
+        let r_normalized = match range {
+            Range::Original(_) => self.convert_offsets(range)?,
+            Range::Normalized(_) => range.into_full_range(self.len()),
+        };
+
+        // We need to shift the alignments according to the part of the original string that we
+        // keep
+        let alignment_shift = r_original.start;
+
+        Some(Self {
+            original: get_range_of(&self.original, r_original)?.to_owned(),
+            normalized: get_range_of(&self.normalized, r_normalized.clone())?.to_owned(),
+            alignments: self
+                .alignments
+                .get(r_normalized)?
+                .to_vec()
+                .iter()
+                .map(|(start, end)| (start - alignment_shift, end - alignment_shift))
+                .collect(),
+        })
     }
 
     /// Applies transformations to the current normalized version, updating the current
@@ -370,7 +435,7 @@ impl NormalizedString {
     /// Merge with the given NormalizedString by appending it to self
     pub fn merge_with(&mut self, other: &NormalizedString) {
         self.original.push_str(&other.original);
-        let len = self.len();
+        let len = self.len() - 1;
         self.alignments.extend(
             other
                 .alignments
@@ -735,5 +800,90 @@ mod tests {
         merged.merge_with(&s3);
 
         assert_eq!(s, merged);
+    }
+
+    #[test]
+    fn slice() {
+        let mut s = NormalizedString::from("𝔾𝕠𝕠𝕕 𝕞𝕠𝕣𝕟𝕚𝕟𝕘");
+        s.nfkc();
+
+        assert_eq!(
+            s.slice(Range::Original(0..4)),
+            Some(NormalizedString {
+                original: "𝔾𝕠𝕠𝕕".to_string(),
+                normalized: "Good".to_string(),
+                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4)]
+            })
+        );
+        assert_eq!(
+            s.slice(Range::Normalized(0..4)),
+            Some(NormalizedString {
+                original: "𝔾𝕠𝕠𝕕".to_string(),
+                normalized: "Good".to_string(),
+                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4)]
+            })
+        );
+
+        // Make sure the sliced NormalizedString is still aligned as expected
+        let mut s = NormalizedString::from("   Good Morning!   ");
+        s.strip();
+
+        // If we keep the whole slice
+        let slice = s.slice(Range::Original(..)).unwrap();
+        assert_eq!(
+            slice.get_range_original(Range::Normalized(0..4)),
+            Some("Good")
+        );
+        let slice = s.slice(Range::Normalized(..)).unwrap();
+        assert_eq!(
+            slice.get_range_original(Range::Normalized(0..4)),
+            Some("Good")
+        );
+
+        // If we keep after the modified piece
+        let slice = s.slice(Range::Original(4..15)).unwrap();
+        assert_eq!(
+            slice.get_range_original(Range::Normalized(0..3)),
+            Some("ood")
+        );
+
+        // If we keep only the modified piece
+        let slice = s.slice(Range::Original(3..16)).unwrap();
+        assert_eq!(
+            slice.get_range_original(Range::Normalized(0..4)),
+            Some("Good")
+        );
+    }
+
+    #[test]
+    fn slice_bytes() {
+        let mut s = NormalizedString::from("𝔾𝕠𝕠𝕕 𝕞𝕠𝕣𝕟𝕚𝕟𝕘");
+        s.nfkc();
+
+        assert_eq!(
+            s.slice_bytes(Range::Original(0..16)),
+            Some(NormalizedString {
+                original: "𝔾𝕠𝕠𝕕".to_string(),
+                normalized: "Good".to_string(),
+                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4)]
+            })
+        );
+        assert_eq!(
+            s.slice_bytes(Range::Original(17..)),
+            Some(NormalizedString {
+                original: "𝕞𝕠𝕣𝕟𝕚𝕟𝕘".to_string(),
+                normalized: "morning".to_string(),
+                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)]
+            })
+        );
+        assert_eq!(
+            s.slice_bytes(Range::Normalized(0..4)),
+            Some(NormalizedString {
+                original: "𝔾𝕠𝕠𝕕".to_string(),
+                normalized: "Good".to_string(),
+                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4)]
+            })
+        );
+        assert_eq!(s.slice_bytes(Range::Original(0..10)), None);
     }
 }

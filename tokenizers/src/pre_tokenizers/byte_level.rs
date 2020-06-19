@@ -154,14 +154,20 @@ impl PreTokenizer for ByteLevel {
 #[typetag::serde]
 impl Decoder for ByteLevel {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
-        Ok(String::from_utf8_lossy(
-            &tokens
-                .join("")
-                .chars()
-                .map(|c| CHAR_BYTES[&c])
-                .collect::<Vec<_>>(),
-        )
-        .into_owned())
+        let toks = tokens
+            .into_iter()
+            .flat_map(|t| {
+                t.chars()
+                    .try_fold(vec![], |mut acc, c| {
+                        CHAR_BYTES.get(&c).map(|b| {
+                            acc.push(*b);
+                            acc
+                        })
+                    })
+                    .unwrap_or_else(|| t.as_bytes().to_vec())
+            })
+            .collect::<Vec<_>>();
+        Ok(String::from_utf8_lossy(&toks).into_owned())
     }
 }
 
@@ -432,6 +438,24 @@ mod tests {
             bytelevel
                 .process(start.clone(), Some(start), false)
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn decode_unknown_characters() {
+        let byte_level = ByteLevel::default();
+        assert_eq!(
+            byte_level
+                .decode(vec![
+                    "Hello".into(),
+                    "Ġthere".into(),
+                    "Ġdear".into(),
+                    "Ġfriend!".into(),
+                    "Ġ".into(),
+                    "[PA D]".into()
+                ])
+                .unwrap(),
+            "Hello there dear friend! [PA D]"
         );
     }
 }

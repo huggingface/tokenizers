@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - [#286]: Fix various crash when training a BPE model
+- [#309]: Fixed a few bugs related to additional vocabulary/tokens
 
 ### Added
 - [#272]: Serialization of the `Tokenizer` and all the parts (`PreTokenizer`, `Normalizer`, ...).
@@ -27,6 +28,9 @@ the argument `is_pretokenized=True` must be specified.
 processing of each file
 - [#280]: Use `onig` for byte-level pre-tokenization to remove all the differences with the original
 implementation from GPT-2
+- [#309]: Improved the management of the additional vocabulary. This introduces an option
+`normalized`, controlling whether a token should be extracted from the normalized version of the
+input text.
 
 ## [0.7.0]
 
@@ -186,6 +190,7 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug with the IDs associated with added tokens.
 - Fix a bug that was causing crashes in Python 3.5
 
+[#309]: https://github.com/huggingface/tokenizers/pull/309
 [#289]: https://github.com/huggingface/tokenizers/pull/289
 [#286]: https://github.com/huggingface/tokenizers/pull/286
 [#280]: https://github.com/huggingface/tokenizers/pull/280

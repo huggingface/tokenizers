@@ -392,6 +392,14 @@ export interface AddedTokenOptions {
    * @default False
    */
   singleWord?: boolean;
+  /**
+   * Whether this token should match on the normalized version of the text. For example
+   * with the added token `yesterday` and a normalizer in charge of lowercasing the text,
+   * the input `I saw a lion Yesterday` would match the token.
+   * This is False for special tokens by default, true otherwise
+   * @default True
+   */
+  normalized?: boolean;
 }
 
 /**
@@ -404,9 +412,10 @@ export class AddedToken {
   /**
    * Instantiate a new AddedToken
    * @param content The content of the token
+   * @param special Whether this is a special token
    * @param [options] Options for the token
    */
-  constructor(content: string, options?: AddedTokenOptions);
+  constructor(content: string, special: boolean, options?: AddedTokenOptions);
 
   /**
    * Get the content of the AddedToken

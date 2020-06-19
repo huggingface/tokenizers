@@ -30,10 +30,11 @@ struct AddedTokenOptions {
     singleWord: Option<bool>,
     leftStrip: Option<bool>,
     rightStrip: Option<bool>,
+    normalized: Option<bool>,
 }
 impl AddedTokenOptions {
-    fn into_added_token(self, content: String) -> tk::AddedToken {
-        let mut token = tk::AddedToken::from(content);
+    fn into_added_token(self, content: String, special: bool) -> tk::AddedToken {
+        let mut token = tk::AddedToken::from(content, special);
         if let Some(sw) = self.singleWord {
             token = token.single_word(sw);
         }
@@ -42,6 +43,9 @@ impl AddedTokenOptions {
         }
         if let Some(rs) = self.rightStrip {
             token = token.rstrip(rs);
+        }
+        if let Some(n) = self.normalized {
+            token = token.normalized(n);
         }
         token
     }
@@ -52,18 +56,20 @@ declare_types! {
         init(mut cx) {
             // init(
             //  content: string,
+            //  special: boolean,
             //  options?: {
             //    singleWord?: boolean = false,
             //    leftStrip?: boolean = false,
             //    rightStrip?: boolean = false
+            //    normalized?: boolean = true,
             //  }
             // )
 
-            let content = cx.extract::<String>(0)
-                .map_err(|_| Error("First argument must be string".into()))?;
-            let token = cx.extract_opt::<AddedTokenOptions>(1)?
+            let content = cx.extract::<String>(0)?;
+            let special = cx.extract::<bool>(1)?;
+            let token = cx.extract_opt::<AddedTokenOptions>(2)?
                 .unwrap_or_else(AddedTokenOptions::default)
-                .into_added_token(content);
+                .into_added_token(content, special);
 
             Ok(AddedToken { token })
         }
@@ -87,12 +93,27 @@ impl FromJsValue for AddedToken {
     fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
         if let Ok(token) = from.downcast::<JsString>() {
             Ok(AddedToken {
-                token: tk::AddedToken::from(token.value()),
+                token: tk::AddedToken::from(token.value(), false),
             })
         } else if let Ok(token) = from.downcast::<JsAddedToken>() {
             let guard = cx.lock();
             let token = token.borrow(&guard);
             Ok(token.clone())
+        } else {
+            Err(Error("Expected `string | AddedToken`".into()))
+        }
+    }
+}
+
+struct SpecialToken(tk::AddedToken);
+impl FromJsValue for SpecialToken {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
+        if let Ok(token) = from.downcast::<JsString>() {
+            Ok(SpecialToken(tk::AddedToken::from(token.value(), true)))
+        } else if let Ok(token) = from.downcast::<JsAddedToken>() {
+            let guard = cx.lock();
+            let token = token.borrow(&guard);
+            Ok(SpecialToken(token.token.clone()))
         } else {
             Err(Error("Expected `string | AddedToken`".into()))
         }
@@ -623,7 +644,7 @@ declare_types! {
 
             let this = cx.this();
             let guard = cx.lock();
-            let token = this.borrow(&guard).tokenizer.id_to_token(id);
+            let token = this.borrow(&guard).tokenizer.id_to_token(id).map(|t| t.to_owned());
 
             if let Some(token) = token {
                 Ok(cx.string(token).upcast())
@@ -650,9 +671,9 @@ declare_types! {
         method addSpecialTokens(mut cx) {
             // addSpecialTokens(tokens: (string | AddedToken)[]): number
 
-            let tokens = cx.extract_vec::<AddedToken>(0)?
+            let tokens = cx.extract_vec::<SpecialToken>(0)?
                 .into_iter()
-                .map(|token| token.into())
+                .map(|token| token.0)
                 .collect::<Vec<_>>();
 
             let mut this = cx.this();

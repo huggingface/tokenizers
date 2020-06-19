@@ -200,7 +200,13 @@ class AddedToken:
     """
 
     def __new__(
-        cls, content: str, single_word: bool = False, lstrip: bool = False, rstrip: bool = False,
+        cls,
+        content: str,
+        is_special_token: bool,
+        single_word: bool = False,
+        lstrip: bool = False,
+        rstrip: bool = False,
+        normalized: bool = True,
     ) -> AddedToken:
         """ Instantiate a new AddedToken
 
@@ -208,19 +214,30 @@ class AddedToken:
             content: str:
                 The content of the token
 
+            is_special_token: bool:
+                Whether this token is a special token. This has an impact on the default value for
+                `normalized` which is False for special tokens, but True for others.
+
             single_word: bool
-                Whether this token should only match against single word. If True,
-                this token will never match inside of a word.
+                Whether this token should only match against single words. If True,
+                this token will never match inside of a word. For example the token `ing` would
+                match on `tokenizing` if this option if False, but not if this option is True.
 
             lstrip: bool
                 Whether this token should strip all potential whitespaces on the left side.
-                If True, this token will greedily match any whitespace on the left and then strip
-                them out.
+                If True, this token will greedily match any whitespace on the left. For example,
+                if we try to match the token `[MASK]` with lstrip=True, in the text `I saw a [MASK]`
+                we will match on ` [MASK]`.
 
             rstrip: bool
                 Whether this token should strip all potential whitespaces on the right side.
-                If True, this token will greedily match any whitespace on the right and then strip
-                them out.
+                If True, this token will greedily match any whitespace on the right. It works just
+                like lstrip, but on the right.
+
+            normalized: bool:
+                Whether this token should be match the normalized version of the input text. For
+                example, with the added token `yesterday` and a normalizer in charge of lowercasing
+                the text, the token could be extract from the input `I saw a lion Yesterday`.
         """
         pass
 
