@@ -85,11 +85,12 @@ impl PyObjectProtocol for AddedToken {
         };
 
         Ok(format!(
-            "AddedToken(\"{}\", rstrip={}, lstrip={}, single_word={})",
+            "AddedToken(\"{}\", rstrip={}, lstrip={}, single_word={}, normalized={})",
             self.token.content,
             bool_to_python(self.token.rstrip),
             bool_to_python(self.token.lstrip),
-            bool_to_python(self.token.single_word)
+            bool_to_python(self.token.single_word),
+            bool_to_python(self.token.normalized)
         ))
     }
 }
