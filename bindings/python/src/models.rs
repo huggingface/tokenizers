@@ -6,8 +6,8 @@ use super::utils::Container;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use rayon::prelude::*;
 use std::path::Path;
+use tk::parallelism::*;
 
 #[pyclass]
 struct EncodeInput {
@@ -154,7 +154,7 @@ impl Model {
     fn encode_batch(&self, sequences: Vec<EncodeInput>, type_id: u32) -> PyResult<Vec<Encoding>> {
         ToPyResult(self.model.execute(|model| {
             sequences
-                .into_par_iter()
+                .into_maybe_par_iter()
                 .map(|sequence| {
                     let sequence = sequence.into_input();
                     if sequence.is_empty() {
