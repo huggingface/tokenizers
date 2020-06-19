@@ -219,7 +219,7 @@ impl AddedVocabulary {
         normalizer: Option<&dyn Normalizer>,
     ) -> usize {
         for token in tokens {
-            if !self.special_tokens_set.contains(&token.content) {
+            if !token.content.is_empty() && !self.special_tokens_set.contains(&token.content) {
                 self.special_tokens.push(token.to_owned());
                 self.special_tokens_set.insert(token.content.clone());
             }

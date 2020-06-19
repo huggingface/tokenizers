@@ -36,12 +36,12 @@ impl BpeTrainer {
                                 .into_iter()
                                 .map(|token| {
                                     if let Ok(content) = token.extract::<String>() {
-                                        Ok(tk::tokenizer::AddedToken {
-                                            content,
-                                            ..Default::default()
-                                        })
-                                    } else if let Ok(token) = token.extract::<PyRef<AddedToken>>() {
-                                        Ok(token.token.clone())
+                                        Ok(AddedToken::from(content, Some(true)).get_token())
+                                    } else if let Ok(mut token) =
+                                        token.extract::<PyRefMut<AddedToken>>()
+                                    {
+                                        token.is_special_token = true;
+                                        Ok(token.get_token())
                                     } else {
                                         Err(exceptions::Exception::py_err(
                                             "special_tokens must be a List[Union[str, AddedToken]]",
@@ -105,12 +105,12 @@ impl WordPieceTrainer {
                                 .into_iter()
                                 .map(|token| {
                                     if let Ok(content) = token.extract::<String>() {
-                                        Ok(tk::tokenizer::AddedToken {
-                                            content,
-                                            ..Default::default()
-                                        })
-                                    } else if let Ok(token) = token.extract::<PyRef<AddedToken>>() {
-                                        Ok(token.token.clone())
+                                        Ok(AddedToken::from(content, Some(true)).get_token())
+                                    } else if let Ok(mut token) =
+                                        token.extract::<PyRefMut<AddedToken>>()
+                                    {
+                                        token.is_special_token = true;
+                                        Ok(token.get_token())
                                     } else {
                                         Err(exceptions::Exception::py_err(
                                             "special_tokens must be a List[Union[str, AddedToken]]",

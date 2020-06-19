@@ -12,49 +12,46 @@ from tokenizers.implementations import BertWordPieceTokenizer
 
 class TestAddedToken:
     def test_instantiate_with_content_only(self):
-        added_token = AddedToken("<mask>", True)
+        added_token = AddedToken("<mask>")
         assert type(added_token) == AddedToken
         assert str(added_token) == "<mask>"
         assert (
             repr(added_token)
-            == 'AddedToken("<mask>", rstrip=False, lstrip=False, single_word=False, normalized=False)'
+            == 'AddedToken("<mask>", rstrip=False, lstrip=False, single_word=False, normalized=True)'
         )
         assert added_token.rstrip == False
         assert added_token.lstrip == False
         assert added_token.single_word == False
-        assert added_token.normalized == False
+        assert added_token.normalized == True
         assert isinstance(pickle.loads(pickle.dumps(added_token)), AddedToken)
 
     def test_can_set_rstrip(self):
-        added_token = AddedToken("<mask>", True, rstrip=True)
+        added_token = AddedToken("<mask>", rstrip=True)
         assert added_token.rstrip == True
         assert added_token.lstrip == False
         assert added_token.single_word == False
+        assert added_token.normalized == True
 
     def test_can_set_lstrip(self):
-        added_token = AddedToken("<mask>", True, lstrip=True)
+        added_token = AddedToken("<mask>", lstrip=True)
         assert added_token.rstrip == False
         assert added_token.lstrip == True
         assert added_token.single_word == False
+        assert added_token.normalized == True
 
     def test_can_set_single_world(self):
-        added_token = AddedToken("<mask>", True, single_word=True)
+        added_token = AddedToken("<mask>", single_word=True)
         assert added_token.rstrip == False
         assert added_token.lstrip == False
         assert added_token.single_word == True
+        assert added_token.normalized == True
 
     def test_can_set_normalized(self):
-        added_token = AddedToken("<mask>", True, normalized=True)
+        added_token = AddedToken("<mask>", normalized=False)
         assert added_token.rstrip == False
         assert added_token.lstrip == False
         assert added_token.single_word == False
-        assert added_token.normalized == True
-
-    def test_second_argument_defines_normalized(self):
-        added_token = AddedToken("<mask>", True)
         assert added_token.normalized == False
-        added_token = AddedToken("<mask>", False)
-        assert added_token.normalized == True
 
 
 class TestTokenizer:
@@ -91,10 +88,12 @@ class TestTokenizer:
         added = tokenizer.add_tokens(["my", "name", "is", "john"])
         assert added == 4
 
-        added = tokenizer.add_tokens(
-            [AddedToken("the", False), AddedToken("quick", False, rstrip=True)]
-        )
+        tokens = [AddedToken("the"), AddedToken("quick", normalized=False), AddedToken()]
+        assert tokens[0].normalized == True
+        added = tokenizer.add_tokens(tokens)
         assert added == 2
+        assert tokens[0].normalized == True
+        assert tokens[1].normalized == False
 
     def test_add_special_tokens(self):
         tokenizer = Tokenizer(BPE())
@@ -104,10 +103,12 @@ class TestTokenizer:
         assert added == 4
 
         # Can add special tokens as `AddedToken`
-        added = tokenizer.add_special_tokens(
-            [AddedToken("the", False), AddedToken("quick", False, rstrip=True)]
-        )
+        tokens = [AddedToken("the"), AddedToken("quick", normalized=True), AddedToken()]
+        assert tokens[0].normalized == True
+        added = tokenizer.add_special_tokens(tokens)
         assert added == 2
+        assert tokens[0].normalized == False
+        assert tokens[1].normalized == True
 
     def test_encode(self):
         tokenizer = Tokenizer(BPE())
