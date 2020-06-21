@@ -385,7 +385,9 @@ mod tests {
 
     #[test]
     fn test_unigram_chars() {
-        let trainer = UnigramTrainerBuilder::new().with_progress(false).build();
+        let trainer = UnigramTrainerBuilder::default()
+            .with_progress(false)
+            .build();
         let mut word_count: HashMap<String, u32> = HashMap::new();
         word_count.insert("This is a".to_string(), 1);
         word_count.insert("こんにちは友達".to_string(), 1);

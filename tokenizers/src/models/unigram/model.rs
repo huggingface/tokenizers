@@ -177,9 +177,9 @@ impl Model for Unigram {
         self.token_to_ids.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    fn id_to_token(&self, id: u32) -> Option<&str> {
         match self.vocab.get(id as usize) {
-            Some(string) => Some(string.clone()),
+            Some(string) => Some(string),
             None => None,
         }
     }
