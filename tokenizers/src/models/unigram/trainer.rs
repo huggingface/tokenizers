@@ -1,10 +1,8 @@
-use crate::models::unigram::{lattice::Lattice, unigram::Unigram};
-use crate::tokenizer::{AddedToken, Model, Offsets, Result, Token, Trainer};
+use crate::models::unigram::{lattice::Lattice, model::Unigram};
+use crate::tokenizer::{AddedToken, Model, Result, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
-use std::path::{Path, PathBuf};
 
 type SentencePiece = (String, f64);
 
@@ -24,28 +22,30 @@ fn digamma(x: f64) -> f64 {
     result
 }
 
-struct UnigramTrainerBuilder {
+pub struct UnigramTrainerBuilder {
     show_progress: bool,
 }
 
-impl UnigramTrainerBuilder {
-    fn new() -> UnigramTrainerBuilder {
+impl Default for UnigramTrainerBuilder {
+    fn default() -> Self {
         UnigramTrainerBuilder {
             show_progress: true,
         }
     }
+}
 
-    fn with_progress(mut self, progress: bool) -> Self {
+impl UnigramTrainerBuilder {
+    pub fn with_progress(mut self, progress: bool) -> Self {
         self.show_progress = progress;
         self
     }
 
-    fn build(&self) -> UnigramTrainer {
+    pub fn build(&self) -> UnigramTrainer {
         UnigramTrainer::new(self.show_progress)
     }
 }
 
-struct UnigramTrainer {
+pub struct UnigramTrainer {
     show_progress: bool,
     vocab_size: u32,
     n_iterations: u32,
@@ -63,15 +63,15 @@ impl Default for UnigramTrainer {
     }
 }
 
-fn is_valid_sentencepiece(char_string: &[char]) -> bool {
+fn is_valid_sentencepiece(_char_string: &[char]) -> bool {
     // TODO
     // Checks string length, space not in the substring, numbers, hiragana and more
     // https://github.com/google/sentencepiece/blob/26be9516cd81d5315ee31c48d2438018e0eab879/src/trainer_interface.cc#L203
-    return true;
+    true
 }
 
 impl UnigramTrainer {
-    fn new(show_progress: bool) -> UnigramTrainer {
+    pub fn new(show_progress: bool) -> UnigramTrainer {
         UnigramTrainer {
             show_progress,
             vocab_size: 8_000,
@@ -111,7 +111,8 @@ impl UnigramTrainer {
     ) -> Result<Vec<(String, f64)>> {
         let vocab_size: usize = self.vocab_size.try_into()?;
         let progress = self.setup_progress();
-        let required_chars = self.required_chars(word_counts);
+        // TODO This is unused, figure out why.
+        let _required_chars = self.required_chars(word_counts);
         // Put all sentences in a string, separated by \0
         let total: usize = word_counts
             .iter()
@@ -121,7 +122,7 @@ impl UnigramTrainer {
         let mut flat_string = String::with_capacity(total);
         let mut all_chars: HashMap<char, u32> = HashMap::new();
         let k_sentence_boundary = '\0';
-        for (string, _) in word_counts {
+        for string in word_counts.keys() {
             flat_string.push_str(&string);
             // Comment suggests we add sentence boundary, but it seems to be missing from actual
             // code.
@@ -201,7 +202,7 @@ impl UnigramTrainer {
             let char_string = &chars[offset..offset + len];
             // Just in case
             assert!(is_valid_sentencepiece(char_string));
-            let string: String = char_string.into_iter().collect();
+            let string: String = char_string.iter().collect();
             seed_sentencepieces.push((string, score.into()));
             if seed_sentencepieces.len() >= vocab_size {
                 break;
@@ -238,16 +239,12 @@ impl UnigramTrainer {
         }
     }
 
-    fn run_e_step(
-        &self,
-        model: &mut Unigram,
-        sentences: &mut Vec<(String, f64)>,
-    ) -> (f64, u32, Vec<f64>) {
+    fn run_e_step(&self, model: &mut Unigram, sentences: &[(String, f64)]) -> (f64, u32, Vec<f64>) {
         let mut expected: Vec<f64> = vec![0.0; self.vocab_size as usize];
         let mut objs: f64 = 0.0;
         let mut ntokens: u32 = 0;
 
-        let all_sentence_freq: f64 = sentences.iter().map(|(a, b)| *b).sum();
+        let all_sentence_freq: f64 = sentences.iter().map(|(_a, b)| *b).sum();
 
         // TODO reparallelize this.
         for (string, freq) in sentences {
@@ -264,11 +261,12 @@ impl UnigramTrainer {
 
         (objs, ntokens, expected)
     }
+    // TODO: Model is not really used...
     fn run_m_step(
         &self,
-        model: &mut Unigram,
-        sentences: &Vec<(String, f64)>,
-        expected: &Vec<f64>,
+        _model: &mut Unigram,
+        sentences: &[(String, f64)],
+        expected: &[f64],
     ) -> Vec<SentencePiece> {
         // const auto &sentencepieces = model.GetSentencePieces();
         // CHECK_EQ(sentencepieces.size(), expected.size());
@@ -297,12 +295,16 @@ impl UnigramTrainer {
             .collect();
         new_sentencepieces
     }
-    pub fn _train(&self, word_counts: HashMap<String, u32>) -> Result<(Unigram, Vec<AddedToken>)> {
-        let progress = self.setup_progress();
+    pub fn _train(
+        &self,
+        word_counts: HashMap<String, u32>,
+    ) -> Result<(Box<dyn Model>, Vec<AddedToken>)> {
+        // TODO handle progress bar.
+        let _progress = self.setup_progress();
         //
         // 1. Compute frequent substrings
         // TODO should be either i64 or i32
-        let mut table = self.make_seed_sentence_pieces(&word_counts)?;
+        let table: Vec<(String, f64)> = self.make_seed_sentence_pieces(&word_counts)?;
 
         // Probably not implementing this, pre-tokenizer should handle that beforehand.
         // if (trainer_spec_.split_by_whitespace()) {
@@ -314,16 +316,17 @@ impl UnigramTrainer {
         let desired_vocab_size_ = (self.vocab_size * 11) / 10; // * 1.1
 
         // TODO make the model correctly ?
-        let mut model = Unigram::new();
+        let mut model = Unigram::from(&table);
 
         loop {
             // Sub-EM iteration.
-            for iter in 0..self.n_iterations {
+            for _iter in 0..self.n_iterations {
                 // Executes E step
-                let (objective, num_tokens, expected) = self.run_e_step(&mut model, &mut table);
+                let (_objective, _num_tokens, expected) = self.run_e_step(&mut model, &table);
 
                 // // Executes M step.
                 let new_sentencepieces = self.run_m_step(&mut model, &table, &expected);
+                model = Unigram::from(&new_sentencepieces);
                 // self.sentence_pieces = new_sentencepieces;
 
                 // LOG(INFO) << "EM sub_iter=" << iter << " size=" << model.GetPieceSize()
@@ -345,7 +348,7 @@ impl UnigramTrainer {
         // Finally, adjusts the size of sentencepices to be |vocab_size|.
         self.finalize();
 
-        Ok((model, self.special_tokens.clone()))
+        Ok((Box::new(model), self.special_tokens.clone()))
     }
 }
 
@@ -355,8 +358,9 @@ impl Trainer for UnigramTrainer {
         &self,
         word_counts: HashMap<String, u32>,
     ) -> Result<(Box<dyn Model>, Vec<AddedToken>)> {
-        let (unigram, tokens) = self._train(word_counts)?;
-        Ok((Box::new(unigram), tokens))
+        self._train(word_counts)
+        // §let (unigram, tokens) = self._train(word_counts)?;
+        // §Ok((unigram, tokens))
     }
 
     /// Process a bunch of tokens, counting them
