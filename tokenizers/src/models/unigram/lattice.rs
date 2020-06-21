@@ -625,8 +625,8 @@ mod tests {
         let mut x = 0.0;
 
         let v: Vec<f64> = vec![1.0, 2.0, 3.0];
-        for i in 0..v.len() {
-            x = log_sum_exp(x, v[i], i == 0);
+        for (i, y) in v.iter().enumerate() {
+            x = log_sum_exp(x, *y, i == 0);
         }
         assert_approx_eq!(x, v.iter().map(|n| n.exp()).sum::<f64>().ln(), 0.001);
     }
