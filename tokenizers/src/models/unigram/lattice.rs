@@ -2,7 +2,7 @@ use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use std::cell::RefCell;
 use std::cmp::{min, Ordering};
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::BinaryHeap;
 use std::rc::Rc;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -111,7 +111,7 @@ fn log_sum_exp(x: f64, y: f64, init_mode: bool) -> f64 {
 
 impl<'a> Lattice<'a> {
     pub fn from(sentence: &'a str) -> Lattice<'a> {
-        let graphemes: Vec<_> = UnicodeSegmentation::graphemes(&sentence[..], true).collect();
+        let graphemes: Vec<_> = sentence.graphemes(true).collect();
         let k_reserved_node_size = 16;
         // We are adding 2 tokens, bos and eos
         let len = graphemes.len();
@@ -146,7 +146,6 @@ impl<'a> Lattice<'a> {
 
     pub fn insert_with_id(&mut self, pos: usize, length: usize, score: f64, id: usize) {
         let node = Rc::new(RefCell::new(Node::new(id, pos, length, score)));
-        let res = Rc::clone(&node);
 
         // TODO node.piece ? Which is self.grapheme[pos..pos + length]
         // XXX: Careful, in sentence piece, length is in bytes, here we assume
@@ -206,7 +205,7 @@ impl<'a> Lattice<'a> {
             return vec![];
         }
         let mut node: NodeRef = prev.unwrap().clone();
-        while !node.borrow().prev.is_none() {
+        while node.borrow().prev.is_some() {
             results.push(node.clone());
             let n = node.borrow().clone();
             node = n.prev.as_ref().unwrap().clone();
@@ -227,7 +226,7 @@ impl<'a> Lattice<'a> {
             n if n < 1 => vec![],
             n if n == 1 => vec![self.viterbi()],
             _ => {
-                let k_reserved_hypothesis_size = 512;
+                // let k_reserved_hypothesis_size = 512;
                 let mut agenda: Agenda = BinaryHeap::new();
                 let mut hypotheses: Vec<Vec<NodeRef>> = vec![];
                 let eos = self.eos_node();
@@ -273,7 +272,7 @@ impl<'a> Lattice<'a> {
                         if agenda.len() > k_max_agenda_size {
                             let mut new_agenda = BinaryHeap::new();
                             let len = min(k_min_agenda_size, n * 10);
-                            for i in 0..len {
+                            for _i in 0..len {
                                 new_agenda.push(agenda.pop().unwrap());
                             }
                             agenda = new_agenda;
@@ -295,6 +294,10 @@ impl<'a> Lattice<'a> {
     pub fn len(&self) -> usize {
         self.graphemes.len()
     }
+    pub fn is_empty(&self) -> bool {
+        self.graphemes.is_empty()
+    }
+
     pub fn utf8_len(&self) -> usize {
         self.sentence.len()
     }
@@ -363,9 +366,9 @@ impl<'a> Lattice<'a> {
         freq * z
     }
 
-    fn sample(&self, theta: f64) -> Vec<NodeRef> {
+    pub fn sample(&self, theta: f64) -> Vec<NodeRef> {
         let len = self.len();
-        if (len == 0) {
+        if len == 0 {
             return vec![];
         }
         let mut alpha = vec![0.0; self.nodes.len()];
@@ -408,7 +411,7 @@ impl<'a> Lattice<'a> {
         results
     }
 
-    fn sample_token(&self, theta: f64) -> Vec<String> {
+    pub fn sample_token(&self, theta: f64) -> Vec<String> {
         self.sample(theta)
             .iter()
             .map(|node| piece(self, &node.borrow()))
@@ -420,6 +423,7 @@ impl<'a> Lattice<'a> {
 mod tests {
     use super::*;
     use assert_approx_eq::assert_approx_eq;
+    use std::collections::HashMap;
 
     #[test]
     fn set_sentence() {
@@ -472,7 +476,6 @@ mod tests {
     #[test]
     fn insert_test() {
         let mut lattice = Lattice::from("ABあい");
-        let nodes: Vec<Node> = vec![];
 
         lattice.insert(0, 1, 0.0);
         lattice.insert(1, 1, 0.0);
@@ -687,7 +690,7 @@ mod tests {
 
             let n_trials = 100_000;
             let mut freq: HashMap<String, u32> = HashMap::new();
-            for i in 0..n_trials {
+            for _ in 0..n_trials {
                 let string = lattice.sample_token(theta).join(" ");
                 *freq.entry(string).or_insert(0) += 1;
             }
