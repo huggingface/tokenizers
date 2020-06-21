@@ -50,7 +50,7 @@ impl Ord for Hypothesis {
 
 pub struct Lattice<'a> {
     sentence: &'a str,
-    graphemes: Vec<&'a str>,
+    pub graphemes: Vec<&'a str>,
     nodes: Vec<NodeRef>,
     begin_nodes: Vec<Vec<NodeRef>>,
     end_nodes: Vec<Vec<NodeRef>>,
@@ -140,7 +140,12 @@ impl<'a> Lattice<'a> {
     }
 
     pub fn insert(&mut self, pos: usize, length: usize, score: f64) {
-        let node = Rc::new(RefCell::new(Node::new(self.current_id, pos, length, score)));
+        self.insert_with_id(pos, length, score, self.current_id);
+        self.current_id += 1;
+    }
+
+    pub fn insert_with_id(&mut self, pos: usize, length: usize, score: f64, id: usize) {
+        let node = Rc::new(RefCell::new(Node::new(id, pos, length, score)));
         let res = Rc::clone(&node);
 
         // TODO node.piece ? Which is self.grapheme[pos..pos + length]
@@ -150,9 +155,6 @@ impl<'a> Lattice<'a> {
         self.end_nodes[pos + length].push(Rc::clone(&node));
 
         self.nodes.push(node);
-
-        self.current_id += 1;
-        // res.clone().borrow()
     }
 
     pub fn viterbi(&mut self) -> Vec<NodeRef> {
@@ -213,14 +215,14 @@ impl<'a> Lattice<'a> {
         results
     }
 
-    fn tokens(&mut self) -> Vec<String> {
+    pub fn tokens(&mut self) -> Vec<String> {
         self.viterbi()
             .iter()
             .map(|node| piece(self, &node.borrow()))
             .collect()
     }
 
-    fn nbest(&mut self, n: usize) -> Vec<Vec<NodeRef>> {
+    pub fn nbest(&mut self, n: usize) -> Vec<Vec<NodeRef>> {
         match n {
             n if n < 1 => vec![],
             n if n == 1 => vec![self.viterbi()],
@@ -283,7 +285,7 @@ impl<'a> Lattice<'a> {
         }
     }
 
-    fn nbest_tokens(&mut self, n: usize) -> Vec<Vec<String>> {
+    pub fn nbest_tokens(&mut self, n: usize) -> Vec<Vec<String>> {
         self.nbest(n)
             .iter()
             .map(|v| v.iter().map(|node| piece(self, &node.borrow())).collect())
@@ -371,7 +373,7 @@ impl<'a> Lattice<'a> {
             for rnode in &self.begin_nodes[pos] {
                 for lnode in &self.end_nodes[pos] {
                     let lid = lnode.borrow().id;
-                    let rid = lnode.borrow().id;
+                    let rid = rnode.borrow().id;
                     alpha[rid] = log_sum_exp(
                         alpha[rid],
                         theta * (lnode.borrow().score + alpha[lid]),
@@ -381,6 +383,7 @@ impl<'a> Lattice<'a> {
             }
         }
 
+        let mut rng = thread_rng();
         let mut results: Vec<NodeRef> = vec![];
         let mut probs: Vec<f64> = vec![];
         let mut z = alpha[self.eos_node().borrow().id];
@@ -393,7 +396,6 @@ impl<'a> Lattice<'a> {
                 probs.push((alpha[lid] + theta * lnode.borrow().score - z).exp())
             }
             let dist = WeightedIndex::new(&probs).unwrap();
-            let mut rng = thread_rng();
             let index = dist.sample(&mut rng);
             node = Rc::clone(&self.end_nodes[pos][index]);
             if node == self.bos_node() {
@@ -664,9 +666,9 @@ mod tests {
         lattice.insert(1, 2, 1.7); // BC
         lattice.insert(0, 3, 1.8); // ABC
 
-        let k_theta: Vec<f64> = vec![0.0, 0.1, 0.5, 0.7, 1.0];
+        let thetas: Vec<f64> = vec![0.0, 0.01, 0.5, 0.7, 1.0];
 
-        for theta in k_theta {
+        for theta in thetas {
             let mut probs: HashMap<String, f64> = HashMap::new();
             probs.insert("A B C".to_string(), (theta * (1.0 + 1.2 + 1.5)).exp());
             probs.insert("AB C".to_string(), (theta * (1.6 + 1.5)).exp());
@@ -683,18 +685,16 @@ mod tests {
                 *p /= z;
             }
 
-            let k_trial = 100_000;
+            let n_trials = 100_000;
             let mut freq: HashMap<String, u32> = HashMap::new();
-            for i in 0..k_trial {
+            for i in 0..n_trials {
                 let string = lattice.sample_token(theta).join(" ");
                 *freq.entry(string).or_insert(0) += 1;
             }
 
-            println!("Freq {:?}", freq);
-
             assert_eq!(freq.len(), probs.len());
             for (s, p) in probs.iter() {
-                assert_approx_eq!(1.0 * (freq[s] as f64) / (k_trial as f64), p, 0.02)
+                assert_approx_eq!(1.0 * (freq[s] as f64) / (n_trials as f64), p, 0.03)
             }
         }
     }
