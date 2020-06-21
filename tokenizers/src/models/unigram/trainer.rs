@@ -1,4 +1,4 @@
-use crate::models::unigram::lattice::Lattice;
+use crate::models::unigram::{lattice::Lattice, unigram::Unigram};
 use crate::tokenizer::{AddedToken, Model, Offsets, Result, Token, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
@@ -7,7 +7,6 @@ use std::convert::TryInto;
 use std::path::{Path, PathBuf};
 
 type SentencePiece = (String, f64);
-type Vocab = HashMap<String, u32>;
 
 fn digamma(x: f64) -> f64 {
     let mut x = x;
@@ -25,102 +24,6 @@ fn digamma(x: f64) -> f64 {
     result
 }
 
-#[derive(PartialEq, Serialize, Deserialize)]
-struct Unigram {
-    vocab: Vocab,
-    min_score: f64,
-}
-impl std::fmt::Debug for Unigram {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        fmt.debug_struct("BPE")
-            .field("vocab", &self.vocab.len())
-            .finish()
-    }
-}
-
-static K_UNK_PENALTY: f64 = 10.0;
-
-impl Unigram {
-    pub fn populate_node(&mut self, lattice: &Lattice) {
-        //TODO
-        //  auto get_chars_length = [&lattice](int begin_pos, const char *end) {
-        //   int pos = begin_pos;
-        //   while (lattice->surface(pos) < end) ++pos;
-        //   return pos - begin_pos;
-        // };
-        let unk_score = self.min_score - K_UNK_PENALTY;
-
-        // const float unk_score = min_score() - kUnkPenalty;
-
-        // const int len = lattice->size();
-        // const char *end = lattice->sentence() + lattice->utf8_size();
-
-        // // +1 just in case.
-        // std::vector<Darts::DoubleArray::result_pair_type> trie_results(
-        //     trie_results_size_ + 1);
-
-        // for (int begin_pos = 0; begin_pos < len; ++begin_pos) {
-        //   const char *begin = lattice->surface(begin_pos);
-
-        //   // Finds all pieces which are prefix of surface(begin_pos).
-        //   const size_t num_nodes = trie_->commonPrefixSearch(
-        //       begin, trie_results.data(), trie_results.size(),
-        //       static_cast<int>(end - begin));
-        //   CHECK_LT(num_nodes, trie_results.size());
-
-        //   bool has_single_node = false;
-
-        //   // Inserts pieces to the lattice.
-        //   for (size_t k = 0; k < num_nodes; ++k) {
-        //     const int length =
-        //         get_chars_length(begin_pos, begin + trie_results[k].length);
-        //     const int id = trie_results[k].value;
-        //     if (IsUnusedInlined(id)) continue;
-        //     Lattice::Node *node = lattice->Insert(begin_pos, length);
-        //     node->id = id;  // the value of Trie stores vocab_id.
-        //     // User defined symbol receives extra bonus to always be selected.
-        //     node->score = IsUserDefinedInlined(id) ? (length * max_score_ - 0.1)
-        //                                            : GetScoreInlined(id);
-        //     if (!has_single_node && node->length == 1) {
-        //       has_single_node = true;
-        //     }
-        //   }
-
-        //   if (!has_single_node) {
-        //     Lattice::Node *node = lattice->Insert(begin_pos, 1);
-        //     node->id = unk_id_;  // add UNK node.
-        //     node->score = unk_score;
-        //   }
-        // }
-    }
-}
-
-#[typetag::serde]
-impl Model for Unigram {
-    fn get_vocab(&self) -> &HashMap<String, u32> {
-        &self.vocab
-    }
-
-    fn get_vocab_size(&self) -> usize {
-        self.vocab.len()
-    }
-
-    fn tokenize(&self, sentence: Vec<(String, Offsets)>) -> Result<Vec<Token>> {
-        Ok(vec![])
-    }
-
-    fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.vocab.get(token).copied()
-    }
-
-    fn id_to_token(&self, id: u32) -> Option<String> {
-        None
-    }
-
-    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
-        Ok(vec![])
-    }
-}
 struct UnigramTrainerBuilder {
     show_progress: bool,
 }
@@ -349,7 +252,7 @@ impl UnigramTrainer {
         // TODO reparallelize this.
         for (string, freq) in sentences {
             let mut lattice = Lattice::from(string);
-            model.populate_node(&lattice);
+            model.populate_nodes(&mut lattice);
             let z: f64 = lattice.populate_marginal(*freq, &mut expected);
             ntokens += lattice.viterbi().len() as u32;
             if z.is_nan() {
@@ -363,7 +266,7 @@ impl UnigramTrainer {
     }
     fn run_m_step(
         &self,
-        molde: &mut Unigram,
+        model: &mut Unigram,
         sentences: &Vec<(String, f64)>,
         expected: &Vec<f64>,
     ) -> Vec<SentencePiece> {
@@ -411,10 +314,7 @@ impl UnigramTrainer {
         let desired_vocab_size_ = (self.vocab_size * 11) / 10; // * 1.1
 
         // TODO make the model correctly ?
-        let mut model = Unigram {
-            vocab: HashMap::new(),
-            min_score: 0.0,
-        };
+        let mut model = Unigram::new();
 
         loop {
             // Sub-EM iteration.
