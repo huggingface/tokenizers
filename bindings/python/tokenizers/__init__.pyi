@@ -201,8 +201,7 @@ class AddedToken:
 
     def __new__(
         cls,
-        content: str,
-        is_special_token: bool,
+        content: str = "",
         single_word: bool = False,
         lstrip: bool = False,
         rstrip: bool = False,
@@ -213,10 +212,6 @@ class AddedToken:
         Args:
             content: str:
                 The content of the token
-
-            is_special_token: bool:
-                Whether this token is a special token. This has an impact on the default value for
-                `normalized` which is False for special tokens, but True for others.
 
             single_word: bool
                 Whether this token should only match against single words. If True,
