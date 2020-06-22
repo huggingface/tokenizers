@@ -44,7 +44,7 @@ tokenizer.train(
 )
 
 # Save the files
-tokenizer.save(args.out, args.name)
+tokenizer.save_model(args.out, args.name)
 
 # Restoring model from learned vocab/merges
 tokenizer = ByteLevelBPETokenizer(

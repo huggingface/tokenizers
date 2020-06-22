@@ -613,11 +613,8 @@ impl Tokenizer {
                 // We read new lines using this API instead of the Lines Iterator
                 // on purpose. We want to keep the `\n` and potential `\r` between each lines
                 // We use an iterator to be able to chain with par_bridge.
-                use rayon::prelude::*;
-                let words = file
-                    .lines_with_ending()
-                    //.maybe_par_bridge()
-                    .par_bridge()
+                file.lines_with_ending()
+                    .maybe_par_bridge()
                     .map_with(
                         &progress,
                         |progress, line| -> Result<HashMap<String, u32>> {
@@ -638,14 +635,16 @@ impl Tokenizer {
                             Ok(words)
                         },
                     )
-                    .try_reduce(HashMap::new, |mut acc, ws| {
-                        for (k, v) in ws {
-                            acc.entry(k).and_modify(|c| *c += v).or_insert(v);
-                        }
-                        Ok(acc)
-                    })?;
-
-                Ok(words)
+                    .reduce(
+                        || Ok(HashMap::new()),
+                        |acc, ws| {
+                            let mut acc = acc?;
+                            for (k, v) in ws? {
+                                acc.entry(k).and_modify(|c| *c += v).or_insert(v);
+                            }
+                            Ok(acc)
+                        },
+                    )
             })
             .try_fold(
                 HashMap::new(),

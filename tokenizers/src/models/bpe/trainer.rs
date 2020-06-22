@@ -379,10 +379,10 @@ impl BpeTrainer {
                             h
                         });
                     *pair_counts.get_mut(&cur_pair).unwrap() += count as i32;
+                }
 
-                    if let Some(p) = &p {
-                        p.inc(1);
-                    }
+                if let Some(p) = &p {
+                    p.inc(1);
                 }
 
                 (pair_counts, where_to_update)
