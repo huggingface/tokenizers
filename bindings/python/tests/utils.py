@@ -1,3 +1,4 @@
+from multiprocessing import Process
 import os
 import requests
 import pytest
@@ -56,3 +57,28 @@ def openai_files(data_dir):
             "https://s3.amazonaws.com/models.huggingface.co/bert/openai-gpt-merges.txt"
         ),
     }
+
+
+def encode_decode_in_subprocess(tokenizer):
+    # It's essential to this test that we call 'encode' or 'encode_batch'
+    # before the fork. This causes the main process to "lock" some resources
+    # provided by the Rust "rayon" crate that are needed for parallel processing.
+    tokenizer.encode("Hi")
+    tokenizer.encode_batch(["hi", "there"])
+
+    def encode():
+        encoding = tokenizer.encode("Hi")
+        tokenizer.decode(encoding.ids)
+
+    p = Process(target=encode)
+    p.start()
+    p.join(timeout=1)
+
+    # At this point the process should have successfully exited.
+    # If the subprocess is still alive, the test have failed.
+    # But we want terminate that process anyway otherwise pytest might hang forever.
+    if p.is_alive():
+        p.terminate()
+        assert False, "tokenizer in sub process caused dead lock"
+
+    assert p.exitcode == 0

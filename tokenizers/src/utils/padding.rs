@@ -1,5 +1,4 @@
 use crate::tokenizer::{Encoding, Result};
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// The various possible padding directions.
@@ -54,11 +53,7 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
 
     let mut pad_length = match params.strategy {
         PaddingStrategy::Fixed(size) => size,
-        PaddingStrategy::BatchLongest => encodings
-            .par_iter()
-            .map(|e| e.get_ids().len())
-            .max()
-            .unwrap(),
+        PaddingStrategy::BatchLongest => encodings.iter().map(|e| e.get_ids().len()).max().unwrap(),
     };
 
     if let Some(multiple) = params.pad_to_multiple_of {
@@ -67,7 +62,7 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
         }
     }
 
-    encodings.par_iter_mut().for_each(|encoding| {
+    encodings.iter_mut().for_each(|encoding| {
         encoding.pad(
             pad_length,
             params.pad_id,

@@ -1,4 +1,4 @@
-from ..utils import data_dir, openai_files
+from ..utils import data_dir, openai_files, encode_decode_in_subprocess
 from tokenizers import CharBPETokenizer
 
 
@@ -42,3 +42,7 @@ class TestBertWordPieceBPE:
         tokenizer = CharBPETokenizer(openai_files["vocab"], openai_files["merges"], lowercase=True)
         decoded = tokenizer.decode(tokenizer.encode("my name is john").ids)
         assert decoded == "my name is john"
+
+    def test_encode_decode_in_subprocess(self, openai_files):
+        tokenizer = CharBPETokenizer(openai_files["vocab"], openai_files["merges"], lowercase=True)
+        encode_decode_in_subprocess(tokenizer)

@@ -2,7 +2,6 @@ use crate::tokenizer::{
     Decoder, Encoding, NormalizedString, Offsets, PostProcessor, PreTokenizer, Result,
 };
 use onig::Regex;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -97,7 +96,7 @@ impl PreTokenizer for ByteLevel {
             .collect::<Vec<_>>();
 
         let splits = positions
-            .into_par_iter()
+            .into_iter()
             .map(|range| {
                 // Process one of the splits
                 let slice = &normalized.get()[range];
