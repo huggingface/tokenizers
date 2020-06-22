@@ -459,8 +459,6 @@ impl Serialize for AddedVocabulary {
     where
         S: Serializer,
     {
-        let mut vocabulary = serializer.serialize_seq(Some(self.added_tokens_map.len()))?;
-
         let mut added_tokens = self
             .added_tokens_map_r
             .iter()
@@ -473,6 +471,7 @@ impl Serialize for AddedVocabulary {
         // We need to have these added tokens ordered by ascending ID
         added_tokens.sort_unstable_by_key(|o| o.id);
 
+        let mut vocabulary = serializer.serialize_seq(Some(added_tokens.len()))?;
         for token in added_tokens {
             vocabulary.serialize_element(&token)?;
         }
