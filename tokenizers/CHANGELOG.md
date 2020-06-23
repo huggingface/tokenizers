@@ -43,6 +43,8 @@ using serde. It is now easy to save/load an entire tokenizer.
 - [#289]: Ability to pad to a multiple of a specified value. This is especially useful to ensure
 activation of the Tensor Cores, while ensuring padding to a multiple of 8.
 - [#298]: Ability to get the currently set truncation/padding params
+- [#311]: Ability to enable/disable the parallelism using the `TOKENIZERS_PARALLELISM` environment
+variable.
 
 ### How to migrate
 - Replace any `XXX_to_YYY_offsets()` method call by any of the new ones.
@@ -117,6 +119,7 @@ advised, but that's not the question)
 split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
+[#311]: https://github.com/huggingface/tokenizers/pull/311
 [#309]: https://github.com/huggingface/tokenizers/pull/309
 [#298]: https://github.com/huggingface/tokenizers/pull/298
 [#289]: https://github.com/huggingface/tokenizers/pull/289
