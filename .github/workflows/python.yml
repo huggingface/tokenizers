@@ -67,7 +67,10 @@ jobs:
 
   build_and_test:
     name: Check everything builds & tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
