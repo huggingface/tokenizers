@@ -104,7 +104,7 @@ fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
 #[pymodule]
 fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     // Register the fork callback
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     unsafe {
         if !REGISTERED_FORK_CALLBACK {
             libc::pthread_atfork(None, None, Some(child_after_fork));
