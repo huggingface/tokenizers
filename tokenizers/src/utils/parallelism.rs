@@ -6,9 +6,16 @@ use rayon::iter::IterBridge;
 use rayon::prelude::*;
 use rayon_cond::CondIterator;
 
+pub const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
+
+/// Check if the TOKENIZERS_PARALLELISM env variable has been explicitly set
+pub fn is_parallelism_configured() -> bool {
+    std::env::var(ENV_VARIABLE).is_ok()
+}
+
 /// Get the currently set value for `TOKENIZERS_PARALLELISM` env variable
 pub fn get_parallelism() -> bool {
-    match std::env::var("TOKENIZERS_PARALLELISM") {
+    match std::env::var(ENV_VARIABLE) {
         Ok(mut v) => {
             v.make_ascii_lowercase();
             match v.as_ref() {
@@ -22,7 +29,7 @@ pub fn get_parallelism() -> bool {
 
 /// Set the value for `TOKENIZERS_PARALLELISM` for the current process
 pub fn set_parallelism(val: bool) {
-    std::env::set_var("TOKENIZERS_PARALLELISM", if val { "true" } else { "false" })
+    std::env::set_var(ENV_VARIABLE, if val { "true" } else { "false" })
 }
 
 /// Allows to convert into an iterator that can be executed either parallelly or serially.

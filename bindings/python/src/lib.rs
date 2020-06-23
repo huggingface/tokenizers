@@ -1,3 +1,5 @@
+extern crate tokenizers as tk;
+
 mod decoders;
 mod encoding;
 mod error;
@@ -12,6 +14,23 @@ mod utils;
 
 use pyo3::prelude::*;
 use pyo3::wrap_pymodule;
+
+// For users using multiprocessing in python, it is quite easy to fork the process running
+// tokenizers, ending up with a deadlock because we internaly make use of multithreading. So
+// we register a callback to be called in the event of a fork so that we can warn the user.
+static mut REGISTERED_FORK_CALLBACK: bool = false;
+extern "C" fn child_after_fork() {
+    if !tk::parallelism::is_parallelism_configured() {
+        println!(
+            "The current process just got forked. Disabling parallelism to avoid deadlocks..."
+        );
+        println!(
+            "To disable this warning, please explicitly set {}=(true | false)",
+            tk::parallelism::ENV_VARIABLE
+        );
+        tk::parallelism::set_parallelism(false);
+    }
+}
 
 /// Trainers Module
 #[pymodule]
@@ -84,6 +103,15 @@ fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
 /// Tokenizers Module
 #[pymodule]
 fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
+    // Register the fork callback
+    #[cfg(target_os = "linux")]
+    unsafe {
+        if !REGISTERED_FORK_CALLBACK {
+            libc::pthread_atfork(None, None, Some(child_after_fork));
+            REGISTERED_FORK_CALLBACK = true;
+        }
+    }
+
     m.add_class::<tokenizer::Tokenizer>()?;
     m.add_class::<tokenizer::AddedToken>()?;
     m.add_class::<encoding::Encoding>()?;
