@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::cmp::{min, Ordering};
 use std::collections::BinaryHeap;
 use std::rc::Rc;
-use unicode_segmentation::UnicodeSegmentation;
 
 type NodeRef = Rc<RefCell<Node>>;
 type HypothesisRef = Rc<RefCell<Hypothesis>>;
@@ -50,7 +49,7 @@ impl Ord for Hypothesis {
 
 pub struct Lattice<'a> {
     sentence: &'a str,
-    pub graphemes: Vec<&'a str>,
+    pub chars: Vec<char>,
     nodes: Vec<NodeRef>,
     begin_nodes: Vec<Vec<NodeRef>>,
     end_nodes: Vec<Vec<NodeRef>>,
@@ -87,7 +86,9 @@ impl Node {
 }
 
 fn piece<'a>(lattice: &'a Lattice, node: &Node) -> String {
-    lattice.graphemes[node.pos..node.pos + node.length].concat()
+    lattice.chars[node.pos..node.pos + node.length]
+        .into_iter()
+        .collect()
 }
 
 /// Returns log(exp(x) + exp(y)).
@@ -111,10 +112,10 @@ fn log_sum_exp(x: f64, y: f64, init_mode: bool) -> f64 {
 
 impl<'a> Lattice<'a> {
     pub fn from(sentence: &'a str) -> Lattice<'a> {
-        let graphemes: Vec<_> = sentence.graphemes(true).collect();
+        let chars: Vec<_> = sentence.chars().collect();
         let k_reserved_node_size = 16;
         // We are adding 2 tokens, bos and eos
-        let len = graphemes.len();
+        let len = chars.len();
         let mut nodes: Vec<NodeRef> = Vec::with_capacity(k_reserved_node_size);
         let mut begin_nodes = vec![Vec::with_capacity(k_reserved_node_size); len + 1];
         let mut end_nodes = vec![Vec::with_capacity(k_reserved_node_size); len + 1];
@@ -131,7 +132,7 @@ impl<'a> Lattice<'a> {
         let current_id = 2;
         Lattice {
             sentence,
-            graphemes,
+            chars,
             nodes,
             begin_nodes,
             end_nodes,
@@ -147,9 +148,9 @@ impl<'a> Lattice<'a> {
     pub fn insert_with_id(&mut self, pos: usize, length: usize, score: f64, id: usize) {
         let node = Rc::new(RefCell::new(Node::new(id, pos, length, score)));
 
-        // TODO node.piece ? Which is self.grapheme[pos..pos + length]
+        // TODO node.piece ? Which is self.chars[pos..pos + length]
         // XXX: Careful, in sentence piece, length is in bytes, here we assume
-        // it's in graphemes already, let's see if we can get away with it.
+        // it's in chars already, let's see if we can get away with it.
         self.begin_nodes[pos].push(Rc::clone(&node));
         self.end_nodes[pos + length].push(Rc::clone(&node));
 
@@ -159,7 +160,7 @@ impl<'a> Lattice<'a> {
     pub fn viterbi(&mut self) -> Vec<NodeRef> {
         //TODO Remove this mut it's probably unnecessary
         //  const int len = size();
-        let len = self.graphemes.len();
+        let len = self.chars.len();
         for pos in 0..=len {
             // println!("Pos {:?}", pos);
             // println!("n {:?}", self.begin_nodes[pos]);
@@ -292,10 +293,10 @@ impl<'a> Lattice<'a> {
     }
 
     pub fn len(&self) -> usize {
-        self.graphemes.len()
+        self.chars.len()
     }
     pub fn is_empty(&self) -> bool {
-        self.graphemes.is_empty()
+        self.chars.is_empty()
     }
 
     pub fn utf8_len(&self) -> usize {
@@ -306,12 +307,11 @@ impl<'a> Lattice<'a> {
         Rc::clone(&self.end_nodes[0][0])
     }
     pub fn eos_node(&self) -> NodeRef {
-        Rc::clone(&self.begin_nodes[self.graphemes.len()][0])
+        Rc::clone(&self.begin_nodes[self.chars.len()][0])
     }
 
     pub fn surface(&self, n: usize) -> &str {
-        let mut m: usize = 0;
-        self.graphemes.iter().take(n).for_each(|x| m += x.len());
+        let m = self.chars[..n].iter().map(|c| c.to_string().len()).sum();
         &self.sentence[m..]
     }
     pub fn sentence(&self) -> &str {
