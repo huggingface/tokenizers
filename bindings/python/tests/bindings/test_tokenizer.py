@@ -1,6 +1,6 @@
 import pickle
 import pytest
-from ..utils import data_dir, roberta_files, bert_files
+from ..utils import data_dir, roberta_files, bert_files, multiprocessing_with_parallelism
 
 from tokenizers import AddedToken, Tokenizer, Encoding
 from tokenizers.models import Model, BPE, WordPiece
@@ -289,3 +289,8 @@ class TestTokenizer:
         # Can post process a pair of encodings
         output = tokenizer.post_process(encoding, pair_encoding)
         assert output.tokens == ["my", "pair", "[PAD]", "[PAD]"]
+
+    def test_multiprocessing_with_parallelism(self):
+        tokenizer = Tokenizer(BPE())
+        multiprocessing_with_parallelism(tokenizer, False)
+        multiprocessing_with_parallelism(tokenizer, True)

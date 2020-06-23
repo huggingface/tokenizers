@@ -1,4 +1,4 @@
-from ..utils import data_dir, bert_files
+from ..utils import data_dir, bert_files, multiprocessing_with_parallelism
 from tokenizers import BertWordPieceTokenizer
 
 
@@ -19,3 +19,8 @@ class TestBertWordPieceBPE:
         assert output.tokens == ["my", "name", "is", "john", "pair"]
         assert output.offsets == [(0, 2), (3, 7), (8, 10), (11, 15), (0, 4)]
         assert output.type_ids == [0, 0, 0, 0, 1]
+
+    def test_multiprocessing_with_parallelism(self, bert_files):
+        tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
+        multiprocessing_with_parallelism(tokenizer, False)
+        multiprocessing_with_parallelism(tokenizer, True)

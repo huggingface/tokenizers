@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import os
 import requests
 import pytest
@@ -56,3 +57,33 @@ def openai_files(data_dir):
             "https://s3.amazonaws.com/models.huggingface.co/bert/openai-gpt-merges.txt"
         ),
     }
+
+
+def multiprocessing_with_parallelism(tokenizer, enabled: bool):
+    """
+    This helper can be used to test that disabling parallelism avoids dead locks when the
+    same tokenizer is used after forking.
+    """
+    # It's essential to this test that we call 'encode' or 'encode_batch'
+    # before the fork. This causes the main process to "lock" some resources
+    # provided by the Rust "rayon" crate that are needed for parallel processing.
+    tokenizer.encode("Hi")
+    tokenizer.encode_batch(["hi", "there"])
+
+    def encode(tokenizer):
+        tokenizer.encode("Hi")
+        tokenizer.encode_batch(["hi", "there"])
+
+    # Make sure this environment variable is set before the fork happens
+    os.environ["TOKENIZERS_PARALLELISM"] = str(enabled)
+    p = mp.Process(target=encode, args=(tokenizer,))
+    p.start()
+    p.join(timeout=1)
+
+    # At this point the process should have successfully exited, depending on whether parallelism
+    # was activated or not. So we check the status and kill it if needed
+    alive = p.is_alive()
+    if alive:
+        p.terminate()
+
+    assert (alive and mp.get_start_method() == "fork") == enabled
