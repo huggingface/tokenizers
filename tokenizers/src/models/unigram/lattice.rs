@@ -435,7 +435,6 @@ impl<'a> Lattice<'a> {
 mod tests {
     use super::*;
     use assert_approx_eq::assert_approx_eq;
-    use std::collections::HashMap;
 
     #[test]
     fn set_sentence() {
@@ -670,48 +669,5 @@ mod tests {
         assert_approx_eq!(probs[3], (p2) / z, 0.001);
         assert_approx_eq!(probs[4], (p3) / z, 0.001);
         assert_approx_eq!(probs[5], (p4) / z, 0.001);
-    }
-
-    #[test]
-    fn test_sample() {
-        let mut lattice = Lattice::from("ABC");
-        lattice.insert(0, 1, 1.0); // A
-        lattice.insert(1, 1, 1.2); // B
-        lattice.insert(2, 1, 1.5); // C
-        lattice.insert(0, 2, 1.6); // AB
-        lattice.insert(1, 2, 1.7); // BC
-        lattice.insert(0, 3, 1.8); // ABC
-
-        let thetas: Vec<f64> = vec![0.0, 0.01, 0.5, 0.7, 1.0];
-
-        for theta in thetas {
-            let mut probs: HashMap<String, f64> = HashMap::new();
-            probs.insert("A B C".to_string(), (theta * (1.0 + 1.2 + 1.5)).exp());
-            probs.insert("AB C".to_string(), (theta * (1.6 + 1.5)).exp());
-            probs.insert("A BC".to_string(), (theta * (1.0 + 1.7)).exp());
-            probs.insert("ABC".to_string(), (theta * (1.8)).exp());
-
-            // Computes expected probabilities.
-            let mut z = 0.0;
-
-            for (_, p) in probs.iter() {
-                z += p;
-            }
-            for (_, p) in probs.iter_mut() {
-                *p /= z;
-            }
-
-            let n_trials = 100_000;
-            let mut freq: HashMap<String, u32> = HashMap::new();
-            for _ in 0..n_trials {
-                let string = lattice.sample_token(theta).join(" ");
-                *freq.entry(string).or_insert(0) += 1;
-            }
-
-            assert_eq!(freq.len(), probs.len());
-            for (s, p) in probs.iter() {
-                assert_approx_eq!(1.0 * (freq[s] as f64) / (n_trials as f64), p, 0.03)
-            }
-        }
     }
 }

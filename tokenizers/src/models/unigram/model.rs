@@ -268,8 +268,6 @@ impl Model for Unigram {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pre_tokenizers::whitespace::Whitespace;
-    use crate::tokenizer::{NormalizedString, PreTokenizer};
 
     #[test]
     fn test_encode() {
@@ -322,67 +320,5 @@ mod tests {
         assert_eq!(model.encode("abABCcd"), vec!["ab", "ABC", "cd"]);
         assert_eq!(model.encode("ababcdabcdcd"), vec!["ab", "abcdabcd", "cd"]);
         assert_eq!(model.encode("abqrcd"), vec!["ab", "q", "r", "cd"]);
-    }
-
-    #[test]
-    fn test_unigram_from_file() {
-        let model = Unigram::load(Path::new("data/unigram.json")).unwrap();
-        let pretok = Whitespace;
-        let string = "吾輩《わがはい》は猫である。名前はまだ無い。";
-        let input = pretok
-            .pre_tokenize(&mut NormalizedString::from(string))
-            .unwrap();
-        assert_eq!(
-            model
-                .tokenize(input)
-                .unwrap()
-                .iter()
-                .map(|tok| tok.value.clone())
-                .collect::<Vec<_>>(),
-            vec![
-                "吾輩",
-                "《",
-                "わが",
-                "はい",
-                "》",
-                "は",
-                "猫",
-                "である",
-                "。",
-                "名前",
-                "はまだ",
-                "無い",
-                "。"
-            ]
-        );
-
-        // Check it works with spm_export_vocab model.
-        let model = Unigram::load_spm(Path::new("data/unigram.model")).unwrap();
-        let input = pretok
-            .pre_tokenize(&mut NormalizedString::from(string))
-            .unwrap();
-        assert_eq!(
-            model
-                .tokenize(input)
-                .unwrap()
-                .iter()
-                .map(|tok| tok.value.clone())
-                .collect::<Vec<_>>(),
-            vec![
-                "吾輩",
-                "《",
-                "わが",
-                "はい",
-                "》",
-                "は",
-                "猫",
-                "である",
-                "。",
-                "名前",
-                "はまだ",
-                "無い",
-                "。"
-            ]
-        );
     }
 }
