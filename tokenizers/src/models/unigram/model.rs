@@ -2,8 +2,9 @@ use crate::models::unigram::lattice::Lattice;
 use crate::tokenizer::{Model, Offsets, Result, Token};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::error::Error;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use trie_rs::{Trie, TrieBuilder};
 
@@ -32,7 +33,6 @@ fn empty_trie() -> Trie<char> {
 }
 
 static K_UNK_PENALTY: f64 = 10.0;
-static UNK_ID: usize = 2;
 
 impl Default for Unigram {
     fn default() -> Self {
@@ -46,6 +46,22 @@ impl Default for Unigram {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum LoadError {
+    InvalidLine(String),
+}
+impl std::fmt::Display for LoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Load Error")
+    }
+}
+
+impl Error for LoadError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(self)
+    }
+}
+
 impl Unigram {
     pub fn from(table: &[(String, f64)]) -> Self {
         let n = table.len();
@@ -53,7 +69,14 @@ impl Unigram {
         let mut scores: Vec<f64> = Vec::with_capacity(n);
         let mut token_to_ids: TokenMap = HashMap::new();
         let mut builder = TrieBuilder::new();
-        for (id, (token, score)) in table.iter().enumerate() {
+        // XXX: Very import trie-rs *requires* that items are inserted in
+        // increasing length order, otherwise the trie *will* be wrong !!
+        // It does incur a copy here, but we probably shouldn't expect to impose
+        // from the caller as we more commonly will give table in decreasing scores.
+        // TODO: Fix this bug in trie-rs...
+        let mut tokens: Vec<_> = table.iter().cloned().collect();
+        tokens.sort_by(|a, b| a.0.len().partial_cmp(&b.0.len()).unwrap());
+        for (id, (token, score)) in tokens.iter().enumerate() {
             vocab.push(token.to_string());
             scores.push(*score);
             token_to_ids.insert(token.to_string(), id as u32);
@@ -80,27 +103,14 @@ impl Unigram {
     }
 
     pub fn populate_nodes(&self, lattice: &mut Lattice) {
-        //TODO
-        //  auto get_chars_length = [&lattice](int begin_pos, const char *end) {
-        //   int pos = begin_pos;
-        //   while (lattice->surface(pos) < end) ++pos;
-        //   return pos - begin_pos;
-        // };
         let unk_score = self.min_score - K_UNK_PENALTY;
 
-        // const float unk_score = min_score() - kUnkPenalty;
-
-        // const int len = lattice->size();
         let len = lattice.len();
-        // const char *end = lattice->sentence() + lattice->utf8_size();
-
-        // // +1 just in case.
-        // std::vector<Darts::DoubleArray::result_pair_type> trie_results(
-        //     trie_results_size_ + 1);
 
         for begin_pos in 0..len {
             let rest: Vec<char> = lattice.chars[begin_pos..].to_vec();
             let trie_results: Vec<Vec<char>> = self.trie.common_prefix_search(&rest);
+            println!("Trie {:?} -> {:?}", rest, trie_results);
 
             let mut has_single_node = false;
 
@@ -117,9 +127,10 @@ impl Unigram {
             }
 
             if !has_single_node {
-                lattice.insert_with_id(begin_pos, 1, unk_score, UNK_ID);
+                lattice.insert_unk(begin_pos, 1, unk_score);
             }
         }
+        println!("Lattice {:?}", lattice);
         // for (int begin_pos = 0; begin_pos < len; ++begin_pos) {
         //   const char *begin = lattice->surface(begin_pos);
 
@@ -165,8 +176,30 @@ impl Unigram {
         lattice.tokens()
     }
 
-    fn load(path: &Path) -> Result<Unigram> {
-        println!("Path {:?}", path);
+    pub fn load_spm(path: &Path) -> Result<Unigram> {
+        let file = File::open(path).unwrap();
+        let reader = BufReader::new(file);
+
+        // Read the JSON contents of the file as an instance of `User`.
+        let mut table: Vec<(String, f64)> = vec![];
+        for (i, line) in reader.lines().enumerate() {
+            let real_line = line?;
+            let tokens: Vec<&str> = real_line.split('\t').collect();
+            match tokens.as_slice() {
+                [token, score] => table.push((token.to_string(), score.parse().unwrap())),
+                _ => {
+                    return Err(Box::new(LoadError::InvalidLine(format!(
+                        "line {} is invalid {:?}",
+                        i, real_line
+                    ))))
+                }
+            }
+        }
+        let u = Unigram::from(&table);
+        Ok(u)
+    }
+
+    pub fn load(path: &Path) -> Result<Unigram> {
         let file = File::open(path).unwrap();
         let reader = BufReader::new(file);
 
@@ -190,50 +223,27 @@ impl Model for Unigram {
     fn tokenize(&self, sentence: Vec<(String, Offsets)>) -> Result<Vec<Token>> {
         // TODO offsets
         let mut results: Vec<Token> = Vec::with_capacity(sentence.len());
-        let string = sentence
-            .into_iter()
-            .map(|(s, _)| s)
-            .collect::<Vec<_>>()
-            .concat();
-        let tokens = self.encode(&string);
-        let elts: Vec<Token> = tokens
-            .iter()
-            .enumerate()
-            .map(|(word, string)| {
-                let id = match self.token_to_ids.get(string) {
-                    Some(id) => id,
-                    None => {
-                        println!("Vocab {:?}", self.vocab);
-                        println!("String {:?} has no id", string);
-                        &0
-                    }
-                };
-                let offsets = (0, 0);
-                Token::new(*id, string.to_string(), offsets, word as u32)
-            })
-            .collect();
-        Ok(elts)
-        // for (element, _) in sentence {
-        //     let tokens = self.encode(&element);
-        //     let elts: Vec<Token> = tokens
-        //         .iter()
-        //         .enumerate()
-        //         .map(|(word, string)| {
-        //             let id = match self.token_to_ids.get(string) {
-        //                 Some(id) => id,
-        //                 None => {
-        //                     println!("Vocab {:?}", self.vocab);
-        //                     println!("String {:?} has no id", string);
-        //                     &0
-        //                 }
-        //             };
-        //             let offsets = (0, 0);
-        //             Token::new(*id, string.to_string(), offsets, word as u32)
-        //         })
-        //         .collect();
-        //     results.extend(elts);
-        // }
-        // Ok(results)
+        for (element, _) in sentence {
+            let tokens = self.encode(&element);
+            let elts: Vec<Token> = tokens
+                .iter()
+                .enumerate()
+                .map(|(word, string)| {
+                    let id = match self.token_to_ids.get(string) {
+                        Some(id) => id,
+                        None => {
+                            println!("Vocab {:?}", self.vocab);
+                            println!("String {:?} has no id", string);
+                            &0
+                        }
+                    };
+                    let offsets = (0, 0);
+                    Token::new(*id, string.to_string(), offsets, word as u32)
+                })
+                .collect();
+            results.extend(elts);
+        }
+        Ok(results)
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
@@ -292,9 +302,6 @@ mod tests {
             ("q".to_string(), 20.5),
             ("r".to_string(), 20.5),
             ("qr".to_string(), -0.5),
-            ("ab".to_string(), 2.0),
-            ("abc".to_string(), 5.0),
-            ("abcd".to_string(), 10.0),
         ];
 
         let model = Unigram::from(&sentencepieces);
@@ -317,14 +324,41 @@ mod tests {
 
     #[test]
     fn test_unigram_from_file() {
-        let model = Unigram::load(Path::new("data/model.json")).unwrap();
+        let model = Unigram::load(Path::new("data/unigram.json")).unwrap();
         let pretok = Whitespace;
+        let string = "吾輩《わがはい》は猫である。名前はまだ無い。";
         let input = pretok
-            .pre_tokenize(&mut NormalizedString::from(
-                "吾輩《わがはい》は猫である。名前はまだ無い。",
-            ))
+            .pre_tokenize(&mut NormalizedString::from(string))
             .unwrap();
-        println!("input {:?}", input);
+        assert_eq!(
+            model
+                .tokenize(input)
+                .unwrap()
+                .iter()
+                .map(|tok| tok.value.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                "吾輩",
+                "《",
+                "わが",
+                "はい",
+                "》",
+                "は",
+                "猫",
+                "である",
+                "。",
+                "名前",
+                "はまだ",
+                "無い",
+                "。"
+            ]
+        );
+
+        // Check it works with spm_export_vocab model.
+        let model = Unigram::load_spm(Path::new("data/unigram.model")).unwrap();
+        let input = pretok
+            .pre_tokenize(&mut NormalizedString::from(string))
+            .unwrap();
         assert_eq!(
             model
                 .tokenize(input)
