@@ -184,7 +184,9 @@ impl Unigram {
         let mut table: Vec<(String, f64)> = vec![];
         for (i, line) in reader.lines().enumerate() {
             let real_line = line?;
-            let tokens: Vec<&str> = real_line.split('\t').collect();
+            // ▁ is spm token for space.
+            let newline = real_line.replace('▁', " ");
+            let tokens: Vec<&str> = newline.split('\t').collect();
             match tokens.as_slice() {
                 [token, score] => table.push((token.to_string(), score.parse().unwrap())),
                 _ => {
