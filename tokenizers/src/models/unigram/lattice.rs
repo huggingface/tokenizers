@@ -88,7 +88,7 @@ impl Node {
 
 fn piece<'a>(lattice: &'a Lattice, node: &Node) -> String {
     lattice.chars[node.pos..node.pos + node.length]
-        .into_iter()
+        .iter()
         .collect()
 }
 

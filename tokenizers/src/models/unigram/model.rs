@@ -74,7 +74,7 @@ impl Unigram {
         // It does incur a copy here, but we probably shouldn't expect to impose
         // from the caller as we more commonly will give table in decreasing scores.
         // TODO: Fix this bug in trie-rs...
-        let mut tokens: Vec<_> = table.iter().cloned().collect();
+        let mut tokens: Vec<_> = table.to_vec();
         tokens.sort_by(|a, b| a.0.len().partial_cmp(&b.0.len()).unwrap());
         for (id, (token, score)) in tokens.iter().enumerate() {
             vocab.push(token.to_string());
