@@ -47,6 +47,7 @@ impl Ord for Hypothesis {
     }
 }
 
+#[derive(Debug)]
 pub struct Lattice<'a> {
     sentence: &'a str,
     pub chars: Vec<char>,
@@ -122,14 +123,16 @@ impl<'a> Lattice<'a> {
 
         let bos = Rc::new(RefCell::new(Node::new(0, 0, 0, 0.0)));
         let eos = Rc::new(RefCell::new(Node::new(1, len, 0, 0.0)));
+        let unk = Rc::new(RefCell::new(Node::new(2, 0, 0, f64::MIN)));
 
         begin_nodes[len].push(Rc::clone(&eos));
         end_nodes[0].push(Rc::clone(&bos));
 
         nodes.push(bos);
         nodes.push(eos);
+        nodes.push(unk);
 
-        let current_id = 2;
+        let current_id = 3;
         Lattice {
             sentence,
             chars,
@@ -140,9 +143,18 @@ impl<'a> Lattice<'a> {
         }
     }
 
+    #[inline]
+    pub fn unk_id(&self) -> usize {
+        2
+    }
+
     pub fn insert(&mut self, pos: usize, length: usize, score: f64) {
         self.insert_with_id(pos, length, score, self.current_id);
         self.current_id += 1;
+    }
+
+    pub fn insert_unk(&mut self, pos: usize, length: usize, score: f64) {
+        self.insert_with_id(pos, length, score, self.unk_id());
     }
 
     pub fn insert_with_id(&mut self, pos: usize, length: usize, score: f64, id: usize) {
@@ -356,9 +368,9 @@ impl<'a> Lattice<'a> {
                 if node.borrow().id > 1 {
                     let a = alpha[node.borrow().id];
                     let b = beta[node.borrow().id];
-                    // Unigram uses -1 id for bos and eos, we don't so just substract 2 here.
-                    // as bos, eos are 0 and 1.
-                    expected[node.borrow().id - 2] +=
+                    // Unigram uses -1 id for bos and eos, we don't so just substract 3 here.
+                    // as bos, eos are 0 and 1. unk_id is 2.
+                    expected[node.borrow().id - 3] +=
                         freq * (a + node.borrow().score + b - z).exp();
                 }
             }
@@ -484,13 +496,13 @@ mod tests {
         lattice.insert(0, 2, 0.0);
         lattice.insert(1, 2, 0.0);
         lattice.insert(2, 2, 0.0);
-        let node0 = lattice.nodes[2].borrow();
-        let node1 = lattice.nodes[3].borrow();
-        let node2 = lattice.nodes[4].borrow();
-        let node3 = lattice.nodes[5].borrow();
-        let node4 = lattice.nodes[6].borrow();
-        let node5 = lattice.nodes[7].borrow();
-        let node6 = lattice.nodes[8].borrow();
+        let node0 = lattice.nodes[3].borrow();
+        let node1 = lattice.nodes[4].borrow();
+        let node2 = lattice.nodes[5].borrow();
+        let node3 = lattice.nodes[6].borrow();
+        let node4 = lattice.nodes[7].borrow();
+        let node5 = lattice.nodes[8].borrow();
+        let node6 = lattice.nodes[9].borrow();
 
         assert_eq!(piece(&lattice, &node0), "A");
         assert_eq!(piece(&lattice, &node1), "B");
@@ -518,13 +530,14 @@ mod tests {
 
         assert_eq!(lattice.bos_node().borrow().id, 0);
         assert_eq!(lattice.eos_node().borrow().id, 1);
-        assert_eq!(node0.id, 2);
-        assert_eq!(node1.id, 3);
-        assert_eq!(node2.id, 4);
-        assert_eq!(node3.id, 5);
-        assert_eq!(node4.id, 6);
-        assert_eq!(node5.id, 7);
-        assert_eq!(node6.id, 8);
+        assert_eq!(lattice.unk_id(), 2);
+        assert_eq!(node0.id, 3);
+        assert_eq!(node1.id, 4);
+        assert_eq!(node2.id, 5);
+        assert_eq!(node3.id, 6);
+        assert_eq!(node4.id, 7);
+        assert_eq!(node5.id, 8);
+        assert_eq!(node6.id, 9);
 
         assert_eq!(lattice.begin_nodes[0].len(), 2);
         assert_eq!(lattice.begin_nodes[1].len(), 2);
