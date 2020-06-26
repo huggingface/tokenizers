@@ -1,12 +1,14 @@
 use crate::models::unigram::lattice::Lattice;
+use crate::models::unigram::trie::{Trie, TrieBuilder};
 use crate::tokenizer::{Model, Offsets, Result, Token};
 use serde::{Deserialize, Serialize};
+
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use trie_rs::{Trie, TrieBuilder};
 
 type TokenMap = HashMap<String, u32>;
 type Vocab = Vec<String>;
@@ -18,7 +20,10 @@ pub struct Unigram {
     scores: Vec<f64>,
     #[serde(skip_serializing, skip_deserializing, default = "empty_trie")]
     trie: Trie<char>,
-    min_score: f64,
+    pub min_score: f64,
+    bos_id: usize,
+    eos_id: usize,
+    unk_id: usize,
 }
 impl std::fmt::Debug for Unigram {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -29,20 +34,19 @@ impl std::fmt::Debug for Unigram {
 }
 
 fn empty_trie() -> Trie<char> {
-    TrieBuilder::new().build()
+    TrieBuilder::default().build()
 }
 
 static K_UNK_PENALTY: f64 = 10.0;
 
 impl Default for Unigram {
     fn default() -> Self {
-        Self {
-            token_to_ids: HashMap::new(),
-            vocab: vec![],
-            trie: empty_trie(),
-            scores: vec![],
-            min_score: 0.0,
-        }
+        let vocab = vec![
+            ("<bos>".to_string(), 0.0),
+            ("<eos>".to_string(), 0.0),
+            ("<unk>".to_string(), 0.0),
+        ];
+        Self::from(&vocab, 0, 1, 2)
     }
 }
 
@@ -63,25 +67,22 @@ impl Error for LoadError {
 }
 
 impl Unigram {
-    pub fn from(table: &[(String, f64)]) -> Self {
+    pub fn from(table: &[(String, f64)], bos_id: usize, eos_id: usize, unk_id: usize) -> Self {
         let n = table.len();
         let mut vocab: Vec<String> = Vec::with_capacity(n);
         let mut scores: Vec<f64> = Vec::with_capacity(n);
         let mut token_to_ids: TokenMap = HashMap::new();
-        let mut builder = TrieBuilder::new();
-        // XXX: Very import trie-rs *requires* that items are inserted in
-        // increasing length order, otherwise the trie *will* be wrong !!
-        // It does incur a copy here, but we probably shouldn't expect to impose
-        // from the caller as we more commonly will give table in decreasing scores.
-        // TODO: Fix this bug in trie-rs...
-        let mut tokens: Vec<_> = table.to_vec();
-        tokens.sort_by(|a, b| a.0.len().partial_cmp(&b.0.len()).unwrap());
-        for (id, (token, score)) in tokens.iter().enumerate() {
+        let mut builder = TrieBuilder::default();
+        assert!(
+            n > 3,
+            "We need at least bos, eos, and unk in the vocabulary"
+        );
+        for (id, (token, score)) in table.iter().enumerate() {
             vocab.push(token.to_string());
             scores.push(*score);
             token_to_ids.insert(token.to_string(), id as u32);
             let chars: Vec<char> = token.chars().collect();
-            builder.push(chars);
+            builder.push(&chars);
         }
         let min_score = scores.iter().fold(f64::INFINITY, |a, &b| a.min(b));
         let trie = builder.build();
@@ -92,6 +93,9 @@ impl Unigram {
             token_to_ids,
             trie,
             min_score,
+            bos_id,
+            eos_id,
+            unk_id,
         }
     }
 
@@ -108,9 +112,10 @@ impl Unigram {
         let len = lattice.len();
 
         for begin_pos in 0..len {
-            let rest: Vec<char> = lattice.chars[begin_pos..].to_vec();
-            let trie_results: Vec<Vec<char>> = self.trie.common_prefix_search(&rest);
-            println!("Trie {:?} -> {:?}", rest, trie_results);
+            // let now = Instant::now();
+            let trie_results: Vec<Vec<char>> =
+                self.trie.common_prefix_search(&lattice.chars[begin_pos..]);
+            // println!("Common prefix search {:?}", now.elapsed());
 
             let mut has_single_node = false;
 
@@ -120,50 +125,16 @@ impl Unigram {
                 let tok: String = result.into_iter().collect();
                 let id = *self.token_to_ids.get(&tok).unwrap();
                 let score: f64 = self.scores[id as usize];
-                lattice.insert(begin_pos, n, score);
+                lattice.insert(begin_pos, n, score, id.try_into().unwrap());
                 if !has_single_node && n == 1 {
                     has_single_node = true;
                 }
             }
 
             if !has_single_node {
-                lattice.insert_unk(begin_pos, 1, unk_score);
+                lattice.insert(begin_pos, 1, unk_score, self.unk_id);
             }
         }
-        println!("Lattice {:?}", lattice);
-        // for (int begin_pos = 0; begin_pos < len; ++begin_pos) {
-        //   const char *begin = lattice->surface(begin_pos);
-
-        //   // Finds all pieces which are prefix of surface(begin_pos).
-        //   const size_t num_nodes = trie_->commonPrefixSearch(
-        //       begin, trie_results.data(), trie_results.size(),
-        //       static_cast<int>(end - begin));
-        //   CHECK_LT(num_nodes, trie_results.size());
-
-        //   bool has_single_node = false;
-
-        //   // Inserts pieces to the lattice.
-        //   for (size_t k = 0; k < num_nodes; ++k) {
-        //     const int length =
-        //         get_chars_length(begin_pos, begin + trie_results[k].length);
-        //     const int id = trie_results[k].value;
-        //     if (IsUnusedInlined(id)) continue;
-        //     Lattice::Node *node = lattice->Insert(begin_pos, length);
-        //     node->id = id;  // the value of Trie stores vocab_id.
-        //     // User defined symbol receives extra bonus to always be selected.
-        //     node->score = IsUserDefinedInlined(id) ? (length * max_score_ - 0.1)
-        //                                            : GetScoreInlined(id);
-        //     if (!has_single_node && node->length == 1) {
-        //       has_single_node = true;
-        //     }
-        //   }
-
-        //   if (!has_single_node) {
-        //     Lattice::Node *node = lattice->Insert(begin_pos, 1);
-        //     node->id = unk_id_;  // add UNK node.
-        //     node->score = unk_score;
-        //   }
-        // }
     }
     pub fn encode(&self, sentence: &str) -> Vec<String> {
         // let pretokenizer = Whitespace;
@@ -171,7 +142,7 @@ impl Unigram {
         // let encoded = pretokenizer.pre_tokenize(&mut input)?;
         // self.tokenize(encoded)
         // TODO optimized version
-        let mut lattice = Lattice::from(sentence);
+        let mut lattice = Lattice::from(sentence, self.bos_id, self.eos_id, self.unk_id);
         self.populate_nodes(&mut lattice);
         lattice.tokens()
     }
@@ -197,8 +168,13 @@ impl Unigram {
                 }
             }
         }
-        let u = Unigram::from(&table);
+        // XXX: by default in spm unk is 0, bos is 1, eos is 2
+        let u = Unigram::from(&table, 1, 2, 0);
         Ok(u)
+    }
+
+    pub fn iter(&self) -> UnigramIterator {
+        UnigramIterator { model: self, i: 0 }
     }
 
     pub fn load(path: &Path) -> Result<Unigram> {
@@ -207,8 +183,28 @@ impl Unigram {
 
         // Read the JSON contents of the file as an instance of `User`.
         let table: Vec<(String, f64)> = serde_json::from_reader(reader).unwrap();
-        let u = Unigram::from(&table);
+        let u = Unigram::from(&table, 0, 1, 2);
         Ok(u)
+    }
+}
+
+pub struct UnigramIterator<'a> {
+    model: &'a Unigram,
+    i: usize,
+}
+
+impl<'a> Iterator for UnigramIterator<'a> {
+    type Item = (&'a String, f64);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let i = self.i;
+        if i < self.model.len() {
+            let r = Some((&self.model.vocab[i], self.model.scores[i]));
+            self.i += 1;
+            r
+        } else {
+            None
+        }
     }
 }
 
@@ -272,6 +268,9 @@ mod tests {
     #[test]
     fn test_encode() {
         let sentencepieces = vec![
+            ("<bos>".to_string(), 0.0),
+            ("<eos>".to_string(), 0.0),
+            ("<unk>".to_string(), 0.0),
             ("a".to_string(), 0.0),
             ("b".to_string(), 0.0),
             ("c".to_string(), 0.0),
@@ -283,7 +282,7 @@ mod tests {
         ];
 
         //TODO
-        let model = Unigram::from(&sentencepieces);
+        let model = Unigram::from(&sentencepieces, 0, 1, 2);
         let result = model.encode("abcd");
         assert_eq!(result, vec!["abcd"]);
     }
@@ -291,6 +290,9 @@ mod tests {
     #[test]
     fn test_encode2() {
         let sentencepieces = vec![
+            ("<bos>".to_string(), 0.0),
+            ("<eos>".to_string(), 0.0),
+            ("<unk>".to_string(), 0.0),
             ("ab".to_string(), 0.0),
             ("cd".to_string(), -0.1),
             ("abc".to_string(), -0.2),
@@ -304,7 +306,7 @@ mod tests {
             ("qr".to_string(), -0.5),
         ];
 
-        let model = Unigram::from(&sentencepieces);
+        let model = Unigram::from(&sentencepieces, 0, 1, 2);
         assert_eq!(model.encode("abc"), vec!["abc"]);
         assert_eq!(model.encode("AB"), vec!["A", "B"]);
         assert_eq!(model.encode("abcd"), vec!["ab", "cd"]);

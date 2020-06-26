@@ -54,7 +54,9 @@ pub struct Lattice<'a> {
     nodes: Vec<NodeRef>,
     begin_nodes: Vec<Vec<NodeRef>>,
     end_nodes: Vec<Vec<NodeRef>>,
-    current_id: usize,
+    bos_id: usize,
+    eos_id: usize,
+    unk_id: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -112,7 +114,7 @@ fn log_sum_exp(x: f64, y: f64, init_mode: bool) -> f64 {
 }
 
 impl<'a> Lattice<'a> {
-    pub fn from(sentence: &'a str) -> Lattice<'a> {
+    pub fn from(sentence: &'a str, bos_id: usize, eos_id: usize, unk_id: usize) -> Lattice<'a> {
         let chars: Vec<_> = sentence.chars().collect();
         let k_reserved_node_size = 16;
         // We are adding 2 tokens, bos and eos
@@ -121,43 +123,28 @@ impl<'a> Lattice<'a> {
         let mut begin_nodes = vec![Vec::with_capacity(k_reserved_node_size); len + 1];
         let mut end_nodes = vec![Vec::with_capacity(k_reserved_node_size); len + 1];
 
-        let bos = Rc::new(RefCell::new(Node::new(0, 0, 0, 0.0)));
-        let eos = Rc::new(RefCell::new(Node::new(1, len, 0, 0.0)));
-        let unk = Rc::new(RefCell::new(Node::new(2, 0, 0, f64::MIN)));
+        let bos = Rc::new(RefCell::new(Node::new(bos_id, 0, 0, 0.0)));
+        let eos = Rc::new(RefCell::new(Node::new(eos_id, len, 0, 0.0)));
 
         begin_nodes[len].push(Rc::clone(&eos));
         end_nodes[0].push(Rc::clone(&bos));
 
         nodes.push(bos);
         nodes.push(eos);
-        nodes.push(unk);
 
-        let current_id = 3;
         Lattice {
             sentence,
             chars,
             nodes,
             begin_nodes,
             end_nodes,
-            current_id,
+            bos_id,
+            eos_id,
+            unk_id,
         }
     }
 
-    #[inline]
-    pub fn unk_id(&self) -> usize {
-        2
-    }
-
-    pub fn insert(&mut self, pos: usize, length: usize, score: f64) {
-        self.insert_with_id(pos, length, score, self.current_id);
-        self.current_id += 1;
-    }
-
-    pub fn insert_unk(&mut self, pos: usize, length: usize, score: f64) {
-        self.insert_with_id(pos, length, score, self.unk_id());
-    }
-
-    pub fn insert_with_id(&mut self, pos: usize, length: usize, score: f64, id: usize) {
+    pub fn insert(&mut self, pos: usize, length: usize, score: f64, id: usize) {
         let node = Rc::new(RefCell::new(Node::new(id, pos, length, score)));
 
         // TODO node.piece ? Which is self.chars[pos..pos + length]
@@ -332,8 +319,8 @@ impl<'a> Lattice<'a> {
 
     pub fn populate_marginal(&self, freq: f64, expected: &mut Vec<f64>) -> f64 {
         let len = self.len();
-        let mut alpha = vec![0.0; self.nodes.len()];
-        let mut beta = vec![0.0; self.nodes.len()];
+        let mut alpha = vec![0.0; expected.len()];
+        let mut beta = vec![0.0; expected.len()];
         // let mut marginal = vec![0.0, self.nodes.len()];
         for pos in 0..=len {
             for rnode in &self.begin_nodes[pos] {
@@ -364,14 +351,15 @@ impl<'a> Lattice<'a> {
         let z = alpha[self.begin_nodes[len][0].borrow().id];
         for pos in 0..len {
             for node in &self.begin_nodes[pos] {
-                // TODO node.id is -1 for OOV, but we don't support this yet.
-                if node.borrow().id > 1 {
-                    let a = alpha[node.borrow().id];
-                    let b = beta[node.borrow().id];
-                    // Unigram uses -1 id for bos and eos, we don't so just substract 3 here.
-                    // as bos, eos are 0 and 1. unk_id is 2.
-                    expected[node.borrow().id - 3] +=
-                        freq * (a + node.borrow().score + b - z).exp();
+                let node_id = node.borrow().id;
+                let a = alpha[node_id];
+                let b = beta[node_id];
+                let update = freq * (a + node.borrow().score + b - z).exp();
+                let max: f64 = 1e100;
+                // XXX: We try to prevent NaN by capping updates.
+                // This is effective to avoid NaN, but not sure if it messes up algo.
+                if expected[node_id] < max && update < max {
+                    expected[node_id] += update;
                 }
             }
         }
@@ -438,19 +426,19 @@ mod tests {
 
     #[test]
     fn set_sentence() {
-        let lattice = Lattice::from("");
+        let lattice = Lattice::from("", 0, 1, 2);
 
         assert_eq!(lattice.len(), 0);
         assert_eq!(lattice.utf8_len(), 0);
         // EXPECT_EQ(0, lattice.utf8_size());
 
-        let lattice = Lattice::from("");
+        let lattice = Lattice::from("", 0, 1, 2);
         assert_eq!(lattice.len(), 0);
         assert_eq!(lattice.utf8_len(), 0);
         assert_eq!(lattice.sentence(), "");
         assert_eq!(lattice.surface(0), "");
 
-        let lattice = Lattice::from("test");
+        let lattice = Lattice::from("test", 0, 1, 2);
         assert_eq!(lattice.len(), 4);
         assert_eq!(lattice.utf8_len(), 4);
         assert_eq!(lattice.sentence(), "test");
@@ -473,7 +461,7 @@ mod tests {
             eos.borrow().id
         );
 
-        let lattice = Lattice::from("テストab");
+        let lattice = Lattice::from("テストab", 0, 1, 2);
         assert_eq!(lattice.len(), 5);
         assert_eq!(lattice.utf8_len(), 11);
         assert_eq!(lattice.sentence(), "テストab");
@@ -486,22 +474,23 @@ mod tests {
 
     #[test]
     fn insert_test() {
-        let mut lattice = Lattice::from("ABあい");
+        let mut lattice = Lattice::from("ABあい", 0, 1, 2);
 
-        lattice.insert(0, 1, 0.0);
-        lattice.insert(1, 1, 0.0);
-        lattice.insert(2, 1, 0.0);
-        lattice.insert(3, 1, 0.0);
-        lattice.insert(0, 2, 0.0);
-        lattice.insert(1, 2, 0.0);
-        lattice.insert(2, 2, 0.0);
-        let node0 = lattice.nodes[3].borrow();
-        let node1 = lattice.nodes[4].borrow();
-        let node2 = lattice.nodes[5].borrow();
-        let node3 = lattice.nodes[6].borrow();
-        let node4 = lattice.nodes[7].borrow();
-        let node5 = lattice.nodes[8].borrow();
-        let node6 = lattice.nodes[9].borrow();
+        lattice.insert(0, 1, 0.0, 3);
+        lattice.insert(1, 1, 0.0, 4);
+        lattice.insert(2, 1, 0.0, 5);
+        lattice.insert(3, 1, 0.0, 6);
+        lattice.insert(0, 2, 0.0, 7);
+        lattice.insert(1, 2, 0.0, 8);
+        lattice.insert(2, 2, 0.0, 9);
+        // 0 & 1 are bos and eos
+        let node0 = lattice.nodes[2].borrow();
+        let node1 = lattice.nodes[3].borrow();
+        let node2 = lattice.nodes[4].borrow();
+        let node3 = lattice.nodes[5].borrow();
+        let node4 = lattice.nodes[6].borrow();
+        let node5 = lattice.nodes[7].borrow();
+        let node6 = lattice.nodes[8].borrow();
 
         assert_eq!(piece(&lattice, &node0), "A");
         assert_eq!(piece(&lattice, &node1), "B");
@@ -529,7 +518,6 @@ mod tests {
 
         assert_eq!(lattice.bos_node().borrow().id, 0);
         assert_eq!(lattice.eos_node().borrow().id, 1);
-        assert_eq!(lattice.unk_id(), 2);
         assert_eq!(node0.id, 3);
         assert_eq!(node1.id, 4);
         assert_eq!(node2.id, 5);
@@ -577,46 +565,46 @@ mod tests {
 
     #[test]
     fn test_viterbi() {
-        let mut lattice = Lattice::from("ABC");
+        let mut lattice = Lattice::from("ABC", 0, 1, 2);
         assert_eq!(lattice.viterbi(), vec![]);
         // Still incomplete
-        lattice.insert(0, 1, 0.0);
+        lattice.insert(0, 1, 0.0, 3);
         assert_eq!(lattice.viterbi(), vec![]);
-        lattice.insert(1, 1, 0.0);
-        lattice.insert(2, 1, 0.0);
+        lattice.insert(1, 1, 0.0, 4);
+        lattice.insert(2, 1, 0.0, 5);
         // XXX: In sentence piece this is not tested, still incomplete ?
         assert_eq!(lattice.viterbi().len(), 3);
     }
 
     #[test]
     fn test_viterbi2() {
-        let mut lattice = Lattice::from("ABC");
+        let mut lattice = Lattice::from("ABC", 0, 1, 2);
 
-        lattice.insert(0, 1, 0.0);
-        lattice.insert(1, 1, 0.0);
-        lattice.insert(2, 1, 0.0);
+        lattice.insert(0, 1, 0.0, 3);
+        lattice.insert(1, 1, 0.0, 4);
+        lattice.insert(2, 1, 0.0, 5);
 
         assert_eq!(lattice.tokens(), ["A", "B", "C"]);
 
-        lattice.insert(0, 2, 2.0);
+        lattice.insert(0, 2, 2.0, 6);
         assert_eq!(lattice.tokens(), ["AB", "C"]);
 
-        lattice.insert(1, 2, 5.0);
+        lattice.insert(1, 2, 5.0, 7);
         assert_eq!(lattice.tokens(), ["A", "BC"]);
 
-        lattice.insert(0, 3, 10.0);
+        lattice.insert(0, 3, 10.0, 8);
         assert_eq!(lattice.tokens(), ["ABC"]);
     }
 
     #[test]
     fn test_nbest() {
-        let mut lattice = Lattice::from("ABC");
-        lattice.insert(0, 1, 0.0);
-        lattice.insert(1, 1, 0.0);
-        lattice.insert(2, 1, 0.0);
-        lattice.insert(0, 2, 2.0);
-        lattice.insert(1, 2, 5.0);
-        lattice.insert(0, 3, 10.0);
+        let mut lattice = Lattice::from("ABC", 0, 1, 2);
+        lattice.insert(0, 1, 0.0, 3);
+        lattice.insert(1, 1, 0.0, 4);
+        lattice.insert(2, 1, 0.0, 5);
+        lattice.insert(0, 2, 2.0, 6);
+        lattice.insert(1, 2, 5.0, 7);
+        lattice.insert(0, 3, 10.0, 8);
 
         let nbests = lattice.nbest_tokens(10);
         assert_eq!(
@@ -645,15 +633,15 @@ mod tests {
 
     #[test]
     fn test_populate() {
-        let mut lattice = Lattice::from("ABC");
-        lattice.insert(0, 1, 1.0); // A
-        lattice.insert(1, 1, 1.2); // B
-        lattice.insert(2, 1, 2.5); // C
-        lattice.insert(0, 2, 3.0); // AB
-        lattice.insert(1, 2, 4.0); // BC
-        lattice.insert(0, 3, 2.0); // ABC
+        let mut lattice = Lattice::from("ABC", 0, 1, 2);
+        lattice.insert(0, 1, 1.0, 3); // A
+        lattice.insert(1, 1, 1.2, 4); // B
+        lattice.insert(2, 1, 2.5, 5); // C
+        lattice.insert(0, 2, 3.0, 6); // AB
+        lattice.insert(1, 2, 4.0, 7); // BC
+        lattice.insert(0, 3, 2.0, 8); // ABC
 
-        let mut probs = vec![0.0; 6];
+        let mut probs = vec![0.0; 9];
         let p1 = (1.0_f64 + 1.2 + 2.5).exp();
         let p2 = (3.0_f64 + 2.5).exp();
         let p3 = (1.0_f64 + 4.0).exp();
@@ -663,11 +651,11 @@ mod tests {
         let log_z = lattice.populate_marginal(1.0, &mut probs);
 
         assert_approx_eq!(log_z, z.ln(), 0.001);
-        assert_approx_eq!(probs[0], (p1 + p3) / z, 0.001);
-        assert_approx_eq!(probs[1], (p1) / z, 0.001);
-        assert_approx_eq!(probs[2], (p1 + p2) / z, 0.001);
-        assert_approx_eq!(probs[3], (p2) / z, 0.001);
-        assert_approx_eq!(probs[4], (p3) / z, 0.001);
-        assert_approx_eq!(probs[5], (p4) / z, 0.001);
+        assert_approx_eq!(probs[3], (p1 + p3) / z, 0.001);
+        assert_approx_eq!(probs[4], (p1) / z, 0.001);
+        assert_approx_eq!(probs[5], (p1 + p2) / z, 0.001);
+        assert_approx_eq!(probs[6], (p2) / z, 0.001);
+        assert_approx_eq!(probs[7], (p3) / z, 0.001);
+        assert_approx_eq!(probs[8], (p4) / z, 0.001);
     }
 }
