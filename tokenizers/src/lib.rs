@@ -57,3 +57,6 @@ pub mod utils;
 
 // Re-export from tokenizer
 pub use tokenizer::*;
+
+// Re-export also parallelism utils
+pub use utils::parallelism;

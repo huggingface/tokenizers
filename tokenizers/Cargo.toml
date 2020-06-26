@@ -36,6 +36,7 @@ onig = { version = "6.0", default-features = false }
 regex = "1.3"
 regex-syntax = "0.6"
 rayon = "1.3"
+rayon-cond = { version = "*", git = "https://github.com/n1t0/rayon-cond" }
 serde = { version = "1.0", features = [ "derive" ] }
 serde_json = "1.0"
 typetag = "0.1"

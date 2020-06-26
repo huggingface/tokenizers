@@ -18,6 +18,10 @@ This adds some methods to easily save/load an entire tokenizer (`from_str`, `fro
 activation of the Tensor Cores, while ensuring padding to a multiple of 8. Use with
 `enable_padding(pad_to_multiple_of=8)` for example.
 - [#298]: Ability to get the currently set truncation/padding params
+- [#311]: Ability to enable/disable the parallelism using the `TOKENIZERS_PARALLELISM` environment
+variable. This is especially usefull when using `multiprocessing` capabilities, with the `fork`
+start method, which happens to be the default on Linux systems. Without disabling the parallelism,
+the process dead-locks while encoding. (Cf [#187] for more information)
 
 ### Changed
 - Improved errors generated during truncation: When the provided max length is too low are
@@ -190,6 +194,7 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug with the IDs associated with added tokens.
 - Fix a bug that was causing crashes in Python 3.5
 
+[#311]: https://github.com/huggingface/tokenizers/pull/311
 [#309]: https://github.com/huggingface/tokenizers/pull/309
 [#289]: https://github.com/huggingface/tokenizers/pull/289
 [#286]: https://github.com/huggingface/tokenizers/pull/286
@@ -207,6 +212,7 @@ delimiter (Works like `.split(delimiter)`)
 [#193]: https://github.com/huggingface/tokenizers/pull/193
 [#190]: https://github.com/huggingface/tokenizers/pull/190
 [#188]: https://github.com/huggingface/tokenizers/pull/188
+[#187]: https://github.com/huggingface/tokenizers/issues/187
 [#175]: https://github.com/huggingface/tokenizers/issues/175
 [#174]: https://github.com/huggingface/tokenizers/issues/174
 [#165]: https://github.com/huggingface/tokenizers/pull/165

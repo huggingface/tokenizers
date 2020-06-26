@@ -1,9 +1,9 @@
 #![allow(clippy::map_entry)]
 
 use super::{Pair, WithFirstLastIterator, Word, BPE};
+use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Model, Result, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
-use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
@@ -352,7 +352,7 @@ impl BpeTrainer {
         p: &Option<ProgressBar>,
     ) -> (HashMap<Pair, i32>, HashMap<Pair, HashSet<usize>>) {
         words
-            .par_iter()
+            .maybe_par_iter()
             .enumerate()
             .map(|(i, word)| {
                 let mut pair_counts = HashMap::new();
@@ -379,10 +379,10 @@ impl BpeTrainer {
                             h
                         });
                     *pair_counts.get_mut(&cur_pair).unwrap() += count as i32;
+                }
 
-                    if let Some(p) = &p {
-                        p.inc(1);
-                    }
+                if let Some(p) = &p {
+                    p.inc(1);
                 }
 
                 (pair_counts, where_to_update)
@@ -499,7 +499,7 @@ impl BpeTrainer {
             // Merge the new pair in every words
             let changes = top
                 .pos
-                .par_iter()
+                .maybe_par_iter()
                 .flat_map(|i| {
                     let w = &words[*i] as *const _ as *mut _;
                     // We can merge each of these words in parallel here because each position

@@ -1,4 +1,4 @@
-from ..utils import data_dir, openai_files
+from ..utils import data_dir, openai_files, multiprocessing_with_parallelism
 from tokenizers import CharBPETokenizer
 
 
@@ -42,3 +42,8 @@ class TestBertWordPieceBPE:
         tokenizer = CharBPETokenizer(openai_files["vocab"], openai_files["merges"], lowercase=True)
         decoded = tokenizer.decode(tokenizer.encode("my name is john").ids)
         assert decoded == "my name is john"
+
+    def test_multiprocessing_with_parallelism(self, openai_files):
+        tokenizer = CharBPETokenizer(openai_files["vocab"], openai_files["merges"])
+        multiprocessing_with_parallelism(tokenizer, False)
+        multiprocessing_with_parallelism(tokenizer, True)

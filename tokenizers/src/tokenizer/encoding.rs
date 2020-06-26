@@ -1,6 +1,6 @@
+use crate::parallelism::*;
 use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Represents the output of a `Tokenizer`.
@@ -362,7 +362,7 @@ impl Encoding {
         direction: PaddingDirection,
     ) {
         // Dispatch call to all the overflowings first
-        self.overflowing.par_iter_mut().for_each(|encoding| {
+        self.overflowing.maybe_par_iter_mut().for_each(|encoding| {
             encoding.pad(target_length, pad_id, pad_type_id, pad_token, direction)
         });
 

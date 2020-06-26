@@ -1,4 +1,4 @@
-from ..utils import data_dir, roberta_files
+from ..utils import data_dir, roberta_files, multiprocessing_with_parallelism
 from tokenizers import ByteLevelBPETokenizer
 
 
@@ -79,3 +79,8 @@ class TestByteLevelBPE:
             "Ġlazy",
             "Ġdog",
         ]
+
+    def test_multiprocessing_with_parallelism(self, roberta_files):
+        tokenizer = ByteLevelBPETokenizer(roberta_files["vocab"], roberta_files["merges"])
+        multiprocessing_with_parallelism(tokenizer, False)
+        multiprocessing_with_parallelism(tokenizer, True)

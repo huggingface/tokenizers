@@ -14,7 +14,6 @@ use crate::utils::iter::ResultShunt;
 pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, PaddingStrategy};
 pub use crate::utils::truncation::{truncate_encodings, TruncationParams, TruncationStrategy};
 use indicatif::{ProgressBar, ProgressStyle};
-use rayon::prelude::*;
 use std::{
     collections::HashMap,
     fs::File,
@@ -35,6 +34,8 @@ pub use normalizer::*;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Offsets = (usize, usize);
+
+use crate::utils::parallelism::*;
 
 #[typetag::serde(tag = "type")]
 /// Takes care of pre-processing strings.
@@ -532,7 +533,7 @@ impl Tokenizer {
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>> {
         let mut encodings = inputs
-            .into_par_iter()
+            .into_maybe_par_iter()
             .map(|input| self.encode(input, add_special_tokens))
             .collect::<Result<Vec<Encoding>>>()?;
 
@@ -574,7 +575,7 @@ impl Tokenizer {
         skip_special_tokens: bool,
     ) -> Result<Vec<String>> {
         sentences
-            .into_par_iter()
+            .into_maybe_par_iter()
             .map(|sentence| self.decode(sentence, skip_special_tokens))
             .collect()
     }
@@ -612,9 +613,8 @@ impl Tokenizer {
                 // We read new lines using this API instead of the Lines Iterator
                 // on purpose. We want to keep the `\n` and potential `\r` between each lines
                 // We use an iterator to be able to chain with par_bridge.
-                let words = file
-                    .lines_with_ending()
-                    .par_bridge()
+                file.lines_with_ending()
+                    .maybe_par_bridge()
                     .map_with(
                         &progress,
                         |progress, line| -> Result<HashMap<String, u32>> {
@@ -635,14 +635,16 @@ impl Tokenizer {
                             Ok(words)
                         },
                     )
-                    .try_reduce(HashMap::new, |mut acc, ws| {
-                        for (k, v) in ws {
-                            acc.entry(k).and_modify(|c| *c += v).or_insert(v);
-                        }
-                        Ok(acc)
-                    })?;
-
-                Ok(words)
+                    .reduce(
+                        || Ok(HashMap::new()),
+                        |acc, ws| {
+                            let mut acc = acc?;
+                            for (k, v) in ws? {
+                                acc.entry(k).and_modify(|c| *c += v).or_insert(v);
+                            }
+                            Ok(acc)
+                        },
+                    )
             })
             .try_fold(
                 HashMap::new(),
