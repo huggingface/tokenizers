@@ -641,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers-python"
-version = "0.8.0-rc3"
+version = "0.8.0"
 dependencies = [
  "libc 0.2.68 (registry+https://github.com/rust-lang/crates.io-index)",
  "pyo3 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",

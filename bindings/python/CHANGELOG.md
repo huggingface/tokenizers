@@ -4,7 +4,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0.rc3]
+## [0.8.0]
+
+### Highlights of this release
+- We can now encode both pre-tokenized inputs, and raw strings. This is especially usefull when
+processing datasets that are already pre-tokenized like for NER (Name Entity Recognition), and helps
+while applying labels to each word.
+- Full tokenizer serialization. It is now easy to save a tokenizer to a single JSON file, to later
+load it back with just one line of code. That's what sharing a Tokenizer means now: 1 line of code.
+- With the serialization comes the compatibility with `Pickle`! The Tokenizer, all of its components,
+Encodings, everything can be pickled!
+- Training a tokenizer is now even faster (up to 5-10x) than before!
+- Compatibility with `multiprocessing`, even when using the `fork` start method. Since this library
+makes heavy use of the multithreading capacities of our computers to allows a very fast tokenization,
+this led to problems (deadlocks) when used with `multiprocessing`. This version now allows to
+disable the parallelism, and will warn you if this is necessary.
+- And a lot of other improvements, and fixes.
 
 ### Fixed
 - [#286]: Fix various crash when training a BPE model
