@@ -51,7 +51,6 @@ indicatif = "0.14"
 itertools = "0.9"
 log = "0.4"
 esaxx-rs = "0.1"
-trie-rs = "0.1"
 
 [dev-dependencies]
 criterion = "0.3"
