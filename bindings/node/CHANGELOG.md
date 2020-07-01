@@ -1,3 +1,29 @@
+# [0.7.0](https://github.com/huggingface/tokenizers/compare/node-v0.6.2...node-v0.7.0) (2020-07-01)
+
+### BREAKING CHANGES
+
+- `robertaProcessing` now handles trimming the offsets (activated by default) ([#236](https://github.com/huggingface/tokenizers/pull/236))
+- `charToTokenOffsets`, `charToWordOffsets` and `tokenToWordOffsets` helper functions on `Encoding` instances are removed and replaced by new `wordToTokens`, `wordToChars`, `tokenToChars`, `tokenToWord` and `charToWord` methods ([#234](https://github.com/huggingface/tokenizers/pull/234))
+- `encode` and `encodeBatch` methods on a tokenizer now handle pre-tokenized inputs and have their signatures changed ([#249](https://github.com/huggingface/tokenizers/pull/249)). In addition:
+  - `encodeTokenized`, `encodeTokenizedBatch` methods are therefore removed
+  - `InputSequence`, `EncodeInput` and `EncodeOptions` types are added
+- Improve management of the additional vocabulary ([#309](https://github.com/huggingface/tokenizers/pull/309)):
+  - New parameter `normalized` in `AddedToken` options, controlling whether a token should be extracted from the normalized version of the input text
+  - The `AddedToken` constructor now takes a `special` boolean as second parameter to indicate if the token is special (in this case it won't be normalized)
+
+### Features
+
+- Serialization of a `Tokenizer` and all its parts (`PreTokenizer`, `Normalizer`, ...). This adds some methods to easily save/load an entire tokenizer: new static methods `fromString` / `fromFile`, and instance methods `save` / `toString` on `BaseTokenizer` ([#272](https://github.com/huggingface/tokenizers/pull/272))
+- New `padToMultipleOf` parameter for `PaddingOptions`, to pad to a multiple of a specified value ([#289](https://github.com/huggingface/tokenizers/pull/289))
+- Improved errors generated during truncation when the provided max length is too low ([02cc977](https://github.com/huggingface/tokenizers/commit/02cc97756ffb9193b5d6d8dfcdeb7bf08adf2516))
+- Improve BPE training speeds, by reading files sequentially, but parallelizing the processing of each file ([#276](https://github.com/huggingface/tokenizers/pull/276))
+- Use `onig` for byte-level pre-tokenization to remove all the differences with the original implementation from GPT-2 ([#280](https://github.com/huggingface/tokenizers/pull/280))
+
+### Fixes
+
+- Fix various crash when training a BPE model ([#286](https://github.com/huggingface/tokenizers/pull/286))
+- Fix a few bugs related to additional vocabulary/tokens ([#309](https://github.com/huggingface/tokenizers/pull/309))
+
 ## [0.6.2](https://github.com/huggingface/tokenizers/compare/node-v0.6.1...node-v0.6.2) (2020-04-13)
 
 ### Features
