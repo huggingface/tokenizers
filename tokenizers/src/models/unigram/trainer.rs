@@ -219,7 +219,7 @@ impl UnigramTrainer {
                 // if let Some(p) = &progress {
                 //     p.inc(1);
                 // }
-                return Some((score, string));
+                Some((score, string))
             })
             .collect();
 
