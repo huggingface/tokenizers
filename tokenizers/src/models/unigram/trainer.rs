@@ -194,57 +194,34 @@ impl UnigramTrainer {
                 }
             }
         }
-        let chars: Vec<_> = flat_string.chars().collect();
-        let n = chars.len();
-        let mut sa = vec![0; n];
-        let mut l = vec![0; n];
-        let mut r = vec![0; n];
-        let mut d = vec![0; n];
-        let mut node_num = 0;
-        let alphabet_size = 0x110000; // All UCS4 range.
-        esaxx_rs::esaxx(
-            &chars,
-            &mut sa,
-            &mut l,
-            &mut r,
-            &mut d,
-            alphabet_size,
-            &mut node_num,
-        )
-        .unwrap();
+        let suffix = esaxx_rs::suffix(&flat_string).unwrap();
 
         self.update_progress(&progress, vocab_size, "Updating frequent sub strings...");
-        let mut substr_index: Vec<(u32, usize)> = vec![];
         //  Basic chars need to be in sentence pieces.
         let mut seed_sentencepieces: Vec<SentencePiece> = vec![];
 
         let mut sall_chars: Vec<_> = all_chars.into_iter().map(|(a, b)| (b, a)).collect();
         // Reversed order
         sall_chars.sort_by(|a, b| b.cmp(a));
-        for i in 0..node_num {
-            let index: usize = i.try_into()?;
-            let left: usize = l[index].try_into()?;
-            let offset: usize = sa[left].try_into()?;
-            let len: usize = d[index].try_into()?;
-            if len <= 1 {
-                continue;
-            }
-            let string = &chars[offset..offset + len];
-            if string.contains(&c_sentence_boundary) {
-                continue;
-            }
-            if !is_valid_sentencepiece(string) {
-                continue;
-            }
-
-            let freq: u32 = (r[index] - l[index]).try_into()?;
-            let len_u32: u32 = len.try_into()?;
-            let score = freq * len_u32;
-            substr_index.push((score, index));
-            if let Some(p) = &progress {
-                p.inc(1);
-            }
-        }
+        let mut substr_index: Vec<_> = suffix
+            .iter()
+            .filter_map(|(string, freq)| {
+                if string.len() <= 1 {
+                    return None;
+                }
+                if string.contains(&c_sentence_boundary) {
+                    return None;
+                }
+                if !is_valid_sentencepiece(string) {
+                    return None;
+                }
+                let score = freq * string.len() as u32;
+                // if let Some(p) = &progress {
+                //     p.inc(1);
+                // }
+                return Some((score, string));
+            })
+            .collect();
 
         // Fill seed_sentencepieces
         println!("all_chars {}", sall_chars.len());
@@ -257,12 +234,7 @@ impl UnigramTrainer {
         println!("substr_index {}", substr_index.len());
         // sort by decreasing score
         substr_index.sort_by(|a, b| b.cmp(a));
-        for (score, i) in substr_index {
-            let left: usize = l[i].try_into()?;
-            let offset: usize = sa[left].try_into()?;
-            let len: usize = d[i].try_into()?;
-            assert!(len > 0);
-            let char_string = &chars[offset..offset + len];
+        for (score, char_string) in substr_index {
             // Just in case
             assert!(is_valid_sentencepiece(char_string));
             let string: String = char_string.iter().collect();
