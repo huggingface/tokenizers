@@ -20,15 +20,19 @@ use pyo3::wrap_pymodule;
 // we register a callback to be called in the event of a fork so that we can warn the user.
 static mut REGISTERED_FORK_CALLBACK: bool = false;
 extern "C" fn child_after_fork() {
-    if !tk::parallelism::is_parallelism_configured() {
+    use tk::parallelism::*;
+    if has_parallelism_been_used() && !is_parallelism_configured() {
         println!(
-            "The current process just got forked. Disabling parallelism to avoid deadlocks..."
+            "huggingface/tokenizers: The current process just got forked, after parallelism has \
+            already been used. Disabling parallelism to avoid deadlocks..."
         );
+        println!("To disable this warning, you can either:");
         println!(
-            "To disable this warning, please explicitly set {}=(true | false)",
-            tk::parallelism::ENV_VARIABLE
+            "\t- Avoid using `tokenizers` before the fork if possible\n\
+            \t- Explicitly set the environment variable {}=(true | false)",
+            ENV_VARIABLE
         );
-        tk::parallelism::set_parallelism(false);
+        set_parallelism(false);
     }
 }
 
