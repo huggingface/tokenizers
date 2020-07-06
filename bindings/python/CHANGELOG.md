@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1-rc1]
+
+### Fixed
+- [#333]: Fix deserialization of `AddedToken`, where the content was not restored properly
+
+### Changed
+- [#329]: Improved warning and behavior when we detect a fork
+- [#330]: BertNormalizer now keeps the same behavior than the original implementation when
+`strip_accents` is not specified.
+
 ## [0.8.0]
 
 ### Highlights of this release
@@ -209,6 +219,9 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug with the IDs associated with added tokens.
 - Fix a bug that was causing crashes in Python 3.5
 
+[#333]: https://github.com/huggingface/tokenizers/pull/333
+[#330]: https://github.com/huggingface/tokenizers/pull/330
+[#329]: https://github.com/huggingface/tokenizers/pull/329
 [#311]: https://github.com/huggingface/tokenizers/pull/311
 [#309]: https://github.com/huggingface/tokenizers/pull/309
 [#289]: https://github.com/huggingface/tokenizers/pull/289
