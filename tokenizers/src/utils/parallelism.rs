@@ -8,9 +8,17 @@ use rayon_cond::CondIterator;
 
 pub const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
 
+// Reading/Writing this variable should always happen on the main thread
+static mut USED_PARALLELISM: bool = false;
+
 /// Check if the TOKENIZERS_PARALLELISM env variable has been explicitly set
 pub fn is_parallelism_configured() -> bool {
     std::env::var(ENV_VARIABLE).is_ok()
+}
+
+/// Check if at some point we used a parallel iterator
+pub fn has_parallelism_been_used() -> bool {
+    unsafe { USED_PARALLELISM }
 }
 
 /// Get the currently set value for `TOKENIZERS_PARALLELISM` env variable
@@ -60,7 +68,11 @@ where
     S: Iterator<Item = P::Item>,
 {
     fn into_maybe_par_iter(self) -> CondIterator<P, S> {
-        CondIterator::new(self, get_parallelism())
+        let parallelism = get_parallelism();
+        if parallelism {
+            unsafe { USED_PARALLELISM = true };
+        }
+        CondIterator::new(self, parallelism)
     }
 
     fn into_maybe_par_iter_cond(self, cond: bool) -> CondIterator<P, S> {
@@ -147,6 +159,7 @@ where
         let iter = CondIterator::from_serial(self);
 
         if get_parallelism() {
+            unsafe { USED_PARALLELISM = true };
             CondIterator::from_parallel(iter.into_parallel().right().unwrap())
         } else {
             iter
