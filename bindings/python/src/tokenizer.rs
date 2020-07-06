@@ -107,6 +107,7 @@ impl AddedToken {
                 for (key, value) in state {
                     let key: &str = key.extract()?;
                     match key {
+                        "content" => self.content = value.extract()?,
                         "single_word" => self.single_word = Some(value.extract()?),
                         "lstrip" => self.lstrip = Some(value.extract()?),
                         "rstrip" => self.rstrip = Some(value.extract()?),
