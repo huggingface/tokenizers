@@ -24,7 +24,7 @@ export interface BertNormalizerOptions {
   lowercase?: boolean;
   /**
    * Whether to strip all accents.
-   * @default true
+   * @default undefined
    */
   stripAccents?: boolean;
 }

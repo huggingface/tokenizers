@@ -21,7 +21,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
         mask_token: Union[str, AddedToken] = "[MASK]",
         clean_text: bool = True,
         handle_chinese_chars: bool = True,
-        strip_accents: bool = True,
+        strip_accents: Optional[bool] = None,
         lowercase: bool = True,
         wordpieces_prefix: str = "##",
     ):

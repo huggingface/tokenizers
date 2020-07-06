@@ -18,7 +18,7 @@ class BertNormalizer(Normalizer):
         self,
         clean_text: Optional[bool] = True,
         handle_chinese_chars: Optional[bool] = True,
-        strip_accents: Optional[bool] = True,
+        strip_accents: Optional[bool] = None,
         lowercase: Optional[bool] = True,
     ) -> None:
         """ Instantiate a BertNormalizer with the given options.
@@ -32,7 +32,8 @@ class BertNormalizer(Normalizer):
                 Whether to handle chinese chars by putting spaces around them.
 
             strip_accents: (`optional`) boolean:
-                Whether to strip all accents.
+                Whether to strip all accents. If this option is not specified (ie == None),
+                then it will be determined by the value for `lowercase` (as in the original Bert).
 
             lowercase: (`optional`) boolean:
                 Whether to lowercase.

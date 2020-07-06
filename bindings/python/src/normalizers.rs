@@ -51,7 +51,7 @@ impl BertNormalizer {
     fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, Normalizer)> {
         let mut clean_text = true;
         let mut handle_chinese_chars = true;
-        let mut strip_accents = true;
+        let mut strip_accents = None;
         let mut lowercase = true;
 
         if let Some(kwargs) = kwargs {
