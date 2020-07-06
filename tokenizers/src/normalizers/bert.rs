@@ -57,7 +57,7 @@ pub struct BertNormalizer {
     /// Whether to put spaces around chinese characters so they get split
     handle_chinese_chars: bool,
     /// Whether to strip accents
-    strip_accents: bool,
+    strip_accents: Option<bool>,
     /// Whether to lowercase the input
     lowercase: bool,
 }
@@ -67,7 +67,7 @@ impl Default for BertNormalizer {
         Self {
             clean_text: true,
             handle_chinese_chars: true,
-            strip_accents: true,
+            strip_accents: None,
             lowercase: true,
         }
     }
@@ -77,7 +77,7 @@ impl BertNormalizer {
     pub fn new(
         clean_text: bool,
         handle_chinese_chars: bool,
-        strip_accents: bool,
+        strip_accents: Option<bool>,
         lowercase: bool,
     ) -> Self {
         BertNormalizer {
@@ -124,7 +124,8 @@ impl Normalizer for BertNormalizer {
         if self.handle_chinese_chars {
             self.do_handle_chinese_chars(&mut normalized);
         }
-        if self.strip_accents {
+        let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
+        if strip_accents {
             self.do_strip_accents(&mut normalized);
         }
         if self.lowercase {
