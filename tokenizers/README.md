@@ -40,14 +40,14 @@ Train and serialize a Tokenizer.
 
 ```Rust
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
-use tokenizers::Result;
 use tokenizers::normalizers::{strip::Strip, unicode::NFC, utils::Sequence};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::tokenizer::Result;
 use tokenizers::tokenizer::{AddedToken, Tokenizer, Trainer};
 
 use std::path::Path;
 
-fn main() -> Result<()>{
+fn main() -> Result<()> {
     let vocab_size: usize = 100;
 
     let trainer: Box<dyn Trainer> = Box::new(
@@ -56,11 +56,11 @@ fn main() -> Result<()>{
             .vocab_size(vocab_size)
             .min_frequency(0)
             .special_tokens(vec![
-                AddedToken::from("<s>", true),
-                AddedToken::from("<pad>", true),
-                AddedToken::from("</s>", true),
-                AddedToken::from("<unk>", true),
-                AddedToken::from("<mask>", true),
+                AddedToken::from("<s>".into()),
+                AddedToken::from("<pad>".into()),
+                AddedToken::from("</s>".into()),
+                AddedToken::from("<unk>".into()),
+                AddedToken::from("<mask>".into()),
             ])
             .build(),
     );
@@ -73,7 +73,9 @@ fn main() -> Result<()>{
     tokenizer.with_pre_tokenizer(Box::new(ByteLevel::default()));
 
     tokenizer.train(&trainer, vec!["/path/to/train.txt".to_string()])?;
-    tokenizer.save("/path/to/trained_tokenizer", true)?;
+    tokenizer
+        .get_model()
+        .save(Path::new("/path/to/folder"), Some("trained_tokenizer"))?;
 
     Ok(())
 }
