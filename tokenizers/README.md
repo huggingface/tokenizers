@@ -75,7 +75,7 @@ fn main() -> Result<()> {
     tokenizer.train(&trainer, vec!["/path/to/train.txt".to_string()])?;
     tokenizer
         .get_model()
-        .save(Path::new("/path/to/folder"), Some("trained_tokenizer"))?;
+        .save(Path::new("/path/to/"), Some("trained_tokenizer"))?;
 
     Ok(())
 }
