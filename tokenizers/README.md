@@ -84,14 +84,20 @@ fn main() -> Result<()> {
 Deserialize a pretrained Tokenizer.
 
 ```Rust
-use tokenizers::Result;
+use tokenizers::models::bpe::BPE;
+use tokenizers::tokenizer::EncodeInput;
+use tokenizers::tokenizer::Result;
 use tokenizers::tokenizer::Tokenizer;
 
-fn main() -> Result<()>{
+fn main() -> Result<()> {
+    let model = BPE::from_files(
+        "/path/to/trained_tokenizer-vocab.json",
+        "/path/to/trained_tokenizer-merges.txt",
+    )
+    .build()?;
 
-    let tokenizer = Tokenizer::from_file("/path/to/trained_tokenizer")?;
-
-    let sample_encoding = tokenizer.encode("Huggingface", false)?;
+    let tokenizer = Tokenizer::new(Box::new(model));
+    let sample_encoding = tokenizer.encode(EncodeInput::Single("Huggingface".into()), false)?;
 
     println!("{:?}", sample_encoding);
 
