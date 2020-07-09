@@ -399,22 +399,12 @@ impl UnigramTrainer {
                     panic!("");
                 }
 
-                if inverted[id].is_empty() {
-                    for sub_id in &alternatives[id] {
-                        println!("Alternative {:?}", pieces[*sub_id].0);
-                    }
-
-                    panic!("Error for id {}", pieces[id].0);
-                }
                 candidates.push((id, loss));
             }
         }
         let desired_vocab_size: usize = (self.vocab_size as usize * 11) / 10; // * 1.1
         let pruned_size: usize = ((pieces.len() as f64) * self.shrinking_factor) as usize;
         let pruned_size = desired_vocab_size.max(pruned_size);
-        // println!("Pruned size {}", pruned_size);
-
-        // println!("Candidates {:?}", candidates);
 
         candidates.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
         for (id, _score) in candidates {
@@ -423,8 +413,6 @@ impl UnigramTrainer {
             }
             new_pieces.push(pieces[id].clone());
         }
-        // println!("Before  {}", pieces.len());
-        // println!("New pieces {:?}", new_pieces.len());
 
         new_pieces.to_vec()
     }
@@ -567,11 +555,11 @@ impl UnigramTrainer {
                 model = Unigram::from(&pieces, 0, 1, 2);
                 // println!(
                 //     "Em iter={} size={} obj={} num_tokens={} num_tokens/piece={}",
-                //     iter,
+                //     _iter,
                 //     model.len(),
-                //     objective,
-                //     num_tokens,
-                //     num_tokens as f64 / model.len() as f64
+                //     _objective,
+                //     _num_tokens,
+                //     _num_tokens as f64 / model.len() as f64
                 // );
                 if let Some(p) = &progress {
                     p.inc(1);
@@ -678,7 +666,7 @@ mod tests {
             -1.4663370687934272, // 6.0
             -1.8718021769015916, // 4.0
         ];
-        println!("Scores {:?}", scores);
+        // println!("Scores {:?}", scores);
 
         for (score, target_score) in scores.into_iter().zip(target_scores) {
             assert_approx_eq!(*score, target_score, 0.01);

@@ -1,7 +1,7 @@
 use crate::models::unigram::lattice::Lattice;
 use crate::models::unigram::trie::{Trie, TrieBuilder};
 use crate::tokenizer::{Model, Offsets, Result, Token};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -13,12 +13,12 @@ use std::path::{Path, PathBuf};
 type TokenMap = HashMap<String, u32>;
 type Vocab = Vec<String>;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 pub struct Unigram {
     token_to_ids: TokenMap,
     pub(crate) vocab: Vocab,
-    scores: Vec<f64>,
-    #[serde(skip_serializing, skip_deserializing, default = "empty_trie")]
+    pub(super) scores: Vec<f64>,
+    #[serde(skip_deserializing, default = "empty_trie")]
     trie: Trie<char>,
     pub min_score: f64,
     bos_id: usize,
@@ -262,9 +262,17 @@ impl Model for Unigram {
         }
     }
 
-    fn save(&self, _folder: &Path, _name: Option<&str>) -> Result<Vec<PathBuf>> {
-        // TODO
-        Ok(vec![])
+    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
+        let name = match name {
+            Some(name) => format!("{}-unigram.json", name),
+            None => "unigram.json".to_string(),
+        };
+        let mut fullpath = PathBuf::new();
+        fullpath.push(folder);
+        fullpath.push(name);
+        let string = serde_json::to_string_pretty(self)?;
+        std::fs::write(&fullpath, string)?;
+        Ok(vec![fullpath])
     }
 }
 

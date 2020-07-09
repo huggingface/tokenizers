@@ -129,12 +129,12 @@ fn test_train_from_file() {
     let file = read_to_string("data/unigram_wagahaiwa_nekodearu.txt").unwrap();
     let mut ignored = 0;
     for line in file.split("\r\n") {
-        if line.len() > 4192 {
+        if line.len() > 4192 || line.len() == 0 {
             ignored += 1;
             continue;
         }
-        // word_counts.push((format!("▁{}", line.to_string()), 1));
-        word_counts.push((line.to_string(), 1));
+        word_counts.push((format!("▁{}", line.to_string()), 1));
+        // word_counts.push((line.to_string(), 1));
     }
     println!("Kept {:?} sentences", word_counts.len());
     println!("Ignored {:?} sentences", ignored);
@@ -143,6 +143,10 @@ fn test_train_from_file() {
     let (model, _) = trainer._train(word_counts).unwrap();
     // println!("Stop train {:?}", model.get_vocab());
     // println!("Vocab {}", model.get_vocab().len());
+    //
+    model
+        .save(std::path::Path::new("data"), Some("wagahaiwa_nekodearu"))
+        .unwrap();
 
     let pretok = Whitespace;
     let input = pretok
