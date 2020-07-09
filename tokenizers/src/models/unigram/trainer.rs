@@ -103,17 +103,15 @@ impl UnigramTrainer {
             }
             if *c == ' ' {
                 if self.treat_whitespace_as_suffix {
-                    if self.split_by_whitespace && i != n - 1 {
-                        return false;
-                    } else if !self.split_by_whitespace && i == 0 {
-                        // Prevent prefix
+                    let is_not_suffix_no_whitespace = self.split_by_whitespace && i != n - 1;
+                    let is_prefix = !self.split_by_whitespace && i == 0;
+                    if is_not_suffix_no_whitespace || is_prefix {
                         return false;
                     }
                 } else {
-                    if self.split_by_whitespace && i != 0 {
-                        return false;
-                    } else if !self.split_by_whitespace && i == n - 1 {
-                        // Prevent suffix
+                    let is_not_prefix_no_whitespace = self.split_by_whitespace && i != 0;
+                    let is_suffix = !self.split_by_whitespace && i == n - 1;
+                    if is_not_prefix_no_whitespace || is_suffix {
                         return false;
                     }
                 }
@@ -134,10 +132,8 @@ impl UnigramTrainer {
                 }
             };
 
-            if self.split_by_digits && c.is_numeric() {
-                if n > 1 {
-                    return false;
-                }
+            if self.split_by_digits && c.is_numeric() && n > 1 {
+                return false;
             }
             if self.split_by_unicode_script
                 && script != Script::Any
