@@ -121,17 +121,20 @@ fn test_sample() {
 #[test]
 fn test_train_from_file() {
     let trainer = UnigramTrainerBuilder::default()
-        .with_progress(false)
-        .build();
-    let mut word_counts: HashMap<String, u32> = HashMap::new();
+        .show_progress(false)
+        // .split_by_whitespace(true)
+        .build()
+        .unwrap();
+    let mut word_counts: Vec<(String, u32)> = vec![];
     let file = read_to_string("data/unigram_wagahaiwa_nekodearu.txt").unwrap();
     let mut ignored = 0;
-    for line in file.split('\n') {
-        if line.len() > 2048 {
+    for line in file.split("\r\n") {
+        if line.len() > 4192 {
             ignored += 1;
             continue;
         }
-        word_counts.insert(line.to_string(), 1);
+        // word_counts.push((format!("▁{}", line.to_string()), 1));
+        word_counts.push((line.to_string(), 1));
     }
     println!("Kept {:?} sentences", word_counts.len());
     println!("Ignored {:?} sentences", ignored);
@@ -147,9 +150,6 @@ fn test_train_from_file() {
             "吾輩《わがはい》は猫である。名前はまだ無い。",
         ))
         .unwrap();
-    // XXX: In original algo the tokens "吾", "輩" are actually
-    // fused into "吾輩", it's *probably* because of is_valid_sentencepiece
-    // shenanigans. Same for "名前"
     assert_eq!(
         model
             .tokenize(input)
@@ -158,8 +158,7 @@ fn test_train_from_file() {
             .map(|tok| tok.value.clone())
             .collect::<Vec<_>>(),
         vec![
-            "吾",
-            "輩",
+            "吾輩",
             "《",
             "わが",
             "はい",
@@ -168,8 +167,7 @@ fn test_train_from_file() {
             "猫",
             "である",
             "。",
-            "名",
-            "前",
+            "名前",
             "はまだ",
             "無い",
             "。"

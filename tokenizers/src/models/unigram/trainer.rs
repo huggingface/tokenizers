@@ -1,14 +1,19 @@
-use crate::models::unigram::{lattice::Lattice, model::Unigram};
+use crate::models::unigram::{
+    lattice::Lattice,
+    model::Unigram,
+    unicode::{get_script, Script},
+};
 use crate::tokenizer::{AddedToken, Model, Result, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
+// A token and a score
 type SentencePiece = (String, f64);
-const SEED_SIZE: usize = 1_000_000;
+// A full sentence or word + it's count within the dataset
+type Sentence = (String, u32);
 
-fn digamma(x: f64) -> f64 {
-    let mut x = x;
+fn digamma(mut x: f64) -> f64 {
     let mut result = 0.0;
     while x < 7.0 {
         result -= 1.0 / x;
@@ -31,81 +36,43 @@ fn to_log_prob(pieces: &mut [SentencePiece]) {
     }
 }
 
-pub struct UnigramTrainerBuilder {
-    show_progress: bool,
-}
-
-impl Default for UnigramTrainerBuilder {
-    fn default() -> Self {
-        UnigramTrainerBuilder {
-            show_progress: true,
-        }
-    }
-}
-
-impl UnigramTrainerBuilder {
-    pub fn with_progress(mut self, progress: bool) -> Self {
-        self.show_progress = progress;
-        self
-    }
-
-    pub fn build(&self) -> UnigramTrainer {
-        UnigramTrainer::new(self.show_progress)
-    }
-}
-
+#[derive(Builder, Debug, Clone)]
 pub struct UnigramTrainer {
+    #[builder(default = "true")]
     show_progress: bool,
+    #[builder(default = "8000")]
     vocab_size: u32,
+    #[builder(default = "2")]
     n_sub_iterations: u32,
+    #[builder(default = "0.75")]
+    shrinking_factor: f64,
+    #[builder(default = "vec![]")]
     special_tokens: Vec<AddedToken>,
-}
 
-impl Default for UnigramTrainer {
-    fn default() -> Self {
-        Self {
-            show_progress: true,
-            vocab_size: 8_000,
-            n_sub_iterations: 2,
-            special_tokens: vec![],
-        }
-    }
-}
+    #[builder(default = "false")]
+    treat_whitespace_as_suffix: bool,
+    #[builder(default = "true")]
+    split_by_unicode_script: bool,
+    #[builder(default = "true")]
+    split_by_number: bool,
+    #[builder(default = "false")]
+    split_by_digits: bool,
+    /// In spm this parameter defaults to true,
+    /// we set it to false here because it's supposed
+    /// to be a job taken care by the pretokenizer. We still
+    /// have it here to enable easier testing as it does make a difference
+    /// in `is_valid_sentencepiece` method were we discard seed_pieces if they
+    /// contain a whitespace. This job can/could be taken elsewhere.
+    #[builder(default = "false")]
+    split_by_whitespace: bool,
 
-static MAX_PIECE_LENGTH: usize = 16;
-
-fn is_valid_sentencepiece(char_string: &[char]) -> bool {
-    // TODO
-    // Checks string length, space not in the substring, numbers, hiragana and more
-    // https://github.com/google/sentencepiece/blob/26be9516cd81d5315ee31c48d2438018e0eab879/src/trainer_interface.cc#L203
-    let n = char_string.len();
-    if char_string.is_empty() || n > MAX_PIECE_LENGTH {
-        // println!("Too long");
-        return false;
-    }
-    true
-    // for (i, c) in char_string.iter().enumerate() {
-    //     if *c == ' ' && i > 0 {
-    //         // println!("Invalid prefix");
-    //         return false;
-    //     }
-    // }
-    // // This function checks that unicode "scripts" are consistent, so we cannot have romaji and
-    // // hiragana for instance. Seems pretty specific. Also Hiragana and katakana are mixed
-
-    // true
+    #[builder(default = "16")]
+    max_piece_length: usize,
+    #[builder(default = "1_000_000")]
+    seed_size: usize,
 }
 
 impl UnigramTrainer {
-    pub fn new(show_progress: bool) -> UnigramTrainer {
-        UnigramTrainer {
-            show_progress,
-            vocab_size: 8_000,
-            n_sub_iterations: 2,
-            special_tokens: vec![],
-        }
-    }
-
     /// Setup a progress bar if asked to show progress
     fn setup_progress(&self) -> Option<ProgressBar> {
         if self.show_progress {
@@ -118,6 +85,74 @@ impl UnigramTrainer {
         } else {
             None
         }
+    }
+
+    fn is_valid_sentencepiece(&self, char_string: &[char]) -> bool {
+        // TODO
+        // Checks string length, space not in the substring, numbers, hiragana and more
+        // https://github.com/google/sentencepiece/blob/26be9516cd81d5315ee31c48d2438018e0eab879/src/trainer_interface.cc#L203
+        let n = char_string.len();
+        if char_string.is_empty() || n > self.max_piece_length {
+            // println!("Too long");
+            return false;
+        }
+        let mut last_script = Script::Any;
+        for (i, c) in char_string.iter().enumerate() {
+            if *c == '\0' {
+                return false;
+            }
+            if *c == ' ' {
+                if self.treat_whitespace_as_suffix {
+                    if self.split_by_whitespace && i != n - 1 {
+                        return false;
+                    } else if !self.split_by_whitespace && i == 0 {
+                        // Prevent prefix
+                        return false;
+                    }
+                } else {
+                    if self.split_by_whitespace && i != 0 {
+                        return false;
+                    } else if !self.split_by_whitespace && i == n - 1 {
+                        // Prevent suffix
+                        return false;
+                    }
+                }
+            }
+
+            // This function checks that unicode "scripts" are consistent, so we cannot have romaji and
+            // hiragana for instance. Seems pretty specific. Also Hiragana and katakana are mixed
+            let raw_script = get_script(c);
+            let script = if *c as u32 == 0x30FC {
+                Script::Han
+            } else if *c as u32 == 32 || !self.split_by_number && c.is_numeric() {
+                Script::Any
+            } else {
+                match raw_script {
+                    Script::Hiragana => Script::Han,
+                    Script::Katakana => Script::Han,
+                    script => script,
+                }
+            };
+
+            if self.split_by_digits && c.is_numeric() {
+                if n > 1 {
+                    return false;
+                }
+            }
+            if self.split_by_unicode_script
+                && script != Script::Any
+                && last_script != Script::Any
+                && script != last_script
+            {
+                // println!("removing for for unicode script {:?}", char_string);
+                return false;
+            }
+            last_script = script;
+        }
+
+        true
+
+        // true
     }
 
     fn finalize(&self, model: Unigram, required_chars: HashSet<String>) -> Unigram {
@@ -157,7 +192,7 @@ impl UnigramTrainer {
         Unigram::from(&final_pieces, 0, 1, 2)
     }
 
-    fn required_chars(&self, word_counts: &HashMap<String, u32>) -> HashSet<String> {
+    fn required_chars(&self, word_counts: &[Sentence]) -> HashSet<String> {
         // TODO more logic needed if this required chars > vocab_size
         word_counts
             .iter()
@@ -168,25 +203,24 @@ impl UnigramTrainer {
     }
     fn make_seed_sentence_pieces(
         &self,
-        word_counts: &HashMap<String, u32>,
+        sentences: &[Sentence],
+        _progress: &Option<ProgressBar>,
     ) -> Result<Vec<SentencePiece>> {
-        let vocab_size: usize = self.vocab_size.try_into()?;
-        let progress = self.setup_progress();
         // Put all sentences in a string, separated by \0
-        let total: usize = word_counts
+        let total: usize = sentences
             .iter()
             .map(|(s, _)| s.chars().count())
             .sum::<usize>()
-            + word_counts.len();
+            + sentences.len();
         let mut flat_string = String::with_capacity(total);
         let mut all_chars: HashMap<char, u32> = HashMap::new();
         let c_sentence_boundary = '\0';
         let k_sentence_boundary = '\0'.to_string();
-        for string in word_counts.keys() {
+        for (string, _) in sentences {
             flat_string.push_str(&string);
             // XXX
-            // Comment suggests we add sentence boupiece, but it seems to be missing from actual
-            // code.
+            // Comment suggests we add sentence boundary, but it seems to be missing from actual
+            // code in spm.
             flat_string.push_str(&k_sentence_boundary);
             for c in string.chars() {
                 if c != c_sentence_boundary {
@@ -196,7 +230,6 @@ impl UnigramTrainer {
         }
         let suffix = esaxx_rs::suffix(&flat_string).unwrap();
 
-        self.update_progress(&progress, vocab_size, "Updating frequent sub strings...");
         //  Basic chars need to be in sentence pieces.
         let mut seed_sentencepieces: Vec<SentencePiece> = vec![];
 
@@ -212,7 +245,7 @@ impl UnigramTrainer {
                 if string.contains(&c_sentence_boundary) {
                     return None;
                 }
-                if !is_valid_sentencepiece(string) {
+                if !self.is_valid_sentencepiece(string) {
                     return None;
                 }
                 let score = freq * string.len() as u32;
@@ -224,22 +257,19 @@ impl UnigramTrainer {
             .collect();
 
         // Fill seed_sentencepieces
-        println!("all_chars {}", sall_chars.len());
+        // println!("all_chars {}", sall_chars.len());
         for (count, character) in sall_chars {
             seed_sentencepieces.push((character.to_string(), count.into()));
-            if let Some(p) = &progress {
-                p.inc(1);
-            }
         }
-        println!("substr_index {}", substr_index.len());
+        // println!("substr_index {}", substr_index.len());
         // sort by decreasing score
         substr_index.sort_by(|a, b| b.cmp(a));
         for (score, char_string) in substr_index {
             // Just in case
-            assert!(is_valid_sentencepiece(char_string));
+            assert!(self.is_valid_sentencepiece(char_string));
             let string: String = char_string.iter().collect();
             seed_sentencepieces.push((string, score.into()));
-            if seed_sentencepieces.len() >= SEED_SIZE {
+            if seed_sentencepieces.len() >= self.seed_size {
                 break;
             }
 
@@ -248,11 +278,159 @@ impl UnigramTrainer {
             //assert_eq!(all_chars.get(string), None);
         }
         to_log_prob(&mut seed_sentencepieces);
-        self.finalize_progress(&progress, vocab_size);
         Ok(seed_sentencepieces)
     }
-    fn prune_sentence_pieces(&self) {
+    fn prune_sentence_pieces(
+        &self,
+        model: &Unigram,
+        pieces: &[SentencePiece],
+        sentences: &[Sentence],
+    ) -> Vec<SentencePiece> {
         // TODO
+        let mut always_keep = vec![true; pieces.len()];
+        let mut alternatives: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
+
+        // First, segments the current sentencepieces to know
+        // how each sentencepiece is resegmented if this sentencepiece is removed
+        // from the vocabulary.
+        // To do so, we take the second best segmentation of sentencepiece[i].
+        // alternatives[i] stores the sequence of second best sentencepieces.
+        for (id, (token, _score)) in pieces.iter().enumerate() {
+            // Always keep bos, eos, unk.
+            if id <= 2 {
+                always_keep[id] = false;
+                continue;
+            }
+            let mut lattice = Lattice::from(token, 0, 1, 2);
+            model.populate_nodes(&mut lattice);
+
+            let nbests = lattice.nbest(2);
+            if nbests.len() == 1 {
+                always_keep[id] = true;
+            } else if nbests[0].len() >= 2 {
+                always_keep[id] = false;
+            } else if nbests[0].len() == 1 {
+                always_keep[id] = true;
+                for node in &nbests[1] {
+                    let alt_id = node.borrow().id;
+                    alternatives[id].push(alt_id);
+                }
+            }
+        }
+
+        // Second, segments all sentences to compute likelihood
+        // with a unigram language model. inverted[i] stores
+        // the set of sentence index where the sentencepieces[i] appears.
+        let mut vsum = 0.0;
+        let mut freq: Vec<f64> = vec![0.0; pieces.len()];
+        let mut inverted: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
+        // TODO reparallelize this
+        for (i, (sentence, count)) in sentences.iter().enumerate() {
+            let mut lattice = Lattice::from(sentence, 0, 1, 2);
+            model.populate_nodes(&mut lattice);
+            vsum += *count as f64;
+            for node_ref in lattice.viterbi() {
+                let id = node_ref.borrow().id;
+                freq[id] += *count as f64;
+                inverted[id].push(i);
+            }
+        }
+
+        let sum: f64 = freq.iter().sum();
+        let logsum = sum.ln();
+        let mut candidates: Vec<(usize, f64)> = vec![];
+        let mut new_pieces: Vec<SentencePiece> = Vec::with_capacity(self.vocab_size as usize);
+        new_pieces.push(pieces[0].clone());
+        new_pieces.push(pieces[1].clone());
+        new_pieces.push(pieces[2].clone());
+        // Finally, computes how likely the LM likelihood is reduced if
+        // the sentencepiece[i] is removed from the vocabulary.
+        // Since the exact computation of loss is difficult, we compute the
+        // loss approximately by assuming that all sentencepiece[i] in the sentences
+        // are replaced with alternatives[i] when sentencepiece[i] is removed.
+        for (id, (token, score)) in pieces.iter().enumerate() {
+            if id <= 2 {
+                continue;
+            }
+            if freq[id] == 0.0 && !always_keep[id] {
+                // not found in Viterbi path. Can remove this entry safely.
+                continue;
+            } else if alternatives[id].is_empty() {
+                // no alternatives. Keeps this entry.
+                new_pieces.push((token.to_string(), *score));
+            } else {
+                let mut f = 0.0; // the frequency of pieces[i];
+
+                // println!("Inverted {:?}", inverted[id]);
+                // println!("alternatives {:?}", alternatives[id]);
+                // if inverted[id].len() == 0 {
+                //     new_pieces.push((token.to_string(), *score));
+                //     continue;
+                // }
+
+                for n in &inverted[id] {
+                    let score = sentences[*n].1 as f64;
+                    f += score;
+                }
+                // TODO: Temporary hack to avoid Nans.
+                if f == 0.0 || f.is_nan() {
+                    // new_pieces.push((token.to_string(), *score));
+                    continue;
+                }
+                f /= vsum; // normalizes by all sentence frequency.
+                let logprob_sp = freq[id].ln() - logsum;
+
+                // After removing the sentencepiece[i], its frequency freq[i] is
+                // re-assigned to alternatives.
+                // new_sum = current_sum - freq[i] + freq[i] * alternatives.size()
+                //         = current_sum + freq[i] (alternatives - 1)
+
+                let logsum_alt = (sum + freq[id] * (alternatives.len() - 1) as f64).ln();
+
+                // The frequencies of altenatives are increased by freq[i].
+                let mut logprob_alt = 0.0;
+                for n in &alternatives[id] {
+                    logprob_alt += (freq[*n] + freq[id]).ln() - logsum_alt;
+                }
+
+                // loss: the diff of likelihood after removing the sentencepieces[i].
+                let loss = f * (logprob_sp - logprob_alt);
+                // println!(
+                //     "Loss {}, f {}, sp {}, alt {}",
+                //     loss, f, logprob_sp, logprob_alt
+                // );
+                if loss.is_nan() {
+                    panic!("");
+                }
+
+                if inverted[id].is_empty() {
+                    for sub_id in &alternatives[id] {
+                        println!("Alternative {:?}", pieces[*sub_id].0);
+                    }
+
+                    panic!("Error for id {}", pieces[id].0);
+                }
+                candidates.push((id, loss));
+            }
+        }
+        let desired_vocab_size: usize = (self.vocab_size as usize * 11) / 10; // * 1.1
+        let pruned_size: usize = ((pieces.len() as f64) * self.shrinking_factor) as usize;
+        let pruned_size = desired_vocab_size.max(pruned_size);
+        // println!("Pruned size {}", pruned_size);
+
+        // println!("Candidates {:?}", candidates);
+
+        candidates.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+        for (id, _score) in candidates {
+            if new_pieces.len() == pruned_size {
+                break;
+            }
+            new_pieces.push(pieces[id].clone());
+        }
+        // println!("Before  {}", pieces.len());
+        // println!("New pieces {:?}", new_pieces.len());
+
+        new_pieces.to_vec()
     }
 
     /// Update the progress bar with the new provided length and message
@@ -273,43 +451,25 @@ impl UnigramTrainer {
         }
     }
 
-    fn run_e_step(&self, model: &mut Unigram, sentences: &[(String, u32)]) -> (f64, u32, Vec<f64>) {
+    fn run_e_step(&self, model: &mut Unigram, sentences: &[Sentence]) -> (f64, u32, Vec<f64>) {
         let mut expected: Vec<f64> = vec![0.0; model.len()];
         let mut objs: f64 = 0.0;
         let mut ntokens: u32 = 0;
 
         let all_sentence_freq: u32 = sentences.iter().map(|(_a, b)| *b).sum();
 
-        println!("{} sentences", sentences.len());
         // TODO reparallelize this.
         for (string, freq) in sentences {
-            // println!("String {:?} f={}", string, freq);
-            // println!("Sentence {}", i);
-            // let now = Instant::now();
             let mut lattice = Lattice::from(string, 0, 1, 2);
-            // println!("Lattice {:?}", now.elapsed());
             model.populate_nodes(&mut lattice);
-            // println!("Populate nodes {:?}", now.elapsed());
             let z: f64 = lattice.populate_marginal(*freq as f64, &mut expected);
-            // println!("Populate marginal {:?}", now.elapsed());
             ntokens += lattice.viterbi().len() as u32;
-            // println!("Viterbi {:?}", now.elapsed());
-            // let mut max = f64::MIN;
-            // for score in &expected {
-            //     if score > &max {
-            //         max = *score;
-            //     }
-            // }
-            // println!("Expected max {:?}", max);
             if z.is_nan() {
                 panic!("likelihood is NAN. Input sentence may be too long.");
             }
 
             objs -= z / (all_sentence_freq as f64);
-            // println!("objs {:?}", now.elapsed());
         }
-
-        println!("Obj={} ntokens={}", objs, ntokens);
 
         (objs, ntokens, expected)
     }
@@ -323,8 +483,12 @@ impl UnigramTrainer {
 
         let mut sum = 0.0;
         let expected_frequency_threshold = 0.5;
-        for (freq, (piece, _)) in expected.iter().zip(pieces) {
-            // println!("Freq {}", freq);
+        for (i, (freq, (piece, _))) in expected.iter().zip(pieces).enumerate() {
+            // i > 2 so we keep bos, eos and unk.
+            if i <= 2 {
+                new_pieces.push((piece.clone(), f64::NAN));
+                continue;
+            }
             if *freq < expected_frequency_threshold {
                 continue;
             }
@@ -344,56 +508,78 @@ impl UnigramTrainer {
     }
     pub fn _train(
         &self,
-        word_counts: HashMap<String, u32>,
+        mut sentences: Vec<Sentence>,
     ) -> Result<(Box<dyn Model>, Vec<AddedToken>)> {
         // TODO handle progress bar.
-        let _progress = self.setup_progress();
+        let progress = self.setup_progress();
         //
         // 1. Compute frequent substrings
         // TODO should be either i64 or i32
+        self.update_progress(&progress, sentences.len(), "Suffix array seeds");
         let mut pieces: Vec<SentencePiece> =
             Vec::with_capacity(self.vocab_size.try_into().unwrap());
         // XXX: Make sure bos, eos and unk exists and are ids 0, 1, 2
-        pieces.push(("<bos>".to_string(), 0.0));
-        pieces.push(("<eos>".to_string(), 0.0));
-        pieces.push(("<unk>".to_string(), 0.0));
-        pieces.extend(self.make_seed_sentence_pieces(&word_counts)?);
+        pieces.push(("<bos>".to_string(), f64::NAN));
+        pieces.push(("<eos>".to_string(), f64::NAN));
+        pieces.push(("<unk>".to_string(), f64::NAN));
+        pieces.extend(self.make_seed_sentence_pieces(&sentences, &progress)?);
+        self.finalize_progress(&progress, sentences.len());
 
-        println!("Using {} pieces for EM training", pieces.len());
+        if self.split_by_whitespace {
+            self.update_progress(&progress, sentences.len(), "Splitting by whitespace");
+            let mut words: HashMap<String, u32> = HashMap::new();
+            for (sentence, count) in &sentences {
+                for word in sentence.split(' ') {
+                    *words.entry(word.to_string()).or_insert(0) += count;
+                }
+                if let Some(p) = &progress {
+                    p.inc(1);
+                }
+            }
+            self.finalize_progress(&progress, sentences.len());
+            sentences = words.into_iter().collect();
+        }
+
+        // println!(
+        //     "Using {} pieces on {} sentences for EM training",
+        //     pieces.len(),
+        //     sentences.len()
+        // );
 
         let desired_vocab_size: usize = (self.vocab_size as usize * 11) / 10; // * 1.1
-        println!(
-            "table {} desired vocab {}",
-            pieces.len(),
-            desired_vocab_size
-        );
 
-        let required_chars = self.required_chars(&word_counts);
-        // TODO make the model correctly ?
+        // 2. Run E-M Loops to fine grain the pieces.
+        // We will shrink the vocab by shrinking_factor every loop on average
+        // Some other pieces are dropped if logprob is too small
+        // V = N * (f)**k
+        // k = log(N / V) / f
+        let expected_loops =
+            ((pieces.len() as f64 / self.vocab_size as f64).ln() / self.shrinking_factor) as usize;
+        let expected_updates = expected_loops * self.n_sub_iterations as usize;
+        self.update_progress(&progress, expected_updates, "EM training");
+        let required_chars = self.required_chars(&sentences);
         let mut model = Unigram::from(&pieces, 0, 1, 2);
-
-        let sentences: Vec<_> = word_counts.into_iter().collect();
-
         loop {
             // Sub-EM iteration.
-            for iter in 0..self.n_sub_iterations {
-                println!("-------------loop {}", iter);
+            for _iter in 0..self.n_sub_iterations {
+                // println!("-------------loop {}", iter);
                 // Executes E step
-                let (objective, num_tokens, expected) = self.run_e_step(&mut model, &sentences);
-                println!("E step expected={}", expected.len());
+                let (_objective, _num_tokens, expected) = self.run_e_step(&mut model, &sentences);
 
-                // // Executes M step.
+                // Executes M step.
                 pieces = self.run_m_step(&pieces, &expected);
-                // pieces.extend(new_pieces);
                 model = Unigram::from(&pieces, 0, 1, 2);
-                println!(
-                    "Em iter={} size={} obj={} num_tokens={} num_tokens/piece={}",
-                    iter,
-                    model.len(),
-                    objective,
-                    num_tokens,
-                    num_tokens as f64 / model.len() as f64
-                );
+                // println!(
+                //     "Em iter={} size={} obj={} num_tokens={} num_tokens/piece={}",
+                //     iter,
+                //     model.len(),
+                //     objective,
+                //     num_tokens,
+                //     num_tokens as f64 / model.len() as f64
+                // );
+                if let Some(p) = &progress {
+                    p.inc(1);
+                }
             } // end of Sub EM iteration
 
             // Stops the iteration when the size of sentences reaches to the
@@ -403,8 +589,11 @@ impl UnigramTrainer {
             }
 
             // Prunes pieces.
-            self.prune_sentence_pieces();
+            // println!("Prune ----");
+            pieces = self.prune_sentence_pieces(&model, &pieces, &sentences);
+            model = Unigram::from(&pieces, 0, 1, 2);
         }
+        self.finalize_progress(&progress, expected_updates);
 
         // // Finally, adjusts the size of sentencepices to be |vocab_size|.
         model = self.finalize(model, required_chars);
@@ -419,7 +608,8 @@ impl Trainer for UnigramTrainer {
         &self,
         word_counts: HashMap<String, u32>,
     ) -> Result<(Box<dyn Model>, Vec<AddedToken>)> {
-        self._train(word_counts)
+        let sentences: Vec<_> = word_counts.into_iter().collect();
+        self._train(sentences)
         // §let (unigram, tokens) = self._train(word_counts)?;
         // §Ok((unigram, tokens))
     }
@@ -448,16 +638,24 @@ mod tests {
     #[test]
     fn test_unigram_chars() {
         let trainer = UnigramTrainerBuilder::default()
-            .with_progress(false)
-            .build();
-        let mut word_count: HashMap<String, u32> = HashMap::new();
-        word_count.insert("This is a".to_string(), 1);
-        word_count.insert("こんにちは友達".to_string(), 1);
+            .show_progress(false)
+            .split_by_whitespace(false)
+            .treat_whitespace_as_suffix(true)
+            .build()
+            .unwrap();
 
-        let required_chars = trainer.required_chars(&word_count);
+        let sentences = vec![
+            ("This is a".to_string(), 1),
+            ("こんにちは友達".to_string(), 1),
+        ];
+
+        let required_chars = trainer.required_chars(&sentences);
         assert_eq!(required_chars.len(), 13);
 
-        let table = trainer.make_seed_sentence_pieces(&word_count).unwrap();
+        let progress = None;
+        let table = trainer
+            .make_seed_sentence_pieces(&sentences, &progress)
+            .unwrap();
 
         let target_strings = vec![
             "s", "i", " ", "達", "友", "ん", "は", "に", "ち", "こ", "h", "a", "T", "is ", "s ",
@@ -489,6 +687,16 @@ mod tests {
         for (score, target_score) in scores.into_iter().zip(target_scores) {
             assert_approx_eq!(*score, target_score, 0.01);
         }
+
+        // let model = Unigram::from(&pieces, 0, 1, 2);
+
+        // let string = "http://www.aozora.gr.jp/accent_separation.html".to_string();
+        // let mut lattice = Lattice::from(string, 0, 1, 2);
+        // model.populate_nodes(&mut lattice);
+        // let mut expected: Vec<f64> = vec![0.0; model.len()];
+        // let z: f64 = lattice.populate_marginal(*freq as f64, &mut expected);
+
+        // assert_eq!(expected.iter().sum::<f64>(), 0.0);
     }
 
     // #[test]

@@ -107,13 +107,15 @@ extern crate log;
 extern crate lazy_static;
 
 #[macro_use]
-pub mod utils;
+extern crate derive_builder;
+
 pub mod decoders;
 pub mod models;
 pub mod normalizers;
 pub mod pre_tokenizers;
 pub mod processors;
 pub mod tokenizer;
+pub mod utils;
 
 // Re-export from tokenizer
 pub use tokenizer::*;

@@ -49,11 +49,11 @@ impl Ord for Hypothesis {
 
 #[derive(Debug)]
 pub struct Lattice<'a> {
-    sentence: &'a str,
-    pub chars: Vec<char>,
+    pub(super) sentence: &'a str,
+    pub(super) chars: Vec<char>,
     nodes: Vec<NodeRef>,
-    begin_nodes: Vec<Vec<NodeRef>>,
-    end_nodes: Vec<Vec<NodeRef>>,
+    pub(super) begin_nodes: Vec<Vec<NodeRef>>,
+    pub(super) end_nodes: Vec<Vec<NodeRef>>,
     bos_id: usize,
     eos_id: usize,
     unk_id: usize,
@@ -61,7 +61,10 @@ pub struct Lattice<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Node {
-    id: usize,
+    // Vocabulary id
+    pub(super) id: usize,
+    // Local lattice identifier
+    pub(super) node_id: usize,
     pos: usize,
     length: usize,
     prev: Option<NodeRef>,
@@ -76,9 +79,10 @@ impl PartialEq for Node {
 }
 
 impl Node {
-    pub fn new(id: usize, pos: usize, length: usize, score: f64) -> Node {
+    pub fn new(id: usize, node_id: usize, pos: usize, length: usize, score: f64) -> Node {
         Node {
             id,
+            node_id,
             pos,
             length,
             prev: None,
@@ -123,8 +127,8 @@ impl<'a> Lattice<'a> {
         let mut begin_nodes = vec![Vec::with_capacity(k_reserved_node_size); len + 1];
         let mut end_nodes = vec![Vec::with_capacity(k_reserved_node_size); len + 1];
 
-        let bos = Rc::new(RefCell::new(Node::new(bos_id, 0, 0, 0.0)));
-        let eos = Rc::new(RefCell::new(Node::new(eos_id, len, 0, 0.0)));
+        let bos = Rc::new(RefCell::new(Node::new(bos_id, 0, 0, 0, 0.0)));
+        let eos = Rc::new(RefCell::new(Node::new(eos_id, 1, len, 0, 0.0)));
 
         begin_nodes[len].push(Rc::clone(&eos));
         end_nodes[0].push(Rc::clone(&bos));
@@ -145,7 +149,8 @@ impl<'a> Lattice<'a> {
     }
 
     pub fn insert(&mut self, pos: usize, length: usize, score: f64, id: usize) {
-        let node = Rc::new(RefCell::new(Node::new(id, pos, length, score)));
+        let node_id = self.nodes.len();
+        let node = Rc::new(RefCell::new(Node::new(id, node_id, pos, length, score)));
 
         // TODO node.piece ? Which is self.chars[pos..pos + length]
         // XXX: Careful, in sentence piece, length is in bytes, here we assume
@@ -223,8 +228,8 @@ impl<'a> Lattice<'a> {
 
     pub fn nbest(&mut self, n: usize) -> Vec<Vec<NodeRef>> {
         match n {
-            n if n < 1 => vec![],
-            n if n == 1 => vec![self.viterbi()],
+            0 => vec![],
+            1 => vec![self.viterbi()],
             _ => {
                 // let k_reserved_hypothesis_size = 512;
                 let mut agenda: Agenda = BinaryHeap::new();
@@ -319,14 +324,14 @@ impl<'a> Lattice<'a> {
 
     pub fn populate_marginal(&self, freq: f64, expected: &mut Vec<f64>) -> f64 {
         let len = self.len();
-        let mut alpha = vec![0.0; expected.len()];
-        let mut beta = vec![0.0; expected.len()];
-        // let mut marginal = vec![0.0, self.nodes.len()];
+        let n_nodes = self.nodes.len();
+        let mut alpha = vec![0.0; n_nodes];
+        let mut beta = vec![0.0; n_nodes];
         for pos in 0..=len {
             for rnode in &self.begin_nodes[pos] {
                 for lnode in &self.end_nodes[pos] {
-                    let lid = lnode.borrow().id;
-                    let rid = rnode.borrow().id;
+                    let lid = lnode.borrow().node_id;
+                    let rid = rnode.borrow().node_id;
                     alpha[rid] = log_sum_exp(
                         alpha[rid],
                         lnode.borrow().score + alpha[lid],
@@ -334,33 +339,36 @@ impl<'a> Lattice<'a> {
                     );
                 }
             }
-            let rpos = len - pos;
-            for lnode in &self.end_nodes[rpos] {
-                for rnode in &self.begin_nodes[rpos] {
-                    let lid = lnode.borrow().id;
-                    let rid = rnode.borrow().id;
+        }
+        for pos in (0..=len).rev() {
+            // let rpos = len - pos;
+            for lnode in &self.end_nodes[pos] {
+                for rnode in &self.begin_nodes[pos] {
+                    let lid = lnode.borrow().node_id;
+                    let rid = rnode.borrow().node_id;
                     beta[lid] = log_sum_exp(
                         beta[lid],
                         rnode.borrow().score + beta[rid],
-                        *rnode == self.begin_nodes[rpos][0],
+                        *rnode == self.begin_nodes[pos][0],
                     );
                 }
             }
         }
 
-        let z = alpha[self.begin_nodes[len][0].borrow().id];
+        let eos_id = self.begin_nodes[len][0].borrow().node_id;
+        // println!("Eos _id {}", eos_id);
+        let z = alpha[eos_id];
+        // println!("z {:?}", z);
+        // println!("--");
         for pos in 0..len {
             for node in &self.begin_nodes[pos] {
-                let node_id = node.borrow().id;
+                let node_id = node.borrow().node_id;
+                let id = node.borrow().id;
                 let a = alpha[node_id];
                 let b = beta[node_id];
-                let update = freq * (a + node.borrow().score + b - z).exp();
-                let max: f64 = 1e100;
-                // XXX: We try to prevent NaN by capping updates.
-                // This is effective to avoid NaN, but not sure if it messes up algo.
-                if expected[node_id] < max && update < max {
-                    expected[node_id] += update;
-                }
+                let total = a + node.borrow().score + b - z;
+                let update = freq * total.exp();
+                expected[id] += update;
             }
         }
         freq * z
@@ -375,8 +383,8 @@ impl<'a> Lattice<'a> {
         for pos in 0..=len {
             for rnode in &self.begin_nodes[pos] {
                 for lnode in &self.end_nodes[pos] {
-                    let lid = lnode.borrow().id;
-                    let rid = rnode.borrow().id;
+                    let lid = lnode.borrow().node_id;
+                    let rid = rnode.borrow().node_id;
                     alpha[rid] = log_sum_exp(
                         alpha[rid],
                         theta * (lnode.borrow().score + alpha[lid]),
@@ -389,13 +397,13 @@ impl<'a> Lattice<'a> {
         let mut rng = thread_rng();
         let mut results: Vec<NodeRef> = vec![];
         let mut probs: Vec<f64> = vec![];
-        let mut z = alpha[self.eos_node().borrow().id];
+        let mut z = alpha[self.eos_node().borrow().node_id];
         let mut node = self.eos_node();
         loop {
             probs.clear();
             let pos = node.borrow().pos;
             for lnode in &self.end_nodes[pos] {
-                let lid = lnode.borrow().id;
+                let lid = lnode.borrow().node_id;
                 probs.push((alpha[lid] + theta * lnode.borrow().score - z).exp())
             }
             let dist = WeightedIndex::new(&probs).unwrap();
@@ -404,7 +412,7 @@ impl<'a> Lattice<'a> {
             if node == self.bos_node() {
                 break;
             }
-            z = alpha[node.borrow().id];
+            z = alpha[node.borrow().node_id];
             results.push(Rc::clone(&node));
         }
         results.reverse();
@@ -651,6 +659,9 @@ mod tests {
         let log_z = lattice.populate_marginal(1.0, &mut probs);
 
         assert_approx_eq!(log_z, z.ln(), 0.001);
+        assert_approx_eq!(probs[0], 0.0, 0.001);
+        assert_approx_eq!(probs[1], 0.0, 0.001);
+        assert_approx_eq!(probs[2], 0.0, 0.001);
         assert_approx_eq!(probs[3], (p1 + p3) / z, 0.001);
         assert_approx_eq!(probs[4], (p1) / z, 0.001);
         assert_approx_eq!(probs[5], (p1 + p2) / z, 0.001);

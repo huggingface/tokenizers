@@ -16,7 +16,7 @@ type Vocab = Vec<String>;
 #[derive(Serialize, Deserialize)]
 pub struct Unigram {
     token_to_ids: TokenMap,
-    vocab: Vocab,
+    pub(crate) vocab: Vocab,
     scores: Vec<f64>,
     #[serde(skip_serializing, skip_deserializing, default = "empty_trie")]
     trie: Trie<char>,
@@ -74,9 +74,12 @@ impl Unigram {
         let mut token_to_ids: TokenMap = HashMap::new();
         let mut builder = TrieBuilder::default();
         assert!(
-            n > 3,
+            n >= 3,
             "We need at least bos, eos, and unk in the vocabulary"
         );
+        assert!(bos_id < table.len(), "Bos id is invalid");
+        assert!(eos_id < table.len(), "Eos id is invalid");
+        assert!(unk_id < table.len(), "Unk id is invalid");
         for (id, (token, score)) in table.iter().enumerate() {
             vocab.push(token.to_string());
             scores.push(*score);
@@ -85,6 +88,9 @@ impl Unigram {
             builder.push(&chars);
         }
         let min_score = scores.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+        if min_score == -f64::INFINITY {
+            println!("Alert min_score !!");
+        }
         let trie = builder.build();
 
         Unigram {
@@ -115,7 +121,6 @@ impl Unigram {
             // let now = Instant::now();
             let trie_results: Vec<Vec<char>> =
                 self.trie.common_prefix_search(&lattice.chars[begin_pos..]);
-            // println!("Common prefix search {:?}", now.elapsed());
 
             let mut has_single_node = false;
 
@@ -124,6 +129,7 @@ impl Unigram {
                 let n = result.len();
                 let tok: String = result.into_iter().collect();
                 let id = *self.token_to_ids.get(&tok).unwrap();
+                assert_eq!(self.vocab[id as usize], tok);
                 let score: f64 = self.scores[id as usize];
                 lattice.insert(begin_pos, n, score, id.try_into().unwrap());
                 if !has_single_node && n == 1 {
@@ -132,6 +138,7 @@ impl Unigram {
             }
 
             if !has_single_node {
+                // println!("Unk found, {:?}", unk_score);
                 lattice.insert(begin_pos, 1, unk_score, self.unk_id);
             }
         }
@@ -264,6 +271,63 @@ impl Model for Unigram {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_populate_nodes_unk() {
+        let pieces = vec![
+            ("<s>".to_string(), 0.0),
+            ("</s>".to_string(), 0.0),
+            ("<unk>".to_string(), 0.0),
+        ];
+        let model = Unigram::from(&pieces, 0, 1, 2);
+
+        let mut lattice = Lattice::from("abc", 0, 1, 2);
+        model.populate_nodes(&mut lattice);
+
+        assert_eq!(lattice.begin_nodes[0].len(), 1);
+        assert_eq!(lattice.begin_nodes[1].len(), 1);
+        assert_eq!(lattice.begin_nodes[2].len(), 1);
+        assert_eq!(lattice.begin_nodes[0][0].borrow().id, 2);
+        assert_eq!(lattice.begin_nodes[1][0].borrow().id, 2);
+        assert_eq!(lattice.begin_nodes[2][0].borrow().id, 2);
+        assert_eq!(lattice.begin_nodes[0][0].borrow().node_id, 2);
+        assert_eq!(lattice.begin_nodes[1][0].borrow().node_id, 3);
+        assert_eq!(lattice.begin_nodes[2][0].borrow().node_id, 4);
+    }
+
+    #[test]
+    fn test_populate_nodes() {
+        let pieces = vec![
+            ("<s>".to_string(), 0.0),
+            ("</s>".to_string(), 0.0),
+            ("<unk>".to_string(), 0.0),
+            ("a".to_string(), 0.1),
+            ("b".to_string(), 0.2),
+            ("ab".to_string(), 0.3),
+            ("bc".to_string(), 0.4),
+        ];
+        let model = Unigram::from(&pieces, 0, 1, 2);
+
+        let mut lattice = Lattice::from("abc", 0, 1, 2);
+        model.populate_nodes(&mut lattice);
+
+        assert_eq!(lattice.begin_nodes[0].len(), 2); // a, ab
+        assert_eq!(lattice.begin_nodes[1].len(), 2); // b, bc
+        assert_eq!(lattice.begin_nodes[2].len(), 1); // c(unk)
+
+        // Id is the vocabulary id from Unigram model
+        // node_id is simply the rank of the given node in the lattice.
+        assert_eq!(lattice.begin_nodes[0][0].borrow().id, 3);
+        assert_eq!(lattice.begin_nodes[0][1].borrow().id, 5);
+        assert_eq!(lattice.begin_nodes[1][0].borrow().id, 4);
+        assert_eq!(lattice.begin_nodes[1][1].borrow().id, 6);
+        assert_eq!(lattice.begin_nodes[2][0].borrow().id, 2);
+        assert_eq!(lattice.begin_nodes[0][0].borrow().node_id, 2);
+        assert_eq!(lattice.begin_nodes[0][1].borrow().node_id, 3);
+        assert_eq!(lattice.begin_nodes[1][0].borrow().node_id, 4);
+        assert_eq!(lattice.begin_nodes[1][1].borrow().node_id, 5);
+        assert_eq!(lattice.begin_nodes[2][0].borrow().node_id, 6);
+    }
 
     #[test]
     fn test_encode() {
