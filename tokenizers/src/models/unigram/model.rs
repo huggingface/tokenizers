@@ -1,4 +1,4 @@
-use crate::models::unigram::lattice::Lattice;
+use crate::models::unigram::lattice::{piece, Lattice};
 use crate::models::unigram::trie::{Trie, TrieBuilder};
 use crate::tokenizer::{Model, Offsets, Result, Token};
 use serde::Deserialize;
@@ -89,7 +89,7 @@ impl Unigram {
         }
         let min_score = scores.iter().fold(f64::INFINITY, |a, &b| a.min(b));
         if min_score == -f64::INFINITY {
-            println!("Alert min_score !!");
+            panic!("Alert min_score !!");
         }
         let trie = builder.build();
 
@@ -138,20 +138,36 @@ impl Unigram {
             }
 
             if !has_single_node {
-                // println!("Unk found, {:?}", unk_score);
                 lattice.insert(begin_pos, 1, unk_score, self.unk_id);
             }
         }
     }
-    pub fn encode(&self, sentence: &str) -> Vec<String> {
-        // let pretokenizer = Whitespace;
-        // let mut input = NormalizedString::from(sentence);
-        // let encoded = pretokenizer.pre_tokenize(&mut input)?;
-        // self.tokenize(encoded)
+    pub fn encode(&self, sentence: &str, fuse_unk: bool) -> Vec<String> {
         // TODO optimized version
         let mut lattice = Lattice::from(sentence, self.bos_id, self.eos_id, self.unk_id);
         self.populate_nodes(&mut lattice);
-        lattice.tokens()
+        if fuse_unk {
+            let mut results = vec![];
+            let mut token = String::new();
+            for node in lattice.viterbi().iter() {
+                let item = piece(&lattice, &node.borrow());
+                if node.borrow().id == self.unk_id {
+                    token.push_str(&item);
+                } else {
+                    if !token.is_empty() {
+                        results.push(token);
+                        token = String::new();
+                    }
+                    results.push(item.to_string());
+                }
+            }
+            if !token.is_empty() {
+                results.push(token);
+            }
+            results
+        } else {
+            lattice.tokens()
+        }
     }
 
     pub fn load_spm(path: &Path) -> Result<Unigram> {
@@ -229,7 +245,7 @@ impl Model for Unigram {
         // TODO offsets
         let mut results: Vec<Token> = Vec::with_capacity(sentence.len());
         for (element, _) in sentence {
-            let tokens = self.encode(&element);
+            let tokens = self.encode(&element, false);
             let elts: Vec<Token> = tokens
                 .iter()
                 .enumerate()
@@ -237,8 +253,8 @@ impl Model for Unigram {
                     let id = match self.token_to_ids.get(string) {
                         Some(id) => id,
                         None => {
-                            println!("Vocab {:?}", self.vocab);
-                            println!("String {:?} has no id", string);
+                            // println!("Vocab {:?}", self.vocab);
+                            // println!("String {:?} has no id", string);
                             &0
                         }
                     };
@@ -355,7 +371,7 @@ mod tests {
 
         //TODO
         let model = Unigram::from(&sentencepieces, 0, 1, 2);
-        let result = model.encode("abcd");
+        let result = model.encode("abcd", false);
         assert_eq!(result, vec!["abcd"]);
     }
 
@@ -379,20 +395,27 @@ mod tests {
         ];
 
         let model = Unigram::from(&sentencepieces, 0, 1, 2);
-        assert_eq!(model.encode("abc"), vec!["abc"]);
-        assert_eq!(model.encode("AB"), vec!["A", "B"]);
-        assert_eq!(model.encode("abcd"), vec!["ab", "cd"]);
-        assert_eq!(model.encode("abcc"), vec!["abc", "c"]);
+        assert_eq!(model.encode("abc", false), vec!["abc"]);
+        assert_eq!(model.encode("AB", false), vec!["A", "B"]);
+        assert_eq!(model.encode("AB", true), vec!["AB"]);
+        assert_eq!(model.encode("abcd", false), vec!["ab", "cd"]);
+        assert_eq!(model.encode("abcc", false), vec!["abc", "c"]);
         assert_eq!(
-            model.encode("xabcabaabcdd"),
+            model.encode("xabcabaabcdd", false),
             vec!["x", "abc", "ab", "a", "ab", "cd", "d"]
         );
-        assert_eq!(model.encode("xyz東京"), vec!["x", "y", "z", "東", "京"]);
+        assert_eq!(
+            model.encode("xyz東京", false),
+            vec!["x", "y", "z", "東", "京"]
+        );
 
         // User encoded in original version
-        assert_eq!(model.encode("ABC"), vec!["ABC"]);
-        assert_eq!(model.encode("abABCcd"), vec!["ab", "ABC", "cd"]);
-        assert_eq!(model.encode("ababcdabcdcd"), vec!["ab", "abcdabcd", "cd"]);
-        assert_eq!(model.encode("abqrcd"), vec!["ab", "q", "r", "cd"]);
+        assert_eq!(model.encode("ABC", false), vec!["ABC"]);
+        assert_eq!(model.encode("abABCcd", false), vec!["ab", "ABC", "cd"]);
+        assert_eq!(
+            model.encode("ababcdabcdcd", false),
+            vec!["ab", "abcdabcd", "cd"]
+        );
+        assert_eq!(model.encode("abqrcd", false), vec!["ab", "q", "r", "cd"]);
     }
 }
