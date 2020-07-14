@@ -7,7 +7,7 @@ use std::fs::read_to_string;
 use std::path::Path;
 #[cfg(not(debug_assertions))]
 use std::process::Command;
-use tokenizers::models::unigram::model::Unigram;
+use tokenizers::models::unigram::Unigram;
 #[cfg(not(debug_assertions))]
 use tokenizers::models::unigram::{lattice::Lattice, trainer::UnigramTrainerBuilder};
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
