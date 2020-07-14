@@ -47,6 +47,8 @@ impl Ord for Hypothesis {
     }
 }
 
+/// Structure to implement Viterbi algorithm to find the best encoding, or sample
+/// from all possible encodings of a given sentence.
 #[derive(Debug)]
 pub struct Lattice<'a> {
     pub(super) sentence: &'a str,
@@ -59,6 +61,7 @@ pub struct Lattice<'a> {
     unk_id: usize,
 }
 
+/// A node from the lattice, that helps reconstruct the underlying `String`
 #[derive(Debug, Clone)]
 pub struct Node {
     // Vocabulary id
