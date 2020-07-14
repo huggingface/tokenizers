@@ -92,7 +92,7 @@ impl Node {
     }
 }
 
-fn piece<'a>(lattice: &'a Lattice, node: &Node) -> String {
+pub(super) fn piece<'a>(lattice: &'a Lattice, node: &Node) -> String {
     lattice.chars[node.pos..node.pos + node.length]
         .iter()
         .collect()
@@ -152,9 +152,6 @@ impl<'a> Lattice<'a> {
         let node_id = self.nodes.len();
         let node = Rc::new(RefCell::new(Node::new(id, node_id, pos, length, score)));
 
-        // TODO node.piece ? Which is self.chars[pos..pos + length]
-        // XXX: Careful, in sentence piece, length is in bytes, here we assume
-        // it's in chars already, let's see if we can get away with it.
         self.begin_nodes[pos].push(Rc::clone(&node));
         self.end_nodes[pos + length].push(Rc::clone(&node));
 
@@ -162,24 +159,15 @@ impl<'a> Lattice<'a> {
     }
 
     pub fn viterbi(&mut self) -> Vec<NodeRef> {
-        //TODO Remove this mut it's probably unnecessary
-        //  const int len = size();
         let len = self.chars.len();
         for pos in 0..=len {
-            // println!("Pos {:?}", pos);
-            // println!("n {:?}", self.begin_nodes[pos]);
             if self.begin_nodes[pos].is_empty() {
-                println!("Empty");
                 return vec![];
             }
             for rnode in &self.begin_nodes[pos] {
-                // ??
-                // rnode->prev = nullptr;
-                // println!("Node {:?}", rnode);
                 rnode.borrow_mut().prev = None;
                 let mut best_score = 0.0;
                 let mut best_node: Option<NodeRef> = None;
-                // println!("End nodes {:?}", self.end_nodes[pos]);
                 for lnode in &self.end_nodes[pos] {
                     let score = lnode.borrow().backtrace_score + rnode.borrow().score;
                     if best_node.is_none() || score > best_score {
@@ -188,7 +176,6 @@ impl<'a> Lattice<'a> {
                         best_score = score
                     }
                 }
-                // println!("Best node {:?}", best_node);
                 match best_node {
                     Some(bnode) => {
                         rnode.borrow_mut().prev = Some(Rc::clone(&bnode));
@@ -196,17 +183,13 @@ impl<'a> Lattice<'a> {
                     }
                     None => return vec![],
                 }
-                // println!("r node {:?}", rnode);
             }
         }
-        // println!("Here");
 
         let mut results: Vec<NodeRef> = vec![];
-        // println!("prev {:?}", self.begin_nodes[len]);
         let root = self.begin_nodes[len][0].borrow();
         let prev = root.prev.as_ref();
         if prev.is_none() {
-            // println!("NOOONE");
             return vec![];
         }
         let mut node: NodeRef = prev.unwrap().clone();
@@ -245,7 +228,6 @@ impl<'a> Lattice<'a> {
                 while !agenda.is_empty() {
                     let top = Rc::new(RefCell::new(agenda.pop().unwrap()));
                     let node = Rc::clone(&top.borrow().node_ref);
-                    // println!("Node {:?}, bos_node {:?}", node, self.bos_node());
                     if node.borrow().id == self.bos_node().borrow().id {
                         let mut hypothesis = vec![];
                         let mut next: HypothesisRef =
@@ -356,10 +338,7 @@ impl<'a> Lattice<'a> {
         }
 
         let eos_id = self.begin_nodes[len][0].borrow().node_id;
-        // println!("Eos _id {}", eos_id);
         let z = alpha[eos_id];
-        // println!("z {:?}", z);
-        // println!("--");
         for pos in 0..len {
             for node in &self.begin_nodes[pos] {
                 let node_id = node.borrow().node_id;
