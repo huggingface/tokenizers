@@ -534,10 +534,11 @@ impl UnigramTrainer {
         // We will shrink the vocab by shrinking_factor every loop on average
         // Some other pieces are dropped if logprob is too small
         // V = N * (f)**k
-        // k = log(N / V) / log(f)
-        let expected_loops = ((pieces.len() as f64 / self.vocab_size as f64).ln()
-            / self.shrinking_factor.ln()) as usize;
-        let expected_updates = expected_loops * self.n_sub_iterations as usize;
+        // k = log(V / N) / log(f)
+        let expected_loops = (((desired_vocab_size as f64).ln() - (pieces.len() as f64).ln())
+            / self.shrinking_factor.ln()) as usize
+            + 1;
+        let expected_updates = expected_loops as usize * self.n_sub_iterations as usize;
         self.update_progress(&progress, expected_updates, "EM training");
         let required_chars = self.required_chars(&sentences);
         let mut model = Unigram::from(&pieces, 0, 1, 2);
@@ -667,22 +668,6 @@ mod tests {
         for (score, target_score) in scores.into_iter().zip(target_scores) {
             assert_approx_eq!(*score, target_score, 0.01);
         }
-    }
-
-    #[test]
-    fn test_train_from_file() {
-        let trainer = UnigramTrainerBuilder::default()
-            .show_progress(false)
-            .build()
-            .unwrap();
-        let mut word_counts: Vec<(String, u32)> = vec![];
-        let file = std::fs::read_to_string("data/unigram_wagahaiwa_nekodearu.txt").unwrap();
-        for line in file.lines() {
-            word_counts.push((line.to_string(), 1));
-        }
-
-        let (model, _) = trainer._train(word_counts).unwrap();
-        assert_eq!(model.get_vocab().len(), 8000);
     }
 
     #[test]
