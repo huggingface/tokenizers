@@ -36,6 +36,7 @@ fn to_log_prob(pieces: &mut [SentencePiece]) {
     }
 }
 
+/// A `UnigramTrainer` can train a `Unigram` model from `word_counts`.
 #[derive(Builder, Debug, Clone)]
 pub struct UnigramTrainer {
     #[builder(default = "true")]

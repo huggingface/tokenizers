@@ -1,6 +1,11 @@
-pub mod lattice;
-pub mod model;
-pub mod serialization;
-pub mod trainer;
-pub mod trie;
-pub mod unicode;
+//! [Unigram](https://arxiv.org/abs/1804.10959) model.
+mod lattice;
+mod model;
+mod serialization;
+mod trainer;
+mod trie;
+mod unicode;
+
+pub use lattice::*;
+pub use model::*;
+pub use trainer::*;
