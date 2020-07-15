@@ -90,7 +90,7 @@ impl BertNormalizer {
 
     fn do_clean_text(&self, normalized: &mut NormalizedString) {
         normalized
-            .filter(|c| !(*c as usize == 0 || *c as usize == 0xfffd || is_control(*c)))
+            .filter(|c| !(c as usize == 0 || c as usize == 0xfffd || is_control(c)))
             .map(|c| if is_whitespace(c) { ' ' } else { c });
     }
 
@@ -117,19 +117,19 @@ impl BertNormalizer {
 
 #[typetag::serde]
 impl Normalizer for BertNormalizer {
-    fn normalize(&self, mut normalized: &mut NormalizedString) -> Result<()> {
+    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         if self.clean_text {
-            self.do_clean_text(&mut normalized);
+            self.do_clean_text(normalized);
         }
         if self.handle_chinese_chars {
-            self.do_handle_chinese_chars(&mut normalized);
+            self.do_handle_chinese_chars(normalized);
         }
         let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
         if strip_accents {
-            self.do_strip_accents(&mut normalized);
+            self.do_strip_accents(normalized);
         }
         if self.lowercase {
-            self.do_lowercase(&mut normalized);
+            self.do_lowercase(normalized);
         }
 
         Ok(())
