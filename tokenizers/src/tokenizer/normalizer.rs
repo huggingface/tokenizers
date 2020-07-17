@@ -337,6 +337,7 @@ impl NormalizedString {
     /// Prepend the given string to ourself
     pub fn prepend(&mut self, s: &str) -> &mut Self {
         self.normalized.insert_str(0, s);
+        #[allow(clippy::reversed_empty_ranges)]
         self.alignments.splice(0..0, s.chars().map(|_| (0, 0)));
         self
     }
@@ -547,6 +548,7 @@ pub fn get_range_of<T: RangeBounds<usize>>(s: &str, range: T) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::reversed_empty_ranges)]
     use super::*;
     use unicode_categories::UnicodeCategories;
 
