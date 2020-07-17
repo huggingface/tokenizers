@@ -1,10 +1,8 @@
-use super::{
-    super::OrderedVocabIter, Cache, Error, Pair, WithFirstLastIterator, Word,
-    DEFAULT_CACHE_CAPACITY,
-};
+use super::{super::OrderedVocabIter, Cache, Error, Pair, Word, DEFAULT_CACHE_CAPACITY};
 use crate::tokenizer::{Model, Offsets, Result, Token};
 use crate::utils::iter::ResultShunt;
 use serde_json::Value;
+use std::borrow::Cow;
 use std::{
     collections::HashMap,
     fs::File,
@@ -302,24 +300,22 @@ impl BPE {
     }
 
     fn merge_word(&self, w: &str) -> Result<Word> {
-        let mut word = Word::new();
-        for (is_first, is_last, c) in w.chars().with_first_and_last() {
-            let mut s = c.to_string();
-
-            // Add the `continuing_subword_prefix` if relevant
-            if !is_first {
-                if let Some(prefix) = &self.continuing_subword_prefix {
-                    s = format!("{}{}", prefix, s);
+        let mut indices = w.char_indices().map(|(idx, _)| idx).peekable();
+        let mut word = Word::with_capacity(w.len());
+        while let Some(i) = indices.next() {
+            let s = if let Some(&end) = indices.peek() {
+                match (i, self.continuing_subword_prefix.as_ref()) {
+                    (0, Some(prefix)) => Cow::Owned(format!("{}{}", prefix, &w[i..end])),
+                    _ => Cow::Borrowed(&w[i..end]),
                 }
-            }
-            // Add the `end_of_word_suffix` if relevant
-            if is_last {
-                if let Some(suffix) = &self.end_of_word_suffix {
-                    s = format!("{}{}", s, suffix);
-                }
-            }
+            } else {
+                self.end_of_word_suffix
+                    .as_ref()
+                    .map(|suffix| format!("{}{}", &w[i..], suffix).into())
+                    .unwrap_or_else(|| Cow::Borrowed(&w[i..]))
+            };
 
-            if let Some(id) = self.vocab.get(&s) {
+            if let Some(id) = self.vocab.get(s.as_ref()) {
                 word.add(*id);
             } else if let Some(unk) = &self.unk_token {
                 let unk_id = self
@@ -336,25 +332,45 @@ impl BPE {
         Ok(word)
     }
 
-    fn word_to_tokens(
-        &self,
+    fn word_to_tokens<'a, 'b: 'a>(
+        &'a self,
         index: u32,
-        word: &Word,
-        initial_offsets: &(usize, usize),
-    ) -> Vec<Token> {
-        word.get_chars()
-            .iter()
-            .zip(word.get_offsets())
-            .map(|(id, offsets)| {
+        word: &'b Word,
+        initial_offsets: (usize, usize),
+    ) -> impl Iterator<Item = Token> + 'a {
+        word.get_chars_iter()
+            .zip(word.get_offsets_iter())
+            .map(move |(id, offsets)| {
                 assert!(initial_offsets.0 + offsets.0 < initial_offsets.1);
                 Token::new(
-                    *id,
-                    self.vocab_r[id].clone(),
+                    id,
+                    self.vocab_r[&id].clone(),
                     (initial_offsets.0 + offsets.0, initial_offsets.0 + offsets.1),
                     index,
                 )
             })
-            .collect::<Vec<_>>()
+    }
+
+    fn tokenize_with_cache(
+        &self,
+        sentence: Vec<(String, Offsets)>,
+        cached: Vec<Option<Word>>,
+    ) -> Result<Vec<Token>> {
+        let mut misses = Vec::new();
+        let mut encoded: Vec<Token> = Vec::with_capacity(sentence.len());
+        for (i, ((w, initial_offsets), maybe_hit)) in sentence.into_iter().zip(cached).enumerate() {
+            if let Some(hit) = maybe_hit {
+                encoded.extend(self.word_to_tokens(i as u32, &hit, initial_offsets));
+            } else {
+                let word = self.merge_word(&w)?;
+                encoded.extend(self.word_to_tokens(i as u32, &word, initial_offsets));
+                misses.push((w, word));
+            }
+        }
+        if !misses.is_empty() {
+            self.cache.as_ref().unwrap().set_values(misses)
+        }
+        Ok(encoded)
     }
 }
 
@@ -374,56 +390,19 @@ impl Model for BPE {
         }
 
         let mut encoded: Vec<Token> = Vec::with_capacity(sentence.len());
-        let mut cached_words = match self.dropout {
-            None => self
+        if self.dropout.is_none() {
+            if let Some(cached_words) = self
                 .cache
                 .as_ref()
-                .and_then(|cache| cache.get_values(sentence.iter().map(|(s, _)| s.clone()))),
-            Some(_) => None, // If using dropout we don't want to use the cache.
-        };
-        let mut should_update_cache = false;
-
-        for (i, (w, initial_offsets)) in sentence.iter().enumerate() {
-            let tokens = match cached_words {
-                None => {
-                    // Not using cache since we're using dropout.
-                    let word = self.merge_word(&w)?;
-                    self.word_to_tokens(i as u32, &word, initial_offsets)
-                }
-                Some(ref mut cache) => {
-                    match cache[i].as_ref() {
-                        None => {
-                            // No cache hit, so re-compute merges.
-                            let word = self.merge_word(&w)?;
-                            let tokens = self.word_to_tokens(i as u32, &word, initial_offsets);
-                            // Add to cache.
-                            cache[i] = Some(word);
-                            should_update_cache = true;
-                            tokens
-                        }
-                        Some(word) => {
-                            let tokens = self.word_to_tokens(i as u32, word, initial_offsets);
-                            // Remove this entry so we don't needlesly try to update
-                            // it in the cache below.
-                            cache[i] = None;
-                            tokens
-                        }
-                    }
-                }
-            };
-
-            encoded.extend(tokens);
+                .and_then(|c| c.get_values(sentence.iter().map(|(s, _)| s)))
+            {
+                return self.tokenize_with_cache(sentence, cached_words);
+            }
         }
 
-        // Try updating the cache if we need to.
-        if let Some(cache) = cached_words {
-            if should_update_cache {
-                let keys_iter = sentence.into_iter().map(|(s, _)| s);
-                self.cache
-                    .as_ref()
-                    .unwrap()
-                    .set_values(keys_iter, cache.into_iter());
-            }
+        for (i, (w, initial_offsets)) in sentence.into_iter().enumerate() {
+            let word = self.merge_word(&w)?;
+            encoded.extend(self.word_to_tokens(i as u32, &word, initial_offsets));
         }
 
         Ok(encoded)
