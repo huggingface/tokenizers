@@ -20,7 +20,7 @@ impl Task for WordPieceFromFilesTask {
     fn perform(&self) -> Result<Self::Output, Self::Error> {
         let builder: Option<WordPieceBuilder> =
             unsafe { std::ptr::replace(&self.0 as *const _ as *mut _, None) };
-        builder.unwrap().build().or_else(|e| Err(format!("{}", e)))
+        builder.unwrap().build().map_err(|e| format!("{}", e))
     }
 
     fn complete(
@@ -56,7 +56,7 @@ impl Task for BPEFromFilesTask {
     fn perform(&self) -> Result<Self::Output, Self::Error> {
         let builder: Option<BpeBuilder> =
             unsafe { std::ptr::replace(&self.0 as *const _ as *mut _, None) };
-        builder.unwrap().build().or_else(|e| Err(format!("{}", e)))
+        builder.unwrap().build().map_err(|e| format!("{}", e))
     }
 
     fn complete(
