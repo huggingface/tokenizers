@@ -69,6 +69,8 @@ jobs:
 
   create_wheels_others_64bit:
     name: Create wheels for other OSes
+    env:
+      MACOSX_DEPLOYMENT_TARGET: 10.10
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
