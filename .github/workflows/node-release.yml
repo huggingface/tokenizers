@@ -12,6 +12,8 @@ on:
 
 jobs:
   rust_publish:
+    env:
+      MACOSX_DEPLOYMENT_TARGET: 10.11
     strategy:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
