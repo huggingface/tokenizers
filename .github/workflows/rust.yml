@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     env:
-      MACOSX_DEPLOYMENT_TARGET: 10.10
+      MACOSX_DEPLOYMENT_TARGET: 10.11
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
