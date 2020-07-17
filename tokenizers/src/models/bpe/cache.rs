@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::RwLock;
@@ -61,25 +62,26 @@ where
         self.map.write().unwrap().clear();
     }
 
-    pub(super) fn get_values<I>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
+    pub(super) fn get_values<'a, I, Q>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
     where
-        I: Iterator<Item = K>,
+        I: Iterator<Item = &'a Q>,
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized + 'a,
     {
         if let Ok(ref mut cache) = self.map.try_read() {
-            Some(keys_iter.map(|k| cache.get(&k).cloned()).collect())
+            Some(keys_iter.map(|k| cache.get(k).cloned()).collect())
         } else {
             None
         }
     }
 
-    pub(super) fn set_values<I, J>(&self, keys_iter: I, values_iter: J)
+    pub(super) fn set_values<I>(&self, entries: I)
     where
-        I: Iterator<Item = K>,
-        J: Iterator<Item = Option<V>>,
+        I: IntoIterator<Item = (K, V)>,
     {
         // Before trying to acquire a write lock, we check if we are already at
         // capacity with a read handler.
-        if let Ok(ref mut cache) = self.map.try_read() {
+        if let Ok(cache) = self.map.try_read() {
             if cache.len() >= self.capacity {
                 // At capacity, so do nothing.
                 return;
@@ -89,15 +91,11 @@ where
             // a write handle one quadrillionth of a second later.
             return;
         }
+
         // Not at capacity, so try acquiring a write handle.
-        if let Ok(ref mut cache) = self.map.try_write() {
-            for (key, value) in keys_iter.zip(values_iter).filter(|(_, v)| v.is_some()) {
-                // If already at capacity, don't add any more values.
-                if cache.len() >= self.capacity {
-                    break;
-                }
-                cache.insert(key, value.unwrap());
-            }
+        if let Ok(mut cache) = self.map.try_write() {
+            let free = self.capacity - cache.len();
+            cache.extend(entries.into_iter().take(free));
         }
     }
 }
