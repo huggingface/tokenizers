@@ -549,7 +549,7 @@ impl Tokenizer {
     pub fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> Result<String> {
         let tokens = ids
             .into_iter()
-            .map(|id| {
+            .filter_map(|id| {
                 self.added_vocabulary
                     .id_to_token(id, self.model.as_ref())
                     .filter(|token| {
@@ -557,8 +557,6 @@ impl Tokenizer {
                     })
                     .map(|t| t.to_owned())
             })
-            .filter(|token| token.is_some())
-            .map(|id| id.unwrap())
             .collect::<Vec<_>>();
 
         if let Some(decoder) = &self.decoder {

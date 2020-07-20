@@ -7,7 +7,7 @@ fn is_bert_punc(x: char) -> bool {
 }
 
 /// Split the given string as the `should_split` predicate dictates. Keep track of the offsets
-fn split_on<F: Fn(&char) -> bool>(
+fn split_on<F: Fn(char) -> bool>(
     s: &str,
     should_split: F,
     include_split_token: bool,
@@ -16,7 +16,7 @@ fn split_on<F: Fn(&char) -> bool>(
     let mut offset = 0;
     let mut word = Vec::with_capacity(50);
     s.chars().for_each(|c| {
-        if should_split(&c) {
+        if should_split(c) {
             if !word.is_empty() {
                 let offsets = (offset - word.len(), offset);
                 words.push((word.drain(0..).collect::<String>(), offsets));
@@ -24,7 +24,7 @@ fn split_on<F: Fn(&char) -> bool>(
             if include_split_token {
                 words.push((c.to_string(), (offset, offset + 1)));
             }
-        } else if !should_split(&c) {
+        } else if !should_split(c) {
             word.push(c);
         }
         offset += 1;
@@ -45,9 +45,9 @@ pub struct BertPreTokenizer;
 impl PreTokenizer for BertPreTokenizer {
     fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
         let mut split_tokens = vec![];
-        for (token, offsets) in split_on(normalized.get(), |c| char::is_whitespace(*c), false) {
+        for (token, offsets) in split_on(normalized.get(), char::is_whitespace, false) {
             split_tokens.extend(
-                split_on(&token, |c| is_bert_punc(*c), true)
+                split_on(&token, is_bert_punc, true)
                     .into_iter()
                     .map(|(tok, off)| (tok, (off.0 + offsets.0, off.1 + offsets.0))),
             );

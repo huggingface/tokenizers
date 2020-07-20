@@ -62,7 +62,7 @@ impl Decoder for Metaspace {
             .iter()
             .flat_map(|t| t.chars())
             .enumerate()
-            .map(|(i, c)| {
+            .filter_map(|(i, c)| {
                 if c == self.replacement {
                     if i == 0 && self.add_prefix_space {
                         None
@@ -73,8 +73,6 @@ impl Decoder for Metaspace {
                     Some(c)
                 }
             })
-            .filter(|c| c.is_some())
-            .map(|c| c.unwrap())
             .collect::<String>())
     }
 }

@@ -326,9 +326,9 @@ impl Encoding {
         let starting_word = self
             .words
             .iter()
-            .filter(|w| w.is_some())
-            .map(|w| w.unwrap())
+            .cloned()
             .max()
+            .flatten()
             .map_or(0, |w| w + 1);
         self.words.extend(
             pair.words
