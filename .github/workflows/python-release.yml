@@ -104,7 +104,7 @@ jobs:
       - name: Rename wheels
         shell: bash
         working-directory: ./bindings/python/dist
-        run: for file in *.whl ; do mv $file ${file//macosx_10_15/macosx_10_11} ; done
+        run: for file in *.whl ; do mv $file ${file//macosx_10_1[0-9]/macosx_10_11} ; done
 
       - name: Upload wheels
         shell: bash
