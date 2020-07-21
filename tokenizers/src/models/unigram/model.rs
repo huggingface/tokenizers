@@ -1,4 +1,4 @@
-use crate::models::unigram::lattice::{piece, Lattice};
+use crate::models::unigram::lattice::Lattice;
 use crate::models::unigram::trie::{Trie, TrieBuilder};
 use crate::tokenizer::{Model, Offsets, Result, Token};
 use serde::Deserialize;
@@ -184,7 +184,7 @@ impl Unigram {
             let mut results = vec![];
             let mut token = String::new();
             for node in lattice.viterbi().iter() {
-                let item = piece(&lattice, &node.borrow());
+                let item = lattice.piece(&node.borrow());
                 if node.borrow().id == self.unk_id {
                     token.push_str(&item);
                 } else {
