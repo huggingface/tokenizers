@@ -61,6 +61,27 @@ pub struct Lattice<'a> {
     unk_id: usize,
 }
 
+impl std::fmt::Display for Lattice<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let display_pieces = |nodes: &Vec<Vec<NodeRef>>| {
+            nodes
+                .iter()
+                .map(|l| {
+                    l.iter()
+                        .map(|n| self.piece(&n.borrow()))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        };
+
+        f.debug_struct("Lattice")
+            .field("sentence", &self.sentence)
+            .field("begin_nodes", &display_pieces(&self.begin_nodes))
+            .field("end_nodes", &display_pieces(&self.end_nodes))
+            .finish()
+    }
+}
+
 /// A node from the lattice, that helps reconstruct the underlying `String`
 #[derive(Debug, Clone)]
 pub struct Node {
@@ -93,12 +114,6 @@ impl Node {
             backtrace_score: 0.0,
         }
     }
-}
-
-pub(super) fn piece<'a>(lattice: &'a Lattice, node: &Node) -> String {
-    lattice.chars[node.pos..node.pos + node.length]
-        .iter()
-        .collect()
 }
 
 /// Returns log(exp(x) + exp(y)).
@@ -205,10 +220,18 @@ impl<'a> Lattice<'a> {
         results
     }
 
+    pub fn piece(&self, node: &Node) -> String {
+        self.sentence
+            .chars()
+            .skip(node.pos)
+            .take(node.length)
+            .collect()
+    }
+
     pub fn tokens(&mut self) -> Vec<String> {
         self.viterbi()
             .iter()
-            .map(|node| piece(self, &node.borrow()))
+            .map(|node| self.piece(&node.borrow()))
             .collect()
     }
 
@@ -277,7 +300,7 @@ impl<'a> Lattice<'a> {
     pub fn nbest_tokens(&mut self, n: usize) -> Vec<Vec<String>> {
         self.nbest(n)
             .iter()
-            .map(|v| v.iter().map(|node| piece(self, &node.borrow())).collect())
+            .map(|v| v.iter().map(|node| self.piece(&node.borrow())).collect())
             .collect()
     }
 
@@ -300,8 +323,10 @@ impl<'a> Lattice<'a> {
     }
 
     pub fn surface(&self, n: usize) -> &str {
-        let m = self.chars[..n].iter().map(|c| c.to_string().len()).sum();
-        &self.sentence[m..]
+        match self.sentence.char_indices().nth(n) {
+            Some((pos, _)) => &self.sentence[pos..],
+            None => "",
+        }
     }
     pub fn sentence(&self) -> &str {
         &self.sentence
@@ -404,7 +429,7 @@ impl<'a> Lattice<'a> {
     pub fn sample_token(&self, theta: f64) -> Vec<String> {
         self.sample(theta)
             .iter()
-            .map(|node| piece(self, &node.borrow()))
+            .map(|node| self.piece(&node.borrow()))
             .collect()
     }
 }
@@ -482,13 +507,13 @@ mod tests {
         let node5 = lattice.nodes[7].borrow();
         let node6 = lattice.nodes[8].borrow();
 
-        assert_eq!(piece(&lattice, &node0), "A");
-        assert_eq!(piece(&lattice, &node1), "B");
-        assert_eq!(piece(&lattice, &node2), "あ");
-        assert_eq!(piece(&lattice, &node3), "い");
-        assert_eq!(piece(&lattice, &node4), "AB");
-        assert_eq!(piece(&lattice, &node5), "Bあ");
-        assert_eq!(piece(&lattice, &node6), "あい");
+        assert_eq!(lattice.piece(&node0), "A");
+        assert_eq!(lattice.piece(&node1), "B");
+        assert_eq!(lattice.piece(&node2), "あ");
+        assert_eq!(lattice.piece(&node3), "い");
+        assert_eq!(lattice.piece(&node4), "AB");
+        assert_eq!(lattice.piece(&node5), "Bあ");
+        assert_eq!(lattice.piece(&node6), "あい");
 
         assert_eq!(node0.pos, 0);
         assert_eq!(node1.pos, 1);
