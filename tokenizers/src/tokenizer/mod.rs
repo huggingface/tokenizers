@@ -387,7 +387,6 @@ impl Tokenizer {
         let mut normalized = self
             .added_vocabulary
             .extract_and_normalize(self.normalizer.as_deref(), sentence)
-            .into_iter()
             .map(|(mut sentence, id)| -> Result<NormalizedString> {
                 if id.is_some() {
                     Ok(sentence)
@@ -419,7 +418,6 @@ impl Tokenizer {
             let results = self
                 .added_vocabulary
                 .extract_and_normalize(self.normalizer.as_deref(), &subseq)
-                .into_iter()
                 .map(
                     |(mut normalized, id)| -> Result<(Encoding, NormalizedString)> {
                         if let Some(id) = id {
