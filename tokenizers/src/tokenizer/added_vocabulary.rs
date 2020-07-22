@@ -302,11 +302,11 @@ impl AddedVocabulary {
     }
 
     /// Extract any AddedToken from the sentence, using the provided MatchingSet
-    fn extract(
+    fn extract<'a>(
         &self,
         sentence: NormalizedString,
-        split_re: &MatchingSet,
-    ) -> Vec<(NormalizedString, Option<u32>)> {
+        split_re: &'a MatchingSet,
+    ) -> impl Iterator<Item = (NormalizedString, Option<u32>)> + 'a {
         let mut matches = split_re
             .0
             .matches(sentence.get())
@@ -389,21 +389,18 @@ impl AddedVocabulary {
         }
 
         if splits.is_empty() {
-            vec![(sentence, None)]
+            itertools::Either::Left(std::iter::once((sentence, None)))
         } else {
-            splits
-                .into_iter()
-                .map(|(idx, (start, end))| {
-                    let normalized = sentence
-                        .slice_bytes(Range::Normalized(start..end))
-                        .expect("Error while extracting normalized Range");
+            itertools::Either::Right(splits.into_iter().map(move |(idx, (start, end))| {
+                let normalized = sentence
+                    .slice_bytes(Range::Normalized(start..end))
+                    .expect("Error while extracting normalized Range");
 
-                    // Find out the associated AddedToken, and its id
-                    let id = idx.map(|idx| split_re.1[idx]);
+                // Find out the associated AddedToken, and its id
+                let id = idx.map(|idx| split_re.1[idx]);
 
-                    (normalized, id)
-                })
-                .collect()
+                (normalized, id)
+            }))
         }
     }
 
@@ -416,29 +413,28 @@ impl AddedVocabulary {
     ///
     /// This method returns a `Vec` of `(NormalizedString, Option<u32>)`, where the optional `u32`
     /// contains the relevant ID if this is an additional token.
-    pub fn extract_and_normalize(
-        &self,
-        normalizer: Option<&dyn Normalizer>,
+    pub fn extract_and_normalize<'a>(
+        &'a self,
+        normalizer: Option<&'a dyn Normalizer>,
         sentence: &str,
-    ) -> Vec<(NormalizedString, Option<u32>)> {
+    ) -> impl Iterator<Item = (NormalizedString, Option<u32>)> + 'a {
         // 1. We extract all the non-normalized tokens from the non-normalized string
         let pieces = self.extract(NormalizedString::from(sentence), &self.split_re);
 
         // 2. Then extract the normalized tokens from the normalized pieces of the string
         pieces
-            .into_iter()
-            .flat_map(|(mut normalized, id)| {
+            //.into_iter()
+            .flat_map(move |(mut normalized, id)| {
                 if id.is_some() {
                     // If the piece has an associated ID, we already extracted something,
                     // so we just return it
-                    vec![(normalized, id)]
+                    itertools::Either::Left(std::iter::once((normalized, id)))
                 } else {
                     // Otherwise, we need to normalized the string, and then proceed to extracting
                     normalizer.map(|n| n.normalize(&mut normalized));
-                    self.extract(normalized, &self.split_normalized_re)
+                    itertools::Either::Right(self.extract(normalized, &self.split_normalized_re))
                 }
             })
-            .collect::<Vec<_>>()
     }
 }
 
@@ -625,20 +621,19 @@ mod tests {
             None,
         );
 
-        let result = vocab.extract_and_normalize(None, "[CLS] My name is Anthony [SEP]");
-        assert_eq!(
-            result
-                .iter()
-                .map(|(normalized, id)| (normalized.get(), *id))
-                .collect::<Vec<_>>(),
-            vec![
-                ("[CLS]", Some(2)),
-                (" My ", None),
-                ("name", Some(1)),
-                (" is Anthony ", None),
-                ("[SEP]", Some(3))
-            ]
-        );
+        let result = vocab
+            .extract_and_normalize(None, "[CLS] My name is Anthony [SEP]")
+            .collect::<Vec<_>>();
+        assert!(result
+            .iter()
+            .map(|(normalized, id)| (normalized.get(), id))
+            .eq(vec![
+                ("[CLS]", &Some(2)),
+                (" My ", &None),
+                ("name", &Some(1)),
+                (" is Anthony ", &None),
+                ("[SEP]", &Some(3))
+            ]));
     }
 
     #[test]
@@ -667,23 +662,22 @@ mod tests {
             Some(&normalizer),
         );
 
-        let result =
-            vocab.extract_and_normalize(Some(&normalizer), "[CLS] My name is Anthony [SEP]");
-        assert_eq!(
-            result
-                .iter()
-                .map(|(normalized, id)| (normalized.get(), *id))
-                .collect::<Vec<_>>(),
-            vec![
-                ("[CLS]", Some(3)),
+        let result = vocab
+            .extract_and_normalize(Some(&normalizer), "[CLS] My name is Anthony [SEP]")
+            .collect::<Vec<_>>();
+
+        assert!(result
+            .iter()
+            .map(|(normalized, id)| (normalized.get(), id))
+            .eq(vec![
+                ("[CLS]", &Some(3u32)),
                 // This one includes both spaces because of the lstrip & rstrip
                 // And it matches because normalized == true
-                (" my ", Some(0)),
-                ("name", Some(1)),
+                (" my ", &Some(0)),
+                ("name", &Some(1)),
                 // `ony` is not extracted here thanks to single_word
-                (" is anthony ", None),
-                ("[SEP]", Some(4))
-            ]
-        );
+                (" is anthony ", &None),
+                ("[SEP]", &Some(4)),
+            ]));
     }
 }
