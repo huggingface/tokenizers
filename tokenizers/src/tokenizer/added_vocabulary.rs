@@ -1,4 +1,4 @@
-use super::{Model, NormalizedString, Normalizer, Range};
+use super::{Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Range};
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 
@@ -84,7 +84,7 @@ impl AddedToken {
                 .unwrap();
 
             // Normalize the content
-            let mut content = NormalizedString::from(&self.content);
+            let mut content = NormalizedString::from(self.content);
             normalizer.map(|n| n.normalize(&mut content));
             format!(r"{}{}{}", first_b, regex::escape(content.get()), last_b)
         } else {
@@ -301,20 +301,23 @@ impl AddedVocabulary {
         );
     }
 
-    /// Extract any AddedToken from the sentence, using the provided MatchingSet
-    fn extract<'a>(
+    /// Find any AddedToken in the given sentence, using the provided MatchingSet. This method
+    /// returns a list "splits", each of them being a pair of Offsets and an optional ID if it is
+    /// an AddedToken.
+    /// The list of splits cover the entire input string
+    fn find_matches<'a>(
         &self,
-        sentence: NormalizedString,
+        sentence: &str,
         split_re: &'a MatchingSet,
-    ) -> impl Iterator<Item = (NormalizedString, Option<u32>)> + 'a {
+    ) -> Vec<(Option<u32>, Offsets)> {
         let mut matches = split_re
             .0
-            .matches(sentence.get())
+            .matches(sentence)
             .into_iter()
             .flat_map(|idx| {
                 regex::Regex::new(&split_re.0.patterns()[idx])
                     .unwrap()
-                    .find_iter(sentence.get())
+                    .find_iter(sentence)
                     .map(|m| (idx, (m.start(), m.end())))
                     .collect::<Vec<_>>()
             })
@@ -376,32 +379,43 @@ impl AddedVocabulary {
                 if start_offset < start {
                     splits.push((None, (start_offset, start)));
                 }
-                splits.push((Some(idx), (start, end)));
+                splits.push((Some(idx as u32), (start, end)));
                 start_offset = end;
 
                 splits
             })
             .collect::<Vec<_>>();
         if let Some((_, (_, end))) = splits.iter().last().copied() {
-            if end < sentence.get().len() {
-                splits.push((None, (end, sentence.get().len())));
+            if end < sentence.len() {
+                splits.push((None, (end, sentence.len())));
             }
         }
 
-        if splits.is_empty() {
-            itertools::Either::Left(std::iter::once((sentence, None)))
-        } else {
-            itertools::Either::Right(splits.into_iter().map(move |(idx, (start, end))| {
-                let normalized = sentence
-                    .slice_bytes(Range::Normalized(start..end))
-                    .expect("Error while extracting normalized Range");
+        splits
+    }
 
-                // Find out the associated AddedToken, and its id
-                let id = idx.map(|idx| split_re.1[idx]);
+    /// Split the input sentence to extract anything we found from the `MatchingSet`, as well as
+    /// the list of corresponding IDs
+    /// The list of IDs have the exact same number of elements than the Iterator.
+    fn split_with_indices(
+        &self,
+        sentence: NormalizedString,
+        split_re: &MatchingSet,
+    ) -> (Vec<Option<u32>>, impl Iterator<Item = NormalizedString>) {
+        let (indices, offsets) = self
+            .find_matches(sentence.get(), split_re)
+            .into_iter()
+            .unzip::<_, _, Vec<_>, Vec<_>>();
 
-                (normalized, id)
-            }))
-        }
+        // Return the indices and the split normalized string
+        (
+            indices,
+            offsets.into_iter().map(move |(start, end)| {
+                sentence
+                    .slice(Range::Normalized(start..end))
+                    .expect("Error while extracting normalized Range")
+            }),
+        )
     }
 
     /// Extract the additional vocabulary from the given sentence, normalizing it along the way.
@@ -411,29 +425,53 @@ impl AddedVocabulary {
     /// input sentence `I read a book Yesterday`, if the normalizer is supposed to lowercase
     /// everything, we expect a match.
     ///
-    /// This method returns a `Vec` of `(NormalizedString, Option<u32>)`, where the optional `u32`
-    /// contains the relevant ID if this is an additional token.
+    /// This method returns an iterator over `(NormalizedString, Offsets, Option<u32>)`, where the
+    /// optional `u32` contains the relevant ID if this is an additional token. The offsets being
+    /// returned here are in the `original` referential. They are the offsets of the given part
+    /// in the original input
     pub fn extract_and_normalize<'a>(
         &'a self,
         normalizer: Option<&'a dyn Normalizer>,
-        sentence: &str,
-    ) -> impl Iterator<Item = (NormalizedString, Option<u32>)> + 'a {
+        sequence: &str,
+    ) -> impl Iterator<Item = (NormalizedString, Offsets, Option<u32>)> + 'a {
+        let mut pretokenized: PreTokenizedString = sequence.into();
+
         // 1. We extract all the non-normalized tokens from the non-normalized string
-        let pieces = self.extract(NormalizedString::from(sentence), &self.split_re);
+        let mut indices = vec![];
+        pretokenized
+            .split(|_, sequence| {
+                let (idcs, split) = self.split_with_indices(sequence, &self.split_re);
+                indices = idcs;
+                split
+            })
+            .expect("Error while splitting on additional vocabulary");
 
         // 2. Then extract the normalized tokens from the normalized pieces of the string
-        pieces
-            //.into_iter()
-            .flat_map(move |(mut normalized, id)| {
-                if id.is_some() {
-                    // If the piece has an associated ID, we already extracted something,
-                    // so we just return it
-                    itertools::Either::Left(std::iter::once((normalized, id)))
-                } else {
-                    // Otherwise, we need to normalized the string, and then proceed to extracting
-                    normalizer.map(|n| n.normalize(&mut normalized));
-                    itertools::Either::Right(self.extract(normalized, &self.split_normalized_re))
-                }
+        let mut multi_indices = vec![];
+        pretokenized.split(|i, mut sequence| {
+            if let Some(id) = indices[i] {
+                multi_indices.push(vec![Some(id)]);
+                itertools::Either::Left(std::iter::once(sequence))
+            } else {
+                normalizer.map(|n| n.normalize(&mut sequence));
+
+                let (idcs, split) = self.split_with_indices(sequence, &self.split_normalized_re);
+                multi_indices.push(idcs);
+                itertools::Either::Right(split)
+            }
+        });
+
+        let indices = multi_indices.into_iter().flatten().collect::<Vec<_>>();
+
+        pretokenized
+            .into_iter()
+            .zip(indices)
+            .map(|(substring, id)| {
+                (
+                    substring.normalized,
+                    substring.offsets,
+                    id.map(|i| i as u32),
+                )
             })
     }
 }
@@ -626,7 +664,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(result
             .iter()
-            .map(|(normalized, id)| (normalized.get(), id))
+            .map(|(normalized, offsets, id)| (normalized.get(), id))
             .eq(vec![
                 ("[CLS]", &Some(2)),
                 (" My ", &None),
@@ -668,7 +706,7 @@ mod tests {
 
         assert!(result
             .iter()
-            .map(|(normalized, id)| (normalized.get(), id))
+            .map(|(normalized, offsets, id)| (normalized.get(), id))
             .eq(vec![
                 ("[CLS]", &Some(3u32)),
                 // This one includes both spaces because of the lstrip & rstrip

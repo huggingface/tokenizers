@@ -10,7 +10,6 @@
 //!   ...).
 
 pub use crate::utils::iter::LinesWithEnding;
-use crate::utils::iter::ResultShunt;
 pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, PaddingStrategy};
 pub use crate::utils::truncation::{truncate_encodings, TruncationParams, TruncationStrategy};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -25,11 +24,13 @@ use std::{
 mod added_vocabulary;
 mod encoding;
 mod normalizer;
+mod pre_tokenizer;
 mod serialization;
 
 pub use added_vocabulary::*;
 pub use encoding::*;
 pub use normalizer::*;
+pub use pre_tokenizer::*;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
@@ -50,18 +51,28 @@ pub trait Normalizer: Send + Sync {
 /// `NormalizedString` to ensure we can entirely keep track of the offsets and the mapping with
 /// the original string.
 pub trait PreTokenizer: Send + Sync {
-    fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>>;
+    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()>;
+    //fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>>;
 }
 
 #[typetag::serde(tag = "type")]
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
 pub trait Model: Send + Sync {
-    fn tokenize(&self, tokens: Vec<(String, Offsets)>) -> Result<Vec<Token>>;
+    //fn tokenize(&self, tokens: Vec<(String, Offsets)>) -> Result<Vec<Token>>;
+    /// Tokenize the given sequence into multiple underlying `Token`. The `offsets` on the `Token`
+    /// are expected to be relative to the given sequence.
+    fn tokenize(&self, sequence: &str) -> Result<Vec<Token>>;
+    /// Find the ID associated to a string token
     fn token_to_id(&self, token: &str) -> Option<u32>;
+    /// Find the string token associated to an ID
     fn id_to_token(&self, id: u32) -> Option<&str>;
+    /// Retrieve the entire vocabulary mapping (token -> ID)
     fn get_vocab(&self) -> &HashMap<String, u32>;
+    /// Retrieve the size of the vocabulary
     fn get_vocab_size(&self) -> usize;
-    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>>;
+    /// Save the current `Model` in the given folder, using the given `prefix` for the various
+    /// files that need to be saved.
+    fn save(&self, folder: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf>>;
 }
 
 #[typetag::serde(tag = "type")]
@@ -117,16 +128,10 @@ pub struct Token {
     pub id: u32,
     pub value: String,
     pub offsets: (usize, usize),
-    pub word: u32,
 }
 impl Token {
-    pub fn new(id: u32, value: String, offsets: (usize, usize), word: u32) -> Self {
-        Token {
-            id,
-            value,
-            offsets,
-            word,
-        }
+    pub fn new(id: u32, value: String, offsets: (usize, usize)) -> Self {
+        Token { id, value, offsets }
     }
 }
 
@@ -384,26 +389,23 @@ impl Tokenizer {
 
     /// Normalize the given sentence and return the corresponding normalized string
     pub fn normalize(&self, sentence: &str) -> Result<NormalizedString> {
-        let mut normalized = self
-            .added_vocabulary
+        self.added_vocabulary
             .extract_and_normalize(self.normalizer.as_deref(), sentence)
-            .map(|(mut sentence, id)| -> Result<NormalizedString> {
+            .flat_map(|(mut sentence, _, id)| {
                 if id.is_some() {
-                    Ok(sentence)
+                    itertools::Either::Left(std::iter::once(Ok(sentence)))
                 } else {
-                    self.pre_tokenize(&mut sentence)?;
-                    Ok(sentence)
+                    // The PreTokenizers can still manipulate the normalized strings, so we do
+                    // this anyway, and will merge it back to a NormalizedString
+                    match self.do_pre_tokenize(sentence) {
+                        Ok(pretok) => itertools::Either::Right(
+                            pretok.into_iter().map(|substring| Ok(substring.normalized)),
+                        ),
+                        Err(e) => itertools::Either::Left(std::iter::once(Err(e))),
+                    }
                 }
             })
-            .collect::<Result<Vec<_>>>()?;
-
-        let others = normalized.split_off(1);
-        let mut normalized: NormalizedString = normalized.into_iter().next().unwrap();
-        for n in others {
-            normalized.merge_with(&n);
-        }
-
-        Ok(normalized)
+            .collect::<Result<NormalizedString>>()
     }
 
     /// Encode a single sequence
@@ -413,71 +415,41 @@ impl Tokenizer {
             InputSequence::Raw(seq) => (vec![seq], false),
         };
 
-        let mut sequence_encodings = vec![];
-        for subseq in sequence {
-            let results = self
-                .added_vocabulary
-                .extract_and_normalize(self.normalizer.as_deref(), &subseq)
-                .map(
-                    |(mut normalized, id)| -> Result<(Encoding, NormalizedString)> {
-                        if let Some(id) = id {
-                            Ok((
-                                Encoding::new(
-                                    vec![id],
-                                    vec![type_id],
-                                    vec![normalized.get().to_owned()],
-                                    vec![Some(0)],
-                                    vec![(0, normalized.len())],
-                                    vec![0],
-                                    vec![1],
-                                    vec![],
-                                ),
-                                normalized,
-                            ))
-                        } else {
-                            // 1. Pre tokenization
-                            let pre_tokenized = self.pre_tokenize(&mut normalized)?;
-                            // 2. Model
-                            let tokens = self.model.tokenize(pre_tokenized)?;
-                            let encoding = Encoding::from_tokens(tokens, type_id);
+        sequence
+            .into_iter()
+            .enumerate()
+            .map(|(subseq_idx, subseq)| {
+                let subseq_encoding = self
+                    .added_vocabulary
+                    .extract_and_normalize(self.normalizer.as_deref(), &subseq)
+                    .map(|(normalized, original_offsets, id)| match id {
+                        Some(id) => Ok(Encoding::from_tokens(
+                            vec![Token::new(
+                                id,
+                                normalized.get().to_owned(),
+                                original_offsets,
+                            )],
+                            type_id,
+                        )),
+                        None => self.do_tokenize(
+                            self.do_pre_tokenize(normalized)?,
+                            original_offsets,
+                            type_id,
+                        ),
+                    })
+                    .collect::<Result<Encoding>>()?;
 
-                            Ok((encoding, normalized))
-                        }
-                    },
-                );
-
-            let (all_encodings, all_normalized) =
-                ResultShunt::process(results, |iter| iter.unzip::<_, _, Vec<_>, Vec<_>>())?;
-            if all_encodings.is_empty() {
-                return Ok(Encoding::default());
-            }
-
-            let mut final_encoding = Encoding::default();
-
-            let mut offset = 0; //final_normalized.len_original();
-            for (mut encoding, normalized) in all_encodings.into_iter().zip(all_normalized) {
-                encoding
-                    .get_offsets_mut()
-                    .iter_mut()
-                    .for_each(|(start, end)| {
-                        // We convert offsets back to original before merging
-                        let (s, e) = normalized
-                            .convert_offsets(Range::Normalized(*start..*end))
-                            .map_or((*start, *end), |range| (range.start, range.end));
-                        *start = s + offset;
-                        *end = e + offset;
+                // If we are handling already pre-tokenized input, each word should have the
+                // relevant index from the given input, not determined by the pre-tokenization step
+                if pre_tokenized {
+                    subseq_encoding.get_words_mut().iter_mut().for_each(|word| {
+                        word.as_mut().map(|w| *w = subseq_idx as u32);
                     });
-                // We use the original length because we are merging offsets back to the
-                // original referential
-                offset += normalized.len_original();
+                }
 
-                final_encoding.merge_with(encoding, false);
-            }
-
-            sequence_encodings.push(final_encoding);
-        }
-
-        Ok(Encoding::merge(&sequence_encodings, !pre_tokenized))
+                Ok(subseq_encoding)
+            })
+            .collect::<Result<Encoding>>()
     }
 
     /// Encode the given input. This method accepts both single sequences, as well as pair
@@ -616,12 +588,14 @@ impl Tokenizer {
                         |progress, line| -> Result<HashMap<String, u32>> {
                             let newline = line?;
                             let mut words = HashMap::new();
-                            let mut normalized =
-                                self.do_normalize(NormalizedString::from(&newline))?;
-                            let pre_tokenized = self.pre_tokenize(&mut normalized)?;
+                            let normalized = self.do_normalize(newline)?;
+                            let pre_tokenized = self.do_pre_tokenize(normalized)?;
                             trainer.process_tokens(
                                 &mut words,
-                                pre_tokenized.into_iter().map(|(t, _)| t).collect(),
+                                pre_tokenized
+                                    .into_iter()
+                                    .map(|sub| sub.normalized.get().to_owned())
+                                    .collect(),
                             );
 
                             let b = newline.len();
@@ -669,20 +643,68 @@ impl Tokenizer {
         Ok(())
     }
 
-    /// PreTokenization logic, handling the case where there is no PreTokenizer set
-    fn pre_tokenize(
+    /// Tokenization logic, makes the bridge between the pre-tokenization phase and the real
+    /// tokenization phase, and converting offsets back to the original referential.
+    fn do_tokenize<P: Into<PreTokenizedString>>(
         &self,
-        mut normalized: &mut NormalizedString,
-    ) -> Result<Vec<(String, Offsets)>> {
-        match &self.pre_tokenizer {
-            None => Ok(vec![(normalized.get().to_owned(), (0, normalized.len()))]),
-            Some(pre_tokenizer) => pre_tokenizer.pre_tokenize(&mut normalized),
+        pretokenized: P,
+        original_offsets: Offsets,
+        type_id: u32,
+    ) -> Result<Encoding> {
+        let pretokenized: PreTokenizedString = pretokenized.into();
+
+        pretokenized
+            .into_iter()
+            .enumerate()
+            .map(|(word_idx, substr)| {
+                let mut tokens = self.model.tokenize(substr.normalized.get())?;
+
+                // Update the offsets to match the original input
+                tokens.iter_mut().for_each(|token| {
+                    // We convert the normalized offsets back to the original
+                    let original_o = substr
+                        .normalized
+                        .convert_offsets(Range::Normalized(token.offsets.0..token.offsets.1))
+                        .map_or(token.offsets, |range| (range.start, range.end));
+
+                    // And we update the token to these original offsets, applying the original offset
+                    // of the sequence we just tokenized.
+                    token.offsets = (
+                        original_o.0 + original_offsets.0,
+                        original_o.1 + original_offsets.0,
+                    );
+                });
+
+                // Then build the encoding from these tokens, setting the `words` as relevant
+                let mut encoding = Encoding::from_tokens(tokens, type_id);
+                encoding.get_words_mut().iter_mut().for_each(|word| {
+                    *word = Some(word_idx as u32);
+                });
+
+                Ok(encoding)
+            })
+            .collect()
+    }
+
+    /// PreTokenization logic, handling the case where there is no PreTokenizer set
+    fn do_pre_tokenize<P: Into<PreTokenizedString>>(
+        &self,
+        pretokenized: P,
+    ) -> Result<PreTokenizedString> {
+        let mut pretokenized: PreTokenizedString = pretokenized.into();
+
+        if let Some(ref pretok) = self.pre_tokenizer {
+            pretok.pre_tokenize(&mut pretokenized)?;
         }
+
+        Ok(pretokenized)
     }
 
     /// Normalization logic, go through all normalizers
-    fn do_normalize(&self, mut normalized: NormalizedString) -> Result<NormalizedString> {
-        if let Some(normalizer) = &self.normalizer {
+    fn do_normalize<N: Into<NormalizedString>>(&self, normalized: N) -> Result<NormalizedString> {
+        let mut normalized: NormalizedString = normalized.into();
+
+        if let Some(ref normalizer) = self.normalizer {
             normalizer.normalize(&mut normalized)?;
         }
 
