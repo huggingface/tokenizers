@@ -75,6 +75,18 @@ where
         }
     }
 
+    pub(super) fn get<Q>(&self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        if let Ok(ref mut cache) = self.map.try_read() {
+            cache.get(key).cloned()
+        } else {
+            None
+        }
+    }
+
     pub(super) fn set_values<I>(&self, entries: I)
     where
         I: IntoIterator<Item = (K, V)>,
@@ -97,5 +109,9 @@ where
             let free = self.capacity - cache.len();
             cache.extend(entries.into_iter().take(free));
         }
+    }
+
+    pub(super) fn set(&self, key: K, value: V) {
+        self.set_values(std::iter::once((key, value)))
     }
 }

@@ -144,25 +144,16 @@ impl Default for WordLevel {
 
 #[typetag::serde]
 impl Model for WordLevel {
-    fn tokenize(&self, tokens: Vec<(String, (usize, usize))>) -> Result<Vec<Token>> {
-        let mut output_tokens = vec![];
-
-        for (index, (token, initial_offsets)) in tokens.into_iter().enumerate() {
-            let t = Token {
-                id: *self
-                    .vocab
-                    .get(&*token)
-                    .or_else(|| self.vocab.get(&*self.unk_token))
-                    .ok_or(Error::MissingUnkToken)?,
-                value: token,
-                offsets: initial_offsets,
-                word: index as u32,
-            };
-
-            output_tokens.push(t);
-        }
-
-        Ok(output_tokens)
+    fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
+        Ok(vec![Token {
+            id: *self
+                .vocab
+                .get(&*token)
+                .or_else(|| self.vocab.get(&*self.unk_token))
+                .ok_or(Error::MissingUnkToken)?,
+            value: token.to_owned(),
+            offsets: (0, token.chars().count()),
+        }])
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {

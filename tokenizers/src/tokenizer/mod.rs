@@ -52,13 +52,11 @@ pub trait Normalizer: Send + Sync {
 /// the original string.
 pub trait PreTokenizer: Send + Sync {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()>;
-    //fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>>;
 }
 
 #[typetag::serde(tag = "type")]
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
 pub trait Model: Send + Sync {
-    //fn tokenize(&self, tokens: Vec<(String, Offsets)>) -> Result<Vec<Token>>;
     /// Tokenize the given sequence into multiple underlying `Token`. The `offsets` on the `Token`
     /// are expected to be relative to the given sequence.
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>>;
@@ -391,7 +389,7 @@ impl Tokenizer {
     pub fn normalize(&self, sentence: &str) -> Result<NormalizedString> {
         self.added_vocabulary
             .extract_and_normalize(self.normalizer.as_deref(), sentence)
-            .flat_map(|(mut sentence, _, id)| {
+            .flat_map(|(sentence, _, id)| {
                 if id.is_some() {
                     itertools::Either::Left(std::iter::once(Ok(sentence)))
                 } else {
@@ -419,7 +417,7 @@ impl Tokenizer {
             .into_iter()
             .enumerate()
             .map(|(subseq_idx, subseq)| {
-                let subseq_encoding = self
+                let mut subseq_encoding = self
                     .added_vocabulary
                     .extract_and_normalize(self.normalizer.as_deref(), &subseq)
                     .map(|(normalized, original_offsets, id)| match id {
@@ -587,6 +585,7 @@ impl Tokenizer {
                         &progress,
                         |progress, line| -> Result<HashMap<String, u32>> {
                             let newline = line?;
+                            let b = newline.len();
                             let mut words = HashMap::new();
                             let normalized = self.do_normalize(newline)?;
                             let pre_tokenized = self.do_pre_tokenize(normalized)?;
@@ -598,7 +597,6 @@ impl Tokenizer {
                                     .collect(),
                             );
 
-                            let b = newline.len();
                             if let Some(pbar) = progress {
                                 pbar.inc(b as u64);
                             }

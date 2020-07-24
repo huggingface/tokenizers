@@ -84,7 +84,7 @@ impl AddedToken {
                 .unwrap();
 
             // Normalize the content
-            let mut content = NormalizedString::from(self.content);
+            let mut content = NormalizedString::from(self.content.as_ref());
             normalizer.map(|n| n.normalize(&mut content));
             format!(r"{}{}{}", first_b, regex::escape(content.get()), last_b)
         } else {
@@ -379,7 +379,7 @@ impl AddedVocabulary {
                 if start_offset < start {
                     splits.push((None, (start_offset, start)));
                 }
-                splits.push((Some(idx as u32), (start, end)));
+                splits.push((Some(split_re.1[idx] as u32), (start, end)));
                 start_offset = end;
 
                 splits
@@ -444,22 +444,25 @@ impl AddedVocabulary {
                 indices = idcs;
                 split
             })
-            .expect("Error while splitting on additional vocabulary");
+            .expect("AddedVocabulary bad split");
 
         // 2. Then extract the normalized tokens from the normalized pieces of the string
         let mut multi_indices = vec![];
-        pretokenized.split(|i, mut sequence| {
-            if let Some(id) = indices[i] {
-                multi_indices.push(vec![Some(id)]);
-                itertools::Either::Left(std::iter::once(sequence))
-            } else {
-                normalizer.map(|n| n.normalize(&mut sequence));
+        pretokenized
+            .split(|i, mut sequence| {
+                if let Some(id) = indices[i] {
+                    multi_indices.push(vec![Some(id)]);
+                    itertools::Either::Left(std::iter::once(sequence))
+                } else {
+                    normalizer.map(|n| n.normalize(&mut sequence));
 
-                let (idcs, split) = self.split_with_indices(sequence, &self.split_normalized_re);
-                multi_indices.push(idcs);
-                itertools::Either::Right(split)
-            }
-        });
+                    let (idcs, split) =
+                        self.split_with_indices(sequence, &self.split_normalized_re);
+                    multi_indices.push(idcs);
+                    itertools::Either::Right(split)
+                }
+            })
+            .expect("AddedVocabulary bad split");
 
         let indices = multi_indices.into_iter().flatten().collect::<Vec<_>>();
 
@@ -518,7 +521,7 @@ impl Serialize for AddedVocabulary {
 mod tests {
     use super::*;
     use crate::normalizers::utils::Lowercase;
-    use crate::{Offsets, Result, Token};
+    use crate::{Result, Token};
     use std::path::{Path, PathBuf};
 
     #[derive(Serialize, Deserialize)]
@@ -546,7 +549,7 @@ mod tests {
     }
     #[typetag::serde]
     impl Model for ModelMock {
-        fn tokenize(&self, _tokens: Vec<(String, Offsets)>) -> Result<Vec<Token>> {
+        fn tokenize(&self, _sequence: &str) -> Result<Vec<Token>> {
             unimplemented!()
         }
         fn token_to_id(&self, token: &str) -> Option<u32> {
@@ -662,16 +665,19 @@ mod tests {
         let result = vocab
             .extract_and_normalize(None, "[CLS] My name is Anthony [SEP]")
             .collect::<Vec<_>>();
-        assert!(result
-            .iter()
-            .map(|(normalized, offsets, id)| (normalized.get(), id))
-            .eq(vec![
+        assert_eq!(
+            result
+                .iter()
+                .map(|(normalized, offsets, id)| (normalized.get(), id))
+                .collect::<Vec<_>>(),
+            vec![
                 ("[CLS]", &Some(2)),
                 (" My ", &None),
                 ("name", &Some(1)),
                 (" is Anthony ", &None),
                 ("[SEP]", &Some(3))
-            ]));
+            ]
+        );
     }
 
     #[test]
@@ -704,11 +710,13 @@ mod tests {
             .extract_and_normalize(Some(&normalizer), "[CLS] My name is Anthony [SEP]")
             .collect::<Vec<_>>();
 
-        assert!(result
-            .iter()
-            .map(|(normalized, offsets, id)| (normalized.get(), id))
-            .eq(vec![
-                ("[CLS]", &Some(3u32)),
+        assert_eq!(
+            result
+                .iter()
+                .map(|(normalized, offsets, id)| (normalized.get(), id))
+                .collect::<Vec<_>>(),
+            vec![
+                ("[CLS]", &Some(3)),
                 // This one includes both spaces because of the lstrip & rstrip
                 // And it matches because normalized == true
                 (" my ", &Some(0)),
@@ -716,6 +724,7 @@ mod tests {
                 // `ony` is not extracted here thanks to single_word
                 (" is anthony ", &None),
                 ("[SEP]", &Some(4)),
-            ]));
+            ]
+        );
     }
 }

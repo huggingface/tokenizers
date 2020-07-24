@@ -1,5 +1,5 @@
 use super::{super::OrderedVocabIter, Cache, Error, Pair, Word, DEFAULT_CACHE_CAPACITY};
-use crate::tokenizer::{Model, Offsets, Result, Token};
+use crate::tokenizer::{Model, Result, Token};
 use crate::utils::iter::ResultShunt;
 use serde_json::Value;
 use std::borrow::Cow;
@@ -332,45 +332,23 @@ impl BPE {
         Ok(word)
     }
 
-    fn word_to_tokens<'a, 'b: 'a>(
-        &'a self,
-        index: u32,
-        word: &'b Word,
-        initial_offsets: (usize, usize),
-    ) -> impl Iterator<Item = Token> + 'a {
+    fn word_to_tokens<'a, 'b: 'a>(&'a self, word: &'b Word) -> impl Iterator<Item = Token> + 'a {
         word.get_chars_iter()
             .zip(word.get_offsets_iter())
-            .map(move |(id, offsets)| {
-                assert!(initial_offsets.0 + offsets.0 < initial_offsets.1);
-                Token::new(
-                    id,
-                    self.vocab_r[&id].clone(),
-                    (initial_offsets.0 + offsets.0, initial_offsets.0 + offsets.1),
-                    index,
-                )
-            })
+            .map(move |(id, offsets)| Token::new(id, self.vocab_r[&id].clone(), offsets))
     }
 
-    fn tokenize_with_cache(
-        &self,
-        sentence: Vec<(String, Offsets)>,
-        cached: Vec<Option<Word>>,
-    ) -> Result<Vec<Token>> {
-        let mut misses = Vec::new();
-        let mut encoded: Vec<Token> = Vec::with_capacity(sentence.len());
-        for (i, ((w, initial_offsets), maybe_hit)) in sentence.into_iter().zip(cached).enumerate() {
-            if let Some(hit) = maybe_hit {
-                encoded.extend(self.word_to_tokens(i as u32, &hit, initial_offsets));
-            } else {
-                let word = self.merge_word(&w)?;
-                encoded.extend(self.word_to_tokens(i as u32, &word, initial_offsets));
-                misses.push((w, word));
-            }
+    fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
+        if let Some(ref hit) = self.cache.as_ref().and_then(|c| c.get(sequence)) {
+            Ok(self.word_to_tokens(hit).collect())
+        } else {
+            let word = self.merge_word(sequence)?;
+            let ret = self.word_to_tokens(&word).collect();
+            self.cache
+                .as_ref()
+                .map(|c| c.set(sequence.to_owned(), word));
+            Ok(ret)
         }
-        if !misses.is_empty() {
-            self.cache.as_ref().unwrap().set_values(misses)
-        }
-        Ok(encoded)
     }
 }
 
@@ -384,28 +362,17 @@ impl Model for BPE {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sentence: Vec<(String, Offsets)>) -> Result<Vec<Token>> {
-        if sentence.is_empty() {
+    fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
+        if sequence.is_empty() {
             return Ok(vec![]);
         }
 
-        let mut encoded: Vec<Token> = Vec::with_capacity(sentence.len());
         if self.dropout.is_none() {
-            if let Some(cached_words) = self
-                .cache
-                .as_ref()
-                .and_then(|c| c.get_values(sentence.iter().map(|(s, _)| s)))
-            {
-                return self.tokenize_with_cache(sentence, cached_words);
-            }
+            self.tokenize_with_cache(sequence)
+        } else {
+            let word = self.merge_word(sequence)?;
+            Ok(self.word_to_tokens(&word).collect())
         }
-
-        for (i, (w, initial_offsets)) in sentence.into_iter().enumerate() {
-            let word = self.merge_word(&w)?;
-            encoded.extend(self.word_to_tokens(i as u32, &word, initial_offsets));
-        }
-
-        Ok(encoded)
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
@@ -524,36 +491,31 @@ mod tests {
         .collect();
         let mut bpe = BPE::new(vocab, merges);
 
-        let sentence: Vec<(String, Offsets)> = vec![("unrelated".into(), (0, 9))];
-
         // With no dropout:
-        let tokens = bpe.tokenize(sentence.clone()).unwrap();
-        assert_eq!(
-            tokens,
-            vec![Token::new(15u32, "unrelated".into(), (0, 9), 0)]
-        );
+        let tokens = bpe.tokenize("unrelated").unwrap();
+        assert_eq!(tokens, vec![Token::new(15u32, "unrelated".into(), (0, 9))]);
 
         // Now set dropout to 1.0. Result should be no merges performed.
         bpe.dropout = Some(1.0);
-        let tokens = bpe.tokenize(sentence.clone()).unwrap();
+        let tokens = bpe.tokenize("unrelated").unwrap();
         assert_eq!(
             tokens,
             vec![
-                Token::new(0u32, "u".into(), (0, 1), 0),
-                Token::new(1u32, "n".into(), (1, 2), 0),
-                Token::new(2u32, "r".into(), (2, 3), 0),
-                Token::new(3u32, "e".into(), (3, 4), 0),
-                Token::new(4u32, "l".into(), (4, 5), 0),
-                Token::new(5u32, "a".into(), (5, 6), 0),
-                Token::new(6u32, "t".into(), (6, 7), 0),
-                Token::new(3u32, "e".into(), (7, 8), 0),
-                Token::new(7u32, "d".into(), (8, 9), 0),
+                Token::new(0u32, "u".into(), (0, 1)),
+                Token::new(1u32, "n".into(), (1, 2)),
+                Token::new(2u32, "r".into(), (2, 3)),
+                Token::new(3u32, "e".into(), (3, 4)),
+                Token::new(4u32, "l".into(), (4, 5)),
+                Token::new(5u32, "a".into(), (5, 6)),
+                Token::new(6u32, "t".into(), (6, 7)),
+                Token::new(3u32, "e".into(), (7, 8)),
+                Token::new(7u32, "d".into(), (8, 9)),
             ]
         );
 
         // Now try with dropout between 0 and 1.
         bpe.dropout = Some(0.5);
-        let tokens = bpe.tokenize(sentence).unwrap();
+        let tokens = bpe.tokenize("unrelated").unwrap();
         assert!(!tokens.is_empty() && tokens.len() <= 9);
     }
 

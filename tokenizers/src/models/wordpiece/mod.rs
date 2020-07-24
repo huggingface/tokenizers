@@ -2,7 +2,7 @@
 //! model.
 
 use crate::models::bpe::BPE;
-use crate::tokenizer::{Model, Offsets, Result, Token};
+use crate::tokenizer::{Model, Result, Token};
 use std::{
     collections::HashMap,
     fmt,
@@ -208,75 +208,65 @@ impl Model for WordPiece {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sentence: Vec<(String, Offsets)>) -> Result<Vec<Token>> {
-        let mut output_tokens = vec![];
-
-        for (index, (token, initial_offsets)) in sentence.into_iter().enumerate() {
-            let char_len = token.chars().count();
-            if char_len > self.max_input_chars_per_word {
-                output_tokens.push(Token {
-                    value: self.unk_token.clone(),
-                    id: *self
-                        .vocab
-                        .get(&self.unk_token)
-                        .ok_or(Error::MissingUnkToken)?,
-                    offsets: initial_offsets,
-                    word: index as u32,
-                });
-                continue;
-            }
-
-            let mut is_bad = false;
-            let mut start = 0;
-            let mut sub_tokens: Vec<Token> = vec![];
-            let chars = token.chars().collect::<Vec<_>>();
-
-            while start < chars.len() {
-                let mut end = chars.len();
-                let mut cur_str = None;
-
-                while start < end {
-                    let mut substr = chars[start..end].iter().collect::<String>();
-                    if start > 0 {
-                        substr = format!("{}{}", self.continuing_subword_prefix, substr);
-                    }
-                    if self.vocab.contains_key(&substr) {
-                        cur_str = Some(Token {
-                            id: self.vocab[&substr],
-                            value: substr,
-                            offsets: (initial_offsets.0 + start, initial_offsets.0 + end),
-                            word: index as u32,
-                        });
-                        break;
-                    }
-                    end -= 1;
-                }
-
-                if cur_str.is_none() {
-                    is_bad = true;
-                    break;
-                }
-
-                sub_tokens.push(cur_str.unwrap());
-                start = end;
-            }
-
-            if is_bad {
-                output_tokens.push(Token {
-                    value: self.unk_token.clone(),
-                    id: *self
-                        .vocab
-                        .get(&self.unk_token)
-                        .ok_or(Error::MissingUnkToken)?,
-                    offsets: initial_offsets,
-                    word: index as u32,
-                });
-            } else {
-                output_tokens.extend(sub_tokens);
-            }
+    fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
+        let char_len = sequence.chars().count();
+        if char_len > self.max_input_chars_per_word {
+            return Ok(vec![Token {
+                value: self.unk_token.clone(),
+                id: *self
+                    .vocab
+                    .get(&self.unk_token)
+                    .ok_or(Error::MissingUnkToken)?,
+                offsets: (0, char_len),
+            }]);
         }
 
-        Ok(output_tokens)
+        let mut is_bad = false;
+        let mut start = 0;
+        let mut sub_tokens: Vec<Token> = vec![];
+        let chars = sequence.chars().collect::<Vec<_>>();
+
+        while start < chars.len() {
+            let mut end = chars.len();
+            let mut cur_str = None;
+
+            while start < end {
+                let mut substr = chars[start..end].iter().collect::<String>();
+                if start > 0 {
+                    substr = format!("{}{}", self.continuing_subword_prefix, substr);
+                }
+                if self.vocab.contains_key(&substr) {
+                    cur_str = Some(Token {
+                        id: self.vocab[&substr],
+                        value: substr,
+                        offsets: (start, end),
+                    });
+                    break;
+                }
+                end -= 1;
+            }
+
+            if cur_str.is_none() {
+                is_bad = true;
+                break;
+            }
+
+            sub_tokens.push(cur_str.unwrap());
+            start = end;
+        }
+
+        if is_bad {
+            Ok(vec![Token {
+                value: self.unk_token.clone(),
+                id: *self
+                    .vocab
+                    .get(&self.unk_token)
+                    .ok_or(Error::MissingUnkToken)?,
+                offsets: (0, char_len),
+            }])
+        } else {
+            Ok(sub_tokens)
+        }
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {

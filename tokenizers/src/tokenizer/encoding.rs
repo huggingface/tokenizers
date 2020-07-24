@@ -49,19 +49,17 @@ impl Encoding {
 
     pub fn from_tokens(tokens: Vec<Token>, type_id: u32) -> Self {
         let length = tokens.len();
-        let (ids, tokens, offsets, words) = tokens.into_iter().fold(
+        let (ids, tokens, offsets) = tokens.into_iter().fold(
             (
                 Vec::with_capacity(length),
                 Vec::with_capacity(length),
                 Vec::with_capacity(length),
-                Vec::with_capacity(length),
             ),
-            |(mut ids, mut tokens, mut offsets, mut words), t| {
+            |(mut ids, mut tokens, mut offsets), t| {
                 ids.push(t.id);
                 tokens.push(t.value);
                 offsets.push(t.offsets);
-                words.push(Some(t.word));
-                (ids, tokens, offsets, words)
+                (ids, tokens, offsets)
             },
         );
 
@@ -69,7 +67,7 @@ impl Encoding {
             ids,
             tokens,
             offsets,
-            words,
+            words: vec![None; length],
             type_ids: vec![type_id; length],
             attention_mask: vec![1; length],
             special_tokens_mask: vec![0; length],
