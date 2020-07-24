@@ -7,5 +7,5 @@ class Tokenizer extends native.tokenizer_Tokenizer {
 
 module.exports = {
   AddedToken: native.tokenizer_AddedToken,
-  Tokenizer
+  Tokenizer,
 };

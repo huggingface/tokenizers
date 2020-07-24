@@ -8,5 +8,5 @@ module.exports = {
   nfkcNormalizer: native.normalizers_NFKC,
   nfkdNormalizer: native.normalizers_NFKD,
   sequenceNormalizer: native.normalizers_Sequence,
-  stripNormalizer: native.normalizers_Strip
+  stripNormalizer: native.normalizers_Strip,
 };

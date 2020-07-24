@@ -21,7 +21,7 @@ describe("RawEncoding", () => {
     const model = await promisify<string, WordPieceOptions, Model>(WordPiece.fromFiles)(
       `${MOCKS_DIR}/vocab.txt`,
       {
-        continuingSubwordPrefix: "##"
+        continuingSubwordPrefix: "##",
       }
     );
 
@@ -155,7 +155,7 @@ describe("RawEncoding", () => {
         direction: PaddingDirection.Left,
         padToken: "[PA]",
         padTypeId: 10,
-        padId: 400
+        padId: 400,
       });
 
       const tokens = encoding.getTokens();

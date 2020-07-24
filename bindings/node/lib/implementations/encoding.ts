@@ -21,7 +21,7 @@ export class Encoding {
    */
   static merge(encodings: Encoding[], growingOffsets?: boolean): Encoding {
     const mergedRaw = mergeEncodings(
-      encodings.map(e => e.rawEncoding),
+      encodings.map((e) => e.rawEncoding),
       growingOffsets
     );
 
@@ -82,7 +82,7 @@ export class Encoding {
 
     return (this._overflowing = this._rawEncoding
       .getOverflowing()
-      .map(e => new Encoding(e)));
+      .map((e) => new Encoding(e)));
   }
 
   /**
@@ -218,7 +218,7 @@ export class Encoding {
       "_specialTokensMask",
       "_tokens",
       "_typeIds",
-      "_wordIndexes"
+      "_wordIndexes",
     ]) {
       delete this[prop as keyof this];
     }

@@ -5,7 +5,7 @@ import { BPE, BPEOptions, Model } from "../../bindings/models";
 import {
   lowercaseNormalizer,
   nfkcNormalizer,
-  sequenceNormalizer
+  sequenceNormalizer,
 } from "../../bindings/normalizers";
 import { whitespaceSplitPreTokenizer } from "../../bindings/pre-tokenizers";
 import { Tokenizer } from "../../bindings/tokenizer";
@@ -75,7 +75,7 @@ type BPETokenizerConfig = BPETokenizerOptions &
 export class BPETokenizer extends BaseTokenizer<BPETokenizerConfig> {
   private static readonly defaultBPEOptions: BPETokenizerConfig = {
     suffix: "</w>",
-    unkToken: "<unk>"
+    unkToken: "<unk>",
   };
 
   private readonly defaultTrainOptions: Required<BPETokenizerTrainOptions> = {
@@ -85,7 +85,7 @@ export class BPETokenizer extends BaseTokenizer<BPETokenizerConfig> {
     showProgress: true,
     specialTokens: ["<unk>"],
     suffix: "</w>",
-    vocabSize: 30000
+    vocabSize: 30000,
   };
 
   private constructor(tokenizer: Tokenizer, configuration: BPETokenizerConfig) {
@@ -105,7 +105,7 @@ export class BPETokenizer extends BaseTokenizer<BPETokenizerConfig> {
       const modelOptions: BPEOptions = {
         dropout: opts.dropout,
         endOfWordSuffix: opts.suffix,
-        unkToken: unkToken
+        unkToken: unkToken,
       };
 
       const fromFiles = promisify<string, string, BPEOptions, Model>(BPE.fromFiles);

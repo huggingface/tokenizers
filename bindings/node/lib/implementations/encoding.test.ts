@@ -10,7 +10,7 @@ describe("Encoding", () => {
   describe("ids", () => {
     const getIdsMock = jest.fn(() => [3]);
     const m = rawEncodingMock.mockImplementation(() => ({
-      getIds: getIdsMock
+      getIds: getIdsMock,
     }));
 
     encoding = new Encoding(m() as RawEncoding);
@@ -36,7 +36,7 @@ describe("Encoding", () => {
       const getIdsMock = jest.fn(() => [4]);
       const m = rawEncodingMock.mockImplementation(() => ({
         getIds: getIdsMock,
-        pad: jest.fn()
+        pad: jest.fn(),
       }));
 
       encoding = new Encoding(m() as RawEncoding);
@@ -55,7 +55,7 @@ describe("Encoding", () => {
       const getIdsMock = jest.fn(() => [4]);
       const m = rawEncodingMock.mockImplementation(() => ({
         getIds: getIdsMock,
-        truncate: jest.fn()
+        truncate: jest.fn(),
       }));
 
       encoding = new Encoding(m() as RawEncoding);

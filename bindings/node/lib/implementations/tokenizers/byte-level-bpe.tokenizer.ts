@@ -5,7 +5,7 @@ import { BPE, BPEOptions, Model } from "../../bindings/models";
 import {
   lowercaseNormalizer,
   nfkcNormalizer,
-  sequenceNormalizer
+  sequenceNormalizer,
 } from "../../bindings/normalizers";
 import { byteLevelProcessing } from "../../bindings/post-processors";
 import { byteLevelAlphabet, byteLevelPreTokenizer } from "../../bindings/pre-tokenizers";
@@ -72,14 +72,14 @@ type ByteLevelBPETokenizerConfig = ByteLevelBPETokenizerOptions &
 export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerConfig> {
   private static readonly defaultOptions: ByteLevelBPETokenizerConfig = {
     addPrefixSpace: false,
-    trimOffsets: false
+    trimOffsets: false,
   };
 
   private readonly defaultTrainOptions: Required<ByteLevelBPETrainOptions> = {
     minFrequency: 2,
     showProgress: true,
     specialTokens: ["<unk>"],
-    vocabSize: 30000
+    vocabSize: 30000,
   };
 
   private constructor(tokenizer: Tokenizer, configuration: ByteLevelBPETokenizerConfig) {
@@ -127,7 +127,7 @@ export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerCo
     const mergedOptions = { ...this.defaultTrainOptions, ...options };
     const trainer = bpeTrainer({
       ...mergedOptions,
-      initialAlphabet: byteLevelAlphabet()
+      initialAlphabet: byteLevelAlphabet(),
     });
 
     this.tokenizer.train(trainer, files);

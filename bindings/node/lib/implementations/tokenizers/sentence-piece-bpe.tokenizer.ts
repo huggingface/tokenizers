@@ -68,7 +68,7 @@ export class SentencePieceBPETokenizer extends BaseTokenizer<
   private static readonly defaultOptions: SentencePieceBPETokenizerConfig = {
     addPrefixSpace: true,
     replacement: "▁",
-    unkToken: "<unk>"
+    unkToken: "<unk>",
   };
 
   private readonly defaultTrainOptions: Required<SentencePieceBPETrainOptions> = {
@@ -77,7 +77,7 @@ export class SentencePieceBPETokenizer extends BaseTokenizer<
     minFrequency: 2,
     showProgress: true,
     specialTokens: ["<unk>"],
-    vocabSize: 30000
+    vocabSize: 30000,
   };
 
   private constructor(
@@ -97,7 +97,7 @@ export class SentencePieceBPETokenizer extends BaseTokenizer<
     if (opts.vocabFile && opts.mergesFile) {
       const modelOptions: BPEOptions = {
         dropout: opts.dropout,
-        unkToken: unkToken
+        unkToken: unkToken,
       };
 
       const fromFiles = promisify<string, string, BPEOptions, Model>(BPE.fromFiles);

@@ -104,7 +104,7 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
     sepToken: "[SEP]",
     stripAccents: true,
     unkToken: "[UNK]",
-    wordpiecesPrefix: "##"
+    wordpiecesPrefix: "##",
   };
 
   private readonly defaultTrainOptions: Required<BertWordPieceTrainOptions> = {
@@ -114,7 +114,7 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
     showProgress: true,
     specialTokens: ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"],
     vocabSize: 30000,
-    wordpiecesPrefix: "##"
+    wordpiecesPrefix: "##",
   };
 
   private constructor(tokenizer: Tokenizer, configuration: BertTokenizerConfig) {
@@ -135,7 +135,7 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
       const fromFiles = promisify<string, WordPieceOptions, Model>(WordPiece.fromFiles);
       model = await fromFiles(opts.vocabFile, {
         unkToken: getTokenContent(opts.unkToken),
-        continuingSubwordPrefix: opts.wordpiecesPrefix
+        continuingSubwordPrefix: opts.wordpiecesPrefix,
       });
     } else {
       model = WordPiece.empty();
@@ -148,7 +148,7 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
       opts.sepToken,
       opts.unkToken,
       opts.padToken,
-      opts.maskToken
+      opts.maskToken,
     ]) {
       if (tokenizer.tokenToId(getTokenContent(token)) !== undefined) {
         tokenizer.addSpecialTokens([token]);

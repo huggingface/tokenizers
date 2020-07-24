@@ -10,12 +10,13 @@ import {
   PaddingOptions,
   Tokenizer,
   TruncationConfiguration,
-  TruncationOptions
+  TruncationOptions,
 } from "../../bindings/tokenizer";
 import { Encoding } from "../encoding";
 
 export type Token = string | AddedToken;
 
+// eslint-disable-next-line @typescript-eslint/ban-types
 export class BaseTokenizer<TConfig extends object> {
   private _truncation?: TruncationConfiguration;
   private _padding?: PaddingConfiguration;
@@ -114,7 +115,7 @@ export class BaseTokenizer<TConfig extends object> {
   ): Promise<Encoding[]> {
     const encodeBatch = promisify(this.tokenizer.encodeBatch.bind(this.tokenizer));
     const rawEncodings = await encodeBatch(sequences, options);
-    return rawEncodings.map(e => new Encoding(e));
+    return rawEncodings.map((e) => new Encoding(e));
   }
 
   /**

@@ -23,7 +23,7 @@ describe("WordPiece", () => {
       });
 
       it("has its callback called with the loaded model", () => {
-        return new Promise(done => {
+        return new Promise((done) => {
           WordPiece.fromFiles(`${MOCKS_DIR}/vocab.txt`, (err, model) => {
             expect(model).toBeDefined();
             done();
@@ -40,7 +40,7 @@ describe("WordPiece", () => {
       });
 
       it("has its callback called with the loaded model", () => {
-        return new Promise(done => {
+        return new Promise((done) => {
           WordPiece.fromFiles(`${MOCKS_DIR}/vocab.txt`, {}, (err, model) => {
             expect(model).toBeDefined();
             done();
@@ -72,7 +72,7 @@ describe("BPE", () => {
     });
 
     it("has its callback called with the loaded model", () => {
-      return new Promise(done => {
+      return new Promise((done) => {
         BPE.fromFiles(
           `${MOCKS_DIR}/vocab.json`,
           `${MOCKS_DIR}/merges.txt`,
@@ -93,7 +93,7 @@ describe("BPE", () => {
     });
 
     it("has its callback called with the loaded model", () => {
-      return new Promise(done => {
+      return new Promise((done) => {
         BPE.fromFiles(
           `${MOCKS_DIR}/vocab.json`,
           `${MOCKS_DIR}/merges.txt`,

@@ -3,7 +3,7 @@
 import {
   bertProcessing,
   byteLevelProcessing,
-  robertaProcessing
+  robertaProcessing,
 } from "./post-processors";
 
 describe("bertProcessing", () => {

@@ -11,6 +11,6 @@ export {
   EncodeInput,
   EncodeOptions,
   TruncationConfiguration,
-  TruncationOptions
+  TruncationOptions,
 } from "./bindings/tokenizer";
 export { Encoding } from "./implementations/encoding";

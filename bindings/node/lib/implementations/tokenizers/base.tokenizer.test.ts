@@ -3,12 +3,12 @@ import { BPE } from "../../bindings/models";
 import {
   PaddingConfiguration,
   Tokenizer,
-  TruncationConfiguration
+  TruncationConfiguration,
 } from "../../bindings/tokenizer";
 import { BaseTokenizer } from "./base.tokenizer";
 
 describe("BaseTokenizer", () => {
-  let tokenizer: BaseTokenizer<{}>;
+  let tokenizer: BaseTokenizer<Record<string, unknown>>;
 
   beforeEach(() => {
     // Clear all instances and calls to constructor and all methods:
@@ -29,7 +29,7 @@ describe("BaseTokenizer", () => {
       const expectedConfig: TruncationConfiguration = {
         maxLength: 2,
         strategy: TruncationStrategy.LongestFirst,
-        stride: 0
+        stride: 0,
       };
       expect(tokenizer.truncation).toEqual(expectedConfig);
     });
@@ -52,7 +52,7 @@ describe("BaseTokenizer", () => {
         direction: PaddingDirection.Right,
         padId: 0,
         padToken: "[PAD]",
-        padTypeId: 0
+        padTypeId: 0,
       };
       expect(tokenizer.padding).toEqual(expectedConfig);
     });

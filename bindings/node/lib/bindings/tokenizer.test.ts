@@ -14,7 +14,7 @@ import {
   InputSequence,
   PaddingConfiguration,
   Tokenizer,
-  TruncationConfiguration
+  TruncationConfiguration,
 } from "./tokenizer";
 
 // jest.mock('../bindings/tokenizer');
@@ -45,7 +45,7 @@ describe("AddedToken", () => {
     const addToken = new AddedToken("test", false, {
       leftStrip: true,
       rightStrip: true,
-      singleWord: true
+      singleWord: true,
     });
     expect(addToken.constructor.name).toEqual("AddedToken");
   });
@@ -156,7 +156,7 @@ describe("Tokenizer", () => {
 
     it("accepts a pre-tokenized string as parameter", async () => {
       const encoding = await encode(["my", "name", "is", "john"], undefined, {
-        isPretokenized: true
+        isPretokenized: true,
       });
       expect(encoding).toBeDefined();
     });
@@ -170,7 +170,7 @@ describe("Tokenizer", () => {
 
     it("accepts a pre-tokenized input in encodeBatch", async () => {
       const encoding = await encodeBatch([["my", "name", "is", "john"]], {
-        isPretokenized: true
+        isPretokenized: true,
       });
       expect(encoding).toBeDefined();
     });
@@ -198,7 +198,7 @@ describe("Tokenizer", () => {
         [3, 7],
         [8, 10],
         [11, 15],
-        [0, 4]
+        [0, 4],
       ]);
       expect(encoding.getOverflowing()).toEqual([]);
       expect(encoding.getSpecialTokensMask()).toEqual([0, 0, 0, 0, 0]);
@@ -243,7 +243,7 @@ describe("Tokenizer", () => {
           "name",
           "[PAD]",
           "[PAD]",
-          "[PAD]"
+          "[PAD]",
         ]);
 
         const pairEncoding = await encode("my name", "pair");
@@ -252,7 +252,7 @@ describe("Tokenizer", () => {
           "name",
           "pair",
           "[PAD]",
-          "[PAD]"
+          "[PAD]",
         ]);
       });
 
@@ -304,7 +304,7 @@ describe("Tokenizer", () => {
       const decodeBatch = promisify(tokenizer.decodeBatch.bind(tokenizer));
       await expect(decodeBatch([[0, 1, 2, 3], [4]], true)).resolves.toEqual([
         "my name is john",
-        "pair"
+        "pair",
       ]);
     });
   });
@@ -326,7 +326,7 @@ describe("Tokenizer", () => {
         my: 0,
         name: 1,
         is: 2,
-        john: 3
+        john: 3,
       });
     });
   });
@@ -349,7 +349,7 @@ describe("Tokenizer", () => {
       const expectedConfig: TruncationConfiguration = {
         maxLength: 2,
         strategy: TruncationStrategy.LongestFirst,
-        stride: 0
+        stride: 0,
       };
       expect(truncation).toEqual(expectedConfig);
     });
@@ -365,7 +365,7 @@ describe("Tokenizer", () => {
         direction: PaddingDirection.Right,
         padId: 0,
         padToken: "[PAD]",
-        padTypeId: 0
+        padTypeId: 0,
       };
       expect(padding).toEqual(expectedConfig);
     });
