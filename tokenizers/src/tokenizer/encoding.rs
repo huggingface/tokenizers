@@ -276,20 +276,30 @@ impl Encoding {
     }
 
     /// Merge all Encodings together
-    pub fn merge(encodings: &[Encoding], growing_offsets: bool) -> Encoding {
-        if encodings.is_empty() {
-            return Encoding::default();
+    pub fn merge<I: IntoIterator<Item = Encoding>>(encodings: I, growing_offsets: bool) -> Self {
+        let mut encoding = Encoding::default();
+
+        for sub in encodings {
+            encoding.merge_with(sub, growing_offsets);
         }
 
-        let (firsts, others) = encodings.split_at(1);
-        let mut first: Encoding = firsts[0].clone();
-
-        for encoding in others {
-            first.merge_with(encoding.clone(), growing_offsets);
-        }
-
-        first
+        encoding
     }
+
+    // pub fn merge(encodings: &[Encoding], growing_offsets: bool) -> Encoding {
+    //     if encodings.is_empty() {
+    //         return Encoding::default();
+    //     }
+
+    //     let (firsts, others) = encodings.split_at(1);
+    //     let mut first: Encoding = firsts[0].clone();
+
+    //     for encoding in others {
+    //         first.merge_with(encoding.clone(), growing_offsets);
+    //     }
+
+    //     first
+    // }
 
     /// Merge ourself with the given `Encoding`. Happens in place.
     pub fn merge_with(&mut self, pair: Encoding, growing_offsets: bool) {
@@ -415,6 +425,12 @@ impl Encoding {
                 self.offsets.extend((0..pad_length).map(|_| (0, 0)));
             }
         }
+    }
+}
+
+impl std::iter::FromIterator<Encoding> for Encoding {
+    fn from_iter<I: IntoIterator<Item = Encoding>>(iter: I) -> Self {
+        Self::merge(iter, false)
     }
 }
 

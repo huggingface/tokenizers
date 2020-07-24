@@ -61,15 +61,6 @@ pub struct NormalizedString {
 }
 
 impl NormalizedString {
-    /// Create a NormalizedString from the given str
-    pub fn from(s: &str) -> Self {
-        NormalizedString {
-            original: s.to_owned(),
-            normalized: s.to_owned(),
-            alignments: (0..s.chars().count()).map(|v| (v, v + 1)).collect(),
-        }
-    }
-
     /// Return the normalized string
     pub fn get(&self) -> &str {
         &self.normalized
@@ -362,7 +353,7 @@ impl NormalizedString {
     /// Split off ourselves, returning a new Self that contains the range [at, len).
     /// self will then contain the range [0, at).
     /// The provided `at` indexes on `char` not bytes.
-    pub fn split_off(&mut self, at: usize) -> Self {
+    fn ssplit_off(&mut self, at: usize) -> Self {
         if at > self.len() {
             return NormalizedString::from("");
         }
@@ -504,6 +495,33 @@ pub fn get_range_of<T: RangeBounds<usize>>(s: &str, range: T) -> Option<&str> {
             .nth(end as usize)
             .unwrap_or_else(|| s.len());
         Some(&s[start_b..end_b])
+    }
+}
+
+impl From<String> for NormalizedString {
+    fn from(s: String) -> Self {
+        let len = s.chars().count();
+        Self {
+            original: s.clone(),
+            normalized: s,
+            alignments: (0..len).map(|v| (v, v + 1)).collect(),
+        }
+    }
+}
+
+impl From<&str> for NormalizedString {
+    fn from(s: &str) -> Self {
+        Self::from(s.to_owned())
+    }
+}
+
+impl std::iter::FromIterator<NormalizedString> for NormalizedString {
+    fn from_iter<I: IntoIterator<Item = NormalizedString>>(iter: I) -> NormalizedString {
+        let mut normalized: NormalizedString = "".into();
+        for sub in iter {
+            normalized.merge_with(&sub)
+        }
+        normalized
     }
 }
 
