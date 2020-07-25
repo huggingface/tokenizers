@@ -8,16 +8,17 @@ use serde::{
 };
 
 use super::{added_vocabulary::AddedTokenWithId, Tokenizer};
-use crate::{Model, Normalizer, PostProcessor, PreTokenizer, TokenizerBuilder};
+use crate::{Decoder, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerBuilder};
 
 static SERIALIZATION_VERSION: &str = "1.0";
 
-impl<M, N, PT, PP> Serialize for Tokenizer<M, N, PT, PP>
+impl<M, N, PT, PP, D> Serialize for Tokenizer<M, N, PT, PP, D>
 where
     M: Serialize,
     N: Serialize,
     PT: Serialize,
     PP: Serialize,
+    D: Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -46,12 +47,13 @@ where
     }
 }
 
-impl<'de, M, N, PT, PP> Deserialize<'de> for Tokenizer<M, N, PT, PP>
+impl<'de, M, N, PT, PP, D> Deserialize<'de> for Tokenizer<M, N, PT, PP, D>
 where
     M: Deserialize<'de> + Model,
     N: Deserialize<'de> + Normalizer,
     PT: Deserialize<'de> + PreTokenizer,
     PP: Deserialize<'de> + PostProcessor,
+    D: Deserialize<'de> + Decoder,
 {
     fn deserialize<De>(deserializer: De) -> Result<Self, De::Error>
     where
@@ -70,26 +72,34 @@ where
                 "decoder",
                 "model",
             ],
-            TokenizerVisitor(PhantomData, PhantomData, PhantomData, PhantomData),
+            TokenizerVisitor(
+                PhantomData,
+                PhantomData,
+                PhantomData,
+                PhantomData,
+                PhantomData,
+            ),
         )
     }
 }
 
-struct TokenizerVisitor<M, N, PT, PP>(
+struct TokenizerVisitor<M, N, PT, PP, D>(
     PhantomData<M>,
     PhantomData<N>,
     PhantomData<PT>,
     PhantomData<PP>,
+    PhantomData<D>,
 );
 
-impl<'de, M, N, PT, PP> Visitor<'de> for TokenizerVisitor<M, N, PT, PP>
+impl<'de, M, N, PT, PP, D> Visitor<'de> for TokenizerVisitor<M, N, PT, PP, D>
 where
     M: Deserialize<'de> + Model,
     N: Deserialize<'de> + Normalizer,
     PT: Deserialize<'de> + PreTokenizer,
     PP: Deserialize<'de> + PostProcessor,
+    D: Deserialize<'de> + Decoder,
 {
-    type Value = Tokenizer<M, N, PT, PP>;
+    type Value = Tokenizer<M, N, PT, PP, D>;
 
     fn expecting(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(fmt, "struct Tokenizer")
