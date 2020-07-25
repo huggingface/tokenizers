@@ -82,10 +82,10 @@ fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
 /// Processors Module
 #[pymodule]
 fn processors(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<processors::PostProcessor>()?;
-    m.add_class::<processors::BertProcessing>()?;
-    m.add_class::<processors::RobertaProcessing>()?;
-    m.add_class::<processors::ByteLevel>()?;
+    m.add_class::<processors::PyPostProcessor>()?;
+    m.add_class::<processors::PyBertProcessing>()?;
+    m.add_class::<processors::PyRobertaProcessing>()?;
+    m.add_class::<processors::PyByteLevel>()?;
     Ok(())
 }
 
