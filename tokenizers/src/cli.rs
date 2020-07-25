@@ -17,10 +17,9 @@ fn shell(matches: &ArgMatches) -> Result<()> {
         .expect("Must give a merges.txt file");
 
     let bpe = BPE::from_files(vocab, merges).build()?;
-    let mut tokenizer = Tokenizer::new(Box::new(bpe));
-    tokenizer.with_pre_tokenizer(Box::new(ByteLevel::default()));
-    tokenizer.with_decoder(Box::new(ByteLevel::default()));
-
+    let mut tokenizer = Tokenizer::new(Box::new(bpe))
+        .with_pre_tokenizer(Box::new(ByteLevel::default()))
+        .with_decoder(Box::new(ByteLevel::default()));
     tokenizer.add_tokens(&[AddedToken::from(String::from("ing"), false).single_word(false)]);
     tokenizer
         .add_special_tokens(&[AddedToken::from(String::from("[ENT]"), true).single_word(true)]);

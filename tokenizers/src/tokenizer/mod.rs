@@ -253,7 +253,7 @@ impl Tokenizer {
     }
 
     /// Set the normalizer
-    pub fn with_normalizer(&mut self, normalizer: Box<dyn Normalizer>) -> &Self {
+    pub fn with_normalizer(mut self, normalizer: Box<dyn Normalizer>) -> Self {
         self.normalizer = Some(normalizer);
         self
     }
@@ -265,7 +265,7 @@ impl Tokenizer {
     }
 
     /// Set the pre tokenizer
-    pub fn with_pre_tokenizer(&mut self, pre_tokenizer: Box<dyn PreTokenizer>) -> &Self {
+    pub fn with_pre_tokenizer(mut self, pre_tokenizer: Box<dyn PreTokenizer>) -> Self {
         self.pre_tokenizer = Some(pre_tokenizer);
         self
     }
@@ -277,7 +277,7 @@ impl Tokenizer {
     }
 
     /// Set the post processor
-    pub fn with_post_processor(&mut self, post_processor: Box<dyn PostProcessor>) -> &Self {
+    pub fn with_post_processor(mut self, post_processor: Box<dyn PostProcessor>) -> Self {
         self.post_processor = Some(post_processor);
         self
     }
@@ -289,7 +289,7 @@ impl Tokenizer {
     }
 
     /// Set the decoder
-    pub fn with_decoder(&mut self, decoder: Box<dyn Decoder>) -> &Self {
+    pub fn with_decoder(mut self, decoder: Box<dyn Decoder>) -> Self {
         self.decoder = Some(decoder);
         self
     }
@@ -301,7 +301,7 @@ impl Tokenizer {
     }
 
     /// Set the model
-    pub fn with_model(&mut self, model: Box<dyn Model>) -> &Self {
+    pub fn with_model(mut self, model: Box<dyn Model>) -> Self {
         self.model = model;
         self
     }
@@ -313,7 +313,7 @@ impl Tokenizer {
     }
 
     /// Set the truncation parameters
-    pub fn with_truncation(&mut self, trunc: Option<TruncationParams>) -> &Self {
+    pub fn with_truncation(mut self, trunc: Option<TruncationParams>) -> Self {
         self.truncation = trunc;
         self
     }
@@ -329,7 +329,7 @@ impl Tokenizer {
     }
 
     /// Set the padding parameters
-    pub fn with_padding(&mut self, padding: Option<PaddingParams>) -> &Self {
+    pub fn with_padding(mut self, padding: Option<PaddingParams>) -> Self {
         self.padding = padding;
         self
     }

@@ -83,35 +83,35 @@ impl<'de> Visitor<'de> for TokenizerVisitor {
                     }
                 }
                 "truncation" => {
-                    tokenizer.with_truncation(map.next_value()?);
+                    tokenizer = tokenizer.with_truncation(map.next_value()?);
                 }
                 "padding" => {
-                    tokenizer.with_padding(map.next_value()?);
+                    tokenizer = tokenizer.with_padding(map.next_value()?);
                 }
                 "added_tokens" => {
                     tokens = map.next_value()?;
                 }
                 "normalizer" => {
                     if let Some(normalizer) = map.next_value()? {
-                        tokenizer.with_normalizer(normalizer);
+                        tokenizer = tokenizer.with_normalizer(normalizer);
                     }
                 }
                 "pre_tokenizer" => {
                     if let Some(pre_tok) = map.next_value()? {
-                        tokenizer.with_pre_tokenizer(pre_tok);
+                        tokenizer = tokenizer.with_pre_tokenizer(pre_tok);
                     }
                 }
                 "model" => {
-                    tokenizer.with_model(map.next_value()?);
+                    tokenizer = tokenizer.with_model(map.next_value()?);
                 }
                 "decoder" => {
                     if let Some(decoder) = map.next_value()? {
-                        tokenizer.with_decoder(decoder);
+                        tokenizer = tokenizer.with_decoder(decoder);
                     }
                 }
                 "post_processor" => {
                     if let Some(processor) = map.next_value()? {
-                        tokenizer.with_post_processor(processor);
+                        tokenizer = tokenizer.with_post_processor(processor);
                     }
                 }
                 _ => {}

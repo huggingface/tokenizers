@@ -5,7 +5,7 @@ use tokenizers::normalizers::bert::BertNormalizer;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::processors::bert::BertProcessing;
-use tokenizers::tokenizer::Tokenizer;
+use tokenizers::{tokenizer::Tokenizer, Model};
 
 #[allow(dead_code)]
 pub fn get_empty() -> Tokenizer {
@@ -21,14 +21,12 @@ pub fn get_byte_level_bpe() -> BPE {
 
 #[allow(dead_code)]
 pub fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
-    let mut tokenizer = Tokenizer::new(Box::new(get_byte_level_bpe()));
-    tokenizer.with_pre_tokenizer(Box::new(
-        ByteLevel::default().add_prefix_space(add_prefix_space),
-    ));
-    tokenizer.with_decoder(Box::new(ByteLevel::default()));
-    tokenizer.with_post_processor(Box::new(ByteLevel::default().trim_offsets(trim_offsets)));
-
-    tokenizer
+    Tokenizer::new(Box::new(get_byte_level_bpe()))
+        .with_pre_tokenizer(Box::new(
+            ByteLevel::default().add_prefix_space(add_prefix_space),
+        ))
+        .with_decoder(Box::new(ByteLevel::default()))
+        .with_post_processor(Box::new(ByteLevel::default().trim_offsets(trim_offsets)))
 }
 
 #[allow(dead_code)]
@@ -40,20 +38,19 @@ pub fn get_bert_wordpiece() -> WordPiece {
 
 #[allow(dead_code)]
 pub fn get_bert() -> Tokenizer {
-    let mut tokenizer = Tokenizer::new(Box::new(get_bert_wordpiece()));
-    tokenizer.with_normalizer(Box::new(BertNormalizer::default()));
-    tokenizer.with_pre_tokenizer(Box::new(BertPreTokenizer));
-    tokenizer.with_decoder(Box::new(WordPieceDecoder::default()));
-    tokenizer.with_post_processor(Box::new(BertProcessing::new(
-        (
-            String::from("[SEP]"),
-            tokenizer.get_model().token_to_id("[SEP]").unwrap(),
-        ),
-        (
-            String::from("[CLS]"),
-            tokenizer.get_model().token_to_id("[CLS]").unwrap(),
-        ),
-    )));
+    let model = Box::new(get_bert_wordpiece());
+    const SEP_TOKEN: &'static str = "[SEP]";
+    const CLS_TOKEN: &'static str = "[CLS]";
+    let sep = model.token_to_id(SEP_TOKEN).unwrap();
+    let cls = model.token_to_id(CLS_TOKEN).unwrap();
+    let tokenizer = Tokenizer::new(model)
+        .with_normalizer(Box::new(BertNormalizer::default()))
+        .with_pre_tokenizer(Box::new(BertPreTokenizer))
+        .with_decoder(Box::new(WordPieceDecoder::default()))
+        .with_post_processor(Box::new(BertProcessing::new(
+            (String::from(SEP_TOKEN), sep),
+            (String::from(CLS_TOKEN), cls),
+        )));
 
     tokenizer
 }
