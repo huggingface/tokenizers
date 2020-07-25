@@ -213,10 +213,10 @@ impl fmt::Display for BuilderError {
 /// Builder for Tokenizer structs.
 ///
 /// `build()` fails if the `model` is missing.
-pub struct TokenizerBuilder<M, N> {
+pub struct TokenizerBuilder<M, N, PT> {
     model: Option<M>,
     normalizer: Option<N>,
-    pre_tokenizer: Option<Box<dyn PreTokenizer>>,
+    pre_tokenizer: Option<PT>,
     post_processor: Option<Box<dyn PostProcessor>>,
     decoder: Option<Box<dyn Decoder>>,
 
@@ -226,20 +226,22 @@ pub struct TokenizerBuilder<M, N> {
     padding: Option<PaddingParams>,
 }
 
-impl<M, N> Default for TokenizerBuilder<M, N>
+impl<M, N, PT> Default for TokenizerBuilder<M, N, PT>
 where
     M: Model,
     N: Normalizer,
+    PT: PreTokenizer,
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<M, N> TokenizerBuilder<M, N>
+impl<M, N, PT> TokenizerBuilder<M, N, PT>
 where
     M: Model,
     N: Normalizer,
+    PT: PreTokenizer,
 {
     /// Get an empty TokenizerBuilder.
     pub fn new() -> Self {
@@ -258,7 +260,7 @@ where
     /// Convert the TokenizerBuilder to a Tokenizer.
     ///
     /// Conversion fails if the `model` is missing.
-    pub fn build(self) -> Result<Tokenizer<M, N>> {
+    pub fn build(self) -> Result<Tokenizer<M, N, PT>> {
         let model = self
             .model
             .ok_or_else(|| Box::new(BuilderError("Model missing.".into())))?;
@@ -288,7 +290,7 @@ where
     }
 
     /// Set the pretokenizer.
-    pub fn with_pretokenizer(mut self, pretokenizer: Option<Box<dyn PreTokenizer>>) -> Self {
+    pub fn with_pretokenizer(mut self, pretokenizer: Option<PT>) -> Self {
         self.pre_tokenizer = pretokenizer;
         self
     }
@@ -319,10 +321,10 @@ where
 }
 
 /// A `Tokenizer` is capable of encoding/decoding any text.
-pub struct Tokenizer<M, N> {
+pub struct Tokenizer<M, N, PT> {
     // Tokenizer parts
     normalizer: Option<N>,
-    pre_tokenizer: Option<Box<dyn PreTokenizer>>,
+    pre_tokenizer: Option<PT>,
     model: M,
     post_processor: Option<Box<dyn PostProcessor>>,
     decoder: Option<Box<dyn Decoder>>,
@@ -335,10 +337,11 @@ pub struct Tokenizer<M, N> {
     padding: Option<PaddingParams>,
 }
 
-impl<M, N> Tokenizer<M, N>
+impl<M, N, PT> Tokenizer<M, N, PT>
 where
     M: Model,
     N: Normalizer,
+    PT: PreTokenizer,
 {
     /// Instantiate a new Tokenizer, with the given Model
     pub fn new(model: M) -> Self {
@@ -368,14 +371,13 @@ where
     }
 
     /// Set the pre tokenizer
-    pub fn with_pre_tokenizer(&mut self, pre_tokenizer: Box<dyn PreTokenizer>) -> &Self {
+    pub fn with_pre_tokenizer(&mut self, pre_tokenizer: PT) -> &Self {
         self.pre_tokenizer = Some(pre_tokenizer);
         self
     }
 
     /// Get the pre tokenizer
-    #[allow(clippy::borrowed_box)]
-    pub fn get_pre_tokenizer(&self) -> Option<&Box<dyn PreTokenizer>> {
+    pub fn get_pre_tokenizer(&self) -> Option<&PT> {
         self.pre_tokenizer.as_ref()
     }
 
@@ -577,7 +579,8 @@ where
     /// # use tokenizers::Tokenizer;
     /// # use tokenizers::models::bpe::BPE;
     /// # use tokenizers::normalizers::NormalizerWrapper;
-    /// # let mut tokenizer = Tokenizer::<_, NormalizerWrapper>::new(BPE::default());
+    /// # use tokenizers::pre_tokenizers::PreTokenizerWrapper;
+    /// # let mut tokenizer = Tokenizer::<_, NormalizerWrapper, PreTokenizerWrapper>::new(BPE::default());
     /// #
     /// // Sequences:
     /// tokenizer.encode("Single sequence", false);
@@ -752,7 +755,7 @@ where
     }
 
     /// Train a model and replace our current Model, using the given Trainer
-    pub fn train<T, TM>(self, trainer: &T, files: Vec<String>) -> Result<Tokenizer<TM, N>>
+    pub fn train<T, TM>(self, trainer: &T, files: Vec<String>) -> Result<Tokenizer<TM, N, PT>>
     where
         T: Trainer<Model = TM>,
         TM: Model,
@@ -912,10 +915,11 @@ where
     }
 }
 
-impl<M, N> std::str::FromStr for Tokenizer<M, N>
+impl<M, N, PT> std::str::FromStr for Tokenizer<M, N, PT>
 where
     M: for<'de> Deserialize<'de> + Model,
     N: for<'de> Deserialize<'de> + Normalizer,
+    PT: for<'de> Deserialize<'de> + PreTokenizer,
 {
     type Err = Error;
 
@@ -924,10 +928,11 @@ where
     }
 }
 
-impl<M, N> Tokenizer<M, N>
+impl<M, N, PT> Tokenizer<M, N, PT>
 where
     M: DeserializeOwned + Model,
     N: DeserializeOwned + Normalizer,
+    PT: DeserializeOwned + PreTokenizer,
 {
     /// Instantiate a new Tokenizer from the given file
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
@@ -937,10 +942,11 @@ where
     }
 }
 
-impl<M, N> Tokenizer<M, N>
+impl<M, N, PT> Tokenizer<M, N, PT>
 where
     M: Serialize,
     N: Serialize,
+    PT: Serialize,
 {
     /// Serialize the current tokenizer as a String
     pub fn to_string(&self, pretty: bool) -> Result<String> {

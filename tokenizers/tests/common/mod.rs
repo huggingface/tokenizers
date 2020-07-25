@@ -5,11 +5,12 @@ use tokenizers::normalizers::bert::BertNormalizer;
 use tokenizers::normalizers::NormalizerWrapper;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::pre_tokenizers::PreTokenizerWrapper;
 use tokenizers::processors::bert::BertProcessing;
 use tokenizers::tokenizer::{Model, Tokenizer};
 
 #[allow(dead_code)]
-pub fn get_empty() -> Tokenizer<BPE, NormalizerWrapper> {
+pub fn get_empty() -> Tokenizer<BPE, NormalizerWrapper, PreTokenizerWrapper> {
     Tokenizer::new(BPE::default())
 }
 
@@ -24,11 +25,9 @@ pub fn get_byte_level_bpe() -> BPE {
 pub fn get_byte_level(
     add_prefix_space: bool,
     trim_offsets: bool,
-) -> Tokenizer<BPE, NormalizerWrapper> {
+) -> Tokenizer<BPE, NormalizerWrapper, ByteLevel> {
     let mut tokenizer = Tokenizer::new(get_byte_level_bpe());
-    tokenizer.with_pre_tokenizer(Box::new(
-        ByteLevel::default().add_prefix_space(add_prefix_space),
-    ));
+    tokenizer.with_pre_tokenizer(ByteLevel::default().add_prefix_space(add_prefix_space));
     tokenizer.with_decoder(Box::new(ByteLevel::default()));
     tokenizer.with_post_processor(Box::new(ByteLevel::default().trim_offsets(trim_offsets)));
 
@@ -43,10 +42,10 @@ pub fn get_bert_wordpiece() -> WordPiece {
 }
 
 #[allow(dead_code)]
-pub fn get_bert() -> Tokenizer<WordPiece, BertNormalizer> {
+pub fn get_bert() -> Tokenizer<WordPiece, BertNormalizer, BertPreTokenizer> {
     let mut tokenizer = Tokenizer::new(get_bert_wordpiece());
     tokenizer.with_normalizer(BertNormalizer::default());
-    tokenizer.with_pre_tokenizer(Box::new(BertPreTokenizer));
+    tokenizer.with_pre_tokenizer(BertPreTokenizer);
     tokenizer.with_decoder(Box::new(WordPieceDecoder::default()));
     tokenizer.with_post_processor(Box::new(BertProcessing::new(
         (
