@@ -30,6 +30,7 @@
 //! use tokenizers::normalizers::NormalizerWrapper;
 //! use tokenizers::pre_tokenizers::PreTokenizerWrapper;
 //! use tokenizers::processors::PostProcessorWrapper;
+//! use tokenizers::decoders::DecoderWrapper;
 //!
 //! fn main() -> Result<()> {
 //! let bpe_builder = BPE::from_files("./path/to/vocab.json", "./path/to/merges.txt");
@@ -38,8 +39,11 @@
 //!         .unk_token("[UNK]".into())
 //!         .build()?;
 //!
-//!     let mut tokenizer =
-//!         Tokenizer::<_, NormalizerWrapper, PreTokenizerWrapper, PostProcessorWrapper>::new(bpe);
+//!     let mut tokenizer = Tokenizer::<_,
+//!              NormalizerWrapper,
+//!              PreTokenizerWrapper,
+//!              PostProcessorWrapper,
+//!              DecoderWrapper>::new(bpe);
 //!
 //!     let encoding = tokenizer.encode("Hey there!", false)?;
 //!     println!("{:?}", encoding.get_tokens());
