@@ -31,6 +31,7 @@ setup(
         "Programming Language :: Python :: 3.8",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
+    package_dir={"": "py_src"},
     packages=[
         "tokenizers",
         "tokenizers.models",
