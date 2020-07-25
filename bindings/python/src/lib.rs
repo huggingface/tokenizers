@@ -92,15 +92,15 @@ fn processors(_py: Python, m: &PyModule) -> PyResult<()> {
 /// Normalizers Module
 #[pymodule]
 fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<normalizers::Normalizer>()?;
-    m.add_class::<normalizers::BertNormalizer>()?;
-    m.add_class::<normalizers::NFD>()?;
-    m.add_class::<normalizers::NFKD>()?;
-    m.add_class::<normalizers::NFC>()?;
-    m.add_class::<normalizers::NFKC>()?;
-    m.add_class::<normalizers::Sequence>()?;
-    m.add_class::<normalizers::Lowercase>()?;
-    m.add_class::<normalizers::Strip>()?;
+    m.add_class::<normalizers::PyNormalizer>()?;
+    m.add_class::<normalizers::PyBertNormalizer>()?;
+    m.add_class::<normalizers::PyNFD>()?;
+    m.add_class::<normalizers::PyNFKD>()?;
+    m.add_class::<normalizers::PyNFC>()?;
+    m.add_class::<normalizers::PyNFKC>()?;
+    m.add_class::<normalizers::PySequence>()?;
+    m.add_class::<normalizers::PyLowercase>()?;
+    m.add_class::<normalizers::PyStrip>()?;
     Ok(())
 }
 
