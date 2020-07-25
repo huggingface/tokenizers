@@ -10,7 +10,6 @@ mod processors;
 mod token;
 mod tokenizer;
 mod trainers;
-mod utils;
 
 use pyo3::prelude::*;
 use pyo3::wrap_pymodule;
@@ -71,11 +70,11 @@ fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
 /// Decoders Module
 #[pymodule]
 fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<decoders::Decoder>()?;
-    m.add_class::<decoders::ByteLevel>()?;
-    m.add_class::<decoders::WordPiece>()?;
-    m.add_class::<decoders::Metaspace>()?;
-    m.add_class::<decoders::BPEDecoder>()?;
+    m.add_class::<decoders::PyDecoder>()?;
+    m.add_class::<decoders::PyByteLevelDec>()?;
+    m.add_class::<decoders::PyWordPieceDec>()?;
+    m.add_class::<decoders::PyMetaspaceDec>()?;
+    m.add_class::<decoders::PyBPEDecoder>()?;
     Ok(())
 }
 
