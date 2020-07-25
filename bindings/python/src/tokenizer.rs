@@ -17,7 +17,7 @@ use super::encoding::PyEncoding;
 use super::error::{PyError, ToPyResult};
 use super::models::PyModel;
 use super::normalizers::PyNormalizer;
-use super::pre_tokenizers::PreTokenizer;
+use super::pre_tokenizers::PyPreTokenizer;
 use super::processors::PostProcessor;
 use super::trainers::PyTrainer;
 use super::utils::Container;
@@ -268,7 +268,7 @@ impl From<PreTokenizedEncodeInput> for tk::tokenizer::EncodeInput {
     }
 }
 
-type TokenizerImpl = Tokenizer<PyModel, PyNormalizer>;
+type TokenizerImpl = Tokenizer<PyModel, PyNormalizer, PyPreTokenizer>;
 
 #[pyclass(dict, module = "tokenizers")]
 pub struct PyTokenizer {
@@ -717,25 +717,13 @@ impl PyTokenizer {
     }
 
     #[getter]
-    fn get_pre_tokenizer(&self) -> PyResult<Option<PreTokenizer>> {
-        Ok(self
-            .tokenizer
-            .get_pre_tokenizer()
-            .map(|pretok| PreTokenizer {
-                pretok: Container::from_ref(pretok),
-            }))
+    fn get_pre_tokenizer(&self) -> Option<PyPreTokenizer> {
+        self.tokenizer.get_pre_tokenizer().cloned()
     }
 
     #[setter]
-    fn set_pre_tokenizer(&mut self, mut pretok: PyRefMut<PreTokenizer>) -> PyResult<()> {
-        if let Some(pretok) = pretok.pretok.to_pointer() {
-            self.tokenizer.with_pre_tokenizer(pretok);
-            Ok(())
-        } else {
-            Err(exceptions::Exception::py_err(
-                "The PreTokenizer is already being used in another Tokenizer",
-            ))
-        }
+    fn set_pre_tokenizer(&mut self, pretok: PyRef<PyPreTokenizer>) {
+        self.tokenizer.with_pre_tokenizer(pretok.clone());
     }
 
     #[getter]
