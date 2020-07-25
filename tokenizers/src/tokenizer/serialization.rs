@@ -1,11 +1,12 @@
-use super::{added_vocabulary::AddedTokenWithId, Tokenizer};
-use crate::models::bpe::BPE;
 use serde::{
     self,
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
     Deserialize, Deserializer, Serialize, Serializer,
 };
+
+use super::{added_vocabulary::AddedTokenWithId, Tokenizer};
+use crate::TokenizerBuilder;
 
 static SERIALIZATION_VERSION: &str = "1.0";
 
@@ -72,7 +73,7 @@ impl<'de> Visitor<'de> for TokenizerVisitor {
     where
         V: MapAccess<'de>,
     {
-        let mut tokenizer = Tokenizer::new(Box::new(BPE::default()));
+        let mut builder = TokenizerBuilder::new();
         let mut tokens: Vec<AddedTokenWithId> = vec![];
         while let Some(key) = map.next_key::<String>()? {
             match key.as_ref() {
@@ -83,40 +84,35 @@ impl<'de> Visitor<'de> for TokenizerVisitor {
                     }
                 }
                 "truncation" => {
-                    tokenizer.with_truncation(map.next_value()?);
+                    builder = builder.with_truncation(map.next_value()?);
                 }
                 "padding" => {
-                    tokenizer.with_padding(map.next_value()?);
+                    builder = builder.with_padding(map.next_value()?);
                 }
                 "added_tokens" => {
                     tokens = map.next_value()?;
                 }
                 "normalizer" => {
-                    if let Some(normalizer) = map.next_value()? {
-                        tokenizer.with_normalizer(normalizer);
-                    }
+                    builder = builder.with_normalizer(map.next_value()?);
                 }
                 "pre_tokenizer" => {
-                    if let Some(pre_tok) = map.next_value()? {
-                        tokenizer.with_pre_tokenizer(pre_tok);
-                    }
+                    builder = builder.with_pretokenizer(map.next_value()?);
                 }
                 "model" => {
-                    tokenizer.with_model(map.next_value()?);
+                    builder = builder.with_model(map.next_value()?);
                 }
                 "decoder" => {
-                    if let Some(decoder) = map.next_value()? {
-                        tokenizer.with_decoder(decoder);
-                    }
+                    builder = builder.with_decoder(map.next_value()?);
                 }
                 "post_processor" => {
-                    if let Some(processor) = map.next_value()? {
-                        tokenizer.with_post_processor(processor);
-                    }
+                    builder = builder.with_postprocessor(map.next_value()?);
                 }
                 _ => {}
             };
         }
+        let mut tokenizer = builder
+            .build()
+            .map_err(|e| V::Error::custom(e.to_string()))?;
 
         // We take care of deserializing the added_tokens (instead of `AddedVocabulary` directly
         // because it let us check that associated IDs are still good, and warn the user otherwise
