@@ -49,7 +49,7 @@ impl_enum_from!(BPE, ModelWrapper, BPE);
 
 #[typetag::serde]
 impl Model for ModelWrapper {
-    fn tokenize(&self, tokens: Vec<(String, (usize, usize))>) -> Result<Vec<Token>> {
+    fn tokenize(&self, tokens: &str) -> Result<Vec<Token>> {
         use ModelWrapper::*;
         match self {
             WordLevel(t) => t.tokenize(tokens),
@@ -110,6 +110,8 @@ pub enum TrainerWrapper {
 }
 
 impl Trainer for TrainerWrapper {
+    type Model = ModelWrapper;
+
     fn should_show_progress(&self) -> bool {
         match self {
             TrainerWrapper::BpeTrainer(bpe) => bpe.should_show_progress(),
@@ -120,16 +122,10 @@ impl Trainer for TrainerWrapper {
     fn train(
         &self,
         words: HashMap<String, u32>,
-    ) -> Result<(Box<dyn Model>, Vec<AddedToken>)> {
+    ) -> Result<(Self::Model, Vec<AddedToken>)> {
         match self {
-            TrainerWrapper::BpeTrainer(bpe) => bpe.train(words).map(|(m, t)| {
-                let m: Box<dyn Model> = Box::new(m);
-                (m, t)
-            }),
-            TrainerWrapper::WordPieceTrainer(wpt) => wpt.train(words).map(|(m, t)| {
-                let m: Box<dyn Model> = Box::new(m);
-                (m, t)
-            }),
+            TrainerWrapper::BpeTrainer(bpe) => bpe.train(words).map(|(m, t)| (m.into(), t)),
+            TrainerWrapper::WordPieceTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),
         }
     }
 

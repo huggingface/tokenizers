@@ -194,7 +194,7 @@ impl AddedVocabulary {
     }
 
     /// Get the id matching one of our token if it exists
-    pub fn token_to_id(&self, token: &str, model: &dyn Model) -> Option<u32> {
+    pub fn token_to_id(&self, token: &str, model: &impl Model) -> Option<u32> {
         self.added_tokens_map
             .get(token)
             .copied()
@@ -202,7 +202,7 @@ impl AddedVocabulary {
     }
 
     /// Get the token matching the given id if it exists
-    pub fn id_to_token<'s>(&'s self, id: u32, model: &'s dyn Model) -> Option<&'s str> {
+    pub fn id_to_token<'s>(&'s self, id: u32, model: &'s impl Model) -> Option<&'s str> {
         self.added_tokens_map_r
             .get(&id)
             .map(|t| t.content.as_ref())
@@ -218,7 +218,7 @@ impl AddedVocabulary {
     pub fn add_special_tokens(
         &mut self,
         tokens: &[AddedToken],
-        model: &dyn Model,
+        model: &impl Model,
         normalizer: Option<&dyn Normalizer>,
     ) -> usize {
         for token in tokens {
@@ -235,7 +235,7 @@ impl AddedVocabulary {
     pub fn add_tokens(
         &mut self,
         tokens: &[AddedToken],
-        model: &dyn Model,
+        model: &impl Model,
         normalizer: Option<&dyn Normalizer>,
     ) -> usize {
         let mut ignored = 0;
@@ -276,7 +276,7 @@ impl AddedVocabulary {
     ///
     /// We keep two different RegexSet, one that will take care of matching against the
     /// non-normalized string, and one matching against the normalized one.
-    fn refresh_added_tokens(&mut self, model: &dyn Model, normalizer: Option<&dyn Normalizer>) {
+    fn refresh_added_tokens(&mut self, model: &impl Model, normalizer: Option<&dyn Normalizer>) {
         type TupleTokenId<'a> = (&'a AddedToken, u32);
         let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
             .special_tokens

@@ -11,7 +11,7 @@ use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::delimiter::CharDelimiterSplit;
 use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
-use crate::{NormalizedString, PreTokenizer};
+use crate::{PreTokenizer, PreTokenizedString};
 
 #[derive(Serialize, Deserialize)]
 pub enum PreTokenizerWrapper {
@@ -27,8 +27,8 @@ pub enum PreTokenizerWrapper {
 impl PreTokenizer for PreTokenizerWrapper {
     fn pre_tokenize(
         &self,
-        normalized: &mut NormalizedString,
-    ) -> crate::Result<Vec<(String, (usize, usize))>> {
+        normalized: &mut PreTokenizedString,
+    ) -> crate::Result<()> {
         match self {
             PreTokenizerWrapper::BertPreTokenizer(bpt) => bpt.pre_tokenize(normalized),
             PreTokenizerWrapper::ByteLevel(bpt) => bpt.pre_tokenize(normalized),

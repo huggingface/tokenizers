@@ -1,6 +1,6 @@
 use super::WordPiece;
 use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder};
-use crate::tokenizer::{AddedToken, Model, Result, Trainer};
+use crate::tokenizer::{AddedToken, Result, Trainer};
 use std::collections::{HashMap, HashSet};
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
@@ -96,12 +96,14 @@ impl WordPieceTrainer {
 }
 
 impl Trainer for WordPieceTrainer {
+    type Model=WordPiece;
+
     fn train(
         &self,
         word_counts: HashMap<String, u32>,
-    ) -> Result<(Box<dyn Model>, Vec<AddedToken>)> {
+    ) -> Result<(WordPiece, Vec<AddedToken>)> {
         let (wp, tokens) = self.train(word_counts)?;
-        Ok((Box::new(wp), tokens))
+        Ok((wp, tokens))
     }
 
     fn process_tokens(&self, mut words: &mut HashMap<String, u32>, tokens: Vec<String>) {

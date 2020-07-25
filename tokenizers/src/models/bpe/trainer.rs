@@ -2,7 +2,7 @@
 
 use super::{Pair, WithFirstLastIterator, Word, BPE};
 use crate::parallelism::*;
-use crate::tokenizer::{AddedToken, Model, Result, Trainer};
+use crate::tokenizer::{AddedToken, Result, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -575,13 +575,15 @@ impl BpeTrainer {
 }
 
 impl Trainer for BpeTrainer {
+    type Model = BPE;
+
     /// Train a BPE model
     fn train(
         &self,
         word_counts: HashMap<String, u32>,
-    ) -> Result<(Box<dyn Model>, Vec<AddedToken>)> {
+    ) -> Result<(BPE, Vec<AddedToken>)> {
         let (bpe, tokens) = self.train(word_counts)?;
-        Ok((Box::new(bpe), tokens))
+        Ok((bpe, tokens))
     }
 
     /// Process a bunch of tokens, counting them
