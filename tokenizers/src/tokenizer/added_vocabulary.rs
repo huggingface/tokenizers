@@ -147,6 +147,7 @@ type MatchingSet = (regex::RegexSet, Vec<u32>);
 /// were to add new tokens after this training process, we couldn't make sure the merges pairs
 /// exist as required.
 ///
+#[derive(Clone)]
 pub(super) struct AddedVocabulary {
     /// Contains the mapping from String (token content) to ID. This map contains both special
     /// tokens and classic added tokens that were added to the this vocabulary.
