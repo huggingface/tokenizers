@@ -96,12 +96,9 @@ impl WordPieceTrainer {
 }
 
 impl Trainer for WordPieceTrainer {
-    type Model=WordPiece;
+    type Model = WordPiece;
 
-    fn train(
-        &self,
-        word_counts: HashMap<String, u32>,
-    ) -> Result<(WordPiece, Vec<AddedToken>)> {
+    fn train(&self, word_counts: HashMap<String, u32>) -> Result<(WordPiece, Vec<AddedToken>)> {
         let (wp, tokens) = self.train(word_counts)?;
         Ok((wp, tokens))
     }

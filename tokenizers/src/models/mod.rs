@@ -9,10 +9,10 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::{AddedToken, Model, Result, Token, Trainer};
 use crate::models::bpe::{BpeTrainer, BPE};
-use crate::models::wordpiece::{WordPieceTrainer, WordPiece};
 use crate::models::wordlevel::WordLevel;
+use crate::models::wordpiece::{WordPiece, WordPieceTrainer};
+use crate::{AddedToken, Model, Result, Token, Trainer};
 
 /// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
 /// of token ID, smallest to largest.
@@ -119,10 +119,7 @@ impl Trainer for TrainerWrapper {
         }
     }
 
-    fn train(
-        &self,
-        words: HashMap<String, u32>,
-    ) -> Result<(Self::Model, Vec<AddedToken>)> {
+    fn train(&self, words: HashMap<String, u32>) -> Result<(Self::Model, Vec<AddedToken>)> {
         match self {
             TrainerWrapper::BpeTrainer(bpe) => bpe.train(words).map(|(m, t)| (m.into(), t)),
             TrainerWrapper::WordPieceTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),

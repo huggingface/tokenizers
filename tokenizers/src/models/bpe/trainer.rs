@@ -578,10 +578,7 @@ impl Trainer for BpeTrainer {
     type Model = BPE;
 
     /// Train a BPE model
-    fn train(
-        &self,
-        word_counts: HashMap<String, u32>,
-    ) -> Result<(BPE, Vec<AddedToken>)> {
+    fn train(&self, word_counts: HashMap<String, u32>) -> Result<(BPE, Vec<AddedToken>)> {
         let (bpe, tokens) = self.train(word_counts)?;
         Ok((bpe, tokens))
     }

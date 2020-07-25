@@ -7,13 +7,15 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::time::{Duration, Instant};
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
+use tokenizers::normalizers::NormalizerWrapper;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::tokenizer::{AddedToken, EncodeInput, Tokenizer, Trainer};
+use tokenizers::{Model, Normalizer};
 
 static BATCH_SIZE: usize = 1_000;
 
-fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer<BPE> {
+fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer<BPE, NormalizerWrapper> {
     let mut tokenizer = Tokenizer::new(bpe);
     tokenizer.with_pre_tokenizer(Box::new(ByteLevel::default()));
     tokenizer.with_decoder(Box::new(ByteLevel::default()));
@@ -22,7 +24,15 @@ fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer<BPE> {
     tokenizer
 }
 
-fn iter_bench_encode(iters: u64, tokenizer: &Tokenizer<BPE>, lines: &[EncodeInput]) -> Duration {
+fn iter_bench_encode<M, N>(
+    iters: u64,
+    tokenizer: &Tokenizer<M, N>,
+    lines: &[EncodeInput],
+) -> Duration
+where
+    M: Model,
+    N: Normalizer,
+{
     let mut duration = Duration::new(0, 0);
     let mut line_index: usize = 0;
     for _i in 0..iters {
@@ -37,11 +47,15 @@ fn iter_bench_encode(iters: u64, tokenizer: &Tokenizer<BPE>, lines: &[EncodeInpu
     duration
 }
 
-fn iter_bench_encode_batch(
+fn iter_bench_encode_batch<M, N>(
     iters: u64,
-    tokenizer: &Tokenizer<BPE>,
+    tokenizer: &Tokenizer<M, N>,
     batches: &[Vec<EncodeInput>],
-) -> Duration {
+) -> Duration
+where
+    M: Model,
+    N: Normalizer,
+{
     let mut duration = Duration::new(0, 0);
     let mut batch_index: usize = 0;
     for _i in 0..iters {
@@ -95,9 +109,9 @@ fn bench_gpt2(c: &mut Criterion) {
     });
 }
 
-fn iter_bench_train<T: Trainer<Model=BPE>>(
+fn iter_bench_train<T: Trainer<Model = BPE>>(
     iters: u64,
-    mut tokenizer: Tokenizer<BPE>,
+    mut tokenizer: Tokenizer<BPE, NormalizerWrapper>,
     trainer: &T,
     files: Vec<String>,
 ) -> Duration {
@@ -129,12 +143,7 @@ fn bench_train(c: &mut Criterion) {
         b.iter_custom(|iters| {
             let mut tokenizer = Tokenizer::new(BPE::default());
             tokenizer.with_pre_tokenizer(Box::new(Whitespace::default()));
-            iter_bench_train(
-                iters,
-                tokenizer,
-                &trainer,
-                vec!["data/big.txt".to_string()],
-            )
+            iter_bench_train(iters, tokenizer, &trainer, vec!["data/big.txt".to_string()])
         })
     });
 }
