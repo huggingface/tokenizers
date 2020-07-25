@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use serde::{
     self,
     de::{Error, MapAccess, Visitor},
@@ -6,11 +8,14 @@ use serde::{
 };
 
 use super::{added_vocabulary::AddedTokenWithId, Tokenizer};
-use crate::TokenizerBuilder;
+use crate::{Model, TokenizerBuilder};
 
 static SERIALIZATION_VERSION: &str = "1.0";
 
-impl Serialize for Tokenizer {
+impl<M> Serialize for Tokenizer<M>
+where
+    M: Serialize,
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -38,10 +43,13 @@ impl Serialize for Tokenizer {
     }
 }
 
-impl<'de> Deserialize<'de> for Tokenizer {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+impl<'de, M> Deserialize<'de> for Tokenizer<M>
+where
+    M: Deserialize<'de> + Model,
+{
+    fn deserialize<De>(deserializer: De) -> Result<Self, De::Error>
     where
-        D: Deserializer<'de>,
+        De: Deserializer<'de>,
     {
         deserializer.deserialize_struct(
             "Tokenizer",
@@ -56,14 +64,22 @@ impl<'de> Deserialize<'de> for Tokenizer {
                 "decoder",
                 "model",
             ],
-            TokenizerVisitor,
+            TokenizerVisitor(
+                PhantomData,
+            ),
         )
     }
 }
 
-struct TokenizerVisitor;
-impl<'de> Visitor<'de> for TokenizerVisitor {
-    type Value = Tokenizer;
+struct TokenizerVisitor<M>(
+    PhantomData<M>,
+);
+
+impl<'de, M> Visitor<'de> for TokenizerVisitor<M>
+where
+    M: Deserialize<'de> + Model
+{
+    type Value = Tokenizer<M>;
 
     fn expecting(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(fmt, "struct Tokenizer")

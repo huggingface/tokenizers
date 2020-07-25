@@ -35,7 +35,7 @@
 //!         .unk_token("[UNK]".into())
 //!         .build()?;
 //!
-//!     let mut tokenizer = Tokenizer::new(Box::new(bpe));
+//!     let mut tokenizer = Tokenizer::new(bpe);
 //!
 //!     let encoding = tokenizer.encode("Hey there!", false)?;
 //!     println!("{:?}", encoding.get_tokens());
