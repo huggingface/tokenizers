@@ -39,19 +39,19 @@ extern "C" fn child_after_fork() {
 /// Trainers Module
 #[pymodule]
 fn trainers(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<trainers::Trainer>()?;
-    m.add_class::<trainers::BpeTrainer>()?;
-    m.add_class::<trainers::WordPieceTrainer>()?;
+    m.add_class::<trainers::PyTrainer>()?;
+    m.add_class::<trainers::PyBpeTrainer>()?;
+    m.add_class::<trainers::PyWordPieceTrainer>()?;
     Ok(())
 }
 
 /// Models Module
 #[pymodule]
 fn models(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<models::Model>()?;
-    m.add_class::<models::BPE>()?;
-    m.add_class::<models::WordPiece>()?;
-    m.add_class::<models::WordLevel>()?;
+    m.add_class::<models::PyModel>()?;
+    m.add_class::<models::PyBPE>()?;
+    m.add_class::<models::PyWordPiece>()?;
+    m.add_class::<models::PyWordLevel>()?;
     Ok(())
 }
 
@@ -116,9 +116,9 @@ fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
         }
     }
 
-    m.add_class::<tokenizer::Tokenizer>()?;
-    m.add_class::<tokenizer::AddedToken>()?;
-    m.add_class::<encoding::Encoding>()?;
+    m.add_class::<tokenizer::PyTokenizer>()?;
+    m.add_class::<tokenizer::PyAddedToken>()?;
+    m.add_class::<encoding::PyEncoding>()?;
     m.add_wrapped(wrap_pymodule!(models))?;
     m.add_wrapped(wrap_pymodule!(pre_tokenizers))?;
     m.add_wrapped(wrap_pymodule!(decoders))?;

@@ -5,6 +5,7 @@
 use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use std::io::{self, BufRead, Write};
 use tokenizers::models::bpe::BPE;
+use tokenizers::normalizers::NormalizerWrapper;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::tokenizer::{AddedToken, Result, Tokenizer};
 
@@ -17,7 +18,7 @@ fn shell(matches: &ArgMatches) -> Result<()> {
         .expect("Must give a merges.txt file");
 
     let bpe = BPE::from_files(vocab, merges).build()?;
-    let mut tokenizer = Tokenizer::new(bpe);
+    let mut tokenizer = Tokenizer::<_, NormalizerWrapper>::new(bpe);
     tokenizer.with_pre_tokenizer(Box::new(ByteLevel::default()));
     tokenizer.with_decoder(Box::new(ByteLevel::default()));
 

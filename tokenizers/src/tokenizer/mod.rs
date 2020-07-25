@@ -18,13 +18,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use indicatif::{ProgressBar, ProgressStyle};
 use serde::de::DeserializeOwned;
 use serde::export::Formatter;
 use serde::{Deserialize, Serialize};
-use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::utils::parallelism::*;
 use crate::tokenizer::normalizer::Range;
+use crate::utils::parallelism::*;
 
 mod added_vocabulary;
 mod encoding;
@@ -33,9 +33,9 @@ pub mod pattern;
 pub mod pre_tokenizer;
 mod serialization;
 
-pub use crate::utils::truncation::{truncate_encodings, TruncationParams, TruncationStrategy};
-pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, PaddingStrategy};
 pub use crate::utils::iter::LinesWithEnding;
+pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, PaddingStrategy};
+pub use crate::utils::truncation::{truncate_encodings, TruncationParams, TruncationStrategy};
 pub use added_vocabulary::*;
 pub use encoding::*;
 pub use normalizer::{NormalizedString, OffsetReferential, SplitDelimiterBehavior};
@@ -45,7 +45,6 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type ByteOffsets = (usize, usize);
 pub type Offsets = (usize, usize);
-
 
 #[typetag::serde(tag = "type")]
 /// Takes care of pre-processing strings.
@@ -214,9 +213,9 @@ impl fmt::Display for BuilderError {
 /// Builder for Tokenizer structs.
 ///
 /// `build()` fails if the `model` is missing.
-pub struct TokenizerBuilder<M> {
+pub struct TokenizerBuilder<M, N> {
     model: Option<M>,
-    normalizer: Option<Box<dyn Normalizer>>,
+    normalizer: Option<N>,
     pre_tokenizer: Option<Box<dyn PreTokenizer>>,
     post_processor: Option<Box<dyn PostProcessor>>,
     decoder: Option<Box<dyn Decoder>>,
@@ -227,18 +226,20 @@ pub struct TokenizerBuilder<M> {
     padding: Option<PaddingParams>,
 }
 
-impl<M> Default for TokenizerBuilder<M>
+impl<M, N> Default for TokenizerBuilder<M, N>
 where
     M: Model,
+    N: Normalizer,
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<M> TokenizerBuilder<M>
+impl<M, N> TokenizerBuilder<M, N>
 where
     M: Model,
+    N: Normalizer,
 {
     /// Get an empty TokenizerBuilder.
     pub fn new() -> Self {
@@ -257,7 +258,7 @@ where
     /// Convert the TokenizerBuilder to a Tokenizer.
     ///
     /// Conversion fails if the `model` is missing.
-    pub fn build(self) -> Result<Tokenizer<M>> {
+    pub fn build(self) -> Result<Tokenizer<M, N>> {
         let model = self
             .model
             .ok_or_else(|| Box::new(BuilderError("Model missing.".into())))?;
@@ -281,7 +282,7 @@ where
     }
 
     /// Set the normalizer.
-    pub fn with_normalizer(mut self, normalizer: Option<Box<dyn Normalizer>>) -> Self {
+    pub fn with_normalizer(mut self, normalizer: Option<N>) -> Self {
         self.normalizer = normalizer;
         self
     }
@@ -318,9 +319,9 @@ where
 }
 
 /// A `Tokenizer` is capable of encoding/decoding any text.
-pub struct Tokenizer<M> {
+pub struct Tokenizer<M, N> {
     // Tokenizer parts
-    normalizer: Option<Box<dyn Normalizer>>,
+    normalizer: Option<N>,
     pre_tokenizer: Option<Box<dyn PreTokenizer>>,
     model: M,
     post_processor: Option<Box<dyn PostProcessor>>,
@@ -334,9 +335,10 @@ pub struct Tokenizer<M> {
     padding: Option<PaddingParams>,
 }
 
-impl<M> Tokenizer<M>
+impl<M, N> Tokenizer<M, N>
 where
     M: Model,
+    N: Normalizer,
 {
     /// Instantiate a new Tokenizer, with the given Model
     pub fn new(model: M) -> Self {
@@ -355,14 +357,13 @@ where
     }
 
     /// Set the normalizer
-    pub fn with_normalizer(&mut self, normalizer: Box<dyn Normalizer>) -> &Self {
+    pub fn with_normalizer(&mut self, normalizer: N) -> &Self {
         self.normalizer = Some(normalizer);
         self
     }
 
     /// Get the normalizer
-    #[allow(clippy::borrowed_box)]
-    pub fn get_normalizer(&self) -> Option<&Box<dyn Normalizer>> {
+    pub fn get_normalizer(&self) -> Option<&N> {
         self.normalizer.as_ref()
     }
 
@@ -409,7 +410,6 @@ where
     }
 
     /// Get the model
-    #[allow(clippy::borrowed_box)]
     pub fn get_model(&self) -> &M {
         &self.model
     }
@@ -486,7 +486,7 @@ where
     /// Normalize the given sentence and return the corresponding normalized string
     pub fn normalize(&self, sentence: &str) -> Result<NormalizedString> {
         self.added_vocabulary
-            .extract_and_normalize(self.normalizer.as_deref(), sentence)
+            .extract_and_normalize(self.normalizer.as_ref(), sentence)
             .flat_map(|(sentence, _, id)| {
                 if id.is_some() {
                     itertools::Either::Left(std::iter::once(Ok(sentence)))
@@ -517,7 +517,7 @@ where
             .map(|(subseq_idx, subseq)| {
                 let encodings = self
                     .added_vocabulary
-                    .extract_and_normalize(self.normalizer.as_deref(), &subseq)
+                    .extract_and_normalize(self.normalizer.as_ref(), &subseq)
                     .map(|(normalized, original_offsets, id)| match id {
                         // This is an added token, no need to tokenize, we have the ID
                         Some(id) => {
@@ -576,7 +576,8 @@ where
     /// ```
     /// # use tokenizers::Tokenizer;
     /// # use tokenizers::models::bpe::BPE;
-    /// # let mut tokenizer = Tokenizer::<_>::new(BPE::default());
+    /// # use tokenizers::normalizers::NormalizerWrapper;
+    /// # let mut tokenizer = Tokenizer::<_, NormalizerWrapper>::new(BPE::default());
     /// #
     /// // Sequences:
     /// tokenizer.encode("Single sequence", false);
@@ -751,11 +752,7 @@ where
     }
 
     /// Train a model and replace our current Model, using the given Trainer
-    pub fn train<T, TM>(
-        self,
-        trainer: &T,
-        files: Vec<String>,
-    ) -> Result<Tokenizer<TM>>
+    pub fn train<T, TM>(self, trainer: &T, files: Vec<String>) -> Result<Tokenizer<TM, N>>
     where
         T: Trainer<Model = TM>,
         TM: Model,
@@ -842,7 +839,7 @@ where
     }
 
     /// Normalization logic, go through all normalizers
-    fn do_normalize<N: Into<NormalizedString>>(&self, normalized: N) -> Result<NormalizedString> {
+    fn do_normalize<V: Into<NormalizedString>>(&self, normalized: V) -> Result<NormalizedString> {
         let mut normalized: NormalizedString = normalized.into();
 
         if let Some(ref normalizer) = self.normalizer {
@@ -905,19 +902,20 @@ where
     /// these special tokens while decoding
     pub fn add_special_tokens(&mut self, tokens: &[AddedToken]) -> usize {
         self.added_vocabulary
-            .add_special_tokens(tokens, &self.model, self.normalizer.as_deref())
+            .add_special_tokens(tokens, &self.model, self.normalizer.as_ref())
     }
 
     /// Add the given tokens to the added vocabulary
     pub fn add_tokens(&mut self, tokens: &[AddedToken]) -> usize {
         self.added_vocabulary
-            .add_tokens(tokens, &self.model, self.normalizer.as_deref())
+            .add_tokens(tokens, &self.model, self.normalizer.as_ref())
     }
 }
 
-impl<M> std::str::FromStr for Tokenizer<M>
+impl<M, N> std::str::FromStr for Tokenizer<M, N>
 where
     M: for<'de> Deserialize<'de> + Model,
+    N: for<'de> Deserialize<'de> + Normalizer,
 {
     type Err = Error;
 
@@ -926,9 +924,10 @@ where
     }
 }
 
-impl<M> Tokenizer<M>
+impl<M, N> Tokenizer<M, N>
 where
     M: DeserializeOwned + Model,
+    N: DeserializeOwned + Normalizer,
 {
     /// Instantiate a new Tokenizer from the given file
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
@@ -938,9 +937,10 @@ where
     }
 }
 
-impl<M> Tokenizer<M>
+impl<M, N> Tokenizer<M, N>
 where
     M: Serialize,
+    N: Serialize,
 {
     /// Serialize the current tokenizer as a String
     pub fn to_string(&self, pretty: bool) -> Result<String> {

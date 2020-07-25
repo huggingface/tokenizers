@@ -1,26 +1,26 @@
-extern crate tokenizers as tk;
-
-use crate::error::PyError;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3::{PyObjectProtocol, PySequenceProtocol};
 use tk::tokenizer::{Offsets, PaddingDirection};
+use tokenizers as tk;
 
-#[pyclass(dict, module = "tokenizers")]
+use crate::error::PyError;
+
+#[pyclass(dict, module = "tokenizers", name=Encoding)]
 #[repr(transparent)]
-pub struct Encoding {
+pub struct PyEncoding {
     pub encoding: tk::tokenizer::Encoding,
 }
 
-impl From<tk::tokenizer::Encoding> for Encoding {
+impl From<tk::tokenizer::Encoding> for PyEncoding {
     fn from(v: tk::tokenizer::Encoding) -> Self {
         Self { encoding: v }
     }
 }
 
 #[pyproto]
-impl PyObjectProtocol for Encoding {
+impl PyObjectProtocol for PyEncoding {
     fn __repr__(&self) -> PyResult<String> {
         Ok(format!(
             "Encoding(num_tokens={}, attributes=[ids, type_ids, tokens, offsets, \
@@ -31,14 +31,14 @@ impl PyObjectProtocol for Encoding {
 }
 
 #[pyproto]
-impl PySequenceProtocol for Encoding {
+impl PySequenceProtocol for PyEncoding {
     fn __len__(self) -> PyResult<usize> {
         Ok(self.encoding.len())
     }
 }
 
 #[pymethods]
-impl Encoding {
+impl PyEncoding {
     #[new]
     fn new() -> PyResult<Self> {
         Ok(Self {
@@ -73,7 +73,7 @@ impl Encoding {
 
     #[staticmethod]
     #[args(growing_offsets = true)]
-    fn merge(encodings: Vec<PyRef<Encoding>>, growing_offsets: bool) -> Encoding {
+    fn merge(encodings: Vec<PyRef<PyEncoding>>, growing_offsets: bool) -> PyEncoding {
         tk::tokenizer::Encoding::merge(
             encodings.into_iter().map(|e| e.encoding.clone()),
             growing_offsets,
@@ -117,7 +117,7 @@ impl Encoding {
     }
 
     #[getter]
-    fn get_overflowing(&self) -> Vec<Encoding> {
+    fn get_overflowing(&self) -> Vec<PyEncoding> {
         self.encoding
             .get_overflowing()
             .clone()

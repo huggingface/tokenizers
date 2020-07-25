@@ -1,27 +1,29 @@
-extern crate tokenizers as tk;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3::PyObjectProtocol;
-use std::collections::HashMap;
+use tk::models::bpe::BPE;
+use tk::tokenizer::{
+    PaddingDirection, PaddingParams, PaddingStrategy, Tokenizer, TruncationParams,
+    TruncationStrategy,
+};
+use tokenizers as tk;
 
 use super::decoders::Decoder;
-use super::encoding::Encoding;
+use super::encoding::PyEncoding;
 use super::error::{PyError, ToPyResult};
-use super::models::Model;
+use super::models::PyModel;
 use super::normalizers::Normalizer;
 use super::pre_tokenizers::PreTokenizer;
 use super::processors::PostProcessor;
-use super::trainers::Trainer;
+use super::trainers::PyTrainer;
 use super::utils::Container;
 
-use tk::tokenizer::{
-    PaddingDirection, PaddingParams, PaddingStrategy, TruncationParams, TruncationStrategy,
-};
-
-#[pyclass(dict, module = "tokenizers")]
-pub struct AddedToken {
+#[pyclass(dict, module = "tokenizers", name=AddedToken)]
+pub struct PyAddedToken {
     pub content: String,
     pub is_special_token: bool,
     pub single_word: Option<bool>,
@@ -29,7 +31,7 @@ pub struct AddedToken {
     pub rstrip: Option<bool>,
     pub normalized: Option<bool>,
 }
-impl AddedToken {
+impl PyAddedToken {
     pub fn from<S: Into<String>>(content: S, is_special_token: Option<bool>) -> Self {
         Self {
             content: content.into(),
@@ -75,11 +77,11 @@ impl AddedToken {
 }
 
 #[pymethods]
-impl AddedToken {
+impl PyAddedToken {
     #[new]
     #[args(kwargs = "**")]
     fn new(content: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<Self> {
-        let mut token = AddedToken::from(content.unwrap_or(""), None);
+        let mut token = PyAddedToken::from(content.unwrap_or(""), None);
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
@@ -147,7 +149,7 @@ impl AddedToken {
     }
 }
 #[pyproto]
-impl PyObjectProtocol for AddedToken {
+impl PyObjectProtocol for PyAddedToken {
     fn __str__(&'p self) -> PyResult<&'p str> {
         Ok(&self.content)
     }
@@ -266,23 +268,28 @@ impl From<PreTokenizedEncodeInput> for tk::tokenizer::EncodeInput {
     }
 }
 
+type TokenizerImpl = Tokenizer<PyModel>;
+
 #[pyclass(dict, module = "tokenizers")]
-pub struct Tokenizer {
-    tokenizer: tk::tokenizer::Tokenizer,
+pub struct PyTokenizer {
+    tokenizer: TokenizerImpl,
+}
+
+impl PyTokenizer {
+    fn new(tokenizer: TokenizerImpl) -> Self {
+        PyTokenizer { tokenizer }
+    }
+
+    fn from_model(model: PyModel) -> Self {
+        PyTokenizer::new(TokenizerImpl::new(model))
+    }
 }
 
 #[pymethods]
-impl Tokenizer {
+impl PyTokenizer {
     #[new]
-    fn new(mut model: PyRefMut<Model>) -> PyResult<Self> {
-        if let Some(model) = model.model.to_pointer() {
-            let tokenizer = tk::tokenizer::Tokenizer::new(model);
-            Ok(Tokenizer { tokenizer })
-        } else {
-            Err(exceptions::Exception::py_err(
-                "The Model is already being used in another Tokenizer",
-            ))
-        }
+    fn __new__(model: PyRef<PyModel>) -> Self {
+        PyTokenizer::from_model(model.clone())
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
@@ -311,25 +318,20 @@ impl Tokenizer {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        let model: PyObject = crate::models::Model {
-            model: Container::Owned(Box::new(tk::models::bpe::BPE::default())),
-        }
-        .into_py(py);
+        let model: PyObject = PyModel::new(Arc::new(BPE::default())).into_py(py);
         let args = PyTuple::new(py, vec![model]);
         Ok(args)
     }
 
     #[staticmethod]
     fn from_str(s: &str) -> PyResult<Self> {
-        let tokenizer: PyResult<tk::tokenizer::Tokenizer> = ToPyResult(s.parse()).into();
-        Ok(Self {
-            tokenizer: tokenizer?,
-        })
+        let tokenizer: PyResult<_> = ToPyResult(s.parse()).into();
+        Ok(Self::new(tokenizer?))
     }
 
     #[staticmethod]
     fn from_file(path: &str) -> PyResult<Self> {
-        let tokenizer: PyResult<_> = ToPyResult(tk::tokenizer::Tokenizer::from_file(path)).into();
+        let tokenizer: PyResult<_> = ToPyResult(Tokenizer::from_file(path)).into();
         Ok(Self {
             tokenizer: tokenizer?,
         })
@@ -337,13 +339,12 @@ impl Tokenizer {
 
     #[staticmethod]
     fn from_buffer(buffer: &PyBytes) -> PyResult<Self> {
-        let tokenizer: tk::tokenizer::Tokenizer = serde_json::from_slice(buffer.as_bytes())
-            .map_err(|e| {
-                exceptions::Exception::py_err(format!(
-                    "Cannot instantiate Tokenizer from buffer: {}",
-                    e.to_string()
-                ))
-            })?;
+        let tokenizer = serde_json::from_slice(buffer.as_bytes()).map_err(|e| {
+            exceptions::Exception::py_err(format!(
+                "Cannot instantiate Tokenizer from buffer: {}",
+                e.to_string()
+            ))
+        })?;
         Ok(Self { tokenizer })
     }
 
@@ -532,7 +533,7 @@ impl Tokenizer {
         pair: Option<&PyAny>,
         is_pretokenized: bool,
         add_special_tokens: bool,
-    ) -> PyResult<Encoding> {
+    ) -> PyResult<PyEncoding> {
         let sequence: tk::InputSequence = if is_pretokenized {
             sequence.extract::<PreTokenizedInputSequence>()?.into()
         } else {
@@ -571,7 +572,7 @@ impl Tokenizer {
         input: Vec<&PyAny>,
         is_pretokenized: bool,
         add_special_tokens: bool,
-    ) -> PyResult<Vec<Encoding>> {
+    ) -> PyResult<Vec<PyEncoding>> {
         let input: Vec<tk::EncodeInput> = input
             .into_iter()
             .map(|o| {
@@ -630,8 +631,8 @@ impl Tokenizer {
             .into_iter()
             .map(|token| {
                 if let Ok(content) = token.extract::<String>() {
-                    Ok(AddedToken::from(content, Some(false)).get_token())
-                } else if let Ok(mut token) = token.extract::<PyRefMut<AddedToken>>() {
+                    Ok(PyAddedToken::from(content, Some(false)).get_token())
+                } else if let Ok(mut token) = token.extract::<PyRefMut<PyAddedToken>>() {
                     token.is_special_token = false;
                     Ok(token.get_token())
                 } else {
@@ -651,7 +652,7 @@ impl Tokenizer {
             .map(|token| {
                 if let Ok(content) = token.extract::<String>() {
                     Ok(tk::tokenizer::AddedToken::from(content, true))
-                } else if let Ok(mut token) = token.extract::<PyRefMut<AddedToken>>() {
+                } else if let Ok(mut token) = token.extract::<PyRefMut<PyAddedToken>>() {
                     token.is_special_token = true;
                     Ok(token.get_token())
                 } else {
@@ -665,26 +666,24 @@ impl Tokenizer {
         Ok(self.tokenizer.add_special_tokens(&tokens))
     }
 
-    fn train(&mut self, trainer: &Trainer, files: Vec<String>) -> PyResult<()> {
-        trainer.trainer.execute(|trainer| {
-            let gil = Python::acquire_gil();
-            gil.python().allow_threads(|| {
-                if let Err(e) = self.tokenizer.train(trainer, files) {
-                    Err(exceptions::Exception::py_err(format!("{}", e)))
-                } else {
-                    Ok(())
-                }
-            })
-        })
+    fn train(&mut self, _trainer: &PyTrainer, _files: Vec<String>) -> PyResult<()> {
+        // TODO enable training once Tokenizer derives Clone
+        // self.tokenizer = self.tokenizer.clone().train(trainer, files).map_err(|e|
+        //    exceptions::Exception::py_err(format!("{}", e))
+        // )?;
+        // Ok(())
+        Err(exceptions::NotImplementedError::py_err(
+            "Training currently disabled",
+        ))
     }
 
     #[args(pair = "None", add_special_tokens = true)]
     fn post_process(
         &self,
-        encoding: &Encoding,
-        pair: Option<&Encoding>,
+        encoding: &PyEncoding,
+        pair: Option<&PyEncoding>,
         add_special_tokens: bool,
-    ) -> PyResult<Encoding> {
+    ) -> PyResult<PyEncoding> {
         ToPyResult(
             self.tokenizer
                 .post_process(
@@ -698,22 +697,13 @@ impl Tokenizer {
     }
 
     #[getter]
-    fn get_model(&self) -> PyResult<Model> {
-        Ok(Model {
-            model: Container::from_ref(self.tokenizer.get_model()),
-        })
+    fn get_model(&self) -> PyModel {
+        self.tokenizer.get_model().clone()
     }
 
     #[setter]
-    fn set_model(&mut self, mut model: PyRefMut<Model>) -> PyResult<()> {
-        if let Some(model) = model.model.to_pointer() {
-            self.tokenizer.with_model(model);
-            Ok(())
-        } else {
-            Err(exceptions::Exception::py_err(
-                "The Model is already being used in another Tokenizer",
-            ))
-        }
+    fn set_model(&mut self, model: PyRef<PyModel>) {
+        self.tokenizer.with_model(model.clone());
     }
 
     #[getter]
