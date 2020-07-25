@@ -16,7 +16,7 @@ use super::decoders::Decoder;
 use super::encoding::PyEncoding;
 use super::error::{PyError, ToPyResult};
 use super::models::PyModel;
-use super::normalizers::Normalizer;
+use super::normalizers::PyNormalizer;
 use super::pre_tokenizers::PreTokenizer;
 use super::processors::PostProcessor;
 use super::trainers::PyTrainer;
@@ -268,7 +268,7 @@ impl From<PreTokenizedEncodeInput> for tk::tokenizer::EncodeInput {
     }
 }
 
-type TokenizerImpl = Tokenizer<PyModel>;
+type TokenizerImpl = Tokenizer<PyModel, PyNormalizer>;
 
 #[pyclass(dict, module = "tokenizers")]
 pub struct PyTokenizer {
@@ -707,25 +707,13 @@ impl PyTokenizer {
     }
 
     #[getter]
-    fn get_normalizer(&self) -> PyResult<Option<Normalizer>> {
-        Ok(self
-            .tokenizer
-            .get_normalizer()
-            .map(|normalizer| Normalizer {
-                normalizer: Container::from_ref(normalizer),
-            }))
+    fn get_normalizer(&self) -> Option<PyNormalizer> {
+        self.tokenizer.get_normalizer().cloned()
     }
 
     #[setter]
-    fn set_normalizer(&mut self, mut normalizer: PyRefMut<Normalizer>) -> PyResult<()> {
-        if let Some(normalizer) = normalizer.normalizer.to_pointer() {
-            self.tokenizer.with_normalizer(normalizer);
-            Ok(())
-        } else {
-            Err(exceptions::Exception::py_err(
-                "The Normalizer is already being used in another Tokenizer",
-            ))
-        }
+    fn set_normalizer(&mut self, normalizer: PyRef<PyNormalizer>) {
+        self.tokenizer.with_normalizer(normalizer.clone());
     }
 
     #[getter]
