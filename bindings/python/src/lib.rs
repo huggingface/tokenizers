@@ -58,13 +58,13 @@ fn models(_py: Python, m: &PyModule) -> PyResult<()> {
 /// PreTokenizers Module
 #[pymodule]
 fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<pre_tokenizers::PreTokenizer>()?;
-    m.add_class::<pre_tokenizers::ByteLevel>()?;
-    m.add_class::<pre_tokenizers::Whitespace>()?;
-    m.add_class::<pre_tokenizers::WhitespaceSplit>()?;
-    m.add_class::<pre_tokenizers::BertPreTokenizer>()?;
-    m.add_class::<pre_tokenizers::Metaspace>()?;
-    m.add_class::<pre_tokenizers::CharDelimiterSplit>()?;
+    m.add_class::<pre_tokenizers::PyPreTokenizer>()?;
+    m.add_class::<pre_tokenizers::PyByteLevel>()?;
+    m.add_class::<pre_tokenizers::PyWhitespace>()?;
+    m.add_class::<pre_tokenizers::PyWhitespaceSplit>()?;
+    m.add_class::<pre_tokenizers::PyBertPreTokenizer>()?;
+    m.add_class::<pre_tokenizers::PyMetaspace>()?;
+    m.add_class::<pre_tokenizers::PyCharDelimiterSplit>()?;
     Ok(())
 }
 
