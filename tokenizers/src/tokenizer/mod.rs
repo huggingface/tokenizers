@@ -16,6 +16,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use normalizer::Range;
 use std::{
     collections::HashMap,
+    fmt,
     fs::File,
     io::prelude::*,
     io::BufReader,
@@ -187,6 +188,117 @@ impl<I: Into<InputSequence>> From<I> for EncodeInput {
 impl<I1: Into<InputSequence>, I2: Into<InputSequence>> From<(I1, I2)> for EncodeInput {
     fn from(input: (I1, I2)) -> Self {
         EncodeInput::Dual(input.0.into(), input.1.into())
+    }
+}
+
+#[derive(Debug)]
+pub struct BuilderError(String);
+
+impl std::error::Error for BuilderError {}
+
+impl fmt::Display for BuilderError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Builder for Tokenizer structs.
+///
+/// `build()` fails if the `model` is missing.
+pub struct TokenizerBuilder {
+    model: Option<Box<dyn Model>>,
+    normalizer: Option<Box<dyn Normalizer>>,
+    pre_tokenizer: Option<Box<dyn PreTokenizer>>,
+    post_processor: Option<Box<dyn PostProcessor>>,
+    decoder: Option<Box<dyn Decoder>>,
+
+    added_vocabulary: AddedVocabulary,
+
+    truncation: Option<TruncationParams>,
+    padding: Option<PaddingParams>,
+}
+
+impl Default for TokenizerBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TokenizerBuilder {
+    /// Get an empty TokenizerBuilder.
+    pub fn new() -> Self {
+        TokenizerBuilder {
+            model: None,
+            normalizer: None,
+            pre_tokenizer: None,
+            post_processor: None,
+            decoder: None,
+            added_vocabulary: AddedVocabulary::new(),
+            truncation: None,
+            padding: None,
+        }
+    }
+
+    /// Convert the TokenizerBuilder to a Tokenizer.
+    ///
+    /// Conversion fails if the `model` is missing.
+    pub fn build(self) -> Result<Tokenizer> {
+        let model = self
+            .model
+            .ok_or_else(||BuilderError("Model missing.".into()))?;
+        Ok(Tokenizer {
+            normalizer: self.normalizer,
+            pre_tokenizer: self.pre_tokenizer,
+            model,
+
+            post_processor: self.post_processor,
+            decoder: self.decoder,
+            added_vocabulary: self.added_vocabulary,
+            truncation: self.truncation,
+            padding: self.padding,
+        })
+    }
+
+    /// Set the model.
+    pub fn with_model(mut self, model: Box<dyn Model>) -> Self {
+        self.model = Some(model);
+        self
+    }
+
+    /// Set the normalizer.
+    pub fn with_normalizer(mut self, normalizer: Option<Box<dyn Normalizer>>) -> Self {
+        self.normalizer = normalizer;
+        self
+    }
+
+    /// Set the pretokenizer.
+    pub fn with_pretokenizer(mut self, pretokenizer: Option<Box<dyn PreTokenizer>>) -> Self {
+        self.pre_tokenizer = pretokenizer;
+        self
+    }
+
+    /// Set the postprocessor.
+    pub fn with_postprocessor(mut self, post_processor: Option<Box<dyn PostProcessor>>) -> Self {
+        self.post_processor = post_processor;
+        self
+    }
+
+    /// Set the decoder.
+    pub fn with_decoder(mut self, decoder: Option<Box<dyn Decoder>>) -> Self {
+        self.decoder = decoder;
+        self
+    }
+
+    /// Set the trunaction parameters.
+    pub fn with_truncation(mut self, trunc: Option<TruncationParams>) -> Self {
+        self.truncation = trunc;
+        self
+    }
+
+    /// Set the padding parameters.
+    pub fn with_padding(mut self, padding: Option<PaddingParams>) -> Self {
+        self.padding = padding;
+        self
     }
 }
 
