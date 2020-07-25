@@ -8,14 +8,15 @@ use serde::{
 };
 
 use super::{added_vocabulary::AddedTokenWithId, Tokenizer};
-use crate::{Model, Normalizer, TokenizerBuilder};
+use crate::{Model, Normalizer, PreTokenizer, TokenizerBuilder};
 
 static SERIALIZATION_VERSION: &str = "1.0";
 
-impl<M, N> Serialize for Tokenizer<M, N>
+impl<M, N, PT> Serialize for Tokenizer<M, N, PT>
 where
     M: Serialize,
     N: Serialize,
+    PT: Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -44,10 +45,11 @@ where
     }
 }
 
-impl<'de, M, N> Deserialize<'de> for Tokenizer<M, N>
+impl<'de, M, N, PT> Deserialize<'de> for Tokenizer<M, N, PT>
 where
     M: Deserialize<'de> + Model,
     N: Deserialize<'de> + Normalizer,
+    PT: Deserialize<'de> + PreTokenizer,
 {
     fn deserialize<De>(deserializer: De) -> Result<Self, De::Error>
     where
@@ -66,19 +68,20 @@ where
                 "decoder",
                 "model",
             ],
-            TokenizerVisitor(PhantomData, PhantomData),
+            TokenizerVisitor(PhantomData, PhantomData, PhantomData),
         )
     }
 }
 
-struct TokenizerVisitor<M, N>(PhantomData<M>, PhantomData<N>);
+struct TokenizerVisitor<M, N, PT>(PhantomData<M>, PhantomData<N>, PhantomData<PT>);
 
-impl<'de, M, N> Visitor<'de> for TokenizerVisitor<M, N>
+impl<'de, M, N, PT> Visitor<'de> for TokenizerVisitor<M, N, PT>
 where
     M: Deserialize<'de> + Model,
     N: Deserialize<'de> + Normalizer,
+    PT: Deserialize<'de> + PreTokenizer,
 {
-    type Value = Tokenizer<M, N>;
+    type Value = Tokenizer<M, N, PT>;
 
     fn expecting(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(fmt, "struct Tokenizer")
