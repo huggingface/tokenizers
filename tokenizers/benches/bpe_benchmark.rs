@@ -10,12 +10,15 @@ use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::normalizers::NormalizerWrapper;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
+use tokenizers::processors::PostProcessorWrapper;
 use tokenizers::tokenizer::{AddedToken, EncodeInput, Tokenizer, Trainer};
-use tokenizers::{Model, Normalizer, PreTokenizer};
+use tokenizers::{Model, Normalizer, PostProcessor, PreTokenizer};
 
 static BATCH_SIZE: usize = 1_000;
 
-fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer<BPE, NormalizerWrapper, ByteLevel> {
+fn create_gpt2_tokenizer(
+    bpe: BPE,
+) -> Tokenizer<BPE, NormalizerWrapper, ByteLevel, PostProcessorWrapper> {
     let mut tokenizer = Tokenizer::new(bpe);
     tokenizer.with_pre_tokenizer(ByteLevel::default());
     tokenizer.with_decoder(Box::new(ByteLevel::default()));
@@ -24,15 +27,16 @@ fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer<BPE, NormalizerWrapper, ByteLeve
     tokenizer
 }
 
-fn iter_bench_encode<M, N, PT>(
+fn iter_bench_encode<M, N, PT, PP>(
     iters: u64,
-    tokenizer: &Tokenizer<M, N, PT>,
+    tokenizer: &Tokenizer<M, N, PT, PP>,
     lines: &[EncodeInput],
 ) -> Duration
 where
     M: Model,
     N: Normalizer,
     PT: PreTokenizer,
+    PP: PostProcessor,
 {
     let mut duration = Duration::new(0, 0);
     let mut line_index: usize = 0;
@@ -48,15 +52,16 @@ where
     duration
 }
 
-fn iter_bench_encode_batch<M, N, PT>(
+fn iter_bench_encode_batch<M, N, PT, PP>(
     iters: u64,
-    tokenizer: &Tokenizer<M, N, PT>,
+    tokenizer: &Tokenizer<M, N, PT, PP>,
     batches: &[Vec<EncodeInput>],
 ) -> Duration
 where
     M: Model,
     N: Normalizer,
     PT: PreTokenizer,
+    PP: PostProcessor,
 {
     let mut duration = Duration::new(0, 0);
     let mut batch_index: usize = 0;
@@ -113,7 +118,7 @@ fn bench_gpt2(c: &mut Criterion) {
 
 fn iter_bench_train<T, M, PT>(
     iters: u64,
-    mut tokenizer: Tokenizer<M, NormalizerWrapper, PT>,
+    mut tokenizer: Tokenizer<M, NormalizerWrapper, PT, PostProcessorWrapper>,
     trainer: &T,
     files: Vec<String>,
 ) -> Duration
