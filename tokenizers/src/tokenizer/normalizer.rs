@@ -1,3 +1,4 @@
+use super::Offsets;
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
 
@@ -71,6 +72,16 @@ impl NormalizedString {
         &self.original
     }
 
+    /// Return the offsets of the normalized part
+    pub fn offsets(&self) -> Offsets {
+        (0, self.len())
+    }
+
+    /// Return the offsets of the original part
+    pub fn offsets_original(&self) -> Offsets {
+        (0, self.len_original())
+    }
+
     /// Convert the given offsets range from one referential to the other one:
     /// `Original => Normalized` or `Normalized => Original`
     pub fn convert_offsets<T>(&self, range: Range<T>) -> Option<std::ops::Range<usize>>
@@ -140,6 +151,7 @@ impl NormalizedString {
     }
 
     /// Return a new NormalizedString that contains only the specified range, indexing on bytes
+    // TODO: Make sure we test this thorouglhy
     pub fn slice_bytes<T>(&self, range: Range<T>) -> Option<NormalizedString>
     where
         T: RangeBounds<usize> + Clone,
@@ -175,18 +187,48 @@ impl NormalizedString {
         }
     }
 
-    /// Return a new NormalizedString that contains only the specified range, indexing on char
+    /// Return a new NormalizedString that contains only the specified range,
+    /// indexing on char
+    ///
+    /// If we want a slice of the `NormalizedString` based on a `Range::Normalized``,
+    /// the original part of the `NormalizedString` will contain any "additional"
+    /// content on the right, and also on the left. The left will be included
+    /// only if we are retrieving the very beginning of the string, since there
+    /// is no previous part. The right is always included, up to what's covered
+    /// by the next part of the normalized string.  This is important to be able
+    /// to build a new `NormalizedString` from multiple contiguous slices
+    ///
+    /// TODO: Make sure we test this
     pub fn slice<T>(&self, range: Range<T>) -> Option<NormalizedString>
     where
         T: RangeBounds<usize> + Clone,
     {
-        let r_original = match range {
-            Range::Original(_) => range.clone().into_full_range(self.len_original()),
-            Range::Normalized(_) => self.convert_offsets(range.clone())?,
-        };
+        // Find out the part of the normalized string we should keep
         let r_normalized = match range {
-            Range::Original(_) => self.convert_offsets(range)?,
-            Range::Normalized(_) => range.into_full_range(self.len()),
+            Range::Original(_) => self.convert_offsets(range.clone())?,
+            Range::Normalized(_) => range.clone().into_full_range(self.len()),
+        };
+
+        let r_original = match range {
+            Range::Original(_) => range.into_full_range(self.len_original()),
+            Range::Normalized(_) => {
+                let end_range = self.convert_offsets(Range::Normalized(r_normalized.end..));
+                let mut range = self.convert_offsets(range)?;
+
+                // If we take the very beginning of the normalized string, we should take
+                // all the beginning of the original too
+                if r_normalized.start == 0 && range.start != 0 {
+                    range.start = 0;
+                }
+                // If there is a void between the `end` char we target and the next one, we
+                // want to include everything in-between from the original string
+                match end_range {
+                    Some(r) if r.start > range.end => range.end = r.start,
+                    _ => {}
+                }
+
+                range
+            }
         };
 
         // We need to shift the alignments according to the part of the original string that we
@@ -350,10 +392,22 @@ impl NormalizedString {
         self
     }
 
+    /// Split ourselves in many subparts. Specify whether the delimiter parts should
+    /// be included or not.
+    ///
+    /// This method will always ensure that the entire `self` is covered in the
+    /// produced subparts. This means that the delimiter parts will also be included,
+    /// and will appear empty if we don't want to include them (their `original`
+    /// part will still be present).
+    // TODO: How can we accept some sort of std::str::pattern::Pattern
+    pub fn split(self, c: char) -> Vec<NormalizedString> {
+        todo!()
+    }
+
     /// Split off ourselves, returning a new Self that contains the range [at, len).
     /// self will then contain the range [0, at).
     /// The provided `at` indexes on `char` not bytes.
-    fn ssplit_off(&mut self, at: usize) -> Self {
+    pub fn split_off(&mut self, at: usize) -> Self {
         if at > self.len() {
             return NormalizedString::from("");
         }
