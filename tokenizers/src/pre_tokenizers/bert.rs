@@ -1,4 +1,4 @@
-use crate::tokenizer::{NormalizedString, Offsets, PreTokenizer, Result};
+use crate::tokenizer::{Offsets, PreTokenizedString, PreTokenizer, Result};
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 
@@ -43,16 +43,22 @@ pub struct BertPreTokenizer;
 
 #[typetag::serde]
 impl PreTokenizer for BertPreTokenizer {
-    fn pre_tokenize(&self, normalized: &mut NormalizedString) -> Result<Vec<(String, Offsets)>> {
-        let mut split_tokens = vec![];
-        for (token, offsets) in split_on(normalized.get(), char::is_whitespace, false) {
-            split_tokens.extend(
-                split_on(&token, is_bert_punc, true)
-                    .into_iter()
-                    .map(|(tok, off)| (tok, (off.0 + offsets.0, off.1 + offsets.0))),
-            );
-        }
-        Ok(split_tokens)
+    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        pretokenized.split(|_, substr| {
+            let mut parts = vec![];
+            todo!();
+            parts
+        })
+
+        // let mut split_tokens = vec![];
+        // for (token, offsets) in split_on(normalized.get(), char::is_whitespace, false) {
+        //     split_tokens.extend(
+        //         split_on(&token, is_bert_punc, true)
+        //             .into_iter()
+        //             .map(|(tok, off)| (tok, (off.0 + offsets.0, off.1 + offsets.0))),
+        //     );
+        // }
+        // Ok(split_tokens)
     }
 }
 
@@ -63,20 +69,20 @@ mod tests {
     #[test]
     fn basic() {
         let pretok = BertPreTokenizer;
-        let mut input = NormalizedString::from("Hey friend!     How are you?!?");
-        let res = pretok.pre_tokenize(&mut input).unwrap();
+        let mut pretokenized: PreTokenizedString = "Hey friend!     How are you?!?".into();
+        pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
-            &res,
-            &[
-                ("Hey".into(), (0, 3)),
-                ("friend".into(), (4, 10)),
-                ("!".into(), (10, 11)),
-                ("How".into(), (16, 19)),
-                ("are".into(), (20, 23)),
-                ("you".into(), (24, 27)),
-                ("?".into(), (27, 28)),
-                ("!".into(), (28, 29)),
-                ("?".into(), (29, 30)),
+            pretokenized.get_normalized(),
+            vec![
+                ("Hey", (0, 3)),
+                ("friend", (4, 10)),
+                ("!", (10, 11)),
+                ("How", (16, 19)),
+                ("are", (20, 23)),
+                ("you", (24, 27)),
+                ("?", (27, 28)),
+                ("!", (28, 29)),
+                ("?", (29, 30)),
             ]
         );
     }

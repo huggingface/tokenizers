@@ -1,5 +1,10 @@
 use crate::{NormalizedString, Offsets, Result};
 
+/// Wrapper for a subpart of a `NormalizedString`.
+///
+/// This SubString contains the underlying `NormalizedString` as well as its offsets
+/// in the original string. These offsets are in the `original` referential
+#[derive(Debug)]
 pub struct SubString {
     /// The underlying `NormalizedString`. Each SubString is represented by a `NormalizedString`
     /// and in the end we might be carrying a lot of SubString representing various parts of the
@@ -8,43 +13,102 @@ pub struct SubString {
     /// Offsets of the `NormalizedString` in the `original` input string. These are useful to find
     /// the `original` offsets in the input string, as opposed to the `original` offsets in the
     /// sub-part of the input string represented by `NormalizedString`
-    pub offsets: Offsets,
+    pub original_offsets: Offsets,
 }
 
-/// A `PreTokenizedString` takes care of splitting the input string in multiple `SubString`, while
-/// ensuring that they form a coherend group. This let us keep track of the offsets during the whole
-/// normalization and pre-tokenization steps.
+/// A `PreTokenizedString` takes care of splitting the input string in multiple
+/// sub strings, while ensuring that they form a coherend group. This let us keep
+/// track of the offsets during the whole normalization and pre-tokenization steps.
+#[derive(Debug)]
 pub struct PreTokenizedString {
     parts: Vec<SubString>,
 }
 
 impl PreTokenizedString {
-    /// Split the `PreTokenizedString` by providing a `split_fn` in charge of splitting each
-    /// substring (`NormalizedString`) into multiple parts.
+    /// Split the `PreTokenizedString` by providing a `split_fn` in charge of splitting
+    /// each substring (`NormalizedString`) into multiple parts.
     ///
-    /// `split_fn` takes a `NormalizedString` and is in charge of returning an iterator over
-    /// the produced `NormalizedString`. `split_fn` is free of modifying these `NormalizedString`
-    /// as relevant.
+    /// `split_fn` takes a `NormalizedString` and is in charge of returning an iterator
+    /// over the produced `NormalizedString`. `split_fn` is free of modifying these
+    /// `NormalizedString` as relevant, as long as it respects the constraint stated below.
     ///
     /// There are only one constraint that *MUST* be respected:
-    /// > The produced `NormalizedString`, if combined together, must have the same `original` string
-    /// as the original one given to `split_fn`. This concretely means that for the offset tracking
-    /// to work as expected, `split_fn` must produce "splits" of the original string.
-    pub fn split<F, U>(&mut self, split_fn: F) -> Result<()>
+    /// > The produced `NormalizedString`, if combined back together, must have the
+    /// same `original` string as the original one given to `split_fn`. This concretely
+    /// means that for the offset tracking to work as expected, `split_fn` must produce
+    /// "splits" of the original string.
+    pub fn split<F, U>(&mut self, mut split_fn: F) -> Result<()>
     where
         F: FnMut(usize, NormalizedString) -> U,
         U: IntoIterator<Item = NormalizedString>,
     {
-        todo!()
+        self.parts = self
+            .parts
+            .drain(..)
+            .enumerate()
+            .flat_map(|(i, sub)| {
+                let original_len = sub.normalized.len_original();
+
+                let mut new_len = 0;
+                let parts = split_fn(i, sub.normalized)
+                    .into_iter()
+                    .map(|normalized| {
+                        let len = normalized.len_original();
+                        let new_s = SubString {
+                            normalized,
+                            original_offsets: (new_len, new_len + len),
+                        };
+                        new_len += len;
+                        new_s
+                    })
+                    .collect::<Vec<_>>();
+
+                if new_len != original_len {
+                    println!(
+                        "Original offsets: {:?}\nNew: {:?}",
+                        (0, original_len),
+                        (0, new_len)
+                    );
+                    itertools::Either::Left(std::iter::once(Err(
+                        "Split pre-tokenized string must represent the entire original string"
+                            .into(),
+                    )))
+                } else {
+                    itertools::Either::Right(parts.into_iter().map(Ok))
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(())
     }
 
     pub fn iter(&self) -> std::slice::Iter<SubString> {
         self.into_iter()
     }
 
+    pub fn get_normalized(&self) -> Vec<(&str, Offsets)> {
+        self.iter()
+            .map(|sub| {
+                (
+                    sub.normalized.get(),
+                    (
+                        sub.original_offsets.0,
+                        sub.original_offsets.0 + sub.normalized.len(),
+                    ),
+                )
+            })
+            .collect()
+    }
+
     /// Merge back to a NormalizedString
     pub fn into_merged(self) -> NormalizedString {
-        let offsets = (0, self.parts.iter().last().map_or(0, |sub| sub.offsets.1));
+        let offsets = (
+            0,
+            self.parts
+                .iter()
+                .last()
+                .map_or(0, |sub| sub.original_offsets.1),
+        );
         let normalized: NormalizedString = self.into_iter().map(|sub| sub.normalized).collect();
         assert_eq!(offsets, (0, normalized.len_original()));
         normalized
@@ -53,11 +117,11 @@ impl PreTokenizedString {
 
 impl From<NormalizedString> for PreTokenizedString {
     fn from(s: NormalizedString) -> Self {
-        let offsets = (0, s.len_original());
+        let original_offsets = (0, s.len_original());
         Self {
             parts: vec![SubString {
                 normalized: s,
-                offsets,
+                original_offsets,
             }],
         }
     }

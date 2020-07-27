@@ -472,7 +472,7 @@ impl AddedVocabulary {
             .map(|(substring, id)| {
                 (
                     substring.normalized,
-                    substring.offsets,
+                    substring.original_offsets,
                     id.map(|i| i as u32),
                 )
             })
