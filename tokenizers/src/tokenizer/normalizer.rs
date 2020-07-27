@@ -443,15 +443,15 @@ impl NormalizedString {
 
     /// Merge with the given NormalizedString by appending it to self
     pub fn merge_with(&mut self, other: &NormalizedString) {
+        let shift_len = self.len_original();
         self.original.push_str(&other.original);
-        let len = self.len() - 1;
+        self.normalized.push_str(&other.normalized);
         self.alignments.extend(
             other
                 .alignments
                 .iter()
-                .map(|(start, end)| (start + len, end + len)),
+                .map(|(start, end)| (start + shift_len, end + shift_len)),
         );
-        self.normalized.push_str(&other.normalized);
     }
 
     /// Remove any leading space(s) of the normalized string
@@ -824,16 +824,36 @@ mod tests {
 
     #[test]
     fn merge() {
+        // Merge unmodified
+        let s = NormalizedString::from("A sentence that will be merged");
+        let mut merged = NormalizedString::from("A sentence");
+        let s2 = NormalizedString::from(" that will");
+        let s3 = NormalizedString::from(" be merged");
+        merged.merge_with(&s2);
+        merged.merge_with(&s3);
+        assert_eq!(s, merged);
+
+        // Merge grown normalized
         let mut s = NormalizedString::from("A sentence that will be merged");
         s.prepend(" ");
-
         let mut merged = NormalizedString::from("A sentence");
         let s2 = NormalizedString::from(" that will");
         let s3 = NormalizedString::from(" be merged");
         merged.prepend(" ");
         merged.merge_with(&s2);
         merged.merge_with(&s3);
+        assert_eq!(s, merged);
 
+        // Merge shrinked normalized
+        let mut s = NormalizedString::from("  A sentence that will be merged  ");
+        s.strip();
+        let mut merged = NormalizedString::from("  A sentence");
+        merged.strip();
+        let s2 = NormalizedString::from(" that will");
+        let mut s3 = NormalizedString::from(" be merged  ");
+        s3.rstrip();
+        merged.merge_with(&s2);
+        merged.merge_with(&s3);
         assert_eq!(s, merged);
     }
 
