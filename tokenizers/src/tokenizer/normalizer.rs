@@ -1,3 +1,5 @@
+#![allow(clippy::reversed_empty_ranges)]
+
 use super::Offsets;
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
@@ -90,25 +92,49 @@ impl NormalizedString {
     {
         match range {
             Range::Original(_) => {
-                let (mut start, mut end) = (0, 0);
-                let r = range.into_full_range(self.alignments.last().map_or(0, |(_, e)| *e));
+                let (mut start, mut end) = (None, None);
+                let target = range.into_full_range(self.len_original());
+
+                // If we target before the start of the normalized string
+                if let Some((start, _)) = self.alignments.first() {
+                    if target.end <= *start {
+                        return Some(0..0);
+                    }
+                }
+                // If we target after the end of the normalized string
+                if let Some((_, end)) = self.alignments.last() {
+                    if target.start >= *end {
+                        let len = self.len();
+                        return Some(len..len);
+                    }
+                }
+
+                // Otherwise lets find the range
                 self.alignments
                     .iter()
                     .enumerate()
-                    .take_while(|(_, alignment)| r.end >= alignment.1)
+                    .take_while(|(_, alignment)| target.end >= alignment.1)
                     .for_each(|(i, alignment)| {
-                        if alignment.0 <= r.start {
-                            start = i;
+                        if alignment.0 >= target.start && start.is_none() {
+                            // Here we want to keep the first char in the normalized string
+                            // that is on or *after* the target start.
+                            start = Some(i);
                         }
-                        if alignment.1 <= r.end {
-                            end = i + 1;
+                        if alignment.1 <= target.end {
+                            end = Some(i + 1);
                         }
                     });
-                Some(start..end)
+
+                // If we didn't find the start, let's use the end of the normalized string
+                let start = start.unwrap_or_else(|| self.len());
+                // The end must be greater or equal to start, and might be None otherwise
+                let end = end.filter(|e| *e >= start);
+
+                Some(start..end?)
             }
             Range::Normalized(_) => self
                 .alignments
-                .get(range.into_full_range(self.alignments.len()))
+                .get(range.into_full_range(self.len()))
                 .map(|alignments| {
                     if alignments.is_empty() {
                         None
@@ -150,8 +176,16 @@ impl NormalizedString {
         }
     }
 
-    /// Return a new NormalizedString that contains only the specified range, indexing on bytes
-    // TODO: Make sure we test this thorouglhy
+    /// Return a new NormalizedString that contains only the specified range,
+    /// indexing on bytes. Any range that splits a UTF-8 char will return None.
+    ///
+    /// If we want a slice of the `NormalizedString` based on a `Range::Normalized``,
+    /// the original part of the `NormalizedString` will contain any "additional"
+    /// content on the right, and also on the left. The left will be included
+    /// only if we are retrieving the very beginning of the string, since there
+    /// is no previous part. The right is always included, up to what's covered
+    /// by the next part of the normalized string.  This is important to be able
+    /// to build a new `NormalizedString` from multiple contiguous slices
     pub fn slice_bytes<T>(&self, range: Range<T>) -> Option<NormalizedString>
     where
         T: RangeBounds<usize> + Clone,
@@ -197,20 +231,21 @@ impl NormalizedString {
     /// is no previous part. The right is always included, up to what's covered
     /// by the next part of the normalized string.  This is important to be able
     /// to build a new `NormalizedString` from multiple contiguous slices
-    ///
-    /// TODO: Make sure we test this
     pub fn slice<T>(&self, range: Range<T>) -> Option<NormalizedString>
     where
         T: RangeBounds<usize> + Clone,
     {
+        let len_original = self.len_original();
+        let len_normalized = self.len();
+
         // Find out the part of the normalized string we should keep
         let r_normalized = match range {
             Range::Original(_) => self.convert_offsets(range.clone())?,
-            Range::Normalized(_) => range.clone().into_full_range(self.len()),
+            Range::Normalized(_) => range.clone().into_full_range(len_normalized),
         };
 
         let r_original = match range {
-            Range::Original(_) => range.into_full_range(self.len_original()),
+            Range::Original(_) => range.into_full_range(len_original),
             Range::Normalized(_) => {
                 let end_range = self.convert_offsets(Range::Normalized(r_normalized.end..));
                 let mut range = self.convert_offsets(range)?;
@@ -226,6 +261,10 @@ impl NormalizedString {
                     Some(r) if r.start > range.end => range.end = r.start,
                     _ => {}
                 }
+                // If we target the end of the normalized but the original is longer
+                if r_normalized.end == self.alignments.len() && len_original > range.end {
+                    range.end = len_original;
+                }
 
                 range
             }
@@ -236,8 +275,12 @@ impl NormalizedString {
         let alignment_shift = r_original.start;
 
         Some(Self {
-            original: get_range_of(&self.original, r_original)?.to_owned(),
-            normalized: get_range_of(&self.normalized, r_normalized.clone())?.to_owned(),
+            original: get_range_of(&self.original, r_original)
+                .unwrap_or("")
+                .to_owned(),
+            normalized: get_range_of(&self.normalized, r_normalized.clone())
+                .unwrap_or("")
+                .to_owned(),
             alignments: self
                 .alignments
                 .get(r_normalized)?
@@ -343,7 +386,6 @@ impl NormalizedString {
     /// Prepend the given string to ourself
     pub fn prepend(&mut self, s: &str) -> &mut Self {
         self.normalized.insert_str(0, s);
-        #[allow(clippy::reversed_empty_ranges)]
         self.alignments.splice(0..0, s.chars().map(|_| (0, 0)));
         self
     }
@@ -940,5 +982,41 @@ mod tests {
             })
         );
         assert_eq!(s.slice_bytes(Range::Original(0..10)), None);
+
+        // Check that we get a `None` if we try to split chars
+        for cut_at in 1..s.len() {
+            let res = s.slice_bytes(Range::Original(..cut_at));
+            // The chars in the original string all take 4 bytes.
+            assert!(if cut_at % 4 == 0 {
+                res.is_some()
+            } else {
+                res.is_none()
+            });
+        }
+    }
+
+    #[test]
+    fn slice_coverage() {
+        let mut s = NormalizedString::from(" Hello   friend ");
+        s.filter(|c| !c.is_whitespace());
+        assert_eq!(s.get(), "Hellofriend");
+
+        // Multiple slices with Normalized range
+        for cut_at in 1..s.len() {
+            let mut slices = vec![];
+            slices.push(s.slice(Range::Normalized(..cut_at)).unwrap());
+            slices.push(s.slice(Range::Normalized(cut_at..)).unwrap());
+            let rebuilt: NormalizedString = slices.into_iter().collect();
+            assert_eq!(rebuilt, s);
+        }
+
+        // Multiple slices with Original range
+        for cut_at in 1..s.len_original() {
+            let mut slices = vec![];
+            slices.push(s.slice(Range::Original(..cut_at)).unwrap());
+            slices.push(s.slice(Range::Original(cut_at..)).unwrap());
+            let rebuilt: NormalizedString = slices.into_iter().collect();
+            assert_eq!(rebuilt, s);
+        }
     }
 }
