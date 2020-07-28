@@ -147,19 +147,28 @@ impl NormalizedString {
 
                 Some(start..end?)
             }
-            Range::Normalized(_) => self
-                .alignments
-                .get(range.into_full_range(self.len()))
-                .map(|alignments| {
-                    if alignments.is_empty() {
-                        None
-                    } else {
-                        let start = alignments[0].0;
-                        let end = alignments[alignments.len() - 1].1;
-                        Some(start..end)
-                    }
-                })
-                .flatten(),
+            Range::Normalized(_) => {
+                // If we target 0..0 on an empty normalized string, we want to return the
+                // entire original one
+                let range = range.into_full_range(self.len());
+
+                if self.alignments.is_empty() && range == (0..0) {
+                    Some(0..self.len_original())
+                } else {
+                    self.alignments
+                        .get(range)
+                        .map(|alignments| {
+                            if alignments.is_empty() {
+                                None
+                            } else {
+                                let start = alignments[0].0;
+                                let end = alignments[alignments.len() - 1].1;
+                                Some(start..end)
+                            }
+                        })
+                        .flatten()
+                }
+            }
         }
     }
 
