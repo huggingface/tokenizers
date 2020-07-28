@@ -442,7 +442,7 @@ impl AddedVocabulary {
             .split(|_, sequence| {
                 let (idcs, split) = self.split_with_indices(sequence, &self.split_re);
                 indices = idcs;
-                split
+                Ok(split)
             })
             .expect("AddedVocabulary bad split");
 
@@ -452,14 +452,14 @@ impl AddedVocabulary {
             .split(|i, mut sequence| {
                 if let Some(id) = indices[i] {
                     multi_indices.push(vec![Some(id)]);
-                    itertools::Either::Left(std::iter::once(sequence))
+                    Ok(itertools::Either::Left(std::iter::once(sequence)))
                 } else {
                     normalizer.map(|n| n.normalize(&mut sequence));
 
                     let (idcs, split) =
                         self.split_with_indices(sequence, &self.split_normalized_re);
                     multi_indices.push(idcs);
-                    itertools::Either::Right(split)
+                    Ok(itertools::Either::Right(split))
                 }
             })
             .expect("AddedVocabulary bad split");

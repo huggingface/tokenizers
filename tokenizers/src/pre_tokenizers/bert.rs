@@ -45,9 +45,18 @@ pub struct BertPreTokenizer;
 impl PreTokenizer for BertPreTokenizer {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         pretokenized.split(|_, sub| {
-            sub.split(char::is_whitespace, SplitDelimiterBehavior::Removed)
+            Ok(sub
+                .split(char::is_whitespace, SplitDelimiterBehavior::Removed)?
                 .into_iter()
-                .flat_map(|sub| sub.split(is_bert_punc, SplitDelimiterBehavior::Isolated))
+                .flat_map(|sub| {
+                    let result = sub.split(is_bert_punc, SplitDelimiterBehavior::Isolated);
+                    if let Err(e) = result {
+                        itertools::Either::Left(std::iter::once(Err(e)))
+                    } else {
+                        itertools::Either::Right(result.unwrap().into_iter().map(Ok))
+                    }
+                })
+                .collect::<Result<Vec<_>>>()?)
         })
 
         // let mut split_tokens = vec![];

@@ -39,7 +39,7 @@ impl PreTokenizedString {
     /// "splits" of the original string.
     pub fn split<F, U>(&mut self, mut split_fn: F) -> Result<()>
     where
-        F: FnMut(usize, NormalizedString) -> U,
+        F: FnMut(usize, NormalizedString) -> Result<U>,
         U: IntoIterator<Item = NormalizedString>,
     {
         self.parts = self
@@ -50,7 +50,13 @@ impl PreTokenizedString {
                 let original_len = sub.normalized.len_original();
 
                 let mut new_len = 0;
-                let parts = split_fn(i, sub.normalized)
+                let res = split_fn(i, sub.normalized);
+                if let Err(e) = res {
+                    return itertools::Either::Left(std::iter::once(Err(e)));
+                }
+
+                let parts = res
+                    .unwrap()
                     .into_iter()
                     .map(|normalized| {
                         let len = normalized.len_original();

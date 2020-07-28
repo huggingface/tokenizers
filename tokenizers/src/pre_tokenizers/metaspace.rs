@@ -38,8 +38,8 @@ impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         let replacement = self.replacement.to_string();
         pretokenized.split(|_, normalized| {
-            normalized
-                .split(' ', SplitDelimiterBehavior::MergedWithNext)
+            Ok(normalized
+                .split(' ', SplitDelimiterBehavior::MergedWithNext)?
                 .into_iter()
                 .enumerate()
                 .map(|(i, mut normalized)| {
@@ -48,7 +48,7 @@ impl PreTokenizer for Metaspace {
                         normalized.prepend(&replacement);
                     }
                     normalized
-                })
+                }))
         })
     }
 }
