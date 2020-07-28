@@ -1,4 +1,4 @@
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
+use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -15,6 +15,9 @@ impl CharDelimiterSplit {
 #[typetag::serde]
 impl PreTokenizer for CharDelimiterSplit {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, normalized| normalized.split(self.delimiter))
+        // TODO: Maybe add the option to specify the behavior
+        pretokenized.split(|_, normalized| {
+            normalized.split(self.delimiter, SplitDelimiterBehavior::Removed)
+        })
     }
 }

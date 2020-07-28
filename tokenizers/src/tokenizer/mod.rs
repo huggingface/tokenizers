@@ -13,6 +13,7 @@ pub use crate::utils::iter::LinesWithEnding;
 pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, PaddingStrategy};
 pub use crate::utils::truncation::{truncate_encodings, TruncationParams, TruncationStrategy};
 use indicatif::{ProgressBar, ProgressStyle};
+use normalizer::Range;
 use std::{
     collections::HashMap,
     fs::File,
@@ -23,13 +24,14 @@ use std::{
 
 mod added_vocabulary;
 mod encoding;
-mod normalizer;
-mod pre_tokenizer;
+pub mod normalizer;
+pub mod pattern;
+pub mod pre_tokenizer;
 mod serialization;
 
 pub use added_vocabulary::*;
 pub use encoding::*;
-pub use normalizer::*;
+pub use normalizer::{NormalizedString, SplitDelimiterBehavior};
 pub use pre_tokenizer::*;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

@@ -1,4 +1,4 @@
-use crate::tokenizer::{Offsets, PreTokenizedString, PreTokenizer, Result};
+use crate::tokenizer::{Offsets, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 
@@ -44,10 +44,10 @@ pub struct BertPreTokenizer;
 #[typetag::serde]
 impl PreTokenizer for BertPreTokenizer {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, substr| {
-            let mut parts = vec![];
-            todo!();
-            parts
+        pretokenized.split(|_, sub| {
+            sub.split(char::is_whitespace, SplitDelimiterBehavior::Removed)
+                .into_iter()
+                .flat_map(|sub| sub.split(is_bert_punc, SplitDelimiterBehavior::Isolated))
         })
 
         // let mut split_tokens = vec![];

@@ -1,6 +1,7 @@
 #![allow(clippy::reversed_empty_ranges)]
 
-use super::Offsets;
+use crate::pattern::Pattern;
+use crate::Offsets;
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
 
@@ -45,21 +46,35 @@ where
     }
 }
 
-/// A `NormalizedString` takes care of processing an "original" string to modify it and obtain a
-/// "normalized" string. It keeps both version of the string, alignments information between both
-/// and provides an interface to retrieve ranges of each string, using offsets from any of them.
+/// Defines the expected behavior for the delimiter of a Split Pattern
+/// When splitting on `'-'` for example, with input `the-final-countdown`:
+///  - Removed => `[ "the", "final", "countdown" ]`
+///  - Isolated => `[ "the", "-", "final", "-", "countdown" ]`
+///  - MergedWithPrevious => `[ "the-", "final-", "countdown" ]`
+///  - MergedWithNext => `[ "the", "-final", "-countdown" ]`
+pub enum SplitDelimiterBehavior {
+    Removed,
+    Isolated,
+    MergedWithPrevious,
+    MergedWithNext,
+}
+
+/// A `NormalizedString` takes care of processing an "original" string to modify
+/// it and obtain a "normalized" string. It keeps both version of the string,
+/// alignments information between both and provides an interface to retrieve
+/// ranges of each string, using offsets from any of them.
 ///
-/// It is possible to retrieve a part of the original string, by indexing it with offsets from the
-/// normalized one, and the other way around too. It is also possible to convert offsets from one
-/// referential to the other one easily.
+/// It is possible to retrieve a part of the original string, by indexing it with
+/// offsets from the normalized one, and the other way around too. It is also
+/// possible to convert offsets from one referential to the other one easily.
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct NormalizedString {
     /// The original version of the string, before any modification
     original: String,
     /// The normalized version of the string, after all modifications
     normalized: String,
-    /// Mapping from normalized string to original one: (start, end) for each character of the
-    /// normalized string
+    /// Mapping from normalized string to original one: (start, end) for each
+    /// character of the normalized string
     alignments: Vec<(usize, usize)>,
 }
 
@@ -148,7 +163,7 @@ impl NormalizedString {
         }
     }
 
-    /// Return a range of the normalized string (indexing on char not bytes)
+    /// Return a range of the normalized string (indexing on char, not bytes)
     pub fn get_range<T>(&self, range: Range<T>) -> Option<&str>
     where
         T: RangeBounds<usize> + Clone,
@@ -162,7 +177,7 @@ impl NormalizedString {
         }
     }
 
-    /// Return a range of the original string (indexing on char not bytes)
+    /// Return a range of the original string (indexing on char, not bytes)
     pub fn get_range_original<T>(&self, range: Range<T>) -> Option<&str>
     where
         T: RangeBounds<usize> + Clone,
@@ -434,15 +449,23 @@ impl NormalizedString {
         self
     }
 
-    /// Split ourselves in many subparts. Specify whether the delimiter parts should
-    /// be included or not.
+    /// Replace anything that matches the pattern with the given content.
+    pub fn replace<P: Pattern>(&mut self, pattern: P, content: &str) {
+        todo!()
+    }
+
+    /// Split ourselves in many subparts. Specify what to do with the delimiter.
     ///
     /// This method will always ensure that the entire `self` is covered in the
     /// produced subparts. This means that the delimiter parts will also be included,
     /// and will appear empty if we don't want to include them (their `original`
-    /// part will still be present).
-    // TODO: How can we accept some sort of std::str::pattern::Pattern
-    pub fn split(self, c: char) -> Vec<NormalizedString> {
+    /// part will still be present). It should always be possible to merge all the
+    /// subparts back to the original `NormalizedString`
+    pub fn split<P: Pattern>(
+        self,
+        pattern: P,
+        behavior: SplitDelimiterBehavior,
+    ) -> Vec<NormalizedString> {
         todo!()
     }
 

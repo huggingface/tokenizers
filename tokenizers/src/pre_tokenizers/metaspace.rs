@@ -1,4 +1,4 @@
-use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result};
+use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -6,15 +6,24 @@ use serde::{Deserialize, Serialize};
 /// splits on this character
 pub struct Metaspace {
     replacement: char,
+    str_bytes: [u8; 4],
     add_prefix_space: bool,
 }
 
 impl Metaspace {
     pub fn new(replacement: char, add_prefix_space: bool) -> Self {
+        let mut str_bytes = [0; 4];
+        replacement.encode_utf8(&mut str_bytes);
         Self {
             replacement,
+            str_bytes,
             add_prefix_space,
         }
+    }
+
+    #[inline]
+    fn replacement(&self) -> &str {
+        unsafe { std::str::from_utf8_unchecked(&self.str_bytes[..self.replacement.len_utf8()]) }
     }
 }
 
@@ -30,10 +39,11 @@ impl PreTokenizer for Metaspace {
         let replacement = self.replacement.to_string();
         pretokenized.split(|_, normalized| {
             normalized
-                .split(' ')
+                .split(' ', SplitDelimiterBehavior::MergedWithNext)
                 .into_iter()
                 .enumerate()
                 .map(|(i, mut normalized)| {
+                    normalized.replace(' ', self.replacement());
                     if i > 0 || (i == 0 && self.add_prefix_space) {
                         normalized.prepend(&replacement);
                     }
