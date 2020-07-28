@@ -1,7 +1,7 @@
 #![allow(clippy::reversed_empty_ranges)]
 
 use crate::pattern::Pattern;
-use crate::Offsets;
+use crate::{Offsets, Result};
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
 
@@ -450,8 +450,41 @@ impl NormalizedString {
     }
 
     /// Replace anything that matches the pattern with the given content.
-    pub fn replace<P: Pattern>(&mut self, pattern: P, content: &str) {
-        todo!()
+    pub fn replace<P: Pattern>(&mut self, pattern: P, content: &str) -> Result<()> {
+        let matches = pattern.find_matches(&self.normalized)?;
+
+        let (normalized, alignments): (Vec<char>, Vec<Offsets>) = matches
+            .into_iter()
+            .flat_map(|((start, end), is_match)| {
+                let len = end - start;
+                if is_match {
+                    let original_offsets = self
+                        .convert_offsets(Range::Normalized(start..end))
+                        .expect("Bad offsets when replacing");
+
+                    // Here, since we don't know the exact alignment, each character in
+                    // the new normalized part will align to the whole replaced one.
+                    itertools::Either::Left(content.chars().zip(std::iter::repeat((
+                        original_offsets.start,
+                        original_offsets.end,
+                    ))))
+                } else {
+                    // No need to replace anything, just zip the relevant parts
+                    itertools::Either::Right(
+                        self.normalized
+                            .chars()
+                            .skip(start)
+                            .take(len)
+                            .zip(self.alignments.iter().skip(start).take(len).copied()),
+                    )
+                }
+            })
+            .unzip();
+
+        self.normalized = normalized.into_iter().collect();
+        self.alignments = alignments;
+
+        Ok(())
     }
 
     /// Split ourselves in many subparts. Specify what to do with the delimiter.
@@ -648,6 +681,7 @@ impl std::iter::FromIterator<NormalizedString> for NormalizedString {
 mod tests {
     #![allow(clippy::reversed_empty_ranges)]
     use super::*;
+    use regex::Regex;
     use unicode_categories::UnicodeCategories;
 
     #[test]
@@ -1041,5 +1075,27 @@ mod tests {
             let rebuilt: NormalizedString = slices.into_iter().collect();
             assert_eq!(rebuilt, s);
         }
+    }
+
+    #[test]
+    fn replace() {
+        // Simple
+        let mut s = NormalizedString::from(" Hello   friend ");
+        s.replace(' ', "_").unwrap();
+        assert_eq!(s.get(), "_Hello___friend_");
+        let mut s = NormalizedString::from("aaaab");
+        s.replace('a', "b").unwrap();
+        assert_eq!(s.get(), "bbbbb");
+
+        // Overlapping
+        let mut s = NormalizedString::from("aaaab");
+        s.replace("aaa", "b").unwrap();
+        assert_eq!(s.get(), "bab");
+
+        // Regex
+        let mut s = NormalizedString::from(" Hello   friend ");
+        let re = Regex::new(r"\s+").unwrap();
+        s.replace(&re, "_").unwrap();
+        assert_eq!(s.get(), "_Hello_friend_");
     }
 }
