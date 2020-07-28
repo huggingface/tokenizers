@@ -1,5 +1,5 @@
 use crate::tokenizer::{
-    Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Range, Result,
+    normalizer::Range, Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,
 };
 use onig::Regex;
 use serde::{Deserialize, Serialize};
@@ -217,7 +217,8 @@ pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
 mod tests {
     use super::ByteLevel;
     use crate::tokenizer::{
-        Decoder, Encoding, NormalizedString, PostProcessor, PreTokenizedString, PreTokenizer, Range,
+        normalizer::Range, Decoder, Encoding, NormalizedString, PostProcessor, PreTokenizedString,
+        PreTokenizer,
     };
 
     #[test]

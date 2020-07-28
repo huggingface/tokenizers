@@ -1,4 +1,4 @@
-use super::{Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Range};
+use super::{normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString};
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 

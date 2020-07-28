@@ -1,26 +1,41 @@
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Range, Result};
+use crate::tokenizer::{
+    pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
+};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
-pub struct Whitespace;
+pub struct Whitespace {
+    #[serde(default = "default_regex", skip)]
+    re: Regex,
+}
+
+fn default_regex() -> Regex {
+    Regex::new(r"\w+|[^\w\s]+").unwrap()
+}
+
+impl Default for Whitespace {
+    fn default() -> Self {
+        Self {
+            re: default_regex(),
+        }
+    }
+}
+
 #[typetag::serde]
 impl PreTokenizer for Whitespace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        lazy_static! {
-            static ref RE: Regex = Regex::new(r"\w+|[^\w\s]+").unwrap();
-        }
-
         pretokenized.split(|_, normalized| {
-            RE.find_iter(&normalized.get())
-                .map(|m| {
-                    let (start, end) = (m.start(), m.end());
-                    println!("{:?}\t{:?}", start, end);
-                    normalized
-                        .slice_bytes(Range::Normalized(start..end))
-                        .expect("Whitespace cannot split according to regex")
-                })
-                .collect::<Vec<_>>()
+            normalized.split(Invert(&self.re), SplitDelimiterBehavior::Removed)
+            //RE.find_iter(&normalized.get())
+            //    .map(|m| {
+            //        let (start, end) = (m.start(), m.end());
+            //        println!("{:?}\t{:?}", start, end);
+            //        normalized
+            //            .slice_bytes(Range::Normalized(start..end))
+            //            .expect("Whitespace cannot split according to regex")
+            //    })
+            //    .collect::<Vec<_>>()
         })
     }
 }
@@ -28,9 +43,10 @@ impl PreTokenizer for Whitespace {
 #[derive(Serialize, Deserialize)]
 pub struct WhitespaceSplit;
 #[typetag::serde]
+#[deprecated = "Prefer using DelimiterSplit, specifying the relevant delimiter"]
 impl PreTokenizer for WhitespaceSplit {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, normalized| normalized.split(' '))
+        pretokenized.split(|_, normalized| normalized.split(' ', SplitDelimiterBehavior::Removed))
     }
 }
 
@@ -57,7 +73,7 @@ mod tests {
                 ],
             ),
         ];
-        let pretok = Whitespace;
+        let pretok = Whitespace::default();
         for (s, res) in tests {
             let mut pretokenized = PreTokenizedString::from(s);
             pretok.pre_tokenize(&mut pretokenized).unwrap();
