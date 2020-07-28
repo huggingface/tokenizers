@@ -496,6 +496,12 @@ impl NormalizedString {
         Ok(())
     }
 
+    /// Clear the normalized part of the string
+    pub fn clear(&mut self) {
+        self.normalized = "".into();
+        self.alignments = vec![];
+    }
+
     /// Split ourselves in many subparts. Specify what to do with the delimiter.
     ///
     /// This method will always ensure that the entire `self` is covered in the
@@ -507,8 +513,68 @@ impl NormalizedString {
         self,
         pattern: P,
         behavior: SplitDelimiterBehavior,
-    ) -> Vec<NormalizedString> {
-        todo!()
+    ) -> Result<Vec<NormalizedString>> {
+        let matches = pattern.find_matches(&self.normalized)?;
+
+        // Process the matches according to the selected behavior: Vec<(Offsets, should_remove)>
+        use SplitDelimiterBehavior::*;
+        let splits = match behavior {
+            Isolated => matches
+                .into_iter()
+                .map(|(offsets, _)| (offsets, false))
+                .collect(),
+            Removed => matches,
+            MergedWithPrevious => {
+                matches
+                    .into_iter()
+                    .fold(vec![], |mut acc, (offsets, is_match)| {
+                        if is_match {
+                            if let Some(((_, end), _)) = acc.last_mut() {
+                                *end = offsets.1;
+                            } else {
+                                acc.push((offsets, false));
+                            }
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                        acc
+                    })
+            }
+            MergedWithNext => {
+                let mut matches =
+                    matches
+                        .into_iter()
+                        .rev()
+                        .fold(vec![], |mut acc, (offsets, is_match)| {
+                            if is_match {
+                                if let Some(((start, _), _)) = acc.last_mut() {
+                                    *start = offsets.0;
+                                } else {
+                                    acc.push((offsets, false));
+                                }
+                            } else {
+                                acc.push((offsets, false));
+                            }
+                            acc
+                        });
+                matches.reverse();
+                matches
+            }
+        };
+
+        // Then we split according to the computed splits
+        Ok(splits
+            .into_iter()
+            .map(|(offsets, remove)| {
+                let mut slice = self
+                    .slice(Range::Normalized(offsets.0..offsets.1))
+                    .expect("NormalizedString bad split");
+                if remove {
+                    slice.clear();
+                }
+                slice
+            })
+            .collect())
     }
 
     /// Split off ourselves, returning a new Self that contains the range [at, len).
