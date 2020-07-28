@@ -134,14 +134,14 @@ mod tests {
     #[test]
     fn char() {
         do_test!("aba", 'a' => vec![((0, 1), true), ((1, 2), false), ((2, 3), true)]);
-        do_test!("bbbba", 'a' => vec![((0, 5), false), ((5, 6), true)]);
+        do_test!("bbbba", 'a' => vec![((0, 4), false), ((4, 5), true)]);
         do_test!("aabbb", 'a' => vec![((0, 1), true), ((1, 2), true), ((2, 5), false)]);
     }
 
     #[test]
     fn str() {
         do_test!("aba", "a" => vec![((0, 1), true), ((1, 2), false), ((2, 3), true)]);
-        do_test!("bbbba", "a" => vec![((0, 5), false), ((5, 6), true)]);
+        do_test!("bbbba", "a" => vec![((0, 4), false), ((4, 5), true)]);
         do_test!("aabbb", "a" => vec![((0, 1), true), ((1, 2), true), ((2, 5), false)]);
         do_test!("aabbb", "ab" => vec![((0, 1), false), ((1, 3), true), ((3, 5), false)]);
         do_test!("aabbab", "ab" =>
@@ -153,9 +153,8 @@ mod tests {
     fn functions() {
         let is_b = |c| c == 'b';
         do_test!("aba", is_b => vec![((0, 1), false), ((1, 2), true), ((2, 3), false)]);
-        do_test!("aaaab", is_b => vec![((0, 5), false), ((5, 6), true)]);
+        do_test!("aaaab", is_b => vec![((0, 4), false), ((4, 5), true)]);
         do_test!("bbaaa", is_b => vec![((0, 1), true), ((1, 2), true), ((2, 5), false)]);
-        do_test!("bbaaa", is_b => vec![((0, 1), false), ((1, 3), true), ((3, 5), false)]);
     }
 
     #[test]
@@ -163,7 +162,7 @@ mod tests {
         let is_whitespace = Regex::new(r"\s+").unwrap();
         do_test!("a   b", &is_whitespace => vec![((0, 1), false), ((1, 4), true), ((4, 5), false)]);
         do_test!("   a   b   ", &is_whitespace =>
-            vec![((0, 4), true), ((4, 5), false), ((5, 8), true), ((8, 9), false), ((9, 12), true)]
+            vec![((0, 3), true), ((3, 4), false), ((4, 7), true), ((7, 8), false), ((8, 11), true)]
         );
     }
 }
