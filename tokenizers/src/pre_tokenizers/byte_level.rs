@@ -91,7 +91,8 @@ impl PreTokenizer for ByteLevel {
                 normalized.prepend(" ");
             }
 
-            RE.find_iter(normalized.get())
+            Ok(RE
+                .find_iter(normalized.get())
                 .map(|(start, end)| {
                     let mut part = normalized
                         .slice_bytes(Range::Normalized(start..end))
@@ -115,7 +116,7 @@ impl PreTokenizer for ByteLevel {
 
                     part
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>())
         })
     }
 }
