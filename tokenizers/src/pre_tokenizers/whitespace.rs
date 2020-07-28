@@ -60,14 +60,22 @@ mod tests {
         let tests = vec![
             (
                 "Hey man!",
-                vec![("Hey", (0, 3)), ("man", (4, 7)), ("!", (7, 8))],
+                vec![
+                    ("Hey", (0, 3)),
+                    ("", (3, 4)),
+                    ("man", (4, 7)),
+                    ("!", (7, 8)),
+                ],
             ),
             (
                 "How are you doing?",
                 vec![
                     ("How", (0, 3)),
+                    ("", (3, 4)),
                     ("are", (4, 7)),
+                    ("", (7, 8)),
                     ("you", (8, 11)),
+                    ("", (11, 12)),
                     ("doing", (12, 17)),
                     ("?", (17, 18)),
                 ],
@@ -84,10 +92,19 @@ mod tests {
     #[test]
     fn whitespace_split() {
         let tests = vec![
-            ("Hey man!", vec![("Hey", (0, 3)), ("man!", (4, 8))]),
+            (
+                "Hey man!",
+                vec![("Hey", (0, 3)), ("", (3, 4)), ("man!", (4, 8))],
+            ),
             (
                 "Hey, man, Good?",
-                vec![("Hey,", (0, 4)), ("man,", (5, 9)), ("Good?", (10, 15))],
+                vec![
+                    ("Hey,", (0, 4)),
+                    ("", (4, 5)),
+                    ("man,", (5, 9)),
+                    ("", (9, 10)),
+                    ("Good?", (10, 15)),
+                ],
             ),
         ];
         let pretok = WhitespaceSplit;

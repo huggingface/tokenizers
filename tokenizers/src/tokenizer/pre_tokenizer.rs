@@ -92,6 +92,7 @@ impl PreTokenizedString {
         self.into_iter()
     }
 
+    /// Returns a list of normalized string and their `original` offsets
     pub fn get_normalized(&self) -> Vec<(&str, Offsets)> {
         self.iter()
             .map(|sub| {
@@ -99,7 +100,7 @@ impl PreTokenizedString {
                     sub.normalized.get(),
                     (
                         sub.original_offsets.0,
-                        sub.original_offsets.0 + sub.normalized.len(),
+                        sub.original_offsets.0 + sub.normalized.len_original(),
                     ),
                 )
             })
