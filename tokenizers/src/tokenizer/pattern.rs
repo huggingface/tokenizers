@@ -27,6 +27,10 @@ impl Pattern for &str {
 
 impl Pattern for &Regex {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+        if inside.is_empty() {
+            return Ok(vec![]);
+        }
+
         // Find initial matches
         let matches = self
             .find_iter(inside)
@@ -48,6 +52,7 @@ impl Pattern for &Regex {
                 splits
             })
             .collect::<Vec<_>>();
+
         if let Some(((_, end), _)) = splits.iter().last().copied() {
             if end < inside.len() {
                 splits.push(((end, inside.len()), false));
@@ -63,6 +68,10 @@ where
     F: Fn(char) -> bool,
 {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+        if inside.is_empty() {
+            return Ok(vec![]);
+        }
+
         let mut last_offset = 0;
         let mut last_seen = 0;
 
@@ -125,7 +134,7 @@ mod tests {
                 Invert($pattern).find_matches($inside).unwrap(),
                 $result
                     .into_iter()
-                    .map(|(offsets, flag)| (offsets, !flag))
+                    .map(|v: (Offsets, bool)| (v.0, !v.1))
                     .collect::<Vec<_>>()
             );
         };
@@ -136,6 +145,7 @@ mod tests {
         do_test!("aba", 'a' => vec![((0, 1), true), ((1, 2), false), ((2, 3), true)]);
         do_test!("bbbba", 'a' => vec![((0, 4), false), ((4, 5), true)]);
         do_test!("aabbb", 'a' => vec![((0, 1), true), ((1, 2), true), ((2, 5), false)]);
+        do_test!("", 'a' => vec![]);
     }
 
     #[test]
@@ -147,6 +157,7 @@ mod tests {
         do_test!("aabbab", "ab" =>
             vec![((0, 1), false), ((1, 3), true), ((3, 4), false), ((4, 6), true)]
         );
+        do_test!("", "" => vec![]);
     }
 
     #[test]
@@ -155,6 +166,7 @@ mod tests {
         do_test!("aba", is_b => vec![((0, 1), false), ((1, 2), true), ((2, 3), false)]);
         do_test!("aaaab", is_b => vec![((0, 4), false), ((4, 5), true)]);
         do_test!("bbaaa", is_b => vec![((0, 1), true), ((1, 2), true), ((2, 5), false)]);
+        do_test!("", is_b => vec![]);
     }
 
     #[test]
@@ -164,5 +176,6 @@ mod tests {
         do_test!("   a   b   ", &is_whitespace =>
             vec![((0, 3), true), ((3, 4), false), ((4, 7), true), ((7, 8), false), ((8, 11), true)]
         );
+        do_test!("", &is_whitespace => vec![]);
     }
 }
