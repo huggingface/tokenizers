@@ -85,7 +85,7 @@ mod tests {
         for (s, res) in tests {
             let mut pretokenized = PreTokenizedString::from(s);
             pretok.pre_tokenize(&mut pretokenized).unwrap();
-            assert_eq!(pretokenized.get_normalized(), res);
+            assert_eq!(pretokenized.get_normalized(true), res);
         }
     }
 
@@ -111,7 +111,7 @@ mod tests {
         for (s, res) in tests {
             let mut pretokenized = PreTokenizedString::from(s);
             pretok.pre_tokenize(&mut pretokenized).unwrap();
-            assert_eq!(pretokenized.get_normalized(), res);
+            assert_eq!(pretokenized.get_normalized(true), res);
         }
     }
 }

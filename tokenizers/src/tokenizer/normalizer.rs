@@ -47,11 +47,11 @@ where
 }
 
 /// Defines the expected behavior for the delimiter of a Split Pattern
-/// When splitting on `'-'` for example, with input `the-final-countdown`:
+/// When splitting on `'-'` for example, with input `the-final--countdown`:
 ///  - Removed => `[ "the", "final", "countdown" ]`
-///  - Isolated => `[ "the", "-", "final", "-", "countdown" ]`
-///  - MergedWithPrevious => `[ "the-", "final-", "countdown" ]`
-///  - MergedWithNext => `[ "the", "-final", "-countdown" ]`
+///  - Isolated => `[ "the", "-", "final", "-", "-", "countdown" ]`
+///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
+///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,
@@ -502,13 +502,23 @@ impl NormalizedString {
         self.alignments = vec![];
     }
 
-    /// Split ourselves in many subparts. Specify what to do with the delimiter.
+    /// Split the current string in many subparts. Specify what to do with the
+    /// delimiter.
     ///
     /// This method will always ensure that the entire `self` is covered in the
     /// produced subparts. This means that the delimiter parts will also be included,
     /// and will appear empty if we don't want to include them (their `original`
     /// part will still be present). It should always be possible to merge all the
     /// subparts back to the original `NormalizedString`
+    ///
+    /// ## Splitting Behavior for the delimiter
+    ///
+    /// The behavior can be one of the followings:
+    /// When splitting on `'-'` for example, with input `the-final--countdown`:
+    ///  - Removed => `[ "the", "", "final", "", "", "countdown" ]`
+    ///  - Isolated => `[ "the", "-", "final", "-", "-", "countdown" ]`
+    ///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
+    ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
     pub fn split<P: Pattern>(
         self,
         pattern: P,
@@ -525,10 +535,11 @@ impl NormalizedString {
                 .collect(),
             Removed => matches,
             MergedWithPrevious => {
+                let mut previous_match = false;
                 matches
                     .into_iter()
                     .fold(vec![], |mut acc, (offsets, is_match)| {
-                        if is_match {
+                        if is_match && !previous_match {
                             if let Some(((_, end), _)) = acc.last_mut() {
                                 *end = offsets.1;
                             } else {
@@ -537,16 +548,18 @@ impl NormalizedString {
                         } else {
                             acc.push((offsets, false));
                         }
+                        previous_match = is_match;
                         acc
                     })
             }
             MergedWithNext => {
+                let mut previous_match = false;
                 let mut matches =
                     matches
                         .into_iter()
                         .rev()
                         .fold(vec![], |mut acc, (offsets, is_match)| {
-                            if is_match {
+                            if is_match && !previous_match {
                                 if let Some(((start, _), _)) = acc.last_mut() {
                                     *start = offsets.0;
                                 } else {
@@ -555,6 +568,7 @@ impl NormalizedString {
                             } else {
                                 acc.push((offsets, false));
                             }
+                            previous_match = is_match;
                             acc
                         });
                 matches.reverse();
@@ -1172,5 +1186,21 @@ mod tests {
         let re = Regex::new(r"\s+").unwrap();
         s.replace(&re, "_").unwrap();
         assert_eq!(s.get(), "_Hello_friend_");
+    }
+
+    #[test]
+    fn split() {
+        use SplitDelimiterBehavior::*;
+        let s = NormalizedString::from("The-final--countdown");
+
+        let test = |behavior: SplitDelimiterBehavior, result: Vec<&str>| {
+            let splits = s.clone().split('-', behavior).unwrap();
+            assert_eq!(splits.iter().map(|n| n.get()).collect::<Vec<_>>(), result);
+        };
+
+        test(Removed, vec!["The", "", "final", "", "", "countdown"]);
+        test(Isolated, vec!["The", "-", "final", "-", "-", "countdown"]);
+        test(MergedWithPrevious, vec!["The-", "final-", "-", "countdown"]);
+        test(MergedWithNext, vec!["The", "-final", "-", "-countdown"]);
     }
 }
