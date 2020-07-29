@@ -1,12 +1,11 @@
 extern crate tokenizers as tk;
 
-use super::error::{PyError, ToPyResult};
+use super::error::ToPyResult;
 use super::utils::Container;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use tk::tokenizer::{Offsets, Result};
+use tk::tokenizer::Offsets;
 
 #[pyclass(dict, module = "tokenizers.pre_tokenizers")]
 pub struct PreTokenizer {
@@ -14,13 +13,13 @@ pub struct PreTokenizer {
 }
 #[pymethods]
 impl PreTokenizer {
-    #[staticmethod]
-    fn custom(pretok: PyObject) -> PyResult<Self> {
-        let py_pretok = PyPreTokenizer::new(pretok)?;
-        Ok(PreTokenizer {
-            pretok: Container::Owned(Box::new(py_pretok)),
-        })
-    }
+    // #[staticmethod]
+    // fn custom(pretok: PyObject) -> PyResult<Self> {
+    //     let py_pretok = PyPreTokenizer::new(pretok)?;
+    //     Ok(PreTokenizer {
+    //         pretok: Container::Owned(Box::new(py_pretok)),
+    //     })
+    // }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = self
@@ -52,13 +51,20 @@ impl PreTokenizer {
     }
 
     fn pre_tokenize(&self, s: &str) -> PyResult<Vec<(String, Offsets)>> {
-        // TODO: Expose the NormalizedString
-        let mut normalized = tk::tokenizer::NormalizedString::from(s);
+        // TODO: Expose the PreTokenizedString
+        let mut pretokenized = tk::tokenizer::PreTokenizedString::from(s);
+
         ToPyResult(
             self.pretok
-                .execute(|pretok| pretok.pre_tokenize(&mut normalized)),
+                .execute(|pretok| pretok.pre_tokenize(&mut pretokenized)),
         )
-        .into()
+        .into_py()?;
+
+        Ok(pretokenized
+            .get_normalized(true)
+            .into_iter()
+            .map(|(s, o)| (s.to_owned(), o))
+            .collect())
     }
 }
 
@@ -108,7 +114,9 @@ impl Whitespace {
         Ok((
             Whitespace {},
             PreTokenizer {
-                pretok: Container::Owned(Box::new(tk::pre_tokenizers::whitespace::Whitespace)),
+                pretok: Container::Owned(Box::new(
+                    tk::pre_tokenizers::whitespace::Whitespace::default(),
+                )),
             },
         ))
     }
@@ -209,64 +217,64 @@ impl Metaspace {
     }
 }
 
-struct PyPreTokenizer {
-    class: PyObject,
-}
-
-impl PyPreTokenizer {
-    pub fn new(class: PyObject) -> PyResult<Self> {
-        Ok(PyPreTokenizer { class })
-    }
-}
-
-#[typetag::serde]
-impl tk::tokenizer::PreTokenizer for PyPreTokenizer {
-    fn pre_tokenize(
-        &self,
-        sentence: &mut tk::tokenizer::NormalizedString,
-    ) -> Result<Vec<(String, Offsets)>> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        let args = PyTuple::new(py, &[sentence.get()]);
-        match self.class.call_method(py, "pre_tokenize", args, None) {
-            Ok(res) => Ok(res
-                .cast_as::<PyList>(py)
-                .map_err(|_| {
-                    PyError::from("`pre_tokenize is expected to return a List[(str, (uint, uint))]")
-                })?
-                .extract::<Vec<(String, Offsets)>>()
-                .map_err(|_| {
-                    PyError::from(
-                        "`pre_tokenize` is expected to return a List[(str, (uint, uint))]",
-                    )
-                })?),
-            Err(e) => {
-                e.print(py);
-                Err(Box::new(PyError::from(
-                    "Error while calling `pre_tokenize`",
-                )))
-            }
-        }
-    }
-}
-
-impl Serialize for PyPreTokenizer {
-    fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        Err(serde::ser::Error::custom(
-            "Custom PyPreTokenizer cannot be serialized",
-        ))
-    }
-}
-
-impl<'de> Deserialize<'de> for PyPreTokenizer {
-    fn deserialize<D>(_deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        unimplemented!("PyPreTokenizer cannot be deserialized")
-    }
-}
+// struct PyPreTokenizer {
+//     class: PyObject,
+// }
+//
+// impl PyPreTokenizer {
+//     pub fn new(class: PyObject) -> PyResult<Self> {
+//         Ok(PyPreTokenizer { class })
+//     }
+// }
+//
+// #[typetag::serde]
+// impl tk::tokenizer::PreTokenizer for PyPreTokenizer {
+//     fn pre_tokenize(
+//         &self,
+//         sentence: &mut tk::tokenizer::NormalizedString,
+//     ) -> Result<Vec<(String, Offsets)>> {
+//         let gil = Python::acquire_gil();
+//         let py = gil.python();
+//
+//         let args = PyTuple::new(py, &[sentence.get()]);
+//         match self.class.call_method(py, "pre_tokenize", args, None) {
+//             Ok(res) => Ok(res
+//                 .cast_as::<PyList>(py)
+//                 .map_err(|_| {
+//                     PyError::from("`pre_tokenize is expected to return a List[(str, (uint, uint))]")
+//                 })?
+//                 .extract::<Vec<(String, Offsets)>>()
+//                 .map_err(|_| {
+//                     PyError::from(
+//                         "`pre_tokenize` is expected to return a List[(str, (uint, uint))]",
+//                     )
+//                 })?),
+//             Err(e) => {
+//                 e.print(py);
+//                 Err(Box::new(PyError::from(
+//                     "Error while calling `pre_tokenize`",
+//                 )))
+//             }
+//         }
+//     }
+// }
+//
+// impl Serialize for PyPreTokenizer {
+//     fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         Err(serde::ser::Error::custom(
+//             "Custom PyPreTokenizer cannot be serialized",
+//         ))
+//     }
+// }
+//
+// impl<'de> Deserialize<'de> for PyPreTokenizer {
+//     fn deserialize<D>(_deserializer: D) -> std::result::Result<Self, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         unimplemented!("PyPreTokenizer cannot be deserialized")
+//     }
+// }

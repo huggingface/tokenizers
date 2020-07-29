@@ -75,11 +75,7 @@ impl Encoding {
     #[args(growing_offsets = true)]
     fn merge(encodings: Vec<PyRef<Encoding>>, growing_offsets: bool) -> Encoding {
         tk::tokenizer::Encoding::merge(
-            encodings
-                .into_iter()
-                .map(|e| e.encoding.clone())
-                .collect::<Vec<_>>()
-                .as_slice(),
+            encodings.into_iter().map(|e| e.encoding.clone()),
             growing_offsets,
         )
         .into()

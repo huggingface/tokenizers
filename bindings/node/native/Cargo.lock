@@ -282,6 +282,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -584,7 +593,7 @@ version = "0.1.0"
 source = "git+https://github.com/n1t0/rayon-cond#c56e4f1ded0fcb92eac70e0533703bba3ca2983f"
 dependencies = [
  "either",
- "itertools",
+ "itertools 0.8.2",
  "rayon",
 ]
 
@@ -749,6 +758,7 @@ version = "0.10.1"
 dependencies = [
  "clap",
  "indicatif",
+ "itertools 0.9.0",
  "lazy_static",
  "onig",
  "rand",
