@@ -330,20 +330,7 @@ impl Encoding {
         self.ids.extend(pair.ids);
         self.type_ids.extend(pair.type_ids);
         self.tokens.extend(pair.tokens);
-
-        let starting_word = self
-            .words
-            .iter()
-            .cloned()
-            .max()
-            .flatten()
-            .map_or(0, |w| w + 1);
-        self.words.extend(
-            pair.words
-                .into_iter()
-                .map(|w| w.map(|w| w + starting_word))
-                .collect::<Vec<_>>(),
-        );
+        self.words.extend(pair.words);
 
         let starting_offset = if growing_offsets {
             self.offsets.last().map_or(0, |o| o.1)
@@ -483,7 +470,7 @@ mod tests {
                 ids: vec![1, 2],
                 type_ids: vec![0, 1],
                 tokens: vec![String::from("Hello "), String::from("World!")],
-                words: vec![Some(0), Some(1)],
+                words: vec![Some(0), Some(0)],
                 offsets: vec![(0, 6), (6, 12)],
                 special_tokens_mask: vec![0, 0],
                 attention_mask: vec![1, 1],
