@@ -390,6 +390,9 @@ impl AddedVocabulary {
                 splits.push((None, (end, sentence.len())));
             }
         }
+        if splits.is_empty() {
+            splits.push((None, (0, sentence.len())));
+        }
 
         splits
     }
@@ -412,7 +415,7 @@ impl AddedVocabulary {
             indices,
             offsets.into_iter().map(move |(start, end)| {
                 sentence
-                    .slice(Range::Normalized(start..end))
+                    .slice_bytes(Range::Normalized(start..end))
                     .expect("Error while extracting normalized Range")
             }),
         )
