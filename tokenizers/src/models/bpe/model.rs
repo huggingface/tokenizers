@@ -344,9 +344,9 @@ impl BPE {
         } else {
             let word = self.merge_word(sequence)?;
             let ret = self.word_to_tokens(&word).collect();
-            self.cache
-                .as_ref()
-                .map(|c| c.set(sequence.to_owned(), word));
+            if let Some(ref cache) = self.cache {
+                cache.set(sequence.to_owned(), word);
+            }
             Ok(ret)
         }
     }

@@ -62,6 +62,7 @@ where
         self.map.write().unwrap().clear();
     }
 
+    #[allow(dead_code)]
     pub(super) fn get_values<'a, I, Q>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
     where
         I: Iterator<Item = &'a Q>,
