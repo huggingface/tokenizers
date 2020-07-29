@@ -671,7 +671,7 @@ mod tests {
         assert_eq!(
             result
                 .iter()
-                .map(|(normalized, offsets, id)| (normalized.get(), id))
+                .map(|(normalized, _, id)| (normalized.get(), id))
                 .collect::<Vec<_>>(),
             vec![
                 ("[CLS]", &Some(2)),
@@ -716,7 +716,7 @@ mod tests {
         assert_eq!(
             result
                 .iter()
-                .map(|(normalized, offsets, id)| (normalized.get(), id))
+                .map(|(normalized, _, id)| (normalized.get(), id))
                 .collect::<Vec<_>>(),
             vec![
                 ("[CLS]", &Some(3)),
