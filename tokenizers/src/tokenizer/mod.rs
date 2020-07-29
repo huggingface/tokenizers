@@ -443,7 +443,9 @@ impl Tokenizer {
                 // relevant index from the given input, not determined by the pre-tokenization step
                 if pre_tokenized {
                     subseq_encoding.get_words_mut().iter_mut().for_each(|word| {
-                        word.as_mut().map(|w| *w = subseq_idx as u32);
+                        if let Some(ref mut word) = word {
+                            *word = subseq_idx as u32;
+                        }
                     });
                 }
 
@@ -664,17 +666,19 @@ impl Tokenizer {
                 // Update the offsets to match the original input
                 tokens.iter_mut().for_each(|token| {
                     // We convert the normalized offsets back to the original
-                    let original_o = substr
+                    let converted_offsets = substr
                         .normalized
                         .convert_offsets(Range::Normalized(token.offsets.0..token.offsets.1))
-                        .map_or(token.offsets, |range| (range.start, range.end));
+                        .map_or(token.offsets, |range| {
+                            (
+                                original_offsets.0 + substr.original_offsets.0 + range.start,
+                                original_offsets.0 + substr.original_offsets.0 + range.end,
+                            )
+                        });
 
                     // And we update the token to these original offsets, applying the original offset
                     // of the sequence we just tokenized.
-                    token.offsets = (
-                        original_o.0 + original_offsets.0,
-                        original_o.1 + original_offsets.0,
-                    );
+                    token.offsets = converted_offsets;
                 });
 
                 // Then build the encoding from these tokens, setting the `words` as relevant
