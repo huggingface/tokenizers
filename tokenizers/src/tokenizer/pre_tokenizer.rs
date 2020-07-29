@@ -48,6 +48,7 @@ impl PreTokenizedString {
             .enumerate()
             .flat_map(|(i, sub)| {
                 let original_len = sub.normalized.len_original();
+                let original_offsets = sub.original_offsets;
 
                 let mut new_len = 0;
                 let res = split_fn(i, sub.normalized);
@@ -62,7 +63,10 @@ impl PreTokenizedString {
                         let len = normalized.len_original();
                         let new_s = SubString {
                             normalized,
-                            original_offsets: (new_len, new_len + len),
+                            original_offsets: (
+                                original_offsets.0 + new_len,
+                                original_offsets.0 + new_len + len,
+                            ),
                         };
                         new_len += len;
                         new_s
