@@ -21,7 +21,7 @@ fn slice(mut cx: FunctionContext) -> JsResult<JsString> {
     let begin_index = get_index(cx.extract_opt::<i32>(1)?.unwrap_or(0));
     let end_index = get_index(cx.extract_opt::<i32>(2)?.unwrap_or(len as i32));
 
-    if let Some(slice) = tk::tokenizer::get_range_of(&s, begin_index..end_index) {
+    if let Some(slice) = tk::tokenizer::normalizer::get_range_of(&s, begin_index..end_index) {
         Ok(cx.string(slice))
     } else {
         cx.throw_error("Error in offsets")
@@ -37,7 +37,7 @@ fn merge_encodings(mut cx: FunctionContext) -> JsResult<JsEncoding> {
         .collect();
     let growing_offsets = cx.extract_opt::<bool>(1)?.unwrap_or(false);
 
-    let new_encoding = tk::tokenizer::Encoding::merge(encodings.as_slice(), growing_offsets);
+    let new_encoding = tk::tokenizer::Encoding::merge(encodings, growing_offsets);
     let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
 
     let guard = cx.lock();
