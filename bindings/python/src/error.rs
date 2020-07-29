@@ -27,3 +27,8 @@ impl<T> std::convert::Into<PyResult<T>> for ToPyResult<T> {
             .map_err(|e| exceptions::Exception::py_err(format!("{}", e)))
     }
 }
+impl<T> ToPyResult<T> {
+    pub fn into_py(self) -> PyResult<T> {
+        self.into()
+    }
+}
