@@ -1,7 +1,7 @@
 mod common;
 
 use common::*;
-use tokenizers::tokenizer::{get_range_of, AddedToken};
+use tokenizers::tokenizer::{normalizer::get_range_of, AddedToken};
 
 macro_rules! check_offsets {
     ($input: expr, $output:expr, $offset:expr, $result:expr) => {
@@ -84,13 +84,14 @@ fn byte_level_double_sequence() {
             Some(1),
             Some(2),
             Some(3),
-            Some(4),
-            Some(5),
-            Some(6),
-            Some(7),
-            Some(8)
+            Some(0),
+            Some(1),
+            Some(2),
+            Some(3),
+            Some(4)
         ]
     );
+    assert_eq!(output.get_type_ids(), &[0, 0, 0, 0, 1, 1, 1, 1, 1]);
 
     // When trimming offsets
     let tokenizer = get_byte_level(true, true);
@@ -176,5 +177,17 @@ fn split_on_added_tokens_bert() {
     assert_eq!(
         output.get_tokens(),
         &["yesterday", "i", "saw", "a", "[MASK]", "far", "away"]
+    );
+    assert_eq!(
+        output.get_words(),
+        &[
+            Some(0),
+            Some(1),
+            Some(2),
+            Some(3),
+            Some(4),
+            Some(5),
+            Some(6)
+        ]
     );
 }

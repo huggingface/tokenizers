@@ -419,25 +419,43 @@ impl Tokenizer {
             .into_iter()
             .enumerate()
             .map(|(subseq_idx, subseq)| {
-                let mut subseq_encoding = self
+                let encodings = self
                     .added_vocabulary
                     .extract_and_normalize(self.normalizer.as_deref(), &subseq)
                     .map(|(normalized, original_offsets, id)| match id {
-                        Some(id) => Ok(Encoding::from_tokens(
-                            vec![Token::new(
-                                id,
-                                normalized.get().to_owned(),
-                                original_offsets,
-                            )],
-                            type_id,
-                        )),
+                        Some(id) => {
+                            let mut encoding = Encoding::from_tokens(
+                                vec![Token::new(
+                                    id,
+                                    normalized.get().to_owned(),
+                                    original_offsets,
+                                )],
+                                type_id,
+                            );
+                            encoding.get_words_mut()[0] = Some(0);
+                            Ok(encoding)
+                        }
                         None => self.do_tokenize(
                             self.do_pre_tokenize(normalized)?,
                             original_offsets,
                             type_id,
                         ),
                     })
-                    .collect::<Result<Encoding>>()?;
+                    .collect::<Result<Vec<Encoding>>>()?;
+
+                // At this point, the words are good for each sub encoding,
+                // but we need to make them grow sequentially.
+                let mut subseq_encoding: Encoding =
+                    encodings
+                        .into_iter()
+                        .fold(Encoding::default(), |mut encoding, mut other| {
+                            let last_word_id = encoding.get_words().last().map(|w| w.unwrap());
+                            other.get_words_mut().iter_mut().for_each(|w| {
+                                *w.as_mut().unwrap() += last_word_id.map(|w| w + 1).unwrap_or(0);
+                            });
+                            encoding.merge_with(other, false);
+                            encoding
+                        });
 
                 // If we are handling already pre-tokenized input, each word should have the
                 // relevant index from the given input, not determined by the pre-tokenization step
@@ -655,10 +673,16 @@ impl Tokenizer {
     ) -> Result<Encoding> {
         let pretokenized: PreTokenizedString = pretokenized.into();
 
+        let mut empty_words = 0;
         pretokenized
             .into_iter()
             .enumerate()
             .map(|(word_idx, substr)| {
+                if substr.normalized.is_empty() {
+                    empty_words += 1;
+                    return Ok(Encoding::default());
+                }
+
                 let mut tokens = self.model.tokenize(substr.normalized.get())?;
 
                 // Update the offsets to match the original input
@@ -682,7 +706,9 @@ impl Tokenizer {
                 // Then build the encoding from these tokens, setting the `words` as relevant
                 let mut encoding = Encoding::from_tokens(tokens, type_id);
                 encoding.get_words_mut().iter_mut().for_each(|word| {
-                    *word = Some(word_idx as u32);
+                    // empty words are generally spaces, and other things
+                    // that were normalized out, so we dont want to count them in.
+                    *word = Some(word_idx as u32 - empty_words);
                 });
 
                 Ok(encoding)
