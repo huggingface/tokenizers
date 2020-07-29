@@ -228,7 +228,7 @@ mod tests {
         let mut pretokenized: PreTokenizedString = "Hello my friend, how is your day going?".into();
         bytelevel.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
-            pretokenized.get_normalized(),
+            pretokenized.get_normalized(true),
             vec![
                 ("Hello", (0, 5)),
                 ("Ġmy", (5, 8)),
@@ -273,7 +273,7 @@ mod tests {
             let mut pretokenized = PreTokenizedString::from(*s);
             bytelevel.pre_tokenize(&mut pretokenized).unwrap();
             assert_eq!(
-                pretokenized.get_normalized(),
+                pretokenized.get_normalized(false),
                 vec![
                     ("ĠHello", (0, 6)),
                     ("Ġmy", (6, 9)),
@@ -317,7 +317,7 @@ mod tests {
         bytelevel.pre_tokenize(&mut pretokenized).unwrap();
 
         assert_eq!(
-            pretokenized.get_normalized(),
+            pretokenized.get_normalized(true),
             vec![
                 ("Hello", (0, 5)),
                 ("Ġthere", (5, 11)),
@@ -335,7 +335,7 @@ mod tests {
         bytelevel.pre_tokenize(&mut pretokenized).unwrap();
 
         assert_eq!(
-            pretokenized.get_normalized(),
+            pretokenized.get_normalized(true),
             vec![
                 ("Hello", (0, 5)),
                 ("Ġthere", (5, 11)),
@@ -352,8 +352,12 @@ mod tests {
         bytelevel.pre_tokenize(&mut pretokenized).unwrap();
 
         assert_eq!(
-            pretokenized.get_normalized(),
-            vec![("i", (0, 1)), ("âŃ¢", (1, 4)), ("j", (4, 5)),]
+            pretokenized.get_normalized(true),
+            vec![("i", (0, 1)), ("âŃ¢", (1, 2)), ("j", (2, 3))]
+        );
+        assert_eq!(
+            pretokenized.get_normalized(false),
+            vec![("i", (0, 1)), ("âŃ¢", (1, 4)), ("j", (4, 5))]
         );
         assert_eq!(
             pretokenized

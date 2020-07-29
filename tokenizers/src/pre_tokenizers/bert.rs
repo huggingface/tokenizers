@@ -39,7 +39,7 @@ mod tests {
         let mut pretokenized: PreTokenizedString = "Hey friend!     How are you?!?".into();
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
-            pretokenized.get_normalized(),
+            pretokenized.get_normalized(true),
             vec![
                 ("Hey", (0, 3)),
                 ("", (3, 4)),

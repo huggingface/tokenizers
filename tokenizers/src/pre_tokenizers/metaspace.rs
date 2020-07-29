@@ -36,19 +36,19 @@ impl Default for Metaspace {
 #[typetag::serde]
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        let replacement = self.replacement.to_string();
-        pretokenized.split(|_, normalized| {
+        pretokenized.split(|_, mut normalized| {
+            if self.add_prefix_space {
+                normalized.prepend(&self.replacement());
+            }
+
             Ok(normalized
                 .split(' ', SplitDelimiterBehavior::MergedWithNext)?
                 .into_iter()
-                .enumerate()
-                .map(|(i, mut normalized)| {
-                    normalized.replace(' ', self.replacement());
-                    if i > 0 || (i == 0 && self.add_prefix_space) {
-                        normalized.prepend(&replacement);
-                    }
-                    normalized
-                }))
+                .map(|mut normalized| {
+                    normalized.replace(' ', self.replacement())?;
+                    Ok(normalized)
+                })
+                .collect::<Result<Vec<_>>>()?)
         })
     }
 }
@@ -85,8 +85,12 @@ mod tests {
         let mut pretokenized = PreTokenizedString::from("Hey friend!");
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
-            pretokenized.get_normalized(),
+            pretokenized.get_normalized(false),
             vec![("▁Hey", (0, 4)), ("▁friend!", (4, 12))]
+        );
+        assert_eq!(
+            pretokenized.get_normalized(true),
+            vec![("▁Hey", (0, 3)), ("▁friend!", (3, 11))]
         );
     }
 
@@ -96,12 +100,21 @@ mod tests {
         let mut pretokenized = PreTokenizedString::from("Hey   friend!");
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
-            pretokenized.get_normalized(),
+            pretokenized.get_normalized(false),
             vec![
                 ("▁Hey", (0, 4)),
                 ("▁", (4, 5)),
                 ("▁", (5, 6)),
                 ("▁friend!", (6, 14)),
+            ]
+        );
+        assert_eq!(
+            pretokenized.get_normalized(true),
+            vec![
+                ("▁Hey", (0, 3)),
+                ("▁", (3, 4)),
+                ("▁", (4, 5)),
+                ("▁friend!", (5, 13)),
             ]
         );
     }
