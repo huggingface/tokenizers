@@ -443,7 +443,7 @@ impl Tokenizer {
                     })
                     .collect::<Result<Vec<Encoding>>>()?;
 
-                // At this point, the words are good for each sub encoding,
+                // At this point, the `words` are good for each sub encoding independently,
                 // but we need to make them grow sequentially.
                 let mut subseq_encoding: Encoding =
                     encodings
