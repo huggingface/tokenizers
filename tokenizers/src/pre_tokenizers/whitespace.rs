@@ -27,15 +27,6 @@ impl PreTokenizer for Whitespace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         pretokenized.split(|_, normalized| {
             normalized.split(Invert(&self.re), SplitDelimiterBehavior::Removed)
-            //RE.find_iter(&normalized.get())
-            //    .map(|m| {
-            //        let (start, end) = (m.start(), m.end());
-            //        println!("{:?}\t{:?}", start, end);
-            //        normalized
-            //            .slice_bytes(Range::Normalized(start..end))
-            //            .expect("Whitespace cannot split according to regex")
-            //    })
-            //    .collect::<Vec<_>>()
         })
     }
 }
@@ -43,10 +34,11 @@ impl PreTokenizer for Whitespace {
 #[derive(Serialize, Deserialize)]
 pub struct WhitespaceSplit;
 #[typetag::serde]
-#[deprecated = "Prefer using DelimiterSplit, specifying the relevant delimiter"]
 impl PreTokenizer for WhitespaceSplit {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, normalized| normalized.split(' ', SplitDelimiterBehavior::Removed))
+        pretokenized.split(|_, normalized| {
+            normalized.split(char::is_whitespace, SplitDelimiterBehavior::Removed)
+        })
     }
 }
 
