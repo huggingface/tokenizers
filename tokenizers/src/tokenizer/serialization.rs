@@ -7,12 +7,12 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use super::{added_vocabulary::AddedTokenWithId, Tokenizer};
+use super::{added_vocabulary::AddedTokenWithId, TokenizerImpl};
 use crate::{Decoder, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerBuilder};
 
 static SERIALIZATION_VERSION: &str = "1.0";
 
-impl<M, N, PT, PP, D> Serialize for Tokenizer<M, N, PT, PP, D>
+impl<M, N, PT, PP, D> Serialize for TokenizerImpl<M, N, PT, PP, D>
 where
     M: Serialize,
     N: Serialize,
@@ -47,7 +47,7 @@ where
     }
 }
 
-impl<'de, M, N, PT, PP, D> Deserialize<'de> for Tokenizer<M, N, PT, PP, D>
+impl<'de, M, N, PT, PP, D> Deserialize<'de> for TokenizerImpl<M, N, PT, PP, D>
 where
     M: Deserialize<'de> + Model,
     N: Deserialize<'de> + Normalizer,
@@ -99,7 +99,7 @@ where
     PP: Deserialize<'de> + PostProcessor,
     D: Deserialize<'de> + Decoder,
 {
-    type Value = Tokenizer<M, N, PT, PP, D>;
+    type Value = TokenizerImpl<M, N, PT, PP, D>;
 
     fn expecting(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(fmt, "struct Tokenizer")

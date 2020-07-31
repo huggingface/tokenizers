@@ -39,11 +39,7 @@
 //!         .unk_token("[UNK]".into())
 //!         .build()?;
 //!
-//!     let mut tokenizer = Tokenizer::<_,
-//!              NormalizerWrapper,
-//!              PreTokenizerWrapper,
-//!              PostProcessorWrapper,
-//!              DecoderWrapper>::new(bpe);
+//!     let mut tokenizer = Tokenizer::new(bpe);
 //!
 //!     let encoding = tokenizer.encode("Hey there!", false)?;
 //!     println!("{:?}", encoding.get_tokens());

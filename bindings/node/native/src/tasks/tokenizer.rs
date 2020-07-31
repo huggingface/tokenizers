@@ -2,17 +2,17 @@ extern crate tokenizers as tk;
 
 use crate::encoding::*;
 use neon::prelude::*;
-use tk::tokenizer::{EncodeInput, Encoding, Tokenizer};
+use tk::tokenizer::{EncodeInput, Encoding, TokenizerImpl};
 
 pub struct WorkingTokenizer {
     _arc: std::sync::Arc<()>,
-    ptr: *const Tokenizer,
+    ptr: *const TokenizerImpl,
 }
 impl WorkingTokenizer {
     /// This is unsafe because the caller must ensure that the given tokenizer
     /// wont be modified for the duration of the task. We keep an arc here to let the
     /// caller know when we are done with our pointer on Tokenizer
-    pub unsafe fn new(tokenizer: &Tokenizer, arc: std::sync::Arc<()>) -> Self {
+    pub unsafe fn new(tokenizer: &TokenizerImpl, arc: std::sync::Arc<()>) -> Self {
         WorkingTokenizer {
             _arc: arc,
             ptr: tokenizer as *const _,
@@ -41,7 +41,7 @@ impl Task for EncodeTask {
             EncodeTask::Single(worker, input, add_special_tokens) => {
                 let mut input: Option<EncodeInput> =
                     unsafe { std::ptr::replace(input as *const _ as *mut _, None) };
-                let tokenizer: &Tokenizer = unsafe { &*worker.ptr };
+                let tokenizer: &TokenizerImpl = unsafe { &*worker.ptr };
                 tokenizer
                     .encode(
                         input.take().ok_or("No provided input")?,
@@ -53,7 +53,7 @@ impl Task for EncodeTask {
             EncodeTask::Batch(worker, input, add_special_tokens) => {
                 let mut input: Option<Vec<EncodeInput>> =
                     unsafe { std::ptr::replace(input as *const _ as *mut _, None) };
-                let tokenizer: &Tokenizer = unsafe { &*worker.ptr };
+                let tokenizer: &TokenizerImpl = unsafe { &*worker.ptr };
                 tokenizer
                     .encode_batch(
                         input.take().ok_or("No provided input")?,
@@ -120,14 +120,14 @@ impl Task for DecodeTask {
     fn perform(&self) -> Result<Self::Output, Self::Error> {
         match self {
             DecodeTask::Single(worker, ids, skip_special_tokens) => {
-                let tokenizer: &Tokenizer = unsafe { &*worker.ptr };
+                let tokenizer: &TokenizerImpl = unsafe { &*worker.ptr };
                 tokenizer
                     .decode(ids.to_vec(), *skip_special_tokens)
                     .map_err(|e| format!("{}", e))
                     .map(DecodeOutput::Single)
             }
             DecodeTask::Batch(worker, ids, skip_special_tokens) => {
-                let tokenizer: &Tokenizer = unsafe { &*worker.ptr };
+                let tokenizer: &TokenizerImpl = unsafe { &*worker.ptr };
                 tokenizer
                     .decode_batch(ids.to_vec(), *skip_special_tokens)
                     .map_err(|e| format!("{}", e))
