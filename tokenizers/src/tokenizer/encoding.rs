@@ -47,6 +47,19 @@ impl Encoding {
         }
     }
 
+    pub fn with_capacity(len: usize) -> Self {
+        Encoding {
+            ids: Vec::with_capacity(len),
+            type_ids: Vec::with_capacity(len),
+            tokens: Vec::with_capacity(len),
+            words: Vec::with_capacity(len),
+            offsets: Vec::with_capacity(len),
+            special_tokens_mask: Vec::with_capacity(len),
+            attention_mask: Vec::with_capacity(len),
+            overflowing: vec![],
+        }
+    }
+
     pub fn from_tokens(tokens: Vec<Token>, type_id: u32) -> Self {
         let length = tokens.len();
         let (ids, tokens, offsets) = tokens.into_iter().fold(
@@ -401,6 +414,27 @@ impl Encoding {
 impl std::iter::FromIterator<Encoding> for Encoding {
     fn from_iter<I: IntoIterator<Item = Encoding>>(iter: I) -> Self {
         Self::merge(iter, false)
+    }
+}
+
+impl std::iter::FromIterator<(u32, String, (usize, usize), Option<u32>, u32)> for Encoding {
+    fn from_iter<I: IntoIterator<Item = (u32, String, (usize, usize), Option<u32>, u32)>>(
+        iter: I,
+    ) -> Self {
+        let items = iter.into_iter();
+        let (lower, upper) = items.size_hint();
+        let length = upper.unwrap_or(lower);
+        let mut encoding = Self::with_capacity(length);
+
+        for (id, token, offsets, word, type_id) in items {
+            encoding.ids.push(id);
+            encoding.tokens.push(token);
+            encoding.offsets.push(offsets);
+            encoding.type_ids.push(type_id);
+            encoding.words.push(word);
+        }
+
+        encoding
     }
 }
 

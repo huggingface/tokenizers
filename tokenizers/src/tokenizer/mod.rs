@@ -31,7 +31,7 @@ mod serialization;
 
 pub use added_vocabulary::*;
 pub use encoding::*;
-pub use normalizer::{NormalizedString, SplitDelimiterBehavior};
+pub use normalizer::{NormalizedString, OffsetReferential, SplitDelimiterBehavior};
 pub use pre_tokenizer::*;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -423,6 +423,7 @@ impl Tokenizer {
                     .added_vocabulary
                     .extract_and_normalize(self.normalizer.as_deref(), &subseq)
                     .map(|(normalized, original_offsets, id)| match id {
+                        // This is an added token, no need to tokenize, we have the ID
                         Some(id) => {
                             let mut encoding = Encoding::from_tokens(
                                 vec![Token::new(
@@ -435,6 +436,7 @@ impl Tokenizer {
                             encoding.get_words_mut()[0] = Some(0);
                             Ok(encoding)
                         }
+                        // Let's tokenize
                         None => self.do_tokenize(
                             self.do_pre_tokenize(normalized)?,
                             original_offsets,
@@ -675,45 +677,40 @@ impl Tokenizer {
     ) -> Result<Encoding> {
         let pretokenized: PreTokenizedString = pretokenized.into();
 
-        let mut empty_words = 0;
         pretokenized
             .into_iter()
+            .filter(|substr| !substr.normalized.is_empty())
             .enumerate()
-            .map(|(word_idx, substr)| {
-                if substr.normalized.is_empty() {
-                    empty_words += 1;
-                    return Ok(Encoding::default());
+            .flat_map(|(word_idx, substr)| {
+                match self.model.tokenize(substr.normalized.get()) {
+                    Ok(tokens) => {
+                        itertools::Either::Left(tokens.into_iter().map(move |token| {
+                            // We convert the normalized offsets back to the original
+                            let converted_offsets = substr
+                                .normalized
+                                .convert_offsets(Range::Normalized(
+                                    token.offsets.0..token.offsets.1,
+                                ))
+                                .map_or(token.offsets, |range| {
+                                    (
+                                        original_offsets.0
+                                            + substr.original_offsets.0
+                                            + range.start,
+                                        original_offsets.0 + substr.original_offsets.0 + range.end,
+                                    )
+                                });
+
+                            Ok((
+                                token.id,
+                                token.value,
+                                converted_offsets,
+                                Some(word_idx as u32),
+                                type_id,
+                            ))
+                        }))
+                    }
+                    Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
                 }
-
-                let mut tokens = self.model.tokenize(substr.normalized.get())?;
-
-                // Update the offsets to match the original input
-                tokens.iter_mut().for_each(|token| {
-                    // We convert the normalized offsets back to the original
-                    let converted_offsets = substr
-                        .normalized
-                        .convert_offsets(Range::Normalized(token.offsets.0..token.offsets.1))
-                        .map_or(token.offsets, |range| {
-                            (
-                                original_offsets.0 + substr.original_offsets.0 + range.start,
-                                original_offsets.0 + substr.original_offsets.0 + range.end,
-                            )
-                        });
-
-                    // And we update the token to these original offsets, applying the original offset
-                    // of the sequence we just tokenized.
-                    token.offsets = converted_offsets;
-                });
-
-                // Then build the encoding from these tokens, setting the `words` as relevant
-                let mut encoding = Encoding::from_tokens(tokens, type_id);
-                encoding.get_words_mut().iter_mut().for_each(|word| {
-                    // empty words are generally spaces, and other things
-                    // that were normalized out, so we dont want to count them in.
-                    *word = Some(word_idx as u32 - empty_words);
-                });
-
-                Ok(encoding)
             })
             .collect()
     }

@@ -61,7 +61,7 @@ impl PreTokenizer {
         .into_py()?;
 
         Ok(pretokenized
-            .get_normalized(true)
+            .get_normalized(tk::OffsetReferential::Original)
             .into_iter()
             .map(|(s, o)| (s.to_owned(), o))
             .collect())

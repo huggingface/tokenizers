@@ -32,6 +32,7 @@ impl PreTokenizer for BertPreTokenizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::OffsetReferential;
 
     #[test]
     fn basic() {
@@ -39,7 +40,7 @@ mod tests {
         let mut pretokenized: PreTokenizedString = "Hey friend!     How are you?!?".into();
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
-            pretokenized.get_normalized(true),
+            pretokenized.get_normalized(OffsetReferential::Original),
             vec![
                 ("Hey", (0, 3)),
                 ("", (3, 4)),

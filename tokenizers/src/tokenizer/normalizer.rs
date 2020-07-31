@@ -5,6 +5,12 @@ use crate::{Offsets, Result};
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
 
+/// The possible offsets referential
+pub enum OffsetReferential {
+    Original,
+    Normalized,
+}
+
 /// Represents a Range usable by the NormalizedString to index its content.
 /// A Range can use indices relative to either the `Original` or the `Normalized` string
 #[derive(Debug, Clone)]
@@ -300,11 +306,11 @@ impl NormalizedString {
 
         Some(Self {
             original: get_range_of(&self.original, r_original)
-                .unwrap_or("")
-                .to_owned(),
+                .unwrap_or_default()
+                .into(),
             normalized: get_range_of(&self.normalized, r_normalized.clone())
-                .unwrap_or("")
-                .to_owned(),
+                .unwrap_or_default()
+                .into(),
             alignments: self
                 .alignments
                 .get(r_normalized)?
@@ -462,7 +468,7 @@ impl NormalizedString {
     pub fn replace<P: Pattern>(&mut self, pattern: P, content: &str) -> Result<()> {
         let matches = pattern.find_matches(&self.normalized)?;
 
-        let (normalized, alignments): (Vec<char>, Vec<Offsets>) = matches
+        let (normalized, alignments): (String, Vec<Offsets>) = matches
             .into_iter()
             .flat_map(|((start, end), is_match)| {
                 let len = end - start;
@@ -490,7 +496,7 @@ impl NormalizedString {
             })
             .unzip();
 
-        self.normalized = normalized.into_iter().collect();
+        self.normalized = normalized;
         self.alignments = alignments;
 
         Ok(())
