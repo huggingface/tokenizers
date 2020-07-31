@@ -1,4 +1,7 @@
-use super::{normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString};
+use super::{
+    normalizer::Range, ByteOffsets, Model, NormalizedString, Normalizer, Offsets,
+    PreTokenizedString,
+};
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 
@@ -301,15 +304,15 @@ impl AddedVocabulary {
         );
     }
 
-    /// Find any AddedToken in the given sentence, using the provided MatchingSet. This method
-    /// returns a list "splits", each of them being a pair of Offsets and an optional ID if it is
-    /// an AddedToken.
-    /// The list of splits cover the entire input string
+    /// Find any AddedToken in the given sentence, using the provided MatchingSet.
+    /// This method returns a list "splits", each of them being a pair of ByteOffsets
+    /// and an optional ID if it is an AddedToken.
+    /// The list of splits cover the entire input string.
     fn find_matches<'a>(
         &self,
         sentence: &str,
         split_re: &'a MatchingSet,
-    ) -> Vec<(Option<u32>, Offsets)> {
+    ) -> Vec<(Option<u32>, ByteOffsets)> {
         let mut matches = split_re
             .0
             .matches(sentence)
@@ -385,13 +388,10 @@ impl AddedVocabulary {
                 splits
             })
             .collect::<Vec<_>>();
-        if let Some((_, (_, end))) = splits.iter().last().copied() {
-            if end < sentence.len() {
-                splits.push((None, (end, sentence.len())));
-            }
-        }
-        if splits.is_empty() {
-            splits.push((None, (0, sentence.len())));
+
+        let total_byte_len = sentence.len();
+        if start_offset != total_byte_len {
+            splits.push((None, (start_offset, total_byte_len)));
         }
 
         splits
@@ -405,7 +405,7 @@ impl AddedVocabulary {
         sentence: NormalizedString,
         split_re: &MatchingSet,
     ) -> (Vec<Option<u32>>, impl Iterator<Item = NormalizedString>) {
-        let (indices, offsets) = self
+        let (indices, byte_offsets) = self
             .find_matches(sentence.get(), split_re)
             .into_iter()
             .unzip::<_, _, Vec<_>, Vec<_>>();
@@ -413,7 +413,7 @@ impl AddedVocabulary {
         // Return the indices and the split normalized string
         (
             indices,
-            offsets.into_iter().map(move |(start, end)| {
+            byte_offsets.into_iter().map(move |(start, end)| {
                 sentence
                     .slice_bytes(Range::Normalized(start..end))
                     .expect("Error while extracting normalized Range")
@@ -727,5 +727,12 @@ mod tests {
                 ("[SEP]", &Some(4)),
             ]
         );
+    }
+
+    #[test]
+    fn empty_matches() {
+        let vocab = AddedVocabulary::new();
+        let matches = vocab.find_matches("", &vocab.split_re);
+        assert_eq!(matches, vec![]);
     }
 }

@@ -36,6 +36,7 @@ pub use pre_tokenizer::*;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
+pub type ByteOffsets = (usize, usize);
 pub type Offsets = (usize, usize);
 
 use crate::utils::parallelism::*;
