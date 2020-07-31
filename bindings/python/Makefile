@@ -2,11 +2,11 @@
 
 # Format source code automatically
 style:
-	black --line-length 100 --target-version py35 examples tokenizers tests
+	black --line-length 100 --target-version py35 examples py_src/tokenizers tests
 
 # Check the source code is formatted correctly
 check-style:
-	black --check --line-length 100 --target-version py35 examples tokenizers tests
+	black --check --line-length 100 --target-version py35 examples py_src/tokenizers tests
 
 # Launch the test suite
 test:

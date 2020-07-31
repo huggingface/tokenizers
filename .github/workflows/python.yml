@@ -114,6 +114,6 @@ jobs:
         run: |
           python -m venv .env
           source .env/bin/activate
-          pip install pytest requests maturin
-          maturin develop --release
+          pip install pytest requests setuptools_rust 
+          python setup.py develop
           make test
