@@ -231,7 +231,11 @@ impl NormalizedString {
             ),
         };
 
-        let (mut start, mut end) = (None, None);
+        let (mut start, mut end) = if r == (0..0) {
+            (Some(0), Some(0))
+        } else {
+            (None, None)
+        };
         s.char_indices()
             .enumerate()
             .take_while(|(_, (b, _))| *b < r.end)

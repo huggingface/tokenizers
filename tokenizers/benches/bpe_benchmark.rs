@@ -113,7 +113,7 @@ fn iter_bench_train(
 
 fn bench_train(c: &mut Criterion) {
     let mut tokenizer = Tokenizer::new(Box::new(BPE::default()));
-    tokenizer.with_pre_tokenizer(Box::new(Whitespace));
+    tokenizer.with_pre_tokenizer(Box::new(Whitespace::default()));
 
     let trainer: Box<dyn Trainer> =
         Box::new(BpeTrainerBuilder::default().show_progress(false).build());

@@ -20,6 +20,11 @@ impl Pattern for char {
 
 impl Pattern for &str {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+        if self.is_empty() {
+            // If we try to find the matches with an empty string, just don't match anything
+            return Ok(vec![((0, inside.chars().count()), false)]);
+        }
+
         let re = Regex::new(&regex::escape(self))?;
         (&re).find_matches(inside)
     }
@@ -31,18 +36,31 @@ impl Pattern for &Regex {
             return Ok(vec![((0, 0), false)]);
         }
 
+        let char_indices = inside.char_indices().collect::<Vec<_>>();
+        let mut char_idx = 0;
+
         let mut prev = 0;
         let mut splits = Vec::with_capacity(inside.len());
         for m in self.find_iter(inside) {
-            if prev != m.start() {
-                splits.push(((prev, m.start()), false));
+            let prev_idx = char_idx;
+            let mut start_idx = char_idx;
+            while char_idx < char_indices.len() && char_indices[char_idx].0 < m.end() {
+                if char_indices[char_idx].0 == m.start() {
+                    start_idx = char_idx;
+                }
+                char_idx += 1;
             }
-            splits.push(((m.start(), m.end()), true));
+
+            if prev != m.start() {
+                splits.push(((prev_idx, start_idx), false));
+            }
+            splits.push(((start_idx, char_idx), true));
             prev = m.end();
         }
         if prev != inside.len() {
-            splits.push(((prev, inside.len()), false))
+            splits.push(((char_idx, char_indices.len()), false))
         }
+
         Ok(splits)
     }
 }
@@ -130,6 +148,7 @@ mod tests {
         do_test!("bbbba", 'a' => vec![((0, 4), false), ((4, 5), true)]);
         do_test!("aabbb", 'a' => vec![((0, 1), true), ((1, 2), true), ((2, 5), false)]);
         do_test!("", 'a' => vec![((0, 0), false)]);
+        do_test!("aaa", 'b' => vec![((0, 3), false)]);
     }
 
     #[test]
@@ -142,6 +161,8 @@ mod tests {
             vec![((0, 1), false), ((1, 3), true), ((3, 4), false), ((4, 6), true)]
         );
         do_test!("", "" => vec![((0, 0), false)]);
+        do_test!("aaa", "" => vec![((0, 3), false)]);
+        do_test!("aaa", "b" => vec![((0, 3), false)]);
     }
 
     #[test]
@@ -151,6 +172,7 @@ mod tests {
         do_test!("aaaab", is_b => vec![((0, 4), false), ((4, 5), true)]);
         do_test!("bbaaa", is_b => vec![((0, 1), true), ((1, 2), true), ((2, 5), false)]);
         do_test!("", is_b => vec![((0, 0), false)]);
+        do_test!("aaa", is_b => vec![((0, 3), false)]);
     }
 
     #[test]
@@ -161,5 +183,9 @@ mod tests {
             vec![((0, 3), true), ((3, 4), false), ((4, 7), true), ((7, 8), false), ((8, 11), true)]
         );
         do_test!("", &is_whitespace => vec![((0, 0), false)]);
+        do_test!("𝔾𝕠𝕠𝕕 𝕞𝕠𝕣𝕟𝕚𝕟𝕘", &is_whitespace =>
+            vec![((0, 4), false), ((4, 5), true), ((5, 12), false)]
+        );
+        do_test!("aaa", &is_whitespace => vec![((0, 3), false)]);
     }
 }

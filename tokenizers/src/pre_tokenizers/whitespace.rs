@@ -72,6 +72,7 @@ mod tests {
                     ("?", (17, 18)),
                 ],
             ),
+            ("\n", vec![("", (0, 1))]),
         ];
         let pretok = Whitespace::default();
         for (s, res) in tests {
