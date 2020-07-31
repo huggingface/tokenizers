@@ -318,7 +318,7 @@ impl PyTokenizer {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        let model: PyObject = PyModel::new(Arc::new(BPE::default())).into_py(py);
+        let model: PyObject = PyModel::new(Arc::new(BPE::default().into())).into_py(py);
         let args = PyTuple::new(py, vec![model]);
         Ok(args)
     }
