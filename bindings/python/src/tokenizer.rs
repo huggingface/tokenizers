@@ -7,7 +7,7 @@ use pyo3::types::*;
 use pyo3::PyObjectProtocol;
 use tk::models::bpe::BPE;
 use tk::tokenizer::{
-    PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, Tokenizer, TruncationParams,
+    PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl, TruncationParams,
     TruncationStrategy,
 };
 use tokenizers as tk;
@@ -267,16 +267,16 @@ impl From<PreTokenizedEncodeInput> for tk::tokenizer::EncodeInput {
     }
 }
 
-type TokenizerImpl = Tokenizer<PyModel, PyNormalizer, PyPreTokenizer, PyPostProcessor, PyDecoder>;
+type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProcessor, PyDecoder>;
 
 #[pyclass(dict, module = "tokenizers", name=Tokenizer)]
 #[derive(Clone)]
 pub struct PyTokenizer {
-    tokenizer: TokenizerImpl,
+    tokenizer: Tokenizer,
 }
 
 impl PyTokenizer {
-    fn new(tokenizer: TokenizerImpl) -> Self {
+    fn new(tokenizer: Tokenizer) -> Self {
         PyTokenizer { tokenizer }
     }
 
@@ -331,7 +331,7 @@ impl PyTokenizer {
 
     #[staticmethod]
     fn from_file(path: &str) -> PyResult<Self> {
-        let tokenizer: PyResult<_> = ToPyResult(Tokenizer::from_file(path)).into();
+        let tokenizer: PyResult<_> = ToPyResult(TokenizerImpl::from_file(path)).into();
         Ok(Self {
             tokenizer: tokenizer?,
         })

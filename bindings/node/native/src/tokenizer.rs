@@ -345,7 +345,7 @@ pub struct PaddingParams(#[serde(with = "PaddingParamsDef")] pub tk::PaddingPara
 
 /// Tokenizer
 pub struct Tokenizer {
-    tokenizer: tk::Tokenizer,
+    tokenizer: tk::TokenizerImpl,
 
     /// Whether we have a running task. We keep this to make sure we never
     /// modify the underlying tokenizer while a task is running
@@ -1016,7 +1016,7 @@ declare_types! {
 pub fn tokenizer_from_string(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
     let s = cx.extract::<String>(0)?;
 
-    let tokenizer: tk::tokenizer::Tokenizer = s
+    let tokenizer: tk::tokenizer::TokenizerImpl = s
         .parse()
         .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
 
@@ -1030,7 +1030,7 @@ pub fn tokenizer_from_string(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
 pub fn tokenizer_from_file(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
     let s = cx.extract::<String>(0)?;
 
-    let tokenizer = tk::tokenizer::Tokenizer::from_file(s)
+    let tokenizer = tk::tokenizer::TokenizerImpl::from_file(s)
         .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
 
     let mut js_tokenizer = JsTokenizer::new::<_, JsTokenizer, _>(&mut cx, vec![])?;
