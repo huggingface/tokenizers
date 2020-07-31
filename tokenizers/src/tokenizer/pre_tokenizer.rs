@@ -1,4 +1,4 @@
-use crate::{NormalizedString, Offsets, Result};
+use crate::{NormalizedString, OffsetReferential, Offsets, Result};
 
 /// Wrapper for a subpart of a `NormalizedString`.
 ///
@@ -16,7 +16,15 @@ pub struct SubString {
     pub original_offsets: Offsets,
 }
 
-/// A `PreTokenizedString` takes care of splitting the input string in multiple
+impl SubString {
+    pub fn new(normalized: NormalizedString, original_offsets: Offsets) -> Self {
+        Self {
+            normalized,
+            original_offsets,
+        }
+    }
+}
+
 /// sub strings, while ensuring that they form a coherend group. This let us keep
 /// track of the offsets during the whole normalization and pre-tokenization steps.
 #[derive(Debug)]
@@ -42,52 +50,28 @@ impl PreTokenizedString {
         F: FnMut(usize, NormalizedString) -> Result<U>,
         U: IntoIterator<Item = NormalizedString>,
     {
-        self.parts = self
-            .parts
-            .drain(..)
-            .enumerate()
-            .flat_map(|(i, sub)| {
-                let original_len = sub.normalized.len_original();
-                let original_offsets = sub.original_offsets;
+        // new_parts is at least as big as self.parts
+        let mut new_parts = Vec::with_capacity(self.parts.len());
+        for (i, sub) in self.parts.drain(..).enumerate() {
+            let original_len = sub.normalized.len_original();
+            let original_offsets = sub.original_offsets;
 
-                let mut new_len = 0;
-                let res = split_fn(i, sub.normalized);
-                if let Err(e) = res {
-                    return itertools::Either::Left(std::iter::once(Err(e)));
-                }
-
-                let parts = res
-                    .unwrap()
-                    .into_iter()
-                    .map(|normalized| {
-                        let len = normalized.len_original();
-                        let new_s = SubString {
-                            normalized,
-                            original_offsets: (
-                                original_offsets.0 + new_len,
-                                original_offsets.0 + new_len + len,
-                            ),
-                        };
-                        new_len += len;
-                        new_s
-                    })
-                    .collect::<Vec<_>>();
-
-                if new_len != original_len {
-                    println!(
-                        "Original offsets: {:?}\nNew: {:?}",
-                        (0, original_len),
-                        (0, new_len)
-                    );
-                    itertools::Either::Left(std::iter::once(Err(
-                        "Split pre-tokenized string must represent the entire original string"
-                            .into(),
-                    )))
-                } else {
-                    itertools::Either::Right(parts.into_iter().map(Ok))
-                }
-            })
-            .collect::<Result<Vec<_>>>()?;
+            let mut new_len = 0;
+            new_parts.extend(split_fn(i, sub.normalized)?.into_iter().map(|normalized| {
+                let len = normalized.len_original();
+                let start = original_offsets.0 + new_len;
+                let end = original_offsets.0 + new_len + len;
+                let new_s = SubString::new(normalized, (start, end));
+                new_len += len;
+                new_s
+            }));
+            if original_len != new_len {
+                return Err(
+                    "Split pre-tokenized string must represent the entire original string".into(),
+                );
+            }
+        }
+        self.parts = new_parts;
 
         Ok(())
     }
@@ -98,19 +82,20 @@ impl PreTokenizedString {
 
     /// Returns a list of normalized string and the associated offsets,
     /// either in original or normalized referential
-    pub fn get_normalized(&self, original: bool) -> Vec<(&str, Offsets)> {
+    pub fn get_normalized(&self, offset_type: OffsetReferential) -> Vec<(&str, Offsets)> {
         let mut offset = 0;
         self.iter()
             .map(|sub| {
-                let offsets = if original {
-                    (
+                let offsets = match offset_type {
+                    OffsetReferential::Original => (
                         sub.original_offsets.0,
                         sub.original_offsets.0 + sub.normalized.len_original(),
-                    )
-                } else {
-                    let len = sub.normalized.len();
-                    offset += len;
-                    (offset - len, offset)
+                    ),
+                    OffsetReferential::Normalized => {
+                        let len = sub.normalized.len();
+                        offset += len;
+                        (offset - len, offset)
+                    }
                 };
 
                 (sub.normalized.get(), offsets)
@@ -176,4 +161,3 @@ impl<'a> IntoIterator for &'a PreTokenizedString {
         self.parts.iter()
     }
 }
-

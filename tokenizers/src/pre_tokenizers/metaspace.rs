@@ -6,24 +6,17 @@ use serde::{Deserialize, Serialize};
 /// splits on this character
 pub struct Metaspace {
     replacement: char,
-    str_bytes: [u8; 4],
+    str_rep: String,
     add_prefix_space: bool,
 }
 
 impl Metaspace {
     pub fn new(replacement: char, add_prefix_space: bool) -> Self {
-        let mut str_bytes = [0; 4];
-        replacement.encode_utf8(&mut str_bytes);
         Self {
             replacement,
-            str_bytes,
+            str_rep: replacement.to_string(),
             add_prefix_space,
         }
-    }
-
-    #[inline]
-    fn replacement(&self) -> &str {
-        unsafe { std::str::from_utf8_unchecked(&self.str_bytes[..self.replacement.len_utf8()]) }
     }
 }
 
@@ -38,14 +31,14 @@ impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         pretokenized.split(|_, mut normalized| {
             if self.add_prefix_space {
-                normalized.prepend(&self.replacement());
+                normalized.prepend(&self.str_rep);
             }
 
             Ok(normalized
                 .split(' ', SplitDelimiterBehavior::MergedWithNext)?
                 .into_iter()
                 .map(|mut normalized| {
-                    normalized.replace(' ', self.replacement())?;
+                    normalized.replace(' ', &self.str_rep)?;
                     Ok(normalized)
                 })
                 .collect::<Result<Vec<_>>>()?)
@@ -78,6 +71,7 @@ impl Decoder for Metaspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::OffsetReferential;
 
     #[test]
     fn basic() {
@@ -85,11 +79,11 @@ mod tests {
         let mut pretokenized = PreTokenizedString::from("Hey friend!");
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
-            pretokenized.get_normalized(false),
+            pretokenized.get_normalized(OffsetReferential::Normalized),
             vec![("▁Hey", (0, 4)), ("▁friend!", (4, 12))]
         );
         assert_eq!(
-            pretokenized.get_normalized(true),
+            pretokenized.get_normalized(OffsetReferential::Original),
             vec![("▁Hey", (0, 3)), ("▁friend!", (3, 11))]
         );
     }
@@ -100,7 +94,7 @@ mod tests {
         let mut pretokenized = PreTokenizedString::from("Hey   friend!");
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
-            pretokenized.get_normalized(false),
+            pretokenized.get_normalized(OffsetReferential::Normalized),
             vec![
                 ("▁Hey", (0, 4)),
                 ("▁", (4, 5)),
@@ -109,7 +103,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            pretokenized.get_normalized(true),
+            pretokenized.get_normalized(OffsetReferential::Original),
             vec![
                 ("▁Hey", (0, 3)),
                 ("▁", (3, 4)),

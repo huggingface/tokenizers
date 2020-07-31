@@ -45,7 +45,7 @@ impl PreTokenizer for WhitespaceSplit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tokenizer::PreTokenizer;
+    use crate::{OffsetReferential, PreTokenizer};
 
     #[test]
     fn basic() {
@@ -77,7 +77,10 @@ mod tests {
         for (s, res) in tests {
             let mut pretokenized = PreTokenizedString::from(s);
             pretok.pre_tokenize(&mut pretokenized).unwrap();
-            assert_eq!(pretokenized.get_normalized(true), res);
+            assert_eq!(
+                pretokenized.get_normalized(OffsetReferential::Original),
+                res
+            );
         }
     }
 
@@ -103,7 +106,10 @@ mod tests {
         for (s, res) in tests {
             let mut pretokenized = PreTokenizedString::from(s);
             pretok.pre_tokenize(&mut pretokenized).unwrap();
-            assert_eq!(pretokenized.get_normalized(true), res);
+            assert_eq!(
+                pretokenized.get_normalized(OffsetReferential::Original),
+                res
+            );
         }
     }
 }

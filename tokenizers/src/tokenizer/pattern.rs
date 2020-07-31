@@ -31,34 +31,18 @@ impl Pattern for &Regex {
             return Ok(vec![((0, 0), false)]);
         }
 
-        // Find initial matches
-        let matches = self
-            .find_iter(inside)
-            .map(|m| ((m.start(), m.end()), true))
-            .collect::<Vec<_>>();
-
-        // Then add missing splits inbetween
-        let mut start_offset = 0;
-        let mut splits = matches
-            .into_iter()
-            .flat_map(|((start, end), flag)| {
-                let mut splits = vec![];
-                if start_offset < start {
-                    splits.push(((start_offset, start), false));
-                }
-                splits.push(((start, end), flag));
-                start_offset = end;
-
-                splits
-            })
-            .collect::<Vec<_>>();
-
-        if let Some(((_, end), _)) = splits.iter().last().copied() {
-            if end < inside.len() {
-                splits.push(((end, inside.len()), false));
+        let mut prev = 0;
+        let mut splits = Vec::with_capacity(inside.len());
+        for m in self.find_iter(inside) {
+            if prev != m.start() {
+                splits.push(((prev, m.start()), false));
             }
+            splits.push(((m.start(), m.end()), true));
+            prev = m.end();
         }
-
+        if prev != inside.len() {
+            splits.push(((prev, inside.len()), false))
+        }
         Ok(splits)
     }
 }

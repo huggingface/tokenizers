@@ -454,24 +454,22 @@ impl AddedVocabulary {
         pretokenized
             .split(|i, mut sequence| {
                 if let Some(id) = indices[i] {
-                    multi_indices.push(vec![Some(id)]);
+                    multi_indices.push(Some(id));
                     Ok(itertools::Either::Left(std::iter::once(sequence)))
                 } else {
                     normalizer.map(|n| n.normalize(&mut sequence));
 
                     let (idcs, split) =
                         self.split_with_indices(sequence, &self.split_normalized_re);
-                    multi_indices.push(idcs);
+                    multi_indices.extend(idcs);
                     Ok(itertools::Either::Right(split))
                 }
             })
             .expect("AddedVocabulary bad split");
 
-        let indices = multi_indices.into_iter().flatten().collect::<Vec<_>>();
-
         pretokenized
             .into_iter()
-            .zip(indices)
+            .zip(multi_indices)
             .map(|(substring, id)| {
                 (
                     substring.normalized,
