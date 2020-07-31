@@ -14,17 +14,18 @@ use tk::{Model, Token};
 use tokenizers as tk;
 
 use super::error::ToPyResult;
+use tk::models::ModelWrapper;
 
 /// A Model represents some tokenization algorithm like BPE or Word
 /// This class cannot be constructed directly. Please use one of the concrete models.
 #[pyclass(module = "tokenizers.models", name=Model)]
 #[derive(Clone)]
 pub struct PyModel {
-    pub model: Arc<dyn Model>,
+    pub model: Arc<ModelWrapper>,
 }
 
 impl PyModel {
-    pub(crate) fn new(model: Arc<dyn Model>) -> Self {
+    pub(crate) fn new(model: Arc<ModelWrapper>) -> Self {
         PyModel { model }
     }
 }
@@ -83,7 +84,7 @@ impl PyModel {
         // Instantiate a default empty model. This doesn't really make sense, but we need
         // to be able to instantiate an empty model for pickle capabilities.
         Ok(PyModel {
-            model: Arc::new(BPE::default()),
+            model: Arc::new(BPE::default().into()),
         })
     }
 
@@ -175,7 +176,7 @@ impl PyBPE {
                 "Error while initializing BPE: {}",
                 e
             ))),
-            Ok(bpe) => Ok((PyBPE {}, PyModel::new(Arc::new(bpe)))),
+            Ok(bpe) => Ok((PyBPE {}, PyModel::new(Arc::new(bpe.into())))),
         }
     }
 }
@@ -220,7 +221,7 @@ impl PyWordPiece {
                     "Error while initializing WordPiece",
                 ))
             }
-            Ok(wordpiece) => Ok((PyWordPiece {}, PyModel::new(Arc::new(wordpiece)))),
+            Ok(wordpiece) => Ok((PyWordPiece {}, PyModel::new(Arc::new(wordpiece.into())))),
         }
     }
 }
@@ -253,10 +254,10 @@ impl PyWordLevel {
                         "Error while initializing WordLevel",
                     ))
                 }
-                Ok(model) => Ok((PyWordLevel {}, PyModel::new(Arc::new(model)))),
+                Ok(model) => Ok((PyWordLevel {}, PyModel::new(Arc::new(model.into())))),
             }
         } else {
-            Ok((PyWordLevel {}, PyModel::new(Arc::new(WordLevel::default()))))
+            Ok((PyWordLevel {}, PyModel::new(Arc::new(WordLevel::default().into()))))
         }
     }
 }

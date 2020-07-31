@@ -70,7 +70,7 @@ pub trait PreTokenizer: Send + Sync {
 
 #[typetag::serde(tag = "type")]
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
-pub trait Model: Send + Sync {
+pub trait Model {
     /// Tokenize the given sequence into multiple underlying `Token`. The `offsets` on the `Token`
     /// are expected to be relative to the given sequence.
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>>;
@@ -709,7 +709,10 @@ where
         &self,
         inputs: Vec<E>,
         add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>> {
+    ) -> Result<Vec<Encoding>>
+    where
+        M: Send + Sync,
+    {
         let mut encodings = inputs
             .into_maybe_par_iter()
             .map(|input| self.encode(input, add_special_tokens))
@@ -749,7 +752,10 @@ where
         &self,
         sentences: Vec<Vec<u32>>,
         skip_special_tokens: bool,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Vec<String>>
+    where
+        M: Send + Sync,
+    {
         sentences
             .into_maybe_par_iter()
             .map(|sentence| self.decode(sentence, skip_special_tokens))
@@ -761,6 +767,7 @@ where
     where
         T: Trainer<Model = MN>,
         MN: Model,
+        M: Send + Sync,
     {
         let max_read = 1_000_000;
         let mut len = 0;
@@ -849,6 +856,7 @@ where
     where
         T: Trainer<Model = TM>,
         TM: Model,
+        M: Send + Sync,
     {
         let words = self.word_count(trainer, files)?;
 
