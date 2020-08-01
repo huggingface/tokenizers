@@ -36,7 +36,8 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[serde(untagged)]
 pub enum ModelWrapper {
     WordPiece(WordPiece),
     BPE(BPE),
@@ -47,7 +48,6 @@ impl_enum_from!(WordLevel, ModelWrapper, WordLevel);
 impl_enum_from!(WordPiece, ModelWrapper, WordPiece);
 impl_enum_from!(BPE, ModelWrapper, BPE);
 
-#[typetag::serde]
 impl Model for ModelWrapper {
     fn tokenize(&self, tokens: &str) -> Result<Vec<Token>> {
         use ModelWrapper::*;

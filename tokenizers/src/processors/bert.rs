@@ -1,7 +1,8 @@
 use crate::tokenizer::{Encoding, PostProcessor, Result};
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Serialize, Serializer};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct BertProcessing {
     sep: (String, u32),
     cls: (String, u32),
@@ -13,7 +14,6 @@ impl BertProcessing {
     }
 }
 
-#[typetag::serde]
 impl PostProcessor for BertProcessing {
     fn added_tokens(&self, is_pair: bool) -> usize {
         if is_pair {
@@ -136,5 +136,18 @@ impl PostProcessor for BertProcessing {
         }
 
         Ok(new_encoding)
+    }
+}
+
+impl Serialize for BertProcessing {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut m = serializer.serialize_struct("BertProcessing", 3)?;
+        m.serialize_field("type", "BertProcessing")?;
+        m.serialize_field("sep", &self.sep)?;
+        m.serialize_field("cls", &self.cls)?;
+        m.end()
     }
 }

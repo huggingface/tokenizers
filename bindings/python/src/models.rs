@@ -6,7 +6,7 @@ use std::sync::Arc;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use tk::models::bpe::BPE;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::WordPiece;
@@ -19,8 +19,9 @@ use tk::models::ModelWrapper;
 /// A Model represents some tokenization algorithm like BPE or Word
 /// This class cannot be constructed directly. Please use one of the concrete models.
 #[pyclass(module = "tokenizers.models", name=Model)]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PyModel {
+    #[serde(flatten)]
     pub model: Arc<ModelWrapper>,
 }
 
@@ -28,29 +29,19 @@ impl PyModel {
     pub(crate) fn new(model: Arc<ModelWrapper>) -> Self {
         PyModel { model }
     }
-}
 
-impl Serialize for PyModel {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.model.serialize(serializer)
+    pub(crate) fn get_as_subtype(&self) -> PyResult<PyObject> {
+        let base = self.clone();
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        match self.model.as_ref() {
+            ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base)).map(Into::into),
+            ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base)).map(Into::into),
+            ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base)).map(Into::into),
+        }
     }
 }
 
-impl<'de> Deserialize<'de> for PyModel {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(PyModel {
-            model: Arc::deserialize(deserializer)?,
-        })
-    }
-}
-
-#[typetag::serde]
 impl Model for PyModel {
     fn tokenize(&self, tokens: &str) -> tk::Result<Vec<Token>> {
         self.model.tokenize(tokens)
@@ -257,7 +248,55 @@ impl PyWordLevel {
                 Ok(model) => Ok((PyWordLevel {}, PyModel::new(Arc::new(model.into())))),
             }
         } else {
-            Ok((PyWordLevel {}, PyModel::new(Arc::new(WordLevel::default().into()))))
+            Ok((
+                PyWordLevel {},
+                PyModel::new(Arc::new(WordLevel::default().into())),
+            ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::models::PyModel;
+    use pyo3::{AsPyRef, Python};
+    use std::sync::Arc;
+    use tk::models::bpe::BPE;
+    use tk::models::ModelWrapper;
+
+    #[test]
+    fn get_subtype() {
+        let py_model = PyModel::new(Arc::new(BPE::default().into()));
+        let py_bpe = py_model.get_as_subtype().unwrap();
+        let gil = Python::acquire_gil();
+        assert_eq!(
+            "tokenizers.models.BPE",
+            py_bpe.as_ref(gil.python()).get_type().name()
+        );
+    }
+
+    #[test]
+    fn serialize() {
+        let rs_bpe = BPE::default();
+        let rs_bpe_ser = serde_json::to_string(&rs_bpe).unwrap();
+        let rs_wrapper: ModelWrapper = rs_bpe.clone().into();
+        let rs_wrapper_ser = serde_json::to_string(&rs_wrapper).unwrap();
+
+        let py_model = PyModel::new(Arc::new(rs_wrapper.clone()));
+        let py_ser = serde_json::to_string(&py_model).unwrap();
+        assert_eq!(py_ser, rs_bpe_ser);
+        assert_eq!(py_ser, rs_wrapper_ser);
+
+        let py_model: PyModel = serde_json::from_str(&rs_bpe_ser).unwrap();
+        match py_model.model.as_ref() {
+            ModelWrapper::BPE(_) => (),
+            _ => panic!("Expected Bert postprocessor."),
+        }
+
+        let py_model: PyModel = serde_json::from_str(&rs_wrapper_ser).unwrap();
+        match py_model.model.as_ref() {
+            ModelWrapper::BPE(_) => (),
+            _ => panic!("Expected Bert postprocessor."),
         }
     }
 }

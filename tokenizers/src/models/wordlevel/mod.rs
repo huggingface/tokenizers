@@ -84,7 +84,7 @@ impl WordLevelBuilder {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub struct WordLevel {
     vocab: HashMap<String, u32>,
     vocab_r: HashMap<u32, String>,
@@ -142,7 +142,6 @@ impl Default for WordLevel {
     }
 }
 
-#[typetag::serde]
 impl Model for WordLevel {
     fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
         Ok(vec![Token {

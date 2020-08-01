@@ -9,47 +9,49 @@ use tk::decoders::bpe::BPEDecoder;
 use tk::decoders::byte_level::ByteLevel;
 use tk::decoders::metaspace::Metaspace;
 use tk::decoders::wordpiece::WordPiece;
+use tk::decoders::DecoderWrapper;
 use tk::Decoder;
 use tokenizers as tk;
 
 use super::error::{PyError, ToPyResult};
 
 #[pyclass(dict, module = "tokenizers.decoders", name=Decoder)]
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct PyDecoder {
-    pub decoder: Arc<dyn Decoder>,
+    #[serde(flatten)]
+    pub(crate) decoder: PyDecoderWrapper,
 }
 
 impl PyDecoder {
-    pub fn new(decoder: Arc<dyn Decoder>) -> Self {
+    pub(crate) fn new(decoder: PyDecoderWrapper) -> Self {
         PyDecoder { decoder }
+    }
+
+    pub(crate) fn get_as_subtype(&self) -> PyResult<PyObject> {
+        let base = self.clone();
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        match &self.decoder {
+            PyDecoderWrapper::Custom(_) => Py::new(py, base).map(Into::into),
+            PyDecoderWrapper::Wrapped(inner) => match inner.as_ref() {
+                DecoderWrapper::Metaspace(_) => {
+                    Py::new(py, (PyMetaspaceDec {}, base)).map(Into::into)
+                }
+                DecoderWrapper::WordPiece(_) => {
+                    Py::new(py, (PyWordPieceDec {}, base)).map(Into::into)
+                }
+                DecoderWrapper::ByteLevel(_) => {
+                    Py::new(py, (PyByteLevelDec {}, base)).map(Into::into)
+                }
+                DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base)).map(Into::into),
+            },
+        }
     }
 }
 
-#[typetag::serde]
 impl Decoder for PyDecoder {
     fn decode(&self, tokens: Vec<String>) -> tk::Result<String> {
         self.decoder.decode(tokens)
-    }
-}
-
-impl Serialize for PyDecoder {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.decoder.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for PyDecoder {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(PyDecoder {
-            decoder: Arc::deserialize(deserializer)?,
-        })
     }
 }
 
@@ -57,7 +59,7 @@ impl<'de> Deserialize<'de> for PyDecoder {
 impl PyDecoder {
     #[staticmethod]
     fn custom(decoder: PyObject) -> PyResult<Self> {
-        let decoder = CustomDecoder::new(decoder).map(Arc::new)?;
+        let decoder = PyDecoderWrapper::Custom(CustomDecoder::new(decoder).map(Arc::new)?);
         Ok(PyDecoder::new(decoder))
     }
 
@@ -97,10 +99,7 @@ pub struct PyByteLevelDec {}
 impl PyByteLevelDec {
     #[new]
     fn new() -> PyResult<(Self, PyDecoder)> {
-        Ok((
-            PyByteLevelDec {},
-            PyDecoder::new(Arc::new(ByteLevel::default())),
-        ))
+        Ok((PyByteLevelDec {}, ByteLevel::default().into()))
     }
 }
 
@@ -123,10 +122,7 @@ impl PyWordPieceDec {
             }
         }
 
-        Ok((
-            PyWordPieceDec {},
-            PyDecoder::new(Arc::new(WordPiece::new(prefix, cleanup))),
-        ))
+        Ok((PyWordPieceDec {}, WordPiece::new(prefix, cleanup).into()))
     }
 }
 
@@ -158,7 +154,7 @@ impl PyMetaspaceDec {
 
         Ok((
             PyMetaspaceDec {},
-            PyDecoder::new(Arc::new(Metaspace::new(replacement, add_prefix_space))),
+            Metaspace::new(replacement, add_prefix_space).into(),
         ))
     }
 }
@@ -182,24 +178,20 @@ impl PyBPEDecoder {
             }
         }
 
-        Ok((
-            PyBPEDecoder {},
-            PyDecoder::new(Arc::new(BPEDecoder::new(suffix))),
-        ))
+        Ok((PyBPEDecoder {}, BPEDecoder::new(suffix).into()))
     }
 }
 
-struct CustomDecoder {
+pub(crate) struct CustomDecoder {
     class: PyObject,
 }
 
 impl CustomDecoder {
-    pub fn new(class: PyObject) -> PyResult<Self> {
+    pub(crate) fn new(class: PyObject) -> PyResult<Self> {
         Ok(CustomDecoder { class })
     }
 }
 
-#[typetag::serde]
 impl Decoder for CustomDecoder {
     fn decode(&self, tokens: Vec<String>) -> tk::Result<String> {
         let gil = Python::acquire_gil();
@@ -238,5 +230,85 @@ impl<'de> Deserialize<'de> for CustomDecoder {
         D: Deserializer<'de>,
     {
         Err(D::Error::custom("PyDecoder cannot be deserialized"))
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub(crate) enum PyDecoderWrapper {
+    Custom(Arc<CustomDecoder>),
+    Wrapped(Arc<DecoderWrapper>),
+}
+
+impl<I> From<I> for PyDecoderWrapper
+where
+    I: Into<DecoderWrapper>,
+{
+    fn from(norm: I) -> Self {
+        PyDecoderWrapper::Wrapped(Arc::new(norm.into()))
+    }
+}
+
+impl<I> From<I> for PyDecoder
+where
+    I: Into<DecoderWrapper>,
+{
+    fn from(dec: I) -> Self {
+        PyDecoder {
+            decoder: dec.into().into(),
+        }
+    }
+}
+
+impl Decoder for PyDecoderWrapper {
+    fn decode(&self, tokens: Vec<String>) -> tk::Result<String> {
+        match self {
+            PyDecoderWrapper::Wrapped(inner) => inner.decode(tokens),
+            PyDecoderWrapper::Custom(inner) => inner.decode(tokens),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use pyo3::{AsPyRef, Py, PyObject, Python};
+    use tk::decoders::metaspace::Metaspace;
+    use tk::decoders::DecoderWrapper;
+
+    use crate::decoders::{CustomDecoder, PyDecoder, PyDecoderWrapper};
+
+    #[test]
+    fn get_subtype() {
+        let py_dec = PyDecoder::new(Metaspace::default().into());
+        let py_meta = py_dec.get_as_subtype().unwrap();
+        let gil = Python::acquire_gil();
+        assert_eq!(
+            "tokenizers.decoders.Metaspace",
+            py_meta.as_ref(gil.python()).get_type().name()
+        );
+    }
+
+    #[test]
+    fn serialize() {
+        let py_wrapped: PyDecoderWrapper = Metaspace::default().into();
+        let py_ser = serde_json::to_string(&py_wrapped).unwrap();
+        let rs_wrapped = DecoderWrapper::Metaspace(Metaspace::default());
+        let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
+        assert_eq!(py_ser, rs_ser);
+        let py_dec: PyDecoder = serde_json::from_str(&rs_ser).unwrap();
+        match py_dec.decoder {
+            PyDecoderWrapper::Wrapped(msp) => match msp.as_ref() {
+                DecoderWrapper::Metaspace(_) => {}
+                _ => panic!("Expected Whitespace"),
+            },
+            _ => panic!("Expected wrapped, not custom."),
+        }
+        let gil = Python::acquire_gil();
+        let py_msp = PyDecoder::new(Metaspace::default().into());
+        let obj: PyObject = Py::new(gil.python(), py_msp).unwrap().into();
+        let py_seq = PyDecoderWrapper::Custom(Arc::new(CustomDecoder::new(obj).unwrap()));
+        assert!(serde_json::to_string(&py_seq).is_err());
     }
 }

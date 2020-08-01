@@ -1,7 +1,8 @@
 use crate::tokenizer::{Decoder, Result};
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Serialize, Serializer};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Clone, Debug)]
 /// The WordPiece decoder takes care of decoding a list of wordpiece tokens
 /// back into a readable string.
 pub struct WordPiece {
@@ -26,7 +27,6 @@ impl Default for WordPiece {
     }
 }
 
-#[typetag::serde]
 impl Decoder for WordPiece {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
         let mut output = tokens.join(" ").replace(&format!(" {}", self.prefix), "");
@@ -46,5 +46,18 @@ impl Decoder for WordPiece {
         }
 
         Ok(output)
+    }
+}
+
+impl Serialize for WordPiece {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut m = serializer.serialize_struct("BPEDecoder", 3)?;
+        m.serialize_field("type", "BPEDecoder")?;
+        m.serialize_field("prefix", &self.prefix)?;
+        m.serialize_field("cleanup", &self.cleanup)?;
+        m.end()
     }
 }

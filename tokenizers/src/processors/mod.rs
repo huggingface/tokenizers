@@ -11,14 +11,14 @@ use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
 use crate::{Encoding, PostProcessor, Result};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
 pub enum PostProcessorWrapper {
     Bert(BertProcessing),
     ByteLevel(ByteLevel),
     Roberta(RobertaProcessing),
 }
 
-#[typetag::serde]
 impl PostProcessor for PostProcessorWrapper {
     fn added_tokens(&self, is_pair: bool) -> usize {
         match self {

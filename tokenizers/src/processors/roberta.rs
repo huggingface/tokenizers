@@ -1,8 +1,9 @@
 use crate::processors::byte_level::process_offsets;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Serialize, Serializer};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct RobertaProcessing {
     sep: (String, u32),
     cls: (String, u32),
@@ -39,7 +40,6 @@ impl RobertaProcessing {
     }
 }
 
-#[typetag::serde]
 impl PostProcessor for RobertaProcessing {
     fn added_tokens(&self, is_pair: bool) -> usize {
         if is_pair {
@@ -189,5 +189,20 @@ impl PostProcessor for RobertaProcessing {
         }
 
         Ok(new_encoding)
+    }
+}
+
+impl Serialize for RobertaProcessing {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut m = serializer.serialize_struct("RobertaProcessing", 3)?;
+        m.serialize_field("type", "RobertaProcessing")?;
+        m.serialize_field("sep", &self.sep)?;
+        m.serialize_field("cls", &self.cls)?;
+        m.serialize_field("trim_offsets", &self.trim_offsets)?;
+        m.serialize_field("add_prefix_space", &self.add_prefix_space)?;
+        m.end()
     }
 }
