@@ -11,3 +11,4 @@ check-style:
 # Launch the test suite
 test:
 	python -m pytest -s -v tests
+	cargo test --no-default-features

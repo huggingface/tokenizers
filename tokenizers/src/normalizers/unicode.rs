@@ -1,9 +1,7 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Copy, Clone, Debug)]
 pub struct NFD;
-#[typetag::serde]
 impl Normalizer for NFD {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         normalized.nfd();
@@ -11,9 +9,8 @@ impl Normalizer for NFD {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Copy, Clone, Debug)]
 pub struct NFKD;
-#[typetag::serde]
 impl Normalizer for NFKD {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         normalized.nfkd();
@@ -21,9 +18,8 @@ impl Normalizer for NFKD {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Copy, Clone, Debug)]
 pub struct NFC;
-#[typetag::serde]
 impl Normalizer for NFC {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         normalized.nfc();
@@ -31,12 +27,16 @@ impl Normalizer for NFC {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Copy, Clone, Debug)]
 pub struct NFKC;
-#[typetag::serde]
 impl Normalizer for NFKC {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         normalized.nfkc();
         Ok(())
     }
 }
+
+impl_serde_unit_struct!(NFCVisitor, NFC);
+impl_serde_unit_struct!(NFCKVisitor, NFKC);
+impl_serde_unit_struct!(NFKDVisitor, NFKD);
+impl_serde_unit_struct!(NFDVisitor, NFD);

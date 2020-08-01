@@ -13,7 +13,8 @@ use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::{Decoder, Result};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
 pub enum DecoderWrapper {
     BPE(BPEDecoder),
     ByteLevel(ByteLevel),
@@ -21,7 +22,6 @@ pub enum DecoderWrapper {
     Metaspace(Metaspace),
 }
 
-#[typetag::serde]
 impl Decoder for DecoderWrapper {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
         match self {

@@ -27,10 +27,6 @@
 //! ```no_run
 //! use tokenizers::tokenizer::{Result, Tokenizer, EncodeInput};
 //! use tokenizers::models::bpe::BPE;
-//! use tokenizers::normalizers::NormalizerWrapper;
-//! use tokenizers::pre_tokenizers::PreTokenizerWrapper;
-//! use tokenizers::processors::PostProcessorWrapper;
-//! use tokenizers::decoders::DecoderWrapper;
 //!
 //! fn main() -> Result<()> {
 //! let bpe_builder = BPE::from_files("./path/to/vocab.json", "./path/to/merges.txt");

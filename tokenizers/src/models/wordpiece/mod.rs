@@ -125,7 +125,7 @@ impl WordPieceBuilder {
 /// A
 /// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 /// model.
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct WordPiece {
     vocab: Vocab,
     vocab_r: VocabR,
@@ -198,7 +198,6 @@ impl WordPiece {
     }
 }
 
-#[typetag::serde]
 impl Model for WordPiece {
     fn get_vocab(&self) -> &HashMap<String, u32> {
         &self.vocab

@@ -3,16 +3,18 @@ pub mod strip;
 pub mod unicode;
 pub mod utils;
 
+pub use crate::normalizers::bert::BertNormalizer;
+pub use crate::normalizers::strip::Strip;
+pub use crate::normalizers::unicode::{NFC, NFD, NFKC, NFKD};
+pub use crate::normalizers::utils::{Lowercase, Sequence};
+
 use serde::{Deserialize, Serialize};
 
-use crate::normalizers::bert::BertNormalizer;
-use crate::normalizers::strip::Strip;
-use crate::normalizers::unicode::{NFC, NFD, NFKC, NFKD};
-use crate::normalizers::utils::{Lowercase, Sequence};
 use crate::{NormalizedString, Normalizer};
 
 /// Wrapper for known Normalizers.
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
 pub enum NormalizerWrapper {
     BertNormalizer(BertNormalizer),
     StripNormalizer(Strip),
@@ -24,7 +26,6 @@ pub enum NormalizerWrapper {
     Lowercase(Lowercase),
 }
 
-#[typetag::serde]
 impl Normalizer for NormalizerWrapper {
     fn normalize(&self, normalized: &mut NormalizedString) -> crate::Result<()> {
         match self {

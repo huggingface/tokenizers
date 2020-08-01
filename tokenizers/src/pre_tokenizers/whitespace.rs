@@ -1,12 +1,16 @@
+use std::fmt;
+
+use regex::Regex;
+use serde::de::{Error, Visitor};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
-use regex::Regex;
-use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Whitespace {
-    #[serde(default = "default_regex", skip)]
     re: Regex,
 }
 
@@ -22,7 +26,6 @@ impl Default for Whitespace {
     }
 }
 
-#[typetag::serde]
 impl PreTokenizer for Whitespace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         pretokenized.split(|_, normalized| {
@@ -31,9 +34,50 @@ impl PreTokenizer for Whitespace {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+// manually implement serialize / deserialize because Whitespace is not a unit-struct but is
+// serialized like one.
+impl Serialize for Whitespace {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut m = serializer.serialize_struct("Whitespace", 1)?;
+        m.serialize_field("type", "Whitespace")?;
+        m.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Whitespace {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(WhitespaceVisitor)
+    }
+}
+struct WhitespaceVisitor;
+impl<'de> Visitor<'de> for WhitespaceVisitor {
+    type Value = Whitespace;
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "Whitespace")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        match map.next_entry::<&str, &str>()? {
+            Some(("type", "Whitespace")) => Ok(Whitespace::default()),
+            Some((_, ty)) => Err(Error::custom(&format!("Expected Whitespace, got {}", ty))),
+            None => Err(Error::custom("Expected type: Whitespace")),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
 pub struct WhitespaceSplit;
-#[typetag::serde]
+impl_serde_unit_struct!(WhitespaceSplitVisitor, WhitespaceSplit);
+
 impl PreTokenizer for WhitespaceSplit {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         pretokenized.split(|_, normalized| {

@@ -104,7 +104,7 @@ fn iter_bench_train<T>(
     files: Vec<String>,
 ) -> Duration
 where
-    T: Trainer<Model = ModelWrapper>,
+    T: Trainer<Model = ModelWrapper> + Sync,
 {
     let mut tokenizer = tokenizer.into_inner();
     let mut duration = Duration::new(0, 0);

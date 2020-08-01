@@ -13,7 +13,8 @@ use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use crate::{PreTokenizedString, PreTokenizer};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
 pub enum PreTokenizerWrapper {
     BertPreTokenizer(BertPreTokenizer),
     ByteLevel(ByteLevel),
@@ -23,7 +24,6 @@ pub enum PreTokenizerWrapper {
     WhitespaceSplit(WhitespaceSplit),
 }
 
-#[typetag::serde]
 impl PreTokenizer for PreTokenizerWrapper {
     fn pre_tokenize(&self, normalized: &mut PreTokenizedString) -> crate::Result<()> {
         match self {
