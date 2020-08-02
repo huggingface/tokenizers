@@ -44,13 +44,13 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2020-05-18-i686-pc-windows-msvc
+          toolchain: stable-i686-pc-windows-msvc
           override: true
 
       - name: Override toolchain
         shell: bash
         working-directory: ./bindings/python
-        run: echo "nightly-2020-05-18-i686-pc-windows-msvc" > rust-toolchain
+        run: echo "stable-i686-pc-windows-msvc" > rust-toolchain
 
 
       - name: Install Python
@@ -78,7 +78,7 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: stable
           components: rustfmt
 
       # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
@@ -99,7 +99,7 @@ jobs:
       - name: Lint with RustFmt
         uses: actions-rs/cargo@v1
         with:
-          toolchain: nightly
+          toolchain: stable
           command: fmt
           args: --manifest-path ./bindings/python/Cargo.toml -- --check
 
