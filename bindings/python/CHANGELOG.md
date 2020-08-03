@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - [#333]: Fix deserialization of `AddedToken`, where the content was not restored properly
+- [#362]: Fix training deadlock with Python components.
 
 ### Changed
 - [#329]: Improved warning and behavior when we detect a fork
