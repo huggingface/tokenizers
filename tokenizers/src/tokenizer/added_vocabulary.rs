@@ -313,6 +313,10 @@ impl AddedVocabulary {
         sentence: &str,
         split_re: &'a MatchingSet,
     ) -> Vec<(Option<u32>, ByteOffsets)> {
+        if sentence.is_empty() {
+            return vec![(None, (0, 0))];
+        }
+
         let mut matches = split_re
             .0
             .matches(sentence)
@@ -459,10 +463,14 @@ impl AddedVocabulary {
                 } else {
                     normalizer.map(|n| n.normalize(&mut sequence));
 
-                    let (idcs, split) =
-                        self.split_with_indices(sequence, &self.split_normalized_re);
-                    multi_indices.extend(idcs);
-                    Ok(itertools::Either::Right(split))
+                    if sequence.is_empty() {
+                        Ok(itertools::Either::Left(std::iter::once(sequence)))
+                    } else {
+                        let (idcs, split) =
+                            self.split_with_indices(sequence, &self.split_normalized_re);
+                        multi_indices.extend(idcs);
+                        Ok(itertools::Either::Right(split))
+                    }
                 }
             })
             .expect("AddedVocabulary bad split");
@@ -733,6 +741,6 @@ mod tests {
     fn empty_matches() {
         let vocab = AddedVocabulary::new();
         let matches = vocab.find_matches("", &vocab.split_re);
-        assert_eq!(matches, vec![]);
+        assert_eq!(matches, vec![(None, (0, 0))]);
     }
 }
