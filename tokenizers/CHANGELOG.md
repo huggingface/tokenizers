@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 special tokens and/or added tokens in the sequence).
 - [#286]: Fix various crash when training a BPE model
 - [#309]: Fixed a few bugs related to additional vocabulary/tokens
+- [#363]: Fix panic from unwrapping `File::open` in `count_words`
 
 ### Changed
 - [#234]: Completely changed the alignement mappings available on `Encoding`. Previous mappings

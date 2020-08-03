@@ -586,10 +586,12 @@ impl Tokenizer {
         files: Vec<String>,
     ) -> Result<HashMap<String, u32>> {
         let max_read = 1_000_000;
-        let len: u64 = files
-            .iter()
-            .map(|filename| File::open(filename).unwrap().metadata().unwrap().len() as u64)
-            .sum();
+        let mut len = 0;
+        for file in files.iter() {
+            len += File::open(file)
+                .and_then(|f| f.metadata())
+                .map(|m| m.len())?;
+        }
 
         let progress = if trainer.should_show_progress() {
             let progress = ProgressBar::new(len);
