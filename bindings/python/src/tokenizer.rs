@@ -583,12 +583,15 @@ impl Tokenizer {
                 Ok(input)
             })
             .collect::<PyResult<Vec<tk::EncodeInput>>>()?;
-        ToPyResult(
-            self.tokenizer
-                .encode_batch(input, add_special_tokens)
-                .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
-        )
-        .into()
+        let gil = Python::acquire_gil();
+        gil.python().allow_threads(|| {
+            ToPyResult(
+                self.tokenizer
+                    .encode_batch(input, add_special_tokens)
+                    .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
+            )
+            .into()
+        })
     }
 
     fn decode(&self, ids: Vec<u32>, skip_special_tokens: Option<bool>) -> PyResult<String> {
@@ -604,11 +607,14 @@ impl Tokenizer {
         sentences: Vec<Vec<u32>>,
         skip_special_tokens: Option<bool>,
     ) -> PyResult<Vec<String>> {
-        ToPyResult(
-            self.tokenizer
-                .decode_batch(sentences, skip_special_tokens.unwrap_or(true)),
-        )
-        .into()
+        let gil = Python::acquire_gil();
+        gil.python().allow_threads(|| {
+            ToPyResult(
+                self.tokenizer
+                    .decode_batch(sentences, skip_special_tokens.unwrap_or(true)),
+            )
+            .into()
+        })
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
@@ -661,11 +667,14 @@ impl Tokenizer {
 
     fn train(&mut self, trainer: &Trainer, files: Vec<String>) -> PyResult<()> {
         trainer.trainer.execute(|trainer| {
-            if let Err(e) = self.tokenizer.train(trainer, files) {
-                Err(exceptions::Exception::py_err(format!("{}", e)))
-            } else {
-                Ok(())
-            }
+            let gil = Python::acquire_gil();
+            gil.python().allow_threads(|| {
+                if let Err(e) = self.tokenizer.train(trainer, files) {
+                    Err(exceptions::Exception::py_err(format!("{}", e)))
+                } else {
+                    Ok(())
+                }
+            })
         })
     }
 
