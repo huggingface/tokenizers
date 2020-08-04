@@ -7,7 +7,7 @@ use crate::models::{JsModel, Model};
 use crate::normalizers::{JsNormalizer, Normalizer};
 use crate::pre_tokenizers::{JsPreTokenizer, PreTokenizer};
 use crate::processors::{JsPostProcessor, Processor};
-use crate::tasks::tokenizer::{DecodeTask, EncodeTask, WorkingTokenizer};
+use crate::tasks::tokenizer::{DecodeTask, EncodeTask};
 use crate::trainers::JsTrainer;
 use neon::prelude::*;
 use std::sync::{Arc, RwLock};
@@ -348,8 +348,9 @@ pub struct PaddingParams(#[serde(with = "PaddingParamsDef")] pub tk::PaddingPara
 type Tokenizer = TokenizerImpl<Model, Normalizer, PreTokenizer, Processor, Decoder>;
 
 /// Tokenizer
+#[derive(Clone)]
 pub struct RsTokenizer {
-    tokenizer: Arc<RwLock<Tokenizer>>,
+    pub(crate) tokenizer: Arc<RwLock<Tokenizer>>,
 }
 
 declare_types! {
@@ -506,9 +507,10 @@ declare_types! {
 
             let this = cx.this();
             let guard = cx.lock();
-            let worker = this.borrow(&guard).prepare_for_task();
 
-            let task = EncodeTask::Single(worker, Some(input), options.add_special_tokens);
+            let task = EncodeTask::Single(
+                this.borrow(&guard).clone(), Some(input), options.add_special_tokens
+            );
             task.schedule(callback);
 
             Ok(cx.undefined().upcast())
@@ -558,9 +560,10 @@ declare_types! {
 
             let this = cx.this();
             let guard = cx.lock();
-            let worker = this.borrow(&guard).prepare_for_task();
 
-            let task = EncodeTask::Batch(worker, Some(inputs), options.add_special_tokens);
+            let task = EncodeTask::Batch(
+                this.borrow(&guard).clone(), Some(inputs), options.add_special_tokens
+            );
             task.schedule(callback);
 
             Ok(cx.undefined().upcast())
@@ -575,9 +578,10 @@ declare_types! {
 
             let this = cx.this();
             let guard = cx.lock();
-            let worker = this.borrow(&guard).prepare_for_task();
 
-            let task = DecodeTask::Single(worker, ids, skip_special_tokens);
+            let task = DecodeTask::Single(
+                this.borrow(&guard).clone(), ids, skip_special_tokens
+            );
             task.schedule(callback);
 
             Ok(cx.undefined().upcast())
@@ -592,9 +596,10 @@ declare_types! {
 
             let this = cx.this();
             let guard = cx.lock();
-            let worker = this.borrow(&guard).prepare_for_task();
 
-            let task = DecodeTask::Batch(worker, sentences, skip_special_tokens);
+            let task = DecodeTask::Batch(
+                this.borrow(&guard).clone(), sentences, skip_special_tokens
+            );
             task.schedule(callback);
 
             Ok(cx.undefined().upcast())
