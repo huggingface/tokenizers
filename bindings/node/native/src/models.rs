@@ -13,8 +13,9 @@ use tk::Model as ModelTrait;
 use tk::Token;
 
 /// Model
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Model {
+    #[serde(flatten)]
     pub model: Option<Arc<ModelWrapper>>,
 }
 
