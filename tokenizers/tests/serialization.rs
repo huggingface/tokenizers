@@ -125,6 +125,15 @@ fn pretoks() {
     // wrapped serializes same way as inner
     let ser_wrapped = serde_json::to_string(&ch_wrapped).unwrap();
     assert_eq!(ser_wrapped, ch_ser);
+
+    let wsp = Whitespace::default();
+    let wsp_ser = serde_json::to_string(&wsp).unwrap();
+    serde_json::from_str::<Whitespace>(&wsp_ser).unwrap();
+    let err: Result<BertPreTokenizer, _> = serde_json::from_str(&wsp_ser);
+    assert!(
+        err.is_err(),
+        "BertPreTokenizer shouldn't be deserializable from Whitespace"
+    );
 }
 
 #[test]

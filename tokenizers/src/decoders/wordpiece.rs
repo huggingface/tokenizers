@@ -1,10 +1,11 @@
 use crate::tokenizer::{Decoder, Result};
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
 
-#[derive(Deserialize, Clone, Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Deserialize, Clone, Debug, Serialize)]
 /// The WordPiece decoder takes care of decoding a list of wordpiece tokens
 /// back into a readable string.
+#[serde(tag = "type")]
 pub struct WordPiece {
     /// The prefix to be used for continuing subwords
     prefix: String,
@@ -46,18 +47,5 @@ impl Decoder for WordPiece {
         }
 
         Ok(output)
-    }
-}
-
-impl Serialize for WordPiece {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut m = serializer.serialize_struct("BPEDecoder", 3)?;
-        m.serialize_field("type", "BPEDecoder")?;
-        m.serialize_field("prefix", &self.prefix)?;
-        m.serialize_field("cleanup", &self.cleanup)?;
-        m.end()
     }
 }

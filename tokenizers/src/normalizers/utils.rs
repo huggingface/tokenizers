@@ -1,25 +1,14 @@
+use serde::{Deserialize, Serialize};
+
 use crate::normalizers::NormalizerWrapper;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize, Debug, Serialize)]
+#[serde(tag = "type")]
 /// Allows concatenating multiple other Normalizer as a Sequence.
 /// All the normalizers run in sequence in the given order against the same NormalizedString.
 pub struct Sequence {
     normalizers: Vec<NormalizerWrapper>,
-}
-
-impl Serialize for Sequence {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut m = serializer.serialize_struct("Sequence", 2)?;
-        m.serialize_field("type", "Sequence")?;
-        m.serialize_field("normalizers", &self.normalizers)?;
-        m.end()
-    }
 }
 
 impl Sequence {

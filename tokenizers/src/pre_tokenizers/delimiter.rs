@@ -1,9 +1,9 @@
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type")]
 pub struct CharDelimiterSplit {
     delimiter: char,
 }
@@ -20,17 +20,5 @@ impl PreTokenizer for CharDelimiterSplit {
         pretokenized.split(|_, normalized| {
             normalized.split(self.delimiter, SplitDelimiterBehavior::Removed)
         })
-    }
-}
-
-impl Serialize for CharDelimiterSplit {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut m = serializer.serialize_struct("CharDelimiterSplit", 2)?;
-        m.serialize_field("type", "CharDelimiterSplit")?;
-        m.serialize_field("delimiter", &self.delimiter)?;
-        m.end()
     }
 }

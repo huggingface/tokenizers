@@ -1,24 +1,11 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type")]
 pub struct Strip {
     strip_left: bool,
     strip_right: bool,
-}
-
-impl Serialize for Strip {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut m = serializer.serialize_struct("Strip", 5)?;
-        m.serialize_field("type", "BertNormalizer")?;
-        m.serialize_field("strip_left", &self.strip_left)?;
-        m.serialize_field("strip_right", &self.strip_right)?;
-        m.end()
-    }
 }
 
 impl Strip {
