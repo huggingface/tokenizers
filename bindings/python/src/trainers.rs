@@ -13,11 +13,11 @@ use crate::tokenizer::PyAddedToken;
 
 #[pyclass(name=Trainer)]
 pub struct PyTrainer {
-    pub trainer: Arc<TrainerWrapper>,
+    pub trainer: TrainerWrapper,
 }
 
 impl PyTrainer {
-    pub fn new(trainer: Arc<TrainerWrapper>) -> Self {
+    pub fn new(trainer: TrainerWrapper) -> Self {
         PyTrainer { trainer }
     }
 }
@@ -101,10 +101,7 @@ impl PyBpeTrainer {
                 };
             }
         }
-        Ok((
-            PyBpeTrainer {},
-            PyTrainer::new(Arc::new(builder.build().into())),
-        ))
+        Ok((PyBpeTrainer {}, PyTrainer::new(builder.build().into())))
     }
 }
 
@@ -171,7 +168,7 @@ impl PyWordPieceTrainer {
 
         Ok((
             PyWordPieceTrainer {},
-            PyTrainer::new(Arc::new(builder.build().into())),
+            PyTrainer::new(builder.build().into()),
         ))
     }
 }
