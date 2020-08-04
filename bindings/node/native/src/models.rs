@@ -1,24 +1,66 @@
 extern crate tokenizers as tk;
 
-use crate::container::Container;
 use crate::extraction::*;
 use crate::tasks::models::{BPEFromFilesTask, WordPieceFromFilesTask};
 use neon::prelude::*;
+use std::collections::HashMap;
 use std::path::Path;
-use tk::models::{bpe::BpeBuilder, wordpiece::WordPieceBuilder};
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use tk::models::{bpe::BpeBuilder, wordpiece::WordPieceBuilder, ModelWrapper};
+use tk::Model as ModelTrait;
+use tk::Token;
 
 /// Model
+#[derive(Clone)]
 pub struct Model {
-    pub model: Container<dyn tk::tokenizer::Model>,
+    pub model: Option<Arc<ModelWrapper>>,
+}
+
+impl tk::Model for Model {
+    fn tokenize(&self, sequence: &str) -> tk::Result<Vec<Token>> {
+        self.model
+            .as_ref()
+            .ok_or("Uninitialized Model")?
+            .tokenize(sequence)
+    }
+
+    fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.model.as_ref()?.token_to_id(token)
+    }
+
+    fn id_to_token(&self, id: u32) -> Option<&str> {
+        self.model.as_ref()?.id_to_token(id)
+    }
+
+    fn get_vocab(&self) -> &HashMap<String, u32> {
+        self.model
+            .as_ref()
+            .expect("Uninitialized Model")
+            .get_vocab()
+    }
+
+    fn get_vocab_size(&self) -> usize {
+        self.model
+            .as_ref()
+            .expect("Uninitialized Model")
+            .get_vocab_size()
+    }
+
+    fn save(&self, folder: &Path, name: Option<&str>) -> tk::Result<Vec<PathBuf>> {
+        self.model
+            .as_ref()
+            .ok_or("Uninitialized Model")?
+            .save(folder, name)
+    }
 }
 
 declare_types! {
     pub class JsModel for Model {
         init(_) {
             // This should not be called from JS
-            Ok(Model {
-                model: Container::Empty
-            })
+            Ok(Model { model: None })
         }
 
         method save(mut cx) {
@@ -29,9 +71,13 @@ declare_types! {
             let this = cx.this();
             let guard = cx.lock();
 
-            let files = this.borrow(&guard).model.execute(|model| {
-                model.unwrap().save(Path::new(&folder), name.as_deref())
-            }).map_err(|e| Error(format!("{}", e)))?;
+            let files = this.borrow(&guard)
+                .model.as_ref().unwrap()
+                .save(
+                    Path::new(&folder),
+                    name.as_deref()
+                )
+                .map_err(|e| Error(format!("{}", e)))?;
 
             Ok(neon_serde::to_value(&mut cx, &files)?)
         }
@@ -91,7 +137,7 @@ pub fn bpe_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     let bpe = tk::models::bpe::BPE::default();
 
     let guard = cx.lock();
-    model.borrow_mut(&guard).model.make_owned(Box::new(bpe));
+    model.borrow_mut(&guard).model = Some(Arc::new(bpe.into()));
 
     Ok(model)
 }
@@ -150,10 +196,7 @@ pub fn wordpiece_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     let wordpiece = tk::models::wordpiece::WordPiece::default();
 
     let guard = cx.lock();
-    model
-        .borrow_mut(&guard)
-        .model
-        .make_owned(Box::new(wordpiece));
+    model.borrow_mut(&guard).model = Some(Arc::new(wordpiece.into()));
 
     Ok(model)
 }
