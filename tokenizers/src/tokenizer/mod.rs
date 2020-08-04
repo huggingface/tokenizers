@@ -1004,7 +1004,7 @@ where
         Ok(words)
     }
 
-    /// Train a model and replace our current Model, using the given Trainer
+    /// Train a model and return a new Tokenizer, using the given Trainer
     pub fn train<T, TM>(
         self,
         trainer: &T,
@@ -1031,6 +1031,20 @@ where
         new_tok.add_special_tokens(&special_tokens);
 
         Ok(new_tok)
+    }
+
+    /// Train a model and replace our current Model, using the given Trainer
+    pub fn train_and_replace<T>(&mut self, trainer: &T, files: Vec<String>) -> Result<()>
+    where
+        T: Trainer<Model = M> + Sync,
+    {
+        let words = self.word_count(trainer, files)?;
+
+        let (model, special_tokens) = trainer.train(words)?;
+        self.model = model;
+        self.add_special_tokens(&special_tokens);
+
+        Ok(())
     }
 }
 
