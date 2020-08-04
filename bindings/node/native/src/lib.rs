@@ -2,9 +2,8 @@
 
 extern crate neon;
 extern crate neon_serde;
-extern crate serde;
 #[macro_use]
-extern crate serde_derive;
+extern crate serde;
 extern crate tokenizers as tk;
 
 mod container;

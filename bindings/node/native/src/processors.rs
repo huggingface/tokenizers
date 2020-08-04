@@ -8,8 +8,9 @@ use tk::processors::PostProcessorWrapper;
 use tk::Encoding;
 
 /// Processor
-#[derive(Clone)]
-pub struct PostProcessor {
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Processor {
+    #[serde(flatten)]
     pub processor: Option<Arc<PostProcessorWrapper>>,
 }
 

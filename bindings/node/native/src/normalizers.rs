@@ -2,15 +2,33 @@ extern crate tokenizers as tk;
 
 use crate::extraction::*;
 use neon::prelude::*;
+use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::sync::Arc;
 
 use tk::normalizers::NormalizerWrapper;
 use tk::NormalizedString;
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize)]
 pub enum JsNormalizerWrapper {
     Sequence(Vec<Arc<NormalizerWrapper>>),
     Wrapped(Arc<NormalizerWrapper>),
+}
+
+impl Serialize for JsNormalizerWrapper {
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            JsNormalizerWrapper::Sequence(seq) => {
+                let mut ser = serializer.serialize_struct("Sequence", 2)?;
+                ser.serialize_field("type", "Sequence")?;
+                ser.serialize_field("normalizers", seq)?;
+                ser.end()
+            }
+            JsNormalizerWrapper::Wrapped(inner) => inner.serialize(serializer),
+        }
+    }
 }
 
 impl<I> From<I> for JsNormalizerWrapper
@@ -23,8 +41,9 @@ where
 }
 
 /// Normalizer
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Normalizer {
+    #[serde(flatten)]
     pub normalizer: Option<JsNormalizerWrapper>,
 }
 

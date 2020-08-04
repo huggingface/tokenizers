@@ -8,8 +8,9 @@ use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::PreTokenizedString;
 
 /// PreTokenizers
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PreTokenizer {
+    #[serde(flatten)]
     pub pretok: Option<Arc<PreTokenizerWrapper>>,
 }
 

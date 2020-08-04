@@ -371,8 +371,10 @@ declare_types! {
 
             let this = cx.this();
             let guard = cx.lock();
-            let s = this.borrow(&guard).tokenizer.to_string(pretty);
-            let s = s.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+            let s = this.borrow(&guard)
+                .tokenizer.read().unwrap()
+                .to_string(pretty)
+                .map_err(|e| Error(format!("{}", e)))?;
 
             Ok(cx.string(s).upcast())
         }
@@ -384,8 +386,10 @@ declare_types! {
 
             let this = cx.this();
             let guard = cx.lock();
-            let res = this.borrow(&guard).tokenizer.save(&path, pretty);
-            res.map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+            this.borrow(&guard)
+                .tokenizer.read().unwrap()
+                .save(&path, pretty)
+                .map_err(|e| Error(format!("{}", e)))?;
 
             Ok(cx.undefined().upcast())
         }
@@ -958,13 +962,17 @@ declare_types! {
 pub fn tokenizer_from_string(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
     let s = cx.extract::<String>(0)?;
 
-    let tokenizer: tk::tokenizer::TokenizerImpl = s
-        .parse()
-        .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+    let tokenizer: tk::tokenizer::TokenizerImpl<
+        Model,
+        Normalizer,
+        PreTokenizer,
+        Processor,
+        Decoder,
+    > = s.parse().map_err(|e| Error(format!("{}", e)))?;
 
     let mut js_tokenizer = JsTokenizer::new::<_, JsTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_tokenizer.borrow_mut(&guard).tokenizer = tokenizer;
+    js_tokenizer.borrow_mut(&guard).tokenizer = Arc::new(RwLock::new(tokenizer));
 
     Ok(js_tokenizer)
 }
@@ -972,12 +980,12 @@ pub fn tokenizer_from_string(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
 pub fn tokenizer_from_file(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
     let s = cx.extract::<String>(0)?;
 
-    let tokenizer = tk::tokenizer::TokenizerImpl::from_file(s)
-        .map_err(|e| cx.throw_error::<_, ()>(format!("{}", e)).unwrap_err())?;
+    let tokenizer =
+        tk::tokenizer::TokenizerImpl::from_file(s).map_err(|e| Error(format!("{}", e)))?;
 
     let mut js_tokenizer = JsTokenizer::new::<_, JsTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_tokenizer.borrow_mut(&guard).tokenizer = tokenizer;
+    js_tokenizer.borrow_mut(&guard).tokenizer = Arc::new(RwLock::new(tokenizer));
 
     Ok(js_tokenizer)
 }

@@ -7,8 +7,9 @@ use std::sync::Arc;
 use tk::decoders::DecoderWrapper;
 
 /// Decoder
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Decoder {
+    #[serde(flatten)]
     pub decoder: Option<Arc<DecoderWrapper>>,
 }
 
