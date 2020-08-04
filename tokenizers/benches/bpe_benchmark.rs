@@ -1,17 +1,22 @@
 #[macro_use]
 extern crate criterion;
 
-use criterion::{black_box, Criterion};
+mod common;
+
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::time::{Duration, Instant};
+
+use criterion::Criterion;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
-use tokenizers::models::{ModelWrapper, TrainerWrapper};
+use tokenizers::models::TrainerWrapper;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
-use tokenizers::tokenizer::{AddedToken, EncodeInput, Trainer};
+use tokenizers::tokenizer::{AddedToken, EncodeInput};
 use tokenizers::Tokenizer;
+
+use common::{iter_bench_encode, iter_bench_encode_batch, iter_bench_train};
+use std::ops::Deref;
 
 static BATCH_SIZE: usize = 1_000;
 
@@ -22,40 +27,6 @@ fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer {
     tokenizer.add_tokens(&[AddedToken::from("ing", false).single_word(false)]);
     tokenizer.add_special_tokens(&[AddedToken::from("[ENT]", true).single_word(true)]);
     tokenizer
-}
-
-fn iter_bench_encode(iters: u64, tokenizer: &Tokenizer, lines: &[EncodeInput]) -> Duration {
-    let mut duration = Duration::new(0, 0);
-    let mut line_index: usize = 0;
-    for _i in 0..iters {
-        if line_index >= lines.len() {
-            line_index = 0;
-        }
-        let input = lines[line_index].clone();
-        let start = Instant::now();
-        let _ = black_box(tokenizer.encode(input, false));
-        duration = duration.checked_add(start.elapsed()).unwrap();
-    }
-    duration
-}
-
-fn iter_bench_encode_batch(
-    iters: u64,
-    tokenizer: &Tokenizer,
-    batches: &[Vec<EncodeInput>],
-) -> Duration {
-    let mut duration = Duration::new(0, 0);
-    let mut batch_index: usize = 0;
-    for _i in 0..iters {
-        if batch_index >= batches.len() {
-            batch_index = 0;
-        }
-        let batch = batches[batch_index].clone();
-        let start = Instant::now();
-        let _ = black_box(tokenizer.encode_batch(batch, false));
-        duration = duration.checked_add(start.elapsed()).unwrap();
-    }
-    duration
 }
 
 fn bench_gpt2(c: &mut Criterion) {
@@ -75,11 +46,11 @@ fn bench_gpt2(c: &mut Criterion) {
     }
 
     c.bench_function("BPE GPT2 encode", |b| {
-        b.iter_custom(|iters| iter_bench_encode(iters, &tokenizer, &lines))
+        b.iter_custom(|iters| iter_bench_encode(iters, tokenizer.deref(), &lines))
     });
 
     c.bench_function("BPE GPT2 encode batch", |b| {
-        b.iter_custom(|iters| iter_bench_encode_batch(iters, &tokenizer, &batches))
+        b.iter_custom(|iters| iter_bench_encode_batch(iters, tokenizer.deref(), &batches))
     });
 
     let bpe = BPE::from_files("data/gpt2-vocab.json", "data/gpt2-merges.txt")
@@ -97,48 +68,34 @@ fn bench_gpt2(c: &mut Criterion) {
     });
 }
 
-fn iter_bench_train<T>(
-    iters: u64,
-    tokenizer: Tokenizer,
-    trainer: &T,
-    files: Vec<String>,
-) -> Duration
-where
-    T: Trainer<Model = ModelWrapper> + Sync,
-{
-    let mut tokenizer = tokenizer.into_inner();
-    let mut duration = Duration::new(0, 0);
-    for _i in 0..iters {
-        let start = Instant::now();
-        tokenizer = black_box(tokenizer.train(trainer, files.clone()).unwrap());
-        duration = duration.checked_add(start.elapsed()).unwrap();
-    }
-    duration
-}
-
 fn bench_train(c: &mut Criterion) {
     let trainer: TrainerWrapper = BpeTrainerBuilder::default()
         .show_progress(false)
         .build()
         .into();
+    let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
+    tokenizer.with_pre_tokenizer(Whitespace::default());
     c.bench_function("BPE Train vocabulary (small)", |b| {
         b.iter_custom(|iters| {
-            let mut tokenizer = Tokenizer::new(BPE::default());
-            tokenizer.with_pre_tokenizer(Whitespace::default());
             iter_bench_train(
                 iters,
-                tokenizer,
+                &mut tokenizer,
                 &trainer,
                 vec!["data/small.txt".to_string()],
             )
         })
     });
 
+    let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
+    tokenizer.with_pre_tokenizer(Whitespace::default());
     c.bench_function("BPE Train vocabulary (big)", |b| {
         b.iter_custom(|iters| {
-            let mut tokenizer = Tokenizer::new(BPE::default());
-            tokenizer.with_pre_tokenizer(Whitespace::default());
-            iter_bench_train(iters, tokenizer, &trainer, vec!["data/big.txt".to_string()])
+            iter_bench_train(
+                iters,
+                &mut tokenizer,
+                &trainer,
+                vec!["data/big.txt".to_string()],
+            )
         })
     });
 }

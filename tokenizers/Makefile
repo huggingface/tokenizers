@@ -4,9 +4,9 @@ TESTS_DIR = tests
 
 dir_guard=@mkdir -p $(@D)
 
-SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt
+SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt $(DATA_DIR)/bert-base-uncased-vocab.txt
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/big.txt $(DATA_DIR)/small.txt
-TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/bert-base-uncased-vocab.txt
+TESTS_RESOURCES = $(SHARED_RESOURCES)
 
 .PHONY : build
 build :
