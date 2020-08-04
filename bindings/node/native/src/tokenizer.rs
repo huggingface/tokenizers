@@ -1,16 +1,18 @@
 extern crate tokenizers as tk;
 
-use crate::container::Container;
-use crate::decoders::JsDecoder;
+use crate::decoders::{Decoder, JsDecoder};
 use crate::encoding::JsEncoding;
 use crate::extraction::*;
-use crate::models::JsModel;
-use crate::normalizers::JsNormalizer;
-use crate::pre_tokenizers::JsPreTokenizer;
-use crate::processors::JsPostProcessor;
+use crate::models::{JsModel, Model};
+use crate::normalizers::{JsNormalizer, Normalizer};
+use crate::pre_tokenizers::{JsPreTokenizer, PreTokenizer};
+use crate::processors::{JsPostProcessor, Processor};
 use crate::tasks::tokenizer::{DecodeTask, EncodeTask, WorkingTokenizer};
 use crate::trainers::JsTrainer;
 use neon::prelude::*;
+use std::sync::{Arc, RwLock};
+
+use tk::TokenizerImpl;
 
 // AddedToken
 
@@ -343,51 +345,24 @@ pub struct PaddingParamsDef {
 #[serde(transparent)]
 pub struct PaddingParams(#[serde(with = "PaddingParamsDef")] pub tk::PaddingParams);
 
+type Tokenizer = TokenizerImpl<Model, Normalizer, PreTokenizer, Processor, Decoder>;
+
 /// Tokenizer
-pub struct Tokenizer {
-    tokenizer: tk::TokenizerImpl,
-
-    /// Whether we have a running task. We keep this to make sure we never
-    /// modify the underlying tokenizer while a task is running
-    running_task: std::sync::Arc<()>,
-}
-
-impl Tokenizer {
-    pub fn prepare_for_task(&self) -> WorkingTokenizer {
-        unsafe { WorkingTokenizer::new(&self.tokenizer, self.running_task.clone()) }
-    }
-}
-
-macro_rules! check_tokenizer_can_be_modified {
-    ($cx: expr) => {
-        let this = $cx.this();
-        let guard = $cx.lock();
-        let running = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
-        if running > 1 {
-            return Err(
-                Error("Cannot modify the tokenizer while there are running tasks".into()).into(),
-            );
-        }
-    };
+pub struct RsTokenizer {
+    tokenizer: Arc<RwLock<Tokenizer>>,
 }
 
 declare_types! {
-    pub class JsTokenizer for Tokenizer {
+    pub class JsTokenizer for RsTokenizer {
         init(mut cx) {
             // init(model: JsModel)
-            let mut model = cx.argument::<JsModel>(0)?;
-            if let Some(instance) = {
-                let guard = cx.lock();
-                let mut model = model.borrow_mut(&guard);
-                model.model.make_pointer()
-            } {
-                Ok(Tokenizer {
-                    tokenizer: tk::Tokenizer::new(instance),
-                    running_task: std::sync::Arc::new(())
-                })
-            } else {
-                cx.throw_error("The Model is already being used in another Tokenizer")
-            }
+            let model = cx.argument::<JsModel>(0)?;
+            let guard = cx.lock();
+            let model = model.borrow(&guard).clone();
+
+            Ok(RsTokenizer {
+                tokenizer: Arc::new(RwLock::new(TokenizerImpl::new(model)))
+            })
         }
 
         method toString(mut cx) {
@@ -419,7 +394,7 @@ declare_types! {
             // runningTasks(): number
             let this = cx.this();
             let guard = cx.lock();
-            let count = std::sync::Arc::strong_count(&this.borrow(&guard).running_task);
+            let count = std::sync::Arc::strong_count(&this.borrow(&guard).tokenizer);
             let running = if count > 0 { count - 1 } else { 0 };
             Ok(cx.number(running as f64).upcast())
         }
@@ -431,7 +406,7 @@ declare_types! {
             let this = cx.this();
             let guard = cx.lock();
             let vocab = this.borrow(&guard)
-                .tokenizer
+                .tokenizer.read().unwrap()
                 .get_vocab(with_added_tokens);
 
             let js_vocab = JsObject::new(&mut cx);
@@ -451,7 +426,7 @@ declare_types! {
             let this = cx.this();
             let guard = cx.lock();
             let size = this.borrow(&guard)
-                .tokenizer
+                .tokenizer.read().unwrap()
                 .get_vocab_size(with_added_tokens);
 
             Ok(cx.number(size as f64).upcast())
@@ -465,7 +440,7 @@ declare_types! {
             let guard = cx.lock();
 
             let normalized = this.borrow(&guard)
-                .tokenizer
+                .tokenizer.read().unwrap()
                 .normalize(&sentence)
                 .map(|s| s.get().to_owned())
                 .map_err(|e| Error(format!("{}", e)))?;
@@ -628,7 +603,9 @@ declare_types! {
 
             let this = cx.this();
             let guard = cx.lock();
-            let id = this.borrow(&guard).tokenizer.token_to_id(&token);
+            let id = this.borrow(&guard)
+                .tokenizer.read().unwrap()
+                .token_to_id(&token);
 
             if let Some(id) = id {
                 Ok(cx.number(id).upcast())
@@ -644,7 +621,9 @@ declare_types! {
 
             let this = cx.this();
             let guard = cx.lock();
-            let token = this.borrow(&guard).tokenizer.id_to_token(id).map(|t| t.to_owned());
+            let token = this.borrow(&guard)
+                .tokenizer.read().unwrap()
+                .id_to_token(id).map(|t| t.to_owned());
 
             if let Some(token) = token {
                 Ok(cx.string(token).upcast())
@@ -663,7 +642,9 @@ declare_types! {
 
             let mut this = cx.this();
             let guard = cx.lock();
-            let added = this.borrow_mut(&guard).tokenizer.add_tokens(&tokens);
+            let added = this.borrow_mut(&guard)
+                .tokenizer.write().unwrap()
+                .add_tokens(&tokens);
 
             Ok(cx.number(added as f64).upcast())
         }
@@ -679,7 +660,7 @@ declare_types! {
             let mut this = cx.this();
             let guard = cx.lock();
             let added = this.borrow_mut(&guard)
-                .tokenizer
+                .tokenizer.write().unwrap()
                 .add_special_tokens(&tokens);
 
             Ok(cx.number(added as f64).upcast())
@@ -699,8 +680,9 @@ declare_types! {
             let params_obj = neon_serde::to_value(&mut cx, &TruncationParams(options.clone()))?;
             let mut this = cx.this();
             let guard = cx.lock();
-            let mut tokenizer = this.borrow_mut(&guard);
-            tokenizer.tokenizer.with_truncation(Some(options));
+            this.borrow_mut(&guard)
+                .tokenizer.write().unwrap()
+                .with_truncation(Some(options));
 
             Ok(params_obj)
         }
@@ -710,7 +692,9 @@ declare_types! {
 
             let mut this = cx.this();
             let guard = cx.lock();
-            this.borrow_mut(&guard).tokenizer.with_truncation(None);
+            this.borrow_mut(&guard)
+                .tokenizer.write().unwrap()
+                .with_truncation(None);
 
             Ok(cx.undefined().upcast())
         }
@@ -730,8 +714,9 @@ declare_types! {
             let params_obj = neon_serde::to_value(&mut cx, &PaddingParams(options.clone()))?;
             let mut this = cx.this();
             let guard = cx.lock();
-            let mut tokenizer = this.borrow_mut(&guard);
-            tokenizer.tokenizer.with_padding(Some(options));
+            this.borrow_mut(&guard)
+                .tokenizer.write().unwrap()
+                .with_padding(Some(options));
 
             Ok(params_obj)
         }
@@ -741,7 +726,9 @@ declare_types! {
 
             let mut this = cx.this();
             let guard = cx.lock();
-            this.borrow_mut(&guard).tokenizer.with_padding(None);
+            this.borrow_mut(&guard)
+                .tokenizer.write().unwrap()
+                .with_padding(None);
 
             Ok(cx.undefined().upcast())
         }
@@ -755,12 +742,11 @@ declare_types! {
             let mut this = cx.this();
             let guard = cx.lock();
 
-            trainer.borrow(&guard).trainer.execute(|trainer| {
-                this.borrow_mut(&guard)
-                    .tokenizer
-                    .train(trainer.unwrap(), files)
-                    .map_err(|e| Error(format!("{}", e)))
-            })?;
+            let trainer = trainer.borrow(&guard).clone();
+            let new_tokenizer = this.borrow_mut(&guard)
+                .tokenizer.write().unwrap()
+                .train(&trainer, files)
+                .map_err(|e| Error(format!("{}", e)))?;
 
             Ok(cx.undefined().upcast())
         }
@@ -779,7 +765,7 @@ declare_types! {
             let this = cx.this();
             let guard = cx.lock();
             let encoding = this.borrow(&guard)
-                .tokenizer
+                .tokenizer.read().unwrap()
                 .post_process(encoding.into(), pair.map(|p| p.into()), add_special_tokens)
                 .map_err(|e| Error(format!("{}", e)))?;
 
@@ -798,7 +784,11 @@ declare_types! {
 
             let this = cx.this();
             let guard = cx.lock();
-            let model = Container::from_ref(this.borrow(&guard).tokenizer.get_model());
+            let model = this.borrow(&guard)
+                .tokenizer.read().unwrap()
+                .get_model()
+                .model
+                .clone();
 
             let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
             let guard = cx.lock();
@@ -809,43 +799,33 @@ declare_types! {
 
         method setModel(mut cx) {
             // setModel(model: JsModel)
-            check_tokenizer_can_be_modified!(cx);
 
-            let mut model = cx.argument::<JsModel>(0)?;
-            if let Some(instance) = {
-                let guard = cx.lock();
-                let mut model = model.borrow_mut(&guard);
-                model.model.make_pointer()
-            } {
-                let mut this = cx.this();
-                {
-                    let guard = cx.lock();
-                    let mut tokenizer = this.borrow_mut(&guard);
-                    tokenizer.tokenizer.with_model(instance);
-                }
+            let model = cx.argument::<JsModel>(0)?;
+            let mut this = cx.this();
+            let guard = cx.lock();
 
-                Ok(cx.undefined().upcast())
-            } else {
-                cx.throw_error("The Model is already being used in another Tokenizer")
-            }
+            let model = model.borrow(&guard).clone();
+            this.borrow_mut(&guard)
+                .tokenizer.write().unwrap()
+                .with_model(model);
+
+            Ok(cx.undefined().upcast())
         }
 
         method getNormalizer(mut cx) {
             // getNormalizer(): Normalizer | undefined
 
-            let normalizer = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let borrowed = this.borrow(&guard);
-                let normalizer = borrowed.tokenizer.get_normalizer();
-                normalizer.map(|normalizer| { Container::from_ref(normalizer) })
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let normalizer = this.borrow(&guard)
+                .tokenizer.read().unwrap()
+                .get_normalizer().cloned();
 
             if let Some(normalizer) = normalizer {
                 let mut js_normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
                 let guard = cx.lock();
-                js_normalizer.borrow_mut(&guard).normalizer = normalizer;
 
+                js_normalizer.borrow_mut(&guard).normalizer = normalizer.normalizer;
                 Ok(js_normalizer.upcast())
             } else {
                 Ok(cx.undefined().upcast())
@@ -854,43 +834,33 @@ declare_types! {
 
         method setNormalizer(mut cx) {
             // setNormalizer(normalizer: Normalizer)
-            check_tokenizer_can_be_modified!(cx);
 
-            let mut normalizer = cx.argument::<JsNormalizer>(0)?;
-            if let Some(instance) = {
-                let guard = cx.lock();
-                let mut normalizer = normalizer.borrow_mut(&guard);
-                normalizer.normalizer.make_pointer()
-            } {
-                let mut this = cx.this();
-                {
-                    let guard = cx.lock();
-                    let mut tokenizer = this.borrow_mut(&guard);
-                    tokenizer.tokenizer.with_normalizer(instance);
-                }
+            let normalizer = cx.argument::<JsNormalizer>(0)?;
+            let mut this = cx.this();
+            let guard = cx.lock();
 
-                Ok(cx.undefined().upcast())
-            } else {
-                cx.throw_error("The Normalizer is already being used in another Tokenizer")
-            }
+            let normalizer = normalizer.borrow(&guard).clone();
+            this.borrow_mut(&guard)
+                .tokenizer.write().unwrap()
+                .with_normalizer(normalizer);
+
+            Ok(cx.undefined().upcast())
         }
 
         method getPreTokenizer(mut cx) {
             // getPreTokenizer(): PreTokenizer | undefined
 
-            let pretok = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let borrowed = this.borrow(&guard);
-                let pretok = borrowed.tokenizer.get_pre_tokenizer();
-                pretok.map(|pretok| { Container::from_ref(pretok) })
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let pretok = this.borrow(&guard)
+                .tokenizer.read().unwrap()
+                .get_pre_tokenizer().cloned();
 
             if let Some(pretok) = pretok {
                 let mut js_pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
                 let guard = cx.lock();
-                js_pretok.borrow_mut(&guard).pretok = pretok;
 
+                js_pretok.borrow_mut(&guard).pretok = pretok.pretok;
                 Ok(js_pretok.upcast())
             } else {
                 Ok(cx.undefined().upcast())
@@ -899,44 +869,34 @@ declare_types! {
 
         method setPreTokenizer(mut cx) {
             // setPreTokenizer(pretokenizer: PreTokenizer)
-            check_tokenizer_can_be_modified!(cx);
 
-            let mut pretok = cx.argument::<JsPreTokenizer>(0)?;
-            if let Some(instance) = {
-                let guard = cx.lock();
-                let mut pretok = pretok.borrow_mut(&guard);
-                pretok.pretok.make_pointer()
-            } {
-                let mut this = cx.this();
-                {
-                    let guard = cx.lock();
-                    let mut tokenizer = this.borrow_mut(&guard);
-                    tokenizer.tokenizer.with_pre_tokenizer(instance);
-                }
+            let pretok = cx.argument::<JsPreTokenizer>(0)?;
+            let mut this = cx.this();
+            let guard = cx.lock();
 
-                Ok(cx.undefined().upcast())
-            } else {
-                cx.throw_error("The PreTokenizer is already being used in another Tokenizer")
-            }
+            let pretok = pretok.borrow(&guard).clone();
+            this.borrow_mut(&guard)
+                .tokenizer.write().unwrap()
+                .with_pre_tokenizer(pretok);
+
+            Ok(cx.undefined().upcast())
         }
 
         method getPostProcessor(mut cx) {
             // getPostProcessor(): PostProcessor | undefined
 
-            let processor = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let borrowed = this.borrow(&guard);
-                let processor = borrowed.tokenizer.get_post_processor();
-                processor.map(|processor| { Container::from_ref(processor) })
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let processor = this.borrow(&guard)
+                .tokenizer.read().unwrap()
+                .get_post_processor().cloned();
 
             if let Some(processor) = processor {
                 let mut js_processor =
                     JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
                 let guard = cx.lock();
-                js_processor.borrow_mut(&guard).processor = processor;
 
+                js_processor.borrow_mut(&guard).processor = processor.processor;
                 Ok(js_processor.upcast())
             } else {
                 Ok(cx.undefined().upcast())
@@ -945,43 +905,33 @@ declare_types! {
 
         method setPostProcessor(mut cx) {
             // setPostProcessor(processor: PostProcessor)
-            check_tokenizer_can_be_modified!(cx);
 
-            let mut processor = cx.argument::<JsPostProcessor>(0)?;
-            if let Some(instance) = {
-                let guard = cx.lock();
-                let mut processor = processor.borrow_mut(&guard);
-                processor.processor.make_pointer()
-            } {
-                let mut this = cx.this();
-                {
-                    let guard = cx.lock();
-                    let mut tokenizer = this.borrow_mut(&guard);
-                    tokenizer.tokenizer.with_post_processor(instance);
-                }
+            let processor = cx.argument::<JsPostProcessor>(0)?;
+            let mut this = cx.this();
+            let guard = cx.lock();
 
-                Ok(cx.undefined().upcast())
-            } else {
-                cx.throw_error("The PostProcessor is already being used in another Tokenizer")
-            }
+            let processor = processor.borrow(&guard).clone();
+            this.borrow_mut(&guard)
+                .tokenizer.write().unwrap()
+                .with_post_processor(processor);
+
+            Ok(cx.undefined().upcast())
         }
 
         method getDecoder(mut cx) {
             // getDecoder(): Decoder | undefined
 
-            let decoder = {
-                let this = cx.this();
-                let guard = cx.lock();
-                let borrowed = this.borrow(&guard);
-                let decoder = borrowed.tokenizer.get_decoder();
-                decoder.map(|decoder| { Container::from_ref(decoder) })
-            };
+            let this = cx.this();
+            let guard = cx.lock();
+            let decoder = this.borrow(&guard)
+                .tokenizer.read().unwrap()
+                .get_decoder().cloned();
 
             if let Some(decoder) = decoder {
                 let mut js_decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
                 let guard = cx.lock();
-                js_decoder.borrow_mut(&guard).decoder = decoder;
 
+                js_decoder.borrow_mut(&guard).decoder = decoder.decoder;
                 Ok(js_decoder.upcast())
             } else {
                 Ok(cx.undefined().upcast())
@@ -990,25 +940,17 @@ declare_types! {
 
         method setDecoder(mut cx) {
             // setDecoder(decoder: Decoder)
-            check_tokenizer_can_be_modified!(cx);
 
-            let mut decoder = cx.argument::<JsDecoder>(0)?;
-            if let Some(instance) = {
-                let guard = cx.lock();
-                let mut decoder = decoder.borrow_mut(&guard);
-                decoder.decoder.make_pointer()
-            } {
-                let mut this = cx.this();
-                {
-                    let guard = cx.lock();
-                    let mut tokenizer = this.borrow_mut(&guard);
-                    tokenizer.tokenizer.with_decoder(instance);
-                }
+            let decoder = cx.argument::<JsDecoder>(0)?;
+            let mut this = cx.this();
+            let guard = cx.lock();
 
-                Ok(cx.undefined().upcast())
-            } else {
-                cx.throw_error("The Decoder is already being used in another Tokenizer")
-            }
+            let decoder = decoder.borrow(&guard).clone();
+            this.borrow_mut(&guard)
+                .tokenizer.write().unwrap()
+                .with_decoder(decoder);
+
+            Ok(cx.undefined().upcast())
         }
     }
 }
