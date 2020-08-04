@@ -6,7 +6,6 @@ extern crate neon_serde;
 extern crate serde;
 extern crate tokenizers as tk;
 
-mod container;
 mod decoders;
 mod encoding;
 mod extraction;
