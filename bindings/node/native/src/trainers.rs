@@ -1,23 +1,53 @@
 extern crate tokenizers as tk;
 
-use crate::container::Container;
 use crate::extraction::*;
 use crate::tokenizer::AddedToken;
 use neon::prelude::*;
-use tk::models::{bpe::BpeTrainer, wordpiece::WordPieceTrainer};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use tk::models::{bpe::BpeTrainer, wordpiece::WordPieceTrainer, ModelWrapper, TrainerWrapper};
+use tk::Trainer;
 
 /// Trainer
-pub struct Trainer {
-    pub trainer: Container<dyn tk::tokenizer::Trainer>,
+#[derive(Clone)]
+pub struct RsTrainer {
+    pub trainer: Option<Arc<TrainerWrapper>>,
+}
+
+impl Trainer for RsTrainer {
+    type Model = ModelWrapper;
+
+    fn should_show_progress(&self) -> bool {
+        self.trainer
+            .as_ref()
+            .expect("Uninitialized Trainer")
+            .should_show_progress()
+    }
+
+    fn train(
+        &self,
+        words: HashMap<String, u32>,
+    ) -> tk::Result<(<Self as Trainer>::Model, Vec<tk::AddedToken>)> {
+        self.trainer
+            .as_ref()
+            .ok_or("Uninitialized Trainer")?
+            .train(words)
+    }
+
+    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
+        self.trainer
+            .as_ref()
+            .expect("Uninitialized Trainer")
+            .process_tokens(words, tokens)
+    }
 }
 
 declare_types! {
-    pub class JsTrainer for Trainer {
+    pub class JsTrainer for RsTrainer {
         init(_) {
             // This should not be called from JS
-            Ok(Trainer {
-                trainer: Container::Empty
-            })
+            Ok(RsTrainer { trainer: None })
         }
     }
 }
@@ -109,10 +139,7 @@ fn bpe_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
 
     let mut js_trainer = JsTrainer::new::<_, JsTrainer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_trainer
-        .borrow_mut(&guard)
-        .trainer
-        .make_owned(Box::new(trainer));
+    js_trainer.borrow_mut(&guard).trainer = Some(Arc::new(trainer.into()));
 
     Ok(js_trainer)
 }
@@ -204,10 +231,7 @@ fn wordpiece_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
 
     let mut js_trainer = JsTrainer::new::<_, JsTrainer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_trainer
-        .borrow_mut(&guard)
-        .trainer
-        .make_owned(Box::new(trainer));
+    js_trainer.borrow_mut(&guard).trainer = Some(Arc::new(trainer.into()));
 
     Ok(js_trainer)
 }
