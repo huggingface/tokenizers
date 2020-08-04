@@ -667,10 +667,8 @@ impl PyTokenizer {
     }
 
     fn train(&mut self, trainer: &PyTrainer, files: Vec<String>) -> PyResult<()> {
-        self.tokenizer = self
-            .tokenizer
-            .clone()
-            .train(trainer, files)
+        self.tokenizer
+            .train_and_replace(trainer, files)
             .map_err(|e| exceptions::Exception::py_err(format!("{}", e)))?;
         Ok(())
     }
