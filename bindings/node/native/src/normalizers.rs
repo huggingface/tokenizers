@@ -1,21 +1,53 @@
 extern crate tokenizers as tk;
 
-use crate::container::Container;
 use crate::extraction::*;
 use neon::prelude::*;
+use std::sync::Arc;
+
+use tk::normalizers::NormalizerWrapper;
+use tk::NormalizedString;
+
+#[derive(Clone)]
+pub enum JsNormalizerWrapper {
+    Sequence(Vec<Arc<NormalizerWrapper>>),
+    Wrapped(Arc<NormalizerWrapper>),
+}
+
+impl<I> From<I> for JsNormalizerWrapper
+where
+    I: Into<NormalizerWrapper>,
+{
+    fn from(norm: I) -> Self {
+        JsNormalizerWrapper::Wrapped(Arc::new(norm.into()))
+    }
+}
 
 /// Normalizer
+#[derive(Clone)]
 pub struct Normalizer {
-    pub normalizer: Container<dyn tk::tokenizer::Normalizer>,
+    pub normalizer: Option<JsNormalizerWrapper>,
+}
+
+impl tk::Normalizer for Normalizer {
+    fn normalize(&self, normalized: &mut NormalizedString) -> tk::Result<()> {
+        match self.normalizer.as_ref().ok_or("Uninitialized Normalizer")? {
+            JsNormalizerWrapper::Sequence(seq) => {
+                for norm in seq {
+                    norm.normalize(normalized)?;
+                }
+            }
+            JsNormalizerWrapper::Wrapped(norm) => norm.normalize(normalized)?,
+        };
+
+        Ok(())
+    }
 }
 
 declare_types! {
     pub class JsNormalizer for Normalizer {
         init(_) {
             // This should not be called from JS
-            Ok(Normalizer {
-                normalizer: Container::Empty
-            })
+            Ok(Normalizer { normalizer: None })
         }
     }
 }
@@ -52,15 +84,15 @@ fn bert_normalizer(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
 
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    normalizer
-        .borrow_mut(&guard)
-        .normalizer
-        .make_owned(Box::new(tk::normalizers::bert::BertNormalizer::new(
+    normalizer.borrow_mut(&guard).normalizer = Some(
+        tk::normalizers::bert::BertNormalizer::new(
             options.clean_text,
             options.handle_chinese_chars,
             options.strip_accents,
             options.lowercase,
-        )));
+        )
+        .into(),
+    );
     Ok(normalizer)
 }
 
@@ -68,10 +100,7 @@ fn bert_normalizer(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
 fn nfd(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    normalizer
-        .borrow_mut(&guard)
-        .normalizer
-        .make_owned(Box::new(tk::normalizers::unicode::NFD));
+    normalizer.borrow_mut(&guard).normalizer = Some(tk::normalizers::unicode::NFD.into());
     Ok(normalizer)
 }
 
@@ -79,10 +108,7 @@ fn nfd(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
 fn nfkd(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    normalizer
-        .borrow_mut(&guard)
-        .normalizer
-        .make_owned(Box::new(tk::normalizers::unicode::NFKD));
+    normalizer.borrow_mut(&guard).normalizer = Some(tk::normalizers::unicode::NFKD.into());
     Ok(normalizer)
 }
 
@@ -90,10 +116,7 @@ fn nfkd(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
 fn nfc(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    normalizer
-        .borrow_mut(&guard)
-        .normalizer
-        .make_owned(Box::new(tk::normalizers::unicode::NFC));
+    normalizer.borrow_mut(&guard).normalizer = Some(tk::normalizers::unicode::NFC.into());
     Ok(normalizer)
 }
 
@@ -101,10 +124,7 @@ fn nfc(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
 fn nfkc(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    normalizer
-        .borrow_mut(&guard)
-        .normalizer
-        .make_owned(Box::new(tk::normalizers::unicode::NFKC));
+    normalizer.borrow_mut(&guard).normalizer = Some(tk::normalizers::unicode::NFKC.into());
     Ok(normalizer)
 }
 
@@ -115,55 +135,44 @@ fn strip(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
 
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    normalizer
-        .borrow_mut(&guard)
-        .normalizer
-        .make_owned(Box::new(tk::normalizers::strip::Strip::new(left, right)));
+    normalizer.borrow_mut(&guard).normalizer =
+        Some(tk::normalizers::strip::Strip::new(left, right).into());
 
     Ok(normalizer)
 }
 
 /// sequence(normalizers: Normalizer[])
 fn sequence(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
-    let normalizers = cx
-        .argument::<JsArray>(0)?
-        .to_vec(&mut cx)?
+    let normalizers = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
+    let mut sequence = Vec::with_capacity(normalizers.len());
+
+    normalizers
         .into_iter()
         .map(
             |normalizer| match normalizer.downcast::<JsNormalizer>().or_throw(&mut cx) {
                 Ok(normalizer) => {
                     let guard = cx.lock();
-                    if !normalizer.borrow(&guard).normalizer.is_owned() {
-                        cx.throw_error(
-                            "At least one of the normalizers is \
-                                        already being used in another Tokenizer",
-                        )
+                    let normalizer = normalizer.borrow(&guard).normalizer.clone();
+                    if let Some(normalizer) = normalizer {
+                        match normalizer {
+                            JsNormalizerWrapper::Sequence(seq) => {
+                                sequence.extend(seq.iter().map(|i| i.clone()));
+                            }
+                            JsNormalizerWrapper::Wrapped(inner) => sequence.push(inner.clone()),
+                        }
+                        Ok(())
                     } else {
-                        Ok(normalizer)
+                        cx.throw_error("Uninitialized Normalizer")
                     }
                 }
                 Err(e) => Err(e),
             },
         )
-        .collect::<NeonResult<Vec<_>>>()?;
-
-    // We've checked that all the normalizers can be used, now we can convert them and attach
-    // them the to sequence normalizer
-    let normalizers = normalizers
-        .into_iter()
-        .map(|mut normalizer| {
-            let guard = cx.lock();
-            let mut n = normalizer.borrow_mut(&guard);
-            n.normalizer.make_pointer().unwrap()
-        })
-        .collect::<Vec<_>>();
+        .collect::<NeonResult<_>>()?;
 
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    normalizer
-        .borrow_mut(&guard)
-        .normalizer
-        .make_owned(Box::new(tk::normalizers::utils::Sequence::new(normalizers)));
+    normalizer.borrow_mut(&guard).normalizer = Some(JsNormalizerWrapper::Sequence(sequence).into());
     Ok(normalizer)
 }
 
@@ -171,10 +180,7 @@ fn sequence(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
 fn lowercase(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    normalizer
-        .borrow_mut(&guard)
-        .normalizer
-        .make_owned(Box::new(tk::normalizers::utils::Lowercase));
+    normalizer.borrow_mut(&guard).normalizer = Some(tk::normalizers::utils::Lowercase.into());
     Ok(normalizer)
 }
 
