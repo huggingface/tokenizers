@@ -1,21 +1,44 @@
 extern crate tokenizers as tk;
 
-use crate::container::Container;
 use crate::extraction::*;
 use neon::prelude::*;
+use std::sync::Arc;
+
+use tk::processors::PostProcessorWrapper;
+use tk::Encoding;
 
 /// Processor
-pub struct Processor {
-    pub processor: Container<dyn tk::tokenizer::PostProcessor>,
+#[derive(Clone)]
+pub struct PostProcessor {
+    pub processor: Option<Arc<PostProcessorWrapper>>,
+}
+
+impl tk::PostProcessor for Processor {
+    fn added_tokens(&self, is_pair: bool) -> usize {
+        self.processor
+            .as_ref()
+            .expect("Uninitialized PostProcessor")
+            .added_tokens(is_pair)
+    }
+
+    fn process(
+        &self,
+        encoding: Encoding,
+        pair_encoding: Option<Encoding>,
+        add_special_tokens: bool,
+    ) -> tk::Result<Encoding> {
+        self.processor
+            .as_ref()
+            .ok_or("Uninitialized PostProcessor")?
+            .process(encoding, pair_encoding, add_special_tokens)
+    }
 }
 
 declare_types! {
     pub class JsPostProcessor for Processor {
         init(_) {
             // This should not be called from JS
-            Ok(Processor {
-                processor: Container::Empty
-            })
+            Ok(Processor { processor: None })
         }
     }
 }
@@ -27,8 +50,8 @@ fn bert_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
 
     let mut processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    processor.borrow_mut(&guard).processor.make_owned(Box::new(
-        tk::processors::bert::BertProcessing::new(sep, cls),
+    processor.borrow_mut(&guard).processor = Some(Arc::new(
+        tk::processors::bert::BertProcessing::new(sep, cls).into(),
     ));
     Ok(processor)
 }
@@ -53,10 +76,7 @@ fn roberta_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
 
     let mut js_processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_processor
-        .borrow_mut(&guard)
-        .processor
-        .make_owned(Box::new(processor));
+    js_processor.borrow_mut(&guard).processor = Some(Arc::new(processor.into()));
     Ok(js_processor)
 }
 
@@ -70,10 +90,7 @@ fn bytelevel(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
 
     let mut processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    processor
-        .borrow_mut(&guard)
-        .processor
-        .make_owned(Box::new(byte_level));
+    processor.borrow_mut(&guard).processor = Some(Arc::new(byte_level.into()));
     Ok(processor)
 }
 
