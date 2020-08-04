@@ -1,13 +1,13 @@
 extern crate tokenizers as tk;
 
 use crate::encoding::*;
-use crate::tokenizer::RsTokenizer;
+use crate::tokenizer::Tokenizer;
 use neon::prelude::*;
 use tk::tokenizer::{EncodeInput, Encoding};
 
 pub enum EncodeTask {
-    Single(RsTokenizer, Option<EncodeInput>, bool),
-    Batch(RsTokenizer, Option<Vec<EncodeInput>>, bool),
+    Single(Tokenizer, Option<EncodeInput>, bool),
+    Batch(Tokenizer, Option<Vec<EncodeInput>>, bool),
 }
 
 pub enum EncodeOutput {
@@ -87,8 +87,8 @@ impl Task for EncodeTask {
 }
 
 pub enum DecodeTask {
-    Single(RsTokenizer, Vec<u32>, bool),
-    Batch(RsTokenizer, Vec<Vec<u32>>, bool),
+    Single(Tokenizer, Vec<u32>, bool),
+    Batch(Tokenizer, Vec<Vec<u32>>, bool),
 }
 
 pub enum DecodeOutput {
