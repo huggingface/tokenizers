@@ -41,10 +41,7 @@ fn merge_encodings(mut cx: FunctionContext) -> JsResult<JsEncoding> {
     let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
 
     let guard = cx.lock();
-    js_encoding
-        .borrow_mut(&guard)
-        .encoding
-        .make_owned(Box::new(new_encoding));
+    js_encoding.borrow_mut(&guard).encoding = Some(new_encoding);
 
     Ok(js_encoding)
 }

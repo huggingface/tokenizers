@@ -236,8 +236,8 @@ impl FromJsValue for Encoding {
         from.downcast::<JsEncoding>()
             .map(|e| {
                 let guard = cx.lock();
-                let enc = e.borrow(&guard);
-                Self(enc.encoding.execute(|e| *e.unwrap().clone()))
+                let enc = e.borrow(&guard).encoding.clone();
+                Self(enc.expect("Uninitialized Encoding"))
             })
             .map_err(|_| Error("Expected Encoding".into()))
     }
@@ -780,10 +780,7 @@ declare_types! {
 
             let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
             let guard = cx.lock();
-            js_encoding
-                .borrow_mut(&guard)
-                .encoding
-                .make_owned(Box::new(encoding));
+            js_encoding.borrow_mut(&guard).encoding = Some(encoding);
 
             Ok(js_encoding.upcast())
         }

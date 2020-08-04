@@ -65,10 +65,7 @@ impl Task for EncodeTask {
                 let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
                 // Set the actual encoding
                 let guard = cx.lock();
-                js_encoding
-                    .borrow_mut(&guard)
-                    .encoding
-                    .make_owned(Box::new(encoding));
+                js_encoding.borrow_mut(&guard).encoding = Some(encoding);
 
                 Ok(js_encoding.upcast())
             }
@@ -79,10 +76,7 @@ impl Task for EncodeTask {
 
                     // Set the actual encoding
                     let guard = cx.lock();
-                    js_encoding
-                        .borrow_mut(&guard)
-                        .encoding
-                        .make_owned(Box::new(encoding));
+                    js_encoding.borrow_mut(&guard).encoding = Some(encoding);
 
                     result.set(&mut cx, i as u32, js_encoding)?;
                 }
