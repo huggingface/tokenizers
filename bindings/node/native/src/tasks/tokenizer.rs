@@ -1,29 +1,13 @@
 extern crate tokenizers as tk;
 
 use crate::encoding::*;
+use crate::tokenizer::RsTokenizer;
 use neon::prelude::*;
-use tk::tokenizer::{EncodeInput, Encoding, TokenizerImpl};
-
-pub struct WorkingTokenizer {
-    _arc: std::sync::Arc<()>,
-    ptr: *const TokenizerImpl,
-}
-impl WorkingTokenizer {
-    /// This is unsafe because the caller must ensure that the given tokenizer
-    /// wont be modified for the duration of the task. We keep an arc here to let the
-    /// caller know when we are done with our pointer on Tokenizer
-    pub unsafe fn new(tokenizer: &TokenizerImpl, arc: std::sync::Arc<()>) -> Self {
-        WorkingTokenizer {
-            _arc: arc,
-            ptr: tokenizer as *const _,
-        }
-    }
-}
-unsafe impl Send for WorkingTokenizer {}
+use tk::tokenizer::{EncodeInput, Encoding};
 
 pub enum EncodeTask {
-    Single(WorkingTokenizer, Option<EncodeInput>, bool),
-    Batch(WorkingTokenizer, Option<Vec<EncodeInput>>, bool),
+    Single(RsTokenizer, Option<EncodeInput>, bool),
+    Batch(RsTokenizer, Option<Vec<EncodeInput>>, bool),
 }
 
 pub enum EncodeOutput {
@@ -41,8 +25,11 @@ impl Task for EncodeTask {
             EncodeTask::Single(worker, input, add_special_tokens) => {
                 let mut input: Option<EncodeInput> =
                     unsafe { std::ptr::replace(input as *const _ as *mut _, None) };
-                let tokenizer: &TokenizerImpl = unsafe { &*worker.ptr };
-                tokenizer
+
+                worker
+                    .tokenizer
+                    .read()
+                    .unwrap()
                     .encode(
                         input.take().ok_or("No provided input")?,
                         *add_special_tokens,
@@ -53,8 +40,11 @@ impl Task for EncodeTask {
             EncodeTask::Batch(worker, input, add_special_tokens) => {
                 let mut input: Option<Vec<EncodeInput>> =
                     unsafe { std::ptr::replace(input as *const _ as *mut _, None) };
-                let tokenizer: &TokenizerImpl = unsafe { &*worker.ptr };
-                tokenizer
+
+                worker
+                    .tokenizer
+                    .read()
+                    .unwrap()
                     .encode_batch(
                         input.take().ok_or("No provided input")?,
                         *add_special_tokens,
@@ -103,8 +93,8 @@ impl Task for EncodeTask {
 }
 
 pub enum DecodeTask {
-    Single(WorkingTokenizer, Vec<u32>, bool),
-    Batch(WorkingTokenizer, Vec<Vec<u32>>, bool),
+    Single(RsTokenizer, Vec<u32>, bool),
+    Batch(RsTokenizer, Vec<Vec<u32>>, bool),
 }
 
 pub enum DecodeOutput {
@@ -119,20 +109,20 @@ impl Task for DecodeTask {
 
     fn perform(&self) -> Result<Self::Output, Self::Error> {
         match self {
-            DecodeTask::Single(worker, ids, skip_special_tokens) => {
-                let tokenizer: &TokenizerImpl = unsafe { &*worker.ptr };
-                tokenizer
-                    .decode(ids.to_vec(), *skip_special_tokens)
-                    .map_err(|e| format!("{}", e))
-                    .map(DecodeOutput::Single)
-            }
-            DecodeTask::Batch(worker, ids, skip_special_tokens) => {
-                let tokenizer: &TokenizerImpl = unsafe { &*worker.ptr };
-                tokenizer
-                    .decode_batch(ids.to_vec(), *skip_special_tokens)
-                    .map_err(|e| format!("{}", e))
-                    .map(DecodeOutput::Batch)
-            }
+            DecodeTask::Single(worker, ids, skip_special_tokens) => worker
+                .tokenizer
+                .read()
+                .unwrap()
+                .decode(ids.to_vec(), *skip_special_tokens)
+                .map_err(|e| format!("{}", e))
+                .map(DecodeOutput::Single),
+            DecodeTask::Batch(worker, ids, skip_special_tokens) => worker
+                .tokenizer
+                .read()
+                .unwrap()
+                .decode_batch(ids.to_vec(), *skip_special_tokens)
+                .map_err(|e| format!("{}", e))
+                .map(DecodeOutput::Batch),
         }
     }
 
