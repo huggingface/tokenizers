@@ -1,4 +1,3 @@
-use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -10,11 +9,11 @@ use serde::{Deserialize, Serialize};
 use tk::models::bpe::BPE;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::WordPiece;
+use tk::models::ModelWrapper;
 use tk::{Model, Token};
 use tokenizers as tk;
 
 use super::error::ToPyResult;
-use tk::models::ModelWrapper;
 
 /// A Model represents some tokenization algorithm like BPE or Word
 /// This class cannot be constructed directly. Please use one of the concrete models.
@@ -55,7 +54,7 @@ impl Model for PyModel {
         self.model.id_to_token(id)
     }
 
-    fn get_vocab(&self) -> &HashMap<String, u32, RandomState> {
+    fn get_vocab(&self) -> &HashMap<String, u32> {
         self.model.get_vocab()
     }
 

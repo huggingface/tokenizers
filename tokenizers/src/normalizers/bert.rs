@@ -1,6 +1,6 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
+
+use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 
 /// Checks whether a character is whitespace
@@ -49,7 +49,8 @@ fn is_chinese_char(c: char) -> bool {
     }
 }
 
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type")]
 pub struct BertNormalizer {
     /// Whether to do the bert basic cleaning:
     ///   1. Remove any control characters
@@ -61,21 +62,6 @@ pub struct BertNormalizer {
     strip_accents: Option<bool>,
     /// Whether to lowercase the input
     lowercase: bool,
-}
-
-impl Serialize for BertNormalizer {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut m = serializer.serialize_struct("BertNormalizer", 5)?;
-        m.serialize_field("type", "BertNormalizer")?;
-        m.serialize_field("clean_text", &self.clean_text)?;
-        m.serialize_field("handle_chinese_chars", &self.handle_chinese_chars)?;
-        m.serialize_field("strip_accents", &self.strip_accents)?;
-        m.serialize_field("lowercase", &self.lowercase)?;
-        m.end()
-    }
 }
 
 impl Default for BertNormalizer {

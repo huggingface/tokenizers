@@ -1,16 +1,17 @@
 use std::fmt;
 
 use regex::Regex;
-use serde::de::{Error, Visitor};
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
+use serde::de::{Error, Visitor};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "type")]
 pub struct Whitespace {
+    #[serde(default = "default_regex", skip)]
     re: Regex,
 }
 
@@ -34,19 +35,8 @@ impl PreTokenizer for Whitespace {
     }
 }
 
-// manually implement serialize / deserialize because Whitespace is not a unit-struct but is
+// manually implement deserialize because Whitespace is not a unit-struct but is
 // serialized like one.
-impl Serialize for Whitespace {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut m = serializer.serialize_struct("Whitespace", 1)?;
-        m.serialize_field("type", "Whitespace")?;
-        m.end()
-    }
-}
-
 impl<'de> Deserialize<'de> for Whitespace {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where

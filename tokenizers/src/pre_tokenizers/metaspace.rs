@@ -1,11 +1,11 @@
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 /// Replaces all the whitespaces by the provided meta character and then
 /// splits on this character
+#[serde(tag = "type")]
 pub struct Metaspace {
     replacement: char,
     str_rep: String,
@@ -65,20 +65,6 @@ impl Decoder for Metaspace {
                 }
             })
             .collect::<String>())
-    }
-}
-
-impl Serialize for Metaspace {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut m = serializer.serialize_struct("Metaspace", 3)?;
-        m.serialize_field("type", "Metaspace")?;
-        m.serialize_field("replacement", &self.replacement)?;
-        m.serialize_field("str_rep", &self.str_rep)?;
-        m.serialize_field("add_prefix_space", &self.add_prefix_space)?;
-        m.end()
     }
 }
 

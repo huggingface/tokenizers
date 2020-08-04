@@ -657,10 +657,6 @@ where
     /// ```
     /// # use tokenizers::Tokenizer;
     /// # use tokenizers::models::bpe::BPE;
-    /// # use tokenizers::normalizers::NormalizerWrapper;
-    /// # use tokenizers::pre_tokenizers::PreTokenizerWrapper;
-    /// # use tokenizers::processors::PostProcessorWrapper;
-    /// # use tokenizers::decoders::DecoderWrapper;
     /// # let mut tokenizer = Tokenizer::new(BPE::default());
     /// #
     /// // Sequences:

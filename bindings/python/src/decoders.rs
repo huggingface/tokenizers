@@ -301,7 +301,7 @@ mod test {
         match py_dec.decoder {
             PyDecoderWrapper::Wrapped(msp) => match msp.as_ref() {
                 DecoderWrapper::Metaspace(_) => {}
-                _ => panic!("Expected Whitespace"),
+                _ => panic!("Expected Metaspace"),
             },
             _ => panic!("Expected wrapped, not custom."),
         }
