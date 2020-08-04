@@ -345,23 +345,23 @@ pub struct PaddingParamsDef {
 #[serde(transparent)]
 pub struct PaddingParams(#[serde(with = "PaddingParamsDef")] pub tk::PaddingParams);
 
-type Tokenizer = TokenizerImpl<Model, Normalizer, PreTokenizer, Processor, Decoder>;
+type RsTokenizer = TokenizerImpl<Model, Normalizer, PreTokenizer, Processor, Decoder>;
 
 /// Tokenizer
 #[derive(Clone)]
-pub struct RsTokenizer {
-    pub(crate) tokenizer: Arc<RwLock<Tokenizer>>,
+pub struct Tokenizer {
+    pub(crate) tokenizer: Arc<RwLock<RsTokenizer>>,
 }
 
 declare_types! {
-    pub class JsTokenizer for RsTokenizer {
+    pub class JsTokenizer for Tokenizer {
         init(mut cx) {
             // init(model: JsModel)
             let model = cx.argument::<JsModel>(0)?;
             let guard = cx.lock();
             let model = model.borrow(&guard).clone();
 
-            Ok(RsTokenizer {
+            Ok(Tokenizer {
                 tokenizer: Arc::new(RwLock::new(TokenizerImpl::new(model)))
             })
         }
@@ -752,9 +752,9 @@ declare_types! {
             let guard = cx.lock();
 
             let trainer = trainer.borrow(&guard).clone();
-            let new_tokenizer = this.borrow_mut(&guard)
+            this.borrow_mut(&guard)
                 .tokenizer.write().unwrap()
-                .train(&trainer, files)
+                .train_and_replace(&trainer, files)
                 .map_err(|e| Error(format!("{}", e)))?;
 
             Ok(cx.undefined().upcast())

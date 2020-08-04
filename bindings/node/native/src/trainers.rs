@@ -1,22 +1,22 @@
 extern crate tokenizers as tk;
 
 use crate::extraction::*;
+use crate::models::Model;
 use crate::tokenizer::AddedToken;
 use neon::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tk::models::{bpe::BpeTrainer, wordpiece::WordPieceTrainer, ModelWrapper, TrainerWrapper};
-use tk::Trainer;
+use tk::models::{bpe::BpeTrainer, wordpiece::WordPieceTrainer, TrainerWrapper};
 
 /// Trainer
 #[derive(Clone)]
-pub struct RsTrainer {
+pub struct Trainer {
     pub trainer: Option<Arc<TrainerWrapper>>,
 }
 
-impl Trainer for RsTrainer {
-    type Model = ModelWrapper;
+impl tk::Trainer for Trainer {
+    type Model = Model;
 
     fn should_show_progress(&self) -> bool {
         self.trainer
@@ -25,14 +25,14 @@ impl Trainer for RsTrainer {
             .should_show_progress()
     }
 
-    fn train(
-        &self,
-        words: HashMap<String, u32>,
-    ) -> tk::Result<(<Self as Trainer>::Model, Vec<tk::AddedToken>)> {
-        self.trainer
+    fn train(&self, words: HashMap<String, u32>) -> tk::Result<(Self::Model, Vec<tk::AddedToken>)> {
+        let (model, special_tokens) = self
+            .trainer
             .as_ref()
             .ok_or("Uninitialized Trainer")?
-            .train(words)
+            .train(words)?;
+
+        Ok((model.into(), special_tokens))
     }
 
     fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
@@ -44,10 +44,10 @@ impl Trainer for RsTrainer {
 }
 
 declare_types! {
-    pub class JsTrainer for RsTrainer {
+    pub class JsTrainer for Trainer {
         init(_) {
             // This should not be called from JS
-            Ok(RsTrainer { trainer: None })
+            Ok(Trainer { trainer: None })
         }
     }
 }

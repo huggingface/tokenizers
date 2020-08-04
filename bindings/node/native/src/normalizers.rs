@@ -174,10 +174,8 @@ fn sequence(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
                     let normalizer = normalizer.borrow(&guard).normalizer.clone();
                     if let Some(normalizer) = normalizer {
                         match normalizer {
-                            JsNormalizerWrapper::Sequence(seq) => {
-                                sequence.extend(seq.iter().map(|i| i.clone()));
-                            }
-                            JsNormalizerWrapper::Wrapped(inner) => sequence.push(inner.clone()),
+                            JsNormalizerWrapper::Sequence(seq) => sequence.extend(seq),
+                            JsNormalizerWrapper::Wrapped(inner) => sequence.push(inner),
                         }
                         Ok(())
                     } else {
@@ -191,7 +189,7 @@ fn sequence(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
 
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    normalizer.borrow_mut(&guard).normalizer = Some(JsNormalizerWrapper::Sequence(sequence).into());
+    normalizer.borrow_mut(&guard).normalizer = Some(JsNormalizerWrapper::Sequence(sequence));
     Ok(normalizer)
 }
 

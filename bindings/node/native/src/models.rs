@@ -19,6 +19,14 @@ pub struct Model {
     pub model: Option<Arc<ModelWrapper>>,
 }
 
+impl From<ModelWrapper> for Model {
+    fn from(wrapper: ModelWrapper) -> Self {
+        Self {
+            model: Some(Arc::new(wrapper)),
+        }
+    }
+}
+
 impl tk::Model for Model {
     fn tokenize(&self, sequence: &str) -> tk::Result<Vec<Token>> {
         self.model
