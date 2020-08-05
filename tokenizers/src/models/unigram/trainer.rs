@@ -483,10 +483,7 @@ impl UnigramTrainer {
             .collect();
         new_pieces
     }
-    pub fn _train(
-        &self,
-        mut sentences: Vec<Sentence>,
-    ) -> Result<(Box<dyn Model>, Vec<AddedToken>)> {
+    pub fn _train(&self, mut sentences: Vec<Sentence>) -> Result<(Unigram, Vec<AddedToken>)> {
         // TODO handle progress bar.
         let progress = self.setup_progress();
         //
@@ -581,20 +578,17 @@ impl UnigramTrainer {
         // // Finally, adjusts the size of sentencepices to be |vocab_size|.
         model = self.finalize(model, required_chars);
 
-        Ok((Box::new(model), self.special_tokens.clone()))
+        Ok((model, self.special_tokens.clone()))
     }
 }
 
 impl Trainer for UnigramTrainer {
+    type Model = Unigram;
+
     /// Train a Unigram model
-    fn train(
-        &self,
-        word_counts: HashMap<String, u32>,
-    ) -> Result<(Box<dyn Model>, Vec<AddedToken>)> {
+    fn train(&self, word_counts: HashMap<String, u32>) -> Result<(Unigram, Vec<AddedToken>)> {
         let sentences: Vec<_> = word_counts.into_iter().collect();
         self._train(sentences)
-        // §let (unigram, tokens) = self._train(word_counts)?;
-        // §Ok((unigram, tokens))
     }
 
     /// Process a bunch of tokens, counting them

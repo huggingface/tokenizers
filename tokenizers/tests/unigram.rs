@@ -9,23 +9,18 @@ use std::path::Path;
 use std::process::Command;
 use tokenizers::models::unigram::Unigram;
 #[cfg(not(debug_assertions))]
-use tokenizers::models::unigram::{lattice::Lattice, trainer::UnigramTrainerBuilder};
-use tokenizers::pre_tokenizers::whitespace::Whitespace;
-use tokenizers::tokenizer::{Model, NormalizedString, PreTokenizer};
+use tokenizers::models::unigram::{Lattice, UnigramTrainerBuilder};
+use tokenizers::tokenizer::Model;
 #[cfg(not(debug_assertions))]
 use unicode_normalization::UnicodeNormalization;
 
 #[test]
 fn test_unigram_from_file() {
     let model = Unigram::load(Path::new("data/unigram.json")).unwrap();
-    let pretok = Whitespace;
     let string = "吾輩《わがはい》は猫である。名前はまだ無い。";
-    let input = pretok
-        .pre_tokenize(&mut NormalizedString::from(string))
-        .unwrap();
     assert_eq!(
         model
-            .tokenize(input)
+            .tokenize(string)
             .unwrap()
             .iter()
             .map(|tok| tok.value.clone())
@@ -49,12 +44,9 @@ fn test_unigram_from_file() {
 
     // Check it works with spm_export_vocab model.
     let model = Unigram::load_spm(Path::new("data/unigram.model")).unwrap();
-    let input = pretok
-        .pre_tokenize(&mut NormalizedString::from(string))
-        .unwrap();
     assert_eq!(
         model
-            .tokenize(input)
+            .tokenize(string)
             .unwrap()
             .iter()
             .map(|tok| tok.value.clone())
@@ -154,12 +146,7 @@ fn test_train_from_file() {
         )
         .unwrap();
 
-    let pretok = Whitespace;
-    let input = pretok
-        .pre_tokenize(&mut NormalizedString::from(
-            "吾輩《わがはい》は猫である。名前はまだ無い。",
-        ))
-        .unwrap();
+    let input = "吾輩《わがはい》は猫である。名前はまだ無い。";
     assert_eq!(
         model
             .tokenize(input)

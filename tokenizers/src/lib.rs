@@ -109,13 +109,14 @@ extern crate lazy_static;
 #[macro_use]
 extern crate derive_builder;
 
+#[macro_use]
+pub mod utils;
 pub mod decoders;
 pub mod models;
 pub mod normalizers;
 pub mod pre_tokenizers;
 pub mod processors;
 pub mod tokenizer;
-pub mod utils;
 
 // Re-export from tokenizer
 pub use tokenizer::*;
