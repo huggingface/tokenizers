@@ -1,11 +1,10 @@
 use crate::models::unigram::lattice::Lattice;
 use crate::models::unigram::trie::{Trie, TrieBuilder};
-use crate::tokenizer::{Model, Offsets, Result, Token};
+use crate::tokenizer::{Model, Result, Token};
 use serde::Deserialize;
 
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -48,23 +47,6 @@ impl Default for Unigram {
             ("<unk>".to_string(), 0.0),
         ];
         Self::from(&vocab, 0, 1, 2)
-    }
-}
-
-/// When loading a `Unigram` model from a file, you might encounter errors.
-#[derive(Debug, Clone)]
-pub enum LoadError {
-    InvalidLine(String),
-}
-impl std::fmt::Display for LoadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Load Error")
-    }
-}
-
-impl Error for LoadError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(self)
     }
 }
 
@@ -219,27 +201,21 @@ impl Unigram {
     ///
     /// let model = Unigram::load_spm(Path::new("myprefix.txt")).unwrap();
     /// ```
-    pub fn load_spm(path: &Path) -> Result<Unigram> {
-        let file = File::open(path).unwrap();
-        let reader = BufReader::new(file);
-
-        // Read the JSON contents of the file as an instance of `User`.
-        let mut table: Vec<(String, f64)> = vec![];
-        for (i, line) in reader.lines().enumerate() {
-            let real_line = line?;
-            // ▁ is spm token for space.
-            let newline = real_line.replace('▁', " ");
-            let tokens: Vec<&str> = newline.split('\t').collect();
-            match tokens.as_slice() {
-                [token, score] => table.push((token.to_string(), score.parse().unwrap())),
-                _ => {
-                    return Err(Box::new(LoadError::InvalidLine(format!(
-                        "line {} is invalid {:?}",
-                        i, real_line
-                    ))))
+    pub fn load_spm<P: AsRef<Path>>(path: P) -> Result<Unigram> {
+        let file = BufReader::new(File::open(path)?);
+        let table = file
+            .lines()
+            .enumerate()
+            .map(|(i, line)| {
+                let line = line?;
+                let tokens: Vec<_> = line.split('\t').collect();
+                match tokens.as_slice() {
+                    [token, score] => Ok((token.to_string(), score.parse()?)),
+                    _ => Err(format!("Line {} is invalid {:?}", i, line).into()),
                 }
-            }
-        }
+            })
+            .collect::<Result<Vec<_>>>()?;
+
         // XXX: by default in spm unk is 0, bos is 1, eos is 2
         let u = Unigram::from(&table, 1, 2, 0);
         Ok(u)
@@ -290,7 +266,6 @@ impl<'a> Iterator for UnigramIterator<'a> {
     }
 }
 
-#[typetag::serde]
 impl Model for Unigram {
     fn get_vocab(&self) -> &HashMap<String, u32> {
         &self.token_to_ids
@@ -300,30 +275,19 @@ impl Model for Unigram {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sentence: Vec<(String, Offsets)>) -> Result<Vec<Token>> {
-        // TODO offsets
-        let mut results: Vec<Token> = Vec::with_capacity(sentence.len());
-        for (element, _) in sentence {
-            let tokens = self.encode(&element, false);
-            let elts: Vec<Token> = tokens
-                .iter()
-                .enumerate()
-                .map(|(word, string)| {
-                    let id = match self.token_to_ids.get(string) {
-                        Some(id) => id,
-                        None => {
-                            // println!("Vocab {:?}", self.vocab);
-                            // println!("String {:?} has no id", string);
-                            &0
-                        }
-                    };
-                    let offsets = (0, 0);
-                    Token::new(*id, string.to_string(), offsets, word as u32)
-                })
-                .collect();
-            results.extend(elts);
-        }
-        Ok(results)
+    fn tokenize(&self, sentence: &str) -> Result<Vec<Token>> {
+        let tokens = self.encode(sentence, false);
+        let mut offset = 0;
+        Ok(tokens
+            .iter()
+            .map(|string| {
+                let id = self.token_to_ids.get(string).unwrap_or(&0);
+                let len = string.len();
+                let offsets = (offset, offset + len);
+                offset += len;
+                Token::new(*id, string.to_string(), offsets)
+            })
+            .collect())
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
