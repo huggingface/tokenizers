@@ -136,3 +136,22 @@ impl Normalizer for BertNormalizer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn handle_chinese_chars() {
+        let mut normalized = NormalizedString::from("野口里佳 Noguchi Rika");
+        let normalizer = BertNormalizer {
+            handle_chinese_chars: true,
+            lowercase: false,
+            clean_text: false,
+            strip_accents: Some(false),
+        };
+
+        normalizer.normalize(&mut normalized).unwrap();
+        assert_eq!(normalized.get(), " 野  口  里  佳  Noguchi Rika");
+    }
+}

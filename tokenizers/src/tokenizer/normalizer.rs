@@ -352,9 +352,10 @@ impl NormalizedString {
                     if idx < 1 {
                         (0, 0)
                     } else {
-                        // This is a newly inserted character, so we use the alignment from the
-                        // previous one
-                        self.alignments[idx - 1]
+                        // This is a newly inserted character, so it has a length of 0 at the
+                        // position of the last character.
+                        let end_previous = self.alignments[idx - 1].1;
+                        (end_previous, end_previous)
                     }
                 } else {
                     self.alignments[idx]
@@ -791,10 +792,10 @@ mod tests {
             &n.alignments,
             &[
                 (0, 1),
-                (0, 1),
+                (1, 1),
                 (1, 2),
                 (2, 3),
-                (2, 3),
+                (3, 3),
                 (3, 4),
                 (4, 5),
                 (5, 6),
@@ -889,6 +890,40 @@ mod tests {
         assert_eq!(
             n.get_range_original(Range::Normalized(1..n.normalized.len() - 1)),
             Some("Hello")
+        );
+    }
+
+    #[test]
+    fn added_characters_alignment() {
+        let mut n = NormalizedString::from("野口 No");
+        n.transform(
+            n.get().to_owned().chars().flat_map(|c| {
+                if (c as usize) > 0x4E00 {
+                    vec![(' ', 1), (c, 0), (' ', 1)]
+                } else {
+                    vec![(c, 0)]
+                }
+            }),
+            0,
+        );
+
+        assert_eq!(
+            n,
+            NormalizedString {
+                original: "野口 No".to_owned(),
+                normalized: " 野  口  No".to_owned(),
+                alignments: vec![
+                    (0, 0),
+                    (0, 1),
+                    (1, 1),
+                    (1, 1),
+                    (1, 2),
+                    (2, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                ]
+            }
         );
     }
 
