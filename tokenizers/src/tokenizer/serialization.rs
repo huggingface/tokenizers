@@ -162,7 +162,7 @@ where
             // Warn the user if the id is different than expected
             let received_id = tokenizer.token_to_id(&tk);
             if received_id != Some(token.id) {
-                println!(
+                warn!(
                     "Warning: Token '{}' was expected to have ID '{}' but was given ID '{}'",
                     tk,
                     token.id,
