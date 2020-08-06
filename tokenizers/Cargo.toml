@@ -48,6 +48,7 @@ unicode-normalization-alignments = "0.1"
 unicode_categories = "0.1"
 indicatif = "0.14"
 itertools = "0.9"
+log = "0.4"
 
 [dev-dependencies]
 criterion = "0.3"

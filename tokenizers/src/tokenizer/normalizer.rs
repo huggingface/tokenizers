@@ -5,6 +5,19 @@ use crate::{Offsets, Result};
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
 
+/// Add or Substract a signed isize on a usize. Makes sure of avoiding
+/// any substraction overflow, flooring at 0.
+macro_rules! apply_signed {
+    ($origin: expr, $signed: expr) => {
+        if $signed.is_positive() {
+            $origin += $signed as usize;
+        } else {
+            let (result, overflow) = $origin.overflowing_sub(-($signed) as usize);
+            $origin = if overflow { 0 } else { result };
+        }
+    };
+}
+
 /// The possible offsets referential
 pub enum OffsetReferential {
     Original,
@@ -13,28 +26,46 @@ pub enum OffsetReferential {
 
 /// Represents a Range usable by the NormalizedString to index its content.
 /// A Range can use indices relative to either the `Original` or the `Normalized` string
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Range<T: RangeBounds<usize> + Clone> {
     Original(T),
     Normalized(T),
 }
 
+#[allow(clippy::len_without_is_empty)]
 impl<T> Range<T>
 where
     T: RangeBounds<usize> + Clone,
 {
     /// Unwrap the underlying range
-    fn unwrap(self) -> T {
+    pub fn unwrap(self) -> T {
         match self {
             Range::Original(r) => r,
             Range::Normalized(r) => r,
         }
     }
 
+    /// Return the length of the current Range if not Unbounded
+    pub fn len(&self) -> Option<usize> {
+        let range = self.clone().unwrap();
+
+        let end = match range.end_bound() {
+            Bound::Unbounded => None,
+            Bound::Included(i) => Some(*i + 1),
+            Bound::Excluded(i) => Some(*i),
+        }?;
+
+        match range.start_bound() {
+            Bound::Unbounded => Some(end),
+            Bound::Included(i) => Some(end - (*i + 1)),
+            Bound::Excluded(i) => Some(end - *i),
+        }
+    }
+
     /// Converts the current Range to a `std::ops::Range<usize>`. This requires the `max_len`
     /// of the represented string (in chars, not bytes) in order to cover the case where the
     /// original provided range was unbounded
-    fn into_full_range(self, max_len: usize) -> std::ops::Range<usize> {
+    pub fn into_full_range(self, max_len: usize) -> std::ops::Range<usize> {
         let range = self.unwrap();
 
         let start = match range.start_bound() {
@@ -80,8 +111,11 @@ pub struct NormalizedString {
     /// The normalized version of the string, after all modifications
     normalized: String,
     /// Mapping from normalized string to original one: (start, end) for each
-    /// character of the normalized string
+    /// byte of the normalized string
     alignments: Vec<(usize, usize)>,
+    /// Mapping from original string to normalized one: (start, end) for each
+    /// byte of the original string
+    alignments_original: Vec<(usize, usize)>,
 }
 
 impl NormalizedString {
@@ -95,276 +129,463 @@ impl NormalizedString {
         &self.original
     }
 
-    /// Return the offsets of the normalized part
-    pub fn offsets(&self) -> Offsets {
-        (0, self.len())
-    }
-
-    /// Return the offsets of the original part
-    pub fn offsets_original(&self) -> Offsets {
-        (0, self.len_original())
-    }
-
     /// Convert the given offsets range from one referential to the other one:
     /// `Original => Normalized` or `Normalized => Original`
+    ///
+    /// Returns `None` when targeting something that is outside range
     pub fn convert_offsets<T>(&self, range: Range<T>) -> Option<std::ops::Range<usize>>
-    where
-        T: RangeBounds<usize> + Clone,
-    {
-        match range {
-            Range::Original(_) => {
-                let (mut start, mut end) = (None, None);
-                let target = range.into_full_range(self.len_original());
-
-                // If we target before the start of the normalized string
-                if let Some((start, _)) = self.alignments.first() {
-                    if target.end <= *start {
-                        return Some(0..0);
-                    }
-                }
-                // If we target after the end of the normalized string
-                if let Some((_, end)) = self.alignments.last() {
-                    if target.start >= *end {
-                        let len = self.len();
-                        return Some(len..len);
-                    }
-                }
-
-                // Otherwise lets find the range
-                self.alignments
-                    .iter()
-                    .enumerate()
-                    .take_while(|(_, alignment)| target.end >= alignment.1)
-                    .for_each(|(i, alignment)| {
-                        if alignment.0 >= target.start && start.is_none() {
-                            // Here we want to keep the first char in the normalized string
-                            // that is on or *after* the target start.
-                            start = Some(i);
-                        }
-                        if alignment.1 <= target.end {
-                            end = Some(i + 1);
-                        }
-                    });
-
-                // If we didn't find the start, let's use the end of the normalized string
-                let start = start.unwrap_or_else(|| self.len());
-                // The end must be greater or equal to start, and might be None otherwise
-                let end = end.filter(|e| *e >= start);
-
-                Some(start..end?)
-            }
-            Range::Normalized(_) => {
-                // If we target 0..0 on an empty normalized string, we want to return the
-                // entire original one
-                let range = range.into_full_range(self.len());
-
-                if self.alignments.is_empty() && range == (0..0) {
-                    Some(0..self.len_original())
-                } else {
-                    self.alignments
-                        .get(range)
-                        .map(|alignments| {
-                            if alignments.is_empty() {
-                                None
-                            } else {
-                                let start = alignments[0].0;
-                                let end = alignments[alignments.len() - 1].1;
-                                Some(start..end)
-                            }
-                        })
-                        .flatten()
-                }
-            }
-        }
-    }
-
-    /// Return a range of the normalized string (indexing on char, not bytes)
-    pub fn get_range<T>(&self, range: Range<T>) -> Option<&str>
-    where
-        T: RangeBounds<usize> + Clone,
-    {
-        match range {
-            Range::Original(_) => self
-                .convert_offsets(range)
-                .map(|r| get_range_of(&self.normalized, r))
-                .flatten(),
-            Range::Normalized(r) => get_range_of(&self.normalized, r),
-        }
-    }
-
-    /// Return a range of the original string (indexing on char, not bytes)
-    pub fn get_range_original<T>(&self, range: Range<T>) -> Option<&str>
-    where
-        T: RangeBounds<usize> + Clone,
-    {
-        match range {
-            Range::Original(r) => get_range_of(&self.original, r),
-            Range::Normalized(_) => self
-                .convert_offsets(range)
-                .map(|r| get_range_of(&self.original, r))
-                .flatten(),
-        }
-    }
-
-    /// Return a new NormalizedString that contains only the specified range,
-    /// indexing on bytes. Any range that splits a UTF-8 char will return None.
-    ///
-    /// If we want a slice of the `NormalizedString` based on a `Range::Normalized``,
-    /// the original part of the `NormalizedString` will contain any "additional"
-    /// content on the right, and also on the left. The left will be included
-    /// only if we are retrieving the very beginning of the string, since there
-    /// is no previous part. The right is always included, up to what's covered
-    /// by the next part of the normalized string.  This is important to be able
-    /// to build a new `NormalizedString` from multiple contiguous slices
-    pub fn slice_bytes<T>(&self, range: Range<T>) -> Option<NormalizedString>
-    where
-        T: RangeBounds<usize> + Clone,
-    {
-        let (r, s) = match range {
-            Range::Original(_) => (
-                range.clone().into_full_range(self.original.len()),
-                &self.original,
-            ),
-            Range::Normalized(_) => (
-                range.clone().into_full_range(self.normalized.len()),
-                &self.normalized,
-            ),
-        };
-
-        let (mut start, mut end) = if r == (0..0) {
-            (Some(0), Some(0))
-        } else {
-            (None, None)
-        };
-        s.char_indices()
-            .enumerate()
-            .take_while(|(_, (b, _))| *b < r.end)
-            .filter(|(_, (b, _))| *b >= r.start)
-            .for_each(|(i, (b, c))| {
-                if b == r.start {
-                    start = Some(i);
-                }
-                if b + c.len_utf8() == r.end {
-                    end = Some(i + 1);
-                }
-            });
-
-        match range {
-            Range::Original(_) => self.slice(Range::Original(start?..end?)),
-            Range::Normalized(_) => self.slice(Range::Normalized(start?..end?)),
-        }
-    }
-
-    /// Return a new NormalizedString that contains only the specified range,
-    /// indexing on char
-    ///
-    /// If we want a slice of the `NormalizedString` based on a `Range::Normalized``,
-    /// the original part of the `NormalizedString` will contain any "additional"
-    /// content on the right, and also on the left. The left will be included
-    /// only if we are retrieving the very beginning of the string, since there
-    /// is no previous part. The right is always included, up to what's covered
-    /// by the next part of the normalized string.  This is important to be able
-    /// to build a new `NormalizedString` from multiple contiguous slices
-    pub fn slice<T>(&self, range: Range<T>) -> Option<NormalizedString>
     where
         T: RangeBounds<usize> + Clone,
     {
         let len_original = self.len_original();
         let len_normalized = self.len();
 
-        // Find out the part of the normalized string we should keep
-        let r_normalized = match range {
-            Range::Original(_) => self.convert_offsets(range.clone())?,
-            Range::Normalized(_) => range.clone().into_full_range(len_normalized),
+        let (target, original) = match range {
+            Range::Original(_) => (range.into_full_range(len_original), true),
+            Range::Normalized(_) => (range.into_full_range(len_normalized), false),
         };
 
-        let r_original = match range {
-            Range::Original(_) => range.into_full_range(len_original),
-            Range::Normalized(_) => {
-                let end_range = self.convert_offsets(Range::Normalized(r_normalized.end..));
-                let mut range = self.convert_offsets(range)?;
+        // If we target an empty range, let's return the same
+        if target.start == target.end {
+            return Some(target);
+        }
 
-                // If we take the very beginning of the normalized string, we should take
-                // all the beginning of the original too
-                if r_normalized.start == 0 && range.start != 0 {
-                    range.start = 0;
-                }
-                // If there is a void between the `end` char we target and the next one, we
-                // want to include everything in-between from the original string
-                match end_range {
-                    Some(r) if r.start > range.end => range.end = r.start,
-                    _ => {}
-                }
-                // If we target the end of the normalized but the original is longer
-                if r_normalized.end == self.alignments.len() && len_original > range.end {
-                    range.end = len_original;
-                }
+        // If we target 0..0 on an empty string, we want to expand to the entire equivalent
+        if original && self.alignments_original.is_empty() && target == (0..0) {
+            return Some(0..len_normalized);
+        }
+        if !original && self.alignments.is_empty() && target == (0..0) {
+            return Some(0..len_original);
+        }
 
-                range
+        // Otherwise just convert them
+        if original {
+            &self.alignments_original
+        } else {
+            &self.alignments
+        }
+        .get(target)
+        .map(expand_alignments)
+        .flatten()
+    }
+
+    /// Return a range of the normalized string
+    pub fn get_range<T>(&self, range: Range<T>) -> Option<&str>
+    where
+        T: RangeBounds<usize> + Clone,
+    {
+        match range {
+            Range::Original(_) => self.normalized.get(self.convert_offsets(range)?),
+            Range::Normalized(_) => self.normalized.get(range.into_full_range(self.len())),
+        }
+    }
+
+    /// Return a range of the original string
+    pub fn get_range_original<T>(&self, range: Range<T>) -> Option<&str>
+    where
+        T: RangeBounds<usize> + Clone,
+    {
+        match range {
+            Range::Original(_) => self
+                .original
+                .get(range.into_full_range(self.len_original())),
+            Range::Normalized(_) => self.original.get(self.convert_offsets(range)?),
+        }
+    }
+
+    /// Validate the given range, to make sure it is on char boundaries
+    fn validate_range<T: RangeBounds<usize> + Clone>(
+        &self,
+        range: Range<T>,
+    ) -> Option<Range<std::ops::Range<usize>>> {
+        match range {
+            Range::Original(_) => {
+                let r = range.into_full_range(self.original.len());
+                if !(self.original.is_char_boundary(r.start)
+                    && self.original.is_char_boundary(r.end))
+                {
+                    None
+                } else {
+                    Some(Range::Original(r))
+                }
             }
+            Range::Normalized(_) => {
+                let r = range.into_full_range(self.normalized.len());
+                if !(self.normalized.is_char_boundary(r.start)
+                    && self.normalized.is_char_boundary(r.end))
+                {
+                    None
+                } else {
+                    Some(Range::Normalized(r))
+                }
+            }
+        }
+    }
+
+    /// Return a slice of the current NormalizedString
+    /// If the range is not on char boundaries, return None
+    pub fn slice<T>(&self, range: Range<T>) -> Option<NormalizedString>
+    where
+        T: RangeBounds<usize> + Clone,
+    {
+        let full_range = self.validate_range(range)?;
+        let (normalized_range, original_range) = match full_range {
+            Range::Original(_) => (
+                self.convert_offsets(full_range.clone())?,
+                full_range.clone().unwrap(),
+            ),
+            Range::Normalized(_) => (
+                full_range.clone().unwrap(),
+                self.convert_offsets(full_range.clone())?,
+            ),
         };
 
-        // We need to shift the alignments according to the part of the original string that we
-        // keep
-        let alignment_shift = r_original.start;
+        let o_shift = normalized_range.start;
+        let n_shift = original_range.start;
 
         Some(Self {
-            original: get_range_of(&self.original, r_original)
+            original: self
+                .get_range_original(full_range.clone())
                 .unwrap_or_default()
                 .into(),
-            normalized: get_range_of(&self.normalized, r_normalized.clone())
-                .unwrap_or_default()
-                .into(),
+            normalized: self.get_range(full_range).unwrap_or_default().into(),
             alignments: self
                 .alignments
-                .get(r_normalized)?
+                .get(normalized_range)?
                 .to_vec()
                 .iter()
-                .map(|(start, end)| (start - alignment_shift, end - alignment_shift))
+                .map(|(start, end)| (start - n_shift, end - n_shift))
+                .collect(),
+            alignments_original: self
+                .alignments_original
+                .get(original_range.clone())?
+                .to_vec()
+                .iter()
+                .map(|(start, end)| (start - o_shift, end - o_shift))
                 .collect(),
         })
     }
 
-    /// Applies transformations to the current normalized version, updating the current
-    /// alignments with the new ones.
+    /// Applies transformations to the current normalized version of the string,
+    /// while updating the alignments.
     /// This method expect an Iterator yielding each char of the new normalized string
     /// with a `change` isize equals to:
     ///   - `1` if this is a new char
     ///   - `-N` if the char is right before N removed chars
-    ///   - `0` if this char represents the old one (even if changed)
+    ///   - `0` if the char is replacing the existing one
     /// Since it is possible that the normalized string doesn't include some of the characters at
     /// the beginning of the original one, we need an `initial_offset` which represents the number
     /// of removed chars at the very beginning.
-    ///
-    /// `change` should never be more than `1`. If multiple chars are added, each of
-    /// them has a `change` of `1`, but more doesn't make any sense.
-    /// We treat any value above `1` as `1`.
-    pub fn transform<I: Iterator<Item = (char, isize)>>(&mut self, dest: I, initial_offset: usize) {
-        let mut offset = -(initial_offset as isize);
-        let (normalized, alignments): (String, Vec<_>) = dest
-            .enumerate()
-            .map(|(index, (c, changes))| {
-                // A positive offset means we added characters. So we need to remove this offset
-                // from the current index to find out the previous id
-                let idx = (index as isize - offset) as usize;
-                offset += changes;
+    pub fn transform_range<T, I>(&mut self, range: Range<T>, dest: I, initial_offset: usize)
+    where
+        T: RangeBounds<usize> + Clone,
+        I: IntoIterator<Item = (char, isize)>,
+    {
+        let n_range = match range {
+            Range::Normalized(_) => range.into_full_range(self.len()),
+            Range::Original(_) => match self.convert_offsets(range) {
+                Some(range) => range,
+                None => return,
+            },
+        };
+        trace!(
+            "===== transform_range call (initial_offset: {}) =====",
+            initial_offset
+        );
+
+        // Retrieve the original characters that are being replaced. This let us
+        // compute the change in byte sizes along the way.
+        let mut replaced_normalized = self.normalized[n_range.clone()]
+            .chars()
+            .collect::<Vec<_>>()
+            .into_iter();
+
+        // Handle the initial offset in the original alignment. All the characters
+        // that were removed from the normalized one should have their width reduced
+        // by the number of bytes we remove
+        let mut end_shift_start = n_range.end;
+        let initial_removed = if initial_offset > 0 {
+            trace!("=> Clearing alignment for {} chars", initial_offset);
+            let mut removed_bytes = 0;
+            let removed_chars = (0..initial_offset)
+                .map(|_| {
+                    let c = replaced_normalized.next().unwrap_or_else(|| {
+                        // We want to panic here, because the NormalizedString is in
+                        // a bad state if this happens. We already modified a lot of things
+                        panic!(
+                            "Expected to remove {} characters but couldn't find them...",
+                            initial_offset
+                        )
+                    });
+                    removed_bytes += c.len_utf8();
+                    c
+                })
+                .collect::<Vec<_>>();
+
+            let mut offset = n_range.start;
+            let mut o_shift = 0;
+            // Then we remove all these chars, updating the alignments along the way
+            for c in removed_chars {
+                let removed_o_range = self
+                    .alignments
+                    .get(offset..offset + c.len_utf8())
+                    .map(expand_alignments)
+                    .flatten()
+                    .unwrap();
+                offset += c.len_utf8();
+                o_shift += c.len_utf8();
+                if let Some(alignments) = self.alignments_original.get_mut(removed_o_range) {
+                    trace!("Clearing alignments for char {:?}: {:?}", c, alignments);
+                    alignments.iter_mut().for_each(|mut offsets| {
+                        // At the very end we will apply the global shift to the remaining
+                        // original offsets. We should start after these to avoid doing it twice
+                        if offsets.1 > end_shift_start {
+                            end_shift_start = offsets.1;
+                        }
+
+                        apply_signed!(offsets.1, -(o_shift as isize));
+                        //apply_signed!(offsets.1, -(c.len_utf8() as isize));
+                        // Make sure the starting offset is always smaller or equal to the end
+                        if offsets.0 > offsets.1 {
+                            offsets.0 = offsets.1;
+                        }
+                    });
+                    trace!("Cleared: {:?}", alignments);
+                }
+            }
+
+            removed_bytes
+        } else {
+            0
+        };
+
+        // o_shift is the shift to be applied to all original alignment along the way
+        let mut o_shift = -(initial_removed as isize);
+        let mut offset = (initial_removed + n_range.start) as isize;
+        let mut alignments = Vec::with_capacity(n_range.len());
+        trace!("=> Applying transformations");
+        let normalized = dest
+            .into_iter()
+            //.enumerate()
+            .map(|(c, changes)| {
+                trace!(
+                    "### {:?} with size {}: {} with offset {} ###",
+                    c,
+                    c.len_utf8(),
+                    match changes {
+                        0 => "Replacing".into(),
+                        ch if ch > 0 => "Adding".into(),
+                        ch if ch < 0 => format!("Replacing + removing {} following chars", ch),
+                        _ => "Undefined".into(),
+                    },
+                    offset
+                );
+
+                let idx = offset as usize;
                 let align = if changes.is_positive() {
                     if idx < 1 {
                         (0, 0)
                     } else {
-                        // This is a newly inserted character, so we use the alignment from the
-                        // previous one
+                        // This is a newly inserted character, so it shares the same alignment
+                        // than the previous one
                         self.alignments[idx - 1]
                     }
                 } else {
                     self.alignments[idx]
                 };
+
+                // If we are replacing a character, find it and compute the change in size
+                let replaced_char = if !changes.is_positive() {
+                    replaced_normalized.next()
+                } else {
+                    None
+                };
+                let replaced_char_size = replaced_char.map_or(0, |c| c.len_utf8());
+                let replaced_char_size_change = c.len_utf8() as isize - replaced_char_size as isize;
+                if let Some(ref replaced_char) = replaced_char {
+                    trace!(
+                        "Replacing char {:?} - with a change in size: {}",
+                        replaced_char,
+                        replaced_char_size_change
+                    );
+                }
+
+                // If we are removing some characters, find them too
+                let n_changes = if changes.is_negative() {
+                    -changes as usize
+                } else {
+                    0
+                };
+                let removed_chars = (0..n_changes)
+                    .map(|_| {
+                        replaced_normalized.next().unwrap_or_else(|| {
+                            // We want to panic here, because the NormalizedString is in
+                            // a bad state if this happens. We already modified a lot of things
+                            panic!(
+                                "Expected to remove {} characters but couldn't find them...",
+                                n_changes
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                let total_bytes_to_remove: usize = removed_chars.iter().map(|c| c.len_utf8()).sum();
+                trace!("Total bytes to remove: {}", total_bytes_to_remove);
+
+                // If we are removing characters, there are two possible scenarios:
+                //   1. We remove characters that are part of the original string (most likely)
+                //   2. We remove characters that were previously added (with NFD for example)
+                //      and are just part of the normalized string
+                let (removing_from_original, removing_from_normalized) =
+                    if total_bytes_to_remove > 0 {
+                        let original_range =
+                            self.alignments[idx].1..self.alignments[idx + total_bytes_to_remove].1;
+                        (
+                            original_range.len(),
+                            total_bytes_to_remove - original_range.len(),
+                        )
+                    } else {
+                        (0, 0)
+                    };
+                if total_bytes_to_remove > 0 {
+                    trace!(
+                        "Bytes to remove from original alignments: {}",
+                        removing_from_original
+                    );
+                    trace!(
+                        "Bytes to remove from normalized alignments: {}",
+                        removing_from_normalized
+                    );
+                }
+
+                // Update the original alignments for the current char
+                if let Some(alignments) = self.alignments_original.get_mut(align.0..align.1) {
+                    trace!("Updating original alignments: {:?}", alignments);
+                    // Let's compute the actual change in size for the original alignment.
+                    // This value may be different than `replaced_char_size_change` because the
+                    // char might not exist in the original string. It might have been added.
+                    let original_range = expand_alignments(alignments);
+                    let replaced_char_size_change_original =
+                        c.len_utf8() as isize - original_range.map_or(0, |r| r.len()) as isize;
+                    trace!(
+                        "Change in size for the current char: {}",
+                        replaced_char_size_change
+                    );
+                    trace!(
+                        "Change in size in the original alignment for the current char: {}",
+                        replaced_char_size_change_original
+                    );
+                    alignments.iter_mut().for_each(|mut offsets| {
+                        // A new char is being added, we need to extend the current
+                        // alignment. No need to apply the shift in this case as it
+                        // should have been applied already (with a previous changes == 0).
+                        if changes.is_positive() {
+                            offsets.1 += c.len_utf8();
+                        // Otherwise we just apply the shift
+                        } else {
+                            apply_signed!(offsets.1, replaced_char_size_change);
+                            apply_signed!(offsets.1, -(removing_from_normalized as isize));
+
+                            // We only apply o_shift if we are:
+                            // - Removing characters
+                            // - Replacing one, that has the same size in both normalized and
+                            //   original alignments.
+                            // Otherwise it means we are modifying multiple times the same
+                            // original character. This happens when normalized characters
+                            // are added (not part of the original), and then replaced.
+                            if changes.is_negative()
+                                || replaced_char_size_change == replaced_char_size_change_original
+                            {
+                                apply_signed!(offsets.0, o_shift);
+                                apply_signed!(offsets.1, o_shift);
+                            }
+                        }
+                    });
+                    trace!("Updated to: {:?}", alignments);
+                }
+
+                // If some were removed, we need to zero them out in the original alignment
+                if removing_from_original > 0 {
+                    let removed_chars =
+                        self.alignments[idx].1..self.alignments[idx + total_bytes_to_remove].1;
+                    // They should use the original alignment of the current character
+                    let new_idx = self.alignments_original[align.0].1;
+                    if let Some(alignments) = self.alignments_original.get_mut(removed_chars) {
+                        trace!("Removing original alignments: {:?}", alignments);
+                        alignments.iter_mut().for_each(|mut offsets| {
+                            offsets.0 = new_idx;
+                            offsets.1 = new_idx;
+                        });
+                    }
+                }
+
+                // Keep track of the changes for next offsets
+                offset += replaced_char_size as isize;
+                offset += total_bytes_to_remove as isize;
+                // For the original only the real modifications count
+                o_shift += replaced_char_size_change;
+                o_shift -= total_bytes_to_remove as isize;
+
+                trace!("New normalized alignment: {}x {:?}", c.len_utf8(), align);
+                alignments.extend((0..c.len_utf8()).map(|_| align));
+
                 // Then we keep only the char for string reconstruction
-                (c, align)
+                c
             })
-            .unzip();
-        self.alignments = alignments;
-        self.normalized = normalized;
+            .collect::<String>();
+
+        // Apply the changes to the remaining original alignments
+        if o_shift != 0 {
+            trace!(
+                "Shifting the end from {:?} using shift: {}",
+                end_shift_start,
+                o_shift
+            );
+            let end_range = self
+                .alignments
+                .get(end_shift_start..)
+                .map(expand_alignments)
+                .flatten();
+            trace!("End range: {:?}", end_range);
+            if let Some(end_range) = end_range {
+                if let Some(alignments) = self.alignments_original.get_mut(end_range) {
+                    trace!("Alignments before shifting: {:?}", alignments);
+                    alignments.iter_mut().for_each(|mut offsets| {
+                        apply_signed!(offsets.0, o_shift);
+                        apply_signed!(offsets.1, o_shift);
+                    });
+                    trace!("After: {:?}", alignments);
+                }
+            }
+        }
+
+        self.alignments.splice(n_range.clone(), alignments);
+        unsafe {
+            self.normalized
+                .as_mut_vec()
+                .splice(n_range, normalized.bytes());
+        }
+        trace!(
+            "New normalized alignments: {:?}\nNew original alignments: {:?}",
+            self.alignments,
+            self.alignments_original
+        );
+    }
+
+    /// Applies transformations to the current normalized version of the string,
+    /// while updating the alignments.
+    /// This method expect an Iterator yielding each char of the new normalized string
+    /// with a `change` isize equals to:
+    ///   - `1` if this is a new char
+    ///   - `-N` if the char is right before N removed chars
+    ///   - `0` if the char is replacing the existing one
+    /// Since it is possible that the normalized string doesn't include some of the characters at
+    /// the beginning of the original one, we need an `initial_offset` which represents the number
+    /// of removed chars at the very beginning.
+    pub fn transform<I>(&mut self, dest: I, initial_offset: usize)
+    where
+        I: IntoIterator<Item = (char, isize)>,
+    {
+        self.transform_range(Range::Original(..), dest, initial_offset)
     }
 
     /// Applies NFD normalization
@@ -601,53 +822,23 @@ impl NormalizedString {
             .collect())
     }
 
-    /// Split off ourselves, returning a new Self that contains the range [at, len).
-    /// self will then contain the range [0, at).
-    /// The provided `at` indexes on `char` not bytes.
-    pub fn split_off(&mut self, at: usize) -> Self {
-        if at > self.len() {
-            return NormalizedString::from("");
-        }
-
-        // Split normalized
-        let byte_index = self.normalized.chars().enumerate().fold(0, |acc, (i, c)| {
-            if i < at {
-                acc + c.len_utf8()
-            } else {
-                acc
-            }
-        });
-        let normalized = self.normalized.split_off(byte_index);
-        let alignments = self.alignments.split_off(at);
-
-        // Split original
-        let original_at = self.alignments.last().map(|(_, end)| *end).unwrap_or(0);
-        let original_byte_index = self.original.chars().enumerate().fold(0, |acc, (i, c)| {
-            if i < original_at {
-                acc + c.len_utf8()
-            } else {
-                acc
-            }
-        });
-        let original = self.original.split_off(original_byte_index);
-
-        NormalizedString {
-            original,
-            normalized,
-            alignments,
-        }
-    }
-
     /// Merge with the given NormalizedString by appending it to self
     pub fn merge_with(&mut self, other: &NormalizedString) {
-        let shift_len = self.len_original();
+        let n_shift = self.len_original();
+        let o_shift = self.len();
         self.original.push_str(&other.original);
         self.normalized.push_str(&other.normalized);
         self.alignments.extend(
             other
                 .alignments
                 .iter()
-                .map(|(start, end)| (start + shift_len, end + shift_len)),
+                .map(|(start, end)| (start + n_shift, end + n_shift)),
+        );
+        self.alignments_original.extend(
+            other
+                .alignments
+                .iter()
+                .map(|(start, end)| (start + o_shift, end + o_shift)),
         );
     }
 
@@ -704,17 +895,28 @@ impl NormalizedString {
 
     /// Returns the length of the normalized string (counting chars not bytes)
     pub fn len(&self) -> usize {
-        self.normalized.chars().count()
+        self.normalized.len()
     }
 
     /// Returns the length of the original string (counting chars not bytes)
     pub fn len_original(&self) -> usize {
-        self.original.chars().count()
+        self.original.len()
     }
 
     /// Whether empty
     pub fn is_empty(&self) -> bool {
-        self.normalized.len() == 0
+        self.normalized.is_empty()
+    }
+}
+
+/// Returns the range covered by a slice of alignments
+fn expand_alignments(alignments: &[(usize, usize)]) -> Option<std::ops::Range<usize>> {
+    if alignments.is_empty() {
+        None
+    } else {
+        let start = alignments[0].0;
+        let end = alignments[alignments.len() - 1].1;
+        Some(start..end)
     }
 }
 
@@ -732,7 +934,9 @@ pub fn get_range_of<T: RangeBounds<usize>>(s: &str, range: T) -> Option<&str> {
         Bound::Excluded(i) => *i,
     };
 
-    if start >= len || end > len || start >= end {
+    if start == 0 && end == 0 {
+        Some(&s[0..0])
+    } else if start >= len || end > len || start >= end {
         None
     } else {
         let start_b = s
@@ -749,13 +953,78 @@ pub fn get_range_of<T: RangeBounds<usize>>(s: &str, range: T) -> Option<&str> {
     }
 }
 
+/// Convert the given range from bytes to char
+pub fn bytes_to_char(s: &str, range: std::ops::Range<usize>) -> Option<std::ops::Range<usize>> {
+    let (mut start, mut end) = if range == (0..0) {
+        (Some(0), Some(0))
+    } else {
+        (None, None)
+    };
+
+    s.char_indices()
+        .enumerate()
+        .take_while(|(_, (b, _))| *b <= range.end)
+        .filter(|(_, (b, _))| *b >= range.start)
+        .for_each(|(i, (b, c))| {
+            if b == range.start {
+                start = Some(i);
+            }
+            if b == range.end {
+                end = Some(i);
+            }
+            if b + c.len_utf8() == range.end {
+                end = Some(i + 1);
+            }
+        });
+
+    Some(start?..end?)
+}
+
+/// Convert the given range from char to bytes
+pub fn char_to_bytes(s: &str, range: std::ops::Range<usize>) -> Option<std::ops::Range<usize>> {
+    let (mut start, mut end) = if range == (0..0) {
+        (Some(0), Some(0))
+    } else {
+        (None, None)
+    };
+
+    if range.start == range.end {
+        s.char_indices()
+            .skip(range.start)
+            .take(1)
+            .for_each(|(b, _)| {
+                start = Some(b);
+                end = Some(b);
+            });
+    } else {
+        s.char_indices()
+            .skip(range.start)
+            .take(range.end - range.start)
+            .for_each(|(b, c)| {
+                if start.is_none() {
+                    start = Some(b);
+                }
+                end = Some(b + c.len_utf8());
+            });
+    }
+
+    Some(start?..end?)
+}
+
 impl From<String> for NormalizedString {
     fn from(s: String) -> Self {
-        let len = s.chars().count();
+        let alignments = s
+            .char_indices()
+            .flat_map(|(b, c)| {
+                let len = c.len_utf8();
+                (0..len).map(move |_| (b, b + len))
+            })
+            .collect::<Vec<_>>();
         Self {
             original: s.clone(),
             normalized: s,
-            alignments: (0..len).map(|v| (v, v + 1)).collect(),
+            alignments: alignments.clone(),
+            alignments_original: alignments,
         }
     }
 }

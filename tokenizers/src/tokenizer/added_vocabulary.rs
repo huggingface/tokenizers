@@ -1,7 +1,4 @@
-use super::{
-    normalizer::Range, ByteOffsets, Model, NormalizedString, Normalizer, Offsets,
-    PreTokenizedString,
-};
+use super::{normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString};
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 
@@ -306,14 +303,14 @@ impl AddedVocabulary {
     }
 
     /// Find any AddedToken in the given sentence, using the provided MatchingSet.
-    /// This method returns a list "splits", each of them being a pair of ByteOffsets
+    /// This method returns a list "splits", each of them being a pair of Offsets
     /// and an optional ID if it is an AddedToken.
     /// The list of splits cover the entire input string.
     fn find_matches<'a>(
         &self,
         sentence: &str,
         split_re: &'a MatchingSet,
-    ) -> Vec<(Option<u32>, ByteOffsets)> {
+    ) -> Vec<(Option<u32>, Offsets)> {
         if sentence.is_empty() {
             return vec![(None, (0, 0))];
         }
@@ -420,7 +417,7 @@ impl AddedVocabulary {
             indices,
             byte_offsets.into_iter().map(move |(start, end)| {
                 sentence
-                    .slice_bytes(Range::Normalized(start..end))
+                    .slice(Range::Normalized(start..end))
                     .expect("Error while extracting normalized Range")
             }),
         )

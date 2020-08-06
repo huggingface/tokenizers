@@ -97,7 +97,7 @@ impl PreTokenizer for ByteLevel {
                 .find_iter(normalized.get())
                 .map(|(start, end)| {
                     let mut part = normalized
-                        .slice_bytes(Range::Normalized(start..end))
+                        .slice(Range::Normalized(start..end))
                         .expect("Byte-level cannot split according to regex");
 
                     let mut transformations: Vec<(char, isize)> =
