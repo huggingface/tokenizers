@@ -1053,11 +1053,52 @@ mod tests {
     use unicode_categories::UnicodeCategories;
 
     #[test]
-    fn new_chars() {
+    fn nfd_adds_new_chars() {
         let mut n = NormalizedString::from("élégant");
         n.nfd();
         assert_eq!(
             &n.alignments,
+            &[
+                (0, 2),
+                (0, 2),
+                (0, 2),
+                (2, 3),
+                (3, 5),
+                (3, 5),
+                (3, 5),
+                (5, 6),
+                (6, 7),
+                (7, 8),
+                (8, 9)
+            ]
+        );
+        assert_eq!(
+            &n.alignments_original,
+            &[
+                (0, 3),
+                (0, 3),
+                (3, 4),
+                (4, 7),
+                (4, 7),
+                (7, 8),
+                (8, 9),
+                (9, 10),
+                (10, 11)
+            ]
+        );
+    }
+
+    #[test]
+    fn remove_chars_added_by_nfd() {
+        let mut n = NormalizedString::from("élégant");
+        n.nfd().filter(|c| !c.is_mark_nonspacing());
+
+        assert_eq!(
+            &n.alignments,
+            &[(0, 2), (2, 3), (3, 5), (5, 6), (6, 7), (7, 8), (8, 9)]
+        );
+        assert_eq!(
+            &n.alignments_original,
             &[
                 (0, 1),
                 (0, 1),
@@ -1073,22 +1114,35 @@ mod tests {
     }
 
     #[test]
-    fn unchanged() {
-        let mut n = NormalizedString::from("élégant");
-        n.nfd().filter(|c| !c.is_mark_nonspacing());
-        assert_eq!(
-            &n.alignments,
-            &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)]
-        );
-    }
-
-    #[test]
-    fn removed_chars() {
+    fn remove_chars() {
         let mut n = NormalizedString::from("élégant");
         n.filter(|c| c != 'n');
         assert_eq!(
             &n.alignments,
-            &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (6, 7)]
+            &[
+                (0, 2),
+                (0, 2),
+                (2, 3),
+                (3, 5),
+                (3, 5),
+                (5, 6),
+                (6, 7),
+                (8, 9)
+            ]
+        );
+        assert_eq!(
+            &n.alignments_original,
+            &[
+                (0, 2),
+                (0, 2),
+                (2, 3),
+                (3, 5),
+                (3, 5),
+                (5, 6),
+                (6, 7),
+                (7, 7),
+                (7, 8)
+            ]
         );
     }
 
@@ -1098,7 +1152,21 @@ mod tests {
         n.nfd().filter(|c| !c.is_mark_nonspacing() && c != 'n');
         assert_eq!(
             &n.alignments,
-            &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (6, 7)]
+            &[(0, 2), (2, 3), (3, 5), (5, 6), (6, 7), (8, 9)]
+        );
+        assert_eq!(
+            &n.alignments_original,
+            &[
+                (0, 1),
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 5),
+                (5, 6)
+            ]
         );
     }
 
@@ -1106,6 +1174,7 @@ mod tests {
     fn range_conversion() {
         let mut n = NormalizedString::from("    __Hello__   ");
         n.filter(|c| !c.is_whitespace()).lowercase();
+        println!("{:?}", n);
         let hello_n = n.convert_offsets(Range::Original(6..11));
         assert_eq!(hello_n, Some(2..7));
         assert_eq!(
@@ -1118,6 +1187,17 @@ mod tests {
         );
         assert_eq!(n.get_range(Range::Original(6..11)), Some("hello"));
         assert_eq!(n.get_range_original(Range::Original(6..11)), Some("Hello"));
+
+        // Make sure we get None only in specific cases
+        assert_eq!(n.convert_offsets(Range::Original(0..0)), Some(0..0));
+        assert_eq!(n.convert_offsets(Range::Original(3..3)), Some(3..3));
+        assert_eq!(n.convert_offsets(Range::Original(15..)), Some(9..9));
+        assert_eq!(n.convert_offsets(Range::Original(16..)), Some(16..16));
+        assert_eq!(n.convert_offsets(Range::Original(17..)), None);
+        assert_eq!(n.convert_offsets(Range::Normalized(0..0)), Some(0..0));
+        assert_eq!(n.convert_offsets(Range::Normalized(3..3)), Some(3..3));
+        assert_eq!(n.convert_offsets(Range::Normalized(9..)), Some(9..9));
+        assert_eq!(n.convert_offsets(Range::Normalized(10..)), None);
     }
 
     #[test]
@@ -1158,6 +1238,55 @@ mod tests {
         assert_eq!(
             n.get_range_original(Range::Normalized(1..n.normalized.len() - 1)),
             Some("Hello")
+        );
+    }
+
+    #[test]
+    fn added_characters_alignment() {
+        let mut n = NormalizedString::from("野口 No");
+        n.transform(
+            n.get().to_owned().chars().flat_map(|c| {
+                if (c as usize) > 0x4E00 {
+                    vec![(' ', 0), (c, 1), (' ', 1)]
+                } else {
+                    vec![(c, 0)]
+                }
+            }),
+            0,
+        );
+
+        assert_eq!(
+            n,
+            NormalizedString {
+                original: "野口 No".into(),
+                normalized: " 野  口  No".into(),
+                alignments: vec![
+                    (0, 3),
+                    (0, 3),
+                    (0, 3),
+                    (0, 3),
+                    (0, 3),
+                    (3, 6),
+                    (3, 6),
+                    (3, 6),
+                    (3, 6),
+                    (3, 6),
+                    (6, 7),
+                    (7, 8),
+                    (8, 9)
+                ],
+                alignments_original: vec![
+                    (0, 5),
+                    (0, 5),
+                    (0, 5),
+                    (5, 10),
+                    (5, 10),
+                    (5, 10),
+                    (10, 11),
+                    (11, 12),
+                    (12, 13)
+                ]
+            }
         );
     }
 
@@ -1268,17 +1397,17 @@ mod tests {
                 (0, 1),
                 (1, 2),
                 (2, 3),
-                (3, 3),
-                (3, 3),
-                (3, 3),
-                (3, 3),
-                (3, 3),
-                (3, 3)
+                (2, 3),
+                (2, 3),
+                (2, 3),
+                (2, 3),
+                (2, 3),
+                (2, 3)
             ]
         );
         assert_eq!(
             n.convert_offsets(Range::Normalized(3.." there".len())),
-            Some(3..3)
+            Some(2..3)
         );
     }
 
@@ -1290,61 +1419,17 @@ mod tests {
     }
 
     #[test]
-    fn merge() {
-        // Merge unmodified
-        let s = NormalizedString::from("A sentence that will be merged");
-        let mut merged = NormalizedString::from("A sentence");
-        let s2 = NormalizedString::from(" that will");
-        let s3 = NormalizedString::from(" be merged");
-        merged.merge_with(&s2);
-        merged.merge_with(&s3);
-        assert_eq!(s, merged);
-
-        // Merge grown normalized
-        let mut s = NormalizedString::from("A sentence that will be merged");
-        s.prepend(" ");
-        let mut merged = NormalizedString::from("A sentence");
-        let s2 = NormalizedString::from(" that will");
-        let s3 = NormalizedString::from(" be merged");
-        merged.prepend(" ");
-        merged.merge_with(&s2);
-        merged.merge_with(&s3);
-        assert_eq!(s, merged);
-
-        // Merge shrinked normalized
-        let mut s = NormalizedString::from("  A sentence that will be merged  ");
-        s.strip();
-        let mut merged = NormalizedString::from("  A sentence");
-        merged.strip();
-        let s2 = NormalizedString::from(" that will");
-        let mut s3 = NormalizedString::from(" be merged  ");
-        s3.rstrip();
-        merged.merge_with(&s2);
-        merged.merge_with(&s3);
-        assert_eq!(s, merged);
-    }
-
-    #[test]
     fn slice() {
         let mut s = NormalizedString::from("𝔾𝕠𝕠𝕕 𝕞𝕠𝕣𝕟𝕚𝕟𝕘");
         s.nfkc();
 
-        assert_eq!(
-            s.slice(Range::Original(0..4)),
-            Some(NormalizedString {
-                original: "𝔾𝕠𝕠𝕕".to_string(),
-                normalized: "Good".to_string(),
-                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4)]
-            })
-        );
-        assert_eq!(
-            s.slice(Range::Normalized(0..4)),
-            Some(NormalizedString {
-                original: "𝔾𝕠𝕠𝕕".to_string(),
-                normalized: "Good".to_string(),
-                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4)]
-            })
-        );
+        let original_slice = s.slice(Range::Original(0..4)).unwrap();
+        assert_eq!(original_slice.get(), "G");
+        assert_eq!(original_slice.get_original(), "𝔾");
+
+        let normalized_slice = s.slice(Range::Normalized(0..4)).unwrap();
+        assert_eq!(normalized_slice.get(), "Good");
+        assert_eq!(normalized_slice.get_original(), "𝔾𝕠𝕠𝕕");
 
         // Make sure the sliced NormalizedString is still aligned as expected
         let mut s = NormalizedString::from("   Good Morning!   ");
@@ -1378,74 +1463,6 @@ mod tests {
     }
 
     #[test]
-    fn slice_bytes() {
-        let mut s = NormalizedString::from("𝔾𝕠𝕠𝕕 𝕞𝕠𝕣𝕟𝕚𝕟𝕘");
-        s.nfkc();
-
-        assert_eq!(
-            s.slice_bytes(Range::Original(0..16)),
-            Some(NormalizedString {
-                original: "𝔾𝕠𝕠𝕕".to_string(),
-                normalized: "Good".to_string(),
-                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4)]
-            })
-        );
-        assert_eq!(
-            s.slice_bytes(Range::Original(17..)),
-            Some(NormalizedString {
-                original: "𝕞𝕠𝕣𝕟𝕚𝕟𝕘".to_string(),
-                normalized: "morning".to_string(),
-                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)]
-            })
-        );
-        assert_eq!(
-            s.slice_bytes(Range::Normalized(0..4)),
-            Some(NormalizedString {
-                original: "𝔾𝕠𝕠𝕕".to_string(),
-                normalized: "Good".to_string(),
-                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4)]
-            })
-        );
-        assert_eq!(s.slice_bytes(Range::Original(0..10)), None);
-
-        // Check that we get a `None` if we try to split chars
-        for cut_at in 1..s.len() {
-            let res = s.slice_bytes(Range::Original(..cut_at));
-            // The chars in the original string all take 4 bytes.
-            assert!(if cut_at % 4 == 0 {
-                res.is_some()
-            } else {
-                res.is_none()
-            });
-        }
-    }
-
-    #[test]
-    fn slice_coverage() {
-        let mut s = NormalizedString::from(" Hello   friend ");
-        s.filter(|c| !c.is_whitespace());
-        assert_eq!(s.get(), "Hellofriend");
-
-        // Multiple slices with Normalized range
-        for cut_at in 1..s.len() {
-            let mut slices = vec![];
-            slices.push(s.slice(Range::Normalized(..cut_at)).unwrap());
-            slices.push(s.slice(Range::Normalized(cut_at..)).unwrap());
-            let rebuilt: NormalizedString = slices.into_iter().collect();
-            assert_eq!(rebuilt, s);
-        }
-
-        // Multiple slices with Original range
-        for cut_at in 1..s.len_original() {
-            let mut slices = vec![];
-            slices.push(s.slice(Range::Original(..cut_at)).unwrap());
-            slices.push(s.slice(Range::Original(cut_at..)).unwrap());
-            let rebuilt: NormalizedString = slices.into_iter().collect();
-            assert_eq!(rebuilt, s);
-        }
-    }
-
-    #[test]
     fn replace() {
         // Simple
         let mut s = NormalizedString::from(" Hello   friend ");
@@ -1473,13 +1490,742 @@ mod tests {
         let s = NormalizedString::from("The-final--countdown");
 
         let test = |behavior: SplitDelimiterBehavior, result: Vec<&str>| {
-            let splits = s.clone().split('-', behavior).unwrap();
-            assert_eq!(splits.iter().map(|n| n.get()).collect::<Vec<_>>(), result);
+            let mut s = s.clone();
+            let splits = s.split('-', behavior).unwrap();
+            assert_eq!(
+                splits.iter().map(|n| n.get()).collect::<Vec<_>>(),
+                result
+            );
         };
 
-        test(Removed, vec!["The", "", "final", "", "", "countdown"]);
+        test(Removed, vec!["The", "final", "countdown"]);
         test(Isolated, vec!["The", "-", "final", "-", "-", "countdown"]);
         test(MergedWithPrevious, vec!["The-", "final-", "-", "countdown"]);
         test(MergedWithNext, vec!["The", "-final", "-", "-countdown"]);
+    }
+
+    #[test]
+    fn transform_range_single_bytes() {
+        let s = NormalizedString::from("Hello friend");
+
+        // Removing at the beginning
+        let mut current = s.clone();
+        current.transform_range(Range::Original(0..4), vec![('Y', 0)], 3);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "Hello friend".into(),
+                normalized: "Yo friend".into(),
+                alignments: vec![
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (6, 7),
+                    (7, 8),
+                    (8, 9),
+                    (9, 10),
+                    (10, 11),
+                    (11, 12)
+                ],
+                alignments_original: vec![
+                    (0, 0),
+                    (0, 0),
+                    (0, 0),
+                    (0, 1),
+                    (1, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (6, 7),
+                    (7, 8),
+                    (8, 9)
+                ]
+            }
+        );
+
+        // Removing in the middle
+        let mut current = s.clone();
+        current.transform_range(
+            Range::Original(3..10),
+            vec![('_', 0), ('F', 0), ('R', -2)],
+            2,
+        );
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "Hello friend".into(),
+                normalized: "Hel_FRnd".into(),
+                alignments: vec![
+                    (0, 1),
+                    (1, 2),
+                    (2, 3),
+                    (5, 6),
+                    (6, 7),
+                    (7, 8),
+                    (10, 11),
+                    (11, 12)
+                ],
+                alignments_original: vec![
+                    (0, 1),
+                    (1, 2),
+                    (2, 3),
+                    (3, 3),
+                    (3, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (6, 6),
+                    (6, 6),
+                    (6, 7),
+                    (7, 8)
+                ]
+            }
+        );
+
+        // Removing at the end
+        let mut current = s.clone();
+        current.transform_range(Range::Original(5..), vec![('_', 0), ('F', -5)], 0);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "Hello friend".into(),
+                normalized: "Hello_F".into(),
+                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)],
+                alignments_original: vec![
+                    (0, 1),
+                    (1, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (6, 7),
+                    (7, 7),
+                    (7, 7),
+                    (7, 7),
+                    (7, 7),
+                    (7, 7)
+                ]
+            }
+        );
+
+        // Adding at the beginning
+        let mut current = s.clone();
+        current.transform_range(Range::Original(0..1), vec![('H', 1), ('H', 0)], 0);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "Hello friend".into(),
+                normalized: "HHello friend".into(),
+                alignments: vec![
+                    (0, 0),
+                    (0, 1),
+                    (1, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (6, 7),
+                    (7, 8),
+                    (8, 9),
+                    (9, 10),
+                    (10, 11),
+                    (11, 12)
+                ],
+                alignments_original: vec![
+                    (1, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (6, 7),
+                    (7, 8),
+                    (8, 9),
+                    (9, 10),
+                    (10, 11),
+                    (11, 12),
+                    (12, 13)
+                ]
+            }
+        );
+        // Equivalent to the previous one
+        let mut current = s.clone();
+        current.transform_range(Range::Original(0..0), vec![('H', 1)], 0);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "Hello friend".into(),
+                normalized: "HHello friend".into(),
+                alignments: vec![
+                    (0, 0),
+                    (0, 1),
+                    (1, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (6, 7),
+                    (7, 8),
+                    (8, 9),
+                    (9, 10),
+                    (10, 11),
+                    (11, 12)
+                ],
+                alignments_original: vec![
+                    (1, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (6, 7),
+                    (7, 8),
+                    (8, 9),
+                    (9, 10),
+                    (10, 11),
+                    (11, 12),
+                    (12, 13)
+                ]
+            }
+        );
+        // Adding as part of the first character
+        let mut current = s.clone();
+        current.transform_range(Range::Original(0..1), vec![('H', 0), ('H', 1)], 0);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "Hello friend".into(),
+                normalized: "HHello friend".into(),
+                alignments: vec![
+                    (0, 1),
+                    (0, 1),
+                    (1, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (6, 7),
+                    (7, 8),
+                    (8, 9),
+                    (9, 10),
+                    (10, 11),
+                    (11, 12)
+                ],
+                alignments_original: vec![
+                    (0, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (6, 7),
+                    (7, 8),
+                    (8, 9),
+                    (9, 10),
+                    (10, 11),
+                    (11, 12),
+                    (12, 13)
+                ]
+            }
+        );
+
+        // Adding in the middle
+        let mut current = s.clone();
+        current.transform_range(
+            Range::Original(5..6),
+            vec![('_', 0), ('m', 1), ('y', 1), ('_', 1)],
+            0,
+        );
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "Hello friend".into(),
+                normalized: "Hello_my_friend".into(),
+                alignments: vec![
+                    (0, 1),
+                    (1, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (5, 6),
+                    (5, 6),
+                    (5, 6),
+                    (6, 7),
+                    (7, 8),
+                    (8, 9),
+                    (9, 10),
+                    (10, 11),
+                    (11, 12)
+                ],
+                alignments_original: vec![
+                    (0, 1),
+                    (1, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 9),
+                    (9, 10),
+                    (10, 11),
+                    (11, 12),
+                    (12, 13),
+                    (13, 14),
+                    (14, 15)
+                ]
+            }
+        );
+
+        // Adding at the end
+        let mut current = s;
+        current.transform_range(Range::Original(11..), vec![('d', 0), ('_', 1), ('!', 1)], 0);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "Hello friend".into(),
+                normalized: "Hello friend_!".into(),
+                alignments: vec![
+                    (0, 1),
+                    (1, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (6, 7),
+                    (7, 8),
+                    (8, 9),
+                    (9, 10),
+                    (10, 11),
+                    (11, 12),
+                    (11, 12),
+                    (11, 12)
+                ],
+                alignments_original: vec![
+                    (0, 1),
+                    (1, 2),
+                    (2, 3),
+                    (3, 4),
+                    (4, 5),
+                    (5, 6),
+                    (6, 7),
+                    (7, 8),
+                    (8, 9),
+                    (9, 10),
+                    (10, 11),
+                    (11, 14)
+                ]
+            }
+        );
+    }
+
+    #[test]
+    fn transform_range_multiple_bytes() {
+        let s = NormalizedString::from("𝔾𝕠𝕠𝕕");
+
+        // Removing at the beginning
+        let mut current = s.clone();
+        current.transform_range(Range::Original(0..8), vec![('G', -1)], 0);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "𝔾𝕠𝕠𝕕".into(),
+                normalized: "G𝕠𝕕".into(),
+                alignments: vec![
+                    (0, 4),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16)
+                ],
+                alignments_original: vec![
+                    (0, 1),
+                    (0, 1),
+                    (0, 1),
+                    (0, 1),
+                    (1, 1),
+                    (1, 1),
+                    (1, 1),
+                    (1, 1),
+                    (1, 5),
+                    (1, 5),
+                    (1, 5),
+                    (1, 5),
+                    (5, 9),
+                    (5, 9),
+                    (5, 9),
+                    (5, 9)
+                ]
+            }
+        );
+        assert_eq!(current.get_range(Range::Original(0..8)).unwrap(), "G");
+        assert_eq!(current.get_range(Range::Original(0..4)).unwrap(), "G");
+        assert_eq!(
+            current.get_range_original(Range::Original(0..4)).unwrap(),
+            "𝔾"
+        );
+        assert_eq!(
+            current.get_range_original(Range::Original(0..8)).unwrap(),
+            "𝔾𝕠"
+        );
+
+        // Removing in the middle
+        let mut current = s.clone();
+        current.transform_range(Range::Original(4..12), vec![('o', -1)], 0);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "𝔾𝕠𝕠𝕕".into(),
+                normalized: "𝔾o𝕕".into(),
+                alignments: vec![
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (4, 8),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16)
+                ],
+                alignments_original: vec![
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (4, 5),
+                    (4, 5),
+                    (4, 5),
+                    (4, 5),
+                    (5, 5),
+                    (5, 5),
+                    (5, 5),
+                    (5, 5),
+                    (5, 9),
+                    (5, 9),
+                    (5, 9),
+                    (5, 9)
+                ]
+            }
+        );
+
+        // Removing at the end
+        let mut current = s.clone();
+        current.transform_range(Range::Original(12..), vec![('d', 0), ('!', 1)], 0);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "𝔾𝕠𝕠𝕕".into(),
+                normalized: "𝔾𝕠𝕠d!".into(),
+                alignments: vec![
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (12, 16),
+                    (12, 16)
+                ],
+                alignments_original: vec![
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (12, 14),
+                    (12, 14),
+                    (12, 14),
+                    (12, 14)
+                ]
+            }
+        );
+
+        // Adding at the beginning
+        let mut current = s.clone();
+        current.transform_range(Range::Original(0..1), vec![('_', 1), ('𝔾', 0)], 0);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "𝔾𝕠𝕠𝕕".into(),
+                normalized: "_𝔾𝕠𝕠𝕕".into(),
+                alignments: vec![
+                    (0, 0),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16)
+                ],
+                alignments_original: vec![
+                    (1, 5),
+                    (1, 5),
+                    (1, 5),
+                    (1, 5),
+                    (5, 9),
+                    (5, 9),
+                    (5, 9),
+                    (5, 9),
+                    (9, 13),
+                    (9, 13),
+                    (9, 13),
+                    (9, 13),
+                    (13, 17),
+                    (13, 17),
+                    (13, 17),
+                    (13, 17)
+                ]
+            }
+        );
+        assert_eq!(current.get_range(Range::Original(0..8)).unwrap(), "𝔾𝕠");
+        assert_eq!(current.get_range(Range::Original(0..4)).unwrap(), "𝔾");
+        assert_eq!(
+            current.get_range_original(Range::Original(0..4)).unwrap(),
+            "𝔾"
+        );
+        assert_eq!(
+            current.get_range_original(Range::Original(0..8)).unwrap(),
+            "𝔾𝕠"
+        );
+        // Equivalent to the previous one
+        let mut current = s.clone();
+        current.transform_range(Range::Original(0..0), vec![('_', 1)], 0);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "𝔾𝕠𝕠𝕕".into(),
+                normalized: "_𝔾𝕠𝕠𝕕".into(),
+                alignments: vec![
+                    (0, 0),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16)
+                ],
+                alignments_original: vec![
+                    (1, 5),
+                    (1, 5),
+                    (1, 5),
+                    (1, 5),
+                    (5, 9),
+                    (5, 9),
+                    (5, 9),
+                    (5, 9),
+                    (9, 13),
+                    (9, 13),
+                    (9, 13),
+                    (9, 13),
+                    (13, 17),
+                    (13, 17),
+                    (13, 17),
+                    (13, 17)
+                ]
+            }
+        );
+        assert_eq!(current.get_range(Range::Original(0..8)).unwrap(), "𝔾𝕠");
+        assert_eq!(current.get_range(Range::Original(0..4)).unwrap(), "𝔾");
+        assert_eq!(
+            current.get_range_original(Range::Original(0..4)).unwrap(),
+            "𝔾"
+        );
+        assert_eq!(
+            current.get_range_original(Range::Original(0..8)).unwrap(),
+            "𝔾𝕠"
+        );
+        // Adding as part of the first character
+        let mut current = s.clone();
+        current.transform_range(Range::Original(0..1), vec![('𝔾', 0), ('o', 1)], 0);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "𝔾𝕠𝕠𝕕".into(),
+                normalized: "𝔾o𝕠𝕠𝕕".into(),
+                alignments: vec![
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16)
+                ],
+                alignments_original: vec![
+                    (0, 5),
+                    (0, 5),
+                    (0, 5),
+                    (0, 5),
+                    (5, 9),
+                    (5, 9),
+                    (5, 9),
+                    (5, 9),
+                    (9, 13),
+                    (9, 13),
+                    (9, 13),
+                    (9, 13),
+                    (13, 17),
+                    (13, 17),
+                    (13, 17),
+                    (13, 17)
+                ]
+            }
+        );
+        assert_eq!(current.get_range(Range::Original(0..8)).unwrap(), "𝔾o𝕠");
+        assert_eq!(current.get_range(Range::Original(0..4)).unwrap(), "𝔾o");
+        assert_eq!(
+            current.get_range_original(Range::Original(0..4)).unwrap(),
+            "𝔾"
+        );
+        assert_eq!(
+            current.get_range_original(Range::Original(0..8)).unwrap(),
+            "𝔾𝕠"
+        );
+
+        // Adding in the middle
+        let mut current = s.clone();
+        current.transform_range(
+            Range::Original(4..8),
+            vec![('𝕠', 0), ('o', 1), ('o', 1), ('o', 1)],
+            0,
+        );
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "𝔾𝕠𝕠𝕕".into(),
+                normalized: "𝔾𝕠ooo𝕠𝕕".into(),
+                alignments: vec![
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16)
+                ],
+                alignments_original: vec![
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (4, 11),
+                    (4, 11),
+                    (4, 11),
+                    (4, 11),
+                    (11, 15),
+                    (11, 15),
+                    (11, 15),
+                    (11, 15),
+                    (15, 19),
+                    (15, 19),
+                    (15, 19),
+                    (15, 19)
+                ]
+            }
+        );
+
+        // Adding at the end
+        let mut current = s;
+        current.transform_range(Range::Original(16..), vec![('!', 1)], 0);
+        assert_eq!(
+            current,
+            NormalizedString {
+                original: "𝔾𝕠𝕠𝕕".into(),
+                normalized: "𝔾𝕠𝕠𝕕!".into(),
+                alignments: vec![
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16),
+                    (12, 16)
+                ],
+                alignments_original: vec![
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (0, 4),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (4, 8),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (8, 12),
+                    (12, 17),
+                    (12, 17),
+                    (12, 17),
+                    (12, 17)
+                ]
+            }
+        );
     }
 }
