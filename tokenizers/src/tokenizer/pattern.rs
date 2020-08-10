@@ -36,31 +36,18 @@ impl Pattern for &Regex {
             return Ok(vec![((0, 0), false)]);
         }
 
-        let char_indices = inside.char_indices().collect::<Vec<_>>();
-        let mut char_idx = 0;
-
         let mut prev = 0;
         let mut splits = Vec::with_capacity(inside.len());
         for m in self.find_iter(inside) {
-            let prev_idx = char_idx;
-            let mut start_idx = char_idx;
-            while char_idx < char_indices.len() && char_indices[char_idx].0 < m.end() {
-                if char_indices[char_idx].0 == m.start() {
-                    start_idx = char_idx;
-                }
-                char_idx += 1;
-            }
-
             if prev != m.start() {
-                splits.push(((prev_idx, start_idx), false));
+                splits.push(((prev, m.start()), false));
             }
-            splits.push(((start_idx, char_idx), true));
+            splits.push(((m.start(), m.end()), true));
             prev = m.end();
         }
         if prev != inside.len() {
-            splits.push(((char_idx, char_indices.len()), false))
+            splits.push(((prev, inside.len()), false))
         }
-
         Ok(splits)
     }
 }
@@ -78,18 +65,17 @@ where
         let mut last_seen = 0;
 
         let mut matches = inside
-            .chars()
-            .enumerate()
-            .flat_map(|(i, c)| {
-                last_seen = i;
+            .char_indices()
+            .flat_map(|(b, c)| {
+                last_seen = b + c.len_utf8();
                 if self(c) {
                     let mut events = Vec::with_capacity(2);
-                    if last_offset < i {
+                    if last_offset < b {
                         // We need to emit what was before this match
-                        events.push(((last_offset, i), false));
+                        events.push(((last_offset, b), false));
                     }
-                    events.push(((i, i + 1), true));
-                    last_offset = i + 1;
+                    events.push(((b, b + c.len_utf8()), true));
+                    last_offset = b + c.len_utf8();
                     events
                 } else {
                     vec![]
@@ -98,8 +84,8 @@ where
             .collect::<Vec<_>>();
 
         // Do not forget the last potential split
-        if last_seen >= last_offset {
-            matches.push(((last_offset, last_seen + 1), false));
+        if last_seen > last_offset {
+            matches.push(((last_offset, last_seen), false));
         }
 
         Ok(matches)
@@ -184,7 +170,7 @@ mod tests {
         );
         do_test!("", &is_whitespace => vec![((0, 0), false)]);
         do_test!("𝔾𝕠𝕠𝕕 𝕞𝕠𝕣𝕟𝕚𝕟𝕘", &is_whitespace =>
-            vec![((0, 4), false), ((4, 5), true), ((5, 12), false)]
+            vec![((0, 16), false), ((16, 17), true), ((17, 45), false)]
         );
         do_test!("aaa", &is_whitespace => vec![((0, 3), false)]);
     }
