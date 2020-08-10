@@ -52,6 +52,28 @@ impl Pattern for &Regex {
     }
 }
 
+impl Pattern for &onig::Regex {
+    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+        if inside.is_empty() {
+            return Ok(vec![((0, 0), false)]);
+        }
+
+        let mut prev = 0;
+        let mut splits = Vec::with_capacity(inside.len());
+        for (start, end) in self.find_iter(inside) {
+            if prev != start {
+                splits.push(((prev, start), false));
+            }
+            splits.push(((start, end), true));
+            prev = end;
+        }
+        if prev != inside.len() {
+            splits.push(((prev, inside.len()), false))
+        }
+        Ok(splits)
+    }
+}
+
 impl<F> Pattern for F
 where
     F: Fn(char) -> bool,
@@ -164,6 +186,20 @@ mod tests {
     #[test]
     fn regex() {
         let is_whitespace = Regex::new(r"\s+").unwrap();
+        do_test!("a   b", &is_whitespace => vec![((0, 1), false), ((1, 4), true), ((4, 5), false)]);
+        do_test!("   a   b   ", &is_whitespace =>
+            vec![((0, 3), true), ((3, 4), false), ((4, 7), true), ((7, 8), false), ((8, 11), true)]
+        );
+        do_test!("", &is_whitespace => vec![((0, 0), false)]);
+        do_test!("𝔾𝕠𝕠𝕕 𝕞𝕠𝕣𝕟𝕚𝕟𝕘", &is_whitespace =>
+            vec![((0, 16), false), ((16, 17), true), ((17, 45), false)]
+        );
+        do_test!("aaa", &is_whitespace => vec![((0, 3), false)]);
+    }
+
+    #[test]
+    fn onig_regex() {
+        let is_whitespace = onig::Regex::new(r"\s+").unwrap();
         do_test!("a   b", &is_whitespace => vec![((0, 1), false), ((1, 4), true), ((4, 5), false)]);
         do_test!("   a   b   ", &is_whitespace =>
             vec![((0, 3), true), ((3, 4), false), ((4, 7), true), ((7, 8), false), ((8, 11), true)]
