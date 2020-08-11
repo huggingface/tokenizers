@@ -565,28 +565,16 @@ where
 
     /// Normalize the given sentence and return the corresponding normalized string
     pub fn normalize(&self, sentence: &str) -> Result<NormalizedString> {
-        self.added_vocabulary
-            .extract_and_normalize(self.normalizer.as_ref(), sentence)
-            .flat_map(|(sentence, _, id)| {
-                if id.is_some() {
-                    itertools::Either::Left(std::iter::once(Ok(sentence)))
-                } else {
-                    // The PreTokenizers can still manipulate the normalized strings, so we do
-                    // this anyway, and will merge it back to a NormalizedString
-                    match self.do_pre_tokenize(sentence) {
-                        Ok(pretok) => itertools::Either::Right(
-                            pretok.into_iter().map(|substring| Ok(substring.normalized)),
-                        ),
-                        Err(e) => itertools::Either::Left(std::iter::once(Err(e))),
-                    }
-                }
-            })
-            .collect::<Result<NormalizedString>>()
+        let normalized = self
+            .added_vocabulary
+            .extract_and_normalize(self.normalizer.as_ref(), sentence);
+        let pre_tokenized = self.do_pre_tokenize(normalized)?;
+        Ok(pre_tokenized.into())
     }
 
     /// Encode a single sequence
     fn encode_single_sequence(&self, sequence: InputSequence, type_id: u32) -> Result<Encoding> {
-        let (sequence, pre_tokenized) = match sequence {
+        let (sequence, is_pre_tokenized) = match sequence {
             InputSequence::PreTokenized(seq) => (seq, true),
             InputSequence::Raw(seq) => (vec![seq], false),
         };
@@ -595,55 +583,19 @@ where
             .into_iter()
             .enumerate()
             .map(|(subseq_idx, subseq)| {
-                let encodings = self
+                let normalized = self
                     .added_vocabulary
-                    .extract_and_normalize(self.normalizer.as_ref(), &subseq)
-                    .map(|(normalized, original_offsets, id)| match id {
-                        // This is an added token, no need to tokenize, we have the ID
-                        Some(id) => {
-                            let mut encoding = Encoding::from_tokens(
-                                vec![Token::new(
-                                    id,
-                                    normalized.get().to_owned(),
-                                    original_offsets,
-                                )],
-                                type_id,
-                            );
-                            encoding.get_words_mut()[0] = Some(0);
-                            Ok(encoding)
-                        }
-                        // Let's tokenize
-                        None => self.do_tokenize(
-                            self.do_pre_tokenize(normalized)?,
-                            original_offsets,
-                            type_id,
-                        ),
-                    })
-                    .collect::<Result<Vec<Encoding>>>()?;
-
-                // At this point, the `words` are good for each sub encoding independently,
-                // but we need to make them grow sequentially.
-                let mut subseq_encoding: Encoding =
-                    encodings
-                        .into_iter()
-                        .fold(Encoding::default(), |mut encoding, mut other| {
-                            let last_word_id = encoding.get_words().last().map(|w| w.unwrap());
-                            other.get_words_mut().iter_mut().for_each(|w| {
-                                *w.as_mut().unwrap() += last_word_id.map(|w| w + 1).unwrap_or(0);
-                            });
-                            encoding.merge_with(other, false);
-                            encoding
-                        });
-
-                // If we are handling already pre-tokenized input, each word should have the
-                // relevant index from the given input, not determined by the pre-tokenization step
-                if pre_tokenized {
-                    subseq_encoding.get_words_mut().iter_mut().for_each(|word| {
-                        if let Some(ref mut word) = word {
-                            *word = subseq_idx as u32;
-                        }
-                    });
-                }
+                    .extract_and_normalize(self.normalizer.as_ref(), &subseq);
+                let pre_tokenized = self.do_pre_tokenize(normalized)?;
+                let subseq_encoding = self.do_tokenize(
+                    pre_tokenized,
+                    type_id,
+                    if is_pre_tokenized {
+                        Some(subseq_idx as u32)
+                    } else {
+                        None
+                    },
+                )?;
 
                 Ok(subseq_encoding)
             })
@@ -725,47 +677,12 @@ where
     fn do_tokenize<P: Into<PreTokenizedString>>(
         &self,
         pretokenized: P,
-        original_offsets: Offsets,
         type_id: u32,
+        word_idx: Option<u32>,
     ) -> Result<Encoding> {
-        let pretokenized: PreTokenizedString = pretokenized.into();
-
-        pretokenized
-            .into_iter()
-            .filter(|substr| !substr.normalized.is_empty())
-            .enumerate()
-            .flat_map(|(word_idx, substr)| {
-                match self.model.tokenize(substr.normalized.get()) {
-                    Ok(tokens) => {
-                        itertools::Either::Left(tokens.into_iter().map(move |token| {
-                            // We convert the normalized offsets back to the original
-                            let converted_offsets = substr
-                                .normalized
-                                .convert_offsets(Range::Normalized(
-                                    token.offsets.0..token.offsets.1,
-                                ))
-                                .map_or(token.offsets, |range| {
-                                    (
-                                        original_offsets.0
-                                            + substr.original_offsets.0
-                                            + range.start,
-                                        original_offsets.0 + substr.original_offsets.0 + range.end,
-                                    )
-                                });
-
-                            Ok((
-                                token.id,
-                                token.value,
-                                converted_offsets,
-                                Some(word_idx as u32),
-                                type_id,
-                            ))
-                        }))
-                    }
-                    Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
-                }
-            })
-            .collect()
+        let mut pretokenized: PreTokenizedString = pretokenized.into();
+        pretokenized.tokenize(|normalized| self.model.tokenize(normalized.get()))?;
+        pretokenized.into_encoding(word_idx, type_id)
     }
 }
 
@@ -966,8 +883,9 @@ where
                             trainer.process_tokens(
                                 &mut words,
                                 pre_tokenized
+                                    .get_splits(OffsetReferential::Original)
                                     .into_iter()
-                                    .map(|sub| sub.normalized.get().to_owned())
+                                    .map(|(s, _, _)| s.to_owned())
                                     .collect(),
                             );
 
