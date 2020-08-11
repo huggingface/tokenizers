@@ -1,4 +1,6 @@
-use super::{normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString};
+use super::{
+    normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
+};
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 
@@ -406,21 +408,22 @@ impl AddedVocabulary {
         &self,
         sentence: NormalizedString,
         split_re: &MatchingSet,
-    ) -> (Vec<Option<u32>>, impl Iterator<Item = NormalizedString>) {
-        let (indices, byte_offsets) = self
-            .find_matches(sentence.get(), split_re)
+    ) -> Vec<(NormalizedString, Option<Vec<Token>>)> {
+        self.find_matches(sentence.get(), split_re)
             .into_iter()
-            .unzip::<_, _, Vec<_>, Vec<_>>();
-
-        // Return the indices and the split normalized string
-        (
-            indices,
-            byte_offsets.into_iter().map(move |(start, end)| {
-                sentence
-                    .slice(Range::Normalized(start..end))
-                    .expect("Error while extracting normalized Range")
-            }),
-        )
+            .map(|(id, byte_offsets)| {
+                let slice = sentence
+                    .slice(Range::Normalized(byte_offsets.0..byte_offsets.1))
+                    .expect("AddedVocabulary bad split");
+                if let Some(id) = id {
+                    let value = slice.get().to_owned();
+                    let len = value.len();
+                    (slice, Some(vec![Token::new(id, value, (0, len))]))
+                } else {
+                    (slice, None)
+                }
+            })
+            .collect()
     }
 
     /// Extract the additional vocabulary from the given sentence, normalizing it along the way.
@@ -429,59 +432,27 @@ impl AddedVocabulary {
     /// non-normalized one. For example, when we expect to extract the token `yesterday` in the
     /// input sentence `I read a book Yesterday`, if the normalizer is supposed to lowercase
     /// everything, we expect a match.
-    ///
-    /// This method returns an iterator over `(NormalizedString, Offsets, Option<u32>)`, where the
-    /// optional `u32` contains the relevant ID if this is an additional token. The offsets being
-    /// returned here are in the `original` referential. They are the offsets of the given part
-    /// in the original input
-    pub fn extract_and_normalize<'a, N: Normalizer>(
-        &'a self,
+    pub fn extract_and_normalize<N: Normalizer>(
+        &self,
         normalizer: Option<&N>,
         sequence: &str,
-    ) -> impl Iterator<Item = (NormalizedString, Offsets, Option<u32>)> + 'a {
+    ) -> PreTokenizedString {
         let mut pretokenized: PreTokenizedString = sequence.into();
+
         // 1. We extract all the non-normalized tokens from the non-normalized string
-        let mut indices = vec![];
         pretokenized
-            .split(|_, sequence| {
-                let (idcs, split) = self.split_with_indices(sequence, &self.split_re);
-                indices = idcs;
-                Ok(split)
-            })
+            .split(|_, sequence| Ok(self.split_with_indices(sequence, &self.split_re)))
             .expect("AddedVocabulary bad split");
 
         // 2. Then extract the normalized tokens from the normalized pieces of the string
-        let mut multi_indices = vec![];
         pretokenized
-            .split(|i, mut sequence| {
-                if let Some(id) = indices[i] {
-                    multi_indices.push(Some(id));
-                    Ok(itertools::Either::Left(std::iter::once(sequence)))
-                } else {
-                    normalizer.map(|n| n.normalize(&mut sequence));
-
-                    if sequence.is_empty() {
-                        Ok(itertools::Either::Left(std::iter::once(sequence)))
-                    } else {
-                        let (idcs, split) =
-                            self.split_with_indices(sequence, &self.split_normalized_re);
-                        multi_indices.extend(idcs);
-                        Ok(itertools::Either::Right(split))
-                    }
-                }
+            .split(|_, mut sequence| {
+                normalizer.map(|n| n.normalize(&mut sequence));
+                Ok(self.split_with_indices(sequence, &self.split_normalized_re))
             })
             .expect("AddedVocabulary bad split");
 
         pretokenized
-            .into_iter()
-            .zip(multi_indices)
-            .map(|(substring, id)| {
-                (
-                    substring.normalized,
-                    substring.original_offsets,
-                    id.map(|i| i as u32),
-                )
-            })
     }
 }
 
@@ -528,7 +499,7 @@ mod tests {
     use super::*;
     use crate::normalizers::utils::Lowercase;
     use crate::normalizers::NormalizerWrapper;
-    use crate::{Result, Token};
+    use crate::{OffsetReferential, Result, Token};
     use std::path::{Path, PathBuf};
 
     #[derive(Serialize, Deserialize)]
@@ -679,20 +650,24 @@ mod tests {
             normalizer,
         );
 
-        let result = vocab
-            .extract_and_normalize(normalizer, "[CLS] My name is Anthony [SEP]")
-            .collect::<Vec<_>>();
+        let result = vocab.extract_and_normalize(normalizer, "[CLS] My name is Anthony [SEP]");
         assert_eq!(
             result
-                .iter()
-                .map(|(normalized, _, id)| (normalized.get(), id))
+                .get_splits(OffsetReferential::Original)
+                .into_iter()
+                .map(|(s, _, tokens)| (
+                    s,
+                    tokens
+                        .as_ref()
+                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
+                ))
                 .collect::<Vec<_>>(),
             vec![
-                ("[CLS]", &Some(2)),
-                (" My ", &None),
-                ("name", &Some(1)),
-                (" is Anthony ", &None),
-                ("[SEP]", &Some(3))
+                ("[CLS]", Some(vec![2])),
+                (" My ", None),
+                ("name", Some(vec![1])),
+                (" is Anthony ", None),
+                ("[SEP]", Some(vec![3]))
             ]
         );
     }
@@ -723,24 +698,29 @@ mod tests {
             Some(&normalizer),
         );
 
-        let result = vocab
-            .extract_and_normalize(Some(&normalizer), "[CLS] My name is Anthony [SEP]")
-            .collect::<Vec<_>>();
+        let result =
+            vocab.extract_and_normalize(Some(&normalizer), "[CLS] My name is Anthony [SEP]");
 
         assert_eq!(
             result
-                .iter()
-                .map(|(normalized, _, id)| (normalized.get(), id))
+                .get_splits(OffsetReferential::Original)
+                .into_iter()
+                .map(|(s, _, tokens)| (
+                    s,
+                    tokens
+                        .as_ref()
+                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
+                ))
                 .collect::<Vec<_>>(),
             vec![
-                ("[CLS]", &Some(3)),
+                ("[CLS]", Some(vec![3])),
                 // This one includes both spaces because of the lstrip & rstrip
                 // And it matches because normalized == true
-                (" my ", &Some(0)),
-                ("name", &Some(1)),
+                (" my ", Some(vec![0])),
+                ("name", Some(vec![1])),
                 // `ony` is not extracted here thanks to single_word
-                (" is anthony ", &None),
-                ("[SEP]", &Some(4)),
+                (" is anthony ", None),
+                ("[SEP]", Some(vec![4])),
             ]
         );
     }
