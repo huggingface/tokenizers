@@ -133,7 +133,7 @@ pub trait Trainer {
     fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>);
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub id: u32,
     pub value: String,
