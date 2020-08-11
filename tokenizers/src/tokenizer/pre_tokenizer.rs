@@ -1,35 +1,49 @@
-use crate::{NormalizedString, OffsetReferential, Offsets, Result};
+use crate::{
+    normalizer::Range, Encoding, NormalizedString, OffsetReferential, Offsets, Result, Token,
+};
 
 /// Wrapper for a subpart of a `NormalizedString`.
 ///
-/// This SubString contains the underlying `NormalizedString` as well as its offsets
-/// in the original string. These offsets are in the `original` referential
-#[derive(Debug)]
-pub struct SubString {
+/// This Split contains the underlying `NormalizedString` as well as its offsets
+/// in the original string. These offsets are in the `original` referential.
+/// It also contains any `Token` associated to the current split
+#[derive(Debug, Clone, PartialEq)]
+pub struct Split {
     /// The underlying `NormalizedString`. Each SubString is represented by a `NormalizedString`
     /// and in the end we might be carrying a lot of SubString representing various parts of the
     /// original input string.
-    pub normalized: NormalizedString,
-    /// Offsets of the `NormalizedString` in the `original` input string. These are useful to find
-    /// the `original` offsets in the input string, as opposed to the `original` offsets in the
-    /// sub-part of the input string represented by `NormalizedString`
-    pub original_offsets: Offsets,
+    normalized: NormalizedString,
+    /// Optional Tokens associated to this Split
+    tokens: Option<Vec<Token>>,
 }
 
-impl SubString {
-    pub fn new(normalized: NormalizedString, original_offsets: Offsets) -> Self {
+impl From<NormalizedString> for Split {
+    fn from(n: NormalizedString) -> Self {
         Self {
-            normalized,
-            original_offsets,
+            normalized: n,
+            tokens: None,
         }
     }
 }
 
-/// sub strings, while ensuring that they form a coherend group. This let us keep
-/// track of the offsets during the whole normalization and pre-tokenization steps.
-#[derive(Debug)]
+impl From<(NormalizedString, Option<Vec<Token>>)> for Split {
+    fn from(f: (NormalizedString, Option<Vec<Token>>)) -> Self {
+        Self {
+            normalized: f.0,
+            tokens: f.1,
+        }
+    }
+}
+
+/// The `PreTokenizedString` is in charge of splitting an underlying string,
+/// making sure everything is fine while doing so, and providing ways to normalize
+/// and tokenize these splits.
+/// Once everything has been normalized and tokenized, the `PreTokenizedString` is able
+/// to build an `Encoding` with all the relevant offsets and word ids, relative to the
+/// original string.
+#[derive(Debug, Clone, PartialEq)]
 pub struct PreTokenizedString {
-    parts: Vec<SubString>,
+    splits: Vec<Split>,
 }
 
 impl PreTokenizedString {
@@ -45,76 +59,130 @@ impl PreTokenizedString {
     /// same `original` string as the original one given to `split_fn`. This concretely
     /// means that for the offset tracking to work as expected, `split_fn` must produce
     /// "splits" of the original string.
-    pub fn split<F, U>(&mut self, mut split_fn: F) -> Result<()>
+    pub fn split<F, U, R>(&mut self, mut split_fn: F) -> Result<()>
     where
         F: FnMut(usize, NormalizedString) -> Result<U>,
-        U: IntoIterator<Item = NormalizedString>,
+        U: IntoIterator<Item = R>,
+        R: Into<Split>,
     {
-        // new_parts is at least as big as self.parts
-        let mut new_parts = Vec::with_capacity(self.parts.len());
-        for (i, sub) in self.parts.drain(..).enumerate() {
-            let original_len = sub.normalized.len_original();
-            let original_offsets = sub.original_offsets;
-
-            let mut new_len = 0;
-            new_parts.extend(split_fn(i, sub.normalized)?.into_iter().map(|normalized| {
-                let len = normalized.len_original();
-                let start = original_offsets.0 + new_len;
-                let end = original_offsets.0 + new_len + len;
-                let new_s = SubString::new(normalized, (start, end));
-                new_len += len;
-                new_s
-            }));
-            if original_len != new_len {
-                return Err(
-                    "Split pre-tokenized string must represent the entire original string".into(),
-                );
+        // new_splits is at least as big as self.splits
+        let mut new_splits = Vec::with_capacity(self.splits.len());
+        for (i, original_split) in self.splits.drain(..).enumerate() {
+            if original_split.tokens.is_some() {
+                new_splits.push(original_split);
+                continue;
             }
+
+            new_splits.extend(
+                split_fn(i, original_split.normalized)?
+                    .into_iter()
+                    .filter_map(|split| {
+                        let split: Split = split.into();
+                        if split.normalized.is_empty() {
+                            None
+                        } else {
+                            Some(split)
+                        }
+                    }),
+            );
         }
-        self.parts = new_parts;
+        self.splits = new_splits;
 
         Ok(())
     }
 
-    pub fn iter(&self) -> std::slice::Iter<SubString> {
-        self.into_iter()
+    /// Normalized all the splits that do not have attached `Tokens`, using the provided
+    /// `normalize` function.
+    pub fn normalize<F>(&mut self, normalize: F) -> Result<()>
+    where
+        F: Fn(&mut NormalizedString) -> Result<()>,
+    {
+        for split in self.splits.iter_mut().filter(|s| s.tokens.is_none()) {
+            normalize(&mut split.normalized)?;
+        }
+        Ok(())
     }
 
-    /// Returns a list of normalized string and the associated offsets,
-    /// either in original or normalized referential
-    pub fn get_normalized(&self, offset_type: OffsetReferential) -> Vec<(&str, Offsets)> {
+    /// Tokenize all the splits that do not have attached `Tokens`, using the provided
+    /// `tokenize` function
+    pub fn tokenize<F>(&mut self, tokenize: F) -> Result<()>
+    where
+        F: Fn(&NormalizedString) -> Result<Vec<Token>>,
+    {
+        for split in self.splits.iter_mut().filter(|s| s.tokens.is_none()) {
+            split.tokens = Some(tokenize(&split.normalized)?);
+        }
+
+        Ok(())
+    }
+
+    /// Transform the current `PreTokenizedString` into an `Encoding`.
+    ///
+    /// If a `word_idx` is provided, any word in the generated `Encoding`
+    /// will be set to this value. This is generally used with pre-tokenized
+    /// input, that do not need the `PreTokenizedString` to generate word ids.
+    ///
+    /// This method will fail if some splits do not have associated `Token`.
+    pub fn into_encoding(self, word_idx: Option<u32>, type_id: u32) -> Result<Encoding> {
+        if self.splits.is_empty() {
+            Ok(Encoding::default())
+        } else if !self.splits.iter().all(|split| split.tokens.is_some()) {
+            Err("Split has not been tokenized, call `PreTokenizedString::tokenize` first".into())
+        } else {
+            Ok(self
+                .splits
+                .into_iter()
+                .enumerate()
+                .flat_map(|(idx, split)| {
+                    let normalized = split.normalized;
+                    let offsets = normalized.offsets_original();
+                    split.tokens.unwrap().into_iter().map(move |token| {
+                        let converted_offsets = normalized
+                            .convert_offsets(Range::Normalized(token.offsets.0..token.offsets.1))
+                            .map_or(token.offsets, |range| {
+                                (offsets.0 + range.start, offsets.0 + range.end)
+                            });
+
+                        (
+                            token.id,
+                            token.value,
+                            converted_offsets,
+                            if word_idx.is_some() {
+                                word_idx
+                            } else {
+                                Some(idx as u32)
+                            },
+                            type_id,
+                        )
+                    })
+                })
+                .collect())
+        }
+    }
+
+    /// Returns a list of splits, each of them being a slice of the normalized
+    /// string, the associated offsets either in original or normalized
+    /// referential, as well as the potention tokens
+    pub fn get_splits(
+        &self,
+        offset_type: OffsetReferential,
+    ) -> Vec<(&str, Offsets, &Option<Vec<Token>>)> {
         let mut offset = 0;
-        self.iter()
-            .map(|sub| {
+        self.splits
+            .iter()
+            .map(|split| {
                 let offsets = match offset_type {
-                    OffsetReferential::Original => (
-                        sub.original_offsets.0,
-                        sub.original_offsets.0 + sub.normalized.len_original(),
-                    ),
+                    OffsetReferential::Original => split.normalized.offsets_original(),
                     OffsetReferential::Normalized => {
-                        let len = sub.normalized.len();
+                        let len = split.normalized.len();
                         offset += len;
                         (offset - len, offset)
                     }
                 };
 
-                (sub.normalized.get(), offsets)
+                (split.normalized.get(), offsets, &split.tokens)
             })
             .collect()
-    }
-
-    /// Merge back to a NormalizedString
-    pub fn into_merged(self) -> NormalizedString {
-        let offsets = (
-            0,
-            self.parts
-                .iter()
-                .last()
-                .map_or(0, |sub| sub.original_offsets.1),
-        );
-        let normalized: NormalizedString = self.into_iter().map(|sub| sub.normalized).collect();
-        assert_eq!(offsets, (0, normalized.len_original()));
-        normalized
     }
 }
 
@@ -122,9 +190,9 @@ impl From<NormalizedString> for PreTokenizedString {
     fn from(s: NormalizedString) -> Self {
         let original_offsets = (0, s.len_original());
         Self {
-            parts: vec![SubString {
+            splits: vec![Split {
                 normalized: s,
-                original_offsets,
+                tokens: None,
             }],
         }
     }
@@ -144,20 +212,8 @@ impl From<String> for PreTokenizedString {
     }
 }
 
-impl IntoIterator for PreTokenizedString {
-    type Item = SubString;
-    type IntoIter = std::vec::IntoIter<SubString>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.parts.into_iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a PreTokenizedString {
-    type Item = &'a SubString;
-    type IntoIter = std::slice::Iter<'a, SubString>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.parts.iter()
+impl From<PreTokenizedString> for NormalizedString {
+    fn from(p: PreTokenizedString) -> Self {
+        p.splits.into_iter().map(|split| split.normalized).collect()
     }
 }

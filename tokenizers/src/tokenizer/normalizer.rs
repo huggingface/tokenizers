@@ -116,6 +116,11 @@ pub struct NormalizedString {
     /// Mapping from original string to normalized one: (start, end) for each
     /// byte of the original string
     alignments_original: Vec<(usize, usize)>,
+
+    /// If this NormalizedString is a slice of a bigger one, we keep the track
+    /// of the missing part, so that we can still give offsets from this original
+    /// string.
+    original_shift: usize,
 }
 
 impl NormalizedString {
@@ -127,6 +132,14 @@ impl NormalizedString {
     /// Return the original string
     pub fn get_original(&self) -> &str {
         &self.original
+    }
+
+    /// Return the original offsets
+    pub fn offsets_original(&self) -> Offsets {
+        (
+            self.original_shift,
+            self.original_shift + self.len_original(),
+        )
     }
 
     /// Convert the given offsets range from one referential to the other one:
@@ -263,6 +276,7 @@ impl NormalizedString {
                 .iter()
                 .map(|(start, end)| (start - o_shift, end - o_shift))
                 .collect(),
+            original_shift: original_range.start,
         })
     }
 
@@ -736,12 +750,6 @@ impl NormalizedString {
     /// Split the current string in many subparts. Specify what to do with the
     /// delimiter.
     ///
-    /// This method will always ensure that the entire `self` is covered in the
-    /// produced subparts. This means that the delimiter parts will also be included,
-    /// and will appear empty if we don't want to include them (their `original`
-    /// part will still be present). It should always be possible to merge all the
-    /// subparts back to the original `NormalizedString`
-    ///
     /// ## Splitting Behavior for the delimiter
     ///
     /// The behavior can be one of the followings:
@@ -751,7 +759,7 @@ impl NormalizedString {
     ///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
     ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
     pub fn split<P: Pattern>(
-        self,
+        &self,
         pattern: P,
         behavior: SplitDelimiterBehavior,
     ) -> Result<Vec<NormalizedString>> {
@@ -810,14 +818,15 @@ impl NormalizedString {
         // Then we split according to the computed splits
         Ok(splits
             .into_iter()
-            .map(|(offsets, remove)| {
-                let mut slice = self
-                    .slice(Range::Normalized(offsets.0..offsets.1))
-                    .expect("NormalizedString bad split");
-                if remove {
-                    slice.clear();
+            .filter_map(|(offsets, remove)| {
+                if !remove {
+                    Some(
+                        self.slice(Range::Normalized(offsets.0..offsets.1))
+                            .expect("NormalizedString bad split"),
+                    )
+                } else {
+                    None
                 }
-                slice
             })
             .collect())
     }
@@ -840,6 +849,7 @@ impl NormalizedString {
                 .iter()
                 .map(|(start, end)| (start + o_shift, end + o_shift)),
         );
+        todo!("This must take into account the `original_shift`");
     }
 
     /// Remove any leading space(s) of the normalized string
@@ -1025,6 +1035,7 @@ impl From<String> for NormalizedString {
             normalized: s,
             alignments: alignments.clone(),
             alignments_original: alignments,
+            original_shift: 0,
         }
     }
 }
@@ -1285,7 +1296,8 @@ mod tests {
                     (10, 11),
                     (11, 12),
                     (12, 13)
-                ]
+                ],
+                original_shift: 0
             }
         );
     }
@@ -1492,10 +1504,7 @@ mod tests {
         let test = |behavior: SplitDelimiterBehavior, result: Vec<&str>| {
             let mut s = s.clone();
             let splits = s.split('-', behavior).unwrap();
-            assert_eq!(
-                splits.iter().map(|n| n.get()).collect::<Vec<_>>(),
-                result
-            );
+            assert_eq!(splits.iter().map(|n| n.get()).collect::<Vec<_>>(), result);
         };
 
         test(Removed, vec!["The", "final", "countdown"]);
@@ -1540,7 +1549,8 @@ mod tests {
                     (6, 7),
                     (7, 8),
                     (8, 9)
-                ]
+                ],
+                original_shift: 0,
             }
         );
 
@@ -1579,7 +1589,8 @@ mod tests {
                     (6, 6),
                     (6, 7),
                     (7, 8)
-                ]
+                ],
+                original_shift: 0,
             }
         );
 
@@ -1605,7 +1616,8 @@ mod tests {
                     (7, 7),
                     (7, 7),
                     (7, 7)
-                ]
+                ],
+                original_shift: 0,
             }
         );
 
@@ -1645,7 +1657,8 @@ mod tests {
                     (10, 11),
                     (11, 12),
                     (12, 13)
-                ]
+                ],
+                original_shift: 0,
             }
         );
         // Equivalent to the previous one
@@ -1684,7 +1697,8 @@ mod tests {
                     (10, 11),
                     (11, 12),
                     (12, 13)
-                ]
+                ],
+                original_shift: 0,
             }
         );
         // Adding as part of the first character
@@ -1723,7 +1737,8 @@ mod tests {
                     (10, 11),
                     (11, 12),
                     (12, 13)
-                ]
+                ],
+                original_shift: 0,
             }
         );
 
@@ -1769,7 +1784,8 @@ mod tests {
                     (12, 13),
                     (13, 14),
                     (14, 15)
-                ]
+                ],
+                original_shift: 0,
             }
         );
 
@@ -1810,7 +1826,8 @@ mod tests {
                     (9, 10),
                     (10, 11),
                     (11, 14)
-                ]
+                ],
+                original_shift: 0,
             }
         );
     }
@@ -1855,7 +1872,8 @@ mod tests {
                     (5, 9),
                     (5, 9),
                     (5, 9)
-                ]
+                ],
+                original_shift: 0,
             }
         );
         assert_eq!(current.get_range(Range::Original(0..8)).unwrap(), "G");
@@ -1905,7 +1923,8 @@ mod tests {
                     (5, 9),
                     (5, 9),
                     (5, 9)
-                ]
+                ],
+                original_shift: 0,
             }
         );
 
@@ -1950,7 +1969,8 @@ mod tests {
                     (12, 14),
                     (12, 14),
                     (12, 14)
-                ]
+                ],
+                original_shift: 0,
             }
         );
 
@@ -1998,7 +2018,8 @@ mod tests {
                     (13, 17),
                     (13, 17),
                     (13, 17)
-                ]
+                ],
+                original_shift: 0,
             }
         );
         assert_eq!(current.get_range(Range::Original(0..8)).unwrap(), "𝔾𝕠");
@@ -2055,7 +2076,8 @@ mod tests {
                     (13, 17),
                     (13, 17),
                     (13, 17)
-                ]
+                ],
+                original_shift: 0,
             }
         );
         assert_eq!(current.get_range(Range::Original(0..8)).unwrap(), "𝔾𝕠");
@@ -2112,7 +2134,8 @@ mod tests {
                     (13, 17),
                     (13, 17),
                     (13, 17)
-                ]
+                ],
+                original_shift: 0,
             }
         );
         assert_eq!(current.get_range(Range::Original(0..8)).unwrap(), "𝔾o𝕠");
@@ -2176,7 +2199,8 @@ mod tests {
                     (15, 19),
                     (15, 19),
                     (15, 19)
-                ]
+                ],
+                original_shift: 0,
             }
         );
 
@@ -2224,7 +2248,8 @@ mod tests {
                     (12, 17),
                     (12, 17),
                     (12, 17)
-                ]
+                ],
+                original_shift: 0,
             }
         );
     }
