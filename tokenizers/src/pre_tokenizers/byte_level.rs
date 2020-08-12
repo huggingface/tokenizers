@@ -4,7 +4,8 @@ use onig::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{
-    normalizer::Range, Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,
+    Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,
+    SplitDelimiterBehavior,
 };
 
 fn bytes_char() -> HashMap<u8, char> {
@@ -88,37 +89,30 @@ impl ByteLevel {
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        let re_ref: &Regex = &RE;
         pretokenized.split(|_, mut normalized| {
             if self.add_prefix_space && !normalized.get().starts_with(' ') {
                 normalized.prepend(" ");
             }
-
-            Ok(RE
-                .find_iter(normalized.get())
-                .map(|(start, end)| {
-                    let mut part = normalized
-                        .slice(Range::Normalized(start..end))
-                        .expect("Byte-level cannot split according to regex");
-
-                    let mut transformations: Vec<(char, isize)> =
-                        Vec::with_capacity(part.get().len());
-                    let mut i = 0;
-                    for cur_char in part.get().chars() {
-                        let size = cur_char.len_utf8();
-                        let bytes = part.get()[i..i + size].as_bytes();
-                        i += size;
-                        transformations.extend(
-                            bytes
-                                .iter()
-                                .enumerate()
-                                .map(|(i, b)| (BYTES_CHAR[b], if i > 0 { 1 } else { 0 })),
-                        );
-                    }
-                    part.transform(transformations.into_iter(), 0);
-
-                    part
-                })
-                .collect::<Vec<_>>())
+            normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
+        })?;
+        pretokenized.normalize(|normalized| {
+            let s = normalized.get();
+            let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());
+            let mut i = 0;
+            for cur_char in s.chars() {
+                let size = cur_char.len_utf8();
+                let bytes = s[i..i + size].as_bytes();
+                i += size;
+                transformations.extend(
+                    bytes
+                        .iter()
+                        .enumerate()
+                        .map(|(i, b)| (BYTES_CHAR[b], if i > 0 { 1 } else { 0 })),
+                );
+            }
+            normalized.transform(transformations.into_iter(), 0);
+            Ok(())
         })
     }
 }
@@ -218,8 +212,7 @@ pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
 mod tests {
     use super::ByteLevel;
     use crate::tokenizer::{
-        normalizer::Range, Decoder, Encoding, NormalizedString, OffsetReferential, PostProcessor,
-        PreTokenizedString, PreTokenizer,
+        Decoder, Encoding, OffsetReferential, PostProcessor, PreTokenizedString, PreTokenizer,
     };
 
     #[test]
@@ -228,7 +221,11 @@ mod tests {
         let mut pretokenized: PreTokenizedString = "Hello my friend, how is your day going?".into();
         bytelevel.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
-            pretokenized.get_normalized(OffsetReferential::Original),
+            pretokenized
+                .get_splits(OffsetReferential::Original)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
             vec![
                 ("Hello", (0, 5)),
                 ("Ġmy", (5, 8)),
@@ -273,18 +270,22 @@ mod tests {
             let mut pretokenized = PreTokenizedString::from(*s);
             bytelevel.pre_tokenize(&mut pretokenized).unwrap();
             assert_eq!(
-                pretokenized.get_normalized(OffsetReferential::Normalized),
+                pretokenized
+                    .get_splits(OffsetReferential::Normalized)
+                    .into_iter()
+                    .map(|(s, o, _)| (s, o))
+                    .collect::<Vec<_>>(),
                 vec![
-                    ("ĠHello", (0, 6)),
-                    ("Ġmy", (6, 9)),
-                    ("Ġfriend", (9, 16)),
-                    (",", (16, 17)),
-                    ("Ġhow", (17, 21)),
-                    ("Ġis", (21, 24)),
-                    ("Ġyour", (24, 29)),
-                    ("Ġday", (29, 33)),
-                    ("Ġgoing", (33, 39)),
-                    ("?", (39, 40))
+                    ("ĠHello", (0, 7)),
+                    ("Ġmy", (7, 11)),
+                    ("Ġfriend", (11, 19)),
+                    (",", (19, 20)),
+                    ("Ġhow", (20, 25)),
+                    ("Ġis", (25, 29)),
+                    ("Ġyour", (29, 35)),
+                    ("Ġday", (35, 40)),
+                    ("Ġgoing", (40, 47)),
+                    ("?", (47, 48))
                 ]
             );
         }
@@ -303,8 +304,9 @@ mod tests {
             let mut pretokenized = PreTokenizedString::from(sample);
             bytelevel.pre_tokenize(&mut pretokenized).unwrap();
             let separated_tokens = pretokenized
+                .get_splits(OffsetReferential::Original)
                 .iter()
-                .flat_map(|sub| sub.normalized.get().split("").map(|t| t.into()))
+                .flat_map(|(s, _, _)| s.split("").map(|t| t.into()))
                 .collect::<Vec<_>>();
             assert_eq!(sample, bytelevel.decode(separated_tokens).unwrap());
         }
@@ -317,7 +319,11 @@ mod tests {
         bytelevel.pre_tokenize(&mut pretokenized).unwrap();
 
         assert_eq!(
-            pretokenized.get_normalized(OffsetReferential::Original),
+            pretokenized
+                .get_splits(OffsetReferential::Original)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
             vec![
                 ("Hello", (0, 5)),
                 ("Ġthere", (5, 11)),
@@ -335,7 +341,11 @@ mod tests {
         bytelevel.pre_tokenize(&mut pretokenized).unwrap();
 
         assert_eq!(
-            pretokenized.get_normalized(OffsetReferential::Original),
+            pretokenized
+                .get_splits(OffsetReferential::Original)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
             vec![
                 ("Hello", (0, 5)),
                 ("Ġthere", (5, 11)),
@@ -347,32 +357,34 @@ mod tests {
 
     #[test]
     fn offsets_when_char_split_up() {
-        let mut pretokenized = PreTokenizedString::from("i⭢j");
+        let input = "i⭢j";
+        let mut pretokenized = PreTokenizedString::from(input);
         let bytelevel = ByteLevel::default().add_prefix_space(false);
         bytelevel.pre_tokenize(&mut pretokenized).unwrap();
 
         assert_eq!(
-            pretokenized.get_normalized(OffsetReferential::Original),
-            vec![("i", (0, 1)), ("âŃ¢", (1, 2)), ("j", (2, 3))]
-        );
-        assert_eq!(
-            pretokenized.get_normalized(OffsetReferential::Normalized),
+            pretokenized
+                .get_splits(OffsetReferential::Original)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
             vec![("i", (0, 1)), ("âŃ¢", (1, 4)), ("j", (4, 5))]
         );
         assert_eq!(
             pretokenized
-                .iter()
-                .map(|sub| sub.normalized.get())
-                .collect::<String>(),
-            "iâŃ¢j"
+                .get_splits(OffsetReferential::Normalized)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
+            vec![("i", (0, 1)), ("âŃ¢", (1, 7)), ("j", (7, 8))]
         );
         assert_eq!(
             pretokenized
+                .get_splits(OffsetReferential::Original)
                 .into_iter()
-                .map(|sub| sub.normalized)
-                .collect::<NormalizedString>()
-                .get_range_original(Range::Normalized(1..4)),
-            Some("⭢")
+                .map(|(_, o, _)| &input[o.0..o.1])
+                .collect::<Vec<_>>(),
+            vec!["i", "⭢", "j"]
         );
     }
 

@@ -31,18 +31,12 @@ impl Default for Metaspace {
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         pretokenized.split(|_, mut normalized| {
-            if self.add_prefix_space {
+            if self.add_prefix_space && !normalized.get().starts_with(self.replacement) {
                 normalized.prepend(&self.str_rep);
             }
 
-            Ok(normalized
-                .split(' ', SplitDelimiterBehavior::MergedWithNext)?
-                .into_iter()
-                .map(|mut normalized| {
-                    normalized.replace(' ', &self.str_rep)?;
-                    Ok(normalized)
-                })
-                .collect::<Result<Vec<_>>>()?)
+            normalized.replace(' ', &self.str_rep)?;
+            normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
         })
     }
 }
@@ -79,11 +73,19 @@ mod tests {
         let mut pretokenized = PreTokenizedString::from("Hey friend!");
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
-            pretokenized.get_normalized(OffsetReferential::Normalized),
-            vec![("▁Hey", (0, 4)), ("▁friend!", (4, 12))]
+            pretokenized
+                .get_splits(OffsetReferential::Normalized)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
+            vec![("▁Hey", (0, 6)), ("▁friend!", (6, 16))]
         );
         assert_eq!(
-            pretokenized.get_normalized(OffsetReferential::Original),
+            pretokenized
+                .get_splits(OffsetReferential::Original)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
             vec![("▁Hey", (0, 3)), ("▁friend!", (3, 11))]
         );
     }
@@ -94,16 +96,24 @@ mod tests {
         let mut pretokenized = PreTokenizedString::from("Hey   friend!");
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
-            pretokenized.get_normalized(OffsetReferential::Normalized),
+            pretokenized
+                .get_splits(OffsetReferential::Normalized)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
             vec![
-                ("▁Hey", (0, 4)),
-                ("▁", (4, 5)),
-                ("▁", (5, 6)),
-                ("▁friend!", (6, 14)),
+                ("▁Hey", (0, 6)),
+                ("▁", (6, 9)),
+                ("▁", (9, 12)),
+                ("▁friend!", (12, 22)),
             ]
         );
         assert_eq!(
-            pretokenized.get_normalized(OffsetReferential::Original),
+            pretokenized
+                .get_splits(OffsetReferential::Original)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
             vec![
                 ("▁Hey", (0, 3)),
                 ("▁", (3, 4)),
