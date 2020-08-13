@@ -4,6 +4,7 @@
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
 use std::{
+    borrow::Cow,
     collections::HashMap,
     fmt,
     fs::File,
@@ -216,33 +217,33 @@ impl Model for WordPiece {
                     .vocab
                     .get(&self.unk_token)
                     .ok_or(Error::MissingUnkToken)?,
-                offsets: (0, char_len),
+                offsets: (0, sequence.len()),
             }]);
         }
 
         let mut is_bad = false;
         let mut start = 0;
         let mut sub_tokens: Vec<Token> = vec![];
-        let chars = sequence.chars().collect::<Vec<_>>();
 
-        while start < chars.len() {
-            let mut end = chars.len();
+        while start < sequence.len() {
+            let mut end = sequence.len();
             let mut cur_str = None;
 
             while start < end {
-                let mut substr = chars[start..end].iter().collect::<String>();
+                let mut substr: Cow<str> = Cow::Borrowed(&sequence[start..end]);
+
                 if start > 0 {
-                    substr = format!("{}{}", self.continuing_subword_prefix, substr);
+                    substr = Cow::Owned(format!("{}{}", self.continuing_subword_prefix, substr));
                 }
-                if self.vocab.contains_key(&substr) {
+                if self.vocab.contains_key(substr.as_ref()) {
                     cur_str = Some(Token {
-                        id: self.vocab[&substr],
-                        value: substr,
+                        id: self.vocab[substr.as_ref()],
+                        value: substr.to_string(),
                         offsets: (start, end),
                     });
                     break;
                 }
-                end -= 1;
+                end -= substr.chars().last().map_or(1, |c| c.len_utf8());
             }
 
             if cur_str.is_none() {
@@ -261,7 +262,7 @@ impl Model for WordPiece {
                     .vocab
                     .get(&self.unk_token)
                     .ok_or(Error::MissingUnkToken)?,
-                offsets: (0, char_len),
+                offsets: (0, sequence.len()),
             }])
         } else {
             Ok(sub_tokens)
