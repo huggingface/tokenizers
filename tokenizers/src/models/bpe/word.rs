@@ -84,7 +84,7 @@ impl Word {
         }
     }
 
-    pub(super) fn add(&mut self, c: u32) {
+    pub(super) fn add(&mut self, c: u32, byte_len: usize) {
         let (prev, next) = {
             let len = self.symbols.len() as isize;
             if let Some(last) = self.symbols.last_mut() {
@@ -99,7 +99,7 @@ impl Word {
             c,
             prev,
             next,
-            len: 1,
+            len: byte_len,
         });
     }
 
@@ -268,11 +268,11 @@ mod tests {
         // Let's say we have the word 'hello' and a word-to-id vocab that looks
         // like this: {'h': 0, 'e': 1, 'l': 2, 'o': 3}.
         let mut word = Word::new();
-        word.add(0); // 'h'
-        word.add(1); // 'e'
-        word.add(2); // 'l'
-        word.add(2); // 'l'
-        word.add(3); // 'o'
+        word.add(0, 1); // 'h'
+        word.add(1, 1); // 'e'
+        word.add(2, 1); // 'l'
+        word.add(2, 1); // 'l'
+        word.add(3, 1); // 'o'
 
         // We're going to perform a merge on the pair ('l', 'l') ~= (2, 2). Let's
         // say that 'll' has the ID of 4 in the updated word-to-id vocab.

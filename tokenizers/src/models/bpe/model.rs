@@ -303,27 +303,33 @@ impl BPE {
         let mut indices = w.char_indices().map(|(idx, _)| idx).peekable();
         let mut word = Word::with_capacity(w.len());
         while let Some(i) = indices.next() {
-            let s = if let Some(&end) = indices.peek() {
+            let (s, byte_len) = if let Some(&end) = indices.peek() {
                 match (i, self.continuing_subword_prefix.as_ref()) {
-                    (0, Some(prefix)) => Cow::Owned(format!("{}{}", prefix, &w[i..end])),
-                    _ => Cow::Borrowed(&w[i..end]),
+                    (0, Some(prefix)) => (
+                        Cow::Owned(format!("{}{}", prefix, &w[i..end])),
+                        (i..end).len(),
+                    ),
+                    _ => (Cow::Borrowed(&w[i..end]), (i..end).len()),
                 }
             } else {
-                self.end_of_word_suffix
-                    .as_ref()
-                    .map(|suffix| format!("{}{}", &w[i..], suffix).into())
-                    .unwrap_or_else(|| Cow::Borrowed(&w[i..]))
+                (
+                    self.end_of_word_suffix
+                        .as_ref()
+                        .map(|suffix| format!("{}{}", &w[i..], suffix).into())
+                        .unwrap_or_else(|| Cow::Borrowed(&w[i..])),
+                    w[i..].len(),
+                )
             };
 
             if let Some(id) = self.vocab.get(s.as_ref()) {
-                word.add(*id);
+                word.add(*id, byte_len);
             } else if let Some(unk) = &self.unk_token {
                 let unk_id = self
                     .vocab
                     .get(unk)
                     .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk.to_owned()))?;
                 // Handle UNK token
-                word.add(*unk_id);
+                word.add(*unk_id, byte_len);
             }
         }
 

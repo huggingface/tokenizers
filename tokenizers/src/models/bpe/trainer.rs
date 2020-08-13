@@ -332,7 +332,7 @@ impl BpeTrainer {
                         id2w.push(s.clone());
                         w2id.insert(s.clone(), (id2w.len() - 1) as u32);
                     }
-                    current_word.add(w2id[&s]);
+                    current_word.add(w2id[&s], 1); // We do not care about the len here
                 }
             }
             words.push(current_word);
