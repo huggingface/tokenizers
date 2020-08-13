@@ -151,7 +151,7 @@ impl Model for WordLevel {
                 .or_else(|| self.vocab.get(&*self.unk_token))
                 .ok_or(Error::MissingUnkToken)?,
             value: token.to_owned(),
-            offsets: (0, token.chars().count()),
+            offsets: (0, token.len()),
         }])
     }
 
