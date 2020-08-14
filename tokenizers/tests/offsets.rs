@@ -1,12 +1,12 @@
 mod common;
 
 use common::*;
-use tokenizers::tokenizer::{normalizer::get_range_of, AddedToken};
+use tokenizers::tokenizer::AddedToken;
 
 macro_rules! check_offsets {
     ($input: expr, $output:expr, $offset:expr, $result:expr) => {
         let offsets = $output.get_offsets()[$offset];
-        assert_eq!(get_range_of(&$input, offsets.0..offsets.1), Some($result));
+        assert_eq!(&$input[offsets.0..offsets.1], $result);
     };
 }
 
