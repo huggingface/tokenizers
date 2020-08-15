@@ -33,69 +33,13 @@ The various steps of the pipeline are:
 4. The `PostProcessor`: in charge of post-processing the `Encoding` to add anything relevant
    that, for example, a language model would need, such as special tokens.
 
-## Quick example
+## Rust Usage examples
+Examples of 
+* deserialization and use for tokenization
+* training and serialization
 
-Train and serialize a Tokenizer.
+can be found on the main page of the Rust API docs. 
 
-
-```Rust
-use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
-use tokenizers::Result;
-use tokenizers::normalizers::{strip::Strip, unicode::NFC, utils::Sequence};
-use tokenizers::pre_tokenizers::byte_level::ByteLevel;
-use tokenizers::tokenizer::{AddedToken, Tokenizer, Trainer};
-
-use std::path::Path;
-
-fn main() -> Result<()>{
-    let vocab_size: usize = 100;
-
-    let trainer: Box<dyn Trainer> = Box::new(
-        BpeTrainerBuilder::new()
-            .show_progress(true)
-            .vocab_size(vocab_size)
-            .min_frequency(0)
-            .special_tokens(vec![
-                AddedToken::from("<s>", true),
-                AddedToken::from("<pad>", true),
-                AddedToken::from("</s>", true),
-                AddedToken::from("<unk>", true),
-                AddedToken::from("<mask>", true),
-            ])
-            .build(),
-    );
-
-    let mut tokenizer = Tokenizer::new(Box::new(BPE::default()));
-    tokenizer.with_normalizer(Box::new(Sequence::new(vec![
-        Box::new(Strip::new(true, true)),
-        Box::new(NFC),
-    ])));
-    tokenizer.with_pre_tokenizer(Box::new(ByteLevel::default()));
-
-    tokenizer.train(&trainer, vec!["/path/to/train.txt".to_string()])?;
-    tokenizer.save("/path/to/trained_tokenizer", true)?;
-
-    Ok(())
-}
-```
-
-Deserialize a pretrained Tokenizer.
-
-```Rust
-use tokenizers::Result;
-use tokenizers::tokenizer::Tokenizer;
-
-fn main() -> Result<()>{
-
-    let tokenizer = Tokenizer::from_file("/path/to/trained_tokenizer")?;
-
-    let sample_encoding = tokenizer.encode("Huggingface", false)?;
-
-    println!("{:?}", sample_encoding);
-
-    Ok(())
-}
-```
 
 ## Additional information
 
