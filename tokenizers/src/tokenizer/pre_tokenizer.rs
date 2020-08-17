@@ -1,6 +1,14 @@
 use crate::{
     normalizer::Range, Encoding, NormalizedString, OffsetReferential, Offsets, Result, Token,
 };
+use std::collections::HashMap;
+
+/// Various possible types of offsets
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OffsetType {
+    Byte,
+    Char,
+}
 
 /// Wrapper for a subpart of a `NormalizedString`.
 ///
@@ -43,6 +51,7 @@ impl From<(NormalizedString, Option<Vec<Token>>)> for Split {
 /// original string.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreTokenizedString {
+    original: String,
     splits: Vec<Split>,
 }
 
@@ -123,12 +132,35 @@ impl PreTokenizedString {
     /// input, that do not need the `PreTokenizedString` to generate word ids.
     ///
     /// This method will fail if some splits do not have associated `Token`.
-    pub fn into_encoding(self, word_idx: Option<u32>, type_id: u32) -> Result<Encoding> {
+    pub fn into_encoding(
+        self,
+        word_idx: Option<u32>,
+        type_id: u32,
+        offset_type: OffsetType,
+    ) -> Result<Encoding> {
         if self.splits.is_empty() {
             Ok(Encoding::default())
         } else if !self.splits.iter().all(|split| split.tokens.is_some()) {
             Err("Split has not been tokenized, call `PreTokenizedString::tokenize` first".into())
         } else {
+            let char_map: HashMap<usize, usize> = match offset_type {
+                OffsetType::Char => self
+                    .original
+                    .char_indices()
+                    .enumerate()
+                    .flat_map(|(i, (b, c))| {
+                        let mut n = 0;
+                        std::iter::repeat_with(move || {
+                            let o = (b + n, i);
+                            n += 1;
+                            o
+                        })
+                        .take(c.len_utf8())
+                    })
+                    .collect(),
+                OffsetType::Byte => HashMap::new(),
+            };
+
             Ok(self
                 .splits
                 .into_iter()
@@ -136,12 +168,32 @@ impl PreTokenizedString {
                 .flat_map(|(idx, split)| {
                     let normalized = split.normalized;
                     let offsets = normalized.offsets_original();
+                    let char_map = &char_map;
+
                     split.tokens.unwrap().into_iter().map(move |token| {
-                        let converted_offsets = normalized
+                        let mut converted_offsets = normalized
                             .convert_offsets(Range::Normalized(token.offsets.0..token.offsets.1))
                             .map_or(token.offsets, |range| {
                                 (offsets.0 + range.start, offsets.0 + range.end)
                             });
+
+                        // Convert to char offsets if relevant
+                        match (
+                            char_map.get(&converted_offsets.0),
+                            char_map.get(&converted_offsets.1),
+                        ) {
+                            (Some(start), Some(end)) => converted_offsets = (*start, *end),
+                            // If we reached the end, `end` is not in the map
+                            (Some(start), None) => {
+                                // But the one just before should be
+                                let last = char_map
+                                    .get(&(converted_offsets.1 - 1))
+                                    .copied()
+                                    .unwrap_or(*start + 1);
+                                converted_offsets = (*start, last + 1);
+                            }
+                            _ => {}
+                        };
 
                         (
                             token.id,
@@ -190,6 +242,7 @@ impl From<NormalizedString> for PreTokenizedString {
     fn from(s: NormalizedString) -> Self {
         let original_offsets = (0, s.len_original());
         Self {
+            original: s.get_original().to_owned(),
             splits: vec![Split {
                 normalized: s,
                 tokens: None,
