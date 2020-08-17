@@ -432,6 +432,8 @@ impl std::iter::FromIterator<(u32, String, (usize, usize), Option<u32>, u32)> fo
             encoding.offsets.push(offsets);
             encoding.type_ids.push(type_id);
             encoding.words.push(word);
+            encoding.special_tokens_mask.push(0);
+            encoding.attention_mask.push(1);
         }
 
         encoding
