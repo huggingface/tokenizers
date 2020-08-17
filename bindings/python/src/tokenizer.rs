@@ -553,7 +553,7 @@ impl PyTokenizer {
 
         ToPyResult(
             self.tokenizer
-                .encode(input, add_special_tokens)
+                .encode_char_offsets(input, add_special_tokens)
                 .map(|e| e.into()),
         )
         .into()
@@ -588,7 +588,7 @@ impl PyTokenizer {
         gil.python().allow_threads(|| {
             ToPyResult(
                 self.tokenizer
-                    .encode_batch(input, add_special_tokens)
+                    .encode_batch_char_offsets(input, add_special_tokens)
                     .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
             )
             .into()
