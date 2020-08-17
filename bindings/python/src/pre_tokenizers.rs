@@ -109,9 +109,9 @@ impl PyPreTokenizer {
         ToPyResult(self.pretok.pre_tokenize(&mut pretokenized)).into_py()?;
 
         Ok(pretokenized
-            .get_normalized(tk::OffsetReferential::Original)
+            .get_splits(tk::OffsetReferential::Original)
             .into_iter()
-            .map(|(s, o)| (s.to_owned(), o))
+            .map(|(s, o, _)| (s.to_owned(), o))
             .collect())
     }
 }

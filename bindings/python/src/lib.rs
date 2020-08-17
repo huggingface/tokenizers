@@ -106,6 +106,8 @@ fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
 /// Tokenizers Module
 #[pymodule]
 fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
+    env_logger::init_from_env("TOKENIZERS_LOG");
+
     // Register the fork callback
     #[cfg(target_family = "unix")]
     unsafe {
