@@ -253,8 +253,13 @@ impl NormalizedString {
             ),
         };
 
-        let o_shift = normalized_range.start;
         let n_shift = original_range.start;
+        let o_shift = self
+            .alignments_original
+            .get(0..n_shift)
+            .map(expand_alignments)
+            .flatten()
+            .map_or(0, |r| r.end);
 
         Some(Self {
             original: self
@@ -276,7 +281,7 @@ impl NormalizedString {
                 .iter()
                 .map(|(start, end)| (start - o_shift, end - o_shift))
                 .collect(),
-            original_shift: original_range.start,
+            original_shift: self.original_shift + original_range.start,
         })
     }
 
@@ -654,27 +659,40 @@ impl NormalizedString {
 
     /// Prepend the given string to ourself
     pub fn prepend(&mut self, s: &str) -> &mut Self {
-        self.normalized.insert_str(0, s);
-        self.alignments.splice(0..0, s.chars().map(|_| (0, 0)));
+        if let Some(next) = self.normalized.chars().next() {
+            let transformations = s
+                .chars()
+                .enumerate()
+                .map(|(i, c)| (c, if i == 0 { 0 } else { 1 }))
+                .chain(std::iter::once((next, 1)));
+
+            self.transform_range(Range::Normalized(0..next.len_utf8()), transformations, 0);
+        }
         self
     }
 
     /// Append the given string to ourself
     pub fn append(&mut self, s: &str) -> &mut Self {
-        self.normalized.push_str(s);
-        let last_offset = self.alignments.last().map_or((0, 0), |o| (o.1, o.1));
-        self.alignments.extend(s.chars().map(|_| last_offset));
+        if let Some((b, prev)) = self.normalized.char_indices().last() {
+            let transformations = std::iter::once((prev, 0)).chain(s.chars().map(|c| (c, 1)));
+            self.transform_range(Range::Normalized(b..), transformations, 0);
+        }
         self
     }
 
     /// Map our characters
     pub fn map<F: Fn(char) -> char>(&mut self, map: F) -> &mut Self {
-        self.normalized = self.normalized.chars().map(map).collect::<String>();
+        let transformations = self
+            .normalized
+            .chars()
+            .map(|c| (map(c), 0))
+            .collect::<Vec<_>>();
+        self.transform(transformations, 0);
         self
     }
 
     /// Calls the given function for each characters
-    pub fn for_each<F: FnMut(char)>(&mut self, foreach: F) -> &mut Self {
+    pub fn for_each<F: FnMut(char)>(&self, foreach: F) -> &Self {
         self.normalized.chars().for_each(foreach);
         self
     }
@@ -705,46 +723,39 @@ impl NormalizedString {
 
     /// Replace anything that matches the pattern with the given content.
     pub fn replace<P: Pattern>(&mut self, pattern: P, content: &str) -> Result<()> {
-        let matches = pattern.find_matches(&self.normalized)?;
-
-        let (normalized, alignments): (String, Vec<Offsets>) = matches
+        let mut offset: isize = 0;
+        pattern
+            .find_matches(&self.normalized)?
             .into_iter()
-            .flat_map(|((start, end), is_match)| {
-                let len = end - start;
+            .for_each(|((start, end), is_match)| {
                 if is_match {
-                    let original_offsets = self
-                        .convert_offsets(Range::Normalized(start..end))
-                        .expect("Bad offsets when replacing");
+                    let mut range = start..end;
+                    apply_signed!(range.start, offset);
+                    apply_signed!(range.end, offset);
 
-                    // Here, since we don't know the exact alignment, each character in
-                    // the new normalized part will align to the whole replaced one.
-                    itertools::Either::Left(content.chars().zip(std::iter::repeat((
-                        original_offsets.start,
-                        original_offsets.end,
-                    ))))
-                } else {
-                    // No need to replace anything, just zip the relevant parts
-                    itertools::Either::Right(
-                        self.normalized
-                            .chars()
-                            .skip(start)
-                            .take(len)
-                            .zip(self.alignments.iter().skip(start).take(len).copied()),
-                    )
+                    let mut new_len = 0;
+                    let removed_chars = self.normalized[range.clone()].chars().count();
+                    self.transform_range(
+                        Range::Normalized(range),
+                        content.chars().map(|c| {
+                            new_len += c.len_utf8();
+                            (c, 1)
+                        }),
+                        removed_chars,
+                    );
+
+                    let old_len = end - start;
+                    offset += new_len as isize - old_len as isize;
                 }
-            })
-            .unzip();
-
-        self.normalized = normalized;
-        self.alignments = alignments;
-
+            });
         Ok(())
     }
 
     /// Clear the normalized part of the string
-    pub fn clear(&mut self) {
-        self.normalized = "".into();
-        self.alignments = vec![];
+    pub fn clear(&mut self) -> usize {
+        let len = self.len();
+        self.transform(std::iter::empty(), len);
+        len
     }
 
     /// Split the current string in many subparts. Specify what to do with the
@@ -1384,10 +1395,10 @@ mod tests {
         assert_eq!(
             n.alignments,
             vec![
-                (0, 0),
-                (0, 0),
-                (0, 0),
-                (0, 0),
+                (0, 1),
+                (0, 1),
+                (0, 1),
+                (0, 1),
                 (0, 1),
                 (1, 2),
                 (2, 3),
@@ -1395,7 +1406,7 @@ mod tests {
                 (4, 5)
             ]
         );
-        assert_eq!(n.convert_offsets(Range::Normalized(0..4)), Some(0..0));
+        assert_eq!(n.convert_offsets(Range::Normalized(0..4)), Some(0..1));
     }
 
     #[test]
@@ -1502,7 +1513,6 @@ mod tests {
         let s = NormalizedString::from("The-final--countdown");
 
         let test = |behavior: SplitDelimiterBehavior, result: Vec<&str>| {
-            let mut s = s.clone();
             let splits = s.split('-', behavior).unwrap();
             assert_eq!(splits.iter().map(|n| n.get()).collect::<Vec<_>>(), result);
         };
