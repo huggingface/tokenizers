@@ -30,7 +30,7 @@ impl Task for EncodeTask {
                     .tokenizer
                     .read()
                     .unwrap()
-                    .encode(
+                    .encode_char_offsets(
                         input.take().ok_or("No provided input")?,
                         *add_special_tokens,
                     )
@@ -45,7 +45,7 @@ impl Task for EncodeTask {
                     .tokenizer
                     .read()
                     .unwrap()
-                    .encode_batch(
+                    .encode_batch_char_offsets(
                         input.take().ok_or("No provided input")?,
                         *add_special_tokens,
                     )

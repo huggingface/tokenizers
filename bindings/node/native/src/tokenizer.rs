@@ -437,22 +437,6 @@ declare_types! {
             Ok(cx.number(size as f64).upcast())
         }
 
-        method normalize(mut cx) {
-            // normalize(sentence: String) -> String
-            let sentence = cx.extract::<String>(0)?;
-
-            let this = cx.this();
-            let guard = cx.lock();
-
-            let normalized = this.borrow(&guard)
-                .tokenizer.read().unwrap()
-                .normalize(&sentence)
-                .map(|s| s.get().to_owned())
-                .map_err(|e| Error(format!("{}", e)))?;
-
-            Ok(cx.string(normalized).upcast())
-        }
-
         method encode(mut cx) {
             // type InputSequence = string | string[];
             // encode(
