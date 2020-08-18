@@ -371,16 +371,6 @@ describe("Tokenizer", () => {
     });
   });
 
-  describe("normalize", () => {
-    it("normalizes a string correctly", () => {
-      const model = BPE.empty();
-      const tokenizer = new Tokenizer(model);
-      tokenizer.setNormalizer(lowercaseNormalizer());
-
-      expect(tokenizer.normalize("MY NAME IS JOHN")).toEqual("my name is john");
-    });
-  });
-
   describe("postProcess", () => {
     let tokenizer: Tokenizer;
     let encode: (
