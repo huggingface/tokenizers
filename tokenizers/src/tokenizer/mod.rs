@@ -562,15 +562,6 @@ where
         self.added_vocabulary.id_to_token(id, &self.model)
     }
 
-    /// Normalize the given sentence and return the corresponding normalized string
-    pub fn normalize(&self, sentence: &str) -> Result<NormalizedString> {
-        let normalized = self
-            .added_vocabulary
-            .extract_and_normalize(self.normalizer.as_ref(), sentence);
-        let pre_tokenized = self.do_pre_tokenize(normalized)?;
-        Ok(pre_tokenized.into())
-    }
-
     /// Encode a single sequence
     fn encode_single_sequence(
         &self,

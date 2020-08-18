@@ -4,6 +4,7 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 
+use crate::error::ToPyResult;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize, Serializer};
 use tk::normalizers::{BertNormalizer, Lowercase, NormalizerWrapper, Strip, NFC, NFD, NFKC, NFKD};
@@ -80,6 +81,12 @@ impl PyNormalizer {
             }
             Err(e) => Err(e),
         }
+    }
+
+    fn normalize_str(&self, sequence: &str) -> PyResult<String> {
+        let mut normalized = NormalizedString::from(sequence);
+        ToPyResult(self.normalizer.normalize(&mut normalized)).into_py()?;
+        Ok(normalized.get().to_owned())
     }
 }
 

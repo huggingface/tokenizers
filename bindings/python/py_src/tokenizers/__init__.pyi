@@ -459,17 +459,6 @@ class Tokenizer:
             if the padding is enabled.
         """
         pass
-    def normalize(self, sequence: str) -> str:
-        """ Normalize the given sequence
-
-        Args:
-            sequence: str:
-                The sequence to normalize
-
-        Returns:
-            The normalized string
-        """
-        pass
     def encode(
         self,
         sequence: InputSequence,

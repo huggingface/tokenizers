@@ -240,7 +240,6 @@ impl PreTokenizedString {
 
 impl From<NormalizedString> for PreTokenizedString {
     fn from(s: NormalizedString) -> Self {
-        let original_offsets = (0, s.len_original());
         Self {
             original: s.get_original().to_owned(),
             splits: vec![Split {
@@ -262,11 +261,5 @@ impl From<String> for PreTokenizedString {
     fn from(s: String) -> Self {
         let normalized: NormalizedString = s.into();
         normalized.into()
-    }
-}
-
-impl From<PreTokenizedString> for NormalizedString {
-    fn from(p: PreTokenizedString) -> Self {
-        p.splits.into_iter().map(|split| split.normalized).collect()
     }
 }
