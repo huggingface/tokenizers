@@ -65,7 +65,6 @@ class TestTokenizer:
         assert callable(tokenizer.no_truncation)
         assert callable(tokenizer.enable_padding)
         assert callable(tokenizer.no_padding)
-        assert callable(tokenizer.normalize)
         assert callable(tokenizer.encode)
         assert callable(tokenizer.encode_batch)
         assert callable(tokenizer.decode)
@@ -264,14 +263,6 @@ class TestTokenizer:
         # Can retrieve vocab's size without added tokens
         size = tokenizer.get_vocab_size(with_added_tokens=False)
         assert size == 0
-
-    def test_normalize(self):
-        tokenizer = Tokenizer(BPE())
-        tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
-        tokenizer.normalizer = Lowercase()
-
-        output = tokenizer.normalize("My Name Is John")
-        assert output == "my name is john"
 
     def test_post_process(self):
         tokenizer = Tokenizer(BPE())

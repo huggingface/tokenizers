@@ -509,15 +509,6 @@ impl PyTokenizer {
         })
     }
 
-    fn normalize(&self, sentence: &str) -> PyResult<String> {
-        ToPyResult(
-            self.tokenizer
-                .normalize(sentence)
-                .map(|s| s.get().to_owned()),
-        )
-        .into()
-    }
-
     /// Input can be:
     /// encode("A single sequence")
     /// encode("A sequence", "And its pair")

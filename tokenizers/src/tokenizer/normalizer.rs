@@ -842,27 +842,6 @@ impl NormalizedString {
             .collect())
     }
 
-    /// Merge with the given NormalizedString by appending it to self
-    pub fn merge_with(&mut self, other: &NormalizedString) {
-        let n_shift = self.len_original();
-        let o_shift = self.len();
-        self.original.push_str(&other.original);
-        self.normalized.push_str(&other.normalized);
-        self.alignments.extend(
-            other
-                .alignments
-                .iter()
-                .map(|(start, end)| (start + n_shift, end + n_shift)),
-        );
-        self.alignments_original.extend(
-            other
-                .alignments
-                .iter()
-                .map(|(start, end)| (start + o_shift, end + o_shift)),
-        );
-        todo!("This must take into account the `original_shift`");
-    }
-
     /// Remove any leading space(s) of the normalized string
     pub fn lstrip(&mut self) -> &mut Self {
         self.lrstrip(true, false)
@@ -1057,16 +1036,6 @@ impl From<&str> for NormalizedString {
     }
 }
 
-impl std::iter::FromIterator<NormalizedString> for NormalizedString {
-    fn from_iter<I: IntoIterator<Item = NormalizedString>>(iter: I) -> NormalizedString {
-        let mut normalized: NormalizedString = "".into();
-        for sub in iter {
-            normalized.merge_with(&sub)
-        }
-        normalized
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::reversed_empty_ranges)]
@@ -1196,7 +1165,6 @@ mod tests {
     fn range_conversion() {
         let mut n = NormalizedString::from("    __Hello__   ");
         n.filter(|c| !c.is_whitespace()).lowercase();
-        println!("{:?}", n);
         let hello_n = n.convert_offsets(Range::Original(6..11));
         assert_eq!(hello_n, Some(2..7));
         assert_eq!(
