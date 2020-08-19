@@ -171,27 +171,26 @@ impl PyObjectProtocol for PyAddedToken {
     }
 }
 
-struct TextInputSequence(tk::InputSequence);
-impl FromPyObject<'_> for TextInputSequence {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+struct TextInputSequence<'s>(tk::InputSequence<'s>);
+impl<'s> FromPyObject<'s> for TextInputSequence<'s> {
+    fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let err = exceptions::ValueError::py_err("TextInputSequence must be str");
         if let Ok(s) = ob.downcast::<PyString>() {
-            let seq: String = s.extract().map_err(|_| err)?;
-            Ok(Self(seq.into()))
+            Ok(Self(s.to_string()?.into()))
         } else {
             Err(err)
         }
     }
 }
-impl From<TextInputSequence> for tk::InputSequence {
-    fn from(s: TextInputSequence) -> Self {
+impl<'s> From<TextInputSequence<'s>> for tk::InputSequence<'s> {
+    fn from(s: TextInputSequence<'s>) -> Self {
         s.0
     }
 }
 
-struct PreTokenizedInputSequence(tk::InputSequence);
-impl FromPyObject<'_> for PreTokenizedInputSequence {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+struct PreTokenizedInputSequence<'s>(tk::InputSequence<'s>);
+impl<'s> FromPyObject<'s> for PreTokenizedInputSequence<'s> {
+    fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let err = exceptions::ValueError::py_err(
             "PreTokenizedInputSequence must be Union[List[str], Tuple[str]]",
         );
@@ -207,53 +206,45 @@ impl FromPyObject<'_> for PreTokenizedInputSequence {
         }
     }
 }
-impl From<PreTokenizedInputSequence> for tk::InputSequence {
-    fn from(s: PreTokenizedInputSequence) -> Self {
+impl<'s> From<PreTokenizedInputSequence<'s>> for tk::InputSequence<'s> {
+    fn from(s: PreTokenizedInputSequence<'s>) -> Self {
         s.0
     }
 }
 
-struct TextEncodeInput(tk::EncodeInput);
-impl FromPyObject<'_> for TextEncodeInput {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+struct TextEncodeInput<'s>(tk::EncodeInput<'s>);
+impl<'s> FromPyObject<'s> for TextEncodeInput<'s> {
+    fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let err = exceptions::ValueError::py_err(
             "TextEncodeInput must be Union[TextInputSequence, Tuple[InputSequence, InputSequence]]",
         );
 
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let obj = ob.to_object(py);
-
-        if let Ok(i) = obj.extract::<TextInputSequence>(py) {
+        if let Ok(i) = ob.extract::<TextInputSequence>() {
             Ok(Self(i.into()))
-        } else if let Ok((i1, i2)) = obj.extract::<(TextInputSequence, TextInputSequence)>(py) {
+        } else if let Ok((i1, i2)) = ob.extract::<(TextInputSequence, TextInputSequence)>() {
             Ok(Self((i1, i2).into()))
         } else {
             Err(err)
         }
     }
 }
-impl From<TextEncodeInput> for tk::tokenizer::EncodeInput {
-    fn from(i: TextEncodeInput) -> Self {
+impl<'s> From<TextEncodeInput<'s>> for tk::tokenizer::EncodeInput<'s> {
+    fn from(i: TextEncodeInput<'s>) -> Self {
         i.0
     }
 }
-struct PreTokenizedEncodeInput(tk::EncodeInput);
-impl FromPyObject<'_> for PreTokenizedEncodeInput {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+struct PreTokenizedEncodeInput<'s>(tk::EncodeInput<'s>);
+impl<'s> FromPyObject<'s> for PreTokenizedEncodeInput<'s> {
+    fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let err = exceptions::ValueError::py_err(
             "PreTokenizedEncodeInput must be Union[PreTokenizedInputSequence, \
             Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence]]",
         );
 
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let obj = ob.to_object(py);
-
-        if let Ok(i) = obj.extract::<PreTokenizedInputSequence>(py) {
+        if let Ok(i) = ob.extract::<PreTokenizedInputSequence>() {
             Ok(Self(i.into()))
         } else if let Ok((i1, i2)) =
-            obj.extract::<(PreTokenizedInputSequence, PreTokenizedInputSequence)>(py)
+            ob.extract::<(PreTokenizedInputSequence, PreTokenizedInputSequence)>()
         {
             Ok(Self((i1, i2).into()))
         } else {
@@ -261,8 +252,8 @@ impl FromPyObject<'_> for PreTokenizedEncodeInput {
         }
     }
 }
-impl From<PreTokenizedEncodeInput> for tk::tokenizer::EncodeInput {
-    fn from(i: PreTokenizedEncodeInput) -> Self {
+impl<'s> From<PreTokenizedEncodeInput<'s>> for tk::tokenizer::EncodeInput<'s> {
+    fn from(i: PreTokenizedEncodeInput<'s>) -> Self {
         i.0
     }
 }
