@@ -3,7 +3,7 @@ use crate::models::unigram::{
     model::Unigram,
     unicode::{get_script, Script},
 };
-use crate::tokenizer::{AddedToken, Model, Result, Trainer};
+use crate::tokenizer::{AddedToken, Result, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -167,8 +167,6 @@ impl UnigramTrainer {
         let mut pieces: HashMap<String, f64> = HashMap::new();
         let existing_pieces: HashMap<&String, f64> = model.iter().collect();
         // XXX: Make sure bos, eos and unk exists and are ids 0, 1, 2
-        pieces.insert("<bos>".to_string(), 0.0);
-        pieces.insert("<eos>".to_string(), 0.0);
         pieces.insert("<unk>".to_string(), 0.0);
         for c in required_chars {
             if let Some(t) = existing_pieces.get(&c) {
@@ -191,7 +189,7 @@ impl UnigramTrainer {
         }
         let mut final_pieces: Vec<SentencePiece> = pieces.into_iter().collect();
         final_pieces.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
-        Unigram::from(&final_pieces, 0, 1, 2)
+        Unigram::from(&final_pieces, 0)
     }
 
     fn required_chars(&self, word_counts: &[Sentence]) -> HashSet<String> {
@@ -287,18 +285,21 @@ impl UnigramTrainer {
         let mut always_keep = vec![true; pieces.len()];
         let mut alternatives: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
 
+        let bos_id = pieces.len() + 1;
+        let eos_id = pieces.len() + 2;
+
         // First, segments the current sentencepieces to know
         // how each sentencepiece is resegmented if this sentencepiece is removed
         // from the vocabulary.
         // To do so, we take the second best segmentation of sentencepiece[i].
         // alternatives[i] stores the sequence of second best sentencepieces.
         for (id, (token, _score)) in pieces.iter().enumerate() {
-            // Always keep bos, eos, unk.
-            if id <= 2 {
+            // Always keep unk.
+            if id == 0 {
                 always_keep[id] = false;
                 continue;
             }
-            let mut lattice = Lattice::from(token, 0, 1, 2);
+            let mut lattice = Lattice::from(token, 0, bos_id, eos_id);
             model.populate_nodes(&mut lattice);
 
             let nbests = lattice.nbest(2);
@@ -323,7 +324,7 @@ impl UnigramTrainer {
         let mut inverted: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
         // TODO reparallelize this
         for (i, (sentence, count)) in sentences.iter().enumerate() {
-            let mut lattice = Lattice::from(sentence, 0, 1, 2);
+            let mut lattice = Lattice::from(sentence, 0, bos_id, eos_id);
             model.populate_nodes(&mut lattice);
             vsum += *count as f64;
             for node_ref in lattice.viterbi() {
@@ -338,15 +339,14 @@ impl UnigramTrainer {
         let mut candidates: Vec<(usize, f64)> = vec![];
         let mut new_pieces: Vec<SentencePiece> = Vec::with_capacity(self.vocab_size as usize);
         new_pieces.push(pieces[0].clone());
-        new_pieces.push(pieces[1].clone());
-        new_pieces.push(pieces[2].clone());
+
         // Finally, computes how likely the LM likelihood is reduced if
         // the sentencepiece[i] is removed from the vocabulary.
         // Since the exact computation of loss is difficult, we compute the
         // loss approximately by assuming that all sentencepiece[i] in the sentences
         // are replaced with alternatives[i] when sentencepiece[i] is removed.
         for (id, (token, score)) in pieces.iter().enumerate() {
-            if id <= 2 {
+            if id == 0 {
                 continue;
             }
             if freq[id] == 0.0 && !always_keep[id] {
@@ -434,7 +434,7 @@ impl UnigramTrainer {
 
         // TODO reparallelize this.
         for (string, freq) in sentences {
-            let mut lattice = Lattice::from(string, 0, 1, 2);
+            let mut lattice = Lattice::from(string, model.unk_id, model.bos_id, model.eos_id);
             model.populate_nodes(&mut lattice);
             let z: f64 = lattice.populate_marginal(*freq as f64, &mut expected);
             ntokens += lattice.viterbi().len() as u32;
@@ -461,8 +461,8 @@ impl UnigramTrainer {
         let mut sum = 0.0;
         let expected_frequency_threshold = 0.5;
         for (i, (freq, (piece, _))) in expected.iter().zip(pieces).enumerate() {
-            // i > 2 so we keep bos, eos and unk.
-            if i <= 2 {
+            // We keep unk.
+            if i == 0 {
                 new_pieces.push((piece.clone(), f64::NAN));
                 continue;
             }
@@ -493,8 +493,6 @@ impl UnigramTrainer {
         let mut pieces: Vec<SentencePiece> =
             Vec::with_capacity(self.vocab_size.try_into().unwrap());
         // XXX: Make sure bos, eos and unk exists and are ids 0, 1, 2
-        pieces.push(("<bos>".to_string(), f64::NAN));
-        pieces.push(("<eos>".to_string(), f64::NAN));
         pieces.push(("<unk>".to_string(), f64::NAN));
         pieces.extend(self.make_seed_sentence_pieces(&sentences, &progress)?);
         self.finalize_progress(&progress, sentences.len());
@@ -539,7 +537,7 @@ impl UnigramTrainer {
         let expected_updates = expected_loops as usize * self.n_sub_iterations as usize;
         self.update_progress(&progress, expected_updates, "EM training");
         let required_chars = self.required_chars(&sentences);
-        let mut model = Unigram::from(&pieces, 0, 1, 2);
+        let mut model = Unigram::from(&pieces, 0);
         loop {
             // Sub-EM iteration.
             for _iter in 0..self.n_sub_iterations {
@@ -548,7 +546,7 @@ impl UnigramTrainer {
 
                 // Executes M step.
                 pieces = self.run_m_step(&pieces, &expected);
-                model = Unigram::from(&pieces, 0, 1, 2);
+                model = Unigram::from(&pieces, 0);
                 // Useful comment for checking compatibility with spm
                 // println!(
                 //     "Em iter={} size={} obj={} num_tokens={} num_tokens/piece={}",
@@ -571,7 +569,7 @@ impl UnigramTrainer {
 
             // Prunes pieces.
             pieces = self.prune_sentence_pieces(&model, &pieces, &sentences);
-            model = Unigram::from(&pieces, 0, 1, 2);
+            model = Unigram::from(&pieces, 0);
         }
         self.finalize_progress(&progress, expected_updates);
 
@@ -586,7 +584,7 @@ impl Trainer for UnigramTrainer {
     type Model = Unigram;
 
     /// Train a Unigram model
-    fn train(&self, word_counts: HashMap<String, u32>) -> Result<(Unigram, Vec<AddedToken>)> {
+    fn train(&self, word_counts: HashMap<String, u32>) -> Result<(Self::Model, Vec<AddedToken>)> {
         let sentences: Vec<_> = word_counts.into_iter().collect();
         self._train(sentences)
     }

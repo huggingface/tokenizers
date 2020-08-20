@@ -394,7 +394,7 @@ fn test_spm_compat_encode() {
             filtered_line.push(c);
             last_c = c;
         }
-        // println!("Tokenizer line {:?}", filtered_line);
+        println!("Tokenizer line {:?}", filtered_line);
         let tokenizer_tokens = model.encode(&filtered_line, true);
         let mut spm_tokens: Vec<String> = spm_line
             .split(' ')
@@ -411,6 +411,8 @@ fn test_spm_compat_encode() {
         if tokenizer_tokens == spm_tokens {
             correct += 1;
         } else {
+            println!("Tokens {:?}", tokenizer_tokens);
+            println!("SPM {:?}", spm_tokens);
             let mut iter = tokenizer_tokens.iter().zip(&spm_tokens).peekable();
             loop {
                 if let Some((tok, spm)) = iter.next() {
