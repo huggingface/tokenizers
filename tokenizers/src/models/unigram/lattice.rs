@@ -136,7 +136,7 @@ fn log_sum_exp(x: f64, y: f64, init_mode: bool) -> f64 {
 }
 
 impl<'a> Lattice<'a> {
-    pub fn from(sentence: &'a str, bos_id: usize, eos_id: usize, unk_id: usize) -> Lattice<'a> {
+    pub fn from(sentence: &'a str, unk_id: usize, bos_id: usize, eos_id: usize) -> Lattice<'a> {
         let chars: Vec<_> = sentence.chars().collect();
         let k_reserved_node_size = 16;
         // We are adding 2 tokens, bos and eos
@@ -465,8 +465,8 @@ mod tests {
         let bos = lattice.bos_node();
         let eos = lattice.eos_node();
 
-        assert_eq!(bos.borrow().id, 0);
-        assert_eq!(eos.borrow().id, 1);
+        assert_eq!(bos.borrow().id, 1);
+        assert_eq!(eos.borrow().id, 2);
         assert_eq!(
             lattice.end_nodes[0].first().unwrap().borrow().id,
             bos.borrow().id
@@ -531,8 +531,8 @@ mod tests {
         assert_eq!(node5.length, 2);
         assert_eq!(node6.length, 2);
 
-        assert_eq!(lattice.bos_node().borrow().id, 0);
-        assert_eq!(lattice.eos_node().borrow().id, 1);
+        assert_eq!(lattice.bos_node().borrow().id, 1);
+        assert_eq!(lattice.eos_node().borrow().id, 2);
         assert_eq!(node0.id, 3);
         assert_eq!(node1.id, 4);
         assert_eq!(node2.id, 5);
