@@ -5,9 +5,9 @@ use crate::tokenizer::Tokenizer;
 use neon::prelude::*;
 use tk::tokenizer::{EncodeInput, Encoding};
 
-pub enum EncodeTask {
-    Single(Tokenizer, Option<EncodeInput>, bool),
-    Batch(Tokenizer, Option<Vec<EncodeInput>>, bool),
+pub enum EncodeTask<'s> {
+    Single(Tokenizer, Option<EncodeInput<'s>>, bool),
+    Batch(Tokenizer, Option<Vec<EncodeInput<'s>>>, bool),
 }
 
 pub enum EncodeOutput {
@@ -15,7 +15,7 @@ pub enum EncodeOutput {
     Batch(Vec<Encoding>),
 }
 
-impl Task for EncodeTask {
+impl Task for EncodeTask<'static> {
     type Output = EncodeOutput;
     type Error = String;
     type JsEvent = JsValue;
