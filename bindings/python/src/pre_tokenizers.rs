@@ -382,9 +382,7 @@ impl Serialize for PyPreTokenizerWrapper {
                 ser.end()
             }
             PyPreTokenizerWrapper::Wrapped(inner) => inner.serialize(serializer),
-            PyPreTokenizerWrapper::Custom(_) => {
-                unreachable!("Custom pretokenizers are currently disabled, how did you get here?")
-            }
+            PyPreTokenizerWrapper::Custom(inner) => inner.serialize(serializer),
         }
     }
 }
