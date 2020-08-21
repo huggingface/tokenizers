@@ -3,12 +3,16 @@ use std::sync::Arc;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use tk::pre_tokenizers::bert::BertPreTokenizer;
 use tk::pre_tokenizers::byte_level::ByteLevel;
+use tk::pre_tokenizers::deduplication::Deduplication;
 use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk::pre_tokenizers::metaspace::Metaspace;
+use tk::pre_tokenizers::punctuation::Punctuation;
+// use tk::pre_tokenizers::sequence::Sequence;
 use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::tokenizer::Offsets;
@@ -36,9 +40,21 @@ impl PyPreTokenizer {
         let py = gil.python();
         match &self.pretok {
             PyPreTokenizerWrapper::Custom(_) => Py::new(py, base).map(Into::into),
+            PyPreTokenizerWrapper::Sequence(_) => {
+                Py::new(py, (PySequence {}, base)).map(Into::into)
+            }
             PyPreTokenizerWrapper::Wrapped(inner) => match inner.as_ref() {
                 PreTokenizerWrapper::Whitespace(_) => {
                     Py::new(py, (PyWhitespace {}, base)).map(Into::into)
+                }
+                PreTokenizerWrapper::Deduplication(_) => {
+                    Py::new(py, (PyDeduplication {}, base)).map(Into::into)
+                }
+                PreTokenizerWrapper::Punctuation(_) => {
+                    Py::new(py, (PyPunctuation {}, base)).map(Into::into)
+                }
+                PreTokenizerWrapper::Sequence(_) => {
+                    Py::new(py, (PySequence {}, base)).map(Into::into)
                 }
                 PreTokenizerWrapper::Metaspace(_) => {
                     Py::new(py, (PyMetaspace {}, base)).map(Into::into)
@@ -201,6 +217,56 @@ impl PyBertPreTokenizer {
     }
 }
 
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Deduplication)]
+pub struct PyDeduplication {}
+#[pymethods]
+impl PyDeduplication {
+    #[new]
+    fn new() -> PyResult<(Self, PyPreTokenizer)> {
+        Ok((PyDeduplication {}, Deduplication.into()))
+    }
+}
+
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Punctuation)]
+pub struct PyPunctuation {}
+#[pymethods]
+impl PyPunctuation {
+    #[new]
+    fn new() -> PyResult<(Self, PyPreTokenizer)> {
+        Ok((PyPunctuation {}, Punctuation.into()))
+    }
+}
+
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Sequence)]
+pub struct PySequence {}
+#[pymethods]
+impl PySequence {
+    #[new]
+    fn new(pre_tokenizers: &PyList) -> PyResult<(Self, PyPreTokenizer)> {
+        let mut sequence = Vec::with_capacity(pre_tokenizers.len());
+        for n in pre_tokenizers.iter() {
+            let pretokenizer: PyRef<PyPreTokenizer> = n.extract()?;
+            match &pretokenizer.pretok {
+                PyPreTokenizerWrapper::Sequence(inner) => {
+                    sequence.extend(inner.iter().map(|i| i.clone()))
+                }
+                PyPreTokenizerWrapper::Wrapped(inner) => sequence.push(inner.clone()),
+                PyPreTokenizerWrapper::Custom(_) => unreachable!(
+                    "Custom pretokenizers are currently disabled, how did you get here?"
+                ),
+            }
+        }
+        Ok((
+            PySequence {},
+            PyPreTokenizer::new(PyPreTokenizerWrapper::Sequence(sequence)),
+        ))
+    }
+
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
+        Ok(PyTuple::new(py, &[PyList::empty(py)]))
+    }
+}
+
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Metaspace)]
 pub struct PyMetaspace {}
 #[pymethods]
@@ -295,11 +361,32 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerWrapper {
+    Sequence(Vec<Arc<PreTokenizerWrapper>>),
     Custom(Arc<CustomPreTokenizer>),
     Wrapped(Arc<PreTokenizerWrapper>),
+}
+
+impl Serialize for PyPreTokenizerWrapper {
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            PyPreTokenizerWrapper::Sequence(seq) => {
+                let mut ser = serializer.serialize_struct("Sequence", 2)?;
+                ser.serialize_field("type", "Sequence")?;
+                ser.serialize_field("pretokenizers", seq)?;
+                ser.end()
+            }
+            PyPreTokenizerWrapper::Wrapped(inner) => inner.serialize(serializer),
+            PyPreTokenizerWrapper::Custom(_) => {
+                unreachable!("Custom pretokenizers are currently disabled, how did you get here?")
+            }
+        }
+    }
 }
 
 impl<I> From<I> for PyPreTokenizerWrapper
@@ -326,6 +413,9 @@ impl PreTokenizer for PyPreTokenizerWrapper {
     fn pre_tokenize(&self, normalized: &mut PreTokenizedString) -> tk::Result<()> {
         match self {
             PyPreTokenizerWrapper::Wrapped(inner) => inner.pre_tokenize(normalized),
+            PyPreTokenizerWrapper::Sequence(inner) => {
+                inner.iter().map(|n| n.pre_tokenize(normalized)).collect()
+            }
             PyPreTokenizerWrapper::Custom(_) => {
                 unreachable!("Custom pretokenizers are currently disabled, how did you get here?")
             }
