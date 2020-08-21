@@ -150,17 +150,18 @@ pub enum InputSequence<'s> {
     Raw(Cow<'s, str>),
     PreTokenized(Cow<'s, [&'s str]>),
     PreTokenizedOwned(Cow<'s, [String]>),
-}
-
-impl<'s> From<&'s str> for InputSequence<'s> {
-    fn from(input: &'s str) -> Self {
-        InputSequence::Raw(Cow::Borrowed(input))
-    }
+    PreTokenizedCow(Cow<'s, [Cow<'s, str>]>),
 }
 
 impl<'s> From<Cow<'s, str>> for InputSequence<'s> {
     fn from(input: Cow<'s, str>) -> Self {
         InputSequence::Raw(input)
+    }
+}
+
+impl<'s> From<&'s str> for InputSequence<'s> {
+    fn from(input: &'s str) -> Self {
+        InputSequence::Raw(Cow::Borrowed(input))
     }
 }
 
@@ -191,6 +192,18 @@ impl<'s> From<&'s [String]> for InputSequence<'s> {
 impl<'s> From<Vec<String>> for InputSequence<'s> {
     fn from(input: Vec<String>) -> Self {
         InputSequence::PreTokenizedOwned(Cow::Owned(input))
+    }
+}
+
+impl<'s> From<Vec<Cow<'s, str>>> for InputSequence<'s> {
+    fn from(input: Vec<Cow<'s, str>>) -> Self {
+        InputSequence::PreTokenizedCow(Cow::Owned(input))
+    }
+}
+
+impl<'s> From<&'s [Cow<'s, str>]> for InputSequence<'s> {
+    fn from(input: &'s [Cow<'s, str>]) -> Self {
+        InputSequence::PreTokenizedCow(Cow::Borrowed(input))
     }
 }
 
@@ -613,6 +626,11 @@ where
                 .map(|(i, sequence)| encode(true, i, sequence))
                 .collect(),
             InputSequence::PreTokenizedOwned(seq) => seq
+                .iter()
+                .enumerate()
+                .map(|(i, sequence)| encode(true, i, sequence))
+                .collect(),
+            InputSequence::PreTokenizedCow(seq) => seq
                 .iter()
                 .enumerate()
                 .map(|(i, sequence)| encode(true, i, sequence))
