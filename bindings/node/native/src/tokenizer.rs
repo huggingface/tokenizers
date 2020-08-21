@@ -124,9 +124,9 @@ impl FromJsValue for SpecialToken {
 
 // encode & encodeBatch types
 
-struct TextInputSequence(tk::InputSequence);
-struct PreTokenizedInputSequence(tk::InputSequence);
-impl FromJsValue for PreTokenizedInputSequence {
+struct TextInputSequence<'s>(tk::InputSequence<'s>);
+struct PreTokenizedInputSequence<'s>(tk::InputSequence<'s>);
+impl FromJsValue for PreTokenizedInputSequence<'_> {
     fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
         let sequence = from
             .downcast::<JsArray>()?
@@ -137,25 +137,25 @@ impl FromJsValue for PreTokenizedInputSequence {
         Ok(Self(sequence.into()))
     }
 }
-impl From<PreTokenizedInputSequence> for tk::InputSequence {
-    fn from(v: PreTokenizedInputSequence) -> Self {
+impl<'s> From<PreTokenizedInputSequence<'s>> for tk::InputSequence<'s> {
+    fn from(v: PreTokenizedInputSequence<'s>) -> Self {
         v.0
     }
 }
-impl FromJsValue for TextInputSequence {
+impl FromJsValue for TextInputSequence<'_> {
     fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, _cx: &mut C) -> LibResult<Self> {
         Ok(Self(from.downcast::<JsString>()?.value().into()))
     }
 }
-impl From<TextInputSequence> for tk::InputSequence {
-    fn from(v: TextInputSequence) -> Self {
+impl<'s> From<TextInputSequence<'s>> for tk::InputSequence<'s> {
+    fn from(v: TextInputSequence<'s>) -> Self {
         v.0
     }
 }
 
-struct TextEncodeInput(tk::EncodeInput);
-struct PreTokenizedEncodeInput(tk::EncodeInput);
-impl FromJsValue for PreTokenizedEncodeInput {
+struct TextEncodeInput<'s>(tk::EncodeInput<'s>);
+struct PreTokenizedEncodeInput<'s>(tk::EncodeInput<'s>);
+impl FromJsValue for PreTokenizedEncodeInput<'_> {
     fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
         // If array is of size 2, and the first element is also an array, we'll parse a pair
         let array = from.downcast::<JsArray>()?;
@@ -177,12 +177,12 @@ impl FromJsValue for PreTokenizedEncodeInput {
         }
     }
 }
-impl From<PreTokenizedEncodeInput> for tk::EncodeInput {
-    fn from(v: PreTokenizedEncodeInput) -> Self {
+impl<'s> From<PreTokenizedEncodeInput<'s>> for tk::EncodeInput<'s> {
+    fn from(v: PreTokenizedEncodeInput<'s>) -> Self {
         v.0
     }
 }
-impl FromJsValue for TextEncodeInput {
+impl FromJsValue for TextEncodeInput<'_> {
     fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, cx: &mut C) -> LibResult<Self> {
         // If we get an array, it's a pair of sequences
         if let Ok(array) = from.downcast::<JsArray>() {
@@ -204,8 +204,8 @@ impl FromJsValue for TextEncodeInput {
         }
     }
 }
-impl From<TextEncodeInput> for tk::EncodeInput {
-    fn from(v: TextEncodeInput) -> Self {
+impl<'s> From<TextEncodeInput<'s>> for tk::EncodeInput<'s> {
+    fn from(v: TextEncodeInput<'s>) -> Self {
         v.0
     }
 }
