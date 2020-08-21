@@ -9,6 +9,9 @@ from tokenizers.pre_tokenizers import (
     BertPreTokenizer,
     Metaspace,
     CharDelimiterSplit,
+    Deduplication,
+    Punctuation,
+    Sequence,
 )
 
 
@@ -39,7 +42,9 @@ class TestWhitespaceSplit:
         assert WhitespaceSplit() is not None
         assert isinstance(WhitespaceSplit(), PreTokenizer)
         assert isinstance(WhitespaceSplit(), WhitespaceSplit)
-        assert isinstance(pickle.loads(pickle.dumps(WhitespaceSplit())), WhitespaceSplit)
+        assert isinstance(
+            pickle.loads(pickle.dumps(WhitespaceSplit())), WhitespaceSplit
+        )
 
 
 class TestBertPreTokenizer:
@@ -47,7 +52,9 @@ class TestBertPreTokenizer:
         assert BertPreTokenizer() is not None
         assert isinstance(BertPreTokenizer(), PreTokenizer)
         assert isinstance(BertPreTokenizer(), BertPreTokenizer)
-        assert isinstance(pickle.loads(pickle.dumps(BertPreTokenizer())), BertPreTokenizer)
+        assert isinstance(
+            pickle.loads(pickle.dumps(BertPreTokenizer())), BertPreTokenizer
+        )
 
 
 class TestMetaspace:
@@ -69,4 +76,50 @@ class TestCharDelimiterSplit:
             CharDelimiterSplit("")
         assert isinstance(CharDelimiterSplit(" "), PreTokenizer)
         assert isinstance(CharDelimiterSplit(" "), CharDelimiterSplit)
-        assert isinstance(pickle.loads(pickle.dumps(CharDelimiterSplit("-"))), CharDelimiterSplit)
+        assert isinstance(
+            pickle.loads(pickle.dumps(CharDelimiterSplit("-"))), CharDelimiterSplit
+        )
+
+
+class TestDeduplication:
+    def test_instantiate(self):
+        assert Deduplication() is not None
+        assert isinstance(Deduplication(), PreTokenizer)
+        assert isinstance(Deduplication(), Deduplication)
+        assert isinstance(pickle.loads(pickle.dumps(Deduplication())), Deduplication)
+
+
+class TestPunctuation:
+    def test_instantiate(self):
+        assert Punctuation() is not None
+        assert isinstance(Punctuation(), PreTokenizer)
+        assert isinstance(Punctuation(), Punctuation)
+        assert isinstance(pickle.loads(pickle.dumps(Punctuation())), Punctuation)
+
+
+class TestSequence:
+    def test_instantiate(self):
+        assert Sequence([]) is not None
+        assert isinstance(Sequence([]), PreTokenizer)
+        assert isinstance(Sequence([]), Sequence)
+        dumped = pickle.dumps(Sequence([]))
+        assert isinstance(pickle.loads(dumped), Sequence)
+
+    def test_bert_like(self):
+        pre_tokenizer = Sequence([Deduplication(), Punctuation()])
+        assert isinstance(Sequence([]), PreTokenizer)
+        assert isinstance(Sequence([]), Sequence)
+        assert isinstance(pickle.loads(pickle.dumps(pre_tokenizer)), Sequence)
+
+        result = pre_tokenizer.pre_tokenize("Hey friend!     How are you?!?")
+        assert result == [
+            ("Hey", (0, 3)),
+            ("friend", (4, 10)),
+            ("!", (10, 11)),
+            ("How", (16, 19)),
+            ("are", (20, 23)),
+            ("you", (24, 27)),
+            ("?", (27, 28)),
+            ("!", (28, 29)),
+            ("?", (29, 30)),
+        ]
