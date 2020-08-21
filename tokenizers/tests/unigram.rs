@@ -173,8 +173,8 @@ fn test_train_from_file() {
 }
 
 #[cfg(not(debug_assertions))]
-#[test]
 #[ignore]
+#[test]
 fn test_spm_compat_train() {
     let n_sentences = 100_000;
     let train_file = "data/wikitext-103-raw/wiki.train.raw";

@@ -10,6 +10,7 @@ use std::convert::TryInto;
 
 // A token and a score
 type SentencePiece = (String, f64);
+
 // A full sentence or word + it's count within the dataset
 type Sentence = (String, u32);
 
@@ -52,6 +53,9 @@ pub struct UnigramTrainer {
 
     #[builder(default = "' '")]
     space_char: char,
+
+    #[builder(default = "String::from(\"<unk>\")")]
+    unk_token: String,
 
     #[builder(default = "false")]
     treat_whitespace_as_suffix: bool,
@@ -167,7 +171,7 @@ impl UnigramTrainer {
         let mut pieces: HashMap<String, f64> = HashMap::new();
         let existing_pieces: HashMap<&String, f64> = model.iter().collect();
         // XXX: Make sure bos, eos and unk exists and are ids 0, 1, 2
-        pieces.insert("<unk>".to_string(), 0.0);
+        pieces.insert(self.unk_token.clone(), 0.0);
         for c in required_chars {
             if let Some(t) = existing_pieces.get(&c) {
                 pieces.insert(c, *t);
@@ -484,7 +488,6 @@ impl UnigramTrainer {
         new_pieces
     }
     pub fn _train(&self, mut sentences: Vec<Sentence>) -> Result<(Unigram, Vec<AddedToken>)> {
-        // TODO handle progress bar.
         let progress = self.setup_progress();
         //
         // 1. Compute frequent substrings
@@ -492,8 +495,8 @@ impl UnigramTrainer {
         self.update_progress(&progress, sentences.len(), "Suffix array seeds");
         let mut pieces: Vec<SentencePiece> =
             Vec::with_capacity(self.vocab_size.try_into().unwrap());
-        // XXX: Make sure bos, eos and unk exists and are ids 0, 1, 2
-        pieces.push(("<unk>".to_string(), f64::NAN));
+        // XXX: Make sure unk exists and are ids 0
+        pieces.push((self.unk_token.clone(), f64::NAN));
         pieces.extend(self.make_seed_sentence_pieces(&sentences, &progress)?);
         self.finalize_progress(&progress, sentences.len());
 
@@ -573,7 +576,7 @@ impl UnigramTrainer {
         }
         self.finalize_progress(&progress, expected_updates);
 
-        // // Finally, adjusts the size of sentencepices to be |vocab_size|.
+        // Finally, adjusts the size of sentencepices to be |vocab_size|.
         model = self.finalize(model, required_chars);
 
         Ok((model, self.special_tokens.clone()))

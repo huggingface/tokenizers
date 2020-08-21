@@ -154,7 +154,7 @@ impl Unigram {
     pub fn encode(&self, sentence: &str, fuse_unk: bool) -> Vec<String> {
         // TODO optimized version
         // https://github.com/google/sentencepiece/blob/d48247191a6d50e469ed1a4a36e877befffd1851/src/unigram_model.cc#L600
-        let mut lattice = Lattice::from(sentence, self.bos_id, self.eos_id, self.unk_id);
+        let mut lattice = Lattice::from(sentence, self.unk_id, self.bos_id, self.eos_id);
         self.populate_nodes(&mut lattice);
         if fuse_unk {
             let mut results = vec![];
