@@ -37,6 +37,8 @@ implementation from GPT-2
 input text.
 - [#330]: BertNormalizer now keeps the same behavior than the original implementation when
 `strip_accents` is not specified.
+- [#355]: Tokenizer does not use any dynamic dispatch anymore.
+- [#377]: Use byte offsets everywhere (instead of the char offsets)
 
 ### Added
 - [#236]: RobertaProcessing is now also taking care of trimming offsets, and works just as ByteLevel
@@ -122,6 +124,9 @@ advised, but that's not the question)
 split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
+[#377]: https://github.com/huggingface/tokenizers/pull/377
+[#355]: https://github.com/huggingface/tokenizers/pull/355
+[#363]: https://github.com/huggingface/tokenizers/pull/363
 [#330]: https://github.com/huggingface/tokenizers/pull/330
 [#311]: https://github.com/huggingface/tokenizers/pull/311
 [#309]: https://github.com/huggingface/tokenizers/pull/309
