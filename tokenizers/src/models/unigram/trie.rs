@@ -16,6 +16,7 @@ impl<Label: Eq + Hash + Copy> TrieBuilder<Label> {
     }
 }
 
+#[derive(Clone)]
 pub struct Trie<Label> {
     root: Node<Label>,
 }
@@ -57,6 +58,7 @@ impl<Label> Default for Trie<Label> {
     }
 }
 
+#[derive(Clone)]
 pub struct Node<Label> {
     is_leaf: bool,
     children: HashMap<Label, Node<Label>>,

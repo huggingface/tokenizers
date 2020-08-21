@@ -1,7 +1,6 @@
 use crate::models::unigram::lattice::Lattice;
 use crate::models::unigram::trie::{Trie, TrieBuilder};
 use crate::tokenizer::{Model, Result, Token};
-use serde::Deserialize;
 
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -13,28 +12,32 @@ type TokenMap = HashMap<String, u32>;
 type Vocab = Vec<String>;
 
 /// A `Unigram` model to encode sentences.
-#[derive(Deserialize)]
+#[derive(Clone)]
 pub struct Unigram {
     token_to_ids: TokenMap,
     pub(crate) vocab: Vocab,
     pub(super) scores: Vec<f64>,
-    #[serde(skip_deserializing, default = "empty_trie")]
     trie: Trie<char>,
     pub min_score: f64,
     pub(super) unk_id: usize,
     pub(super) bos_id: usize,
     pub(super) eos_id: usize,
 }
+impl PartialEq for Unigram {
+    fn eq(&self, other: &Self) -> bool {
+        let vocab: Vec<(&String, &f64)> = self.vocab.iter().zip(self.scores.iter()).collect();
+        let other_vocab: Vec<(&String, &f64)> =
+            other.vocab.iter().zip(other.scores.iter()).collect();
+        self.unk_id == other.unk_id && vocab == other_vocab
+    }
+}
+
 impl std::fmt::Debug for Unigram {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         fmt.debug_struct("BPE")
             .field("vocab", &self.vocab.len())
             .finish()
     }
-}
-
-fn empty_trie() -> Trie<char> {
-    TrieBuilder::default().build()
 }
 
 static K_UNK_PENALTY: f64 = 10.0;
