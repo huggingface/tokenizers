@@ -128,7 +128,6 @@ class Punctuation(PreTokenizer):
         """ Instantiate a new Punctuation PreTokenizer """
         pass
 
-
 class Sequence(PreTokenizer):
     """ Sequence PreTokenizer
 
