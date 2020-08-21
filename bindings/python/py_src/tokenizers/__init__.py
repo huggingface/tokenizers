@@ -8,7 +8,8 @@ TextInputSequence = str
 PreTokenizedInputSequence = Union[List[str], Tuple[str]]
 TextEncodeInput = Union[TextInputSequence, Tuple[TextInputSequence, TextInputSequence]]
 PreTokenizedEncodeInput = Union[
-    PreTokenizedInputSequence, Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence]
+    PreTokenizedInputSequence,
+    Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence],
 ]
 
 InputSequence = Union[TextInputSequence, PreTokenizedInputSequence]
@@ -25,5 +26,6 @@ from .implementations import (
     ByteLevelBPETokenizer,
     CharBPETokenizer,
     SentencePieceBPETokenizer,
+    SentencePieceUnigramTokenizer,
     BertWordPieceTokenizer,
 )

@@ -7,6 +7,7 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
 use tk::models::bpe::BPE;
+use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::WordPiece;
 use tk::models::ModelWrapper;
@@ -37,6 +38,7 @@ impl PyModel {
             ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base)).map(Into::into),
             ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base)).map(Into::into),
             ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base)).map(Into::into),
+            ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base)).map(Into::into),
         }
     }
 }
@@ -250,6 +252,57 @@ impl PyWordLevel {
             Ok((
                 PyWordLevel {},
                 PyModel::new(Arc::new(WordLevel::default().into())),
+            ))
+        }
+    }
+}
+
+#[pyclass(extends=PyModel, module = "tokenizers.models", name=Unigram)]
+pub struct PyUnigram {}
+
+#[pymethods]
+impl PyUnigram {
+    #[new]
+    #[args(kwargs = "**")]
+    fn new(vocab: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
+        let mut is_spm_file = false;
+        if let Some(kwargs) = kwargs {
+            for (key, val) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "is_spm_file" => is_spm_file = val.extract()?,
+                    _ => println!("Ignored unknown kwargs option {}", key),
+                }
+            }
+        }
+
+        if let Some(vocab) = vocab {
+            let path = Path::new(vocab);
+            if is_spm_file {
+                match Unigram::load_spm(path) {
+                    Err(e) => {
+                        println!("Errors: {:?}", e);
+                        Err(exceptions::Exception::py_err(
+                            "Error while initializing Unigram from spm file",
+                        ))
+                    }
+                    Ok(model) => Ok((PyUnigram {}, PyModel::new(Arc::new(model.into())))),
+                }
+            } else {
+                match Unigram::load(path) {
+                    Err(e) => {
+                        println!("Errors: {:?}", e);
+                        Err(exceptions::Exception::py_err(
+                            "Error while initializing Unigram",
+                        ))
+                    }
+                    Ok(model) => Ok((PyUnigram {}, PyModel::new(Arc::new(model.into())))),
+                }
+            }
+        } else {
+            Ok((
+                PyUnigram {},
+                PyModel::new(Arc::new(Unigram::default().into())),
             ))
         }
     }

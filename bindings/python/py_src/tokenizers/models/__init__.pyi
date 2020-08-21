@@ -100,3 +100,25 @@ class WordLevel(Model):
 
     def __init__(self, vocab: Optional[str], unk_token: Optional[str]):
         pass
+
+class Unigram(Model):
+    """UnigramEncoding model class
+
+    Instantiate a Unigram Model from the given model file.
+
+    Args:
+       vocab: ('`optional`) string:
+           Path to a vocabulary JSON file.
+
+       is_spm_file: ('`optional`) bool:
+           If the file came out of sentencepiece, we need to load it differently
+
+    """
+
+    @staticmethod
+    def __init__(
+        self,
+        vocab: Optional[str],
+        is_spm_file: Optional[bool],
+    ):
+        pass
