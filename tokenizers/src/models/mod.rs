@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::models::bpe::{BpeTrainer, BPE};
+use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::{WordPiece, WordPieceTrainer};
 use crate::{AddedToken, Model, Result, Token, Trainer};
@@ -43,11 +44,13 @@ pub enum ModelWrapper {
     WordPiece(WordPiece),
     BPE(BPE),
     WordLevel(WordLevel),
+    Unigram(Unigram),
 }
 
 impl_enum_from!(WordLevel, ModelWrapper, WordLevel);
 impl_enum_from!(WordPiece, ModelWrapper, WordPiece);
 impl_enum_from!(BPE, ModelWrapper, BPE);
+impl_enum_from!(Unigram, ModelWrapper, Unigram);
 
 impl Model for ModelWrapper {
     fn tokenize(&self, tokens: &str) -> Result<Vec<Token>> {
@@ -56,6 +59,7 @@ impl Model for ModelWrapper {
             WordLevel(t) => t.tokenize(tokens),
             WordPiece(t) => t.tokenize(tokens),
             BPE(t) => t.tokenize(tokens),
+            Unigram(t) => t.tokenize(tokens),
         }
     }
 
@@ -65,6 +69,7 @@ impl Model for ModelWrapper {
             WordLevel(t) => t.token_to_id(token),
             WordPiece(t) => t.token_to_id(token),
             BPE(t) => t.token_to_id(token),
+            Unigram(t) => t.token_to_id(token),
         }
     }
 
@@ -74,6 +79,7 @@ impl Model for ModelWrapper {
             WordLevel(t) => t.id_to_token(id),
             WordPiece(t) => t.id_to_token(id),
             BPE(t) => t.id_to_token(id),
+            Unigram(t) => t.id_to_token(id),
         }
     }
 
@@ -83,6 +89,7 @@ impl Model for ModelWrapper {
             WordLevel(t) => t.get_vocab(),
             WordPiece(t) => t.get_vocab(),
             BPE(t) => t.get_vocab(),
+            Unigram(t) => t.get_vocab(),
         }
     }
 
@@ -92,6 +99,7 @@ impl Model for ModelWrapper {
             WordLevel(t) => t.get_vocab_size(),
             WordPiece(t) => t.get_vocab_size(),
             BPE(t) => t.get_vocab_size(),
+            Unigram(t) => t.get_vocab_size(),
         }
     }
 
@@ -101,6 +109,7 @@ impl Model for ModelWrapper {
             WordLevel(t) => t.save(folder, name),
             WordPiece(t) => t.save(folder, name),
             BPE(t) => t.save(folder, name),
+            Unigram(t) => t.save(folder, name),
         }
     }
 }

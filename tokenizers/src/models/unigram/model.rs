@@ -22,6 +22,8 @@ pub struct Unigram {
     pub(super) unk_id: usize,
     pub(super) bos_id: usize,
     pub(super) eos_id: usize,
+
+    fuse_unk: bool,
 }
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
@@ -81,6 +83,7 @@ impl Unigram {
             panic!("Alert min_score !!");
         }
         let trie = builder.build();
+        let fuse_unk = true;
 
         Unigram {
             vocab,
@@ -91,6 +94,7 @@ impl Unigram {
             bos_id,
             eos_id,
             unk_id,
+            fuse_unk,
         }
     }
 
@@ -154,12 +158,12 @@ impl Unigram {
     /// let result = model.encode("abcdacdxx", true);
     /// assert_eq!(result, vec!["abcd", "a", "cd", "xx"]);
     /// ```
-    pub fn encode(&self, sentence: &str, fuse_unk: bool) -> Vec<String> {
+    pub fn encode(&self, sentence: &str) -> Vec<String> {
         // TODO optimized version
         // https://github.com/google/sentencepiece/blob/d48247191a6d50e469ed1a4a36e877befffd1851/src/unigram_model.cc#L600
         let mut lattice = Lattice::from(sentence, self.unk_id, self.bos_id, self.eos_id);
         self.populate_nodes(&mut lattice);
-        if fuse_unk {
+        if self.fuse_unk {
             let mut results = vec![];
             let mut token = String::new();
             for node in lattice.viterbi().iter() {
@@ -236,10 +240,7 @@ impl Unigram {
     pub fn load(path: &Path) -> Result<Unigram> {
         let file = File::open(path).unwrap();
         let reader = BufReader::new(file);
-
-        // Read the JSON contents of the file as an instance of `User`.
-        let table: Vec<(String, f64)> = serde_json::from_reader(reader)?;
-        let u = Unigram::from(&table, 0);
+        let u = serde_json::from_reader(reader)?;
         Ok(u)
     }
 }
@@ -275,7 +276,7 @@ impl Model for Unigram {
     }
 
     fn tokenize(&self, sentence: &str) -> Result<Vec<Token>> {
-        let tokens = self.encode(sentence, false);
+        let tokens = self.encode(sentence);
         let mut offset = 0;
         Ok(tokens
             .iter()
