@@ -42,9 +42,7 @@ class TestWhitespaceSplit:
         assert WhitespaceSplit() is not None
         assert isinstance(WhitespaceSplit(), PreTokenizer)
         assert isinstance(WhitespaceSplit(), WhitespaceSplit)
-        assert isinstance(
-            pickle.loads(pickle.dumps(WhitespaceSplit())), WhitespaceSplit
-        )
+        assert isinstance(pickle.loads(pickle.dumps(WhitespaceSplit())), WhitespaceSplit)
 
 
 class TestBertPreTokenizer:
@@ -52,9 +50,7 @@ class TestBertPreTokenizer:
         assert BertPreTokenizer() is not None
         assert isinstance(BertPreTokenizer(), PreTokenizer)
         assert isinstance(BertPreTokenizer(), BertPreTokenizer)
-        assert isinstance(
-            pickle.loads(pickle.dumps(BertPreTokenizer())), BertPreTokenizer
-        )
+        assert isinstance(pickle.loads(pickle.dumps(BertPreTokenizer())), BertPreTokenizer)
 
 
 class TestMetaspace:
@@ -76,9 +72,7 @@ class TestCharDelimiterSplit:
             CharDelimiterSplit("")
         assert isinstance(CharDelimiterSplit(" "), PreTokenizer)
         assert isinstance(CharDelimiterSplit(" "), CharDelimiterSplit)
-        assert isinstance(
-            pickle.loads(pickle.dumps(CharDelimiterSplit("-"))), CharDelimiterSplit
-        )
+        assert isinstance(pickle.loads(pickle.dumps(CharDelimiterSplit("-"))), CharDelimiterSplit)
 
 
 class TestDeduplication:
