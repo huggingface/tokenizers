@@ -9,7 +9,6 @@ from tokenizers.pre_tokenizers import (
     BertPreTokenizer,
     Metaspace,
     CharDelimiterSplit,
-    Deduplication,
     Punctuation,
     Sequence,
 )
@@ -75,14 +74,6 @@ class TestCharDelimiterSplit:
         assert isinstance(pickle.loads(pickle.dumps(CharDelimiterSplit("-"))), CharDelimiterSplit)
 
 
-class TestDeduplication:
-    def test_instantiate(self):
-        assert Deduplication() is not None
-        assert isinstance(Deduplication(), PreTokenizer)
-        assert isinstance(Deduplication(), Deduplication)
-        assert isinstance(pickle.loads(pickle.dumps(Deduplication())), Deduplication)
-
-
 class TestPunctuation:
     def test_instantiate(self):
         assert Punctuation() is not None
@@ -100,7 +91,7 @@ class TestSequence:
         assert isinstance(pickle.loads(dumped), Sequence)
 
     def test_bert_like(self):
-        pre_tokenizer = Sequence([Deduplication(), Punctuation()])
+        pre_tokenizer = Sequence([WhitespaceSplit(), Punctuation()])
         assert isinstance(Sequence([]), PreTokenizer)
         assert isinstance(Sequence([]), Sequence)
         assert isinstance(pickle.loads(pickle.dumps(pre_tokenizer)), Sequence)
