@@ -1,7 +1,7 @@
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use unicode_categories::UnicodeCategories;
 
-fn is_bert_punc(x: char) -> bool {
+fn is_punc(x: char) -> bool {
     char::is_ascii_punctuation(&x) || x.is_punctuation()
 }
 
