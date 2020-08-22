@@ -1,6 +1,5 @@
 pub mod bert;
 pub mod byte_level;
-pub mod deduplication;
 pub mod delimiter;
 pub mod metaspace;
 pub mod punctuation;
@@ -11,7 +10,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::pre_tokenizers::bert::BertPreTokenizer;
 use crate::pre_tokenizers::byte_level::ByteLevel;
-use crate::pre_tokenizers::deduplication::Deduplication;
 use crate::pre_tokenizers::delimiter::CharDelimiterSplit;
 use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::pre_tokenizers::punctuation::Punctuation;
@@ -28,7 +26,6 @@ pub enum PreTokenizerWrapper {
     Metaspace(Metaspace),
     Whitespace(Whitespace),
     Sequence(Sequence),
-    Deduplication(Deduplication),
     Punctuation(Punctuation),
     WhitespaceSplit(WhitespaceSplit),
 }
@@ -41,7 +38,6 @@ impl PreTokenizer for PreTokenizerWrapper {
             PreTokenizerWrapper::Delimiter(dpt) => dpt.pre_tokenize(normalized),
             PreTokenizerWrapper::Metaspace(mspt) => mspt.pre_tokenize(normalized),
             PreTokenizerWrapper::Whitespace(wspt) => wspt.pre_tokenize(normalized),
-            PreTokenizerWrapper::Deduplication(tok) => tok.pre_tokenize(normalized),
             PreTokenizerWrapper::Punctuation(tok) => tok.pre_tokenize(normalized),
             PreTokenizerWrapper::Sequence(tok) => tok.pre_tokenize(normalized),
             PreTokenizerWrapper::WhitespaceSplit(wspt) => wspt.pre_tokenize(normalized),
@@ -53,7 +49,6 @@ impl_enum_from!(BertPreTokenizer, PreTokenizerWrapper, BertPreTokenizer);
 impl_enum_from!(ByteLevel, PreTokenizerWrapper, ByteLevel);
 impl_enum_from!(CharDelimiterSplit, PreTokenizerWrapper, Delimiter);
 impl_enum_from!(Whitespace, PreTokenizerWrapper, Whitespace);
-impl_enum_from!(Deduplication, PreTokenizerWrapper, Deduplication);
 impl_enum_from!(Punctuation, PreTokenizerWrapper, Punctuation);
 impl_enum_from!(Sequence, PreTokenizerWrapper, Sequence);
 impl_enum_from!(Metaspace, PreTokenizerWrapper, Metaspace);

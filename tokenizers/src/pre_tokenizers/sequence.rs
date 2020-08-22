@@ -26,13 +26,13 @@ impl PreTokenizer for Sequence {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pre_tokenizers::{deduplication::Deduplication, punctuation::Punctuation};
+    use crate::pre_tokenizers::{punctuation::Punctuation, whitespace::WhitespaceSplit};
     use crate::OffsetReferential;
 
     #[test]
     fn sequence_basic() {
         let pretokenizers = vec![
-            PreTokenizerWrapper::Deduplication(Deduplication),
+            PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),
             PreTokenizerWrapper::Punctuation(Punctuation),
         ];
         let pretok = Sequence::new(pretokenizers);

@@ -108,20 +108,10 @@ class CharDelimiterSplit(PreTokenizer):
         """
         pass
 
-class Deduplication(PreTokenizer):
-    """ Deduplication PreTokenizer
-
-    This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`
-    """
-
-    def __init__(self) -> None:
-        """ Instantiate a new Deduplication PreTokenizer """
-        pass
-
 class Punctuation(PreTokenizer):
     """ Punctuation PreTokenizer
 
-    This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`
+    This pre-tokenizer simply splits on punctuation as individual characters.`
     """
 
     def __init__(self) -> None:
@@ -131,7 +121,7 @@ class Punctuation(PreTokenizer):
 class Sequence(PreTokenizer):
     """ Sequence PreTokenizer
 
-    This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`
+    This pre-tokenizer composes other pre_tokenizers and applies them in sequence`
     """
 
     def __init__(self) -> None:
