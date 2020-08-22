@@ -3,7 +3,6 @@ from .. import pre_tokenizers
 PreTokenizer = pre_tokenizers.PreTokenizer
 ByteLevel = pre_tokenizers.ByteLevel
 Whitespace = pre_tokenizers.Whitespace
-Deduplication = pre_tokenizers.Deduplication
 Punctuation = pre_tokenizers.Punctuation
 Sequence = pre_tokenizers.Sequence
 WhitespaceSplit = pre_tokenizers.WhitespaceSplit
