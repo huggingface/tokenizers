@@ -8,11 +8,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use tk::pre_tokenizers::bert::BertPreTokenizer;
 use tk::pre_tokenizers::byte_level::ByteLevel;
-use tk::pre_tokenizers::deduplication::Deduplication;
 use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk::pre_tokenizers::metaspace::Metaspace;
 use tk::pre_tokenizers::punctuation::Punctuation;
-// use tk::pre_tokenizers::sequence::Sequence;
 use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::tokenizer::Offsets;
@@ -46,9 +44,6 @@ impl PyPreTokenizer {
             PyPreTokenizerWrapper::Wrapped(inner) => match inner.as_ref() {
                 PreTokenizerWrapper::Whitespace(_) => {
                     Py::new(py, (PyWhitespace {}, base)).map(Into::into)
-                }
-                PreTokenizerWrapper::Deduplication(_) => {
-                    Py::new(py, (PyDeduplication {}, base)).map(Into::into)
                 }
                 PreTokenizerWrapper::Punctuation(_) => {
                     Py::new(py, (PyPunctuation {}, base)).map(Into::into)
@@ -214,16 +209,6 @@ impl PyBertPreTokenizer {
     #[new]
     fn new() -> PyResult<(Self, PyPreTokenizer)> {
         Ok((PyBertPreTokenizer {}, BertPreTokenizer.into()))
-    }
-}
-
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Deduplication)]
-pub struct PyDeduplication {}
-#[pymethods]
-impl PyDeduplication {
-    #[new]
-    fn new() -> PyResult<(Self, PyPreTokenizer)> {
-        Ok((PyDeduplication {}, Deduplication.into()))
     }
 }
 

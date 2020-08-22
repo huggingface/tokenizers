@@ -11,7 +11,7 @@ impl_serde_unit_struct!(PunctuationVisitor, Punctuation);
 
 impl PreTokenizer for Punctuation {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, s| s.split(is_bert_punc, SplitDelimiterBehavior::Isolated))
+        pretokenized.split(|_, s| s.split(is_punc, SplitDelimiterBehavior::Isolated))
     }
 }
 
