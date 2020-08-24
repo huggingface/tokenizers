@@ -117,8 +117,6 @@ class Unigram(Model):
 
     @staticmethod
     def __init__(
-        self,
-        vocab: Optional[str],
-        is_spm_file: Optional[bool],
+        self, vocab: Optional[str], is_spm_file: Optional[bool],
     ):
         pass
