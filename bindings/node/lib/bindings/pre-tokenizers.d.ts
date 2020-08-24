@@ -38,6 +38,13 @@ export function whitespacePreTokenizer(): PreTokenizer;
 export function whitespaceSplitPreTokenizer(): PreTokenizer;
 
 /**
+ * Returns a new Punctuation PreTokenizer.
+ * This pre-tokenizer splits tokens on punctuation.
+ * Each occurrence of a punctuation character will be treated separately.
+ */
+export function punctuationPreTokenizer(): PreTokenizer;
+
+/**
  * Returns a new Bert PreTokenizer.
  * This pre-tokenizer splits tokens on spaces, and also on punctuation.
  * Each occurrence of a punctuation character will be treated separately.
@@ -55,8 +62,8 @@ export function bertPreTokenizer(): PreTokenizer;
  * This lets us treat `hello` exactly like `say hello`.
  */
 export function metaspacePreTokenizer(
-  replacement?: string,
-  addPrefixSpace?: boolean
+    replacement?: string,
+    addPrefixSpace?: boolean
 ): PreTokenizer;
 
 /**
@@ -67,3 +74,10 @@ export function metaspacePreTokenizer(
  * @param delimiter The delimiter character on which the sequence will be split.
  */
 export function charDelimiterSplitPreTokenizer(delimiter: string): PreTokenizer;
+
+/**
+ * Returns a new Sequence PreTokenizer.
+ * This pre-tokenizer combines other pretokenizers and applies them.
+ * sequentially.
+ */
+export function sequencePreTokenizer(pretokenizers: PreTokenizer[]): PreTokenizer;

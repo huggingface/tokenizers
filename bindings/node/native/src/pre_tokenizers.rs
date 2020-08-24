@@ -8,7 +8,7 @@ use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::PreTokenizedString;
 
 /// PreTokenizers
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct PreTokenizer {
     #[serde(flatten)]
     pub pretok: Option<Arc<PreTokenizerWrapper>>,
@@ -97,6 +97,48 @@ fn metaspace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     Ok(pretok)
 }
 
+/// punctuation()
+fn punctuation(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
+    let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    pretok.borrow_mut(&guard).pretok = Some(Arc::new(
+        tk::pre_tokenizers::punctuation::Punctuation.into(),
+    ));
+    Ok(pretok)
+}
+
+/// sequence()
+fn sequence(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
+    let pretokenizers = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
+    let mut sequence = Vec::with_capacity(pretokenizers.len());
+
+    pretokenizers
+        .into_iter()
+        .map(
+            |pretokenizer| match pretokenizer.downcast::<JsPreTokenizer>().or_throw(&mut cx) {
+                Ok(pretokenizer) => {
+                    let guard = cx.lock();
+                    let pretokenizer = (*pretokenizer.borrow(&guard)).pretok.clone();
+                    if let Some(pretokenizer) = pretokenizer {
+                        let pretok = (*pretokenizer).clone();
+                        sequence.push(pretok);
+                        Ok(())
+                    } else {
+                        cx.throw_error("Uninitialized Normalizer")
+                    }
+                }
+                Err(e) => Err(e),
+            },
+        )
+        .collect::<NeonResult<_>>()?;
+    let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    pretok.borrow_mut(&guard).pretok = Some(Arc::new(
+        tk::pre_tokenizers::sequence::Sequence::new(sequence).into(),
+    ));
+    Ok(pretok)
+}
+
 /// char_delimiter_split(delimiter: string)
 fn char_delimiter_split(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let delimiter = cx.extract::<char>(0)?;
@@ -125,5 +167,7 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
         &format!("{}_CharDelimiterSplit", prefix),
         char_delimiter_split,
     )?;
+    m.export_function(&format!("{}_Punctuation", prefix), punctuation)?;
+    m.export_function(&format!("{}_Sequence", prefix), sequence)?;
     Ok(())
 }
