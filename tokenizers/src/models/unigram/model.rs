@@ -98,6 +98,11 @@ impl Unigram {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn set_fuse_unk(&mut self, fuse_unk: bool) {
+        self.fuse_unk = fuse_unk;
+    }
+
     pub(super) fn len(&self) -> usize {
         self.vocab.len()
     }
@@ -134,10 +139,7 @@ impl Unigram {
     }
 
     /// This functions take a String, and will encode it in a Vec of Strings,
-    /// of the best tokenization available to the current model. `fuse_unk` is
-    /// a flag to decide whether multiple unknown tokens should be fused into a single
-    /// unknown model.
-    ///
+    /// of the best tokenization available to the current model.
     /// ```
     /// use tokenizers::models::unigram::Unigram;
     ///
@@ -153,9 +155,7 @@ impl Unigram {
     ///     ("abcd".to_string(), 10.0),
     /// ];
     /// let model = Unigram::from(&pieces, 0);
-    /// let result = model.encode("abcdacdxx", false);
-    /// assert_eq!(result, vec!["abcd", "a", "cd", "x", "x"]);
-    /// let result = model.encode("abcdacdxx", true);
+    /// let result = model.encode("abcdacdxx");
     /// assert_eq!(result, vec!["abcd", "a", "cd", "xx"]);
     /// ```
     pub fn encode(&self, sentence: &str) -> Vec<String> {
@@ -385,7 +385,7 @@ mod tests {
         ];
 
         let model = Unigram::from(&sentencepieces, 0);
-        let result = model.encode("abcd", false);
+        let result = model.encode("abcd");
         assert_eq!(result, vec!["abcd"]);
     }
 
@@ -406,28 +406,28 @@ mod tests {
             ("qr".to_string(), -0.5),
         ];
 
-        let model = Unigram::from(&sentencepieces, 0);
-        assert_eq!(model.encode("abc", false), vec!["abc"]);
-        assert_eq!(model.encode("AB", false), vec!["A", "B"]);
-        assert_eq!(model.encode("AB", true), vec!["AB"]);
-        assert_eq!(model.encode("abcd", false), vec!["ab", "cd"]);
-        assert_eq!(model.encode("abcc", false), vec!["abc", "c"]);
+        let mut model = Unigram::from(&sentencepieces, 0);
+        assert_eq!(model.encode("abc"), vec!["abc"]);
+        assert_eq!(model.encode("AB"), vec!["AB"]);
+
+        model.set_fuse_unk(false);
+        assert_eq!(model.encode("AB"), vec!["A", "B"]);
+        model.set_fuse_unk(true);
+
+        assert_eq!(model.encode("abcd"), vec!["ab", "cd"]);
+        assert_eq!(model.encode("abcc"), vec!["abc", "c"]);
         assert_eq!(
-            model.encode("xabcabaabcdd", false),
+            model.encode("xabcabaabcdd"),
             vec!["x", "abc", "ab", "a", "ab", "cd", "d"]
         );
-        assert_eq!(
-            model.encode("xyz東京", false),
-            vec!["x", "y", "z", "東", "京"]
-        );
+        model.set_fuse_unk(false);
+        assert_eq!(model.encode("xyz東京"), vec!["x", "y", "z", "東", "京"]);
+        model.set_fuse_unk(true);
 
         // User encoded in original version
-        assert_eq!(model.encode("ABC", false), vec!["ABC"]);
-        assert_eq!(model.encode("abABCcd", false), vec!["ab", "ABC", "cd"]);
-        assert_eq!(
-            model.encode("ababcdabcdcd", false),
-            vec!["ab", "abcdabcd", "cd"]
-        );
-        assert_eq!(model.encode("abqrcd", false), vec!["ab", "q", "r", "cd"]);
+        assert_eq!(model.encode("ABC"), vec!["ABC"]);
+        assert_eq!(model.encode("abABCcd"), vec!["ab", "ABC", "cd"]);
+        assert_eq!(model.encode("ababcdabcdcd"), vec!["ab", "abcdabcd", "cd"]);
+        assert_eq!(model.encode("abqrcd"), vec!["ab", "q", "r", "cd"]);
     }
 }
