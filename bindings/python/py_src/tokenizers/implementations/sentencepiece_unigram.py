@@ -21,8 +21,13 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
             tokenizer = Tokenizer(Unigram())
 
         tokenizer.normalizer = NFKC()
-        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(
-            replacement=replacement, add_prefix_space=add_prefix_space
+        tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
+            [
+                pre_tokenizers.WhitespaceSplit(),
+                pre_tokenizers.Metaspace(
+                    replacement=replacement, add_prefix_space=add_prefix_space
+                ),
+            ]
         )
         tokenizer.decoder = decoders.Metaspace(
             replacement=replacement, add_prefix_space=add_prefix_space

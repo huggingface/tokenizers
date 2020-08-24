@@ -46,21 +46,7 @@ def main():
 
             if ids != encoded.ids:
                 # Encoding can be the same with same result AAA -> A + AA vs AA + A
-                # We just check this does not cover unk tokens
-                if len(ids) != len(encoded.ids):
-                    N = len(ids)
-                    M = len(encoded.ids)
-                    first_index_error = [i for i in range(min(N, M)) if ids[i] != encoded.ids[i]][0]
-                    last_index_error = [
-                        min(N, M) - i
-                        for i in range(min(N, M))
-                        if ids[-i - 1] != encoded.ids[-i - 1]
-                    ][0]
-                    print(ids[first_index_error : last_index_error + 1])
-                    print(encoded.ids[first_index_error : last_index_error + 1])
-                    import ipdb
-
-                    ipdb.set_trace()
+                # We can check that we use at least exactly the same number of tokens.
                 assert len(ids) == len(encoded.ids)
                 continue
 
