@@ -7,17 +7,10 @@ import json
 def main():
     parser = ArgumentParser("SentencePiece parity checker")
     parser.add_argument(
-        "--input-file",
-        "-i",
-        type=str,
-        required=True,
-        help="Which files do you want to train from",
+        "--input-file", "-i", type=str, required=True, help="Which files do you want to train from",
     )
     parser.add_argument(
-        "--model-prefix",
-        type=str,
-        default="spm_parity",
-        help="Model prefix for spm_train",
+        "--model-prefix", type=str, default="spm_parity", help="Model prefix for spm_train",
     )
     parser.add_argument(
         "--vocab-size", "-v", type=int, default=8000, help="Vocab size for spm_train",
@@ -57,9 +50,7 @@ def main():
                 if len(ids) != len(encoded.ids):
                     N = len(ids)
                     M = len(encoded.ids)
-                    first_index_error = [
-                        i for i in range(min(N, M)) if ids[i] != encoded.ids[i]
-                    ][0]
+                    first_index_error = [i for i in range(min(N, M)) if ids[i] != encoded.ids[i]][0]
                     last_index_error = [
                         min(N, M) - i
                         for i in range(min(N, M))

@@ -13,10 +13,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
     """
 
     def __init__(
-        self,
-        vocab: Optional[str] = None,
-        replacement: str = "▁",
-        add_prefix_space: bool = True,
+        self, vocab: Optional[str] = None, replacement: str = "▁", add_prefix_space: bool = True,
     ):
         if vocab is not None:
             tokenizer = Tokenizer(Unigram(vocab))
