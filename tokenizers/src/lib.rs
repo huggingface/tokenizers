@@ -19,7 +19,7 @@
 //!    `BPE` or `WordPiece`.
 //! 4. The `PostProcessor`: in charge of post-processing the `Encoding` to add anything relevant
 //!    that, for example, a language model would need, such as special tokens.
-//!s
+//!
 //! ## Deserialization and tokenization example
 //!
 //! ```no_run
