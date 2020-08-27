@@ -29,6 +29,13 @@ jobs:
       - if: matrix.os == 'ubuntu-latest'
         run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
 
+      - name: Install cargo-readme for Ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-readme
+
       - name: Build
         uses: actions-rs/cargo@v1
         with:
@@ -73,3 +80,10 @@ jobs:
         with:
           command: test
           args: --verbose --manifest-path ./tokenizers/Cargo.toml --doc
+
+      # Verify that Readme.md is up to date.
+      - name: Make sure, Readme generated from lib.rs matches actual Readme
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        working-directory: ./tokenizers
+        run: cargo readme > must_match_readme.md && diff must_match_readme.md README.md
