@@ -1,5 +1,3 @@
-import { mocked } from "ts-jest/utils";
-
 import { BertWordPieceOptions, BertWordPieceTokenizer } from "./bert-wordpiece.tokenizer";
 
 const MOCKS_DIR = __dirname + "/__mocks__";

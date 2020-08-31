@@ -5,7 +5,6 @@ import { promisify } from "util";
 
 import { PaddingDirection, TruncationStrategy } from "./enums";
 import { BPE } from "./models";
-import { lowercaseNormalizer } from "./normalizers";
 import { RawEncoding } from "./raw-encoding";
 import {
   AddedToken,
