@@ -422,10 +422,8 @@ impl PyTokenizer {
 
     #[staticmethod]
     fn from_file(path: &str) -> PyResult<Self> {
-        let tokenizer: PyResult<_> = ToPyResult(TokenizerImpl::from_file(path)).into();
-        Ok(Self {
-            tokenizer: tokenizer?,
-        })
+        let tokenizer: PyResult<_> = ToPyResult(Tokenizer::from_file(path)).into();
+        Ok(Self::new(tokenizer?))
     }
 
     #[staticmethod]
@@ -838,5 +836,31 @@ impl PyTokenizer {
     #[setter]
     fn set_decoder(&mut self, decoder: PyRef<PyDecoder>) {
         self.tokenizer.with_decoder(decoder.clone());
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::models::PyModel;
+    use crate::normalizers::{PyNormalizer, PyNormalizerWrapper};
+    use std::sync::Arc;
+    use tempfile::NamedTempFile;
+    use tk::normalizers::{Lowercase, NFKC};
+
+    #[test]
+    fn serialize() {
+        let mut tokenizer = Tokenizer::new(PyModel::new(Arc::new(
+            tk::models::bpe::BPE::default().into(),
+        )));
+        tokenizer.with_normalizer(PyNormalizer::new(PyNormalizerWrapper::Sequence(vec![
+            Arc::new(NFKC.into()),
+            Arc::new(Lowercase.into()),
+        ])));
+
+        let tmp = NamedTempFile::new().unwrap().into_temp_path();
+        tokenizer.save(&tmp, false).unwrap();
+
+        Tokenizer::from_file(&tmp).unwrap();
     }
 }

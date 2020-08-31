@@ -1121,7 +1121,7 @@ where
     }
 
     /// Save the current tokenizer at the given path
-    pub fn save(&self, path: &str, pretty: bool) -> Result<()> {
+    pub fn save<P: AsRef<Path>>(&self, path: P, pretty: bool) -> Result<()> {
         let serialized = self.to_string(pretty)?;
 
         let mut file = File::create(path)?;
