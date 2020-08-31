@@ -33,65 +33,75 @@ The various steps of the pipeline are:
 4. The `PostProcessor`: in charge of post-processing the `Encoding` to add anything relevant
    that, for example, a language model would need, such as special tokens.
 
-## Quick example
+### Deserialization and tokenization example
 
-Train and serialize a Tokenizer.
+```rust
+use tokenizers::tokenizer::{Result, Tokenizer, EncodeInput};
+use tokenizers::models::bpe::BPE;
 
+fn main() -> Result<()> {
+    let bpe_builder = BPE::from_files("./path/to/vocab.json", "./path/to/merges.txt");
+    let bpe = bpe_builder
+        .dropout(0.1)
+        .unk_token("[UNK]".into())
+        .build()?;
 
-```Rust
-use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
-use tokenizers::Result;
-use tokenizers::normalizers::{strip::Strip, unicode::NFC, utils::Sequence};
-use tokenizers::pre_tokenizers::byte_level::ByteLevel;
-use tokenizers::tokenizer::{AddedToken, Tokenizer, Trainer};
+    let mut tokenizer = Tokenizer::new(bpe);
 
-use std::path::Path;
-
-fn main() -> Result<()>{
-    let vocab_size: usize = 100;
-
-    let trainer: Box<dyn Trainer> = Box::new(
-        BpeTrainerBuilder::new()
-            .show_progress(true)
-            .vocab_size(vocab_size)
-            .min_frequency(0)
-            .special_tokens(vec![
-                AddedToken::from("<s>", true),
-                AddedToken::from("<pad>", true),
-                AddedToken::from("</s>", true),
-                AddedToken::from("<unk>", true),
-                AddedToken::from("<mask>", true),
-            ])
-            .build(),
-    );
-
-    let mut tokenizer = Tokenizer::new(Box::new(BPE::default()));
-    tokenizer.with_normalizer(Box::new(Sequence::new(vec![
-        Box::new(Strip::new(true, true)),
-        Box::new(NFC),
-    ])));
-    tokenizer.with_pre_tokenizer(Box::new(ByteLevel::default()));
-
-    tokenizer.train(&trainer, vec!["/path/to/train.txt".to_string()])?;
-    tokenizer.save("/path/to/trained_tokenizer", true)?;
+    let encoding = tokenizer.encode("Hey there!", false)?;
+    println!("{:?}", encoding.get_tokens());
 
     Ok(())
 }
 ```
 
-Deserialize a pretrained Tokenizer.
+### Training and serialization example
 
-```Rust
-use tokenizers::Result;
-use tokenizers::tokenizer::Tokenizer;
+```rust
+use tokenizers::decoders::DecoderWrapper;
+use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
+use tokenizers::normalizers::{strip::Strip, unicode::NFC, utils::Sequence, NormalizerWrapper};
+use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::pre_tokenizers::PreTokenizerWrapper;
+use tokenizers::processors::PostProcessorWrapper;
+use tokenizers::{AddedToken, Model, Result, TokenizerBuilder};
 
-fn main() -> Result<()>{
+use std::path::Path;
 
-    let tokenizer = Tokenizer::from_file("/path/to/trained_tokenizer")?;
+fn main() -> Result<()> {
+    let vocab_size: usize = 100;
 
-    let sample_encoding = tokenizer.encode("Huggingface", false)?;
+    let trainer = BpeTrainerBuilder::new()
+        .show_progress(true)
+        .vocab_size(vocab_size)
+        .min_frequency(0)
+        .special_tokens(vec![
+            AddedToken::from(String::from("<s>"), true),
+            AddedToken::from(String::from("<pad>"), true),
+            AddedToken::from(String::from("</s>"), true),
+            AddedToken::from(String::from("<unk>"), true),
+            AddedToken::from(String::from("<mask>"), true),
+        ])
+        .build();
 
-    println!("{:?}", sample_encoding);
+    let tokenizer = TokenizerBuilder::new()
+        .with_model(BPE::default())
+        .with_normalizer(Some(Sequence::new(vec![
+            NormalizerWrapper::StripNormalizer(Strip::new(true, true)),
+            NormalizerWrapper::NFC(NFC),
+        ])))
+        .with_pretokenizer(Some(PreTokenizerWrapper::ByteLevel(ByteLevel::default())))
+        .with_postprocessor(Some(PostProcessorWrapper::ByteLevel(ByteLevel::default())))
+        .with_decoder(Some(DecoderWrapper::ByteLevel(ByteLevel::default())))
+        .build()?;
+
+    tokenizer
+        .train(
+            &trainer,
+            vec!["path/to/vocab.txt".to_string()],
+        )?
+        .get_model()
+        .save(Path::new("result-folder"), Some("some-prefix"))?;
 
     Ok(())
 }

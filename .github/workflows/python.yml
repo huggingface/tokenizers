@@ -25,7 +25,7 @@ jobs:
           architecture: "x64"
 
       - name: Install dependencies
-        run: pip install black
+        run: pip install black==19.10b0
 
       - name: Check style
         working-directory: ./bindings/python
