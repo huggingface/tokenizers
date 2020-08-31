@@ -1074,11 +1074,11 @@ where
 
 impl<M, N, PT, PP, D> std::str::FromStr for TokenizerImpl<M, N, PT, PP, D>
 where
-    M: for<'de> Deserialize<'de> + Model,
-    N: for<'de> Deserialize<'de> + Normalizer,
-    PT: for<'de> Deserialize<'de> + PreTokenizer,
-    PP: for<'de> Deserialize<'de> + PostProcessor,
-    D: for<'de> Deserialize<'de> + Decoder,
+    M: DeserializeOwned + Model,
+    N: DeserializeOwned + Normalizer,
+    PT: DeserializeOwned + PreTokenizer,
+    PP: DeserializeOwned + PostProcessor,
+    D: DeserializeOwned + Decoder,
 {
     type Err = Error;
 
@@ -1097,9 +1097,9 @@ where
 {
     /// Instantiate a new Tokenizer from the given file
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
-        let file = File::open(file)?;
-        let buf = BufReader::new(file);
-        Ok(serde_json::from_reader(buf)?)
+        let mut content = vec![];
+        File::open(file)?.read_to_end(&mut content)?;
+        Ok(serde_json::from_slice(&content)?)
     }
 }
 
