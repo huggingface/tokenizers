@@ -62,8 +62,8 @@ export function bertPreTokenizer(): PreTokenizer;
  * This lets us treat `hello` exactly like `say hello`.
  */
 export function metaspacePreTokenizer(
-    replacement?: string,
-    addPrefixSpace?: boolean
+  replacement?: string,
+  addPrefixSpace?: boolean
 ): PreTokenizer;
 
 /**
