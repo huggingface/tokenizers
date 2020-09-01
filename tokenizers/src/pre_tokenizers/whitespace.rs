@@ -56,7 +56,9 @@ impl<'de> Visitor<'de> for WhitespaceVisitor {
     where
         A: serde::de::MapAccess<'de>,
     {
-        match map.next_entry::<&str, &str>()? {
+        let maybe_type = map.next_entry::<String, String>()?;
+        let maybe_type_str = maybe_type.as_ref().map(|(k, v)| (k.as_str(), v.as_str()));
+        match maybe_type_str {
             Some(("type", "Whitespace")) => Ok(Whitespace::default()),
             Some((_, ty)) => Err(Error::custom(&format!("Expected Whitespace, got {}", ty))),
             None => Err(Error::custom("Expected type: Whitespace")),
