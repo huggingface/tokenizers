@@ -111,3 +111,32 @@ class WordPieceTrainer(Trainer):
             Trainer
         """
         pass
+
+class UnigramTrainer(Trainer):
+    """ UnigramTrainer
+
+    Capable of training a Unigram model
+    """
+
+    def __init__(
+        self,
+        vocab_size: int = 8000,
+        show_progress: bool = True,
+        special_tokens: List[Union[str, AddedToken]] = [],
+    ) -> Trainer:
+        """ Instantiate a new UnigramTrainer with the given options:
+
+        Args:
+            vocab_size: unsigned int:
+                The size of the final vocabulary, including all tokens and alphabet.
+
+            show_progress: boolean:
+                Whether to show progress bars while training.
+
+            special_tokens: List[Union[str, AddedToken]]:
+                A list of special tokens the model should know of.
+
+        Returns:
+            Trainer
+        """
+        pass

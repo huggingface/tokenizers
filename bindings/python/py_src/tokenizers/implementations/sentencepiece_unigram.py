@@ -40,3 +40,20 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         }
 
         super().__init__(tokenizer, parameters)
+
+    def train(
+        self,
+        files: Union[str, List[str]],
+        vocab_size: int = 8000,
+        show_progress: bool = True,
+        special_tokens: List[Union[str, AddedToken]] = [],
+    ):
+        """ Train the model using the given files """
+
+        trainer = trainers.UnigramTrainer(
+            vocab_size=vocab_size, special_tokens=special_tokens, show_progress=show_progress,
+        )
+
+        if isinstance(files, str):
+            files = [files]
+        self._tokenizer.train(trainer, files)
