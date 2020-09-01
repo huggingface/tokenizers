@@ -172,3 +172,75 @@ impl PyWordPieceTrainer {
         ))
     }
 }
+
+#[pyclass(extends=PyTrainer, name=UnigramTrainer)]
+pub struct PyUnigramTrainer {}
+#[pymethods]
+impl PyUnigramTrainer {
+    /// Create a new UnigramTrainer with the given configuration
+    #[new]
+    #[args(kwargs = "**")]
+    pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
+        let mut builder = tk::models::unigram::UnigramTrainer::builder();
+        if let Some(kwargs) = kwargs {
+            for (key, val) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "vocab_size" => builder.vocab_size(val.extract()?),
+                    "show_progress" => builder.show_progress(val.extract()?),
+                    "n_sub_iterations" => builder.n_sub_iterations(val.extract()?),
+                    "shrinking_factor" => builder.shrinking_factor(val.extract()?),
+                    "space_char" => {
+                        let string: String = val.extract()?;
+                        if string.chars().collect::<Vec<_>>().len() != 1 {
+                            return Err(exceptions::Exception::py_err(
+                                "space_char must be 1 unicode char long",
+                            ));
+                        }
+                        builder.space_char(string.chars().next().ok_or_else(|| {
+                            exceptions::Exception::py_err("space_char must not be 0 width")
+                        })?)
+                    }
+                    "unk_token" => builder.unk_token(val.extract()?),
+                    "split_by_number" => builder.split_by_number(val.extract()?),
+                    "treat_whitespace_as_suffix" => {
+                        builder.treat_whitespace_as_suffix(val.extract()?)
+                    }
+                    "split_by_unicode_script" => builder.split_by_unicode_script(val.extract()?),
+                    "split_by_digits" => builder.split_by_digits(val.extract()?),
+                    "split_by_whitespace" => builder.split_by_whitespace(val.extract()?),
+                    "max_piece_length" => builder.max_piece_length(val.extract()?),
+                    "seed_size" => builder.seed_size(val.extract()?),
+                    "special_tokens" => builder.special_tokens(
+                        val.cast_as::<PyList>()?
+                            .into_iter()
+                            .map(|token| {
+                                if let Ok(content) = token.extract::<String>() {
+                                    Ok(PyAddedToken::from(content, Some(true)).get_token())
+                                } else if let Ok(mut token) =
+                                    token.extract::<PyRefMut<PyAddedToken>>()
+                                {
+                                    token.is_special_token = true;
+                                    Ok(token.get_token())
+                                } else {
+                                    Err(exceptions::Exception::py_err(
+                                        "special_tokens must be a List[Union[str, AddedToken]]",
+                                    ))
+                                }
+                            })
+                            .collect::<PyResult<Vec<_>>>()?,
+                    ),
+                    _ => {
+                        println!("Ignored unknown kwargs option {}", key);
+                        &mut builder
+                    }
+                };
+            }
+        }
+
+        let trainer: tokenizers::models::unigram::UnigramTrainer = builder
+            .build()
+            .map_err(|_| exceptions::Exception::py_err("Cannot build UnigramTrainer"))?;
+        Ok((PyUnigramTrainer {}, PyTrainer::new(trainer.into())))
+    }
+}

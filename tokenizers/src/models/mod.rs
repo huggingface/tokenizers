@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::models::bpe::{BpeTrainer, BPE};
-use crate::models::unigram::Unigram;
+use crate::models::unigram::{Unigram, UnigramTrainer};
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::{WordPiece, WordPieceTrainer};
 use crate::{AddedToken, Model, Result, Token, Trainer};
@@ -117,6 +117,7 @@ impl Model for ModelWrapper {
 pub enum TrainerWrapper {
     BpeTrainer(BpeTrainer),
     WordPieceTrainer(WordPieceTrainer),
+    UnigramTrainer(UnigramTrainer),
 }
 
 impl Trainer for TrainerWrapper {
@@ -126,6 +127,7 @@ impl Trainer for TrainerWrapper {
         match self {
             TrainerWrapper::BpeTrainer(bpe) => bpe.should_show_progress(),
             TrainerWrapper::WordPieceTrainer(wpt) => wpt.should_show_progress(),
+            TrainerWrapper::UnigramTrainer(wpt) => wpt.should_show_progress(),
         }
     }
 
@@ -133,6 +135,7 @@ impl Trainer for TrainerWrapper {
         match self {
             TrainerWrapper::BpeTrainer(bpe) => bpe.train(words).map(|(m, t)| (m.into(), t)),
             TrainerWrapper::WordPieceTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),
+            TrainerWrapper::UnigramTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),
         }
     }
 
@@ -140,9 +143,11 @@ impl Trainer for TrainerWrapper {
         match self {
             TrainerWrapper::BpeTrainer(bpe) => bpe.process_tokens(words, tokens),
             TrainerWrapper::WordPieceTrainer(wpt) => wpt.process_tokens(words, tokens),
+            TrainerWrapper::UnigramTrainer(wpt) => wpt.process_tokens(words, tokens),
         }
     }
 }
 
 impl_enum_from!(BpeTrainer, TrainerWrapper, BpeTrainer);
 impl_enum_from!(WordPieceTrainer, TrainerWrapper, WordPieceTrainer);
+impl_enum_from!(UnigramTrainer, TrainerWrapper, UnigramTrainer);
