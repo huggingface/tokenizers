@@ -173,12 +173,12 @@ fn test_train_from_file() {
 }
 
 #[cfg(not(debug_assertions))]
-#[ignore]
 #[test]
 fn test_spm_compat_train() {
     let n_sentences = 100_000;
     let train_file = "data/wikitext-103-raw/wiki.train.raw";
     let test_file = "data/wikitext-103-raw/wiki.test.raw";
+    let spm_prefix = "data/wikitext-103-raw/spm_wiki_103";
     let output = Command::new("spm_train")
         .args(&[
             "--input",
@@ -186,7 +186,7 @@ fn test_spm_compat_train() {
             "--model_type",
             "unigram",
             "--model_prefix",
-            "data/wikitext-103-raw/spm_wiki_103",
+            spm_prefix,
             "--input_sentence_size",
             &n_sentences.to_string(),
             "--num_threads",
@@ -207,7 +207,7 @@ fn test_spm_compat_train() {
     let output = Command::new("spm_encode")
         .args(&[
             "--model",
-            "data/wikitext-103-raw/spm_wiki_103.model",
+            &format!("{}.model", spm_prefix),
             "--input",
             test_file,
         ])
@@ -217,9 +217,9 @@ fn test_spm_compat_train() {
     // println!("{}", std::str::from_utf8(output.stdout));
 
     let trainer = UnigramTrainerBuilder::default()
-        // .show_progress(false)
+        .show_progress(false)
         .split_by_whitespace(true)
-        // .space_char('▁')
+        .space_char('▁')
         .build()
         .unwrap();
     let mut word_counts: Vec<(String, u32)> = vec![];
@@ -244,18 +244,6 @@ fn test_spm_compat_train() {
     let (model, _) = trainer._train(word_counts).unwrap();
     // println!("Stop train {:?}", model.get_vocab());
     // println!("Vocab {}", model.get_vocab().len());
-    //
-    model
-        .save(
-            std::path::Path::new("data/wikitext-103-raw"),
-            Some("wiki_train_raw"),
-        )
-        .unwrap();
-
-    let model = Unigram::load(std::path::Path::new(
-        "data/wikitext-103-raw/wiki_train_raw-unigram.json",
-    ))
-    .unwrap();
 
     let file = read_to_string(test_file).unwrap();
     let encoded = std::str::from_utf8(&output.stdout).unwrap();
@@ -265,9 +253,9 @@ fn test_spm_compat_train() {
     let mut n_tokenizer_tokens = 0;
     let mut n_spm_tokens = 0;
     for (tokenizer_line, spm_line) in file.lines().zip(encoded.lines()) {
-        // println!("Tokenizer line {:?}", tokenizer_line);
-        // println!("Spm line {:?}", spm_line);
-        let tokenizer_tokens = model.encode(tokenizer_line, true);
+        println!("Tokenizer line {:?}", tokenizer_line);
+        println!("Spm line {:?}", spm_line);
+        let tokenizer_tokens = model.encode(tokenizer_line);
         let mut spm_tokens: Vec<String> = spm_line
             .split(' ')
             .map(|s| s.to_string().replace('▁', " "))
@@ -395,7 +383,7 @@ fn test_spm_compat_encode() {
             last_c = c;
         }
         println!("Tokenizer line {:?}", filtered_line);
-        let tokenizer_tokens = model.encode(&filtered_line, true);
+        let tokenizer_tokens = model.encode(&filtered_line);
         let mut spm_tokens: Vec<String> = spm_line
             .split(' ')
             .map(|s| s.to_string().replace('▁', " "))
