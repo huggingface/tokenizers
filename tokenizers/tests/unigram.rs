@@ -99,7 +99,7 @@ fn test_sample() {
             *p /= z;
         }
 
-        let n_trials = 100_000;
+        let n_trials = 1_000;
         let mut freq: HashMap<String, u32> = HashMap::new();
         for _ in 0..n_trials {
             let string = lattice.sample_token(theta).join(" ");
@@ -245,6 +245,8 @@ fn test_spm_compat_train() {
     // println!("Stop train {:?}", model.get_vocab());
     // println!("Vocab {}", model.get_vocab().len());
 
+    model.save(Path::new("data"), Some("trained.json")).unwrap();
+
     let file = read_to_string(test_file).unwrap();
     let encoded = std::str::from_utf8(&output.stdout).unwrap();
 
@@ -253,9 +255,7 @@ fn test_spm_compat_train() {
     let mut n_tokenizer_tokens = 0;
     let mut n_spm_tokens = 0;
     for (tokenizer_line, spm_line) in file.lines().zip(encoded.lines()) {
-        println!("Tokenizer line {:?}", tokenizer_line);
-        println!("Spm line {:?}", spm_line);
-        let tokenizer_tokens = model.encode(tokenizer_line);
+        let tokenizer_tokens = model.encode(&tokenizer_line.replace(" ", "▁"));
         let mut spm_tokens: Vec<String> = spm_line
             .split(' ')
             .map(|s| s.to_string().replace('▁', " "))
@@ -274,6 +274,12 @@ fn test_spm_compat_train() {
         total += 1;
 
         // assert_eq!(tokenizer_tokens, spm_tokens, "Failed on line {}", i + 1,);
+        // println!("{} vs {}", tokenizer_tokens.len(), spm_tokens.len());
+        // assert!(tokenizer_tokens.len() <= spm_tokens.len());
+        // if spm_tokens.len() < tokenizer_tokens.len() {
+        //     println!("Tokenizer line {:?}", tokenizer_tokens.join(" "));
+        //     println!("Spm line       {:?}", spm_line);
+        // }
     }
     let acc = (correct as f64) / (total as f64) * 100.0;
     println!("Total tokenizer tokens {}", n_tokenizer_tokens);

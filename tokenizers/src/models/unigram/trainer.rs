@@ -86,6 +86,10 @@ pub struct UnigramTrainer {
 }
 
 impl UnigramTrainer {
+    pub fn builder() -> UnigramTrainerBuilder {
+        UnigramTrainerBuilder::default()
+    }
+
     /// Setup a progress bar if asked to show progress
     fn setup_progress(&self) -> Option<ProgressBar> {
         if self.show_progress {
@@ -132,9 +136,10 @@ impl UnigramTrainer {
             // This function checks that unicode "scripts" are consistent, so we cannot have romaji and
             // hiragana for instance. Seems pretty specific. Also Hiragana and katakana are mixed
             let raw_script = get_script(c);
+
             let script = if *c as u32 == 0x30FC {
                 Script::Han
-            } else if *c as u32 == 32 || !self.split_by_number && c.is_numeric() {
+            } else if *c == self.space_char || !self.split_by_number && c.is_numeric() {
                 Script::Any
             } else {
                 match raw_script {
