@@ -41,32 +41,6 @@ fn test_unigram_from_file() {
             "。"
         ]
     );
-
-    // Check it works with spm_export_vocab model.
-    let model = Unigram::load_spm(Path::new("data/unigram.model")).unwrap();
-    assert_eq!(
-        model
-            .tokenize(string)
-            .unwrap()
-            .iter()
-            .map(|tok| tok.value.clone())
-            .collect::<Vec<_>>(),
-        vec![
-            "吾輩",
-            "《",
-            "わが",
-            "はい",
-            "》",
-            "は",
-            "猫",
-            "である",
-            "。",
-            "名前",
-            "はまだ",
-            "無い",
-            "。"
-        ]
-    );
 }
 
 #[cfg(not(debug_assertions))]

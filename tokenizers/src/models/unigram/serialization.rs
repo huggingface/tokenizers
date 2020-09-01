@@ -13,9 +13,7 @@ impl Serialize for Unigram {
         let mut model = serializer.serialize_struct("Unigram", 2)?;
 
         model.serialize_field("unk_id", &self.unk_id)?;
-
-        let vocab: Vec<(&String, &f64)> = self.vocab.iter().zip(self.scores.iter()).collect();
-        model.serialize_field("vocab", &vocab)?;
+        model.serialize_field("vocab", &self.vocab)?;
 
         model.end()
     }
@@ -54,7 +52,8 @@ impl<'de> Visitor<'de> for UnigramVisitor {
             }
         }
         match (vocab, unk_id) {
-            (Some(vocab), Some(unk_id)) => Ok(Unigram::from(&vocab, unk_id)),
+            (Some(vocab), Some(unk_id)) => Ok(Unigram::from(&vocab, unk_id)
+                .map_err(|err| Error::custom(&format!("Unable to load vocab {:?}", err)))?),
             (None, Some(_)) => Err(Error::custom("Missing vocab")),
             (None, None) => Err(Error::custom("Missing vocab and unk_id")),
             (Some(_), None) => Err(Error::custom("Missing unk_id")),
@@ -69,7 +68,7 @@ mod test {
     #[test]
     fn test_serialization() {
         let vocab = vec![("<unk>".to_string(), 0.0), ("a".to_string(), -0.5)];
-        let model = Unigram::from(&vocab, 0);
+        let model = Unigram::from(&vocab, 0).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
         let reconstructed = serde_json::from_str(&data).unwrap();
