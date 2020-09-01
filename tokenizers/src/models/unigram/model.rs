@@ -80,7 +80,7 @@ impl Unigram {
         unk_id: usize,
     ) -> std::result::Result<Self, UnigramError> {
         let n = vocabulary.len();
-        let vocab: Vec<(String, f64)> = vocabulary.iter().cloned().collect();
+        let vocab: Vec<(String, f64)> = vocabulary.to_vec();
         let mut token_to_ids: TokenMap = HashMap::new();
         let mut builder = TrieBuilder::default();
 
