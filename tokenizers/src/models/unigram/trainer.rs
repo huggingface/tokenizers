@@ -5,6 +5,7 @@ use crate::models::unigram::{
 };
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
@@ -239,7 +240,7 @@ impl UnigramTrainer {
 
         let mut sall_chars: Vec<_> = all_chars.into_iter().map(|(a, b)| (b, a)).collect();
         // Reversed order
-        sall_chars.sort_by(|a, b| b.cmp(a));
+        sall_chars.sort_by_key(|&a| Reverse(a));
         let mut substr_index: Vec<_> = suffix
             .iter()
             .filter_map(|(string, freq)| {
@@ -266,7 +267,7 @@ impl UnigramTrainer {
         }
 
         // sort by decreasing score
-        substr_index.sort_by(|a, b| b.cmp(a));
+        substr_index.sort_by_key(|&a| Reverse(a));
         for (score, char_string) in substr_index {
             // Just in case
             assert!(self.is_valid_sentencepiece(char_string));
@@ -521,11 +522,11 @@ impl UnigramTrainer {
         }
 
         // Useful to check compatibility with spm.
-        // println!(
-        //     "Using {} pieces on {} sentences for EM training",
-        //     pieces.len(),
-        //     sentences.len()
-        // );
+        println!(
+            "Using {} pieces on {} sentences for EM training",
+            pieces.len(),
+            sentences.len()
+        );
 
         let desired_vocab_size: usize = (self.vocab_size as usize * 11) / 10; // * 1.1
 
@@ -551,14 +552,14 @@ impl UnigramTrainer {
                 pieces = self.run_m_step(&pieces, &expected);
                 model = Unigram::from(&pieces, 0);
                 // Useful comment for checking compatibility with spm
-                // println!(
-                //     "Em iter={} size={} obj={} num_tokens={} num_tokens/piece={}",
-                //     _iter,
-                //     model.len(),
-                //     _objective,
-                //     _num_tokens,
-                //     _num_tokens as f64 / model.len() as f64
-                // );
+                println!(
+                    "Em iter={} size={} obj={} num_tokens={} num_tokens/piece={}",
+                    _iter,
+                    model.len(),
+                    _objective,
+                    _num_tokens,
+                    _num_tokens as f64 / model.len() as f64
+                );
                 if let Some(p) = &progress {
                     p.inc(1);
                 }
