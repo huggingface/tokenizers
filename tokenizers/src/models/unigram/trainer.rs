@@ -226,7 +226,7 @@ impl UnigramTrainer {
         let mut all_chars: HashMap<char, u32> = HashMap::new();
         let c_sentence_boundary = '\0';
         let k_sentence_boundary = '\0'.to_string();
-        for (string, _) in sentences {
+        for (string, n) in sentences {
             flat_string.push_str(&string);
             // XXX
             // Comment suggests we add sentence boundary, but it seems to be missing from actual
@@ -234,7 +234,7 @@ impl UnigramTrainer {
             flat_string.push_str(&k_sentence_boundary);
             for c in string.chars() {
                 if c != c_sentence_boundary {
-                    *all_chars.entry(c).or_insert(0) += 1;
+                    *all_chars.entry(c).or_insert(0) += n;
                 }
             }
         }
