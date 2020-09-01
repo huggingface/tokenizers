@@ -5,18 +5,17 @@ use crate::tokenizer::{Model, Result, Token};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 type TokenMap = HashMap<String, u32>;
-type Vocab = Vec<String>;
+type Vocab = Vec<(String, f64)>;
 
 /// A `Unigram` model to encode sentences.
 #[derive(Clone)]
 pub struct Unigram {
     token_to_ids: TokenMap,
     pub(crate) vocab: Vocab,
-    pub(super) scores: Vec<f64>,
     trie: Trie<char>,
     pub min_score: f64,
     pub(super) unk_id: usize,
@@ -27,10 +26,7 @@ pub struct Unigram {
 }
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
-        let vocab: Vec<(&String, &f64)> = self.vocab.iter().zip(self.scores.iter()).collect();
-        let other_vocab: Vec<(&String, &f64)> =
-            other.vocab.iter().zip(other.scores.iter()).collect();
-        self.unk_id == other.unk_id && vocab == other_vocab
+        self.unk_id == other.unk_id && self.vocab == other.vocab
     }
 }
 
@@ -44,10 +40,31 @@ impl std::fmt::Debug for Unigram {
 
 static K_UNK_PENALTY: f64 = 10.0;
 
+#[derive(Debug)]
+pub enum UnigramError {
+    EmptyVocabulary,
+    UnkIdNotInVocabulary,
+}
+
+impl std::fmt::Display for UnigramError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            UnigramError::EmptyVocabulary => {
+                write!(f, "The vocabulary is empty but at least <unk> is needed")
+            }
+            UnigramError::UnkIdNotInVocabulary => {
+                write!(f, "The `unk_id` is larger than vocabulary size")
+            }
+        }
+    }
+}
+
+impl std::error::Error for UnigramError {}
+
 impl Default for Unigram {
     fn default() -> Self {
         let vocab = vec![("<unk>".to_string(), 0.0)];
-        Self::from(&vocab, 0)
+        Self::from(&vocab, 0).unwrap()
     }
 }
 
@@ -58,36 +75,39 @@ impl Unigram {
     /// unk_id, is the index within the vocabulary.
     /// For now `Unigram` *requires* at least `unk` because we might find a never seen char.
     /// Further versions might allow that part to be hidden.
-    pub fn from(vocabulary: &[(String, f64)], unk_id: usize) -> Self {
+    pub fn from(
+        vocabulary: &[(String, f64)],
+        unk_id: usize,
+    ) -> std::result::Result<Self, UnigramError> {
         let n = vocabulary.len();
-        let mut vocab: Vec<String> = Vec::with_capacity(n);
-        let mut scores: Vec<f64> = Vec::with_capacity(n);
+        let vocab: Vec<(String, f64)> = vocabulary.iter().cloned().collect();
         let mut token_to_ids: TokenMap = HashMap::new();
         let mut builder = TrieBuilder::default();
 
-        assert!(n >= 1, "We need at least unk in the vocabulary");
-        assert!(unk_id < vocabulary.len(), "Unk id is invalid");
+        if vocabulary.is_empty() {
+            return Err(UnigramError::EmptyVocabulary);
+        }
+        if unk_id >= vocabulary.len() {
+            return Err(UnigramError::UnkIdNotInVocabulary);
+        }
 
         let bos_id = n + 1;
         let eos_id = n + 2;
 
+        let mut min_score = f64::INFINITY;
         for (id, (token, score)) in vocabulary.iter().enumerate() {
-            vocab.push(token.to_string());
-            scores.push(*score);
             token_to_ids.insert(token.to_string(), id as u32);
             let chars: Vec<char> = token.chars().collect();
             builder.push(&chars);
-        }
-        let min_score = scores.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-        if min_score == -f64::INFINITY {
-            panic!("Alert min_score !!");
+            if score < &min_score {
+                min_score = *score;
+            }
         }
         let trie = builder.build();
         let fuse_unk = true;
 
-        Unigram {
+        Ok(Unigram {
             vocab,
-            scores,
             token_to_ids,
             trie,
             min_score,
@@ -95,7 +115,7 @@ impl Unigram {
             eos_id,
             unk_id,
             fuse_unk,
-        }
+        })
     }
 
     #[cfg(test)]
@@ -124,8 +144,10 @@ impl Unigram {
                 let n = result.len();
                 let tok: String = result.into_iter().collect();
                 let id = *self.token_to_ids.get(&tok).unwrap();
-                assert_eq!(self.vocab[id as usize], tok);
-                let score: f64 = self.scores[id as usize];
+
+                let item = &self.vocab[id as usize];
+                assert_eq!(item.0, tok);
+                let score: f64 = item.1;
                 lattice.insert(begin_pos, n, score, id.try_into().unwrap());
                 if !has_single_node && n == 1 {
                     has_single_node = true;
@@ -154,7 +176,7 @@ impl Unigram {
     ///     ("abc".to_string(), 5.0),
     ///     ("abcd".to_string(), 10.0),
     /// ];
-    /// let model = Unigram::from(&pieces, 0);
+    /// let model = Unigram::from(&pieces, 0).unwrap();
     /// let result = model.encode("abcdacdxx");
     /// assert_eq!(result, vec!["abcd", "a", "cd", "xx"]);
     /// ```
@@ -187,43 +209,6 @@ impl Unigram {
         }
     }
 
-    /// Loads a SentencePiece output model.
-    /// In order to get the proper model with spm.
-    ///
-    /// ```ignore
-    /// spm_train --model=unigram --input=.... --model_prefix=myprefix ...
-    /// spm_export_vocab --model=myprefix.model --output=myprefix.txt
-    /// ```
-    ///
-    /// After that you can use the model with tokenizers library.
-    /// ```no_run
-    /// use tokenizers::models::unigram::Unigram;
-    /// use std::path::Path;
-    ///
-    /// let model = Unigram::load_spm(Path::new("myprefix.txt")).unwrap();
-    /// ```
-    pub fn load_spm<P: AsRef<Path>>(path: P) -> Result<Unigram> {
-        let file = BufReader::new(File::open(path)?);
-        let table = file
-            .lines()
-            .enumerate()
-            .map(|(i, line)| {
-                let line = line?;
-                let newline = line.replace('▁', " ");
-                let tokens: Vec<_> = newline.split('\t').collect();
-                match tokens.as_slice() {
-                    [token, score] => Ok((token.to_string(), score.parse()?)),
-                    _ => Err(format!("Line {} is invalid {:?}", i, line).into()),
-                }
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        // XXX: by default in spm unk is 0
-        // TODO: Check that we handle bos, eos correctly !
-        let u = Unigram::from(&table, 0);
-        Ok(u)
-    }
-
     /// Iterate of vocabulary of the model as a pair of `(token, score)`.
     pub fn iter(&self) -> UnigramIterator {
         UnigramIterator { model: self, i: 0 }
@@ -252,12 +237,12 @@ pub struct UnigramIterator<'a> {
 }
 
 impl<'a> Iterator for UnigramIterator<'a> {
-    type Item = (&'a String, f64);
+    type Item = &'a (String, f64);
 
     fn next(&mut self) -> Option<Self::Item> {
         let i = self.i;
         if i < self.model.len() {
-            let r = Some((&self.model.vocab[i], self.model.scores[i]));
+            let r = Some(&self.model.vocab[i]);
             self.i += 1;
             r
         } else {
@@ -296,7 +281,7 @@ impl Model for Unigram {
 
     fn id_to_token(&self, id: u32) -> Option<&str> {
         match self.vocab.get(id as usize) {
-            Some(string) => Some(string),
+            Some(item) => Some(&item.0),
             None => None,
         }
     }
@@ -322,7 +307,7 @@ mod tests {
     #[test]
     fn test_populate_nodes_unk() {
         let pieces = vec![("<unk>".to_string(), 0.0)];
-        let model = Unigram::from(&pieces, 0);
+        let model = Unigram::from(&pieces, 0).unwrap();
 
         let mut lattice = Lattice::from("abc", 0, model.bos_id, model.eos_id);
         model.populate_nodes(&mut lattice);
@@ -347,7 +332,7 @@ mod tests {
             ("ab".to_string(), 0.3),
             ("bc".to_string(), 0.4),
         ];
-        let model = Unigram::from(&pieces, 0);
+        let model = Unigram::from(&pieces, 0).unwrap();
 
         let mut lattice = Lattice::from("abc", 0, model.bos_id, model.eos_id);
         model.populate_nodes(&mut lattice);
@@ -384,7 +369,7 @@ mod tests {
             ("abcd".to_string(), 10.0),
         ];
 
-        let model = Unigram::from(&sentencepieces, 0);
+        let model = Unigram::from(&sentencepieces, 0).unwrap();
         let result = model.encode("abcd");
         assert_eq!(result, vec!["abcd"]);
     }
@@ -406,7 +391,7 @@ mod tests {
             ("qr".to_string(), -0.5),
         ];
 
-        let mut model = Unigram::from(&sentencepieces, 0);
+        let mut model = Unigram::from(&sentencepieces, 0).unwrap();
         assert_eq!(model.encode("abc"), vec!["abc"]);
         assert_eq!(model.encode("AB"), vec!["AB"]);
 

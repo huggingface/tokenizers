@@ -263,41 +263,15 @@ pub struct PyUnigram {}
 #[pymethods]
 impl PyUnigram {
     #[new]
-    #[args(kwargs = "**")]
-    fn new(vocab: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
-        let mut is_spm_file = false;
-        if let Some(kwargs) = kwargs {
-            for (key, val) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
-                    "is_spm_file" => is_spm_file = val.extract()?,
-                    _ => println!("Ignored unknown kwargs option {}", key),
-                }
-            }
-        }
-
+    fn new(vocab: Option<&str>) -> PyResult<(Self, PyModel)> {
         if let Some(vocab) = vocab {
             let path = Path::new(vocab);
-            if is_spm_file {
-                match Unigram::load_spm(path) {
-                    Err(e) => {
-                        println!("Errors: {:?}", e);
-                        Err(exceptions::Exception::py_err(
-                            "Error while initializing Unigram from spm file",
-                        ))
-                    }
-                    Ok(model) => Ok((PyUnigram {}, PyModel::new(Arc::new(model.into())))),
+            match Unigram::load(path) {
+                Err(e) => {
+                    println!("Errors: {:?}", e);
+                    Err(exceptions::Exception::py_err("Error while loading Unigram"))
                 }
-            } else {
-                match Unigram::load(path) {
-                    Err(e) => {
-                        println!("Errors: {:?}", e);
-                        Err(exceptions::Exception::py_err(
-                            "Error while initializing Unigram",
-                        ))
-                    }
-                    Ok(model) => Ok((PyUnigram {}, PyModel::new(Arc::new(model.into())))),
-                }
+                Ok(model) => Ok((PyUnigram {}, PyModel::new(Arc::new(model.into())))),
             }
         } else {
             Ok((
