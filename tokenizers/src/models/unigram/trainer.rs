@@ -199,7 +199,7 @@ impl UnigramTrainer {
         }
         let mut final_pieces: Vec<SentencePiece> = pieces.into_iter().collect();
         final_pieces.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
-        Ok(Unigram::from(&final_pieces, 0).unwrap())
+        Unigram::from(final_pieces, 0)
     }
 
     fn required_chars(&self, word_counts: &[Sentence]) -> HashSet<String> {
@@ -546,7 +546,7 @@ impl UnigramTrainer {
         let expected_updates = expected_loops as usize * self.n_sub_iterations as usize;
         self.update_progress(&progress, expected_updates, "EM training");
         let required_chars = self.required_chars(&sentences);
-        let mut model = Unigram::from(&pieces, 0)?;
+        let mut model = Unigram::from(pieces.clone(), 0)?;
         loop {
             // Sub-EM iteration.
             for _iter in 0..self.n_sub_iterations {
@@ -554,8 +554,8 @@ impl UnigramTrainer {
                 let (_objective, _num_tokens, expected) = self.run_e_step(&mut model, &sentences);
 
                 // Executes M step.
-                pieces = self.run_m_step(&pieces, &expected);
-                model = Unigram::from(&pieces, 0)?;
+                let newpieces = self.run_m_step(&pieces, &expected);
+                model = Unigram::from(newpieces, 0)?;
                 // Useful comment for checking compatibility with spm
                 println!(
                     "Em iter={} size={} obj={} num_tokens={} num_tokens/piece={}",
@@ -577,8 +577,8 @@ impl UnigramTrainer {
             }
 
             // Prunes pieces.
-            pieces = self.prune_sentence_pieces(&model, &pieces, &sentences);
-            model = Unigram::from(&pieces, 0)?;
+            let pruned_pieces = self.prune_sentence_pieces(&model, &pieces, &sentences);
+            model = Unigram::from(pruned_pieces, 0)?;
         }
         self.finalize_progress(&progress, expected_updates);
 
