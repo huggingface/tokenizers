@@ -45,7 +45,9 @@ macro_rules! impl_serde_unit_struct (
             fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error> where
                 A: serde::de::MapAccess<'de>, {
                 let self_ty_str = stringify!($self_ty);
-                match map.next_entry::<&str, &str>()? {
+                let maybe_type = map.next_entry::<String, String>()?;
+                let maybe_type_str = maybe_type.as_ref().map(|(k, v)| (k.as_str(), v.as_str()));
+                match maybe_type_str {
                     Some(("type", stringify!($self_ty))) => Ok($self_ty),
                     Some((_, ty)) => Err(serde::de::Error::custom(&format!("Expected {}, got {}", self_ty_str, ty))),
                     None => Err(serde::de::Error::custom(&format!("Expected type : {}", self_ty_str)))
