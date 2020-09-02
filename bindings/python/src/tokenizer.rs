@@ -254,7 +254,7 @@ impl FromPyObject<'_> for PyArrayStr {
             let objects = std::slice::from_raw_parts(data as *const PyObject, n_elem);
 
             let seq = objects
-                .into_iter()
+                .iter()
                 .map(|obj| {
                     let gil = Python::acquire_gil();
                     let py = gil.python();

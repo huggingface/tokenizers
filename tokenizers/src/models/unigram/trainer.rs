@@ -167,7 +167,7 @@ impl UnigramTrainer {
         // true
     }
 
-    fn finalize(&self, model: Unigram, required_chars: HashSet<String>) -> Unigram {
+    fn finalize(&self, model: Unigram, required_chars: HashSet<String>) -> Result<Unigram> {
         // let mut pieces: Vec<SentencePiece> =
         //     Vec::with_capacity(self.vocab_size.try_into().unwrap());
 
@@ -175,7 +175,7 @@ impl UnigramTrainer {
         let min_score_penalty_delta = 0.0001;
 
         let mut pieces: HashMap<String, f64> = HashMap::new();
-        let existing_pieces: HashMap<&String, f64> = model.iter().collect();
+        let existing_pieces: HashMap<String, f64> = model.iter().cloned().collect();
         // XXX: Make sure bos, eos and unk exists and are ids 0, 1, 2
         pieces.insert(self.unk_token.clone(), 0.0);
         for c in required_chars {
@@ -191,7 +191,7 @@ impl UnigramTrainer {
         for (token, score) in model.iter() {
             match pieces.get(token) {
                 Some(_) => continue,
-                None => pieces.insert(token.to_string(), score),
+                None => pieces.insert(token.to_string(), *score),
             };
             if pieces.len() == self.vocab_size as usize {
                 break;
@@ -199,7 +199,7 @@ impl UnigramTrainer {
         }
         let mut final_pieces: Vec<SentencePiece> = pieces.into_iter().collect();
         final_pieces.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
-        Unigram::from(&final_pieces, 0)
+        Unigram::from(final_pieces, 0)
     }
 
     fn required_chars(&self, word_counts: &[Sentence]) -> HashSet<String> {
@@ -546,7 +546,7 @@ impl UnigramTrainer {
         let expected_updates = expected_loops as usize * self.n_sub_iterations as usize;
         self.update_progress(&progress, expected_updates, "EM training");
         let required_chars = self.required_chars(&sentences);
-        let mut model = Unigram::from(&pieces, 0);
+        let mut model = Unigram::from(pieces.clone(), 0)?;
         loop {
             // Sub-EM iteration.
             for _iter in 0..self.n_sub_iterations {
@@ -554,8 +554,8 @@ impl UnigramTrainer {
                 let (_objective, _num_tokens, expected) = self.run_e_step(&mut model, &sentences);
 
                 // Executes M step.
-                pieces = self.run_m_step(&pieces, &expected);
-                model = Unigram::from(&pieces, 0);
+                let newpieces = self.run_m_step(&pieces, &expected);
+                model = Unigram::from(newpieces, 0)?;
                 // Useful comment for checking compatibility with spm
                 println!(
                     "Em iter={} size={} obj={} num_tokens={} num_tokens/piece={}",
@@ -577,13 +577,13 @@ impl UnigramTrainer {
             }
 
             // Prunes pieces.
-            pieces = self.prune_sentence_pieces(&model, &pieces, &sentences);
-            model = Unigram::from(&pieces, 0);
+            let pruned_pieces = self.prune_sentence_pieces(&model, &pieces, &sentences);
+            model = Unigram::from(pruned_pieces, 0)?;
         }
         self.finalize_progress(&progress, expected_updates);
 
         // Finally, adjusts the size of sentencepices to be |vocab_size|.
-        model = self.finalize(model, required_chars);
+        model = self.finalize(model, required_chars)?;
 
         Ok((model, self.special_tokens.clone()))
     }

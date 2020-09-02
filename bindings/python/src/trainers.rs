@@ -87,7 +87,7 @@ impl PyBpeTrainer {
                         builder = builder.initial_alphabet(
                             alphabet
                                 .into_iter()
-                                .map(|s| s.chars().nth(0))
+                                .map(|s| s.chars().next())
                                 .filter(|c| c.is_some())
                                 .map(|c| c.unwrap())
                                 .collect(),
@@ -151,7 +151,7 @@ impl PyWordPieceTrainer {
                         builder = builder.initial_alphabet(
                             alphabet
                                 .into_iter()
-                                .map(|s| s.chars().nth(0))
+                                .map(|s| s.chars().next())
                                 .filter(|c| c.is_some())
                                 .map(|c| c.unwrap())
                                 .collect(),
@@ -190,25 +190,7 @@ impl PyUnigramTrainer {
                     "show_progress" => builder.show_progress(val.extract()?),
                     "n_sub_iterations" => builder.n_sub_iterations(val.extract()?),
                     "shrinking_factor" => builder.shrinking_factor(val.extract()?),
-                    "space_char" => {
-                        let string: String = val.extract()?;
-                        if string.chars().collect::<Vec<_>>().len() != 1 {
-                            return Err(exceptions::Exception::py_err(
-                                "space_char must be 1 unicode char long",
-                            ));
-                        }
-                        builder.space_char(string.chars().next().ok_or_else(|| {
-                            exceptions::Exception::py_err("space_char must not be 0 width")
-                        })?)
-                    }
                     "unk_token" => builder.unk_token(val.extract()?),
-                    "split_by_number" => builder.split_by_number(val.extract()?),
-                    "treat_whitespace_as_suffix" => {
-                        builder.treat_whitespace_as_suffix(val.extract()?)
-                    }
-                    "split_by_unicode_script" => builder.split_by_unicode_script(val.extract()?),
-                    "split_by_digits" => builder.split_by_digits(val.extract()?),
-                    "split_by_whitespace" => builder.split_by_whitespace(val.extract()?),
                     "max_piece_length" => builder.max_piece_length(val.extract()?),
                     "seed_size" => builder.seed_size(val.extract()?),
                     "special_tokens" => builder.special_tokens(

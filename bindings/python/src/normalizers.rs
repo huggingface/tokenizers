@@ -170,9 +170,7 @@ impl PySequence {
         for n in normalizers.iter() {
             let normalizer: PyRef<PyNormalizer> = n.extract()?;
             match &normalizer.normalizer {
-                PyNormalizerWrapper::Sequence(inner) => {
-                    sequence.extend(inner.iter().map(|i| i.clone()))
-                }
+                PyNormalizerWrapper::Sequence(inner) => sequence.extend(inner.iter().cloned()),
                 PyNormalizerWrapper::Wrapped(inner) => sequence.push(inner.clone()),
             }
         }
