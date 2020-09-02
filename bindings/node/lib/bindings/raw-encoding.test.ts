@@ -12,7 +12,7 @@ import { EncodeOptions, InputSequence, Tokenizer } from "./tokenizer";
 
 const MOCKS_DIR = __dirname + "/__mocks__";
 
-describe("Encoding", () => {
+describe("Can modify pretokenizers on the fly", () => {
   let encoding: RawEncoding;
   let encode: (
     sequence: InputSequence,
@@ -30,28 +30,22 @@ describe("Encoding", () => {
     );
 
     tokenizer = new Tokenizer(model);
-    tokenizer.setPreTokenizer(whitespacePreTokenizer());
     encode = promisify(tokenizer.encode.bind(tokenizer));
   });
 
-  it("Encodes correctly", async () => {
-    encoding = await encode("my name is john", null);
-    expect(encoding.getIds()).toEqual([0, 1, 2, 3, 4]);
-
-    encoding = await encode("my  name is john", null);
-    expect(encoding.getIds()).toEqual([0, 1, 2, 3, 4]);
-  });
-
   it("Can change pre tokenizer", async () => {
+    const input = "my  name is john.!?";
     tokenizer.setPreTokenizer(sequencePreTokenizer([whitespacePreTokenizer()]));
 
-    encoding = await encode("my  name is john.!?", null);
+    encoding = await encode(input, null);
     expect(encoding.getIds()).toEqual([0, 1, 2, 3, 4, 6]);
+
+    // Change pre tokenizer
     tokenizer.setPreTokenizer(
       sequencePreTokenizer([whitespacePreTokenizer(), punctuationPreTokenizer()])
     );
 
-    encoding = await encode("my  name is john.!?", null);
+    encoding = await encode(input, null);
     expect(encoding.getIds()).toEqual([0, 1, 2, 3, 4, 6, 6, 6]);
   });
 });

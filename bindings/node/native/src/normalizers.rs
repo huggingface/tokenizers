@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tk::normalizers::NormalizerWrapper;
 use tk::NormalizedString;
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum JsNormalizerWrapper {
     Sequence(Vec<Arc<NormalizerWrapper>>),
     Wrapped(Arc<NormalizerWrapper>),
@@ -212,4 +212,48 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_Lowercase", prefix), lowercase)?;
     m.export_function(&format!("{}_Strip", prefix), strip)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tk::normalizers::unicode::{NFC, NFKC};
+    use tk::normalizers::utils::Sequence;
+    use tk::normalizers::NormalizerWrapper;
+
+    #[test]
+    fn serialize() {
+        let js_wrapped: JsNormalizerWrapper = NFKC.into();
+        let js_ser = serde_json::to_string(&js_wrapped).unwrap();
+
+        let rs_wrapped = NormalizerWrapper::NFKC(NFKC);
+        let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
+        assert_eq!(js_ser, rs_ser);
+
+        // let js_norm: Normalizer = serde_json::from_str(&rs_ser).unwrap();
+        // match js_norm.normalizer.unwrap() {
+        //     JsNormalizerWrapper::Wrapped(nfc) => match nfc.as_ref() {
+        //         NormalizerWrapper::NFKC(_) => {}
+        //         _ => panic!("Expected NFKC"),
+        //     },
+        //     _ => panic!("Expected wrapped, not sequence."),
+        // }
+
+        let js_seq: JsNormalizerWrapper = Sequence::new(vec![NFC.into(), NFKC.into()]).into();
+        let js_wrapper_ser = serde_json::to_string(&js_seq).unwrap();
+        let rs_wrapped =
+            NormalizerWrapper::Sequence(Sequence::new(vec![NFC.into(), NFKC.into()]).into());
+        let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
+        assert_eq!(js_wrapper_ser, rs_ser);
+
+        let js_seq = Normalizer {
+            normalizer: Some(js_seq),
+        };
+        let js_ser = serde_json::to_string(&js_seq).unwrap();
+        assert_eq!(js_wrapper_ser, js_ser);
+
+        let rs_seq = Sequence::new(vec![NFC.into(), NFKC.into()]);
+        let rs_ser = serde_json::to_string(&rs_seq).unwrap();
+        assert_eq!(js_wrapper_ser, rs_ser);
+    }
 }
