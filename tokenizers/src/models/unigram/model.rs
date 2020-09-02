@@ -133,7 +133,7 @@ impl Unigram {
                 .trie
                 .common_prefix_search(&lattice.chars[begin_pos..])
                 .iter()
-                .map(|chars| chars.into_iter().collect())
+                .map(|chars| chars.iter().collect())
                 .collect();
 
             let mut has_single_node = false;

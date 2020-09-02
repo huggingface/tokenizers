@@ -142,9 +142,9 @@ impl PyMetaspaceDec {
                 match key {
                     "replacement" => {
                         let s: &str = value.extract()?;
-                        replacement = s.chars().nth(0).ok_or(exceptions::Exception::py_err(
-                            "replacement must be a character",
-                        ))?;
+                        replacement = s.chars().next().ok_or_else(|| {
+                            exceptions::Exception::py_err("replacement must be a character")
+                        })?;
                     }
                     "add_prefix_space" => add_prefix_space = value.extract()?,
                     _ => println!("Ignored unknown kwarg option {}", key),

@@ -187,10 +187,8 @@ impl PyCharDelimiterSplit {
     pub fn new(delimiter: &str) -> PyResult<(Self, PyPreTokenizer)> {
         let chr_delimiter = delimiter
             .chars()
-            .nth(0)
-            .ok_or(exceptions::Exception::py_err(
-                "delimiter must be a single character",
-            ))?;
+            .next()
+            .ok_or_else(|| exceptions::Exception::py_err("delimiter must be a single character"))?;
         Ok((
             PyCharDelimiterSplit {},
             CharDelimiterSplit::new(chr_delimiter).into(),
@@ -232,9 +230,7 @@ impl PySequence {
         for n in pre_tokenizers.iter() {
             let pretokenizer: PyRef<PyPreTokenizer> = n.extract()?;
             match &pretokenizer.pretok {
-                PyPreTokenizerWrapper::Sequence(inner) => {
-                    sequence.extend(inner.iter().map(|i| i.clone()))
-                }
+                PyPreTokenizerWrapper::Sequence(inner) => sequence.extend(inner.iter().cloned()),
                 PyPreTokenizerWrapper::Wrapped(inner) => sequence.push(inner.clone()),
                 PyPreTokenizerWrapper::Custom(_) => unreachable!(
                     "Custom pretokenizers are currently disabled, how did you get here?"
@@ -268,9 +264,9 @@ impl PyMetaspace {
                 match key {
                     "replacement" => {
                         let s: &str = value.extract()?;
-                        replacement = s.chars().nth(0).ok_or(exceptions::Exception::py_err(
-                            "replacement must be a character",
-                        ))?;
+                        replacement = s.chars().next().ok_or_else(|| {
+                            exceptions::Exception::py_err("replacement must be a character")
+                        })?;
                     }
                     "add_prefix_space" => add_prefix_space = value.extract()?,
                     _ => println!("Ignored unknown kwarg option {}", key),

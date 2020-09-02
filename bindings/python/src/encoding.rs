@@ -181,10 +181,9 @@ impl PyEncoding {
                 }
             }
         }
-
-        Ok(self
-            .encoding
-            .pad(length, pad_id, pad_type_id, pad_token, direction))
+        self.encoding
+            .pad(length, pad_id, pad_type_id, pad_token, direction);
+        Ok(())
     }
 
     #[args(kwargs = "**")]
@@ -200,7 +199,7 @@ impl PyEncoding {
                 }
             }
         }
-
-        Ok(self.encoding.truncate(max_length, stride))
+        self.encoding.truncate(max_length, stride);
+        Ok(())
     }
 }
