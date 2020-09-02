@@ -241,8 +241,7 @@ mod test {
 
         let js_seq: JsNormalizerWrapper = Sequence::new(vec![NFC.into(), NFKC.into()]).into();
         let js_wrapper_ser = serde_json::to_string(&js_seq).unwrap();
-        let rs_wrapped =
-            NormalizerWrapper::Sequence(Sequence::new(vec![NFC.into(), NFKC.into()]).into());
+        let rs_wrapped = NormalizerWrapper::Sequence(Sequence::new(vec![NFC.into(), NFKC.into()]));
         let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
         assert_eq!(js_wrapper_ser, rs_ser);
 
