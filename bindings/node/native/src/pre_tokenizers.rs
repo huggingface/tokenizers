@@ -169,7 +169,7 @@ fn sequence(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
         .collect::<NeonResult<_>>()?;
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    pretok.borrow_mut(&guard).pretok = Some(JsPreTokenizerWrapper::Sequence(sequence).into());
+    pretok.borrow_mut(&guard).pretok = Some(JsPreTokenizerWrapper::Sequence(sequence));
     Ok(pretok)
 }
 
@@ -224,9 +224,10 @@ mod test {
         let js_seq: JsPreTokenizerWrapper =
             Sequence::new(vec![WhitespaceSplit.into(), Whitespace::default().into()]).into();
         let js_wrapper_ser = serde_json::to_string(&js_seq).unwrap();
-        let rs_wrapped = PreTokenizerWrapper::Sequence(
-            Sequence::new(vec![WhitespaceSplit.into(), Whitespace::default().into()]).into(),
-        );
+        let rs_wrapped = PreTokenizerWrapper::Sequence(Sequence::new(vec![
+            WhitespaceSplit.into(),
+            Whitespace::default().into(),
+        ]));
         let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
         assert_eq!(js_wrapper_ser, rs_ser);
 
