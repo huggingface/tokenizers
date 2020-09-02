@@ -59,6 +59,15 @@ def openai_files(data_dir):
     }
 
 
+@pytest.fixture(scope="session")
+def train_files(data_dir):
+    return {
+        "wagahaiwa": download(
+            "https://storage.googleapis.com/tokenizers/unigram_wagahaiwa_nekodearu.txt"
+        ),
+    }
+
+
 def multiprocessing_with_parallelism(tokenizer, enabled: bool):
     """
     This helper can be used to test that disabling parallelism avoids dead locks when the
