@@ -367,6 +367,7 @@ dependencies = [
  "neon-runtime",
  "neon-serde",
  "serde",
+ "serde_json",
  "tokenizers",
 ]
 
