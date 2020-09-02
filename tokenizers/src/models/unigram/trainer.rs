@@ -527,11 +527,11 @@ impl UnigramTrainer {
         }
 
         // Useful to check compatibility with spm.
-        println!(
-            "Using {} pieces on {} sentences for EM training",
-            pieces.len(),
-            sentences.len()
-        );
+        // println!(
+        //     "Using {} pieces on {} sentences for EM training",
+        //     pieces.len(),
+        //     sentences.len()
+        // );
 
         let desired_vocab_size: usize = (self.vocab_size as usize * 11) / 10; // * 1.1
 
@@ -557,14 +557,14 @@ impl UnigramTrainer {
                 let newpieces = self.run_m_step(&pieces, &expected);
                 model = Unigram::from(newpieces, 0)?;
                 // Useful comment for checking compatibility with spm
-                println!(
-                    "Em iter={} size={} obj={} num_tokens={} num_tokens/piece={}",
-                    _iter,
-                    model.len(),
-                    _objective,
-                    _num_tokens,
-                    _num_tokens as f64 / model.len() as f64
-                );
+                // println!(
+                //     "Em iter={} size={} obj={} num_tokens={} num_tokens/piece={}",
+                //     _iter,
+                //     model.len(),
+                //     _objective,
+                //     _num_tokens,
+                //     _num_tokens as f64 / model.len() as f64
+                // );
                 if let Some(p) = &progress {
                     p.inc(1);
                 }
