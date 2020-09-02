@@ -30,13 +30,13 @@ impl<Label: Eq + Hash + Copy> Trie<Label> {
         node.is_leaf = true;
     }
 
-    pub fn common_prefix_search(&self, element: &[Label]) -> Vec<Vec<Label>> {
+    pub fn common_prefix_search(&self, iterator: impl Iterator<Item = Label>) -> Vec<Vec<Label>> {
         let mut node = &self.root;
         let mut results = vec![];
         let mut prefix = vec![];
-        for label in element.iter() {
-            prefix.push(*label);
-            let child_opt = node.children.get(label);
+        for label in iterator {
+            prefix.push(label);
+            let child_opt = node.children.get(&label);
             if let Some(child) = child_opt {
                 node = child;
                 if node.is_leaf {

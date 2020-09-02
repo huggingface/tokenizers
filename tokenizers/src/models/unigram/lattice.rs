@@ -52,7 +52,7 @@ impl Ord for Hypothesis {
 #[derive(Debug)]
 pub struct Lattice<'a> {
     pub(super) sentence: &'a str,
-    pub(super) chars: Vec<char>,
+    len: usize,
     nodes: Vec<NodeRef>,
     pub(super) begin_nodes: Vec<Vec<NodeRef>>,
     pub(super) end_nodes: Vec<Vec<NodeRef>>,
@@ -137,10 +137,9 @@ fn log_sum_exp(x: f64, y: f64, init_mode: bool) -> f64 {
 
 impl<'a> Lattice<'a> {
     pub fn from(sentence: &'a str, unk_id: usize, bos_id: usize, eos_id: usize) -> Lattice<'a> {
-        let chars: Vec<_> = sentence.chars().collect();
+        let len = sentence.chars().count();
         let k_reserved_node_size = 16;
         // We are adding 2 tokens, bos and eos
-        let len = chars.len();
         let mut nodes: Vec<NodeRef> = Vec::with_capacity(k_reserved_node_size);
         let mut begin_nodes = vec![Vec::with_capacity(k_reserved_node_size); len + 1];
         let mut end_nodes = vec![Vec::with_capacity(k_reserved_node_size); len + 1];
@@ -156,7 +155,7 @@ impl<'a> Lattice<'a> {
 
         Lattice {
             sentence,
-            chars,
+            len,
             nodes,
             begin_nodes,
             end_nodes,
@@ -177,7 +176,7 @@ impl<'a> Lattice<'a> {
     }
 
     pub fn viterbi(&mut self) -> Vec<NodeRef> {
-        let len = self.chars.len();
+        let len = self.len;
         for pos in 0..=len {
             if self.begin_nodes[pos].is_empty() {
                 return vec![];
@@ -305,10 +304,10 @@ impl<'a> Lattice<'a> {
     }
 
     pub fn len(&self) -> usize {
-        self.chars.len()
+        self.len
     }
     pub fn is_empty(&self) -> bool {
-        self.chars.is_empty()
+        self.len == 0
     }
 
     pub fn utf8_len(&self) -> usize {
@@ -319,7 +318,7 @@ impl<'a> Lattice<'a> {
         Rc::clone(&self.end_nodes[0][0])
     }
     pub fn eos_node(&self) -> NodeRef {
-        Rc::clone(&self.begin_nodes[self.chars.len()][0])
+        Rc::clone(&self.begin_nodes[self.len][0])
     }
 
     pub fn surface(&self, n: usize) -> &str {
