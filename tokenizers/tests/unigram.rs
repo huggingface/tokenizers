@@ -12,7 +12,7 @@ use tokenizers::models::unigram::Unigram;
 use tokenizers::models::unigram::{Lattice, UnigramTrainerBuilder};
 use tokenizers::tokenizer::Model;
 #[cfg(not(debug_assertions))]
-use unicode_normalization::UnicodeNormalization;
+use unicode_normalization_alignments::UnicodeNormalization;
 
 #[test]
 fn test_unigram_from_file() {
@@ -149,6 +149,7 @@ fn test_train_from_file() {
 #[cfg(not(debug_assertions))]
 #[test]
 fn test_spm_compat_train() {
+    println!("Starting train compat test");
     let n_sentences = 100_000;
     let train_file = "data/wikitext-103-raw/wiki.train.raw";
     let test_file = "data/wikitext-103-raw/wiki.test.raw";
@@ -191,7 +192,7 @@ fn test_spm_compat_train() {
     // println!("{}", std::str::from_utf8(output.stdout));
 
     let trainer = UnigramTrainerBuilder::default()
-        .show_progress(false)
+        .show_progress(true)
         .split_by_whitespace(true)
         .space_char('▁')
         .build()
@@ -270,6 +271,7 @@ fn normalize(s: &str) -> Result<String, ()> {
             .filter(|c| !c.is_control())
             .collect::<String>()
             .nfkc()
+            .map(|(s, _)| s)
             .collect::<String>()
     );
     let mut vecs = vec![""];
@@ -281,134 +283,6 @@ fn normalize(s: &str) -> Result<String, ()> {
         return Err(());
     }
     Ok(result)
-}
-
-#[cfg(not(debug_assertions))]
-#[test]
-fn test_spm_compat_encode() {
-    let n_sentences = 5_000;
-    let train_file = "data/wikitext-103-raw/wiki.train.raw";
-    let test_file = "data/wikitext-103-raw/wiki.test.raw";
-    let output_file = "data/wikitext-103-raw/spm_wiki_103-exported.model";
-    let output = Command::new("spm_train")
-        .args(&[
-            "--input",
-            train_file,
-            "--model_type",
-            "unigram",
-            "--model_prefix",
-            "data/wikitext-103-raw/spm_wiki_103",
-            "--input_sentence_size",
-            &n_sentences.to_string(),
-            "--num_threads",
-            "1",
-            "--shuffle_input_sentence",
-            "0",
-            "--character_coverage",
-            "1",
-        ])
-        .output()
-        .expect("Command failed is `spm_train` installed ?");
-    if !output.status.success() {
-        let err_msg = std::str::from_utf8(&output.stderr).unwrap();
-        assert!(output.status.success(), "Command failed {}", err_msg)
-    }
-    println!("train: {}", std::str::from_utf8(&output.stderr).unwrap());
-
-    let output = Command::new("spm_encode")
-        .args(&[
-            "--model",
-            "data/wikitext-103-raw/spm_wiki_103.model",
-            "--input",
-            test_file,
-        ])
-        .output()
-        .expect("Command failed is `spm_encode` installed ?");
-
-    println!("{}", std::str::from_utf8(&output.stderr).unwrap());
-
-    let _output = Command::new("spm_export_vocab")
-        .args(&[
-            "--model",
-            "data/wikitext-103-raw/spm_wiki_103.model",
-            "--output",
-            output_file,
-        ])
-        .output()
-        .expect("Command failed is `spm_export_vocab` installed ?");
-
-    let model = Unigram::load_spm(std::path::Path::new(output_file)).unwrap();
-
-    let file = read_to_string(test_file)
-        .unwrap()
-        .nfkc()
-        .collect::<String>();
-
-    let encoded = std::str::from_utf8(&output.stdout).unwrap();
-
-    let mut correct = 0;
-    let mut total = 0;
-    let mut n_tokenizer_tokens = 0;
-    let mut n_spm_tokens = 0;
-    for (_i, (tokenizer_line, spm_line)) in file.lines().zip(encoded.lines()).enumerate() {
-        // XXX: SPM filters lines by removing duplicate spaces.
-        let mut filtered_line = String::new();
-        let mut last_c = ' ';
-        filtered_line.push(last_c);
-        for c in tokenizer_line.chars() {
-            if c == ' ' && last_c == ' ' {
-                continue;
-            }
-            filtered_line.push(c);
-            last_c = c;
-        }
-        println!("Tokenizer line {:?}", filtered_line);
-        let tokenizer_tokens = model.encode(&filtered_line);
-        let mut spm_tokens: Vec<String> = spm_line
-            .split(' ')
-            .map(|s| s.to_string().replace('▁', " "))
-            .collect();
-        // XXX : For some reason spm_encode mangles trailing spaces which exist in wiki103.
-        if spm_tokens == vec![""] {
-            spm_tokens.pop();
-        }
-        spm_tokens.push(" ".to_string());
-
-        n_tokenizer_tokens += tokenizer_tokens.len();
-        n_spm_tokens += spm_tokens.len();
-        if tokenizer_tokens == spm_tokens {
-            correct += 1;
-        } else {
-            println!("Tokens {:?}", tokenizer_tokens);
-            println!("SPM {:?}", spm_tokens);
-            let mut iter = tokenizer_tokens.iter().zip(&spm_tokens).peekable();
-            loop {
-                if let Some((tok, spm)) = iter.next() {
-                    let mut is_ok = false;
-                    if tok != spm {
-                        if let Some((next_tok, next_spm)) = iter.peek() {
-                            if spm == *next_tok && tok == *next_spm {
-                                is_ok = true;
-                            }
-                        }
-                    }
-                    if is_ok {
-                        iter.next();
-                        correct += 1;
-                    } else {
-                        assert_eq!(tok, spm, "Failed on line {}", _i + 1);
-                    }
-                } else {
-                    break;
-                }
-            }
-        }
-        total += 1;
-    }
-    let acc = (correct as f64) / (total as f64) * 100.0;
-    println!("Total tokenizer tokens {}", n_tokenizer_tokens);
-    println!("Total spm tokens {}", n_spm_tokens);
-    println!("Total accuracy {}/{} ({:.2}%)", correct, total, acc);
 }
 
 #[cfg(test)]

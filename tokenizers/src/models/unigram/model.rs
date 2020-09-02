@@ -131,7 +131,7 @@ impl Unigram {
         for begin_pos in 0..len {
             let trie_results: Vec<String> = self
                 .trie
-                .common_prefix_search(&lattice.chars[begin_pos..])
+                .common_prefix_search(lattice.sentence.chars().skip(begin_pos))
                 .iter()
                 .map(|chars| chars.iter().collect())
                 .collect();

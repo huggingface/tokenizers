@@ -5,6 +5,7 @@ use crate::models::unigram::{
 };
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
+use log::debug;
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -435,7 +436,7 @@ impl UnigramTrainer {
         }
     }
 
-    fn run_e_step(&self, model: &mut Unigram, sentences: &[Sentence]) -> (f64, u32, Vec<f64>) {
+    fn run_e_step(&self, model: &Unigram, sentences: &[Sentence]) -> (f64, u32, Vec<f64>) {
         let mut expected: Vec<f64> = vec![0.0; model.len()];
         let mut objs: f64 = 0.0;
         let mut ntokens: u32 = 0;
@@ -527,11 +528,11 @@ impl UnigramTrainer {
         }
 
         // Useful to check compatibility with spm.
-        // println!(
-        //     "Using {} pieces on {} sentences for EM training",
-        //     pieces.len(),
-        //     sentences.len()
-        // );
+        debug!(
+            "Using {} pieces on {} sentences for EM training",
+            pieces.len(),
+            sentences.len()
+        );
 
         let desired_vocab_size: usize = (self.vocab_size as usize * 11) / 10; // * 1.1
 
@@ -551,20 +552,21 @@ impl UnigramTrainer {
             // Sub-EM iteration.
             for _iter in 0..self.n_sub_iterations {
                 // Executes E step
-                let (_objective, _num_tokens, expected) = self.run_e_step(&mut model, &sentences);
+                let (_objective, _num_tokens, expected) = self.run_e_step(&model, &sentences);
 
                 // Executes M step.
-                let newpieces = self.run_m_step(&pieces, &expected);
-                model = Unigram::from(newpieces, 0)?;
+                pieces = self.run_m_step(&pieces, &expected);
+                model = Unigram::from(pieces.clone(), 0)?;
+
                 // Useful comment for checking compatibility with spm
-                // println!(
-                //     "Em iter={} size={} obj={} num_tokens={} num_tokens/piece={}",
-                //     _iter,
-                //     model.len(),
-                //     _objective,
-                //     _num_tokens,
-                //     _num_tokens as f64 / model.len() as f64
-                // );
+                debug!(
+                    "Em iter={} size={} obj={} num_tokens={} num_tokens/piece={}",
+                    _iter,
+                    model.len(),
+                    _objective,
+                    _num_tokens,
+                    _num_tokens as f64 / model.len() as f64
+                );
                 if let Some(p) = &progress {
                     p.inc(1);
                 }
@@ -577,8 +579,8 @@ impl UnigramTrainer {
             }
 
             // Prunes pieces.
-            let pruned_pieces = self.prune_sentence_pieces(&model, &pieces, &sentences);
-            model = Unigram::from(pruned_pieces, 0)?;
+            pieces = self.prune_sentence_pieces(&model, &pieces, &sentences);
+            model = Unigram::from(pieces.clone(), 0)?;
         }
         self.finalize_progress(&progress, expected_updates);
 
