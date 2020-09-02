@@ -305,10 +305,10 @@ mod test {
     fn serialize() {
         let rs_bpe = BPE::default();
         let rs_bpe_ser = serde_json::to_string(&rs_bpe).unwrap();
-        let rs_wrapper: ModelWrapper = rs_bpe.clone().into();
+        let rs_wrapper: ModelWrapper = rs_bpe.into();
         let rs_wrapper_ser = serde_json::to_string(&rs_wrapper).unwrap();
 
-        let py_model = PyModel::new(Arc::new(rs_wrapper.clone()));
+        let py_model = PyModel::new(Arc::new(rs_wrapper));
         let py_ser = serde_json::to_string(&py_model).unwrap();
         assert_eq!(py_ser, rs_bpe_ser);
         assert_eq!(py_ser, rs_wrapper_ser);

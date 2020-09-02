@@ -188,7 +188,7 @@ mod test {
         let rs_processing_ser = serde_json::to_string(&rs_processing).unwrap();
         let rs_wrapper_ser = serde_json::to_string(&rs_wrapper).unwrap();
 
-        let py_processing = PyPostProcessor::new(Arc::new(rs_wrapper.clone()));
+        let py_processing = PyPostProcessor::new(Arc::new(rs_wrapper));
         let py_ser = serde_json::to_string(&py_processing).unwrap();
         assert_eq!(py_ser, rs_processing_ser);
         assert_eq!(py_ser, rs_wrapper_ser);
