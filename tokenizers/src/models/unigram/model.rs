@@ -129,16 +129,18 @@ impl Unigram {
         let len = lattice.len();
 
         for begin_pos in 0..len {
-            // let now = Instant::now();
-            let trie_results: Vec<Vec<char>> =
-                self.trie.common_prefix_search(&lattice.chars[begin_pos..]);
+            let trie_results: Vec<String> = self
+                .trie
+                .common_prefix_search(&lattice.chars[begin_pos..])
+                .iter()
+                .map(|chars| chars.into_iter().collect())
+                .collect();
 
             let mut has_single_node = false;
 
-            for result in trie_results {
-                // TODO score comes from proto id.
-                let n = result.len();
-                let tok: String = result.into_iter().collect();
+            for tok in trie_results {
+                let n = tok.chars().count();
+
                 let id = *self.token_to_ids.get(&tok).unwrap();
 
                 let item = &self.vocab[id as usize];
