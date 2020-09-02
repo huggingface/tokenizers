@@ -87,7 +87,7 @@ impl PyBpeTrainer {
                         builder = builder.initial_alphabet(
                             alphabet
                                 .into_iter()
-                                .map(|s| s.chars().nth(0))
+                                .map(|s| s.chars().next())
                                 .filter(|c| c.is_some())
                                 .map(|c| c.unwrap())
                                 .collect(),
@@ -151,7 +151,7 @@ impl PyWordPieceTrainer {
                         builder = builder.initial_alphabet(
                             alphabet
                                 .into_iter()
-                                .map(|s| s.chars().nth(0))
+                                .map(|s| s.chars().next())
                                 .filter(|c| c.is_some())
                                 .map(|c| c.unwrap())
                                 .collect(),
