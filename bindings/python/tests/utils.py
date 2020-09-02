@@ -65,6 +65,9 @@ def train_files(data_dir):
         "wagahaiwa": download(
             "https://storage.googleapis.com/tokenizers/unigram_wagahaiwa_nekodearu.txt"
         ),
+        "simple": download(
+            "https://s3.amazonaws.com/models.huggingface.co/bert/roberta-base-merges.txt"
+        ),
     }
 
 
