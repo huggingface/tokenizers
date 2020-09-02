@@ -62,12 +62,7 @@ def openai_files(data_dir):
 @pytest.fixture(scope="session")
 def train_files(data_dir):
     return {
-        "wagahaiwa": download(
-            "https://storage.googleapis.com/tokenizers/unigram_wagahaiwa_nekodearu.txt"
-        ),
-        "simple": download(
-            "https://s3.amazonaws.com/models.huggingface.co/bert/roberta-base-merges.txt"
-        ),
+        "big": download("https://norvig.com/big.txt"),
     }
 
 
