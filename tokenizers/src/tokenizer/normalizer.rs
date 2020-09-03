@@ -1,5 +1,3 @@
-#![allow(clippy::reversed_empty_ranges)]
-
 use crate::pattern::Pattern;
 use crate::{Offsets, Result};
 use std::ops::{Bound, RangeBounds};
@@ -89,11 +87,13 @@ where
 ///  - Isolated => `[ "the", "-", "final", "-", "-", "countdown" ]`
 ///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
 ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
+///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,
     MergedWithPrevious,
     MergedWithNext,
+    Contiguous,
 }
 
 /// A `NormalizedString` takes care of processing an "original" string to modify
@@ -784,6 +784,24 @@ impl NormalizedString {
                 .map(|(offsets, _)| (offsets, false))
                 .collect(),
             Removed => matches,
+            Contiguous => {
+                let mut previous_match = false;
+                matches
+                    .into_iter()
+                    .fold(vec![], |mut acc, (offsets, is_match)| {
+                        if is_match == previous_match {
+                            if let Some(((_, end), _)) = acc.last_mut() {
+                                *end = offsets.1;
+                            } else {
+                                acc.push((offsets, false));
+                            }
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                        previous_match = is_match;
+                        acc
+                    })
+            }
             MergedWithPrevious => {
                 let mut previous_match = false;
                 matches
@@ -1038,7 +1056,6 @@ impl From<&str> for NormalizedString {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::reversed_empty_ranges)]
     use super::*;
     use regex::Regex;
     use unicode_categories::UnicodeCategories;
@@ -1489,6 +1506,7 @@ mod tests {
         test(Isolated, vec!["The", "-", "final", "-", "-", "countdown"]);
         test(MergedWithPrevious, vec!["The-", "final-", "-", "countdown"]);
         test(MergedWithNext, vec!["The", "-final", "-", "-countdown"]);
+        test(Contiguous, vec!["The", "-", "final", "--", "countdown"]);
     }
 
     #[test]

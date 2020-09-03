@@ -11,6 +11,7 @@ from tokenizers.pre_tokenizers import (
     CharDelimiterSplit,
     Punctuation,
     Sequence,
+    Digits,
 )
 
 
@@ -108,3 +109,13 @@ class TestSequence:
             ("!", (28, 29)),
             ("?", (29, 30)),
         ]
+
+
+class TestDigits:
+    def test_instantiate(self):
+        assert Digits() is not None
+        assert isinstance(Digits(), PreTokenizer)
+        assert isinstance(Digits(), Digits)
+        assert isinstance(Digits(individual_digits=True), Digits)
+        assert isinstance(Digits(individual_digits=False), Digits)
+        assert isinstance(pickle.loads(pickle.dumps(Digits())), Digits)
