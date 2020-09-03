@@ -12,6 +12,7 @@ from tokenizers.pre_tokenizers import (
     Punctuation,
     Sequence,
     Digits,
+    UnicodeScripts,
 )
 
 
@@ -119,3 +120,11 @@ class TestDigits:
         assert isinstance(Digits(True), Digits)
         assert isinstance(Digits(False), Digits)
         assert isinstance(pickle.loads(pickle.dumps(Digits())), Digits)
+
+
+class TestUnicodeScripts:
+    def test_instantiate(self):
+        assert UnicodeScripts() is not None
+        assert isinstance(UnicodeScripts(), PreTokenizer)
+        assert isinstance(UnicodeScripts(), UnicodeScripts)
+        assert isinstance(pickle.loads(pickle.dumps(UnicodeScripts())), UnicodeScripts)

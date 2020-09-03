@@ -144,3 +144,16 @@ class Digits(PreTokenizer):
 
         """
         pass
+
+class UnicodeScripts(PreTokenizer):
+    """ UnicodeScripts PreTokenizer
+
+    This pre-tokenizer splits on characters that belong to different language family
+    It roughly follows https://github.com/google/sentencepiece/blob/master/data/Scripts.txt
+    Actually Hiragana and Katakana are fused with Han, and 0x30FC is Han too.
+    This mimicks SentencePiece Unigram implementation.
+    """
+
+    def __init__(self) -> None:
+        """ Instantiate a new UnicodeScripts """
+        pass
