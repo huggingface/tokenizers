@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.0-dev0]
+## [0.9.0-dev1]
 
 ### Fixed
 - [#362]: Fix training deadlock with Python components.
@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - [#379]: Add the ability to call `encode`/`encode_batch` with numpy arrays
+- [#292]: Support for the Unigram algorithm
 
 ### Changed
 
