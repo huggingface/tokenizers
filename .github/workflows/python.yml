@@ -79,7 +79,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          components: rustfmt
+          components: rustfmt, clippy
 
           # # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
           # - run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
