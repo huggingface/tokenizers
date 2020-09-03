@@ -127,3 +127,20 @@ class Sequence(PreTokenizer):
     def __init__(self) -> None:
         """ Instantiate a new Sequence PreTokenizer """
         pass
+
+class Digits(PreTokenizer):
+    """ Digits PreTokenizer
+
+    This pre-tokenizer simply splits using the digits in separate tokens
+    """
+
+    def __init__(self, individual_digits:bool) -> None:
+        """ Instantiate a new Digits
+
+        Args:
+            individual_digits: bool:
+                If set to True, digits will each be separated "Call 123 please" -> "Call ", "1", "2", "3", " please"
+                If set to False, digits will grouped "Call 123 please" -> "Call ", "123", " please"
+
+        """
+        pass

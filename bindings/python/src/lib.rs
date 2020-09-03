@@ -68,6 +68,7 @@ fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<pre_tokenizers::PyCharDelimiterSplit>()?;
     m.add_class::<pre_tokenizers::PyPunctuation>()?;
     m.add_class::<pre_tokenizers::PySequence>()?;
+    m.add_class::<pre_tokenizers::PyDigits>()?;
     Ok(())
 }
 
