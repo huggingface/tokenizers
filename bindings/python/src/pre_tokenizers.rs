@@ -9,6 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::pre_tokenizers::bert::BertPreTokenizer;
 use tk::pre_tokenizers::byte_level::ByteLevel;
 use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
+use tk::pre_tokenizers::digits::Digits;
 use tk::pre_tokenizers::metaspace::Metaspace;
 use tk::pre_tokenizers::punctuation::Punctuation;
 use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
@@ -66,6 +67,7 @@ impl PyPreTokenizer {
                 PreTokenizerWrapper::BertPreTokenizer(_) => {
                     Py::new(py, (PyBertPreTokenizer {}, base)).map(Into::into)
                 }
+                PreTokenizerWrapper::Digits(_) => Py::new(py, (PyDigits {}, base)).map(Into::into),
             },
         }
     }
@@ -278,6 +280,17 @@ impl PyMetaspace {
             PyMetaspace {},
             Metaspace::new(replacement, add_prefix_space).into(),
         ))
+    }
+}
+
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Digits)]
+pub struct PyDigits {}
+#[pymethods]
+impl PyDigits {
+    #[new]
+    #[args(individual_digits = false)]
+    fn new(individual_digits: bool) -> PyResult<(Self, PyPreTokenizer)> {
+        Ok((PyDigits {}, Digits::new(individual_digits).into()))
     }
 }
 
