@@ -54,6 +54,7 @@ impl std::fmt::Debug for Unigram {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         fmt.debug_struct("BPE")
             .field("vocab", &self.vocab.len())
+            .field("unk_id", &self.unk_id)
             .finish()
     }
 }
@@ -296,11 +297,14 @@ impl Model for Unigram {
         Ok(tokens
             .iter()
             .map(|string| {
-                let id = self.token_to_ids.get(string).unwrap_or(&0);
+                let id: u32 = match self.token_to_ids.get(string) {
+                    Some(id) => *id,
+                    None => self.unk_id as u32,
+                };
                 let len = string.len();
                 let offsets = (offset, offset + len);
                 offset += len;
-                Token::new(*id, string.to_string(), offsets)
+                Token::new(id, string.to_string(), offsets)
             })
             .collect())
     }
