@@ -29,35 +29,31 @@ impl PyNormalizer {
         let base = self.clone();
         let gil = Python::acquire_gil();
         let py = gil.python();
-        match self.normalizer {
-            PyNormalizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base)).map(Into::into),
+        Ok(match self.normalizer {
+            PyNormalizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_py(py),
             PyNormalizerWrapper::Wrapped(ref inner) => match inner.as_ref() {
-                NormalizerWrapper::Sequence(_) => {
-                    Py::new(py, (PySequence {}, base)).map(Into::into)
-                }
+                NormalizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_py(py),
                 NormalizerWrapper::BertNormalizer(_) => {
-                    Py::new(py, (PyBertNormalizer {}, base)).map(Into::into)
+                    Py::new(py, (PyBertNormalizer {}, base))?.into_py(py)
                 }
                 NormalizerWrapper::StripNormalizer(_) => {
-                    Py::new(py, (PyBertNormalizer {}, base)).map(Into::into)
+                    Py::new(py, (PyBertNormalizer {}, base))?.into_py(py)
                 }
                 NormalizerWrapper::StripAccents(_) => {
-                    Py::new(py, (PyStripAccents {}, base)).map(Into::into)
+                    Py::new(py, (PyStripAccents {}, base))?.into_py(py)
                 }
-                NormalizerWrapper::NFC(_) => Py::new(py, (PyNFC {}, base)).map(Into::into),
-                NormalizerWrapper::NFD(_) => Py::new(py, (PyNFD {}, base)).map(Into::into),
-                NormalizerWrapper::NFKC(_) => Py::new(py, (PyNFKC {}, base)).map(Into::into),
-                NormalizerWrapper::NFKD(_) => Py::new(py, (PyNFKD {}, base)).map(Into::into),
-                NormalizerWrapper::Lowercase(_) => {
-                    Py::new(py, (PyLowercase {}, base)).map(Into::into)
-                }
+                NormalizerWrapper::NFC(_) => Py::new(py, (PyNFC {}, base))?.into_py(py),
+                NormalizerWrapper::NFD(_) => Py::new(py, (PyNFD {}, base))?.into_py(py),
+                NormalizerWrapper::NFKC(_) => Py::new(py, (PyNFKC {}, base))?.into_py(py),
+                NormalizerWrapper::NFKD(_) => Py::new(py, (PyNFKD {}, base))?.into_py(py),
+                NormalizerWrapper::Lowercase(_) => Py::new(py, (PyLowercase {}, base))?.into_py(py),
                 NormalizerWrapper::Precompiled(_) => {
-                    Py::new(py, (PyPrecompiled {}, base)).map(Into::into)
+                    Py::new(py, (PyPrecompiled {}, base))?.into_py(py)
                 }
-                NormalizerWrapper::Replace(_) => Py::new(py, (PyReplace {}, base)).map(Into::into),
-                NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base)).map(Into::into),
+                NormalizerWrapper::Replace(_) => Py::new(py, (PyReplace {}, base))?.into_py(py),
+                NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base))?.into_py(py),
             },
-        }
+        })
     }
 }
 
@@ -71,9 +67,9 @@ impl Normalizer for PyNormalizer {
 impl PyNormalizer {
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.normalizer).map_err(|e| {
-            exceptions::Exception::py_err(format!(
+            exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle Normalizer: {}",
-                e.to_string()
+                e
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
@@ -83,9 +79,9 @@ impl PyNormalizer {
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
                 self.normalizer = serde_json::from_slice(s.as_bytes()).map_err(|e| {
-                    exceptions::Exception::py_err(format!(
+                    exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle Normalizer: {}",
-                        e.to_string()
+                        e
                     ))
                 })?;
                 Ok(())
@@ -315,9 +311,9 @@ impl PyPrecompiled {
             PyPrecompiled {},
             Precompiled::from(precompiled_charsmap)
                 .map_err(|e| {
-                    exceptions::Exception::py_err(format!(
+                    exceptions::PyException::new_err(format!(
                         "Error while attempting to build Precompiled normalizer: {}",
-                        e.to_string()
+                        e
                     ))
                 })?
                 .into(),
@@ -337,7 +333,7 @@ impl PyReplace {
 
 #[cfg(test)]
 mod test {
-    use pyo3::{AsPyRef, Python};
+    use pyo3::prelude::*;
     use tk::normalizers::unicode::{NFC, NFKC};
     use tk::normalizers::utils::Sequence;
     use tk::normalizers::NormalizerWrapper;

@@ -1,5 +1,6 @@
 use pyo3::exceptions;
 use pyo3::prelude::*;
+use pyo3::type_object::PyTypeObject;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use tokenizers::tokenizer::Result;
 
@@ -9,8 +10,8 @@ impl PyError {
     pub fn from(s: &str) -> Self {
         PyError(String::from(s))
     }
-    pub fn into_pyerr(self) -> PyErr {
-        exceptions::Exception::py_err(format!("{}", self))
+    pub fn into_pyerr<T: PyTypeObject>(self) -> PyErr {
+        PyErr::new::<T, _>(format!("{}", self))
     }
 }
 impl Display for PyError {
@@ -24,7 +25,7 @@ pub struct ToPyResult<T>(pub Result<T>);
 impl<T> std::convert::Into<PyResult<T>> for ToPyResult<T> {
     fn into(self) -> PyResult<T> {
         self.0
-            .map_err(|e| exceptions::Exception::py_err(format!("{}", e)))
+            .map_err(|e| exceptions::PyException::new_err(format!("{}", e)))
     }
 }
 impl<T> ToPyResult<T> {

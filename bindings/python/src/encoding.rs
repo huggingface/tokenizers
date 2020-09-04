@@ -48,7 +48,7 @@ impl PyEncoding {
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.encoding).map_err(|e| {
-            exceptions::Exception::py_err(format!(
+            exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle Encoding: {}",
                 e.to_string()
             ))
@@ -60,7 +60,7 @@ impl PyEncoding {
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
                 self.encoding = serde_json::from_slice(s.as_bytes()).map_err(|e| {
-                    exceptions::Exception::py_err(format!(
+                    exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle Encoding: {}",
                         e.to_string()
                     ))
@@ -171,7 +171,7 @@ impl PyEncoding {
                                  one of `left` or `right`",
                                 other
                             ))
-                            .into_pyerr()),
+                            .into_pyerr::<exceptions::PyValueError>()),
                         }?;
                     }
                     "pad_id" => pad_id = value.extract()?,

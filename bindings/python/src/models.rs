@@ -34,12 +34,12 @@ impl PyModel {
         let base = self.clone();
         let gil = Python::acquire_gil();
         let py = gil.python();
-        match self.model.as_ref() {
-            ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base)).map(Into::into),
-            ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base)).map(Into::into),
-            ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base)).map(Into::into),
-            ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base)).map(Into::into),
-        }
+        Ok(match self.model.as_ref() {
+            ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?.into_py(py),
+            ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base))?.into_py(py),
+            ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base))?.into_py(py),
+            ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base))?.into_py(py),
+        })
     }
 }
 
@@ -82,7 +82,7 @@ impl PyModel {
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.model).map_err(|e| {
-            exceptions::Exception::py_err(format!(
+            exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle Model: {}",
                 e.to_string()
             ))
@@ -94,7 +94,7 @@ impl PyModel {
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
                 self.model = serde_json::from_slice(s.as_bytes()).map_err(|e| {
-                    exceptions::Exception::py_err(format!(
+                    exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle Model: {}",
                         e.to_string()
                     ))
@@ -130,7 +130,7 @@ impl PyBPE {
         kwargs: Option<&PyDict>,
     ) -> PyResult<(Self, PyModel)> {
         if (vocab.is_some() && merges.is_none()) || (vocab.is_none() && merges.is_some()) {
-            return Err(exceptions::ValueError::py_err(
+            return Err(exceptions::PyValueError::new_err(
                 "`vocab` and `merges` must be both specified",
             ));
         }
@@ -164,7 +164,7 @@ impl PyBPE {
         }
 
         match builder.build() {
-            Err(e) => Err(exceptions::Exception::py_err(format!(
+            Err(e) => Err(exceptions::PyException::new_err(format!(
                 "Error while initializing BPE: {}",
                 e
             ))),
@@ -207,12 +207,10 @@ impl PyWordPiece {
         }
 
         match builder.build() {
-            Err(e) => {
-                println!("Errors: {:?}", e);
-                Err(exceptions::Exception::py_err(
-                    "Error while initializing WordPiece",
-                ))
-            }
+            Err(e) => Err(exceptions::PyException::new_err(format!(
+                "Error while initializing WordPiece: {}",
+                e
+            ))),
             Ok(wordpiece) => Ok((PyWordPiece {}, PyModel::new(Arc::new(wordpiece.into())))),
         }
     }
@@ -240,12 +238,10 @@ impl PyWordLevel {
 
         if let Some(vocab) = vocab {
             match WordLevel::from_files(vocab, unk_token) {
-                Err(e) => {
-                    println!("Errors: {:?}", e);
-                    Err(exceptions::Exception::py_err(
-                        "Error while initializing WordLevel",
-                    ))
-                }
+                Err(e) => Err(exceptions::PyException::new_err(format!(
+                    "Error while initializing WordLevel: {}",
+                    e
+                ))),
                 Ok(model) => Ok((PyWordLevel {}, PyModel::new(Arc::new(model.into())))),
             }
         } else {
@@ -263,13 +259,13 @@ pub struct PyUnigram {}
 #[pymethods]
 impl PyUnigram {
     #[new]
-    fn new(vocab: Option<String>) -> PyResult<(Self, PyModel)> {
+    fn new(vocab: Option<&str>) -> PyResult<(Self, PyModel)> {
         match vocab {
-            Some(vocab) => match Unigram::load(&std::path::Path::new(&vocab)) {
-                Err(e) => {
-                    println!("Errors: {:?}", e);
-                    Err(exceptions::Exception::py_err("Error while loading Unigram"))
-                }
+            Some(vocab) => match Unigram::load(vocab) {
+                Err(e) => Err(exceptions::PyException::new_err(format!(
+                    "Error while loading Unigram: {}",
+                    e
+                ))),
                 Ok(model) => Ok((PyUnigram {}, PyModel::new(Arc::new(model.into())))),
             },
             None => Ok((
@@ -283,7 +279,7 @@ impl PyUnigram {
 #[cfg(test)]
 mod test {
     use crate::models::PyModel;
-    use pyo3::{AsPyRef, Python};
+    use pyo3::prelude::*;
     use std::sync::Arc;
     use tk::models::bpe::BPE;
     use tk::models::ModelWrapper;

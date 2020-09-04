@@ -31,21 +31,15 @@ impl PyDecoder {
         let base = self.clone();
         let gil = Python::acquire_gil();
         let py = gil.python();
-        match &self.decoder {
-            PyDecoderWrapper::Custom(_) => Py::new(py, base).map(Into::into),
+        Ok(match &self.decoder {
+            PyDecoderWrapper::Custom(_) => Py::new(py, base)?.into_py(py),
             PyDecoderWrapper::Wrapped(inner) => match inner.as_ref() {
-                DecoderWrapper::Metaspace(_) => {
-                    Py::new(py, (PyMetaspaceDec {}, base)).map(Into::into)
-                }
-                DecoderWrapper::WordPiece(_) => {
-                    Py::new(py, (PyWordPieceDec {}, base)).map(Into::into)
-                }
-                DecoderWrapper::ByteLevel(_) => {
-                    Py::new(py, (PyByteLevelDec {}, base)).map(Into::into)
-                }
-                DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base)).map(Into::into),
+                DecoderWrapper::Metaspace(_) => Py::new(py, (PyMetaspaceDec {}, base))?.into_py(py),
+                DecoderWrapper::WordPiece(_) => Py::new(py, (PyWordPieceDec {}, base))?.into_py(py),
+                DecoderWrapper::ByteLevel(_) => Py::new(py, (PyByteLevelDec {}, base))?.into_py(py),
+                DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base))?.into_py(py),
             },
-        }
+        })
     }
 }
 
@@ -65,7 +59,7 @@ impl PyDecoder {
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.decoder).map_err(|e| {
-            exceptions::Exception::py_err(format!(
+            exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle Decoder: {}",
                 e
             ))
@@ -77,7 +71,7 @@ impl PyDecoder {
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
                 self.decoder = serde_json::from_slice(s.as_bytes()).map_err(|e| {
-                    exceptions::Exception::py_err(format!(
+                    exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle Decoder: {}",
                         e
                     ))
@@ -143,7 +137,7 @@ impl PyMetaspaceDec {
                     "replacement" => {
                         let s: &str = value.extract()?;
                         replacement = s.chars().next().ok_or_else(|| {
-                            exceptions::Exception::py_err("replacement must be a character")
+                            exceptions::PyValueError::new_err("replacement must be a character")
                         })?;
                     }
                     "add_prefix_space" => add_prefix_space = value.extract()?,
@@ -202,9 +196,7 @@ impl Decoder for CustomDecoder {
             Ok(res) => Ok(res
                 .cast_as::<PyString>(py)
                 .map_err(|_| PyError::from("`decode` is expected to return a str"))?
-                .to_string()
-                .map_err(|_| PyError::from("`decode` is expected to return a str"))?
-                .into_owned()),
+                .to_string()),
             Err(e) => {
                 e.print(py);
                 Err(Box::new(PyError::from("Error while calling `decode`")))
@@ -273,7 +265,7 @@ impl Decoder for PyDecoderWrapper {
 mod test {
     use std::sync::Arc;
 
-    use pyo3::{AsPyRef, Py, PyObject, Python};
+    use pyo3::prelude::*;
     use tk::decoders::metaspace::Metaspace;
     use tk::decoders::DecoderWrapper;
 
@@ -306,8 +298,9 @@ mod test {
             _ => panic!("Expected wrapped, not custom."),
         }
         let gil = Python::acquire_gil();
+        let py = gil.python();
         let py_msp = PyDecoder::new(Metaspace::default().into());
-        let obj: PyObject = Py::new(gil.python(), py_msp).unwrap().into();
+        let obj: PyObject = Py::new(py, py_msp).unwrap().into_py(py);
         let py_seq = PyDecoderWrapper::Custom(Arc::new(CustomDecoder::new(obj).unwrap()));
         assert!(serde_json::to_string(&py_seq).is_err());
     }

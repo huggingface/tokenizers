@@ -238,12 +238,12 @@ class TestTokenizer:
         )
 
         # Mal formed
-        with pytest.raises(ValueError, match="InputSequence must be str"):
+        with pytest.raises(TypeError, match="TextInputSequence must be str"):
             tokenizer.encode([["my", "name"]])
             tokenizer.encode("My name is john", [["pair"]])
             tokenizer.encode("my name is john", ["pair"])
 
-        with pytest.raises(ValueError, match="InputSequence must be Union[List[str]"):
+        with pytest.raises(TypeError, match="InputSequence must be Union[List[str]"):
             tokenizer.encode("My name is john", is_pretokenized=True)
             tokenizer.encode("My name is john", ["pair"], is_pretokenized=True)
             tokenizer.encode(["My", "name", "is", "John"], "pair", is_pretokenized=True)

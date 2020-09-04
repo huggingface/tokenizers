@@ -366,9 +366,9 @@ impl Unigram {
     /// use tokenizers::models::unigram::Unigram;
     /// use std::path::Path;
     ///
-    /// let model = Unigram::load(Path::new("mymodel-unigram.json")).unwrap();
+    /// let model = Unigram::load("mymodel-unigram.json").unwrap();
     /// ```
-    pub fn load(path: &Path) -> Result<Unigram> {
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Unigram> {
         let file = File::open(path).unwrap();
         let reader = BufReader::new(file);
         let u = serde_json::from_reader(reader)?;
