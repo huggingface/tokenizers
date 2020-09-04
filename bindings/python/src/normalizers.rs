@@ -311,8 +311,7 @@ mod test {
 
         let py_seq: PyNormalizerWrapper = Sequence::new(vec![NFC.into(), NFKC.into()]).into();
         let py_wrapper_ser = serde_json::to_string(&py_seq).unwrap();
-        let rs_wrapped =
-            NormalizerWrapper::Sequence(Sequence::new(vec![NFC.into(), NFKC.into()]).into());
+        let rs_wrapped = NormalizerWrapper::Sequence(Sequence::new(vec![NFC.into(), NFKC.into()]));
         let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
         assert_eq!(py_wrapper_ser, rs_ser);
 
