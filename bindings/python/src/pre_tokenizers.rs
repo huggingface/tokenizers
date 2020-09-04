@@ -288,21 +288,8 @@ pub struct PyDigits {}
 #[pymethods]
 impl PyDigits {
     #[new]
-    #[args(kwargs = "**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyPreTokenizer)> {
-        let mut individual_digits = false;
-
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
-                    "individual_digits" => {
-                        individual_digits = value.extract()?;
-                    }
-                    _ => println!("Ignored unknown kwarg option {}", key),
-                }
-            }
-        }
+    #[args(individual_digits = false)]
+    fn new(individual_digits: bool) -> PyResult<(Self, PyPreTokenizer)> {
         Ok((PyDigits {}, Digits::new(individual_digits).into()))
     }
 }

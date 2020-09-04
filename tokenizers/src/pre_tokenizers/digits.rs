@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-/// Replaces all the whitespaces by the provided meta character and then
-/// splits on this character
+/// Pre tokenizes the numbers into single tokens. If individual_digits is set
+/// to true, then all digits are splitted into individual tokens.
 #[serde(tag = "type")]
 pub struct Digits {
     individual_digits: bool,

@@ -116,6 +116,6 @@ class TestDigits:
         assert Digits() is not None
         assert isinstance(Digits(), PreTokenizer)
         assert isinstance(Digits(), Digits)
-        assert isinstance(Digits(individual_digits=True), Digits)
-        assert isinstance(Digits(individual_digits=False), Digits)
+        assert isinstance(Digits(True), Digits)
+        assert isinstance(Digits(False), Digits)
         assert isinstance(pickle.loads(pickle.dumps(Digits())), Digits)
