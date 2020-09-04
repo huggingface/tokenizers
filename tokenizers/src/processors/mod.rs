@@ -1,5 +1,6 @@
 pub mod bert;
 pub mod roberta;
+pub mod template;
 
 // Re-export these as processors
 pub use super::pre_tokenizers::byte_level;
@@ -9,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
+use crate::processors::template::TemplateProcessing;
 use crate::{Encoding, PostProcessor, Result};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -17,6 +19,7 @@ pub enum PostProcessorWrapper {
     Bert(BertProcessing),
     ByteLevel(ByteLevel),
     Roberta(RobertaProcessing),
+    Template(TemplateProcessing),
 }
 
 impl PostProcessor for PostProcessorWrapper {
@@ -25,6 +28,7 @@ impl PostProcessor for PostProcessorWrapper {
             PostProcessorWrapper::Bert(bert) => bert.added_tokens(is_pair),
             PostProcessorWrapper::ByteLevel(bl) => bl.added_tokens(is_pair),
             PostProcessorWrapper::Roberta(roberta) => roberta.added_tokens(is_pair),
+            PostProcessorWrapper::Template(template) => template.added_tokens(is_pair),
         }
     }
 
@@ -44,6 +48,9 @@ impl PostProcessor for PostProcessorWrapper {
             PostProcessorWrapper::Roberta(roberta) => {
                 roberta.process(encoding, pair_encoding, add_special_tokens)
             }
+            PostProcessorWrapper::Template(template) => {
+                template.process(encoding, pair_encoding, add_special_tokens)
+            }
         }
     }
 }
@@ -51,3 +58,4 @@ impl PostProcessor for PostProcessorWrapper {
 impl_enum_from!(BertProcessing, PostProcessorWrapper, Bert);
 impl_enum_from!(ByteLevel, PostProcessorWrapper, ByteLevel);
 impl_enum_from!(RobertaProcessing, PostProcessorWrapper, Roberta);
+impl_enum_from!(TemplateProcessing, PostProcessorWrapper, Template);
