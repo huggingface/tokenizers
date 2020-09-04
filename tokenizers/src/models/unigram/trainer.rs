@@ -1,8 +1,4 @@
-use crate::models::unigram::{
-    lattice::Lattice,
-    model::Unigram,
-    unicode::{get_script, Script},
-};
+use crate::models::unigram::{lattice::Lattice, model::Unigram};
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
 use log::debug;
@@ -53,32 +49,8 @@ pub struct UnigramTrainer {
     #[builder(default = "vec![]")]
     special_tokens: Vec<AddedToken>,
 
-    #[builder(default = "' '")]
-    space_char: char,
-
     #[builder(default = "String::from(\"<unk>\")")]
     unk_token: String,
-
-    #[builder(default = "false")]
-    treat_whitespace_as_suffix: bool,
-
-    #[builder(default = "true")]
-    split_by_unicode_script: bool,
-
-    #[builder(default = "true")]
-    split_by_number: bool,
-
-    #[builder(default = "false")]
-    split_by_digits: bool,
-
-    /// In spm this parameter defaults to true,
-    /// we set it to false here because it's supposed
-    /// to be a job taken care by the pretokenizer. We still
-    /// have it here to enable easier testing as it does make a difference
-    /// in `is_valid_sentencepiece` method were we discard seed_pieces if they
-    /// contain a whitespace. This job can/could be taken elsewhere.
-    #[builder(default = "false")]
-    split_by_whitespace: bool,
 
     #[builder(default = "16")]
     max_piece_length: usize,
@@ -106,72 +78,19 @@ impl UnigramTrainer {
     }
 
     fn is_valid_sentencepiece(&self, char_string: &[char]) -> bool {
-        // TODO check more formally but should be ok.
-        // Checks string length, space not in the substring, numbers, hiragana and more
+        // Checks string length
+        // Space not in the substring, numbers, hiragana and more should be taken
+        // care of within pre_tokenizers.
         // https://github.com/google/sentencepiece/blob/26be9516cd81d5315ee31c48d2438018e0eab879/src/trainer_interface.cc#L203
         let n = char_string.len();
         if char_string.is_empty() || n > self.max_piece_length {
             return false;
         }
-        let mut last_script = Script::Any;
-        for (i, c) in char_string.iter().enumerate() {
-            if *c == '\0' {
-                return false;
-            }
-            if *c == self.space_char {
-                if self.treat_whitespace_as_suffix {
-                    let is_not_suffix_no_whitespace = self.split_by_whitespace && i != n - 1;
-                    let is_prefix = !self.split_by_whitespace && i == 0;
-                    if is_not_suffix_no_whitespace || is_prefix {
-                        return false;
-                    }
-                } else {
-                    let is_not_prefix_no_whitespace = self.split_by_whitespace && i != 0;
-                    let is_suffix = !self.split_by_whitespace && i == n - 1;
-                    if is_not_prefix_no_whitespace || is_suffix {
-                        return false;
-                    }
-                }
-            }
-
-            // This function checks that unicode "scripts" are consistent, so we cannot have romaji and
-            // hiragana for instance. Seems pretty specific. Also Hiragana and katakana are mixed
-            let raw_script = get_script(c);
-
-            let script = if *c as u32 == 0x30FC {
-                Script::Han
-            } else if *c == self.space_char || !self.split_by_number && c.is_numeric() {
-                Script::Any
-            } else {
-                match raw_script {
-                    Script::Hiragana => Script::Han,
-                    Script::Katakana => Script::Han,
-                    script => script,
-                }
-            };
-
-            if self.split_by_digits && c.is_numeric() && n > 1 {
-                return false;
-            }
-            if self.split_by_unicode_script
-                && script != Script::Any
-                && last_script != Script::Any
-                && script != last_script
-            {
-                return false;
-            }
-            last_script = script;
-        }
 
         true
-
-        // true
     }
 
     fn finalize(&self, model: Unigram, required_chars: HashSet<String>) -> Result<Unigram> {
-        // let mut pieces: Vec<SentencePiece> =
-        //     Vec::with_capacity(self.vocab_size.try_into().unwrap());
-
         let mut min_score_penalty = 0.0;
         let min_score_penalty_delta = 0.0001;
 
@@ -204,7 +123,6 @@ impl UnigramTrainer {
     }
 
     fn required_chars(&self, word_counts: &[Sentence]) -> HashSet<String> {
-        // TODO more logic needed if this required chars > vocab_size
         word_counts
             .iter()
             .map(|(s, _count)| s.chars())
@@ -292,7 +210,6 @@ impl UnigramTrainer {
         pieces: &[SentencePiece],
         sentences: &[Sentence],
     ) -> Vec<SentencePiece> {
-        // TODO
         let mut always_keep = vec![true; pieces.len()];
         let mut alternatives: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
 
@@ -494,11 +411,11 @@ impl UnigramTrainer {
             .collect();
         new_pieces
     }
-    pub fn _train(&self, mut sentences: Vec<Sentence>) -> Result<(Unigram, Vec<AddedToken>)> {
+    pub fn _train(&self, sentences: Vec<Sentence>) -> Result<(Unigram, Vec<AddedToken>)> {
         let progress = self.setup_progress();
         //
         // 1. Compute frequent substrings
-        // TODO should be either i64 or i32
+        // TODO Should be able to upgrade to u64 when needed
         self.update_progress(&progress, sentences.len(), "Suffix array seeds");
         let mut pieces: Vec<SentencePiece> =
             Vec::with_capacity(self.vocab_size.try_into().unwrap());
@@ -506,26 +423,6 @@ impl UnigramTrainer {
         pieces.push((self.unk_token.clone(), f64::NAN));
         pieces.extend(self.make_seed_sentence_pieces(&sentences, &progress)?);
         self.finalize_progress(&progress, sentences.len());
-
-        if self.split_by_whitespace {
-            self.update_progress(&progress, sentences.len(), "Splitting by whitespace");
-            let mut words: HashMap<String, u32> = HashMap::new();
-            for (sentence, count) in &sentences {
-                for word in sentence.split(self.space_char) {
-                    if word.is_empty() {
-                        continue;
-                    }
-                    *words
-                        .entry(format!("{}{}", self.space_char, word))
-                        .or_insert(0) += count;
-                }
-                if let Some(p) = &progress {
-                    p.inc(1);
-                }
-            }
-            self.finalize_progress(&progress, sentences.len());
-            sentences = words.into_iter().collect();
-        }
 
         // Useful to check compatibility with spm.
         debug!(
@@ -625,8 +522,6 @@ mod tests {
     fn test_unigram_chars() {
         let trainer = UnigramTrainerBuilder::default()
             .show_progress(false)
-            .split_by_whitespace(false)
-            .treat_whitespace_as_suffix(true)
             .build()
             .unwrap();
 

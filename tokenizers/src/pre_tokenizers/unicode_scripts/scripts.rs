@@ -144,8 +144,8 @@ pub enum Script {
     Yi,
 }
 
-pub fn get_script(c: &char) -> Script {
-    match *c as u32 {
+pub fn get_script(c: char) -> Script {
+    match c as u32 {
         0x0000..=0x001F => Script::Common,
         0x0020 => Script::Common,
         0x0021..=0x0023 => Script::Common,
@@ -2078,16 +2078,17 @@ mod tests {
 
     #[test]
     fn test_unicode_script() {
-        assert_eq!(Script::Han, get_script(&'京'));
-        assert_eq!(Script::Han, get_script(&'太'));
-        assert_eq!(Script::Hiragana, get_script(&'い'));
-        assert_eq!(Script::Katakana, get_script(&'グ'));
-        assert_eq!(Script::Common, get_script(&'ー'));
-        assert_eq!(Script::Latin, get_script(&'a'));
-        assert_eq!(Script::Latin, get_script(&'A'));
-        assert_eq!(Script::Common, get_script(&'0'));
-        assert_eq!(Script::Common, get_script(&'$'));
-        assert_eq!(Script::Common, get_script(&'@'));
-        assert_eq!(Script::Common, get_script(&'-'));
+        assert_eq!(Script::Han, get_script('京'));
+        assert_eq!(Script::Han, get_script('太'));
+        assert_eq!(Script::Hiragana, get_script('い'));
+        assert_eq!(Script::Katakana, get_script('グ'));
+        assert_eq!(Script::Common, get_script('ー'));
+        assert_eq!(Script::Latin, get_script('a'));
+        assert_eq!(Script::Latin, get_script('A'));
+        assert_eq!(Script::Common, get_script('0'));
+        assert_eq!(Script::Common, get_script('$'));
+        assert_eq!(Script::Common, get_script('@'));
+        assert_eq!(Script::Common, get_script('-'));
+        assert_eq!(Script::Common, get_script(' '));
     }
 }
