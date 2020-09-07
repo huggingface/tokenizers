@@ -1,6 +1,7 @@
 import tokenizers
 from argparse import ArgumentParser
 import sentencepiece as spm
+from collections import Counter
 import json
 import os
 
@@ -107,6 +108,27 @@ def check_train(args):
     print("Ok our trainer is at least more efficient than the SPM one")
 
 
+def check_diff(spm_diff, tok_diff, sp, tok):
+    if spm_diff == list(reversed(tok_diff)):
+        # AAA -> AA+A vs A+AA case.
+        return True
+    elif len(spm_diff) == len(tok_diff) and tok.decode(spm_diff) == tok.decode(tok_diff):
+        # Second order OK
+        # Barrich -> Barr + ich vs Bar + rich
+        return True
+    spm_reencoded = sp.encode(sp.decode(spm_diff))
+    tok_reencoded = tok.encode(tok.decode(spm_diff)).ids
+    if spm_reencoded != spm_diff and spm_reencoded == tok_reencoded:
+        # Type 3 error.
+        # Snehagatha ->
+        #       Sne, h, aga, th, a
+        #       Sne, ha, gat, ha
+        # Encoding the wrong with sp does not even recover what spm gave us
+        # It fits tokenizer however...
+        return True
+    return False
+
+
 def check_details(line, spm_ids, tok_ids, tok, sp):
     # Encoding can be the same with same result AAA -> A + AA vs AA + A
     # We can check that we use at least exactly the same number of tokens.
@@ -121,14 +143,30 @@ def check_details(line, spm_ids, tok_ids, tok, sp):
 
     spm_diff = spm_ids[first:last]
     tok_diff = tok_ids[first:last]
-    if spm_diff == list(reversed(tok_diff)):
-        # AAA -> AA+A vs A+AA case.
-        return True
-    elif len(spm_diff) == len(tok_diff) and tok.decode(spm_diff) == tok.decode(tok_diff):
-        # Second order OK
-        # Barrich -> Barr + ich vs Bar + rich
+
+    if check_diff(spm_diff, tok_diff, sp, tok):
         return True
 
+    if last - first > 5:
+        # We might have twice a single problem, attempt to subdivide the disjointed tokens into smaller problems
+        spms = Counter(spm_ids[first:last])
+        toks = Counter(tok_ids[first:last])
+
+        removable_tokens = {spm_ for (spm_, si) in spms.items() if toks.get(spm_, 0) == si}
+        min_width = 3
+        for i in range(last - first - min_width):
+            if all(spm_ids[first + i + j] in removable_tokens for j in range(min_width)):
+                possible_matches = [
+                    k
+                    for k in range(last - first - min_width)
+                    if tok_ids[first + k : first + k + min_width]
+                    == spm_ids[first + i : first + i + min_width]
+                ]
+                for j in possible_matches:
+                    if check_diff(
+                        spm_ids[first : first + i], tok_ids[first : first + j], sp, tok
+                    ) and check_diff(spm_ids[first + i : last], tok_ids[first + j : last], sp, tok):
+                        return True
     ok_start = tok.decode(spm_ids[:first])
     ok_end = tok.decode(spm_ids[last:])
     wrong = tok.decode(spm_ids[first:last])
@@ -140,17 +178,6 @@ def check_details(line, spm_ids, tok_ids, tok, sp):
 
     print(f"Spm: {[tok.decode([spm_ids[i]]) for i in range(first, last)]}")
     print(f"Tok: {[tok.decode([tok_ids[i]]) for i in range(first, last)]}")
-
-    spm_reencoded = sp.encode(sp.decode(spm_ids[first:last]))
-    tok_reencoded = tok.encode(tok.decode(spm_ids[first:last])).ids
-    if spm_reencoded != spm_ids[first:last] and spm_reencoded == tok_reencoded:
-        # Type 3 error.
-        # Snehagatha ->
-        #       Sne, h, aga, th, a
-        #       Sne, ha, gat, ha
-        # Encoding the wrong with sp does not even recover what spm gave us
-        # It fits tokenizer however...
-        return True
     return False
 
 
@@ -175,11 +202,6 @@ def check_encode(args):
         with open(args.input_file, "r", encoding="utf-8-sig") as f:
             for i, line in enumerate(f):
                 line = line.strip()
-                line = line.replace("�", "")
-                line = line.replace("\u200b", "")
-                line = line.replace("\u200c", "")
-                line = line.replace("\u200d", "")
-                line = line.replace("\ufeff", "")
                 ids = sp.EncodeAsIds(line)
 
                 encoded = tok.encode(line)
@@ -189,13 +211,6 @@ def check_encode(args):
                         print(
                             f"({perfect} / {imperfect} / {wrong} ----- {perfect + imperfect + wrong})"
                         )
-
-                # In wiki-text-103
-                # sp.encode('increasing to 35 ( km / h ) Lonaconing Lonaconing .')
-                # will give 2 different encodings for the same word `Lonaconing`.
-                # We should be able to see why there is a difference
-                if "Lonaconing" in line:
-                    continue
 
                 if ids != encoded.ids:
                     if check_details(line, ids, encoded.ids, tok, sp):

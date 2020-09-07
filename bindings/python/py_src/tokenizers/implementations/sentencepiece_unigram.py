@@ -1,6 +1,6 @@
 from tokenizers import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers
 from tokenizers.models import Unigram
-from tokenizers.normalizers import NFKC
+from tokenizers.normalizers import SpmNmtNfkc
 from .base_tokenizer import BaseTokenizer
 
 from typing import Optional, List, Union
@@ -20,7 +20,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         else:
             tokenizer = Tokenizer(Unigram())
 
-        tokenizer.normalizer = NFKC()
+        tokenizer.normalizer = SpmNmtNfkc()
         tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
             [
                 pre_tokenizers.WhitespaceSplit(),

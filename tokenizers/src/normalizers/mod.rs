@@ -5,7 +5,7 @@ pub mod utils;
 
 pub use crate::normalizers::bert::BertNormalizer;
 pub use crate::normalizers::strip::Strip;
-pub use crate::normalizers::unicode::{NFC, NFD, NFKC, NFKD};
+pub use crate::normalizers::unicode::{Nmt, SpmNmtNfkc, NFC, NFD, NFKC, NFKD};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
 
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,8 @@ pub enum NormalizerWrapper {
     NFKD(NFKD),
     Sequence(Sequence),
     Lowercase(Lowercase),
+    Nmt(Nmt),
+    SpmNmtNfkc(SpmNmtNfkc),
 }
 
 impl Normalizer for NormalizerWrapper {
@@ -37,6 +39,8 @@ impl Normalizer for NormalizerWrapper {
             NormalizerWrapper::NFKD(nfkd) => nfkd.normalize(normalized),
             NormalizerWrapper::Sequence(sequence) => sequence.normalize(normalized),
             NormalizerWrapper::Lowercase(lc) => lc.normalize(normalized),
+            NormalizerWrapper::Nmt(lc) => lc.normalize(normalized),
+            NormalizerWrapper::SpmNmtNfkc(lc) => lc.normalize(normalized),
         }
     }
 }
@@ -49,3 +53,5 @@ impl_enum_from!(NFD, NormalizerWrapper, NFD);
 impl_enum_from!(Strip, NormalizerWrapper, StripNormalizer);
 impl_enum_from!(Sequence, NormalizerWrapper, Sequence);
 impl_enum_from!(Lowercase, NormalizerWrapper, Lowercase);
+impl_enum_from!(Nmt, NormalizerWrapper, Nmt);
+impl_enum_from!(SpmNmtNfkc, NormalizerWrapper, SpmNmtNfkc);
