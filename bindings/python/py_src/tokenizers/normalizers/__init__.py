@@ -9,6 +9,8 @@ NFKC = normalizers.NFKC
 Sequence = normalizers.Sequence
 Lowercase = normalizers.Lowercase
 Strip = normalizers.Strip
+Nmt = normalizers.Nmt
+SpmNmtNfkc = normalizers.SpmNmtNfkc
 
 
 NORMALIZERS = {"nfc": NFC, "nfd": NFD, "nfkc": NFKC, "nfkd": NFKD}

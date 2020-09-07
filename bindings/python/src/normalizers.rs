@@ -7,7 +7,9 @@ use pyo3::types::*;
 use crate::error::ToPyResult;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize, Serializer};
-use tk::normalizers::{BertNormalizer, Lowercase, NormalizerWrapper, Strip, NFC, NFD, NFKC, NFKD};
+use tk::normalizers::{
+    BertNormalizer, Lowercase, Nmt, NormalizerWrapper, SpmNmtNfkc, Strip, NFC, NFD, NFKC, NFKD,
+};
 use tk::{NormalizedString, Normalizer};
 use tokenizers as tk;
 
@@ -45,6 +47,10 @@ impl PyNormalizer {
                 NormalizerWrapper::Lowercase(_) => {
                     Py::new(py, (PyLowercase {}, base)).map(Into::into)
                 }
+                NormalizerWrapper::SpmNmtNfkc(_) => {
+                    Py::new(py, (PySpmNmtNfkc {}, base)).map(Into::into)
+                }
+                NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base)).map(Into::into),
             },
         }
     }
@@ -270,6 +276,26 @@ impl Normalizer for PyNormalizerWrapper {
                 inner.iter().map(|n| n.normalize(normalized)).collect()
             }
         }
+    }
+}
+
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Nmt)]
+pub struct PyNmt {}
+#[pymethods]
+impl PyNmt {
+    #[new]
+    fn new() -> PyResult<(Self, PyNormalizer)> {
+        Ok((PyNmt {}, Nmt.into()))
+    }
+}
+
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=SpmNmtNfkc)]
+pub struct PySpmNmtNfkc {}
+#[pymethods]
+impl PySpmNmtNfkc {
+    #[new]
+    fn new() -> PyResult<(Self, PyNormalizer)> {
+        Ok((PySpmNmtNfkc {}, SpmNmtNfkc.into()))
     }
 }
 
