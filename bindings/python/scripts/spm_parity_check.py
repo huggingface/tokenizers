@@ -4,6 +4,7 @@ import sentencepiece as spm
 from collections import Counter
 import json
 import os
+import datetime
 
 try:
     from termcolor import colored
@@ -197,20 +198,31 @@ def check_encode(args):
     perfect = 0
     imperfect = 0
     wrong = 0
+    now = datetime.datetime.now
+    spm_total_time = datetime.timedelta(seconds=0)
+    tok_total_time = datetime.timedelta(seconds=0)
     try:
         tok = tokenizers.SentencePieceUnigramTokenizer(vocab_filename)
         with open(args.input_file, "r", encoding="utf-8-sig") as f:
             for i, line in enumerate(f):
                 line = line.strip()
+
+                start = now()
                 ids = sp.EncodeAsIds(line)
+                spm_time = now()
 
                 encoded = tok.encode(line)
+                tok_time = now()
+
+                spm_total_time += spm_time - start
+                tok_total_time += tok_time - spm_time
 
                 if args.verbose:
                     if i % 10000 == 0:
                         print(
                             f"({perfect} / {imperfect} / {wrong} ----- {perfect + imperfect + wrong})"
                         )
+                        print(f"SPM: {spm_total_time} - TOK: {tok_total_time}")
 
                 if ids != encoded.ids:
                     if check_details(line, ids, encoded.ids, tok, sp):

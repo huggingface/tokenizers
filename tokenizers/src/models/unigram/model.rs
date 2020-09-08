@@ -17,7 +17,7 @@ pub struct Unigram {
     token_to_ids: TokenMap,
     pub(crate) vocab: Vocab,
     cache: Cache<String, Vec<String>>,
-    trie: Trie<char>,
+    trie: Trie<u8>,
     pub min_score: f64,
     pub(super) unk_id: usize,
     pub(super) bos_id: usize,
@@ -114,8 +114,8 @@ impl Unigram {
         let mut min_score = f64::INFINITY;
         for (id, (token, score)) in vocab.iter().enumerate() {
             token_to_ids.insert(token.to_string(), id as u32);
-            let chars: Vec<char> = token.chars().collect();
-            builder.push(&chars);
+            let bytes: Vec<u8> = token.bytes().collect();
+            builder.push(&bytes);
             if score < &min_score {
                 min_score = *score;
             }
@@ -151,25 +151,29 @@ impl Unigram {
 
         let len = lattice.len();
 
-        for begin_pos in 0..len {
-            let trie_results: Vec<String> = self
-                .trie
-                .common_prefix_search(lattice.sentence.chars().skip(begin_pos))
-                .map(|chars| chars.iter().collect())
-                .collect();
+        let mut begin_pos = 0;
+        while begin_pos < len {
+            let mblen = lattice.sentence[begin_pos..]
+                .chars()
+                .next()
+                .unwrap()
+                .len_utf8();
 
             let mut has_single_node = false;
 
-            for tok in trie_results {
-                let n = tok.chars().count();
-
+            for bytes in self
+                .trie
+                .common_prefix_search(lattice.sentence.bytes().skip(begin_pos))
+            {
+                let n = bytes.len();
+                let tok = String::from_utf8(bytes).unwrap();
                 let id = *self.token_to_ids.get(&tok).unwrap();
 
                 let item = &self.vocab[id as usize];
                 assert_eq!(item.0, tok);
                 let score: f64 = item.1;
                 lattice.insert(begin_pos, n, score, id.try_into().unwrap());
-                if !has_single_node && n == 1 {
+                if !has_single_node && n == mblen {
                     has_single_node = true;
                 }
             }
@@ -177,6 +181,7 @@ impl Unigram {
             if !has_single_node {
                 lattice.insert(begin_pos, 1, unk_score, self.unk_id);
             }
+            begin_pos += mblen
         }
     }
 
@@ -234,19 +239,21 @@ impl Unigram {
                 }
             }
         }
-        let size = sentence.chars().count();
+        let size = sentence.len();
         let unk_score = self.min_score - K_UNK_PENALTY;
 
         let mut best_path_ends_at = vec![BestPathNode::default(); size + 1];
-        for starts_at in 0..size {
+        let mut starts_at = 0;
+        while starts_at < size {
             let best_path_score_till_here = best_path_ends_at[starts_at].best_path_score;
             let mut has_single_node = false;
-            for tok_chars in self
+            let mblen = sentence[starts_at..].chars().next().unwrap().len_utf8();
+            for tok_bytes in self
                 .trie
-                .common_prefix_search(sentence.chars().skip(starts_at))
+                .common_prefix_search(sentence.bytes().skip(starts_at))
             {
-                let token: String = tok_chars.iter().collect();
-                let key_pos = starts_at + tok_chars.len();
+                let key_pos = starts_at + tok_bytes.len();
+                let token: String = String::from_utf8(tok_bytes).unwrap();
                 let mut target_node = &mut best_path_ends_at[key_pos];
                 let length = key_pos - starts_at;
                 let id = self.token_to_ids.get(&token).unwrap();
@@ -259,12 +266,12 @@ impl Unigram {
                     target_node.starts_at = Some(starts_at);
                     target_node.id = *id as usize;
                 }
-                if !has_single_node && length == 1 {
+                if !has_single_node && length == mblen {
                     has_single_node = true;
                 }
             }
             if !has_single_node {
-                let mut target_node = &mut best_path_ends_at[starts_at + 1];
+                let mut target_node = &mut best_path_ends_at[starts_at + mblen];
                 let candidate_best_path_score = unk_score + best_path_score_till_here;
                 if target_node.starts_at.is_none()
                     || candidate_best_path_score > target_node.best_path_score
@@ -274,21 +281,24 @@ impl Unigram {
                     target_node.id = self.unk_id;
                 }
             }
+            starts_at += mblen
         }
         let mut ends_at = size;
         let mut results: Vec<String> = vec![];
-        // println!("Best path ends at {:?}", best_path_ends_at);
         let mut token = vec![];
         while ends_at > 0 {
             let node = &best_path_ends_at[ends_at];
             let starts_at = node.starts_at.unwrap();
             if self.fuse_unk && node.id == self.unk_id {
                 token.push(
-                    sentence
-                        .chars()
-                        .skip(starts_at)
-                        .take(ends_at - starts_at)
-                        .collect::<String>(),
+                    String::from_utf8(
+                        sentence
+                            .bytes()
+                            .skip(starts_at)
+                            .take(ends_at - starts_at)
+                            .collect(),
+                    )
+                    .unwrap(),
                 );
             } else {
                 if !token.is_empty() {
@@ -297,11 +307,14 @@ impl Unigram {
                     token = vec![];
                 }
                 results.push(
-                    sentence
-                        .chars()
-                        .skip(starts_at)
-                        .take(ends_at - starts_at)
-                        .collect::<String>(),
+                    String::from_utf8(
+                        sentence
+                            .bytes()
+                            .skip(starts_at)
+                            .take(ends_at - starts_at)
+                            .collect(),
+                    )
+                    .unwrap(),
                 );
             }
             ends_at = starts_at;
