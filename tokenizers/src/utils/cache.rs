@@ -11,7 +11,7 @@ pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
 /// The goal is clearly not the accuracy of the content, both get and set
 /// are not guaranteed to actually get or set.
 #[derive(Debug)]
-pub(super) struct Cache<K, V>
+pub(crate) struct Cache<K, V>
 where
     K: Eq + Hash + Clone,
     V: Clone,
@@ -47,23 +47,23 @@ where
     V: Clone,
 {
     /// Create new `Cache` with the given capacity.
-    pub(super) fn new(capacity: usize) -> Self {
+    pub(crate) fn new(capacity: usize) -> Self {
         let map = RwLock::new(HashMap::with_capacity(capacity));
         Cache { map, capacity }
     }
 
     /// Create a fresh `Cache` with the same configuration.
-    pub(super) fn fresh(&self) -> Self {
+    pub(crate) fn fresh(&self) -> Self {
         Self::new(self.capacity)
     }
 
     /// Clear the cache.
-    pub(super) fn clear(&self) {
+    pub(crate) fn clear(&self) {
         self.map.write().unwrap().clear();
     }
 
     #[allow(dead_code)]
-    pub(super) fn get_values<'a, I, Q>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
+    pub(crate) fn get_values<'a, I, Q>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
     where
         I: Iterator<Item = &'a Q>,
         K: Borrow<Q>,
@@ -76,7 +76,7 @@ where
         }
     }
 
-    pub(super) fn get<Q>(&self, key: &Q) -> Option<V>
+    pub(crate) fn get<Q>(&self, key: &Q) -> Option<V>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -88,7 +88,7 @@ where
         }
     }
 
-    pub(super) fn set_values<I>(&self, entries: I)
+    pub(crate) fn set_values<I>(&self, entries: I)
     where
         I: IntoIterator<Item = (K, V)>,
     {
@@ -112,7 +112,7 @@ where
         }
     }
 
-    pub(super) fn set(&self, key: K, value: V) {
+    pub(crate) fn set(&self, key: K, value: V) {
         self.set_values(std::iter::once((key, value)))
     }
 }
