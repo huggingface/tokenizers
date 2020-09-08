@@ -1,5 +1,6 @@
-use super::{super::OrderedVocabIter, Cache, Error, Pair, Word, DEFAULT_CACHE_CAPACITY};
+use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
+use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY};
 use crate::utils::iter::ResultShunt;
 use serde_json::Value;
 use std::borrow::Cow;

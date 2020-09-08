@@ -1,6 +1,7 @@
 use crate::models::unigram::lattice::Lattice;
 use crate::models::unigram::trie::{Trie, TrieBuilder};
 use crate::tokenizer::{Model, Result, Token};
+use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY};
 
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -12,10 +13,10 @@ type TokenMap = HashMap<String, u32>;
 type Vocab = Vec<(String, f64)>;
 
 /// A `Unigram` model to encode sentences.
-#[derive(Clone)]
 pub struct Unigram {
     token_to_ids: TokenMap,
     pub(crate) vocab: Vocab,
+    cache: Cache<String, Vec<String>>,
     trie: Trie<char>,
     pub min_score: f64,
     pub(super) unk_id: usize,
@@ -27,6 +28,25 @@ pub struct Unigram {
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
         self.unk_id == other.unk_id && self.vocab == other.vocab
+    }
+}
+
+impl Clone for Unigram {
+    // `Clone` can't be derive because it's not implemented for `Cache`.
+    // To keep things simple when we clone, the new Unigram will start with a fresh cache.
+    fn clone(&self) -> Self {
+        let fresh_cache = self.cache.fresh();
+        Self {
+            vocab: self.vocab.clone(),
+            token_to_ids: self.token_to_ids.clone(),
+            cache: fresh_cache,
+            unk_id: self.unk_id,
+            min_score: self.min_score,
+            bos_id: self.bos_id,
+            eos_id: self.eos_id,
+            trie: self.trie.clone(),
+            fuse_unk: self.fuse_unk,
+        }
     }
 }
 
@@ -101,9 +121,11 @@ impl Unigram {
         }
         let trie = builder.build();
         let fuse_unk = true;
+        let cache = Cache::new(DEFAULT_CACHE_CAPACITY);
 
         Ok(Unigram {
             vocab,
+            cache,
             token_to_ids,
             trie,
             min_score,
@@ -117,6 +139,7 @@ impl Unigram {
     #[cfg(test)]
     pub(super) fn set_fuse_unk(&mut self, fuse_unk: bool) {
         self.fuse_unk = fuse_unk;
+        self.cache = self.cache.fresh();
     }
 
     pub(super) fn len(&self) -> usize {
@@ -179,6 +202,15 @@ impl Unigram {
     /// assert_eq!(result, vec!["abcd", "a", "cd", "xx"]);
     /// ```
     pub fn encode(&self, sentence: &str) -> Vec<String> {
+        if let Some(result) = self.cache.get(sentence) {
+            result
+        } else {
+            let result = self.encode_no_cache(sentence);
+            self.cache.set(sentence.to_owned(), result.clone());
+            result
+        }
+    }
+    fn encode_no_cache(&self, sentence: &str) -> Vec<String> {
         // TODO optimized version
         // https://github.com/google/sentencepiece/blob/d48247191a6d50e469ed1a4a36e877befffd1851/src/unigram_model.cc#L600
         let mut lattice = Lattice::from(sentence, self.unk_id, self.bos_id, self.eos_id);
