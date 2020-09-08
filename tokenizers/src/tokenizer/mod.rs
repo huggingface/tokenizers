@@ -601,10 +601,16 @@ where
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
         let encode = |is_pre_tokenized, subseq_idx, subseq| -> Result<Encoding> {
+            let now = std::time::Instant::now();
+            debug!("Subseq {:?}", subseq);
             let normalized = self
                 .added_vocabulary
                 .extract_and_normalize(self.normalizer.as_ref(), subseq);
+            let ntime = now.elapsed();
+            debug!("Normalize {:?}", ntime);
             let pre_tokenized = self.do_pre_tokenize(normalized)?;
+            let ptime = now.elapsed();
+            debug!("PreTok {:?}", ptime);
             let subseq_encoding = self.do_tokenize(
                 pre_tokenized,
                 type_id,
@@ -615,6 +621,13 @@ where
                 },
                 offsets_type,
             )?;
+            let etime = now.elapsed();
+            debug!(
+                "Normalize {:?} - PreTok {:?} - Encoding {:?}",
+                ntime,
+                ptime - ntime,
+                etime - ptime
+            );
 
             Ok(subseq_encoding)
         };
