@@ -4,10 +4,12 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 
+use crate::error::ToPyResult;
 use serde::{Deserialize, Serialize};
 use tk::processors::bert::BertProcessing;
 use tk::processors::byte_level::ByteLevel;
 use tk::processors::roberta::RobertaProcessing;
+use tk::processors::template::{SpecialToken, Template};
 use tk::processors::PostProcessorWrapper;
 use tk::{Encoding, PostProcessor};
 use tokenizers as tk;
@@ -37,6 +39,9 @@ impl PyPostProcessor {
             }
             PostProcessorWrapper::Roberta(_) => {
                 Py::new(py, (PyRobertaProcessing {}, base)).map(Into::into)
+            }
+            PostProcessorWrapper::Template(_) => {
+                Py::new(py, (PyTemplateProcessing {}, base)).map(Into::into)
             }
         }
     }
@@ -154,6 +159,104 @@ impl PyByteLevel {
         Ok((
             PyByteLevel {},
             PyPostProcessor::new(Arc::new(byte_level.into())),
+        ))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PySpecialToken(SpecialToken);
+
+impl From<PySpecialToken> for SpecialToken {
+    fn from(v: PySpecialToken) -> Self {
+        v.0
+    }
+}
+
+impl FromPyObject<'_> for PySpecialToken {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        if let Ok(v) = ob.extract::<(String, u32)>() {
+            Ok(Self(v.into()))
+        } else if let Ok(v) = ob.extract::<(u32, String)>() {
+            Ok(Self(v.into()))
+        } else if let Ok(d) = ob.downcast::<PyDict>() {
+            let id = d
+                .get_item("id")
+                .ok_or_else(|| exceptions::ValueError::py_err("`id` must be specified"))?
+                .extract::<String>()?;
+            let ids = d
+                .get_item("ids")
+                .ok_or_else(|| exceptions::ValueError::py_err("`ids` must be specified"))?
+                .extract::<Vec<u32>>()?;
+            let type_ids = d.get_item("type_ids").map_or_else(
+                || Ok(vec![None; ids.len()]),
+                |v| v.extract::<Vec<Option<u32>>>(),
+            )?;
+            let tokens = d
+                .get_item("tokens")
+                .ok_or_else(|| exceptions::ValueError::py_err("`tokens` must be specified"))?
+                .extract::<Vec<String>>()?;
+
+            Ok(Self(
+                ToPyResult(SpecialToken::new(id, ids, type_ids, tokens)).into_py()?,
+            ))
+        } else {
+            Err(exceptions::TypeError::py_err(
+                "Expected Union[Tuple[str, int], Tuple[int, str], dict]",
+            ))
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PyTemplate(Template);
+
+impl From<PyTemplate> for Template {
+    fn from(v: PyTemplate) -> Self {
+        v.0
+    }
+}
+
+impl FromPyObject<'_> for PyTemplate {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        if let Ok(s) = ob.extract::<&str>() {
+            Ok(Self(s.into()))
+        } else if let Ok(s) = ob.extract::<Vec<&str>>() {
+            Ok(Self(s.into()))
+        } else {
+            Err(exceptions::TypeError::py_err(
+                "Expected Union[str, List[str]]",
+            ))
+        }
+    }
+}
+
+#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=TemplateProcessing)]
+pub struct PyTemplateProcessing {}
+#[pymethods]
+impl PyTemplateProcessing {
+    #[new]
+    #[args(seq_a = "None", seq_b = "None", special_tokens = "None")]
+    fn new(
+        seq_a: Option<PyTemplate>,
+        seq_b: Option<PyTemplate>,
+        special_tokens: Option<Vec<PySpecialToken>>,
+    ) -> PyResult<(Self, PyPostProcessor)> {
+        let mut builder = tk::processors::template::TemplateProcessing::builder();
+
+        if let Some(seq) = seq_a {
+            builder.sequence_a(seq);
+        }
+        if let Some(seq) = seq_b {
+            builder.sequence_b(seq);
+        }
+        if let Some(sp) = special_tokens {
+            builder.special_tokens(sp);
+        }
+        let processor = builder.build().map_err(exceptions::ValueError::py_err)?;
+
+        Ok((
+            PyTemplateProcessing {},
+            PyPostProcessor::new(Arc::new(processor.into())),
         ))
     }
 }
