@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - [#379]: Add the ability to call `encode`/`encode_batch` with numpy arrays
 - [#292]: Support for the Unigram algorithm
+- [#403]: Add `TemplateProcessing` `PostProcessor`.
 
 ### Changed
 
@@ -232,14 +233,17 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug with the IDs associated with added tokens.
 - Fix a bug that was causing crashes in Python 3.5
 
+[#403]: https://github.com/huggingface/tokenizers/pull/403
 [#379]: https://github.com/huggingface/tokenizers/pull/379
-[#355]: https://github.com/huggingface/tokenizers/pull/355
 [#363]: https://github.com/huggingface/tokenizers/pull/363
+[#362]: https://github.com/huggingface/tokenizers/pull/362
+[#355]: https://github.com/huggingface/tokenizers/pull/355
 [#333]: https://github.com/huggingface/tokenizers/pull/333
 [#330]: https://github.com/huggingface/tokenizers/pull/330
 [#329]: https://github.com/huggingface/tokenizers/pull/329
 [#311]: https://github.com/huggingface/tokenizers/pull/311
 [#309]: https://github.com/huggingface/tokenizers/pull/309
+[#292]: https://github.com/huggingface/tokenizers/pull/292
 [#289]: https://github.com/huggingface/tokenizers/pull/289
 [#286]: https://github.com/huggingface/tokenizers/pull/286
 [#280]: https://github.com/huggingface/tokenizers/pull/280
