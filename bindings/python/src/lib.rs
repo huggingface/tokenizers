@@ -1,3 +1,5 @@
+#![warn(clippy::all)]
+
 extern crate tokenizers as tk;
 
 mod decoders;
@@ -90,6 +92,7 @@ fn processors(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<processors::PyBertProcessing>()?;
     m.add_class::<processors::PyRobertaProcessing>()?;
     m.add_class::<processors::PyByteLevel>()?;
+    m.add_class::<processors::PyTemplateProcessing>()?;
     Ok(())
 }
 
