@@ -470,7 +470,7 @@ where
     }
 
     /// Set the normalizer
-    pub fn with_normalizer(&mut self, normalizer: impl Into<N>) -> &Self {
+    pub fn with_normalizer(&mut self, normalizer: impl Into<N>) -> &mut Self {
         self.normalizer = Some(normalizer.into());
         self
     }
@@ -481,7 +481,7 @@ where
     }
 
     /// Set the pre tokenizer
-    pub fn with_pre_tokenizer(&mut self, pre_tokenizer: impl Into<PT>) -> &Self {
+    pub fn with_pre_tokenizer(&mut self, pre_tokenizer: impl Into<PT>) -> &mut Self {
         self.pre_tokenizer = Some(pre_tokenizer.into());
         self
     }
@@ -492,7 +492,7 @@ where
     }
 
     /// Set the post processor
-    pub fn with_post_processor(&mut self, post_processor: impl Into<PP>) -> &Self {
+    pub fn with_post_processor(&mut self, post_processor: impl Into<PP>) -> &mut Self {
         self.post_processor = Some(post_processor.into());
         self
     }
@@ -503,7 +503,7 @@ where
     }
 
     /// Set the decoder
-    pub fn with_decoder(&mut self, decoder: impl Into<D>) -> &Self {
+    pub fn with_decoder(&mut self, decoder: impl Into<D>) -> &mut Self {
         self.decoder = Some(decoder.into());
         self
     }
@@ -525,7 +525,7 @@ where
     }
 
     /// Set the truncation parameters
-    pub fn with_truncation(&mut self, trunc: Option<TruncationParams>) -> &Self {
+    pub fn with_truncation(&mut self, trunc: Option<TruncationParams>) -> &mut Self {
         self.truncation = trunc;
         self
     }
@@ -541,7 +541,7 @@ where
     }
 
     /// Set the padding parameters
-    pub fn with_padding(&mut self, padding: Option<PaddingParams>) -> &Self {
+    pub fn with_padding(&mut self, padding: Option<PaddingParams>) -> &mut Self {
         self.padding = padding;
         self
     }
