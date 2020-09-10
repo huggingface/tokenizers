@@ -9,6 +9,7 @@ use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::PreTokenizedString;
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
 pub enum JsPreTokenizerWrapper {
     Sequence(Vec<Arc<PreTokenizerWrapper>>),
     Wrapped(Arc<PreTokenizerWrapper>),
@@ -220,6 +221,15 @@ mod test {
         let rs_wrapped = PreTokenizerWrapper::Whitespace(Whitespace::default());
         let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
         assert_eq!(js_ser, rs_ser);
+
+        let js_pretok: PreTokenizer = serde_json::from_str(&rs_ser).unwrap();
+        match js_pretok.pretok.unwrap() {
+            JsPreTokenizerWrapper::Wrapped(pretok) => match pretok.as_ref() {
+                PreTokenizerWrapper::Whitespace(_) => {}
+                _ => panic!("Expected Whitespace"),
+            },
+            _ => panic!("Expected wrapped, not sequence."),
+        }
 
         let js_seq: JsPreTokenizerWrapper =
             Sequence::new(vec![WhitespaceSplit.into(), Whitespace::default().into()]).into();
