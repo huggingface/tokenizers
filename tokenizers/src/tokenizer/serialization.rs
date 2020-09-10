@@ -132,7 +132,7 @@ where
                     builder = builder.with_normalizer(map.next_value()?);
                 }
                 "pre_tokenizer" => {
-                    builder = builder.with_pretokenizer(map.next_value()?);
+                    builder = builder.with_pre_tokenizer(map.next_value()?);
                 }
                 "model" => {
                     builder = builder.with_model(map.next_value()?);
@@ -141,7 +141,7 @@ where
                     builder = builder.with_decoder(map.next_value()?);
                 }
                 "post_processor" => {
-                    builder = builder.with_postprocessor(map.next_value()?);
+                    builder = builder.with_post_processor(map.next_value()?);
                 }
                 _ => {}
             };

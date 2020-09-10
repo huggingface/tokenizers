@@ -323,14 +323,14 @@ where
         self
     }
 
-    /// Set the pretokenizer.
-    pub fn with_pretokenizer(mut self, pretokenizer: Option<PT>) -> Self {
+    /// Set the pre-tokenizer.
+    pub fn with_pre_tokenizer(mut self, pretokenizer: Option<PT>) -> Self {
         self.pre_tokenizer = pretokenizer;
         self
     }
 
-    /// Set the postprocessor.
-    pub fn with_postprocessor(mut self, post_processor: Option<PP>) -> Self {
+    /// Set the post-processor.
+    pub fn with_post_processor(mut self, post_processor: Option<PP>) -> Self {
         self.post_processor = post_processor;
         self
     }
