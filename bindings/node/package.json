@@ -45,7 +45,7 @@
     "compile": "neon build --release",
     "clean-rs": "neon clean",
     "package": "node-pre-gyp package",
-    "test": "jest",
+    "test": "jest && cargo test --manifest-path native/Cargo.toml",
     "lint-check": "eslint --ext .js,.ts lib examples",
     "lint": "eslint --fix --ext .js,.ts lib examples"
   },
