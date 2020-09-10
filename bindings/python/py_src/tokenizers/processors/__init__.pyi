@@ -129,6 +129,11 @@ class TemplateProcessing(PostProcessor):
 
     Note that we are saying the "default" type_id because each SpecialToken can define
     its own type_id which would override the provided default.
+
+    **Warning**: You must ensure that you are giving the correct tokens/ids as these
+    will be added to the Encoding without any further check. If the given ids correspond
+    to something totally different in a `Tokenizer` using this `PostProcessor`, it
+    might lead to unexpected results.
     """
 
     def __init__(self, seq_a: Template, seq_b: Template, special_tokens: Tokens) -> None:
