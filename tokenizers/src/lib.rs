@@ -77,8 +77,8 @@
 //!             NormalizerWrapper::StripNormalizer(Strip::new(true, true)),
 //!             NormalizerWrapper::NFC(NFC),
 //!         ])))
-//!         .with_pretokenizer(Some(PreTokenizerWrapper::ByteLevel(ByteLevel::default())))
-//!         .with_postprocessor(Some(PostProcessorWrapper::ByteLevel(ByteLevel::default())))
+//!         .with_pre_tokenizer(Some(PreTokenizerWrapper::ByteLevel(ByteLevel::default())))
+//!         .with_post_processor(Some(PostProcessorWrapper::ByteLevel(ByteLevel::default())))
 //!         .with_decoder(Some(DecoderWrapper::ByteLevel(ByteLevel::default())))
 //!         .build()?;
 //!
