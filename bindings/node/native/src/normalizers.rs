@@ -9,6 +9,7 @@ use tk::normalizers::NormalizerWrapper;
 use tk::NormalizedString;
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
 pub enum JsNormalizerWrapper {
     Sequence(Vec<Arc<NormalizerWrapper>>),
     Wrapped(Arc<NormalizerWrapper>),
@@ -41,7 +42,7 @@ where
 }
 
 /// Normalizer
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Normalizer {
     #[serde(flatten)]
     pub normalizer: Option<JsNormalizerWrapper>,
@@ -230,14 +231,14 @@ mod test {
         let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
         assert_eq!(js_ser, rs_ser);
 
-        // let js_norm: Normalizer = serde_json::from_str(&rs_ser).unwrap();
-        // match js_norm.normalizer.unwrap() {
-        //     JsNormalizerWrapper::Wrapped(nfc) => match nfc.as_ref() {
-        //         NormalizerWrapper::NFKC(_) => {}
-        //         _ => panic!("Expected NFKC"),
-        //     },
-        //     _ => panic!("Expected wrapped, not sequence."),
-        // }
+        let js_norm: Normalizer = serde_json::from_str(&rs_ser).unwrap();
+        match js_norm.normalizer.unwrap() {
+            JsNormalizerWrapper::Wrapped(nfc) => match nfc.as_ref() {
+                NormalizerWrapper::NFKC(_) => {}
+                _ => panic!("Expected NFKC"),
+            },
+            _ => panic!("Expected wrapped, not sequence."),
+        }
 
         let js_seq: JsNormalizerWrapper = Sequence::new(vec![NFC.into(), NFKC.into()]).into();
         let js_wrapper_ser = serde_json::to_string(&js_seq).unwrap();
