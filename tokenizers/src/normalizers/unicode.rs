@@ -102,27 +102,8 @@ impl Normalizer for Nmt {
     }
 }
 
-// TODO Actually remove the TILDE rule from here !
-#[derive(Default, Copy, Clone, Debug)]
-/// This struct is specifically done to be compatible with SentencePiece
-/// because of specifically one rule that removes a rule from Nfkc
-/// ```cpp
-///  // Do not normalize FULL_WIDTH TILDE, since FULL_WIDTH TILDE
-///  // and HALF_WIDTH TILDE are used differently in Japanese.
-///  nfkc_map.erase({0xFF5E});
-/// ```
-pub struct SpmNmtNfkc;
-impl Normalizer for SpmNmtNfkc {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.nfkc();
-        do_nmt(normalized);
-        Ok(())
-    }
-}
-
 impl_serde_unit_struct!(NFCVisitor, NFC);
 impl_serde_unit_struct!(NFCKVisitor, NFKC);
 impl_serde_unit_struct!(NFKDVisitor, NFKD);
 impl_serde_unit_struct!(NFDVisitor, NFD);
 impl_serde_unit_struct!(NMTVisitor, Nmt);
-impl_serde_unit_struct!(SpmNmtNfkcVisitor, SpmNmtNfkc);

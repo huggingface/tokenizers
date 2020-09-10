@@ -109,7 +109,7 @@ fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<normalizers::PyLowercase>()?;
     m.add_class::<normalizers::PyStrip>()?;
     m.add_class::<normalizers::PyNmt>()?;
-    m.add_class::<normalizers::PySpmNmtNfkc>()?;
+    m.add_class::<normalizers::PyPrecompiled>()?;
     Ok(())
 }
 

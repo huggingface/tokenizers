@@ -8,7 +8,7 @@ use crate::error::ToPyResult;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize, Serializer};
 use tk::normalizers::{
-    BertNormalizer, Lowercase, Nmt, NormalizerWrapper, SpmNmtNfkc, Strip, NFC, NFD, NFKC, NFKD,
+    BertNormalizer, Lowercase, Nmt, NormalizerWrapper, Precompiled, Strip, NFC, NFD, NFKC, NFKD,
 };
 use tk::{NormalizedString, Normalizer};
 use tokenizers as tk;
@@ -47,8 +47,8 @@ impl PyNormalizer {
                 NormalizerWrapper::Lowercase(_) => {
                     Py::new(py, (PyLowercase {}, base)).map(Into::into)
                 }
-                NormalizerWrapper::SpmNmtNfkc(_) => {
-                    Py::new(py, (PySpmNmtNfkc {}, base)).map(Into::into)
+                NormalizerWrapper::Precompiled(_) => {
+                    Py::new(py, (PyPrecompiled {}, base)).map(Into::into)
                 }
                 NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base)).map(Into::into),
             },
@@ -289,13 +289,20 @@ impl PyNmt {
     }
 }
 
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=SpmNmtNfkc)]
-pub struct PySpmNmtNfkc {}
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Precompiled)]
+pub struct PyPrecompiled {
+    precompiled_charsmap: Vec<u8>,
+}
 #[pymethods]
-impl PySpmNmtNfkc {
+impl PyPrecompiled {
     #[new]
-    fn new() -> PyResult<(Self, PyNormalizer)> {
-        Ok((PySpmNmtNfkc {}, SpmNmtNfkc.into()))
+    fn new(precompiled_charsmap: Vec<u8>) -> PyResult<(Self, PyNormalizer)> {
+        Ok((
+            PyPrecompiled {
+                precompiled_charsmap,
+            },
+            Precompiled.into(),
+        ))
     }
 }
 

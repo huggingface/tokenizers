@@ -52,6 +52,7 @@ itertools = "0.9"
 log = "0.4"
 esaxx-rs = "0.1"
 derive_builder = "0.9"
+nom = "5.1"
 
 [dev-dependencies]
 criterion = "0.3"
