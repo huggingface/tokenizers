@@ -41,6 +41,11 @@ def main():
         action="store_true",
         help="Instead of checking the encoder part, we check the trainer part",
     )
+    parser.add_argument(
+        "--from-spm",
+        action="store_true",
+        help="Directly load the spm file with it's own normalizer",
+    )
 
     args = parser.parse_args()
 
@@ -186,14 +191,20 @@ def check_encode(args):
     sp = spm.SentencePieceProcessor()
     sp.Load(args.model_file)
 
-    vocab_filename = f"{'.'.join(args.model_file.split('.')[:-1])}.json"
+    if args.from_spm:
+        tok = tokenizers.SentencePieceUnigramTokenizer.from_spm(args.model_file)
+    else:
 
-    vocab = [(sp.id_to_piece(i), sp.get_score(i)) for i in range(sp.piece_size())]
+        vocab_filename = f"{'.'.join(args.model_file.split('.')[:-1])}.json"
 
-    data = {"unk_id": sp.unk_id(), "vocab": vocab}
+        vocab = [(sp.id_to_piece(i), sp.get_score(i)) for i in range(sp.piece_size())]
 
-    with open(vocab_filename, "w") as f:
-        json.dump(data, f, indent=4)
+        data = {"unk_id": sp.unk_id(), "vocab": vocab}
+
+        with open(vocab_filename, "w") as f:
+            json.dump(data, f, indent=4)
+
+        tok = tokenizers.SentencePieceUnigramTokenizer(vocab_filename)
 
     perfect = 0
     imperfect = 0
@@ -202,7 +213,6 @@ def check_encode(args):
     spm_total_time = datetime.timedelta(seconds=0)
     tok_total_time = datetime.timedelta(seconds=0)
     try:
-        tok = tokenizers.SentencePieceUnigramTokenizer(vocab_filename)
         with open(args.input_file, "r", encoding="utf-8-sig") as f:
             for i, line in enumerate(f):
                 line = line.strip()

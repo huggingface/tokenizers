@@ -110,6 +110,9 @@ extern crate lazy_static;
 extern crate derive_builder;
 
 #[macro_use]
+extern crate nom;
+
+#[macro_use]
 pub mod utils;
 pub mod decoders;
 pub mod models;

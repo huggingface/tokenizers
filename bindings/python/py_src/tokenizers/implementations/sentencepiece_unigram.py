@@ -1,6 +1,12 @@
-from tokenizers import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers
+from tokenizers import (
+    Tokenizer,
+    AddedToken,
+    pre_tokenizers,
+    decoders,
+    trainers,
+    normalizers,
+)
 from tokenizers.models import Unigram
-from tokenizers.normalizers import SpmNmtNfkc
 from .base_tokenizer import BaseTokenizer
 
 from typing import Optional, List, Union
@@ -20,7 +26,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         else:
             tokenizer = Tokenizer(Unigram())
 
-        tokenizer.normalizer = SpmNmtNfkc()
+        tokenizer.normalizer = normalizers.Sequence(normalizers.Nmt(), normalizers.NFKC(),)
         tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
             [
                 pre_tokenizers.WhitespaceSplit(),
@@ -57,3 +63,32 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         if isinstance(files, str):
             files = [files]
         self._tokenizer.train(trainer, files)
+
+    @staticmethod
+    def from_spm(filename: str):
+        try:
+            import sentencepiece as spm
+        except Exception:
+            raise Exception(
+                "We need `sentencepiece` package to load via this method try installing it with `pip install sentencepiece`"
+            )
+
+        sp = spm.SentencePieceProcessor()
+        sp.Load(filename)
+
+        from . import sentencepiece_model_pb2 as model
+
+        m = model.ModelProto()
+        m.ParseFromString(open(filename, "rb").read())
+
+        precompiled_charsmap = m.normalizer_spec.precompiled_charsmap
+
+        vocab = [(sp.id_to_piece(i), sp.get_score(i)) for i in range(sp.piece_size())]
+        tokenizer = Tokenizer(Unigram(vocab))
+        tokenizer.normalizer = normalizers.Precompiled(precompiled_charsmap)
+
+        parameters = {
+            "model": "SentencePieceUnigram",
+        }
+
+        return super().__init__(tokenizer, parameters)
