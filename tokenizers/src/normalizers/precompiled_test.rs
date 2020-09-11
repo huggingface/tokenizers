@@ -1,6 +1,123 @@
 use crate::normalizers::precompiled::*;
 use crate::{normalizer::NormalizedString, Normalizer};
 
+#[test]
+fn test_serialization() {
+    let precompiled = Precompiled::from(&nmt_nfkc()).unwrap();
+
+    let string = &serde_json::to_string(&precompiled).unwrap();
+    let reconstructed: Precompiled = serde_json::from_str(string).unwrap();
+
+    assert_eq!(reconstructed, precompiled)
+}
+
+#[test]
+fn test_load_precompiled_map() {
+    let precompiled = Precompiled::from(&nmt_nfkc()).unwrap();
+    let results = precompiled
+        .trie
+        .common_prefix_search(&"\u{fb01}".as_bytes());
+    assert_eq!(results, vec![2130]);
+    // Check the null termination
+    assert_eq!(&precompiled.normalized[2130..2133], "fi\0");
+
+    let results = precompiled.trie.common_prefix_search(b" ");
+    assert!(results.is_empty());
+
+    let results = precompiled.trie.common_prefix_search(&"𝔾".as_bytes());
+    assert_eq!(results, vec![1786]);
+    assert_eq!(&precompiled.normalized[1786..1788], "G\0");
+
+    assert_eq!(precompiled.transform(&"𝔾"), Some("G"));
+    assert_eq!(precompiled.transform(&"𝕠"), Some("o"));
+    assert_eq!(precompiled.transform(&"\u{200d}"), Some(" "));
+
+    let original = "𝔾𝕠𝕠𝕕 𝕞𝕠𝕣𝕟𝕚𝕟𝕘".to_string();
+    let normalized = "Good morning".to_string();
+    let mut s = NormalizedString::from(original.clone());
+    precompiled.normalize(&mut s).unwrap();
+    assert_eq!(s.get(), &normalized);
+    assert_eq!(
+        s,
+        NormalizedString::new(
+            original,
+            normalized,
+            vec![
+                (0, 4),
+                (4, 8),
+                (8, 12),
+                (12, 16),
+                (16, 17),
+                (17, 21),
+                (21, 25),
+                (25, 29),
+                (29, 33),
+                (33, 37),
+                (37, 41),
+                (41, 45)
+            ],
+            vec![
+                (0, 1),
+                (0, 1),
+                (0, 1),
+                (0, 1),
+                (1, 2),
+                (1, 2),
+                (1, 2),
+                (1, 2),
+                (2, 3),
+                (2, 3),
+                (2, 3),
+                (2, 3),
+                (3, 4),
+                (3, 4),
+                (3, 4),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (5, 6),
+                (5, 6),
+                (5, 6),
+                (6, 7),
+                (6, 7),
+                (6, 7),
+                (6, 7),
+                (7, 8),
+                (7, 8),
+                (7, 8),
+                (7, 8),
+                (8, 9),
+                (8, 9),
+                (8, 9),
+                (8, 9),
+                (9, 10),
+                (9, 10),
+                (9, 10),
+                (9, 10),
+                (10, 11),
+                (10, 11),
+                (10, 11),
+                (10, 11),
+                (11, 12),
+                (11, 12),
+                (11, 12),
+                (11, 12)
+            ],
+            0
+        )
+    );
+}
+
+#[test]
+fn test_failure_mode() {
+    let precompiled = Precompiled::from(&nmt_nfkc()).unwrap();
+    let original = "เขาไม่ได้พูดสักคำ".to_string();
+    let normalized = "เขาไม\u{e48}ได\u{e49}พ\u{e39}ดส\u{e31}กค\u{e4d}า".to_string();
+    let mut s = NormalizedString::from(original);
+    precompiled.normalize(&mut s).unwrap();
+    assert_eq!(s.get(), &normalized);
+}
+
 fn nmt_nfkc() -> Vec<u8> {
     vec![
         0x00, 0xB4, 0x02, 0x00, 0x00, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0x00, 0x00,
@@ -15840,111 +15957,4 @@ fn nmt_nfkc() -> Vec<u8> {
         0xAA, 0x83, 0x8E, 0x00, 0xF0, 0xAA, 0x84, 0x85, 0x00, 0xF0, 0xAA, 0x88, 0x8E, 0x00, 0xF0,
         0xAA, 0x8A, 0x91, 0x00, 0xF0, 0xAA, 0x8E, 0x92, 0x00, 0xF0, 0xAA, 0x98, 0x80, 0x00,
     ]
-}
-
-#[test]
-fn test_serialization() {
-    let precompiled = Precompiled::from(&nmt_nfkc()).unwrap();
-
-    let string = &serde_json::to_string(&precompiled).unwrap();
-    let reconstructed: Precompiled = serde_json::from_str(string).unwrap();
-
-    assert_eq!(reconstructed, precompiled)
-}
-
-#[test]
-fn test_load_precompiled_map() {
-    let precompiled = Precompiled::from(&nmt_nfkc()).unwrap();
-    let results = precompiled
-        .trie
-        .common_prefix_search(&"\u{fb01}".as_bytes());
-    assert_eq!(results, vec![2130]);
-    // Check the null termination
-    assert_eq!(&precompiled.normalized[2130..2133], "fi\0");
-
-    let results = precompiled.trie.common_prefix_search(b" ");
-    assert!(results.is_empty());
-
-    let results = precompiled.trie.common_prefix_search(&"𝔾".as_bytes());
-    assert_eq!(results, vec![1786]);
-    assert_eq!(&precompiled.normalized[1786..1788], "G\0");
-
-    assert_eq!(precompiled.transform(&"𝔾"), Some("G"));
-    assert_eq!(precompiled.transform(&"𝕠"), Some("o"));
-    assert_eq!(precompiled.transform(&"\u{200d}"), Some(" "));
-
-    let original = "𝔾𝕠𝕠𝕕 𝕞𝕠𝕣𝕟𝕚𝕟𝕘".to_string();
-    let normalized = "Good morning".to_string();
-    let mut s = NormalizedString::from(original.clone());
-    precompiled.normalize(&mut s).unwrap();
-    assert_eq!(s.get(), &normalized);
-    assert_eq!(
-        s,
-        NormalizedString::new(
-            original,
-            normalized,
-            vec![
-                (0, 4),
-                (4, 8),
-                (8, 12),
-                (12, 16),
-                (16, 17),
-                (17, 21),
-                (21, 25),
-                (25, 29),
-                (29, 33),
-                (33, 37),
-                (37, 41),
-                (41, 45)
-            ],
-            vec![
-                (0, 1),
-                (0, 1),
-                (0, 1),
-                (0, 1),
-                (1, 2),
-                (1, 2),
-                (1, 2),
-                (1, 2),
-                (2, 3),
-                (2, 3),
-                (2, 3),
-                (2, 3),
-                (3, 4),
-                (3, 4),
-                (3, 4),
-                (3, 4),
-                (4, 5),
-                (5, 6),
-                (5, 6),
-                (5, 6),
-                (5, 6),
-                (6, 7),
-                (6, 7),
-                (6, 7),
-                (6, 7),
-                (7, 8),
-                (7, 8),
-                (7, 8),
-                (7, 8),
-                (8, 9),
-                (8, 9),
-                (8, 9),
-                (8, 9),
-                (9, 10),
-                (9, 10),
-                (9, 10),
-                (9, 10),
-                (10, 11),
-                (10, 11),
-                (10, 11),
-                (10, 11),
-                (11, 12),
-                (11, 12),
-                (11, 12),
-                (11, 12)
-            ],
-            0
-        )
-    );
 }
