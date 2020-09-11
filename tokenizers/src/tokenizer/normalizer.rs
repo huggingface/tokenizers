@@ -124,6 +124,21 @@ pub struct NormalizedString {
 }
 
 impl NormalizedString {
+    pub fn new(
+        original: String,
+        normalized: String,
+        alignments: Vec<(usize, usize)>,
+        alignments_original: Vec<(usize, usize)>,
+        original_shift: usize,
+    ) -> Self {
+        Self {
+            original,
+            normalized,
+            alignments,
+            alignments_original,
+            original_shift,
+        }
+    }
     /// Return the normalized string
     pub fn get(&self) -> &str {
         &self.normalized

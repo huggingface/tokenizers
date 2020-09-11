@@ -107,3 +107,27 @@ impl_serde_unit_struct!(NFCKVisitor, NFKC);
 impl_serde_unit_struct!(NFKDVisitor, NFKD);
 impl_serde_unit_struct!(NFDVisitor, NFD);
 impl_serde_unit_struct!(NMTVisitor, Nmt);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nfkc() {
+        let original = "\u{fb01}".to_string();
+        let normalized = "fi".to_string();
+        let mut n = NormalizedString::from(original.clone());
+        NFKC.normalize(&mut n).unwrap();
+
+        assert_eq!(
+            n,
+            NormalizedString::new(
+                original,
+                normalized,
+                vec![(0, 3), (0, 3)],
+                vec![(0, 2), (0, 2), (0, 2)],
+                0
+            )
+        )
+    }
+}
