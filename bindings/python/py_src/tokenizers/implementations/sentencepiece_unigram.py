@@ -9,7 +9,7 @@ from tokenizers import (
 from tokenizers.models import Unigram
 from .base_tokenizer import BaseTokenizer
 
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Tuple
 
 
 class SentencePieceUnigramTokenizer(BaseTokenizer):
@@ -19,10 +19,15 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
     """
 
     def __init__(
-        self, vocab: Optional[str] = None, replacement: str = "▁", add_prefix_space: bool = True,
+        self,
+        vocab: Optional[List[Tuple[str, float]]] = None,
+        unk_id: Optional[int] = None,
+        replacement: str = "▁",
+        add_prefix_space: bool = True,
     ):
-        if vocab is not None:
-            tokenizer = Tokenizer(Unigram(vocab))
+        if vocab is not None or unk_id is not None:
+            # Let Unigram(..) fail if only one of them is None
+            tokenizer = Tokenizer(Unigram(vocab, unk_id))
         else:
             tokenizer = Tokenizer(Unigram())
 

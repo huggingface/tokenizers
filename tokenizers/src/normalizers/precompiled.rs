@@ -6,6 +6,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use std::fmt;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// This struct is specifically done to be compatible with SentencePiece
 /// SentencePiece models embed their Normalizer within a `precompiled_charsmap`
@@ -155,10 +156,13 @@ impl Precompiled {
     }
 
     pub(super) fn transform(&self, chunk: &str) -> Option<&str> {
+        debug!("Chunk {:?}", chunk);
         let results = self.trie.common_prefix_search(&chunk.as_bytes());
+        debug!("Results {:?}", results);
         if results.is_empty() {
             None
         } else {
+            debug!("Results {:?}", results.len());
             let index = results[0] as usize;
             let mut index2 = index;
             while index2 < self.normalized.len() {
@@ -167,25 +171,46 @@ impl Precompiled {
                 }
                 index2 += 1;
             }
-            Some(&self.normalized[index..index2])
+            let normalized = &self.normalized[index..index2];
+            // println!("Chunk {:?} was normalized as {:?}", chunk, normalized);
+            Some(normalized)
         }
     }
 }
 
 impl Normalizer for Precompiled {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        let mut normalized_string = Vec::with_capacity(normalized.get().len());
-        normalized.get().char_indices().for_each(|(index, c)| {
-            let source = &normalized.get()[index..index + c.len_utf8()];
-            if let Some(normalized) = self.transform(source) {
-                for (i, c) in normalized.chars().enumerate() {
-                    normalized_string.push((c, i as isize));
+        let mut transformations = Vec::with_capacity(normalized.get().len());
+        // Future reader. From @Narsil.
+        // Yes, this is weird,
+        // Yes, this seems broken
+        // No, I don't know why Google did this.
+        // If you question this code, check this normalizer against
+        // XNLI database (all languages) with Unigram model against
+        // Mbart, XLMRoberta *AND* Marian. If you don't get 100% or
+        // break a single test.
+        // You don't pass.
+        normalized.get().graphemes(true).for_each(|grapheme| {
+            if grapheme.len() < 6 {
+                if let Some(norm) = self.transform(grapheme) {
+                    for (i, c) in norm.chars().enumerate() {
+                        transformations.push((c, i as isize));
+                    }
+                    return;
                 }
-            } else {
-                normalized_string.push((c, 0));
+            }
+            for (char_index, c) in grapheme.char_indices() {
+                let part = &grapheme[char_index..char_index + c.len_utf8()];
+                if let Some(norm) = self.transform(part) {
+                    for (i, c) in norm.chars().enumerate() {
+                        transformations.push((c, i as isize));
+                    }
+                } else {
+                    transformations.push((c, 0));
+                }
             }
         });
-        normalized.transform(normalized_string.into_iter(), 0);
+        normalized.transform(transformations.into_iter(), 0);
         Ok(())
     }
 }

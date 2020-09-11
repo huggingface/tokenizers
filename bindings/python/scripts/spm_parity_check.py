@@ -184,6 +184,9 @@ def check_details(line, spm_ids, tok_ids, tok, sp):
 
     print(f"Spm: {[tok.decode([spm_ids[i]]) for i in range(first, last)]}")
     print(f"Tok: {[tok.decode([tok_ids[i]]) for i in range(first, last)]}")
+    import ipdb
+
+    ipdb.set_trace()
     return False
 
 
