@@ -109,11 +109,39 @@ fn test_load_precompiled_map() {
 }
 
 #[test]
-fn test_failure_mode() {
+fn test_precompiled_failure_mode() {
     let precompiled = Precompiled::from(&nmt_nfkc()).unwrap();
     let original = "เขาไม่ได้พูดสักคำ".to_string();
     let normalized = "เขาไม\u{e48}ได\u{e49}พ\u{e39}ดส\u{e31}กค\u{e4d}า".to_string();
     let mut s = NormalizedString::from(original);
+    precompiled.normalize(&mut s).unwrap();
+    assert_eq!(s.get(), &normalized);
+}
+
+#[test]
+fn test_precompiled_hindi() {
+    let precompiled = Precompiled::from(&nmt_nfkc()).unwrap();
+    let original = "ड़ी दुख".to_string();
+    let normalized = "ड\u{93c}ी द\u{941}ख".to_string();
+    let mut s = NormalizedString::from(original);
+    precompiled.normalize(&mut s).unwrap();
+    assert_eq!(s.get(), &normalized);
+}
+
+#[test]
+fn test_precompiled_multi_char_replace_bug() {
+    let precompiled = Precompiled::from(&nmt_nfkc()).unwrap();
+    // آپ
+    let original = vec![0xd8, 0xa7, 0xd9, 0x93];
+    // This grapheme is actually 2 chars.
+    let normalized = "آ".to_string();
+
+    let results = precompiled.trie.common_prefix_search(&original);
+    assert_eq!(results, vec![4050]);
+    assert_eq!(&precompiled.normalized[4050..4053], "آ\0");
+
+    let original_string = String::from_utf8(original).unwrap();
+    let mut s = NormalizedString::from(original_string);
     precompiled.normalize(&mut s).unwrap();
     assert_eq!(s.get(), &normalized);
 }
