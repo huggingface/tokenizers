@@ -194,17 +194,8 @@ def check_encode(args):
     if args.from_spm:
         tok = tokenizers.SentencePieceUnigramTokenizer.from_spm(args.model_file)
     else:
-
-        vocab_filename = f"{'.'.join(args.model_file.split('.')[:-1])}.json"
-
         vocab = [(sp.id_to_piece(i), sp.get_score(i)) for i in range(sp.piece_size())]
-
-        data = {"unk_id": sp.unk_id(), "vocab": vocab}
-
-        with open(vocab_filename, "w") as f:
-            json.dump(data, f, indent=4)
-
-        tok = tokenizers.SentencePieceUnigramTokenizer(vocab_filename)
+        tok = tokenizers.SentencePieceUnigramTokenizer(vocab, sp.unk_id())
 
     perfect = 0
     imperfect = 0
@@ -212,40 +203,37 @@ def check_encode(args):
     now = datetime.datetime.now
     spm_total_time = datetime.timedelta(seconds=0)
     tok_total_time = datetime.timedelta(seconds=0)
-    try:
-        with open(args.input_file, "r", encoding="utf-8-sig") as f:
-            for i, line in enumerate(f):
-                line = line.strip()
+    with open(args.input_file, "r", encoding="utf-8-sig") as f:
+        for i, line in enumerate(f):
+            line = line.strip()
 
-                start = now()
-                ids = sp.EncodeAsIds(line)
-                spm_time = now()
+            start = now()
+            ids = sp.EncodeAsIds(line)
+            spm_time = now()
 
-                encoded = tok.encode(line)
-                tok_time = now()
+            encoded = tok.encode(line)
+            tok_time = now()
 
-                spm_total_time += spm_time - start
-                tok_total_time += tok_time - spm_time
+            spm_total_time += spm_time - start
+            tok_total_time += tok_time - spm_time
 
-                if args.verbose:
-                    if i % 10000 == 0:
-                        print(
-                            f"({perfect} / {imperfect} / {wrong} ----- {perfect + imperfect + wrong})"
-                        )
-                        print(f"SPM: {spm_total_time} - TOK: {tok_total_time}")
+            if args.verbose:
+                if i % 10000 == 0:
+                    print(
+                        f"({perfect} / {imperfect} / {wrong} ----- {perfect + imperfect + wrong})"
+                    )
+                    print(f"SPM: {spm_total_time} - TOK: {tok_total_time}")
 
-                if ids != encoded.ids:
-                    if check_details(line, ids, encoded.ids, tok, sp):
-                        imperfect += 1
-                        continue
-                    else:
-                        wrong += 1
+            if ids != encoded.ids:
+                if check_details(line, ids, encoded.ids, tok, sp):
+                    imperfect += 1
+                    continue
                 else:
-                    perfect += 1
+                    wrong += 1
+            else:
+                perfect += 1
 
-                assert ids == encoded.ids, f"line {i}: {line} : {ids} != {encoded.ids}"
-    finally:
-        os.remove(vocab_filename)
+            assert ids == encoded.ids, f"line {i}: {line} : {ids} != {encoded.ids}"
 
     print(f"({perfect} / {imperfect} / {wrong} ----- {perfect + imperfect + wrong})")
 

@@ -290,18 +290,21 @@ impl PyNmt {
 }
 
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Precompiled)]
-pub struct PyPrecompiled {
-    precompiled_charsmap: Vec<u8>,
-}
+pub struct PyPrecompiled {}
 #[pymethods]
 impl PyPrecompiled {
     #[new]
     fn new(precompiled_charsmap: Vec<u8>) -> PyResult<(Self, PyNormalizer)> {
         Ok((
-            PyPrecompiled {
-                precompiled_charsmap,
-            },
-            Precompiled.into(),
+            PyPrecompiled {},
+            Precompiled::from(&precompiled_charsmap)
+                .map_err(|e| {
+                    exceptions::Exception::py_err(format!(
+                        "Error while attempting to build Precompiled normalizer: {}",
+                        e.to_string()
+                    ))
+                })?
+                .into(),
         ))
     }
 }

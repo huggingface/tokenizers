@@ -66,29 +66,36 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
 
     @staticmethod
     def from_spm(filename: str):
-        try:
-            import sentencepiece as spm
-        except Exception:
-            raise Exception(
-                "We need `sentencepiece` package to load via this method try installing it with `pip install sentencepiece`"
-            )
-
-        sp = spm.SentencePieceProcessor()
-        sp.Load(filename)
-
         from . import sentencepiece_model_pb2 as model
 
         m = model.ModelProto()
         m.ParseFromString(open(filename, "rb").read())
 
         precompiled_charsmap = m.normalizer_spec.precompiled_charsmap
+        vocab = [(piece.piece, piece.score) for piece in m.pieces]
+        unk_id = m.trainer_spec.unk_id
 
-        vocab = [(sp.id_to_piece(i), sp.get_score(i)) for i in range(sp.piece_size())]
-        tokenizer = Tokenizer(Unigram(vocab))
+        replacement = "▁"
+        add_prefix_space = True
+
+        tokenizer = Tokenizer(Unigram(vocab, unk_id))
         tokenizer.normalizer = normalizers.Precompiled(precompiled_charsmap)
+        tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
+            [
+                pre_tokenizers.WhitespaceSplit(),
+                pre_tokenizers.Metaspace(
+                    replacement=replacement, add_prefix_space=add_prefix_space
+                ),
+            ]
+        )
+        tokenizer.decoder = decoders.Metaspace(
+            replacement=replacement, add_prefix_space=add_prefix_space
+        )
 
         parameters = {
             "model": "SentencePieceUnigram",
         }
 
-        return super().__init__(tokenizer, parameters)
+        obj = BaseTokenizer.__new__(SentencePieceUnigramTokenizer, tokenizer, parameters)
+        BaseTokenizer.__init__(obj, tokenizer, parameters)
+        return obj
