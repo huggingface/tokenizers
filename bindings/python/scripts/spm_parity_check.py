@@ -236,6 +236,8 @@ def check_encode(args):
             assert ids == encoded.ids, f"line {i}: {line} : {ids} != {encoded.ids}"
 
     print(f"({perfect} / {imperfect} / {wrong} ----- {perfect + imperfect + wrong})")
+    total = perfect + imperfect + wrong
+    print(f"Accuracy {perfect * 100 / total:.2f} Slowdown : {tok_total_time/ spm_total_time:.2f}")
 
 
 if __name__ == "__main__":

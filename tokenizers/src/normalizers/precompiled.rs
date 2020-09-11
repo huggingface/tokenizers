@@ -162,7 +162,7 @@ impl Precompiled {
             let index = results[0] as usize;
             let mut index2 = index;
             while index2 < self.normalized.len() {
-                if &self.normalized[index2..index2 + 1] == "\0" {
+                if self.normalized.bytes().nth(index2)? == 0u8 {
                     break;
                 }
                 index2 += 1;
@@ -178,8 +178,8 @@ impl Normalizer for Precompiled {
         normalized.get().char_indices().for_each(|(index, c)| {
             let source = &normalized.get()[index..index + c.len_utf8()];
             if let Some(normalized) = self.transform(source) {
-                for c in normalized.chars() {
-                    normalized_string.push((c, 0));
+                for (i, c) in normalized.chars().enumerate() {
+                    normalized_string.push((c, i as isize));
                 }
             } else {
                 normalized_string.push((c, 0));
