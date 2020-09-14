@@ -263,21 +263,19 @@ pub struct PyUnigram {}
 #[pymethods]
 impl PyUnigram {
     #[new]
-    fn new(vocab: Option<Vec<(String, f64)>>, unk_id: Option<usize>) -> PyResult<(Self, PyModel)> {
-        match (vocab, unk_id) {
-            (Some(vocab), Some(unk_id)) => match Unigram::from(vocab, unk_id) {
+    fn new(vocab: Option<String>) -> PyResult<(Self, PyModel)> {
+        match vocab {
+            Some(vocab) => match Unigram::load(&std::path::Path::new(&vocab)) {
                 Err(e) => {
                     println!("Errors: {:?}", e);
                     Err(exceptions::Exception::py_err("Error while loading Unigram"))
                 }
                 Ok(model) => Ok((PyUnigram {}, PyModel::new(Arc::new(model.into())))),
             },
-            (None, None) => Ok((
+            None => Ok((
                 PyUnigram {},
                 PyModel::new(Arc::new(Unigram::default().into())),
             )),
-            (Some(_vocab), _) => Err(exceptions::Exception::py_err("Missing unk_id")),
-            (_, Some(_unk_id)) => Err(exceptions::Exception::py_err("Missing vocab")),
         }
     }
 }

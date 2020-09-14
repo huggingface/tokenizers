@@ -6,10 +6,12 @@ from tokenizers import (
     trainers,
     normalizers,
 )
+import os
 from tokenizers.models import Unigram
+import json
 from .base_tokenizer import BaseTokenizer
 
-from typing import Optional, List, Union, Tuple
+from typing import Optional, List, Union
 
 
 class SentencePieceUnigramTokenizer(BaseTokenizer):
@@ -19,19 +21,15 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
     """
 
     def __init__(
-        self,
-        vocab: Optional[List[Tuple[str, float]]] = None,
-        unk_id: Optional[int] = None,
-        replacement: str = "▁",
-        add_prefix_space: bool = True,
+        self, vocab: Optional[str] = None, replacement: str = "▁", add_prefix_space: bool = True,
     ):
-        if vocab is not None or unk_id is not None:
+        if vocab is not None:
             # Let Unigram(..) fail if only one of them is None
-            tokenizer = Tokenizer(Unigram(vocab, unk_id))
+            tokenizer = Tokenizer(Unigram(vocab))
         else:
             tokenizer = Tokenizer(Unigram())
 
-        tokenizer.normalizer = normalizers.Sequence(normalizers.Nmt(), normalizers.NFKC(),)
+        tokenizer.normalizer = normalizers.Sequence([normalizers.Nmt(), normalizers.NFKC(),])
         tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
             [
                 pre_tokenizers.WhitespaceSplit(),
@@ -71,7 +69,16 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
 
     @staticmethod
     def from_spm(filename: str):
-        from . import sentencepiece_model_pb2 as model
+        try:
+            import sys
+
+            sys.path.append(".")
+
+            import sentencepiece_model_pb2 as model
+        except Exception:
+            raise Exception(
+                "You don't seem to have the required protobuf file, in order to use this function you need to run `pip install protobuf` and `wget https://raw.githubusercontent.com/google/sentencepiece/master/python/sentencepiece_model_pb2.py` for us to be able to read the intrinsics of your spm_file. `pip install sentencepiece` is not required."
+            )
 
         m = model.ModelProto()
         m.ParseFromString(open(filename, "rb").read())
@@ -80,10 +87,20 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         vocab = [(piece.piece, piece.score) for piece in m.pieces]
         unk_id = m.trainer_spec.unk_id
 
+        data = {"unk_id": unk_id, "vocab": vocab}
+
         replacement = "▁"
         add_prefix_space = True
 
-        tokenizer = Tokenizer(Unigram(vocab, unk_id))
+        out_vocab_filename = f"{filename}.json"
+        try:
+            with open(out_vocab_filename, "w") as f:
+                json.dump(data, f, indent=4)
+
+            tokenizer = Tokenizer(Unigram(out_vocab_filename))
+        finally:
+            os.remove(out_vocab_filename)
+
         tokenizer.normalizer = normalizers.Precompiled(precompiled_charsmap)
         tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
             [

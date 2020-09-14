@@ -198,7 +198,17 @@ def check_encode(args):
         tok = tokenizers.SentencePieceUnigramTokenizer.from_spm(args.model_file)
     else:
         vocab = [(sp.id_to_piece(i), sp.get_score(i)) for i in range(sp.piece_size())]
-        tok = tokenizers.SentencePieceUnigramTokenizer(vocab, sp.unk_id())
+        vocab_filename = f"{args.model_file}.json"
+        unk_id = sp.unk_id()
+
+        data = {"unk_id": unk_id, "vocab": vocab}
+        try:
+            with open(vocab_filename, "w") as f:
+                json.dump(data, f, indent=4)
+
+            tok = tokenizers.SentencePieceUnigramTokenizer(vocab_filename)
+        finally:
+            os.remove(vocab_filename)
 
     perfect = 0
     imperfect = 0
