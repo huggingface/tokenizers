@@ -124,7 +124,8 @@ pub struct NormalizedString {
 }
 
 impl NormalizedString {
-    pub fn new(
+    #[cfg(test)]
+    pub(crate) fn new(
         original: String,
         normalized: String,
         alignments: Vec<(usize, usize)>,

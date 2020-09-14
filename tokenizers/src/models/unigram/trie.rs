@@ -56,22 +56,12 @@ where
     type Item = Vec<Label>;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            match self.iterator.next() {
-                Some(label) => {
-                    self.prefix.push(label);
-                    let child_opt = self.node.children.get(&label);
-                    if let Some(child) = child_opt {
-                        self.node = child;
-                        if self.node.is_leaf {
-                            return Some(self.prefix.clone());
-                        }
-                    } else {
-                        return None;
-                    }
-                }
-                None => {
-                    return None;
-                }
+            let label = self.iterator.next()?;
+            self.prefix.push(label);
+            let child = self.node.children.get(&label)?;
+            self.node = child;
+            if self.node.is_leaf {
+                return Some(self.prefix.clone());
             }
         }
     }

@@ -294,10 +294,11 @@ pub struct PyPrecompiled {}
 #[pymethods]
 impl PyPrecompiled {
     #[new]
-    fn new(precompiled_charsmap: Vec<u8>) -> PyResult<(Self, PyNormalizer)> {
+    fn new(py_precompiled_charsmap: &PyBytes) -> PyResult<(Self, PyNormalizer)> {
+        let precompiled_charsmap: &[u8] = FromPyObject::extract(py_precompiled_charsmap)?;
         Ok((
             PyPrecompiled {},
-            Precompiled::from(&precompiled_charsmap)
+            Precompiled::from(precompiled_charsmap)
                 .map_err(|e| {
                     exceptions::Exception::py_err(format!(
                         "Error while attempting to build Precompiled normalizer: {}",

@@ -1,11 +1,7 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use nom::{number::complete::le_u32, number::Endianness, IResult, ToUsize};
-use serde::{
-    de::{Error, Visitor},
-    ser::SerializeStruct,
-    Deserialize, Deserializer, Serialize, Serializer,
-};
-use std::fmt;
+use nom::{number::complete::le_u32, IResult, ToUsize};
+use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
 use unicode_segmentation::UnicodeSegmentation;
 
 /// This struct is specifically done to be compatible with SentencePiece
@@ -13,54 +9,30 @@ use unicode_segmentation::UnicodeSegmentation;
 /// that both represents a Trie, and embedded rewrite rules.
 /// In order to be 100% compliant we need to interpret that binary format too.
 ///
-#[derive(Default, Clone, Debug, PartialEq)]
+#[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", try_from = "PrecompiledDeserializer")]
 pub struct Precompiled {
     precompiled_charsmap: Vec<u8>,
+    #[serde(skip)]
     pub(super) normalized: String,
+    #[serde(skip)]
     pub(super) trie: DoubleArray,
 }
 
-impl Serialize for Precompiled {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("Precompiled", 1)?;
-        state.serialize_field("precompiled_charsmap", &self.precompiled_charsmap)?;
-        state.end()
-    }
+#[doc(hidden)]
+#[derive(Deserialize)]
+#[serde(tag = "type")]
+struct PrecompiledDeserializer {
+    precompiled_charsmap: Vec<u8>,
 }
 
-impl<'de> Deserialize<'de> for Precompiled {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_map(PrecompiledVisitor)
+impl TryFrom<PrecompiledDeserializer> for Precompiled {
+    type Error = Box<dyn std::error::Error + Send + Sync>;
+
+    fn try_from(t: PrecompiledDeserializer) -> Result<Self> {
+        Self::from(&t.precompiled_charsmap)
     }
 }
-struct PrecompiledVisitor;
-impl<'de> Visitor<'de> for PrecompiledVisitor {
-    type Value = Precompiled;
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "Precompiled")
-    }
-
-    fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
-    where
-        A: serde::de::MapAccess<'de>,
-    {
-        let maybe_type = map.next_entry::<String, Vec<u8>>()?;
-        let maybe_type_str = maybe_type.as_ref().map(|(k, v)| (k.as_str(), v));
-        match maybe_type_str {
-            Some(("precompiled_charsmap", value)) => Ok(Precompiled::from(&value)
-                .map_err(|_| Error::custom("Cannot read `precompiled` string"))?),
-            _ => Err(Error::custom("Expected precompiled value, got {:?}")),
-        }
-    }
-}
-
-named!(be<u32>, u32!(Endianness::Little));
 
 pub type ArrayUnit = usize;
 
@@ -126,9 +98,7 @@ impl DoubleArray {
 }
 
 fn parse(precompiled_charsmap: &[u8]) -> IResult<&[u8], Array> {
-    let n = precompiled_charsmap.len();
     let (mut rest, trie_size) = le_u32(precompiled_charsmap)?;
-    assert_eq!(trie_size % 4, 0);
     // u8 to u32.
     let trie_char_size = trie_size / 4;
     let mut trie_blob = Vec::with_capacity(trie_char_size as usize);
@@ -138,13 +108,26 @@ fn parse(precompiled_charsmap: &[u8]) -> IResult<&[u8], Array> {
         trie_blob.push(n.to_usize());
     }
     let normalized_blob = rest;
-    assert_eq!(rest.len() + trie_size as usize + 4, n);
     Ok((normalized_blob, trie_blob))
 }
 
+#[derive(Debug)]
+pub enum PrecompiledError {
+    ParseError,
+}
+
+impl std::fmt::Display for PrecompiledError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Cannot parse precompiled_charsmap")
+    }
+}
+
+impl std::error::Error for PrecompiledError {}
+
 impl Precompiled {
     pub fn from(precompiled_charsmap: &[u8]) -> Result<Precompiled> {
-        let (normalized_blob, trie_blob) = parse(&precompiled_charsmap).unwrap();
+        let (normalized_blob, trie_blob) =
+            parse(&precompiled_charsmap).map_err(|_| PrecompiledError::ParseError)?;
         let normalized = String::from_utf8(normalized_blob.to_vec())?;
         let trie = DoubleArray::from(trie_blob);
         let precompiled = Precompiled {
@@ -156,13 +139,10 @@ impl Precompiled {
     }
 
     pub(super) fn transform(&self, chunk: &str) -> Option<&str> {
-        debug!("Chunk {:?}", chunk);
         let results = self.trie.common_prefix_search(&chunk.as_bytes());
-        debug!("Results {:?}", results);
         if results.is_empty() {
             None
         } else {
-            debug!("Results {:?}", results.len());
             let index = results[0] as usize;
             let mut index2 = index;
             while index2 < self.normalized.len() {
@@ -172,7 +152,6 @@ impl Precompiled {
                 index2 += 1;
             }
             let normalized = &self.normalized[index..index2];
-            // println!("Chunk {:?} was normalized as {:?}", chunk, normalized);
             Some(normalized)
         }
     }

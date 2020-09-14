@@ -218,7 +218,7 @@ impl Unigram {
         }
     }
 
-    pub fn encode_optimized(&self, sentence: &str) -> Vec<String> {
+    fn encode_optimized(&self, sentence: &str) -> Vec<String> {
         // https://github.com/google/sentencepiece/blob/d48247191a6d50e469ed1a4a36e877befffd1851/src/unigram_model.cc#L600
         #[derive(Debug, Clone)]
         struct BestPathNode {
@@ -326,7 +326,9 @@ impl Unigram {
         results.reverse();
         results
     }
-    pub fn encode_unoptimized(&self, sentence: &str) -> Vec<String> {
+
+    #[allow(dead_code)]
+    fn encode_unoptimized(&self, sentence: &str) -> Vec<String> {
         let mut lattice = Lattice::from(sentence, self.unk_id, self.bos_id, self.eos_id);
         self.populate_nodes(&mut lattice);
         if self.fuse_unk {
