@@ -8,7 +8,13 @@ use unicode_segmentation::UnicodeSegmentation;
 /// SentencePiece models embed their Normalizer within a `precompiled_charsmap`
 /// that both represents a Trie, and embedded rewrite rules.
 /// In order to be 100% compliant we need to interpret that binary format too.
+/// The format is [u32 (length of trie), trie: [u32], normalized: String]
+/// The trie has u8 as entries, and u32 as values, those u32 values
+/// point to offsets withing the String that correspond to the real replace value
+/// The normalized string contains '\0' that should indicate the end of an entry.
 ///
+/// Hence, normalized could be "abc\0", some entry in the trie could be 0 meaning
+/// the value is "abc" and another one be 1 meaning the actual entry was "bc".
 #[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", try_from = "PrecompiledDeserializer")]
 pub struct Precompiled {
@@ -170,10 +176,17 @@ impl Normalizer for Precompiled {
         // break a single test.
         // You don't pass.
         normalized.get().graphemes(true).for_each(|grapheme| {
+            let old_count = grapheme.chars().count() as isize;
             if grapheme.len() < 6 {
                 if let Some(norm) = self.transform(grapheme) {
+                    let new_count = norm.chars().count() as isize;
                     for (i, c) in norm.chars().enumerate() {
-                        transformations.push((c, i as isize));
+                        let n = if i == 0 {
+                            new_count - old_count
+                        } else {
+                            i as isize
+                        };
+                        transformations.push((c, n));
                     }
                     return;
                 }
@@ -181,8 +194,14 @@ impl Normalizer for Precompiled {
             for (char_index, c) in grapheme.char_indices() {
                 let part = &grapheme[char_index..char_index + c.len_utf8()];
                 if let Some(norm) = self.transform(part) {
+                    let new_count = norm.chars().count() as isize;
                     for (i, c) in norm.chars().enumerate() {
-                        transformations.push((c, i as isize));
+                        let n = if i == 0 {
+                            new_count - old_count
+                        } else {
+                            i as isize
+                        };
+                        transformations.push((c, n));
                     }
                 } else {
                     transformations.push((c, 0));
