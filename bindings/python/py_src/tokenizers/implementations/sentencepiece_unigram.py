@@ -31,7 +31,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         else:
             tokenizer = Tokenizer(Unigram())
 
-        tokenizer.normalizer = normalizers.Sequence(normalizers.Nmt(), normalizers.NFKC(),)
+        tokenizer.normalizer = normalizers.Sequence([normalizers.Nmt(), normalizers.NFKC()])
         tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
             [
                 pre_tokenizers.WhitespaceSplit(),
