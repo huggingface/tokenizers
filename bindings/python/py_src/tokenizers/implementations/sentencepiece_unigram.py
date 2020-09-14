@@ -86,6 +86,11 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         precompiled_charsmap = m.normalizer_spec.precompiled_charsmap
         vocab = [(piece.piece, piece.score) for piece in m.pieces]
         unk_id = m.trainer_spec.unk_id
+        model_type = m.trainer_spec.model_type
+        if model_type != 1:
+            raise Exception(
+                "You're trying to run a `Unigram` model but you're file was trained with a different algorithm"
+            )
 
         data = {"unk_id": unk_id, "vocab": vocab}
 
