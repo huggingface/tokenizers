@@ -785,6 +785,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3757cb9d89161a2f24e1cf78efa0c1fcff485d18e3f55e0aa3480824ddaa0f3f"
 
 [[package]]
+name = "spm_precompiled"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f78be885c9efc899a7c0348f67c98b488cbeaf2cb608a48fb87ef1484ecab5c5"
+dependencies = [
+ "nom",
+ "serde",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -861,7 +872,6 @@ dependencies = [
  "itertools 0.9.0",
  "lazy_static",
  "log",
- "nom",
  "onig",
  "rand",
  "rayon",
@@ -870,6 +880,7 @@ dependencies = [
  "regex-syntax",
  "serde",
  "serde_json",
+ "spm_precompiled",
  "unicode-normalization-alignments",
  "unicode-segmentation",
  "unicode_categories",

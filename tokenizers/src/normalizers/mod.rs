@@ -1,8 +1,5 @@
 pub mod bert;
 pub mod precompiled;
-// Separatae file because of long bytes.
-#[cfg(test)]
-mod precompiled_test;
 pub mod strip;
 pub mod unicode;
 pub mod utils;
