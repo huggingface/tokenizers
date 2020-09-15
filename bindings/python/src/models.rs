@@ -263,21 +263,19 @@ pub struct PyUnigram {}
 #[pymethods]
 impl PyUnigram {
     #[new]
-    fn new(vocab: Option<&str>) -> PyResult<(Self, PyModel)> {
-        if let Some(vocab) = vocab {
-            let path = Path::new(vocab);
-            match Unigram::load(path) {
+    fn new(vocab: Option<String>) -> PyResult<(Self, PyModel)> {
+        match vocab {
+            Some(vocab) => match Unigram::load(&std::path::Path::new(&vocab)) {
                 Err(e) => {
                     println!("Errors: {:?}", e);
                     Err(exceptions::Exception::py_err("Error while loading Unigram"))
                 }
                 Ok(model) => Ok((PyUnigram {}, PyModel::new(Arc::new(model.into())))),
-            }
-        } else {
-            Ok((
+            },
+            None => Ok((
                 PyUnigram {},
                 PyModel::new(Arc::new(Unigram::default().into())),
-            ))
+            )),
         }
     }
 }

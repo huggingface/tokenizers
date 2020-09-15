@@ -30,23 +30,40 @@ impl<Label: Eq + Hash + Copy> Trie<Label> {
         node.is_leaf = true;
     }
 
-    pub fn common_prefix_search(&self, iterator: impl Iterator<Item = Label>) -> Vec<Vec<Label>> {
-        let mut node = &self.root;
-        let mut results = vec![];
-        let mut prefix = vec![];
-        for label in iterator {
-            prefix.push(label);
-            let child_opt = node.children.get(&label);
-            if let Some(child) = child_opt {
-                node = child;
-                if node.is_leaf {
-                    results.push(prefix.clone());
-                }
-            } else {
-                return results;
+    pub fn common_prefix_search<T>(&self, iterator: T) -> TrieIterator<Label, T>
+    where
+        T: Iterator<Item = Label>,
+    {
+        TrieIterator {
+            node: &self.root,
+            prefix: vec![],
+            iterator,
+        }
+    }
+}
+
+pub struct TrieIterator<'a, Label, T> {
+    node: &'a Node<Label>,
+    prefix: Vec<Label>,
+    iterator: T,
+}
+
+impl<Label, T> Iterator for TrieIterator<'_, Label, T>
+where
+    Label: Eq + Hash + Copy,
+    T: Iterator<Item = Label>,
+{
+    type Item = Vec<Label>;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let label = self.iterator.next()?;
+            self.prefix.push(label);
+            let child = self.node.children.get(&label)?;
+            self.node = child;
+            if self.node.is_leaf {
+                return Some(self.prefix.clone());
             }
         }
-        results
     }
 }
 

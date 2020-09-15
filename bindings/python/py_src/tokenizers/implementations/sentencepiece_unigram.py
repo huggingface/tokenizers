@@ -1,6 +1,14 @@
-from tokenizers import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers
+from tokenizers import (
+    Tokenizer,
+    AddedToken,
+    pre_tokenizers,
+    decoders,
+    trainers,
+    normalizers,
+)
+import os
 from tokenizers.models import Unigram
-from tokenizers.normalizers import NFKC
+import json
 from .base_tokenizer import BaseTokenizer
 
 from typing import Optional, List, Union
@@ -16,11 +24,12 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         self, vocab: Optional[str] = None, replacement: str = "▁", add_prefix_space: bool = True,
     ):
         if vocab is not None:
+            # Let Unigram(..) fail if only one of them is None
             tokenizer = Tokenizer(Unigram(vocab))
         else:
             tokenizer = Tokenizer(Unigram())
 
-        tokenizer.normalizer = NFKC()
+        tokenizer.normalizer = normalizers.Sequence([normalizers.Nmt(), normalizers.NFKC(),])
         tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
             [
                 pre_tokenizers.WhitespaceSplit(),
@@ -57,3 +66,63 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         if isinstance(files, str):
             files = [files]
         self._tokenizer.train(trainer, files)
+
+    @staticmethod
+    def from_spm(filename: str):
+        try:
+            import sys
+
+            sys.path.append(".")
+
+            import sentencepiece_model_pb2 as model
+        except Exception:
+            raise Exception(
+                "You don't seem to have the required protobuf file, in order to use this function you need to run `pip install protobuf` and `wget https://raw.githubusercontent.com/google/sentencepiece/master/python/sentencepiece_model_pb2.py` for us to be able to read the intrinsics of your spm_file. `pip install sentencepiece` is not required."
+            )
+
+        m = model.ModelProto()
+        m.ParseFromString(open(filename, "rb").read())
+
+        precompiled_charsmap = m.normalizer_spec.precompiled_charsmap
+        vocab = [(piece.piece, piece.score) for piece in m.pieces]
+        unk_id = m.trainer_spec.unk_id
+        model_type = m.trainer_spec.model_type
+        if model_type != 1:
+            raise Exception(
+                "You're trying to run a `Unigram` model but you're file was trained with a different algorithm"
+            )
+
+        data = {"unk_id": unk_id, "vocab": vocab}
+
+        replacement = "▁"
+        add_prefix_space = True
+
+        out_vocab_filename = f"{filename}.json"
+        try:
+            with open(out_vocab_filename, "w") as f:
+                json.dump(data, f, indent=4)
+
+            tokenizer = Tokenizer(Unigram(out_vocab_filename))
+        finally:
+            os.remove(out_vocab_filename)
+
+        tokenizer.normalizer = normalizers.Precompiled(precompiled_charsmap)
+        tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
+            [
+                pre_tokenizers.WhitespaceSplit(),
+                pre_tokenizers.Metaspace(
+                    replacement=replacement, add_prefix_space=add_prefix_space
+                ),
+            ]
+        )
+        tokenizer.decoder = decoders.Metaspace(
+            replacement=replacement, add_prefix_space=add_prefix_space
+        )
+
+        parameters = {
+            "model": "SentencePieceUnigram",
+        }
+
+        obj = BaseTokenizer.__new__(SentencePieceUnigramTokenizer, tokenizer, parameters)
+        BaseTokenizer.__init__(obj, tokenizer, parameters)
+        return obj

@@ -99,6 +99,18 @@ class Strip(Normalizer):
     def __init__(self, left: bool = True, right: bool = True) -> Normalizer:
         pass
 
+class Nmt(Normalizer):
+    """ Nmt normalizer """
+
+    def __init__(self) -> Normalizer:
+        pass
+
+class Precompiled(Normalizer):
+    """ SpmNmtNfkc normalizer """
+
+    def __init__(self, precompiled_charsmap: bytes) -> Normalizer:
+        pass
+
 def unicode_normalizer_from_str(normalizer: str) -> Normalizer:
     """
     Instanciate unicode normalizer from the normalizer name

@@ -1,7 +1,7 @@
 use crate::models::unigram::lattice::Lattice;
 use crate::models::unigram::trie::{Trie, TrieBuilder};
 use crate::tokenizer::{Model, Result, Token};
-use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY};
+use crate::utils::cache::Cache;
 
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -17,7 +17,7 @@ pub struct Unigram {
     token_to_ids: TokenMap,
     pub(crate) vocab: Vocab,
     cache: Cache<String, Vec<String>>,
-    trie: Trie<char>,
+    trie: Trie<u8>,
     pub min_score: f64,
     pub(super) unk_id: usize,
     pub(super) bos_id: usize,
@@ -38,13 +38,13 @@ impl Clone for Unigram {
         let fresh_cache = self.cache.fresh();
         Self {
             vocab: self.vocab.clone(),
-            token_to_ids: self.token_to_ids.clone(),
             cache: fresh_cache,
-            unk_id: self.unk_id,
+            token_to_ids: self.token_to_ids.clone(),
+            trie: self.trie.clone(),
             min_score: self.min_score,
+            unk_id: self.unk_id,
             bos_id: self.bos_id,
             eos_id: self.eos_id,
-            trie: self.trie.clone(),
             fuse_unk: self.fuse_unk,
         }
     }
@@ -54,6 +54,7 @@ impl std::fmt::Debug for Unigram {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         fmt.debug_struct("BPE")
             .field("vocab", &self.vocab.len())
+            .field("unk_id", &self.unk_id)
             .finish()
     }
 }
@@ -113,19 +114,17 @@ impl Unigram {
         let mut min_score = f64::INFINITY;
         for (id, (token, score)) in vocab.iter().enumerate() {
             token_to_ids.insert(token.to_string(), id as u32);
-            let chars: Vec<char> = token.chars().collect();
-            builder.push(&chars);
+            let bytes: Vec<u8> = token.bytes().collect();
+            builder.push(&bytes);
             if score < &min_score {
                 min_score = *score;
             }
         }
         let trie = builder.build();
         let fuse_unk = true;
-        let cache = Cache::new(DEFAULT_CACHE_CAPACITY);
 
         Ok(Unigram {
             vocab,
-            cache,
             token_to_ids,
             trie,
             min_score,
@@ -133,6 +132,7 @@ impl Unigram {
             eos_id,
             unk_id,
             fuse_unk,
+            cache: Cache::default(),
         })
     }
 
@@ -151,26 +151,29 @@ impl Unigram {
 
         let len = lattice.len();
 
-        for begin_pos in 0..len {
-            let trie_results: Vec<String> = self
-                .trie
-                .common_prefix_search(lattice.sentence.chars().skip(begin_pos))
-                .iter()
-                .map(|chars| chars.iter().collect())
-                .collect();
+        let mut begin_pos = 0;
+        while begin_pos < len {
+            let mblen = lattice.sentence[begin_pos..]
+                .chars()
+                .next()
+                .unwrap()
+                .len_utf8();
 
             let mut has_single_node = false;
 
-            for tok in trie_results {
-                let n = tok.chars().count();
-
+            for bytes in self
+                .trie
+                .common_prefix_search(lattice.sentence.bytes().skip(begin_pos))
+            {
+                let n = bytes.len();
+                let tok = String::from_utf8(bytes).unwrap();
                 let id = *self.token_to_ids.get(&tok).unwrap();
 
                 let item = &self.vocab[id as usize];
                 assert_eq!(item.0, tok);
                 let score: f64 = item.1;
                 lattice.insert(begin_pos, n, score, id.try_into().unwrap());
-                if !has_single_node && n == 1 {
+                if !has_single_node && n == mblen {
                     has_single_node = true;
                 }
             }
@@ -178,6 +181,7 @@ impl Unigram {
             if !has_single_node {
                 lattice.insert(begin_pos, 1, unk_score, self.unk_id);
             }
+            begin_pos += mblen
         }
     }
 
@@ -202,17 +206,129 @@ impl Unigram {
     /// assert_eq!(result, vec!["abcd", "a", "cd", "xx"]);
     /// ```
     pub fn encode(&self, sentence: &str) -> Vec<String> {
+        if sentence.is_empty() {
+            return vec![];
+        }
         if let Some(result) = self.cache.get(sentence) {
-            result
+            result.to_vec()
         } else {
-            let result = self.encode_no_cache(sentence);
+            let result = self.encode_optimized(sentence);
             self.cache.set(sentence.to_owned(), result.clone());
             result
         }
     }
-    fn encode_no_cache(&self, sentence: &str) -> Vec<String> {
-        // TODO optimized version
+
+    fn encode_optimized(&self, sentence: &str) -> Vec<String> {
         // https://github.com/google/sentencepiece/blob/d48247191a6d50e469ed1a4a36e877befffd1851/src/unigram_model.cc#L600
+        #[derive(Debug, Clone)]
+        struct BestPathNode {
+            /// The vocab id. (maybe UNK)
+            id: usize,
+            /// The total score of the best path ending at this node.
+            best_path_score: f64,
+            /// The starting position (in utf-8) of this node. The entire best
+            /// path can be constructed by backtracking along this link.
+            starts_at: Option<usize>,
+        };
+        impl Default for BestPathNode {
+            fn default() -> Self {
+                Self {
+                    id: 0,
+                    best_path_score: 0.0,
+                    starts_at: None,
+                }
+            }
+        }
+        let size = sentence.len();
+        let unk_score = self.min_score - K_UNK_PENALTY;
+
+        let mut best_path_ends_at = vec![BestPathNode::default(); size + 1];
+        let mut starts_at = 0;
+        while starts_at < size {
+            let best_path_score_till_here = best_path_ends_at[starts_at].best_path_score;
+            let mut has_single_node = false;
+            let mblen = sentence[starts_at..].chars().next().unwrap().len_utf8();
+            for tok_bytes in self
+                .trie
+                .common_prefix_search(sentence.bytes().skip(starts_at))
+            {
+                let key_pos = starts_at + tok_bytes.len();
+                let token: String = String::from_utf8(tok_bytes).unwrap();
+                let mut target_node = &mut best_path_ends_at[key_pos];
+                let length = key_pos - starts_at;
+                let id = self.token_to_ids.get(&token).unwrap();
+                let score = self.vocab.get(*id as usize).unwrap().1;
+                let candidate_best_path_score = score + best_path_score_till_here;
+                if target_node.starts_at.is_none()
+                    || candidate_best_path_score > target_node.best_path_score
+                {
+                    target_node.best_path_score = candidate_best_path_score;
+                    target_node.starts_at = Some(starts_at);
+                    target_node.id = *id as usize;
+                }
+                if !has_single_node && length == mblen {
+                    has_single_node = true;
+                }
+            }
+            if !has_single_node {
+                let mut target_node = &mut best_path_ends_at[starts_at + mblen];
+                let candidate_best_path_score = unk_score + best_path_score_till_here;
+                if target_node.starts_at.is_none()
+                    || candidate_best_path_score > target_node.best_path_score
+                {
+                    target_node.best_path_score = candidate_best_path_score;
+                    target_node.starts_at = Some(starts_at);
+                    target_node.id = self.unk_id;
+                }
+            }
+            starts_at += mblen
+        }
+        let mut ends_at = size;
+        let mut results: Vec<String> = vec![];
+        let mut token = vec![];
+        while ends_at > 0 {
+            let node = &best_path_ends_at[ends_at];
+            let starts_at = node.starts_at.unwrap();
+            if self.fuse_unk && node.id == self.unk_id {
+                token.push(
+                    String::from_utf8(
+                        sentence
+                            .bytes()
+                            .skip(starts_at)
+                            .take(ends_at - starts_at)
+                            .collect(),
+                    )
+                    .unwrap(),
+                );
+            } else {
+                if !token.is_empty() {
+                    token.reverse();
+                    results.push(token.concat());
+                    token = vec![];
+                }
+                results.push(
+                    String::from_utf8(
+                        sentence
+                            .bytes()
+                            .skip(starts_at)
+                            .take(ends_at - starts_at)
+                            .collect(),
+                    )
+                    .unwrap(),
+                );
+            }
+            ends_at = starts_at;
+        }
+        if !token.is_empty() {
+            token.reverse();
+            results.push(token.concat());
+        }
+        results.reverse();
+        results
+    }
+
+    #[allow(dead_code)]
+    fn encode_unoptimized(&self, sentence: &str) -> Vec<String> {
         let mut lattice = Lattice::from(sentence, self.unk_id, self.bos_id, self.eos_id);
         self.populate_nodes(&mut lattice);
         if self.fuse_unk {
@@ -296,11 +412,14 @@ impl Model for Unigram {
         Ok(tokens
             .iter()
             .map(|string| {
-                let id = self.token_to_ids.get(string).unwrap_or(&0);
+                let id: u32 = match self.token_to_ids.get(string) {
+                    Some(id) => *id,
+                    None => self.unk_id as u32,
+                };
                 let len = string.len();
                 let offsets = (offset, offset + len);
                 offset += len;
-                Token::new(*id, string.to_string(), offsets)
+                Token::new(id, string.to_string(), offsets)
             })
             .collect())
     }

@@ -4,7 +4,6 @@ mod model;
 mod serialization;
 mod trainer;
 mod trie;
-mod unicode;
 
 pub use lattice::*;
 pub use model::*;
