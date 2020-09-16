@@ -210,6 +210,17 @@ fn lowercase(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     Ok(normalizer)
 }
 
+/// replace()
+fn replace(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
+    let pattern: String = cx.extract::<String>(0)?;
+    let content: String = cx.extract::<String>(1)?;
+    let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    normalizer.borrow_mut(&guard).normalizer =
+        Some(tk::normalizers::replace::Replace::new(pattern, content).into());
+    Ok(normalizer)
+}
+
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_BertNormalizer", prefix), bert_normalizer)?;
@@ -219,6 +230,7 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_NFKC", prefix), nfkc)?;
     m.export_function(&format!("{}_Sequence", prefix), sequence)?;
     m.export_function(&format!("{}_Lowercase", prefix), lowercase)?;
+    m.export_function(&format!("{}_Replace", prefix), replace)?;
     m.export_function(&format!("{}_Strip", prefix), strip)?;
     m.export_function(&format!("{}_StripAccents", prefix), strip_accents)?;
     Ok(())
