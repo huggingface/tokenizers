@@ -1,11 +1,13 @@
 pub mod bert;
 pub mod precompiled;
+pub mod replace;
 pub mod strip;
 pub mod unicode;
 pub mod utils;
 
 pub use crate::normalizers::bert::BertNormalizer;
 pub use crate::normalizers::precompiled::Precompiled;
+pub use crate::normalizers::replace::Replace;
 pub use crate::normalizers::strip::{Strip, StripAccents};
 pub use crate::normalizers::unicode::{Nmt, NFC, NFD, NFKC, NFKD};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
@@ -29,6 +31,7 @@ pub enum NormalizerWrapper {
     Lowercase(Lowercase),
     Nmt(Nmt),
     Precompiled(Precompiled),
+    Replace(Replace),
 }
 
 impl Normalizer for NormalizerWrapper {
@@ -45,6 +48,7 @@ impl Normalizer for NormalizerWrapper {
             NormalizerWrapper::Lowercase(lc) => lc.normalize(normalized),
             NormalizerWrapper::Nmt(lc) => lc.normalize(normalized),
             NormalizerWrapper::Precompiled(lc) => lc.normalize(normalized),
+            NormalizerWrapper::Replace(lc) => lc.normalize(normalized),
         }
     }
 }
@@ -60,3 +64,4 @@ impl_enum_from!(Sequence, NormalizerWrapper, Sequence);
 impl_enum_from!(Lowercase, NormalizerWrapper, Lowercase);
 impl_enum_from!(Nmt, NormalizerWrapper, Nmt);
 impl_enum_from!(Precompiled, NormalizerWrapper, Precompiled);
+impl_enum_from!(Replace, NormalizerWrapper, Replace);

@@ -8,8 +8,13 @@ use crate::error::ToPyResult;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize, Serializer};
 use tk::normalizers::{
+<<<<<<< HEAD
     BertNormalizer, Lowercase, Nmt, NormalizerWrapper, Precompiled, Strip, StripAccents, NFC, NFD,
     NFKC, NFKD,
+=======
+    BertNormalizer, Lowercase, Nmt, NormalizerWrapper, Precompiled, Replace, Strip, NFC, NFD, NFKC,
+    NFKD,
+>>>>>>> Adding a new "Replace" normalizer that takes a string and replaces it
 };
 use tk::{NormalizedString, Normalizer};
 use tokenizers as tk;
@@ -54,6 +59,7 @@ impl PyNormalizer {
                 NormalizerWrapper::Precompiled(_) => {
                     Py::new(py, (PyPrecompiled {}, base)).map(Into::into)
                 }
+                NormalizerWrapper::Replace(_) => Py::new(py, (PyReplace {}, base)).map(Into::into),
                 NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base)).map(Into::into),
             },
         }
@@ -321,6 +327,18 @@ impl PyPrecompiled {
                 })?
                 .into(),
         ))
+    }
+}
+
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Replace)]
+pub struct PyReplace {}
+#[pymethods]
+impl PyReplace {
+    #[new]
+    fn new(pattern: &PyString, content: &PyString) -> PyResult<(Self, PyNormalizer)> {
+        let pattern: String = (*pattern).to_string()?.to_string();
+        let content: String = (*content).to_string()?.to_string();
+        Ok((PyReplace {}, Replace::new(pattern, content).into()))
     }
 }
 

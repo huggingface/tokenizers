@@ -112,9 +112,15 @@ class Nmt(Normalizer):
         pass
 
 class Precompiled(Normalizer):
-    """ SpmNmtNfkc normalizer """
+    """ Precompiled normalizer """
 
     def __init__(self, precompiled_charsmap: bytes) -> Normalizer:
+        pass
+
+class Replace(Normalizer):
+    """ Replace normalizer """
+
+    def __init__(self, pattern: str, content: str) -> Normalizer:
         pass
 
 def unicode_normalizer_from_str(normalizer: str) -> Normalizer:
