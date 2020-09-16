@@ -6,7 +6,7 @@ pub mod utils;
 
 pub use crate::normalizers::bert::BertNormalizer;
 pub use crate::normalizers::precompiled::Precompiled;
-pub use crate::normalizers::strip::Strip;
+pub use crate::normalizers::strip::{Strip, StripAccents};
 pub use crate::normalizers::unicode::{Nmt, NFC, NFD, NFKC, NFKD};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
 
@@ -20,6 +20,7 @@ use crate::{NormalizedString, Normalizer};
 pub enum NormalizerWrapper {
     BertNormalizer(BertNormalizer),
     StripNormalizer(Strip),
+    StripAccents(StripAccents),
     NFC(NFC),
     NFD(NFD),
     NFKC(NFKC),
@@ -35,6 +36,7 @@ impl Normalizer for NormalizerWrapper {
         match self {
             NormalizerWrapper::BertNormalizer(bn) => bn.normalize(normalized),
             NormalizerWrapper::StripNormalizer(sn) => sn.normalize(normalized),
+            NormalizerWrapper::StripAccents(sn) => sn.normalize(normalized),
             NormalizerWrapper::NFC(nfc) => nfc.normalize(normalized),
             NormalizerWrapper::NFD(nfd) => nfd.normalize(normalized),
             NormalizerWrapper::NFKC(nfkc) => nfkc.normalize(normalized),
@@ -53,6 +55,7 @@ impl_enum_from!(NFKC, NormalizerWrapper, NFKC);
 impl_enum_from!(NFC, NormalizerWrapper, NFC);
 impl_enum_from!(NFD, NormalizerWrapper, NFD);
 impl_enum_from!(Strip, NormalizerWrapper, StripNormalizer);
+impl_enum_from!(StripAccents, NormalizerWrapper, StripAccents);
 impl_enum_from!(Sequence, NormalizerWrapper, Sequence);
 impl_enum_from!(Lowercase, NormalizerWrapper, Lowercase);
 impl_enum_from!(Nmt, NormalizerWrapper, Nmt);
