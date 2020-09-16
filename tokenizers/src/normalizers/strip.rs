@@ -38,9 +38,9 @@ impl Normalizer for Strip {
     }
 }
 
-/// This normalizer removes combining marks from a normalized string
-/// It's different from unidecode as it does not attempt to modify
-/// non ascii languages.
+// This normalizer removes combining marks from a normalized string
+// It's different from unidecode as it does not attempt to modify
+// non ascii languages.
 #[derive(Copy, Clone, Debug)]
 pub struct StripAccents;
 impl_serde_unit_struct!(StripAccentsVisitor, StripAccents);
