@@ -111,6 +111,7 @@ fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<normalizers::PyStripAccents>()?;
     m.add_class::<normalizers::PyNmt>()?;
     m.add_class::<normalizers::PyPrecompiled>()?;
+    m.add_class::<normalizers::PyReplace>()?;
     Ok(())
 }
 

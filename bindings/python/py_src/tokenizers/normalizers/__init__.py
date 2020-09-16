@@ -12,6 +12,7 @@ Strip = normalizers.Strip
 StripAccents = normalizers.StripAccents
 Nmt = normalizers.Nmt
 Precompiled = normalizers.Precompiled
+Replace = normalizers.Replace
 
 
 NORMALIZERS = {"nfc": NFC, "nfd": NFD, "nfkc": NFKC, "nfkd": NFKD}
