@@ -1,4 +1,4 @@
-import { stripNormalizer } from "./normalizers";
+import { stripAccentsNormalizer, stripNormalizer } from "./normalizers";
 
 describe("stripNormalizer", () => {
   it("instantiates with no parameters", () => {
@@ -21,6 +21,13 @@ describe("stripNormalizer", () => {
 
   it("instantiates with two parameters", () => {
     const normalizer = stripNormalizer(false, true);
+    expect(normalizer.constructor.name).toEqual("Normalizer");
+  });
+});
+
+describe("stripAccentsNormalizer", () => {
+  it("initialize", () => {
+    const normalizer = stripAccentsNormalizer();
     expect(normalizer.constructor.name).toEqual("Normalizer");
   });
 });

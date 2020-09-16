@@ -75,3 +75,8 @@ export function sequenceNormalizer(normalizers: Normalizer[]): Normalizer;
  * @param [right=true] Whether or not to strip on the right (defaults to `true`)
  */
 export function stripNormalizer(left?: boolean, right?: boolean): Normalizer;
+
+/**
+ *  Returns a new StripAccents Normalizer
+ */
+export function stripAccentsNormalizer(): Normalizer;

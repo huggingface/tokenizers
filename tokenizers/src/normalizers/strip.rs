@@ -48,17 +48,7 @@ impl_serde_unit_struct!(StripAccentsVisitor, StripAccents);
 impl Normalizer for StripAccents {
     /// Strip the normalized string inplace
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        let mut transforms = Vec::with_capacity(normalized.get().len());
-        let mut offset = 0isize;
-        for c in normalized.get().chars() {
-            if is_combining_mark(c) {
-                offset -= 1;
-            } else {
-                transforms.push((c, offset));
-                offset = 0;
-            }
-        }
-        normalized.transform(transforms.into_iter(), 0);
+        normalized.filter(|c| !is_combining_mark(c));
         Ok(())
     }
 }
@@ -109,7 +99,7 @@ mod tests {
             NormalizedString::new(
                 original.to_string(),
                 normalized.to_string(),
-                vec![(0, 1), (1, 3)],
+                vec![(0, 1), (7, 8)],
                 vec![
                     (0, 1),
                     (1, 1),
@@ -118,7 +108,7 @@ mod tests {
                     (1, 1),
                     (1, 1),
                     (1, 1),
-                    (7, 8)
+                    (1, 2)
                 ],
                 0
             )
