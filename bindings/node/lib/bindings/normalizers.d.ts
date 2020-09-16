@@ -44,6 +44,11 @@ export function bertNormalizer(options?: BertNormalizerOptions): Normalizer;
 export function lowercaseNormalizer(): Normalizer;
 
 /**
+ * Returns a new Replace Normalizer
+ */
+export function replaceNormalizer(): Normalizer;
+
+/**
  * Returns a new NFC Unicode Normalizer
  */
 export function nfcNormalizer(): Normalizer;
