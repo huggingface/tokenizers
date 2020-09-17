@@ -100,16 +100,6 @@ mod tests {
                 original.to_string(),
                 normalized.to_string(),
                 vec![(0, 1), (7, 8)],
-                vec![
-                    (0, 1),
-                    (1, 1),
-                    (1, 1),
-                    (1, 1),
-                    (1, 1),
-                    (1, 1),
-                    (1, 1),
-                    (1, 2)
-                ],
                 0
             )
         );

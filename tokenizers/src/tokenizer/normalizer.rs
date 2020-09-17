@@ -113,10 +113,6 @@ pub struct NormalizedString {
     /// Mapping from normalized string to original one: (start, end) for each
     /// byte of the normalized string
     alignments: Vec<(usize, usize)>,
-    /// Mapping from original string to normalized one: (start, end) for each
-    /// byte of the original string
-    alignments_original: Vec<(usize, usize)>,
-
     /// If this NormalizedString is a slice of a bigger one, we keep the track
     /// of the missing part, so that we can still give offsets from this original
     /// string.
@@ -129,14 +125,12 @@ impl NormalizedString {
         original: String,
         normalized: String,
         alignments: Vec<(usize, usize)>,
-        alignments_original: Vec<(usize, usize)>,
         original_shift: usize,
     ) -> Self {
         Self {
             original,
             normalized,
             alignments,
-            alignments_original,
             original_shift,
         }
     }
@@ -178,24 +172,49 @@ impl NormalizedString {
         if target.start == target.end {
             return Some(target);
         }
+        // If the target goes reverse, return None
+        if target.start > target.end {
+            return None;
+        }
 
         // If we target 0..0 on an empty string, we want to expand to the entire equivalent
-        if original && self.alignments_original.is_empty() && target == (0..0) {
+        if original && self.original.is_empty() && target == (0..0) {
             return Some(0..len_normalized);
         }
-        if !original && self.alignments.is_empty() && target == (0..0) {
+        if !original && self.normalized.is_empty() && target == (0..0) {
             return Some(0..len_original);
         }
 
-        // Otherwise just convert them
         if original {
-            &self.alignments_original
+            let (mut start, mut end) = (None, None);
+            self.alignments
+                .iter()
+                .enumerate()
+                .take_while(|(_, alignment)| target.end >= alignment.1)
+                .for_each(|(i, alignment)| {
+                    if start.is_none() && target.start <= alignment.0 {
+                        // For now, don't update if width == 0
+                        if alignment.0 != alignment.1 {
+                            start = Some(i);
+                        }
+                    }
+                    if target.end >= alignment.1 {
+                        end = Some(i + 1);
+                    }
+                });
+
+            match (start, end) {
+                // Targetting inexistant beginning
+                (Some(s), None) => Some(s..s),
+                // Targetting inexistant end
+                (None, Some(e)) => Some(e..e),
+                // Found the range
+                (Some(s), Some(e)) => Some(s..e),
+                _ => None,
+            }
         } else {
-            &self.alignments
+            self.alignments.get(target).map(expand_alignments).flatten()
         }
-        .get(target)
-        .map(expand_alignments)
-        .flatten()
     }
 
     /// Return a range of the normalized string
@@ -270,12 +289,6 @@ impl NormalizedString {
         };
 
         let n_shift = original_range.start;
-        let o_shift = self
-            .alignments_original
-            .get(0..n_shift)
-            .map(expand_alignments)
-            .flatten()
-            .map_or(0, |r| r.end);
 
         Some(Self {
             original: self
@@ -289,13 +302,6 @@ impl NormalizedString {
                 .to_vec()
                 .iter()
                 .map(|(start, end)| (start - n_shift, end - n_shift))
-                .collect(),
-            alignments_original: self
-                .alignments_original
-                .get(original_range.clone())?
-                .to_vec()
-                .iter()
-                .map(|(start, end)| (start - o_shift, end - o_shift))
                 .collect(),
             original_shift: self.original_shift + original_range.start,
         })
@@ -324,7 +330,8 @@ impl NormalizedString {
             },
         };
         trace!(
-            "===== transform_range call (initial_offset: {}) =====",
+            "===== transform_range call with {:?} (initial_offset: {}) =====",
+            n_range,
             initial_offset
         );
 
@@ -334,74 +341,16 @@ impl NormalizedString {
             .chars()
             .collect::<Vec<_>>()
             .into_iter();
+        let initial_removed: usize = (&mut replaced_normalized)
+            .take(initial_offset)
+            .map(|c| c.len_utf8())
+            .sum();
 
-        // Handle the initial offset in the original alignment. All the characters
-        // that were removed from the normalized one should have their width reduced
-        // by the number of bytes we remove
-        let mut end_shift_start = n_range.end;
-        let initial_removed = if initial_offset > 0 {
-            trace!("=> Clearing alignment for {} chars", initial_offset);
-            let mut removed_bytes = 0;
-            let removed_chars = (0..initial_offset)
-                .map(|_| {
-                    let c = replaced_normalized.next().unwrap_or_else(|| {
-                        // We want to panic here, because the NormalizedString is in
-                        // a bad state if this happens. We already modified a lot of things
-                        panic!(
-                            "Expected to remove {} characters but couldn't find them...",
-                            initial_offset
-                        )
-                    });
-                    removed_bytes += c.len_utf8();
-                    c
-                })
-                .collect::<Vec<_>>();
-
-            let mut offset = n_range.start;
-            let mut o_shift = 0;
-            // Then we remove all these chars, updating the alignments along the way
-            for c in removed_chars {
-                let removed_o_range = self
-                    .alignments
-                    .get(offset..offset + c.len_utf8())
-                    .map(expand_alignments)
-                    .flatten()
-                    .unwrap();
-                offset += c.len_utf8();
-                o_shift += c.len_utf8();
-                if let Some(alignments) = self.alignments_original.get_mut(removed_o_range) {
-                    trace!("Clearing alignments for char {:?}: {:?}", c, alignments);
-                    alignments.iter_mut().for_each(|mut offsets| {
-                        // At the very end we will apply the global shift to the remaining
-                        // original offsets. We should start after these to avoid doing it twice
-                        if offsets.1 > end_shift_start {
-                            end_shift_start = offsets.1;
-                        }
-
-                        apply_signed!(offsets.1, -(o_shift as isize));
-                        //apply_signed!(offsets.1, -(c.len_utf8() as isize));
-                        // Make sure the starting offset is always smaller or equal to the end
-                        if offsets.0 > offsets.1 {
-                            offsets.0 = offsets.1;
-                        }
-                    });
-                    trace!("Cleared: {:?}", alignments);
-                }
-            }
-
-            removed_bytes
-        } else {
-            0
-        };
-
-        // o_shift is the shift to be applied to all original alignment along the way
-        let mut o_shift = -(initial_removed as isize);
         let mut offset = (initial_removed + n_range.start) as isize;
         let mut alignments = Vec::with_capacity(n_range.len());
         trace!("=> Applying transformations");
         let normalized = dest
             .into_iter()
-            //.enumerate()
             .map(|(c, changes)| {
                 trace!(
                     "### {:?} with size {}: {} with offset {} ###",
@@ -446,119 +395,20 @@ impl NormalizedString {
                 }
 
                 // If we are removing some characters, find them too
-                let n_changes = if changes.is_negative() {
-                    -changes as usize
+                let total_bytes_to_remove = if changes.is_negative() {
+                    (&mut replaced_normalized)
+                        .take(-changes as usize)
+                        .map(|c| c.len_utf8())
+                        .sum()
                 } else {
                     0
                 };
-                let removed_chars = (0..n_changes)
-                    .map(|_| {
-                        replaced_normalized.next().unwrap_or_else(|| {
-                            // We want to panic here, because the NormalizedString is in
-                            // a bad state if this happens. We already modified a lot of things
-                            panic!(
-                                "Expected to remove {} characters but couldn't find them...",
-                                n_changes
-                            )
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                let total_bytes_to_remove: usize = removed_chars.iter().map(|c| c.len_utf8()).sum();
                 trace!("Total bytes to remove: {}", total_bytes_to_remove);
-
-                // If we are removing characters, there are two possible scenarios:
-                //   1. We remove characters that are part of the original string (most likely)
-                //   2. We remove characters that were previously added (with NFD for example)
-                //      and are just part of the normalized string
-                let (removing_from_original, removing_from_normalized) =
-                    if total_bytes_to_remove > 0 {
-                        let original_range =
-                            self.alignments[idx].1..self.alignments[idx + total_bytes_to_remove].1;
-                        (
-                            original_range.len(),
-                            total_bytes_to_remove - original_range.len(),
-                        )
-                    } else {
-                        (0, 0)
-                    };
-                if total_bytes_to_remove > 0 {
-                    trace!(
-                        "Bytes to remove from original alignments: {}",
-                        removing_from_original
-                    );
-                    trace!(
-                        "Bytes to remove from normalized alignments: {}",
-                        removing_from_normalized
-                    );
-                }
-
-                // Update the original alignments for the current char
-                if let Some(alignments) = self.alignments_original.get_mut(align.0..align.1) {
-                    trace!("Updating original alignments: {:?}", alignments);
-                    // Let's compute the actual change in size for the original alignment.
-                    // This value may be different than `replaced_char_size_change` because the
-                    // char might not exist in the original string. It might have been added.
-                    let original_range = expand_alignments(alignments);
-                    let replaced_char_size_change_original =
-                        c.len_utf8() as isize - original_range.map_or(0, |r| r.len()) as isize;
-                    trace!(
-                        "Change in size for the current char: {}",
-                        replaced_char_size_change
-                    );
-                    trace!(
-                        "Change in size in the original alignment for the current char: {}",
-                        replaced_char_size_change_original
-                    );
-                    alignments.iter_mut().for_each(|mut offsets| {
-                        // A new char is being added, we need to extend the current
-                        // alignment. No need to apply the shift in this case as it
-                        // should have been applied already (with a previous changes == 0).
-                        if changes.is_positive() {
-                            offsets.1 += c.len_utf8();
-                        // Otherwise we just apply the shift
-                        } else {
-                            apply_signed!(offsets.1, replaced_char_size_change);
-                            apply_signed!(offsets.1, -(removing_from_normalized as isize));
-
-                            // We only apply o_shift if we are:
-                            // - Removing characters
-                            // - Replacing one, that has the same size in both normalized and
-                            //   original alignments.
-                            // Otherwise it means we are modifying multiple times the same
-                            // original character. This happens when normalized characters
-                            // are added (not part of the original), and then replaced.
-                            if changes.is_negative()
-                                || replaced_char_size_change == replaced_char_size_change_original
-                            {
-                                apply_signed!(offsets.0, o_shift);
-                                apply_signed!(offsets.1, o_shift);
-                            }
-                        }
-                    });
-                    trace!("Updated to: {:?}", alignments);
-                }
-
-                // If some were removed, we need to zero them out in the original alignment
-                if removing_from_original > 0 {
-                    let removed_chars =
-                        self.alignments[idx].1..self.alignments[idx + total_bytes_to_remove].1;
-                    // They should use the original alignment of the current character
-                    let new_idx = self.alignments_original[align.0].1;
-                    if let Some(alignments) = self.alignments_original.get_mut(removed_chars) {
-                        trace!("Removing original alignments: {:?}", alignments);
-                        alignments.iter_mut().for_each(|mut offsets| {
-                            offsets.0 = new_idx;
-                            offsets.1 = new_idx;
-                        });
-                    }
-                }
 
                 // Keep track of the changes for next offsets
                 offset += replaced_char_size as isize;
                 offset += total_bytes_to_remove as isize;
-                // For the original only the real modifications count
-                o_shift += replaced_char_size_change;
-                o_shift -= total_bytes_to_remove as isize;
+                trace!("New offset: {}", offset);
 
                 trace!("New normalized alignment: {}x {:?}", c.len_utf8(), align);
                 alignments.extend((0..c.len_utf8()).map(|_| align));
@@ -568,42 +418,12 @@ impl NormalizedString {
             })
             .collect::<String>();
 
-        // Apply the changes to the remaining original alignments
-        if o_shift != 0 {
-            trace!(
-                "Shifting the end from {:?} using shift: {}",
-                end_shift_start,
-                o_shift
-            );
-            let end_range = self
-                .alignments
-                .get(end_shift_start..)
-                .map(expand_alignments)
-                .flatten();
-            trace!("End range: {:?}", end_range);
-            if let Some(end_range) = end_range {
-                if let Some(alignments) = self.alignments_original.get_mut(end_range) {
-                    trace!("Alignments before shifting: {:?}", alignments);
-                    alignments.iter_mut().for_each(|mut offsets| {
-                        apply_signed!(offsets.0, o_shift);
-                        apply_signed!(offsets.1, o_shift);
-                    });
-                    trace!("After: {:?}", alignments);
-                }
-            }
-        }
-
         self.alignments.splice(n_range.clone(), alignments);
         unsafe {
             self.normalized
                 .as_mut_vec()
                 .splice(n_range, normalized.bytes());
         }
-        trace!(
-            "New normalized alignments: {:?}\nNew original alignments: {:?}",
-            self.alignments,
-            self.alignments_original
-        );
     }
 
     /// Applies transformations to the current normalized version of the string,
@@ -1057,8 +877,7 @@ impl From<String> for NormalizedString {
         Self {
             original: s.clone(),
             normalized: s,
-            alignments: alignments.clone(),
-            alignments_original: alignments,
+            alignments,
             original_shift: 0,
         }
     }
@@ -1096,20 +915,6 @@ mod tests {
                 (8, 9)
             ]
         );
-        assert_eq!(
-            &n.alignments_original,
-            &[
-                (0, 3),
-                (0, 3),
-                (3, 4),
-                (4, 7),
-                (4, 7),
-                (7, 8),
-                (8, 9),
-                (9, 10),
-                (10, 11)
-            ]
-        );
     }
 
     #[test]
@@ -1120,20 +925,6 @@ mod tests {
         assert_eq!(
             &n.alignments,
             &[(0, 2), (2, 3), (3, 5), (5, 6), (6, 7), (7, 8), (8, 9)]
-        );
-        assert_eq!(
-            &n.alignments_original,
-            &[
-                (0, 1),
-                (0, 1),
-                (1, 2),
-                (2, 3),
-                (2, 3),
-                (3, 4),
-                (4, 5),
-                (5, 6),
-                (6, 7)
-            ]
         );
     }
 
@@ -1154,20 +945,6 @@ mod tests {
                 (8, 9)
             ]
         );
-        assert_eq!(
-            &n.alignments_original,
-            &[
-                (0, 2),
-                (0, 2),
-                (2, 3),
-                (3, 5),
-                (3, 5),
-                (5, 6),
-                (6, 7),
-                (7, 7),
-                (7, 8)
-            ]
-        );
     }
 
     #[test]
@@ -1177,20 +954,6 @@ mod tests {
         assert_eq!(
             &n.alignments,
             &[(0, 2), (2, 3), (3, 5), (5, 6), (6, 7), (8, 9)]
-        );
-        assert_eq!(
-            &n.alignments_original,
-            &[
-                (0, 1),
-                (0, 1),
-                (1, 2),
-                (2, 3),
-                (2, 3),
-                (3, 4),
-                (4, 5),
-                (5, 5),
-                (5, 6)
-            ]
         );
     }
 
@@ -1297,17 +1060,6 @@ mod tests {
                     (6, 7),
                     (7, 8),
                     (8, 9)
-                ],
-                alignments_original: vec![
-                    (0, 5),
-                    (0, 5),
-                    (0, 5),
-                    (5, 10),
-                    (5, 10),
-                    (5, 10),
-                    (10, 11),
-                    (11, 12),
-                    (12, 13)
                 ],
                 original_shift: 0
             }
@@ -1548,20 +1300,6 @@ mod tests {
                     (10, 11),
                     (11, 12)
                 ],
-                alignments_original: vec![
-                    (0, 0),
-                    (0, 0),
-                    (0, 0),
-                    (0, 1),
-                    (1, 2),
-                    (2, 3),
-                    (3, 4),
-                    (4, 5),
-                    (5, 6),
-                    (6, 7),
-                    (7, 8),
-                    (8, 9)
-                ],
                 original_shift: 0,
             }
         );
@@ -1588,20 +1326,6 @@ mod tests {
                     (10, 11),
                     (11, 12)
                 ],
-                alignments_original: vec![
-                    (0, 1),
-                    (1, 2),
-                    (2, 3),
-                    (3, 3),
-                    (3, 3),
-                    (3, 4),
-                    (4, 5),
-                    (5, 6),
-                    (6, 6),
-                    (6, 6),
-                    (6, 7),
-                    (7, 8)
-                ],
                 original_shift: 0,
             }
         );
@@ -1615,20 +1339,6 @@ mod tests {
                 original: "Hello friend".into(),
                 normalized: "Hello_F".into(),
                 alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)],
-                alignments_original: vec![
-                    (0, 1),
-                    (1, 2),
-                    (2, 3),
-                    (3, 4),
-                    (4, 5),
-                    (5, 6),
-                    (6, 7),
-                    (7, 7),
-                    (7, 7),
-                    (7, 7),
-                    (7, 7),
-                    (7, 7)
-                ],
                 original_shift: 0,
             }
         );
@@ -1656,20 +1366,6 @@ mod tests {
                     (10, 11),
                     (11, 12)
                 ],
-                alignments_original: vec![
-                    (1, 2),
-                    (2, 3),
-                    (3, 4),
-                    (4, 5),
-                    (5, 6),
-                    (6, 7),
-                    (7, 8),
-                    (8, 9),
-                    (9, 10),
-                    (10, 11),
-                    (11, 12),
-                    (12, 13)
-                ],
                 original_shift: 0,
             }
         );
@@ -1696,20 +1392,6 @@ mod tests {
                     (10, 11),
                     (11, 12)
                 ],
-                alignments_original: vec![
-                    (1, 2),
-                    (2, 3),
-                    (3, 4),
-                    (4, 5),
-                    (5, 6),
-                    (6, 7),
-                    (7, 8),
-                    (8, 9),
-                    (9, 10),
-                    (10, 11),
-                    (11, 12),
-                    (12, 13)
-                ],
                 original_shift: 0,
             }
         );
@@ -1735,20 +1417,6 @@ mod tests {
                     (9, 10),
                     (10, 11),
                     (11, 12)
-                ],
-                alignments_original: vec![
-                    (0, 2),
-                    (2, 3),
-                    (3, 4),
-                    (4, 5),
-                    (5, 6),
-                    (6, 7),
-                    (7, 8),
-                    (8, 9),
-                    (9, 10),
-                    (10, 11),
-                    (11, 12),
-                    (12, 13)
                 ],
                 original_shift: 0,
             }
@@ -1783,20 +1451,6 @@ mod tests {
                     (10, 11),
                     (11, 12)
                 ],
-                alignments_original: vec![
-                    (0, 1),
-                    (1, 2),
-                    (2, 3),
-                    (3, 4),
-                    (4, 5),
-                    (5, 9),
-                    (9, 10),
-                    (10, 11),
-                    (11, 12),
-                    (12, 13),
-                    (13, 14),
-                    (14, 15)
-                ],
                 original_shift: 0,
             }
         );
@@ -1825,20 +1479,6 @@ mod tests {
                     (11, 12),
                     (11, 12)
                 ],
-                alignments_original: vec![
-                    (0, 1),
-                    (1, 2),
-                    (2, 3),
-                    (3, 4),
-                    (4, 5),
-                    (5, 6),
-                    (6, 7),
-                    (7, 8),
-                    (8, 9),
-                    (9, 10),
-                    (10, 11),
-                    (11, 14)
-                ],
                 original_shift: 0,
             }
         );
@@ -1866,24 +1506,6 @@ mod tests {
                     (12, 16),
                     (12, 16),
                     (12, 16)
-                ],
-                alignments_original: vec![
-                    (0, 1),
-                    (0, 1),
-                    (0, 1),
-                    (0, 1),
-                    (1, 1),
-                    (1, 1),
-                    (1, 1),
-                    (1, 1),
-                    (1, 5),
-                    (1, 5),
-                    (1, 5),
-                    (1, 5),
-                    (5, 9),
-                    (5, 9),
-                    (5, 9),
-                    (5, 9)
                 ],
                 original_shift: 0,
             }
@@ -1918,24 +1540,6 @@ mod tests {
                     (12, 16),
                     (12, 16)
                 ],
-                alignments_original: vec![
-                    (0, 4),
-                    (0, 4),
-                    (0, 4),
-                    (0, 4),
-                    (4, 5),
-                    (4, 5),
-                    (4, 5),
-                    (4, 5),
-                    (5, 5),
-                    (5, 5),
-                    (5, 5),
-                    (5, 5),
-                    (5, 9),
-                    (5, 9),
-                    (5, 9),
-                    (5, 9)
-                ],
                 original_shift: 0,
             }
         );
@@ -1964,31 +1568,13 @@ mod tests {
                     (12, 16),
                     (12, 16)
                 ],
-                alignments_original: vec![
-                    (0, 4),
-                    (0, 4),
-                    (0, 4),
-                    (0, 4),
-                    (4, 8),
-                    (4, 8),
-                    (4, 8),
-                    (4, 8),
-                    (8, 12),
-                    (8, 12),
-                    (8, 12),
-                    (8, 12),
-                    (12, 14),
-                    (12, 14),
-                    (12, 14),
-                    (12, 14)
-                ],
                 original_shift: 0,
             }
         );
 
         // Adding at the beginning
         let mut current = s.clone();
-        current.transform_range(Range::Original(0..1), vec![('_', 1), ('𝔾', 0)], 0);
+        current.transform_range(Range::Original(0..4), vec![('_', 1), ('𝔾', 0)], 0);
         assert_eq!(
             current,
             NormalizedString {
@@ -2012,24 +1598,6 @@ mod tests {
                     (12, 16),
                     (12, 16),
                     (12, 16)
-                ],
-                alignments_original: vec![
-                    (1, 5),
-                    (1, 5),
-                    (1, 5),
-                    (1, 5),
-                    (5, 9),
-                    (5, 9),
-                    (5, 9),
-                    (5, 9),
-                    (9, 13),
-                    (9, 13),
-                    (9, 13),
-                    (9, 13),
-                    (13, 17),
-                    (13, 17),
-                    (13, 17),
-                    (13, 17)
                 ],
                 original_shift: 0,
             }
@@ -2071,24 +1639,6 @@ mod tests {
                     (12, 16),
                     (12, 16)
                 ],
-                alignments_original: vec![
-                    (1, 5),
-                    (1, 5),
-                    (1, 5),
-                    (1, 5),
-                    (5, 9),
-                    (5, 9),
-                    (5, 9),
-                    (5, 9),
-                    (9, 13),
-                    (9, 13),
-                    (9, 13),
-                    (9, 13),
-                    (13, 17),
-                    (13, 17),
-                    (13, 17),
-                    (13, 17)
-                ],
                 original_shift: 0,
             }
         );
@@ -2104,7 +1654,7 @@ mod tests {
         );
         // Adding as part of the first character
         let mut current = s.clone();
-        current.transform_range(Range::Original(0..1), vec![('𝔾', 0), ('o', 1)], 0);
+        current.transform_range(Range::Original(0..4), vec![('𝔾', 0), ('o', 1)], 0);
         assert_eq!(
             current,
             NormalizedString {
@@ -2128,24 +1678,6 @@ mod tests {
                     (12, 16),
                     (12, 16),
                     (12, 16)
-                ],
-                alignments_original: vec![
-                    (0, 5),
-                    (0, 5),
-                    (0, 5),
-                    (0, 5),
-                    (5, 9),
-                    (5, 9),
-                    (5, 9),
-                    (5, 9),
-                    (9, 13),
-                    (9, 13),
-                    (9, 13),
-                    (9, 13),
-                    (13, 17),
-                    (13, 17),
-                    (13, 17),
-                    (13, 17)
                 ],
                 original_shift: 0,
             }
@@ -2194,24 +1726,6 @@ mod tests {
                     (12, 16),
                     (12, 16)
                 ],
-                alignments_original: vec![
-                    (0, 4),
-                    (0, 4),
-                    (0, 4),
-                    (0, 4),
-                    (4, 11),
-                    (4, 11),
-                    (4, 11),
-                    (4, 11),
-                    (11, 15),
-                    (11, 15),
-                    (11, 15),
-                    (11, 15),
-                    (15, 19),
-                    (15, 19),
-                    (15, 19),
-                    (15, 19)
-                ],
                 original_shift: 0,
             }
         );
@@ -2242,24 +1756,6 @@ mod tests {
                     (12, 16),
                     (12, 16),
                     (12, 16)
-                ],
-                alignments_original: vec![
-                    (0, 4),
-                    (0, 4),
-                    (0, 4),
-                    (0, 4),
-                    (4, 8),
-                    (4, 8),
-                    (4, 8),
-                    (4, 8),
-                    (8, 12),
-                    (8, 12),
-                    (8, 12),
-                    (8, 12),
-                    (12, 17),
-                    (12, 17),
-                    (12, 17),
-                    (12, 17)
                 ],
                 original_shift: 0,
             }

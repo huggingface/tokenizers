@@ -93,13 +93,7 @@ mod tests {
 
         assert_eq!(
             n,
-            NormalizedString::new(
-                original,
-                normalized,
-                vec![(0, 3), (0, 3)],
-                vec![(0, 2), (0, 2), (0, 2)],
-                0
-            )
+            NormalizedString::new(original, normalized, vec![(0, 3), (0, 3)], 0)
         )
     }
 }
