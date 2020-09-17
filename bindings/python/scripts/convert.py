@@ -5,6 +5,7 @@ from tokenizers.models import Unigram, BPE
 from tokenizers import decoders
 from tokenizers import Tokenizer
 from tokenizers.normalizers import (
+    StripAccents,
     NFKD,
     Lowercase,
     Sequence,
@@ -165,7 +166,7 @@ class AlbertConverter(SpmConverter):
         # TODO Missing Replace quotes
         if not self.original_tokenizer.keep_accents:
             normalizers.append(NFKD())
-            # TODO Missing strip accents
+            normalizers.append(StripAccents())
         if self.original_tokenizer.do_lower_case:
             normalizers.append(Lowercase())
 
@@ -299,8 +300,16 @@ class XLNetConverter(SpmConverter):
 
     def normalizer(self, proto):
         # TODO Missing Replace quotes
-        # TODO Missing strip accents
-        return super().normalizer(proto)
+        normalizers = []
+        if not self.original_tokenizer.keep_accents:
+            normalizers.append(NFKD())
+            normalizers.append(StripAccents())
+        if self.original_tokenizer.do_lower_case:
+            normalizers.append(Lowercase())
+
+        precompiled_charsmap = proto.normalizer_spec.precompiled_charsmap
+        normalizers.append(Precompiled(precompiled_charsmap))
+        return Sequence(normalizers)
 
     def post_processor(self, tokenizer):
         return TemplateProcessing(
@@ -374,10 +383,6 @@ def check(pretrained, filename):
     with open(filename, "r") as f:
         for i, line in enumerate(f):
             line = line.strip()
-
-            # TODO in normalizer
-            line = unicodedata.normalize("NFKD", line)
-            line = "".join([c for c in line if not unicodedata.combining(c)])
 
             # TODO in normalizer
             line = line.replace("``", '"').replace("''", '"')

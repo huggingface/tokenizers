@@ -17,13 +17,6 @@ impl Normalizer for Precompiled {
         normalized.get().graphemes(true).for_each(|grapheme| {
             if grapheme.len() < 6 {
                 if let Some(norm) = self.transform(grapheme) {
-                    // debug!(
-                    //     "Replacing {:?}({:?}) by {:?}({:?})",
-                    //     grapheme,
-                    //     grapheme.chars().count(),
-                    //     norm,
-                    //     norm.chars().count()
-                    // );
                     let old_count = grapheme.chars().count() as isize;
                     let new_count = norm.chars().count() as isize;
                     for (i, c) in norm.chars().enumerate() {
@@ -42,13 +35,6 @@ impl Normalizer for Precompiled {
                 if let Some(norm) = self.transform(part) {
                     let old_count = part.chars().count() as isize;
                     let new_count = norm.chars().count() as isize;
-                    // debug!(
-                    //     "Replacing {:?}({:?}) by {:?}({:?})",
-                    //     part,
-                    //     part.chars().count(),
-                    //     norm,
-                    //     norm.chars().count()
-                    // );
                     for (i, c) in norm.chars().enumerate() {
                         let n = if i == 0 {
                             new_count - old_count
@@ -62,7 +48,6 @@ impl Normalizer for Precompiled {
                 }
             }
         });
-        // debug!("Normalized {:?}", normalized);
         normalized.transform(transformations.into_iter(), 0);
         Ok(())
     }
