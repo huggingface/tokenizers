@@ -469,7 +469,7 @@ impl NormalizedString {
 
     /// Applies filtering over our characters
     pub fn filter<F: Fn(char) -> bool>(&mut self, keep: F) -> &mut Self {
-        let mut removed = 0;
+        let mut removed: isize = 0;
         let filtered = self
             .normalized
             .chars()
@@ -477,7 +477,7 @@ impl NormalizedString {
             .map(|c| {
                 if keep(c) {
                     if removed > 0 {
-                        let res = (c, -(removed as isize));
+                        let res = (c, -removed);
                         removed = 0;
                         Some(res)
                     } else {
@@ -489,7 +489,10 @@ impl NormalizedString {
                 }
             })
             .collect::<Vec<_>>();
-        self.transform(filtered.into_iter().rev().filter_map(|o| o), removed);
+        self.transform(
+            filtered.into_iter().rev().filter_map(|o| o),
+            removed as usize,
+        );
         self
     }
 
@@ -535,6 +538,7 @@ impl NormalizedString {
 
     /// Lowercase
     pub fn lowercase(&mut self) -> &mut Self {
+        debug!("Lowercase {:?}", self);
         let mut new_chars: Vec<(char, isize)> = vec![];
         self.for_each(|c| {
             c.to_lowercase().enumerate().for_each(|(index, c)| {

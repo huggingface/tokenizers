@@ -31,7 +31,9 @@ impl Normalizer for Sequence {
 pub struct Lowercase;
 impl Normalizer for Lowercase {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
+        debug!("Lowercase {:?}", normalized);
         normalized.lowercase();
+        debug!("Lowercase OK {:?}", normalized);
         Ok(())
     }
 }
