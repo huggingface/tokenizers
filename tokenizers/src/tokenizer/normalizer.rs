@@ -489,6 +489,15 @@ impl NormalizedString {
                 }
             })
             .collect::<Vec<_>>();
+        debug!(
+            "Filter transform {:?}",
+            filtered
+                .iter()
+                .cloned()
+                .rev()
+                .filter_map(|o| o)
+                .collect::<Vec<_>>()
+        );
         self.transform(
             filtered.into_iter().rev().filter_map(|o| o),
             removed as usize,
@@ -538,7 +547,6 @@ impl NormalizedString {
 
     /// Lowercase
     pub fn lowercase(&mut self) -> &mut Self {
-        debug!("Lowercase {:?}", self);
         let mut new_chars: Vec<(char, isize)> = vec![];
         self.for_each(|c| {
             c.to_lowercase().enumerate().for_each(|(index, c)| {
@@ -2178,5 +2186,15 @@ mod tests {
                 (12, 17)
             ]
         );
+    }
+
+    #[test]
+    fn transform_check() {
+        let mut s = NormalizedString::from("abc…");
+        s.nfkd();
+        let transforms = vec![('a', -2), ('.', 0), ('.', 0), ('.', 0)];
+        s.transform(transforms, 0);
+        s.lowercase();
+        assert_eq!(s.get(), "a...");
     }
 }
