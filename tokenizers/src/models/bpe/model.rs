@@ -303,6 +303,7 @@ impl BPE {
     fn merge_word(&self, w: &str) -> Result<Word> {
         let mut indices = w.char_indices().map(|(idx, _)| idx).peekable();
         let mut word = Word::with_capacity(w.len());
+        let mut unk: Option<(u32, usize)> = None;
         while let Some(i) = indices.next() {
             let (s, byte_len) = if let Some(&end) = indices.peek() {
                 match (i, self.continuing_subword_prefix.as_ref()) {
@@ -323,15 +324,28 @@ impl BPE {
             };
 
             if let Some(id) = self.vocab.get(s.as_ref()) {
+                if let Some((unk_id, unk_len)) = unk {
+                    word.add(unk_id, unk_len);
+                    unk = None;
+                }
                 word.add(*id, byte_len);
-            } else if let Some(unk) = &self.unk_token {
-                let unk_id = self
-                    .vocab
-                    .get(unk)
-                    .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk.to_owned()))?;
-                // Handle UNK token
-                word.add(*unk_id, byte_len);
+            } else if let Some(unk_token) = &self.unk_token {
+                unk = if let Some((unk_id, unk_len)) = unk {
+                    // Fuse unk
+                    Some((unk_id, unk_len + byte_len))
+                } else {
+                    Some((
+                        *self
+                            .vocab
+                            .get(unk_token)
+                            .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk_token.to_owned()))?,
+                        byte_len,
+                    ))
+                };
             }
+        }
+        if let Some((unk_id, unk_len)) = unk {
+            word.add(unk_id, unk_len);
         }
 
         word.merge_all(&self.merges, self.dropout);
@@ -453,6 +467,34 @@ mod tests {
         let order_vocab_iter = OrderedVocabIter::new(&vocab_r);
         let serialized = serde_json::to_string(&order_vocab_iter).unwrap();
         assert_eq!(serialized, "{\"a\":0,\"b\":1,\"c\":2,\"ab\":3}");
+    }
+
+    #[test]
+    fn test_unk_get_fused() {
+        let vocab: Vocab = [("<unk>".into(), 0), ("a".into(), 1), ("b".into(), 2)]
+            .iter()
+            .cloned()
+            .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, HashMap::new())
+            .unk_token("<unk>".to_string())
+            .build()
+            .unwrap();
+        let tokens = bpe.tokenize("c").unwrap();
+        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
+
+        let tokens = bpe.tokenize("cc").unwrap();
+        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 2)),]);
+
+        let tokens = bpe.tokenize("accb").unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(1u32, "a".into(), (0, 1)),
+                Token::new(0u32, "<unk>".into(), (1, 3)),
+                Token::new(2u32, "b".into(), (3, 4)),
+            ]
+        );
     }
 
     #[test]

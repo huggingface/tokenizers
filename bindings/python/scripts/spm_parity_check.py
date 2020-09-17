@@ -118,10 +118,12 @@ def check_diff(spm_diff, tok_diff, sp, tok):
     if spm_diff == list(reversed(tok_diff)):
         # AAA -> AA+A vs A+AA case.
         return True
-    elif len(spm_diff) == len(tok_diff) and tok.decode(spm_diff) == tok.decode(tok_diff):
-        # Second order OK
-        # Barrich -> Barr + ich vs Bar + rich
-        return True
+    # elif len(spm_diff) == len(tok_diff) and tok.decode(spm_diff) == tok.decode(
+    #     tok_diff
+    # ):
+    #     # Second order OK
+    #     # Barrich -> Barr + ich vs Bar + rich
+    #     return True
     spm_reencoded = sp.encode(sp.decode(spm_diff))
     tok_reencoded = tok.encode(tok.decode(spm_diff)).ids
     if spm_reencoded != spm_diff and spm_reencoded == tok_reencoded:
@@ -173,6 +175,13 @@ def check_details(line, spm_ids, tok_ids, tok, sp):
                         spm_ids[first : first + i], tok_ids[first : first + j], sp, tok
                     ) and check_diff(spm_ids[first + i : last], tok_ids[first + j : last], sp, tok):
                         return True
+
+    print(f"Spm: {[tok.decode([spm_ids[i]]) for i in range(first, last)]}")
+    try:
+        print(f"Tok: {[tok.decode([tok_ids[i]]) for i in range(first, last)]}")
+    except Exception:
+        pass
+
     ok_start = tok.decode(spm_ids[:first])
     ok_end = tok.decode(spm_ids[last:])
     wrong = tok.decode(spm_ids[first:last])
@@ -181,9 +190,6 @@ def check_details(line, spm_ids, tok_ids, tok, sp):
         print(f"{colored(ok_start, 'grey')}{colored(wrong, 'red')}{colored(ok_end, 'grey')}")
     else:
         print(wrong)
-
-    print(f"Spm: {[tok.decode([spm_ids[i]]) for i in range(first, last)]}")
-    print(f"Tok: {[tok.decode([tok_ids[i]]) for i in range(first, last)]}")
     return False
 
 
