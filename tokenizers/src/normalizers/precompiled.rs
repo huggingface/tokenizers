@@ -14,9 +14,11 @@ impl Normalizer for Precompiled {
         // Mbart, XLMRoberta *AND* Marian. If you don't get 100% or
         // break a single test.
         // You don't pass.
+        let mut modified = false;
         normalized.get().graphemes(true).for_each(|grapheme| {
             if grapheme.len() < 6 {
                 if let Some(norm) = self.transform(grapheme) {
+                    modified = true;
                     let old_count = grapheme.chars().count() as isize;
                     let new_count = norm.chars().count() as isize;
                     for (i, c) in norm.chars().enumerate() {
@@ -33,6 +35,7 @@ impl Normalizer for Precompiled {
             for (char_index, c) in grapheme.char_indices() {
                 let part = &grapheme[char_index..char_index + c.len_utf8()];
                 if let Some(norm) = self.transform(part) {
+                    modified = true;
                     let old_count = part.chars().count() as isize;
                     let new_count = norm.chars().count() as isize;
                     for (i, c) in norm.chars().enumerate() {
@@ -48,7 +51,9 @@ impl Normalizer for Precompiled {
                 }
             }
         });
-        normalized.transform(transformations.into_iter(), 0);
+        if modified {
+            normalized.transform(transformations.into_iter(), 0);
+        }
         Ok(())
     }
 }
