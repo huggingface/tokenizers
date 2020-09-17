@@ -9,4 +9,5 @@ module.exports = {
   nfkdNormalizer: native.normalizers_NFKD,
   sequenceNormalizer: native.normalizers_Sequence,
   stripNormalizer: native.normalizers_Strip,
+  stripAccentsNormalizer: native.normalizers_StripAccents,
 };

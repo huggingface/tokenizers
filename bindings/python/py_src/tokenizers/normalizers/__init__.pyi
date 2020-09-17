@@ -99,6 +99,12 @@ class Strip(Normalizer):
     def __init__(self, left: bool = True, right: bool = True) -> Normalizer:
         pass
 
+class StripAccents(Normalizer):
+    """ StripAccents normalizer """
+
+    def __init__(self) -> Normalizer:
+        pass
+
 class Nmt(Normalizer):
     """ Nmt normalizer """
 

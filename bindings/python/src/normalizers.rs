@@ -8,7 +8,8 @@ use crate::error::ToPyResult;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize, Serializer};
 use tk::normalizers::{
-    BertNormalizer, Lowercase, Nmt, NormalizerWrapper, Precompiled, Strip, NFC, NFD, NFKC, NFKD,
+    BertNormalizer, Lowercase, Nmt, NormalizerWrapper, Precompiled, Strip, StripAccents, NFC, NFD,
+    NFKC, NFKD,
 };
 use tk::{NormalizedString, Normalizer};
 use tokenizers as tk;
@@ -39,6 +40,9 @@ impl PyNormalizer {
                 }
                 NormalizerWrapper::StripNormalizer(_) => {
                     Py::new(py, (PyBertNormalizer {}, base)).map(Into::into)
+                }
+                NormalizerWrapper::StripAccents(_) => {
+                    Py::new(py, (PyStripAccents {}, base)).map(Into::into)
                 }
                 NormalizerWrapper::NFC(_) => Py::new(py, (PyNFC {}, base)).map(Into::into),
                 NormalizerWrapper::NFD(_) => Py::new(py, (PyNFD {}, base)).map(Into::into),
@@ -221,6 +225,16 @@ impl PyStrip {
         }
 
         Ok((PyStrip {}, Strip::new(left, right).into()))
+    }
+}
+
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=StripAccents)]
+pub struct PyStripAccents {}
+#[pymethods]
+impl PyStripAccents {
+    #[new]
+    fn new() -> PyResult<(Self, PyNormalizer)> {
+        Ok((PyStripAccents {}, StripAccents.into()))
     }
 }
 

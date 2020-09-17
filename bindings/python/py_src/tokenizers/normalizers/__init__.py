@@ -9,6 +9,7 @@ NFKC = normalizers.NFKC
 Sequence = normalizers.Sequence
 Lowercase = normalizers.Lowercase
 Strip = normalizers.Strip
+StripAccents = normalizers.StripAccents
 Nmt = normalizers.Nmt
 Precompiled = normalizers.Precompiled
 
