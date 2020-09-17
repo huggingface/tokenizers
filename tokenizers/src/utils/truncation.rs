@@ -73,7 +73,11 @@ pub fn truncate_encodings(
     params: &TruncationParams,
 ) -> Result<(Encoding, Option<Encoding>)> {
     if params.max_length == 0 {
-        return Err(Box::new(TruncationError::MaxLengthTooLow));
+        encoding.truncate(0, params.stride);
+        if let Some(other_encoding) = pair_encoding.as_mut() {
+            other_encoding.truncate(0, params.stride);
+        }
+        return Ok((encoding, pair_encoding));
     }
 
     let total_length = encoding.get_ids().len()
@@ -289,5 +293,18 @@ mod tests {
         truncatate_and_assert(get_long(), get_short(), &params, 5, 2);
         truncatate_and_assert(get_long(), get_medium(), &params, 4, 3);
         truncatate_and_assert(get_long(), get_long(), &params, 3, 4);
+    }
+
+    #[test]
+    fn truncate_encodings_empty() {
+        let params = TruncationParams {
+            max_length: 0,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 0,
+        };
+
+        truncatate_and_assert(get_empty(), get_short(), &params, 0, 0);
+        truncatate_and_assert(get_medium(), get_medium(), &params, 0, 0);
+        truncatate_and_assert(get_long(), get_long(), &params, 0, 0);
     }
 }
