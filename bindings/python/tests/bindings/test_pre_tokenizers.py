@@ -119,3 +119,26 @@ class TestDigits:
         assert isinstance(Digits(True), Digits)
         assert isinstance(Digits(False), Digits)
         assert isinstance(pickle.loads(pickle.dumps(Digits())), Digits)
+
+
+class TestCustomPreTokenizer:
+    class BadCustomPretok:
+        def pre_tokenize(self, pretok, wrong):
+            pass
+
+    class GoodCustomPretok:
+        def split(self, n, normalized):
+            return [normalized, normalized]
+
+        def pre_tokenize(self, pretok):
+            pretok.split(self.split)
+
+    def test_instantiate(self):
+        bad = PreTokenizer.custom(TestCustomPreTokenizer.BadCustomPretok())
+        good = PreTokenizer.custom(TestCustomPreTokenizer.GoodCustomPretok())
+
+        assert isinstance(bad, PreTokenizer)
+        assert isinstance(good, PreTokenizer)
+        with pytest.raises(Exception, match="TypeError: pre_tokenize()"):
+            bad.pre_tokenize("Hey there!")
+        assert good.pre_tokenize("Hey there!") == [("Hey there!", (0, 10)), ("Hey there!", (0, 10))]
