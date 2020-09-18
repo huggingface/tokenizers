@@ -761,6 +761,56 @@ impl NormalizedString {
     pub fn is_empty(&self) -> bool {
         self.normalized.is_empty()
     }
+
+    /// Recalculate original alignments
+    pub fn alignments_original(&self) -> Vec<(usize, usize)> {
+        // Start, end are in alignments
+        // offset, length are in alignments_original
+        let mut alignments_original = Vec::with_capacity(self.original.len());
+
+        // Eventual gap before first group
+        let start = self.alignments[0].0;
+        if self.alignments[0].0 != 0 {
+            alignments_original.extend(vec![(0, 0); start]);
+        }
+
+        let mut last = (&self.alignments[0].0, &self.alignments[0].1);
+        let mut offset = 0;
+        let mut length = 0;
+        for (start, end) in &self.alignments {
+            if last == (start, end) {
+                // This is the same group
+                length += 1;
+            } else {
+                // This is a new group
+                if start < last.1 {
+                    panic!("We can't have overlapping ranges.");
+                }
+
+                // Add the old group
+                alignments_original.extend(vec![(offset, offset + length); last.1 - last.0]);
+                offset += length;
+                length = 1;
+
+                // Eventual gap between the 2 groups
+                alignments_original.extend(vec![(offset, offset); start - last.1]);
+            }
+
+            last = (start, end);
+        }
+        // Add the last group
+        alignments_original.extend(vec![(offset, offset + length); last.1 - last.0]);
+
+        // Add eventual last gap
+        offset += length;
+        alignments_original.extend(vec![
+            (offset, offset);
+            self.original.len() - alignments_original.len()
+        ]);
+
+        // assert_eq!(alignments_original.len(), self.normalized.len());
+        alignments_original
+    }
 }
 
 /// Returns the range covered by a slice of alignments
@@ -915,6 +965,20 @@ mod tests {
                 (8, 9)
             ]
         );
+        assert_eq!(
+            n.alignments_original(),
+            vec![
+                (0, 3),
+                (0, 3),
+                (3, 4),
+                (4, 7),
+                (4, 7),
+                (7, 8),
+                (8, 9),
+                (9, 10),
+                (10, 11)
+            ]
+        );
     }
 
     #[test]
@@ -922,9 +986,25 @@ mod tests {
         let mut n = NormalizedString::from("élégant");
         n.nfd().filter(|c| !c.is_mark_nonspacing());
 
+        assert_eq!(n.get(), "elegant");
+
         assert_eq!(
             &n.alignments,
             &[(0, 2), (2, 3), (3, 5), (5, 6), (6, 7), (7, 8), (8, 9)]
+        );
+        assert_eq!(
+            n.alignments_original(),
+            vec![
+                (0, 1),
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (6, 7)
+            ]
         );
     }
 
@@ -932,6 +1012,7 @@ mod tests {
     fn remove_chars() {
         let mut n = NormalizedString::from("élégant");
         n.filter(|c| c != 'n');
+        assert_eq!(n.get(), "élégat");
         assert_eq!(
             &n.alignments,
             &[
@@ -942,7 +1023,22 @@ mod tests {
                 (3, 5),
                 (5, 6),
                 (6, 7),
+                // Skipped range
                 (8, 9)
+            ]
+        );
+        assert_eq!(
+            n.alignments_original(),
+            vec![
+                (0, 2),
+                (0, 2),
+                (2, 3),
+                (3, 5),
+                (3, 5),
+                (5, 6),
+                (6, 7),
+                (7, 7), // Eaten n
+                (7, 8)
             ]
         );
     }
@@ -951,9 +1047,24 @@ mod tests {
     fn mixed_addition_and_removal() {
         let mut n = NormalizedString::from("élégant");
         n.nfd().filter(|c| !c.is_mark_nonspacing() && c != 'n');
+        assert_eq!(n.get(), "elegat");
         assert_eq!(
             &n.alignments,
             &[(0, 2), (2, 3), (3, 5), (5, 6), (6, 7), (8, 9)]
+        );
+        assert_eq!(
+            n.alignments_original(),
+            vec![
+                (0, 1),
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (2, 3),
+                (3, 4), // g
+                (4, 5), // a
+                (5, 5), // Eaten n
+                (5, 6)
+            ]
         );
     }
 
@@ -1063,6 +1174,20 @@ mod tests {
                 ],
                 original_shift: 0
             }
+        );
+        assert_eq!(
+            n.alignments_original(),
+            vec![
+                (0, 5),
+                (0, 5),
+                (0, 5),
+                (5, 10),
+                (5, 10),
+                (5, 10),
+                (10, 11),
+                (11, 12),
+                (12, 13)
+            ]
         );
     }
 
@@ -1304,6 +1429,24 @@ mod tests {
             }
         );
 
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (6, 7),
+                (7, 8),
+                (8, 9)
+            ]
+        );
+
         // Removing in the middle
         let mut current = s.clone();
         current.transform_range(
@@ -1330,6 +1473,24 @@ mod tests {
             }
         );
 
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 3),
+                (3, 3),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (6, 6),
+                (6, 6),
+                (6, 7),
+                (7, 8)
+            ]
+        );
+
         // Removing at the end
         let mut current = s.clone();
         current.transform_range(Range::Original(5..), vec![('_', 0), ('F', -5)], 0);
@@ -1341,6 +1502,23 @@ mod tests {
                 alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)],
                 original_shift: 0,
             }
+        );
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (6, 7),
+                (7, 7),
+                (7, 7),
+                (7, 7),
+                (7, 7),
+                (7, 7)
+            ]
         );
 
         // Adding at the beginning
@@ -1369,6 +1547,23 @@ mod tests {
                 original_shift: 0,
             }
         );
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (6, 7),
+                (7, 8),
+                (8, 9),
+                (9, 10),
+                (10, 11),
+                (11, 12),
+                (12, 13)
+            ]
+        );
         // Equivalent to the previous one
         let mut current = s.clone();
         current.transform_range(Range::Original(0..0), vec![('H', 1)], 0);
@@ -1395,6 +1590,23 @@ mod tests {
                 original_shift: 0,
             }
         );
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (6, 7),
+                (7, 8),
+                (8, 9),
+                (9, 10),
+                (10, 11),
+                (11, 12),
+                (12, 13)
+            ]
+        );
         // Adding as part of the first character
         let mut current = s.clone();
         current.transform_range(Range::Original(0..1), vec![('H', 0), ('H', 1)], 0);
@@ -1420,6 +1632,24 @@ mod tests {
                 ],
                 original_shift: 0,
             }
+        );
+
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (0, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (6, 7),
+                (7, 8),
+                (8, 9),
+                (9, 10),
+                (10, 11),
+                (11, 12),
+                (12, 13)
+            ]
         );
 
         // Adding in the middle
@@ -1454,6 +1684,23 @@ mod tests {
                 original_shift: 0,
             }
         );
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 9),
+                (9, 10),
+                (10, 11),
+                (11, 12),
+                (12, 13),
+                (13, 14),
+                (14, 15)
+            ]
+        );
 
         // Adding at the end
         let mut current = s;
@@ -1482,6 +1729,23 @@ mod tests {
                 original_shift: 0,
             }
         );
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (6, 7),
+                (7, 8),
+                (8, 9),
+                (9, 10),
+                (10, 11),
+                (11, 14)
+            ]
+        );
     }
 
     #[test]
@@ -1509,6 +1773,27 @@ mod tests {
                 ],
                 original_shift: 0,
             }
+        );
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (0, 1),
+                (0, 1),
+                (0, 1),
+                (0, 1),
+                (1, 1),
+                (1, 1),
+                (1, 1),
+                (1, 1),
+                (1, 5),
+                (1, 5),
+                (1, 5),
+                (1, 5),
+                (5, 9),
+                (5, 9),
+                (5, 9),
+                (5, 9)
+            ]
         );
         assert_eq!(current.get_range(Range::Original(0..8)).unwrap(), "G");
         assert_eq!(current.get_range(Range::Original(0..4)).unwrap(), "G");
@@ -1542,6 +1827,27 @@ mod tests {
                 ],
                 original_shift: 0,
             }
+        );
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (0, 4),
+                (0, 4),
+                (0, 4),
+                (0, 4),
+                (4, 5),
+                (4, 5),
+                (4, 5),
+                (4, 5),
+                (5, 5),
+                (5, 5),
+                (5, 5),
+                (5, 5),
+                (5, 9),
+                (5, 9),
+                (5, 9),
+                (5, 9)
+            ]
         );
 
         // Removing at the end
@@ -1602,6 +1908,28 @@ mod tests {
                 original_shift: 0,
             }
         );
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (1, 5),
+                (1, 5),
+                (1, 5),
+                (1, 5),
+                (5, 9),
+                (5, 9),
+                (5, 9),
+                (5, 9),
+                (9, 13),
+                (9, 13),
+                (9, 13),
+                (9, 13),
+                (13, 17),
+                (13, 17),
+                (13, 17),
+                (13, 17)
+            ]
+        );
+
         assert_eq!(current.get_range(Range::Original(0..8)).unwrap(), "𝔾𝕠");
         assert_eq!(current.get_range(Range::Original(0..4)).unwrap(), "𝔾");
         assert_eq!(
@@ -1642,6 +1970,28 @@ mod tests {
                 original_shift: 0,
             }
         );
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (1, 5),
+                (1, 5),
+                (1, 5),
+                (1, 5),
+                (5, 9),
+                (5, 9),
+                (5, 9),
+                (5, 9),
+                (9, 13),
+                (9, 13),
+                (9, 13),
+                (9, 13),
+                (13, 17),
+                (13, 17),
+                (13, 17),
+                (13, 17)
+            ]
+        );
+
         assert_eq!(current.get_range(Range::Original(0..8)).unwrap(), "𝔾𝕠");
         assert_eq!(current.get_range(Range::Original(0..4)).unwrap(), "𝔾");
         assert_eq!(
@@ -1681,6 +2031,27 @@ mod tests {
                 ],
                 original_shift: 0,
             }
+        );
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (0, 5),
+                (0, 5),
+                (0, 5),
+                (0, 5),
+                (5, 9),
+                (5, 9),
+                (5, 9),
+                (5, 9),
+                (9, 13),
+                (9, 13),
+                (9, 13),
+                (9, 13),
+                (13, 17),
+                (13, 17),
+                (13, 17),
+                (13, 17)
+            ]
         );
         assert_eq!(current.get_range(Range::Original(0..8)).unwrap(), "𝔾o𝕠");
         assert_eq!(current.get_range(Range::Original(0..4)).unwrap(), "𝔾o");
@@ -1729,6 +2100,27 @@ mod tests {
                 original_shift: 0,
             }
         );
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (0, 4),
+                (0, 4),
+                (0, 4),
+                (0, 4),
+                (4, 11),
+                (4, 11),
+                (4, 11),
+                (4, 11),
+                (11, 15),
+                (11, 15),
+                (11, 15),
+                (11, 15),
+                (15, 19),
+                (15, 19),
+                (15, 19),
+                (15, 19)
+            ]
+        );
 
         // Adding at the end
         let mut current = s;
@@ -1759,6 +2151,27 @@ mod tests {
                 ],
                 original_shift: 0,
             }
+        );
+        assert_eq!(
+            current.alignments_original(),
+            vec![
+                (0, 4),
+                (0, 4),
+                (0, 4),
+                (0, 4),
+                (4, 8),
+                (4, 8),
+                (4, 8),
+                (4, 8),
+                (8, 12),
+                (8, 12),
+                (8, 12),
+                (8, 12),
+                (12, 17),
+                (12, 17),
+                (12, 17),
+                (12, 17)
+            ]
         );
     }
 }
