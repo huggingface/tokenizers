@@ -1,36 +1,45 @@
-extern crate tokenizers as tk;
-
 use pyo3::prelude::*;
+use tk::Token;
 
-#[pyclass]
-#[repr(transparent)]
-pub struct Token {
-    tok: tk::tokenizer::Token,
+#[pyclass(module = "tokenizers", name=Token)]
+#[derive(Clone)]
+pub struct PyToken {
+    token: Token,
 }
-impl Token {
-    pub fn _new(tok: tk::tokenizer::Token) -> Self {
-        Token { tok }
+impl From<Token> for PyToken {
+    fn from(token: Token) -> Self {
+        Self { token }
+    }
+}
+impl From<PyToken> for Token {
+    fn from(token: PyToken) -> Self {
+        token.token
     }
 }
 
 #[pymethods]
-impl Token {
+impl PyToken {
+    #[new]
+    fn new(id: u32, value: String, offsets: (usize, usize)) -> PyToken {
+        Token::new(id, value, offsets).into()
+    }
+
     #[getter]
     fn get_id(&self) -> PyResult<u32> {
-        Ok(self.tok.id)
+        Ok(self.token.id)
     }
 
     #[getter]
     fn get_value(&self) -> PyResult<&str> {
-        Ok(&self.tok.value)
+        Ok(&self.token.value)
     }
 
     #[getter]
     fn get_offsets(&self) -> PyResult<(usize, usize)> {
-        Ok(self.tok.offsets)
+        Ok(self.token.offsets)
     }
 
     fn as_tuple(&self) -> PyResult<(u32, &str, (usize, usize))> {
-        Ok((self.tok.id, &self.tok.value, self.tok.offsets))
+        Ok((self.token.id, &self.token.value, self.token.offsets))
     }
 }
