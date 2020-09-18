@@ -397,7 +397,7 @@ def check(pretrained, filename):
             tok_total_time += tok - trans
 
             if ids != tok_ids:
-                if check_details(line, ids, tok_ids, tokenizer, transformer_tokenizer):
+                if check_details(line, ids, tok_ids, transformer_tokenizer, tokenizer):
                     continue
             assert ids == tok_ids, f"Error in line {i}: {line} {ids} != {tok_ids}"
 
