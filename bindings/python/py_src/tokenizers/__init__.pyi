@@ -26,6 +26,13 @@ PreTokenizedEncodeInput = Union[
 InputSequence = Union[TextInputSequence, PreTokenizedInputSequence]
 EncodeInput = Union[TextEncodeInput, PreTokenizedEncodeInput]
 
+class Regex:
+    """ A Regex """
+
+    def __new__(pattern: str) -> Regex:
+        """ Instantiate a new Regex with the given pattern """
+        pass
+
 class Encoding:
     """ An Encoding as returned by the Tokenizer """
 
