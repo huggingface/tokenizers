@@ -30,6 +30,13 @@ impl Pattern for &str {
     }
 }
 
+impl Pattern for &String {
+    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+        let s: &str = self;
+        s.find_matches(inside)
+    }
+}
+
 impl Pattern for &Regex {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         if inside.is_empty() {
