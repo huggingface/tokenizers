@@ -5,8 +5,9 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 
 use crate::error::ToPyResult;
+use crate::utils::PyNormalizedStringRefMut;
 use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
     BertNormalizer, Lowercase, Nmt, NormalizerWrapper, Precompiled, Replace, Strip, StripAccents,
     NFC, NFD, NFKC, NFKD,
@@ -18,11 +19,11 @@ use tokenizers as tk;
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PyNormalizer {
     #[serde(flatten)]
-    pub(crate) normalizer: PyNormalizerWrapper,
+    pub(crate) normalizer: PyNormalizerTypeWrapper,
 }
 
 impl PyNormalizer {
-    pub(crate) fn new(normalizer: PyNormalizerWrapper) -> Self {
+    pub(crate) fn new(normalizer: PyNormalizerTypeWrapper) -> Self {
         PyNormalizer { normalizer }
     }
     pub(crate) fn get_as_subtype(&self) -> PyResult<PyObject> {
@@ -30,28 +31,35 @@ impl PyNormalizer {
         let gil = Python::acquire_gil();
         let py = gil.python();
         Ok(match self.normalizer {
-            PyNormalizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_py(py),
-            PyNormalizerWrapper::Wrapped(ref inner) => match inner.as_ref() {
-                NormalizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_py(py),
-                NormalizerWrapper::BertNormalizer(_) => {
-                    Py::new(py, (PyBertNormalizer {}, base))?.into_py(py)
-                }
-                NormalizerWrapper::StripNormalizer(_) => {
-                    Py::new(py, (PyBertNormalizer {}, base))?.into_py(py)
-                }
-                NormalizerWrapper::StripAccents(_) => {
-                    Py::new(py, (PyStripAccents {}, base))?.into_py(py)
-                }
-                NormalizerWrapper::NFC(_) => Py::new(py, (PyNFC {}, base))?.into_py(py),
-                NormalizerWrapper::NFD(_) => Py::new(py, (PyNFD {}, base))?.into_py(py),
-                NormalizerWrapper::NFKC(_) => Py::new(py, (PyNFKC {}, base))?.into_py(py),
-                NormalizerWrapper::NFKD(_) => Py::new(py, (PyNFKD {}, base))?.into_py(py),
-                NormalizerWrapper::Lowercase(_) => Py::new(py, (PyLowercase {}, base))?.into_py(py),
-                NormalizerWrapper::Precompiled(_) => {
-                    Py::new(py, (PyPrecompiled {}, base))?.into_py(py)
-                }
-                NormalizerWrapper::Replace(_) => Py::new(py, (PyReplace {}, base))?.into_py(py),
-                NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base))?.into_py(py),
+            PyNormalizerTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_py(py),
+            PyNormalizerTypeWrapper::Single(ref inner) => match inner.as_ref() {
+                PyNormalizerWrapper::Custom(_) => Py::new(py, base)?.into_py(py),
+                PyNormalizerWrapper::Wrapped(ref inner) => match inner {
+                    NormalizerWrapper::Sequence(_) => {
+                        Py::new(py, (PySequence {}, base))?.into_py(py)
+                    }
+                    NormalizerWrapper::BertNormalizer(_) => {
+                        Py::new(py, (PyBertNormalizer {}, base))?.into_py(py)
+                    }
+                    NormalizerWrapper::StripNormalizer(_) => {
+                        Py::new(py, (PyBertNormalizer {}, base))?.into_py(py)
+                    }
+                    NormalizerWrapper::StripAccents(_) => {
+                        Py::new(py, (PyStripAccents {}, base))?.into_py(py)
+                    }
+                    NormalizerWrapper::NFC(_) => Py::new(py, (PyNFC {}, base))?.into_py(py),
+                    NormalizerWrapper::NFD(_) => Py::new(py, (PyNFD {}, base))?.into_py(py),
+                    NormalizerWrapper::NFKC(_) => Py::new(py, (PyNFKC {}, base))?.into_py(py),
+                    NormalizerWrapper::NFKD(_) => Py::new(py, (PyNFKD {}, base))?.into_py(py),
+                    NormalizerWrapper::Lowercase(_) => {
+                        Py::new(py, (PyLowercase {}, base))?.into_py(py)
+                    }
+                    NormalizerWrapper::Precompiled(_) => {
+                        Py::new(py, (PyPrecompiled {}, base))?.into_py(py)
+                    }
+                    NormalizerWrapper::Replace(_) => Py::new(py, (PyReplace {}, base))?.into_py(py),
+                    NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base))?.into_py(py),
+                },
             },
         })
     }
@@ -65,6 +73,13 @@ impl Normalizer for PyNormalizer {
 
 #[pymethods]
 impl PyNormalizer {
+    #[staticmethod]
+    fn custom(obj: PyObject) -> PyResult<Self> {
+        Ok(Self {
+            normalizer: PyNormalizerWrapper::Custom(CustomNormalizer::new(obj)).into(),
+        })
+    }
+
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.normalizer).map_err(|e| {
             exceptions::PyException::new_err(format!(
@@ -177,13 +192,13 @@ impl PySequence {
         for n in normalizers.iter() {
             let normalizer: PyRef<PyNormalizer> = n.extract()?;
             match &normalizer.normalizer {
-                PyNormalizerWrapper::Sequence(inner) => sequence.extend(inner.iter().cloned()),
-                PyNormalizerWrapper::Wrapped(inner) => sequence.push(inner.clone()),
+                PyNormalizerTypeWrapper::Sequence(inner) => sequence.extend(inner.iter().cloned()),
+                PyNormalizerTypeWrapper::Single(inner) => sequence.push(inner.clone()),
             }
         }
         Ok((
             PySequence {},
-            PyNormalizer::new(PyNormalizerWrapper::Sequence(sequence)),
+            PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(sequence)),
         ))
     }
 
@@ -235,11 +250,54 @@ impl PyStripAccents {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct CustomNormalizer {
+    inner: PyObject,
+}
+impl CustomNormalizer {
+    pub fn new(inner: PyObject) -> Self {
+        Self { inner }
+    }
+}
+
+impl tk::tokenizer::Normalizer for CustomNormalizer {
+    fn normalize(&self, normalized: &mut NormalizedString) -> tk::Result<()> {
+        Python::with_gil(|py| {
+            let normalized = PyNormalizedStringRefMut::new(normalized);
+            let py_normalized = self.inner.as_ref(py);
+            py_normalized.call_method("normalize", (normalized.get(),), None)?;
+            Ok(())
+        })
+    }
+}
+
+impl Serialize for CustomNormalizer {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Err(serde::ser::Error::custom(
+            "Custom Normalizer cannot be serialized",
+        ))
+    }
+}
+
+impl<'de> Deserialize<'de> for CustomNormalizer {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Err(serde::de::Error::custom(
+            "Custom Normalizer cannot be deserialized",
+        ))
+    }
+}
+
 #[derive(Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyNormalizerWrapper {
-    Sequence(Vec<Arc<NormalizerWrapper>>),
-    Wrapped(Arc<NormalizerWrapper>),
+    Custom(CustomNormalizer),
+    Wrapped(NormalizerWrapper),
 }
 
 impl Serialize for PyNormalizerWrapper {
@@ -248,13 +306,32 @@ impl Serialize for PyNormalizerWrapper {
         S: Serializer,
     {
         match self {
-            PyNormalizerWrapper::Sequence(seq) => {
+            PyNormalizerWrapper::Wrapped(inner) => inner.serialize(serializer),
+            PyNormalizerWrapper::Custom(inner) => inner.serialize(serializer),
+        }
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum PyNormalizerTypeWrapper {
+    Sequence(Vec<Arc<PyNormalizerWrapper>>),
+    Single(Arc<PyNormalizerWrapper>),
+}
+
+impl Serialize for PyNormalizerTypeWrapper {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            PyNormalizerTypeWrapper::Sequence(seq) => {
                 let mut ser = serializer.serialize_struct("Sequence", 2)?;
                 ser.serialize_field("type", "Sequence")?;
                 ser.serialize_field("normalizers", seq)?;
                 ser.end()
             }
-            PyNormalizerWrapper::Wrapped(inner) => inner.serialize(serializer),
+            PyNormalizerTypeWrapper::Single(inner) => inner.serialize(serializer),
         }
     }
 }
@@ -264,7 +341,16 @@ where
     I: Into<NormalizerWrapper>,
 {
     fn from(norm: I) -> Self {
-        PyNormalizerWrapper::Wrapped(Arc::new(norm.into()))
+        PyNormalizerWrapper::Wrapped(norm.into())
+    }
+}
+
+impl<I> From<I> for PyNormalizerTypeWrapper
+where
+    I: Into<PyNormalizerWrapper>,
+{
+    fn from(norm: I) -> Self {
+        PyNormalizerTypeWrapper::Single(Arc::new(norm.into()))
     }
 }
 
@@ -279,13 +365,22 @@ where
     }
 }
 
+impl Normalizer for PyNormalizerTypeWrapper {
+    fn normalize(&self, normalized: &mut NormalizedString) -> tk::Result<()> {
+        match self {
+            PyNormalizerTypeWrapper::Single(inner) => inner.normalize(normalized),
+            PyNormalizerTypeWrapper::Sequence(inner) => {
+                inner.iter().map(|n| n.normalize(normalized)).collect()
+            }
+        }
+    }
+}
+
 impl Normalizer for PyNormalizerWrapper {
     fn normalize(&self, normalized: &mut NormalizedString) -> tk::Result<()> {
         match self {
             PyNormalizerWrapper::Wrapped(inner) => inner.normalize(normalized),
-            PyNormalizerWrapper::Sequence(inner) => {
-                inner.iter().map(|n| n.normalize(normalized)).collect()
-            }
+            PyNormalizerWrapper::Custom(inner) => inner.normalize(normalized),
         }
     }
 }
@@ -338,7 +433,7 @@ mod test {
     use tk::normalizers::utils::Sequence;
     use tk::normalizers::NormalizerWrapper;
 
-    use crate::normalizers::{PyNormalizer, PyNormalizerWrapper};
+    use crate::normalizers::{PyNormalizer, PyNormalizerTypeWrapper, PyNormalizerWrapper};
 
     #[test]
     fn get_subtype() {
@@ -360,8 +455,8 @@ mod test {
         assert_eq!(py_ser, rs_ser);
         let py_norm: PyNormalizer = serde_json::from_str(&rs_ser).unwrap();
         match py_norm.normalizer {
-            PyNormalizerWrapper::Wrapped(nfc) => match nfc.as_ref() {
-                NormalizerWrapper::NFKC(_) => {}
+            PyNormalizerTypeWrapper::Single(inner) => match inner.as_ref() {
+                PyNormalizerWrapper::Wrapped(NormalizerWrapper::NFKC(_)) => {}
                 _ => panic!("Expected NFKC"),
             },
             _ => panic!("Expected wrapped, not sequence."),
@@ -373,7 +468,7 @@ mod test {
         let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
         assert_eq!(py_wrapper_ser, rs_ser);
 
-        let py_seq = PyNormalizer::new(py_seq);
+        let py_seq = PyNormalizer::new(py_seq.into());
         let py_ser = serde_json::to_string(&py_seq).unwrap();
         assert_eq!(py_wrapper_ser, py_ser);
 

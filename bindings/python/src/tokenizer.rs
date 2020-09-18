@@ -844,7 +844,7 @@ impl PyTokenizer {
 mod test {
     use super::*;
     use crate::models::PyModel;
-    use crate::normalizers::{PyNormalizer, PyNormalizerWrapper};
+    use crate::normalizers::{PyNormalizer, PyNormalizerTypeWrapper};
     use std::sync::Arc;
     use tempfile::NamedTempFile;
     use tk::normalizers::{Lowercase, NFKC};
@@ -854,7 +854,7 @@ mod test {
         let mut tokenizer = Tokenizer::new(PyModel::new(Arc::new(
             tk::models::bpe::BPE::default().into(),
         )));
-        tokenizer.with_normalizer(PyNormalizer::new(PyNormalizerWrapper::Sequence(vec![
+        tokenizer.with_normalizer(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(vec![
             Arc::new(NFKC.into()),
             Arc::new(Lowercase.into()),
         ])));
