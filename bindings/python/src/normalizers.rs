@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 
 use crate::error::ToPyResult;
-use crate::utils::PyNormalizedStringRefMut;
+use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
@@ -103,6 +103,10 @@ impl PyNormalizer {
             }
             Err(e) => Err(e),
         }
+    }
+
+    fn normalize(&self, normalized: &mut PyNormalizedString) -> PyResult<()> {
+        ToPyResult(self.normalizer.normalize(&mut normalized.normalized)).into()
     }
 
     fn normalize_str(&self, sequence: &str) -> PyResult<String> {

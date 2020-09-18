@@ -167,11 +167,16 @@ fn slice(
 #[pyclass(module = "tokenizers", name=NormalizedString)]
 #[derive(Clone)]
 pub struct PyNormalizedString {
-    normalized: NormalizedString,
+    pub(crate) normalized: NormalizedString,
 }
 
 #[pymethods]
 impl PyNormalizedString {
+    #[new]
+    fn new(s: &str) -> Self {
+        NormalizedString::from(s).into()
+    }
+
     #[getter]
     fn get_normalized(&self) -> &str {
         self.normalized.get()

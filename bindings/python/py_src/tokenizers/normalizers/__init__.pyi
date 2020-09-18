@@ -1,3 +1,4 @@
+from .. import NormalizedString
 from typing import Optional, List
 
 class Normalizer:
@@ -6,6 +7,13 @@ class Normalizer:
     This class is not supposed to be instantiated directly. Instead, any implementation of a
     Normalizer will return an instance of this class when instantiated.
     """
+
+    def normalize(self, normalized: NormalizedString):
+        """ Normalize the given NormalizedString in-place """
+        pass
+    def normalize_str(self, sequence: str) -> str:
+        """ Normalize the given str """
+        pass
 
 class BertNormalizer(Normalizer):
     """ BertNormalizer
