@@ -18,8 +18,7 @@ impl Replace {
 
 impl Normalizer for Replace {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        let pattern: &str = &self.pattern;
-        normalized.replace(pattern, &self.content)
+        normalized.replace(&self.pattern, &self.content)
     }
 }
 
