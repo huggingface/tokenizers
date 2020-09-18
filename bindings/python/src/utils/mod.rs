@@ -1,6 +1,12 @@
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
+mod normalization;
+mod regex;
+
+pub use normalization::*;
+pub use regex::*;
+
 pub trait DestroyPtr {
     fn destroy(&mut self);
 }

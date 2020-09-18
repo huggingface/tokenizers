@@ -14,7 +14,7 @@ PreTokenizedEncodeInput = Union[
 InputSequence = Union[TextInputSequence, PreTokenizedInputSequence]
 EncodeInput = Union[TextEncodeInput, PreTokenizedEncodeInput]
 
-from .tokenizers import Tokenizer, Encoding, AddedToken
+from .tokenizers import Tokenizer, Encoding, AddedToken, Regex, NormalizedString
 from .tokenizers import decoders
 from .tokenizers import models
 from .tokenizers import normalizers
