@@ -11,6 +11,7 @@ from tokenizers.normalizers import (
     Sequence,
     BertNormalizer,
     Precompiled,
+    Replace,
 )
 from tokenizers.pre_tokenizers import (
     Digits,
@@ -162,8 +163,7 @@ class AlbertConverter(SpmConverter):
         ]
 
     def normalizer(self, proto):
-        normalizers = []
-        # TODO Missing Replace quotes
+        normalizers = [Replace("``", '"'), Replace("''", '"')]
         if not self.original_tokenizer.keep_accents:
             normalizers.append(NFKD())
             normalizers.append(StripAccents())
@@ -299,8 +299,7 @@ class XLNetConverter(SpmConverter):
         ]
 
     def normalizer(self, proto):
-        # TODO Missing Replace quotes
-        normalizers = []
+        normalizers = [Replace("``", '"'), Replace("''", '"')]
         if not self.original_tokenizer.keep_accents:
             normalizers.append(NFKD())
             normalizers.append(StripAccents())
@@ -383,9 +382,6 @@ def check(pretrained, filename):
     with open(filename, "r") as f:
         for i, line in enumerate(f):
             line = line.strip()
-
-            # TODO in normalizer
-            line = line.replace("``", '"').replace("''", '"')
 
             start = now()
             ids = transformer_tokenizer.encode(line)
