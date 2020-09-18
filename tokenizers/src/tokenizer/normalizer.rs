@@ -17,6 +17,7 @@ macro_rules! apply_signed {
 }
 
 /// The possible offsets referential
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OffsetReferential {
     Original,
     Normalized,
