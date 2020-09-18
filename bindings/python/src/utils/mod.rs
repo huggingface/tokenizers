@@ -2,9 +2,11 @@ use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
 mod normalization;
+mod pretokenization;
 mod regex;
 
 pub use normalization::*;
+pub use pretokenization::*;
 pub use regex::*;
 
 pub trait DestroyPtr {

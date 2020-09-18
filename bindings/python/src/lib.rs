@@ -135,6 +135,7 @@ fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<encoding::PyEncoding>()?;
     m.add_class::<utils::PyRegex>()?;
     m.add_class::<utils::PyNormalizedString>()?;
+    m.add_class::<utils::PyPreTokenizedString>()?;
     m.add_wrapped(wrap_pymodule!(models))?;
     m.add_wrapped(wrap_pymodule!(pre_tokenizers))?;
     m.add_wrapped(wrap_pymodule!(decoders))?;
