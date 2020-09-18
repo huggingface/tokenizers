@@ -1,7 +1,7 @@
 import pickle
 import pytest
 
-from tokenizers import Tokenizer
+from tokenizers import Tokenizer, NormalizedString
 from tokenizers.models import BPE
 from tokenizers.normalizers import Normalizer, BertNormalizer, Sequence, Lowercase, Strip
 
@@ -123,3 +123,12 @@ class TestCustomNormalizer:
             Exception, match="Cannot use a NormalizedStringRefMut outside `normalize`"
         ):
             good_custom.use_after_normalize()
+
+    def test_normalizer_interface(self):
+        normalizer = Normalizer.custom(TestCustomNormalizer.GoodCustomNormalizer())
+
+        normalized = NormalizedString("Hey there!")
+        normalizer.normalize(normalized)
+
+        assert repr(normalized) == 'NormalizedString(original="Hey you!", normalized="Hey there!")'
+        assert str(normalized) == "Hey you!"
