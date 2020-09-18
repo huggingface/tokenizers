@@ -489,15 +489,6 @@ impl NormalizedString {
                 }
             })
             .collect::<Vec<_>>();
-        debug!(
-            "Filter transform {:?}",
-            filtered
-                .iter()
-                .cloned()
-                .rev()
-                .filter_map(|o| o)
-                .collect::<Vec<_>>()
-        );
         self.transform(
             filtered.into_iter().rev().filter_map(|o| o),
             removed as usize,
