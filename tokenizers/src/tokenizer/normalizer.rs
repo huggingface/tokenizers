@@ -770,7 +770,7 @@ impl NormalizedString {
 
         // Eventual gap before first group
         let start = self.alignments[0].0;
-        if self.alignments[0].0 != 0 {
+        if start != 0 {
             alignments_original.extend(vec![(0, 0); start]);
         }
 
@@ -808,7 +808,7 @@ impl NormalizedString {
             self.original.len() - alignments_original.len()
         ]);
 
-        // assert_eq!(alignments_original.len(), self.normalized.len());
+        // assert_eq!(alignments_original.len(), self.original.len());
         alignments_original
     }
 }
