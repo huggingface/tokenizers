@@ -1,4 +1,5 @@
 import pickle
+import pytest
 
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
@@ -93,3 +94,32 @@ class TestStrip:
 
         output = normalizer.normalize_str("  hello  ")
         assert output == "hello"
+
+
+class TestCustomNormalizer:
+    class BadCustomNormalizer:
+        def normalize(self, normalized, wrong):
+            pass
+
+    class GoodCustomNormalizer:
+        def normalize(self, normalized):
+            self.kept_normalized = normalized
+            normalized.replace("there", "you")
+
+        def use_after_normalize(self):
+            self.kept_normalized.replace("something", "else")
+
+    def test_instantiate(self):
+        bad = Normalizer.custom(TestCustomNormalizer.BadCustomNormalizer())
+        good_custom = TestCustomNormalizer.GoodCustomNormalizer()
+        good = Normalizer.custom(good_custom)
+
+        assert isinstance(bad, Normalizer)
+        assert isinstance(good, Normalizer)
+        with pytest.raises(Exception, match="TypeError: normalize()"):
+            bad.normalize_str("Hey there!")
+        assert good.normalize_str("Hey there!") == "Hey you!"
+        with pytest.raises(
+            Exception, match="Cannot use a NormalizedStringRefMut outside `normalize`"
+        ):
+            good_custom.use_after_normalize()
