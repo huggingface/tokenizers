@@ -12,6 +12,7 @@ mod processors;
 mod token;
 mod tokenizer;
 mod trainers;
+mod utils;
 
 use pyo3::prelude::*;
 use pyo3::wrap_pymodule;
