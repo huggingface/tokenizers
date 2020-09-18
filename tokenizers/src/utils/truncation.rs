@@ -250,7 +250,7 @@ mod tests {
         )
     }
 
-    fn truncatate_and_assert(
+    fn truncate_and_assert(
         encoding1: Encoding,
         encoding2: Encoding,
         params: &TruncationParams,
@@ -274,25 +274,25 @@ mod tests {
             stride: 0,
         };
 
-        truncatate_and_assert(get_empty(), get_empty(), &params, 0, 0);
-        truncatate_and_assert(get_empty(), get_short(), &params, 0, 2);
-        truncatate_and_assert(get_empty(), get_medium(), &params, 0, 4);
-        truncatate_and_assert(get_empty(), get_long(), &params, 0, 7);
+        truncate_and_assert(get_empty(), get_empty(), &params, 0, 0);
+        truncate_and_assert(get_empty(), get_short(), &params, 0, 2);
+        truncate_and_assert(get_empty(), get_medium(), &params, 0, 4);
+        truncate_and_assert(get_empty(), get_long(), &params, 0, 7);
 
-        truncatate_and_assert(get_short(), get_empty(), &params, 2, 0);
-        truncatate_and_assert(get_short(), get_short(), &params, 2, 2);
-        truncatate_and_assert(get_short(), get_medium(), &params, 2, 4);
-        truncatate_and_assert(get_short(), get_long(), &params, 2, 5);
+        truncate_and_assert(get_short(), get_empty(), &params, 2, 0);
+        truncate_and_assert(get_short(), get_short(), &params, 2, 2);
+        truncate_and_assert(get_short(), get_medium(), &params, 2, 4);
+        truncate_and_assert(get_short(), get_long(), &params, 2, 5);
 
-        truncatate_and_assert(get_medium(), get_empty(), &params, 4, 0);
-        truncatate_and_assert(get_medium(), get_short(), &params, 4, 2);
-        truncatate_and_assert(get_medium(), get_medium(), &params, 3, 4);
-        truncatate_and_assert(get_medium(), get_long(), &params, 3, 4);
+        truncate_and_assert(get_medium(), get_empty(), &params, 4, 0);
+        truncate_and_assert(get_medium(), get_short(), &params, 4, 2);
+        truncate_and_assert(get_medium(), get_medium(), &params, 3, 4);
+        truncate_and_assert(get_medium(), get_long(), &params, 3, 4);
 
-        truncatate_and_assert(get_long(), get_empty(), &params, 7, 0);
-        truncatate_and_assert(get_long(), get_short(), &params, 5, 2);
-        truncatate_and_assert(get_long(), get_medium(), &params, 4, 3);
-        truncatate_and_assert(get_long(), get_long(), &params, 3, 4);
+        truncate_and_assert(get_long(), get_empty(), &params, 7, 0);
+        truncate_and_assert(get_long(), get_short(), &params, 5, 2);
+        truncate_and_assert(get_long(), get_medium(), &params, 4, 3);
+        truncate_and_assert(get_long(), get_long(), &params, 3, 4);
     }
 
     #[test]
@@ -303,8 +303,8 @@ mod tests {
             stride: 0,
         };
 
-        truncatate_and_assert(get_empty(), get_short(), &params, 0, 0);
-        truncatate_and_assert(get_medium(), get_medium(), &params, 0, 0);
-        truncatate_and_assert(get_long(), get_long(), &params, 0, 0);
+        truncate_and_assert(get_empty(), get_short(), &params, 0, 0);
+        truncate_and_assert(get_medium(), get_medium(), &params, 0, 0);
+        truncate_and_assert(get_long(), get_long(), &params, 0, 0);
     }
 }

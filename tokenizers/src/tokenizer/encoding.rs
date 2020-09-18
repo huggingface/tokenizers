@@ -215,17 +215,7 @@ impl Encoding {
         }
 
         if max_len == 0 {
-            let o = Encoding {
-                ids: self.get_ids().to_vec(),
-                type_ids: self.get_type_ids().to_vec(),
-                tokens: self.get_tokens().to_vec(),
-                words: self.get_words().to_vec(),
-                offsets: self.get_offsets().to_vec(),
-                special_tokens_mask: self.get_special_tokens_mask().to_vec(),
-                attention_mask: self.get_attention_mask().to_vec(),
-                overflowing: self.get_overflowing().to_vec(),
-            };
-            *self = Encoding::with_capacity(0);
+            let o = std::mem::replace(self, Encoding::with_capacity(0));
             self.overflowing.push(o);
             return;
         }
