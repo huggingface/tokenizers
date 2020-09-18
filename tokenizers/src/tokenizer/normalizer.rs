@@ -763,7 +763,8 @@ impl NormalizedString {
     }
 
     /// Recalculate original alignments
-    pub fn alignments_original(&self) -> Vec<(usize, usize)> {
+    #[allow(dead_code)]
+    pub(crate) fn alignments_original(&self) -> Vec<(usize, usize)> {
         // Start, end are in alignments
         // offset, length are in alignments_original
         let mut alignments_original = Vec::with_capacity(self.original.len());
