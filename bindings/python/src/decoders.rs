@@ -176,32 +176,26 @@ impl PyBPEDecoder {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct CustomDecoder {
-    class: PyObject,
+    inner: PyObject,
 }
 
 impl CustomDecoder {
-    pub(crate) fn new(class: PyObject) -> PyResult<Self> {
-        Ok(CustomDecoder { class })
+    pub(crate) fn new(inner: PyObject) -> PyResult<Self> {
+        Ok(CustomDecoder { inner })
     }
 }
 
 impl Decoder for CustomDecoder {
     fn decode(&self, tokens: Vec<String>) -> tk::Result<String> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        let args = PyTuple::new(py, &[tokens]);
-        match self.class.call_method(py, "decode", args, None) {
-            Ok(res) => Ok(res
-                .cast_as::<PyString>(py)
-                .map_err(|_| PyError::from("`decode` is expected to return a str"))?
-                .to_string()),
-            Err(e) => {
-                e.print(py);
-                Err(Box::new(PyError::from("Error while calling `decode`")))
-            }
-        }
+        Python::with_gil(|py| {
+            let decoded = self
+                .inner
+                .call_method(py, "decode", (tokens,), None)?
+                .extract::<String>(py)?;
+            Ok(decoded)
+        })
     }
 }
 
@@ -297,10 +291,12 @@ mod test {
             },
             _ => panic!("Expected wrapped, not custom."),
         }
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let py_msp = PyDecoder::new(Metaspace::default().into());
-        let obj: PyObject = Py::new(py, py_msp).unwrap().into_py(py);
+
+        let obj = Python::with_gil(|py| {
+            let py_msp = PyDecoder::new(Metaspace::default().into());
+            let obj: PyObject = Py::new(py, py_msp).unwrap().into_py(py);
+            obj
+        });
         let py_seq = PyDecoderWrapper::Custom(Arc::new(CustomDecoder::new(obj).unwrap()));
         assert!(serde_json::to_string(&py_seq).is_err());
     }
