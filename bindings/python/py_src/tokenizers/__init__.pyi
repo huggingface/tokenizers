@@ -12,7 +12,8 @@ from .implementations import (
     BertWordPieceTokenizer as BertWordPieceTokenizer,
 )
 
-from typing import Optional, Union, List, Tuple
+from typing import Optional, Union, List, Tuple, Callable
+from enum import Enum
 
 Offsets = Tuple[int, int]
 
@@ -25,6 +26,114 @@ PreTokenizedEncodeInput = Union[
 
 InputSequence = Union[TextInputSequence, PreTokenizedInputSequence]
 EncodeInput = Union[TextEncodeInput, PreTokenizedEncodeInput]
+
+class OffsetReferential(Enum):
+    ORIGINAL = "original"
+    NORMALIZED = "normalized"
+
+class OffsetType(Enum):
+    BYTE = "byte"
+    CHAR = "char"
+
+class Token:
+    id: int
+    token: str
+    offsets: Offsets
+
+Split = Tuple[str, Offsets, List[Token]]
+
+class PreTokenizedString:
+    """ PreTokenizedString
+
+    Wrapper over a string, that provides a way to normalize, pre-tokenize, tokenize the
+    underlying string, while keeping track of the alignment information (offsets).
+
+    The PreTokenizedString manages what we call `splits`. Each split represents a substring
+    which is a subpart of the original string, with the relevant offsets and tokens.
+
+    When calling one of the methods used to modify the PreTokenizedString (namely one of
+    `split`, `normalize` or `tokenize), only the `splits` that don't have any associated
+    tokens will get modified.
+    """
+
+    def __new__(sequence: str) -> PreTokenizedString:
+        """ Instantiate a new PreTokenizedString using the given str
+
+        Args:
+            sequence: str:
+                The string sequence used to initialize this PreTokenizedString
+        """
+        pass
+    def split(self, func: Callable[[NormalizedString], List[NormalizedString]]):
+        """ Split the PreTokenizedString using the given `func`
+
+        Args:
+            func: Callable[[NormalizedString], List[NormalizedString]]:
+                The function used to split each underlying split.
+                It is expected to return a list of `NormalizedString`, that represent the new
+                splits. If the given `NormalizedString` does not need any splitting, we can
+                just return it directly.
+                In order for the offsets to be tracked accurately, any returned `NormalizedString`
+                should come from calling either `.split` or `.slice` on the received one.
+        """
+        pass
+    def normalize(self, func: Callable[[NormalizedString], None]):
+        """ Normalize each split of the `PreTokenizedString` using the given `func`
+
+        Args:
+            func: Callable[[NormalizedString], None]:
+                The function used to normalize each underlying split. This function
+                does not need to return anything, just calling the methods on the provided
+                NormalizedString allow its modification.
+        """
+        pass
+    def tokenize(self, func: Callable[[str], List[Token]]):
+        """ Tokenize each split of the `PreTokenizedString` using the given `func`
+
+        Args:
+            func: Callable[[str], List[Token]]:
+                The function used to tokenize each underlying split. This function must return
+                a list of Token generated from the input str.
+        """
+        pass
+    def to_encoding(self, type_id: int = 0, word_idx: Optional[int] = None) -> Encoding:
+        """ Return an Encoding generated from this PreTokenizedString
+
+        Args:
+            type_id: int = 0:
+                The type_id to be used on the generated Encoding.
+
+            word_idx: Optional[int] = None:
+                An optional word index to be used for each token of this Encoding. If provided,
+                all the word indices in the generated Encoding will use this value, instead
+                of the one automatically tracked during pre-tokenization.
+
+        Returns:
+            An Encoding
+        """
+        pass
+    def get_splits(
+        self,
+        offset_referential: OffsetReferential = OffsetReferential.ORIGINAL,
+        offset_type: OffsetType = OffsetType.CHAR,
+    ) -> List[Split]:
+        """ Get the splits currently managed by the PreTokenizedString
+
+        Args:
+            offset_referential: OffsetReferential:
+                Whether the returned splits should have offsets expressed relative
+                to the original string, or the normalized one.
+
+            offset_type: OffsetType:
+                Whether the returned splits should have offsets expressed in bytes or chars.
+                When slicing an str, we usually want to use chars, which is the default value.
+                Now in some cases it might be interesting to get these offsets expressed in bytes,
+                so it is possible to change this here.
+
+        Returns
+            A list of splits
+        """
+        pass
 
 class Regex:
     """ A Regex """

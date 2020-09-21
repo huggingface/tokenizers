@@ -1,3 +1,4 @@
+from .. import PreTokenizedString
 from typing import Optional, List, Tuple
 
 Offsets = Tuple[int, int]
@@ -9,7 +10,10 @@ class PreTokenizer:
     PreTokenizer will return an instance of this class when instantiated.
     """
 
-    def pre_tokenize(self, sequence: str) -> List[Tuple[str, Offsets]]:
+    def pre_tokenize(self, pretokenized: PreTokenizedString):
+        """ Pre tokenize the given PreTokenizedString in-place """
+        pass
+    def pre_tokenize_str(self, sequence: str) -> List[Tuple[str, Offsets]]:
         """ Pre tokenize the given sequence """
         pass
 
