@@ -7,6 +7,7 @@ use tokenizers::tokenizer::Result;
 #[derive(Debug)]
 pub struct PyError(pub String);
 impl PyError {
+    #[allow(dead_code)]
     pub fn from(s: &str) -> Self {
         PyError(String::from(s))
     }
