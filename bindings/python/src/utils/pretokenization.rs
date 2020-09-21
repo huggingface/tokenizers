@@ -136,8 +136,25 @@ pub struct PyPreTokenizedString {
     pub(crate) pretok: tk::PreTokenizedString,
 }
 
+impl From<PreTokenizedString> for PyPreTokenizedString {
+    fn from(pretok: PreTokenizedString) -> Self {
+        Self { pretok }
+    }
+}
+
+impl From<PyPreTokenizedString> for PreTokenizedString {
+    fn from(pretok: PyPreTokenizedString) -> Self {
+        pretok.pretok
+    }
+}
+
 #[pymethods]
 impl PyPreTokenizedString {
+    #[new]
+    fn new(s: &str) -> Self {
+        PreTokenizedString::from(s).into()
+    }
+
     fn split(&mut self, func: &PyAny) -> PyResult<()> {
         split(&mut self.pretok, func)
     }
