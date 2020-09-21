@@ -4,6 +4,7 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 
+use crate::encoding::PyEncoding;
 use crate::error::ToPyResult;
 use serde::{Deserialize, Serialize};
 use tk::processors::bert::BertProcessing;
@@ -88,6 +89,22 @@ impl PyPostProcessor {
 
     fn num_special_tokens_to_add(&self, is_pair: bool) -> usize {
         self.processor.added_tokens(is_pair)
+    }
+
+    #[args(pair = "None", add_special_tokens = "true")]
+    fn process(
+        &self,
+        encoding: &PyEncoding,
+        pair: Option<&PyEncoding>,
+        add_special_tokens: bool,
+    ) -> PyResult<PyEncoding> {
+        let final_encoding = ToPyResult(self.processor.process(
+            encoding.encoding.clone(),
+            pair.map(|e| e.encoding.clone()),
+            add_special_tokens,
+        ))
+        .into_py()?;
+        Ok(final_encoding.into())
     }
 }
 
