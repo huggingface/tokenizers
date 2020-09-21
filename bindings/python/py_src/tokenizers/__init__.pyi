@@ -35,12 +35,21 @@ class OffsetType(Enum):
     BYTE = "byte"
     CHAR = "char"
 
+class SplitDelimiterBehavior(Enum):
+    REMOVED = "removed"
+    ISOLATED = "isolated"
+    MERGED_WITH_PREVIOUS = "merged_with_previous"
+    MERGED_WITH_NEXT = "merged_with_next"
+    CONTIGUOUS = "contiguous"
+
 class Token:
     id: int
     token: str
     offsets: Offsets
 
 Split = Tuple[str, Offsets, List[Token]]
+Range = Union[int, Tuple[int, int], slice]
+Pattern = Union[str, Regex]
 
 class PreTokenizedString:
     """ PreTokenizedString
@@ -132,6 +141,108 @@ class PreTokenizedString:
 
         Returns
             A list of splits
+        """
+        pass
+
+class NormalizedString:
+    """ NormalizedString
+
+    A NormalizedString takes care of modifying an "original" string, to obtain a "normalized" one.
+    While making all the requested modifications, it keeps track of the alignment information
+    between the two versions of the string.
+    """
+
+    def __new__(sequence: str) -> NormalizedString:
+        """ Instantiate a new NormalizedString using the given str
+
+        Args:
+            sequence: str:
+                The string sequence used to initialize this NormalizedString
+        """
+        pass
+    @property
+    def normalized(self) -> str:
+        """ The normalized part of the string """
+        pass
+    @property
+    def original(self) -> str:
+        """ The original part of the string """
+        pass
+    def nfd(self):
+        """ Runs the NFD normalization """
+        pass
+    def nfkd(self):
+        """ Runs the NFKD normalization """
+        pass
+    def nfc(self):
+        """ Runs the NFC normalization """
+        pass
+    def nfkc(self):
+        """ Runs the NFKC normalization """
+        pass
+    def lowercase(self):
+        """ Lowercase the string """
+        pass
+    def uppercase(self):
+        """ Uppercase the string """
+        pass
+    def prepend(self, s: str):
+        """ Prepend the given sequence to the string """
+        pass
+    def append(self, s: str):
+        """ Append the given sequence to the string """
+        pass
+    def lstrip(self):
+        """ Strip the left of the string """
+        pass
+    def rstrip(self):
+        """ Strip the right of the string """
+        pass
+    def strip(self):
+        """ Strip both ends of the string """
+        pass
+    def clear(self):
+        """ Clear the string """
+        pass
+    def slice(self, range: Range) -> Optional[NormalizedString]:
+        """ Slice the string using the given range """
+        pass
+    def filter(self, func: Callable[[str], bool]):
+        """ Filter each character of the string using the given func """
+        pass
+    def for_each(self, func: Callable[[str], None]):
+        """ Calls the given function for each character of the string """
+        pass
+    def map(self, func: Callable[[str], str]):
+        """ Calls the given function for each character of the string
+
+        Replaces each character of the string using the returned value. Each
+        returned value **must** be a str of length 1 (ie a character).
+        """
+        pass
+    def split(self, pattern: Pattern, behavior: SplitDelimiterBehavior) -> List[NormalizedString]:
+        """ Split the NormalizedString using the given pattern and the specified behavior
+
+        Args:
+            pattern: Pattern:
+                A pattern used to split the string. Usually a string or a Regex
+
+            behavior: SplitDelimiterBehavior:
+                The behavior to use when splitting
+
+        Returns:
+            A list of NormalizedString, representing each split
+        """
+        pass
+    def replace(self, pattern: Pattern, content: str):
+        """ Replace the content of the given pattern with the provided content
+
+        Args:
+            pattern: Pattern:
+                A pattern used to match the string. Usually a string or a Regex
+
+            content: str:
+                The content to be used as replacement
         """
         pass
 
