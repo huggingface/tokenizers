@@ -26,6 +26,14 @@ class OffsetType(Enum):
     CHAR = "char"
 
 
+class SplitDelimiterBehavior(Enum):
+    REMOVED = "removed"
+    ISOLATED = "isolated"
+    MERGED_WITH_PREVIOUS = "merged_with_previous"
+    MERGED_WITH_NEXT = "merged_with_next"
+    CONTIGUOUS = "contiguous"
+
+
 from .tokenizers import (
     Tokenizer,
     Encoding,
