@@ -65,7 +65,7 @@ impl PyRange<'_> {
             }
             PyRange::Range(s, e) => Ok(*s..*e),
             PyRange::Slice(s) => {
-                let r = s.indices(max_len as i64)?;
+                let r = s.indices(max_len as std::os::raw::c_long)?;
                 Ok(r.start as usize..r.stop as usize)
             }
         }
