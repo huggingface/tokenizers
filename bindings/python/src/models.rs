@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::token::PyToken;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -103,6 +104,22 @@ impl PyModel {
             }
             Err(e) => Err(e),
         }
+    }
+
+    fn tokenize(&self, tokens: &str) -> PyResult<Vec<PyToken>> {
+        Ok(ToPyResult(self.model.tokenize(tokens))
+            .into_py()?
+            .into_iter()
+            .map(|t| t.into())
+            .collect())
+    }
+
+    fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.model.token_to_id(token)
+    }
+
+    fn id_to_token(&self, id: u32) -> Option<&str> {
+        self.model.id_to_token(id)
     }
 
     fn save(&self, folder: &str, name: Option<&str>) -> PyResult<Vec<String>> {
