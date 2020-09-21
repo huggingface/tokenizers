@@ -990,7 +990,7 @@ where
                             trainer.process_tokens(
                                 &mut words,
                                 pre_tokenized
-                                    .get_splits(OffsetReferential::Original)
+                                    .get_splits(OffsetReferential::Original, OffsetType::Byte)
                                     .into_iter()
                                     .map(|(s, _, _)| s.to_owned())
                                     .collect(),

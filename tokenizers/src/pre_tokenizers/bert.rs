@@ -19,7 +19,7 @@ impl PreTokenizer for BertPreTokenizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{NormalizedString, OffsetReferential};
+    use crate::{NormalizedString, OffsetReferential, OffsetType};
 
     #[test]
     fn basic() {
@@ -28,7 +28,7 @@ mod tests {
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
@@ -64,7 +64,7 @@ mod tests {
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),

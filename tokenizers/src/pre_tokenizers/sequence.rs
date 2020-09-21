@@ -27,7 +27,7 @@ impl PreTokenizer for Sequence {
 mod tests {
     use super::*;
     use crate::pre_tokenizers::{punctuation::Punctuation, whitespace::WhitespaceSplit};
-    use crate::OffsetReferential;
+    use crate::{OffsetReferential, OffsetType};
 
     #[test]
     fn sequence_basic() {
@@ -40,7 +40,7 @@ mod tests {
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),

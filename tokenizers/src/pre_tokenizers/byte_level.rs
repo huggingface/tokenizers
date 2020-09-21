@@ -212,7 +212,8 @@ pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
 mod tests {
     use super::ByteLevel;
     use crate::tokenizer::{
-        Decoder, Encoding, OffsetReferential, PostProcessor, PreTokenizedString, PreTokenizer,
+        Decoder, Encoding, OffsetReferential, OffsetType, PostProcessor, PreTokenizedString,
+        PreTokenizer,
     };
 
     #[test]
@@ -222,7 +223,7 @@ mod tests {
         bytelevel.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
@@ -271,7 +272,7 @@ mod tests {
             bytelevel.pre_tokenize(&mut pretokenized).unwrap();
             assert_eq!(
                 pretokenized
-                    .get_splits(OffsetReferential::Normalized)
+                    .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
                     .into_iter()
                     .map(|(s, o, _)| (s, o))
                     .collect::<Vec<_>>(),
@@ -304,7 +305,7 @@ mod tests {
             let mut pretokenized = PreTokenizedString::from(sample);
             bytelevel.pre_tokenize(&mut pretokenized).unwrap();
             let separated_tokens = pretokenized
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .iter()
                 .flat_map(|(s, _, _)| s.split("").map(|t| t.into()))
                 .collect::<Vec<_>>();
@@ -320,7 +321,7 @@ mod tests {
 
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
@@ -342,7 +343,7 @@ mod tests {
 
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
@@ -364,7 +365,7 @@ mod tests {
 
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
@@ -372,7 +373,7 @@ mod tests {
         );
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Normalized)
+                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
@@ -380,7 +381,7 @@ mod tests {
         );
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .into_iter()
                 .map(|(_, o, _)| &input[o.0..o.1])
                 .collect::<Vec<_>>(),
