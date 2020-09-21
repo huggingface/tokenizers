@@ -13,7 +13,7 @@ use tk::decoders::DecoderWrapper;
 use tk::Decoder;
 use tokenizers as tk;
 
-use super::error::{PyError, ToPyResult};
+use super::error::ToPyResult;
 
 #[pyclass(dict, module = "tokenizers.decoders", name=Decoder)]
 #[derive(Clone, Deserialize, Serialize)]

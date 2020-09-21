@@ -381,7 +381,7 @@ impl PyNormalizedStringRefMut {
     fn lowercase(&mut self) -> PyResult<()> {
         self.inner
             .map_mut(|n| {
-                n.nfkc();
+                n.lowercase();
             })
             .ok_or_else(PyNormalizedStringRefMut::destroyed_error)?;
         Ok(())
