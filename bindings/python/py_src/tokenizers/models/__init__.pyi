@@ -1,4 +1,4 @@
-from .. import Encoding, Offsets
+from .. import Encoding, Offsets, Token
 from typing import List, Optional, Union, Tuple
 
 class Model:
@@ -8,6 +8,15 @@ class Model:
     a Model will return a instance of this class when instantiated.
     """
 
+    def tokenize(self, sequence: str) -> List[Token]:
+        """ Tokenize the given sequence """
+        pass
+    def token_to_id(self, token: str) -> Optional[int]:
+        """ Returns the id associated with the given token """
+        pass
+    def id_to_token(self, id: int) -> Optional[str]:
+        """ Returns the token associated with the given id """
+        pass
     def save(self, folder: str, name: Optional[str] = None) -> List[str]:
         """ Save the current model
 

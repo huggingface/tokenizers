@@ -1,3 +1,4 @@
+from .. import Encoding
 from typing import Tuple, Union, List
 
 class PostProcessor:
@@ -13,6 +14,11 @@ class PostProcessor:
         :param is_pair: Boolean indicating if the input would be a single sentence or a pair
         :return:
         """
+        pass
+    def process(
+        self, encoding: Encoding, pair: Optional[Encoding] = None, add_special_tokens: bool = True
+    ) -> Encoding:
+        """ Post-process the given encodings, generating the final one """
         pass
 
 class BertProcessing(PostProcessor):
