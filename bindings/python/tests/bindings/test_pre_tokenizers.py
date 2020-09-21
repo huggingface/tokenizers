@@ -97,7 +97,7 @@ class TestSequence:
         assert isinstance(Sequence([]), Sequence)
         assert isinstance(pickle.loads(pickle.dumps(pre_tokenizer)), Sequence)
 
-        result = pre_tokenizer.pre_tokenize("Hey friend!     How are you?!?")
+        result = pre_tokenizer.pre_tokenize_str("Hey friend!     How are you?!?")
         assert result == [
             ("Hey", (0, 3)),
             ("friend", (4, 10)),
@@ -140,5 +140,8 @@ class TestCustomPreTokenizer:
         assert isinstance(bad, PreTokenizer)
         assert isinstance(good, PreTokenizer)
         with pytest.raises(Exception, match="TypeError: pre_tokenize()"):
-            bad.pre_tokenize("Hey there!")
-        assert good.pre_tokenize("Hey there!") == [("Hey there!", (0, 10)), ("Hey there!", (0, 10))]
+            bad.pre_tokenize_str("Hey there!")
+        assert good.pre_tokenize_str("Hey there!") == [
+            ("Hey there!", (0, 10)),
+            ("Hey there!", (0, 10)),
+        ]

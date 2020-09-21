@@ -10,7 +10,7 @@ use super::{
 use crate::encoding::PyEncoding;
 use crate::error::ToPyResult;
 use crate::token::PyToken;
-use tk::{OffsetReferential, Offsets, PreTokenizedString, Token};
+use tk::{OffsetReferential, OffsetType, Offsets, PreTokenizedString, Token};
 
 fn split(pretok: &mut PreTokenizedString, func: &PyAny) -> PyResult<()> {
     if !func.is_callable() {
@@ -81,13 +81,30 @@ impl FromPyObject<'_> for PyOffsetReferential {
     }
 }
 
+#[derive(Clone)]
+pub struct PyOffsetType(OffsetType);
+impl FromPyObject<'_> for PyOffsetType {
+    fn extract(obj: &PyAny) -> PyResult<Self> {
+        let s = obj.extract::<&str>()?;
+
+        Ok(Self(match s {
+            "byte" => Ok(OffsetType::Byte),
+            "char" => Ok(OffsetType::Char),
+            _ => Err(exceptions::PyValueError::new_err(
+                "Wrong value for OffsetType, expected one of `byte, char`",
+            )),
+        }?))
+    }
+}
+
 type PySplit = (String, Offsets, Option<Vec<PyToken>>);
 fn get_splits(
     pretok: &PreTokenizedString,
     offset_referential: PyOffsetReferential,
+    offset_type: PyOffsetType,
 ) -> Vec<PySplit> {
     pretok
-        .get_splits(offset_referential.0)
+        .get_splits(offset_referential.0, offset_type.0)
         .into_iter()
         .map(|(s, o, t)| {
             (
@@ -116,7 +133,7 @@ fn to_encoding(
 
 #[pyclass(module = "tokenizers", name=PreTokenizedString)]
 pub struct PyPreTokenizedString {
-    pretok: tk::PreTokenizedString,
+    pub(crate) pretok: tk::PreTokenizedString,
 }
 
 #[pymethods]
@@ -138,9 +155,16 @@ impl PyPreTokenizedString {
         to_encoding(&self.pretok, type_id, word_idx)
     }
 
-    #[args(offset_referential = "PyOffsetReferential(OffsetReferential::Original)")]
-    fn get_splits(&self, offset_referential: PyOffsetReferential) -> Vec<PySplit> {
-        get_splits(&self.pretok, offset_referential)
+    #[args(
+        offset_referential = "PyOffsetReferential(OffsetReferential::Original)",
+        offset_type = "PyOffsetType(OffsetType::Char)"
+    )]
+    fn get_splits(
+        &self,
+        offset_referential: PyOffsetReferential,
+        offset_type: PyOffsetType,
+    ) -> Vec<PySplit> {
+        get_splits(&self.pretok, offset_referential, offset_type)
     }
 }
 
@@ -199,10 +223,17 @@ impl PyPreTokenizedStringRefMut {
             .ok_or_else(PyPreTokenizedStringRefMut::destroyed_error)?
     }
 
-    #[args(offset_referential = "PyOffsetReferential(OffsetReferential::Original)")]
-    fn get_splits(&self, offset_referential: PyOffsetReferential) -> PyResult<Vec<PySplit>> {
+    #[args(
+        offset_referential = "PyOffsetReferential(OffsetReferential::Original)",
+        offset_type = "PyOffsetType(OffsetType::Char)"
+    )]
+    fn get_splits(
+        &self,
+        offset_referential: PyOffsetReferential,
+        offset_type: PyOffsetType,
+    ) -> PyResult<Vec<PySplit>> {
         self.inner
-            .map(|pretok| get_splits(pretok, offset_referential))
+            .map(|pretok| get_splits(pretok, offset_referential, offset_type))
             .ok_or_else(PyPreTokenizedStringRefMut::destroyed_error)
     }
 }

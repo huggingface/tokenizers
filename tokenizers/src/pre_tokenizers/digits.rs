@@ -39,7 +39,7 @@ impl PreTokenizer for Digits {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::OffsetReferential;
+    use crate::{OffsetReferential, OffsetType};
 
     #[test]
     fn numbers() {
@@ -48,7 +48,7 @@ mod tests {
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Normalized)
+                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
@@ -56,7 +56,7 @@ mod tests {
         );
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
@@ -70,7 +70,7 @@ mod tests {
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Normalized)
+                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
@@ -84,7 +84,7 @@ mod tests {
         );
         assert_eq!(
             pretokenized
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),

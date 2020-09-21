@@ -499,7 +499,7 @@ mod tests {
     use super::*;
     use crate::normalizers::utils::Lowercase;
     use crate::normalizers::NormalizerWrapper;
-    use crate::{OffsetReferential, Result, Token};
+    use crate::{OffsetReferential, OffsetType, Result, Token};
     use std::path::{Path, PathBuf};
 
     #[derive(Serialize, Deserialize)]
@@ -653,7 +653,7 @@ mod tests {
         let result = vocab.extract_and_normalize(normalizer, "[CLS] My name is Anthony [SEP]");
         assert_eq!(
             result
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, _, tokens)| (
                     s,
@@ -703,7 +703,7 @@ mod tests {
 
         assert_eq!(
             result
-                .get_splits(OffsetReferential::Original)
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .into_iter()
                 .map(|(s, _, tokens)| (
                     s,

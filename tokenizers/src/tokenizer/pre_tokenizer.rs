@@ -143,22 +143,9 @@ impl PreTokenizedString {
         } else if !self.splits.iter().all(|split| split.tokens.is_some()) {
             Err("Split has not been tokenized, call `PreTokenizedString::tokenize` first".into())
         } else {
-            let char_map: HashMap<usize, usize> = match offset_type {
-                OffsetType::Char => self
-                    .original
-                    .char_indices()
-                    .enumerate()
-                    .flat_map(|(i, (b, c))| {
-                        let mut n = 0;
-                        std::iter::repeat_with(move || {
-                            let o = (b + n, i);
-                            n += 1;
-                            o
-                        })
-                        .take(c.len_utf8())
-                    })
-                    .collect(),
-                OffsetType::Byte => HashMap::new(),
+            let offset_converter = match offset_type {
+                OffsetType::Char => Some(BytesToCharOffsetConverter::new(&self.original)),
+                OffsetType::Byte => None,
             };
 
             Ok(self
@@ -168,37 +155,24 @@ impl PreTokenizedString {
                 .flat_map(|(idx, split)| {
                     let normalized = split.normalized;
                     let offsets = normalized.offsets_original();
-                    let char_map = &char_map;
+                    let offset_converter = &offset_converter;
 
                     split.tokens.unwrap().into_iter().map(move |token| {
-                        let mut converted_offsets = normalized
+                        let mut offsets = normalized
                             .convert_offsets(Range::Normalized(token.offsets.0..token.offsets.1))
                             .map_or(token.offsets, |range| {
                                 (offsets.0 + range.start, offsets.0 + range.end)
                             });
 
                         // Convert to char offsets if relevant
-                        match (
-                            char_map.get(&converted_offsets.0),
-                            char_map.get(&converted_offsets.1),
-                        ) {
-                            (Some(start), Some(end)) => converted_offsets = (*start, *end),
-                            // If we reached the end, `end` is not in the map
-                            (Some(start), None) => {
-                                // But the one just before should be
-                                let last = char_map
-                                    .get(&(converted_offsets.1 - 1))
-                                    .copied()
-                                    .unwrap_or(*start + 1);
-                                converted_offsets = (*start, last + 1);
-                            }
-                            _ => {}
-                        };
+                        if let Some(converter) = offset_converter {
+                            offsets = converter.convert(offsets).unwrap_or(offsets);
+                        }
 
                         (
                             token.id,
                             token.value,
-                            converted_offsets,
+                            offsets,
                             if word_idx.is_some() {
                                 word_idx
                             } else {
@@ -217,13 +191,19 @@ impl PreTokenizedString {
     /// referential, as well as the potention tokens
     pub fn get_splits(
         &self,
-        offset_type: OffsetReferential,
+        offset_ref: OffsetReferential,
+        offset_type: OffsetType,
     ) -> Vec<(&str, Offsets, &Option<Vec<Token>>)> {
+        let offset_converter = match offset_type {
+            OffsetType::Char => Some(BytesToCharOffsetConverter::new(&self.original)),
+            OffsetType::Byte => None,
+        };
+
         let mut offset = 0;
         self.splits
             .iter()
             .map(|split| {
-                let offsets = match offset_type {
+                let mut offsets = match offset_ref {
                     OffsetReferential::Original => split.normalized.offsets_original(),
                     OffsetReferential::Normalized => {
                         let len = split.normalized.len();
@@ -231,6 +211,11 @@ impl PreTokenizedString {
                         (offset - len, offset)
                     }
                 };
+
+                // Convert to char offsets if relevant
+                if let Some(ref converter) = offset_converter {
+                    offsets = converter.convert(offsets).unwrap_or(offsets);
+                }
 
                 (split.normalized.get(), offsets, &split.tokens)
             })
@@ -261,5 +246,42 @@ impl From<String> for PreTokenizedString {
     fn from(s: String) -> Self {
         let normalized: NormalizedString = s.into();
         normalized.into()
+    }
+}
+
+struct BytesToCharOffsetConverter {
+    map: HashMap<usize, usize>,
+}
+
+impl BytesToCharOffsetConverter {
+    pub fn new(sequence: &str) -> Self {
+        Self {
+            map: sequence
+                .char_indices()
+                .enumerate()
+                .flat_map(|(i, (b, c))| {
+                    let mut n = 0;
+                    std::iter::repeat_with(move || {
+                        let o = (b + n, i);
+                        n += 1;
+                        o
+                    })
+                    .take(c.len_utf8())
+                })
+                .collect(),
+        }
+    }
+
+    pub fn convert(&self, offsets: Offsets) -> Option<Offsets> {
+        match (self.map.get(&offsets.0), self.map.get(&offsets.1)) {
+            (Some(start), Some(end)) => Some((*start, *end)),
+            // If we reached the end, `end` is not in the map
+            (Some(start), None) => {
+                // But the one just before should be
+                let last = self.map.get(&(offsets.1 - 1)).copied().unwrap_or(start + 1);
+                Some((*start, last + 1))
+            }
+            _ => None,
+        }
     }
 }

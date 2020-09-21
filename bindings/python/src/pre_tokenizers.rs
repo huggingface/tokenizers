@@ -117,14 +117,17 @@ impl PyPreTokenizer {
         }
     }
 
-    fn pre_tokenize(&self, s: &str) -> PyResult<Vec<(String, Offsets)>> {
-        // TODO: Expose the PreTokenizedString
+    fn pre_tokenize(&self, pretok: &mut PyPreTokenizedString) -> PyResult<()> {
+        ToPyResult(self.pretok.pre_tokenize(&mut pretok.pretok)).into()
+    }
+
+    fn pre_tokenize_str(&self, s: &str) -> PyResult<Vec<(String, Offsets)>> {
         let mut pretokenized = tk::tokenizer::PreTokenizedString::from(s);
 
         ToPyResult(self.pretok.pre_tokenize(&mut pretokenized)).into_py()?;
 
         Ok(pretokenized
-            .get_splits(tk::OffsetReferential::Original)
+            .get_splits(tk::OffsetReferential::Original, tk::OffsetType::Char)
             .into_iter()
             .map(|(s, o, _)| (s.to_owned(), o))
             .collect())

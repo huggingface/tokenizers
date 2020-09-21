@@ -81,7 +81,7 @@ impl PreTokenizer for WhitespaceSplit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OffsetReferential, PreTokenizer};
+    use crate::{OffsetReferential, OffsetType, PreTokenizer};
 
     #[test]
     fn basic() {
@@ -108,7 +108,7 @@ mod tests {
             pretok.pre_tokenize(&mut pretokenized).unwrap();
             assert_eq!(
                 pretokenized
-                    .get_splits(OffsetReferential::Original)
+                    .get_splits(OffsetReferential::Original, OffsetType::Byte)
                     .into_iter()
                     .map(|(s, o, _)| (s, o))
                     .collect::<Vec<_>>(),
@@ -132,7 +132,7 @@ mod tests {
             pretok.pre_tokenize(&mut pretokenized).unwrap();
             assert_eq!(
                 pretokenized
-                    .get_splits(OffsetReferential::Original)
+                    .get_splits(OffsetReferential::Original, OffsetType::Byte)
                     .into_iter()
                     .map(|(s, o, _)| (s, o))
                     .collect::<Vec<_>>(),
