@@ -97,15 +97,31 @@ declare_types! {
 #[serde(rename_all = "camelCase")]
 struct BpeOptions {
     cache_capacity: Option<usize>,
-    dropout: Option<usize>,
+    dropout: Option<f32>,
     unk_token: Option<String>,
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
+    fuse_unk: Option<bool>,
 }
 impl BpeOptions {
     fn apply_to_bpe_builder(self, mut builder: BpeBuilder) -> BpeBuilder {
         if let Some(cache_capacity) = self.cache_capacity {
             builder = builder.cache_capacity(cache_capacity);
+        }
+        if let Some(dropout) = self.dropout {
+            builder = builder.dropout(dropout);
+        }
+        if let Some(unk_token) = self.unk_token {
+            builder = builder.unk_token(unk_token);
+        }
+        if let Some(continuing_subword_prefix) = self.continuing_subword_prefix {
+            builder = builder.continuing_subword_prefix(continuing_subword_prefix);
+        }
+        if let Some(end_of_word_suffix) = self.end_of_word_suffix {
+            builder = builder.end_of_word_suffix(end_of_word_suffix);
+        }
+        if let Some(fuse_unk) = self.fuse_unk {
+            builder = builder.fuse_unk(fuse_unk);
         }
 
         builder

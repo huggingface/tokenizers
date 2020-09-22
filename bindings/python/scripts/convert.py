@@ -106,6 +106,7 @@ class SpmConverter(Converter):
                             out_vocab_filename,
                             out_merge_filename,
                             unk_token=proto.trainer_spec.unk_piece,
+                            fuse_unk=True,
                         )
                     )
                 finally:
