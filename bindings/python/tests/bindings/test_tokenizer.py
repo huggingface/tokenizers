@@ -1,7 +1,12 @@
 import numpy as np
 import pickle
 import pytest
-from ..utils import data_dir, roberta_files, bert_files, multiprocessing_with_parallelism
+from ..utils import (
+    data_dir,
+    roberta_files,
+    bert_files,
+    multiprocessing_with_parallelism,
+)
 
 from tokenizers import AddedToken, Tokenizer, Encoding
 from tokenizers.models import Model, BPE, WordPiece
@@ -88,7 +93,11 @@ class TestTokenizer:
         added = tokenizer.add_tokens(["my", "name", "is", "john"])
         assert added == 4
 
-        tokens = [AddedToken("the"), AddedToken("quick", normalized=False), AddedToken()]
+        tokens = [
+            AddedToken("the"),
+            AddedToken("quick", normalized=False),
+            AddedToken(),
+        ]
         assert tokens[0].normalized == True
         added = tokenizer.add_tokens(tokens)
         assert added == 2
@@ -139,17 +148,36 @@ class TestTokenizer:
         assert len(output) == 2
 
     def test_encode_formats(self, bert_files):
-        tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
+        with pytest.deprecated_call():
+            tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
 
         # Encode
         output = tokenizer.encode("my name is john")
         assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
         output = tokenizer.encode("my name is john", "pair")
-        assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]", "pair", "[SEP]"]
+        assert output.tokens == [
+            "[CLS]",
+            "my",
+            "name",
+            "is",
+            "john",
+            "[SEP]",
+            "pair",
+            "[SEP]",
+        ]
         output = tokenizer.encode(["my", "name", "is", "john"], is_pretokenized=True)
         assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
         output = tokenizer.encode(["my", "name", "is", "john"], ["pair"], is_pretokenized=True)
-        assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]", "pair", "[SEP]"]
+        assert output.tokens == [
+            "[CLS]",
+            "my",
+            "name",
+            "is",
+            "john",
+            "[SEP]",
+            "pair",
+            "[SEP]",
+        ]
 
         # Encode batch
         result_single = [
@@ -193,11 +221,17 @@ class TestTokenizer:
         # Lists
         test_single([["My", "name", "is", "John"], ["My", "name", "is", "Georges"]], True)
         test_pair(
-            [(["My", "name", "is", "John"], ["pair"]), (["My", "name", "is", "Georges"], ["pair"])],
+            [
+                (["My", "name", "is", "John"], ["pair"]),
+                (["My", "name", "is", "Georges"], ["pair"]),
+            ],
             True,
         )
         test_pair(
-            [[["My", "name", "is", "John"], ["pair"]], [["My", "name", "is", "Georges"], ["pair"]]],
+            [
+                [["My", "name", "is", "John"], ["pair"]],
+                [["My", "name", "is", "Georges"], ["pair"]],
+            ],
             True,
         )
 
@@ -211,19 +245,27 @@ class TestTokenizer:
             True,
         )
         test_pair(
-            ((["My", "name", "is", "John"], ["pair"]), (["My", "name", "is", "Georges"], ["pair"])),
+            (
+                (["My", "name", "is", "John"], ["pair"]),
+                (["My", "name", "is", "Georges"], ["pair"]),
+            ),
             True,
         )
 
         # Numpy
-        test_single(np.array([["My", "name", "is", "John"], ["My", "name", "is", "Georges"]]), True)
-        test_single(np.array((("My", "name", "is", "John"), ("My", "name", "is", "Georges"))), True)
+        test_single(
+            np.array([["My", "name", "is", "John"], ["My", "name", "is", "Georges"]]), True,
+        )
+        test_single(
+            np.array((("My", "name", "is", "John"), ("My", "name", "is", "Georges"))), True,
+        )
         test_pair(
             np.array(
                 [
                     [["My", "name", "is", "John"], ["pair"]],
                     [["My", "name", "is", "Georges"], ["pair"]],
-                ]
+                ],
+                dtype=object,
             ),
             True,
         )
@@ -232,7 +274,8 @@ class TestTokenizer:
                 (
                     (("My", "name", "is", "John"), ("pair",)),
                     (("My", "name", "is", "Georges"), ("pair",)),
-                )
+                ),
+                dtype=object,
             ),
             True,
         )
@@ -249,7 +292,8 @@ class TestTokenizer:
             tokenizer.encode(["My", "name", "is", "John"], "pair", is_pretokenized=True)
 
     def test_encode_add_special_tokens(self, roberta_files):
-        tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
+        with pytest.deprecated_call():
+            tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
         tokenizer.add_special_tokens(["<s>", "</s>"])
 
         tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=True)
@@ -259,7 +303,14 @@ class TestTokenizer:
 
         # Can encode with special tokens
         output_with_specials = tokenizer.encode("My name is John", add_special_tokens=True)
-        assert output_with_specials.tokens == ["<s>", "ĠMy", "Ġname", "Ġis", "ĠJohn", "</s>"]
+        assert output_with_specials.tokens == [
+            "<s>",
+            "ĠMy",
+            "Ġname",
+            "Ġis",
+            "ĠJohn",
+            "</s>",
+        ]
 
         # Can encode without special tokens
         output_without_specials = tokenizer.encode("My name is John", add_special_tokens=False)

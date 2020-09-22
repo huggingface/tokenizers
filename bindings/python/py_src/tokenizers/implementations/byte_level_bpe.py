@@ -1,21 +1,28 @@
-from tokenizers import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers, processors
+from tokenizers import (
+    Tokenizer,
+    AddedToken,
+    pre_tokenizers,
+    decoders,
+    trainers,
+    processors,
+)
 from tokenizers.models import BPE
 from tokenizers.normalizers import unicode_normalizer_from_str, Lowercase, Sequence
 from .base_tokenizer import BaseTokenizer
 
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict, Tuple
 
 
 class ByteLevelBPETokenizer(BaseTokenizer):
-    """ ByteLevelBPETokenizer
+    """ByteLevelBPETokenizer
 
     Represents a Byte-level BPE as introduced by OpenAI with their GPT-2 model
     """
 
     def __init__(
         self,
-        vocab_file: Optional[str] = None,
-        merges_file: Optional[str] = None,
+        vocab: Optional[Union[str, Dict[str, int]]] = None,
+        merges: Optional[Union[str, Dict[Tuple[int, int], Tuple[int, int]]]] = None,
         add_prefix_space: bool = False,
         lowercase: bool = False,
         dropout: Optional[float] = None,
@@ -24,11 +31,11 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         end_of_word_suffix: Optional[str] = None,
         trim_offsets: bool = False,
     ):
-        if vocab_file is not None and merges_file is not None:
+        if vocab is not None and merges is not None:
             tokenizer = Tokenizer(
                 BPE(
-                    vocab_file,
-                    merges_file,
+                    vocab,
+                    merges,
                     dropout=dropout,
                     continuing_subword_prefix=continuing_subword_prefix or "",
                     end_of_word_suffix=end_of_word_suffix or "",

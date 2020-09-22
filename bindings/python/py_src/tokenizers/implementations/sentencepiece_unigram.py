@@ -92,19 +92,10 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
                 "You're trying to run a `Unigram` model but you're file was trained with a different algorithm"
             )
 
-        data = {"unk_id": unk_id, "vocab": vocab}
-
         replacement = "▁"
         add_prefix_space = True
 
-        out_vocab_filename = f"{filename}.json"
-        try:
-            with open(out_vocab_filename, "w") as f:
-                json.dump(data, f, indent=4)
-
-            tokenizer = Tokenizer(Unigram(out_vocab_filename))
-        finally:
-            os.remove(out_vocab_filename)
+        tokenizer = Tokenizer(Unigram(vocab, unk_id))
 
         tokenizer.normalizer = normalizers.Precompiled(precompiled_charsmap)
         tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
