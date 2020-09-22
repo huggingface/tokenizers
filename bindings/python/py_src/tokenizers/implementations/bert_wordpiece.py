@@ -80,6 +80,10 @@ class BertWordPieceTokenizer(BaseTokenizer):
 
         super().__init__(tokenizer, parameters)
 
+    def from_file(vocab: str, **kwargs):
+        vocab = WordPiece.read_file(vocab)
+        return BertWordPieceTokenizer(vocab, **kwargs)
+
     def train(
         self,
         files: Union[str, List[str]],

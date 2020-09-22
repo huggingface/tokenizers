@@ -94,6 +94,11 @@ class CharBPETokenizer(BaseTokenizer):
 
         super().__init__(tokenizer, parameters)
 
+    @staticmethod
+    def from_files(vocab_filename: str, merges_filename: str, **kwargs):
+        vocab, merges = BPE.read_files(vocab_filename, merges_filename)
+        return CharBPETokenizer(vocab, merges, **kwargs)
+
     def train(
         self,
         files: Union[str, List[str]],

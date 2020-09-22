@@ -12,9 +12,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-type Vocab = HashMap<String, u32>;
+pub type Vocab = HashMap<String, u32>;
 type VocabR = HashMap<u32, String>;
-type Merges = HashMap<Pair, (u32, u32)>;
+pub type Merges = HashMap<Pair, (u32, u32)>;
 
 struct Config {
     files: Option<(String, String)>,
