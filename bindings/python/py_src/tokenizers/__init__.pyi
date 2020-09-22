@@ -73,11 +73,11 @@ class PreTokenizedString:
                 The string sequence used to initialize this PreTokenizedString
         """
         pass
-    def split(self, func: Callable[[NormalizedString], List[NormalizedString]]):
+    def split(self, func: Callable[[index, NormalizedString], List[NormalizedString]]):
         """ Split the PreTokenizedString using the given `func`
 
         Args:
-            func: Callable[[NormalizedString], List[NormalizedString]]:
+            func: Callable[[index, NormalizedString], List[NormalizedString]]:
                 The function used to split each underlying split.
                 It is expected to return a list of `NormalizedString`, that represent the new
                 splits. If the given `NormalizedString` does not need any splitting, we can

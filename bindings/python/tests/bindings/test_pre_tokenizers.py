@@ -124,10 +124,13 @@ class TestDigits:
 class TestCustomPreTokenizer:
     class BadCustomPretok:
         def pre_tokenize(self, pretok, wrong):
+            # This method does not have the right signature: it takes one too many arg
             pass
 
     class GoodCustomPretok:
         def split(self, n, normalized):
+            #  Here we just test that we can return a List[NormalizedString], it
+            # does not really make sense to return twice the same otherwise
             return [normalized, normalized]
 
         def pre_tokenize(self, pretok):
