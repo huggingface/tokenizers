@@ -273,8 +273,8 @@ impl PyObjectProtocol<'p> for PyNormalizedString {
     fn __repr__(&self) -> String {
         format!(
             r#"NormalizedString(original="{}", normalized="{}")"#,
-            self.normalized.get(),
-            self.normalized.get_original()
+            self.normalized.get_original(),
+            self.normalized.get()
         )
     }
 

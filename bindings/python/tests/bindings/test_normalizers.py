@@ -130,5 +130,5 @@ class TestCustomNormalizer:
         normalized = NormalizedString("Hey there!")
         normalizer.normalize(normalized)
 
-        assert repr(normalized) == 'NormalizedString(original="Hey you!", normalized="Hey there!")'
+        assert repr(normalized) == 'NormalizedString(original="Hey there!", normalized="Hey you!")'
         assert str(normalized) == "Hey you!"

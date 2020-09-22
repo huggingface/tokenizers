@@ -16,7 +16,7 @@ fn split(pretok: &mut PreTokenizedString, func: &PyAny) -> PyResult<()> {
     if !func.is_callable() {
         Err(exceptions::PyTypeError::new_err(
             "`split` expect a callable with the signature: \
-           `fn(normalized: NormalizedString) -> List[NormalizedString]`",
+           `fn(index: int, normalized: NormalizedString) -> List[NormalizedString]`",
         ))
     } else {
         ToPyResult(pretok.split(|i, normalized| {
