@@ -2,7 +2,7 @@ from .. import Encoding, Offsets, Token
 from typing import List, Optional, Union, Tuple, Dict
 
 class Model:
-    """ Base class for all models
+    """Base class for all models
 
     This class is not supposed to be instantiated directly. Instead, any implementation of
     a Model will return a instance of this class when instantiated.
@@ -18,7 +18,7 @@ class Model:
         """ Returns the token associated with the given id """
         pass
     def save(self, folder: str, name: Optional[str] = None) -> List[str]:
-        """ Save the current model
+        """Save the current model
 
         Save the current model in the given folder, using the given name for the various
         files that will get created.
@@ -62,6 +62,7 @@ class BPE(Model):
        fuse_unk: (`optional`) bool:
            Multiple unk tokens get fused into only 1
     """
+
     def __init__(
         self,
         vocab: Optional[Union[str, Dict[str, int]]],
@@ -74,18 +75,16 @@ class BPE(Model):
         fuse_unk: Optional[bool],
     ):
         pass
-
     @staticmethod
     def read_files(vocab_filename: str, merges_filename: str) -> Tuple[Vocab, Merges]:
         pass
-
     @staticmethod
     def from_files(vocab_filename: str, merges_filename: str, **kwargs) -> BPE:
-        vocab, merges = BPE.read_files(vocab_filename, merges_filename) 
+        vocab, merges = BPE.read_files(vocab_filename, merges_filename)
         return BPE(vocab, merges, **kwargs)
 
 class WordPiece(Model):
-    """ WordPiece model class
+    """WordPiece model class
 
     Instantiate a WordPiece Model from the given vocab file.
 
@@ -107,14 +106,12 @@ class WordPiece(Model):
         max_input_chars_per_word: Optional[int],
     ):
         pass
-
     @staticmethod
     def read_file(vocab_filename: str) -> Tuple[Vocab]:
         pass
-
     @staticmethod
     def from_files(vocab_filename: str, **kwargs) -> WordPiece:
-        vocab = WordPiece.read_files(vocab_filename) 
+        vocab = WordPiece.read_files(vocab_filename)
         return WordPiece(vocab, **kwargs)
 
 class WordLevel(Model):
@@ -133,14 +130,12 @@ class WordLevel(Model):
 
     def __init__(self, vocab: Optional[Union[str, Dict[str, int]]], unk_token: Optional[str]):
         pass
-
     @staticmethod
     def read_file(vocab_filename: str) -> Tuple[Vocab]:
         pass
-
     @staticmethod
     def from_files(vocab_filename: str, **kwargs) -> WordLevel:
-        vocab = WordLevel.read_files(vocab_filename) 
+        vocab = WordLevel.read_files(vocab_filename)
         return WordLevel(vocab, **kwargs)
 
 class Unigram(Model):
