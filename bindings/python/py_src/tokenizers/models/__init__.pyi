@@ -62,8 +62,6 @@ class BPE(Model):
        fuse_unk: (`optional`) bool:
            Multiple unk tokens get fused into only 1
     """
-
-    @staticmethod
     def __init__(
         self,
         vocab: Optional[Union[str, Dict[str, int]]],
@@ -76,6 +74,15 @@ class BPE(Model):
         fuse_unk: Optional[bool],
     ):
         pass
+
+    @staticmethod
+    def read_files(vocab_filename: str, merges_filename: str) -> Tuple[Vocab, Merges]:
+        pass
+
+    @staticmethod
+    def from_files(vocab_filename: str, merges_filename: str, **kwargs) -> BPE:
+        vocab, merges = BPE.read_files(vocab_filename, merges_filename) 
+        return BPE(vocab, merges, **kwargs)
 
 class WordPiece(Model):
     """ WordPiece model class
@@ -101,6 +108,15 @@ class WordPiece(Model):
     ):
         pass
 
+    @staticmethod
+    def read_file(vocab_filename: str) -> Tuple[Vocab]:
+        pass
+
+    @staticmethod
+    def from_files(vocab_filename: str, **kwargs) -> WordPiece:
+        vocab = WordPiece.read_files(vocab_filename) 
+        return WordPiece(vocab, **kwargs)
+
 class WordLevel(Model):
     """
     Most simple tokenizer model based on mapping token from a vocab file to their corresponding id.
@@ -117,6 +133,15 @@ class WordLevel(Model):
 
     def __init__(self, vocab: Optional[Union[str, Dict[str, int]]], unk_token: Optional[str]):
         pass
+
+    @staticmethod
+    def read_file(vocab_filename: str) -> Tuple[Vocab]:
+        pass
+
+    @staticmethod
+    def from_files(vocab_filename: str, **kwargs) -> WordLevel:
+        vocab = WordLevel.read_files(vocab_filename) 
+        return WordLevel(vocab, **kwargs)
 
 class Unigram(Model):
     """UnigramEncoding model class

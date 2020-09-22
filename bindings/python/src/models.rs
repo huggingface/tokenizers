@@ -7,7 +7,7 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
-use tk::models::bpe::{BpeBuilder, BPE};
+use tk::models::bpe::{BpeBuilder, Merges, Vocab, BPE};
 use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
@@ -217,16 +217,13 @@ impl PyBPE {
     }
 
     #[staticmethod]
-    #[args(kwargs = "**")]
-    fn from_files(
-        vocab_filename: String,
-        merges_filename: String,
-        kwargs: Option<&PyDict>,
-    ) -> PyResult<(Self, PyModel)> {
-        let mut builder = BPE::builder();
-        builder = builder.files(vocab_filename, merges_filename);
-
-        PyBPE::with_builder(builder, kwargs)
+    fn read_files(vocab_filename: &str, merges_filename: &str) -> PyResult<(Vocab, Merges)> {
+        BPE::read_files(vocab_filename, merges_filename).map_err(|e| {
+            exceptions::PyValueError::new_err(format!(
+                "Error while reading vocab&merges files: {}",
+                e
+            ))
+        })
     }
 }
 
@@ -292,10 +289,10 @@ impl PyWordPiece {
     }
 
     #[staticmethod]
-    fn from_file(vocab: String, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
-        let mut builder = WordPiece::builder();
-        builder = builder.files(vocab);
-        PyWordPiece::with_builder(builder, kwargs)
+    fn read_file(vocab_filename: &str) -> PyResult<Vocab> {
+        WordPiece::read_files(vocab_filename).map_err(|e| {
+            exceptions::PyValueError::new_err(format!("Error while reading WordPiece file: {}", e))
+        })
     }
 }
 
@@ -356,15 +353,10 @@ impl PyWordLevel {
     }
 
     #[staticmethod]
-    fn from_file(vocab_filename: &str, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
-        let unk_token = PyWordLevel::get_unk(kwargs)?;
-        let model = WordLevel::from_files(vocab_filename, unk_token).map_err(|e| {
-            exceptions::PyException::new_err(format!(
-                "Error while loading WordLevel from file: {}",
-                e
-            ))
-        })?;
-        Ok((PyWordLevel {}, PyModel::new(Arc::new(model.into()))))
+    fn read_file(vocab_filename: &str) -> PyResult<Vocab> {
+        WordLevel::read_files(vocab_filename).map_err(|e| {
+            exceptions::PyValueError::new_err(format!("Error while reading WordLevel file: {}", e))
+        })
     }
 }
 
