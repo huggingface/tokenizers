@@ -101,7 +101,7 @@ impl std::fmt::Debug for WordLevel {
 }
 
 impl WordLevel {
-    fn builder() -> WordLevelBuilder {
+    pub fn builder() -> WordLevelBuilder {
         WordLevelBuilder::new()
     }
 

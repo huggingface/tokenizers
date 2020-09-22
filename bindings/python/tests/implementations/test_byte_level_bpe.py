@@ -1,10 +1,14 @@
+import pytest
+
 from ..utils import data_dir, roberta_files, multiprocessing_with_parallelism
 from tokenizers import ByteLevelBPETokenizer
 
 
 class TestByteLevelBPE:
     def test_basic_encode(self, roberta_files):
-        tokenizer = ByteLevelBPETokenizer(roberta_files["vocab"], roberta_files["merges"])
+        tokenizer = ByteLevelBPETokenizer.from_files(
+            roberta_files["vocab"], roberta_files["merges"]
+        )
         output = tokenizer.encode("The quick brown fox jumps over the lazy dog")
 
         assert output.ids == [133, 2119, 6219, 23602, 13855, 81, 5, 22414, 2335]
@@ -32,7 +36,7 @@ class TestByteLevelBPE:
         ]
 
     def test_add_prefix_space(self, roberta_files):
-        tokenizer = ByteLevelBPETokenizer(
+        tokenizer = ByteLevelBPETokenizer.from_files(
             roberta_files["vocab"], roberta_files["merges"], add_prefix_space=True
         )
         output = tokenizer.encode("The quick brown fox jumps over the lazy dog")
@@ -62,8 +66,8 @@ class TestByteLevelBPE:
         ]
 
     def test_lowerspace(self, roberta_files):
-        tokenizer = ByteLevelBPETokenizer(
-            roberta_files["vocab"], roberta_files["merges"], add_prefix_space=True, lowercase=True
+        tokenizer = ByteLevelBPETokenizer.from_files(
+            roberta_files["vocab"], roberta_files["merges"], add_prefix_space=True, lowercase=True,
         )
         output = tokenizer.encode("The Quick Brown Fox Jumps Over The Lazy Dog")
 
@@ -81,6 +85,8 @@ class TestByteLevelBPE:
         ]
 
     def test_multiprocessing_with_parallelism(self, roberta_files):
-        tokenizer = ByteLevelBPETokenizer(roberta_files["vocab"], roberta_files["merges"])
+        tokenizer = ByteLevelBPETokenizer.from_files(
+            roberta_files["vocab"], roberta_files["merges"]
+        )
         multiprocessing_with_parallelism(tokenizer, False)
         multiprocessing_with_parallelism(tokenizer, True)

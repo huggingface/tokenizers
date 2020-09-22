@@ -7,15 +7,24 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
-use tk::models::bpe::BPE;
+use tk::models::bpe::{BpeBuilder, BPE};
 use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
-use tk::models::wordpiece::WordPiece;
+use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
 use tk::models::ModelWrapper;
 use tk::{Model, Token};
 use tokenizers as tk;
 
 use super::error::ToPyResult;
+
+fn deprecation_warning(version: &str, message: &str) -> PyResult<()> {
+    let gil = pyo3::Python::acquire_gil();
+    let python = gil.python();
+    let deprecation_warning = python.import("builtins")?.get("DeprecationWarning")?;
+    let full_message = format!("Deprecated in {}: {}", version, message);
+    pyo3::PyErr::warn(python, deprecation_warning, &full_message, 0)?;
+    Ok(())
+}
 
 /// A Model represents some tokenization algorithm like BPE or Word
 /// This class cannot be constructed directly. Please use one of the concrete models.
@@ -137,25 +146,8 @@ impl PyModel {
 #[pyclass(extends=PyModel, module = "tokenizers.models", name=BPE)]
 pub struct PyBPE {}
 
-#[pymethods]
 impl PyBPE {
-    #[new]
-    #[args(kwargs = "**")]
-    fn new(
-        vocab: Option<&str>,
-        merges: Option<&str>,
-        kwargs: Option<&PyDict>,
-    ) -> PyResult<(Self, PyModel)> {
-        if (vocab.is_some() && merges.is_none()) || (vocab.is_none() && merges.is_some()) {
-            return Err(exceptions::PyValueError::new_err(
-                "`vocab` and `merges` must be both specified",
-            ));
-        }
-
-        let mut builder = BPE::builder();
-        if let (Some(vocab), Some(merges)) = (vocab, merges) {
-            builder = builder.files(vocab.to_owned(), merges.to_owned());
-        }
+    fn with_builder(mut builder: BpeBuilder, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
                 let key: &str = key.extract()?;
@@ -191,21 +183,62 @@ impl PyBPE {
     }
 }
 
+#[pymethods]
+impl PyBPE {
+    #[new]
+    #[args(kwargs = "**")]
+    fn new(
+        vocab: Option<&PyAny>,
+        merges: Option<&PyAny>,
+        kwargs: Option<&PyDict>,
+    ) -> PyResult<(Self, PyModel)> {
+        if (vocab.is_some() && merges.is_none()) || (vocab.is_none() && merges.is_some()) {
+            return Err(exceptions::PyValueError::new_err(
+                "`vocab` and `merges` must be both specified",
+            ));
+        }
+
+        let mut builder = BPE::builder();
+        if let (Some(vocab_any), Some(merges_any)) = (vocab, merges) {
+            if let (Ok(vocab), Ok(merges)) = (vocab_any.extract(), merges_any.extract()) {
+                builder = builder.vocab_and_merges(vocab, merges);
+            } else {
+                let vocab_filename: String = vocab_any.extract()?;
+                let merges_filename: String = merges_any.extract()?;
+                deprecation_warning(
+                    "0.9.0",
+                    "BPE.__init__ will not create from files anymore, try `BPE.from_files` instead",
+                )?;
+                builder = builder.files(vocab_filename, merges_filename);
+            }
+        }
+
+        PyBPE::with_builder(builder, kwargs)
+    }
+
+    #[staticmethod]
+    #[args(kwargs = "**")]
+    fn from_files(
+        vocab_filename: String,
+        merges_filename: String,
+        kwargs: Option<&PyDict>,
+    ) -> PyResult<(Self, PyModel)> {
+        let mut builder = BPE::builder();
+        builder = builder.files(vocab_filename, merges_filename);
+
+        PyBPE::with_builder(builder, kwargs)
+    }
+}
+
 /// WordPiece Model
 #[pyclass(extends=PyModel, module = "tokenizers.models", name=WordPiece)]
 pub struct PyWordPiece {}
 
-#[pymethods]
 impl PyWordPiece {
-    #[new]
-    #[args(kwargs = "**")]
-    fn new(vocab: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
-        let mut builder = WordPiece::builder();
-
-        if let Some(vocab) = vocab {
-            builder = builder.files(vocab.to_owned());
-        }
-
+    fn with_builder(
+        mut builder: WordPieceBuilder,
+        kwargs: Option<&PyDict>,
+    ) -> PyResult<(Self, PyModel)> {
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
                 let key: &str = key.extract()?;
@@ -234,14 +267,43 @@ impl PyWordPiece {
     }
 }
 
+#[pymethods]
+impl PyWordPiece {
+    #[new]
+    #[args(kwargs = "**")]
+    fn new(vocab: Option<&PyAny>, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
+        let mut builder = WordPiece::builder();
+
+        if let Some(vocab_any) = vocab {
+            #[allow(deprecated)]
+            if let Ok(vocab) = vocab_any.extract() {
+                builder = builder.vocab(vocab);
+            } else {
+                deprecation_warning(
+                    "0.9.0",
+                    "WordPiece.__init__ will not create from files anymore, try `WordPiece.from_file` instead",
+                )?;
+                let vocab_filename: String = vocab_any.extract()?;
+                builder = builder.files(vocab_filename);
+            }
+        }
+
+        PyWordPiece::with_builder(builder, kwargs)
+    }
+
+    #[staticmethod]
+    fn from_file(vocab: String, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
+        let mut builder = WordPiece::builder();
+        builder = builder.files(vocab);
+        PyWordPiece::with_builder(builder, kwargs)
+    }
+}
+
 #[pyclass(extends=PyModel, module = "tokenizers.models", name=WordLevel)]
 pub struct PyWordLevel {}
 
-#[pymethods]
 impl PyWordLevel {
-    #[new]
-    #[args(kwargs = "**")]
-    fn new(vocab: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
+    fn get_unk(kwargs: Option<&PyDict>) -> PyResult<String> {
         let mut unk_token = String::from("<unk>");
 
         if let Some(kwargs) = kwargs {
@@ -253,21 +315,56 @@ impl PyWordLevel {
                 }
             }
         }
+        Ok(unk_token)
+    }
+}
 
-        if let Some(vocab) = vocab {
-            match WordLevel::from_files(vocab, unk_token) {
-                Err(e) => Err(exceptions::PyException::new_err(format!(
-                    "Error while initializing WordLevel: {}",
-                    e
-                ))),
-                Ok(model) => Ok((PyWordLevel {}, PyModel::new(Arc::new(model.into())))),
-            }
+#[pymethods]
+impl PyWordLevel {
+    #[new]
+    #[args(kwargs = "**")]
+    fn new(vocab: Option<&PyAny>, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
+        let unk_token = PyWordLevel::get_unk(kwargs)?;
+
+        if let Some(vocab_object) = vocab {
+            let model = if let Ok(vocab) = vocab_object.extract() {
+                WordLevel::builder()
+                    .vocab(vocab)
+                    .unk_token(unk_token)
+                    .build()
+            } else {
+                let filename: &str = vocab_object.extract()?;
+                deprecation_warning(
+                    "0.9.0",
+                    "WordLevel.__init__ will not create from files anymore, try `WordLevel.from_file` instead",
+                )?;
+                WordLevel::from_files(filename, unk_token).map_err(|e| {
+                    exceptions::PyException::new_err(format!(
+                        "Error while loading WordLevel: {}",
+                        e
+                    ))
+                })?
+            };
+
+            Ok((PyWordLevel {}, PyModel::new(Arc::new(model.into()))))
         } else {
             Ok((
                 PyWordLevel {},
                 PyModel::new(Arc::new(WordLevel::default().into())),
             ))
         }
+    }
+
+    #[staticmethod]
+    fn from_file(vocab_filename: &str, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
+        let unk_token = PyWordLevel::get_unk(kwargs)?;
+        let model = WordLevel::from_files(vocab_filename, unk_token).map_err(|e| {
+            exceptions::PyException::new_err(format!(
+                "Error while loading WordLevel from file: {}",
+                e
+            ))
+        })?;
+        Ok((PyWordLevel {}, PyModel::new(Arc::new(model.into()))))
     }
 }
 
@@ -277,18 +374,21 @@ pub struct PyUnigram {}
 #[pymethods]
 impl PyUnigram {
     #[new]
-    fn new(vocab: Option<&str>) -> PyResult<(Self, PyModel)> {
-        match vocab {
-            Some(vocab) => match Unigram::load(vocab) {
-                Err(e) => Err(exceptions::PyException::new_err(format!(
-                    "Error while loading Unigram: {}",
-                    e
-                ))),
-                Ok(model) => Ok((PyUnigram {}, PyModel::new(Arc::new(model.into())))),
-            },
-            None => Ok((
+    fn new(vocab: Option<Vec<(String, f64)>>, unk_id: Option<usize>) -> PyResult<(Self, PyModel)> {
+        if vocab.is_some() && unk_id.is_none() || vocab.is_none() && unk_id.is_some() {}
+        match (vocab, unk_id) {
+            (Some(vocab), Some(unk_id)) => {
+                let model = Unigram::from(vocab, unk_id).map_err(|e| {
+                    exceptions::PyException::new_err(format!("Error while loading Unigram: {}", e))
+                })?;
+                Ok((PyUnigram {}, PyModel::new(Arc::new(model.into()))))
+            }
+            (None, None) => Ok((
                 PyUnigram {},
                 PyModel::new(Arc::new(Unigram::default().into())),
+            )),
+            _ => Err(exceptions::PyValueError::new_err(
+                "`vocab` and `unk_id` must be both specified",
             )),
         }
     }
