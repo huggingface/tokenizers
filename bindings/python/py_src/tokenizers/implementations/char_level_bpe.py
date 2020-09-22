@@ -1,31 +1,36 @@
 from .. import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers
 from ..models import BPE
-from ..normalizers import Sequence, Lowercase, unicode_normalizer_from_str, BertNormalizer
+from ..normalizers import (
+    Sequence,
+    Lowercase,
+    unicode_normalizer_from_str,
+    BertNormalizer,
+)
 from .base_tokenizer import BaseTokenizer
 
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict, Tuple
 
 
 class CharBPETokenizer(BaseTokenizer):
-    """ Original BPE Tokenizer
+    """Original BPE Tokenizer
 
-        Represents the BPE algorithm, as introduced by Rico Sennrich
-        (https://arxiv.org/abs/1508.07909)
+    Represents the BPE algorithm, as introduced by Rico Sennrich
+    (https://arxiv.org/abs/1508.07909)
 
-        The defaults settings corresponds to OpenAI GPT BPE tokenizers and differs from the original
-        Sennrich subword-nmt implementation by the following options that you can deactivate:
-            - adding a normalizer to clean up the text (deactivate with `bert_normalizer=False`) by:
-                * removing any control characters and replacing all whitespaces by the classic one.
-                * handle chinese chars by putting spaces around them.
-                * strip all accents.
-            - spitting on punctuation in addition to whitespaces (deactivate it with
-              `split_on_whitespace_only=True`)
+    The defaults settings corresponds to OpenAI GPT BPE tokenizers and differs from the original
+    Sennrich subword-nmt implementation by the following options that you can deactivate:
+        - adding a normalizer to clean up the text (deactivate with `bert_normalizer=False`) by:
+            * removing any control characters and replacing all whitespaces by the classic one.
+            * handle chinese chars by putting spaces around them.
+            * strip all accents.
+        - spitting on punctuation in addition to whitespaces (deactivate it with
+          `split_on_whitespace_only=True`)
     """
 
     def __init__(
         self,
-        vocab_file: Optional[str] = None,
-        merges_file: Optional[str] = None,
+        vocab: Optional[Union[str, Dict[str, int]]] = None,
+        merges: Optional[Union[str, Dict[Tuple[int, int], Tuple[int, int]]]] = None,
         unk_token: Union[str, AddedToken] = "<unk>",
         suffix: str = "</w>",
         dropout: Optional[float] = None,
@@ -34,11 +39,11 @@ class CharBPETokenizer(BaseTokenizer):
         bert_normalizer: bool = True,
         split_on_whitespace_only: bool = False,
     ):
-        if vocab_file is not None and merges_file is not None:
+        if vocab is not None and merges is not None:
             tokenizer = Tokenizer(
                 BPE(
-                    vocab_file,
-                    merges_file,
+                    vocab,
+                    merges,
                     dropout=dropout,
                     unk_token=str(unk_token),
                     end_of_word_suffix=suffix,

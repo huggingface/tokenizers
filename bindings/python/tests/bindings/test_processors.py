@@ -1,3 +1,4 @@
+import pytest
 import pickle
 
 from ..utils import data_dir, roberta_files
@@ -21,7 +22,7 @@ class TestBertProcessing:
         assert isinstance(processor, PostProcessor)
         assert isinstance(processor, BertProcessing)
         assert isinstance(
-            pickle.loads(pickle.dumps(BertProcessing(("[SEP]", 0), ("[CLS]", 1)))), BertProcessing
+            pickle.loads(pickle.dumps(BertProcessing(("[SEP]", 0), ("[CLS]", 1)))), BertProcessing,
         )
 
     def test_processing(self):
@@ -66,7 +67,9 @@ class TestByteLevelProcessing:
         assert isinstance(pickle.loads(pickle.dumps(ByteLevel())), ByteLevel)
 
     def test_processing(self, roberta_files):
-        tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
+        # Deprecated in 0.9
+        with pytest.deprecated_call():
+            tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
         tokenizer.pre_tokenizer = ByteLevelPreTokenizer(add_prefix_space=True)
 
         # Keeps original offsets
