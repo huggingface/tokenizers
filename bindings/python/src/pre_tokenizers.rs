@@ -37,39 +37,35 @@ impl PyPreTokenizer {
         let base = self.clone();
         let gil = Python::acquire_gil();
         let py = gil.python();
-        match &self.pretok {
-            PyPreTokenizerWrapper::Custom(_) => Py::new(py, base).map(Into::into),
-            PyPreTokenizerWrapper::Sequence(_) => {
-                Py::new(py, (PySequence {}, base)).map(Into::into)
-            }
+        Ok(match &self.pretok {
+            PyPreTokenizerWrapper::Custom(_) => Py::new(py, base)?.into_py(py),
+            PyPreTokenizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_py(py),
             PyPreTokenizerWrapper::Wrapped(inner) => match inner.as_ref() {
                 PreTokenizerWrapper::Whitespace(_) => {
-                    Py::new(py, (PyWhitespace {}, base)).map(Into::into)
+                    Py::new(py, (PyWhitespace {}, base))?.into_py(py)
                 }
                 PreTokenizerWrapper::Punctuation(_) => {
-                    Py::new(py, (PyPunctuation {}, base)).map(Into::into)
+                    Py::new(py, (PyPunctuation {}, base))?.into_py(py)
                 }
-                PreTokenizerWrapper::Sequence(_) => {
-                    Py::new(py, (PySequence {}, base)).map(Into::into)
-                }
+                PreTokenizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_py(py),
                 PreTokenizerWrapper::Metaspace(_) => {
-                    Py::new(py, (PyMetaspace {}, base)).map(Into::into)
+                    Py::new(py, (PyMetaspace {}, base))?.into_py(py)
                 }
                 PreTokenizerWrapper::Delimiter(_) => {
-                    Py::new(py, (PyCharDelimiterSplit {}, base)).map(Into::into)
+                    Py::new(py, (PyCharDelimiterSplit {}, base))?.into_py(py)
                 }
                 PreTokenizerWrapper::WhitespaceSplit(_) => {
-                    Py::new(py, (PyWhitespaceSplit {}, base)).map(Into::into)
+                    Py::new(py, (PyWhitespaceSplit {}, base))?.into_py(py)
                 }
                 PreTokenizerWrapper::ByteLevel(_) => {
-                    Py::new(py, (PyByteLevel {}, base)).map(Into::into)
+                    Py::new(py, (PyByteLevel {}, base))?.into_py(py)
                 }
                 PreTokenizerWrapper::BertPreTokenizer(_) => {
-                    Py::new(py, (PyBertPreTokenizer {}, base)).map(Into::into)
+                    Py::new(py, (PyBertPreTokenizer {}, base))?.into_py(py)
                 }
-                PreTokenizerWrapper::Digits(_) => Py::new(py, (PyDigits {}, base)).map(Into::into),
+                PreTokenizerWrapper::Digits(_) => Py::new(py, (PyDigits {}, base))?.into_py(py),
             },
-        }
+        })
     }
 }
 
@@ -91,7 +87,7 @@ impl PyPreTokenizer {
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.pretok).map_err(|e| {
-            exceptions::Exception::py_err(format!(
+            exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle PreTokenizer: {}",
                 e.to_string()
             ))
@@ -103,9 +99,9 @@ impl PyPreTokenizer {
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
                 let unpickled = serde_json::from_slice(s.as_bytes()).map_err(|e| {
-                    exceptions::Exception::py_err(format!(
+                    exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle PreTokenizer: {}",
-                        e.to_string()
+                        e
                     ))
                 })?;
                 self.pretok = unpickled;
@@ -187,10 +183,9 @@ pub struct PyCharDelimiterSplit {}
 impl PyCharDelimiterSplit {
     #[new]
     pub fn new(delimiter: &str) -> PyResult<(Self, PyPreTokenizer)> {
-        let chr_delimiter = delimiter
-            .chars()
-            .next()
-            .ok_or_else(|| exceptions::Exception::py_err("delimiter must be a single character"))?;
+        let chr_delimiter = delimiter.chars().next().ok_or_else(|| {
+            exceptions::PyValueError::new_err("delimiter must be a single character")
+        })?;
         Ok((
             PyCharDelimiterSplit {},
             CharDelimiterSplit::new(chr_delimiter).into(),
@@ -267,7 +262,7 @@ impl PyMetaspace {
                     "replacement" => {
                         let s: &str = value.extract()?;
                         replacement = s.chars().next().ok_or_else(|| {
-                            exceptions::Exception::py_err("replacement must be a character")
+                            exceptions::PyValueError::new_err("replacement must be a character")
                         })?;
                     }
                     "add_prefix_space" => add_prefix_space = value.extract()?,
@@ -417,7 +412,7 @@ impl PreTokenizer for PyPreTokenizerWrapper {
 
 #[cfg(test)]
 mod test {
-    use pyo3::{AsPyRef, Py, PyObject, Python};
+    use pyo3::prelude::*;
     use tk::pre_tokenizers::whitespace::Whitespace;
     use tk::pre_tokenizers::PreTokenizerWrapper;
 
@@ -451,8 +446,9 @@ mod test {
             _ => panic!("Expected wrapped, not custom."),
         }
         let gil = Python::acquire_gil();
+        let py = gil.python();
         let py_wsp = PyPreTokenizer::new(Whitespace::default().into());
-        let obj: PyObject = Py::new(gil.python(), py_wsp).unwrap().into();
+        let obj: PyObject = Py::new(py, py_wsp).unwrap().into_py(py);
         let py_seq: PyPreTokenizerWrapper =
             PyPreTokenizerWrapper::Custom(Arc::new(CustomPreTokenizer::new(obj).unwrap()));
         assert!(serde_json::to_string(&py_seq).is_err());

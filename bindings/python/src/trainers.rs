@@ -73,7 +73,7 @@ impl PyBpeTrainer {
                                         token.is_special_token = true;
                                         Ok(token.get_token())
                                     } else {
-                                        Err(exceptions::Exception::py_err(
+                                        Err(exceptions::PyTypeError::new_err(
                                             "special_tokens must be a List[Union[str, AddedToken]]",
                                         ))
                                     }
@@ -137,7 +137,7 @@ impl PyWordPieceTrainer {
                                         token.is_special_token = true;
                                         Ok(token.get_token())
                                     } else {
-                                        Err(exceptions::Exception::py_err(
+                                        Err(exceptions::PyTypeError::new_err(
                                             "special_tokens must be a List[Union[str, AddedToken]]",
                                         ))
                                     }
@@ -205,7 +205,7 @@ impl PyUnigramTrainer {
                                     token.is_special_token = true;
                                     Ok(token.get_token())
                                 } else {
-                                    Err(exceptions::Exception::py_err(
+                                    Err(exceptions::PyTypeError::new_err(
                                         "special_tokens must be a List[Union[str, AddedToken]]",
                                     ))
                                 }
@@ -220,9 +220,10 @@ impl PyUnigramTrainer {
             }
         }
 
-        let trainer: tokenizers::models::unigram::UnigramTrainer = builder
-            .build()
-            .map_err(|_| exceptions::Exception::py_err("Cannot build UnigramTrainer"))?;
+        let trainer: tokenizers::models::unigram::UnigramTrainer =
+            builder.build().map_err(|e| {
+                exceptions::PyException::new_err(format!("Cannot build UnigramTrainer: {}", e))
+            })?;
         Ok((PyUnigramTrainer {}, PyTrainer::new(trainer.into())))
     }
 }

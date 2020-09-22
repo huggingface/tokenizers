@@ -484,14 +484,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "numpy"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/pyo3/rust-numpy/?rev=e331befa27fede78d4662edf08fa0508db39be01#e331befa27fede78d4662edf08fa0508db39be01"
 dependencies = [
  "cfg-if 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.77 (registry+https://github.com/rust-lang/crates.io-index)",
  "ndarray 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-complex 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-traits 0.2.12 (registry+https://github.com/rust-lang/crates.io-index)",
- "pyo3 0.11.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pyo3 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -580,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3"
-version = "0.11.1"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "ctor 0.1.15 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -589,13 +589,13 @@ dependencies = [
  "libc 0.2.77 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "paste 0.1.18 (registry+https://github.com/rust-lang/crates.io-index)",
- "pyo3cls 0.11.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pyo3cls 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "unindent 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "pyo3-derive-backend"
-version = "0.11.1"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "proc-macro2 1.0.21 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -605,10 +605,10 @@ dependencies = [
 
 [[package]]
 name = "pyo3cls"
-version = "0.11.1"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "pyo3-derive-backend 0.11.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pyo3-derive-backend 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "quote 1.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "syn 1.0.41 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -895,8 +895,8 @@ dependencies = [
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.77 (registry+https://github.com/rust-lang/crates.io-index)",
  "ndarray 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "numpy 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "pyo3 0.11.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "numpy 0.11.0 (git+https://github.com/pyo3/rust-numpy/?rev=e331befa27fede78d4662edf08fa0508db39be01)",
+ "pyo3 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rayon 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.116 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.57 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1037,7 +1037,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum num-traits 0.2.12 (registry+https://github.com/rust-lang/crates.io-index)" = "ac267bcc07f48ee5f8935ab0d24f316fb722d7a1292e2913f0cc196b29ffd611"
 "checksum num_cpus 1.13.0 (registry+https://github.com/rust-lang/crates.io-index)" = "05499f3756671c15885fee9034446956fff3f243d6077b91e5767df161f766b3"
 "checksum number_prefix 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "17b02fc0ff9a9e4b35b3342880f48e896ebf69f2967921fe8646bf5b7125956a"
-"checksum numpy 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)" = "1afa393812b0e4c33d8a46054028ce39d79f954dfa98298f25691abf00b24e39"
+"checksum numpy 0.11.0 (git+https://github.com/pyo3/rust-numpy/?rev=e331befa27fede78d4662edf08fa0508db39be01)" = "<none>"
 "checksum onig 6.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "8a155d13862da85473665694f4c05d77fb96598bdceeaf696433c84ea9567e20"
 "checksum onig_sys 69.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "9bff06597a6b17855040955cae613af000fc0bfc8ad49ea68b9479a74e59292d"
 "checksum parking_lot 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)" = "a4893845fa2ca272e647da5d0e46660a314ead9c2fdd9a883aabc32e481a8733"
@@ -1048,9 +1048,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum ppv-lite86 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)" = "c36fa947111f5c62a733b652544dd0016a43ce89619538a8ef92724a6f501a20"
 "checksum proc-macro-hack 0.5.18 (registry+https://github.com/rust-lang/crates.io-index)" = "99c605b9a0adc77b7211c6b1f722dcb613d68d66859a44f3d485a6da332b0598"
 "checksum proc-macro2 1.0.21 (registry+https://github.com/rust-lang/crates.io-index)" = "36e28516df94f3dd551a587da5357459d9b36d945a7c37c3557928c1c2ff2a2c"
-"checksum pyo3 0.11.1 (registry+https://github.com/rust-lang/crates.io-index)" = "9ca8710ffa8211c9a62a8a3863c4267c710dc42a82a7fd29c97de465d7ea6b7d"
-"checksum pyo3-derive-backend 0.11.1 (registry+https://github.com/rust-lang/crates.io-index)" = "58ad070bf6967b0d29ea74931ffcf9c6bbe8402a726e9afbeafadc0a287cc2b3"
-"checksum pyo3cls 0.11.1 (registry+https://github.com/rust-lang/crates.io-index)" = "c3fa17e1ea569d0bf3b7c00f2a9eea831ca05e55dd76f1794c541abba1c64baa"
+"checksum pyo3 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)" = "4fe7ed6655de90fd3bf799f25ce8b695e89eeb098d03db802723617649fcaa74"
+"checksum pyo3-derive-backend 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)" = "d021655b5f22aeee2eaf3c3f88503250ad6cf90e37a875e1bb1854fceb86b3d0"
+"checksum pyo3cls 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)" = "228ee516c00ac54fb70032d8cd928f213e70c87c340cdf44e2eba028d1f613ea"
 "checksum quick-error 1.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 "checksum quote 1.0.7 (registry+https://github.com/rust-lang/crates.io-index)" = "aa563d17ecb180e500da1cfd2b028310ac758de548efdd203e18f283af693f37"
 "checksum rand 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)" = "6a6b1679d49b24bbfe0c803429aa1874472f50d9b363131f0e89fc356b544d03"
