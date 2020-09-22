@@ -25,6 +25,7 @@ struct Config {
     unk_token: Option<String>,
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
+    fuse_unk: bool,
 }
 
 /// A `BpeBuilder` can be used to create a `BPE` model with a custom configuration.
@@ -44,6 +45,7 @@ impl Default for BpeBuilder {
                 unk_token: None,
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
+                fuse_unk: false,
             },
         }
     }
@@ -98,6 +100,12 @@ impl BpeBuilder {
         self
     }
 
+    /// Set the `fuse_unk` option.
+    pub fn fuse_unk(mut self, fuse_unk: bool) -> Self {
+        self.config.fuse_unk = fuse_unk;
+        self
+    }
+
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
     pub fn build(mut self) -> Result<BPE> {
         // Validate dropout.
@@ -134,6 +142,7 @@ impl BpeBuilder {
             unk_token: self.config.unk_token,
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             end_of_word_suffix: self.config.end_of_word_suffix,
+            fuse_unk: self.config.fuse_unk,
         })
     }
 }
@@ -158,6 +167,8 @@ pub struct BPE {
     pub(super) continuing_subword_prefix: Option<String>,
     /// An optional suffix to caracterize and end-of-word subword
     pub(super) end_of_word_suffix: Option<String>,
+    /// Do multiple unk tokens get fused
+    pub(super) fuse_unk: bool,
 }
 
 impl std::fmt::Debug for BPE {
@@ -167,6 +178,7 @@ impl std::fmt::Debug for BPE {
             .field("unk_token", &self.unk_token)
             .field("continuing_subword_prefix", &self.continuing_subword_prefix)
             .field("end_of_word_suffix", &self.end_of_word_suffix)
+            .field("fuse_unk", &self.fuse_unk)
             .field("vocab", &self.vocab.len())
             .field("merges", &self.merges.len())
             .finish()
@@ -193,6 +205,7 @@ impl Clone for BPE {
             unk_token: self.unk_token.clone(),
             continuing_subword_prefix: self.continuing_subword_prefix.clone(),
             end_of_word_suffix: self.end_of_word_suffix.clone(),
+            fuse_unk: self.fuse_unk,
         }
     }
 }
@@ -330,17 +343,28 @@ impl BPE {
                 }
                 word.add(*id, byte_len);
             } else if let Some(unk_token) = &self.unk_token {
-                unk = if let Some((unk_id, unk_len)) = unk {
-                    // Fuse unk
-                    Some((unk_id, unk_len + byte_len))
-                } else {
-                    Some((
+                unk = match (unk, self.fuse_unk) {
+                    (Some((unk_id, unk_len)), true) => {
+                        // Fuse unk
+                        Some((unk_id, unk_len + byte_len))
+                    }
+                    (Some((unk_id, unk_len)), false) => {
+                        // Do not fuse unk, add the previous one
+                        word.add(unk_id, unk_len);
+                        Some((
+                            *self.vocab.get(unk_token).ok_or_else(|| {
+                                Error::UnkTokenOutOfVocabulary(unk_token.to_owned())
+                            })?,
+                            byte_len,
+                        ))
+                    }
+                    _ => Some((
                         *self
                             .vocab
                             .get(unk_token)
                             .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk_token.to_owned()))?,
                         byte_len,
-                    ))
+                    )),
                 };
             }
         }
@@ -470,6 +494,40 @@ mod tests {
     }
 
     #[test]
+    fn test_unk_not_fused() {
+        let vocab: Vocab = [("<unk>".into(), 0), ("a".into(), 1), ("b".into(), 2)]
+            .iter()
+            .cloned()
+            .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, HashMap::new())
+            .unk_token("<unk>".to_string())
+            .build()
+            .unwrap();
+        let tokens = bpe.tokenize("c").unwrap();
+        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
+
+        let tokens = bpe.tokenize("cc").unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(0u32, "<unk>".into(), (0, 1)),
+                Token::new(0u32, "<unk>".into(), (1, 2)),
+            ]
+        );
+
+        let tokens = bpe.tokenize("accb").unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(1u32, "a".into(), (0, 1)),
+                Token::new(0u32, "<unk>".into(), (1, 2)),
+                Token::new(0u32, "<unk>".into(), (2, 3)),
+                Token::new(2u32, "b".into(), (3, 4)),
+            ]
+        );
+    }
+    #[test]
     fn test_unk_get_fused() {
         let vocab: Vocab = [("<unk>".into(), 0), ("a".into(), 1), ("b".into(), 2)]
             .iter()
@@ -478,6 +536,7 @@ mod tests {
         let bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, HashMap::new())
             .unk_token("<unk>".to_string())
+            .fuse_unk(true)
             .build()
             .unwrap();
         let tokens = bpe.tokenize("c").unwrap();

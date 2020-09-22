@@ -18,6 +18,7 @@ impl Serialize for BPE {
         model.serialize_field("unk_token", &self.unk_token)?;
         model.serialize_field("continuing_subword_prefix", &self.continuing_subword_prefix)?;
         model.serialize_field("end_of_word_suffix", &self.end_of_word_suffix)?;
+        model.serialize_field("fuse_unk", &self.fuse_unk)?;
 
         // Then the large ones
         let mut merges: Vec<(&Pair, &u32)> = self
@@ -51,6 +52,7 @@ impl<'de> Deserialize<'de> for BPE {
                 "unk_token",
                 "continuing_subword_prefix",
                 "end_of_word_suffix",
+                "fuse_unk",
                 "vocab",
                 "merges",
             ],
@@ -94,6 +96,11 @@ impl<'de> Visitor<'de> for BPEVisitor {
                 "end_of_word_suffix" => {
                     if let Some(suffix) = map.next_value()? {
                         builder = builder.end_of_word_suffix(suffix);
+                    }
+                }
+                "fuse_unk" => {
+                    if let Some(suffix) = map.next_value()? {
+                        builder = builder.fuse_unk(suffix);
                     }
                 }
                 "vocab" => vocab = Some(map.next_value()?),

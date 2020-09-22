@@ -45,6 +45,9 @@ class BPE(Model):
 
        end_of_word_suffix: (`optional`) str:
            The suffix to attach to subword units that represent an end of word.
+
+       fuse_unk: (`optional`) bool:
+           Multiple unk tokens get fused into only 1
     """
 
     @staticmethod
@@ -57,6 +60,7 @@ class BPE(Model):
         unk_token: Optional[str],
         continuing_subword_prefix: Optional[str],
         end_of_word_suffix: Optional[str],
+        fuse_unk: Optional[bool],
     ):
         pass
 

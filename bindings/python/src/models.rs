@@ -158,6 +158,7 @@ impl PyBPE {
                         builder = builder.continuing_subword_prefix(value.extract()?)
                     }
                     "end_of_word_suffix" => builder = builder.end_of_word_suffix(value.extract()?),
+                    "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
                     _ => println!("Ignored unknown kwarg option {}", key),
                 };
             }
