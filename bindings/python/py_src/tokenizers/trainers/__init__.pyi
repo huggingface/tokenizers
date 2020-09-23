@@ -2,14 +2,14 @@ from .. import AddedToken
 from typing import Optional, List, Union
 
 class Trainer:
-    """ Base class for all trainers
+    """Base class for all trainers
 
     This class is not supposed to be instantiated directly. Instead, any implementation of a
     Trainer will return an instance of this class when instantiated.
     """
 
 class BpeTrainer(Trainer):
-    """ BpeTrainer
+    """BpeTrainer
 
     Capable of training a BPE model
     """
@@ -25,7 +25,7 @@ class BpeTrainer(Trainer):
         continuing_subword_prefix: Optional[str] = None,
         end_of_word_suffix: Optional[str] = None,
     ) -> None:
-        """ Instantiate a new BpeTrainer with the given options:
+        """Instantiate a new BpeTrainer with the given options:
 
         Args:
             vocab_size: unsigned int:
@@ -61,7 +61,7 @@ class BpeTrainer(Trainer):
         pass
 
 class WordPieceTrainer(Trainer):
-    """ WordPieceTrainer
+    """WordPieceTrainer
 
     Capable of training a WordPiece model
     """
@@ -77,7 +77,7 @@ class WordPieceTrainer(Trainer):
         continuing_subword_prefix: Optional[str] = "##",
         end_of_word_suffix: Optional[str] = None,
     ) -> Trainer:
-        """ Instantiate a new WordPieceTrainer with the given options:
+        """Instantiate a new WordPieceTrainer with the given options:
 
         Args:
             vocab_size: unsigned int:
@@ -113,7 +113,7 @@ class WordPieceTrainer(Trainer):
         pass
 
 class UnigramTrainer(Trainer):
-    """ UnigramTrainer
+    """UnigramTrainer
 
     Capable of training a Unigram model
     """
@@ -124,7 +124,7 @@ class UnigramTrainer(Trainer):
         show_progress: bool = True,
         special_tokens: List[Union[str, AddedToken]] = [],
     ) -> Trainer:
-        """ Instantiate a new UnigramTrainer with the given options:
+        """Instantiate a new UnigramTrainer with the given options:
 
         Args:
             vocab_size: unsigned int:
