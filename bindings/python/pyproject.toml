@@ -1,2 +1,6 @@
 [build-system]
 requires = ["setuptools", "wheel", "setuptools-rust"]
+
+[tool.black]
+target-version = ['py35']
+line-length = 100
