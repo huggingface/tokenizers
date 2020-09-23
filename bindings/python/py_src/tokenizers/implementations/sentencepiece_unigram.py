@@ -21,10 +21,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
     """
 
     def __init__(
-        self,
-        vocab: Optional[str] = None,
-        replacement: str = "▁",
-        add_prefix_space: bool = True,
+        self, vocab: Optional[str] = None, replacement: str = "▁", add_prefix_space: bool = True,
     ):
         if vocab is not None:
             # Let Unigram(..) fail if only one of them is None
@@ -32,12 +29,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         else:
             tokenizer = Tokenizer(Unigram())
 
-        tokenizer.normalizer = normalizers.Sequence(
-            [
-                normalizers.Nmt(),
-                normalizers.NFKC(),
-            ]
-        )
+        tokenizer.normalizer = normalizers.Sequence([normalizers.Nmt(), normalizers.NFKC(),])
         tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
             [
                 pre_tokenizers.WhitespaceSplit(),
@@ -68,9 +60,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         """ Train the model using the given files """
 
         trainer = trainers.UnigramTrainer(
-            vocab_size=vocab_size,
-            special_tokens=special_tokens,
-            show_progress=show_progress,
+            vocab_size=vocab_size, special_tokens=special_tokens, show_progress=show_progress,
         )
 
         if isinstance(files, str):

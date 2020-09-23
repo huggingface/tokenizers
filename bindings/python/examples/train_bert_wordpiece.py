@@ -32,10 +32,7 @@ if not files:
 
 # Initialize an empty tokenizer
 tokenizer = BertWordPieceTokenizer(
-    clean_text=True,
-    handle_chinese_chars=True,
-    strip_accents=True,
-    lowercase=True,
+    clean_text=True, handle_chinese_chars=True, strip_accents=True, lowercase=True,
 )
 
 # And then train
