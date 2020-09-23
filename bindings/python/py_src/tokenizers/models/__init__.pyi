@@ -29,7 +29,7 @@ class Model:
 class BPE(Model):
     """BytePairEncoding model class
 
-    Instantiate a BPE Model from the given vocab and merges files.
+    Instantiate a BPE Model from the given vocab and merges.
 
     Args:
        vocab: ('`optional`) Dict[str, int]:
@@ -76,12 +76,19 @@ class BPE(Model):
     ):
         pass
     @staticmethod
-    def read_files(vocab_filename: str, merges_filename: str) -> Tuple[Vocab, Merges]:
+    def read_file(vocab_filename: str, merges_filename: str) -> Tuple[Vocab, Merges]:
         pass
     @staticmethod
-    def from_files(vocab_filename: str, merges_filename: str, **kwargs) -> BPE:
-        vocab, merges = BPE.read_files(vocab_filename, merges_filename)
-        return BPE(vocab, merges, **kwargs)
+    def from_file(vocab_filename: str, merges_filename: str, **kwargs) -> BPE:
+        """
+        Convenient method to intialize a BPE from files
+        Roughly equivalent to 
+
+        def from_file(vocab_filename, merges_filenames, **kwargs):
+            vocab, merges = BPE.read_file(vocab_filename, merges_filename)
+            return BPE(vocab, merges, **kwargs)
+        """
+        pass
 
 class WordPiece(Model):
     """WordPiece model class
@@ -107,12 +114,19 @@ class WordPiece(Model):
     ):
         pass
     @staticmethod
-    def read_file(vocab_filename: str) -> Tuple[Vocab]:
+    def read_file(vocab_filename: str) -> Vocab:
         pass
     @staticmethod
-    def from_files(vocab_filename: str, **kwargs) -> WordPiece:
-        vocab = WordPiece.read_files(vocab_filename)
-        return WordPiece(vocab, **kwargs)
+    def from_file(vocab_filename: str, **kwargs) -> WordPiece:
+        """
+        Convenient method to intialize a WordPiece from file
+        Roughly equivalent to 
+
+        def from_file(vocab_filename, **kwargs):
+            vocab, merges = WordPiece.read_file(vocab_filename)
+            return WordPiece(vocab, **kwargs)
+        """
+        pass
 
 class WordLevel(Model):
     """
@@ -131,12 +145,19 @@ class WordLevel(Model):
     def __init__(self, vocab: Optional[Union[str, Dict[str, int]]], unk_token: Optional[str]):
         pass
     @staticmethod
-    def read_file(vocab_filename: str) -> Tuple[Vocab]:
+    def read_file(vocab_filename: str) -> Vocab:
         pass
     @staticmethod
-    def from_files(vocab_filename: str, **kwargs) -> WordLevel:
-        vocab = WordLevel.read_files(vocab_filename)
-        return WordLevel(vocab, **kwargs)
+    def from_file(vocab_filename: str, **kwargs) -> WordLevelg:
+        """
+        Convenient method to intialize a WordLevelg from file
+        Roughly equivalent to 
+
+        def from_file(vocab_filename, **kwargs):
+            vocab, merges = WordLevelg.read_file(vocab_filename)
+            return WordLevelg(vocab, **kwargs)
+        """
+        pass
 
 class Unigram(Model):
     """UnigramEncoding model class

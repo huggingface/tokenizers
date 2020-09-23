@@ -78,8 +78,8 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         super().__init__(tokenizer, parameters)
 
     @staticmethod
-    def from_files(vocab_filename: str, merges_filename: str, **kwargs):
-        vocab, merges = BPE.read_files(vocab_filename, merges_filename)
+    def from_file(vocab_filename: str, merges_filename: str, **kwargs):
+        vocab, merges = BPE.read_file(vocab_filename, merges_filename)
         return ByteLevelBPETokenizer(vocab, merges, **kwargs)
 
     def train(

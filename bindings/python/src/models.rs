@@ -209,7 +209,7 @@ impl PyBPE {
                 (PyVocab::Filename(vocab_filename), PyMerges::Filename(merges_filename)) => {
                     deprecation_warning(
                     "0.9.0",
-                    "BPE.__init__ will not create from files anymore, try `BPE.from_files` instead",
+                    "BPE.__init__ will not create from files anymore, try `BPE.from_file` instead",
                 )?;
                     builder =
                         builder.files(vocab_filename.to_string(), merges_filename.to_string());
@@ -226,13 +226,34 @@ impl PyBPE {
     }
 
     #[staticmethod]
-    fn read_files(vocab_filename: &str, merges_filename: &str) -> PyResult<(Vocab, Merges)> {
-        BPE::read_files(vocab_filename, merges_filename).map_err(|e| {
+    fn read_file(vocab_filename: &str, merges_filename: &str) -> PyResult<(Vocab, Merges)> {
+        BPE::read_file(vocab_filename, merges_filename).map_err(|e| {
             exceptions::PyValueError::new_err(format!(
                 "Error while reading vocab&merges files: {}",
                 e
             ))
         })
+    }
+
+    #[staticmethod]
+    #[args(kwargs = "**")]
+    fn from_file(
+        py: Python,
+        vocab_filename: &str,
+        merges_filename: &str,
+        kwargs: Option<&PyDict>,
+    ) -> PyResult<Py<Self>> {
+        let (vocab, merges) = BPE::read_file(vocab_filename, merges_filename).map_err(|e| {
+            exceptions::PyValueError::new_err(format!("Error while reading BPE files: {}", e))
+        })?;
+        Py::new(
+            py,
+            PyBPE::new(
+                Some(PyVocab::Vocab(vocab)),
+                Some(PyMerges::Merges(merges)),
+                kwargs,
+            )?,
+        )
     }
 }
 
@@ -300,9 +321,18 @@ impl PyWordPiece {
 
     #[staticmethod]
     fn read_file(vocab_filename: &str) -> PyResult<Vocab> {
-        WordPiece::read_files(vocab_filename).map_err(|e| {
+        WordPiece::read_file(vocab_filename).map_err(|e| {
             exceptions::PyValueError::new_err(format!("Error while reading WordPiece file: {}", e))
         })
+    }
+
+    #[staticmethod]
+    #[args(kwargs = "**")]
+    fn from_file(py: Python, vocab_filename: &str, kwargs: Option<&PyDict>) -> PyResult<Py<Self>> {
+        let vocab = WordPiece::read_file(vocab_filename).map_err(|e| {
+            exceptions::PyValueError::new_err(format!("Error while reading WordPiece file: {}", e))
+        })?;
+        Py::new(py, PyWordPiece::new(Some(PyVocab::Vocab(vocab)), kwargs)?)
     }
 }
 
@@ -344,7 +374,7 @@ impl PyWordLevel {
                     "0.9.0",
                     "WordLevel.__init__ will not create from files anymore, try `WordLevel.from_file` instead",
                 )?;
-                    WordLevel::from_files(vocab_filename, unk_token).map_err(|e| {
+                    WordLevel::from_file(vocab_filename, unk_token).map_err(|e| {
                         exceptions::PyException::new_err(format!(
                             "Error while loading WordLevel: {}",
                             e
@@ -364,9 +394,18 @@ impl PyWordLevel {
 
     #[staticmethod]
     fn read_file(vocab_filename: &str) -> PyResult<Vocab> {
-        WordLevel::read_files(vocab_filename).map_err(|e| {
+        WordLevel::read_file(vocab_filename).map_err(|e| {
             exceptions::PyValueError::new_err(format!("Error while reading WordLevel file: {}", e))
         })
+    }
+
+    #[staticmethod]
+    #[args(kwargs = "**")]
+    fn from_file(py: Python, vocab_filename: &str, kwargs: Option<&PyDict>) -> PyResult<Py<Self>> {
+        let vocab = WordLevel::read_file(vocab_filename).map_err(|e| {
+            exceptions::PyValueError::new_err(format!("Error while reading WordLevel file: {}", e))
+        })?;
+        Py::new(py, PyWordLevel::new(Some(PyVocab::Vocab(vocab)), kwargs)?)
     }
 }
 
