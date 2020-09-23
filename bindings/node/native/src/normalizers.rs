@@ -216,8 +216,11 @@ fn replace(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     let content: String = cx.extract::<String>(1)?;
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    normalizer.borrow_mut(&guard).normalizer =
-        Some(tk::normalizers::replace::Replace::new(pattern, content).into());
+    normalizer.borrow_mut(&guard).normalizer = Some(
+        tk::normalizers::replace::Replace::new(pattern, content)
+            .map_err(|e| Error(e.to_string()))?
+            .into(),
+    );
     Ok(normalizer)
 }
 
