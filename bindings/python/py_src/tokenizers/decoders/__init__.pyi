@@ -1,7 +1,7 @@
 from typing import List
 
 class Decoder:
-    """ Base class for all decoders
+    """Base class for all decoders
 
     This class is not supposed to be instantiated directly. Instead, any implementation of
     a Decoder will return an instance of this class when instantiated.
@@ -23,7 +23,7 @@ class WordPiece(Decoder):
 
     @staticmethod
     def __init__(self, prefix: str = "##", cleanup: bool = True) -> Decoder:
-        """ Instantiate a new WordPiece Decoder
+        """Instantiate a new WordPiece Decoder
 
         Args:
             prefix: str:
@@ -38,7 +38,7 @@ class Metaspace(Decoder):
     """ Metaspace decoder """
 
     def __init__(self, replacement: str = "▁", add_prefix_space: bool = True) -> None:
-        """ Instantiate a new Metaspace
+        """Instantiate a new Metaspace
 
         Args:
             replacement: str:
@@ -55,7 +55,7 @@ class BPEDecoder(Decoder):
     """ BPEDecoder """
 
     def __init__(self, suffix: str = "</w>") -> None:
-        """ Instantiate a new BPEDecoder
+        """Instantiate a new BPEDecoder
 
         Args:
             suffix: str:

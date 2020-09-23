@@ -2,7 +2,7 @@ from .. import Encoding
 from typing import Tuple, Union, List
 
 class PostProcessor:
-    """ Base class for all post-processors
+    """Base class for all post-processors
 
     This class is not supposed to be instantiated directly. Instead, any implementation of
     a PostProcessor will return an instance of this class when instantiated.
@@ -22,7 +22,7 @@ class PostProcessor:
         pass
 
 class BertProcessing(PostProcessor):
-    """ BertProcessing
+    """BertProcessing
 
     This post-processor takes care of adding the special tokens needed by
     a Bert model:
@@ -31,7 +31,7 @@ class BertProcessing(PostProcessor):
     """
 
     def __init__(self, sep: Tuple[str, int], cls: Tuple[str, int]) -> None:
-        """ Instantiate a new BertProcessing with the given tokens
+        """Instantiate a new BertProcessing with the given tokens
 
         Args:
             sep: Tuple[str, int]:
@@ -46,7 +46,7 @@ class BertProcessing(PostProcessor):
         pass
 
 class RobertaProcessing(PostProcessor):
-    """ RobertaProcessing
+    """RobertaProcessing
 
     This post-processor takes care of adding the special tokens needed by
     a Roberta model:
@@ -66,7 +66,7 @@ class RobertaProcessing(PostProcessor):
         trim_offsets: bool = True,
         add_prefix_space: bool = True,
     ) -> None:
-        """ Instantiate a new RobertaProcessing with the given tokens
+        """Instantiate a new RobertaProcessing with the given tokens
 
         Args:
             sep: Tuple[str, int]:
@@ -88,7 +88,7 @@ class RobertaProcessing(PostProcessor):
         pass
 
 class ByteLevel(PostProcessor):
-    """ ByteLevel Post processing
+    """ByteLevel Post processing
 
     This post-processor takes care of trimming the offsets.
     By default, the ByteLevel BPE might include whitespaces in the produced tokens. If you don't
@@ -96,7 +96,7 @@ class ByteLevel(PostProcessor):
     """
 
     def __init__(self, trim_offsets: bool = True) -> None:
-        """ Instantiate a new ByteLevel
+        """Instantiate a new ByteLevel
 
         Args:
             trim_offsets: bool:
@@ -108,7 +108,7 @@ Template = Union[str, List[str]]
 Tokens = List[Union[Tuple[int, str], Tuple[str, int], dict]]
 
 class TemplateProcessing(PostProcessor):
-    """ TemplateProcessing
+    """TemplateProcessing
 
     Provides a way to specify templates in order to add the special tokens to each
     input sequence as relevant.
@@ -143,7 +143,7 @@ class TemplateProcessing(PostProcessor):
     """
 
     def __init__(self, seq_a: Template, seq_b: Template, special_tokens: Tokens) -> None:
-        """ Instantiate a new TemplateProcessing
+        """Instantiate a new TemplateProcessing
 
         Args:
             seq_a: Template
