@@ -34,3 +34,11 @@ impl<T> ToPyResult<T> {
         self.into()
     }
 }
+
+pub(crate) fn deprecation_warning(version: &str, message: &str) -> PyResult<()> {
+    let gil = pyo3::Python::acquire_gil();
+    let python = gil.python();
+    let deprecation_warning = python.import("builtins")?.get("DeprecationWarning")?;
+    let full_message = format!("Deprecated in {}: {}", version, message);
+    pyo3::PyErr::warn(python, deprecation_warning, &full_message, 0)
+}

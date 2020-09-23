@@ -14,22 +14,33 @@ class TestBPE:
         vocab = {"a": 0, "b": 1, "ab": 2}
         merges = {(0, 1): (0, 2)}
         assert isinstance(BPE(vocab, merges), Model)
-        with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):
+        with pytest.raises(
+            ValueError, match="`vocab` and `merges` must be both specified"
+        ):
             BPE(vocab=vocab)
             BPE(merges=merges)
 
-        assert isinstance(pickle.loads(pickle.dumps(BPE(vocab, merges))), BPE,)
+        assert isinstance(
+            pickle.loads(pickle.dumps(BPE(vocab, merges))),
+            BPE,
+        )
 
         # Deprecated calls in 0.9
         with pytest.deprecated_call():
-            assert isinstance(BPE(roberta_files["vocab"], roberta_files["merges"]), Model)
+            assert isinstance(
+                BPE(roberta_files["vocab"], roberta_files["merges"]), Model
+            )
 
-        with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):
+        with pytest.raises(
+            ValueError, match="`vocab` and `merges` must be both specified"
+        ):
             BPE(vocab=roberta_files["vocab"])
             BPE(merges=roberta_files["merges"])
         with pytest.deprecated_call():
             assert isinstance(
-                pickle.loads(pickle.dumps(BPE(roberta_files["vocab"], roberta_files["merges"]))),
+                pickle.loads(
+                    pickle.dumps(BPE(roberta_files["vocab"], roberta_files["merges"]))
+                ),
                 BPE,
             )
 
@@ -48,7 +59,9 @@ class TestWordPiece:
         with pytest.deprecated_call():
             assert isinstance(WordPiece(bert_files["vocab"]), Model)
         with pytest.deprecated_call():
-            assert isinstance(pickle.loads(pickle.dumps(WordPiece(bert_files["vocab"]))), WordPiece)
+            assert isinstance(
+                pickle.loads(pickle.dumps(WordPiece(bert_files["vocab"]))), WordPiece
+            )
 
 
 class TestWordLevel:
