@@ -21,7 +21,8 @@ TextInputSequence = str
 PreTokenizedInputSequence = Union[List[str], Tuple[str]]
 TextEncodeInput = Union[TextInputSequence, Tuple[TextInputSequence, TextInputSequence]]
 PreTokenizedEncodeInput = Union[
-    PreTokenizedInputSequence, Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence],
+    PreTokenizedInputSequence,
+    Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence],
 ]
 
 InputSequence = Union[TextInputSequence, PreTokenizedInputSequence]
@@ -827,7 +828,10 @@ class Tokenizer:
         """
         pass
     def post_process(
-        self, encoding: Encoding, pair: Optional[Encoding] = None, add_special_tokens: bool = True,
+        self,
+        encoding: Encoding,
+        pair: Optional[Encoding] = None,
+        add_special_tokens: bool = True,
     ) -> Encoding:
         """Apply all the post-processing steps to the given encodings.
 

@@ -22,7 +22,8 @@ class TestBertProcessing:
         assert isinstance(processor, PostProcessor)
         assert isinstance(processor, BertProcessing)
         assert isinstance(
-            pickle.loads(pickle.dumps(BertProcessing(("[SEP]", 0), ("[CLS]", 1)))), BertProcessing,
+            pickle.loads(pickle.dumps(BertProcessing(("[SEP]", 0), ("[CLS]", 1)))),
+            BertProcessing,
         )
 
     def test_processing(self):
@@ -94,7 +95,9 @@ class TestTemplateProcessing:
 
     def get_roberta(self):
         return TemplateProcessing(
-            seq_a="<s> $0 </s>", seq_b="</s> $0 </s>", special_tokens=[("<s>", 0), ("</s>", 1)],
+            seq_a="<s> $0 </s>",
+            seq_b="</s> $0 </s>",
+            special_tokens=[("<s>", 0), ("</s>", 1)],
         )
 
     def get_t5_squad(self):
