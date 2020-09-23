@@ -49,7 +49,7 @@ export namespace BPE {
    * @param options BPE model options
    * @param __callback Callback called when model is loaded
    */
-  export function fromFiles(
+  export function fromFile(
     vocab: string,
     merges: string,
     options: BPEOptions,
@@ -62,7 +62,7 @@ export namespace BPE {
    * @param merges Path to a merge file
    * @param __callback Callback called when model is loaded
    */
-  export function fromFiles(
+  export function fromFile(
     vocab: string,
     merges: string,
     __callback: (err: Error, encoding: Model) => void
@@ -100,7 +100,7 @@ export namespace WordPiece {
    * @param options WordPiece model options
    * @param __callback Callback called when model is loaded
    */
-  export function fromFiles(
+  export function fromFile(
     vocab: string,
     options: WordPieceOptions,
     __callback: (err: Error, encoding: Model) => void
@@ -111,7 +111,7 @@ export namespace WordPiece {
    * @param vocab Path to a vocabulary file
    * @param __callback Callback called when model is loaded
    */
-  export function fromFiles(
+  export function fromFile(
     vocab: string,
     __callback: (err: Error, encoding: Model) => void
   ): void;
