@@ -6,7 +6,9 @@ from tokenizers import CharBPETokenizer
 
 class TestBertWordPieceBPE:
     def test_basic_encode(self, openai_files):
-        tokenizer = CharBPETokenizer.from_files(openai_files["vocab"], openai_files["merges"])
+        tokenizer = CharBPETokenizer.from_files(
+            openai_files["vocab"], openai_files["merges"]
+        )
 
         output = tokenizer.encode("My name is John", "pair")
         assert output.ids == [0, 253, 1362, 544, 0, 7, 12662, 2688]
@@ -50,6 +52,8 @@ class TestBertWordPieceBPE:
         assert decoded == "my name is john"
 
     def test_multiprocessing_with_parallelism(self, openai_files):
-        tokenizer = CharBPETokenizer.from_files(openai_files["vocab"], openai_files["merges"])
+        tokenizer = CharBPETokenizer.from_files(
+            openai_files["vocab"], openai_files["merges"]
+        )
         multiprocessing_with_parallelism(tokenizer, False)
         multiprocessing_with_parallelism(tokenizer, True)
