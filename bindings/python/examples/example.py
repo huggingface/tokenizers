@@ -70,17 +70,13 @@ elif args.type == "bert":
 
     tok_r = Tokenizer(WordPiece(args.vocab, unk_token="[UNK]", max_input_chars_per_word=100))
     tok_r.normalizer = BertNormalizer(
-        clean_text=True,
-        handle_chinese_chars=True,
-        strip_accents=True,
-        lowercase=True,
+        clean_text=True, handle_chinese_chars=True, strip_accents=True, lowercase=True,
     )
     # tok_r.pre_tokenizer = pre_tokenizers.Whitespace()
     tok_r.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
     tok_r.decoder = decoders.WordPiece()
     tok_r.post_processor = BertProcessing(
-        ("[SEP]", tok_r.token_to_id("[SEP]")),
-        ("[CLS]", tok_r.token_to_id("[CLS]")),
+        ("[SEP]", tok_r.token_to_id("[SEP]")), ("[CLS]", tok_r.token_to_id("[CLS]")),
     )
 else:
     raise Exception(f"Unknown type {args.type}")

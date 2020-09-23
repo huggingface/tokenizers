@@ -18,10 +18,7 @@ class TestBPE:
             BPE(vocab=vocab)
             BPE(merges=merges)
 
-        assert isinstance(
-            pickle.loads(pickle.dumps(BPE(vocab, merges))),
-            BPE,
-        )
+        assert isinstance(pickle.loads(pickle.dumps(BPE(vocab, merges))), BPE,)
 
         # Deprecated calls in 0.9
         with pytest.deprecated_call():
