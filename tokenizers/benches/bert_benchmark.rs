@@ -45,7 +45,7 @@ fn create_bert_tokenizer(wp: WordPiece) -> BertTokenizer {
 }
 
 pub fn bench_bert(c: &mut Criterion) {
-    let wp = WordPiece::from_files("data/bert-base-uncased-vocab.txt")
+    let wp = WordPiece::from_file("data/bert-base-uncased-vocab.txt")
         .build()
         .unwrap();
     let tokenizer = create_bert_tokenizer(wp);

@@ -103,7 +103,7 @@ impl WordPieceBuilder {
     /// Contructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
     pub fn build(mut self) -> Result<WordPiece> {
         if let Some(vocab) = self.config.files {
-            self.config.vocab = WordPiece::read_files(&vocab)?;
+            self.config.vocab = WordPiece::read_file(&vocab)?;
         }
 
         let vocab_r = self
@@ -165,7 +165,7 @@ impl WordPiece {
     }
 
     /// Read the given files to extract the vocab
-    pub fn read_files(vocab: &str) -> Result<Vocab> {
+    pub fn read_file(vocab: &str) -> Result<Vocab> {
         let file = File::open(vocab)?;
         let file = BufReader::new(file);
 
@@ -179,7 +179,7 @@ impl WordPiece {
     }
 
     /// Initialize a `WordPiece` model from a vocab mapping file.
-    pub fn from_files(vocab: &str) -> WordPieceBuilder {
+    pub fn from_file(vocab: &str) -> WordPieceBuilder {
         WordPiece::builder().files(vocab.to_owned())
     }
 

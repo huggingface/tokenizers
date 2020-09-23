@@ -14,6 +14,7 @@ class TestBPE:
         vocab = {"a": 0, "b": 1, "ab": 2}
         merges = {(0, 1): (0, 2)}
         assert isinstance(BPE(vocab, merges), Model)
+        assert isinstance(BPE.from_file(roberta_files["vocab"], roberta_files["merges"]), BPE)
         with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):
             BPE(vocab=vocab)
             BPE(merges=merges)
@@ -42,6 +43,7 @@ class TestWordPiece:
         vocab = {"a": 0, "b": 1, "ab": 2}
         assert isinstance(WordPiece(vocab), Model)
         assert isinstance(WordPiece(vocab), WordPiece)
+        assert isinstance(WordPiece.from_file(bert_files["vocab"]), WordPiece)
         assert isinstance(pickle.loads(pickle.dumps(WordPiece(vocab))), WordPiece)
 
         # Deprecated calls in 0.9
@@ -59,6 +61,7 @@ class TestWordLevel:
         vocab = {"a": 0, "b": 1, "ab": 2}
         assert isinstance(WordLevel(vocab), Model)
         assert isinstance(WordLevel(vocab), WordLevel)
+        assert isinstance(WordLevel.from_file(roberta_files["vocab"]), WordLevel)
 
         # The WordLevel model expects a vocab.json using the same format as roberta
         # so we can just try to load with this file

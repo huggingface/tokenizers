@@ -117,7 +117,7 @@ impl BpeBuilder {
 
         // Read files if necessary
         if let Some((vocab, merges)) = self.config.files {
-            let (v, m) = BPE::read_files(&vocab, &merges)?;
+            let (v, m) = BPE::read_file(&vocab, &merges)?;
             self.config.vocab = v;
             self.config.merges = m;
         }
@@ -258,12 +258,12 @@ impl BPE {
     }
 
     /// Initialize a BpeBuilder model from vocab and merges files
-    pub fn from_files(vocab: &str, merges: &str) -> BpeBuilder {
+    pub fn from_file(vocab: &str, merges: &str) -> BpeBuilder {
         BPE::builder().files(vocab.to_owned(), merges.to_owned())
     }
 
     /// Read the given files to extract the vocab and merges
-    pub fn read_files(vocab: &str, merges: &str) -> Result<(Vocab, Merges)> {
+    pub fn read_file(vocab: &str, merges: &str) -> Result<(Vocab, Merges)> {
         // Read vocab.json
         let vocab_file = File::open(vocab)?;
         let mut vocab_file = BufReader::new(vocab_file);
@@ -627,8 +627,8 @@ mod tests {
     }
 
     #[test]
-    // Ensure `BPE::from_files` works as expected.
-    fn test_bpe_from_files() {
+    // Ensure `BPE::from_file` works as expected.
+    fn test_bpe_from_file() {
         // Set up vocab file.
         let mut vocab_file = NamedTempFile::new().unwrap();
         vocab_file
@@ -640,7 +640,7 @@ mod tests {
         merges_file.write_all(b"#version: 0.2\na b").unwrap();
 
         // Make sure we can instantiate a BPE model from the files.
-        let builder = BPE::from_files(
+        let builder = BPE::from_file(
             vocab_file.path().to_str().unwrap(),
             merges_file.path().to_str().unwrap(),
         );
@@ -658,7 +658,7 @@ mod tests {
 
     #[test]
     // Ensure `MergeTokenOutOfVocabulary` error is returned when it should be.
-    fn test_bpe_from_files_merge_token_oov() {
+    fn test_bpe_from_file_merge_token_oov() {
         // Set up vocab file.
         let mut vocab_file = NamedTempFile::new().unwrap();
         vocab_file
@@ -669,8 +669,8 @@ mod tests {
         let mut merges_file = NamedTempFile::new().unwrap();
         merges_file.write_all(b"#version: 0.2\na b\na d").unwrap();
 
-        // Ensure the result of BPE::from_files is a MergeTokenOutOfVocabulary error.
-        match BPE::from_files(
+        // Ensure the result of BPE::from_file is a MergeTokenOutOfVocabulary error.
+        match BPE::from_file(
             vocab_file.path().to_str().unwrap(),
             merges_file.path().to_str().unwrap(),
         )
@@ -689,7 +689,7 @@ mod tests {
     #[test]
     // Ensure `BadMerges` error is returned when there is an invalid line in the
     // merges.txt file.
-    fn test_bpe_from_files_bad_merges() {
+    fn test_bpe_from_file_bad_merges() {
         // Set up vocab file.
         let mut vocab_file = NamedTempFile::new().unwrap();
         vocab_file
@@ -700,8 +700,8 @@ mod tests {
         let mut merges_file = NamedTempFile::new().unwrap();
         merges_file.write_all(b"#version: 0.2\na b\nc").unwrap();
 
-        // Ensure the result of BPE::from_files is a BadMerges error.
-        match BPE::from_files(
+        // Ensure the result of BPE::from_file is a BadMerges error.
+        match BPE::from_file(
             vocab_file.path().to_str().unwrap(),
             merges_file.path().to_str().unwrap(),
         )

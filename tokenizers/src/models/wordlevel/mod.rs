@@ -107,7 +107,7 @@ impl WordLevel {
         WordLevelBuilder::new()
     }
 
-    pub fn read_files(vocab_path: &str) -> Result<Vocab> {
+    pub fn read_file(vocab_path: &str) -> Result<Vocab> {
         let vocab_file = File::open(vocab_path)?;
         let mut vocab_file = BufReader::new(vocab_file);
         let mut buffer = String::new();
@@ -131,8 +131,8 @@ impl WordLevel {
     }
 
     /// Initialize a WordLevel model from vocab and merges file.
-    pub fn from_files(vocab_path: &str, unk_token: String) -> Result<WordLevel> {
-        let vocab = WordLevel::read_files(vocab_path)?;
+    pub fn from_file(vocab_path: &str, unk_token: String) -> Result<WordLevel> {
+        let vocab = WordLevel::read_file(vocab_path)?;
         Ok(Self::builder().vocab(vocab).unk_token(unk_token).build())
     }
 }

@@ -156,14 +156,14 @@ pub fn bpe_init(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     Ok(cx.undefined())
 }
 
-/// bpe_from_files(vocab: String, merges: String, options: {
+/// bpe_from_file(vocab: String, merges: String, options: {
 ///   cacheCapacity?: number,
 ///   dropout?: number,
 ///   unkToken?: String,
 ///   continuingSubwordPrefix?: String,
 ///   endOfWordSuffix?: String
 /// }, callback)
-pub fn bpe_from_files(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+pub fn bpe_from_file(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let (options, callback) = match cx.extract_opt::<BpeOptions>(2) {
         // Options were there, and extracted
         Ok(Some(options)) => (options, cx.argument::<JsFunction>(3)?),
@@ -174,7 +174,7 @@ pub fn bpe_from_files(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     };
     let vocab = cx.extract::<String>(0)?;
     let merges = cx.extract::<String>(1)?;
-    let mut builder = tk::models::bpe::BPE::from_files(&vocab, &merges);
+    let mut builder = tk::models::bpe::BPE::from_file(&vocab, &merges);
 
     builder = options.apply_to_bpe_builder(builder);
 
@@ -242,12 +242,12 @@ pub fn wordpiece_init(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     Ok(cx.undefined())
 }
 
-/// wordpiece_from_files(vocab: String, options: {
+/// wordpiece_from_file(vocab: String, options: {
 ///   unkToken?: String = "[UNK]",
 ///   maxInputCharsPerWord?: number = 100,
 ///   continuingSubwordPrefix?: "##",
 /// }, callback)
-pub fn wordpiece_from_files(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+pub fn wordpiece_from_file(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let (options, callback) = match cx.extract_opt::<WordPieceOptions>(1) {
         // Options were there, and extracted
         Ok(Some(options)) => (options, cx.argument::<JsFunction>(2)?),
@@ -257,7 +257,7 @@ pub fn wordpiece_from_files(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         Err(_) => (WordPieceOptions::default(), cx.argument::<JsFunction>(1)?),
     };
     let vocab = cx.extract::<String>(0)?;
-    let mut builder = tk::models::wordpiece::WordPiece::from_files(&vocab);
+    let mut builder = tk::models::wordpiece::WordPiece::from_file(&vocab);
     builder = options.apply_to_wordpiece_builder(builder);
     let task = WordPieceFromFilesTask::new(builder);
     task.schedule(callback);
@@ -279,12 +279,12 @@ pub fn wordpiece_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_BPE_init", prefix), bpe_init)?;
-    m.export_function(&format!("{}_BPE_from_files", prefix), bpe_from_files)?;
+    m.export_function(&format!("{}_BPE_from_file", prefix), bpe_from_file)?;
     m.export_function(&format!("{}_BPE_empty", prefix), bpe_empty)?;
     m.export_function(&format!("{}_WordPiece_init", prefix), wordpiece_init)?;
     m.export_function(
-        &format!("{}_WordPiece_from_files", prefix),
-        wordpiece_from_files,
+        &format!("{}_WordPiece_from_file", prefix),
+        wordpiece_from_file,
     )?;
     m.export_function(&format!("{}_WordPiece_empty", prefix), wordpiece_empty)?;
     Ok(())
