@@ -144,9 +144,7 @@ class TestTokenizer:
         assert output.tokens == ["my", "name", "is", "john"]
 
         # Can encode a batch with both a single sequence and a pair of sequences
-        output = tokenizer.encode_batch(
-            ["my name is john", ("my name is john", "pair")]
-        )
+        output = tokenizer.encode_batch(["my name is john", ("my name is john", "pair")])
         assert len(output) == 2
 
     def test_encode_formats(self, bert_files):
@@ -169,9 +167,7 @@ class TestTokenizer:
         ]
         output = tokenizer.encode(["my", "name", "is", "john"], is_pretokenized=True)
         assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
-        output = tokenizer.encode(
-            ["my", "name", "is", "john"], ["pair"], is_pretokenized=True
-        )
+        output = tokenizer.encode(["my", "name", "is", "john"], ["pair"], is_pretokenized=True)
         assert output.tokens == [
             "[CLS]",
             "my",
@@ -217,19 +213,13 @@ class TestTokenizer:
 
         # Numpy
         test_single(np.array(["My name is John", "My name is Georges"]))
-        test_pair(
-            np.array([("My name is John", "pair"), ("My name is Georges", "pair")])
-        )
-        test_pair(
-            np.array([["My name is John", "pair"], ["My name is Georges", "pair"]])
-        )
+        test_pair(np.array([("My name is John", "pair"), ("My name is Georges", "pair")]))
+        test_pair(np.array([["My name is John", "pair"], ["My name is Georges", "pair"]]))
 
         # PreTokenized inputs
 
         # Lists
-        test_single(
-            [["My", "name", "is", "John"], ["My", "name", "is", "Georges"]], True
-        )
+        test_single([["My", "name", "is", "John"], ["My", "name", "is", "Georges"]], True)
         test_pair(
             [
                 (["My", "name", "is", "John"], ["pair"]),
@@ -246,9 +236,7 @@ class TestTokenizer:
         )
 
         # Tuples
-        test_single(
-            (("My", "name", "is", "John"), ("My", "name", "is", "Georges")), True
-        )
+        test_single((("My", "name", "is", "John"), ("My", "name", "is", "Georges")), True)
         test_pair(
             (
                 (("My", "name", "is", "John"), ("pair",)),
@@ -317,9 +305,7 @@ class TestTokenizer:
         )
 
         # Can encode with special tokens
-        output_with_specials = tokenizer.encode(
-            "My name is John", add_special_tokens=True
-        )
+        output_with_specials = tokenizer.encode("My name is John", add_special_tokens=True)
         assert output_with_specials.tokens == [
             "<s>",
             "ĠMy",
@@ -330,9 +316,7 @@ class TestTokenizer:
         ]
 
         # Can encode without special tokens
-        output_without_specials = tokenizer.encode(
-            "My name is John", add_special_tokens=False
-        )
+        output_without_specials = tokenizer.encode("My name is John", add_special_tokens=False)
         assert output_without_specials.tokens == ["ĠMy", "Ġname", "Ġis", "ĠJohn"]
 
     def test_truncation(self):
