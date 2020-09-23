@@ -106,4 +106,22 @@ describe("BPE", () => {
       });
     });
   });
+  describe("When initialized from memory", () => {
+    it("returns `undefined`", () => {
+      const merges = new Map();
+      merges.set([0, 1], [0, 2]);
+      expect((BPE as any).init({ a: 0, b: 1, ab: 2 }, merges, () => {})).toBeUndefined();
+    });
+    it("has its callback called with the loaded model", () => {
+      return new Promise((done) => {
+        const merges = new Map();
+        merges.set([0, 1], [0, 2]);
+
+        (BPE as any).init({ a: 0, b: 1, ab: 2 }, merges, (err: any, model: any) => {
+          expect(model).toBeDefined();
+          done();
+        });
+      });
+    });
+  });
 });
