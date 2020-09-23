@@ -132,8 +132,8 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
 
     let model: Model;
     if (opts.vocabFile) {
-      const fromFiles = promisify<string, WordPieceOptions, Model>(WordPiece.fromFiles);
-      model = await fromFiles(opts.vocabFile, {
+      const fromFile = promisify<string, WordPieceOptions, Model>(WordPiece.fromFile);
+      model = await fromFile(opts.vocabFile, {
         unkToken: getTokenContent(opts.unkToken),
         continuingSubwordPrefix: opts.wordpiecesPrefix,
       });

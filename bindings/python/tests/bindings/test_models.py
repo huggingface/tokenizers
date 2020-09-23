@@ -12,7 +12,7 @@ class TestBPE:
         assert isinstance(BPE(), BPE)
 
         vocab = {"a": 0, "b": 1, "ab": 2}
-        merges = {(0, 1): (0, 2)}
+        merges = [("a", "b")]
         assert isinstance(BPE(vocab, merges), Model)
         assert isinstance(BPE.from_file(roberta_files["vocab"], roberta_files["merges"]), BPE)
         with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):

@@ -93,8 +93,8 @@ export class ByteLevelBPETokenizer extends BaseTokenizer<ByteLevelBPETokenizerCo
 
     let model: Model;
     if (opts.vocabFile && opts.mergesFile) {
-      const fromFiles = promisify<string, string, BPEOptions, Model>(BPE.fromFiles);
-      model = await fromFiles(opts.vocabFile, opts.mergesFile, opts);
+      const fromFile = promisify<string, string, BPEOptions, Model>(BPE.fromFile);
+      model = await fromFile(opts.vocabFile, opts.mergesFile, opts);
     } else {
       model = BPE.empty();
     }

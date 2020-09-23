@@ -14,7 +14,8 @@ use std::{
 
 pub type Vocab = HashMap<String, u32>;
 type VocabR = HashMap<u32, String>;
-pub type Merges = HashMap<Pair, (u32, u32)>;
+pub type MergeMap = HashMap<Pair, (u32, u32)>;
+pub type Merges = Vec<(String, String)>;
 
 struct Config {
     files: Option<(String, String)>,
@@ -39,7 +40,7 @@ impl Default for BpeBuilder {
             config: Config {
                 files: None,
                 vocab: HashMap::new(),
-                merges: HashMap::new(),
+                merges: vec![],
                 cache_capacity: DEFAULT_CACHE_CAPACITY,
                 dropout: None,
                 unk_token: None,
@@ -133,10 +134,33 @@ impl BpeBuilder {
             capacity => Some(Cache::new(capacity)),
         };
 
+        let vocab = self.config.vocab;
+        let merge_map: MergeMap = self
+            .config
+            .merges
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a, b))| -> Result<(Pair, (u32, u32))> {
+                let a_id = vocab
+                    .get(&a)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(a.to_owned()))?;
+                let b_id = vocab
+                    .get(&b)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
+                let new_token = format!("{}{}", a, b);
+                let new_id = vocab
+                    .get(&new_token)
+                    .ok_or(Error::MergeTokenOutOfVocabulary(new_token))?;
+                Ok(((*a_id, *b_id), (i as u32, *new_id)))
+            })
+            .collect::<Result<MergeMap>>()?;
+
+        // merges.insert(pair, (rank as u32, *new_id));
+
         Ok(BPE {
-            vocab: self.config.vocab,
+            vocab,
             vocab_r,
-            merges: self.config.merges,
+            merges: merge_map,
             cache,
             dropout: self.config.dropout,
             unk_token: self.config.unk_token,
@@ -155,7 +179,7 @@ pub struct BPE {
     /// Reversed vocabulary, to rebuild sentences.
     pub(crate) vocab_r: VocabR,
     /// Contains the mapping between Pairs and their (rank, new_id).
-    pub(crate) merges: Merges,
+    pub(crate) merges: MergeMap,
     /// Contains the cache for optimizing the encoding step.
     cache: Option<Cache<String, Word>>,
     /// Dropout probability for merges. 0 = no dropout is the default. At 1.0, tokenization will
@@ -214,9 +238,9 @@ impl Clone for BPE {
 /// "{pair_a} {pair_b}" into the format expected by the BPE struct
 pub(crate) fn convert_merges_to_hashmap<I: Iterator<Item = String>>(
     iter: I,
-    vocab: &Vocab,
+    _vocab: &Vocab,
 ) -> Result<Merges> {
-    let mut merges = HashMap::new();
+    let mut merges = vec![];
 
     let lines = iter.filter(|l| !l.starts_with("#version"));
     for (rank, line) in lines.enumerate() {
@@ -225,19 +249,7 @@ pub(crate) fn convert_merges_to_hashmap<I: Iterator<Item = String>>(
             return Err(Error::BadMerges(rank + 1).into());
         }
 
-        let a = vocab
-            .get(parts[0])
-            .ok_or_else(|| Error::MergeTokenOutOfVocabulary(parts[0].to_owned()))?;
-        let b = vocab
-            .get(parts[1])
-            .ok_or_else(|| Error::MergeTokenOutOfVocabulary(parts[1].to_owned()))?;
-        let pair = (*a, *b);
-        let new_token = format!("{}{}", parts[0], parts[1]);
-        let new_id = vocab
-            .get(&new_token)
-            .ok_or(Error::MergeTokenOutOfVocabulary(new_token))?;
-
-        merges.insert(pair, (rank as u32, *new_id));
+        merges.push((parts[0].to_string(), parts[1].to_string()));
     }
 
     Ok(merges)
@@ -500,7 +512,7 @@ mod tests {
             .cloned()
             .collect();
         let bpe = BpeBuilder::default()
-            .vocab_and_merges(vocab, HashMap::new())
+            .vocab_and_merges(vocab, vec![])
             .unk_token("<unk>".to_string())
             .build()
             .unwrap();
@@ -534,7 +546,7 @@ mod tests {
             .cloned()
             .collect();
         let bpe = BpeBuilder::default()
-            .vocab_and_merges(vocab, HashMap::new())
+            .vocab_and_merges(vocab, vec![])
             .unk_token("<unk>".to_string())
             .fuse_unk(true)
             .build()
@@ -583,19 +595,16 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        let merges: Merges = [
-            ((vocab["r"], vocab["e"]), (1u32, vocab["re"])), // 'r-e' -> 're'
-            ((vocab["a"], vocab["t"]), (2u32, vocab["at"])), // 'a-t' -> 'at'
-            ((vocab["e"], vocab["d"]), (3u32, vocab["ed"])), // 'e-d' -> 'ed'
-            ((vocab["u"], vocab["n"]), (4u32, vocab["un"])), // 'u-n' -> 'un'
-            ((vocab["at"], vocab["ed"]), (5u32, vocab["ated"])), // 'at-ed' -> 'ated'
-            ((vocab["re"], vocab["l"]), (6u32, vocab["rel"])), // 're-l' -> 'rel'
-            ((vocab["rel"], vocab["ated"]), (7u32, vocab["related"])), // 'rel-ated' -> 'related'
-            ((vocab["un"], vocab["related"]), (8u32, vocab["unrelated"])), // 'un-related' -> 'unrelated'
-        ]
-        .iter()
-        .cloned()
-        .collect();
+        let merges: Merges = vec![
+            ("r".to_string(), "e".to_string()),
+            ("a".to_string(), "t".to_string()),
+            ("e".to_string(), "d".to_string()),
+            ("u".to_string(), "n".to_string()),
+            ("at".to_string(), "ed".to_string()),
+            ("re".to_string(), "l".to_string()),
+            ("rel".to_string(), "ated".to_string()),
+            ("un".to_string(), "related".to_string()),
+        ];
         let mut bpe = BPE::new(vocab, merges);
 
         // With no dropout:

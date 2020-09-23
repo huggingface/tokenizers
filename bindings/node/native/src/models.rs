@@ -8,7 +8,11 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tk::models::{bpe::BpeBuilder, wordpiece::WordPieceBuilder, ModelWrapper};
+use tk::models::{
+    bpe::{BpeBuilder, Merges, Vocab},
+    wordpiece::WordPieceBuilder,
+    ModelWrapper,
+};
 use tk::Model as ModelTrait;
 use tk::Token;
 
@@ -144,8 +148,8 @@ pub fn bpe_init(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         // Options not specified, callback instead
         Err(_) => (BpeOptions::default(), cx.argument::<JsFunction>(2)?),
     };
-    let vocab = cx.extract::<HashMap<String, u32>>(0)?;
-    let merges = cx.extract::<HashMap<(u32, u32), (u32, u32)>>(1)?;
+    let vocab = cx.extract::<Vocab>(0)?;
+    let merges = cx.extract::<Merges>(1)?;
 
     let mut builder = tk::models::bpe::BPE::builder().vocab_and_merges(vocab, merges);
 

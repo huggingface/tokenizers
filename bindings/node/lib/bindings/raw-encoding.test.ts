@@ -22,7 +22,7 @@ describe("Can modify pretokenizers on the fly", () => {
   let tokenizer: Tokenizer;
 
   beforeAll(async () => {
-    const model = await promisify<string, WordPieceOptions, Model>(WordPiece.fromFiles)(
+    const model = await promisify<string, WordPieceOptions, Model>(WordPiece.fromFile)(
       `${MOCKS_DIR}/vocab.txt`,
       {
         continuingSubwordPrefix: "##",
@@ -60,7 +60,7 @@ describe("RawEncoding", () => {
   ) => Promise<RawEncoding>;
 
   beforeAll(async () => {
-    const model = await promisify<string, WordPieceOptions, Model>(WordPiece.fromFiles)(
+    const model = await promisify<string, WordPieceOptions, Model>(WordPiece.fromFile)(
       `${MOCKS_DIR}/vocab.txt`,
       {
         continuingSubwordPrefix: "##",

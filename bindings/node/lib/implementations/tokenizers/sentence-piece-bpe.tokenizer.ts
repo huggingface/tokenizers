@@ -100,8 +100,8 @@ export class SentencePieceBPETokenizer extends BaseTokenizer<
         unkToken: unkToken,
       };
 
-      const fromFiles = promisify<string, string, BPEOptions, Model>(BPE.fromFiles);
-      model = await fromFiles(opts.vocabFile, opts.mergesFile, modelOptions);
+      const fromFile = promisify<string, string, BPEOptions, Model>(BPE.fromFile);
+      model = await fromFile(opts.vocabFile, opts.mergesFile, modelOptions);
     } else {
       model = BPE.empty();
     }

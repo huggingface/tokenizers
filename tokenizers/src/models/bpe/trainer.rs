@@ -555,8 +555,12 @@ impl BpeTrainer {
             word_to_id,
             merges
                 .into_iter()
-                .enumerate()
-                .map(|(index, (pair, new_id))| (pair, (index as u32, new_id)))
+                .map(|((a_id, b_id), _)| {
+                    (
+                        id_to_word[a_id as usize].clone(),
+                        id_to_word[b_id as usize].clone(),
+                    )
+                })
                 .collect(),
         );
         if let Some(prefix) = &self.continuing_subword_prefix {
