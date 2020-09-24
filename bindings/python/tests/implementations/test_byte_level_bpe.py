@@ -65,7 +65,10 @@ class TestByteLevelBPE:
 
     def test_lowerspace(self, roberta_files):
         tokenizer = ByteLevelBPETokenizer.from_file(
-            roberta_files["vocab"], roberta_files["merges"], add_prefix_space=True, lowercase=True,
+            roberta_files["vocab"],
+            roberta_files["merges"],
+            add_prefix_space=True,
+            lowercase=True,
         )
         output = tokenizer.encode("The Quick Brown Fox Jumps Over The Lazy Dog")
 

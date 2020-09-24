@@ -232,10 +232,12 @@ class TestTokenizer:
 
         # Numpy
         test_single(
-            np.array([["My", "name", "is", "John"], ["My", "name", "is", "Georges"]]), True,
+            np.array([["My", "name", "is", "John"], ["My", "name", "is", "Georges"]]),
+            True,
         )
         test_single(
-            np.array((("My", "name", "is", "John"), ("My", "name", "is", "Georges"))), True,
+            np.array((("My", "name", "is", "John"), ("My", "name", "is", "Georges"))),
+            True,
         )
         test_pair(
             np.array(
@@ -276,7 +278,8 @@ class TestTokenizer:
 
         tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=True)
         tokenizer.post_processor = RobertaProcessing(
-            ("</s>", tokenizer.token_to_id("</s>")), ("<s>", tokenizer.token_to_id("<s>")),
+            ("</s>", tokenizer.token_to_id("</s>")),
+            ("<s>", tokenizer.token_to_id("<s>")),
         )
 
         # Can encode with special tokens

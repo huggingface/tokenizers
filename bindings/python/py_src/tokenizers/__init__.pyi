@@ -21,7 +21,8 @@ TextInputSequence = str
 PreTokenizedInputSequence = Union[List[str], Tuple[str]]
 TextEncodeInput = Union[TextInputSequence, Tuple[TextInputSequence, TextInputSequence]]
 PreTokenizedEncodeInput = Union[
-    PreTokenizedInputSequence, Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence],
+    PreTokenizedInputSequence,
+    Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence],
 ]
 
 InputSequence = Union[TextInputSequence, PreTokenizedInputSequence]
@@ -52,7 +53,7 @@ Range = Union[int, Tuple[int, int], slice]
 Pattern = Union[str, Regex]
 
 class PreTokenizedString:
-    """ PreTokenizedString
+    """PreTokenizedString
 
     Wrapper over a string, that provides a way to normalize, pre-tokenize, tokenize the
     underlying string, while keeping track of the alignment information (offsets).
@@ -66,7 +67,7 @@ class PreTokenizedString:
     """
 
     def __new__(sequence: str) -> PreTokenizedString:
-        """ Instantiate a new PreTokenizedString using the given str
+        """Instantiate a new PreTokenizedString using the given str
 
         Args:
             sequence: str:
@@ -74,7 +75,7 @@ class PreTokenizedString:
         """
         pass
     def split(self, func: Callable[[index, NormalizedString], List[NormalizedString]]):
-        """ Split the PreTokenizedString using the given `func`
+        """Split the PreTokenizedString using the given `func`
 
         Args:
             func: Callable[[index, NormalizedString], List[NormalizedString]]:
@@ -87,7 +88,7 @@ class PreTokenizedString:
         """
         pass
     def normalize(self, func: Callable[[NormalizedString], None]):
-        """ Normalize each split of the `PreTokenizedString` using the given `func`
+        """Normalize each split of the `PreTokenizedString` using the given `func`
 
         Args:
             func: Callable[[NormalizedString], None]:
@@ -97,7 +98,7 @@ class PreTokenizedString:
         """
         pass
     def tokenize(self, func: Callable[[str], List[Token]]):
-        """ Tokenize each split of the `PreTokenizedString` using the given `func`
+        """Tokenize each split of the `PreTokenizedString` using the given `func`
 
         Args:
             func: Callable[[str], List[Token]]:
@@ -106,7 +107,7 @@ class PreTokenizedString:
         """
         pass
     def to_encoding(self, type_id: int = 0, word_idx: Optional[int] = None) -> Encoding:
-        """ Return an Encoding generated from this PreTokenizedString
+        """Return an Encoding generated from this PreTokenizedString
 
         Args:
             type_id: int = 0:
@@ -126,7 +127,7 @@ class PreTokenizedString:
         offset_referential: OffsetReferential = OffsetReferential.ORIGINAL,
         offset_type: OffsetType = OffsetType.CHAR,
     ) -> List[Split]:
-        """ Get the splits currently managed by the PreTokenizedString
+        """Get the splits currently managed by the PreTokenizedString
 
         Args:
             offset_referential: OffsetReferential:
@@ -145,7 +146,7 @@ class PreTokenizedString:
         pass
 
 class NormalizedString:
-    """ NormalizedString
+    """NormalizedString
 
     A NormalizedString takes care of modifying an "original" string, to obtain a "normalized" one.
     While making all the requested modifications, it keeps track of the alignment information
@@ -153,7 +154,7 @@ class NormalizedString:
     """
 
     def __new__(sequence: str) -> NormalizedString:
-        """ Instantiate a new NormalizedString using the given str
+        """Instantiate a new NormalizedString using the given str
 
         Args:
             sequence: str:
@@ -214,14 +215,14 @@ class NormalizedString:
         """ Calls the given function for each character of the string """
         pass
     def map(self, func: Callable[[str], str]):
-        """ Calls the given function for each character of the string
+        """Calls the given function for each character of the string
 
         Replaces each character of the string using the returned value. Each
         returned value **must** be a str of length 1 (ie a character).
         """
         pass
     def split(self, pattern: Pattern, behavior: SplitDelimiterBehavior) -> List[NormalizedString]:
-        """ Split the NormalizedString using the given pattern and the specified behavior
+        """Split the NormalizedString using the given pattern and the specified behavior
 
         Args:
             pattern: Pattern:
@@ -235,7 +236,7 @@ class NormalizedString:
         """
         pass
     def replace(self, pattern: Pattern, content: str):
-        """ Replace the content of the given pattern with the provided content
+        """Replace the content of the given pattern with the provided content
 
         Args:
             pattern: Pattern:
@@ -827,7 +828,10 @@ class Tokenizer:
         """
         pass
     def post_process(
-        self, encoding: Encoding, pair: Optional[Encoding] = None, add_special_tokens: bool = True,
+        self,
+        encoding: Encoding,
+        pair: Optional[Encoding] = None,
+        add_special_tokens: bool = True,
     ) -> Encoding:
         """Apply all the post-processing steps to the given encodings.
 

@@ -78,7 +78,7 @@ class BPE(Model):
     def from_file(vocab_filename: str, merges_filename: str, **kwargs) -> BPE:
         """
         Convenient method to intialize a BPE from files
-        Roughly equivalent to 
+        Roughly equivalent to
 
         def from_file(vocab_filename, merges_filenames, **kwargs):
             vocab, merges = BPE.read_file(vocab_filename, merges_filename)
@@ -116,7 +116,7 @@ class WordPiece(Model):
     def from_file(vocab_filename: str, **kwargs) -> WordPiece:
         """
         Convenient method to intialize a WordPiece from file
-        Roughly equivalent to 
+        Roughly equivalent to
 
         def from_file(vocab_filename, **kwargs):
             vocab, merges = WordPiece.read_file(vocab_filename)
@@ -147,7 +147,7 @@ class WordLevel(Model):
     def from_file(vocab_filename: str, **kwargs) -> WordLevelg:
         """
         Convenient method to intialize a WordLevelg from file
-        Roughly equivalent to 
+        Roughly equivalent to
 
         def from_file(vocab_filename, **kwargs):
             vocab, merges = WordLevelg.read_file(vocab_filename)
