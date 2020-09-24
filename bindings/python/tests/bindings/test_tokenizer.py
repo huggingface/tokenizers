@@ -93,11 +93,7 @@ class TestTokenizer:
         added = tokenizer.add_tokens(["my", "name", "is", "john"])
         assert added == 4
 
-        tokens = [
-            AddedToken("the"),
-            AddedToken("quick", normalized=False),
-            AddedToken(),
-        ]
+        tokens = [AddedToken("the"), AddedToken("quick", normalized=False), AddedToken()]
         assert tokens[0].normalized == True
         added = tokenizer.add_tokens(tokens)
         assert added == 2
@@ -155,29 +151,11 @@ class TestTokenizer:
         output = tokenizer.encode("my name is john")
         assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
         output = tokenizer.encode("my name is john", "pair")
-        assert output.tokens == [
-            "[CLS]",
-            "my",
-            "name",
-            "is",
-            "john",
-            "[SEP]",
-            "pair",
-            "[SEP]",
-        ]
+        assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]", "pair", "[SEP]"]
         output = tokenizer.encode(["my", "name", "is", "john"], is_pretokenized=True)
         assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]"]
         output = tokenizer.encode(["my", "name", "is", "john"], ["pair"], is_pretokenized=True)
-        assert output.tokens == [
-            "[CLS]",
-            "my",
-            "name",
-            "is",
-            "john",
-            "[SEP]",
-            "pair",
-            "[SEP]",
-        ]
+        assert output.tokens == ["[CLS]", "my", "name", "is", "john", "[SEP]", "pair", "[SEP]"]
 
         # Encode batch
         result_single = [
@@ -303,14 +281,7 @@ class TestTokenizer:
 
         # Can encode with special tokens
         output_with_specials = tokenizer.encode("My name is John", add_special_tokens=True)
-        assert output_with_specials.tokens == [
-            "<s>",
-            "ĠMy",
-            "Ġname",
-            "Ġis",
-            "ĠJohn",
-            "</s>",
-        ]
+        assert output_with_specials.tokens == ["<s>", "ĠMy", "Ġname", "Ġis", "ĠJohn", "</s>"]
 
         # Can encode without special tokens
         output_without_specials = tokenizer.encode("My name is John", add_special_tokens=False)
