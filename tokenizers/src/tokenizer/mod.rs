@@ -70,11 +70,11 @@ pub trait Model {
     /// are expected to be relative to the given sequence.
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>>;
     /// Find the ID associated to a string token
-    fn token_to_id(&self, token: &str) -> Option<u32>;
+    fn token_to_id(&self, token: &str) -> Option<u64>;
     /// Find the string token associated to an ID
-    fn id_to_token(&self, id: u32) -> Option<&str>;
+    fn id_to_token(&self, id: u64) -> Option<&str>;
     /// Retrieve the entire vocabulary mapping (token -> ID)
-    fn get_vocab(&self) -> &HashMap<String, u32>;
+    fn get_vocab(&self) -> &HashMap<String, u64>;
     /// Retrieve the size of the vocabulary
     fn get_vocab_size(&self) -> usize;
     /// Save the current `Model` in the given folder, using the given `prefix` for the various
@@ -126,20 +126,20 @@ pub trait Trainer {
     /// of `special_tokens` to be added directly to the tokenizer along with the model.
     fn train(
         &self,
-        words: HashMap<String, u32>,
+        words: HashMap<String, u64>,
     ) -> Result<(<Self as Trainer>::Model, Vec<AddedToken>)>;
     /// Process a bunch of token, counting them as relevant.
-    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>);
+    fn process_tokens(&self, words: &mut HashMap<String, u64>, tokens: Vec<String>);
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
-    pub id: u32,
+    pub id: u64,
     pub value: String,
     pub offsets: (usize, usize),
 }
 impl Token {
-    pub fn new(id: u32, value: String, offsets: (usize, usize)) -> Self {
+    pub fn new(id: u64, value: String, offsets: (usize, usize)) -> Self {
         Token { id, value, offsets }
     }
 }
@@ -557,7 +557,7 @@ where
     }
 
     /// Get the vocabulary
-    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u64> {
         let mut final_vocab = self.model.get_vocab().clone();
 
         if with_added_tokens {
@@ -584,12 +584,12 @@ where
     }
 
     /// Converts a token in the corresponding id.
-    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub fn token_to_id(&self, token: &str) -> Option<u64> {
         self.added_vocabulary.token_to_id(token, &self.model)
     }
 
     /// Converts an id to the corresponding token.
-    pub fn id_to_token(&self, id: u32) -> Option<&str> {
+    pub fn id_to_token(&self, id: u64) -> Option<&str> {
         self.added_vocabulary.id_to_token(id, &self.model)
     }
 
@@ -597,7 +597,7 @@ where
     fn encode_single_sequence(
         &self,
         sequence: InputSequence,
-        type_id: u32,
+        type_id: u64,
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
         let encode = |is_pre_tokenized, subseq_idx, subseq| -> Result<Encoding> {
@@ -609,7 +609,7 @@ where
                 pre_tokenized,
                 type_id,
                 if is_pre_tokenized {
-                    Some(subseq_idx as u32)
+                    Some(subseq_idx as u64)
                 } else {
                     None
                 },
@@ -727,7 +727,7 @@ where
     }
 
     /// Decode the given ids, back to a String
-    pub fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> Result<String> {
+    pub fn decode(&self, ids: Vec<u64>, skip_special_tokens: bool) -> Result<String> {
         let tokens = ids
             .into_iter()
             .filter_map(|id| {
@@ -757,8 +757,8 @@ where
     fn do_tokenize<P: Into<PreTokenizedString>>(
         &self,
         pretokenized: P,
-        type_id: u32,
-        word_idx: Option<u32>,
+        type_id: u64,
+        word_idx: Option<u64>,
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
         let mut pretokenized: PreTokenizedString = pretokenized.into();
@@ -931,7 +931,7 @@ where
     /// Decode all sentences in parallel
     pub fn decode_batch(
         &self,
-        sentences: Vec<Vec<u32>>,
+        sentences: Vec<Vec<u64>>,
         skip_special_tokens: bool,
     ) -> Result<Vec<String>>
     where
@@ -944,7 +944,7 @@ where
     }
 
     /// Train a model and replace our current Model, using the given Trainer
-    fn word_count<MN, T>(&self, trainer: &T, files: Vec<String>) -> Result<HashMap<String, u32>>
+    fn word_count<MN, T>(&self, trainer: &T, files: Vec<String>) -> Result<HashMap<String, u64>>
     where
         T: Trainer<Model = MN> + Sync,
         MN: Model,
@@ -971,7 +971,7 @@ where
         };
         let words = files
             .into_iter()
-            .map(|filename| -> Result<HashMap<String, u32>> {
+            .map(|filename| -> Result<HashMap<String, u64>> {
                 let file = File::open(filename)?;
                 let file = BufReader::with_capacity(max_read, file);
                 // We read new lines using this API instead of the Lines Iterator
@@ -981,7 +981,7 @@ where
                     .maybe_par_bridge()
                     .map_with(
                         &progress,
-                        |progress, line| -> Result<HashMap<String, u32>> {
+                        |progress, line| -> Result<HashMap<String, u64>> {
                             let newline = line?;
                             let b = newline.len();
                             let mut words = HashMap::new();
@@ -1015,7 +1015,7 @@ where
             })
             .try_fold(
                 HashMap::new(),
-                |mut acc, ws| -> Result<HashMap<String, u32>> {
+                |mut acc, ws| -> Result<HashMap<String, u64>> {
                     for (k, v) in ws? {
                         acc.entry(k).and_modify(|c| *c += v).or_insert(v);
                     }

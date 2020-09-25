@@ -145,7 +145,7 @@ pub enum Script {
 }
 
 pub fn get_script(c: char) -> Script {
-    match c as u32 {
+    match c as u64 {
         0x0000..=0x001F => Script::Common,
         0x0020 => Script::Common,
         0x0021..=0x0023 => Script::Common,

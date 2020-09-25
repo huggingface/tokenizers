@@ -119,8 +119,8 @@ fn get_splits(
 
 fn to_encoding(
     pretok: &PreTokenizedString,
-    type_id: u32,
-    word_idx: Option<u32>,
+    type_id: u64,
+    word_idx: Option<u64>,
 ) -> PyResult<PyEncoding> {
     Ok(ToPyResult(
         pretok
@@ -168,7 +168,7 @@ impl PyPreTokenizedString {
     }
 
     #[args(type_id = "0", word_idx = "None")]
-    fn to_encoding(&self, type_id: u32, word_idx: Option<u32>) -> PyResult<PyEncoding> {
+    fn to_encoding(&self, type_id: u64, word_idx: Option<u64>) -> PyResult<PyEncoding> {
         to_encoding(&self.pretok, type_id, word_idx)
     }
 
@@ -234,7 +234,7 @@ impl PyPreTokenizedStringRefMut {
     }
 
     #[args(type_id = "0", word_idx = "None")]
-    fn to_encoding(&self, type_id: u32, word_idx: Option<u32>) -> PyResult<PyEncoding> {
+    fn to_encoding(&self, type_id: u64, word_idx: Option<u64>) -> PyResult<PyEncoding> {
         self.inner
             .map(|pretok| to_encoding(pretok, type_id, word_idx))
             .ok_or_else(PyPreTokenizedStringRefMut::destroyed_error)?

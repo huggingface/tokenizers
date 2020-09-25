@@ -6,8 +6,8 @@ use std::collections::{BinaryHeap, HashMap};
 #[derive(Debug, Eq)]
 struct Merge {
     pos: usize,
-    rank: u32,
-    new_id: u32,
+    rank: u64,
+    new_id: u64,
 }
 
 impl PartialEq for Merge {
@@ -36,7 +36,7 @@ impl Ord for Merge {
 
 #[derive(Debug, Clone, Copy)]
 struct Symbol {
-    c: u32,
+    c: u64,
     prev: isize,
     next: isize,
     len: usize,
@@ -45,7 +45,7 @@ impl Symbol {
     /// Merges the current Symbol with the other one.
     /// In order to update prev/next, we consider Self to be the Symbol on the left,
     /// and other to be the next one on the right.
-    pub fn merge_with(&mut self, other: &Self, new_c: u32) {
+    pub fn merge_with(&mut self, other: &Self, new_c: u64) {
         self.c = new_c;
         self.len += other.len;
         self.next = other.next;
@@ -84,7 +84,7 @@ impl Word {
         }
     }
 
-    pub(super) fn add(&mut self, c: u32, byte_len: usize) {
+    pub(super) fn add(&mut self, c: u64, byte_len: usize) {
         let (prev, next) = {
             let len = self.symbols.len() as isize;
             if let Some(last) = self.symbols.last_mut() {
@@ -103,7 +103,7 @@ impl Word {
         });
     }
 
-    pub(super) fn merge(&mut self, c1: u32, c2: u32, replacement: u32) -> Vec<(Pair, i32)> {
+    pub(super) fn merge(&mut self, c1: u64, c2: u64, replacement: u64) -> Vec<(Pair, i32)> {
         let mut changes: Vec<(Pair, i32)> = vec![];
         let mut i = 0;
         loop {
@@ -147,7 +147,7 @@ impl Word {
         changes
     }
 
-    pub(super) fn merge_all(&mut self, merges: &HashMap<Pair, (u32, u32)>, dropout: Option<f32>) {
+    pub(super) fn merge_all(&mut self, merges: &HashMap<Pair, (u64, u64)>, dropout: Option<f32>) {
         let mut queue = BinaryHeap::with_capacity(self.symbols.len());
         let mut skip = Vec::with_capacity(queue.len());
 
@@ -240,11 +240,11 @@ impl Word {
         self.symbols.retain(|s| s.len != 0);
     }
 
-    pub(super) fn get_chars(&self) -> Vec<u32> {
+    pub(super) fn get_chars(&self) -> Vec<u64> {
         self.symbols.iter().map(|s| s.c).collect()
     }
 
-    pub(super) fn get_chars_iter<'a>(&'a self) -> impl Iterator<Item = u32> + 'a {
+    pub(super) fn get_chars_iter<'a>(&'a self) -> impl Iterator<Item = u64> + 'a {
         self.symbols.iter().map(|s| s.c)
     }
 
@@ -282,10 +282,10 @@ mod tests {
         assert_eq!(
             word.get_chars(),
             &[
-                0u32, // 'h'
-                1u32, // 'e'
-                4u32, // 'll'
-                3u32, // 'o'
+                0u64, // 'h'
+                1u64, // 'e'
+                4u64, // 'll'
+                3u64, // 'o'
             ]
         );
 
@@ -299,10 +299,10 @@ mod tests {
         assert_eq!(
             changes,
             &[
-                ((1u32, 2u32), -1i32), // count for ('e', 'l') should be decreased by 1.
-                ((1u32, 4u32), 1i32),  // count for ('e', 'll') should be increased by 1.
-                ((2u32, 3u32), -1i32), // count for ('l', 'o') should be decreased by 1.
-                ((4u32, 3u32), 1i32),  // count for ('ll', 'o') should be increased by 1.
+                ((1u64, 2u64), -1i32), // count for ('e', 'l') should be decreased by 1.
+                ((1u64, 4u64), 1i32),  // count for ('e', 'll') should be increased by 1.
+                ((2u64, 3u64), -1i32), // count for ('l', 'o') should be decreased by 1.
+                ((4u64, 3u64), 1i32),  // count for ('ll', 'o') should be increased by 1.
             ]
         );
     }

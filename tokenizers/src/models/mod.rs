@@ -19,11 +19,11 @@ use crate::{AddedToken, Model, Result, Token, Trainer};
 /// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
 /// of token ID, smallest to largest.
 struct OrderedVocabIter<'a> {
-    vocab_r: &'a HashMap<u32, String>,
+    vocab_r: &'a HashMap<u64, String>,
 }
 
 impl<'a> OrderedVocabIter<'a> {
-    fn new(vocab_r: &'a HashMap<u32, String>) -> Self {
+    fn new(vocab_r: &'a HashMap<u64, String>) -> Self {
         Self { vocab_r }
     }
 }
@@ -33,7 +33,7 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
     where
         S: Serializer,
     {
-        let iter = (0u32..(self.vocab_r.len() as u32)).map(|i| (&self.vocab_r[&i], i));
+        let iter = (0u64..(self.vocab_r.len() as u64)).map(|i| (&self.vocab_r[&i], i));
         serializer.collect_map(iter)
     }
 }
@@ -63,7 +63,7 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> {
+    fn token_to_id(&self, token: &str) -> Option<u64> {
         use ModelWrapper::*;
         match self {
             WordLevel(t) => t.token_to_id(token),
@@ -73,7 +73,7 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
+    fn id_to_token(&self, id: u64) -> Option<&str> {
         use ModelWrapper::*;
         match self {
             WordLevel(t) => t.id_to_token(id),
@@ -83,7 +83,7 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn get_vocab(&self) -> &HashMap<String, u32> {
+    fn get_vocab(&self) -> &HashMap<String, u64> {
         use ModelWrapper::*;
         match self {
             WordLevel(t) => t.get_vocab(),
@@ -131,7 +131,7 @@ impl Trainer for TrainerWrapper {
         }
     }
 
-    fn train(&self, words: HashMap<String, u32>) -> Result<(Self::Model, Vec<AddedToken>)> {
+    fn train(&self, words: HashMap<String, u64>) -> Result<(Self::Model, Vec<AddedToken>)> {
         match self {
             TrainerWrapper::BpeTrainer(bpe) => bpe.train(words).map(|(m, t)| (m.into(), t)),
             TrainerWrapper::WordPieceTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),
@@ -139,7 +139,7 @@ impl Trainer for TrainerWrapper {
         }
     }
 
-    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
+    fn process_tokens(&self, words: &mut HashMap<String, u64>, tokens: Vec<String>) {
         match self {
             TrainerWrapper::BpeTrainer(bpe) => bpe.process_tokens(words, tokens),
             TrainerWrapper::WordPieceTrainer(wpt) => wpt.process_tokens(words, tokens),

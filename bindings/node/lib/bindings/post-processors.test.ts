@@ -18,7 +18,7 @@ describe("bertProcessing", () => {
 
   it("throws if arguments are malformed", () => {
     expect(() => (bertProcessing as any)(["sep", "1"], ["cls", "2"])).toThrow(
-      'invalid type: string "1", expected u32'
+      'invalid type: string "1", expected u64'
     );
     expect(() => (bertProcessing as any)(["sep"], ["cls"])).toThrow(
       "invalid length 1, expected a tuple of size 2"

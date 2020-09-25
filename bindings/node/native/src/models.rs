@@ -39,15 +39,15 @@ impl tk::Model for Model {
             .tokenize(sequence)
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> {
+    fn token_to_id(&self, token: &str) -> Option<u64> {
         self.model.as_ref()?.token_to_id(token)
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
+    fn id_to_token(&self, id: u64) -> Option<&str> {
         self.model.as_ref()?.id_to_token(id)
     }
 
-    fn get_vocab(&self) -> &HashMap<String, u32> {
+    fn get_vocab(&self) -> &HashMap<String, u64> {
         self.model
             .as_ref()
             .expect("Uninitialized Model")
@@ -132,7 +132,7 @@ impl BpeOptions {
     }
 }
 
-/// bpe_init(vocab: Map<String, u32>, merges: Map<(u32, u32), (u32, u32)>, options: {
+/// bpe_init(vocab: Map<String, u64>, merges: Map<(u64, u64), (u64, u64)>, options: {
 ///   cacheCapacity?: number,
 ///   dropout?: number,
 ///   unkToken?: String,
@@ -221,7 +221,7 @@ impl WordPieceOptions {
     }
 }
 
-/// wordpiece_init(vocab: Map<String, u32>, options: {
+/// wordpiece_init(vocab: Map<String, u64>, options: {
 ///   unkToken?: String = "[UNK]",
 ///   maxInputCharsPerWord?: number = 100,
 ///   continuingSubwordPrefix?: "##",
@@ -236,7 +236,7 @@ pub fn wordpiece_init(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         Err(_) => (WordPieceOptions::default(), cx.argument::<JsFunction>(1)?),
     };
 
-    let vocab = cx.extract::<HashMap<String, u32>>(0)?;
+    let vocab = cx.extract::<HashMap<String, u64>>(0)?;
 
     let mut builder = tk::models::wordpiece::WordPiece::builder().vocab(vocab);
     builder = options.apply_to_wordpiece_builder(builder);

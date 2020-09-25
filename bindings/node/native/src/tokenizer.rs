@@ -337,8 +337,8 @@ pub struct PaddingParamsDef {
     direction: tk::PaddingDirection,
     #[serde(skip_serializing_if = "Option::is_none")]
     pad_to_multiple_of: Option<usize>,
-    pad_id: u32,
-    pad_type_id: u32,
+    pad_id: u64,
+    pad_type_id: u64,
     pad_token: String,
 }
 #[derive(Serialize, Deserialize)]
@@ -556,7 +556,7 @@ declare_types! {
         method decode(mut cx) {
             // decode(ids: number[], skipSpecialTokens: bool, callback)
 
-            let ids = cx.extract_vec::<u32>(0)?;
+            let ids = cx.extract_vec::<u64>(0)?;
             let skip_special_tokens = cx.extract::<bool>(1)?;
             let callback = cx.argument::<JsFunction>(2)?;
 
@@ -574,7 +574,7 @@ declare_types! {
         method decodeBatch(mut cx) {
             // decodeBatch(sequences: number[][], skipSpecialTokens: bool, callback)
 
-            let sentences = cx.extract_vec::<Vec<u32>>(0)?;
+            let sentences = cx.extract_vec::<Vec<u64>>(0)?;
             let skip_special_tokens = cx.extract::<bool>(1)?;
             let callback = cx.argument::<JsFunction>(2)?;
 
@@ -601,7 +601,7 @@ declare_types! {
                 .token_to_id(&token);
 
             if let Some(id) = id {
-                Ok(cx.number(id).upcast())
+                Ok(cx.number(id as f64).upcast())
             } else {
                 Ok(cx.undefined().upcast())
             }
@@ -610,7 +610,7 @@ declare_types! {
         method idToToken(mut cx) {
             // idToToken(id: number): string | undefined
 
-            let id = cx.extract::<u32>(0)?;
+            let id = cx.extract::<u64>(0)?;
 
             let this = cx.this();
             let guard = cx.lock();

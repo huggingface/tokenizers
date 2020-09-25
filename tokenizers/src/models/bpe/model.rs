@@ -12,9 +12,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub type Vocab = HashMap<String, u32>;
-type VocabR = HashMap<u32, String>;
-pub type MergeMap = HashMap<Pair, (u32, u32)>;
+pub type Vocab = HashMap<String, u64>;
+type VocabR = HashMap<u64, String>;
+pub type MergeMap = HashMap<Pair, (u64, u64)>;
 pub type Merges = Vec<(String, String)>;
 
 struct Config {
@@ -140,7 +140,7 @@ impl BpeBuilder {
             .merges
             .into_iter()
             .enumerate()
-            .map(|(i, (a, b))| -> Result<(Pair, (u32, u32))> {
+            .map(|(i, (a, b))| -> Result<(Pair, (u64, u64))> {
                 let a_id = vocab
                     .get(&a)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(a.to_owned()))?;
@@ -151,11 +151,11 @@ impl BpeBuilder {
                 let new_id = vocab
                     .get(&new_token)
                     .ok_or(Error::MergeTokenOutOfVocabulary(new_token))?;
-                Ok(((*a_id, *b_id), (i as u32, *new_id)))
+                Ok(((*a_id, *b_id), (i as u64, *new_id)))
             })
             .collect::<Result<MergeMap>>()?;
 
-        // merges.insert(pair, (rank as u32, *new_id));
+        // merges.insert(pair, (rank as u64, *new_id));
 
         Ok(BPE {
             vocab,
@@ -288,7 +288,7 @@ impl BPE {
             Value::Object(m) => {
                 for (token, id) in m {
                     if let Value::Number(id) = id {
-                        let id = id.as_u64().ok_or(Error::BadVocabulary)? as u32;
+                        let id = id.as_u64().ok_or(Error::BadVocabulary)? as u64;
                         vocab.insert(token, id);
                     }
                 }
@@ -328,7 +328,7 @@ impl BPE {
     fn merge_word(&self, w: &str) -> Result<Word> {
         let mut indices = w.char_indices().map(|(idx, _)| idx).peekable();
         let mut word = Word::with_capacity(w.len());
-        let mut unk: Option<(u32, usize)> = None;
+        let mut unk: Option<(u64, usize)> = None;
         while let Some(i) = indices.next() {
             let (s, byte_len) = if let Some(&end) = indices.peek() {
                 match (i, self.continuing_subword_prefix.as_ref()) {
@@ -410,7 +410,7 @@ impl BPE {
 }
 
 impl Model for BPE {
-    fn get_vocab(&self) -> &HashMap<String, u32> {
+    fn get_vocab(&self) -> &HashMap<String, u64> {
         &self.vocab
     }
 
@@ -431,11 +431,11 @@ impl Model for BPE {
         }
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> {
+    fn token_to_id(&self, token: &str) -> Option<u64> {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
+    fn id_to_token(&self, id: u64) -> Option<&str> {
         self.vocab_r.get(&id).map(String::as_ref)
     }
 
@@ -464,7 +464,7 @@ impl Model for BPE {
             .iter()
             .collect();
         let mut merges_file = File::create(&merges_path)?;
-        let mut merges: Vec<(&Pair, &u32)> = self
+        let mut merges: Vec<(&Pair, &u64)> = self
             .merges
             .iter()
             .map(|(pair, (rank, _))| (pair, rank))
@@ -517,14 +517,14 @@ mod tests {
             .build()
             .unwrap();
         let tokens = bpe.tokenize("c").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
+        assert_eq!(tokens, vec![Token::new(0u64, "<unk>".into(), (0, 1)),]);
 
         let tokens = bpe.tokenize("cc").unwrap();
         assert_eq!(
             tokens,
             vec![
-                Token::new(0u32, "<unk>".into(), (0, 1)),
-                Token::new(0u32, "<unk>".into(), (1, 2)),
+                Token::new(0u64, "<unk>".into(), (0, 1)),
+                Token::new(0u64, "<unk>".into(), (1, 2)),
             ]
         );
 
@@ -532,10 +532,10 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(1u32, "a".into(), (0, 1)),
-                Token::new(0u32, "<unk>".into(), (1, 2)),
-                Token::new(0u32, "<unk>".into(), (2, 3)),
-                Token::new(2u32, "b".into(), (3, 4)),
+                Token::new(1u64, "a".into(), (0, 1)),
+                Token::new(0u64, "<unk>".into(), (1, 2)),
+                Token::new(0u64, "<unk>".into(), (2, 3)),
+                Token::new(2u64, "b".into(), (3, 4)),
             ]
         );
     }
@@ -552,18 +552,18 @@ mod tests {
             .build()
             .unwrap();
         let tokens = bpe.tokenize("c").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
+        assert_eq!(tokens, vec![Token::new(0u64, "<unk>".into(), (0, 1)),]);
 
         let tokens = bpe.tokenize("cc").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 2)),]);
+        assert_eq!(tokens, vec![Token::new(0u64, "<unk>".into(), (0, 2)),]);
 
         let tokens = bpe.tokenize("accb").unwrap();
         assert_eq!(
             tokens,
             vec![
-                Token::new(1u32, "a".into(), (0, 1)),
-                Token::new(0u32, "<unk>".into(), (1, 3)),
-                Token::new(2u32, "b".into(), (3, 4)),
+                Token::new(1u64, "a".into(), (0, 1)),
+                Token::new(0u64, "<unk>".into(), (1, 3)),
+                Token::new(2u64, "b".into(), (3, 4)),
             ]
         );
     }
@@ -609,7 +609,7 @@ mod tests {
 
         // With no dropout:
         let tokens = bpe.tokenize("unrelated").unwrap();
-        assert_eq!(tokens, vec![Token::new(15u32, "unrelated".into(), (0, 9))]);
+        assert_eq!(tokens, vec![Token::new(15u64, "unrelated".into(), (0, 9))]);
 
         // Now set dropout to 1.0. Result should be no merges performed.
         bpe.dropout = Some(1.0);
@@ -617,15 +617,15 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(0u32, "u".into(), (0, 1)),
-                Token::new(1u32, "n".into(), (1, 2)),
-                Token::new(2u32, "r".into(), (2, 3)),
-                Token::new(3u32, "e".into(), (3, 4)),
-                Token::new(4u32, "l".into(), (4, 5)),
-                Token::new(5u32, "a".into(), (5, 6)),
-                Token::new(6u32, "t".into(), (6, 7)),
-                Token::new(3u32, "e".into(), (7, 8)),
-                Token::new(7u32, "d".into(), (8, 9)),
+                Token::new(0u64, "u".into(), (0, 1)),
+                Token::new(1u64, "n".into(), (1, 2)),
+                Token::new(2u64, "r".into(), (2, 3)),
+                Token::new(3u64, "e".into(), (3, 4)),
+                Token::new(4u64, "l".into(), (4, 5)),
+                Token::new(5u64, "a".into(), (5, 6)),
+                Token::new(6u64, "t".into(), (6, 7)),
+                Token::new(3u64, "e".into(), (7, 8)),
+                Token::new(7u64, "d".into(), (8, 9)),
             ]
         );
 
@@ -656,13 +656,13 @@ mod tests {
         let bpe = builder.build().unwrap();
 
         // Check merges.
-        assert_eq!(bpe.merges.get(&(0, 1)).unwrap(), &(0u32, 3u32));
+        assert_eq!(bpe.merges.get(&(0, 1)).unwrap(), &(0u64, 3u64));
 
         // Check vocab.
-        assert_eq!(bpe.vocab.get("a").unwrap(), &0u32);
-        assert_eq!(bpe.vocab.get("b").unwrap(), &1u32);
-        assert_eq!(bpe.vocab.get("c").unwrap(), &2u32);
-        assert_eq!(bpe.vocab.get("ab").unwrap(), &3u32);
+        assert_eq!(bpe.vocab.get("a").unwrap(), &0u64);
+        assert_eq!(bpe.vocab.get("b").unwrap(), &1u64);
+        assert_eq!(bpe.vocab.get("c").unwrap(), &2u64);
+        assert_eq!(bpe.vocab.get("ab").unwrap(), &3u64);
     }
 
     #[test]

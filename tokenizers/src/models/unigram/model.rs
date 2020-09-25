@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
-type TokenMap = HashMap<String, u32>;
+type TokenMap = HashMap<String, u64>;
 type Vocab = Vec<(String, f64)>;
 
 /// A `Unigram` model to encode sentences.
@@ -113,7 +113,7 @@ impl Unigram {
 
         let mut min_score = f64::INFINITY;
         for (id, (token, score)) in vocab.iter().enumerate() {
-            token_to_ids.insert(token.to_string(), id as u32);
+            token_to_ids.insert(token.to_string(), id as u64);
             let bytes: Vec<u8> = token.bytes().collect();
             builder.push(&bytes);
             if score < &min_score {
@@ -398,7 +398,7 @@ impl<'a> Iterator for UnigramIterator<'a> {
 }
 
 impl Model for Unigram {
-    fn get_vocab(&self) -> &HashMap<String, u32> {
+    fn get_vocab(&self) -> &HashMap<String, u64> {
         &self.token_to_ids
     }
 
@@ -412,9 +412,9 @@ impl Model for Unigram {
         Ok(tokens
             .iter()
             .map(|string| {
-                let id: u32 = match self.token_to_ids.get(string) {
+                let id: u64 = match self.token_to_ids.get(string) {
                     Some(id) => *id,
-                    None => self.unk_id as u32,
+                    None => self.unk_id as u64,
                 };
                 let len = string.len();
                 let offsets = (offset, offset + len);
@@ -424,11 +424,11 @@ impl Model for Unigram {
             .collect())
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> {
+    fn token_to_id(&self, token: &str) -> Option<u64> {
         self.token_to_ids.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
+    fn id_to_token(&self, id: u64) -> Option<&str> {
         match self.vocab.get(id as usize) {
             Some(item) => Some(&item.0),
             None => None,

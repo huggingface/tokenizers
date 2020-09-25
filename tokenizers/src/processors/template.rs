@@ -71,7 +71,7 @@ use std::collections::{HashMap, HashSet};
 ///
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Piece {
-    Sequence { type_id: u32 },
+    Sequence { type_id: u64 },
     SpecialToken { id: String },
 }
 
@@ -125,16 +125,16 @@ pub struct SpecialToken {
     /// A unique id used to identify this SpecialToken in the template
     id: String,
     /// The list of associated ids
-    ids: Vec<u32>,
+    ids: Vec<u64>,
     /// The list of type_ids. If provided, it will override the default
     /// `type_id` of the sequence.
-    type_ids: Vec<Option<u32>>,
+    type_ids: Vec<Option<u64>>,
     /// The list of associated tokens
     tokens: Vec<String>,
 }
 
-impl From<(String, u32)> for SpecialToken {
-    fn from(v: (String, u32)) -> Self {
+impl From<(String, u64)> for SpecialToken {
+    fn from(v: (String, u64)) -> Self {
         Self {
             id: v.0.clone(),
             ids: vec![v.1],
@@ -143,18 +143,18 @@ impl From<(String, u32)> for SpecialToken {
         }
     }
 }
-impl From<(&str, u32)> for SpecialToken {
-    fn from(v: (&str, u32)) -> Self {
+impl From<(&str, u64)> for SpecialToken {
+    fn from(v: (&str, u64)) -> Self {
         Self::from((v.0.to_owned(), v.1))
     }
 }
-impl From<(u32, String)> for SpecialToken {
-    fn from(v: (u32, String)) -> Self {
+impl From<(u64, String)> for SpecialToken {
+    fn from(v: (u64, String)) -> Self {
         Self::from((v.1, v.0))
     }
 }
-impl From<(u32, &str)> for SpecialToken {
-    fn from(v: (u32, &str)) -> Self {
+impl From<(u64, &str)> for SpecialToken {
+    fn from(v: (u64, &str)) -> Self {
         Self::from((v.1.to_owned(), v.0))
     }
 }
@@ -162,8 +162,8 @@ impl From<(u32, &str)> for SpecialToken {
 impl SpecialToken {
     pub fn new(
         id: String,
-        ids: Vec<u32>,
-        type_ids: Vec<Option<u32>>,
+        ids: Vec<u64>,
+        type_ids: Vec<Option<u64>>,
         tokens: Vec<String>,
     ) -> Result<Self> {
         if ids.len() != type_ids.len() || ids.len() != tokens.len() {
@@ -322,7 +322,7 @@ fn count_added(container: &Template, special_tokens: Option<&Tokens>) -> usize {
 }
 
 impl TemplateProcessingBuilder {
-    fn default_seq(&self, type_id: u32) -> Template {
+    fn default_seq(&self, type_id: u64) -> Template {
         Template(vec![Piece::Sequence { type_id }])
     }
 

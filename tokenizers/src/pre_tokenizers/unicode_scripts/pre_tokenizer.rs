@@ -23,7 +23,7 @@ impl Default for UnicodeScripts {
 // I am guessing release mode will optimize this away anyway.
 fn fixed_script(c: char) -> Script {
     let raw_script = get_script(c);
-    if c as u32 == 0x30FC {
+    if c as u64 == 0x30FC {
         Script::Han
     } else if c == ' ' {
         Script::Any

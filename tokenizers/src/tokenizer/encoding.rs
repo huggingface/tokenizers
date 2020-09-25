@@ -7,32 +7,32 @@ use serde::{Deserialize, Serialize};
 #[derive(Default, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct Encoding {
     /// IDs produced by the `Tokenizer`
-    ids: Vec<u32>,
+    ids: Vec<u64>,
     /// Type of the IDs
-    type_ids: Vec<u32>,
+    type_ids: Vec<u64>,
     /// Tokens associated to each ID
     tokens: Vec<String>,
     /// Indice of the word associated to each token/ID
-    words: Vec<Option<u32>>,
+    words: Vec<Option<u64>>,
     /// Offsets of the token/ID from the NormalizedString
     offsets: Vec<Offsets>,
     /// Mask identifying special tokens
-    special_tokens_mask: Vec<u32>,
+    special_tokens_mask: Vec<u64>,
     /// Mask identifying padding tokens for the attention mechanism
-    attention_mask: Vec<u32>,
+    attention_mask: Vec<u64>,
     /// A list of overflowing Encoding generated when we got truncated
     overflowing: Vec<Encoding>,
 }
 impl Encoding {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        ids: Vec<u32>,
-        type_ids: Vec<u32>,
+        ids: Vec<u64>,
+        type_ids: Vec<u64>,
         tokens: Vec<String>,
-        words: Vec<Option<u32>>,
+        words: Vec<Option<u64>>,
         offsets: Vec<Offsets>,
-        special_tokens_mask: Vec<u32>,
-        attention_mask: Vec<u32>,
+        special_tokens_mask: Vec<u64>,
+        attention_mask: Vec<u64>,
         overflowing: Vec<Encoding>,
     ) -> Self {
         Encoding {
@@ -60,7 +60,7 @@ impl Encoding {
         }
     }
 
-    pub fn from_tokens(tokens: Vec<Token>, type_id: u32) -> Self {
+    pub fn from_tokens(tokens: Vec<Token>, type_id: u64) -> Self {
         let length = tokens.len();
         let (ids, tokens, offsets) = tokens.into_iter().fold(
             (
@@ -100,19 +100,19 @@ impl Encoding {
         &self.tokens[..]
     }
 
-    pub fn get_words(&self) -> &[Option<u32>] {
+    pub fn get_words(&self) -> &[Option<u64>] {
         &self.words
     }
 
-    pub fn get_words_mut(&mut self) -> &mut [Option<u32>] {
+    pub fn get_words_mut(&mut self) -> &mut [Option<u64>] {
         &mut self.words
     }
 
-    pub fn get_ids(&self) -> &[u32] {
+    pub fn get_ids(&self) -> &[u64] {
         &self.ids
     }
 
-    pub fn get_type_ids(&self) -> &[u32] {
+    pub fn get_type_ids(&self) -> &[u64] {
         &self.type_ids
     }
 
@@ -124,11 +124,11 @@ impl Encoding {
         &mut self.offsets
     }
 
-    pub fn get_special_tokens_mask(&self) -> &[u32] {
+    pub fn get_special_tokens_mask(&self) -> &[u64] {
         &self.special_tokens_mask
     }
 
-    pub fn get_attention_mask(&self) -> &[u32] {
+    pub fn get_attention_mask(&self) -> &[u64] {
         &self.attention_mask
     }
 
@@ -146,7 +146,7 @@ impl Encoding {
 
     /// Get the encoded tokens corresponding to the word at the given index in the input sequence,
     /// with the form (start_token, end_token + 1)
-    pub fn word_to_tokens(&self, word: u32) -> Option<(usize, usize)> {
+    pub fn word_to_tokens(&self, word: u64) -> Option<(usize, usize)> {
         let (mut start, mut end) = (None, None);
         self.words
             .iter()
@@ -170,7 +170,7 @@ impl Encoding {
     }
 
     /// Get the offsets of the word at the given index in the input sequence.
-    pub fn word_to_chars(&self, word: u32) -> Option<Offsets> {
+    pub fn word_to_chars(&self, word: u64) -> Option<Offsets> {
         self.word_to_tokens(word)
             .map(|(start, end)| {
                 if end == 0 {
@@ -188,7 +188,7 @@ impl Encoding {
     }
 
     /// Get the word that contains the token at the given index.
-    pub fn token_to_word(&self, token: usize) -> Option<u32> {
+    pub fn token_to_word(&self, token: usize) -> Option<u64> {
         self.words.get(token).copied().flatten()
     }
 
@@ -200,7 +200,7 @@ impl Encoding {
     }
 
     /// Get the word that contains the given char.
-    pub fn char_to_word(&self, pos: usize) -> Option<u32> {
+    pub fn char_to_word(&self, pos: usize) -> Option<u64> {
         self.char_to_token(pos)
             .map(|token| self.token_to_word(token))
             .flatten()
@@ -353,8 +353,8 @@ impl Encoding {
     pub fn pad(
         &mut self,
         target_length: usize,
-        pad_id: u32,
-        pad_type_id: u32,
+        pad_id: u64,
+        pad_type_id: u64,
         pad_token: &str,
         direction: PaddingDirection,
     ) {
@@ -421,8 +421,8 @@ impl std::iter::FromIterator<Encoding> for Encoding {
     }
 }
 
-impl std::iter::FromIterator<(u32, String, (usize, usize), Option<u32>, u32)> for Encoding {
-    fn from_iter<I: IntoIterator<Item = (u32, String, (usize, usize), Option<u32>, u32)>>(
+impl std::iter::FromIterator<(u64, String, (usize, usize), Option<u64>, u64)> for Encoding {
+    fn from_iter<I: IntoIterator<Item = (u64, String, (usize, usize), Option<u64>, u64)>>(
         iter: I,
     ) -> Self {
         let items = iter.into_iter();

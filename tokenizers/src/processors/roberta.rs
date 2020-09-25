@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RobertaProcessing {
-    sep: (String, u32),
-    cls: (String, u32),
+    sep: (String, u64),
+    cls: (String, u64),
     trim_offsets: bool,
     add_prefix_space: bool,
 }
@@ -23,7 +23,7 @@ impl Default for RobertaProcessing {
 }
 
 impl RobertaProcessing {
-    pub fn new(sep: (String, u32), cls: (String, u32)) -> Self {
+    pub fn new(sep: (String, u64), cls: (String, u64)) -> Self {
         RobertaProcessing {
             sep,
             cls,
@@ -85,7 +85,7 @@ impl PostProcessor for RobertaProcessing {
         .concat();
         let words = [&[None], &encoding.get_words()[..], &[None]].concat();
         let offsets = [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
-        let special_tokens = [&[1u32], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
+        let special_tokens = [&[1u64], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
         let attention_mask = vec![1; ids.len()];
 
         let mut new_encoding = Encoding::new(
@@ -111,7 +111,7 @@ impl PostProcessor for RobertaProcessing {
                     let words = [&[None], &encoding.get_words()[..], &[None]].concat();
                     let offsets = [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
                     let special_tokens =
-                        [&[1u32], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
+                        [&[1u64], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
                     let attention_mask = vec![1; ids.len()];
 
                     Encoding::new(
@@ -140,7 +140,7 @@ impl PostProcessor for RobertaProcessing {
             let pair_words = [&[None], &encoding.get_words()[..], &[None]].concat();
             let pair_offsets = [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
             let pair_special_tokens =
-                [&[1], &vec![0u32; encoding.get_type_ids().len()][..], &[1]].concat();
+                [&[1], &vec![0u64; encoding.get_type_ids().len()][..], &[1]].concat();
             let pair_attention_mask = vec![1; pair_ids.len()];
 
             let new_pair_encoding = Encoding::new(
@@ -168,7 +168,7 @@ impl PostProcessor for RobertaProcessing {
                         let pair_offsets =
                             [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
                         let pair_special_tokens =
-                            [&[1], &vec![0u32; encoding.get_type_ids().len()][..], &[1]].concat();
+                            [&[1], &vec![0u64; encoding.get_type_ids().len()][..], &[1]].concat();
                         let pair_attention_mask = vec![1; pair_ids.len()];
 
                         Encoding::new(

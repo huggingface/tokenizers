@@ -25,7 +25,7 @@ impl tk::Trainer for Trainer {
             .should_show_progress()
     }
 
-    fn train(&self, words: HashMap<String, u32>) -> tk::Result<(Self::Model, Vec<tk::AddedToken>)> {
+    fn train(&self, words: HashMap<String, u64>) -> tk::Result<(Self::Model, Vec<tk::AddedToken>)> {
         let (model, special_tokens) = self
             .trainer
             .as_ref()
@@ -35,7 +35,7 @@ impl tk::Trainer for Trainer {
         Ok((model.into(), special_tokens))
     }
 
-    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
+    fn process_tokens(&self, words: &mut HashMap<String, u64>, tokens: Vec<String>) {
         self.trainer
             .as_ref()
             .expect("Uninitialized Trainer")

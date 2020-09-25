@@ -113,7 +113,7 @@ pub struct PyBertProcessing {}
 #[pymethods]
 impl PyBertProcessing {
     #[new]
-    fn new(sep: (String, u32), cls: (String, u32)) -> PyResult<(Self, PyPostProcessor)> {
+    fn new(sep: (String, u64), cls: (String, u64)) -> PyResult<(Self, PyPostProcessor)> {
         Ok((
             PyBertProcessing {},
             PyPostProcessor::new(Arc::new(BertProcessing::new(sep, cls).into())),
@@ -132,8 +132,8 @@ impl PyRobertaProcessing {
     #[new]
     #[args(trim_offsets = true, add_prefix_space = true)]
     fn new(
-        sep: (String, u32),
-        cls: (String, u32),
+        sep: (String, u64),
+        cls: (String, u64),
         trim_offsets: bool,
         add_prefix_space: bool,
     ) -> PyResult<(Self, PyPostProcessor)> {
@@ -187,9 +187,9 @@ impl From<PySpecialToken> for SpecialToken {
 
 impl FromPyObject<'_> for PySpecialToken {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        if let Ok(v) = ob.extract::<(String, u32)>() {
+        if let Ok(v) = ob.extract::<(String, u64)>() {
             Ok(Self(v.into()))
-        } else if let Ok(v) = ob.extract::<(u32, String)>() {
+        } else if let Ok(v) = ob.extract::<(u64, String)>() {
             Ok(Self(v.into()))
         } else if let Ok(d) = ob.downcast::<PyDict>() {
             let id = d
@@ -199,10 +199,10 @@ impl FromPyObject<'_> for PySpecialToken {
             let ids = d
                 .get_item("ids")
                 .ok_or_else(|| exceptions::PyValueError::new_err("`ids` must be specified"))?
-                .extract::<Vec<u32>>()?;
+                .extract::<Vec<u64>>()?;
             let type_ids = d.get_item("type_ids").map_or_else(
                 || Ok(vec![None; ids.len()]),
-                |v| v.extract::<Vec<Option<u32>>>(),
+                |v| v.extract::<Vec<Option<u64>>>(),
             )?;
             let tokens = d
                 .get_item("tokens")

@@ -82,7 +82,7 @@ impl PyEncoding {
     }
 
     #[getter]
-    fn get_ids(&self) -> Vec<u32> {
+    fn get_ids(&self) -> Vec<u64> {
         self.encoding.get_ids().to_vec()
     }
 
@@ -92,12 +92,12 @@ impl PyEncoding {
     }
 
     #[getter]
-    fn get_words(&self) -> Vec<Option<u32>> {
+    fn get_words(&self) -> Vec<Option<u64>> {
         self.encoding.get_words().to_vec()
     }
 
     #[getter]
-    fn get_type_ids(&self) -> Vec<u32> {
+    fn get_type_ids(&self) -> Vec<u64> {
         self.encoding.get_type_ids().to_vec()
     }
 
@@ -107,12 +107,12 @@ impl PyEncoding {
     }
 
     #[getter]
-    fn get_special_tokens_mask(&self) -> Vec<u32> {
+    fn get_special_tokens_mask(&self) -> Vec<u64> {
         self.encoding.get_special_tokens_mask().to_vec()
     }
 
     #[getter]
-    fn get_attention_mask(&self) -> Vec<u32> {
+    fn get_attention_mask(&self) -> Vec<u64> {
         self.encoding.get_attention_mask().to_vec()
     }
 
@@ -126,11 +126,11 @@ impl PyEncoding {
             .collect()
     }
 
-    fn word_to_tokens(&self, word_index: u32) -> Option<(usize, usize)> {
+    fn word_to_tokens(&self, word_index: u64) -> Option<(usize, usize)> {
         self.encoding.word_to_tokens(word_index)
     }
 
-    fn word_to_chars(&self, word_index: u32) -> Option<Offsets> {
+    fn word_to_chars(&self, word_index: u64) -> Option<Offsets> {
         self.encoding.word_to_chars(word_index)
     }
 
@@ -138,7 +138,7 @@ impl PyEncoding {
         self.encoding.token_to_chars(token_index)
     }
 
-    fn token_to_word(&self, token_index: usize) -> Option<u32> {
+    fn token_to_word(&self, token_index: usize) -> Option<u64> {
         self.encoding.token_to_word(token_index)
     }
 
@@ -146,7 +146,7 @@ impl PyEncoding {
         self.encoding.char_to_token(char_pos)
     }
 
-    fn char_to_word(&self, char_pos: usize) -> Option<u32> {
+    fn char_to_word(&self, char_pos: usize) -> Option<u64> {
         self.encoding.char_to_word(char_pos)
     }
 

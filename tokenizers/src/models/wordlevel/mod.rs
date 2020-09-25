@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 mod serialization;
 
-type Vocab = HashMap<String, u32>;
+type Vocab = HashMap<String, u64>;
 
 #[derive(Debug)]
 pub enum Error {
@@ -31,7 +31,7 @@ impl fmt::Display for Error {
 }
 
 struct Config {
-    vocab: HashMap<String, u32>,
+    vocab: HashMap<String, u64>,
     unk_token: String,
 }
 
@@ -59,7 +59,7 @@ impl WordLevelBuilder {
     }
 
     /// Set the vocab (token -> ID) mapping.
-    pub fn vocab(mut self, vocab: HashMap<String, u32>) -> Self {
+    pub fn vocab(mut self, vocab: HashMap<String, u64>) -> Self {
         self.config.vocab = vocab;
         self
     }
@@ -88,8 +88,8 @@ impl WordLevelBuilder {
 
 #[derive(PartialEq, Clone)]
 pub struct WordLevel {
-    vocab: HashMap<String, u32>,
-    vocab_r: HashMap<u32, String>,
+    vocab: HashMap<String, u64>,
+    vocab_r: HashMap<u64, String>,
     unk_token: String,
 }
 
@@ -120,7 +120,7 @@ impl WordLevel {
             Value::Object(m) => {
                 for (token, id) in m {
                     if let Value::Number(id) = id {
-                        let id = id.as_u64().ok_or(Error::BadVocabulary)? as u32;
+                        let id = id.as_u64().ok_or(Error::BadVocabulary)? as u64;
                         vocab.insert(token, id);
                     }
                 }
@@ -160,15 +160,15 @@ impl Model for WordLevel {
         }])
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> {
+    fn token_to_id(&self, token: &str) -> Option<u64> {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
+    fn id_to_token(&self, id: u64) -> Option<&str> {
         self.vocab_r.get(&id).map(String::as_ref)
     }
 
-    fn get_vocab(&self) -> &HashMap<String, u32> {
+    fn get_vocab(&self) -> &HashMap<String, u64> {
         &self.vocab
     }
 

@@ -459,7 +459,7 @@ impl PyTokenizer {
     }
 
     #[args(with_added_tokens = true)]
-    fn get_vocab(&self, with_added_tokens: bool) -> PyResult<HashMap<String, u32>> {
+    fn get_vocab(&self, with_added_tokens: bool) -> PyResult<HashMap<String, u64>> {
         Ok(self.tokenizer.get_vocab(with_added_tokens))
     }
 
@@ -679,7 +679,7 @@ impl PyTokenizer {
         })
     }
 
-    fn decode(&self, ids: Vec<u32>, skip_special_tokens: Option<bool>) -> PyResult<String> {
+    fn decode(&self, ids: Vec<u64>, skip_special_tokens: Option<bool>) -> PyResult<String> {
         ToPyResult(
             self.tokenizer
                 .decode(ids, skip_special_tokens.unwrap_or(true)),
@@ -689,7 +689,7 @@ impl PyTokenizer {
 
     fn decode_batch(
         &self,
-        sentences: Vec<Vec<u32>>,
+        sentences: Vec<Vec<u64>>,
         skip_special_tokens: Option<bool>,
     ) -> PyResult<Vec<String>> {
         let gil = Python::acquire_gil();
@@ -702,11 +702,11 @@ impl PyTokenizer {
         })
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> {
+    fn token_to_id(&self, token: &str) -> Option<u64> {
         self.tokenizer.token_to_id(token)
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
+    fn id_to_token(&self, id: u64) -> Option<&str> {
         self.tokenizer.id_to_token(id)
     }
 

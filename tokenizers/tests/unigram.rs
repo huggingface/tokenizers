@@ -70,7 +70,7 @@ fn test_sample() {
         }
 
         let n_trials = 1_000;
-        let mut freq: HashMap<String, u32> = HashMap::new();
+        let mut freq: HashMap<String, u64> = HashMap::new();
         for _ in 0..n_trials {
             let string = lattice.sample_token(theta).join(" ");
             *freq.entry(string).or_insert(0) += 1;

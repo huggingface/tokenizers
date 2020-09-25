@@ -23,8 +23,8 @@ pub struct PaddingParams {
     pub strategy: PaddingStrategy,
     pub direction: PaddingDirection,
     pub pad_to_multiple_of: Option<usize>,
-    pub pad_id: u32,
-    pub pad_type_id: u32,
+    pub pad_id: u64,
+    pub pad_type_id: u64,
     pub pad_token: String,
 }
 

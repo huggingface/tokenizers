@@ -87,8 +87,8 @@ impl Task for EncodeTask<'static> {
 }
 
 pub enum DecodeTask {
-    Single(Tokenizer, Vec<u32>, bool),
-    Batch(Tokenizer, Vec<Vec<u32>>, bool),
+    Single(Tokenizer, Vec<u64>, bool),
+    Batch(Tokenizer, Vec<Vec<u64>>, bool),
 }
 
 pub enum DecodeOutput {

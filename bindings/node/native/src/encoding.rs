@@ -147,7 +147,7 @@ declare_types! {
         method wordToTokens(mut cx) {
             // wordToTokens(word: number): [number, number] | undefined
 
-            let word = cx.extract::<u32>(0)?;
+            let word = cx.extract::<u64>(0)?;
 
             let this = cx.this();
             let guard = cx.lock();
@@ -166,7 +166,7 @@ declare_types! {
         method wordToChars(mut cx) {
             // wordToChars(word: number): [number, number] | undefined
 
-            let word = cx.argument::<JsNumber>(0)?.value() as u32;
+            let word = cx.argument::<JsNumber>(0)?.value() as u64;
 
             let this = cx.this();
             let guard = cx.lock();

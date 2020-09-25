@@ -4,12 +4,12 @@ use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct BertProcessing {
-    sep: (String, u32),
-    cls: (String, u32),
+    sep: (String, u64),
+    cls: (String, u64),
 }
 
 impl BertProcessing {
-    pub fn new(sep: (String, u32), cls: (String, u32)) -> Self {
+    pub fn new(sep: (String, u64), cls: (String, u64)) -> Self {
         BertProcessing { sep, cls }
     }
 }
@@ -43,7 +43,7 @@ impl PostProcessor for BertProcessing {
         .concat();
         let words = [&[None], &encoding.get_words()[..], &[None]].concat();
         let offsets = [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
-        let special_tokens = [&[1u32], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
+        let special_tokens = [&[1u64], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
         let attention_mask = vec![1; ids.len()];
 
         let mut new_encoding = Encoding::new(
@@ -69,7 +69,7 @@ impl PostProcessor for BertProcessing {
                     let words = [&[None], &encoding.get_words()[..], &[None]].concat();
                     let offsets = [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
                     let special_tokens =
-                        [&[1u32], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
+                        [&[1u64], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
                     let attention_mask = vec![1; ids.len()];
 
                     Encoding::new(
@@ -93,7 +93,7 @@ impl PostProcessor for BertProcessing {
             let pair_words = [&encoding.get_words()[..], &[None]].concat();
             let pair_offsets = [&encoding.get_offsets()[..], &[(0, 0)]].concat();
             let pair_special_tokens =
-                [&vec![0u32; encoding.get_type_ids().len()][..], &[1]].concat();
+                [&vec![0u64; encoding.get_type_ids().len()][..], &[1]].concat();
             let pair_attention_mask = vec![1; pair_ids.len()];
 
             let new_pair_encoding = Encoding::new(
@@ -115,7 +115,7 @@ impl PostProcessor for BertProcessing {
                         let pair_words = [&encoding.get_words()[..], &[None]].concat();
                         let pair_offsets = [&encoding.get_offsets()[..], &[(0, 0)]].concat();
                         let pair_special_tokens =
-                            [&vec![0u32; encoding.get_type_ids().len()][..], &[1]].concat();
+                            [&vec![0u64; encoding.get_type_ids().len()][..], &[1]].concat();
                         let pair_attention_mask = vec![1; pair_ids.len()];
 
                         Encoding::new(

@@ -134,8 +134,8 @@ impl PreTokenizedString {
     /// This method will fail if some splits do not have associated `Token`.
     pub fn into_encoding(
         self,
-        word_idx: Option<u32>,
-        type_id: u32,
+        word_idx: Option<u64>,
+        type_id: u64,
         offset_type: OffsetType,
     ) -> Result<Encoding> {
         if self.splits.is_empty() {
@@ -176,7 +176,7 @@ impl PreTokenizedString {
                             if word_idx.is_some() {
                                 word_idx
                             } else {
-                                Some(idx as u32)
+                                Some(idx as u64)
                             },
                             type_id,
                         )

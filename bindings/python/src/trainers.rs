@@ -29,14 +29,14 @@ impl Trainer for PyTrainer {
         self.trainer.should_show_progress()
     }
 
-    fn train(&self, words: HashMap<String, u32>) -> tk::Result<(PyModel, Vec<tk::AddedToken>)> {
+    fn train(&self, words: HashMap<String, u64>) -> tk::Result<(PyModel, Vec<tk::AddedToken>)> {
         self.trainer.train(words).map(|(m, t)| {
             let m = PyModel { model: Arc::new(m) };
             (m, t)
         })
     }
 
-    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
+    fn process_tokens(&self, words: &mut HashMap<String, u64>, tokens: Vec<String>) {
         self.trainer.process_tokens(words, tokens)
     }
 }
