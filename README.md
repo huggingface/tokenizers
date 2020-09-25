@@ -41,13 +41,10 @@ Start using in a matter of seconds:
 
 ```python
 # Tokenizers provides ultra-fast implementations of most current tokenizers:
->>> from tokenizers import (ByteLevelBPETokenizer,
-                            CharBPETokenizer,
-                            SentencePieceBPETokenizer,
-                            BertWordPieceTokenizer)
+>>> from tokenizers import Tokenizer
 # Ultra-fast => they can encode 1GB of text in ~20sec on a standard server's CPU
 # Tokenizers can be easily instantiated from standard files
->>> tokenizer = BertWordPieceTokenizer("bert-base-uncased-vocab.txt", lowercase=True)
+>>> tokenizer = Tokenizer.from_file("bert-base-uncased-vocab.json")
 Tokenizer(vocabulary_size=30522, model=BertWordPiece, add_special_tokens=True, unk_token=[UNK], 
           sep_token=[SEP], cls_token=[CLS], clean_text=True, handle_chinese_chars=True, 
           strip_accents=True, lowercase=True, wordpieces_prefix=##)
@@ -70,12 +67,26 @@ And training a new vocabulary is just as easy:
 
 ```python
 # You can also train a BPE/Byte-levelBPE/WordPiece vocabulary on your own files
->>> tokenizer = ByteLevelBPETokenizer()
+>>> unk_token = "[UNK]"
+>>> replacement = "▁"
+>>> add_prefix_space = True
+
+>>> tokenizer = Tokenizer(BPE(unk_token=unk_token))
+>>> tokenizer.normalizer = NFKC()
+>>> tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(
+        replacement=replacement, add_prefix_space=add_prefix_space
+    )
+>>> tokenizer.decoder = decoders.Metaspace(
+        replacement=replacement, add_prefix_space=add_prefix_space
+    )
+>>> tokenizer.add_special_tokens([unk_token])
 >>> tokenizer.train(["wiki.test.raw"], vocab_size=20000)
 [00:00:00] Tokenize words                 ████████████████████████████████████████   20993/20993
 [00:00:00] Count pairs                    ████████████████████████████████████████   20993/20993
 [00:00:03] Compute merges                 ████████████████████████████████████████   19375/19375
 ```
+
+You can check the guide [to build your own tokenizer](...)
  
 ## Contributors
   
