@@ -118,7 +118,7 @@ All of these can be used and trained as explained above!
 
 Whenever these provided tokenizers don't give you enough freedom, you can build your own tokenizer,
 by putting all the different parts you need together.
-You can how we implemented the [provided tokenizers](https://github.com/huggingface/tokenizers/tree/master/bindings/python/tokenizers/implementations) and adapt them easily to your own needs.
+You can check how we implemented the [provided tokenizers](https://github.com/huggingface/tokenizers/tree/master/bindings/python/py_src/tokenizers/implementations) and adapt them easily to your own needs.
 
 #### Building a byte-level BPE
 
