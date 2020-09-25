@@ -10,7 +10,8 @@ Cargo.lock
 /data
 tokenizers/data
 bindings/python/tests/data
-/docs
+docs/build/
+docs/make.bat
 
 __pycache__
 pip-wheel-metadata
