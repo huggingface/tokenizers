@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-empty-function */
+/*eslint-disable no-undef*/
 
 const {
   Tokenizer,
@@ -10,11 +9,11 @@ const {
   decoders,
   trainers,
   AddedToken,
-} = await import("tokenizers");
+} = require("tokenizers");
 
 describe("trainExample", () => {
   it("", () => {
-    const vocab_size = 100;
+    const vocabSize = 100;
 
     const tokenizer = new Tokenizer(models.BPE.empty());
     tokenizer.normalizer = normalizers.sequenceNormalizer([
@@ -26,16 +25,16 @@ describe("trainExample", () => {
     tokenizer.decoder = decoders.byteLevelDecoder();
 
     const trainer = trainers.bpeTrainer({
-      vocab_size,
-      min_frequency: 0,
-      special_tokens: [
+      vocabSize,
+      minFrequency: 0,
+      specialTokens: [
         new AddedToken("<s>", true),
         new AddedToken("<pad>", true),
         new AddedToken("</s>", true),
         new AddedToken("<unk>", true),
         new AddedToken("<mask>", true),
       ],
-      show_progress: true,
+      showProgress: false,
     });
 
     tokenizer.train(trainer, ["data/small.txt"]);
