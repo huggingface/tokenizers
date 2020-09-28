@@ -1,7 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-empty-function */
-
-const tokenizers = await import("tokenizers");
+/*eslint-disable no-undef*/
+const tokenizers = require("tokenizers");
 
 describe("loadExample", () => {
   it("", () => {
