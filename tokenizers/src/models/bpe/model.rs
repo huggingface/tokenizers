@@ -135,6 +135,11 @@ impl BpeBuilder {
         };
 
         let vocab = self.config.vocab;
+        let prefix_len = if let Some(prefix) = &self.config.continuing_subword_prefix {
+            prefix.len()
+        } else {
+            0
+        };
         let merge_map: MergeMap = self
             .config
             .merges
@@ -147,7 +152,7 @@ impl BpeBuilder {
                 let b_id = vocab
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
-                let new_token = format!("{}{}", a, b);
+                let new_token = format!("{}{}", a, &b[prefix_len..]);
                 let new_id = vocab
                     .get(&new_token)
                     .ok_or(Error::MergeTokenOutOfVocabulary(new_token))?;
@@ -663,6 +668,27 @@ mod tests {
         assert_eq!(bpe.vocab.get("b").unwrap(), &1u32);
         assert_eq!(bpe.vocab.get("c").unwrap(), &2u32);
         assert_eq!(bpe.vocab.get("ab").unwrap(), &3u32);
+    }
+
+    #[test]
+    // Ensure `BPE::from_file` works as expected.
+    fn test_bpe_with_continuing_subword_prefix() {
+        let vocab: Vocab = vec![
+            ("a".to_string(), 0),
+            ("##b".to_string(), 1),
+            ("##c".to_string(), 2),
+            ("ab".to_string(), 3),
+        ]
+        .into_iter()
+        .collect();
+
+        let merges = vec![("a".to_string(), "##b".to_string())];
+
+        BPE::builder()
+            .vocab_and_merges(vocab, merges)
+            .continuing_subword_prefix("##".to_string())
+            .build()
+            .unwrap();
     }
 
     #[test]
