@@ -11,19 +11,27 @@
 //! sequences. The final result looks like this:
 //! - Single sequence: `[CLS] Hello there [SEP]`
 //! - Pair sequences: `[CLS] My name is Anthony [SEP] What is my name? [SEP]`
+//! With the type ids as following:
+//! ```markdown
+//! [CLS]   ...   [SEP]   ...   [SEP]
+//!   0      0      0      1      1
+//! ```
 //!
 //! So, we can define a [`TemplateProcessing`] that will achieve this result:
 //! ```
 //! # use tokenizers::processors::template::TemplateProcessing;
 //! let template = TemplateProcessing::builder()
-//!     // The first sequence has `[CLS]` first, the input, `[SEP]` at the end
-//!     .sequence_a(vec!["[CLS]", "$0", "[SEP]"])
+//!     // The template when we only have a single sequence:
+//!     .try_single(vec!["[CLS]", "$0", "[SEP]"]).unwrap()
 //!     // Same as:
-//!     .sequence_a("[CLS] $0 [SEP]")
+//!     .try_single("[CLS] $0 [SEP]").unwrap()
 //!
-//!     // The pair sequence just has `[SEP]` at the end
-//!     .sequence_b(vec!["$1", "[SEP]"])
-//!     .sequence_b("$1 [SEP]")
+//!     // The template when we have both sequences:
+//!     .try_pair(vec!["[CLS]:0", "$A:0", "[SEP]:0", "$B:1", "[SEP]:1"]).unwrap()
+//!     // Same as:
+//!     .try_pair("[CLS]:0 $A:0 [SEP]:0 $B:1 [SEP]:1").unwrap()
+//!     // Or:
+//!     .try_pair("[CLS] $0 [SEP] $B:1 [SEP]:1").unwrap()
 //!
 //!     // The list of special tokens used by each sequences
 //!     .special_tokens(vec![("[CLS]", 1), ("[SEP]", 0)])
@@ -31,12 +39,14 @@
 //!     .unwrap();
 //! ```
 //!
-//! In this example, `$0` and `$1` both represent the input sequences. The number in this
-//! identifier is actually the default `type_id` that will be used for each sequence. So,
-//! in this case, the first sequence will use `0`, while the pair sequence will use `1`.
+//! In this example, each input sequence is identified using a `$` construct. This identifier
+//! lets us specify each input sequence, and the type_id to use. When nothing is specified,
+//! it uses the default values. Here are the different ways to specify it:
+//! - Specifying the sequence, with default `type_id == 0`: `$A` or `$B`
+//! - Specifying the `type_id` with default `sequence == A`: `$0`, `$1`, `$2`, ...
+//! - Specifying both: `$A:0`, `$B:1`, ...
 //!
-//! Note that we are saying the "default" `type_id` because each `SpecialToken` can define
-//! its own `type_id` which would override the provided default.
+//! The same construct is used for special tokens: `<identifier>(:<type_id>)?`.
 //!
 //! **Warning**: You must ensure that you are giving the correct tokens/ids as these will
 //! be added to the `Encoding` without any further check. If the given ids correspond to
@@ -49,55 +59,114 @@ use crate::{Encoding, PostProcessor, Result};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::convert::{TryFrom, TryInto};
+use std::result::Result as StdResult;
+
+/// Represents both sequences received as input of the PostProcessor
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Sequence {
+    /// This is the first sequence, the one that is always specified
+    A,
+    /// This is the pair sequence, that is optional
+    B,
+}
 
 /// Represents the different kind of pieces that constitute a template.
 /// It can be either the input sequence or a [`SpecialToken`]:
 ///
 /// - The `Sequence` has an associated `type_id` which is used by default
-/// for any token inside this sequence. The `Sequence` corresponds to the
-/// input sequence given as input of the `PostProcessor`.
+/// for any token inside this sequence. The `Sequence` corresponds to one
+/// of the input sequence given as input of the `PostProcessor`.
 ///
 /// - The `SpecialToken` has an associated `id`. It corresponds to a [`SpecialToken`].
 ///
-/// The easiest way to build a `Piece` is actually buy converting it from a string:
+/// The easiest way to build a `Piece` is actually by converting it from a string:
 /// ```
 /// # use tokenizers::processors::template::Piece;
-/// let sequence_with_type_id_0 = Piece::from("$0");
-/// let sequence_with_type_id_1 = Piece::from("$1");
-/// let special_token_cls = Piece::from("[CLS]");
+/// # use std::convert::TryFrom;
+/// let sequence_with_type_id_0 = Piece::try_from("$0").unwrap();
+/// let sequence_with_type_id_1 = Piece::try_from("$1").unwrap();
+/// let special_token_cls = Piece::try_from("[CLS]").unwrap();
 /// ```
 ///
 /// [`SpecialToken`]: struct.SpecialToken.html
 ///
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Piece {
-    Sequence { type_id: u32 },
-    SpecialToken { id: String },
+    Sequence { id: Sequence, type_id: u32 },
+    SpecialToken { id: String, type_id: u32 },
 }
 
-impl From<String> for Piece {
-    fn from(s: String) -> Self {
-        // Try to extract `$(n)?` first
+impl Piece {
+    fn extract_id(s: &str) -> Option<Piece> {
         if s.starts_with('$') {
             let rest = &s['$'.len_utf8()..];
 
-            // If the id is just `$`, we use 0 as type_id
-            if rest == "" {
-                return Self::Sequence { type_id: 0 };
+            // If the id is just `$`, we use 0 as type_id, and Sequence A
+            match rest {
+                "" => Some(Self::Sequence {
+                    id: Sequence::A,
+                    type_id: 0,
+                }),
+                "A" | "a" => Some(Self::Sequence {
+                    id: Sequence::A,
+                    type_id: 0,
+                }),
+                "B" | "b" => Some(Self::Sequence {
+                    id: Sequence::B,
+                    type_id: 0,
+                }),
+                n => {
+                    if let Ok(type_id) = n.parse::<u32>() {
+                        Some(Self::Sequence {
+                            id: Sequence::A,
+                            type_id,
+                        })
+                    } else {
+                        None
+                    }
+                }
             }
-            // If we can parse a type_id, let's use it
-            if let Ok(n) = rest.parse() {
-                return Self::Sequence { type_id: n };
-            }
+        } else {
+            Some(Self::SpecialToken {
+                id: s.to_owned(),
+                type_id: 0,
+            })
         }
-        // Must be a SpecialToken otherwise
-        Self::SpecialToken { id: s }
+    }
+
+    fn with_type_id(self, type_id: u32) -> Piece {
+        match self {
+            Piece::Sequence { id, .. } => Piece::Sequence { id, type_id },
+            Piece::SpecialToken { id, .. } => Piece::SpecialToken { id, type_id },
+        }
     }
 }
 
-impl From<&str> for Piece {
-    fn from(s: &str) -> Self {
-        Piece::from(s.to_owned())
+impl TryFrom<String> for Piece {
+    type Error = String;
+
+    fn try_from(s: String) -> StdResult<Self, Self::Error> {
+        let parts = s.split(':').collect::<Vec<_>>();
+
+        let err = || format!("Cannot build Piece from string \"{}\"", s);
+        match parts.as_slice() {
+            [id, type_id] => {
+                let type_id: u32 = type_id.parse().map_err(|_| err())?;
+                let piece = Piece::extract_id(id).ok_or_else(err)?;
+                Ok(piece.with_type_id(type_id))
+            }
+            [id] => Piece::extract_id(id).ok_or_else(err),
+            _ => Err(err()),
+        }
+    }
+}
+
+impl TryFrom<&str> for Piece {
+    type Error = String;
+
+    fn try_from(s: &str) -> StdResult<Self, Self::Error> {
+        Piece::try_from(s.to_owned())
     }
 }
 
@@ -116,7 +185,6 @@ impl From<&str> for Piece {
 /// let complex = SpecialToken::new(
 ///     "A complex special token:".into(),
 ///     vec![0, 1, 2, 3, 4],
-///     vec![None, Some(1), Some(2), Some(3), None],
 ///     vec!["A".into(), "complex".into(), "special".into(), "token".into(), ":".into()]
 /// ).unwrap();
 /// ```
@@ -126,9 +194,6 @@ pub struct SpecialToken {
     id: String,
     /// The list of associated ids
     ids: Vec<u32>,
-    /// The list of type_ids. If provided, it will override the default
-    /// `type_id` of the sequence.
-    type_ids: Vec<Option<u32>>,
     /// The list of associated tokens
     tokens: Vec<String>,
 }
@@ -138,7 +203,6 @@ impl From<(String, u32)> for SpecialToken {
         Self {
             id: v.0.clone(),
             ids: vec![v.1],
-            type_ids: vec![None],
             tokens: vec![v.0],
         }
     }
@@ -160,21 +224,11 @@ impl From<(u32, &str)> for SpecialToken {
 }
 
 impl SpecialToken {
-    pub fn new(
-        id: String,
-        ids: Vec<u32>,
-        type_ids: Vec<Option<u32>>,
-        tokens: Vec<String>,
-    ) -> Result<Self> {
-        if ids.len() != type_ids.len() || ids.len() != tokens.len() {
-            Err("SpecialToken: ids, type_ids and tokens must be of the same length".into())
+    pub fn new(id: String, ids: Vec<u32>, tokens: Vec<String>) -> Result<Self> {
+        if ids.len() != tokens.len() {
+            Err("SpecialToken: ids and tokens must be of the same length".into())
         } else {
-            Ok(Self {
-                id,
-                ids,
-                type_ids,
-                tokens,
-            })
+            Ok(Self { id, ids, tokens })
         }
     }
 }
@@ -184,11 +238,12 @@ impl SpecialToken {
 /// We can easily build one as follows
 /// ```
 /// # use tokenizers::processors::template::Template;
+/// # use std::convert::TryFrom;
 /// // By providing a `String` or `&str`, we just split on whitespaces:
-/// let template = Template::from("[CLS] $0 [SEP]");
+/// let template = Template::try_from("[CLS] $0 [SEP]").unwrap();
 ///
 /// // By providing pieces directly:
-/// let template = Template::from(vec!["[CLS]", "$0", "[SEP]"]);
+/// let template = Template::try_from(vec!["[CLS]", "$0", "[SEP]"]).unwrap();
 /// ```
 /// Both of these methods give the same result.
 ///
@@ -198,24 +253,34 @@ impl SpecialToken {
 #[serde(transparent)]
 pub struct Template(Vec<Piece>);
 
-impl<T> From<Vec<T>> for Template
+impl<T> TryFrom<Vec<T>> for Template
 where
-    T: Into<Piece>,
+    T: TryInto<Piece, Error = String>,
 {
-    fn from(v: Vec<T>) -> Self {
-        Self(v.into_iter().map(|p| p.into()).collect())
+    type Error = String;
+
+    fn try_from(v: Vec<T>) -> StdResult<Self, Self::Error> {
+        Ok(Self(
+            v.into_iter()
+                .map(|p| p.try_into())
+                .collect::<StdResult<Vec<_>, Self::Error>>()?,
+        ))
     }
 }
 
-impl From<String> for Template {
-    fn from(s: String) -> Self {
-        Self::from(s.as_ref())
+impl TryFrom<String> for Template {
+    type Error = String;
+
+    fn try_from(s: String) -> StdResult<Self, Self::Error> {
+        Self::try_from(s.as_ref())
     }
 }
 
-impl From<&str> for Template {
-    fn from(s: &str) -> Self {
-        Self::from(s.split(' ').collect::<Vec<_>>())
+impl TryFrom<&str> for Template {
+    type Error = String;
+
+    fn try_from(s: &str) -> StdResult<Self, Self::Error> {
+        Self::try_from(s.split(' ').collect::<Vec<_>>())
     }
 }
 
@@ -258,8 +323,8 @@ impl From<HashMap<String, SpecialToken>> for Tokens {
 /// ```
 /// # use tokenizers::processors::template::TemplateProcessing;
 /// let template = TemplateProcessing::builder()
-///     .sequence_a(vec!["[CLS]", "$0", "[SEP]"])
-///     .sequence_b(vec!["$1", "[SEP]"])
+///     .try_single("[CLS] $A [SEP]").unwrap()
+///     .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1").unwrap()
 ///     .special_tokens(vec![("[CLS]", 1), ("[SEP]", 0)])
 ///     .build()
 ///     .unwrap();
@@ -269,39 +334,39 @@ impl From<HashMap<String, SpecialToken>> for Tokens {
 #[serde(tag = "type", from = "TemplateProcessingDeserializer")]
 #[builder(build_fn(validate = "Self::validate"))]
 pub struct TemplateProcessing {
-    #[builder(setter(into), default = "self.default_seq(0)")]
-    sequence_a: Template,
-    #[builder(setter(into), default = "self.default_seq(1)")]
-    sequence_b: Template,
+    #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
+    single: Template,
+    #[builder(try_setter, default = "\"$A:0 $B:1\".try_into().unwrap()")]
+    pair: Template,
     #[builder(setter(skip), default = "self.default_added(true)")]
     #[serde(skip)]
-    added_a: usize,
+    added_single: usize,
     #[builder(setter(skip), default = "self.default_added(false)")]
     #[serde(skip)]
-    added_b: usize,
+    added_pair: usize,
     #[builder(setter(into), default)]
     special_tokens: Tokens,
 }
 
-/// We use this custom deserializer to provided the values for `added_a` and `added_b`
-/// during deserialization, while not having to serialize them
+/// We use this custom deserializer to provided the values for `added_single`
+/// and `added_pair` during deserialization, while not having to serialize them
 #[doc(hidden)]
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 struct TemplateProcessingDeserializer {
-    sequence_a: Template,
-    sequence_b: Template,
+    single: Template,
+    pair: Template,
     special_tokens: Tokens,
 }
 impl From<TemplateProcessingDeserializer> for TemplateProcessing {
     fn from(t: TemplateProcessingDeserializer) -> Self {
-        let added_a = count_added(&t.sequence_a, Some(&t.special_tokens));
-        let added_b = count_added(&t.sequence_b, Some(&t.special_tokens));
+        let added_single = count_added(&t.single, Some(&t.special_tokens));
+        let added_pair = count_added(&t.pair, Some(&t.special_tokens));
         Self {
-            sequence_a: t.sequence_a,
-            sequence_b: t.sequence_b,
-            added_a,
-            added_b,
+            single: t.single,
+            pair: t.pair,
+            added_single,
+            added_pair,
             special_tokens: t.special_tokens,
         }
     }
@@ -314,7 +379,7 @@ fn count_added(container: &Template, special_tokens: Option<&Tokens>) -> usize {
         .iter()
         .map(|p| match p {
             Piece::Sequence { .. } => 0,
-            Piece::SpecialToken { id } => {
+            Piece::SpecialToken { id, .. } => {
                 special_tokens.map_or(0, |spt| spt.0.get(id).map_or(0, |s| s.ids.len()))
             }
         })
@@ -322,15 +387,11 @@ fn count_added(container: &Template, special_tokens: Option<&Tokens>) -> usize {
 }
 
 impl TemplateProcessingBuilder {
-    fn default_seq(&self, type_id: u32) -> Template {
-        Template(vec![Piece::Sequence { type_id }])
-    }
-
-    fn default_added(&self, is_a: bool) -> usize {
-        let container = if is_a {
-            self.sequence_a.as_ref()
+    fn default_added(&self, is_single: bool) -> usize {
+        let container = if is_single {
+            self.single.as_ref()
         } else {
-            self.sequence_b.as_ref()
+            self.pair.as_ref()
         };
         container.map_or(0, |pieces| {
             count_added(pieces, self.special_tokens.as_ref())
@@ -352,17 +413,13 @@ impl TemplateProcessingBuilder {
 
         let empty = vec![];
         let missing: HashSet<&str> = self
-            .sequence_a
+            .single
             .as_ref()
             .map_or(empty.iter(), |s| s.0.iter())
-            .chain(
-                self.sequence_b
-                    .as_ref()
-                    .map_or(empty.iter(), |s| s.0.iter()),
-            )
+            .chain(self.pair.as_ref().map_or(empty.iter(), |s| s.0.iter()))
             .filter_map(|piece| match piece {
                 Piece::Sequence { .. } => None,
-                Piece::SpecialToken { id } => check(id.as_ref()),
+                Piece::SpecialToken { id, .. } => check(id.as_ref()),
             })
             .collect::<HashSet<_>>();
 
@@ -380,10 +437,10 @@ impl TemplateProcessingBuilder {
 impl Default for TemplateProcessing {
     fn default() -> Self {
         Self {
-            sequence_a: vec!["$0"].into(),
-            sequence_b: vec!["$1"].into(),
-            added_a: 0,
-            added_b: 0,
+            single: "$0".try_into().unwrap(),
+            pair: "$1".try_into().unwrap(),
+            added_single: 0,
+            added_pair: 0,
             special_tokens: Tokens::default(),
         }
     }
@@ -398,18 +455,23 @@ impl TemplateProcessing {
         &self,
         template: &[Piece],
         mut encoding: Encoding,
+        mut pair: Option<Encoding>,
         add_special_tokens: bool,
     ) -> Result<Encoding> {
         // Compute the new size
         let mut new_len = 0;
-        let mut default_type_id = 0;
         for piece in template {
             new_len += match piece {
-                Piece::Sequence { type_id } => {
-                    default_type_id = *type_id;
-                    encoding.len()
-                }
-                Piece::SpecialToken { id } => {
+                Piece::Sequence {
+                    id: Sequence::A, ..
+                } => encoding.len(),
+                Piece::Sequence {
+                    id: Sequence::B, ..
+                } => pair
+                    .as_ref()
+                    .ok_or("Template expected a pair sequence, but none provided")?
+                    .len(),
+                Piece::SpecialToken { id, .. } => {
                     if add_special_tokens {
                         self.special_tokens
                             .0
@@ -432,15 +494,42 @@ impl TemplateProcessing {
         let mut offsets = Vec::with_capacity(new_len);
         let mut special_tokens_mask = Vec::with_capacity(new_len);
         let mut attention_mask = Vec::with_capacity(new_len);
+
+        let pair_overflowing = pair.as_mut().map_or(vec![], |e| e.take_overflowing());
         let overflowing = encoding
             .take_overflowing()
             .into_iter()
-            .map(|encoding| self.apply_template(template, encoding, add_special_tokens))
+            .flat_map(|encoding| {
+                let mut overflowings = vec![];
+
+                // 1. The pair itself
+                overflowings.push(self.apply_template(
+                    template,
+                    encoding.clone(),
+                    pair.clone(),
+                    add_special_tokens,
+                ));
+
+                // 2. Its overflowings
+                for other_o in &pair_overflowing {
+                    overflowings.push(self.apply_template(
+                        template,
+                        encoding.clone(),
+                        Some(other_o.clone()),
+                        add_special_tokens,
+                    ));
+                }
+
+                overflowings
+            })
             .collect::<Result<Vec<_>>>()?;
 
         for piece in template {
             match piece {
-                Piece::Sequence { type_id } => {
+                Piece::Sequence {
+                    id: Sequence::A,
+                    type_id,
+                } => {
                     ids.extend(encoding.get_ids());
                     type_ids.extend(std::iter::repeat(type_id).take(encoding.len()));
                     tokens.extend(encoding.get_tokens().iter().map(|s| s.to_owned()));
@@ -449,14 +538,26 @@ impl TemplateProcessing {
                     special_tokens_mask.extend(encoding.get_special_tokens_mask());
                     attention_mask.extend(encoding.get_attention_mask());
                 }
-                Piece::SpecialToken { id } => {
+                Piece::Sequence {
+                    id: Sequence::B,
+                    type_id,
+                } => {
+                    let pair = pair.as_ref().expect("Missing pair sequence, checked above");
+                    ids.extend(pair.get_ids());
+                    type_ids.extend(std::iter::repeat(type_id).take(pair.len()));
+                    tokens.extend(pair.get_tokens().iter().map(|s| s.to_owned()));
+                    words.extend(pair.get_words());
+                    offsets.extend(pair.get_offsets());
+                    special_tokens_mask.extend(pair.get_special_tokens_mask());
+                    attention_mask.extend(pair.get_attention_mask());
+                }
+                Piece::SpecialToken { id, type_id } => {
                     if add_special_tokens {
                         let tok = &self.special_tokens.0[id]; // We already checked existance above
                         let len = tok.ids.len();
 
                         ids.extend(&tok.ids);
-                        type_ids
-                            .extend(tok.type_ids.iter().map(|id| id.unwrap_or(default_type_id)));
+                        type_ids.extend(std::iter::repeat(type_id).take(len));
                         tokens.extend(tok.tokens.clone());
                         words.extend(std::iter::repeat(None).take(len));
                         offsets.extend(std::iter::repeat((0, 0)).take(len));
@@ -482,7 +583,11 @@ impl TemplateProcessing {
 
 impl PostProcessor for TemplateProcessing {
     fn added_tokens(&self, is_pair: bool) -> usize {
-        self.added_a + if is_pair { self.added_b } else { 0 }
+        if is_pair {
+            self.added_pair
+        } else {
+            self.added_single
+        }
     }
 
     fn process(
@@ -491,41 +596,97 @@ impl PostProcessor for TemplateProcessing {
         pair: Option<Encoding>,
         add_special_tokens: bool,
     ) -> Result<Encoding> {
-        let sequence_a = self.apply_template(&self.sequence_a.0, encoding, add_special_tokens)?;
-        let sequence_b = pair
-            .map(|encoding| self.apply_template(&self.sequence_b.0, encoding, add_special_tokens))
-            .transpose()?;
-
-        PostProcessor::default_process(sequence_a, sequence_b, add_special_tokens)
+        self.apply_template(
+            if pair.is_some() {
+                &self.pair.0
+            } else {
+                &self.single.0
+            },
+            encoding,
+            pair,
+            add_special_tokens,
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::convert::TryInto;
 
     #[test]
     fn piece_serde() {
-        let seq_0 = Piece::Sequence { type_id: 0 };
-        let seq_0_s = r#"{"Sequence":{"type_id":0}}"#;
+        let seq_0 = Piece::Sequence {
+            id: Sequence::A,
+            type_id: 0,
+        };
+        let seq_0_s = r#"{"Sequence":{"id":"A","type_id":0}}"#;
+
         assert_eq!(serde_json::to_string(&seq_0).unwrap(), seq_0_s);
         assert_eq!(serde_json::from_str::<Piece>(seq_0_s).unwrap(), seq_0);
 
-        let seq_1 = Piece::Sequence { type_id: 1 };
-        let seq_1_s = r#"{"Sequence":{"type_id":1}}"#;
+        let seq_1 = Piece::Sequence {
+            id: Sequence::B,
+            type_id: 1,
+        };
+        let seq_1_s = r#"{"Sequence":{"id":"B","type_id":1}}"#;
         assert_eq!(serde_json::to_string(&seq_1).unwrap(), seq_1_s);
         assert_eq!(serde_json::from_str::<Piece>(seq_1_s).unwrap(), seq_1);
 
-        let spe = Piece::SpecialToken { id: "[CLS]".into() };
-        let spe_s = r#"{"SpecialToken":{"id":"[CLS]"}}"#;
+        let spe = Piece::SpecialToken {
+            id: "[CLS]".into(),
+            type_id: 0,
+        };
+        let spe_s = r#"{"SpecialToken":{"id":"[CLS]","type_id":0}}"#;
         assert_eq!(serde_json::to_string(&spe).unwrap(), spe_s);
         assert_eq!(serde_json::from_str::<Piece>(spe_s).unwrap(), spe);
     }
 
     #[test]
+    fn piece() {
+        assert_eq!(
+            Ok(Piece::Sequence {
+                id: Sequence::A,
+                type_id: 0
+            }),
+            "$".try_into()
+        );
+        assert_eq!(
+            Ok(Piece::Sequence {
+                id: Sequence::B,
+                type_id: 0
+            }),
+            "$B".try_into()
+        );
+        assert_eq!(
+            Ok(Piece::Sequence {
+                id: Sequence::A,
+                type_id: 1
+            }),
+            "$1".try_into()
+        );
+        assert_eq!(
+            Ok(Piece::Sequence {
+                id: Sequence::B,
+                type_id: 2
+            }),
+            "$B:2".try_into()
+        );
+        assert_eq!(
+            Ok(Piece::Sequence {
+                id: Sequence::A,
+                type_id: 1
+            }),
+            "$:1".try_into()
+        );
+        assert!(Piece::try_from("$C:1").is_err());
+        assert!(Piece::try_from("$A:").is_err());
+    }
+
+    #[test]
     fn special_token_serde() {
         let simple = SpecialToken::from(("[CLS]", 0));
-        let simple_s = r#"{"id":"[CLS]","ids":[0],"type_ids":[null],"tokens":["[CLS]"]}"#;
+        let simple_s = r#"{"id":"[CLS]","ids":[0],"tokens":["[CLS]"]}"#;
         assert_eq!(serde_json::to_string(&simple).unwrap(), simple_s);
         assert_eq!(
             serde_json::from_str::<SpecialToken>(simple_s).unwrap(),
@@ -535,11 +696,10 @@ mod tests {
         let complete = SpecialToken::new(
             "[2FR]".into(),
             vec![1, 2, 3],
-            vec![None, Some(2), None],
             vec!["convert".into(), "to".into(), "FR".into()],
         )
         .unwrap();
-        let complete_s = r#"{"id":"[2FR]","ids":[1,2,3],"type_ids":[null,2,null],"tokens":["convert","to","FR"]}"#;
+        let complete_s = r#"{"id":"[2FR]","ids":[1,2,3],"tokens":["convert","to","FR"]}"#;
         assert_eq!(serde_json::to_string(&complete).unwrap(), complete_s);
         assert_eq!(
             serde_json::from_str::<SpecialToken>(complete_s).unwrap(),
@@ -549,21 +709,12 @@ mod tests {
         let malformed = SpecialToken::new(
             "[2FR]".into(),
             vec![1, 2],
-            vec![None, Some(2), None],
             vec!["convert".into(), "to".into(), "FR".into()],
         );
         assert!(malformed.is_err());
         let malformed = SpecialToken::new(
             "[2FR]".into(),
             vec![1, 2, 3],
-            vec![],
-            vec!["convert".into(), "to".into(), "FR".into()],
-        );
-        assert!(malformed.is_err());
-        let malformed = SpecialToken::new(
-            "[2FR]".into(),
-            vec![1, 2, 3],
-            vec![None, None, None],
             vec!["convert".into(), "FR".into()],
         );
         assert!(malformed.is_err());
@@ -571,11 +722,18 @@ mod tests {
 
     #[test]
     fn template_serde() {
-        let template = Template::from(vec![
-            Piece::Sequence { type_id: 0 },
-            Piece::SpecialToken { id: "[CLS]".into() },
+        let template = Template(vec![
+            Piece::Sequence {
+                id: Sequence::A,
+                type_id: 0,
+            },
+            Piece::SpecialToken {
+                id: "[CLS]".into(),
+                type_id: 0,
+            },
         ]);
-        let template_s = r#"[{"Sequence":{"type_id":0}},{"SpecialToken":{"id":"[CLS]"}}]"#;
+        let template_s =
+            r#"[{"Sequence":{"id":"A","type_id":0}},{"SpecialToken":{"id":"[CLS]","type_id":0}}]"#;
         assert_eq!(serde_json::to_string(&template).unwrap(), template_s);
         assert_eq!(
             serde_json::from_str::<Template>(template_s).unwrap(),
@@ -586,8 +744,8 @@ mod tests {
     #[test]
     fn tokens_serde() {
         let tokens = Tokens::from(vec![("[CLS]", 1), ("[SEP]", 0)]);
-        let tokens_s = r#"{"[SEP]":{"id":"[SEP]","ids":[0],"type_ids":[null],"tokens":["[SEP]"]},"[CLS]":{"id":"[CLS]","ids":[1],"type_ids":[null],"tokens":["[CLS]"]}}"#;
-        let tokens_s_alt = r#"{"[CLS]":{"id":"[CLS]","ids":[1],"type_ids":[null],"tokens":["[CLS]"]},"[SEP]":{"id":"[SEP]","ids":[0],"type_ids":[null],"tokens":["[SEP]"]}}"#;
+        let tokens_s = r#"{"[SEP]":{"id":"[SEP]","ids":[0],"tokens":["[SEP]"]},"[CLS]":{"id":"[CLS]","ids":[1],"tokens":["[CLS]"]}}"#;
+        let tokens_s_alt = r#"{"[CLS]":{"id":"[CLS]","ids":[1],"tokens":["[CLS]"]},"[SEP]":{"id":"[SEP]","ids":[0],"tokens":["[SEP]"]}}"#;
         let tokens_ser = serde_json::to_string(&tokens).unwrap();
         assert!(tokens_ser == tokens_s || tokens_ser == tokens_s_alt);
         assert_eq!(serde_json::from_str::<Tokens>(tokens_s).unwrap(), tokens);
@@ -599,8 +757,10 @@ mod tests {
 
     fn get_bert_template() -> TemplateProcessing {
         TemplateProcessing::builder()
-            .sequence_a(vec!["[CLS]", "$0", "[SEP]"])
-            .sequence_b(vec!["$1", "[SEP]"])
+            .try_single(vec!["[CLS]", "$0", "[SEP]"])
+            .unwrap()
+            .try_pair("[CLS]:0 $A:0 [SEP]:0 $B:1 [SEP]:1")
+            .unwrap()
             .special_tokens(vec![("[CLS]", 1), ("[SEP]", 0)])
             .build()
             .unwrap()
@@ -611,40 +771,46 @@ mod tests {
         let template = tests::get_bert_template();
         let template_s = "{\
             \"type\":\"TemplateProcessing\",\
-            \"sequence_a\":[\
-                {\"SpecialToken\":{\"id\":\"[CLS]\"}},\
-                {\"Sequence\":{\"type_id\":0}},\
-                {\"SpecialToken\":{\"id\":\"[SEP]\"}}\
+            \"single\":[\
+                {\"SpecialToken\":{\"id\":\"[CLS]\",\"type_id\":0}},\
+                {\"Sequence\":{\"id\":\"A\",\"type_id\":0}},\
+                {\"SpecialToken\":{\"id\":\"[SEP]\",\"type_id\":0}}\
             ],\
-            \"sequence_b\":[\
-                {\"Sequence\":{\"type_id\":1}},\
-                {\"SpecialToken\":{\"id\":\"[SEP]\"}}\
+            \"pair\":[\
+                {\"SpecialToken\":{\"id\":\"[CLS]\",\"type_id\":0}},\
+                {\"Sequence\":{\"id\":\"A\",\"type_id\":0}},\
+                {\"SpecialToken\":{\"id\":\"[SEP]\",\"type_id\":0}},\
+                {\"Sequence\":{\"id\":\"B\",\"type_id\":1}},\
+                {\"SpecialToken\":{\"id\":\"[SEP]\",\"type_id\":1}}\
             ],\
             \"special_tokens\":{\
                 \"[CLS]\":{\
-                    \"id\":\"[CLS]\",\"ids\":[1],\"type_ids\":[null],\"tokens\":[\"[CLS]\"]\
+                    \"id\":\"[CLS]\",\"ids\":[1],\"tokens\":[\"[CLS]\"]\
                 },\
                 \"[SEP]\":{\
-                    \"id\":\"[SEP]\",\"ids\":[0],\"type_ids\":[null],\"tokens\":[\"[SEP]\"]\
+                    \"id\":\"[SEP]\",\"ids\":[0],\"tokens\":[\"[SEP]\"]\
                 }\
             }}";
         let template_s_alt = "{\
             \"type\":\"TemplateProcessing\",\
-            \"sequence_a\":[\
-                {\"SpecialToken\":{\"id\":\"[CLS]\"}},\
-                {\"Sequence\":{\"type_id\":0}},\
-                {\"SpecialToken\":{\"id\":\"[SEP]\"}}\
+            \"single\":[\
+                {\"SpecialToken\":{\"id\":\"[CLS]\",\"type_id\":0}},\
+                {\"Sequence\":{\"id\":\"A\",\"type_id\":0}},\
+                {\"SpecialToken\":{\"id\":\"[SEP]\",\"type_id\":0}}\
             ],\
-            \"sequence_b\":[\
-                {\"Sequence\":{\"type_id\":1}},\
-                {\"SpecialToken\":{\"id\":\"[SEP]\"}}\
+            \"pair\":[\
+                {\"SpecialToken\":{\"id\":\"[CLS]\",\"type_id\":0}},\
+                {\"Sequence\":{\"id\":\"A\",\"type_id\":0}},\
+                {\"SpecialToken\":{\"id\":\"[SEP]\",\"type_id\":0}},\
+                {\"Sequence\":{\"id\":\"B\",\"type_id\":1}},\
+                {\"SpecialToken\":{\"id\":\"[SEP]\",\"type_id\":1}}\
             ],\
             \"special_tokens\":{\
                 \"[SEP]\":{\
-                    \"id\":\"[SEP]\",\"ids\":[0],\"type_ids\":[null],\"tokens\":[\"[SEP]\"]\
+                    \"id\":\"[SEP]\",\"ids\":[0],\"tokens\":[\"[SEP]\"]\
                 },\
                 \"[CLS]\":{\
-                    \"id\":\"[CLS]\",\"ids\":[1],\"type_ids\":[null],\"tokens\":[\"[CLS]\"]\
+                    \"id\":\"[CLS]\",\"ids\":[1],\"tokens\":[\"[CLS]\"]\
                 }\
             }}";
         let template_ser = serde_json::to_string(&template).unwrap();
@@ -662,8 +828,10 @@ mod tests {
     #[test]
     fn missing_special_tokens() {
         let processor = TemplateProcessing::builder()
-            .sequence_a("[CLS] $0 [SEP]")
-            .sequence_b("$1 [SEP]")
+            .try_single("[CLS] $0 [SEP]")
+            .unwrap()
+            .try_pair("[CLS] $0 [SEP] $1 [SEP]")
+            .unwrap()
             .build();
 
         let err_a = Err("Missing SpecialToken(s) with id(s) `[SEP], [CLS]`".into());
