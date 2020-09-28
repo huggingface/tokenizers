@@ -119,22 +119,29 @@ class TemplateProcessing(PostProcessor):
     sequences. The final result looks like this:
         - Single sequence: `[CLS] Hello there [SEP]`
         - Pair sequences: `[CLS] My name is Anthony [SEP] What is my name? [SEP]`
+    With the type ids as following:
+    ```markdown
+    [CLS]   ...   [SEP]   ...   [SEP]
+      0      0      0      1      1
+    ```
 
     You can achieve such behavior using a TemplateProcessing:
     ```
     TemplateProcessing(
-        seq_a="[CLS] $0 [SEP]",
-        seq_b="$1 [SEP]",
+        single="[CLS] $0 [SEP]",
+        pair="[CLS] $A [SEP] $B:1 [SEP]:1",
         special_tokens=[("[CLS]", 1), ("[SEP]", 0)],
     )
     ```
 
-    In this example, $0 and $1 both represent the input sequences. The number in this
-    identifier is actually the default type_id that will be used for each sequence. So,
-    in this case, the first sequence will use 0, while the pair sequence will use 1.
+    In this example, each input sequence is identified using a `$` construct. This identifier
+    lets us specify each input sequence, and the type_id to use. When nothing is specified,
+    it uses the default values. Here are the different ways to specify it:
+    - Specifying the sequence, with default `type_id == 0`: `$A` or `$B`
+    - Specifying the `type_id` with default `sequence == A`: `$0`, `$1`, `$2`, ...
+    - Specifying both: `$A:0`, `$B:1`, ...
 
-    Note that we are saying the "default" type_id because each SpecialToken can define
-    its own type_id which would override the provided default.
+    The same construct is used for special tokens: `<identifier>(:<type_id>)?`.
 
     **Warning**: You must ensure that you are giving the correct tokens/ids as these
     will be added to the Encoding without any further check. If the given ids correspond
@@ -142,15 +149,15 @@ class TemplateProcessing(PostProcessor):
     might lead to unexpected results.
     """
 
-    def __init__(self, seq_a: Template, seq_b: Template, special_tokens: Tokens) -> None:
+    def __init__(self, single: Template, seq_b: Template, special_tokens: Tokens) -> None:
         """Instantiate a new TemplateProcessing
 
         Args:
-            seq_a: Template
-                The template for the first sequence.
+            single: Template
+                The template used for single sequences
 
-            seq_b: Template:
-                The template for the pair sequence.
+            pair: Template:
+                The template used when both sequences are specified
 
             special_tokens: Tokens:
                 The list of special tokens used in each sequences
@@ -165,10 +172,7 @@ class TemplateProcessing(PostProcessor):
                 - "id": str => The special token id, as specified in the Template
                 - "ids": List[int] => The associated IDs
                 - "tokens": List[str] => The associated tokens
-                - "type_ids": Optional[List[Optional[int]]] => If specified, a list of optional
-                  type_ids. In the `type_id` is not specified, the one from the input sequence
-                  will be used.
-             The given dict expects the provided `ids`, `tokens` and `type_ids` lists to have
+             The given dict expects the provided `ids` and `tokens` lists to have
              the same length.
         """
         pass

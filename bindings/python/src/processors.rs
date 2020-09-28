@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::sync::Arc;
 
 use pyo3::exceptions;
@@ -200,17 +201,13 @@ impl FromPyObject<'_> for PySpecialToken {
                 .get_item("ids")
                 .ok_or_else(|| exceptions::PyValueError::new_err("`ids` must be specified"))?
                 .extract::<Vec<u32>>()?;
-            let type_ids = d.get_item("type_ids").map_or_else(
-                || Ok(vec![None; ids.len()]),
-                |v| v.extract::<Vec<Option<u32>>>(),
-            )?;
             let tokens = d
                 .get_item("tokens")
                 .ok_or_else(|| exceptions::PyValueError::new_err("`tokens` must be specified"))?
                 .extract::<Vec<String>>()?;
 
             Ok(Self(
-                ToPyResult(SpecialToken::new(id, ids, type_ids, tokens)).into_py()?,
+                ToPyResult(SpecialToken::new(id, ids, tokens)).into_py()?,
             ))
         } else {
             Err(exceptions::PyTypeError::new_err(
@@ -232,9 +229,13 @@ impl From<PyTemplate> for Template {
 impl FromPyObject<'_> for PyTemplate {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         if let Ok(s) = ob.extract::<&str>() {
-            Ok(Self(s.into()))
+            Ok(Self(
+                s.try_into().map_err(exceptions::PyValueError::new_err)?,
+            ))
         } else if let Ok(s) = ob.extract::<Vec<&str>>() {
-            Ok(Self(s.into()))
+            Ok(Self(
+                s.try_into().map_err(exceptions::PyValueError::new_err)?,
+            ))
         } else {
             Err(exceptions::PyTypeError::new_err(
                 "Expected Union[str, List[str]]",
@@ -248,19 +249,19 @@ pub struct PyTemplateProcessing {}
 #[pymethods]
 impl PyTemplateProcessing {
     #[new]
-    #[args(seq_a = "None", seq_b = "None", special_tokens = "None")]
+    #[args(single = "None", pair = "None", special_tokens = "None")]
     fn new(
-        seq_a: Option<PyTemplate>,
-        seq_b: Option<PyTemplate>,
+        single: Option<PyTemplate>,
+        pair: Option<PyTemplate>,
         special_tokens: Option<Vec<PySpecialToken>>,
     ) -> PyResult<(Self, PyPostProcessor)> {
         let mut builder = tk::processors::template::TemplateProcessing::builder();
 
-        if let Some(seq) = seq_a {
-            builder.sequence_a(seq);
+        if let Some(seq) = single {
+            builder.single(seq.into());
         }
-        if let Some(seq) = seq_b {
-            builder.sequence_b(seq);
+        if let Some(seq) = pair {
+            builder.pair(seq.into());
         }
         if let Some(sp) = special_tokens {
             builder.special_tokens(sp);

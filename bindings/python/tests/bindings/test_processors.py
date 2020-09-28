@@ -88,15 +88,15 @@ class TestByteLevelProcessing:
 class TestTemplateProcessing:
     def get_bert(self):
         return TemplateProcessing(
-            seq_a=["[CLS]", "$0", "[SEP]"],
-            seq_b=["$1", "[SEP]"],
+            single=["[CLS]", "$0", "[SEP]"],
+            pair=["[CLS]", "$A", "[SEP]", "$B:1", "[SEP]:1"],
             special_tokens=[("[CLS]", 1), ("[SEP]", 0)],
         )
 
     def get_roberta(self):
         return TemplateProcessing(
-            seq_a="<s> $0 </s>",
-            seq_b="</s> $0 </s>",
+            single="<s> $0 </s>",
+            pair="<s> $A </s> </s> $B </s>",
             special_tokens=[("<s>", 0), ("</s>", 1)],
         )
 
@@ -113,19 +113,17 @@ class TestTemplateProcessing:
         # [822, 10]
 
         return TemplateProcessing(
-            seq_a=["Q", "$0"],
-            seq_b=["C", "$1"],
+            single=["$0"],
+            pair=["Q", "$A", "C", "$B"],
             special_tokens=[
                 {
                     "id": "Q",
                     "ids": [2625, 10],
-                    "type_ids": [None, None],
                     "tokens": ["_question", ":"],
                 },
                 {
                     "id": "C",
                     "ids": [822, 10],
-                    "type_ids": [None, None],
                     "tokens": ["_context", ":"],
                 },
             ],
