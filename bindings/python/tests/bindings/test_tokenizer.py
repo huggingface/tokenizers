@@ -263,12 +263,16 @@ class TestTokenizer:
         # Mal formed
         with pytest.raises(TypeError, match="TextInputSequence must be str"):
             tokenizer.encode([["my", "name"]])
+        with pytest.raises(TypeError, match="TextInputSequence must be str"):
             tokenizer.encode("My name is john", [["pair"]])
+        with pytest.raises(TypeError, match="TextInputSequence must be str"):
             tokenizer.encode("my name is john", ["pair"])
 
         with pytest.raises(TypeError, match="InputSequence must be Union[List[str]"):
             tokenizer.encode("My name is john", is_pretokenized=True)
+        with pytest.raises(TypeError, match="InputSequence must be Union[List[str]"):
             tokenizer.encode("My name is john", ["pair"], is_pretokenized=True)
+        with pytest.raises(TypeError, match="InputSequence must be Union[List[str]"):
             tokenizer.encode(["My", "name", "is", "John"], "pair", is_pretokenized=True)
 
     def test_encode_add_special_tokens(self, roberta_files):

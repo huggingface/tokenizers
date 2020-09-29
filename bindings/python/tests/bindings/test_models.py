@@ -17,6 +17,7 @@ class TestBPE:
         assert isinstance(BPE.from_file(roberta_files["vocab"], roberta_files["merges"]), BPE)
         with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):
             BPE(vocab=vocab)
+        with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):
             BPE(merges=merges)
 
         assert isinstance(
@@ -30,6 +31,7 @@ class TestBPE:
 
         with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):
             BPE(vocab=roberta_files["vocab"])
+        with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):
             BPE(merges=roberta_files["merges"])
         with pytest.deprecated_call():
             assert isinstance(
