@@ -66,7 +66,6 @@ impl Task for EncodeTask<'static> {
                 // Set the actual encoding
                 let guard = cx.lock();
                 js_encoding.borrow_mut(&guard).encoding = Some(encoding);
-
                 Ok(js_encoding.upcast())
             }
             EncodeOutput::Batch(encodings) => {
