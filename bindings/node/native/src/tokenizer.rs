@@ -449,23 +449,19 @@ declare_types! {
             //   __callback: (err, encoding) -> void
             // )
 
-            // Start by extracting options and callback
-            let (options, callback) = match cx.extract_opt::<EncodeOptions>(2) {
-                // Options were there, and extracted
-                Ok(Some(options)) => {
-                    (options, cx.argument::<JsFunction>(3)?)
-                },
-                // Options were undefined or null
-                Ok(None) => {
-                    (EncodeOptions::default(), cx.argument::<JsFunction>(3)?)
+            // Start by extracting options if they exist (options is in slot 1 ,or 2)
+            let mut i = 1;
+            let (options, option_index) = loop {
+                if let Ok(Some(opts)) = cx.extract_opt::<EncodeOptions>(i){
+                    break (opts, Some(i));
                 }
-                // Options not specified, callback instead
-                Err(_) => {
-                    (EncodeOptions::default(), cx.argument::<JsFunction>(2)?)
+                i += 1;
+                if i == 3{
+                    break (EncodeOptions::default(), None)
                 }
             };
 
-            // Then we extract our input sequences
+            // Then we extract the first input sentence
             let sentence: tk::InputSequence = if options.is_pretokenized {
                 cx.extract::<PreTokenizedInputSequence>(0)
                     .map_err(|_| Error("encode with isPretokenized=true expect string[]".into()))?
@@ -475,15 +471,29 @@ declare_types! {
                     .map_err(|_| Error("encode with isPreTokenized=false expect string".into()))?
                     .into()
             };
-            let pair: Option<tk::InputSequence> = if options.is_pretokenized {
-                cx.extract_opt::<PreTokenizedInputSequence>(1)
-                    .map_err(|_| Error("encode with isPretokenized=true expect string[]".into()))?
-                    .map(|v| v.into())
-            } else {
-                cx.extract_opt::<TextInputSequence>(1)
-                    .map_err(|_| Error("encode with isPreTokenized=false expect string".into()))?
-                    .map(|v| v.into())
+
+            let (pair, has_pair_arg): (Option<tk::InputSequence>, bool)  = if options.is_pretokenized {
+                if let Ok(second) = cx.extract_opt::<PreTokenizedInputSequence>(1){
+                    (second.map(|v| v.into()), true)
+                }else{
+                    (None, false)
+                }
+            } else if let Ok(second) = cx.extract_opt::<TextInputSequence>(1){
+                    (second.map(|v| v.into()), true)
+                }else{
+                    (None, false)
             };
+
+            // Find the callback index.
+            let last_index = if let Some(option_index) = option_index{
+                option_index + 1
+            }else if has_pair_arg{
+                2
+            }else{
+                1
+            };
+
+            let callback = cx.argument::<JsFunction>(last_index)?;
             let input: tk::EncodeInput = match pair {
                 Some(pair) => (sentence, pair).into(),
                 None => sentence.into()
@@ -557,8 +567,12 @@ declare_types! {
             // decode(ids: number[], skipSpecialTokens: bool, callback)
 
             let ids = cx.extract_vec::<u32>(0)?;
-            let skip_special_tokens = cx.extract::<bool>(1)?;
-            let callback = cx.argument::<JsFunction>(2)?;
+            let (skip_special_tokens, callback_index) = if let Ok(skip_special_tokens) =  cx.extract::<bool>(1){
+                (skip_special_tokens, 2)
+            }else{
+                (false, 1)
+            };
+            let callback = cx.argument::<JsFunction>(callback_index)?;
 
             let this = cx.this();
             let guard = cx.lock();
@@ -575,8 +589,12 @@ declare_types! {
             // decodeBatch(sequences: number[][], skipSpecialTokens: bool, callback)
 
             let sentences = cx.extract_vec::<Vec<u32>>(0)?;
-            let skip_special_tokens = cx.extract::<bool>(1)?;
-            let callback = cx.argument::<JsFunction>(2)?;
+            let (skip_special_tokens, callback_index) = if let Ok(skip_special_tokens) =  cx.extract::<bool>(1){
+                (skip_special_tokens, 2)
+            }else{
+                (false, 1)
+            };
+            let callback = cx.argument::<JsFunction>(callback_index)?;
 
             let this = cx.this();
             let guard = cx.lock();
@@ -956,7 +974,8 @@ pub fn tokenizer_from_string(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
         Decoder,
     > = s.parse().map_err(|e| Error(format!("{}", e)))?;
 
-    let mut js_tokenizer = JsTokenizer::new::<_, JsTokenizer, _>(&mut cx, vec![])?;
+    let js_model: Handle<JsModel> = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+    let mut js_tokenizer = JsTokenizer::new(&mut cx, vec![js_model])?;
     let guard = cx.lock();
     js_tokenizer.borrow_mut(&guard).tokenizer = Arc::new(RwLock::new(tokenizer));
 
@@ -969,7 +988,8 @@ pub fn tokenizer_from_file(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
     let tokenizer = tk::tokenizer::TokenizerImpl::from_file(s)
         .map_err(|e| Error(format!("Error loading from file{}", e)))?;
 
-    let mut js_tokenizer = JsTokenizer::new::<_, JsTokenizer, _>(&mut cx, vec![])?;
+    let js_model: Handle<JsModel> = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+    let mut js_tokenizer = JsTokenizer::new(&mut cx, vec![js_model])?;
     let guard = cx.lock();
     js_tokenizer.borrow_mut(&guard).tokenizer = Arc::new(RwLock::new(tokenizer));
 
