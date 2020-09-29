@@ -1,5 +1,5 @@
 /*eslint-disable no-undef*/
-const tokenizers = require("tokenizers");
+const tokenizers = require("..");
 const { promisify } = require("util");
 
 describe("loadExample", () => {
