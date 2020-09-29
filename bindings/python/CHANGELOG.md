@@ -4,19 +4,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.0-dev4]
+## [0.9.0-rc1]
 
 ### Fixed
 - [#362]: Fix training deadlock with Python components.
 - [#363]: Fix a crash when calling `.train` with some non-existent files
 - [#355]: Remove a lot of possible crashes
+- [#389]: Improve truncation (crash and consistency)
 
 ### Added
 - [#379]: Add the ability to call `encode`/`encode_batch` with numpy arrays
 - [#292]: Support for the Unigram algorithm
+- [#378], [#394], [#416], [#417]: Many new Normalizer and PreTokenizer
 - [#403]: Add `TemplateProcessing` `PostProcessor`.
+- [#420]: Ability to fuse the "unk" token in BPE.
 
 ### Changed
+- [#360]: Lots of improvements related to words/alignment tracking
+- [#426]: Improvements on error messages thanks to PyO3 0.12
 
 ## [0.8.1]
 
@@ -233,10 +238,17 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug with the IDs associated with added tokens.
 - Fix a bug that was causing crashes in Python 3.5
 
+[#420]: https://github.com/huggingface/tokenizers/pull/420
+[#417]: https://github.com/huggingface/tokenizers/pull/417
+[#416]: https://github.com/huggingface/tokenizers/pull/416
 [#403]: https://github.com/huggingface/tokenizers/pull/403
+[#394]: https://github.com/huggingface/tokenizers/pull/394
+[#389]: https://github.com/huggingface/tokenizers/pull/389
 [#379]: https://github.com/huggingface/tokenizers/pull/379
+[#378]: https://github.com/huggingface/tokenizers/pull/378
 [#363]: https://github.com/huggingface/tokenizers/pull/363
 [#362]: https://github.com/huggingface/tokenizers/pull/362
+[#360]: https://github.com/huggingface/tokenizers/pull/360
 [#355]: https://github.com/huggingface/tokenizers/pull/355
 [#333]: https://github.com/huggingface/tokenizers/pull/333
 [#330]: https://github.com/huggingface/tokenizers/pull/330
