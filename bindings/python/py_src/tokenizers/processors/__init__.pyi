@@ -149,7 +149,7 @@ class TemplateProcessing(PostProcessor):
     might lead to unexpected results.
     """
 
-    def __init__(self, single: Template, seq_b: Template, special_tokens: Tokens) -> None:
+    def __init__(self, single: Template, pair: Template, special_tokens: Tokens) -> None:
         """Instantiate a new TemplateProcessing
 
         Args:
