@@ -9,7 +9,7 @@ const {
   decoders,
   trainers,
   AddedToken,
-} = require("tokenizers");
+} = require("..");
 
 describe("trainExample", () => {
   it("", () => {
