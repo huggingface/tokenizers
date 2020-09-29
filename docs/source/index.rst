@@ -50,8 +50,8 @@ Load an existing tokenizer:
 
    .. group-tab:: Node
 
-      .. literalinclude:: ../../bindings/node/examples/load.test.ts
-         :language: typescript
+      .. literalinclude:: ../../bindings/node/examples/load.test.js
+         :language: javascript
          :emphasize-lines: 11
 
 
@@ -74,6 +74,6 @@ Small guide of :ref:`how to create a Tokenizer options<tokenizer_blocks>`.
 
    .. group-tab:: Node
 
-      .. literalinclude:: ../../bindings/node/examples/train.test.ts
-         :language: typescript
+      .. literalinclude:: ../../bindings/node/examples/train.test.js
+         :language: javascript
 
