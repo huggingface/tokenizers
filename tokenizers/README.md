@@ -87,21 +87,21 @@ fn main() -> Result<()> {
     let tokenizer = TokenizerBuilder::new()
         .with_model(BPE::default())
         .with_normalizer(Some(Sequence::new(vec![
-            NormalizerWrapper::StripNormalizer(Strip::new(true, true)),
-            NormalizerWrapper::NFC(NFC),
+            Strip::new(true, true).into(),
+            NFC.into(),
         ])))
-        .with_pre_tokenizer(Some(PreTokenizerWrapper::ByteLevel(ByteLevel::default())))
-        .with_post_processor(Some(PostProcessorWrapper::ByteLevel(ByteLevel::default())))
-        .with_decoder(Some(DecoderWrapper::ByteLevel(ByteLevel::default())))
+        .with_pre_tokenizer(Some(ByteLevel::default()))
+        .with_post_processor(Some(ByteLevel::default()))
+        .with_decoder(Some(ByteLevel::default()))
         .build()?;
 
+    let pretty = false;
     tokenizer
         .train(
             &trainer,
             vec!["path/to/vocab.txt".to_string()],
         )?
-        .get_model()
-        .save(Path::new("result-folder"), Some("some-prefix"))?;
+        .save("tokenizer.json", pretty)?;
 
     Ok(())
 }
