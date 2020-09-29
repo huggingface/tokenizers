@@ -1,18 +1,25 @@
 /*eslint-disable no-undef*/
 const tokenizers = require("tokenizers");
+const { promisify } = require("util");
 
 describe("loadExample", () => {
-  it("", () => {
+  beforeAll(async () => {});
+  it("", async () => {
     const example = "This is an example";
     const ids = [713, 16, 41, 1246];
     const tokens = ["This", "Ġis", "Ġan", "Ġexample"];
 
     const tokenizer = tokenizers.Tokenizer.fromFile("data/roberta.json");
-    const encoded = tokenizer.encode(example);
 
-    expect(encoded.ids).toBe(ids);
-    expect(encoded.tokens).toBe(tokens);
+    // You could also use regular callbacks
+    const encode = promisify(tokenizer.encode.bind(tokenizer));
+    const decode = promisify(tokenizer.decode.bind(tokenizer));
 
-    expect(tokenizer.decode(ids)).toBe(example);
+    const encoded = await encode(example);
+    expect(encoded.getIds()).toEqual(ids);
+    expect(encoded.getTokens()).toEqual(tokens);
+
+    const decoded = await decode(ids);
+    expect(decoded).toEqual(example);
   });
 });

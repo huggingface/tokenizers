@@ -138,7 +138,7 @@ describe("Tokenizer", () => {
     });
 
     it("accepts a pair of strings as parameters", async () => {
-      const encoding = await encode("my name is john", "pair", undefined);
+      const encoding = await encode("my name is john", "pair");
       expect(encoding).toBeDefined();
     });
 
@@ -174,10 +174,9 @@ describe("Tokenizer", () => {
       expect(encoding).toBeDefined();
     });
 
-    it("throws if called with only one argument", async () => {
-      await expect((encode as any)("my name is john")).rejects.toThrow(
-        "not enough arguments"
-      );
+    it("Encodes correctly if called with only one argument", async () => {
+      const encoded = await encode("my name is john");
+      expect(encoded.getIds()).toEqual([0, 1, 2, 3]);
     });
 
     it("returns an Encoding", async () => {
