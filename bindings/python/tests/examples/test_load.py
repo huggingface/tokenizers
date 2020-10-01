@@ -1,7 +1,8 @@
 from tokenizers import Tokenizer
 
-
+# START load
 tokenizer = Tokenizer.from_file("data/roberta.json")
+# END load
 
 example = "This is an example"
 ids = [713, 16, 41, 1246]

@@ -1,7 +1,9 @@
 use tokenizers::Tokenizer;
 
 fn main() {
-    let tokenizer: Tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();
+    // START load
+    let tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();
+    // END load
 
     let example = "This is an example";
     let ids = vec![713, 16, 41, 1246];
