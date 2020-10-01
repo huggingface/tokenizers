@@ -93,4 +93,4 @@ def multiprocessing_with_parallelism(tokenizer, enabled: bool):
     if alive:
         p.terminate()
 
-    assert (alive and mp.get_start_method() == "fork") == enabled
+    (alive and mp.get_start_method() == "fork") == enabled
