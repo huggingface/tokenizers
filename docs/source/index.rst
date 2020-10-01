@@ -3,19 +3,17 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to tokenizers's documentation!
+Tokenizers
 ======================================
 
-.. toctree::
+Fast State-of-the-art tokenizers, optimized for both research and production
 
-    tokenizer_blocks
+`🤗 Tokenizers`_ provides an implementation of today's most used tokenizers, with
+a focus on performance and versatility. These tokenizers are also used in
+`🤗 Transformers`_.
 
-Getting started
-==================
-
-
-Provides an implementation of today's most used tokenizers, with a focus on performance and
-versatility.
+.. _🤗 Tokenizers: https://github.com/huggingface/tokenizers
+.. _🤗 Transformers: https://github.com/huggingface/transformers
 
 Main features:
 --------------
@@ -24,36 +22,46 @@ Main features:
  - Extremely fast (both training and tokenization), thanks to the Rust implementation. Takes
    less than 20 seconds to tokenize a GB of text on a server's CPU.
  - Easy to use, but also extremely versatile.
- - Designed for research and production.
- - Normalization comes with alignments tracking. It's always possible to get the part of the
-   original sentence that corresponds to a given token.
- - Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
- - Bindings to Rust, Python and Node.
+ - Designed for both research and production.
+ - Full alignment tracking. Even with destructive normalization, it's always possible to get
+   the part of the original sentence that corresponds to any token.
+ - Does all the pre-processing: Truncation, Padding, add the special tokens your model needs.
+
+Components:
+------------
+
+.. toctree::
+    :maxdepth: 2
+
+    tokenizer_blocks
 
 Load an existing tokenizer:
 ---------------------------
 
+Loading a previously saved tokenizer is extremely simple and requires a single line of code:
 
-.. tabs::
+.. only:: Rust
 
-   .. group-tab:: Rust
+  .. literalinclude:: ../../tokenizers/examples/load.rs
+     :language: rust
+     :start-after: START load
+     :end-before: END load
+     :dedent: 4
 
-      .. literalinclude:: ../../tokenizers/examples/load.rs
-         :language: rust
-         :emphasize-lines: 4
+.. only:: Python
 
-   .. group-tab:: Python
+  .. literalinclude:: ../../bindings/python/tests/examples/test_load.py
+     :language: python
+     :start-after: START load
+     :end-before: END load
 
-      .. literalinclude:: ../../bindings/python/tests/examples/test_load.py
-         :language: python
-         :emphasize-lines: 4
+.. only:: Node
 
-   .. group-tab:: Node
-
-      .. literalinclude:: ../../bindings/node/examples/load.test.js
-         :language: javascript
-         :emphasize-lines: 11
-
+  .. literalinclude:: ../../bindings/node/examples/load.test.js
+     :language: javascript
+     :start-after: START load
+     :end-before: END load
+     :dedent: 4
 
 
 Train a tokenizer:
