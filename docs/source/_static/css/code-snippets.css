@@ -1,0 +1,16 @@
+
+.highlight .c1, .highlight .sd{
+    color: #999
+}
+
+.highlight .nn, .highlight .k, .highlight .s1, .highlight .nb, .highlight .bp, .highlight .kc, .highlight .kt {
+    color: #FB8D68;
+}
+
+.highlight .kn, .highlight .nv, .highlight .s2, .highlight .ow, .highlight .kd, .highlight .kr, .highlight .s {
+    color: #6670FF;
+}
+
+.highlight .gp {
+    color: #FB8D68;
+}
