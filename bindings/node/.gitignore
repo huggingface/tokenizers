@@ -8,3 +8,5 @@ native/artifacts.json
 dist
 build
 bin-package
+
+data

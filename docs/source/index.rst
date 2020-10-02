@@ -42,10 +42,10 @@ Loading a previously saved tokenizer is extremely simple and requires a single l
 
 .. only:: Rust
 
-  .. literalinclude:: ../../tokenizers/examples/load.rs
+  .. literalinclude:: ../../tokenizers/tests/documentation.rs
      :language: rust
-     :start-after: START load
-     :end-before: END load
+     :start-after: START load_tokenizer
+     :end-before: END load_tokenizer
      :dedent: 4
 
 .. only:: Python
@@ -69,19 +69,20 @@ Train a tokenizer:
 
 Small guide of :ref:`how to create a Tokenizer options<tokenizer_blocks>`.
 
-.. tabs::
-   .. group-tab:: Rust
+.. only:: Rust
 
-      .. literalinclude:: ../../tokenizers/examples/train.rs
-         :language: rust
+  .. literalinclude:: ../../tokenizers/tests/documentation.rs
+     :language: rust
+     :start-after: START train_tokenizer
+     :end-before: END train_tokenizer
+     :dedent: 4
 
-   .. group-tab:: Python
+.. only:: Python
 
-      .. literalinclude:: ../../bindings/python/tests/examples/test_train.py
-         :language: python
+  .. literalinclude:: ../../bindings/python/tests/examples/test_train.py
+     :language: python
 
-   .. group-tab:: Node
+.. only:: Node
 
-      .. literalinclude:: ../../bindings/node/examples/train.test.js
-         :language: javascript
-
+  .. literalinclude:: ../../bindings/node/examples/train.test.js
+     :language: javascript

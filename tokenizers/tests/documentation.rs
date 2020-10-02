@@ -1,9 +1,12 @@
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::normalizers::{Sequence, Strip, NFC};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::Tokenizer;
 use tokenizers::{AddedToken, TokenizerBuilder};
 
-fn main() {
+#[test]
+fn train_tokenizer() {
+    // START train_tokenizer
     let vocab_size: usize = 100;
     let tokenizer = TokenizerBuilder::new()
         .with_model(BPE::default())
@@ -34,6 +37,27 @@ fn main() {
     tokenizer
         .train(&trainer, vec!["data/small.txt".to_string()])
         .unwrap()
-        .save("data/tokenizer.json", pretty)
+        .save("data/trained-tokenizer-tests.json", pretty)
         .unwrap();
+    // END train_tokenizer
+}
+
+#[test]
+#[ignore]
+fn load_tokenizer() {
+    // START load_tokenizer
+    let tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();
+    // END load_tokenizer
+
+    let example = "This is an example";
+    let ids = vec![713, 16, 41, 1246];
+    let tokens = vec!["This", "Ġis", "Ġan", "Ġexample"];
+
+    let encodings = tokenizer.encode(example, false).unwrap();
+
+    assert_eq!(encodings.get_ids(), ids);
+    assert_eq!(encodings.get_tokens(), tokens);
+
+    let decoded = tokenizer.decode(ids, false).unwrap();
+    assert_eq!(decoded, example);
 }
