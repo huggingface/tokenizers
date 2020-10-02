@@ -9,9 +9,9 @@ describe("loadExample", () => {
     const ids = [713, 16, 41, 1246];
     const tokens = ["This", "Ġis", "Ġan", "Ġexample"];
 
-    // START load
+    // START load_tokenizer
     const tokenizer = tokenizers.Tokenizer.fromFile("data/roberta.json");
-    // END load
+    // END load_tokenizer
 
     // You could also use regular callbacks
     const encode = promisify(tokenizer.encode.bind(tokenizer));

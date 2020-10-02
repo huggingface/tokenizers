@@ -37,13 +37,12 @@ fn train_tokenizer() {
     tokenizer
         .train(&trainer, vec!["data/small.txt".to_string()])
         .unwrap()
-        .save("data/trained-tokenizer-tests.json", pretty)
+        .save("data/tokenizer.json", pretty)
         .unwrap();
     // END train_tokenizer
 }
 
 #[test]
-#[ignore]
 fn load_tokenizer() {
     // START load_tokenizer
     let tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();

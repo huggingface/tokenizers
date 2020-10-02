@@ -50,10 +50,11 @@ Loading a previously saved tokenizer is extremely simple and requires a single l
 
 .. only:: Python
 
-  .. literalinclude:: ../../bindings/python/tests/examples/test_load.py
+  .. literalinclude:: ../../bindings/python/tests/documentation/test_load.py
      :language: python
-     :start-after: START load
-     :end-before: END load
+     :start-after: START load_tokenizer
+     :end-before: END load_tokenizer
+     :dedent: 4
 
 .. only:: Node
 
@@ -79,10 +80,16 @@ Small guide of :ref:`how to create a Tokenizer options<tokenizer_blocks>`.
 
 .. only:: Python
 
-  .. literalinclude:: ../../bindings/python/tests/examples/test_train.py
+  .. literalinclude:: ../../bindings/python/tests/documentation/test_train.py
      :language: python
+     :start-after: START train_tokenizer
+     :end-before: END train_tokenizer
+     :dedent: 4
 
 .. only:: Node
 
   .. literalinclude:: ../../bindings/node/examples/train.test.js
      :language: javascript
+     :start-after: START train_tokenizer
+     :end-before: END train_tokenizer
+     :dedent: 4
