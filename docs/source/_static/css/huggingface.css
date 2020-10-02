@@ -17,9 +17,13 @@
     background-color: #A6B0FF;
 }
 
+.dropdown-button.active {
+    background-color: #7988FF;
+}
+
 .menu-dropdown {
     display: none;
-    background-color: #A6B0FF;
+    background-color: #7988FF;
     min-width: 160px;
     overflow: auto;
     font-size: 15px;
@@ -34,11 +38,11 @@
 }
 
 .menu-dropdown a:hover {
-    background-color: #6670FF;
+    background-color: #A6B0FF;
 }
 
 .dropdown-link.active {
-    background-color: #424ac6;
+    background-color: #A6B0FF;
 }
 
 .show {
