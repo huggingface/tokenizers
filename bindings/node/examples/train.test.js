@@ -13,6 +13,7 @@ const {
 
 describe("trainExample", () => {
   it("", () => {
+    // START train_tokenizer
     const vocabSize = 100;
 
     const tokenizer = new Tokenizer(models.BPE.empty());
@@ -39,6 +40,7 @@ describe("trainExample", () => {
 
     tokenizer.train(trainer, ["data/small.txt"]);
     tokenizer.save("data/tokenizer.json");
+    // END train_tokenizer
 
     expect(1).toBe(1);
   });
