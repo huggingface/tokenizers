@@ -59,3 +59,4 @@ html_static_path = ["_static"]
 def setup(app):
     app.add_css_file("css/huggingface.css")
     app.add_css_file("css/code-snippets.css")
+    app.add_js_file("js/custom.js")

@@ -2,7 +2,9 @@
 
 /* Version control */
 
-.version-button {
+.dropdown-button {
+    display: inline-block;
+    width: 50%;
     background-color: #6670FF;
     color: white;
     border: none;
@@ -11,30 +13,35 @@
     cursor: pointer;
 }
 
-.version-button:hover, .version-button:focus {
+.dropdown-button:hover, .dropdown-button:focus, .dropdown-button.active {
     background-color: #A6B0FF;
 }
 
-.version-dropdown {
+.menu-dropdown {
     display: none;
-    background-color: #6670FF;
+    background-color: #A6B0FF;
     min-width: 160px;
     overflow: auto;
     font-size: 15px;
+    padding: 10px 0;
 }
 
-.version-dropdown a {
+.menu-dropdown a {
     color: white;
     padding: 3px 4px;
     text-decoration: none;
     display: block;
 }
 
-.version-dropdown a:hover {
-    background-color: #A6B0FF;
+.menu-dropdown a:hover {
+    background-color: #6670FF;
 }
 
-.version-show {
+.dropdown-link.active {
+    background-color: #424ac6;
+}
+
+.show {
     display: block;
 }
 
@@ -63,6 +70,7 @@
 /* The toc tree */
 .wy-nav-side{
     background-color: #6670FF;
+    padding-bottom: 0;
 }
 
 /* The section headers in the toc tree */
@@ -240,4 +248,41 @@ h2, .rst-content .toctree-wrapper p.caption, h3, h4, h5, h6, legend{
     font-family: Calibre-Thin;
     src: url(./Calibre-Thin.otf);
     font-weight:400;
+}
+
+/**
+ * Nav Links to other parts of huggingface.co
+ */
+ div.hf-menu {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding-top: 20px;
+    padding-right: 20px;
+    z-index: 1000;
+}
+div.hf-menu a {
+    font-size: 14px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    color: white;
+    -webkit-font-smoothing: antialiased;
+    background: linear-gradient(0deg, #6671ffb8, #9a66ffb8 50%);
+    padding: 10px 16px 6px 16px;
+    border-radius: 3px;
+    margin-left: 12px;
+    position: relative;
+}
+div.hf-menu a:active {
+    top: 1px;
+}
+@media (min-width: 768px) and (max-width: 1750px) {
+    .wy-breadcrumbs {
+        margin-top: 32px;
+    }
+}
+@media (max-width: 768px) {
+    div.hf-menu {
+        display: none;
+    }
 }
