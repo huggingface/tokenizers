@@ -3,6 +3,16 @@ set -ex
 
 LANGUAGES=('rust' 'python' 'node')
 
+function push_version() {
+    echo "Pushing version" $2 "for" $3
+    make clean
+    make html O="-t $3"
+    # Always use the statics from master (saved when deploying master)
+    rm -rf build/html/_static
+    cp -r _static build/html
+    rsync -zvr --delete build/html/ "$HOST_NAME:$DOC_PATH/$3/$2"
+}
+
 function deploy_doc(){
     echo "Creating doc at commit $1 for language $3 and pushing to folder $2"
     git checkout $1
@@ -13,25 +23,16 @@ function deploy_doc(){
             make clean
             make html O="-t $LANG"
             ssh "$HOST_NAME" "mkdir -p $DOC_PATH/$LANG"
-            scp -r build/html "$HOST_NAME:$DOC_PATH/$LANG/$2"
+            rsync -zvr --delete build/html/ "$HOST_NAME:$DOC_PATH/$LANG/$2"
             cp -r build/html/_static .
         done
     elif [ "$2" == "latest" ]; then
-        echo "Pushing latest for" $3
-        make clean
-        make html O="-t $3"
-        ssh "$HOST_NAME" "mkdir -p $DOC_PATH/$3"
-        scp -r build/html "$HOST_NAME:$DOC_PATH/$3/$2"
+        push_version $1 $2 $3
     elif ssh "$HOST_NAME" "[ -d $DOC_PATH/$3/$2 ]"; then
         echo "Directory" $2 "already exists"
-        scp -r _static/* "$HOST_NAME:$DOC_PATH/$3/$2/_static/"
+        rsync -zvr --delete _static/ "$HOST_NAME:$DOC_PATH/$3/$2/_static"
     else
-        echo "Pushing version" $2 "for" $3
-        make clean
-        make html O="-t $3"
-        rm -rf build/html/_static
-        cp -r _static build/html
-        scp -r build/html "$HOST_NAME:$DOC_PATH/$3/$2"
+        push_version $1 $2 $3
     fi
 }
 
