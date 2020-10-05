@@ -496,7 +496,7 @@ impl TemplateProcessing {
         let mut attention_mask = Vec::with_capacity(new_len);
 
         let pair_overflowing = pair.as_mut().map_or(vec![], |e| e.take_overflowing());
-        let overflowing = encoding
+        let mut overflowing = encoding
             .take_overflowing()
             .into_iter()
             .flat_map(|encoding| {
@@ -523,6 +523,15 @@ impl TemplateProcessing {
                 overflowings
             })
             .collect::<Result<Vec<_>>>()?;
+        // We also need to combine the first sequence with all other overflowings
+        overflowing.extend(
+            pair_overflowing
+                .into_iter()
+                .map(|pair| {
+                    self.apply_template(template, encoding.clone(), Some(pair), add_special_tokens)
+                })
+                .collect::<Result<Vec<_>>>()?,
+        );
 
         for piece in template {
             match piece {
