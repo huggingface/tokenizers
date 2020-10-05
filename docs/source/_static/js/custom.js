@@ -114,9 +114,12 @@ function addVersionControl() {
     // If a version is specified, update it
     if (parts[versionIndex] != "" && !parts[versionIndex].endsWith(".html")) {
         version = parts[versionIndex];
-    // Otherwise redirect to the latest
-    } else {
+    // Otherwise redirect to the latest (if not opening locally)
+    } else if (!parts[parts.length - 1].endsWith(".html")) {
         return window.location.pathname = [language, version, parts.splice(versionIndex)].join("/");
+    // Opening locally, just don't show the version/language selector
+    } else {
+        return
     }
 
     // Language Menu
