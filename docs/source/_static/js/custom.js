@@ -130,8 +130,14 @@ function addVersionControl() {
     const languageMenu = document.createElement("div");
     languageMenu.classList.add("menu-dropdown");
     languageMenu.innerHTML = languages.map((lang) => {
+        let isVersion = false;
         let updatedParts = parts.map((l, i) => {
+            if (isVersion) {
+                isVersion = false;
+                return 'latest';
+            }
             if (i == languageIndex) {
+                isVersion = true;
                 return lang;
             } else {
                 return l;
