@@ -4,19 +4,20 @@ const languages = [ "rust", "python", "node" ];
 // Last stable version for each language
 const stableVersion = {
     "rust": "master",
-    "python": "master",
+    "python": "v0.9.0",
     "node": "master"
 }
 // Dictionary doc folder to Label for each language
 const versionMapping = {
     "rust": {
-        "master": "master"
+        "master": "master",
     },
     "python": {
-        "master": "master"
+        "master": "master",
+        "v0.9.0": "v0.9.0"
     },
     "node": {
-        "master": "master"
+        "master": "master",
     }
 };
 
@@ -113,7 +114,10 @@ function addVersionControl() {
     const versionIndex  = languageIndex + 1;
     // If a version is specified, update it
     if (parts[versionIndex] != "" && !parts[versionIndex].endsWith(".html")) {
-        version = parts[versionIndex];
+        // If `latest`, let's keep the default (should be the explicit latest version)
+        if (parts[versionIndex] != "latest") {
+            version = parts[versionIndex];
+        }
     // Otherwise redirect to the latest (if not opening locally)
     } else if (!parts[parts.length - 1].endsWith(".html")) {
         return window.location.pathname = [language, version, parts.splice(versionIndex)].join("/");
