@@ -2,6 +2,10 @@
 
 /* Version control */
 
+.selectors {
+    margin-bottom: 10px;
+}
+
 .dropdown-button {
     display: inline-block;
     width: 50%;
