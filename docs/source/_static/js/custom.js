@@ -49,7 +49,7 @@ function addCustomFooter() {
     const questionOrIssue = document.createElement("div");
     questionOrIssue.innerHTML =
         "Stuck? Read our <a href='https://medium.com/huggingface'>Blog posts</a>" +
-        "or <a href='https://github.com/huggingface/tokenizers'>Create an issue</a>";
+        " or <a href='https://github.com/huggingface/tokenizers'>Create an issue</a>";
     customFooter.appendChild(questionOrIssue);
     customFooter.classList.add("footer");
 
@@ -199,6 +199,7 @@ function addVersionControl() {
 
     // Container
     const div = document.createElement("div");
+    div.classList.add("selectors");
     div.appendChild(buttonContainer);
     div.appendChild(languageMenu);
     div.appendChild(versionMenu);
