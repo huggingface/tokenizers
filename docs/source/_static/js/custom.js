@@ -104,12 +104,12 @@ function addGithubButton() {
 function addVersionControl() {
     // Default language and version
     let language = defaultLanguage;
-    let version  = stableVersion[language];
 
     // To grab the version currently in view, we parse the url
     let parts = location.pathname.split('/');
     const languageIndex = parts.findIndex((part) => languages.includes(part));
     language = parts[languageIndex];
+    let version  = stableVersion[language];
 
     const versionIndex  = languageIndex + 1;
     // If a version is specified, update it
