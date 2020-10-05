@@ -40,7 +40,7 @@ Load an existing tokenizer:
 
 Loading a previously saved tokenizer is extremely simple and requires a single line of code:
 
-.. only:: Rust
+.. only:: rust
 
   .. literalinclude:: ../../tokenizers/tests/documentation.rs
      :language: rust
@@ -48,7 +48,7 @@ Loading a previously saved tokenizer is extremely simple and requires a single l
      :end-before: END load_tokenizer
      :dedent: 4
 
-.. only:: Python
+.. only:: python
 
   .. literalinclude:: ../../bindings/python/tests/documentation/test_load.py
      :language: python
@@ -56,7 +56,7 @@ Loading a previously saved tokenizer is extremely simple and requires a single l
      :end-before: END load_tokenizer
      :dedent: 4
 
-.. only:: Node
+.. only:: node
 
   .. literalinclude:: ../../bindings/node/examples/load.test.js
      :language: javascript
@@ -70,7 +70,7 @@ Train a tokenizer:
 
 Small guide of :ref:`how to create a Tokenizer options<tokenizer_blocks>`.
 
-.. only:: Rust
+.. only:: rust
 
   .. literalinclude:: ../../tokenizers/tests/documentation.rs
      :language: rust
@@ -78,7 +78,7 @@ Small guide of :ref:`how to create a Tokenizer options<tokenizer_blocks>`.
      :end-before: END train_tokenizer
      :dedent: 4
 
-.. only:: Python
+.. only:: python
 
   .. literalinclude:: ../../bindings/python/tests/documentation/test_train.py
      :language: python
@@ -86,7 +86,7 @@ Small guide of :ref:`how to create a Tokenizer options<tokenizer_blocks>`.
      :end-before: END train_tokenizer
      :dedent: 4
 
-.. only:: Node
+.. only:: node
 
   .. literalinclude:: ../../bindings/node/examples/train.test.js
      :language: javascript
