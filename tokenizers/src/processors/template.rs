@@ -399,6 +399,29 @@ impl TemplateProcessingBuilder {
     }
 
     fn validate(&self) -> std::result::Result<(), String> {
+        let pair_has_both = self.pair.as_ref().map_or(true, |pair| {
+            let mut has_a = false;
+            let mut has_b = false;
+            for piece in &pair.0 {
+                if let Piece::Sequence {
+                    id: Sequence::A, ..
+                } = piece
+                {
+                    has_a = true;
+                }
+                if let Piece::Sequence {
+                    id: Sequence::B, ..
+                } = piece
+                {
+                    has_b = true;
+                }
+            }
+            has_a && has_b
+        });
+        if !pair_has_both {
+            return Err("Template for `pair` must use both sequences".into());
+        }
+
         let check = |sp| {
             let exist = self
                 .special_tokens
@@ -839,7 +862,7 @@ mod tests {
         let processor = TemplateProcessing::builder()
             .try_single("[CLS] $0 [SEP]")
             .unwrap()
-            .try_pair("[CLS] $0 [SEP] $1 [SEP]")
+            .try_pair("[CLS] $A:0 [SEP] $B:1 [SEP]")
             .unwrap()
             .build();
 
@@ -900,6 +923,20 @@ mod tests {
                 vec![1, 1, 1, 1, 1, 1],
                 vec![]
             )
+        );
+    }
+
+    #[test]
+    fn pair_must_use_both_sequences() {
+        let processor = TemplateProcessing::builder()
+            .try_single("$0")
+            .unwrap()
+            .try_pair("$0 $1")
+            .unwrap()
+            .build();
+        assert_eq!(
+            processor,
+            Err("Template for `pair` must use both sequences".into())
         );
     }
 }
