@@ -694,26 +694,40 @@ class Tokenizer:
         is_pretokenized: bool = False,
         add_special_tokens: bool = True,
     ) -> Encoding:
-        """Encode the given sequence and pair. This method can process raw text sequences as well
-        as already pre-tokenized sequences.
+        """
+        Encode the given sequence and pair. This method can process raw text sequences
+        as well as already pre-tokenized sequences.
+
+        Example:
+            Here are some examples of the inputs that are accepted::
+
+                encode("A single sequence")`
+                encode("A sequence", "And its pair")`
+                encode([ "A", "pre", "tokenized", "sequence" ], is_pretokenized=True)`
+                encode(
+                    [ "A", "pre", "tokenized", "sequence" ], [ "And", "its", "pair" ],
+                    is_pretokenized=True
+                )
 
         Args:
-            sequence: InputSequence:
-                The sequence we want to encode. This sequence can be either raw text or
-                pre-tokenized, according to the `is_pretokenized` argument:
+            sequence (:obj:`~tokenizers.InputSequence`):
+                The main input sequence we want to encode. This sequence can be either raw
+                text or pre-tokenized, according to the ``is_pretokenized`` argument:
 
-                - If `is_pretokenized=False`: `InputSequence` is expected to be `str`
-                - If `is_pretokenized=True`: `InputSequence` is expected to be
-                    `Union[List[str], Tuple[str]]`
+                - If ``is_pretokenized=False``: :class:`~tokenizers.TextInputSequence`
+                - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedInputSequence`
 
-            is_pretokenized: bool:
+            pair (:obj:`~tokenizers.InputSequence`, `optional`):
+                An optional input sequence. The expected format is the same that for ``sequence``.
+
+            is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
                 Whether the input is already pre-tokenized
 
-            add_special_tokens: bool:
-                Whether to add the special tokens while encoding.
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add the special tokens
 
         Returns:
-            An Encoding
+            :class:`~tokenizers.Encoding`: The encoded result
         """
         pass
     def encode_batch(
@@ -722,30 +736,38 @@ class Tokenizer:
         is_pretokenized: bool = False,
         add_special_tokens: bool = True,
     ) -> List[Encoding]:
-        """Encode the given inputs. This method accept both raw text sequences as well as already
-        pre-tokenized sequences.
+        """
+        Encode the given batch of inputs. This method accept both raw text sequences
+        as well as already pre-tokenized sequences.
+
+        Example:
+            Here are some examples of the inputs that are accepted::
+
+                encode_batch([
+                    "A single sequence",
+                    ("A tuple with a sequence", "And its pair"),
+                    [ "A", "pre", "tokenized", "sequence" ],
+                    ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
+                ])
 
         Args:
-            inputs: List[EncodeInput]:
-                A list of single sequences or pair sequences to encode. Each `EncodeInput` is
-                expected to be of the following form:
-                    `Union[InputSequence, Tuple[InputSequence, InputSequence]]`
+            input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
+                A list of single sequences or pair sequences to encode. Each sequence
+                can be either raw text or pre-tokenized, according to the ``is_pretokenized``
+                argument:
 
-                Each `InputSequence` can either be raw text or pre-tokenized,
-                according to the `is_pretokenized` argument:
+                - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
+                - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
 
-                - If `is_pretokenized=False`: `InputSequence` is expected to be `str`
-                - If `is_pretokenized=True`: `InputSequence` is expected to be
-                    `Union[List[str], Tuple[str]]`
+            is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+                Whether the input is already pre-tokenized
 
-            is_pretokenized: bool:
-                Whether the input is already pre-tokenized.
-
-            add_special_tokens: bool:
-                Whether to add the special tokens while encoding.
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add the special tokens
 
         Returns:
-            A list of Encoding
+            A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
+
         """
         pass
     def decode(self, ids: List[int], skip_special_tokens: Optional[bool] = True) -> str:
