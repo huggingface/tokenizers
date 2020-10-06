@@ -35,6 +35,8 @@ Components:
     components
 
 .. toctree::
+    :maxdepth: 3
+    :caption: API Reference
 
     api/reference
 
