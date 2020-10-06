@@ -602,15 +602,31 @@ impl PyTokenizer {
         })
     }
 
-    /// Input can be:
-    /// encode("A single sequence")
-    /// encode("A sequence", "And its pair")
-    /// encode([ "A", "pre", "tokenized", "sequence" ], is_pretokenized=True)
-    /// encode(
-    ///     [ "A", "pre", "tokenized", "sequence" ], [ "And", "its", "pair" ],
-    ///     is_pretokenized=True
-    /// )
+    /// Encode the given sequence and pair. This method can process raw text sequences
+    /// as well as already pre-tokenized sequences.
+    ///
+    /// Example:
+    ///     Here are some examples of the inputs that are accepted::
+    ///
+    ///         encode("A single sequence")`
+    ///         encode("A sequence", "And its pair")`
+    ///         encode([ "A", "pre", "tokenized", "sequence" ], is_pretokenized=True)`
+    ///         encode(
+    ///             [ "A", "pre", "tokenized", "sequence" ], [ "And", "its", "pair" ],
+    ///             is_pretokenized=True
+    ///         )
+    ///
+    /// Args:
+    ///     sequence (:obj:`~tokenizers.InputSequence`): The main input sequence
+    ///     pair: (:obj:`~tokenizers.InputSequence`): An optional input sequence
+    ///     is_pretokenized (:obj:`bool`): Whether the input is already pre-tokenized
+    ///     add_special_tokens (:obj:`bool`): Whether to add the special tokens
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.Encoding`: The encoded result
+    ///
     #[args(pair = "None", is_pretokenized = "false", add_special_tokens = "true")]
+    #[text_signature = "($self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True, /)"]
     fn encode(
         &self,
         sequence: &PyAny,
@@ -643,14 +659,29 @@ impl PyTokenizer {
         .into()
     }
 
-    /// Input can be:
-    /// encode_batch([
-    ///   "A single sequence",
-    ///   ("A tuple with a sequence", "And its pair"),
-    ///   [ "A", "pre", "tokenized", "sequence" ],
-    ///   ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
-    /// ])
+    /// Encode the given batch of inputs. This method accept both raw text sequences
+    /// as well as already pre-tokenized sequences.
+    ///
+    /// Example:
+    ///     Here are some examples of the inputs that are accepted::
+    ///
+    ///         encode_batch([
+    ///             "A single sequence",
+    ///             ("A tuple with a sequence", "And its pair"),
+    ///             [ "A", "pre", "tokenized", "sequence" ],
+    ///             ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
+    ///         ])
+    ///
+    /// Args:
+    ///     input (:obj:`~tokenizers.EncodeInput`): The batch inputs
+    ///     is_pretokenized (:obj:`bool`): Whether the input is already pre-tokenized
+    ///     add_special_tokens (:obj:`bool`): Whether to add the special tokens
+    ///
+    /// Returns:
+    ///     :obj:`List[:class:`~tokenizers.Encoding`]`: The encoded batch
+    ///
     #[args(is_pretokenized = "false", add_special_tokens = "true")]
+    #[text_signature = "($self, input, is_pretokenized=False, add_special_tokens=True, /)"]
     fn encode_batch(
         &self,
         input: Vec<&PyAny>,

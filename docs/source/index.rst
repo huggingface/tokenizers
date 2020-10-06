@@ -34,6 +34,10 @@ Components:
     pipeline
     components
 
+.. toctree::
+
+    api/reference
+
 Load an existing tokenizer:
 ----------------------------------------------------------------------------------------------------
 

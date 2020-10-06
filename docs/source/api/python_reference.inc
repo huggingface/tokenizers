@@ -1,0 +1,2 @@
+.. autoclass:: tokenizers.Tokenizer
+    :members:
