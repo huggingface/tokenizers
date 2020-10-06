@@ -1,10 +1,5 @@
-.. tokenizers documentation master file, created by
-   sphinx-quickstart on Fri Sep 25 14:32:54 2020.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
 Tokenizers
-======================================
+====================================================================================================
 
 Fast State-of-the-art tokenizers, optimized for both research and production
 
@@ -16,7 +11,7 @@ a focus on performance and versatility. These tokenizers are also used in
 .. _🤗 Transformers: https://github.com/huggingface/transformers
 
 Main features:
---------------
+----------------------------------------------------------------------------------------------------
 
  - Train new vocabularies and tokenize, using today's most used tokenizers.
  - Extremely fast (both training and tokenization), thanks to the Rust implementation. Takes
@@ -28,15 +23,15 @@ Main features:
  - Does all the pre-processing: Truncation, Padding, add the special tokens your model needs.
 
 Components:
-------------
+----------------------------------------------------------------------------------------------------
 
 .. toctree::
     :maxdepth: 2
 
-    tokenizer_blocks
+    components
 
 Load an existing tokenizer:
----------------------------
+----------------------------------------------------------------------------------------------------
 
 Loading a previously saved tokenizer is extremely simple and requires a single line of code:
 
@@ -66,9 +61,7 @@ Loading a previously saved tokenizer is extremely simple and requires a single l
 
 
 Train a tokenizer:
-------------------
-
-Small guide of :ref:`how to create a Tokenizer options<tokenizer_blocks>`.
+----------------------------------------------------------------------------------------------------
 
 .. only:: rust
 
