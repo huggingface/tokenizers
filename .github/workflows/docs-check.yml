@@ -19,7 +19,16 @@ jobs:
           python-version: 3.6
 
       - name: Install dependencies
-        run: pip install sphinx sphinx_rtd_theme
+        run: pip install sphinx sphinx_rtd_theme setuptools-rust
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build tokenizers
+        working-directory: ./bindings/python
+        run: python setup.py install
 
       - name: Build documentation
         working-directory: ./docs
