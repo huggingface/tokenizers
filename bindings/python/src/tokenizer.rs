@@ -617,10 +617,21 @@ impl PyTokenizer {
     ///         )
     ///
     /// Args:
-    ///     sequence (:obj:`~tokenizers.InputSequence`): The main input sequence
-    ///     pair: (:obj:`~tokenizers.InputSequence`): An optional input sequence
-    ///     is_pretokenized (:obj:`bool`): Whether the input is already pre-tokenized
-    ///     add_special_tokens (:obj:`bool`): Whether to add the special tokens
+    ///     sequence (:obj:`~tokenizers.InputSequence`):
+    ///         The main input sequence we want to encode. This sequence can be either raw
+    ///         text or pre-tokenized, according to the ``is_pretokenized`` argument:
+    ///
+    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextInputSequence`
+    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedInputSequence`
+    ///
+    ///     pair (:obj:`~tokenizers.InputSequence`, `optional`):
+    ///         An optional input sequence. The expected format is the same that for ``sequence``.
+    ///
+    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+    ///         Whether the input is already pre-tokenized
+    ///
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to add the special tokens
     ///
     /// Returns:
     ///     :class:`~tokenizers.Encoding`: The encoded result
@@ -673,12 +684,22 @@ impl PyTokenizer {
     ///         ])
     ///
     /// Args:
-    ///     input (:obj:`~tokenizers.EncodeInput`): The batch inputs
-    ///     is_pretokenized (:obj:`bool`): Whether the input is already pre-tokenized
-    ///     add_special_tokens (:obj:`bool`): Whether to add the special tokens
+    ///     input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
+    ///         A list of single sequences or pair sequences to encode. Each sequence
+    ///         can be either raw text or pre-tokenized, according to the ``is_pretokenized``
+    ///         argument:
+    ///
+    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
+    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
+    ///
+    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+    ///         Whether the input is already pre-tokenized
+    ///
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to add the special tokens
     ///
     /// Returns:
-    ///     :obj:`List[:class:`~tokenizers.Encoding`]`: The encoded batch
+    ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
     ///
     #[args(is_pretokenized = "false", add_special_tokens = "true")]
     #[text_signature = "($self, input, is_pretokenized=False, add_special_tokens=True, /)"]
