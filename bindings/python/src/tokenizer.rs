@@ -22,7 +22,38 @@ use super::pre_tokenizers::PyPreTokenizer;
 use super::trainers::PyTrainer;
 use crate::processors::PyPostProcessor;
 
+/// Represents a token that can be be added to a :class:`~tokenizers.Tokenizer`.
+/// It can have special options that defines the way it should behave.
+///
+/// Args:
+///     content (:obj:`str`): The content of the token
+///
+///     single_word (:obj:`bool`, defaults to :obj:`False`):
+///         Defines whether this token should only match single words. If :obj:`True`, this
+///         token will never match inside of a word. For example the token ``ing`` would match
+///         on ``tokenizing`` if this option is :obj:`False`, but not if it is :obj:`True`.
+///         The notion of "`inside of a word`" is defined by the word boundaries pattern in
+///         regular expressions (ie. the token should start and end with word boundaries).
+///
+///     lstrip (:obj:`bool`, defaults to :obj:`False`):
+///         Defines whether this token should strip all potential whitespaces on its left side.
+///         If :obj:`True`, this token will greedily match any whitespace on its left. For
+///         example if we try to match the token ``[MASK]`` with ``lstrip=True``, in the text
+///         ``"I saw a [MASK]"``, we would match on ``" [MASK]"``. (Note the space on the left).
+///
+///     rstrip (:obj:`bool`, defaults to :obj:`False`):
+///         Defines whether this token should strip all potential whitespaces on its right
+///         side. If :obj:`True`, this token will greedily match any whitespace on its right.
+///         It works just like :obj:`lstrip` but on the right.
+///
+///     normalized (:obj:`bool`, defaults to :obj:`True` with :meth:`~tokenizers.Tokenizer.add_tokens` and :obj:`False` with :meth:`~tokenizers.Tokenizer.add_special_tokens`):
+///         Defines whether this token should match the normalized version of the input text.
+///         For example, with the added token ``"yesterday"``, and a normalizer in charge of
+///         lowercasing the text, the token could be extract from the input ``"I saw a lion
+///         Yesterday"``.
+///
 #[pyclass(dict, module = "tokenizers", name=AddedToken)]
+#[text_signature = "(content, **kwargs)"]
 pub struct PyAddedToken {
     pub content: String,
     pub is_special_token: bool,
@@ -123,26 +154,31 @@ impl PyAddedToken {
         }
     }
 
+    /// Get the content attribute
     #[getter]
     fn get_content(&self) -> &str {
         &self.content
     }
 
+    /// Get the value of the :obj:`rstrip` attribute
     #[getter]
     fn get_rstrip(&self) -> bool {
         self.get_token().rstrip
     }
 
+    /// Get the value of the :obj:`lstrip` attribute
     #[getter]
     fn get_lstrip(&self) -> bool {
         self.get_token().lstrip
     }
 
+    /// Get the value of the :obj:`single_word` attribute
     #[getter]
     fn get_single_word(&self) -> bool {
         self.get_token().single_word
     }
 
+    /// Get the value of the :obj:`normalized` attribute
     #[getter]
     fn get_normalized(&self) -> bool {
         self.get_token().normalized
