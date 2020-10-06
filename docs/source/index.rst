@@ -27,7 +27,11 @@ Components:
 
 .. toctree::
     :maxdepth: 2
+    :caption: Getting Started
 
+    quicktour
+    installation
+    pipeline
     components
 
 Load an existing tokenizer:
