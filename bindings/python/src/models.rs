@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::token::PyToken;
+use crate::trainers::PyTrainer;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -45,6 +46,8 @@ impl PyModel {
 }
 
 impl Model for PyModel {
+    type Trainer = PyTrainer;
+
     fn tokenize(&self, tokens: &str) -> tk::Result<Vec<Token>> {
         self.model.tokenize(tokens)
     }
@@ -67,6 +70,10 @@ impl Model for PyModel {
 
     fn save(&self, folder: &Path, name: Option<&str>) -> tk::Result<Vec<PathBuf>> {
         self.model.save(folder, name)
+    }
+
+    fn get_trainer(&self) -> Self::Trainer {
+        self.model.get_trainer().into()
     }
 }
 
@@ -129,6 +136,10 @@ impl PyModel {
             .into_iter()
             .map(|path| path.to_string_lossy().into_owned())
             .collect())
+    }
+
+    fn get_trainer(&self) -> PyResult<PyObject> {
+        PyTrainer::from(self.model.get_trainer()).get_as_subtype()
     }
 }
 

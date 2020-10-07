@@ -1,5 +1,8 @@
-use crate::models::unigram::lattice::Lattice;
-use crate::models::unigram::trie::{Trie, TrieBuilder};
+use super::{
+    lattice::Lattice,
+    trainer::UnigramTrainer,
+    trie::{Trie, TrieBuilder},
+};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::Cache;
 
@@ -398,6 +401,8 @@ impl<'a> Iterator for UnigramIterator<'a> {
 }
 
 impl Model for Unigram {
+    type Trainer = UnigramTrainer;
+
     fn get_vocab(&self) -> &HashMap<String, u32> {
         &self.token_to_ids
     }
@@ -446,6 +451,10 @@ impl Model for Unigram {
         let string = serde_json::to_string_pretty(self)?;
         std::fs::write(&fullpath, string)?;
         Ok(vec![fullpath])
+    }
+
+    fn get_trainer(&self) -> Self::Trainer {
+        UnigramTrainer::default()
     }
 }
 

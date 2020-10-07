@@ -152,6 +152,8 @@ impl Default for WordLevel {
 }
 
 impl Model for WordLevel {
+    type Trainer = WordLevelTrainer;
+
     fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
         Ok(vec![Token {
             id: *self
@@ -196,5 +198,9 @@ impl Model for WordLevel {
         vocab_file.write_all(&serialized.as_bytes())?;
 
         Ok(vec![vocab_path])
+    }
+
+    fn get_trainer(&self) -> Self::Trainer {
+        WordLevelTrainer::default()
     }
 }

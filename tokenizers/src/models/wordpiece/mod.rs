@@ -200,6 +200,8 @@ impl WordPiece {
 }
 
 impl Model for WordPiece {
+    type Trainer = WordPieceTrainer;
+
     fn get_vocab(&self) -> &HashMap<String, u32> {
         &self.vocab
     }
@@ -298,6 +300,10 @@ impl Model for WordPiece {
         )?;
 
         Ok(vec![vocab_path])
+    }
+
+    fn get_trainer(&self) -> Self::Trainer {
+        WordPieceTrainer::builder().build()
     }
 }
 
