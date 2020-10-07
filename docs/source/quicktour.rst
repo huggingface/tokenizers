@@ -105,7 +105,7 @@ class method:
 
 .. code-block:: python
 
-    tokenizer = Tokenizer.from_file("tst-tokenizer/wiki-trained.json")
+    tokenizer = Tokenizer.from_file("pretrained/wiki.json")
 
 Using the tokenizer
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -297,5 +297,5 @@ as long as you have downloaded the file `bert-base-uncased-vocab.txt` with
 
 .. note::
 
-    Better support for pretrained tokenziers is coming in a next release, so expect this API to
+    Better support for pretrained tokenizers is coming in a next release, so expect this API to
     change soon.
