@@ -44,6 +44,7 @@ fn trainers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<trainers::PyTrainer>()?;
     m.add_class::<trainers::PyBpeTrainer>()?;
     m.add_class::<trainers::PyWordPieceTrainer>()?;
+    m.add_class::<trainers::PyWordLevelTrainer>()?;
     m.add_class::<trainers::PyUnigramTrainer>()?;
     Ok(())
 }

@@ -8,6 +8,10 @@ use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
 mod serialization;
+mod trainer;
+
+// Re-export
+pub use trainer::*;
 
 type Vocab = HashMap<String, u32>;
 

@@ -112,6 +112,39 @@ class WordPieceTrainer(Trainer):
         """
         pass
 
+class WordLevelTrainer(Trainer):
+    """WordLevelTrainer
+
+    Capable of training a WordLevel model
+    """
+
+    def __init__(
+        self,
+        vocab_size: int = 30000,
+        min_frequency: int = 0,
+        show_progress: bool = True,
+        special_tokens: List[Union[str, AddedToken]] = [],
+    ) -> Trainer:
+        """Instantiate a new WordPieceTrainer with the given options:
+
+        Args:
+            vocab_size: unsigned int:
+                The size of the final vocabulary, including all tokens and alphabet.
+
+            min_frequency: unsigned int:
+                The minimum frequency a pair should have in order to be merged.
+
+            show_progress: boolean:
+                Whether to show progress bars while training.
+
+            special_tokens: List[Union[str, AddedToken]]:
+                A list of special tokens the model should know of.
+
+        Returns:
+            Trainer
+        """
+        pass
+
 class UnigramTrainer(Trainer):
     """UnigramTrainer
 
