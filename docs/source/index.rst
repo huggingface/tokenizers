@@ -22,8 +22,6 @@ Main features:
    the part of the original sentence that corresponds to any token.
  - Does all the pre-processing: Truncation, Padding, add the special tokens your model needs.
 
-Components:
-----------------------------------------------------------------------------------------------------
 
 .. toctree::
     :maxdepth: 2
