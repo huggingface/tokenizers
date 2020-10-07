@@ -129,7 +129,14 @@ pub trait Trainer {
         words: HashMap<String, u32>,
     ) -> Result<(<Self as Trainer>::Model, Vec<AddedToken>)>;
     /// Process a bunch of token, counting them as relevant.
-    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>);
+    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
+        for token in tokens {
+            words
+                .entry(token.clone())
+                .and_modify(|c| *c += 1)
+                .or_insert(1);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -583,18 +583,7 @@ impl Trainer for BpeTrainer {
 
     /// Train a BPE model
     fn train(&self, word_counts: HashMap<String, u32>) -> Result<(BPE, Vec<AddedToken>)> {
-        let (bpe, tokens) = self.train(word_counts)?;
-        Ok((bpe, tokens))
-    }
-
-    /// Process a bunch of tokens, counting them
-    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
-        for token in tokens {
-            words
-                .entry(token.clone())
-                .and_modify(|c| *c += 1)
-                .or_insert(1);
-        }
+        self.train(word_counts)
     }
 
     /// Whether we should show progress

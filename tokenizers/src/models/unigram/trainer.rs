@@ -497,16 +497,6 @@ impl Trainer for UnigramTrainer {
         self._train(sentences)
     }
 
-    /// Process a bunch of tokens, counting them
-    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
-        for token in tokens {
-            words
-                .entry(token.clone())
-                .and_modify(|c| *c += 1)
-                .or_insert(1);
-        }
-    }
-
     /// Whether we should show progress
     fn should_show_progress(&self) -> bool {
         self.show_progress
