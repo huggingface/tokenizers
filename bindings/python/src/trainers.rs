@@ -242,6 +242,69 @@ impl PyWordPieceTrainer {
     }
 }
 
+/// Capable of training a WorldLevel model
+///
+/// Args:
+///     vocab_size: unsigned int:
+///         The size of the final vocabulary, including all tokens and alphabet.
+///
+///     min_frequency: unsigned int:
+///         The minimum frequency a pair should have in order to be merged.
+///
+///     show_progress: boolean:
+///         Whether to show progress bars while training.
+///
+///     special_tokens: List[Union[str, AddedToken]]:
+///         A list of special tokens the model should know of.
+///
+/// Returns:
+///     Trainer
+#[pyclass(extends=PyTrainer, name=WordLevelTrainer)]
+pub struct PyWordLevelTrainer {}
+#[pymethods]
+impl PyWordLevelTrainer {
+    /// Create a new WordLevelTrainer with the given configuration
+    #[new]
+    #[args(kwargs = "**")]
+    pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
+        let mut trainer = tk::models::wordlevel::WordLevelTrainer::default();
+
+        if let Some(kwargs) = kwargs {
+            for (key, val) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "vocab_size" => trainer.vocab_size = val.extract()?,
+                    "min_frequency" => trainer.min_frequency = val.extract()?,
+                    "show_progress" => trainer.show_progress = val.extract()?,
+                    "special_tokens" => {
+                        trainer.special_tokens = val
+                            .cast_as::<PyList>()?
+                            .into_iter()
+                            .map(|token| {
+                                if let Ok(content) = token.extract::<String>() {
+                                    Ok(PyAddedToken::from(content, Some(true)).get_token())
+                                } else if let Ok(mut token) =
+                                    token.extract::<PyRefMut<PyAddedToken>>()
+                                {
+                                    token.is_special_token = true;
+                                    Ok(token.get_token())
+                                } else {
+                                    Err(exceptions::PyTypeError::new_err(
+                                        "special_tokens must be a List[Union[str, AddedToken]]",
+                                    ))
+                                }
+                            })
+                            .collect::<PyResult<Vec<_>>>()?
+                    }
+                    _ => println!("Ignored unknown kwargs option {}", key),
+                }
+            }
+        }
+
+        Ok((PyWordLevelTrainer {}, PyTrainer::new(trainer.into())))
+    }
+}
+
 /// Capable of training a Unigram model
 ///
 /// Args:
