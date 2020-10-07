@@ -226,7 +226,7 @@ If you save your tokenizer with :meth:`~tokenizers.Tokenizer.save`, the post-pro
 along.
 
 Encoding multiple sentences in a batch
-----------------------------------------------------------------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To get the full speed of the 🤗 Tokenizers library, it's best to process your texts by batches by
 using the :meth:`~tokenizers.Tokenizer.encode_batch` method:
