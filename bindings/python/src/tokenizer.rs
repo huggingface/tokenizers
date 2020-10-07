@@ -47,8 +47,8 @@ use crate::processors::PyPostProcessor;
 ///         It works just like :obj:`lstrip` but on the right.
 ///
 ///     normalized (:obj:`bool`, defaults to :obj:`True` with :meth:`~tokenizers.Tokenizer.add_tokens` and :obj:`False` with :meth:`~tokenizers.Tokenizer.add_special_tokens`):
-///         Defines whether this token should match the normalized version of the input text.
-///         For example, with the added token ``"yesterday"``, and a normalizer in charge of
+///         Defines whether this token should match against the normalized version of the input
+///         text. For example, with the added token ``"yesterday"``, and a normalizer in charge of
 ///         lowercasing the text, the token could be extract from the input ``"I saw a lion
 ///         Yesterday"``.
 ///
@@ -111,7 +111,7 @@ impl PyAddedToken {
 impl PyAddedToken {
     #[new]
     #[args(kwargs = "**")]
-    fn new(content: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<Self> {
+    fn __new__(content: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<Self> {
         let mut token = PyAddedToken::from(content.unwrap_or(""), None);
 
         if let Some(kwargs) = kwargs {
@@ -154,31 +154,31 @@ impl PyAddedToken {
         }
     }
 
-    /// Get the content attribute
+    /// Get the content of this :obj:`AddedToken`
     #[getter]
     fn get_content(&self) -> &str {
         &self.content
     }
 
-    /// Get the value of the :obj:`rstrip` attribute
+    /// Get the value of the :obj:`rstrip` option
     #[getter]
     fn get_rstrip(&self) -> bool {
         self.get_token().rstrip
     }
 
-    /// Get the value of the :obj:`lstrip` attribute
+    /// Get the value of the :obj:`lstrip` option
     #[getter]
     fn get_lstrip(&self) -> bool {
         self.get_token().lstrip
     }
 
-    /// Get the value of the :obj:`single_word` attribute
+    /// Get the value of the :obj:`single_word` option
     #[getter]
     fn get_single_word(&self) -> bool {
         self.get_token().single_word
     }
 
-    /// Get the value of the :obj:`normalized` attribute
+    /// Get the value of the :obj:`normalized` option
     #[getter]
     fn get_normalized(&self) -> bool {
         self.get_token().normalized
@@ -400,6 +400,13 @@ impl<'s> From<PreTokenizedEncodeInput<'s>> for tk::tokenizer::EncodeInput<'s> {
 
 type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProcessor, PyDecoder>;
 
+/// A :obj:`Tokenizer` works as a pipeline. It processes some raw text as input
+/// and outputs an :class:`~tokenizers.Encoding`.
+///
+/// Args:
+///     model (:class:`~tokenizers.models.Model`):
+///         The core algorithm that this :obj:`Tokenizer` should be using.
+///
 #[pyclass(dict, module = "tokenizers", name=Tokenizer)]
 #[derive(Clone)]
 pub struct PyTokenizer {
@@ -454,19 +461,48 @@ impl PyTokenizer {
         Ok(args)
     }
 
+    /// Instantiate a new :class:`~tokenizers.Tokenizer` from the given JSON string.
+    ///
+    /// Args:
+    ///     json (:obj:`str`):
+    ///         A valid JSON string representing a previously serialized
+    ///         :class:`~tokenizers.Tokenizer`
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
-    fn from_str(s: &str) -> PyResult<Self> {
-        let tokenizer: PyResult<_> = ToPyResult(s.parse()).into();
+    #[text_signature = "(json)"]
+    fn from_str(json: &str) -> PyResult<Self> {
+        let tokenizer: PyResult<_> = ToPyResult(json.parse()).into();
         Ok(Self::new(tokenizer?))
     }
 
+    /// Instantiate a new :class:`~tokenizers.Tokenizer` from the file at the given path.
+    ///
+    /// Args:
+    ///     path (:obj:`str`):
+    ///         A path to a local JSON file representing a previously serialized
+    ///         :class:`~tokenizers.Tokenizer`
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
+    #[text_signature = "(path)"]
     fn from_file(path: &str) -> PyResult<Self> {
         let tokenizer: PyResult<_> = ToPyResult(Tokenizer::from_file(path)).into();
         Ok(Self::new(tokenizer?))
     }
 
+    /// Instantiate a new :class:`~tokenizers.Tokenizer` from the given buffer.
+    ///
+    /// Args:
+    ///     buffer (:obj:`bytes`):
+    ///         A buffer containing a previously serialized :class:`~tokenizers.Tokenizer`
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
+    #[text_signature = "(buffer)"]
     fn from_buffer(buffer: &PyBytes) -> PyResult<Self> {
         let tokenizer = serde_json::from_slice(buffer.as_bytes()).map_err(|e| {
             exceptions::PyValueError::new_err(format!(
@@ -477,12 +513,30 @@ impl PyTokenizer {
         Ok(Self { tokenizer })
     }
 
+    /// Gets a serialized string representing this :class:`~tokenizers.Tokenizer`.
+    ///
+    /// Args:
+    ///     pretty (:obj:`bool`, defaults to :obj:`False`):
+    ///         Whether the JSON string should be pretty formatted.
+    ///
+    /// Returns:
+    ///     :obj:`str`: A string representing the serialized Tokenizer
     #[args(pretty = false)]
+    #[text_signature = "($self, pretty=False)"]
     fn to_str(&self, pretty: bool) -> PyResult<String> {
         ToPyResult(self.tokenizer.to_string(pretty)).into()
     }
 
+    /// Save the :class:`~tokenizers.Tokenizer` to the file at the given path.
+    ///
+    /// Args:
+    ///     path (:obj:`str`):
+    ///         A path to a file in which to save the serialized tokenizer.
+    ///
+    ///     pretty (:obj:`bool`, defaults to :obj:`False):
+    ///         Whether the JSON file should be pretty formatted.
     #[args(pretty = false)]
+    #[text_signature = "($self, pretty=False)"]
     fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
         ToPyResult(self.tokenizer.save(path, pretty)).into()
     }
@@ -494,17 +548,49 @@ impl PyTokenizer {
             .map_or(0, |p| p.added_tokens(is_pair)))
     }
 
+    /// Get the underlying vocabulary
+    ///
+    /// Args:
+    ///     with_added_tokens (:obj:`bool, defaults to :obj:`True`):
+    ///         Whether to include the added tokens
+    ///
+    /// Returns:
+    ///     :obj:`Dict[str, int]`: The vocabulary
     #[args(with_added_tokens = true)]
+    #[text_signature = "($self, with_added_tokens=True)"]
     fn get_vocab(&self, with_added_tokens: bool) -> PyResult<HashMap<String, u32>> {
         Ok(self.tokenizer.get_vocab(with_added_tokens))
     }
 
+    /// Get the size of the underlying vocabulary
+    ///
+    /// Args:
+    ///     with_added_tokens (:obj:`bool, defaults to :obj:`True`):
+    ///         Whether to include the added tokens
+    ///
+    /// Returns:
+    ///     :obj:`int`: The size of the vocabulary
     #[args(with_added_tokens = true)]
+    #[text_signature = "($self, with_added_tokens=True)"]
     fn get_vocab_size(&self, with_added_tokens: bool) -> PyResult<usize> {
         Ok(self.tokenizer.get_vocab_size(with_added_tokens))
     }
 
+    /// Enable truncation
+    ///
+    /// Args:
+    ///     max_length (:obj:`int`):
+    ///         The max length at which to truncate
+    ///
+    ///     stride (:obj:`int`, `optional`):
+    ///         The length of the previous first sequence to be included in the overflowing
+    ///         sequence
+    ///
+    ///     strategy (:obj:`str`, `optional`, defaults to :obj:`longest_first`):
+    ///         The strategy used to truncation. Can be one of ``longest_first``, ``only_first`` or
+    ///         ``only_second``.
     #[args(kwargs = "**")]
+    #[text_signature = "($self, max_length, stride=0, strategy='longest_first')"]
     fn enable_truncation(&mut self, max_length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut params = TruncationParams::default();
         params.max_length = max_length;
@@ -538,10 +624,17 @@ impl PyTokenizer {
         Ok(())
     }
 
+    /// Disable truncation
+    #[text_signature = "($self)"]
     fn no_truncation(&mut self) {
         self.tokenizer.with_truncation(None);
     }
 
+    /// Get the currently set truncation parameters
+    ///
+    /// Returns:
+    ///     (:obj:`dict`, `optional`):
+    ///         A dict with the current truncation parameters if truncation is enabled
     #[getter]
     fn get_truncation<'py>(&self, py: Python<'py>) -> PyResult<Option<&'py PyDict>> {
         self.tokenizer.get_truncation().map_or(Ok(None), |params| {
@@ -555,7 +648,31 @@ impl PyTokenizer {
         })
     }
 
+    /// Enable the padding
+    ///
+    /// Args:
+    ///     direction (:obj:`str`, `optional`, defaults to :obj:`right`):
+    ///         The direction in which to pad. Can be either ``right`` or ``left``
+    ///
+    ///     pad_to_multiple_of (:obj:`int`, `optional`):
+    ///         If specified, the padding length should always snap to the next multiple of the
+    ///         given value. For example if we were going to pad witha length of 250 but
+    ///         ``pad_to_multiple_of=8`` then we will pad to 256.
+    ///
+    ///     pad_id (:obj:`int`, defaults to 0):
+    ///         The id to be used when padding
+    ///
+    ///     pad_type_id (:obj:`int`, defaults to 0):
+    ///         The type id to be used when padding
+    ///
+    ///     pad_token (:obj:`str`, defaults to :obj:`[PAD]`):
+    ///         The pad token to be used when padding
+    ///
+    ///     length (:obj:`int`, `optional`):
+    ///         If specified, the length at which to pad. If not specified we pad using the size of
+    ///         the longest sequence in a batch.
     #[args(kwargs = "**")]
+    #[text_signature = "($self, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]', length=None, pad_to_multiple_of=None)"]
     fn enable_padding(&mut self, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut params = PaddingParams::default();
 
@@ -612,10 +729,17 @@ impl PyTokenizer {
         Ok(())
     }
 
+    /// Disable padding
+    #[text_signature = "($self)"]
     fn no_padding(&mut self) {
         self.tokenizer.with_padding(None);
     }
 
+    /// Get the current padding parameters
+    ///
+    /// Returns:
+    ///     (:obj:`dict`, `optional`):
+    ///         A dict with the current padding parameters if padding is enabled
     #[getter]
     fn get_padding<'py>(&self, py: Python<'py>) -> PyResult<Option<&'py PyDict>> {
         self.tokenizer.get_padding().map_or(Ok(None), |params| {
