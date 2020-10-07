@@ -68,6 +68,7 @@ pub trait PreTokenizer {
 
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
 pub trait Model {
+    type Trainer: Trainer + Sync;
     /// Tokenize the given sequence into multiple underlying `Token`. The `offsets` on the `Token`
     /// are expected to be relative to the given sequence.
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>>;
@@ -82,6 +83,8 @@ pub trait Model {
     /// Save the current `Model` in the given folder, using the given `prefix` for the various
     /// files that need to be saved.
     fn save(&self, folder: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf>>;
+    /// Get an instance of a Trainer capable of training this Model
+    fn get_trainer(&self) -> <Self as Model>::Trainer;
 }
 
 /// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
