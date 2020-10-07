@@ -499,7 +499,7 @@ mod tests {
     use super::*;
     use crate::normalizers::utils::Lowercase;
     use crate::normalizers::NormalizerWrapper;
-    use crate::{OffsetReferential, OffsetType, Result, Token};
+    use crate::{OffsetReferential, OffsetType, Result, Token, Trainer};
     use std::path::{Path, PathBuf};
 
     #[derive(Serialize, Deserialize)]
@@ -526,7 +526,20 @@ mod tests {
         }
     }
 
+    struct TrainerMock;
+    impl Trainer for TrainerMock {
+        type Model = ModelMock;
+        fn should_show_progress(&self) -> bool {
+            true
+        }
+        fn train(&self, _words: HashMap<String, u32>) -> Result<(ModelMock, Vec<AddedToken>)> {
+            unimplemented!()
+        }
+    }
+
     impl Model for ModelMock {
+        type Trainer = TrainerMock;
+
         fn tokenize(&self, _sequence: &str) -> Result<Vec<Token>> {
             unimplemented!()
         }
@@ -544,6 +557,9 @@ mod tests {
         }
         fn save(&self, _folder: &Path, _name: Option<&str>) -> Result<Vec<PathBuf>> {
             unimplemented!()
+        }
+        fn get_trainer(&self) -> Self::Trainer {
+            TrainerMock
         }
     }
 

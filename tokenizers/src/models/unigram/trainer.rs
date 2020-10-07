@@ -60,6 +60,12 @@ pub struct UnigramTrainer {
     seed_size: usize,
 }
 
+impl Default for UnigramTrainer {
+    fn default() -> Self {
+        Self::builder().build().unwrap()
+    }
+}
+
 impl UnigramTrainer {
     pub fn builder() -> UnigramTrainerBuilder {
         UnigramTrainerBuilder::default()
