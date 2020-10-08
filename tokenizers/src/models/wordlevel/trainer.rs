@@ -25,7 +25,11 @@ impl Default for WordLevelTrainer {
 }
 
 impl WordLevelTrainer {
-    fn train(&self, word_counts: HashMap<String, u32>) -> Result<(WordLevel, Vec<AddedToken>)> {
+    fn train(
+        &self,
+        word_counts: HashMap<String, u32>,
+        model: &mut WordLevel,
+    ) -> Result<Vec<AddedToken>> {
         let mut ordered_counts = word_counts.into_iter().collect::<Vec<_>>();
         ordered_counts.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
         let word_level = WordLevel::builder()
@@ -44,9 +48,13 @@ impl WordLevelTrainer {
                     .map(|(i, w)| (w, i as u32))
                     .collect(),
             )
-            .build();
+            .build()?;
 
-        Ok((word_level, self.special_tokens.clone()))
+        // Transfer the vocab
+        model.vocab = word_level.vocab;
+        model.vocab_r = word_level.vocab_r;
+
+        Ok(self.special_tokens.clone())
     }
 }
 
@@ -54,8 +62,12 @@ impl Trainer for WordLevelTrainer {
     type Model = WordLevel;
 
     /// Train a WordLevel model
-    fn train(&self, word_counts: HashMap<String, u32>) -> Result<(WordLevel, Vec<AddedToken>)> {
-        self.train(word_counts)
+    fn train(
+        &self,
+        word_counts: HashMap<String, u32>,
+        model: &mut WordLevel,
+    ) -> Result<Vec<AddedToken>> {
+        self.train(word_counts, model)
     }
 
     /// Whether we should show progress
@@ -85,7 +97,8 @@ mod tests {
         let mut trainer = WordLevelTrainer::default();
         trainer.vocab_size = 5;
 
-        let (model, _) = trainer.train(word_counts.clone()).unwrap();
+        let mut model = WordLevel::default();
+        trainer.train(word_counts.clone(), &mut model).unwrap();
         let expected_vocab: HashMap<String, u32> = [
             ("the".into(), 0),
             ("are".into(), 1),
@@ -100,7 +113,8 @@ mod tests {
 
         // If we specify a min_frequency
         trainer.min_frequency = 15;
-        let (model, _) = trainer.train(word_counts).unwrap();
+        let mut model = WordLevel::default();
+        trainer.train(word_counts, &mut model).unwrap();
         let expected_vocab: HashMap<String, u32> = [
             ("the".into(), 0),
             ("are".into(), 1),

@@ -1044,7 +1044,7 @@ impl PyTokenizer {
         let trainer =
             trainer.map_or_else(|| self.tokenizer.get_model().get_trainer(), |t| t.clone());
         Python::with_gil(|py| {
-            py.allow_threads(|| ToPyResult(self.tokenizer.train_and_replace(&trainer, files)).into())
+            py.allow_threads(|| ToPyResult(self.tokenizer.train(&trainer, files)).into())
         })
     }
 

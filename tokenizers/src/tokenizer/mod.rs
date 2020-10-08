@@ -134,7 +134,8 @@ pub trait Trainer {
     fn train(
         &self,
         words: HashMap<String, u32>,
-    ) -> Result<(<Self as Trainer>::Model, Vec<AddedToken>)>;
+        model: &mut Self::Model,
+    ) -> Result<Vec<AddedToken>>;
     /// Process a bunch of token, counting them as relevant.
     fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
         for token in tokens {
@@ -1054,44 +1055,14 @@ where
         Ok(words)
     }
 
-    /// Train a model and return a new Tokenizer, using the given Trainer
-    pub fn train<T, TM>(
-        self,
-        trainer: &T,
-        files: Vec<String>,
-    ) -> Result<TokenizerImpl<TM, N, PT, PP, D>>
-    where
-        T: Trainer<Model = TM> + Sync,
-        TM: Model,
-    {
-        let words = self.word_count(trainer, files)?;
-
-        let (model, special_tokens) = trainer.train(words)?;
-        let mut new_tok = TokenizerImpl {
-            normalizer: self.normalizer,
-            pre_tokenizer: self.pre_tokenizer,
-            model,
-            post_processor: self.post_processor,
-            decoder: self.decoder,
-            added_vocabulary: self.added_vocabulary,
-            truncation: self.truncation,
-            padding: self.padding,
-        };
-
-        new_tok.add_special_tokens(&special_tokens);
-
-        Ok(new_tok)
-    }
-
     /// Train a model and replace our current Model, using the given Trainer
-    pub fn train_and_replace<T>(&mut self, trainer: &T, files: Vec<String>) -> Result<()>
+    pub fn train<T>(&mut self, trainer: &T, files: Vec<String>) -> Result<()>
     where
         T: Trainer<Model = M> + Sync,
     {
         let words = self.word_count(trainer, files)?;
 
-        let (model, special_tokens) = trainer.train(words)?;
-        self.model = model;
+        let special_tokens = trainer.train(words, &mut self.model)?;
         self.add_special_tokens(&special_tokens);
 
         Ok(())

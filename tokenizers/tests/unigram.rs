@@ -55,7 +55,8 @@ fn test_train_unigram_from_file() {
         .unk_token(Some("<UNK>".into()))
         .build()
         .unwrap();
-    let (model, _) = trainer.train(word_counts).unwrap();
+    let mut model = Unigram::default();
+    trainer.train(word_counts, &mut model).unwrap();
     assert_eq!(model.get_vocab_size(), 719);
 }
 

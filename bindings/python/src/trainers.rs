@@ -84,11 +84,13 @@ impl Trainer for PyTrainer {
         self.trainer.should_show_progress()
     }
 
-    fn train(&self, words: HashMap<String, u32>) -> tk::Result<(PyModel, Vec<tk::AddedToken>)> {
-        self.trainer.train(words).map(|(m, t)| {
-            let m = PyModel { model: Arc::new(m) };
-            (m, t)
-        })
+    fn train(
+        &self,
+        words: HashMap<String, u32>,
+        model: &mut PyModel,
+    ) -> tk::Result<Vec<tk::AddedToken>> {
+        todo!("FIX THIS");
+        self.trainer.train(words, &mut model.model)
     }
 
     fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {

@@ -145,12 +145,28 @@ impl Trainer for TrainerWrapper {
         }
     }
 
-    fn train(&self, words: HashMap<String, u32>) -> Result<(Self::Model, Vec<AddedToken>)> {
+    fn train(
+        &self,
+        words: HashMap<String, u32>,
+        model: &mut ModelWrapper,
+    ) -> Result<Vec<AddedToken>> {
         match self {
-            TrainerWrapper::BpeTrainer(bpe) => bpe.train(words).map(|(m, t)| (m.into(), t)),
-            TrainerWrapper::WordPieceTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),
-            TrainerWrapper::WordLevelTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),
-            TrainerWrapper::UnigramTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),
+            TrainerWrapper::BpeTrainer(t) => match model {
+                ModelWrapper::BPE(bpe) => t.train(words, bpe),
+                _ => unreachable!(),
+            },
+            TrainerWrapper::WordPieceTrainer(t) => match model {
+                ModelWrapper::WordPiece(wp) => t.train(words, wp),
+                _ => unreachable!(),
+            },
+            TrainerWrapper::WordLevelTrainer(t) => match model {
+                ModelWrapper::WordLevel(wl) => t.train(words, wl),
+                _ => unreachable!(),
+            },
+            TrainerWrapper::UnigramTrainer(t) => match model {
+                ModelWrapper::Unigram(u) => t.train(words, u),
+                _ => unreachable!(),
+            },
         }
     }
 
