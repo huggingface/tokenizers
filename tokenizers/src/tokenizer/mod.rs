@@ -75,9 +75,9 @@ pub trait Model {
     /// Find the ID associated to a string token
     fn token_to_id(&self, token: &str) -> Option<u32>;
     /// Find the string token associated to an ID
-    fn id_to_token(&self, id: u32) -> Option<&str>;
+    fn id_to_token(&self, id: u32) -> Option<String>;
     /// Retrieve the entire vocabulary mapping (token -> ID)
-    fn get_vocab(&self) -> &HashMap<String, u32>;
+    fn get_vocab(&self) -> HashMap<String, u32>;
     /// Retrieve the size of the vocabulary
     fn get_vocab_size(&self) -> usize;
     /// Save the current `Model` in the given folder, using the given `prefix` for the various
@@ -616,7 +616,7 @@ where
     }
 
     /// Converts an id to the corresponding token.
-    pub fn id_to_token(&self, id: u32) -> Option<&str> {
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.added_vocabulary.id_to_token(id, &self.model)
     }
 
