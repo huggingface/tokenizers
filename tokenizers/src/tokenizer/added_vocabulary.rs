@@ -532,7 +532,11 @@ mod tests {
         fn should_show_progress(&self) -> bool {
             true
         }
-        fn train(&self, _words: HashMap<String, u32>) -> Result<(ModelMock, Vec<AddedToken>)> {
+        fn train(
+            &self,
+            _words: HashMap<String, u32>,
+            _model: &mut ModelMock,
+        ) -> Result<Vec<AddedToken>> {
             unimplemented!()
         }
     }

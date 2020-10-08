@@ -43,7 +43,7 @@
 //! ```
 //!
 //! ## Training and serialization example
-//!  
+//!
 //! ```no_run
 //! use tokenizers::decoders::DecoderWrapper;
 //! use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
@@ -71,7 +71,7 @@
 //!         ])
 //!         .build();
 //!
-//!     let tokenizer = TokenizerBuilder::new()
+//!     let mut tokenizer = TokenizerBuilder::new()
 //!         .with_model(BPE::default())
 //!         .with_normalizer(Some(Sequence::new(vec![
 //!             Strip::new(true, true).into(),

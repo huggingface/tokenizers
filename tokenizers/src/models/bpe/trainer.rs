@@ -144,14 +144,15 @@ impl BpeTrainerBuilder {
 /// ```
 /// use std::collections::HashMap;
 /// use tokenizers::tokenizer::Trainer;
-/// use tokenizers::models::bpe::BpeTrainer;
+/// use tokenizers::models::bpe::{BPE, BpeTrainer};
 ///
 /// let word_counts: HashMap<String, u32> = [
 ///     (String::from("Hello"), 1),
 ///     (String::from("World"), 1),
 /// ].iter().cloned().collect();
 /// let trainer = BpeTrainer::default();
-/// let (model, special_tokens) = trainer.train(word_counts).unwrap();
+/// let mut model = BPE::default();
+/// let special_tokens = trainer.train(word_counts, &mut model).unwrap();
 /// ```
 pub struct BpeTrainer {
     /// The minimum frequency a pair must have to produce a merge operation
@@ -404,7 +405,11 @@ impl BpeTrainer {
             )
     }
 
-    pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<(BPE, Vec<AddedToken>)> {
+    pub fn train(
+        &self,
+        word_counts: HashMap<String, u32>,
+        model: &mut BPE,
+    ) -> Result<Vec<AddedToken>> {
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
 
@@ -551,30 +556,27 @@ impl BpeTrainer {
         }
         self.finalize_progress(&progress, merges.len());
 
-        let mut builder = BPE::builder().vocab_and_merges(
-            word_to_id,
-            merges
-                .into_iter()
-                .map(|((a_id, b_id), _)| {
-                    (
-                        id_to_word[a_id as usize].clone(),
-                        id_to_word[b_id as usize].clone(),
-                    )
-                })
-                .collect(),
-        );
+        // Transfer new vocab & options to model
+        model.vocab = word_to_id;
+        model.vocab_r = model
+            .vocab
+            .iter()
+            .map(|(key, val)| (*val, key.to_owned()))
+            .collect();
+        model.merges = merges
+            .into_iter()
+            .enumerate()
+            .map(|(i, (pair, new_token_id))| (pair, (i as u32, new_token_id)))
+            .collect();
+
         if let Some(prefix) = &self.continuing_subword_prefix {
-            builder = builder.continuing_subword_prefix(prefix.to_owned());
+            model.continuing_subword_prefix = Some(prefix.to_owned());
         }
         if let Some(suffix) = &self.end_of_word_suffix {
-            builder = builder.end_of_word_suffix(suffix.to_owned());
+            model.end_of_word_suffix = Some(suffix.to_owned());
         }
-        Ok((
-            builder
-                .build()
-                .expect("Trainer should know how to build BPE"),
-            self.special_tokens.clone(),
-        ))
+
+        Ok(self.special_tokens.clone())
     }
 }
 
@@ -582,8 +584,8 @@ impl Trainer for BpeTrainer {
     type Model = BPE;
 
     /// Train a BPE model
-    fn train(&self, word_counts: HashMap<String, u32>) -> Result<(BPE, Vec<AddedToken>)> {
-        self.train(word_counts)
+    fn train(&self, word_counts: HashMap<String, u32>, model: &mut BPE) -> Result<Vec<AddedToken>> {
+        self.train(word_counts, model)
     }
 
     /// Whether we should show progress
@@ -594,7 +596,7 @@ impl Trainer for BpeTrainer {
 
 #[cfg(test)]
 mod tests {
-    use super::{BpeTrainer, Pair};
+    use super::{BpeTrainer, Pair, BPE};
     use std::collections::HashMap;
 
     #[test]
@@ -619,7 +621,8 @@ mod tests {
             .show_progress(false)
             .min_frequency(2)
             .build();
-        let (model, _) = trainer.train(word_counts).unwrap();
+        let mut model = BPE::default();
+        trainer.train(word_counts, &mut model).unwrap();
 
         // Vocab should contain all of the characters from the `word_counts` mapping
         // as well as three merges: 're', 'are', and 'is'.

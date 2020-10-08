@@ -75,7 +75,7 @@ where
     let mut duration = Duration::new(0, 0);
     for _i in 0..iters {
         let start = Instant::now();
-        tokenizer.train_and_replace(trainer, files.clone()).unwrap();
+        tokenizer.train(trainer, files.clone()).unwrap();
         duration = duration.checked_add(start.elapsed()).unwrap();
     }
     duration
