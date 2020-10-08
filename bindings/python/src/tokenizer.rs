@@ -8,7 +8,7 @@ use pyo3::types::*;
 use pyo3::PyObjectProtocol;
 use tk::models::bpe::BPE;
 use tk::tokenizer::{
-    PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
+    Model, PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
     TruncationParams, TruncationStrategy,
 };
 use tokenizers as tk;
@@ -750,8 +750,11 @@ impl PyTokenizer {
         Ok(self.tokenizer.add_special_tokens(&tokens))
     }
 
-    fn train(&mut self, trainer: &PyTrainer, files: Vec<String>) -> PyResult<()> {
-        ToPyResult(self.tokenizer.train_and_replace(trainer, files)).into()
+    #[args(trainer = "None")]
+    fn train(&mut self, files: Vec<String>, trainer: Option<&PyTrainer>) -> PyResult<()> {
+        let trainer =
+            trainer.map_or_else(|| self.tokenizer.get_model().get_trainer(), |t| t.clone());
+        ToPyResult(self.tokenizer.train_and_replace(&trainer, files)).into()
     }
 
     #[args(pair = "None", add_special_tokens = true)]
