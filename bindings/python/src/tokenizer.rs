@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use numpy::PyArray1;
 use pyo3::exceptions;
@@ -457,7 +457,8 @@ impl PyTokenizer {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        let model: PyObject = PyModel::new(Arc::new(BPE::default().into())).into_py(py);
+        let model: PyObject =
+            PyModel::new(Arc::new(RwLock::new(BPE::default().into()))).into_py(py);
         let args = PyTuple::new(py, vec![model]);
         Ok(args)
     }
@@ -965,7 +966,7 @@ impl PyTokenizer {
     /// Returns:
     ///     :obj:`Optional[str]`: An optional token, :obj:`None` if out of vocabulary
     #[text_signature = "(self, id)"]
-    fn id_to_token(&self, id: u32) -> Option<&str> {
+    fn id_to_token(&self, id: u32) -> Option<String> {
         self.tokenizer.id_to_token(id)
     }
 

@@ -318,8 +318,8 @@ impl BPE {
         }
     }
 
-    pub fn get_vocab(&self) -> &Vocab {
-        &self.vocab
+    pub fn get_vocab(&self) -> Vocab {
+        self.vocab.clone()
     }
 
     pub fn get_unk_token(&self) -> &Option<String> {
@@ -417,8 +417,8 @@ impl BPE {
 impl Model for BPE {
     type Trainer = BpeTrainer;
 
-    fn get_vocab(&self) -> &HashMap<String, u32> {
-        &self.vocab
+    fn get_vocab(&self) -> HashMap<String, u32> {
+        self.vocab.clone()
     }
 
     fn get_vocab_size(&self) -> usize {
@@ -442,8 +442,8 @@ impl Model for BPE {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
-        self.vocab_r.get(&id).map(String::as_ref)
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.vocab_r.get(&id).cloned()
     }
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {

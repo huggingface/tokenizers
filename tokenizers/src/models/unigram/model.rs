@@ -409,8 +409,8 @@ impl<'a> Iterator for UnigramIterator<'a> {
 impl Model for Unigram {
     type Trainer = UnigramTrainer;
 
-    fn get_vocab(&self) -> &HashMap<String, u32> {
-        &self.token_to_ids
+    fn get_vocab(&self) -> HashMap<String, u32> {
+        self.token_to_ids.clone()
     }
 
     fn get_vocab_size(&self) -> usize {
@@ -438,9 +438,9 @@ impl Model for Unigram {
         self.token_to_ids.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
+    fn id_to_token(&self, id: u32) -> Option<String> {
         match self.vocab.get(id as usize) {
-            Some(item) => Some(&item.0),
+            Some(item) => Some(item.0.clone()),
             None => None,
         }
     }

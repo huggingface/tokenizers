@@ -75,7 +75,7 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
+    fn id_to_token(&self, id: u32) -> Option<String> {
         use ModelWrapper::*;
         match self {
             WordLevel(t) => t.id_to_token(id),
@@ -85,7 +85,7 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn get_vocab(&self) -> &HashMap<String, u32> {
+    fn get_vocab(&self) -> HashMap<String, u32> {
         use ModelWrapper::*;
         match self {
             WordLevel(t) => t.get_vocab(),

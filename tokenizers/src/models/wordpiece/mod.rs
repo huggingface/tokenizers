@@ -185,10 +185,7 @@ impl WordPiece {
 
     /// Create a `WordPiece` model from a `BPE` model.
     pub fn from_bpe(bpe: &BPE) -> Self {
-        let mut wp = Self::builder()
-            .vocab(bpe.get_vocab().clone())
-            .build()
-            .unwrap();
+        let mut wp = Self::builder().vocab(bpe.get_vocab()).build().unwrap();
         if let Some(unk) = bpe.get_unk_token() {
             wp.unk_token = unk.to_owned();
         }
@@ -202,8 +199,8 @@ impl WordPiece {
 impl Model for WordPiece {
     type Trainer = WordPieceTrainer;
 
-    fn get_vocab(&self) -> &HashMap<String, u32> {
-        &self.vocab
+    fn get_vocab(&self) -> HashMap<String, u32> {
+        self.vocab.clone()
     }
 
     fn get_vocab_size(&self) -> usize {
@@ -275,8 +272,8 @@ impl Model for WordPiece {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
-        self.vocab_r.get(&id).map(String::as_ref)
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.vocab_r.get(&id).cloned()
     }
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {

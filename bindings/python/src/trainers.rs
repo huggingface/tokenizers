@@ -89,8 +89,7 @@ impl Trainer for PyTrainer {
         words: HashMap<String, u32>,
         model: &mut PyModel,
     ) -> tk::Result<Vec<tk::AddedToken>> {
-        todo!("FIX THIS");
-        self.trainer.train(words, &mut model.model)
+        self.trainer.train(words, &mut model.model.write().unwrap())
     }
 
     fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
