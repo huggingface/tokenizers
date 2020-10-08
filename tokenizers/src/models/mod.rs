@@ -1,3 +1,5 @@
+#![allow(clippy::unit_arg)]
+
 //! Popular tokenizer models.
 
 pub mod bpe;
@@ -38,6 +40,14 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum ModelConfigWrapper {
+    WordPiece(<WordPiece as Model>::Config),
+    BPE(<BPE as Model>::Config),
+    WordLevel(<WordLevel as Model>::Config),
+    Unigram(<Unigram as Model>::Config),
+}
+
 #[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
 #[serde(untagged)]
 pub enum ModelWrapper {
@@ -54,6 +64,7 @@ impl_enum_from!(Unigram, ModelWrapper, Unigram);
 
 impl Model for ModelWrapper {
     type Trainer = TrainerWrapper;
+    type Config = ModelConfigWrapper;
 
     fn tokenize(&self, tokens: &str) -> Result<Vec<Token>> {
         use ModelWrapper::*;
@@ -115,7 +126,7 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn get_trainer(&self) -> Self::Trainer {
+    fn get_trainer(&self) -> TrainerWrapper {
         use ModelWrapper::*;
         match self {
             WordLevel(t) => t.get_trainer().into(),
@@ -124,8 +135,19 @@ impl Model for ModelWrapper {
             Unigram(t) => t.get_trainer().into(),
         }
     }
+
+    fn get_config(&self) -> ModelConfigWrapper {
+        use ModelWrapper::*;
+        match self {
+            WordLevel(t) => ModelConfigWrapper::WordLevel(t.get_config()),
+            WordPiece(t) => ModelConfigWrapper::WordPiece(t.get_config()),
+            BPE(t) => ModelConfigWrapper::BPE(t.get_config()),
+            Unigram(t) => ModelConfigWrapper::Unigram(t.get_config()),
+        }
+    }
 }
 
+#[derive(Debug, Clone)]
 pub enum TrainerWrapper {
     BpeTrainer(BpeTrainer),
     WordPieceTrainer(WordPieceTrainer),
@@ -138,28 +160,53 @@ impl Trainer for TrainerWrapper {
 
     fn should_show_progress(&self) -> bool {
         match self {
-            TrainerWrapper::BpeTrainer(bpe) => bpe.should_show_progress(),
-            TrainerWrapper::WordPieceTrainer(wpt) => wpt.should_show_progress(),
-            TrainerWrapper::WordLevelTrainer(wpt) => wpt.should_show_progress(),
-            TrainerWrapper::UnigramTrainer(wpt) => wpt.should_show_progress(),
+            TrainerWrapper::BpeTrainer(t) => t.should_show_progress(),
+            TrainerWrapper::WordPieceTrainer(t) => t.should_show_progress(),
+            TrainerWrapper::WordLevelTrainer(t) => t.should_show_progress(),
+            TrainerWrapper::UnigramTrainer(t) => t.should_show_progress(),
         }
     }
 
     fn train(&self, words: HashMap<String, u32>) -> Result<(Self::Model, Vec<AddedToken>)> {
         match self {
-            TrainerWrapper::BpeTrainer(bpe) => bpe.train(words).map(|(m, t)| (m.into(), t)),
-            TrainerWrapper::WordPieceTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),
-            TrainerWrapper::WordLevelTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),
-            TrainerWrapper::UnigramTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),
+            TrainerWrapper::BpeTrainer(t) => t.train(words).map(|(m, t)| (m.into(), t)),
+            TrainerWrapper::WordPieceTrainer(t) => t.train(words).map(|(m, t)| (m.into(), t)),
+            TrainerWrapper::WordLevelTrainer(t) => t.train(words).map(|(m, t)| (m.into(), t)),
+            TrainerWrapper::UnigramTrainer(t) => t.train(words).map(|(m, t)| (m.into(), t)),
         }
     }
 
     fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
         match self {
-            TrainerWrapper::BpeTrainer(bpe) => bpe.process_tokens(words, tokens),
-            TrainerWrapper::WordPieceTrainer(wpt) => wpt.process_tokens(words, tokens),
-            TrainerWrapper::WordLevelTrainer(wpt) => wpt.process_tokens(words, tokens),
-            TrainerWrapper::UnigramTrainer(wpt) => wpt.process_tokens(words, tokens),
+            TrainerWrapper::BpeTrainer(t) => t.process_tokens(words, tokens),
+            TrainerWrapper::WordPieceTrainer(t) => t.process_tokens(words, tokens),
+            TrainerWrapper::WordLevelTrainer(t) => t.process_tokens(words, tokens),
+            TrainerWrapper::UnigramTrainer(t) => t.process_tokens(words, tokens),
+        }
+    }
+
+    fn use_config(&mut self, config: ModelConfigWrapper) {
+        match self {
+            TrainerWrapper::BpeTrainer(t) => {
+                if let ModelConfigWrapper::BPE(config) = config {
+                    t.use_config(config)
+                }
+            }
+            TrainerWrapper::WordPieceTrainer(t) => {
+                if let ModelConfigWrapper::WordPiece(config) = config {
+                    t.use_config(config)
+                }
+            }
+            TrainerWrapper::WordLevelTrainer(t) => {
+                if let ModelConfigWrapper::WordLevel(config) = config {
+                    t.use_config(config)
+                }
+            }
+            TrainerWrapper::UnigramTrainer(t) => {
+                if let ModelConfigWrapper::Unigram(config) = config {
+                    t.use_config(config)
+                }
+            }
         }
     }
 }

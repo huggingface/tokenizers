@@ -539,6 +539,7 @@ mod tests {
 
     impl Model for ModelMock {
         type Trainer = TrainerMock;
+        type Config = ();
 
         fn tokenize(&self, _sequence: &str) -> Result<Vec<Token>> {
             unimplemented!()
@@ -561,6 +562,7 @@ mod tests {
         fn get_trainer(&self) -> Self::Trainer {
             TrainerMock
         }
+        fn get_config(&self) {}
     }
 
     #[test]

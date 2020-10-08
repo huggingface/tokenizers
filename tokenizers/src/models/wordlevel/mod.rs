@@ -90,6 +90,12 @@ impl WordLevelBuilder {
     }
 }
 
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub struct WordLevelConfig {
+    unk_token: String,
+}
+
 #[derive(PartialEq, Clone)]
 pub struct WordLevel {
     vocab: HashMap<String, u32>,
@@ -153,6 +159,7 @@ impl Default for WordLevel {
 
 impl Model for WordLevel {
     type Trainer = WordLevelTrainer;
+    type Config = WordLevelConfig;
 
     fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
         Ok(vec![Token {
@@ -200,7 +207,13 @@ impl Model for WordLevel {
         Ok(vec![vocab_path])
     }
 
-    fn get_trainer(&self) -> Self::Trainer {
+    fn get_trainer(&self) -> WordLevelTrainer {
         WordLevelTrainer::default()
+    }
+
+    fn get_config(&self) -> WordLevelConfig {
+        WordLevelConfig {
+            unk_token: self.unk_token.clone(),
+        }
     }
 }

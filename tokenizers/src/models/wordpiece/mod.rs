@@ -123,6 +123,13 @@ impl WordPieceBuilder {
     }
 }
 
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub struct WordPieceConfig {
+    unk_token: String,
+    max_input_chars_per_word: usize,
+}
+
 /// A
 /// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 /// model.
@@ -130,9 +137,9 @@ impl WordPieceBuilder {
 pub struct WordPiece {
     vocab: Vocab,
     vocab_r: VocabR,
-    unk_token: String,
-    continuing_subword_prefix: String,
-    max_input_chars_per_word: usize,
+    pub(self) unk_token: String,
+    pub(self) continuing_subword_prefix: String,
+    pub(self) max_input_chars_per_word: usize,
 }
 
 impl std::fmt::Debug for WordPiece {
@@ -201,6 +208,7 @@ impl WordPiece {
 
 impl Model for WordPiece {
     type Trainer = WordPieceTrainer;
+    type Config = WordPieceConfig;
 
     fn get_vocab(&self) -> &HashMap<String, u32> {
         &self.vocab
@@ -302,8 +310,15 @@ impl Model for WordPiece {
         Ok(vec![vocab_path])
     }
 
-    fn get_trainer(&self) -> Self::Trainer {
+    fn get_trainer(&self) -> WordPieceTrainer {
         WordPieceTrainer::builder().build()
+    }
+
+    fn get_config(&self) -> WordPieceConfig {
+        WordPieceConfig {
+            unk_token: self.unk_token.clone(),
+            max_input_chars_per_word: self.max_input_chars_per_word,
+        }
     }
 }
 

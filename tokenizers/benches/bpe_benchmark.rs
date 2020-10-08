@@ -80,7 +80,7 @@ fn bench_train(c: &mut Criterion) {
             iter_bench_train(
                 iters,
                 &mut tokenizer,
-                &trainer,
+                trainer.clone(),
                 vec!["data/small.txt".to_string()],
             )
         })
@@ -93,7 +93,7 @@ fn bench_train(c: &mut Criterion) {
             iter_bench_train(
                 iters,
                 &mut tokenizer,
-                &trainer,
+                trainer.clone(),
                 vec!["data/big.txt".to_string()],
             )
         })

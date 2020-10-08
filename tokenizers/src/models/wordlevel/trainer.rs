@@ -1,7 +1,8 @@
-use super::WordLevel;
+use super::{WordLevel, WordLevelConfig};
 use crate::{AddedToken, Result, Trainer};
 use std::collections::HashMap;
 
+#[derive(Debug, Clone)]
 pub struct WordLevelTrainer {
     /// The minimum frequency a word must have to be part of the vocabulary
     pub min_frequency: u32,
@@ -11,6 +12,8 @@ pub struct WordLevelTrainer {
     pub show_progress: bool,
     /// A list of special tokens that the model should know of
     pub special_tokens: Vec<AddedToken>,
+
+    config: Option<WordLevelConfig>,
 }
 
 impl Default for WordLevelTrainer {
@@ -20,6 +23,7 @@ impl Default for WordLevelTrainer {
             vocab_size: 30_000,
             show_progress: true,
             special_tokens: vec![],
+            config: None,
         }
     }
 }
@@ -28,7 +32,12 @@ impl WordLevelTrainer {
     fn train(&self, word_counts: HashMap<String, u32>) -> Result<(WordLevel, Vec<AddedToken>)> {
         let mut ordered_counts = word_counts.into_iter().collect::<Vec<_>>();
         ordered_counts.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-        let word_level = WordLevel::builder()
+
+        let mut builder = WordLevel::builder();
+        if let Some(ref config) = self.config {
+            builder = builder.unk_token(config.unk_token.clone());
+        }
+        let word_level = builder
             .vocab(
                 self.special_tokens
                     .iter()
@@ -61,6 +70,10 @@ impl Trainer for WordLevelTrainer {
     /// Whether we should show progress
     fn should_show_progress(&self) -> bool {
         self.show_progress
+    }
+
+    fn use_config(&mut self, config: WordLevelConfig) {
+        self.config = Some(config);
     }
 }
 

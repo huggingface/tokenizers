@@ -12,7 +12,7 @@ use tk::models::bpe::{BpeBuilder, Merges, Vocab, BPE};
 use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
-use tk::models::ModelWrapper;
+use tk::models::{ModelConfigWrapper, ModelWrapper};
 use tk::{Model, Token};
 use tokenizers as tk;
 
@@ -47,6 +47,7 @@ impl PyModel {
 
 impl Model for PyModel {
     type Trainer = PyTrainer;
+    type Config = ModelConfigWrapper;
 
     fn tokenize(&self, tokens: &str) -> tk::Result<Vec<Token>> {
         self.model.tokenize(tokens)
@@ -72,8 +73,12 @@ impl Model for PyModel {
         self.model.save(folder, name)
     }
 
-    fn get_trainer(&self) -> Self::Trainer {
+    fn get_trainer(&self) -> PyTrainer {
         self.model.get_trainer().into()
+    }
+
+    fn get_config(&self) -> ModelConfigWrapper {
+        self.model.get_config()
     }
 }
 

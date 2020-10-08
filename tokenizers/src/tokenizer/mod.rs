@@ -66,7 +66,11 @@ pub trait PreTokenizer {
 
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
 pub trait Model {
+    /// The type of a Trainer, capable of training this Model
     type Trainer: Trainer + Sync;
+    /// The type of config used by this Model, for communication with the Trainer
+    type Config;
+
     /// Tokenize the given sequence into multiple underlying `Token`. The `offsets` on the `Token`
     /// are expected to be relative to the given sequence.
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>>;
@@ -83,6 +87,8 @@ pub trait Model {
     fn save(&self, folder: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf>>;
     /// Get an instance of a Trainer capable of training this Model
     fn get_trainer(&self) -> <Self as Model>::Trainer;
+    /// Get the current configuration of this Model
+    fn get_config(&self) -> <Self as Model>::Config;
 }
 
 /// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
@@ -140,6 +146,9 @@ pub trait Trainer {
                 .or_insert(1);
         }
     }
+    /// Let the Trainer know about the Model::Config used to instantiate the trained Model
+    /// This behavior can be defined when necessary, but is not mandatory.
+    fn use_config(&mut self, _config: <Self::Model as Model>::Config) {}
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1041,14 +1050,14 @@ where
     /// Train a model and return a new Tokenizer, using the given Trainer
     pub fn train<T, TM>(
         self,
-        trainer: &T,
+        trainer: T,
         files: Vec<String>,
     ) -> Result<TokenizerImpl<TM, N, PT, PP, D>>
     where
         T: Trainer<Model = TM> + Sync,
         TM: Model,
     {
-        let words = self.word_count(trainer, files)?;
+        let words = self.word_count(&trainer, files)?;
 
         let (model, special_tokens) = trainer.train(words)?;
         let mut new_tok = TokenizerImpl {
@@ -1068,11 +1077,11 @@ where
     }
 
     /// Train a model and replace our current Model, using the given Trainer
-    pub fn train_and_replace<T>(&mut self, trainer: &T, files: Vec<String>) -> Result<()>
+    pub fn train_and_replace<T>(&mut self, trainer: T, files: Vec<String>) -> Result<()>
     where
         T: Trainer<Model = M> + Sync,
     {
-        let words = self.word_count(trainer, files)?;
+        let words = self.word_count(&trainer, files)?;
 
         let (model, special_tokens) = trainer.train(words)?;
         self.model = model;

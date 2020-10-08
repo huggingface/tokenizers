@@ -61,11 +61,11 @@ where
 pub fn iter_bench_train<T, M, N, PT, PP, D>(
     iters: u64,
     tokenizer: &mut TokenizerImpl<M, N, PT, PP, D>,
-    trainer: &T,
+    trainer: T,
     files: Vec<String>,
 ) -> Duration
 where
-    T: Trainer<Model = M> + Sync,
+    T: Trainer<Model = M> + Clone + Sync,
     M: Model + Send + Sync,
     N: Normalizer + Send + Sync,
     PT: PreTokenizer + Send + Sync,
@@ -75,7 +75,9 @@ where
     let mut duration = Duration::new(0, 0);
     for _i in 0..iters {
         let start = Instant::now();
-        tokenizer.train_and_replace(trainer, files.clone()).unwrap();
+        tokenizer
+            .train_and_replace(trainer.clone(), files.clone())
+            .unwrap();
         duration = duration.checked_add(start.elapsed()).unwrap();
     }
     duration

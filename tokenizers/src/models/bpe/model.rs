@@ -58,6 +58,23 @@ impl BpeBuilder {
         Self::default()
     }
 
+    /// Initialize a `BpeBuilder` using a `BpeConfig`
+    pub(super) fn from_bpe_config(config: BpeConfig) -> Self {
+        Self {
+            config: Config {
+                files: None,
+                vocab: HashMap::new(),
+                merges: vec![],
+                cache_capacity: DEFAULT_CACHE_CAPACITY,
+                dropout: config.dropout,
+                unk_token: config.unk_token,
+                continuing_subword_prefix: config.continuing_subword_prefix,
+                end_of_word_suffix: config.end_of_word_suffix,
+                fuse_unk: config.fuse_unk,
+            },
+        }
+    }
+
     /// Set the input files.
     pub fn files(mut self, vocab: String, merges: String) -> Self {
         self.config.files = Some((vocab, merges));
@@ -174,6 +191,17 @@ impl BpeBuilder {
             fuse_unk: self.config.fuse_unk,
         })
     }
+}
+
+/// This represents the parameters used by a BPE at runtime
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub struct BpeConfig {
+    pub(super) dropout: Option<f32>,
+    pub(super) unk_token: Option<String>,
+    pub(super) continuing_subword_prefix: Option<String>,
+    pub(super) end_of_word_suffix: Option<String>,
+    pub(super) fuse_unk: bool,
 }
 
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
@@ -416,6 +444,7 @@ impl BPE {
 
 impl Model for BPE {
     type Trainer = BpeTrainer;
+    type Config = BpeConfig;
 
     fn get_vocab(&self) -> &HashMap<String, u32> {
         &self.vocab
@@ -492,6 +521,16 @@ impl Model for BPE {
 
     fn get_trainer(&self) -> BpeTrainer {
         BpeTrainer::default()
+    }
+
+    fn get_config(&self) -> BpeConfig {
+        BpeConfig {
+            dropout: self.dropout.clone(),
+            unk_token: self.unk_token.clone(),
+            continuing_subword_prefix: self.continuing_subword_prefix.clone(),
+            end_of_word_suffix: self.end_of_word_suffix.clone(),
+            fuse_unk: self.fuse_unk,
+        }
     }
 }
 

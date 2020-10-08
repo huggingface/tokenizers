@@ -43,7 +43,7 @@
 //! ```
 //!
 //! ## Training and serialization example
-//!  
+//!
 //! ```no_run
 //! use tokenizers::decoders::DecoderWrapper;
 //! use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
@@ -84,7 +84,7 @@
 //!
 //!     tokenizer
 //!         .train(
-//!             &trainer,
+//!             trainer,
 //!             vec!["path/to/vocab.txt".to_string()],
 //!         )?
 //!         .get_model()

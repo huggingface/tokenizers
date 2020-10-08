@@ -1,4 +1,4 @@
-use super::WordPiece;
+use super::{WordPiece, WordPieceConfig};
 use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder};
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use std::collections::{HashMap, HashSet};
@@ -74,14 +74,18 @@ impl WordPieceTrainerBuilder {
     /// Constructs the final BpeTrainer
     pub fn build(self) -> WordPieceTrainer {
         let bpe_trainer = self.bpe_trainer_builder.build();
-        WordPieceTrainer { bpe_trainer }
+        WordPieceTrainer {
+            bpe_trainer,
+            config: None,
+        }
     }
 }
 
 /// Trains a `WordPiece` model.
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub struct WordPieceTrainer {
     bpe_trainer: BpeTrainer,
+    config: Option<WordPieceConfig>,
 }
 
 impl WordPieceTrainer {
@@ -91,6 +95,11 @@ impl WordPieceTrainer {
 
     pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<(WordPiece, Vec<AddedToken>)> {
         let (bpe, tokens) = self.bpe_trainer.train(word_counts)?;
+        let mut model = WordPiece::from_bpe(&bpe);
+        if let Some(ref config) = self.config {
+            model.unk_token = config.unk_token.clone();
+            model.max_input_chars_per_word = config.max_input_chars_per_word;
+        }
         Ok((WordPiece::from_bpe(&bpe), tokens))
     }
 }
@@ -109,5 +118,9 @@ impl Trainer for WordPieceTrainer {
 
     fn should_show_progress(&self) -> bool {
         self.bpe_trainer.should_show_progress()
+    }
+
+    fn use_config(&mut self, config: WordPieceConfig) {
+        self.config = Some(config);
     }
 }

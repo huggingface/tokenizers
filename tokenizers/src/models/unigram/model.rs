@@ -402,6 +402,7 @@ impl<'a> Iterator for UnigramIterator<'a> {
 
 impl Model for Unigram {
     type Trainer = UnigramTrainer;
+    type Config = ();
 
     fn get_vocab(&self) -> &HashMap<String, u32> {
         &self.token_to_ids
@@ -456,6 +457,8 @@ impl Model for Unigram {
     fn get_trainer(&self) -> Self::Trainer {
         UnigramTrainer::default()
     }
+
+    fn get_config(&self) {}
 }
 
 #[cfg(test)]

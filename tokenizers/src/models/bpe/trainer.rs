@@ -1,6 +1,6 @@
 #![allow(clippy::map_entry)]
 
-use super::{Pair, WithFirstLastIterator, Word, BPE};
+use super::{BpeBuilder, BpeConfig, Pair, WithFirstLastIterator, Word, BPE};
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -43,6 +43,7 @@ struct Config {
     initial_alphabet: HashSet<char>,
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
+    bpe_config: Option<BpeConfig>,
 }
 
 /// A `BpeTrainerBuilder` can be used to create a `BpeTrainer` with a custom
@@ -63,6 +64,7 @@ impl Default for BpeTrainerBuilder {
                 initial_alphabet: HashSet::new(),
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
+                bpe_config: None,
             },
         }
     }
@@ -122,6 +124,12 @@ impl BpeTrainerBuilder {
         self
     }
 
+    /// Set the BPE config
+    pub fn bpe_config(mut self, config: BpeConfig) -> Self {
+        self.config.bpe_config = Some(config);
+        self
+    }
+
     /// Constructs the final BpeTrainer
     pub fn build(self) -> BpeTrainer {
         BpeTrainer {
@@ -133,6 +141,7 @@ impl BpeTrainerBuilder {
             initial_alphabet: self.config.initial_alphabet,
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             end_of_word_suffix: self.config.end_of_word_suffix,
+            bpe_config: self.config.bpe_config,
         }
     }
 }
@@ -153,6 +162,7 @@ impl BpeTrainerBuilder {
 /// let trainer = BpeTrainer::default();
 /// let (model, special_tokens) = trainer.train(word_counts).unwrap();
 /// ```
+#[derive(Debug, Clone)]
 pub struct BpeTrainer {
     /// The minimum frequency a pair must have to produce a merge operation
     min_frequency: u32,
@@ -171,6 +181,8 @@ pub struct BpeTrainer {
     continuing_subword_prefix: Option<String>,
     /// An optional suffix to caracterize and end-of-word subword
     end_of_word_suffix: Option<String>,
+    /// The BPE Config used to instantiate the final BPE
+    bpe_config: Option<BpeConfig>,
 }
 
 impl Default for BpeTrainer {
@@ -551,7 +563,13 @@ impl BpeTrainer {
         }
         self.finalize_progress(&progress, merges.len());
 
-        let mut builder = BPE::builder().vocab_and_merges(
+        let mut builder = if let Some(ref config) = self.bpe_config {
+            BpeBuilder::from_bpe_config(config.clone())
+        } else {
+            BpeBuilder::new()
+        };
+
+        builder = builder.vocab_and_merges(
             word_to_id,
             merges
                 .into_iter()
@@ -589,6 +607,11 @@ impl Trainer for BpeTrainer {
     /// Whether we should show progress
     fn should_show_progress(&self) -> bool {
         self.show_progress
+    }
+
+    /// Use the given config
+    fn use_config(&mut self, config: BpeConfig) {
+        self.bpe_config = Some(config);
     }
 }
 
