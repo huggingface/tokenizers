@@ -24,6 +24,7 @@ pub struct Unigram {
     pub(super) eos_id: usize,
 
     fuse_unk: bool,
+    is_optimized: bool,
 }
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
@@ -46,6 +47,7 @@ impl Clone for Unigram {
             bos_id: self.bos_id,
             eos_id: self.eos_id,
             fuse_unk: self.fuse_unk,
+            is_optimized: self.is_optimized,
         }
     }
 }
@@ -122,6 +124,7 @@ impl Unigram {
         }
         let trie = builder.build();
         let fuse_unk = true;
+        let is_optimized = true;
 
         Ok(Unigram {
             vocab,
@@ -133,6 +136,7 @@ impl Unigram {
             unk_id,
             fuse_unk,
             cache: Cache::default(),
+            is_optimized,
         })
     }
 
@@ -140,6 +144,11 @@ impl Unigram {
     pub(super) fn set_fuse_unk(&mut self, fuse_unk: bool) {
         self.fuse_unk = fuse_unk;
         self.cache = self.cache.fresh();
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_optimized(&mut self, is_optimized: bool) {
+        self.is_optimized = is_optimized;
     }
 
     pub(super) fn len(&self) -> usize {
@@ -179,7 +188,7 @@ impl Unigram {
             }
 
             if !has_single_node {
-                lattice.insert(begin_pos, 1, unk_score, self.unk_id);
+                lattice.insert(begin_pos, mblen, unk_score, self.unk_id);
             }
             begin_pos += mblen
         }
@@ -212,7 +221,11 @@ impl Unigram {
         if let Some(result) = self.cache.get(sentence) {
             result.to_vec()
         } else {
-            let result = self.encode_optimized(sentence);
+            let result = if self.is_optimized {
+                self.encode_optimized(sentence)
+            } else {
+                self.encode_unoptimized(sentence)
+            };
             self.cache.set(sentence.to_owned(), result.clone());
             result
         }
@@ -327,7 +340,6 @@ impl Unigram {
         results
     }
 
-    #[allow(dead_code)]
     fn encode_unoptimized(&self, sentence: &str) -> Vec<String> {
         let mut lattice = Lattice::from(sentence, self.unk_id, self.bos_id, self.eos_id);
         self.populate_nodes(&mut lattice);
@@ -541,27 +553,34 @@ mod tests {
         ];
 
         let mut model = Unigram::from(sentencepieces, 0).unwrap();
-        assert_eq!(model.encode("abc"), vec!["abc"]);
-        assert_eq!(model.encode("AB"), vec!["AB"]);
 
-        model.set_fuse_unk(false);
-        assert_eq!(model.encode("AB"), vec!["A", "B"]);
-        model.set_fuse_unk(true);
+        for is_optimized in &[true, false] {
+            model.set_optimized(*is_optimized);
+            println!("IsOptimized {:?}", is_optimized);
+            assert_eq!(model.encode("abc"), vec!["abc"]);
+            assert_eq!(model.encode("AB"), vec!["AB"]);
 
-        assert_eq!(model.encode("abcd"), vec!["ab", "cd"]);
-        assert_eq!(model.encode("abcc"), vec!["abc", "c"]);
-        assert_eq!(
-            model.encode("xabcabaabcdd"),
-            vec!["x", "abc", "ab", "a", "ab", "cd", "d"]
-        );
-        model.set_fuse_unk(false);
-        assert_eq!(model.encode("xyz東京"), vec!["x", "y", "z", "東", "京"]);
-        model.set_fuse_unk(true);
+            model.set_fuse_unk(false);
+            assert_eq!(model.encode("AB"), vec!["A", "B"]);
+            model.set_fuse_unk(true);
+            assert_eq!(model.encode("AB"), vec!["AB"]);
 
-        // User encoded in original version
-        assert_eq!(model.encode("ABC"), vec!["ABC"]);
-        assert_eq!(model.encode("abABCcd"), vec!["ab", "ABC", "cd"]);
-        assert_eq!(model.encode("ababcdabcdcd"), vec!["ab", "abcdabcd", "cd"]);
-        assert_eq!(model.encode("abqrcd"), vec!["ab", "q", "r", "cd"]);
+            assert_eq!(model.encode("abcd"), vec!["ab", "cd"]);
+            assert_eq!(model.encode("abcc"), vec!["abc", "c"]);
+            assert_eq!(
+                model.encode("xabcabaabcdd"),
+                vec!["x", "abc", "ab", "a", "ab", "cd", "d"]
+            );
+            model.set_fuse_unk(false);
+            assert_eq!(model.encode("xyz東京"), vec!["x", "y", "z", "東", "京"]);
+            model.set_fuse_unk(true);
+            assert_eq!(model.encode("xyz東京"), vec!["xyz東京"]);
+
+            // User encoded in original version
+            assert_eq!(model.encode("ABC"), vec!["ABC"]);
+            assert_eq!(model.encode("abABCcd"), vec!["ab", "ABC", "cd"]);
+            assert_eq!(model.encode("ababcdabcdcd"), vec!["ab", "abcdabcd", "cd"]);
+            assert_eq!(model.encode("abqrcd"), vec!["ab", "q", "r", "cd"]);
+        }
     }
 }
