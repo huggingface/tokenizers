@@ -26,10 +26,7 @@ pub fn get_parallelism() -> bool {
     match std::env::var(ENV_VARIABLE) {
         Ok(mut v) => {
             v.make_ascii_lowercase();
-            match v.as_ref() {
-                "" | "off" | "false" | "f" | "no" | "n" | "0" => false,
-                _ => true,
-            }
+            !matches!(v.as_ref(), "" | "off" | "false" | "f" | "no" | "n" | "0")
         }
         Err(_) => true, // If we couldn't get the variable, we use the default
     }
