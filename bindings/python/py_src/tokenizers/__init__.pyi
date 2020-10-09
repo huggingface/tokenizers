@@ -255,130 +255,184 @@ class Regex:
         pass
 
 class Encoding:
-    """ An Encoding as returned by the Tokenizer """
+    """
+    The :class:`~tokenizers.Encoding` represents the output of a :class:`~tokenizers.Tokenizer`.
+    """
 
     @staticmethod
     def merge(encodings: List[Encoding], growing_offsets: bool = True) -> Encoding:
-        """Merge the list of Encoding into one final Encoding
+        """Merge the list of encodings into one final :class:`~tokenizers.Encoding`
 
         Args:
-            encodings: List[Encoding]:
-                The list of encodings
+            encodings (A :obj:`List` of :class:`~tokenizers.Encoding`):
+                The list of encodings that should be merged in one
 
-            growing_offsets: bool:
+            growing_offsets (:obj:`bool`, defaults to :obj:`True`):
                 Whether the offsets should accumulate while merging
 
         Returns:
-            The resulting Encoding
+            :class:`~tokenizers.Encoding`: The resulting Encoding
         """
         pass
     @property
     def ids(self) -> List[int]:
-        """ The tokenized ids """
+        """The generated IDs
+
+        The IDs are the main input to a Language Model. They are the token indices,
+        the numerical representations that a LM understands.
+
+        Returns:
+            :obj:`List[int]`: The list of IDs
+        """
         pass
     @property
     def tokens(self) -> List[str]:
-        """ The tokenized strings """
+        """The generated tokens
+
+        They are the string representation of the IDs.
+
+        Returns:
+            :obj:`List[str]`: The list of tokens
+        """
         pass
     @property
     def words(self) -> List[Optional[int]]:
-        """ The tokenized words index """
+        """The generated word indices.
+
+        They represent the index of the word associated to each token.
+        When the input is pre-tokenized, they correspond to the ID of the given input label,
+        otherwise they correspond to the words indices as defined by the
+        :class:`~tokenizers.pre_tokenizers.PreTokenizer` that was used.
+
+        For special tokens and such (any token that was generated from something that was
+        not part of the input), the output is :obj:`None`
+
+        Returns:
+            A :obj:`List` of :obj:`Optional[int]`: A list of optional word index.
+        """
         pass
     @property
     def type_ids(self) -> List[int]:
-        """ The type ids """
+        """The generated type IDs
+
+        Generally used for tasks like sequence classification or question answering,
+        these tokens let the LM know which input sequence corresponds to each tokens.
+
+        Returns:
+            :obj:`List[int]`: The list of type ids
+        """
         pass
     @property
     def offsets(self) -> List[Offsets]:
-        """The offsets.
-        These offsets can be used to index any `IndexableString` directly. If you want to
-        index the original `str`, make sure to retrieve the converted offsets using the `.offsets`
-        method on the `original_str`.
+        """The offsets associated to each token
+
+        These offsets let's you slice the input string, and thus retrieve the original
+        part that led to producing the corresponding token.
+
+        Returns:
+            A :obj:`List` of :obj:`Tuple[int, int]`: The list of offsets
         """
         pass
     @property
     def special_tokens_mask(self) -> List[int]:
-        """ The special tokens mask """
+        """The special token mask
+
+        This indicates which tokens are special tokens, and which are not.
+
+        Returns:
+            :obj:`List[int]`: The special tokens mask
+        """
         pass
     @property
     def attention_mask(self) -> List[int]:
-        """ The attention mask """
+        """The attention mask
+
+        This indicates to the LM which tokens should be attended to, and which should not.
+        This is especially important when batching sequences, where we need to applying
+        padding.
+
+        Returns:
+           :obj:`List[int]`: The attention mask
+        """
         pass
     @property
     def overflowing(self) -> Optional[Encoding]:
-        """ The overflowing encoding, after truncation """
+        """A :obj:`List` of overflowing :class:`~tokenizers.Encoding`
+
+        When using truncation, the :class:`~tokenizers.Tokenizer` takes care of splitting
+        the output into as many pieces as required to match the specified maximum length.
+        This field lets you retrieve all the subsequent pieces.
+
+        When you use pairs of sequences, the overflowing pieces will contain enough
+        variations to cover all the possible combinations, while respecting the provided
+        maximum length.
+        """
         pass
     def word_to_tokens(self, word_index: int) -> Optional[Tuple[int, int]]:
-        """
-        Get the encoded tokens corresponding to the word at the given index in the input
-        sequence, with the form [start_token, end_token + 1]
+        """Get the encoded tokens corresponding to the word at the given index
+        in the input sequence.
 
         Args:
-            word_index: int:
-                The index of the word in the input sequence.
+            word_index (:obj:`int`):
+                The index of a word in the input sequence.
 
         Returns:
-            The range of tokens with the form [start_token, end_token + 1]
+            :obj:`Tuple[int, int]`: The range of tokens: :obj:`(first, last + 1)`
         """
         pass
     def word_to_chars(self, word_index: int) -> Optional[Offsets]:
-        """
-        Get the offsets of the word at the given index in the input sequence.
+        """Get the offsets of the word at the given index in the input sequence.
 
         Args:
-            word_index: int:
-                The index of the word in the input sequence.
+            word_index (:obj:`int`):
+                The index of a word in the input sequence.
 
         Returns:
-            The word offsets
+            :obj:`Tuple[int, int]`: The range of characters (span) :obj:`(first, last + 1)`
         """
         pass
     def token_to_chars(self, token_index: int) -> Optional[Offsets]:
-        """
-        Get the offsets of the token at the given index
+        """Get the offsets of the token at the given index
 
         Args:
-            token_index: int:
-                The index of the token in the encoded sequence.
+            token_index (:obj:`int`):
+                The index of a token in the encoded sequence.
 
         Returns:
-            The token offsets
+            :obj:`Tuple[int, int]`: The token offsets :obj:`(first, last + 1)`
         """
         pass
     def token_to_word(self, token_index: int) -> Optional[int]:
-        """
-        Get the word that contains the token at the given index
+        """Get the word that contains the token at the given index
 
         Args:
-            token_index: int:
-                The index of the token in the encoded sequence.
+            token_index (:obj:`int`):
+                The index of a token in the encoded sequence.
 
         Returns:
-            The index of the word in the input sequence.
+            :obj:`int`: The index of the word in the input sequence.
         """
         pass
     def char_to_token(self, pos: int) -> Optional[int]:
-        """
-        Get the token that contains the char at the given position
+        """Get the token that contains the char at the given position
 
         Args:
-            pos: int:
+            char_pos (:obj:`int`):
                 The position of a char in the input string
 
         Returns:
-            The index of the token that contains this char
+            :obj:`int`: The index of the token that contains this char in the encoded sequence
         """
         pass
     def char_to_word(self, pos: int) -> Optional[int]:
-        """
-        Get the word that contains the given char.
+        """Get the word that contains the char at the given position
 
         Args:
-            pos: int:
+            char_pos (:obj:`int`):
                 The position of a char in the input string
 
         Returns:
-            The index of the word that contains this char
+            :obj:`int`: The index of the word that contains this char in the input sequence
         """
         pass
     def pad(
@@ -389,35 +443,34 @@ class Encoding:
         pad_token: Optional[str] = "[PAD]",
         direction: Optional[str] = "right",
     ):
-        """Pad the current Encoding at the given length
+        """Pad the :class:`~tokenizers.Encoding` at the given length
 
         Args:
-            length: int:
-                The length at which to pad
+            length (:obj:`int`):
+                The desired length
 
-            direction: (`optional`) str:
-                Can be one of: `right` or `left`
+            direction: (:obj:`str`, defaults to :obj:`right`):
+                The expected padding direction. Can be either :obj:`right` or :obj:`left`
 
-            pad_id: (`optional`) unsigned int:
-                The indice to be used when padding
+            pad_id (:obj:`int`, defaults to :obj:`0`):
+                The ID corresponding to the padding token
 
-            pad_type_id: (`optional`) unsigned int:
-                The type indice to be used when padding
+            pad_type_id (:obj:`int`, defaults to :obj:`0`):
+                The type ID corresponding to the padding token
 
-            pad_token: (`optional`) str:
-                The pad token to be used when padding
+            pad_token (:obj:`str`, defaults to `[PAD]`):
+                The pad token to use
         """
         pass
     def truncate(self, max_length: int, stride: Optional[int] = 0):
-        """Truncate the current Encoding at the given max_length
+        """Truncate the :class:`~tokenizers.Encoding` at the given length
 
         Args:
-            max_length: int:
-                The maximum length to be kept
+            max_length (:obj:`int`):
+                The desired length
 
-            stride: (`optional`) unsigned int:
-                The length of the previous first sequence to be included
-                in the overflowing sequence
+            stride (:obj:`int`, defaults to :obj:`0`):
+                The length of previous content to be included in each overflowing piece
         """
         pass
 

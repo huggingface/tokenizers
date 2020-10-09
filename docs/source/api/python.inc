@@ -30,7 +30,13 @@ Tokenizer
 
 .. autoclass:: tokenizers.Tokenizer
     :members:
-    :undoc-members:
+
+
+Encoding
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: tokenizers.Encoding
+    :members:
 
 
 Added Tokens
