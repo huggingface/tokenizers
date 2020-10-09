@@ -24,7 +24,7 @@ with:
 Training the tokenizer
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-In this tour, we will build and train a Byte-Pair Encoding (BPE) tokenzier. For more information
+In this tour, we will build and train a Byte-Pair Encoding (BPE) tokenizer. For more information
 about the different type of tokenizers, check out this `guide
 <https://huggingface.co/transformers/tokenizer_summary.html>`__ in the 🤗 Transformers
 documentation. Here, training the tokenizer means it will learn merge rules by:
@@ -84,7 +84,7 @@ to use:
     tokenizer.train(trainer, files)
 
 This should only take a few seconds to train our tokenizer on the full wikitext dataset! Once this
-is done, we need to save the model and reinstantiate it with the unkown token, or this token won't
+is done, we need to save the model and reinstantiate it with the unknown token, or this token won't
 be used. This will be simplified in a further release, to let you set the :obj:`unk_token` when
 first instantiating the model.
 
@@ -100,7 +100,7 @@ To save the tokenizer in one file that contains all its configuration and vocabu
 
     tokenizer.save("pretrained/wiki.json")
 
-and you can reload your tokenzier from that file with the :meth:`~tokenizers.Tokenizer.from_file`
+and you can reload your tokenizer from that file with the :meth:`~tokenizers.Tokenizer.from_file`
 class method:
 
 .. code-block:: python
@@ -119,7 +119,7 @@ Now that we have trained a tokenizer, we can use it on any text we want with the
 
 This applied the full pipeline of the tokenizer on the text, returning an
 :class:`~tokenizers.Encoding` object. To learn more about this pipeline, and how to apply (or
-customize) parts of it, check out :doc:`this apge <pipeline>`.
+customize) parts of it, check out :doc:`this page <pipeline>`.
 
 This :class:`~tokenizers.Encoding` object then has all the attributes you need for your deep
 learning model (or other). The :obj:`tokens` attribute contains the segmentation of your text in
@@ -138,7 +138,7 @@ tokenizer's vocabulary:
     print(output.ids)
     # [27194, 16, 93, 11, 5068, 5, 7928, 5083, 6190, 0, 35]
 
-An important feature of the 🤗 Tokenizers library is that it comes with full alignmenbt tracking,
+An important feature of the 🤗 Tokenizers library is that it comes with full alignment tracking,
 meaning you can always get the part of your original sentence that corresponds to a given token.
 Those are stored in the :obj:`offsets` attribute of our :class:`~tokenizers.Encoding` object. For
 instance, let's assume we would want to find back what caused the :obj:`"[UNK]"` token to appear,
@@ -149,7 +149,7 @@ which is the token at index 9 in the list, we can just ask for the offset at the
     print(output.offsets[9])
     # (26, 27)
 
-and those are the indices that correspond to the smiler in the original sentence:
+and those are the indices that correspond to the emoji in the original sentence:
 
 .. code-block:: python
 
@@ -183,7 +183,10 @@ Here is how we can set the post-processing to give us the traditional BERT input
     tokenizer.post_processor = TemplateProcessing
         single="[CLS] $A [SEP]",
         pair="[CLS] $A [SEP] $B:1 [SEP]:1",
-        special_tokens=[("[CLS]", 1), ("[SEP]", 2)],
+        special_tokens=[
+            ("[CLS]", tokenizer.token_to_id("[CLS]")),
+            ("[SEP]", tokenizer.token_to_id("[SEP]"))
+        ],
     )
 
 Let's go over this snippet of code in more details. First we specify the template for single

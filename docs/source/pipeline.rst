@@ -31,7 +31,7 @@ Normalization
 
 Normalization is, in a nutshell, a set of operations you apply to a raw string to make it less
 random or "cleaner". Common operations include stripping whitespace, removing accented characters
-or lowercasing all text. If you're familiar with `unicode normalization
+or lowercasing all text. If you're familiar with `Unicode normalization
 <https://unicode.org/reports/tr15>`__, it is also a very common normalization operation applied
 in most tokenizers.
 
@@ -102,7 +102,7 @@ numbers in their individual digits:
     from tokenizers.pre_tokenizers import Digits
 
     pre_tokenizer = tokenizers.pre_tokenizers.Sequence([
-        Whitespace(), 
+        Whitespace(),
         Digits(individual_digits=True),
     ])
     pre_tokenizer.pre_tokenize_str("Call 911!")
@@ -128,16 +128,18 @@ Once the input texts are normalized and pre-tokenized, we can apply the model on
 This is the part of the pipeline that needs training on your corpus (or that has been trained if you
 are using a pretrained tokenizer).
 
-The role of the models is to split your "words" into tokens, using the rules it has learned. It's
+The role of the model is to split your "words" into tokens, using the rules it has learned. It's
 also responsible for mapping those tokens to their corresponding IDs in the vocabulary of the model.
 
 This model is passed along when intializing the :class:`~tokenizers.Tokenizer` so you already know
 how to customize this part. Currently, the 🤗 Tokenizers library supports:
 
-- :class:`~tokenizers.models.BPE` (Byte-Pair Encoding)
-- :class:`~tokenizers.models.Unigram` (for SentencePiece tokenizers)
-- :class:`~tokenizers.models.WordLevel` (for just returning the result of the pre-tokenization)
-- :class:`~tokenizers.models.WordPiece` (the classic BERT tokenizer)
+- :class:`~tokenizers.models.BPE`
+- :class:`~tokenizers.models.Unigram`
+- :class:`~tokenizers.models.WordLevel`
+- :class:`~tokenizers.models.WordPiece`
+
+For more details about each model and its behavior, you can check `here <components.html#models>`__
 
 
 .. _post-processing:
@@ -210,7 +212,10 @@ And the post-processing uses the template we saw in the previous section:
     bert_tokenizer.post_processor = TemplateProcessing(
         single="[CLS] $A [SEP]",
         pair="[CLS] $A [SEP] $B:1 [SEP]:1",
-        special_tokens=[("[CLS]", 1), ("[SEP]", 2)],
+        special_tokens=[
+            ("[CLS]", bert_tokenizer.token_to_id("[CLS]")),
+            ("[SEP]", bert_tokenizer.token_to_id("[SEP]"))
+        ],
     )
 
 We can use this tokenizer and train on it on wikitext like in the :doc:`quicktour`:

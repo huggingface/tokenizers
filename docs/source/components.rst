@@ -4,6 +4,7 @@ Components
 When building a Tokenizer, you can attach various types of components to this Tokenizer in order
 to customize its behavior. This page lists most provided components.
 
+.. _normalizers:
 
 Normalizers
 ----------------------------------------------------------------------------------------------------
@@ -70,6 +71,8 @@ The ``Normalizer`` is optional.
 
            Sequence([Nmt(), NFKC()])
 
+
+.. _pre-tokenizers:
 
 Pre tokenizers
 ----------------------------------------------------------------------------------------------------
@@ -144,6 +147,8 @@ the ByteLevel)
      - ``Sequence([Punctuation(), WhitespaceSplit()])``
 
 
+.. _models:
+
 Models
 ----------------------------------------------------------------------------------------------------
 
@@ -191,6 +196,8 @@ component of a Tokenizer.
        choosing the most probable one.
 
 
+.. _post-processors:
+
 PostProcessor
 ----------------------------------------------------------------------------------------------------
 
@@ -222,6 +229,8 @@ is the component doing just that.
 
        Output: ``"[CLS] I like this [SEP] but not this [SEP]"``
 
+
+.. _decoders:
 
 Decoders
 ----------------------------------------------------------------------------------------------------
