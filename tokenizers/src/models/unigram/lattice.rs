@@ -137,7 +137,7 @@ fn log_sum_exp(x: f64, y: f64, init_mode: bool) -> f64 {
 
 impl<'a> Lattice<'a> {
     pub fn from(sentence: &'a str, unk_id: usize, bos_id: usize, eos_id: usize) -> Lattice<'a> {
-        let len = sentence.chars().count();
+        let len = sentence.bytes().count();
         let k_reserved_node_size = 16;
         // We are adding 2 tokens, bos and eos
         let mut nodes: Vec<NodeRef> = Vec::with_capacity(k_reserved_node_size);
@@ -177,7 +177,8 @@ impl<'a> Lattice<'a> {
 
     pub fn viterbi(&mut self) -> Vec<NodeRef> {
         let len = self.len;
-        for pos in 0..=len {
+        let mut pos = 0;
+        while pos <= len {
             if self.begin_nodes[pos].is_empty() {
                 return vec![];
             }
@@ -201,6 +202,11 @@ impl<'a> Lattice<'a> {
                     None => return vec![],
                 }
             }
+            if let Some(c) = self.sentence[pos..].chars().next() {
+                pos += c.len_utf8();
+            } else {
+                break;
+            }
         }
 
         let mut results: Vec<NodeRef> = vec![];
@@ -220,11 +226,7 @@ impl<'a> Lattice<'a> {
     }
 
     pub fn piece(&self, node: &Node) -> String {
-        self.sentence
-            .chars()
-            .skip(node.pos)
-            .take(node.length)
-            .collect()
+        self.sentence[node.pos..node.pos + node.length].to_owned()
     }
 
     pub fn tokens(&mut self) -> Vec<String> {
@@ -306,12 +308,9 @@ impl<'a> Lattice<'a> {
     pub fn len(&self) -> usize {
         self.len
     }
+
     pub fn is_empty(&self) -> bool {
         self.len == 0
-    }
-
-    pub fn utf8_len(&self) -> usize {
-        self.sentence.len()
     }
 
     pub fn bos_node(&self) -> NodeRef {
@@ -443,18 +442,14 @@ mod tests {
         let lattice = Lattice::from("", 0, 1, 2);
 
         assert_eq!(lattice.len(), 0);
-        assert_eq!(lattice.utf8_len(), 0);
-        // EXPECT_EQ(0, lattice.utf8_size());
 
         let lattice = Lattice::from("", 0, 1, 2);
         assert_eq!(lattice.len(), 0);
-        assert_eq!(lattice.utf8_len(), 0);
         assert_eq!(lattice.sentence(), "");
         assert_eq!(lattice.surface(0), "");
 
         let lattice = Lattice::from("test", 0, 1, 2);
         assert_eq!(lattice.len(), 4);
-        assert_eq!(lattice.utf8_len(), 4);
         assert_eq!(lattice.sentence(), "test");
         assert_eq!(lattice.surface(0), "test");
         assert_eq!(lattice.surface(1), "est");
@@ -476,8 +471,7 @@ mod tests {
         );
 
         let lattice = Lattice::from("テストab", 0, 1, 2);
-        assert_eq!(lattice.len(), 5);
-        assert_eq!(lattice.utf8_len(), 11);
+        assert_eq!(lattice.len(), 11);
         assert_eq!(lattice.sentence(), "テストab");
         assert_eq!(lattice.surface(0), "テストab");
         assert_eq!(lattice.surface(1), "ストab");
@@ -492,11 +486,11 @@ mod tests {
 
         lattice.insert(0, 1, 0.0, 3);
         lattice.insert(1, 1, 0.0, 4);
-        lattice.insert(2, 1, 0.0, 5);
-        lattice.insert(3, 1, 0.0, 6);
+        lattice.insert(2, 3, 0.0, 5);
+        lattice.insert(5, 3, 0.0, 6);
         lattice.insert(0, 2, 0.0, 7);
-        lattice.insert(1, 2, 0.0, 8);
-        lattice.insert(2, 2, 0.0, 9);
+        lattice.insert(1, 4, 0.0, 8);
+        lattice.insert(2, 6, 0.0, 9);
         // 0 & 1 are bos and eos
         let node0 = lattice.nodes[2].borrow();
         let node1 = lattice.nodes[3].borrow();
@@ -517,18 +511,18 @@ mod tests {
         assert_eq!(node0.pos, 0);
         assert_eq!(node1.pos, 1);
         assert_eq!(node2.pos, 2);
-        assert_eq!(node3.pos, 3);
+        assert_eq!(node3.pos, 5);
         assert_eq!(node4.pos, 0);
         assert_eq!(node5.pos, 1);
         assert_eq!(node6.pos, 2);
 
         assert_eq!(node0.length, 1);
         assert_eq!(node1.length, 1);
-        assert_eq!(node2.length, 1);
-        assert_eq!(node3.length, 1);
+        assert_eq!(node2.length, 3);
+        assert_eq!(node3.length, 3);
         assert_eq!(node4.length, 2);
-        assert_eq!(node5.length, 2);
-        assert_eq!(node6.length, 2);
+        assert_eq!(node5.length, 4);
+        assert_eq!(node6.length, 6);
 
         assert_eq!(lattice.bos_node().borrow().id, 1);
         assert_eq!(lattice.eos_node().borrow().id, 2);
@@ -543,14 +537,14 @@ mod tests {
         assert_eq!(lattice.begin_nodes[0].len(), 2);
         assert_eq!(lattice.begin_nodes[1].len(), 2);
         assert_eq!(lattice.begin_nodes[2].len(), 2);
-        assert_eq!(lattice.begin_nodes[3].len(), 1);
-        assert_eq!(lattice.begin_nodes[4].len(), 1);
+        assert_eq!(lattice.begin_nodes[5].len(), 1);
+        assert_eq!(lattice.begin_nodes[8].len(), 1);
 
         assert_eq!(lattice.end_nodes[0].len(), 1);
         assert_eq!(lattice.end_nodes[1].len(), 1);
         assert_eq!(lattice.end_nodes[2].len(), 2);
-        assert_eq!(lattice.end_nodes[3].len(), 2);
-        assert_eq!(lattice.end_nodes[4].len(), 2);
+        assert_eq!(lattice.end_nodes[5].len(), 2);
+        assert_eq!(lattice.end_nodes[8].len(), 2);
 
         assert_eq!(lattice.begin_nodes[0][0].borrow().id, node0.id);
         assert_eq!(lattice.begin_nodes[0][1].borrow().id, node4.id);
@@ -558,10 +552,10 @@ mod tests {
         assert_eq!(lattice.begin_nodes[1][1].borrow().id, node5.id);
         assert_eq!(lattice.begin_nodes[2][0].borrow().id, node2.id);
         assert_eq!(lattice.begin_nodes[2][1].borrow().id, node6.id);
-        assert_eq!(lattice.begin_nodes[3][0].borrow().id, node3.id);
+        assert_eq!(lattice.begin_nodes[5][0].borrow().id, node3.id);
         assert_eq!(
             lattice.eos_node().borrow().id,
-            lattice.begin_nodes[4][0].borrow().id
+            lattice.begin_nodes[8][0].borrow().id
         );
 
         assert_eq!(
@@ -571,10 +565,10 @@ mod tests {
         assert_eq!(node0.id, lattice.end_nodes[1][0].borrow().id);
         assert_eq!(node1.id, lattice.end_nodes[2][0].borrow().id);
         assert_eq!(node4.id, lattice.end_nodes[2][1].borrow().id);
-        assert_eq!(node2.id, lattice.end_nodes[3][0].borrow().id);
-        assert_eq!(node5.id, lattice.end_nodes[3][1].borrow().id);
-        assert_eq!(node3.id, lattice.end_nodes[4][0].borrow().id);
-        assert_eq!(node6.id, lattice.end_nodes[4][1].borrow().id);
+        assert_eq!(node2.id, lattice.end_nodes[5][0].borrow().id);
+        assert_eq!(node5.id, lattice.end_nodes[5][1].borrow().id);
+        assert_eq!(node3.id, lattice.end_nodes[8][0].borrow().id);
+        assert_eq!(node6.id, lattice.end_nodes[8][1].borrow().id);
     }
 
     #[test]

@@ -61,8 +61,17 @@ def openai_files(data_dir):
 
 @pytest.fixture(scope="session")
 def train_files(data_dir):
+    big = download("https://norvig.com/big.txt")
+    small = os.path.join(DATA_PATH, "small.txt")
+    with open(small, "w") as f:
+        with open(big, "r") as g:
+            for i, line in enumerate(g):
+                f.write(line)
+                if i > 100:
+                    break
     return {
-        "big": download("https://norvig.com/big.txt"),
+        "small": small,
+        "big": big,
     }
 
 

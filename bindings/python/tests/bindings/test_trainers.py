@@ -7,10 +7,9 @@ from ..utils import data_dir, train_files
 
 
 class TestUnigram:
-    @pytest.mark.slow
     def test_train(self, train_files):
         tokenizer = SentencePieceUnigramTokenizer()
-        tokenizer.train(train_files["big"], show_progress=False)
+        tokenizer.train(train_files["small"], show_progress=False)
 
         filename = "tests/data/unigram_trained.json"
         tokenizer.save(filename)

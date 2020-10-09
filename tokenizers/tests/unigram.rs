@@ -1,14 +1,13 @@
 #[cfg(not(debug_assertions))]
 use assert_approx_eq::assert_approx_eq;
-#[cfg(not(debug_assertions))]
 use std::collections::HashMap;
-#[cfg(not(debug_assertions))]
 use std::fs::read_to_string;
 use std::path::Path;
 #[cfg(not(debug_assertions))]
 use tokenizers::models::unigram::Lattice;
 use tokenizers::models::unigram::Unigram;
-use tokenizers::tokenizer::Model;
+use tokenizers::models::unigram::UnigramTrainer;
+use tokenizers::tokenizer::{Model, Trainer};
 
 #[test]
 fn test_unigram_from_file() {
@@ -37,6 +36,26 @@ fn test_unigram_from_file() {
             "。"
         ]
     );
+}
+
+#[test]
+fn test_train_unigram_from_file() {
+    let content = read_to_string("data/small.txt").unwrap();
+    let mut word_counts = HashMap::new();
+    content.split_whitespace().for_each(|word| {
+        // This is important for the test of char vs u8
+        let word = format!("▁{}", word.to_string());
+        *word_counts.entry(word).or_insert(0) += 1;
+    });
+
+    // println!("Words counts {:?}", word_counts);
+
+    let trainer = UnigramTrainer::builder()
+        .show_progress(false)
+        .build()
+        .unwrap();
+    let (model, _) = trainer.train(word_counts).unwrap();
+    assert_eq!(model.get_vocab_size(), 719);
 }
 
 #[cfg(not(debug_assertions))]
