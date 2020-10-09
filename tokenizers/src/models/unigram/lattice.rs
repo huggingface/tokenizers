@@ -226,14 +226,7 @@ impl<'a> Lattice<'a> {
     }
 
     pub fn piece(&self, node: &Node) -> String {
-        String::from_utf8(
-            self.sentence
-                .bytes()
-                .skip(node.pos)
-                .take(node.length)
-                .collect(),
-        )
-        .unwrap()
+        self.sentence[node.pos..node.pos + node.length].to_owned()
     }
 
     pub fn tokens(&mut self) -> Vec<String> {
