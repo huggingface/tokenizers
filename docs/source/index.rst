@@ -28,7 +28,7 @@ Main features:
     :caption: Getting Started
 
     quicktour
-    installation
+    installation/main
     pipeline
     components
 
