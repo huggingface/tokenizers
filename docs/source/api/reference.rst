@@ -1,11 +1,11 @@
 .. only:: python
 
-    .. include:: python_reference.inc
+    .. include:: python.inc
 
 .. only:: rust
 
-    .. include:: rust_reference.inc
+    .. include:: rust.inc
 
 .. only:: node
 
-    .. include:: node_reference.inc
+    .. include:: node.inc
