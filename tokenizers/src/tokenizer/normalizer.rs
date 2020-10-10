@@ -472,7 +472,7 @@ impl NormalizedString {
     /// Applies filtering over our characters
     pub fn filter<F: Fn(char) -> bool>(&mut self, keep: F) -> &mut Self {
         let mut removed: isize = 0;
-        let filtered = self
+        let mut filtered = self
             .normalized
             .chars()
             .rev()
@@ -490,11 +490,10 @@ impl NormalizedString {
                     None
                 }
             })
+            .filter_map(|o| o)
             .collect::<Vec<_>>();
-        self.transform(
-            filtered.into_iter().rev().filter_map(|o| o),
-            removed as usize,
-        );
+        filtered.reverse();
+        self.transform(filtered, removed as usize);
         self
     }
 
@@ -747,7 +746,7 @@ impl NormalizedString {
                     }
                 })
                 .collect::<Vec<_>>();
-            self.transform(transformation.into_iter(), leading_spaces);
+            self.transform(transformation, leading_spaces);
         }
         self
     }

@@ -144,6 +144,17 @@ impl Encoding {
         std::mem::replace(&mut self.overflowing, vec![])
     }
 
+    pub fn process_tokens_with_offsets_mut<F>(&mut self, func: F)
+    where
+        F: FnMut((usize, (&String, &mut Offsets))),
+    {
+        self.tokens
+            .iter()
+            .zip(self.offsets.iter_mut())
+            .enumerate()
+            .for_each(func)
+    }
+
     /// Get the encoded tokens corresponding to the word at the given index in the input sequence,
     /// with the form (start_token, end_token + 1)
     pub fn word_to_tokens(&self, word: u32) -> Option<(usize, usize)> {
