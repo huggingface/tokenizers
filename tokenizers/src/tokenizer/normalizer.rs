@@ -492,6 +492,10 @@ impl NormalizedString {
             })
             .filter_map(|o| o)
             .collect::<Vec<_>>();
+        // We can't use double rev, it get optimized away and make the code wrong.
+        // Re-iterating with rev will trigger clippy error.
+        // Reversing here seems slow but should not be a problem as it should
+        // help cache locality.
         filtered.reverse();
         self.transform(filtered, removed as usize);
         self
