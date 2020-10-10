@@ -16,7 +16,7 @@ jobs:
   create_wheels_manylinux:
     runs-on: ubuntu-latest
     name: Create wheels for manylinux
-    container: quay.io/pypa/manylinux1_x86_64
+    container: quay.io/pypa/manylinux2010_x86_64
     steps:
       - uses: actions/checkout@v1
 
@@ -36,14 +36,6 @@ jobs:
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2020-05-14-i686-pc-windows-msvc
-          override: true
-
-      - name: Override toolchain
-        shell: bash
-        working-directory: ./bindings/python
-        run: echo "nightly-2020-05-14-i686-pc-windows-msvc" > rust-toolchain
 
       - name: Install Python
         uses: actions/setup-python@v1
@@ -82,9 +74,6 @@ jobs:
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2020-05-18
-          override: true
 
       - name: Install Python
         uses: actions/setup-python@v1
