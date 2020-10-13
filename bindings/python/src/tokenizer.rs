@@ -845,7 +845,6 @@ mod test {
     use super::*;
     use crate::models::PyModel;
     use crate::normalizers::{PyNormalizer, PyNormalizerTypeWrapper};
-    use std::str::FromStr;
     use std::sync::Arc;
     use tempfile::NamedTempFile;
     use tk::normalizers::{Lowercase, NFKC};
@@ -864,17 +863,5 @@ mod test {
         tokenizer.save(&tmp, false).unwrap();
 
         Tokenizer::from_file(&tmp).unwrap();
-    }
-
-    #[test]
-    fn tokenizer_deserialize() {
-        let string = std::fs::read_to_string("albert-base-v1-tokenizer.json").unwrap();
-        let _tokenizer: Tokenizer = serde_json::from_str(&string).unwrap();
-
-        let _tokenizer = Tokenizer::from_str(&string).unwrap();
-
-        // This used to fail because of BufReader
-        let path = std::path::Path::new("albert-base-v1-tokenizer.json");
-        let _tokenizer = Tokenizer::from_file(path).unwrap();
     }
 }
