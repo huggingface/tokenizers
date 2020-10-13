@@ -171,39 +171,31 @@ impl PostProcessor for ByteLevel {
 }
 
 pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
-    let modifs = encoding
-        .get_tokens()
-        .iter()
-        .map(|token| {
-            let leading_spaces = token
-                .chars()
-                .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
-                .count();
-            let trailing_spaces = token
-                .chars()
-                .rev()
-                .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
-                .count();
-            (leading_spaces, trailing_spaces)
-        })
-        .enumerate()
-        .filter(|(_, v)| v.0 > 0 || v.1 > 0)
-        .collect::<Vec<_>>();
+    encoding.process_tokens_with_offsets_mut(|(i, (token, mut offsets))| {
+        let mut leading_spaces = token
+            .chars()
+            .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
+            .count();
+        let trailing_spaces = token
+            .chars()
+            .rev()
+            .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
+            .count();
 
-    modifs.into_iter().for_each(|(i, (mut ld, tl))| {
-        let mut offsets = &mut encoding.get_offsets_mut()[i];
-        if ld > 0 {
-            if i == 0 && add_prefix_space && ld == 1 {
-                // If we are processing the first pair of offsets, with `add_prefix_space`,
-                // then we shouldn't remove anything we added. If there are more than one
-                // leading spaces though, it means we didn't add them, and they should be
-                // removed.
-                ld = 0;
+        if leading_spaces > 0 || trailing_spaces > 0 {
+            if leading_spaces > 0 {
+                if i == 0 && add_prefix_space && leading_spaces == 1 {
+                    // If we are processing the first pair of offsets, with `add_prefix_space`,
+                    // then we shouldn't remove anything we added. If there are more than one
+                    // leading spaces though, it means we didn't add them, and they should be
+                    // removed.
+                    leading_spaces = 0;
+                }
+                offsets.0 = std::cmp::min(offsets.0 + leading_spaces, offsets.1);
             }
-            offsets.0 = std::cmp::min(offsets.0 + ld, offsets.1);
-        }
-        if tl > 0 && offsets.1 >= tl {
-            offsets.1 = std::cmp::max(offsets.1 - tl, offsets.0);
+            if trailing_spaces > 0 && offsets.1 >= trailing_spaces {
+                offsets.1 = std::cmp::max(offsets.1 - trailing_spaces, offsets.0);
+            }
         }
     });
 }
