@@ -88,7 +88,7 @@ fn test_sample() {
             *p /= z;
         }
 
-        let n_trials = 1_000;
+        let n_trials = 10_000;
         let mut freq: HashMap<String, u32> = HashMap::new();
         for _ in 0..n_trials {
             let string = lattice.sample_token(theta).join(" ");
