@@ -472,32 +472,30 @@ impl NormalizedString {
     /// Applies filtering over our characters
     pub fn filter<F: Fn(char) -> bool>(&mut self, keep: F) -> &mut Self {
         let mut removed: isize = 0;
-        let mut filtered = self
-            .normalized
-            .chars()
-            .rev()
-            .map(|c| {
-                if keep(c) {
-                    if removed > 0 {
-                        let res = (c, -removed);
-                        removed = 0;
-                        Some(res)
-                    } else {
-                        Some((c, 0))
+        let mut removed_start: usize = 0;
+
+        let mut transforms = Vec::with_capacity(self.normalized.len());
+        let mut last_c = None;
+        for c in self.normalized.chars() {
+            if keep(c) {
+                match last_c {
+                    Some(lc) => {
+                        transforms.push((lc, -removed));
                     }
-                } else {
-                    removed += 1;
-                    None
+                    None => {
+                        removed_start = removed as usize;
+                    }
                 }
-            })
-            .filter_map(|o| o)
-            .collect::<Vec<_>>();
-        // We can't use double rev, it get optimized away and make the code wrong.
-        // Re-iterating with rev will trigger clippy error.
-        // Reversing here seems slow but should not be a problem as it should
-        // help cache locality.
-        filtered.reverse();
-        self.transform(filtered, removed as usize);
+                last_c = Some(c);
+                removed = 0;
+            } else {
+                removed += 1;
+            }
+        }
+        if let Some(lc) = last_c {
+            transforms.push((lc, -removed));
+        }
+        self.transform(transforms, removed_start);
         self
     }
 
