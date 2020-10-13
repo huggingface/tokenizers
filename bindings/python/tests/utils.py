@@ -76,13 +76,10 @@ def train_files(data_dir):
 
 
 @pytest.fixture(scope="session")
-def precompiled_files(data_dir):
-    albert_base = download(
+def albert_base(data_dir):
+    return download(
         "https://s3.amazonaws.com/models.huggingface.co/bert/albert-base-v1-tokenizer.json"
     )
-    return {
-        "albert_base": albert_base,
-    }
 
 
 def multiprocessing_with_parallelism(tokenizer, enabled: bool):

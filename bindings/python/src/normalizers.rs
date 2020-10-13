@@ -491,7 +491,7 @@ mod test {
         match normalizer.normalizer {
             PyNormalizerTypeWrapper::Single(inner) => match inner.as_ref() {
                 PyNormalizerWrapper::Wrapped(NormalizerWrapper::NFKC(_)) => {}
-                _ => panic!("Expected Precompiled"),
+                _ => panic!("Expected NFKC"),
             },
             _ => panic!("Expected wrapped, not sequence."),
         }
