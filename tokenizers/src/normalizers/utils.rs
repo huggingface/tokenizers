@@ -15,6 +15,10 @@ impl Sequence {
     pub fn new(normalizers: Vec<NormalizerWrapper>) -> Self {
         Self { normalizers }
     }
+
+    pub fn get_normalizers(&self) -> &[NormalizerWrapper] {
+        &self.normalizers
+    }
 }
 
 impl Normalizer for Sequence {

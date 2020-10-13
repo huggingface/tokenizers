@@ -75,6 +75,16 @@ def train_files(data_dir):
     }
 
 
+@pytest.fixture(scope="session")
+def precompiled_files(data_dir):
+    albert_base = download(
+        "https://s3.amazonaws.com/models.huggingface.co/bert/albert-base-v1-tokenizer.json"
+    )
+    return {
+        "albert_base": albert_base,
+    }
+
+
 def multiprocessing_with_parallelism(tokenizer, enabled: bool):
     """
     This helper can be used to test that disabling parallelism avoids dead locks when the
