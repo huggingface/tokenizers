@@ -19,6 +19,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(feature = "progressbar")]
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::de::DeserializeOwned;
 use serde::export::Formatter;
@@ -120,7 +121,8 @@ pub trait Decoder {
 /// and it returns a `Model` when done.
 pub trait Trainer {
     type Model: Model + Sized;
-    /// Whether we should show progress during the training.
+    #[cfg(feature = "progressbar")]
+    /// Whether we should show progress during the training. Requires the "progressbar" feature.
     fn should_show_progress(&self) -> bool;
     /// The actual training method. This will return a new trained Model as well as a list
     /// of `special_tokens` to be added directly to the tokenizer along with the model.
@@ -950,24 +952,28 @@ where
         MN: Model,
     {
         let max_read = 1_000_000;
-        let mut len = 0;
-        for file in files.iter() {
-            len += File::open(file)
-                .and_then(|f| f.metadata())
-                .map(|m| m.len())?;
-        }
 
-        let progress = if trainer.should_show_progress() {
-            let progress = ProgressBar::new(len);
-            progress.set_style(
-                ProgressStyle::default_bar()
-                    .template("[{elapsed_precise}] {msg:<40!} {wide_bar} {percent:>19!}"),
-            );
-            progress.set_message(&format!("Reading files ({:.2} Mo)", len / 1_000_000));
-            progress.set_draw_delta(len / 100); // Redraw only every 2%
-            Some(progress)
-        } else {
-            None
+        #[cfg(feature = "progressbar")]
+        let progress = {
+            let mut len = 0;
+            for file in files.iter() {
+                len += File::open(file)
+                    .and_then(|f| f.metadata())
+                    .map(|m| m.len())?;
+            }
+
+            if trainer.should_show_progress() {
+                let progress = ProgressBar::new(len);
+                progress.set_style(
+                    ProgressStyle::default_bar()
+                        .template("[{elapsed_precise}] {msg:<40!} {wide_bar} {percent:>19!}"),
+                );
+                progress.set_message(&format!("Reading files ({:.2} Mo)", len / 1_000_000));
+                progress.set_draw_delta(len / 100); // Redraw only every 2%
+                Some(progress)
+            } else {
+                None
+            }
         };
         let words = files
             .into_iter()
@@ -980,9 +986,16 @@ where
                 file.lines_with_ending()
                     .maybe_par_bridge()
                     .map_with(
+                        #[cfg(feature = "progressbar")]
                         &progress,
-                        |progress, line| -> Result<HashMap<String, u32>> {
+                        #[cfg(not(feature = "progressbar"))]
+                        (),
+                        |#[cfg(feature = "progressbar")] progress,
+                         #[cfg(not(feature = "progressbar"))] _,
+                         line|
+                         -> Result<HashMap<String, u32>> {
                             let newline = line?;
+                            #[cfg(feature = "progressbar")]
                             let b = newline.len();
                             let mut words = HashMap::new();
                             let normalized = self.do_normalize(newline)?;
@@ -996,6 +1009,7 @@ where
                                     .collect(),
                             );
 
+                            #[cfg(feature = "progressbar")]
                             if let Some(pbar) = progress {
                                 pbar.inc(b as u64);
                             }
@@ -1022,6 +1036,7 @@ where
                     Ok(acc)
                 },
             )?;
+        #[cfg(feature = "progressbar")]
         if let Some(pbar) = progress {
             pbar.finish();
         }

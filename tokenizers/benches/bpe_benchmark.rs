@@ -69,10 +69,13 @@ fn bench_gpt2(c: &mut Criterion) {
 }
 
 fn bench_train(c: &mut Criterion) {
+    #[cfg(feature = "progressbar")]
     let trainer: TrainerWrapper = BpeTrainerBuilder::default()
         .show_progress(false)
         .build()
         .into();
+    #[cfg(not(feature = "progressbar"))]
+    let trainer: TrainerWrapper = BpeTrainerBuilder::default().build().into();
     let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
     tokenizer.with_pre_tokenizer(Whitespace::default());
     c.bench_function("BPE Train vocabulary (small)", |b| {

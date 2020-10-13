@@ -35,6 +35,7 @@ impl WordPieceTrainerBuilder {
         self
     }
 
+    #[cfg(feature = "progressbar")]
     /// Set whether to show progress
     pub fn show_progress(mut self, show: bool) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.show_progress(show);
@@ -107,6 +108,7 @@ impl Trainer for WordPieceTrainer {
         self.bpe_trainer.process_tokens(&mut words, tokens)
     }
 
+    #[cfg(feature = "progressbar")]
     fn should_show_progress(&self) -> bool {
         self.bpe_trainer.should_show_progress()
     }

@@ -3,6 +3,7 @@
 use super::{Pair, WithFirstLastIterator, Word, BPE};
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
+#[cfg(feature = "progressbar")]
 use indicatif::{ProgressBar, ProgressStyle};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -37,6 +38,7 @@ impl Ord for Merge {
 struct Config {
     min_frequency: u32,
     vocab_size: usize,
+    #[cfg(feature = "progressbar")]
     show_progress: bool,
     special_tokens: Vec<AddedToken>,
     limit_alphabet: Option<usize>,
@@ -57,6 +59,7 @@ impl Default for BpeTrainerBuilder {
             config: Config {
                 min_frequency: 0,
                 vocab_size: 30000,
+                #[cfg(feature = "progressbar")]
                 show_progress: true,
                 special_tokens: vec![],
                 limit_alphabet: None,
@@ -86,6 +89,7 @@ impl BpeTrainerBuilder {
         self
     }
 
+    #[cfg(feature = "progressbar")]
     /// Set whether to show progress
     pub fn show_progress(mut self, show: bool) -> Self {
         self.config.show_progress = show;
@@ -127,6 +131,7 @@ impl BpeTrainerBuilder {
         BpeTrainer {
             min_frequency: self.config.min_frequency,
             vocab_size: self.config.vocab_size,
+            #[cfg(feature = "progressbar")]
             show_progress: self.config.show_progress,
             special_tokens: self.config.special_tokens,
             limit_alphabet: self.config.limit_alphabet,
@@ -158,6 +163,7 @@ pub struct BpeTrainer {
     min_frequency: u32,
     /// The target vocabulary size
     vocab_size: usize,
+    #[cfg(feature = "progressbar")]
     /// Whether to show progress while training
     show_progress: bool,
     /// A list of special tokens that the model should know of
@@ -192,6 +198,7 @@ impl BpeTrainer {
         BpeTrainerBuilder::new()
     }
 
+    #[cfg(feature = "progressbar")]
     /// Setup a progress bar if asked to show progress
     fn setup_progress(&self) -> Option<ProgressBar> {
         if self.show_progress {
@@ -206,6 +213,7 @@ impl BpeTrainer {
         }
     }
 
+    #[cfg(feature = "progressbar")]
     /// Set the progress bar in the finish state
     fn finalize_progress(&self, p: &Option<ProgressBar>, final_len: usize) {
         if let Some(p) = p {
@@ -215,6 +223,7 @@ impl BpeTrainer {
         }
     }
 
+    #[cfg(feature = "progressbar")]
     /// Update the progress bar with the new provided length and message
     fn update_progress(&self, p: &Option<ProgressBar>, len: usize, message: &str) {
         if let Some(p) = p {
@@ -300,7 +309,7 @@ impl BpeTrainer {
         wc: &HashMap<String, u32>,
         w2id: &mut HashMap<String, u32>,
         id2w: &mut Vec<String>,
-        p: &Option<ProgressBar>,
+        #[cfg(feature = "progressbar")] p: &Option<ProgressBar>,
     ) -> (Vec<Word>, Vec<u32>) {
         let mut words: Vec<Word> = Vec::with_capacity(wc.len());
         let mut counts: Vec<u32> = Vec::with_capacity(wc.len());
@@ -337,6 +346,7 @@ impl BpeTrainer {
             }
             words.push(current_word);
 
+            #[cfg(feature = "progressbar")]
             if let Some(p) = p {
                 p.inc(1);
             }
@@ -349,7 +359,7 @@ impl BpeTrainer {
         &self,
         words: &[Word],
         counts: &[u32],
-        p: &Option<ProgressBar>,
+        #[cfg(feature = "progressbar")] p: &Option<ProgressBar>,
     ) -> (HashMap<Pair, i32>, HashMap<Pair, HashSet<usize>>) {
         words
             .maybe_par_iter()
@@ -381,6 +391,7 @@ impl BpeTrainer {
                     *pair_counts.get_mut(&cur_pair).unwrap() += count as i32;
                 }
 
+                #[cfg(feature = "progressbar")]
                 if let Some(p) = &p {
                     p.inc(1);
                 }
@@ -408,6 +419,7 @@ impl BpeTrainer {
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
 
+        #[cfg(feature = "progressbar")]
         let progress = self.setup_progress();
 
         //
@@ -423,16 +435,29 @@ impl BpeTrainer {
         //
         // 3. Tokenize words
         //
+        #[cfg(feature = "progressbar")]
         self.update_progress(&progress, word_counts.len(), "Tokenize words");
-        let (words, counts) =
-            self.tokenize_words(&word_counts, &mut word_to_id, &mut id_to_word, &progress);
+        let (words, counts) = self.tokenize_words(
+            &word_counts,
+            &mut word_to_id,
+            &mut id_to_word,
+            #[cfg(feature = "progressbar")]
+            &progress,
+        );
+        #[cfg(feature = "progressbar")]
         self.finalize_progress(&progress, words.len());
 
         //
         // 4. Count pairs in words
         //
+        #[cfg(feature = "progressbar")]
         self.update_progress(&progress, words.len(), "Count pairs");
-        let (mut pair_counts, mut where_to_update) = self.count_pairs(&words, &counts, &progress);
+        let (mut pair_counts, mut where_to_update) = self.count_pairs(
+            &words,
+            &counts,
+            #[cfg(feature = "progressbar")]
+            &progress,
+        );
         // Insert them in the queue
         let mut queue = BinaryHeap::with_capacity(pair_counts.len());
         where_to_update.drain().for_each(|(pair, pos)| {
@@ -445,11 +470,13 @@ impl BpeTrainer {
                 });
             }
         });
+        #[cfg(feature = "progressbar")]
         self.finalize_progress(&progress, words.len());
 
         //
         // 5. Do merges
         //
+        #[cfg(feature = "progressbar")]
         self.update_progress(&progress, self.vocab_size, "Compute merges");
         let mut merges: Vec<(Pair, u32)> = vec![];
         loop {
@@ -545,10 +572,12 @@ impl BpeTrainer {
                 }
             });
 
+            #[cfg(feature = "progressbar")]
             if let Some(p) = &progress {
                 p.inc(1);
             }
         }
+        #[cfg(feature = "progressbar")]
         self.finalize_progress(&progress, merges.len());
 
         let mut builder = BPE::builder().vocab_and_merges(
@@ -597,6 +626,7 @@ impl Trainer for BpeTrainer {
         }
     }
 
+    #[cfg(feature = "progressbar")]
     /// Whether we should show progress
     fn should_show_progress(&self) -> bool {
         self.show_progress
@@ -626,10 +656,13 @@ mod tests {
         .iter()
         .cloned()
         .collect();
+        #[cfg(feature = "progressbar")]
         let trainer = BpeTrainer::builder()
             .show_progress(false)
             .min_frequency(2)
             .build();
+        #[cfg(not(feature = "progressbar"))]
+        let trainer = BpeTrainer::builder().min_frequency(2).build();
         let (model, _) = trainer.train(word_counts).unwrap();
 
         // Vocab should contain all of the characters from the `word_counts` mapping

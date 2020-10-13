@@ -70,9 +70,12 @@ pub fn bench_bert(c: &mut Criterion) {
 }
 
 fn bench_train(c: &mut Criterion) {
+    #[cfg(feature = "progressbar")]
     let trainer = WordPieceTrainerBuilder::default()
         .show_progress(false)
         .build();
+    #[cfg(not(feature = "progressbar"))]
+    let trainer = WordPieceTrainerBuilder::default().build();
     type Tok = TokenizerImpl<
         WordPiece,
         NormalizerWrapper,

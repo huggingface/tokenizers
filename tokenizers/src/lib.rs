@@ -57,10 +57,12 @@
 //! use std::path::Path;
 //!
 //! fn main() -> Result<()> {
+//!     # #[cfg(feature = "progressbar")]
+//!     # {
 //!     let vocab_size: usize = 100;
 //!
 //!     let trainer = BpeTrainerBuilder::new()
-//!         .show_progress(true)
+//!         .show_progress(true) // requires "progressbar" feature
 //!         .vocab_size(vocab_size)
 //!         .min_frequency(0)
 //!         .special_tokens(vec![
@@ -90,6 +92,7 @@
 //!         )?
 //!         .get_model()
 //!         .save(Path::new("result-folder"), Some("some-prefix"))?;
+//!    # }
 //!
 //!     Ok(())
 //! }
@@ -101,6 +104,12 @@
 //! by the total number of core/threads your CPU provides but this can be tuned by setting the `RAYON_RS_NUM_CPUS`
 //! environment variable. As an example setting `RAYON_RS_NUM_CPUS=4` will allocate a maximum of 4 threads.
 //! **_Please note this behavior may evolve in the future_**
+//!
+//! # Features
+//!
+//! - **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
+//! compilation for certain targets is not supported by the [termios](https://crates.io/crates/termios)
+//! dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
 
 #[macro_use]
 extern crate log;

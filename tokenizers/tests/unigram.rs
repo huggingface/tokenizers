@@ -50,10 +50,13 @@ fn test_train_unigram_from_file() {
 
     // println!("Words counts {:?}", word_counts);
 
+    #[cfg(feature = "progressbar")]
     let trainer = UnigramTrainer::builder()
         .show_progress(false)
         .build()
         .unwrap();
+    #[cfg(not(feature = "progressbar"))]
+    let trainer = UnigramTrainer::builder().build().unwrap();
     let (model, _) = trainer.train(word_counts).unwrap();
     assert_eq!(model.get_vocab_size(), 719);
 }

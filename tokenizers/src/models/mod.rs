@@ -123,6 +123,7 @@ pub enum TrainerWrapper {
 impl Trainer for TrainerWrapper {
     type Model = ModelWrapper;
 
+    #[cfg(feature = "progressbar")]
     fn should_show_progress(&self) -> bool {
         match self {
             TrainerWrapper::BpeTrainer(bpe) => bpe.should_show_progress(),
