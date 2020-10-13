@@ -144,7 +144,7 @@ impl Encoding {
         std::mem::replace(&mut self.overflowing, vec![])
     }
 
-    pub fn process_tokens_with_offsets_mut<F>(&mut self, func: F)
+    pub(crate) fn process_tokens_with_offsets_mut<F>(&mut self, func: F)
     where
         F: FnMut((usize, (&String, &mut Offsets))),
     {
