@@ -483,4 +483,35 @@ mod test {
         let rs_ser = serde_json::to_string(&rs_seq).unwrap();
         assert_eq!(py_wrapper_ser, rs_ser);
     }
+
+    #[test]
+    fn deserialize_sequence() {
+        let string = r#"{"type": "NFKC"}"#;
+        let normalizer: PyNormalizer = serde_json::from_str(&string).unwrap();
+        match normalizer.normalizer {
+            PyNormalizerTypeWrapper::Single(inner) => match inner.as_ref() {
+                PyNormalizerWrapper::Wrapped(NormalizerWrapper::NFKC(_)) => {}
+                _ => panic!("Expected NFKC"),
+            },
+            _ => panic!("Expected wrapped, not sequence."),
+        }
+
+        let sequence_string = format!(r#"{{"type": "Sequence", "normalizers": [{}]}}"#, string);
+        let normalizer: PyNormalizer = serde_json::from_str(&sequence_string).unwrap();
+
+        match normalizer.normalizer {
+            PyNormalizerTypeWrapper::Single(inner) => match inner.as_ref() {
+                PyNormalizerWrapper::Wrapped(NormalizerWrapper::Sequence(sequence)) => {
+                    let normalizers = sequence.get_normalizers();
+                    assert_eq!(normalizers.len(), 1);
+                    match normalizers[0] {
+                        NormalizerWrapper::NFKC(_) => {}
+                        _ => panic!("Expected NFKC"),
+                    }
+                }
+                _ => panic!("Expected sequence"),
+            },
+            _ => panic!("Expected single"),
+        }
+    }
 }
