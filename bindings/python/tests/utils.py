@@ -6,8 +6,8 @@ import pytest
 DATA_PATH = os.path.join("tests", "data")
 
 
-def download(url):
-    filename = url.rsplit("/")[-1]
+def download(url, with_filename=None):
+    filename = with_filename if with_filename is not None else url.rsplit("/")[-1]
     filepath = os.path.join(DATA_PATH, filename)
     if not os.path.exists(filepath):
         with open(filepath, "wb") as f:
@@ -79,6 +79,14 @@ def train_files(data_dir):
 def albert_base(data_dir):
     return download(
         "https://s3.amazonaws.com/models.huggingface.co/bert/albert-base-v1-tokenizer.json"
+    )
+
+
+@pytest.fixture(scope="session")
+def doc_wiki_tokenizer(data_dir):
+    return download(
+        "https://s3.amazonaws.com/models.huggingface.co/bert/anthony/doc-quicktour/tokenizer.json",
+        "tokenizer-wiki.json",
     )
 
 
