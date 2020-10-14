@@ -23,6 +23,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
         handle_chinese_chars: bool = True,
         strip_accents: Optional[bool] = None,
         lowercase: bool = True,
+        norm_options: int = 0,
         wordpieces_prefix: str = "##",
     ):
 
@@ -48,6 +49,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
             handle_chinese_chars=handle_chinese_chars,
             strip_accents=strip_accents,
             lowercase=lowercase,
+            norm_options=norm_options,
         )
         tokenizer.pre_tokenizer = BertPreTokenizer()
 
@@ -75,6 +77,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
             "handle_chinese_chars": handle_chinese_chars,
             "strip_accents": strip_accents,
             "lowercase": lowercase,
+            "norm_options": norm_options,
             "wordpieces_prefix": wordpieces_prefix,
         }
 

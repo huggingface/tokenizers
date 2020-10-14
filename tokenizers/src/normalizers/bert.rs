@@ -1,7 +1,33 @@
+extern crate lazy_static;
+extern crate opencc_rust;
+
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
+
+use std::sync::Mutex;
+use fnv::FnvHashSet;
+use fnv::FnvHashMap;
+use opencc_rust::{OpenCC, DefaultConfig};
+
+use std::sync::Once;
+static START: Once = Once::new();
+
+static mut OPENCC_CONFIG: DefaultConfig = DefaultConfig::S2T;
+
+lazy_static! {
+    static ref OPENCC: OpenCC = unsafe{OpenCC::new(OPENCC_CONFIG).unwrap()};
+    static ref SYMBOLS_: Mutex<FnvHashSet<char>> = Mutex::new(FnvHashSet::default());
+    static ref SIMPL_MAPPING_: Mutex<FnvHashSet<char>> = Mutex::new(FnvHashSet::default());
+    static ref ZH_NORM_MAPPING_: Mutex<FnvHashMap<char, String>> = Mutex::new(FnvHashMap::default()); 
+}
+
+static SEPARATE_INTEGERS: u32 = 1 << 1;
+static SEPARATE_SYMBOLS: u32  = 1 << 2;
+static SIMPL_TO_TRAD: u32     = 1 << 3;
+static TRAD_TO_SIMPL: u32     = 1 << 4;
+static ZH_NORM_MAPPING: u32   = 1 << 5;
 
 /// Checks whether a character is whitespace
 fn is_whitespace(c: char) -> bool {
@@ -10,6 +36,14 @@ fn is_whitespace(c: char) -> bool {
         true
     } else {
         c.is_whitespace()
+    }
+}
+
+/// match for numbers
+fn is_number(c: char) -> bool {
+    match c as usize {
+        0x30..=0x39 => true,
+        _ => false,
     }
 }
 
@@ -62,6 +96,8 @@ pub struct BertNormalizer {
     strip_accents: Option<bool>,
     /// Whether to lowercase the input
     lowercase: bool,
+    /// Normalization Options
+    norm_options: u32
 }
 
 impl Default for BertNormalizer {
@@ -71,6 +107,7 @@ impl Default for BertNormalizer {
             handle_chinese_chars: true,
             strip_accents: None,
             lowercase: true,
+            norm_options: 0
         }
     }
 }
@@ -81,12 +118,65 @@ impl BertNormalizer {
         handle_chinese_chars: bool,
         strip_accents: Option<bool>,
         lowercase: bool,
+        norm_options: u32
     ) -> Self {
+        START.call_once(||{
+            let mut zh_norm_mapping = ZH_NORM_MAPPING_.lock().unwrap();
+            let mut simpl_mapping = SIMPL_MAPPING_.lock().unwrap();
+            let mut symbols = SYMBOLS_.lock().unwrap();
+            if (norm_options & SIMPL_TO_TRAD) != 0 {
+                unsafe{
+                    OPENCC_CONFIG = DefaultConfig::S2T;
+                }
+            }
+            if (norm_options & TRAD_TO_SIMPL) != 0 {
+                unsafe{
+                    OPENCC_CONFIG = DefaultConfig::T2S;
+                }
+            }
+
+            if (norm_options & ZH_NORM_MAPPING) != 0 {
+                zh_norm_mapping.insert(0 as char, " ".to_string());
+                for line in include_str!("zh_char2str_mapping.txt").lines() {
+                    let mut pair = line.split('\t');
+                    let left = pair.next().unwrap().chars().next().unwrap();
+                    let right = pair.next().unwrap();
+                    zh_norm_mapping.insert(left, right.to_string());
+                }
+                for line in include_str!("s2t.txt").lines() {
+                    let mut pair = line.split('\t');
+                    let left = pair.next().unwrap().chars().next().unwrap();
+                    simpl_mapping.insert(left);
+                    
+                    let right_ = pair.next();
+                    if right_ != None {
+                        let right = right_.unwrap().chars().next().unwrap();
+                        if !zh_norm_mapping.contains_key(&left) {
+                            let value = zh_norm_mapping.get(&right);
+                            if let Some(rep) = value {
+                                let value2 = rep.clone();
+                                zh_norm_mapping.insert(left, value2.to_string());
+                            } else {
+                                zh_norm_mapping.insert(left, right.to_string());
+                            };
+                        }
+                    }
+                }
+            }
+            if (norm_options & SEPARATE_SYMBOLS) != 0 {
+                for c in include_str!("symbols.txt").chars() {
+                    symbols.insert(c);
+                    
+                }
+            }
+        });
+
         BertNormalizer {
             clean_text,
             handle_chinese_chars,
             strip_accents,
             lowercase,
+            norm_options
         }
     }
 
@@ -96,15 +186,51 @@ impl BertNormalizer {
             .map(|c| if is_whitespace(c) { ' ' } else { c });
     }
 
-    fn do_handle_chinese_chars(&self, normalized: &mut NormalizedString) {
+    fn do_handle_chinese_chars(&self, normalized: &mut NormalizedString, norm_options: u32) {
         let mut new_chars: Vec<(char, isize)> = vec![];
-        normalized.for_each(|c| {
-            if is_chinese_char(c) {
-                new_chars.extend(&[(' ', 0), (c, 1), (' ', 1)]);
-            } else {
-                new_chars.push((c, 0));
-            }
-        });
+        let sep_int = (norm_options & SEPARATE_INTEGERS) != 0;
+        let sep_symbols = (norm_options & SEPARATE_SYMBOLS) != 0;
+        let zh_norm = (norm_options & ZH_NORM_MAPPING) != 0;
+        let symbols = SYMBOLS_.lock().unwrap();
+        if zh_norm {
+            let zh_norm_mapping = ZH_NORM_MAPPING_.lock().unwrap();
+            normalized.for_each(|c| {
+                match zh_norm_mapping.get(&c) {
+                    Some(rep) => {
+                        rep.chars().enumerate().for_each(|(i, c2)| {
+                            if (is_chinese_char(c2)) || 
+                            (sep_int && is_number(c2)) || 
+                            (sep_symbols && symbols.contains(&c2))  {
+                                new_chars.extend(&[(' ', if i == 0 {0} else {1}), (c2, 1), (' ', 1)]);
+                            } else {
+                                new_chars.push((c2, if i == 0 {0} else {1}));
+                            }
+                        });
+                    },
+                    None => {
+                        if (is_chinese_char(c)) || 
+                        (sep_int && is_number(c)) || 
+                        (sep_symbols && symbols.contains(&c))  {
+                            new_chars.extend(&[(' ', 0), (c, 1), (' ', 1)]);
+                        } else {
+                            new_chars.push((c, 0));
+                        };
+
+                    },
+
+                }
+            });
+        }else{
+            normalized.for_each(|c| {
+                if (is_chinese_char(c)) || 
+                    (sep_int && is_number(c)) || 
+                    (sep_symbols && symbols.contains(&c))  {
+                    new_chars.extend(&[(' ', 0), (c, 1), (' ', 1)]);
+                } else {
+                    new_chars.push((c, 0));
+                };
+            });
+        }
         normalized.transform(new_chars.into_iter(), 0);
     }
 
@@ -115,6 +241,39 @@ impl BertNormalizer {
     fn do_lowercase(&self, normalized: &mut NormalizedString) {
         normalized.lowercase();
     }
+
+    fn convert_zh(&self, normalized: &mut NormalizedString) {
+        let mut need_clean_count = 0;
+        let mut seen: FnvHashSet<char> = FnvHashSet::default();
+
+        let simpl_mapping = SIMPL_MAPPING_.lock().unwrap();
+        let mut normalized_chars = normalized.get().chars();
+        while let Some(c) = normalized_chars.next() {
+            if c as u32 > 12032 {
+                if simpl_mapping.contains(&c) && !seen.contains(&c) {
+                    need_clean_count = need_clean_count + 1;
+                    if need_clean_count > 1 {
+                        break
+                    }
+                    seen.insert(c);
+                }
+            }
+        }
+
+        if need_clean_count > 1 {
+            let normalized_str = normalized.get();
+            let normalized_str_arg: String;
+            if normalized_str.chars().any(|c| c == '\u{00}') {
+                normalized_str_arg = normalized_str.replace("\u{00}", " ");
+            }else {
+                normalized_str_arg = normalized_str.to_string();
+            }
+
+            normalized.set_normalized(OPENCC.convert(normalized_str_arg));
+            // normalized.set_normalized(OPENCC.convert(normalized.get().clone()));
+        }
+
+    }
 }
 
 impl Normalizer for BertNormalizer {
@@ -122,8 +281,11 @@ impl Normalizer for BertNormalizer {
         if self.clean_text {
             self.do_clean_text(normalized);
         }
+        if ((self.norm_options & SIMPL_TO_TRAD) != 0) || ((self.norm_options & TRAD_TO_SIMPL) != 0){
+            self.convert_zh(normalized)
+        }
         if self.handle_chinese_chars {
-            self.do_handle_chinese_chars(normalized);
+            self.do_handle_chinese_chars(normalized, self.norm_options);
         }
         let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
         if strip_accents {
@@ -134,5 +296,34 @@ impl Normalizer for BertNormalizer {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn basic() {
+        let norm = BertNormalizer::new(
+            true,
+            true,
+            Some(true),
+            true,
+            SEPARATE_INTEGERS | SEPARATE_SYMBOLS | SIMPL_TO_TRAD | ZH_NORM_MAPPING
+        );
+        let mut input = NormalizedString::from("系列 聯系 « 联系 𠱁 氹 𥱊 栄 梊 𠹌 买书 <n> \u{00}");
+        let _ = norm.normalize(&mut input).unwrap();
+        assert_eq!(
+            input.get(),
+            " 系  列   聯  系  <<  聯  繫   o 氹   氹   席   榮   折  木   o 能   買  書  <n> "
+        );
+
+        input = NormalizedString::from("头部");
+        let _ = norm.normalize(&mut input).unwrap();
+        assert_eq!(
+            input.get(),
+            " 頭  部 "
+        );
     }
 }

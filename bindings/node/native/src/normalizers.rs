@@ -79,6 +79,7 @@ struct BertNormalizerOptions {
     handle_chinese_chars: bool,
     strip_accents: Option<bool>,
     lowercase: bool,
+    norm_options: u32
 }
 impl Default for BertNormalizerOptions {
     fn default() -> Self {
@@ -87,6 +88,7 @@ impl Default for BertNormalizerOptions {
             handle_chinese_chars: true,
             strip_accents: None,
             lowercase: true,
+            norm_options: 0
         }
     }
 }
@@ -110,6 +112,7 @@ fn bert_normalizer(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
             options.handle_chinese_chars,
             options.strip_accents,
             options.lowercase,
+            options.norm_options
         )
         .into(),
     );

@@ -127,6 +127,7 @@ impl PyBertNormalizer {
         let mut handle_chinese_chars = true;
         let mut strip_accents = None;
         let mut lowercase = true;
+        let mut norm_options = 0;
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
@@ -136,12 +137,13 @@ impl PyBertNormalizer {
                     "handle_chinese_chars" => handle_chinese_chars = value.extract()?,
                     "strip_accents" => strip_accents = value.extract()?,
                     "lowercase" => lowercase = value.extract()?,
+                    "norm_options" => norm_options = value.extract()?,
                     _ => println!("Ignored unknown kwargs option {}", key),
                 }
             }
         }
         let normalizer =
-            BertNormalizer::new(clean_text, handle_chinese_chars, strip_accents, lowercase);
+            BertNormalizer::new(clean_text, handle_chinese_chars, strip_accents, lowercase, norm_options);
         Ok((PyBertNormalizer {}, normalizer.into()))
     }
 }

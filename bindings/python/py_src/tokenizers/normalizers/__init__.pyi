@@ -28,6 +28,7 @@ class BertNormalizer(Normalizer):
         handle_chinese_chars: Optional[bool] = True,
         strip_accents: Optional[bool] = None,
         lowercase: Optional[bool] = True,
+        norm_options: Optional[int] = 0,
     ) -> None:
         """Instantiate a BertNormalizer with the given options.
 
@@ -45,6 +46,9 @@ class BertNormalizer(Normalizer):
 
             lowercase: (`optional`) boolean:
                 Whether to lowercase.
+
+            norm_options: (`optional`) integer:
+                Apply certain normalization.
 
         Returns:
             Normalizer
