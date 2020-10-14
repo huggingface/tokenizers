@@ -193,3 +193,8 @@ fn tokenizer() {
     > = serde_json::from_str(&ser).unwrap();
     assert_eq!(serde_json::to_string(&de).unwrap(), ser);
 }
+
+#[test]
+fn test_deserialize_long_file() {
+    let _tokenizer = Tokenizer::from_file("data/albert-base-v1-tokenizer.json").unwrap();
+}

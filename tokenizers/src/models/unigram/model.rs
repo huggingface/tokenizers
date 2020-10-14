@@ -5,8 +5,7 @@ use crate::utils::cache::Cache;
 
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::fs::File;
-use std::io::BufReader;
+use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
 type TokenMap = HashMap<String, u32>;
@@ -381,10 +380,8 @@ impl Unigram {
     /// let model = Unigram::load("mymodel-unigram.json").unwrap();
     /// ```
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Unigram> {
-        let file = File::open(path).unwrap();
-        let reader = BufReader::new(file);
-        let u = serde_json::from_reader(reader)?;
-        Ok(u)
+        let string = read_to_string(path)?;
+        Ok(serde_json::from_str(&string)?)
     }
 }
 

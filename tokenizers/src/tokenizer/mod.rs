@@ -12,7 +12,7 @@
 use std::{
     collections::HashMap,
     fmt,
-    fs::File,
+    fs::{read_to_string, File},
     io::prelude::*,
     io::BufReader,
     ops::{Deref, DerefMut},
@@ -382,6 +382,10 @@ impl Tokenizer {
         DecoderWrapper,
     > {
         self.0
+    }
+    pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
+        let content = read_to_string(file)?;
+        Ok(serde_json::from_str(&content)?)
     }
 }
 
@@ -1097,9 +1101,8 @@ where
 {
     /// Instantiate a new Tokenizer from the given file
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
-        let file = File::open(file)?;
-        let buf = BufReader::new(file);
-        Ok(serde_json::from_reader(buf)?)
+        let content = read_to_string(file)?;
+        Ok(serde_json::from_str(&content)?)
     }
 }
 
