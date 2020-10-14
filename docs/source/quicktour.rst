@@ -36,21 +36,24 @@ documentation. Here, training the tokenizer means it will learn merge rules by:
 The main API of the library is the class :class:`~tokenizers.Tokenizer`, here is how we instantiate
 one with a BPE model:
 
-.. code-block:: python
+.. only:: python
 
-    from tokenizers import Tokenizer
-    from tokenizers.models import BPE
-
-    tokenizer = Tokenizer(BPE())
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START init_tokenizer
+        :end-before: END init_tokenizer
+        :dedent: 8
 
 To train our tokenizer on the wikitext files, we will need to instantiate a `trainer`, in this case
 a :class:`~tokenizers.BpeTrainer`:
 
-.. code-block:: python
+.. only:: python
 
-    from tokenizers.trainers import BpeTrainer
-
-    trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START init_trainer
+        :end-before: END init_trainer
+        :dedent: 8
 
 We can set the training arguments like :obj:`vocab_size` or :obj:`min_frequency` (here left at their
 default values of 30,000 and 0) but the most important part is to give the :obj:`special_tokens` we
@@ -69,43 +72,59 @@ pre-tokenizer will ensure no token is bigger than a word returned by the pre-tok
 to train a subword BPE tokenizer, and we will use the easiest pre-tokenizer possible by splitting
 on whitespace.
 
-.. code-block:: python
+.. only:: python
 
-    from tokenizers.pre_tokenizers import Whitespace
-
-    tokenizer.pre_tokenizer = Whitespace()
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START init_pretok
+        :end-before: END init_pretok
+        :dedent: 8
 
 Now, we can just call the :meth:`~tokenizers.Tokenizer.train` method with any list of files we want
 to use:
 
-.. code-block:: python
+.. only:: python
 
-    files = [f"wikitext-103-raw/wiki.{split}.raw" for split in ["test", "train", "valid"]]
-    tokenizer.train(trainer, files)
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START train
+        :end-before: END train
+        :dedent: 8
 
 This should only take a few seconds to train our tokenizer on the full wikitext dataset! Once this
 is done, we need to save the model and reinstantiate it with the unknown token, or this token won't
 be used. This will be simplified in a further release, to let you set the :obj:`unk_token` when
 first instantiating the model.
 
-.. code-block:: python
+.. only:: python
 
-    files = tokenizer.model.save("pretrained", "wiki")
-    tokenizer.model = BPE(*files, unk_token="[UNK]")
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START reload_model
+        :end-before: END reload_model
+        :dedent: 8
 
 To save the tokenizer in one file that contains all its configuration and vocabulary, just use the
 :meth:`~tokenizers.Tokenizer.save` method:
 
-.. code-block:: python
+.. only:: python
 
-    tokenizer.save("pretrained/wiki.json")
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START save
+        :end-before: END save
+        :dedent: 8
 
 and you can reload your tokenizer from that file with the :meth:`~tokenizers.Tokenizer.from_file`
 class method:
 
-.. code-block:: python
+.. only:: python
 
-    tokenizer = Tokenizer.from_file("pretrained/wiki.json")
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START reload_tokenizer
+        :end-before: END reload_tokenizer
+        :dedent: 12
 
 Using the tokenizer
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -113,9 +132,13 @@ Using the tokenizer
 Now that we have trained a tokenizer, we can use it on any text we want with the
 :meth:`~tokenizers.Tokenizer.encode` method:
 
-.. code-block:: python
+.. only:: python
 
-    output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START encode
+        :end-before: END encode
+        :dedent: 8
 
 This applied the full pipeline of the tokenizer on the text, returning an
 :class:`~tokenizers.Encoding` object. To learn more about this pipeline, and how to apply (or
@@ -125,18 +148,24 @@ This :class:`~tokenizers.Encoding` object then has all the attributes you need f
 learning model (or other). The :obj:`tokens` attribute contains the segmentation of your text in
 tokens:
 
-.. code-block:: python
+.. only:: python
 
-    print(output.tokens)
-    # ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?"]
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START print_tokens
+        :end-before: END print_tokens
+        :dedent: 8
 
 Similarly, the :obj:`ids` attribute will contain the index of each of those tokens in the
 tokenizer's vocabulary:
 
-.. code-block:: python
+.. only:: python
 
-    print(output.ids)
-    # [27194, 16, 93, 11, 5068, 5, 7928, 5083, 6190, 0, 35]
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START print_ids
+        :end-before: END print_ids
+        :dedent: 8
 
 An important feature of the 🤗 Tokenizers library is that it comes with full alignment tracking,
 meaning you can always get the part of your original sentence that corresponds to a given token.
@@ -144,18 +173,23 @@ Those are stored in the :obj:`offsets` attribute of our :class:`~tokenizers.Enco
 instance, let's assume we would want to find back what caused the :obj:`"[UNK]"` token to appear,
 which is the token at index 9 in the list, we can just ask for the offset at the index:
 
-.. code-block:: python
+.. only:: python
 
-    print(output.offsets[9])
-    # (26, 27)
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START print_offsets
+        :end-before: END print_offsets
+        :dedent: 8
 
 and those are the indices that correspond to the emoji in the original sentence:
 
-.. code-block:: python
+.. only:: python
 
-    sentence = "Hello, y'all! How are you 😁 ?"
-    sentence[26:27]
-    # "😁"
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START use_offsets
+        :end-before: END use_offsets
+        :dedent: 8
 
 Post-processing
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -169,25 +203,23 @@ When we built our tokenizer, we set :obj:`"[CLS]"` and :obj:`"[SEP]"` in positio
 list of special tokens, so this should be their IDs. To double-check, we can use the
 :meth:`~tokenizers.Tokenizer.token_to_id` method:
 
-.. code-block:: python
+.. only:: python
 
-    tokenizer.token_to_id("[SEP]")
-    # 2
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START check_sep
+        :end-before: END check_sep
+        :dedent: 8
 
 Here is how we can set the post-processing to give us the traditional BERT inputs:
 
-.. code-block:: python
+.. only:: python
 
-    from tokenizers.processors import TemplateProcessing
-
-    tokenizer.post_processor = TemplateProcessing
-        single="[CLS] $A [SEP]",
-        pair="[CLS] $A [SEP] $B:1 [SEP]:1",
-        special_tokens=[
-            ("[CLS]", tokenizer.token_to_id("[CLS]")),
-            ("[SEP]", tokenizer.token_to_id("[SEP]"))
-        ],
-    )
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START init_template_processing
+        :end-before: END init_template_processing
+        :dedent: 8
 
 Let's go over this snippet of code in more details. First we specify the template for single
 sentences: those should have the form :obj:`"[CLS] $A [SEP]"` where :obj:`$A` represents our
@@ -203,27 +235,34 @@ Lastly, we specify the special tokens we used and their IDs in our tokenizer's v
 
 To check out this worked properly, let's try to encode the same sentence as before:
 
-.. code-block:: python
+.. only:: python
 
-    output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
-    print(output.tokens)
-    # ["[CLS]", "Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?", "[SEP]"]
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START print_special_tokens
+        :end-before: END print_special_tokens
+        :dedent: 8
 
 To check the results on a pair of sentences, we just pass the two sentences to
 :meth:`~tokenizers.Tokenizer.encode`:
 
-.. code-block:: python
+.. only:: python
 
-    output = tokenizer.encode("Hello, y'all!", "How are you 😁 ?")
-    print(output.tokens)
-    # ["[CLS]", "Hello", ",", "y", "'", "all", "!", "[SEP]", "How", "are", "you", "[UNK]", "?", "[SEP]"]
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START print_special_tokens_pair
+        :end-before: END print_special_tokens_pair
+        :dedent: 8
 
 You can then check the type IDs attributed to each token is correct with
 
-.. code-block:: python
+.. only:: python
 
-    print(output.type_ids)
-    # [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START print_type_ids
+        :end-before: END print_type_ids
+        :dedent: 8
 
 If you save your tokenizer with :meth:`~tokenizers.Tokenizer.save`, the post-processor will be saved
 along.
@@ -234,9 +273,13 @@ Encoding multiple sentences in a batch
 To get the full speed of the 🤗 Tokenizers library, it's best to process your texts by batches by
 using the :meth:`~tokenizers.Tokenizer.encode_batch` method:
 
-.. code-block:: python
+.. only:: python
 
-    output = tokenizer.encode_batch(["Hello, y'all!", "How are you 😁 ?"])
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START encode_batch
+        :end-before: END encode_batch
+        :dedent: 8
 
 The output is then a list of :class:`~tokenizers.Encoding` objects like the ones we saw before. You
 can process together as many texts as you like, as long as it fits in memory.
@@ -245,38 +288,48 @@ To process a batch of sentences pairs, pass two lists to the
 :meth:`~tokenizers.Tokenizer.encode_batch` method: the list of sentences A and the list of sentences
 B:
 
-.. code-block:: python
+.. only:: python
 
-    output = tokenizer.encode_batch(
-        ["Hello, y'all!", "How are you 😁 ?"],
-        ["Hello to you too!", "I'm fine, thank you!"]
-    )
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START encode_batch_pair
+        :end-before: END encode_batch_pair
+        :dedent: 8
 
 When encoding multiple sentences, you can automatically pad the outputs to the longest sentence
 present by using :meth:`~tokenizers.Tokenizer.enable_padding`, with the :obj:`pad_token` and its ID
 (which we can double-check the id for the padding token with
 :meth:`~tokenizers.Tokenizer.token_to_id` like before):
 
-.. code-block:: python
+.. only:: python
 
-    tokenizer.enable_padding(pad_id=3, pad_token="[PAD]")
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START enable_padding
+        :end-before: END enable_padding
+        :dedent: 8
 
 We can set the :obj:`direction` of the padding (defaults to the right) or a given :obj:`length` if
 we want to pad every sample to that specific number (here we leave it unset to pad to the size of
 the longest text).
 
-.. code-block:: python
+.. only:: python
 
-    output = tokenizer.encode_batch(["Hello, y'all!", "How are you 😁 ?"])
-    print(output[1].tokens)
-    # ["[CLS]", "How", "are", "you", "[UNK]", "?", "[SEP]", "[PAD]"]
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START print_batch_tokens
+        :end-before: END print_batch_tokens
+        :dedent: 8
 
 In this case, the `attention mask` generated by the tokenizer takes the padding into account:
 
-.. code-block:: python
+.. only:: python
 
-    print(output[1].attention_mask)
-    [1, 1, 1, 1, 1, 1, 1, 0]
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START print_attention_mask
+        :end-before: END print_attention_mask
+        :dedent: 8
 
 .. _pretrained:
 
