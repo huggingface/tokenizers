@@ -1,9 +1,9 @@
 use crate::processors::byte_level::process_offsets;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(tag = "type")]
 pub struct RobertaProcessing {
     sep: (String, u32),
     cls: (String, u32),
@@ -192,17 +192,25 @@ impl PostProcessor for RobertaProcessing {
     }
 }
 
-impl Serialize for RobertaProcessing {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut m = serializer.serialize_struct("RobertaProcessing", 3)?;
-        m.serialize_field("type", "RobertaProcessing")?;
-        m.serialize_field("sep", &self.sep)?;
-        m.serialize_field("cls", &self.cls)?;
-        m.serialize_field("trim_offsets", &self.trim_offsets)?;
-        m.serialize_field("add_prefix_space", &self.add_prefix_space)?;
-        m.end()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serde() {
+        let roberta = RobertaProcessing::default();
+        let roberta_r = r#"{
+            "type":"RobertaProcessing",
+            "sep":["</s>",2],
+            "cls":["<s>",0],
+            "trim_offsets":true,
+            "add_prefix_space":true
+        }"#
+        .replace(char::is_whitespace, "");
+        assert_eq!(serde_json::to_string(&roberta).unwrap(), roberta_r);
+        assert_eq!(
+            serde_json::from_str::<RobertaProcessing>(&roberta_r).unwrap(),
+            roberta
+        );
     }
 }
