@@ -148,3 +148,51 @@ class TestCustomPreTokenizer:
             ("Hey there!", (0, 10)),
             ("Hey there!", (0, 10)),
         ]
+
+    def test_camel_case(self):
+        class CamelCasePretok:
+            def get_state(self, c):
+                if c.islower():
+                    return "lower"
+                elif c.isupper():
+                    return "upper"
+                elif c.isdigit():
+                    return "digit"
+                else:
+                    return "rest"
+
+            def split(self, n, normalized):
+                i = 0
+                # states = {"any", "lower", "upper", "digit", "rest"}
+                state = "any"
+                pieces = []
+                for j, c in enumerate(normalized.normalized):
+                    c_state = self.get_state(c)
+                    if state == "any":
+                        state = c_state
+                    if state != "rest" and state == c_state:
+                        pass
+                    elif state == "upper" and c_state == "lower":
+                        pass
+                    else:
+                        pieces.append(normalized[i:j])
+                        i = j
+                    state = c_state
+                pieces.append(normalized[i:])
+                return pieces
+
+            def pre_tokenize(self, pretok):
+                pretok.split(self.split)
+
+        camel = PreTokenizer.custom(CamelCasePretok())
+
+        assert camel.pre_tokenize_str("HeyThere!?-ThisIsLife") == [
+            ("Hey", (0, 3)),
+            ("There", (3, 8)),
+            ("!", (8, 9)),
+            ("?", (9, 10)),
+            ("-", (10, 11)),
+            ("This", (11, 15)),
+            ("Is", (15, 17)),
+            ("Life", (17, 21)),
+        ]
