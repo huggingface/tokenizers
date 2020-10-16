@@ -161,13 +161,13 @@ class AllEntities:
                             newnode = domain.resolve_xref(
                                 env, refdoc, app.builder, typ, target, node, contnode
                             )
-
-                        if newnode is None:
-                            logger.warning(f"Can't resolve node: {node}")
                     except NoUri:
                         newnode = contnode
 
-                    updates[env_docname][name] = {"docname": docname, "content": newnode}
+                    updates[env_docname][name] = {
+                        "docname": docname,
+                        "content": newnode or contnode,
+                    }
 
         update(self.entities, updates)
 
