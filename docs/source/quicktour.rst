@@ -24,6 +24,39 @@ with:
 Training the tokenizer
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+.. entities:: python
+
+    BpeTrainer
+        :class:`~tokenizers.trainers.BpeTrainer`
+    vocab_size
+        :obj:`vocab_size`
+    min_frequency
+        :obj:`min_frequency`
+    special_tokens
+        :obj:`special_tokens`
+
+.. entities:: rust
+
+    BpeTrainer
+        `BpeTrainer <https://docs.rs/tokenizers/latest/tokenizers/models/bpe/struct.BpeTrainer.html>`__
+    vocab_size
+        :obj:`vocab_size`
+    min_frequency
+        :obj:`min_frequency`
+    special_tokens
+        :obj:`special_tokens`
+
+.. entities:: node
+
+    BpeTrainer
+        BpeTrainer
+    vocab_size
+        :obj:`vocabSize`
+    min_frequency
+        :obj:`minFrequency`
+    special_tokens
+        :obj:`specialTokens`
+
 In this tour, we will build and train a Byte-Pair Encoding (BPE) tokenizer. For more information
 about the different type of tokenizers, check out this `guide
 <https://huggingface.co/transformers/tokenizer_summary.html>`__ in the 🤗 Transformers
@@ -33,7 +66,7 @@ documentation. Here, training the tokenizer means it will learn merge rules by:
 - Identify the most common pair of tokens and merge it into one token.
 - Repeat until the vocabulary (e.g., the number of tokens) has reached the size we want.
 
-The main API of the library is the class :class:`~tokenizers.Tokenizer`, here is how we instantiate
+The main API of the library is the :entity:`class` :entity:`Tokenizer`, here is how we instantiate
 one with a BPE model:
 
 .. only:: python
@@ -45,7 +78,7 @@ one with a BPE model:
         :dedent: 8
 
 To train our tokenizer on the wikitext files, we will need to instantiate a `trainer`, in this case
-a :class:`~tokenizers.BpeTrainer`:
+a :entity:`BpeTrainer`
 
 .. only:: python
 
@@ -55,10 +88,10 @@ a :class:`~tokenizers.BpeTrainer`:
         :end-before: END init_trainer
         :dedent: 8
 
-We can set the training arguments like :obj:`vocab_size` or :obj:`min_frequency` (here left at their
-default values of 30,000 and 0) but the most important part is to give the :obj:`special_tokens` we
-plan to use later on (they are not used at all during training) so that they get inserted in the
-vocabulary.
+We can set the training arguments like :entity:`vocab_size` or :entity:`min_frequency` (here left at
+their default values of 30,000 and 0) but the most important part is to give the
+:entity:`special_tokens` we plan to use later on (they are not used at all during training) so that
+they get inserted in the vocabulary.
 
 .. note::
 
@@ -80,7 +113,7 @@ on whitespace.
         :end-before: END init_pretok
         :dedent: 8
 
-Now, we can just call the :meth:`~tokenizers.Tokenizer.train` method with any list of files we want
+Now, we can just call the :entity:`Tokenizer.train` method with any list of files we want
 to use:
 
 .. only:: python
@@ -105,7 +138,7 @@ first instantiating the model.
         :dedent: 8
 
 To save the tokenizer in one file that contains all its configuration and vocabulary, just use the
-:meth:`~tokenizers.Tokenizer.save` method:
+:entity:`Tokenizer.save` method:
 
 .. only:: python
 
@@ -115,8 +148,8 @@ To save the tokenizer in one file that contains all its configuration and vocabu
         :end-before: END save
         :dedent: 8
 
-and you can reload your tokenizer from that file with the :meth:`~tokenizers.Tokenizer.from_file`
-class method:
+and you can reload your tokenizer from that file with the :entity:`Tokenizer.from_file`
+:entity:`classmethod`:
 
 .. only:: python
 
