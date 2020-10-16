@@ -37,3 +37,34 @@ Main features:
     :caption: API Reference
 
     api/reference
+
+
+.. entities:: python
+
+    :global:
+
+    class
+        class
+    classmethod
+        class method
+    Tokenizer
+        :class:`~tokenizers.Tokenizer`
+    Tokenizer.train
+        :meth:`~tokenizers.Tokenizer.train`
+    Tokenizer.save
+        :meth:`~tokenizers.Tokenizer.save`
+    Tokenizer.from_file
+        :meth:`~tokenizers.Tokenizer.from_file`
+
+.. entities:: rust
+
+    :global:
+
+    class
+        struct
+    classmethod
+        static method
+    Tokenizer
+        `Tokenizer <https://docs.rs/tokenizers/latest/tokenizers/tokenizer/struct.Tokenizer.html>`__
+    Tokenizer.train
+        `train <https://docs.rs/tokenizers/0.10.1/tokenizers/tokenizer/struct.Tokenizer.html#method.train>`__
