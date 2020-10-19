@@ -11,6 +11,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
     BertNormalizer, Lowercase, Nmt, NormalizerWrapper, Precompiled, Replace, Strip, StripAccents,
     NFC, NFD, NFKC, NFKD,
+    opencc_enabled as opencc_enabled_
 };
 use tk::{NormalizedString, Normalizer};
 use tokenizers as tk;
@@ -516,4 +517,9 @@ mod test {
             _ => panic!("Expected single"),
         }
     }
+}
+
+#[pyfunction]
+pub fn opencc_enabled() -> bool {
+    opencc_enabled_()
 }

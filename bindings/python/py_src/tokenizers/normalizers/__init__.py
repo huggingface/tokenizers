@@ -13,6 +13,7 @@ StripAccents = normalizers.StripAccents
 Nmt = normalizers.Nmt
 Precompiled = normalizers.Precompiled
 Replace = normalizers.Replace
+opencc_enabled = normalizers.opencc_enabled
 
 class NORM_OPTIONS:
     SEPARATE_INTEGERS      = 1 << 1;

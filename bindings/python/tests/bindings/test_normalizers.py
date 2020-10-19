@@ -3,7 +3,7 @@ import pytest
 
 from tokenizers import Tokenizer, NormalizedString
 from tokenizers.models import BPE
-from tokenizers.normalizers import Normalizer, BertNormalizer, Sequence, Lowercase, Strip, NORM_OPTIONS
+from tokenizers.normalizers import Normalizer, BertNormalizer, Sequence, Lowercase, Strip, NORM_OPTIONS, opencc_enabled
 
 
 class TestBertNormalizer:
@@ -68,6 +68,8 @@ END'''
 
     def test_zh_norm(self):
         import subprocess, sys
+        if not opencc_enabled():
+            return
         cmd = sys.executable + ''' << END
 from tokenizers.normalizers import BertNormalizer, NORM_OPTIONS
 normalizer = BertNormalizer(

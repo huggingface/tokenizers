@@ -987,6 +987,7 @@ dependencies = [
  "indicatif",
  "itertools 0.9.0",
  "lazy_static",
+ "libc",
  "log",
  "onig",
  "opencc-rust",

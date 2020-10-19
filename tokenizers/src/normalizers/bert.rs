@@ -1,5 +1,6 @@
 extern crate lazy_static;
 extern crate opencc_rust;
+extern crate libc;
 
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 
@@ -11,13 +12,25 @@ use fnv::FnvHashSet;
 use fnv::FnvHashMap;
 use opencc_rust::{OpenCC, DefaultConfig};
 
+use std::panic;
+
 use std::sync::Once;
 static START: Once = Once::new();
 
 static mut OPENCC_CONFIG: DefaultConfig = DefaultConfig::S2T;
 
+
 lazy_static! {
-    static ref OPENCC: OpenCC = unsafe{OpenCC::new(OPENCC_CONFIG).unwrap()};
+    static ref OPENCC: Option<OpenCC> = unsafe{
+        let result = panic::catch_unwind(|| {
+            OpenCC::new(OPENCC_CONFIG).unwrap()
+        });
+        match result {
+            Ok(v) => Some(v),
+            Err(_e) => None
+        }
+        
+    };
     static ref SYMBOLS_: Mutex<FnvHashSet<char>> = Mutex::new(FnvHashSet::default());
     static ref SIMPL_MAPPING_: Mutex<FnvHashSet<char>> = Mutex::new(FnvHashSet::default());
     static ref ZH_NORM_MAPPING_: Mutex<FnvHashMap<char, String>> = Mutex::new(FnvHashMap::default()); 
@@ -28,6 +41,12 @@ static SEPARATE_SYMBOLS: u32  = 1 << 2;
 static SIMPL_TO_TRAD: u32     = 1 << 3;
 static TRAD_TO_SIMPL: u32     = 1 << 4;
 static ZH_NORM_MAPPING: u32   = 1 << 5;
+
+
+/// Checks opencc is installed
+pub fn opencc_enabled() -> bool {
+    OPENCC.as_ref().is_some()
+}
 
 /// Checks whether a character is whitespace
 fn is_whitespace(c: char) -> bool {
@@ -243,34 +262,39 @@ impl BertNormalizer {
     }
 
     fn convert_zh(&self, normalized: &mut NormalizedString) {
-        let mut need_clean_count = 0;
-        let mut seen: FnvHashSet<char> = FnvHashSet::default();
-
-        let simpl_mapping = SIMPL_MAPPING_.lock().unwrap();
-        let mut normalized_chars = normalized.get().chars();
-        while let Some(c) = normalized_chars.next() {
-            if c as u32 > 12032 {
-                if simpl_mapping.contains(&c) && !seen.contains(&c) {
-                    need_clean_count = need_clean_count + 1;
-                    if need_clean_count > 1 {
-                        break
+        match OPENCC.as_ref() {
+            // The division was valid
+            Some(opencc) => {
+                let mut need_clean_count = 0;
+                let mut seen: FnvHashSet<char> = FnvHashSet::default();
+        
+                let simpl_mapping = SIMPL_MAPPING_.lock().unwrap();
+                let mut normalized_chars = normalized.get().chars();
+                while let Some(c) = normalized_chars.next() {
+                    if c as u32 > 12032 {
+                        if simpl_mapping.contains(&c) && !seen.contains(&c) {
+                            need_clean_count = need_clean_count + 1;
+                            if need_clean_count > 1 {
+                                break
+                            }
+                            seen.insert(c);
+                        }
                     }
-                    seen.insert(c);
                 }
-            }
-        }
-
-        if need_clean_count > 1 {
-            let normalized_str = normalized.get();
-            let normalized_str_arg: String;
-            if normalized_str.chars().any(|c| c == '\u{00}') {
-                normalized_str_arg = normalized_str.replace("\u{00}", " ");
-            }else {
-                normalized_str_arg = normalized_str.to_string();
-            }
-
-            normalized.set_normalized(OPENCC.convert(normalized_str_arg));
-            // normalized.set_normalized(OPENCC.convert(normalized.get().clone()));
+        
+                if need_clean_count > 1 {
+                    let normalized_str = normalized.get();
+                    let normalized_str_arg: String;
+                    if normalized_str.chars().any(|c| c == '\u{00}') {
+                        normalized_str_arg = normalized_str.replace("\u{00}", " ");
+                    }else {
+                        normalized_str_arg = normalized_str.to_string();
+                    }
+        
+                    normalized.set_normalized(opencc.convert(normalized_str_arg));
+                }
+            },
+            None    => {}
         }
 
     }
@@ -305,25 +329,27 @@ mod tests {
 
     #[test]
     fn basic() {
-        let norm = BertNormalizer::new(
-            true,
-            true,
-            Some(true),
-            true,
-            SEPARATE_INTEGERS | SEPARATE_SYMBOLS | SIMPL_TO_TRAD | ZH_NORM_MAPPING
-        );
-        let mut input = NormalizedString::from("系列 聯系 « 联系 𠱁 氹 𥱊 栄 梊 𠹌 买书 <n> \u{00}");
-        let _ = norm.normalize(&mut input).unwrap();
-        assert_eq!(
-            input.get(),
-            " 系  列   聯  系  <<  聯  繫   o 氹   氹   席   榮   折  木   o 能   買  書  <n> "
-        );
-
-        input = NormalizedString::from("头部");
-        let _ = norm.normalize(&mut input).unwrap();
-        assert_eq!(
-            input.get(),
-            " 頭  部 "
-        );
+        if opencc_enabled() {
+            let norm = BertNormalizer::new(
+                true,
+                true,
+                Some(true),
+                true,
+                SEPARATE_INTEGERS | SEPARATE_SYMBOLS | SIMPL_TO_TRAD | ZH_NORM_MAPPING
+            );
+            let mut input = NormalizedString::from("系列 聯系 « 联系 𠱁 氹 𥱊 栄 梊 𠹌 买书 <n> \u{00}");
+            let _ = norm.normalize(&mut input).unwrap();
+            assert_eq!(
+                input.get(),
+                " 系  列   聯  系  <<  聯  繫   o 氹   氹   席   榮   折  木   o 能   買  書  <n> "
+            );
+    
+            input = NormalizedString::from("头部");
+            let _ = norm.normalize(&mut input).unwrap();
+            assert_eq!(
+                input.get(),
+                " 頭  部 "
+            );
+        }
     }
 }

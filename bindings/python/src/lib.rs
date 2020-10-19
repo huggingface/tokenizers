@@ -15,7 +15,13 @@ mod trainers;
 mod utils;
 
 use pyo3::prelude::*;
+use pyo3::wrap_pyfunction;
 use pyo3::wrap_pymodule;
+
+#[pyfunction]
+pub fn opencc_enabled() -> bool {
+    normalizers::opencc_enabled()
+}
 
 // For users using multiprocessing in python, it is quite easy to fork the process running
 // tokenizers, ending up with a deadlock because we internaly make use of multithreading. So
@@ -113,6 +119,8 @@ fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<normalizers::PyNmt>()?;
     m.add_class::<normalizers::PyPrecompiled>()?;
     m.add_class::<normalizers::PyReplace>()?;
+    m.add_wrapped(wrap_pyfunction!(opencc_enabled)).unwrap();
+
     Ok(())
 }
 

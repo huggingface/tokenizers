@@ -5,6 +5,7 @@ pub mod strip;
 pub mod unicode;
 pub mod utils;
 
+pub use crate::normalizers::bert::opencc_enabled;
 pub use crate::normalizers::bert::BertNormalizer;
 pub use crate::normalizers::precompiled::Precompiled;
 pub use crate::normalizers::replace::Replace;
