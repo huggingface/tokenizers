@@ -3,7 +3,14 @@ import pytest
 
 from tokenizers import Tokenizer, NormalizedString
 from tokenizers.models import BPE
-from tokenizers.normalizers import Normalizer, BertNormalizer, Sequence, Lowercase, Strip, NORM_OPTIONS
+from tokenizers.normalizers import (
+    Normalizer,
+    BertNormalizer,
+    Sequence,
+    Lowercase,
+    Strip,
+    NORM_OPTIONS,
+)
 
 from tokenizers.normalizers import opencc_enabled
 
@@ -48,7 +55,11 @@ class TestBertNormalizer:
 
     def test_handle_separate_numbers(self):
         normalizer = BertNormalizer(
-            strip_accents=False, lowercase=False, handle_chinese_chars=True, clean_text=False, norm_options=NORM_OPTIONS.SEPARATE_INTEGERS
+            strip_accents=False,
+            lowercase=False,
+            handle_chinese_chars=True,
+            clean_text=False,
+            norm_options=NORM_OPTIONS.SEPARATE_INTEGERS,
         )
 
         output = normalizer.normalize_str("你好123 is 123")
@@ -56,43 +67,55 @@ class TestBertNormalizer:
 
     def test_special_chars(self):
         import subprocess, sys
-        cmd = sys.executable + r''' << END
+
+        cmd = (
+            sys.executable
+            + r""" << END
 from tokenizers.normalizers import BertNormalizer, NORM_OPTIONS
 normalizer = BertNormalizer(
     strip_accents=False, lowercase=False, handle_chinese_chars=True, clean_text=False, norm_options=NORM_OPTIONS.SEPARATE_SYMBOLS
 )
 output = normalizer.normalize_str("\$100 and 0.5% \$\$ %%" )
 print(output)
-END'''
-        output = subprocess.check_output(cmd, shell=True).decode().rstrip('\n')
+END"""
+        )
+        output = subprocess.check_output(cmd, shell=True).decode().rstrip("\n")
         assert output == " $ 100 and 0 . 5 %   $  $   %  % ", output
-
 
     def test_zh_norm(self):
         import subprocess, sys
+
         if not opencc_enabled():
             return
-        cmd = sys.executable + ''' << END
+        cmd = (
+            sys.executable
+            + """ << END
 from tokenizers.normalizers import BertNormalizer, NORM_OPTIONS
 normalizer = BertNormalizer(
     strip_accents=False, lowercase=False, handle_chinese_chars=True, clean_text=False, norm_options=NORM_OPTIONS.ZH_NORM_MAPPING | NORM_OPTIONS.SIMPL_TO_TRAD
 )
 output = normalizer.normalize_str("系列 聯系 « 联系 𠱁 氹 𥱊 栄 梊 𠹌 <n> "+chr(0) )
 print(output)
-END'''
-        output = subprocess.check_output(cmd, shell=True).decode().rstrip('\n')
+END"""
+        )
+        output = subprocess.check_output(cmd, shell=True).decode().rstrip("\n")
 
-        assert output == " 系  列   聯  系  <<  聯  繫   o 氹   氹   席   榮   折  木   o 能  <n>  ", repr(output)
+        assert output == " 系  列   聯  系  <<  聯  繫   o 氹   氹   席   榮   折  木   o 能  <n>  ", repr(
+            output
+        )
 
-        cmd = sys.executable + ''' << END
+        cmd = (
+            sys.executable
+            + """ << END
 from tokenizers.normalizers import BertNormalizer, NORM_OPTIONS
 normalizer = BertNormalizer(
     strip_accents=False, lowercase=False, handle_chinese_chars=True, clean_text=False, norm_options=NORM_OPTIONS.ZH_NORM_MAPPING | NORM_OPTIONS.SIMPL_TO_TRAD
 )
 output = normalizer.normalize_str("头部" )
 print(output)
-END'''
-        output = subprocess.check_output(cmd, shell=True).decode().rstrip('\n')
+END"""
+        )
+        output = subprocess.check_output(cmd, shell=True).decode().rstrip("\n")
         assert output == " 頭  部 ", output
 
 

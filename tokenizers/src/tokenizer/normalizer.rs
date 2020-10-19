@@ -142,7 +142,7 @@ impl NormalizedString {
     }
 
     /// Set the normalized string (unsafe)
-    pub fn set_normalized(&mut self,s: String) {
+    pub fn set_normalized(&mut self, s: String) {
         self.normalized = s;
     }
 

@@ -17,16 +17,18 @@ Replace = normalizers.Replace
 try:
     opencc_enabled = normalizers.opencc_enabled
 except:
+
     def opencc_enabled():
         return False
 
 
 class NORM_OPTIONS:
-    SEPARATE_INTEGERS      = 1 << 1;
-    SEPARATE_SYMBOLS       = 1 << 2;
-    SIMPL_TO_TRAD          = 1 << 3;
-    TRAD_TO_SIMPL          = 1 << 4;
-    ZH_NORM_MAPPING        = 1 << 5;
+    SEPARATE_INTEGERS = 1 << 1
+    SEPARATE_SYMBOLS = 1 << 2
+    SIMPL_TO_TRAD = 1 << 3
+    TRAD_TO_SIMPL = 1 << 4
+    ZH_NORM_MAPPING = 1 << 5
+
 
 NORMALIZERS = {"nfc": NFC, "nfd": NFD, "nfkc": NFKC, "nfkd": NFKD}
 

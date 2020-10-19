@@ -143,6 +143,5 @@ def unicode_normalizer_from_str(normalizer: str) -> Normalizer:
     """
     pass
 
-
 def opencc_enabled() -> bool:
     pass

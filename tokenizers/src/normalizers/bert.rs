@@ -9,12 +9,12 @@ use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 
-use std::sync::Mutex;
-use fnv::FnvHashSet;
 use fnv::FnvHashMap;
+use fnv::FnvHashSet;
+use std::sync::Mutex;
 
 #[cfg(feature = "opencc")]
-use opencc_rust::{OpenCC, DefaultConfig};
+use opencc_rust::{DefaultConfig, OpenCC};
 
 use std::panic;
 
@@ -22,12 +22,11 @@ use std::sync::Once;
 static START: Once = Once::new();
 
 #[cfg(not(feature = "opencc"))]
-use libc::{c_void};
-#[cfg(not(feature = "opencc"))]
-use std::ptr::null_mut;
+use libc::c_void;
 #[cfg(not(feature = "opencc"))]
 use std::path::Path;
-
+#[cfg(not(feature = "opencc"))]
+use std::ptr::null_mut;
 
 #[cfg(not(feature = "opencc"))]
 #[derive(Debug, Copy, Clone)]
@@ -60,9 +59,7 @@ impl OpenCC {
     /// Create a new OpenCC instance through a file provided by its path.
     pub fn new<P: AsRef<Path>>(_config_file_path: P) -> Result<OpenCC> {
         let opencc = null_mut();
-        Ok(OpenCC {
-            opencc,
-        })
+        Ok(OpenCC { opencc })
     }
     pub fn convert<S: AsRef<str>>(&self, input: S) -> String {
         String::from(input.as_ref())
@@ -72,27 +69,24 @@ impl OpenCC {
 static mut OPENCC_CONFIG: DefaultConfig = DefaultConfig::S2T;
 
 lazy_static! {
-    static ref OPENCC: Option<OpenCC> = unsafe{
-        let result = panic::catch_unwind(|| {
-            OpenCC::new(OPENCC_CONFIG).unwrap()
-        });
+    static ref OPENCC: Option<OpenCC> = unsafe {
+        let result = panic::catch_unwind(|| OpenCC::new(OPENCC_CONFIG).unwrap());
         match result {
             Ok(v) => Some(v),
-            Err(_e) => None
+            Err(_e) => None,
         }
-        
     };
     static ref SYMBOLS_: Mutex<FnvHashSet<char>> = Mutex::new(FnvHashSet::default());
     static ref SIMPL_MAPPING_: Mutex<FnvHashSet<char>> = Mutex::new(FnvHashSet::default());
-    static ref ZH_NORM_MAPPING_: Mutex<FnvHashMap<char, String>> = Mutex::new(FnvHashMap::default()); 
+    static ref ZH_NORM_MAPPING_: Mutex<FnvHashMap<char, String>> =
+        Mutex::new(FnvHashMap::default());
 }
 
 static SEPARATE_INTEGERS: u32 = 1 << 1;
-static SEPARATE_SYMBOLS: u32  = 1 << 2;
-static SIMPL_TO_TRAD: u32     = 1 << 3;
-static TRAD_TO_SIMPL: u32     = 1 << 4;
-static ZH_NORM_MAPPING: u32   = 1 << 5;
-
+static SEPARATE_SYMBOLS: u32 = 1 << 2;
+static SIMPL_TO_TRAD: u32 = 1 << 3;
+static TRAD_TO_SIMPL: u32 = 1 << 4;
+static ZH_NORM_MAPPING: u32 = 1 << 5;
 
 /// Checks opencc is installed
 #[cfg(feature = "opencc")]
@@ -112,10 +106,7 @@ fn is_whitespace(c: char) -> bool {
 
 /// match for numbers
 fn is_number(c: char) -> bool {
-    match c as usize {
-        0x30..=0x39 => true,
-        _ => false,
-    }
+    matches!(c as usize, 0x30..=0x39)
 }
 
 /// Checks whether a character is a control character
@@ -168,7 +159,7 @@ pub struct BertNormalizer {
     /// Whether to lowercase the input
     lowercase: bool,
     /// Normalization Options
-    norm_options: u32
+    norm_options: u32,
 }
 
 impl Default for BertNormalizer {
@@ -178,7 +169,7 @@ impl Default for BertNormalizer {
             handle_chinese_chars: true,
             strip_accents: None,
             lowercase: true,
-            norm_options: 0
+            norm_options: 0,
         }
     }
 }
@@ -189,21 +180,21 @@ impl BertNormalizer {
         handle_chinese_chars: bool,
         strip_accents: Option<bool>,
         lowercase: bool,
-        norm_options: u32
+        norm_options: u32,
     ) -> Self {
-        START.call_once(||{
+        START.call_once(|| {
             let mut zh_norm_mapping = ZH_NORM_MAPPING_.lock().unwrap();
             let mut simpl_mapping = SIMPL_MAPPING_.lock().unwrap();
             let mut symbols = SYMBOLS_.lock().unwrap();
 
             if (norm_options & SIMPL_TO_TRAD) != 0 {
-                unsafe{
+                unsafe {
                     OPENCC_CONFIG = DefaultConfig::S2T;
                 }
             }
-                            
+
             if (norm_options & TRAD_TO_SIMPL) != 0 {
-                unsafe{
+                unsafe {
                     OPENCC_CONFIG = DefaultConfig::T2S;
                 }
             }
@@ -220,7 +211,7 @@ impl BertNormalizer {
                     let mut pair = line.split('\t');
                     let left = pair.next().unwrap().chars().next().unwrap();
                     simpl_mapping.insert(left);
-                    
+
                     let right_ = pair.next();
                     if right_ != None {
                         let right = right_.unwrap().chars().next().unwrap();
@@ -239,7 +230,6 @@ impl BertNormalizer {
             if (norm_options & SEPARATE_SYMBOLS) != 0 {
                 for c in include_str!("symbols.txt").chars() {
                     symbols.insert(c);
-                    
                 }
             }
         });
@@ -249,7 +239,7 @@ impl BertNormalizer {
             handle_chinese_chars,
             strip_accents,
             lowercase,
-            norm_options
+            norm_options,
         }
     }
 
@@ -267,37 +257,40 @@ impl BertNormalizer {
         let symbols = SYMBOLS_.lock().unwrap();
         if zh_norm {
             let zh_norm_mapping = ZH_NORM_MAPPING_.lock().unwrap();
-            normalized.for_each(|c| {
-                match zh_norm_mapping.get(&c) {
-                    Some(rep) => {
-                        rep.chars().enumerate().for_each(|(i, c2)| {
-                            if (is_chinese_char(c2)) || 
-                            (sep_int && is_number(c2)) || 
-                            (sep_symbols && symbols.contains(&c2))  {
-                                new_chars.extend(&[(' ', if i == 0 {0} else {1}), (c2, 1), (' ', 1)]);
-                            } else {
-                                new_chars.push((c2, if i == 0 {0} else {1}));
-                            }
-                        });
-                    },
-                    None => {
-                        if (is_chinese_char(c)) || 
-                        (sep_int && is_number(c)) || 
-                        (sep_symbols && symbols.contains(&c))  {
-                            new_chars.extend(&[(' ', 0), (c, 1), (' ', 1)]);
+            normalized.for_each(|c| match zh_norm_mapping.get(&c) {
+                Some(rep) => {
+                    rep.chars().enumerate().for_each(|(i, c2)| {
+                        if (is_chinese_char(c2))
+                            || (sep_int && is_number(c2))
+                            || (sep_symbols && symbols.contains(&c2))
+                        {
+                            new_chars.extend(&[
+                                (' ', if i == 0 { 0 } else { 1 }),
+                                (c2, 1),
+                                (' ', 1),
+                            ]);
                         } else {
-                            new_chars.push((c, 0));
-                        };
-
-                    },
-
+                            new_chars.push((c2, if i == 0 { 0 } else { 1 }));
+                        }
+                    });
+                }
+                None => {
+                    if (is_chinese_char(c))
+                        || (sep_int && is_number(c))
+                        || (sep_symbols && symbols.contains(&c))
+                    {
+                        new_chars.extend(&[(' ', 0), (c, 1), (' ', 1)]);
+                    } else {
+                        new_chars.push((c, 0));
+                    };
                 }
             });
-        }else{
+        } else {
             normalized.for_each(|c| {
-                if (is_chinese_char(c)) || 
-                    (sep_int && is_number(c)) || 
-                    (sep_symbols && symbols.contains(&c))  {
+                if (is_chinese_char(c))
+                    || (sep_int && is_number(c))
+                    || (sep_symbols && symbols.contains(&c))
+                {
                     new_chars.extend(&[(' ', 0), (c, 1), (' ', 1)]);
                 } else {
                     new_chars.push((c, 0));
@@ -316,39 +309,32 @@ impl BertNormalizer {
     }
 
     fn convert_zh(&self, normalized: &mut NormalizedString) {
-        match OPENCC.as_ref() {
-            // The division was valid
-            Some(opencc) => {
-                let mut need_clean_count = 0;
-                let mut seen: FnvHashSet<char> = FnvHashSet::default();
-        
-                let simpl_mapping = SIMPL_MAPPING_.lock().unwrap();
-                let mut normalized_chars = normalized.get().chars();
-                while let Some(c) = normalized_chars.next() {
-                    if c as u32 > 12032 {
-                        if simpl_mapping.contains(&c) && !seen.contains(&c) {
-                            need_clean_count = need_clean_count + 1;
-                            if need_clean_count > 1 {
-                                break
-                            }
-                            seen.insert(c);
-                        }
+        if let Some(opencc) = OPENCC.as_ref() {
+            let mut need_clean_count = 0;
+            let mut seen: FnvHashSet<char> = FnvHashSet::default();
+
+            let simpl_mapping = SIMPL_MAPPING_.lock().unwrap();
+            for c in normalized.get().chars() {
+                if c as u32 > 12032 && simpl_mapping.contains(&c) && !seen.contains(&c) {
+                    need_clean_count += 1;
+                    if need_clean_count > 1 {
+                        break;
                     }
+                    seen.insert(c);
                 }
-        
-                if need_clean_count > 1 {
-                    let normalized_str = normalized.get();
-                    let normalized_str_arg: String;
-                    if normalized_str.chars().any(|c| c == '\u{00}') {
-                        normalized_str_arg = normalized_str.replace("\u{00}", " ");
-                    }else {
-                        normalized_str_arg = normalized_str.to_string();
-                    }
-        
-                    normalized.set_normalized(opencc.convert(normalized_str_arg));
+            }
+
+            if need_clean_count > 1 {
+                let normalized_str = normalized.get();
+                let normalized_str_arg: String;
+                if normalized_str.chars().any(|c| c == '\u{00}') {
+                    normalized_str_arg = normalized_str.replace("\u{00}", " ");
+                } else {
+                    normalized_str_arg = normalized_str.to_string();
                 }
-            },
-            None    => {}
+
+                normalized.set_normalized(opencc.convert(normalized_str_arg));
+            }
         }
     }
 }
@@ -358,7 +344,8 @@ impl Normalizer for BertNormalizer {
         if self.clean_text {
             self.do_clean_text(normalized);
         }
-        if ((self.norm_options & SIMPL_TO_TRAD) != 0) || ((self.norm_options & TRAD_TO_SIMPL) != 0){
+        if ((self.norm_options & SIMPL_TO_TRAD) != 0) || ((self.norm_options & TRAD_TO_SIMPL) != 0)
+        {
             self.convert_zh(normalized)
         }
         if self.handle_chinese_chars {
@@ -388,21 +375,19 @@ mod tests {
                 true,
                 Some(true),
                 true,
-                SEPARATE_INTEGERS | SEPARATE_SYMBOLS | SIMPL_TO_TRAD | ZH_NORM_MAPPING
+                SEPARATE_INTEGERS | SEPARATE_SYMBOLS | SIMPL_TO_TRAD | ZH_NORM_MAPPING,
             );
-            let mut input = NormalizedString::from("系列 聯系 « 联系 𠱁 氹 𥱊 栄 梊 𠹌 买书 <n> \u{00}");
+            let mut input =
+                NormalizedString::from("系列 聯系 « 联系 𠱁 氹 𥱊 栄 梊 𠹌 买书 <n> \u{00}");
             let _ = norm.normalize(&mut input).unwrap();
             assert_eq!(
                 input.get(),
                 " 系  列   聯  系  <<  聯  繫   o 氹   氹   席   榮   折  木   o 能   買  書  <n> "
             );
-    
+
             input = NormalizedString::from("头部");
             let _ = norm.normalize(&mut input).unwrap();
-            assert_eq!(
-                input.get(),
-                " 頭  部 "
-            );
+            assert_eq!(input.get(), " 頭  部 ");
         }
     }
 }
