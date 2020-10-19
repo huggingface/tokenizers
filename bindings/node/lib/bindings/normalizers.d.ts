@@ -3,7 +3,9 @@
  * Normalizer will return an instance of this class when instantiated.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
-interface Normalizer {}
+interface Normalizer {
+    normalizeString(s: string): string;
+}
 
 export interface BertNormalizerOptions {
   /**
