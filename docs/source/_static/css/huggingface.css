@@ -284,7 +284,7 @@ div.hf-menu a {
 div.hf-menu a:active {
     top: 1px;
 }
-@media (min-width: 768px) and (max-width: 1750px) {
+@media (min-width: 768px) and (max-width: 1860px) {
     .wy-breadcrumbs {
         margin-top: 32px;
     }
