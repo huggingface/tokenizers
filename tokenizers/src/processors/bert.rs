@@ -1,11 +1,20 @@
 use crate::tokenizer::{Encoding, PostProcessor, Result};
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(tag = "type")]
 pub struct BertProcessing {
     sep: (String, u32),
     cls: (String, u32),
+}
+
+impl Default for BertProcessing {
+    fn default() -> Self {
+        Self {
+            sep: ("[SEP]".into(), 102),
+            cls: ("[CLS]".into(), 101),
+        }
+    }
 }
 
 impl BertProcessing {
@@ -139,15 +148,18 @@ impl PostProcessor for BertProcessing {
     }
 }
 
-impl Serialize for BertProcessing {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut m = serializer.serialize_struct("BertProcessing", 3)?;
-        m.serialize_field("type", "BertProcessing")?;
-        m.serialize_field("sep", &self.sep)?;
-        m.serialize_field("cls", &self.cls)?;
-        m.end()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serde() {
+        let bert = BertProcessing::default();
+        let bert_r = r#"{"type":"BertProcessing","sep":["[SEP]",102],"cls":["[CLS]",101]}"#;
+        assert_eq!(serde_json::to_string(&bert).unwrap(), bert_r);
+        assert_eq!(
+            serde_json::from_str::<BertProcessing>(bert_r).unwrap(),
+            bert
+        );
     }
 }
