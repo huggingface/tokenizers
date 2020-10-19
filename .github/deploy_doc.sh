@@ -28,7 +28,7 @@ function deploy_doc(){
         done
     elif [ "$2" == "latest" ]; then
         push_version $1 $2 $3
-    elif ssh "$HOST_NAME" "[ -d $DOC_PATH/$3/$2 ]"; then
+    elif [ "$4" != "override" ] && ssh "$HOST_NAME" "[ -d $DOC_PATH/$3/$2 ]"; then
         echo "Directory" $2 "already exists"
         rsync -zvr --delete _static/ "$HOST_NAME:$DOC_PATH/$3/$2/_static"
     else
@@ -46,5 +46,5 @@ deploy_doc "$GITHUB_SHA" latest rust
 deploy_doc "$GITHUB_SHA" latest node
 
 # Python versions
-deploy_doc "$GITHUB_SHA" v0.9.0 python
+deploy_doc "$GITHUB_SHA" v0.9.0 python override
 deploy_doc "$GITHUB_SHA" latest python
