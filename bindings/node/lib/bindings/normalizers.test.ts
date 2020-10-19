@@ -23,6 +23,12 @@ describe("stripNormalizer", () => {
     const normalizer = stripNormalizer(false, true);
     expect(normalizer.constructor.name).toEqual("Normalizer");
   });
+
+  it("can normalize strings", () => {
+      const normalizer = stripNormalizer();
+      expect(normalizer.normalizeString("     Hello there   "))
+        .toEqual("Hello there");
+  });
 });
 
 describe("stripAccentsNormalizer", () => {

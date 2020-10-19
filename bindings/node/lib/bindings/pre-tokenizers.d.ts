@@ -3,7 +3,9 @@
  * PreTokenizer will return an instance of this class when instantiated.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
-interface PreTokenizer {}
+interface PreTokenizer {
+    preTokenizeString(s: string): [string, [number, number]][];
+}
 
 /**
  * Instantiate a new ByteLevel PreTokenizer

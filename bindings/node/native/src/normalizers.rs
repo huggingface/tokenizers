@@ -69,6 +69,21 @@ declare_types! {
             // This should not be called from JS
             Ok(Normalizer { normalizer: None })
         }
+
+        method normalizeString(mut cx) {
+            use tk::Normalizer;
+
+            let sequence = cx.extract::<String>(0)?;
+            let mut normalized = NormalizedString::from(sequence);
+
+            let this = cx.this();
+            let guard = cx.lock();
+            this.borrow(&guard)
+                .normalize(&mut normalized)
+                .map_err(|e| Error(format!("{}", e)))?;
+
+            Ok(cx.string(normalized.get()).upcast())
+        }
     }
 }
 

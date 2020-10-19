@@ -71,6 +71,28 @@ declare_types! {
             // This should not be called from JS
             Ok(PreTokenizer { pretok: None })
         }
+
+        method preTokenizeString(mut cx) {
+            use tk::PreTokenizer;
+
+            let sequence = cx.extract::<String>(0)?;
+            let mut pretokenized = PreTokenizedString::from(sequence);
+
+            let this = cx.this();
+            let guard = cx.lock();
+
+            this.borrow(&guard)
+                .pre_tokenize(&mut pretokenized)
+                .map_err(|e| Error(format!("{}", e)))?;
+
+            let splits = pretokenized
+                .get_splits(tk::OffsetReferential::Original, tk::OffsetType::Char)
+                .into_iter()
+                .map(|(s, o, _)| (s.to_owned(), o))
+                .collect::<Vec<_>>();
+
+            Ok(neon_serde::to_value(&mut cx, &splits)?.upcast())
+        }
     }
 }
 
