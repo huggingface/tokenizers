@@ -13,7 +13,13 @@ StripAccents = normalizers.StripAccents
 Nmt = normalizers.Nmt
 Precompiled = normalizers.Precompiled
 Replace = normalizers.Replace
-opencc_enabled = normalizers.opencc_enabled
+
+try:
+    opencc_enabled = normalizers.opencc_enabled
+except:
+    def opencc_enabled():
+        return False
+
 
 class NORM_OPTIONS:
     SEPARATE_INTEGERS      = 1 << 1;

@@ -1,8 +1,22 @@
 from setuptools import setup
 from setuptools_rust import Binding, RustExtension
+import sys
 
 extras = {}
 extras["testing"] = ["pytest"]
+
+features = []
+print(sys.argv)
+for feature in ("opencc",):
+    if "--%s"%feature in sys.argv:
+        features.append("%s"%feature)
+        del sys.argv[sys.argv.index("--%s"%feature)]
+
+from setuptools.command.install import install
+class InstallCommand(install):
+    user_options = install.user_options + [
+        ('opencc', None, 'Enable OpenCC')
+    ]
 
 setup(
     name="tokenizers",
@@ -15,7 +29,10 @@ setup(
     author_email="anthony@huggingface.co",
     url="https://github.com/huggingface/tokenizers",
     license="Apache License 2.0",
-    rust_extensions=[RustExtension("tokenizers.tokenizers", binding=Binding.PyO3, debug=False)],
+    cmdclass={
+        'install': InstallCommand,
+    },
+    rust_extensions=[RustExtension("tokenizers.tokenizers", binding=Binding.PyO3, debug=False, features=features)],
     extras_require=extras,
     classifiers=[
         "Development Status :: 5 - Production/Stable",

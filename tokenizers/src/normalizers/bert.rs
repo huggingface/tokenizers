@@ -1,6 +1,8 @@
 extern crate lazy_static;
-extern crate opencc_rust;
 extern crate libc;
+
+#[cfg(feature = "opencc")]
+extern crate opencc_rust;
 
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 
@@ -10,6 +12,8 @@ use unicode_categories::UnicodeCategories;
 use std::sync::Mutex;
 use fnv::FnvHashSet;
 use fnv::FnvHashMap;
+
+#[cfg(feature = "opencc")]
 use opencc_rust::{OpenCC, DefaultConfig};
 
 use std::panic;
@@ -17,8 +21,55 @@ use std::panic;
 use std::sync::Once;
 static START: Once = Once::new();
 
-static mut OPENCC_CONFIG: DefaultConfig = DefaultConfig::S2T;
+#[cfg(not(feature = "opencc"))]
+use libc::{c_void};
+#[cfg(not(feature = "opencc"))]
+use std::ptr::null_mut;
+#[cfg(not(feature = "opencc"))]
+use std::path::Path;
 
+
+#[cfg(not(feature = "opencc"))]
+#[derive(Debug, Copy, Clone)]
+pub enum DefaultConfig {
+    S2T,
+    T2S,
+}
+
+#[cfg(not(feature = "opencc"))]
+impl AsRef<Path> for DefaultConfig {
+    fn as_ref(&self) -> &Path {
+        Path::new("s2t.json")
+    }
+}
+
+#[cfg(not(feature = "opencc"))]
+#[allow(dead_code)]
+pub struct OpenCC {
+    opencc: *mut c_void,
+}
+
+#[cfg(not(feature = "opencc"))]
+unsafe impl Send for OpenCC {}
+
+#[cfg(not(feature = "opencc"))]
+unsafe impl Sync for OpenCC {}
+
+#[cfg(not(feature = "opencc"))]
+impl OpenCC {
+    /// Create a new OpenCC instance through a file provided by its path.
+    pub fn new<P: AsRef<Path>>(_config_file_path: P) -> Result<OpenCC> {
+        let opencc = null_mut();
+        Ok(OpenCC {
+            opencc,
+        })
+    }
+    pub fn convert<S: AsRef<str>>(&self, input: S) -> String {
+        String::from(input.as_ref())
+    }
+}
+
+static mut OPENCC_CONFIG: DefaultConfig = DefaultConfig::S2T;
 
 lazy_static! {
     static ref OPENCC: Option<OpenCC> = unsafe{
@@ -44,6 +95,7 @@ static ZH_NORM_MAPPING: u32   = 1 << 5;
 
 
 /// Checks opencc is installed
+#[cfg(feature = "opencc")]
 pub fn opencc_enabled() -> bool {
     OPENCC.as_ref().is_some()
 }
@@ -143,11 +195,13 @@ impl BertNormalizer {
             let mut zh_norm_mapping = ZH_NORM_MAPPING_.lock().unwrap();
             let mut simpl_mapping = SIMPL_MAPPING_.lock().unwrap();
             let mut symbols = SYMBOLS_.lock().unwrap();
+
             if (norm_options & SIMPL_TO_TRAD) != 0 {
                 unsafe{
                     OPENCC_CONFIG = DefaultConfig::S2T;
                 }
             }
+                            
             if (norm_options & TRAD_TO_SIMPL) != 0 {
                 unsafe{
                     OPENCC_CONFIG = DefaultConfig::T2S;
@@ -296,7 +350,6 @@ impl BertNormalizer {
             },
             None    => {}
         }
-
     }
 }
 
@@ -323,7 +376,7 @@ impl Normalizer for BertNormalizer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "opencc"))]
 mod tests {
     use super::*;
 

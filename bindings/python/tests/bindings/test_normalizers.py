@@ -3,7 +3,9 @@ import pytest
 
 from tokenizers import Tokenizer, NormalizedString
 from tokenizers.models import BPE
-from tokenizers.normalizers import Normalizer, BertNormalizer, Sequence, Lowercase, Strip, NORM_OPTIONS, opencc_enabled
+from tokenizers.normalizers import Normalizer, BertNormalizer, Sequence, Lowercase, Strip, NORM_OPTIONS
+
+from tokenizers.normalizers import opencc_enabled
 
 
 class TestBertNormalizer:

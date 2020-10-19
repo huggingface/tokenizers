@@ -5,6 +5,7 @@ pub mod strip;
 pub mod unicode;
 pub mod utils;
 
+#[cfg(feature = "opencc")]
 pub use crate::normalizers::bert::opencc_enabled;
 pub use crate::normalizers::bert::BertNormalizer;
 pub use crate::normalizers::precompiled::Precompiled;

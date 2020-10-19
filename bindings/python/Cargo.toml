@@ -22,12 +22,15 @@ onig = { version = "6.0", default-features = false }
 [dependencies.tokenizers]
 version = "*"
 path = "../../tokenizers"
+default-features = false 
+features = ["opencc"]
 
 [dev-dependencies]
 tempfile = "3.1"
 
 [features]
 default = ["pyo3/extension-module"]
+opencc = ["tokenizers/opencc"]
 
 [target.x86_64-apple-darwin]
 rustflags = [

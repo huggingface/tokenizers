@@ -11,8 +11,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
     BertNormalizer, Lowercase, Nmt, NormalizerWrapper, Precompiled, Replace, Strip, StripAccents,
     NFC, NFD, NFKC, NFKD,
-    opencc_enabled as opencc_enabled_
+    
 };
+#[cfg(feature = "opencc")]
+use tk::normalizers::opencc_enabled as opencc_enabled_;
 use tk::{NormalizedString, Normalizer};
 use tokenizers as tk;
 
@@ -519,6 +521,7 @@ mod test {
     }
 }
 
+#[cfg(feature = "opencc")]
 #[pyfunction]
 pub fn opencc_enabled() -> bool {
     opencc_enabled_()

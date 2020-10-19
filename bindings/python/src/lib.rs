@@ -15,9 +15,12 @@ mod trainers;
 mod utils;
 
 use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
 use pyo3::wrap_pymodule;
 
+#[cfg(feature = "opencc")]
+use pyo3::wrap_pyfunction;
+
+#[cfg(feature = "opencc")]
 #[pyfunction]
 pub fn opencc_enabled() -> bool {
     normalizers::opencc_enabled()
@@ -119,6 +122,8 @@ fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<normalizers::PyNmt>()?;
     m.add_class::<normalizers::PyPrecompiled>()?;
     m.add_class::<normalizers::PyReplace>()?;
+
+    #[cfg(feature = "opencc")]
     m.add_wrapped(wrap_pyfunction!(opencc_enabled)).unwrap();
 
     Ok(())
