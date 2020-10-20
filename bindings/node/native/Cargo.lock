@@ -602,6 +602,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "opencc-rust"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc5c796b7c574b9a06b86b3eccd4b6ca45d32a7587dfc42c07013d987089d65e"
+dependencies = [
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "pkg-config"
 version = "0.3.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -878,6 +888,7 @@ dependencies = [
  "libc",
  "log",
  "onig",
+ "opencc-rust",
  "rand",
  "rayon",
  "rayon-cond",
