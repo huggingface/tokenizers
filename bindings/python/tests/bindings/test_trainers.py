@@ -23,8 +23,6 @@ class TestUnigram:
         os.remove(filename)
 
     def test_train_parallelism_with_custom_pretokenizer(self, train_files):
-        tokenizer = SentencePieceUnigramTokenizer()
-
         class GoodCustomPretok:
             def split(self, n, normalized):
                 #  Here we just test that we can return a List[NormalizedString], it
@@ -38,8 +36,6 @@ class TestUnigram:
         bpe_tokenizer = Tokenizer(models.BPE())
         bpe_tokenizer.normalizer = normalizers.Lowercase()
         bpe_tokenizer.pre_tokenizer = custom
-
-        tokenizer.pre_tokenizer = custom
 
         if "TOKENIZERS_PARALLELISM" in os.environ:
             del os.environ["TOKENIZERS_PARALLELISM"]
