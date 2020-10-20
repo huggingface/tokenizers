@@ -107,7 +107,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
+          args: --manifest-path ./bindings/python/Cargo.toml --all-targets --features=default -- -D warnings
 
       - name: Install Python
         uses: actions/setup-python@v1

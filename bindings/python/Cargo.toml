@@ -22,8 +22,6 @@ onig = { version = "6.0", default-features = false }
 [dependencies.tokenizers]
 version = "*"
 path = "../../tokenizers"
-default-features = false 
-features = ["opencc"]
 
 [dev-dependencies]
 tempfile = "3.1"

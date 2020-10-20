@@ -68,7 +68,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --manifest-path ./bindings/node/native/Cargo.toml --all-targets --all-features -- -D warnings
+          args: --manifest-path ./bindings/node/native/Cargo.toml --all-targets -- -D warnings
 
       - name: Lint TS
         working-directory: ./bindings/node
