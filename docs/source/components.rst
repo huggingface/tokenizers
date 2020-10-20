@@ -6,6 +6,52 @@ to customize its behavior. This page lists most provided components.
 
 .. _normalizers:
 
+
+.. entities:: python
+
+    BertNormalizer.clean_text
+        clean_text
+    BertNormalizer.handle_chinese_chars
+        handle_chinese_chars
+    BertNormalizer.strip_accents
+        strip_accents
+    BertNormalizer.lowercase
+        lowercase
+    Normalizer.Sequence
+        ``Sequence([NFKC(), Lowercase()])``
+    PreTokenizer.Sequence
+        ``Sequence([Punctuation(), WhitespaceSplit()])``
+
+.. entities:: rust
+
+    BertNormalizer.clean_text
+        clean_text
+    BertNormalizer.handle_chinese_chars
+        handle_chinese_chars
+    BertNormalizer.strip_accents
+        strip_accents
+    BertNormalizer.lowercase
+        lowercase
+    Normalizer.Sequence
+        ``Sequence::new(vec![NFKC, Lowercase])``
+    PreTokenizer.Sequence
+        ``Sequence::new(vec![Punctuation, WhitespaceSplit])``
+
+.. entities:: node
+
+    BertNormalizer.clean_text
+        cleanText
+    BertNormalizer.handle_chinese_chars
+        handleChineseChars
+    BertNormalizer.strip_accents
+        stripAccents
+    BertNormalizer.lowercase
+        lowercase
+    Normalizer.Sequence
+        ..
+    PreTokenizer.Sequence
+        ..
+
 Normalizers
 ----------------------------------------------------------------------------------------------------
 
@@ -65,11 +111,20 @@ The ``Normalizer`` is optional.
        Input: ``"banana"``
        Ouput: ``"benene"``
 
+   * - BertNormalizer
+     - Provides an implementation of the Normalizer used in the original BERT. Options
+       that can be set are:
+
+            - :entity:`BertNormalizer.clean_text`
+            - :entity:`BertNormalizer.handle_chinese_chars`
+            - :entity:`BertNormalizer.strip_accents`
+            - :entity:`BertNormalizer.lowercase`
+
+     -
+
    * - Sequence
      - Composes multiple normalizers that will run in the provided order
-     - Example::
-
-           Sequence([Nmt(), NFKC()])
+     - :entity:`Normalizer.Sequence`
 
 
 .. _pre-tokenizers:
@@ -142,9 +197,15 @@ the ByteLevel)
 
        Ouput: ``"Hello", "there"``
 
+   * - Digits
+     - Splits the numbers from any other characters.
+     - Input: ``"Hello123there"``
+
+       Output: ```"Hello", "123", "there"```
+
    * - Sequence
      - Lets you compose multiple ``PreTokenizer`` that will be run in the given order
-     - ``Sequence([Punctuation(), WhitespaceSplit()])``
+     - :entity:`PreTokenizer.Sequence`
 
 
 .. _models:
@@ -214,7 +275,7 @@ is the component doing just that.
    * - TemplateProcessing
      - Let's you easily template the post processing, adding special tokens, and specifying
        the ``type_id`` for each sequence/special token. The template is given two strings
-       representing the single sequence and the pair of sequences, as well as a set of 
+       representing the single sequence and the pair of sequences, as well as a set of
        special tokens to use.
      - Example, when specifying a template with these values:
 
