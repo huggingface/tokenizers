@@ -100,13 +100,13 @@ class AllEntities:
                 raise Exception(f"Expected a term here, found {name_node.tagname}")
             if content_node.tagname != "definition":
                 raise Exception(f"Expected a definition here, found {content_node.tagname}")
-            if content_node.children[0].tagname != "paragraph":
-                raise Exception(
-                    f"Expected a paragraph here, found {content_node.children[0].tagname}"
-                )
 
             name = str(name_node.children[0])
-            content = content_node.children[0].children[0]
+            if len(content_node.children) == 1 and content_node.children[0].tagname == "paragraph":
+                content = content_node.children[0].children[0]
+            else:
+                content = content_node
+
             entities.append({"name": name, "content": content})
         return entities
 
@@ -142,7 +142,7 @@ class AllEntities:
                 docname = entity["docname"]
                 node = entity["content"]
 
-                if node.tagname == "pending_xref":
+                for node in node.traverse(sphinx.addnodes.pending_xref):
                     contnode = cast(nodes.TextElement, node[0].deepcopy())
                     newnode = None
 
