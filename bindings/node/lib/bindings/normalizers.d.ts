@@ -27,6 +27,11 @@ export interface BertNormalizerOptions {
    * @default undefined
    */
   stripAccents?: boolean;
+  /**
+   * Normalization Options
+   * @default 0
+   */
+  normOptions?: number;
 }
 
 /**
