@@ -23,18 +23,23 @@ project = "tokenizers"
 copyright = "2020, huggingface"
 author = "huggingface"
 
-languages = ["node", "rust", "python"]
-
 # The full version, including alpha/beta/rc tags
 release = "0.9.0"
 
+# -- Custom information ------------------------------------------------------
+
+# The possible values for languages (used by `_ext/entities`)
+languages = ["node", "rust", "python"]
+
+# This defines the version used to generate links to docs.rs
+rust_version = "latest"
 
 # -- General configuration ---------------------------------------------------
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ["sphinx.ext.autodoc", "sphinx.ext.napoleon", "entities"]
+extensions = ["sphinx.ext.autodoc", "sphinx.ext.napoleon", "entities", "rust_doc"]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
