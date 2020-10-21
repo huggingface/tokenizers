@@ -65,6 +65,10 @@ Main features:
     classmethod
         static method
     Tokenizer
-        `Tokenizer <https://docs.rs/tokenizers/latest/tokenizers/tokenizer/struct.Tokenizer.html>`__
+        :rust:struct:`~tokenizers::tokenizer::Tokenizer`
     Tokenizer.train
-        `train <https://docs.rs/tokenizers/0.10.1/tokenizers/tokenizer/struct.Tokenizer.html#method.train>`__
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::train()`
+    Tokenizer.save
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::save()`
+    Tokenizer.from_file
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::from_file()`
