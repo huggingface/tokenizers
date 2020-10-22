@@ -48,6 +48,8 @@ pub struct UnigramTrainer {
     shrinking_factor: f64,
     #[builder(default = "vec![]")]
     special_tokens: Vec<AddedToken>,
+    #[builder(default = "HashSet::new()")]
+    initial_alphabet: HashSet<char>,
 
     #[builder(default = "String::from(\"<unk>\")")]
     unk_token: String,
@@ -125,8 +127,8 @@ impl UnigramTrainer {
     fn required_chars(&self, word_counts: &[Sentence]) -> HashSet<String> {
         word_counts
             .iter()
-            .map(|(s, _count)| s.chars())
-            .flatten()
+            .flat_map(|(s, _count)| s.chars())
+            .chain(self.initial_alphabet.iter().copied())
             .map(|c| c.to_string())
             .collect()
     }
@@ -517,6 +519,7 @@ impl Trainer for UnigramTrainer {
 mod tests {
     use super::*;
     use assert_approx_eq::assert_approx_eq;
+    use std::iter::FromIterator;
 
     #[test]
     fn test_unigram_chars() {
@@ -567,6 +570,26 @@ mod tests {
         for (score, target_score) in scores.into_iter().zip(target_scores) {
             assert_approx_eq!(*score, target_score, 0.01);
         }
+    }
+
+    #[test]
+    fn test_initial_alphabet() {
+        let trainer = UnigramTrainerBuilder::default()
+            .show_progress(false)
+            .initial_alphabet(HashSet::from_iter(vec!['a', 'b', 'c', 'd', 'e', 'f']))
+            .build()
+            .unwrap();
+
+        let sentences = vec![("こんにちは友達".to_string(), 1)];
+        let required_chars = trainer.required_chars(&sentences);
+        assert_eq!(
+            required_chars,
+            HashSet::from_iter(
+                vec!["こ", "ん", "に", "ち", "は", "友", "達", "a", "b", "c", "d", "e", "f"]
+                    .into_iter()
+                    .map(|s| s.to_owned())
+            )
+        );
     }
 
     #[test]
