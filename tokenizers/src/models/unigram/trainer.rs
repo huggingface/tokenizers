@@ -96,32 +96,33 @@ impl UnigramTrainer {
         let mut min_score_penalty = 0.0;
         let min_score_penalty_delta = 0.0001;
 
-        let mut pieces: HashMap<String, f64> = HashMap::new();
+        let mut pieces: Vec<(String, f64)> = vec![];
+        let mut inserted: HashSet<String> = HashSet::new();
         let existing_pieces: HashMap<String, f64> = model.iter().cloned().collect();
-        // XXX: Make sure bos, eos and unk exists and are ids 0, 1, 2
-        pieces.insert(self.unk_token.clone(), 0.0);
         for c in required_chars {
             if let Some(t) = existing_pieces.get(&c) {
-                pieces.insert(c, *t);
+                inserted.insert(c.clone());
+                pieces.push((c, *t));
             } else {
                 let score = model.min_score + min_score_penalty;
 
-                pieces.insert(c, score);
+                inserted.insert(c.clone());
+                pieces.push((c, score));
                 min_score_penalty += min_score_penalty_delta;
             }
         }
         for (token, score) in model.iter() {
-            match pieces.get(token) {
-                Some(_) => continue,
-                None => pieces.insert(token.to_string(), *score),
-            };
+            if inserted.contains::<str>(token) {
+                continue;
+            }
+            inserted.insert(token.to_string());
+            pieces.push((token.to_string(), if score.is_nan() { 0.0 } else { *score }));
             if pieces.len() == self.vocab_size as usize {
                 break;
             }
         }
-        let mut final_pieces: Vec<SentencePiece> = pieces.into_iter().collect();
-        final_pieces.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
-        Unigram::from(final_pieces, 0)
+        pieces.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+        Unigram::from(pieces, 0)
     }
 
     fn required_chars(&self, word_counts: &[Sentence]) -> HashSet<String> {
@@ -223,9 +224,9 @@ impl UnigramTrainer {
         // from the vocabulary.
         // To do so, we take the second best segmentation of sentencepiece[i].
         // alternatives[i] stores the sequence of second best sentencepieces.
-        for (id, (token, _score)) in pieces.iter().enumerate() {
-            // Always keep unk.
-            if id == 0 {
+        for (id, (token, score)) in pieces.iter().enumerate() {
+            // Always keep those with score == NaN
+            if score.is_nan() {
                 always_keep[id] = false;
                 continue;
             }
@@ -390,9 +391,9 @@ impl UnigramTrainer {
 
         let mut sum = 0.0;
         let expected_frequency_threshold = 0.5;
-        for (i, (freq, (piece, _))) in expected.iter().zip(pieces).enumerate() {
-            // We keep unk.
-            if i == 0 {
+        for (freq, (piece, score)) in expected.iter().zip(pieces) {
+            // Always keep those with score == NaN
+            if score.is_nan() {
                 new_pieces.push((piece.clone(), f64::NAN));
                 continue;
             }
@@ -423,6 +424,11 @@ impl UnigramTrainer {
             Vec::with_capacity(self.vocab_size.try_into().unwrap());
         // XXX: Make sure unk exists and are ids 0
         pieces.push((self.unk_token.clone(), f64::NAN));
+        pieces.extend(
+            self.special_tokens
+                .iter()
+                .map(|tok| (tok.content.clone(), f64::NAN)),
+        );
         pieces.extend(self.make_seed_sentence_pieces(&sentences, &progress)?);
         self.finalize_progress(&progress, sentences.len());
 
@@ -590,6 +596,30 @@ mod tests {
                     .map(|s| s.to_owned())
             )
         );
+    }
+
+    #[test]
+    fn test_special_tokens() {
+        let trainer = UnigramTrainerBuilder::default()
+            .show_progress(false)
+            .special_tokens(vec![
+                AddedToken::from("[SEP]", true),
+                AddedToken::from("[CLS]", true),
+            ])
+            .build()
+            .unwrap();
+
+        let (unigram, _) = trainer
+            .train(HashMap::from_iter(vec![
+                ("The".into(), 12),
+                ("are".into(), 11),
+            ]))
+            .unwrap();
+
+        let mut pieces = unigram.iter();
+        assert_eq!(pieces.next(), Some(&("<unk>".into(), 0.0)));
+        assert_eq!(pieces.next(), Some(&("[SEP]".into(), 0.0)));
+        assert_eq!(pieces.next(), Some(&("[CLS]".into(), 0.0)));
     }
 
     #[test]

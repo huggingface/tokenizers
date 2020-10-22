@@ -53,8 +53,8 @@ impl Clone for Unigram {
 
 impl std::fmt::Debug for Unigram {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        fmt.debug_struct("BPE")
-            .field("vocab", &self.vocab.len())
+        fmt.debug_struct("Unigram")
+            .field("vocab", &self.vocab)
             .field("unk_id", &self.unk_id)
             .finish()
     }
