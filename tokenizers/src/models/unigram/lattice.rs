@@ -58,7 +58,6 @@ pub struct Lattice<'a> {
     pub(super) end_nodes: Vec<Vec<NodeRef>>,
     bos_id: usize,
     eos_id: usize,
-    unk_id: usize,
 }
 
 impl std::fmt::Display for Lattice<'_> {
@@ -136,7 +135,7 @@ fn log_sum_exp(x: f64, y: f64, init_mode: bool) -> f64 {
 }
 
 impl<'a> Lattice<'a> {
-    pub fn from(sentence: &'a str, unk_id: usize, bos_id: usize, eos_id: usize) -> Lattice<'a> {
+    pub fn from(sentence: &'a str, bos_id: usize, eos_id: usize) -> Lattice<'a> {
         let len = sentence.bytes().count();
         let k_reserved_node_size = 16;
         // We are adding 2 tokens, bos and eos
@@ -161,7 +160,6 @@ impl<'a> Lattice<'a> {
             end_nodes,
             bos_id,
             eos_id,
-            unk_id,
         }
     }
 
@@ -439,16 +437,16 @@ mod tests {
 
     #[test]
     fn set_sentence() {
-        let lattice = Lattice::from("", 0, 1, 2);
+        let lattice = Lattice::from("", 1, 2);
 
         assert_eq!(lattice.len(), 0);
 
-        let lattice = Lattice::from("", 0, 1, 2);
+        let lattice = Lattice::from("", 1, 2);
         assert_eq!(lattice.len(), 0);
         assert_eq!(lattice.sentence(), "");
         assert_eq!(lattice.surface(0), "");
 
-        let lattice = Lattice::from("test", 0, 1, 2);
+        let lattice = Lattice::from("test", 1, 2);
         assert_eq!(lattice.len(), 4);
         assert_eq!(lattice.sentence(), "test");
         assert_eq!(lattice.surface(0), "test");
@@ -470,7 +468,7 @@ mod tests {
             eos.borrow().id
         );
 
-        let lattice = Lattice::from("テストab", 0, 1, 2);
+        let lattice = Lattice::from("テストab", 1, 2);
         assert_eq!(lattice.len(), 11);
         assert_eq!(lattice.sentence(), "テストab");
         assert_eq!(lattice.surface(0), "テストab");
@@ -482,7 +480,7 @@ mod tests {
 
     #[test]
     fn insert_test() {
-        let mut lattice = Lattice::from("ABあい", 0, 1, 2);
+        let mut lattice = Lattice::from("ABあい", 1, 2);
 
         lattice.insert(0, 1, 0.0, 3);
         lattice.insert(1, 1, 0.0, 4);
@@ -573,7 +571,7 @@ mod tests {
 
     #[test]
     fn test_viterbi() {
-        let mut lattice = Lattice::from("ABC", 0, 1, 2);
+        let mut lattice = Lattice::from("ABC", 1, 2);
         assert_eq!(lattice.viterbi(), vec![]);
         // Still incomplete
         lattice.insert(0, 1, 0.0, 3);
@@ -586,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_viterbi2() {
-        let mut lattice = Lattice::from("ABC", 0, 1, 2);
+        let mut lattice = Lattice::from("ABC", 1, 2);
 
         lattice.insert(0, 1, 0.0, 3);
         lattice.insert(1, 1, 0.0, 4);
@@ -606,7 +604,7 @@ mod tests {
 
     #[test]
     fn test_nbest() {
-        let mut lattice = Lattice::from("ABC", 0, 1, 2);
+        let mut lattice = Lattice::from("ABC", 1, 2);
         lattice.insert(0, 1, 0.0, 3);
         lattice.insert(1, 1, 0.0, 4);
         lattice.insert(2, 1, 0.0, 5);
@@ -641,7 +639,7 @@ mod tests {
 
     #[test]
     fn test_populate() {
-        let mut lattice = Lattice::from("ABC", 0, 1, 2);
+        let mut lattice = Lattice::from("ABC", 1, 2);
         lattice.insert(0, 1, 1.0, 3); // A
         lattice.insert(1, 1, 1.2, 4); // B
         lattice.insert(2, 1, 2.5, 5); // C

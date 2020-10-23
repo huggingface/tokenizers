@@ -52,10 +52,11 @@ fn test_train_unigram_from_file() {
 
     let trainer = UnigramTrainer::builder()
         .show_progress(false)
+        .unk_token(Some("<unk>".into()))
         .build()
         .unwrap();
     let (model, _) = trainer.train(word_counts).unwrap();
-    assert_eq!(model.get_vocab_size(), 719);
+    assert_eq!(model.get_vocab_size(), 717);
 }
 
 #[cfg(not(debug_assertions))]
