@@ -52,11 +52,9 @@ impl<'de> Visitor<'de> for UnigramVisitor {
             }
         }
         match (vocab, unk_id) {
-            (Some(vocab), Some(unk_id)) => Ok(Unigram::from(vocab, unk_id)
+            (Some(vocab), unk_id) => Ok(Unigram::from(vocab, unk_id)
                 .map_err(|err| Error::custom(&format!("Unable to load vocab {:?}", err)))?),
-            (None, Some(_)) => Err(Error::custom("Missing vocab")),
-            (None, None) => Err(Error::custom("Missing vocab and unk_id")),
-            (Some(_), None) => Err(Error::custom("Missing unk_id")),
+            (None, _) => Err(Error::custom("Missing vocab")),
         }
     }
 }
@@ -68,7 +66,7 @@ mod test {
     #[test]
     fn test_serialization() {
         let vocab = vec![("<unk>".to_string(), 0.0), ("a".to_string(), -0.5)];
-        let model = Unigram::from(vocab, 0).unwrap();
+        let model = Unigram::from(vocab, Some(0)).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
         let reconstructed = serde_json::from_str(&data).unwrap();
@@ -79,7 +77,18 @@ mod test {
     #[test]
     fn test_serialization_unk_id_not_zero() {
         let vocab = vec![("a".to_string(), -0.5), ("<unk>".to_string(), 0.0)];
-        let model = Unigram::from(vocab, 1).unwrap();
+        let model = Unigram::from(vocab, Some(1)).unwrap();
+
+        let data = serde_json::to_string(&model).unwrap();
+        let reconstructed = serde_json::from_str(&data).unwrap();
+
+        assert_eq!(model, reconstructed);
+    }
+
+    #[test]
+    fn test_serialization_no_unk_id() {
+        let vocab = vec![("a".to_string(), -0.5)];
+        let model = Unigram::from(vocab, None).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
         let reconstructed = serde_json::from_str(&data).unwrap();

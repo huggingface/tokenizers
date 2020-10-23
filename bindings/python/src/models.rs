@@ -416,9 +416,8 @@ pub struct PyUnigram {}
 impl PyUnigram {
     #[new]
     fn new(vocab: Option<Vec<(String, f64)>>, unk_id: Option<usize>) -> PyResult<(Self, PyModel)> {
-        if vocab.is_some() && unk_id.is_none() || vocab.is_none() && unk_id.is_some() {}
         match (vocab, unk_id) {
-            (Some(vocab), Some(unk_id)) => {
+            (Some(vocab), unk_id) => {
                 let model = Unigram::from(vocab, unk_id).map_err(|e| {
                     exceptions::PyException::new_err(format!("Error while loading Unigram: {}", e))
                 })?;
