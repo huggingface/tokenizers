@@ -4,8 +4,10 @@ Quicktour
 Let's have a quick look at the 🤗 Tokenizers library features. The library provides an
 implementation of today's most used tokenizers that is both easy to use and blazing fast.
 
-It can be used to instantiate a :ref:`pretrained tokenizer <pretrained>` but we will start our
-quicktour by building one from scratch and see how we can train it.
+.. only:: python
+
+    It can be used to instantiate a :ref:`pretrained tokenizer <pretrained>` but we will start our
+    quicktour by building one from scratch and see how we can train it.
 
 
 Build a tokenizer from scratch
@@ -34,6 +36,10 @@ Training the tokenizer
         :obj:`min_frequency`
     special_tokens
         :obj:`special_tokens`
+    unk_token
+        :obj:`unk_token`
+    pad_token
+        :obj:`pad_token`
 
 .. entities:: rust
 
@@ -45,6 +51,10 @@ Training the tokenizer
         :obj:`min_frequency`
     special_tokens
         :obj:`special_tokens`
+    unk_token
+        :obj:`unk_token`
+    pad_token
+        :obj:`pad_token`
 
 .. entities:: node
 
@@ -56,6 +66,10 @@ Training the tokenizer
         :obj:`minFrequency`
     special_tokens
         :obj:`specialTokens`
+    unk_token
+        :obj:`unkToken`
+    pad_token
+        :obj:`padToken`
 
 In this tour, we will build and train a Byte-Pair Encoding (BPE) tokenizer. For more information
 about the different type of tokenizers, check out this `guide
@@ -158,7 +172,7 @@ to use:
 
 This should only take a few seconds to train our tokenizer on the full wikitext dataset! Once this
 is done, we need to save the model and reinstantiate it with the unknown token, or this token won't
-be used. This will be simplified in a further release, to let you set the :obj:`unk_token` when
+be used. This will be simplified in a further release, to let you set the :entity:`unk_token` when
 first instantiating the model.
 
 .. only:: python
@@ -219,7 +233,7 @@ Using the tokenizer
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Now that we have trained a tokenizer, we can use it on any text we want with the
-:meth:`~tokenizers.Tokenizer.encode` method:
+:entity:`Tokenizer.encode` method:
 
 .. only:: python
 
@@ -238,10 +252,10 @@ Now that we have trained a tokenizer, we can use it on any text we want with the
         :dedent: 4
 
 This applied the full pipeline of the tokenizer on the text, returning an
-:class:`~tokenizers.Encoding` object. To learn more about this pipeline, and how to apply (or
+:entity:`Encoding` object. To learn more about this pipeline, and how to apply (or
 customize) parts of it, check out :doc:`this page <pipeline>`.
 
-This :class:`~tokenizers.Encoding` object then has all the attributes you need for your deep
+This :entity:`Encoding` object then has all the attributes you need for your deep
 learning model (or other). The :obj:`tokens` attribute contains the segmentation of your text in
 tokens:
 
@@ -282,7 +296,7 @@ tokenizer's vocabulary:
 
 An important feature of the 🤗 Tokenizers library is that it comes with full alignment tracking,
 meaning you can always get the part of your original sentence that corresponds to a given token.
-Those are stored in the :obj:`offsets` attribute of our :class:`~tokenizers.Encoding` object. For
+Those are stored in the :obj:`offsets` attribute of our :entity:`Encoding` object. For
 instance, let's assume we would want to find back what caused the :obj:`"[UNK]"` token to appear,
 which is the token at index 9 in the list, we can just ask for the offset at the index:
 
@@ -324,13 +338,13 @@ Post-processing
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 We might want our tokenizer to automatically add special tokens, like :obj:`"[CLS]"` or
-:obj:`"[SEP]"`. To do this, we use a post-processor. :class:`~tokenizers.TemplateProcessing` is the
+:obj:`"[SEP]"`. To do this, we use a post-processor. :entity:`TemplateProcessing` is the
 most commonly used, you just have so specify a template for the processing of single sentences and
 pairs of sentences, along with the special tokens and their IDs.
 
 When we built our tokenizer, we set :obj:`"[CLS]"` and :obj:`"[SEP]"` in positions 1 and 2 of our
 list of special tokens, so this should be their IDs. To double-check, we can use the
-:meth:`~tokenizers.Tokenizer.token_to_id` method:
+:entity:`Tokenizer.token_to_id` method:
 
 .. only:: python
 
@@ -397,7 +411,7 @@ To check out this worked properly, let's try to encode the same sentence as befo
         :dedent: 4
 
 To check the results on a pair of sentences, we just pass the two sentences to
-:meth:`~tokenizers.Tokenizer.encode`:
+:entity:`Tokenizer.encode`:
 
 .. only:: python
 
@@ -433,14 +447,13 @@ You can then check the type IDs attributed to each token is correct with
         :end-before: END print_type_ids
         :dedent: 4
 
-If you save your tokenizer with :meth:`~tokenizers.Tokenizer.save`, the post-processor will be saved
-along.
+If you save your tokenizer with :entity:`Tokenizer.save`, the post-processor will be saved along.
 
 Encoding multiple sentences in a batch
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To get the full speed of the 🤗 Tokenizers library, it's best to process your texts by batches by
-using the :meth:`~tokenizers.Tokenizer.encode_batch` method:
+using the :entity:`Tokenizer.encode_batch` method:
 
 .. only:: python
 
@@ -458,11 +471,11 @@ using the :meth:`~tokenizers.Tokenizer.encode_batch` method:
         :end-before: END encode_batch
         :dedent: 4
 
-The output is then a list of :class:`~tokenizers.Encoding` objects like the ones we saw before. You
+The output is then a list of :entity:`Encoding` objects like the ones we saw before. You
 can process together as many texts as you like, as long as it fits in memory.
 
 To process a batch of sentences pairs, pass two lists to the
-:meth:`~tokenizers.Tokenizer.encode_batch` method: the list of sentences A and the list of sentences
+:entity:`Tokenizer.encode_batch` method: the list of sentences A and the list of sentences
 B:
 
 .. only:: python
@@ -482,9 +495,9 @@ B:
         :dedent: 4
 
 When encoding multiple sentences, you can automatically pad the outputs to the longest sentence
-present by using :meth:`~tokenizers.Tokenizer.enable_padding`, with the :obj:`pad_token` and its ID
+present by using :entity:`Tokenizer.enable_padding`, with the :entity:`pad_token` and its ID
 (which we can double-check the id for the padding token with
-:meth:`~tokenizers.Tokenizer.token_to_id` like before):
+:entity:`Tokenizer.token_to_id` like before):
 
 .. only:: python
 
@@ -542,25 +555,27 @@ In this case, the `attention mask` generated by the tokenizer takes the padding 
 
 .. _pretrained:
 
-Using a pretrained tokenizer
-----------------------------------------------------------------------------------------------------
+.. only:: python
 
-You can also use a pretrained tokenizer directly in, as long as you have its vocabulary file. For
-instance, here is how to get the classic pretrained BERT tokenizer:
+    Using a pretrained tokenizer
+    ----------------------------------------------------------------------------------------------------
 
-.. code-block:: python
+    You can also use a pretrained tokenizer directly in, as long as you have its vocabulary file. For
+    instance, here is how to get the classic pretrained BERT tokenizer:
 
-    from tokenizers import ByteLevelBPETokenizer
+    .. code-block:: python
 
-    tokenizer = BertWordPieceTokenizer("bert-base-uncased-vocab.txt", lowercase=True)
+        from tokenizers import ByteLevelBPETokenizer
 
-as long as you have downloaded the file `bert-base-uncased-vocab.txt` with
+        tokenizer = BertWordPieceTokenizer("bert-base-uncased-vocab.txt", lowercase=True)
 
-.. code-block:: bash
+    as long as you have downloaded the file `bert-base-uncased-vocab.txt` with
 
-    wget https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-vocab.txt
+    .. code-block:: bash
 
-.. note::
+        wget https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-vocab.txt
 
-    Better support for pretrained tokenizers is coming in a next release, so expect this API to
-    change soon.
+    .. note::
+
+        Better support for pretrained tokenizers is coming in a next release, so expect this API to
+        change soon.
