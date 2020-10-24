@@ -14,20 +14,21 @@ class RustRef:
         parts = text.split("::")
 
         if text.startswith("~"):
-            content = parts[-1]
+            title = parts[-1]
             parts[0] = parts[0][1:]
         else:
             content = text
         link = self.base_link()
 
         if doctype == "struct":
-            link += self.make_struct_link(parts)
+            l, title = self.make_struct_link(parts, title)
         if doctype == "func":
-            link += self.make_func_link(parts)
+            l, title = self.make_func_link(parts, title)
         if doctype == "meth":
-            link += self.make_meth_link(parts)
+            l, title = self.make_meth_link(parts, title)
+        link += l
 
-        node = nodes.reference(internal=False, refuri=link, text=content)
+        node = nodes.reference(internal=False, refuri=link, text=title)
         wrapper = nodes.literal(classes=["xref"])
         wrapper += node
 
@@ -36,7 +37,7 @@ class RustRef:
     def base_link(self):
         return f"https://docs.rs/tokenizers/{rust_version}"
 
-    def make_struct_link(self, parts):
+    def make_struct_link(self, parts, title):
         link = ""
         struct_name = parts[-1]
         path = parts[:-1]
@@ -45,9 +46,9 @@ class RustRef:
             link += f"/{p}"
         link += f"/struct.{struct_name}.html"
 
-        return link
+        return link, title
 
-    def make_func_link(self, parts):
+    def make_func_link(self, parts, title):
         link = ""
         fn_name = parts[-1]
 
@@ -56,17 +57,20 @@ class RustRef:
             link += f"/{p}"
         link += f"/fn.{fn_name}.html"
 
-        return link
+        return link, title
 
-    def make_meth_link(self, parts):
+    def make_meth_link(self, parts, title):
         meth_name = parts[-1]
         if meth_name.endswith("()"):
             meth_name = meth_name[:-2]
 
-        link = self.make_struct_link(parts[:-1])
+        link, title = self.make_struct_link(parts[:-1], title)
         link += f"#method.{meth_name}"
 
-        return link
+        if not title.endswith(")"):
+            title += "()"
+
+        return link, title
 
 
 def setup(app):

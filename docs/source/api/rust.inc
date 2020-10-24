@@ -1,4 +1,5 @@
 Documentation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The Rust API has not been documented yet.
+The Rust API Reference is available directly on the `Docs.rs <https://docs.rs/tokenizers>`__
+website.

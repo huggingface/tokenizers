@@ -55,6 +55,18 @@ Main features:
         :meth:`~tokenizers.Tokenizer.save`
     Tokenizer.from_file
         :meth:`~tokenizers.Tokenizer.from_file`
+    Tokenizer.encode
+        :meth:`~tokenizers.Tokenizer.encode`
+    Tokenizer.encode_batch
+        :meth:`~tokenizers.Tokenizer.encode_batch`
+    Tokenizer.token_to_id
+        :meth:`~tokenizers.Tokenizer.token_to_id`
+    Tokenizer.enable_padding
+        :meth:`~tokenizers.Tokenizer.enable_padding`
+    Encoding
+        :class:`~tokenizers.Encoding`
+    TemplateProcessing
+        :class:`~tokenizers.processors.TemplateProcessing`
 
 .. entities:: rust
 
@@ -67,8 +79,20 @@ Main features:
     Tokenizer
         :rust:struct:`~tokenizers::tokenizer::Tokenizer`
     Tokenizer.train
-        :rust:meth:`~tokenizers::tokenizer::Tokenizer::train()`
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::train`
     Tokenizer.save
-        :rust:meth:`~tokenizers::tokenizer::Tokenizer::save()`
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::save`
     Tokenizer.from_file
-        :rust:meth:`~tokenizers::tokenizer::Tokenizer::from_file()`
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::from_file`
+    Tokenizer.encode
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::encode`
+    Tokenizer.encode_batch
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::encode_batch`
+    Tokenizer.token_to_id
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::token_to_id`
+    Tokenizer.enable_padding
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::enable_padding`
+    Encoding
+        :rust:struct:`~tokenizers::tokenizer::Encoding`
+    TemplateProcessing
+        :rust:struct:`~tokenizers::processors::template::TemplateProcessing`
