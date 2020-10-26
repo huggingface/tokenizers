@@ -87,8 +87,8 @@ class TestUnigram:
             " is ",
             "a",
             " ",
-            "t",
-            "es",
+            "te",
+            "s",
             "t ",
             "[SEP]",
         ]
