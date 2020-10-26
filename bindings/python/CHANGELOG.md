@@ -4,15 +4,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3]
+
+### Fixed
+- [#470]: Fix hanging error when training with custom component
+- [#476]: TemplateProcessing serialization is now deterministic
+- [#481]: Fix SentencePieceBPETokenizer.from_files
+
+### Added
+- [#477]: UnicodeScripts PreTokenizer to avoid merges between various scripts
+- [#480]: Unigram now accepts an `initial_alphabet` and handles `special_tokens` correctly
+
 ## [0.9.2]
 
 ### Fixed
-- [#464] Fix a problem with RobertaProcessing being deserialized as BertProcessing
+- [#464]: Fix a problem with RobertaProcessing being deserialized as BertProcessing
 
 ## [0.9.1]
 
 ### Fixed
-- [#459] Fix a problem with deserialization
+- [#459]: Fix a problem with deserialization
 
 ## [0.9.0]
 
@@ -248,6 +259,11 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug with the IDs associated with added tokens.
 - Fix a bug that was causing crashes in Python 3.5
 
+[#481]: https://github.com/huggingface/tokenizers/pull/481
+[#480]: https://github.com/huggingface/tokenizers/pull/480
+[#477]: https://github.com/huggingface/tokenizers/pull/477
+[#476]: https://github.com/huggingface/tokenizers/pull/476
+[#470]: https://github.com/huggingface/tokenizers/pull/470
 [#464]: https://github.com/huggingface/tokenizers/pull/464
 [#459]: https://github.com/huggingface/tokenizers/pull/459
 [#420]: https://github.com/huggingface/tokenizers/pull/420
