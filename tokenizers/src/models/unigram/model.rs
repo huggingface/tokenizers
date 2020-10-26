@@ -309,7 +309,10 @@ impl Unigram {
         while ends_at > 0 {
             let node = &best_path_ends_at[ends_at];
             let starts_at = node.starts_at.unwrap();
-            if self.fuse_unk && node.id == self.unk_id.ok_or(UnigramError::MissingUnkId)? {
+            if self.fuse_unk
+                && self.unk_id.is_some()
+                && node.id == self.unk_id.ok_or(UnigramError::MissingUnkId)?
+            {
                 token.push(
                     String::from_utf8(sentence[starts_at..ends_at].as_bytes().to_vec()).unwrap(),
                 );

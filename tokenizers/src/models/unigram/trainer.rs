@@ -98,6 +98,10 @@ impl UnigramTrainer {
 
         let mut pieces: Vec<(String, f64)> = vec![];
         let mut inserted: HashSet<String> = HashSet::new();
+
+        // We don't want to include the <UNK> that was used to train
+        inserted.insert("<UNK>".into());
+
         let existing_pieces: HashMap<String, f64> = model.iter().cloned().collect();
         for c in required_chars {
             if let Some(t) = existing_pieces.get(&c) {
@@ -250,9 +254,9 @@ impl UnigramTrainer {
         // from the vocabulary.
         // To do so, we take the second best segmentation of sentencepiece[i].
         // alternatives[i] stores the sequence of second best sentencepieces.
-        for (id, (token, score)) in pieces.iter().enumerate() {
-            // Always keep those with score == NaN
-            if score.is_nan() {
+        for (id, (token, _score)) in pieces.iter().enumerate() {
+            // Always keep unk.
+            if id == 0 {
                 always_keep[id] = false;
                 continue;
             }
@@ -417,9 +421,9 @@ impl UnigramTrainer {
 
         let mut sum = 0.0;
         let expected_frequency_threshold = 0.5;
-        for (freq, (piece, score)) in expected.iter().zip(pieces) {
-            // Always keep those with score == NaN
-            if score.is_nan() {
+        for (i, (freq, (piece, _score))) in expected.iter().zip(pieces).enumerate() {
+            // Always keep unk.
+            if i == 0 {
                 new_pieces.push((piece.clone(), f64::NAN));
                 continue;
             }
@@ -449,6 +453,8 @@ impl UnigramTrainer {
         let mut pieces: Vec<SentencePiece> =
             Vec::with_capacity(self.vocab_size.try_into().unwrap());
 
+        // We use a UNK token when training, whatever the `self.unk_token`
+        pieces.push(("<UNK>".into(), f64::NAN));
         pieces.extend(self.make_seed_sentence_pieces(&sentences, &progress)?);
         self.finalize_progress(&progress, sentences.len());
 
@@ -472,7 +478,7 @@ impl UnigramTrainer {
         let expected_updates = expected_loops as usize * self.n_sub_iterations as usize;
         self.update_progress(&progress, expected_updates, "EM training");
         let required_chars = self.required_chars(&sentences);
-        let mut model = Unigram::from(pieces.clone(), None)?;
+        let mut model = Unigram::from(pieces.clone(), Some(0))?;
         loop {
             // Sub-EM iteration.
             for _iter in 0..self.n_sub_iterations {
@@ -481,7 +487,7 @@ impl UnigramTrainer {
 
                 // Executes M step.
                 pieces = self.run_m_step(&pieces, &expected);
-                model = Unigram::from(pieces.clone(), None)?;
+                model = Unigram::from(pieces.clone(), Some(0))?;
 
                 // Useful comment for checking compatibility with spm
                 debug!(
@@ -505,7 +511,7 @@ impl UnigramTrainer {
 
             // Prunes pieces.
             pieces = self.prune_sentence_pieces(&model, &pieces, &sentences);
-            model = Unigram::from(pieces.clone(), None)?;
+            model = Unigram::from(pieces.clone(), Some(0))?;
         }
         self.finalize_progress(&progress, expected_updates);
 
