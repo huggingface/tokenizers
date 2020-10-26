@@ -4,7 +4,7 @@ const languages = [ "rust", "python", "node" ];
 // Last stable version for each language
 const stableVersion = {
     "rust": "master",
-    "python": "v0.9.2",
+    "python": "v0.9.3",
     "node": "master"
 }
 // Dictionary doc folder to Label for each language
@@ -14,7 +14,7 @@ const versionMapping = {
     },
     "python": {
         "master": "master",
-        "v0.9.2": "v0.9.2"
+        "v0.9.3": "v0.9.3"
     },
     "node": {
         "master": "master",
