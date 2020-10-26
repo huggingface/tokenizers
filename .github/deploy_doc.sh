@@ -49,4 +49,5 @@ deploy_doc "$GITHUB_SHA" latest node
 deploy_doc "$GITHUB_SHA" v0.9.0 python override
 deploy_doc "$GITHUB_SHA" v0.9.1 python override
 deploy_doc "$GITHUB_SHA" v0.9.2 python override
+deploy_doc "$GITHUB_SHA" v0.9.3 python override
 deploy_doc "$GITHUB_SHA" latest python
