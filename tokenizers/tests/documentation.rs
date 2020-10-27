@@ -63,14 +63,14 @@ fn load_tokenizer() {
 fn quicktour_slow_train() -> tokenizers::Result<()> {
     let (mut tokenizer, trainer) = quicktour_get_tokenizer_trainer()?;
 
-    // START train
+    // START quicktour_train
     let files = ["test", "train", "valid"]
         .iter()
         .map(|split| format!("data/wikitext-103-raw/wiki.{}.raw", split))
         .collect::<Vec<_>>();
     tokenizer.train_and_replace(&trainer, files)?;
-    // END train
-    // START reload_model
+    // END quicktour_train
+    // START quicktour_reload_model
     use std::path::Path;
     use tokenizers::Model;
 
@@ -85,10 +85,10 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
         .unk_token("[UNK]".to_string())
         .build()?,
     );
-    // END reload_model
-    // START save
+    // END quicktour_reload_model
+    // START quicktour_save
     tokenizer.save("data/tokenizer-wiki.json", false)?;
-    // END save
+    // END quicktour_save
 
     Ok(())
 }
@@ -104,7 +104,7 @@ fn quicktour_get_tokenizer_trainer() -> tokenizers::Result<(
     >,
     BpeTrainer,
 )> {
-    // START init_tokenizer
+    // START quicktour_init_tokenizer
     use tokenizers::models::bpe::BPE;
     use tokenizers::TokenizerBuilder;
 
@@ -115,8 +115,8 @@ fn quicktour_get_tokenizer_trainer() -> tokenizers::Result<(
         PostProcessorWrapper,
         DecoderWrapper,
     > = TokenizerImpl::new(BPE::default());
-    // END init_tokenizer
-    // START init_trainer
+    // END quicktour_init_tokenizer
+    // START quicktour_init_trainer
     use tokenizers::models::bpe::BpeTrainer;
 
     let trainer = BpeTrainer::builder()
@@ -128,56 +128,56 @@ fn quicktour_get_tokenizer_trainer() -> tokenizers::Result<(
             AddedToken::from("[MASK]", true),
         ])
         .build();
-    // END init_trainer
-    // START init_pretok
+    // END quicktour_init_trainer
+    // START quicktour_init_pretok
     use tokenizers::pre_tokenizers::whitespace::Whitespace;
 
     tokenizer.with_pre_tokenizer(Whitespace::default());
-    // END init_pretok
+    // END quicktour_init_pretok
 
     Ok((tokenizer, trainer))
 }
 
 #[test]
 fn quicktour() -> tokenizers::Result<()> {
-    // START reload_tokenizer
+    // START quicktour_reload_tokenizer
     let mut tokenizer = Tokenizer::from_file("data/tokenizer-wiki.json")?;
-    // END reload_tokenizer
-    // START encode
+    // END quicktour_reload_tokenizer
+    // START quicktour_encode
     let output = tokenizer.encode("Hello, y'all! How are you 😁 ?", true)?;
-    // END encode
-    // START print_tokens
+    // END quicktour_encode
+    // START quicktour_print_tokens
     println!("{:?}", output.get_tokens());
     // ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?",]
-    // END print_tokens
+    // END quicktour_print_tokens
     assert_eq!(
         output.get_tokens(),
         ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?",]
     );
-    // START print_ids
+    // START quicktour_print_ids
     println!("{:?}", output.get_ids());
     // [27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35]
-    // END print_ids
+    // END quicktour_print_ids
     assert_eq!(
         output.get_ids(),
         [27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35]
     );
-    // START print_offsets
+    // START quicktour_print_offsets
     println!("{:?}", output.get_offsets()[9]);
     // (26, 30)
-    // END print_offsets
+    // END quicktour_print_offsets
     assert_eq!(output.get_offsets()[9], (26, 30));
-    // START use_offsets
+    // START quicktour_use_offsets
     let sentence = "Hello, y'all! How are you 😁 ?";
     println!("{}", &sentence[26..30]);
     // "😁"
-    // END use_offsets
-    // START check_sep
+    // END quicktour_use_offsets
+    // START quicktour_check_sep
     println!("{}", tokenizer.token_to_id("[SEP]").unwrap());
     // 2
-    // END check_sep
+    // END quicktour_check_sep
     assert_eq!(tokenizer.token_to_id("[SEP]"), Some(2));
-    // START init_template_processing
+    // START quicktour_init_template_processing
     use tokenizers::processors::template::TemplateProcessing;
 
     let special_tokens = vec![
@@ -193,21 +193,21 @@ fn quicktour() -> tokenizers::Result<()> {
             .special_tokens(special_tokens)
             .build()?,
     );
-    // END init_template_processing
-    // START print_special_tokens
+    // END quicktour_init_template_processing
+    // START quicktour_print_special_tokens
     let output = tokenizer.encode("Hello, y'all! How are you 😁 ?", true)?;
     println!("{:?}", output.get_tokens());
     // ["[CLS]", "Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?", "[SEP]"]
-    // END print_special_tokens
+    // END quicktour_print_special_tokens
     assert_eq!(
         output.get_tokens(),
         ["[CLS]", "Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?", "[SEP]"]
     );
-    // START print_special_tokens_pair
+    // START quicktour_print_special_tokens_pair
     let output = tokenizer.encode(("Hello, y'all!", "How are you 😁 ?"), true)?;
     println!("{:?}", output.get_tokens());
     // ["[CLS]", "Hello", ",", "y", "'", "all", "!", "[SEP]", "How", "are", "you", "[UNK]", "?", "[SEP]"]
-    // END print_special_tokens_pair
+    // END quicktour_print_special_tokens_pair
     assert_eq!(
         output.get_tokens(),
         [
@@ -215,19 +215,19 @@ fn quicktour() -> tokenizers::Result<()> {
             "?", "[SEP]"
         ]
     );
-    // START print_type_ids
+    // START quicktour_print_type_ids
     println!("{:?}", output.get_type_ids());
     // [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
-    // END print_type_ids
+    // END quicktour_print_type_ids
     assert_eq!(
         output.get_type_ids(),
         [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
     );
-    // START encode_batch
+    // START quicktour_encode_batch
     let output = tokenizer.encode_batch(vec!["Hello, y'all!", "How are you 😁 ?"], true)?;
-    // END encode_batch
+    // END quicktour_encode_batch
     println!("{:?}", output);
-    // START encode_batch_pair
+    // START quicktour_encode_batch_pair
     let output = tokenizer.encode_batch(
         vec![
             ("Hello, y'all!", "How are you 😁 ?"),
@@ -235,9 +235,9 @@ fn quicktour() -> tokenizers::Result<()> {
         ],
         true,
     )?;
-    // END encode_batch_pair
+    // END quicktour_encode_batch_pair
     println!("{:?}", output);
-    // START enable_padding
+    // START quicktour_enable_padding
     use tokenizers::PaddingParams;
 
     tokenizer.with_padding(Some(PaddingParams {
@@ -245,20 +245,20 @@ fn quicktour() -> tokenizers::Result<()> {
         pad_token: "[PAD]".to_string(),
         ..PaddingParams::default()
     }));
-    // END enable_padding
-    // START print_batch_tokens
+    // END quicktour_enable_padding
+    // START quicktour_print_batch_tokens
     let output = tokenizer.encode_batch(vec!["Hello, y'all!", "How are you 😁 ?"], true)?;
     println!("{:?}", output[1].get_tokens());
     // ["[CLS]", "How", "are", "you", "[UNK]", "?", "[SEP]", "[PAD]"]
-    // END print_batch_tokens
+    // END quicktour_print_batch_tokens
     assert_eq!(
         output[1].get_tokens(),
         ["[CLS]", "How", "are", "you", "[UNK]", "?", "[SEP]", "[PAD]"]
     );
-    // START print_attention_mask
+    // START quicktour_print_attention_mask
     println!("{:?}", output[1].get_attention_mask());
     // [1, 1, 1, 1, 1, 1, 1, 0]
-    // END print_attention_mask
+    // END quicktour_print_attention_mask
     assert_eq!(output[1].get_attention_mask(), [1, 1, 1, 1, 1, 1, 1, 0]);
     Ok(())
 }

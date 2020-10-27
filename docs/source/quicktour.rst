@@ -95,8 +95,8 @@ one with a BPE model:
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START init_tokenizer
-        :end-before: END init_tokenizer
+        :start-after: START quicktour_init_tokenizer
+        :end-before: END quicktour_init_tokenizer
         :dedent: 4
 
 To train our tokenizer on the wikitext files, we will need to instantiate a `trainer`, in this case
@@ -114,8 +114,8 @@ a :entity:`BpeTrainer`
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START init_trainer
-        :end-before: END init_trainer
+        :start-after: START quicktour_init_trainer
+        :end-before: END quicktour_init_trainer
         :dedent: 4
 
 We can set the training arguments like :entity:`vocab_size` or :entity:`min_frequency` (here left at
@@ -147,8 +147,8 @@ on whitespace.
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START init_pretok
-        :end-before: END init_pretok
+        :start-after: START quicktour_init_pretok
+        :end-before: END quicktour_init_pretok
         :dedent: 4
 
 Now, we can just call the :entity:`Tokenizer.train` method with any list of files we want
@@ -166,8 +166,8 @@ to use:
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START train
-        :end-before: END train
+        :start-after: START quicktour_train
+        :end-before: END quicktour_train
         :dedent: 4
 
 This should only take a few seconds to train our tokenizer on the full wikitext dataset! Once this
@@ -187,8 +187,8 @@ first instantiating the model.
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START reload_model
-        :end-before: END reload_model
+        :start-after: START quicktour_reload_model
+        :end-before: END quicktour_reload_model
         :dedent: 4
 
 To save the tokenizer in one file that contains all its configuration and vocabulary, just use the
@@ -206,8 +206,8 @@ To save the tokenizer in one file that contains all its configuration and vocabu
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START save
-        :end-before: END save
+        :start-after: START quicktour_save
+        :end-before: END quicktour_save
         :dedent: 4
 
 and you can reload your tokenizer from that file with the :entity:`Tokenizer.from_file`
@@ -225,8 +225,8 @@ and you can reload your tokenizer from that file with the :entity:`Tokenizer.fro
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START reload_tokenizer
-        :end-before: END reload_tokenizer
+        :start-after: START quicktour_reload_tokenizer
+        :end-before: END quicktour_reload_tokenizer
         :dedent: 4
 
 Using the tokenizer
@@ -247,8 +247,8 @@ Now that we have trained a tokenizer, we can use it on any text we want with the
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START encode
-        :end-before: END encode
+        :start-after: START quicktour_encode
+        :end-before: END quicktour_encode
         :dedent: 4
 
 This applied the full pipeline of the tokenizer on the text, returning an
@@ -271,8 +271,8 @@ tokens:
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START print_tokens
-        :end-before: END print_tokens
+        :start-after: START quicktour_print_tokens
+        :end-before: END quicktour_print_tokens
         :dedent: 4
 
 Similarly, the :obj:`ids` attribute will contain the index of each of those tokens in the
@@ -290,8 +290,8 @@ tokenizer's vocabulary:
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START print_ids
-        :end-before: END print_ids
+        :start-after: START quicktour_print_ids
+        :end-before: END quicktour_print_ids
         :dedent: 4
 
 An important feature of the 🤗 Tokenizers library is that it comes with full alignment tracking,
@@ -312,8 +312,8 @@ which is the token at index 9 in the list, we can just ask for the offset at the
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START print_offsets
-        :end-before: END print_offsets
+        :start-after: START quicktour_print_offsets
+        :end-before: END quicktour_print_offsets
         :dedent: 4
 
 and those are the indices that correspond to the emoji in the original sentence:
@@ -330,8 +330,8 @@ and those are the indices that correspond to the emoji in the original sentence:
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START use_offsets
-        :end-before: END use_offsets
+        :start-after: START quicktour_use_offsets
+        :end-before: END quicktour_use_offsets
         :dedent: 4
 
 Post-processing
@@ -358,8 +358,8 @@ list of special tokens, so this should be their IDs. To double-check, we can use
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START check_sep
-        :end-before: END check_sep
+        :start-after: START quicktour_check_sep
+        :end-before: END quicktour_check_sep
         :dedent: 4
 
 Here is how we can set the post-processing to give us the traditional BERT inputs:
@@ -376,8 +376,8 @@ Here is how we can set the post-processing to give us the traditional BERT input
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START init_template_processing
-        :end-before: END init_template_processing
+        :start-after: START quicktour_init_template_processing
+        :end-before: END quicktour_init_template_processing
         :dedent: 4
 
 Let's go over this snippet of code in more details. First we specify the template for single
@@ -406,8 +406,8 @@ To check out this worked properly, let's try to encode the same sentence as befo
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START print_special_tokens
-        :end-before: END print_special_tokens
+        :start-after: START quicktour_print_special_tokens
+        :end-before: END quicktour_print_special_tokens
         :dedent: 4
 
 To check the results on a pair of sentences, we just pass the two sentences to
@@ -425,8 +425,8 @@ To check the results on a pair of sentences, we just pass the two sentences to
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START print_special_tokens_pair
-        :end-before: END print_special_tokens_pair
+        :start-after: START quicktour_print_special_tokens_pair
+        :end-before: END quicktour_print_special_tokens_pair
         :dedent: 4
 
 You can then check the type IDs attributed to each token is correct with
@@ -443,8 +443,8 @@ You can then check the type IDs attributed to each token is correct with
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START print_type_ids
-        :end-before: END print_type_ids
+        :start-after: START quicktour_print_type_ids
+        :end-before: END quicktour_print_type_ids
         :dedent: 4
 
 If you save your tokenizer with :entity:`Tokenizer.save`, the post-processor will be saved along.
@@ -467,8 +467,8 @@ using the :entity:`Tokenizer.encode_batch` method:
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START encode_batch
-        :end-before: END encode_batch
+        :start-after: START quicktour_encode_batch
+        :end-before: END quicktour_encode_batch
         :dedent: 4
 
 The output is then a list of :entity:`Encoding` objects like the ones we saw before. You
@@ -490,8 +490,8 @@ B:
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START encode_batch_pair
-        :end-before: END encode_batch_pair
+        :start-after: START quicktour_encode_batch_pair
+        :end-before: END quicktour_encode_batch_pair
         :dedent: 4
 
 When encoding multiple sentences, you can automatically pad the outputs to the longest sentence
@@ -511,8 +511,8 @@ present by using :entity:`Tokenizer.enable_padding`, with the :entity:`pad_token
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START enable_padding
-        :end-before: END enable_padding
+        :start-after: START quicktour_enable_padding
+        :end-before: END quicktour_enable_padding
         :dedent: 4
 
 We can set the :obj:`direction` of the padding (defaults to the right) or a given :obj:`length` if
@@ -531,8 +531,8 @@ the longest text).
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START print_batch_tokens
-        :end-before: END print_batch_tokens
+        :start-after: START quicktour_print_batch_tokens
+        :end-before: END quicktour_print_batch_tokens
         :dedent: 4
 
 In this case, the `attention mask` generated by the tokenizer takes the padding into account:
@@ -549,8 +549,8 @@ In this case, the `attention mask` generated by the tokenizer takes the padding 
 
     .. literalinclude:: ../../tokenizers/tests/documentation.rs
         :language: rust
-        :start-after: START print_attention_mask
-        :end-before: END print_attention_mask
+        :start-after: START quicktour_print_attention_mask
+        :end-before: END quicktour_print_attention_mask
         :dedent: 4
 
 .. _pretrained:
