@@ -1,8 +1,8 @@
 The tokenization pipeline
 ====================================================================================================
 
-When calling :meth:`~tokenizers.Tokenizer.encode` or :meth:`~tokenizers.Tokenizer.encode_batch`, the
-input text(s) go through the following pipeline:
+When calling :entity:`Tokenizer.encode` or :entity:`Tokenizer.encode_batch`, the input text(s) go
+through the following pipeline:
 
 - :ref:`normalization`
 - :ref:`pre-tokenization`
@@ -14,14 +14,32 @@ We'll see in details what happens during each of those steps in detail, as well 
 each of those steps to your needs. If you're already familiar with those steps and want to learn by
 seeing some code, jump to :ref:`our BERT from scratch example <example>`.
 
-For the examples that require a :class:`~tokenizers.Tokenizer`, we will use the tokenizer we trained
+For the examples that require a :entity:`Tokenizer`, we will use the tokenizer we trained
 in the :doc:`quicktour`, which you can load with:
 
-.. code-block:: python
+.. only:: python
 
-    from tokenizers import Tokenizer
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START reload_tokenizer
+        :end-before: END reload_tokenizer
+        :dedent: 8
 
-    tokenizer = Tokenizer.from_file("pretrained/wiki.json")
+.. only:: rust
+
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START pipeline_reload_tokenizer
+        :end-before: END pipeline_reload_tokenizer
+        :dedent: 4
+
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START reload_tokenizer
+        :end-before: END reload_tokenizer
+        :dedent: 8
 
 
 .. _normalization:
@@ -36,31 +54,88 @@ or lowercasing all text. If you're familiar with `Unicode normalization
 in most tokenizers.
 
 Each normalization operation is represented in the 🤗 Tokenizers library by a
-:class:`~tokenizers.normalizers.Normalizer`, and you can combine several of those by using a
-:class:`~tokenizers.normalizers.Sequence`. Here is a normalizer applying NFD Unicode normalization
+:entity:`Normalizer`, and you can combine several of those by using a
+:entity:`normalizers.Sequence`. Here is a normalizer applying NFD Unicode normalization
 and removing accents as an example:
 
-.. code-block:: python
+.. only:: python
 
-    import tokenizers
-    from tokenizers.normalizers import NFD, StripAccents
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START setup_normalizer
+        :end-before: END setup_normalizer
+        :dedent: 8
 
-    normalizer = tokenizers.normalizers.Sequence([NFD(), StripAccents()])
+.. only:: rust
 
-You can apply that normalizer to any string with the
-:meth:`~tokenizers.normalizers.Normalizer.normalize_str` method:
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START pipeline_setup_normalizer
+        :end-before: END pipeline_setup_normalizer
+        :dedent: 4
 
-.. code-block:: python
+.. only:: node
 
-    normalizer.normalize_str("Héllò hôw are ü?")
-    # "Hello how are u?"
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START setup_normalizer
+        :end-before: END setup_normalizer
+        :dedent: 8
 
-When building a :class:`~tokenizers.Tokenizer`, you can customize its normalizer by just changing
+
+You can manually test that normalizer by applying it to any string:
+
+.. only:: python
+
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START test_normalizer
+        :end-before: END test_normalizer
+        :dedent: 8
+
+.. only:: rust
+
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START pipeline_test_normalizer
+        :end-before: END pipeline_test_normalizer
+        :dedent: 4
+
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START test_normalizer
+        :end-before: END test_normalizer
+        :dedent: 8
+
+
+When building a :entity:`Tokenizer`, you can customize its normalizer by just changing
 the corresponding attribute:
 
-.. code-block:: python
+.. only:: python
 
-    tokenizer.normalizer = normalizer
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START replace_normalizer
+        :end-before: END replace_normalizer
+        :dedent: 8
+
+.. only:: rust
+
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START pipeline_replace_normalizer
+        :end-before: END pipeline_replace_normalizer
+        :dedent: 4
+
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START replace_normalizer
+        :end-before: END replace_normalizer
+        :dedent: 8
 
 Of course, if you change the way a tokenizer applies normalization, you should probably retrain it
 from scratch afterward.

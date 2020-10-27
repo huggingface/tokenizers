@@ -26,6 +26,8 @@ class RustRef:
             l, title = self.make_func_link(parts, title)
         if doctype == "meth":
             l, title = self.make_meth_link(parts, title)
+        if doctype == "trait":
+            l, title = self.make_trait_link(parts, title)
         link += l
 
         node = nodes.reference(internal=False, refuri=link, text=title)
@@ -72,11 +74,23 @@ class RustRef:
 
         return link, title
 
+    def make_trait_link(self, parts, title):
+        link = ""
+        trait_name = parts[-1]
+
+        path = parts[:-1]
+        for p in path:
+            link += f"/{p}"
+        link += f"/trait.{trait_name}.html"
+
+        return link, title
+
 
 def setup(app):
     app.add_role("rust:struct", RustRef())
     app.add_role("rust:func", RustRef())
     app.add_role("rust:meth", RustRef())
+    app.add_role("rust:trait", RustRef())
 
     return {
         "version": "0.1",
