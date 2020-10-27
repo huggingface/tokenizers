@@ -262,3 +262,34 @@ fn quicktour() -> tokenizers::Result<()> {
     assert_eq!(output[1].get_attention_mask(), [1, 1, 1, 1, 1, 1, 1, 0]);
     Ok(())
 }
+
+#[test]
+fn pipeline() -> tokenizers::Result<()> {
+    // START pipeline_reload_tokenizer
+    use tokenizers::Tokenizer;
+
+    let mut tokenizer = Tokenizer::from_file("data/tokenizer-wiki.json")?;
+    // END pipeline_reload_tokenizer
+    // START pipeline_setup_normalizer
+    use tokenizers::normalizers::{
+        strip::StripAccents, unicode::NFD, utils::Sequence as NormalizerSequence,
+    };
+
+    let normalizer = NormalizerSequence::new(vec![NFD.into(), StripAccents.into()]);
+    // END pipeline_setup_normalizer
+    // START pipeline_test_normalizer
+    use tokenizers::{NormalizedString, Normalizer};
+
+    let mut normalized = NormalizedString::from("Héllò hôw are ü?");
+    normalizer.normalize(&mut normalized)?;
+
+    println!("{}", normalized.get());
+    // "Hello how are u?"
+    // END pipeline_test_normalizer
+    assert_eq!(normalized.get(), "Hello how are u?");
+    // START pipeline_replace_normalizer
+    tokenizer.with_normalizer(normalizer);
+    // END pipeline_replace_normalizer
+
+    Ok(())
+}
