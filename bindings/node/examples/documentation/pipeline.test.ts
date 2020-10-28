@@ -7,7 +7,7 @@ describe("pipelineExample", () => {
         return globRequire("../../lib/" + path);
     }
 
-    it("", async () => {
+    it("shows pipeline parts", async () => {
         // START reload_tokenizer
         let { Tokenizer } = require("tokenizers/bindings/tokenizer");
 
@@ -57,5 +57,64 @@ describe("pipelineExample", () => {
         // START replace_pre_tokenizer
         tokenizer.setPreTokenizer(preTokenizer)
         // END replace_pre_tokenizer
+        // START setup_processor
+        let { templateProcessing } = require("tokenizers/bindings/processors");
+
+        tokenizer.setPostProcessor(templateProcessing(
+            "[CLS] $A [SEP]",
+            "[CLS] $A [SEP] $B:1 [SEP]:1",
+            [["[CLS]", 1], ["[SEP]", 2]]
+        ));
+        // END setup_processor
+    });
+
+    it("shows a full bert example", async () => {
+        // START bert_setup_tokenizer
+        let { Tokenizer } = require("tokenizers/bindings/tokenizer");
+        let { WordPiece } = require("tokenizers/bindings/models");
+
+        let bert_tokenizer = Tokenizer(WordPiece.empty());
+        // END bert_setup_tokenizer
+        // START bert_setup_normalizer
+        let { sequenceNormalizer, lowercaseNormalizer, nfdNormalizer, stripAccentsNormalizer }
+            = require("tokenizers/bindings/normalizers");
+
+        bert_tokenizer.setNormalizer(sequenceNormalizer([
+            nfdNormalizer(), lowercaseNormalizer(), stripAccentsNormalizer()
+        ]))
+        // END bert_setup_normalizer
+        // START bert_setup_pre_tokenizer
+        let { whitespacePreTokenizer } = require("tokenizers/bindings/pre_tokenizers");
+
+        bert_tokenizer.setPreTokenizer = whitespacePreTokenizer();
+        // END bert_setup_pre_tokenizer
+        // START bert_setup_processor
+        let { templateProcessing } = require("tokenizers/bindings/processors");
+
+        bert_tokenizer.setPostProcessor(templateProcessing(
+            "[CLS] $A [SEP]",
+            "[CLS] $A [SEP] $B:1 [SEP]:1",
+            [["[CLS]", 1], ["[SEP]", 2]]
+        ));
+        // END bert_setup_processor
+        // START bert_train_tokenizer
+        let { wordPieceTrainer } = require("tokenizers/bindings/trainers");
+        let { promisify } = require("utils");
+
+        let trainer = wordPieceTrainer({
+            vocabSize: 30522,
+            specialTokens: ["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"]
+        });
+        let files = ["test", "train", "valid"].map(split => `data/wikitext-103-raw/wiki.${split}.raw`);
+        bert_tokenizer.train(trainer, files);
+
+        let model_files = bert_tokenizer.getModel.save("data", "bert-wiki");
+        let fromFile = promisify(WordPiece.fromFile);
+        bert_tokenizer.setModel(await fromFile(model_files[0], {
+            unkToken: "[UNK]"
+        }));
+
+        bert_tokenizer.save("data/bert-wiki.json")
+        // END bert_train_tokenizer
     });
 });

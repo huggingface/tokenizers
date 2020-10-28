@@ -73,3 +73,59 @@ class TestPipeline:
         # START replace_pre_tokenizer
         tokenizer.pre_tokenizer = pre_tokenizer
         # END replace_pre_tokenizer
+        # START setup_processor
+        from tokenizers.processors import TemplateProcessing
+
+        tokenizer.post_processor = TemplateProcessing
+            single="[CLS] $A [SEP]",
+            pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+            special_tokens=[("[CLS]", 1), ("[SEP]", 2)],
+        )
+        # END setup_processor
+
+    def test_bert_example(self):
+        # START bert_setup_tokenizer
+        from tokenizers import Tokenizer
+        from tokenizers.models import WordPiece
+
+        bert_tokenizer = Tokenizer(WordPiece())
+        # END bert_setup_tokenizer
+        # START bert_setup_normalizer
+        from tokenizers import normalizers
+        from tokenizers.normalizers import Lowercase, NFD, StripAccents
+
+        bert_tokenizer.normalizer = normalizers.Sequence([
+            NFD(), Lowercase(), StripAccents()
+        ])
+        # END bert_setup_normalizer
+        # START bert_setup_pre_tokenizer
+        from tokenizers.pre_tokenizers import Whitespace
+
+        bert_tokenizer.pre_tokenizer = Whitespace()
+        # END bert_setup_pre_tokenizer
+        # START bert_setup_processor
+        from tokenizers.processors import TemplateProcessing
+
+        bert_tokenizer.post_processor = TemplateProcessing(
+            single="[CLS] $A [SEP]",
+            pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+            special_tokens=[
+                ("[CLS]", 1),
+                ("[SEP]", 2),
+            ]
+        )
+        # END bert_setup_processor
+        # START bert_train_tokenizer
+        from tokenizers.trainers import WordPieceTrainer
+
+        trainer = WordPieceTrainer(
+            vocab_size=30522, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"]
+        )
+        files = [f"data/wikitext-103-raw/wiki.{split}.raw" for split in ["test", "train", "valid"]]
+        bert_tokenizer.train(trainer, files)
+
+        model_files = bert_tokenizer.model.save("data", "bert-wiki")
+        bert_tokenizer.model = WordPiece(*model_files, unk_token="[UNK]")
+
+        bert_tokenizer.save("data/bert-wiki.json")
+        # END bert_train_tokenizer
