@@ -9,14 +9,14 @@ describe("pipelineExample", () => {
 
     it("", async () => {
         // START reload_tokenizer
-        const { Tokenizer } = require("tokenizers/bindings/tokenizer");
+        let { Tokenizer } = require("tokenizers/bindings/tokenizer");
 
-        const tokenizer = Tokenizer.fromFile("data/tokenizer-wiki.json");
+        let tokenizer = Tokenizer.fromFile("data/tokenizer-wiki.json");
         // END reload_tokenizer
         // START setup_normalizer
-        const { sequenceNormalizer, nfdNormalizer, stripAccentsNormalizer } = require("tokenizers/bindings/normalizers");
+        let { sequenceNormalizer, nfdNormalizer, stripAccentsNormalizer } = require("tokenizers/bindings/normalizers");
 
-        const normalizer = sequenceNormalizer([nfdNormalizer(), stripAccentsNormalizer()]);
+        let normalizer = sequenceNormalizer([nfdNormalizer(), stripAccentsNormalizer()]);
         // END setup_normalizer
         // START test_normalizer
         let normalized = normalizer.normalizeStr("Héllò hôw are ü?")
@@ -26,5 +26,36 @@ describe("pipelineExample", () => {
         // START replace_normalizer
         tokenizer.setNormalizer(normalizer)
         // END replace_normalizer
+        // START setup_pre_tokenizer
+        let { whitespacePreTokenizer } = require("tokenizers/bindings/pre_tokenizers");
+
+        var preTokenizer = whitespacePreTokenizer();
+        var preTokenized = preTokenizer.preTokenizeStr("Hello! How are you? I'm fine, thank you.");
+        // END setup_pre_tokenizer
+        expect(preTokenized).toEqual([
+            ["Hello", [0, 5]],
+            ["!", [5, 6]],
+            ["How", [7, 10]],
+            ["are", [11, 14]],
+            ["you", [15, 18]],
+            ["?", [18, 19]],
+            ["I", [20, 21]],
+            ["'", [21, 22]],
+            ['m', [22, 23]],
+            ["fine", [24, 28]],
+            [",", [28, 29]],
+            ["thank", [30, 35]],
+            ["you", [36, 39]],
+            [".", [39, 40]]
+        ]);
+        // START combine_pre_tokenizer
+        let { sequencePreTokenizer, digitsPreTokenizer } = require("tokenizers/bindings/pre_tokenizers");
+
+        var preTokenizer = sequencePreTokenizer([whitespacePreTokenizer(), digitsPreTokenizer(true)]);
+        var preTokenized = preTokenizer.preTokenizeStr("Call 911!");
+        // END combine_pre_tokenizer
+        // START replace_pre_tokenizer
+        tokenizer.setPreTokenizer(preTokenizer)
+        // END replace_pre_tokenizer
     });
 });

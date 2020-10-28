@@ -152,43 +152,90 @@ pre-tokenizer will split your text into "words" and then, your final tokens will
 words.
 
 An easy way to pre-tokenize inputs is to split on spaces and punctuations, which is done by the
-:class:`~tokenizers.pre_tokenizers.Whitespace` pre-tokenizer:
+:entity:`pre_tokenizers.Whitespace` pre-tokenizer:
 
-.. code-block:: python
+.. only:: python
 
-    from tokenizers.pre_tokenizers import Whitespace
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START setup_pre_tokenizer
+        :end-before: END setup_pre_tokenizer
+        :dedent: 8
 
-    pre_tokenizer = Whitespace()
-    pre_tokenizer.pre_tokenize_str("Hello! How are you? I'm fine, thank you.")
-    # [("Hello", (0, 5)), ("!", (5, 6)), ("How", (7, 10)), ("are", (11, 14)), ("you", (15, 18)),
-    #  ("?", (18, 19)), ("I", (20, 21)), ("'", (21, 22)), ('m', (22, 23)), ("fine", (24, 28)),
-    #  (",", (28, 29)), ("thank", (30, 35)), ("you", (36, 39)), (".", (39, 40))]
+.. only:: rust
+
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START pipeline_setup_pre_tokenizer
+        :end-before: END pipeline_setup_pre_tokenizer
+        :dedent: 4
+
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START setup_pre_tokenizer
+        :end-before: END setup_pre_tokenizer
+        :dedent: 8
 
 The output is a list of tuples, with each tuple containing one word and its span in the original
-sentence (which is used to determine the final :obj:`offsets` of our :class:`~tokenizers.Encoding`).
+sentence (which is used to determine the final :obj:`offsets` of our :entity:`Encoding`).
 Note that splitting on punctuation will split contractions like :obj:`"I'm"` in this example.
 
-You can combine together any :class:`~tokenizers.pre_tokenizers.PreTokenizer` together. For
+You can combine together any :entity:`PreTokenizer` together. For
 instance, here is a pre-tokenizer that will split on space, punctuation and digits, separating
 numbers in their individual digits:
 
-.. code-block:: python
+.. only:: python
 
-    from tokenizers.pre_tokenizers import Digits
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START combine_pre_tokenizer
+        :end-before: END combine_pre_tokenizer
+        :dedent: 8
 
-    pre_tokenizer = tokenizers.pre_tokenizers.Sequence([
-        Whitespace(),
-        Digits(individual_digits=True),
-    ])
-    pre_tokenizer.pre_tokenize_str("Call 911!")
-    # [("Call", (0, 4)), ("9", (5, 6)), ("1", (6, 7)), ("1", (7, 8)), ("!", (8, 9))]
+.. only:: rust
+
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START pipeline_combine_pre_tokenizer
+        :end-before: END pipeline_combine_pre_tokenizer
+        :dedent: 4
+
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START combine_pre_tokenizer
+        :end-before: END combine_pre_tokenizer
+        :dedent: 8
 
 As we saw in the :doc:`quicktour`, you can customize the pre-tokenizer of a
-:class:`~tokenizers.Tokenizer` by just changing the corresponding attribute:
+:entity:`Tokenizer` by just changing the corresponding attribute:
 
-.. code-block:: python
+.. only:: python
 
-    tokenizer.pre_tokenizer = pre_tokenizer
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START replace_pre_tokenizer
+        :end-before: END replace_pre_tokenizer
+        :dedent: 8
+
+.. only:: rust
+
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START pipeline_replace_pre_tokenizer
+        :end-before: END pipeline_replace_pre_tokenizer
+        :dedent: 4
+
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START replace_pre_tokenizer
+        :end-before: END replace_pre_tokenizer
+        :dedent: 8
 
 Of course, if you change the way the pre-tokenizer, you should probably retrain your tokenizer from
 scratch afterward.
