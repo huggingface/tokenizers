@@ -18,6 +18,10 @@
         :meth:`~tokenizers.Tokenizer.encode`
     Tokenizer.encode_batch
         :meth:`~tokenizers.Tokenizer.encode_batch`
+    Tokenizer.decode
+        :meth:`~tokenizers.Tokenizer.decode`
+    Tokenizer.decode_batch
+        :meth:`~tokenizers.Tokenizer.decode_batch`
     Tokenizer.token_to_id
         :meth:`~tokenizers.Tokenizer.token_to_id`
     Tokenizer.enable_padding
@@ -42,6 +46,8 @@
         :class:`~tokenizers.models.WordLevel`
     models.WordPiece
         :class:`~tokenizers.models.WordPiece`
+    Decoder
+        :class:`~tokenizers.decoders.Decoder`
 
 .. entities:: rust
 
@@ -63,6 +69,10 @@
         :rust:meth:`~tokenizers::tokenizer::Tokenizer::encode`
     Tokenizer.encode_batch
         :rust:meth:`~tokenizers::tokenizer::Tokenizer::encode_batch`
+    Tokenizer.decode
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::decode`
+    Tokenizer.decode_batch
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::decode_batch`
     Tokenizer.token_to_id
         :rust:meth:`~tokenizers::tokenizer::Tokenizer::token_to_id`
     Tokenizer.enable_padding
@@ -87,6 +97,8 @@
         :rust:struct:`~tokenizers::models::wordlevel::WordLevel`
     models.WordPiece
         :rust:struct:`~tokenizers::models::wordpiece::WordPiece`
+    Decoder
+        :rust:trait:`~tokenizers::tokenizer::Decoder`
 
 .. entities:: node
 
@@ -108,6 +120,10 @@
         :obj:`Tokenizer.encode()`
     Tokenizer.encode_batch
         :obj:`Tokenizer.encodeBatch()`
+    Tokenizer.decode
+        :obj:`Tokenizer.decode()`
+    Tokenizer.decode_batch
+        :obj:`Tokenizer.decodeBatch()`
     Tokenizer.token_to_id
         :obj:`Tokenizer.tokenToId()`
     Tokenizer.enable_padding
@@ -132,3 +148,5 @@
         :obj:`WordLevel`
     models.WordPiece
         :obj:`WordPiece`
+    Decoder
+        :obj:`Decoder`
