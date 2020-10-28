@@ -290,6 +290,70 @@ fn pipeline() -> tokenizers::Result<()> {
     // START pipeline_replace_normalizer
     tokenizer.with_normalizer(normalizer);
     // END pipeline_replace_normalizer
+    // START pipeline_setup_pre_tokenizer
+    use tokenizers::pre_tokenizers::whitespace::Whitespace;
+    use tokenizers::{OffsetReferential, OffsetType, PreTokenizedString, PreTokenizer};
+
+    let pre_tokenizer = Whitespace::default();
+    let mut pre_tokenized = PreTokenizedString::from("Hello! How are you? I'm fine, thank you.");
+
+    pre_tokenizer.pre_tokenize(&mut pre_tokenized)?;
+
+    println!(
+        "{:?}",
+        pre_tokenized.get_splits(OffsetReferential::Original, OffsetType::Byte)
+    );
+    // [("Hello", (0, 5), None), ("!", (5, 6), None), ("How", (7, 10), None),
+    //  ("are", (11, 14), None), ("you", (15, 18), None), ("?", (18, 19), None),
+    //  ("I", (20, 21), None), ("\'", (21, 22), None), ("m", (22, 23), None),
+    //  ("fine", (24, 28), None), (",", (28, 29), None), ("thank", (30, 35), None),
+    //  ("you", (36, 39), None), (".", (39, 40), None)]
+    // END pipeline_setup_pre_tokenizer
+    assert_eq!(
+        pre_tokenized.get_splits(OffsetReferential::Original, OffsetType::Byte),
+        vec![
+            ("Hello", (0, 5), &None),
+            ("!", (5, 6), &None),
+            ("How", (7, 10), &None),
+            ("are", (11, 14), &None),
+            ("you", (15, 18), &None),
+            ("?", (18, 19), &None),
+            ("I", (20, 21), &None),
+            ("\'", (21, 22), &None),
+            ("m", (22, 23), &None),
+            ("fine", (24, 28), &None),
+            (",", (28, 29), &None),
+            ("thank", (30, 35), &None),
+            ("you", (36, 39), &None),
+            (".", (39, 40), &None)
+        ]
+    );
+    // START pipeline_combine_pre_tokenizer
+    use tokenizers::pre_tokenizers::{digits::Digits, sequence::Sequence};
+
+    let pre_tokenizer = Sequence::new(vec![Whitespace::default().into(), Digits::new(true).into()]);
+    let mut pre_tokenized = PreTokenizedString::from("Call 911!");
+
+    pre_tokenizer.pre_tokenize(&mut pre_tokenized)?;
+
+    println!(
+        "{:?}",
+        pre_tokenized.get_splits(OffsetReferential::Original, OffsetType::Byte)
+    );
+    // END pipeline_combine_pre_tokenizer
+    assert_eq!(
+        pre_tokenized.get_splits(OffsetReferential::Original, OffsetType::Byte),
+        vec![
+            ("Call", (0, 4), &None),
+            ("9", (5, 6), &None),
+            ("1", (6, 7), &None),
+            ("1", (7, 8), &None),
+            ("!", (8, 9), &None)
+        ]
+    );
+    // START pipeline_replace_pre_tokenizer
+    tokenizer.with_pre_tokenizer(pre_tokenizer);
+    // END pipeline_replace_pre_tokenizer
 
     Ok(())
 }

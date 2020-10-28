@@ -30,6 +30,10 @@
         :class:`~tokenizers.normalizers.Normalizer`
     normalizers.Sequence
         :class:`~tokenizers.normalizers.Sequence`
+    pre_tokenizers.Whitespace
+        :class:`~tokenizers.pre_tokenizers.Whitespace`
+    PreTokenizer
+        :class:`~tokenizers.pre_tokenizers.PreTokenizer`
 
 .. entities:: rust
 
@@ -63,6 +67,10 @@
         :rust:trait:`~tokenizers::tokenizer::Normalizer`
     normalizers.Sequence
         :rust:struct:`~tokenizers::normalizers::utils::Sequence`
+    pre_tokenizers.Whitespace
+        :rust:struct:`~tokenizers::normalizers::whitespace::Whitespace`
+    PreTokenizer
+        :rust:trait:`~tokenizers::tokenizer::PreTokenizer`
 
 .. entities:: node
 
@@ -96,3 +104,7 @@
         :obj:`Normalizer`
     normalizers.Sequence
         :obj:`Sequence`
+    pre_tokenizers.Whitespace
+        :obj:`Whitespace`
+    PreTokenizer
+        :obj:`PreTokenizer`
