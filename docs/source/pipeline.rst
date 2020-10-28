@@ -246,20 +246,20 @@ scratch afterward.
 The Model
 ----------------------------------------------------------------------------------------------------
 
-Once the input texts are normalized and pre-tokenized, we can apply the model on the pre-tokens.
-This is the part of the pipeline that needs training on your corpus (or that has been trained if you
-are using a pretrained tokenizer).
+Once the input texts are normalized and pre-tokenized, the :entity:`Tokenizer` applies the model on
+the pre-tokens.  This is the part of the pipeline that needs training on your corpus (or that has
+been trained if you are using a pretrained tokenizer).
 
 The role of the model is to split your "words" into tokens, using the rules it has learned. It's
 also responsible for mapping those tokens to their corresponding IDs in the vocabulary of the model.
 
-This model is passed along when intializing the :class:`~tokenizers.Tokenizer` so you already know
+This model is passed along when intializing the :entity:`Tokenizer` so you already know
 how to customize this part. Currently, the 🤗 Tokenizers library supports:
 
-- :class:`~tokenizers.models.BPE`
-- :class:`~tokenizers.models.Unigram`
-- :class:`~tokenizers.models.WordLevel`
-- :class:`~tokenizers.models.WordPiece`
+- :entity:`models.BPE`
+- :entity:`models.Unigram`
+- :entity:`models.WordLevel`
+- :entity:`models.WordPiece`
 
 For more details about each model and its behavior, you can check `here <components.html#models>`__
 

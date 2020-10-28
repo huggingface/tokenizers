@@ -34,6 +34,14 @@
         :class:`~tokenizers.pre_tokenizers.Whitespace`
     PreTokenizer
         :class:`~tokenizers.pre_tokenizers.PreTokenizer`
+    models.BPE
+        :class:`~tokenizers.models.BPE`
+    models.Unigram
+        :class:`~tokenizers.models.Unigram`
+    models.WordLevel
+        :class:`~tokenizers.models.WordLevel`
+    models.WordPiece
+        :class:`~tokenizers.models.WordPiece`
 
 .. entities:: rust
 
@@ -71,6 +79,14 @@
         :rust:struct:`~tokenizers::normalizers::whitespace::Whitespace`
     PreTokenizer
         :rust:trait:`~tokenizers::tokenizer::PreTokenizer`
+    models.BPE
+        :rust:struct:`~tokenizers::models::bpe::BPE`
+    models.Unigram
+        :rust:struct:`~tokenizers::models::unigram::Unigram`
+    models.WordLevel
+        :rust:struct:`~tokenizers::models::wordlevel::WordLevel`
+    models.WordPiece
+        :rust:struct:`~tokenizers::models::wordpiece::WordPiece`
 
 .. entities:: node
 
@@ -108,3 +124,11 @@
         :obj:`Whitespace`
     PreTokenizer
         :obj:`PreTokenizer`
+    models.BPE
+        :obj:`BPE`
+    models.Unigram
+        :obj:`Unigram`
+    models.WordLevel
+        :obj:`WordLevel`
+    models.WordPiece
+        :obj:`WordPiece`
