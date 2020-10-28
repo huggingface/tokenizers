@@ -76,14 +76,27 @@ class TestPipeline:
         # START setup_processor
         from tokenizers.processors import TemplateProcessing
 
-        tokenizer.post_processor = TemplateProcessing
+        tokenizer.post_processor = TemplateProcessing(
             single="[CLS] $A [SEP]",
             pair="[CLS] $A [SEP] $B:1 [SEP]:1",
             special_tokens=[("[CLS]", 1), ("[SEP]", 2)],
         )
         # END setup_processor
+        # START test_decoding
+        output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+        print(output.ids)
+        # [1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2]
 
-    def test_bert_example(self):
+        tokenizer.decode([1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2])
+        # "Hello , y ' all ! How are you ?"
+        # END test_decoding
+        assert output.ids == [1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2]
+        assert (
+            tokenizer.decode([1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2])
+            == "Hello , y ' all ! How are you ?"
+        )
+
+    def bert_example(self):
         # START bert_setup_tokenizer
         from tokenizers import Tokenizer
         from tokenizers.models import WordPiece
@@ -94,9 +107,7 @@ class TestPipeline:
         from tokenizers import normalizers
         from tokenizers.normalizers import Lowercase, NFD, StripAccents
 
-        bert_tokenizer.normalizer = normalizers.Sequence([
-            NFD(), Lowercase(), StripAccents()
-        ])
+        bert_tokenizer.normalizer = normalizers.Sequence([NFD(), Lowercase(), StripAccents()])
         # END bert_setup_normalizer
         # START bert_setup_pre_tokenizer
         from tokenizers.pre_tokenizers import Whitespace
@@ -112,7 +123,7 @@ class TestPipeline:
             special_tokens=[
                 ("[CLS]", 1),
                 ("[SEP]", 2),
-            ]
+            ],
         )
         # END bert_setup_processor
         # START bert_train_tokenizer
@@ -129,3 +140,16 @@ class TestPipeline:
 
         bert_tokenizer.save("data/bert-wiki.json")
         # END bert_train_tokenizer
+        # START bert_test_decoding
+        output = bert_tokenizer.encode("Welcome to the 🤗 Tokenizers library.")
+        print(output.tokens)
+        # ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
+
+        bert_tokenizer.decoder(output.ids)
+        # "welcome to the tok ##eni ##zer ##s library ."
+        # END bert_test_decoding
+        # START bert_proper_decoding
+        bert_tokenizer.decoder = tokenizers.decoders.WordPiece()
+        bert_tokenizer.decode(output.ids)
+        # "welcome to the tokenizers library."
+        # END bert_proper_decoding

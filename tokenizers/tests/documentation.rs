@@ -368,6 +368,18 @@ fn pipeline() -> tokenizers::Result<()> {
             .unwrap(),
     );
     // END pipeline_setup_processor
+    // START pipeline_test_decoding
+    let output = tokenizer.encode("Hello, y'all! How are you 😁 ?", true)?;
+    println!("{:?}", output.get_ids());
+    // [1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2]
+
+    let decoded = tokenizer.decode(
+        vec![1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2],
+        true,
+    )?;
+    println!("{}", decoded);
+    // "Hello , y ' all ! How are you ?"
+    // END pipeline_test_decoding
 
     Ok(())
 }
@@ -444,6 +456,22 @@ fn pipeline_bert() -> tokenizers::Result<()> {
 
     bert_tokenizer.save("data/bert-wiki.json", false)?;
     // END bert_train_tokenizer
+    // START bert_test_decoding
+    let output = bert_tokenizer.encode("Welcome to the 🤗 Tokenizers library.", true)?;
+    println!("{:?}", output.get_tokens());
+    // ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
+
+    let decoded = bert_tokenizer.decode(output.get_ids().to_vec(), true)?;
+    println!("{}", decoded);
+    // "welcome to the tok ##eni ##zer ##s library ."
+    // END bert_test_decoding
+    // START bert_proper_decoding
+    use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
+    bert_tokenizer.with_decoder(WordPieceDecoder::default());
+    let decoded = bert_tokenizer.decode(output.get_ids().to_vec(), true)?;
+    // "welcome to the tokenizers library."
+    // END bert_proper_decoding
+    println!("{}", decoded);
 
     Ok(())
 }
