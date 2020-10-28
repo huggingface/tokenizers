@@ -354,6 +354,96 @@ fn pipeline() -> tokenizers::Result<()> {
     // START pipeline_replace_pre_tokenizer
     tokenizer.with_pre_tokenizer(pre_tokenizer);
     // END pipeline_replace_pre_tokenizer
+    // START pipeline_setup_processor
+    use tokenizers::processors::template::TemplateProcessing;
+
+    tokenizer.with_post_processor(
+        TemplateProcessing::builder()
+            .try_single("[CLS] $A [SEP]")
+            .unwrap()
+            .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
+            .unwrap()
+            .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
+            .build()
+            .unwrap(),
+    );
+    // END pipeline_setup_processor
+
+    Ok(())
+}
+
+#[test]
+#[ignore]
+fn pipeline_bert() -> tokenizers::Result<()> {
+    // START bert_setup_tokenizer
+    use tokenizers::models::wordpiece::WordPiece;
+    use tokenizers::Tokenizer;
+
+    let mut bert_tokenizer = Tokenizer::new(WordPiece::default());
+    // END bert_setup_tokenizer
+    // START bert_setup_normalizer
+    use tokenizers::normalizers::utils::Sequence as NormalizerSequence;
+    use tokenizers::normalizers::{strip::StripAccents, unicode::NFD, utils::Lowercase};
+
+    bert_tokenizer.with_normalizer(NormalizerSequence::new(vec![
+        NFD.into(),
+        Lowercase.into(),
+        StripAccents.into(),
+    ]));
+    // END bert_setup_normalizer
+    // START bert_setup_pre_tokenizer
+    use tokenizers::pre_tokenizers::whitespace::Whitespace;
+
+    bert_tokenizer.with_pre_tokenizer(Whitespace::default());
+    // END bert_setup_pre_tokenizer
+    // START bert_setup_processor
+    use tokenizers::processors::template::TemplateProcessing;
+
+    bert_tokenizer.with_post_processor(
+        TemplateProcessing::builder()
+            .try_single("[CLS] $A [SEP]")
+            .unwrap()
+            .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
+            .unwrap()
+            .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
+            .build()
+            .unwrap(),
+    );
+    // END bert_setup_processor
+    // START bert_train_tokenizer
+    use std::path::Path;
+    use tokenizers::models::{wordpiece::WordPieceTrainer, TrainerWrapper};
+    use tokenizers::Model;
+
+    let trainer: TrainerWrapper = WordPieceTrainer::builder()
+        .vocab_size(30_522)
+        .special_tokens(vec![
+            AddedToken::from("[UNK]", true),
+            AddedToken::from("[CLS]", true),
+            AddedToken::from("[SEP]", true),
+            AddedToken::from("[PAD]", true),
+            AddedToken::from("[MASK]", true),
+        ])
+        .build()
+        .into();
+    let files = ["test", "train", "valid"]
+        .iter()
+        .map(|split| format!("data/wikitext-103-raw/wiki.{}.raw", split))
+        .collect::<Vec<_>>();
+    bert_tokenizer.train_and_replace(&trainer, files)?;
+
+    let model_files = bert_tokenizer
+        .get_model()
+        .save(&Path::new("data"), Some("bert-wiki"))?;
+    bert_tokenizer.with_model(
+        WordPiece::from_file(model_files[0].to_str().unwrap())
+            .unk_token("[UNK]".to_string())
+            .build()
+            .unwrap(),
+    );
+
+    bert_tokenizer.save("data/bert-wiki.json", false)?;
+    // END bert_train_tokenizer
 
     Ok(())
 }

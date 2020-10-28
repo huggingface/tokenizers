@@ -270,22 +270,36 @@ Post-Processing
 ----------------------------------------------------------------------------------------------------
 
 Post-processing is the last step of the tokenization pipeline, to perform any additional
-transformation to the :class:`~tokenizers.Encoding` before it's returned, like adding potential
+transformation to the :entity:`Encoding` before it's returned, like adding potential
 special tokens.
 
-As we saw in the quick tour, we can customize the post processor of a :class:`~tokenizers.Tokenizer`
+As we saw in the quick tour, we can customize the post processor of a :entity:`Tokenizer`
 by setting the corresponding attribute. For instance, here is how we can post-process to make the
 inputs suitable for the BERT model:
 
-.. code-block:: python
+.. only:: python
 
-    from tokenizers.processors import TemplateProcessing
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START setup_processor
+        :end-before: END setup_processor
+        :dedent: 8
 
-    tokenizer.post_processor = TemplateProcessing
-        single="[CLS] $A [SEP]",
-        pair="[CLS] $A [SEP] $B:1 [SEP]:1",
-        special_tokens=[("[CLS]", 1), ("[SEP]", 2)],
-    )
+.. only:: rust
+
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START pipeline_setup_processor
+        :end-before: END pipeline_setup_processor
+        :dedent: 4
+
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START setup_processor
+        :end-before: END setup_processor
+        :dedent: 8
 
 Note that contrarily to the pre-tokenizer or the normalizer, you don't need to retrain a tokenizer
 after changing its post-processor.
@@ -296,66 +310,136 @@ All together: a BERT tokenizer from scratch
 ----------------------------------------------------------------------------------------------------
 
 Let's put all those pieces together to build a BERT tokenizer. First, BERT relies on WordPiece, so
-we instantiate a new :class:`~tokenizers.Tokenizer` with this model:
+we instantiate a new :entity:`Tokenizer` with this model:
 
-.. code-block:: python
+.. only:: python
 
-    from tokenizers import Tokenizer
-    from tokenizers.models import WordPiece
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START bert_setup_tokenizer
+        :end-before: END bert_setup_tokenizer
+        :dedent: 8
 
-    bert_tokenizer = Tokenizer(WordPiece())
+.. only:: rust
+
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START bert_setup_tokenizer
+        :end-before: END bert_setup_tokenizer
+        :dedent: 4
+
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START bert_setup_tokenizer
+        :end-before: END bert_setup_tokenizer
+        :dedent: 8
 
 Then we know that BERT preprocesses texts by removing accents and lowercasing. We also use a unicode
 normalizer:
 
-.. code-block:: python
+.. only:: python
 
-    import tokenizers
-    from tokenizers.normalizers import Lowercase, NFD, StripAccents
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START bert_setup_normalizer
+        :end-before: END bert_setup_normalizer
+        :dedent: 8
 
-    bert_tokenizer.normalizer = tokenizers.normalizers.Sequence([
-        NFD(), Lowercase(), StripAccents()
-    ])
+.. only:: rust
+
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START bert_setup_normalizer
+        :end-before: END bert_setup_normalizer
+        :dedent: 4
+
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START bert_setup_normalizer
+        :end-before: END bert_setup_normalizer
+        :dedent: 8
 
 The pre-tokenizer is just splitting on whitespace and punctuation:
 
-.. code-block:: python
+.. only:: python
 
-    from tokenizers.pre_tokenizers import Whitespace
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START bert_setup_pre_tokenizer
+        :end-before: END bert_setup_pre_tokenizer
+        :dedent: 8
 
-    bert_tokenizer.pre_tokenizer = Whitespace()
+.. only:: rust
+
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START bert_setup_pre_tokenizer
+        :end-before: END bert_setup_pre_tokenizer
+        :dedent: 4
+
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START bert_setup_pre_tokenizer
+        :end-before: END bert_setup_pre_tokenizer
+        :dedent: 8
 
 And the post-processing uses the template we saw in the previous section:
 
-.. code-block:: python
+.. only:: python
 
-    from tokenizers.processors import TemplateProcessing
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START bert_setup_processor
+        :end-before: END bert_setup_processor
+        :dedent: 8
 
-    bert_tokenizer.post_processor = TemplateProcessing(
-        single="[CLS] $A [SEP]",
-        pair="[CLS] $A [SEP] $B:1 [SEP]:1",
-        special_tokens=[
-            ("[CLS]", bert_tokenizer.token_to_id("[CLS]")),
-            ("[SEP]", bert_tokenizer.token_to_id("[SEP]"))
-        ],
-    )
+.. only:: rust
+
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START bert_setup_processor
+        :end-before: END bert_setup_processor
+        :dedent: 4
+
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START bert_setup_processor
+        :end-before: END bert_setup_processor
+        :dedent: 8
 
 We can use this tokenizer and train on it on wikitext like in the :doc:`quicktour`:
 
-.. code-block:: python
+.. only:: python
 
-    from tokenizers.trainers import WordPieceTrainer
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_pipeline.py
+        :language: python
+        :start-after: START bert_train_tokenizer
+        :end-before: END bert_train_tokenizer
+        :dedent: 8
 
-    trainer = WordPieceTrainer(
-        vocab_size=30522, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"]
-    )
-    files = [f"wikitext-103-raw/wiki.{split}.raw" for split in ["test", "train", "valid"]]
-    bert_tokenizer.train(trainer, files)
+.. only:: rust
 
-    model_files = bert_tokenizer.model.save("pretrained", "bert-wiki")
-    bert_tokenizer.model = WordPiece(*model_files, unk_token="[UNK]")
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START bert_train_tokenizer
+        :end-before: END bert_train_tokenizer
+        :dedent: 4
 
-    bert_tokenizer.save("pretrained/bert-wiki.json")
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/pipeline.test.ts
+        :language: javascript
+        :start-after: START bert_train_tokenizer
+        :end-before: END bert_train_tokenizer
+        :dedent: 8
 
 
 .. _decoding:
