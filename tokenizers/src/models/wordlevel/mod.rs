@@ -31,6 +31,7 @@ impl fmt::Display for Error {
 }
 
 struct Config {
+    files: Option<String>,
     vocab: HashMap<String, u32>,
     unk_token: String,
 }
@@ -45,6 +46,7 @@ impl Default for WordLevelBuilder {
     fn default() -> Self {
         Self {
             config: Config {
+                files: None,
                 vocab: HashMap::new(),
                 unk_token: String::from("<unk>"),
             },
@@ -56,6 +58,12 @@ impl WordLevelBuilder {
     /// Construct a new `WordLevelBuilder`.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Set the input files.
+    pub fn files(mut self, vocab: String) -> Self {
+        self.config.files = Some(vocab);
+        self
     }
 
     /// Set the vocab (token -> ID) mapping.
@@ -71,18 +79,23 @@ impl WordLevelBuilder {
     }
 
     /// Contructs a `WordLevel` model that uses the `WordLevelBuilder`'s configuration.
-    pub fn build(self) -> WordLevel {
+    pub fn build(mut self) -> Result<WordLevel> {
+        if let Some(vocab) = self.config.files {
+            self.config.vocab = WordLevel::read_file(&vocab)?;
+        }
+
         let vocab_r = self
             .config
             .vocab
             .iter()
             .map(|(key, val)| (*val, key.to_owned()))
             .collect();
-        WordLevel {
+
+        Ok(WordLevel {
             vocab: self.config.vocab,
             vocab_r,
             unk_token: self.config.unk_token,
-        }
+        })
     }
 }
 
@@ -133,7 +146,7 @@ impl WordLevel {
     /// Initialize a WordLevel model from vocab and merges file.
     pub fn from_file(vocab_path: &str, unk_token: String) -> Result<WordLevel> {
         let vocab = WordLevel::read_file(vocab_path)?;
-        Ok(Self::builder().vocab(vocab).unk_token(unk_token).build())
+        Self::builder().vocab(vocab).unk_token(unk_token).build()
     }
 }
 

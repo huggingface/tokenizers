@@ -368,12 +368,14 @@ impl PyWordLevel {
                 PyVocab::Vocab(vocab) => WordLevel::builder()
                     .vocab(vocab)
                     .unk_token(unk_token)
-                    .build(),
+                    .build()
+                    .expect("Can only fail when loading from files"),
                 PyVocab::Filename(vocab_filename) => {
                     deprecation_warning(
-                    "0.9.0",
-                    "WordLevel.__init__ will not create from files anymore, try `WordLevel.from_file` instead",
-                )?;
+                        "0.9.0",
+                        "WordLevel.__init__ will not create from files anymore, \
+                            try `WordLevel.from_file` instead",
+                    )?;
                     WordLevel::from_file(vocab_filename, unk_token).map_err(|e| {
                         exceptions::PyException::new_err(format!(
                             "Error while loading WordLevel: {}",
