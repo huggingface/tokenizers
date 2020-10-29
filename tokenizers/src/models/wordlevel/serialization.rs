@@ -47,6 +47,6 @@ impl<'de> Visitor<'de> for WordLevelVisitor {
                 _ => {}
             }
         }
-        Ok(builder.build())
+        Ok(builder.build().map_err(serde::de::Error::custom)?)
     }
 }

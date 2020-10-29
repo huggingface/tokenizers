@@ -1,7 +1,7 @@
 extern crate tokenizers as tk;
 
 use crate::extraction::*;
-use crate::tasks::models::{BPEFromFilesTask, WordPieceFromFilesTask};
+use crate::tasks::models::{BPEFromFilesTask, WordLevelFromFilesTask, WordPieceFromFilesTask};
 use neon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use tk::models::{
     bpe::{BpeBuilder, Merges, Vocab},
+    wordlevel::WordLevelBuilder,
     wordpiece::WordPieceBuilder,
     ModelWrapper,
 };
@@ -132,42 +133,39 @@ impl BpeOptions {
     }
 }
 
-/// bpe_init(vocab: Map<String, u32>, merges: Map<(u32, u32), (u32, u32)>, options: {
+/// bpe_init(vocab: {[token: string]: number}, merges: [string, string][], options: {
 ///   cacheCapacity?: number,
 ///   dropout?: number,
-///   unkToken?: String,
-///   continuingSubwordPrefix?: String,
-///   endOfWordSuffix?: String
-/// }, callback)
-pub fn bpe_init(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-    let (options, callback) = match cx.extract_opt::<BpeOptions>(2) {
-        // Options were there, and extracted
-        Ok(Some(options)) => (options, cx.argument::<JsFunction>(3)?),
-        // Options were undefined or null
-        Ok(None) => (BpeOptions::default(), cx.argument::<JsFunction>(3)?),
-        // Options not specified, callback instead
-        Err(_) => (BpeOptions::default(), cx.argument::<JsFunction>(2)?),
-    };
+///   unkToken?: string,
+///   continuingSubwordPrefix?: string,
+///   endOfWordSuffix?: string
+/// })
+fn bpe_init(mut cx: FunctionContext) -> JsResult<JsModel> {
     let vocab = cx.extract::<Vocab>(0)?;
     let merges = cx.extract::<Merges>(1)?;
+    let options = cx
+        .extract_opt::<BpeOptions>(2)?
+        .unwrap_or_else(BpeOptions::default);
 
     let mut builder = tk::models::bpe::BPE::builder().vocab_and_merges(vocab, merges);
-
     builder = options.apply_to_bpe_builder(builder);
+    let model = builder.build().map_err(|e| Error(e.to_string()))?;
 
-    let task = BPEFromFilesTask::new(builder);
-    task.schedule(callback);
-    Ok(cx.undefined())
+    let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    js_model.borrow_mut(&guard).model = Some(Arc::new(model.into()));
+
+    Ok(js_model)
 }
 
-/// bpe_from_file(vocab: String, merges: String, options: {
+/// bpe_from_file(vocab: string, merges: string, options: {
 ///   cacheCapacity?: number,
 ///   dropout?: number,
-///   unkToken?: String,
-///   continuingSubwordPrefix?: String,
-///   endOfWordSuffix?: String
+///   unkToken?: string,
+///   continuingSubwordPrefix?: string,
+///   endOfWordSuffix?: string
 /// }, callback)
-pub fn bpe_from_file(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+fn bpe_from_file(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let (options, callback) = match cx.extract_opt::<BpeOptions>(2) {
         // Options were there, and extracted
         Ok(Some(options)) => (options, cx.argument::<JsFunction>(3)?),
@@ -188,7 +186,7 @@ pub fn bpe_from_file(mut cx: FunctionContext) -> JsResult<JsUndefined> {
 }
 
 /// bpe_empty()
-pub fn bpe_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
+fn bpe_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     let mut model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
     let bpe = tk::models::bpe::BPE::default();
 
@@ -221,37 +219,34 @@ impl WordPieceOptions {
     }
 }
 
-/// wordpiece_init(vocab: Map<String, u32>, options: {
-///   unkToken?: String = "[UNK]",
+/// wordpiece_init(vocab: {[token: string]: number}, options: {
+///   unkToken?: string = "[UNK]",
 ///   maxInputCharsPerWord?: number = 100,
 ///   continuingSubwordPrefix?: "##",
-/// }, callback)
-pub fn wordpiece_init(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-    let (options, callback) = match cx.extract_opt::<WordPieceOptions>(1) {
-        // Options were there, and extracted
-        Ok(Some(options)) => (options, cx.argument::<JsFunction>(2)?),
-        // Options were undefined or null
-        Ok(None) => (WordPieceOptions::default(), cx.argument::<JsFunction>(2)?),
-        // Options not specified, callback instead
-        Err(_) => (WordPieceOptions::default(), cx.argument::<JsFunction>(1)?),
-    };
-
+/// })
+fn wordpiece_init(mut cx: FunctionContext) -> JsResult<JsModel> {
     let vocab = cx.extract::<HashMap<String, u32>>(0)?;
+    let options = cx
+        .extract_opt::<WordPieceOptions>(1)?
+        .unwrap_or_else(WordPieceOptions::default);
 
     let mut builder = tk::models::wordpiece::WordPiece::builder().vocab(vocab);
     builder = options.apply_to_wordpiece_builder(builder);
-    let task = WordPieceFromFilesTask::new(builder);
-    task.schedule(callback);
+    let model = builder.build().map_err(|e| Error(e.to_string()))?;
 
-    Ok(cx.undefined())
+    let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    js_model.borrow_mut(&guard).model = Some(Arc::new(model.into()));
+
+    Ok(js_model)
 }
 
-/// wordpiece_from_file(vocab: String, options: {
-///   unkToken?: String = "[UNK]",
+/// wordpiece_from_file(vocab: string, options: {
+///   unkToken?: string = "[UNK]",
 ///   maxInputCharsPerWord?: number = 100,
 ///   continuingSubwordPrefix?: "##",
 /// }, callback)
-pub fn wordpiece_from_file(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+fn wordpiece_from_file(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let (options, callback) = match cx.extract_opt::<WordPieceOptions>(1) {
         // Options were there, and extracted
         Ok(Some(options)) => (options, cx.argument::<JsFunction>(2)?),
@@ -270,7 +265,7 @@ pub fn wordpiece_from_file(mut cx: FunctionContext) -> JsResult<JsUndefined> {
 }
 
 /// wordpiece_empty()
-pub fn wordpiece_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
+fn wordpiece_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     let mut model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
     let wordpiece = tk::models::wordpiece::WordPiece::default();
 
@@ -280,6 +275,72 @@ pub fn wordpiece_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     Ok(model)
 }
 
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct WordLevelOptions {
+    unk_token: Option<String>,
+}
+impl WordLevelOptions {
+    fn apply_to_wordlevel_builder(self, mut builder: WordLevelBuilder) -> WordLevelBuilder {
+        if let Some(token) = self.unk_token {
+            builder = builder.unk_token(token);
+        }
+
+        builder
+    }
+}
+
+/// wordlevel_init(vocab: {[token: string]: number}, options: {
+///   unkToken?: String,
+/// }, callback)
+fn wordlevel_init(mut cx: FunctionContext) -> JsResult<JsModel> {
+    let vocab = cx.extract::<HashMap<String, u32>>(0)?;
+    let options = cx
+        .extract_opt::<WordLevelOptions>(1)?
+        .unwrap_or_else(WordLevelOptions::default);
+
+    let mut builder = tk::models::wordlevel::WordLevel::builder().vocab(vocab);
+    builder = options.apply_to_wordlevel_builder(builder);
+    let model = builder.build().map_err(|e| Error(e.to_string()))?;
+
+    let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    js_model.borrow_mut(&guard).model = Some(Arc::new(model.into()));
+
+    Ok(js_model)
+}
+
+/// wordlevel_from_file(vocab: string, options: {
+///   unkToken?: String,
+/// }, callback)
+fn wordlevel_from_file(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let (options, callback) = match cx.extract_opt::<WordLevelOptions>(1) {
+        // Options were there, and extracted
+        Ok(Some(options)) => (options, cx.argument::<JsFunction>(2)?),
+        // Options were undefined or null
+        Ok(None) => (WordLevelOptions::default(), cx.argument::<JsFunction>(2)?),
+        // Options not specified, callback instead
+        Err(_) => (WordLevelOptions::default(), cx.argument::<JsFunction>(1)?),
+    };
+    let vocab = cx.extract::<String>(0)?;
+    let mut builder = tk::models::wordlevel::WordLevel::builder().files(vocab);
+    builder = options.apply_to_wordlevel_builder(builder);
+    let task = WordLevelFromFilesTask::new(builder);
+    task.schedule(callback);
+
+    Ok(cx.undefined())
+}
+
+/// wordlevel_empty()
+fn wordlevel_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
+    let mut model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+    let wordlevel = tk::models::wordlevel::WordLevel::default();
+
+    let guard = cx.lock();
+    model.borrow_mut(&guard).model = Some(Arc::new(wordlevel.into()));
+
+    Ok(model)
+}
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_BPE_init", prefix), bpe_init)?;
@@ -291,5 +352,11 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
         wordpiece_from_file,
     )?;
     m.export_function(&format!("{}_WordPiece_empty", prefix), wordpiece_empty)?;
+    m.export_function(&format!("{}_WordLevel_init", prefix), wordlevel_init)?;
+    m.export_function(
+        &format!("{}_WordLevel_from_file", prefix),
+        wordlevel_from_file,
+    )?;
+    m.export_function(&format!("{}_WordLevel_empty", prefix), wordlevel_empty)?;
     Ok(())
 }

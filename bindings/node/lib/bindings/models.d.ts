@@ -42,6 +42,18 @@ export interface BPEOptions {
 
 export namespace BPE {
   /**
+   * Instantiate a BPE model from the given vocab and merges
+   *
+   * @param vocab A dict mapping strings to number, representing the vocab
+   * @param merges An array of tuples of strings, representing two tokens to be merged
+   * @param options BPE model options
+   */
+  export function init(
+    vocab: string,
+    merges: string,
+    options?: BPEOptions,
+  ): Model;
+  /**
    * Instantiate a BPE model from the given vocab and merges files
    *
    * @param vocab Path to a vocabulary JSON file
@@ -52,20 +64,8 @@ export namespace BPE {
   export function fromFile(
     vocab: string,
     merges: string,
-    options: BPEOptions,
-    __callback: (err: Error, encoding: Model) => void
-  ): void;
-  /**
-   * Instantiate a BPE model from the given vocab and merges files
-   *
-   * @param vocab Path to a vocabulary JSON file
-   * @param merges Path to a merge file
-   * @param __callback Callback called when model is loaded
-   */
-  export function fromFile(
-    vocab: string,
-    merges: string,
-    __callback: (err: Error, encoding: Model) => void
+    options?: BPEOptions,
+    __callback?: (err: Error, encoding: Model) => void
   ): void;
 
   /**
@@ -94,6 +94,18 @@ export interface WordPieceOptions {
 
 export namespace WordPiece {
   /**
+   * Instantiate a WordPiece model from the given vocab
+   *
+   * @param vocab A dict mapping strings to numbers, representing the vocab
+   * @param options WordPiece model options
+   */
+  export function init(
+    vocab: string,
+    options?: WordPieceOptions,
+    __callback?: (err: Error, encoding: Model) => void
+  ): void;
+
+  /**
    * Instantiate a WordPiece model from the given vocab file
    *
    * @param vocab Path to a vocabulary file
@@ -102,22 +114,52 @@ export namespace WordPiece {
    */
   export function fromFile(
     vocab: string,
-    options: WordPieceOptions,
-    __callback: (err: Error, encoding: Model) => void
-  ): void;
-  /**
-   * Instantiate a WordPiece model from the given vocab file
-   *
-   * @param vocab Path to a vocabulary file
-   * @param __callback Callback called when model is loaded
-   */
-  export function fromFile(
-    vocab: string,
-    __callback: (err: Error, encoding: Model) => void
+    options?: WordPieceOptions,
+    __callback?: (err: Error, encoding: Model) => void
   ): void;
 
   /**
    * Instantiate an empty WordPiece model
+   */
+  export function empty(): Model;
+}
+
+export interface WordLevelOptions {
+  /**
+   * The unknown token to be used by the model.
+   * @default "[UNK]"
+   */
+  unkToken?: string;
+}
+
+export namespace WordLevel {
+  /**
+   * Instantiate a WordLevel model from the given vocab
+   *
+   * @param vocab A dict mapping strings to numbers, representing the vocab
+   * @param options WordLevel model options
+   */
+  export function init(
+    vocab: string,
+    options?: WordLevelOptions,
+    __callback?: (err: Error, encoding: Model) => void
+  ): void;
+
+  /**
+   * Instantiate a WordLevel model from the given vocab file
+   *
+   * @param vocab Path to a vocabulary file
+   * @param options WordLevel model options
+   * @param __callback Callback called when model is loaded
+   */
+  export function fromFile(
+    vocab: string,
+    options?: WordLevelOptions,
+    __callback?: (err: Error, encoding: Model) => void
+  ): void;
+
+  /**
+   * Instantiate an empty WordLevel model
    */
   export function empty(): Model;
 }
