@@ -1,3 +1,4 @@
+/* eslint-disable */
 var globRequire = require;
 
 describe("quicktourExample", () => {
