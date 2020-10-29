@@ -4,6 +4,7 @@ import {
   bertProcessing,
   byteLevelProcessing,
   robertaProcessing,
+  templateProcessing,
 } from "./post-processors";
 
 describe("bertProcessing", () => {
@@ -53,5 +54,30 @@ describe("robertaProcessing", () => {
 
   it("accepts `boolean` as third and fourth parameter", () => {
     expect(robertaProcessing(["sep", 1], ["cls", 2], true, true)).toBeDefined();
+  });
+});
+
+describe("templateProcessing", () => {
+  it("instantiates correctly with only a single template", () => {
+    const processor = templateProcessing("$A $A");
+    expect(processor.constructor.name).toEqual("Processor");
+  });
+
+  it("throws if special tokens are missing", () => {
+    expect(() => templateProcessing("[CLS] $A [SEP]")).toThrow(
+      "Missing SpecialToken(s) with id(s)"
+    );
+  });
+
+  it("instantiates correctly with both templates", () => {
+    const processor = templateProcessing(
+      "[CLS] $A [SEP]",
+      "[CLS] $A [SEP] $B:1 [SEP]:1",
+      [
+        ["[CLS]", 1],
+        ["[SEP]", 2],
+      ]
+    );
+    expect(processor.constructor.name).toEqual("Processor");
   });
 });
