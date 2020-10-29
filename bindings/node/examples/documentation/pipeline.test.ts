@@ -1,4 +1,4 @@
-const globRequire = require;
+var globRequire = require;
 
 describe("pipelineExample", () => {
     // This is a hack to let us require using path similar to what the user has to use
@@ -82,7 +82,7 @@ describe("pipelineExample", () => {
 
         // START bert_train_tokenizer
         let { wordPieceTrainer } = require("tokenizers/bindings/trainers");
-        let { promisify } = require("utils");
+        let { promisify } = require("util");
 
         let trainer = wordPieceTrainer({
             vocabSize: 30522,
@@ -107,7 +107,7 @@ describe("pipelineExample", () => {
         let { Tokenizer } = require("tokenizers/bindings/tokenizer");
         let { WordPiece } = require("tokenizers/bindings/models");
 
-        let bertTokenizer = Tokenizer(WordPiece.empty());
+        let bertTokenizer = new Tokenizer(WordPiece.empty());
         // END bert_setup_tokenizer
         // START bert_setup_normalizer
         let { sequenceNormalizer, lowercaseNormalizer, nfdNormalizer, stripAccentsNormalizer }
@@ -118,12 +118,12 @@ describe("pipelineExample", () => {
         ]))
         // END bert_setup_normalizer
         // START bert_setup_pre_tokenizer
-        let { whitespacePreTokenizer } = require("tokenizers/bindings/pre_tokenizers");
+        let { whitespacePreTokenizer } = require("tokenizers/bindings/pre-tokenizers");
 
         bertTokenizer.setPreTokenizer = whitespacePreTokenizer();
         // END bert_setup_pre_tokenizer
         // START bert_setup_processor
-        let { templateProcessing } = require("tokenizers/bindings/processors");
+        let { templateProcessing } = require("tokenizers/bindings/post-processors");
 
         bertTokenizer.setPostProcessor(templateProcessing(
             "[CLS] $A [SEP]",
