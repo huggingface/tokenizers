@@ -41,16 +41,6 @@ export interface BertNormalizerOptions {
 export function bertNormalizer(options?: BertNormalizerOptions): Normalizer;
 
 /**
- * Returns a new Lowercase Normalizer
- */
-export function lowercaseNormalizer(): Normalizer;
-
-/**
- * Returns a new Replace Normalizer
- */
-export function replaceNormalizer(): Normalizer;
-
-/**
  * Returns a new NFC Unicode Normalizer
  */
 export function nfcNormalizer(): Normalizer;
@@ -77,6 +67,11 @@ export function nfkdNormalizer(): Normalizer;
 export function sequenceNormalizer(normalizers: Normalizer[]): Normalizer;
 
 /**
+ * Returns a new Lowercase Normalizer
+ */
+export function lowercaseNormalizer(): Normalizer;
+
+/**
  *  Returns a new Strip Normalizer
  * @param [left=true] Whether or not to strip on the left (defaults to `true`)
  * @param [right=true] Whether or not to strip on the right (defaults to `true`)
@@ -87,3 +82,18 @@ export function stripNormalizer(left?: boolean, right?: boolean): Normalizer;
  *  Returns a new StripAccents Normalizer
  */
 export function stripAccentsNormalizer(): Normalizer;
+
+/**
+ * Returns a new Nmt Normalizer
+ */
+export function nmtNormalizer(): Normalizer;
+
+/**
+ * Returns a new Precompiled Normalizer
+ */
+export function precompiledNormalizer(): Normalizer;
+
+/**
+ * Returns a new Replace Normalizer
+ */
+export function replaceNormalizer(): Normalizer;
