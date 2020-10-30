@@ -19,5 +19,5 @@ module.exports = {
   Unigram: {
     init: native.models_Unigram_init,
     empty: native.models_Unigram_empty,
-  }
+  },
 };

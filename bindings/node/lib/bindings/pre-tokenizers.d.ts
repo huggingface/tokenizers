@@ -4,7 +4,7 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface PreTokenizer {
-    preTokenizeString(s: string): [string, [number, number]][];
+  preTokenizeString(s: string): [string, [number, number]][];
 }
 
 /**

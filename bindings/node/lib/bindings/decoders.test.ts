@@ -10,8 +10,9 @@ describe("wordPieceDecoder", () => {
   });
 
   it("can decode arrays of strings", () => {
-      expect(wordPieceDecoder().decode(["Hel", "##lo", "there", "my", "fr", "##iend"]))
-        .toEqual("Hello there my friend");
+    expect(
+      wordPieceDecoder().decode(["Hel", "##lo", "there", "my", "fr", "##iend"])
+    ).toEqual("Hello there my friend");
   });
 });
 
