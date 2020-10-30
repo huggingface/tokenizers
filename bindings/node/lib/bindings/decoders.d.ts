@@ -4,7 +4,7 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface Decoder {
-    decode(tokens: string[]): string;
+  decode(tokens: string[]): string;
 }
 
 /**

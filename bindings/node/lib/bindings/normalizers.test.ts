@@ -25,9 +25,8 @@ describe("stripNormalizer", () => {
   });
 
   it("can normalize strings", () => {
-      const normalizer = stripNormalizer();
-      expect(normalizer.normalizeString("     Hello there   "))
-        .toEqual("Hello there");
+    const normalizer = stripNormalizer();
+    expect(normalizer.normalizeString("     Hello there   ")).toEqual("Hello there");
   });
 });
 

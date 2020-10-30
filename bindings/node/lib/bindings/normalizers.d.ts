@@ -4,7 +4,7 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface Normalizer {
-    normalizeString(s: string): string;
+  normalizeString(s: string): string;
 }
 
 export interface BertNormalizerOptions {
