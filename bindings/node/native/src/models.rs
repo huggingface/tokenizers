@@ -341,6 +341,43 @@ fn wordlevel_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
 
     Ok(model)
 }
+
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct UnigramOptions {
+    unk_id: Option<usize>,
+}
+
+/// unigram_init(vocab: [string, number][], options?: {
+///   unkId?: number
+/// })
+fn unigram_init(mut cx: FunctionContext) -> JsResult<JsModel> {
+    let vocab = cx.extract::<Vec<(String, f64)>>(0)?;
+    let options = cx
+        .extract_opt::<UnigramOptions>(1)?
+        .unwrap_or_else(UnigramOptions::default);
+
+    let unigram = tk::models::unigram::Unigram::from(vocab, options.unk_id)
+        .map_err(|e| Error(e.to_string()))?;
+
+    let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    js_model.borrow_mut(&guard).model = Some(Arc::new(unigram.into()));
+
+    Ok(js_model)
+}
+
+/// unigram_empty()
+fn unigram_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
+    let mut model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+    let unigram = tk::models::unigram::Unigram::default();
+
+    let guard = cx.lock();
+    model.borrow_mut(&guard).model = Some(Arc::new(unigram.into()));
+
+    Ok(model)
+}
+
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_BPE_init", prefix), bpe_init)?;
@@ -358,5 +395,7 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
         wordlevel_from_file,
     )?;
     m.export_function(&format!("{}_WordLevel_empty", prefix), wordlevel_empty)?;
+    m.export_function(&format!("{}_Unigram_init", prefix), unigram_init)?;
+    m.export_function(&format!("{}_Unigram_empty", prefix), unigram_empty)?;
     Ok(())
 }
