@@ -14,6 +14,8 @@ interface Model {
   save(folder: string, name?: string): string[];
 }
 
+type ModelCallback = (err: Error, model: Model) => void;
+
 export interface BPEOptions {
   /**
    * The number of words that the BPE cache can contain. The cache allows
@@ -64,8 +66,8 @@ export namespace BPE {
   export function fromFile(
     vocab: string,
     merges: string,
-    options?: BPEOptions,
-    __callback?: (err: Error, encoding: Model) => void
+    optionsOrCallback?: BPEOptions | ModelCallback,
+    __callback?: ModelCallback
   ): void;
 
   /**
@@ -101,9 +103,8 @@ export namespace WordPiece {
    */
   export function init(
     vocab: { [token: string]: number },
-    options?: WordPieceOptions,
-    __callback?: (err: Error, encoding: Model) => void
-  ): void;
+    options?: WordPieceOptions
+  ): Model;
 
   /**
    * Instantiate a WordPiece model from the given vocab file
@@ -114,8 +115,8 @@ export namespace WordPiece {
    */
   export function fromFile(
     vocab: string,
-    options?: WordPieceOptions,
-    __callback?: (err: Error, encoding: Model) => void
+    optionsOrCallback?: WordPieceOptions | ModelCallback,
+    __callback?: ModelCallback
   ): void;
 
   /**
@@ -141,9 +142,8 @@ export namespace WordLevel {
    */
   export function init(
     vocab: { [token: string]: number },
-    options?: WordLevelOptions,
-    __callback?: (err: Error, encoding: Model) => void
-  ): void;
+    options?: WordLevelOptions
+  ): Model;
 
   /**
    * Instantiate a WordLevel model from the given vocab file
@@ -154,8 +154,8 @@ export namespace WordLevel {
    */
   export function fromFile(
     vocab: string,
-    options?: WordLevelOptions,
-    __callback?: (err: Error, encoding: Model) => void
+    optionsOrCallback?: WordLevelOptions | ModelCallback,
+    __callback?: ModelCallback
   ): void;
 
   /**
