@@ -49,9 +49,9 @@ export namespace BPE {
    * @param options BPE model options
    */
   export function init(
-    vocab: string,
-    merges: string,
-    options?: BPEOptions,
+    vocab: { [token: string]: number },
+    merges: [string, string][],
+    options?: BPEOptions
   ): Model;
   /**
    * Instantiate a BPE model from the given vocab and merges files
@@ -100,7 +100,7 @@ export namespace WordPiece {
    * @param options WordPiece model options
    */
   export function init(
-    vocab: string,
+    vocab: { [token: string]: number },
     options?: WordPieceOptions,
     __callback?: (err: Error, encoding: Model) => void
   ): void;
@@ -140,7 +140,7 @@ export namespace WordLevel {
    * @param options WordLevel model options
    */
   export function init(
-    vocab: string,
+    vocab: { [token: string]: number },
     options?: WordLevelOptions,
     __callback?: (err: Error, encoding: Model) => void
   ): void;
@@ -160,6 +160,29 @@ export namespace WordLevel {
 
   /**
    * Instantiate an empty WordLevel model
+   */
+  export function empty(): Model;
+}
+
+export interface UnigramOptions {
+  /**
+   * The unknown token id to be used by the model.
+   * @default undefined
+   */
+  unkId?: number;
+}
+
+export namespace Unigram {
+  /**
+   * Instantiate a Unigram model from the given vocab
+   *
+   * @param vocab An array of token and id tuples
+   * @param optiosn Unigram model options
+   */
+  export function init(vocab: [string, number][], options?: UnigramOptions): Model;
+
+  /**
+   * Instantiate an empty Unigram model
    */
   export function empty(): Model;
 }
