@@ -90,6 +90,14 @@ def doc_wiki_tokenizer(data_dir):
     )
 
 
+@pytest.fixture(scope="session")
+def doc_pipeline_bert_tokenizer(data_dir):
+    return download(
+        "https://s3.amazonaws.com/models.huggingface.co/bert/anthony/doc-pipeline/tokenizer.json",
+        "bert-wiki.json",
+    )
+
+
 def multiprocessing_with_parallelism(tokenizer, enabled: bool):
     """
     This helper can be used to test that disabling parallelism avoids dead locks when the
