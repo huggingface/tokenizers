@@ -1,4 +1,4 @@
-from ..utils import data_dir, doc_wiki_tokenizer
+from ..utils import data_dir, doc_wiki_tokenizer, doc_pipeline_bert_tokenizer
 from tokenizers import Tokenizer
 
 
@@ -96,7 +96,8 @@ class TestPipeline:
             == "Hello , y ' all ! How are you ?"
         )
 
-    def bert_example(self):
+    @staticmethod
+    def slow_train():
         # START bert_setup_tokenizer
         from tokenizers import Tokenizer
         from tokenizers.models import WordPiece
@@ -136,20 +137,49 @@ class TestPipeline:
         bert_tokenizer.train(trainer, files)
 
         model_files = bert_tokenizer.model.save("data", "bert-wiki")
-        bert_tokenizer.model = WordPiece(*model_files, unk_token="[UNK]")
+        bert_tokenizer.model = WordPiece.from_file(*model_files, unk_token="[UNK]")
 
         bert_tokenizer.save("data/bert-wiki.json")
         # END bert_train_tokenizer
+
+    def test_bert_example(self):
+        try:
+            bert_tokenizer = Tokenizer.from_file("data/bert-wiki.json")
+        except Exception:
+            bert_tokenizer = Tokenizer.from_file(doc_pipeline_bert_tokenizer)
+
         # START bert_test_decoding
         output = bert_tokenizer.encode("Welcome to the 🤗 Tokenizers library.")
         print(output.tokens)
         # ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
 
-        bert_tokenizer.decoder(output.ids)
+        bert_tokenizer.decode(output.ids)
         # "welcome to the tok ##eni ##zer ##s library ."
         # END bert_test_decoding
+        assert bert_tokenizer.decode(output.ids) == "welcome to the tok ##eni ##zer ##s library ."
         # START bert_proper_decoding
-        bert_tokenizer.decoder = tokenizers.decoders.WordPiece()
+        from tokenizers import decoders
+
+        bert_tokenizer.decoder = decoders.WordPiece()
         bert_tokenizer.decode(output.ids)
         # "welcome to the tokenizers library."
         # END bert_proper_decoding
+        assert bert_tokenizer.decode(output.ids) == "welcome to the tokenizers library."
+
+
+if __name__ == "__main__":
+    from urllib import request
+    from zipfile import ZipFile
+    import os
+
+    if not os.path.isdir("data/wikitext-103-raw"):
+        print("Downloading wikitext-103...")
+        wiki_text, _ = request.urlretrieve(
+            "https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-103-raw-v1.zip"
+        )
+        with ZipFile(wiki_text, "r") as z:
+            print("Unzipping in data...")
+            z.extractall("data")
+
+    print("Now training...")
+    TestPipeline.slow_train()
