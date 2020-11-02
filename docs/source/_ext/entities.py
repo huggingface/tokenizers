@@ -211,14 +211,22 @@ def process_entity_nodes(app, doctree, docname):
     entities = AllEntities.install(env)
     entities.resolve_pendings(app)
 
-    language = next(l for l in LANGUAGES if l in app.tags)
+    language = None
+    try:
+        language = next(l for l in LANGUAGES if l in app.tags)
+    except Exception:
+        logger.warning(f"No language tag specified, not resolving entities in {docname}")
+
     for node in doctree.traverse(EntityNode):
-        entity = entities.get(language, node.entity, docname)
-        if entity is None:
+        if language is None:
             node.replace_self(nodes.Text(_(node.entity), _(node.entity)))
-            logger.warning(f'Entity "{node.entity}" has not been defined', location=node)
         else:
-            node.replace_self(entity["content"])
+            entity = entities.get(language, node.entity, docname)
+            if entity is None:
+                node.replace_self(nodes.Text(_(node.entity), _(node.entity)))
+                logger.warning(f'Entity "{node.entity}" has not been defined', location=node)
+            else:
+                node.replace_self(entity["content"])
 
 
 def purge_entities(app, env, docname):
