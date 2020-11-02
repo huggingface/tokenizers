@@ -54,7 +54,7 @@ from tokenizers.pre_tokenizers import Whitespace
 tokenizer.pre_tokenizer = Whitespace()
 ```
 
-Then training your tokenizer on a set of files jsut takes two lines of codes:
+Then training your tokenizer on a set of files just takes two lines of codes:
 
 ```python
 from tokenizers.trainers import BpeTrainer
