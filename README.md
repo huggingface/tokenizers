@@ -60,7 +60,7 @@ Then training your tokenizer on a set of files just takes two lines of codes:
 from tokenizers.trainers import BpeTrainer
 
 trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
-tokenizer.train(trainer, [wiki.train.raw, wiki.valid.raw, wiki.test.raw])
+tokenizer.train(trainer, ["wiki.train.raw", "wiki.valid.raw", "wiki.test.raw"])
 ```
 
 Once your tokenizer is trained, encode any text with just one line:

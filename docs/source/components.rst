@@ -67,7 +67,7 @@ The ``Normalizer`` is optional.
    :header-rows: 1
 
    * - Name
-     - Desription
+     - Description
      - Example
 
    * - NFD
