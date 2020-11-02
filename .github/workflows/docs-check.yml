@@ -32,7 +32,7 @@ jobs:
 
       - name: Build documentation
         working-directory: ./docs
-        run: make clean && make html O="-W --keep-going -n"
+        run: make clean && make html O="-W --keep-going"
 
       - name: Upload built doc
         uses: actions/upload-artifact@v2
