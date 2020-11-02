@@ -24,7 +24,7 @@ copyright = "2020, huggingface"
 author = "huggingface"
 
 # The full version, including alpha/beta/rc tags
-release = "0.9.0"
+release = ""
 
 # -- Custom information ------------------------------------------------------
 
