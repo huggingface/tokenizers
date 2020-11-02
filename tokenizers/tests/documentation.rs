@@ -93,7 +93,7 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
     Ok(())
 }
 
-#[allow(unused_imports)]
+#[allow(unused_imports, clippy::type_complexity)]
 fn quicktour_get_tokenizer_trainer() -> tokenizers::Result<(
     TokenizerImpl<
         BPE,

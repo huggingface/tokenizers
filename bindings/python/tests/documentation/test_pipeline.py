@@ -2,11 +2,12 @@ from ..utils import data_dir, doc_wiki_tokenizer, doc_pipeline_bert_tokenizer
 from tokenizers import Tokenizer
 
 
+def print(*args, **kwargs):
+    pass
+
+
 class TestPipeline:
     def test_pipeline(self, doc_wiki_tokenizer):
-        def print(*args, **kwargs):
-            pass
-
         try:
             # START reload_tokenizer
             from tokenizers import Tokenizer
@@ -142,7 +143,7 @@ class TestPipeline:
         bert_tokenizer.save("data/bert-wiki.json")
         # END bert_train_tokenizer
 
-    def test_bert_example(self):
+    def test_bert_example(self, doc_pipeline_bert_tokenizer):
         try:
             bert_tokenizer = Tokenizer.from_file("data/bert-wiki.json")
         except Exception:
