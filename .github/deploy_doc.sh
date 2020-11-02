@@ -26,8 +26,6 @@ function deploy_doc(){
             rsync -zvr --delete build/html/ "$HOST_NAME:$DOC_PATH/$LANG/$2"
             cp -r build/html/_static .
         done
-    elif [ "$2" == "latest" ]; then
-        push_version $1 $2 $3
     elif [ "$4" != "override" ] && ssh "$HOST_NAME" "[ -d $DOC_PATH/$3/$2 ]"; then
         echo "Directory" $2 "already exists"
         rsync -zvr --delete _static/ "$HOST_NAME:$DOC_PATH/$3/$2/_static"
@@ -40,14 +38,14 @@ function deploy_doc(){
 deploy_doc "$GITHUB_SHA" master
 
 # Rust versions
-deploy_doc "$GITHUB_SHA" latest rust
+deploy_doc "$GITHUB_SHA" latest rust override
 
 # Node versions
-deploy_doc "$GITHUB_SHA" latest node
+deploy_doc "$GITHUB_SHA" latest node override
 
 # Python versions
 deploy_doc "$GITHUB_SHA" v0.9.0 python override
 deploy_doc "$GITHUB_SHA" v0.9.1 python override
 deploy_doc "$GITHUB_SHA" v0.9.2 python override
 deploy_doc "$GITHUB_SHA" v0.9.3 python override
-deploy_doc "$GITHUB_SHA" latest python
+deploy_doc "$GITHUB_SHA" latest python override
