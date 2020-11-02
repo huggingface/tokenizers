@@ -1,4 +1,4 @@
-use tokenizers::models::bpe::{BpeTrainer, BpeTrainerBuilder, BPE};
+use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::normalizers::{Sequence, Strip, NFC};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::{AddedToken, TokenizerBuilder};
@@ -61,52 +61,8 @@ fn load_tokenizer() {
 #[test]
 #[ignore]
 fn quicktour_slow_train() -> tokenizers::Result<()> {
-    let (mut tokenizer, trainer) = quicktour_get_tokenizer_trainer()?;
-
-    // START quicktour_train
-    let files = ["test", "train", "valid"]
-        .iter()
-        .map(|split| format!("data/wikitext-103-raw/wiki.{}.raw", split))
-        .collect::<Vec<_>>();
-    tokenizer.train_and_replace(&trainer, files)?;
-    // END quicktour_train
-    // START quicktour_reload_model
-    use std::path::Path;
-    use tokenizers::Model;
-
-    let saved_files = tokenizer
-        .get_model()
-        .save(&Path::new("data"), Some("wiki"))?;
-    tokenizer.with_model(
-        BPE::from_file(
-            saved_files[0].to_str().unwrap(),
-            &saved_files[1].to_str().unwrap(),
-        )
-        .unk_token("[UNK]".to_string())
-        .build()?,
-    );
-    // END quicktour_reload_model
-    // START quicktour_save
-    tokenizer.save("data/tokenizer-wiki.json", false)?;
-    // END quicktour_save
-
-    Ok(())
-}
-
-#[allow(unused_imports, clippy::type_complexity)]
-fn quicktour_get_tokenizer_trainer() -> tokenizers::Result<(
-    TokenizerImpl<
-        BPE,
-        NormalizerWrapper,
-        PreTokenizerWrapper,
-        PostProcessorWrapper,
-        DecoderWrapper,
-    >,
-    BpeTrainer,
-)> {
     // START quicktour_init_tokenizer
     use tokenizers::models::bpe::BPE;
-    use tokenizers::TokenizerBuilder;
 
     let mut tokenizer: TokenizerImpl<
         BPE,
@@ -135,7 +91,35 @@ fn quicktour_get_tokenizer_trainer() -> tokenizers::Result<(
     tokenizer.with_pre_tokenizer(Whitespace::default());
     // END quicktour_init_pretok
 
-    Ok((tokenizer, trainer))
+    // START quicktour_train
+    let files = vec![
+        "data/wikitext-103-raw/wiki.train.raw".into(),
+        "data/wikitext-103-raw/wiki.test.raw".into(),
+        "data/wikitext-103-raw/wiki.valid.raw".into(),
+    ];
+    tokenizer.train_and_replace(&trainer, files)?;
+    // END quicktour_train
+    // START quicktour_reload_model
+    use std::path::Path;
+    use tokenizers::Model;
+
+    let saved_files = tokenizer
+        .get_model()
+        .save(&Path::new("data"), Some("wiki"))?;
+    tokenizer.with_model(
+        BPE::from_file(
+            saved_files[0].to_str().unwrap(),
+            &saved_files[1].to_str().unwrap(),
+        )
+        .unk_token("[UNK]".to_string())
+        .build()?,
+    );
+    // END quicktour_reload_model
+    // START quicktour_save
+    tokenizer.save("data/tokenizer-wiki.json", false)?;
+    // END quicktour_save
+
+    Ok(())
 }
 
 #[test]
@@ -386,7 +370,7 @@ fn pipeline() -> tokenizers::Result<()> {
 
 #[test]
 #[ignore]
-fn pipeline_bert() -> tokenizers::Result<()> {
+fn train_pipeline_bert() -> tokenizers::Result<()> {
     // START bert_setup_tokenizer
     use tokenizers::models::wordpiece::WordPiece;
     use tokenizers::Tokenizer;
@@ -438,10 +422,11 @@ fn pipeline_bert() -> tokenizers::Result<()> {
         ])
         .build()
         .into();
-    let files = ["test", "train", "valid"]
-        .iter()
-        .map(|split| format!("data/wikitext-103-raw/wiki.{}.raw", split))
-        .collect::<Vec<_>>();
+    let files = vec![
+        "data/wikitext-103-raw/wiki.train.raw".into(),
+        "data/wikitext-103-raw/wiki.test.raw".into(),
+        "data/wikitext-103-raw/wiki.valid.raw".into(),
+    ];
     bert_tokenizer.train_and_replace(&trainer, files)?;
 
     let model_files = bert_tokenizer
@@ -456,6 +441,13 @@ fn pipeline_bert() -> tokenizers::Result<()> {
 
     bert_tokenizer.save("data/bert-wiki.json", false)?;
     // END bert_train_tokenizer
+    Ok(())
+}
+
+#[test]
+fn pipeline_bert() -> tokenizers::Result<()> {
+    let mut bert_tokenizer = Tokenizer::from_file("data/bert-wiki.json")?;
+
     // START bert_test_decoding
     let output = bert_tokenizer.encode("Welcome to the 🤗 Tokenizers library.", true)?;
     println!("{:?}", output.get_tokens());
@@ -465,13 +457,22 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     println!("{}", decoded);
     // "welcome to the tok ##eni ##zer ##s library ."
     // END bert_test_decoding
+    assert_eq!(
+        output.get_tokens(),
+        &[
+            "[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library",
+            ".", "[SEP]"
+        ]
+    );
+    assert_eq!(decoded, "welcome to the tok ##eni ##zer ##s library .");
     // START bert_proper_decoding
     use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
+
     bert_tokenizer.with_decoder(WordPieceDecoder::default());
     let decoded = bert_tokenizer.decode(output.get_ids().to_vec(), true)?;
     // "welcome to the tokenizers library."
     // END bert_proper_decoding
-    println!("{}", decoded);
+    assert_eq!(decoded, "welcome to the tokenizers library.");
 
     Ok(())
 }

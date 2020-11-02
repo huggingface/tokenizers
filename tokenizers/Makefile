@@ -6,7 +6,7 @@ dir_guard=@mkdir -p $(@D)
 
 SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt $(DATA_DIR)/bert-base-uncased-vocab.txt $(DATA_DIR)/big.txt $(DATA_DIR)/small.txt
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES)
-TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json
+TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json
 
 .PHONY : build
 build :
@@ -75,3 +75,7 @@ $(DATA_DIR)/roberta.json :
 $(DATA_DIR)/tokenizer-wiki.json :
 	$(dir_guard)
 	wget https://s3.amazonaws.com/models.huggingface.co/bert/anthony/doc-quicktour/tokenizer.json -O $@
+
+$(DATA_DIR)/bert-wiki.json :
+	$(dir_guard)
+	wget https://s3.amazonaws.com/models.huggingface.co/bert/anthony/doc-pipeline/tokenizer.json -O $@
