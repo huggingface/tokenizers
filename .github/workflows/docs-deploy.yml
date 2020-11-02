@@ -2,8 +2,8 @@ name: Deploy Documentation
 
 on:
   push:
-#   branches:
-#     - master
+    branches:
+      - master
 
 jobs:
   deploy:
