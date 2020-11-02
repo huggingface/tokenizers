@@ -71,6 +71,28 @@ declare_types! {
             // This should not be called from JS
             Ok(PreTokenizer { pretok: None })
         }
+
+        method preTokenizeString(mut cx) {
+            use tk::PreTokenizer;
+
+            let sequence = cx.extract::<String>(0)?;
+            let mut pretokenized = PreTokenizedString::from(sequence);
+
+            let this = cx.this();
+            let guard = cx.lock();
+
+            this.borrow(&guard)
+                .pre_tokenize(&mut pretokenized)
+                .map_err(|e| Error(format!("{}", e)))?;
+
+            let splits = pretokenized
+                .get_splits(tk::OffsetReferential::Original, tk::OffsetType::Char)
+                .into_iter()
+                .map(|(s, o, _)| (s.to_owned(), o))
+                .collect::<Vec<_>>();
+
+            Ok(neon_serde::to_value(&mut cx, &splits)?.upcast())
+        }
     }
 }
 
@@ -186,6 +208,18 @@ fn char_delimiter_split(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     Ok(pretok)
 }
 
+/// digits(individualDigits: bool)
+fn digits(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
+    let individual_digits = cx.extract_opt::<bool>(0)?.unwrap_or(false);
+
+    let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    pretok.borrow_mut(&guard).pretok =
+        Some(tk::pre_tokenizers::digits::Digits::new(individual_digits).into());
+
+    Ok(pretok)
+}
+
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_ByteLevel", prefix), byte_level)?;
@@ -203,6 +237,7 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     )?;
     m.export_function(&format!("{}_Punctuation", prefix), punctuation)?;
     m.export_function(&format!("{}_Sequence", prefix), sequence)?;
+    m.export_function(&format!("{}_Digits", prefix), digits)?;
     Ok(())
 }
 

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-empty-function */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { BPE, WordPiece } from "./models";
+import { BPE, Unigram, WordPiece } from "./models";
 
 const MOCKS_DIR = __dirname + "/__mocks__";
 
@@ -107,18 +107,25 @@ describe("BPE", () => {
     });
   });
   describe("When initialized from memory", () => {
-    it("returns `undefined`", () => {
-      expect(
-        (BPE as any).init({ a: 0, b: 1, ab: 2 }, [["a", "b"]], () => {})
-      ).toBeUndefined();
+    it("returns the loaded Model", () => {
+      const bpe = BPE.init({ a: 0, b: 1, ab: 2 }, [["a", "b"]]);
+      expect(bpe.constructor.name).toEqual("Model");
     });
-    it("has its callback called with the loaded model", () => {
-      return new Promise((done) => {
-        (BPE as any).init({ a: 0, b: 1, ab: 2 }, [["a", "b"]], (err: any, model: any) => {
-          expect(model).toBeDefined();
-          done();
-        });
-      });
-    });
+  });
+});
+
+describe("Unigram", () => {
+  it("can be initialized from memory", () => {
+    const unigram = Unigram.init(
+      [
+        ["<unk>", 0],
+        ["Hello", -1],
+        ["there", -2],
+      ],
+      {
+        unkId: 0,
+      }
+    );
+    expect(unigram.constructor.name).toEqual("Model");
   });
 });

@@ -69,6 +69,21 @@ declare_types! {
             // This should not be called from JS
             Ok(Normalizer { normalizer: None })
         }
+
+        method normalizeString(mut cx) {
+            use tk::Normalizer;
+
+            let sequence = cx.extract::<String>(0)?;
+            let mut normalized = NormalizedString::from(sequence);
+
+            let this = cx.this();
+            let guard = cx.lock();
+            this.borrow(&guard)
+                .normalize(&mut normalized)
+                .map_err(|e| Error(format!("{}", e)))?;
+
+            Ok(cx.string(normalized.get()).upcast())
+        }
     }
 }
 
@@ -224,6 +239,27 @@ fn replace(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     Ok(normalizer)
 }
 
+/// nmt()
+fn nmt(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
+    let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    normalizer.borrow_mut(&guard).normalizer = Some(tk::normalizers::unicode::Nmt.into());
+    Ok(normalizer)
+}
+
+/// precompiled()
+fn precompiled(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
+    let bytes = cx.extract::<Vec<u8>>(0)?;
+    let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    normalizer.borrow_mut(&guard).normalizer = Some(
+        tk::normalizers::precompiled::Precompiled::from(&bytes)
+            .map_err(|e| Error(e.to_string()))?
+            .into(),
+    );
+    Ok(normalizer)
+}
+
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_BertNormalizer", prefix), bert_normalizer)?;
@@ -233,9 +269,11 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_NFKC", prefix), nfkc)?;
     m.export_function(&format!("{}_Sequence", prefix), sequence)?;
     m.export_function(&format!("{}_Lowercase", prefix), lowercase)?;
-    m.export_function(&format!("{}_Replace", prefix), replace)?;
     m.export_function(&format!("{}_Strip", prefix), strip)?;
     m.export_function(&format!("{}_StripAccents", prefix), strip_accents)?;
+    m.export_function(&format!("{}_Nmt", prefix), nmt)?;
+    m.export_function(&format!("{}_Precompiled", prefix), precompiled)?;
+    m.export_function(&format!("{}_Replace", prefix), replace)?;
     Ok(())
 }
 

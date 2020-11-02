@@ -14,6 +14,8 @@ interface Model {
   save(folder: string, name?: string): string[];
 }
 
+type ModelCallback = (err: Error, model: Model) => void;
+
 export interface BPEOptions {
   /**
    * The number of words that the BPE cache can contain. The cache allows
@@ -42,6 +44,18 @@ export interface BPEOptions {
 
 export namespace BPE {
   /**
+   * Instantiate a BPE model from the given vocab and merges
+   *
+   * @param vocab A dict mapping strings to number, representing the vocab
+   * @param merges An array of tuples of strings, representing two tokens to be merged
+   * @param options BPE model options
+   */
+  export function init(
+    vocab: { [token: string]: number },
+    merges: [string, string][],
+    options?: BPEOptions
+  ): Model;
+  /**
    * Instantiate a BPE model from the given vocab and merges files
    *
    * @param vocab Path to a vocabulary JSON file
@@ -52,20 +66,8 @@ export namespace BPE {
   export function fromFile(
     vocab: string,
     merges: string,
-    options: BPEOptions,
-    __callback: (err: Error, encoding: Model) => void
-  ): void;
-  /**
-   * Instantiate a BPE model from the given vocab and merges files
-   *
-   * @param vocab Path to a vocabulary JSON file
-   * @param merges Path to a merge file
-   * @param __callback Callback called when model is loaded
-   */
-  export function fromFile(
-    vocab: string,
-    merges: string,
-    __callback: (err: Error, encoding: Model) => void
+    optionsOrCallback?: BPEOptions | ModelCallback,
+    __callback?: ModelCallback
   ): void;
 
   /**
@@ -94,6 +96,17 @@ export interface WordPieceOptions {
 
 export namespace WordPiece {
   /**
+   * Instantiate a WordPiece model from the given vocab
+   *
+   * @param vocab A dict mapping strings to numbers, representing the vocab
+   * @param options WordPiece model options
+   */
+  export function init(
+    vocab: { [token: string]: number },
+    options?: WordPieceOptions
+  ): Model;
+
+  /**
    * Instantiate a WordPiece model from the given vocab file
    *
    * @param vocab Path to a vocabulary file
@@ -102,22 +115,74 @@ export namespace WordPiece {
    */
   export function fromFile(
     vocab: string,
-    options: WordPieceOptions,
-    __callback: (err: Error, encoding: Model) => void
-  ): void;
-  /**
-   * Instantiate a WordPiece model from the given vocab file
-   *
-   * @param vocab Path to a vocabulary file
-   * @param __callback Callback called when model is loaded
-   */
-  export function fromFile(
-    vocab: string,
-    __callback: (err: Error, encoding: Model) => void
+    optionsOrCallback?: WordPieceOptions | ModelCallback,
+    __callback?: ModelCallback
   ): void;
 
   /**
    * Instantiate an empty WordPiece model
+   */
+  export function empty(): Model;
+}
+
+export interface WordLevelOptions {
+  /**
+   * The unknown token to be used by the model.
+   * @default "[UNK]"
+   */
+  unkToken?: string;
+}
+
+export namespace WordLevel {
+  /**
+   * Instantiate a WordLevel model from the given vocab
+   *
+   * @param vocab A dict mapping strings to numbers, representing the vocab
+   * @param options WordLevel model options
+   */
+  export function init(
+    vocab: { [token: string]: number },
+    options?: WordLevelOptions
+  ): Model;
+
+  /**
+   * Instantiate a WordLevel model from the given vocab file
+   *
+   * @param vocab Path to a vocabulary file
+   * @param options WordLevel model options
+   * @param __callback Callback called when model is loaded
+   */
+  export function fromFile(
+    vocab: string,
+    optionsOrCallback?: WordLevelOptions | ModelCallback,
+    __callback?: ModelCallback
+  ): void;
+
+  /**
+   * Instantiate an empty WordLevel model
+   */
+  export function empty(): Model;
+}
+
+export interface UnigramOptions {
+  /**
+   * The unknown token id to be used by the model.
+   * @default undefined
+   */
+  unkId?: number;
+}
+
+export namespace Unigram {
+  /**
+   * Instantiate a Unigram model from the given vocab
+   *
+   * @param vocab An array of token and id tuples
+   * @param optiosn Unigram model options
+   */
+  export function init(vocab: [string, number][], options?: UnigramOptions): Model;
+
+  /**
+   * Instantiate an empty Unigram model
    */
   export function empty(): Model;
 }

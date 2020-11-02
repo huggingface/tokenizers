@@ -10,3 +10,4 @@ BertPreTokenizer = pre_tokenizers.BertPreTokenizer
 Metaspace = pre_tokenizers.Metaspace
 CharDelimiterSplit = pre_tokenizers.CharDelimiterSplit
 Digits = pre_tokenizers.Digits
+UnicodeScripts = pre_tokenizers.UnicodeScripts

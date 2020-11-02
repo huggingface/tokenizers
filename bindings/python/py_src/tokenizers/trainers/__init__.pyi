@@ -46,7 +46,7 @@ class BpeTrainer(Trainer):
             initial_alphabet: List[str]:
                 A list of characters to include in the initial alphabet, even
                 if not seen in the training dataset.
-                If the strings contains more than one character, only the first one
+                If the strings contain more than one character, only the first one
                 is kept.
 
             continuing_subword_prefix: Optional[str]:
@@ -98,7 +98,7 @@ class WordPieceTrainer(Trainer):
             initial_alphabet: List[str]:
                 A list of characters to include in the initial alphabet, even
                 if not seen in the training dataset.
-                If the strings contains more than one character, only the first one
+                If the strings contain more than one character, only the first one
                 is kept.
 
             continuing_subword_prefix: Optional[str]:
@@ -135,6 +135,12 @@ class UnigramTrainer(Trainer):
 
             special_tokens: List[Union[str, AddedToken]]:
                 A list of special tokens the model should know of.
+
+            initial_alphabet: List[str]:
+                A list of characters to include in the initial alphabet, even
+                if not seen in the training dataset.
+                If the strings contain more than one character, only the first one
+                is kept.
 
         Returns:
             Trainer

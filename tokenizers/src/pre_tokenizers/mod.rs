@@ -5,6 +5,7 @@ pub mod digits;
 pub mod metaspace;
 pub mod punctuation;
 pub mod sequence;
+pub mod unicode_scripts;
 pub mod whitespace;
 
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,7 @@ use crate::pre_tokenizers::digits::Digits;
 use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::pre_tokenizers::punctuation::Punctuation;
 use crate::pre_tokenizers::sequence::Sequence;
+use crate::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use crate::{PreTokenizedString, PreTokenizer};
 
@@ -31,6 +33,7 @@ pub enum PreTokenizerWrapper {
     Punctuation(Punctuation),
     WhitespaceSplit(WhitespaceSplit),
     Digits(Digits),
+    UnicodeScripts(UnicodeScripts),
 }
 
 impl PreTokenizer for PreTokenizerWrapper {
@@ -45,6 +48,7 @@ impl PreTokenizer for PreTokenizerWrapper {
             PreTokenizerWrapper::Sequence(tok) => tok.pre_tokenize(normalized),
             PreTokenizerWrapper::WhitespaceSplit(wspt) => wspt.pre_tokenize(normalized),
             PreTokenizerWrapper::Digits(wspt) => wspt.pre_tokenize(normalized),
+            PreTokenizerWrapper::UnicodeScripts(us) => us.pre_tokenize(normalized),
         }
     }
 }
@@ -58,3 +62,4 @@ impl_enum_from!(Sequence, PreTokenizerWrapper, Sequence);
 impl_enum_from!(Metaspace, PreTokenizerWrapper, Metaspace);
 impl_enum_from!(WhitespaceSplit, PreTokenizerWrapper, WhitespaceSplit);
 impl_enum_from!(Digits, PreTokenizerWrapper, Digits);
+impl_enum_from!(UnicodeScripts, PreTokenizerWrapper, UnicodeScripts);

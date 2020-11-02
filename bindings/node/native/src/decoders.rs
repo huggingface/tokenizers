@@ -25,8 +25,23 @@ impl tk::Decoder for Decoder {
 declare_types! {
     pub class JsDecoder for Decoder {
         init(_) {
-            // This should not be called from JS
-            Ok(Decoder { decoder: None })
+             // This should not be called from JS
+             Ok(Decoder { decoder: None })
+        }
+
+        method decode(mut cx) {
+            use tk::Decoder;
+
+            let tokens = cx.extract_vec::<String>(0)?;
+
+            let this = cx.this();
+            let guard = cx.lock();
+            let output = this.borrow(&guard)
+                .decoder.as_ref().unwrap()
+                .decode(tokens)
+                .map_err(|e| Error(format!("{}", e)))?;
+
+            Ok(cx.string(output).upcast())
         }
     }
 }

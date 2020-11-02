@@ -41,3 +41,16 @@ export function robertaProcessing(
   trimOffsets?: boolean,
   addPrefixSpace?: boolean
 ): PostProcessor;
+
+/**
+ * Instantiate a new TemplateProcessing.
+ *
+ * @param single A string describing the template for a single sequence
+ * @param pair A string describing the template for a pair of sequences
+ * @param specialTokens An array with all the special tokens
+ */
+export function templateProcessing(
+  single: string,
+  pair?: string,
+  specialTokens?: [string, number][]
+): PostProcessor;

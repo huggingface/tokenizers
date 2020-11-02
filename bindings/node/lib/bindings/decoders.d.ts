@@ -3,7 +3,9 @@
  * a Decoder will return an instance of this class when instantiated.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
-interface Decoder {}
+interface Decoder {
+  decode(tokens: string[]): string;
+}
 
 /**
  * Instantiate a new ByteLevel Decoder

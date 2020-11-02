@@ -12,6 +12,7 @@ use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk::pre_tokenizers::digits::Digits;
 use tk::pre_tokenizers::metaspace::Metaspace;
 use tk::pre_tokenizers::punctuation::Punctuation;
+use tk::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::tokenizer::Offsets;
@@ -70,6 +71,9 @@ impl PyPreTokenizer {
                         Py::new(py, (PyBertPreTokenizer {}, base))?.into_py(py)
                     }
                     PreTokenizerWrapper::Digits(_) => Py::new(py, (PyDigits {}, base))?.into_py(py),
+                    PreTokenizerWrapper::UnicodeScripts(_) => {
+                        Py::new(py, (PyUnicodeScripts {}, base))?.into_py(py)
+                    }
                 },
             },
         })
@@ -294,6 +298,16 @@ impl PyDigits {
     #[args(individual_digits = false)]
     fn new(individual_digits: bool) -> PyResult<(Self, PyPreTokenizer)> {
         Ok((PyDigits {}, Digits::new(individual_digits).into()))
+    }
+}
+
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=UnicodeScripts)]
+pub struct PyUnicodeScripts {}
+#[pymethods]
+impl PyUnicodeScripts {
+    #[new]
+    fn new() -> PyResult<(Self, PyPreTokenizer)> {
+        Ok((PyUnicodeScripts {}, UnicodeScripts::new().into()))
     }
 }
 

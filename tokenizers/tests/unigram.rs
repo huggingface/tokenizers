@@ -53,6 +53,7 @@ fn test_train_unigram_from_file() {
     #[cfg(feature = "progressbar")]
     let trainer = UnigramTrainer::builder()
         .show_progress(false)
+        .unk_token(Some("<UNK>".into()))
         .build()
         .unwrap();
     #[cfg(not(feature = "progressbar"))]

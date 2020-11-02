@@ -49,7 +49,7 @@ class SentencePieceBPETokenizer(BaseTokenizer):
 
     @staticmethod
     def from_file(vocab_filename: str, merges_filename: str, **kwargs):
-        vocab, merges = BPE.read_files(vocab_filename, merges_filename)
+        vocab, merges = BPE.read_file(vocab_filename, merges_filename)
         return SentencePieceBPETokenizer(vocab, merges, **kwargs)
 
     def train(

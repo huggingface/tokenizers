@@ -62,3 +62,21 @@ export function bpeTrainer(options?: TrainerOptions): Trainer;
  * @param [options] WordPiece Trainer options
  */
 export function wordPieceTrainer(options?: TrainerOptions): Trainer;
+
+export interface UnigramTrainerOptions {
+  vocabSize?: number;
+  nSubIterations?: number;
+  shrinkingFactor?: number;
+  specialTokens?: string[];
+  initialAlphabet?: string[];
+  unkToken?: string;
+  maxPieceLength?: number;
+  seedSize?: number;
+  showProgress?: boolean;
+}
+
+/**
+ * Instantiate a new Unigram Trainer
+ * @param [options] Unigram Trainer options
+ */
+export function unigramTrainer(options?: UnigramTrainerOptions): Trainer;

@@ -4,6 +4,22 @@ pub mod padding;
 pub mod parallelism;
 pub mod truncation;
 
+use serde::{Serialize, Serializer};
+use std::collections::{BTreeMap, HashMap};
+
+pub fn ordered_map<S, K, V>(
+    value: &HashMap<K, V>,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+    K: Serialize + std::cmp::Ord,
+    V: Serialize,
+{
+    let ordered: BTreeMap<_, _> = value.iter().collect();
+    ordered.serialize(serializer)
+}
+
 #[macro_use]
 macro_rules! impl_enum_from (
     ($from_ty:ty, $enum:ty, $variant:ident) => {

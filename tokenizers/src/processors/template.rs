@@ -291,7 +291,9 @@ impl TryFrom<&str> for Template {
 /// [`SpecialToken`]: struct.SpecialToken.html
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Tokens(pub HashMap<String, SpecialToken>);
+pub struct Tokens(
+    #[serde(serialize_with = "crate::utils::ordered_map")] pub HashMap<String, SpecialToken>,
+);
 
 impl<T: Into<SpecialToken>> From<Vec<T>> for Tokens {
     fn from(v: Vec<T>) -> Self {
@@ -776,15 +778,10 @@ mod tests {
     #[test]
     fn tokens_serde() {
         let tokens = Tokens::from(vec![("[CLS]", 1), ("[SEP]", 0)]);
-        let tokens_s = r#"{"[SEP]":{"id":"[SEP]","ids":[0],"tokens":["[SEP]"]},"[CLS]":{"id":"[CLS]","ids":[1],"tokens":["[CLS]"]}}"#;
-        let tokens_s_alt = r#"{"[CLS]":{"id":"[CLS]","ids":[1],"tokens":["[CLS]"]},"[SEP]":{"id":"[SEP]","ids":[0],"tokens":["[SEP]"]}}"#;
+        let tokens_s = r#"{"[CLS]":{"id":"[CLS]","ids":[1],"tokens":["[CLS]"]},"[SEP]":{"id":"[SEP]","ids":[0],"tokens":["[SEP]"]}}"#;
         let tokens_ser = serde_json::to_string(&tokens).unwrap();
-        assert!(tokens_ser == tokens_s || tokens_ser == tokens_s_alt);
+        assert_eq!(tokens_ser, tokens_s);
         assert_eq!(serde_json::from_str::<Tokens>(tokens_s).unwrap(), tokens);
-        assert_eq!(
-            serde_json::from_str::<Tokens>(tokens_s_alt).unwrap(),
-            tokens
-        );
     }
 
     fn get_bert_template() -> TemplateProcessing {
@@ -823,36 +820,10 @@ mod tests {
                     \"id\":\"[SEP]\",\"ids\":[0],\"tokens\":[\"[SEP]\"]\
                 }\
             }}";
-        let template_s_alt = "{\
-            \"type\":\"TemplateProcessing\",\
-            \"single\":[\
-                {\"SpecialToken\":{\"id\":\"[CLS]\",\"type_id\":0}},\
-                {\"Sequence\":{\"id\":\"A\",\"type_id\":0}},\
-                {\"SpecialToken\":{\"id\":\"[SEP]\",\"type_id\":0}}\
-            ],\
-            \"pair\":[\
-                {\"SpecialToken\":{\"id\":\"[CLS]\",\"type_id\":0}},\
-                {\"Sequence\":{\"id\":\"A\",\"type_id\":0}},\
-                {\"SpecialToken\":{\"id\":\"[SEP]\",\"type_id\":0}},\
-                {\"Sequence\":{\"id\":\"B\",\"type_id\":1}},\
-                {\"SpecialToken\":{\"id\":\"[SEP]\",\"type_id\":1}}\
-            ],\
-            \"special_tokens\":{\
-                \"[SEP]\":{\
-                    \"id\":\"[SEP]\",\"ids\":[0],\"tokens\":[\"[SEP]\"]\
-                },\
-                \"[CLS]\":{\
-                    \"id\":\"[CLS]\",\"ids\":[1],\"tokens\":[\"[CLS]\"]\
-                }\
-            }}";
         let template_ser = serde_json::to_string(&template).unwrap();
-        assert!(template_ser == template_s || template_ser == template_s_alt);
+        assert_eq!(template_ser, template_s);
         assert_eq!(
             serde_json::from_str::<TemplateProcessing>(template_s).unwrap(),
-            template
-        );
-        assert_eq!(
-            serde_json::from_str::<TemplateProcessing>(template_s_alt).unwrap(),
             template
         );
     }

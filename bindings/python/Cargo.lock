@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers-python"
-version = "0.9.1"
+version = "0.9.3"
 dependencies = [
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.79 (registry+https://github.com/rust-lang/crates.io-index)",
