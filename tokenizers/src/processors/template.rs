@@ -519,6 +519,7 @@ impl TemplateProcessing {
         let mut offsets = Vec::with_capacity(new_len);
         let mut special_tokens_mask = Vec::with_capacity(new_len);
         let mut attention_mask = Vec::with_capacity(new_len);
+        let mut sequence_ranges = HashMap::new();
 
         let pair_overflowing = pair.as_mut().map_or(vec![], |e| e.take_overflowing());
         let mut overflowing = encoding
@@ -564,6 +565,9 @@ impl TemplateProcessing {
                     id: Sequence::A,
                     type_id,
                 } => {
+                    let seq_start = ids.len();
+                    let seq_end = seq_start + encoding.len();
+                    sequence_ranges.insert(0, seq_start..seq_end);
                     ids.extend(encoding.get_ids());
                     type_ids.extend(std::iter::repeat(type_id).take(encoding.len()));
                     tokens.extend(encoding.get_tokens().iter().map(|s| s.to_owned()));
@@ -577,6 +581,9 @@ impl TemplateProcessing {
                     type_id,
                 } => {
                     let pair = pair.as_ref().expect("Missing pair sequence, checked above");
+                    let seq_start = ids.len();
+                    let seq_end = seq_start + pair.len();
+                    sequence_ranges.insert(1, seq_start..seq_end);
                     ids.extend(pair.get_ids());
                     type_ids.extend(std::iter::repeat(type_id).take(pair.len()));
                     tokens.extend(pair.get_tokens().iter().map(|s| s.to_owned()));
@@ -611,6 +618,7 @@ impl TemplateProcessing {
             special_tokens_mask,
             attention_mask,
             overflowing,
+            sequence_ranges,
         ))
     }
 }
@@ -647,6 +655,7 @@ impl PostProcessor for TemplateProcessing {
 mod tests {
     use super::*;
     use std::convert::TryInto;
+    use std::iter::FromIterator;
 
     #[test]
     fn piece_serde() {
@@ -857,8 +866,10 @@ mod tests {
             0,
         );
         let pair = Encoding::from_tokens(vec![Token::new(15, "pair".into(), (0, 4))], 0);
+        let single_encoding = processor.process(encoding.clone(), None, true).unwrap();
+        let pair_encoding = processor.process(encoding, Some(pair), true).unwrap();
         assert_eq!(
-            processor.process(encoding.clone(), None, true).unwrap(),
+            single_encoding,
             Encoding::new(
                 vec![1, 12, 14, 0],
                 vec![0, 0, 0, 0],
@@ -872,11 +883,14 @@ mod tests {
                 vec![(0, 0), (0, 5), (6, 11), (0, 0)],
                 vec![1, 0, 0, 1],
                 vec![1, 1, 1, 1],
-                vec![]
+                vec![],
+                HashMap::from_iter(vec![(0, 1..3)]),
             )
         );
+        assert_eq!(single_encoding.token_to_sequence(2), Some(0));
+        assert_eq!(single_encoding.token_to_sequence(3), None);
         assert_eq!(
-            processor.process(encoding, Some(pair), true).unwrap(),
+            pair_encoding,
             Encoding::new(
                 vec![1, 12, 14, 0, 15, 0],
                 vec![0, 0, 0, 0, 1, 1],
@@ -892,9 +906,14 @@ mod tests {
                 vec![(0, 0), (0, 5), (6, 11), (0, 0), (0, 4), (0, 0)],
                 vec![1, 0, 0, 1, 0, 1],
                 vec![1, 1, 1, 1, 1, 1],
-                vec![]
+                vec![],
+                HashMap::from_iter(vec![(0, 1..3), (1, 4..5)]),
             )
         );
+        assert_eq!(pair_encoding.token_to_sequence(2), Some(0));
+        assert_eq!(pair_encoding.token_to_sequence(3), None);
+        assert_eq!(pair_encoding.token_to_sequence(4), Some(1));
+        assert_eq!(pair_encoding.token_to_sequence(5), None);
     }
 
     #[test]

@@ -2,6 +2,8 @@ use crate::parallelism::*;
 use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::ops::Range;
 
 /// Represents the output of a `Tokenizer`.
 #[derive(Default, PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +24,9 @@ pub struct Encoding {
     attention_mask: Vec<u32>,
     /// A list of overflowing Encoding generated when we got truncated
     overflowing: Vec<Encoding>,
+    /// Ranges of tokens covered by each sequence. If this is empty we consider
+    /// there is only one sequence in this Encoding, and that it covers the entire range.
+    sequence_ranges: HashMap<usize, Range<usize>>,
 }
 impl Encoding {
     #[allow(clippy::too_many_arguments)]
@@ -34,6 +39,7 @@ impl Encoding {
         special_tokens_mask: Vec<u32>,
         attention_mask: Vec<u32>,
         overflowing: Vec<Encoding>,
+        sequence_ranges: HashMap<usize, Range<usize>>,
     ) -> Self {
         Encoding {
             ids,
@@ -44,6 +50,7 @@ impl Encoding {
             special_tokens_mask,
             attention_mask,
             overflowing,
+            sequence_ranges,
         }
     }
 
@@ -57,6 +64,7 @@ impl Encoding {
             special_tokens_mask: Vec::with_capacity(len),
             attention_mask: Vec::with_capacity(len),
             overflowing: vec![],
+            sequence_ranges: HashMap::new(),
         }
     }
 
@@ -85,15 +93,32 @@ impl Encoding {
             attention_mask: vec![1; length],
             special_tokens_mask: vec![0; length],
             overflowing: vec![],
+            sequence_ranges: HashMap::new(),
         }
     }
 
+    /// Whether this Encoding is empty
     pub fn is_empty(&self) -> bool {
         self.ids.is_empty()
     }
 
+    /// Return the total length of this Encoding
     pub fn len(&self) -> usize {
         self.ids.len()
+    }
+
+    /// Return the number of sequences combined in this Encoding
+    pub fn n_sequences(&self) -> usize {
+        if self.sequence_ranges.is_empty() {
+            1
+        } else {
+            self.sequence_ranges.len()
+        }
+    }
+
+    /// Set the given sequence id for the whole range of tokens contained in this Encoding
+    pub fn set_sequence_id(&mut self, sequence_id: usize) {
+        self.sequence_ranges.insert(sequence_id, 0..self.len());
     }
 
     pub fn get_tokens(&self) -> &[String] {
@@ -155,11 +180,40 @@ impl Encoding {
             .for_each(func)
     }
 
+    /// Returns the range to target to retrieve something (word_id, offsets, ..) related to the
+    /// given sequence id
+    fn sequence_range(&self, sequence_id: usize) -> Range<usize> {
+        self.sequence_ranges
+            .get(&sequence_id)
+            .cloned()
+            .unwrap_or(0..self.len())
+    }
+
+    /// Returns the index of the sequence containing the given token
+    pub fn token_to_sequence(&self, token: usize) -> Option<usize> {
+        if token > self.len() {
+            None
+        } else if self.sequence_ranges.is_empty() {
+            Some(0)
+        } else {
+            self.sequence_ranges.iter().find_map(|(seq_id, range)| {
+                if range.contains(&token) {
+                    Some(*seq_id)
+                } else {
+                    None
+                }
+            })
+        }
+    }
+
     /// Get the encoded tokens corresponding to the word at the given index in the input sequence,
     /// with the form (start_token, end_token + 1)
-    pub fn word_to_tokens(&self, word: u32) -> Option<(usize, usize)> {
+    pub fn word_to_tokens(&self, word: u32, sequence_id: usize) -> Option<(usize, usize)> {
         let (mut start, mut end) = (None, None);
+        let sequence_range = self.sequence_range(sequence_id);
+
         self.words
+            .get(sequence_range.clone())?
             .iter()
             .enumerate()
             .take_while(|(_, w)| **w <= Some(word))
@@ -174,15 +228,15 @@ impl Encoding {
             });
 
         if let (Some(start), Some(end)) = (start, end) {
-            Some((start, end))
+            Some((sequence_range.start + start, sequence_range.start + end))
         } else {
             None
         }
     }
 
     /// Get the offsets of the word at the given index in the input sequence.
-    pub fn word_to_chars(&self, word: u32) -> Option<Offsets> {
-        self.word_to_tokens(word)
+    pub fn word_to_chars(&self, word: u32, sequence_id: usize) -> Option<Offsets> {
+        self.word_to_tokens(word, sequence_id)
             .map(|(start, end)| {
                 if end == 0 {
                     None
@@ -194,27 +248,40 @@ impl Encoding {
     }
 
     /// Get the offsets of the token at the given index.
-    pub fn token_to_chars(&self, token: usize) -> Option<Offsets> {
-        self.offsets.get(token).copied()
+    pub fn token_to_chars(&self, token: usize) -> Option<(usize, Offsets)> {
+        Some((
+            self.token_to_sequence(token)?,
+            self.offsets.get(token).copied()?,
+        ))
     }
 
     /// Get the word that contains the token at the given index.
-    pub fn token_to_word(&self, token: usize) -> Option<u32> {
-        self.words.get(token).copied().flatten()
+    pub fn token_to_word(&self, token: usize) -> Option<(usize, u32)> {
+        Some((
+            self.token_to_sequence(token)?,
+            self.words.get(token).copied().flatten()?,
+        ))
     }
 
     /// Get the token that contains the given char.
-    pub fn char_to_token(&self, pos: usize) -> Option<usize> {
+    pub fn char_to_token(&self, pos: usize, sequence_id: usize) -> Option<usize> {
+        let sequence_range = self.sequence_range(sequence_id);
+
         self.offsets
+            .get(sequence_range.clone())?
             .iter()
             .position(|(start, end)| pos >= *start && pos < *end)
+            .map(|pos| sequence_range.start + pos)
     }
 
     /// Get the word that contains the given char.
-    pub fn char_to_word(&self, pos: usize) -> Option<u32> {
-        self.char_to_token(pos)
-            .map(|token| self.token_to_word(token))
-            .flatten()
+    pub fn char_to_word(&self, pos: usize, sequence_id: usize) -> Option<u32> {
+        Some(
+            self.char_to_token(pos, sequence_id)
+                .map(|token| self.token_to_word(token))
+                .flatten()?
+                .1,
+        )
     }
 
     /// Truncate the current `Encoding`.
@@ -239,6 +306,9 @@ impl Encoding {
         let o_offsets = self.offsets.split_off(max_len);
         let o_spe_toks = self.special_tokens_mask.split_off(max_len);
         let o_attent = self.attention_mask.split_off(max_len);
+
+        // When truncating, we loose the `sequence_ranges` information.
+        self.sequence_ranges.clear();
 
         // Now we need to separate the overflowing part into as many Encoding as needed
         assert!(stride < max_len);
@@ -291,6 +361,7 @@ impl Encoding {
                     stride,
                 ),
                 overflowing: vec![],
+                sequence_ranges: HashMap::new(),
             };
 
             part_id += 1;
@@ -340,6 +411,15 @@ impl Encoding {
         }
 
         // Finish by merging ourself with the other encoding
+        let original_self_len = self.len(); // Must be before any modification to self.ids
+
+        self.sequence_ranges
+            .extend(pair.sequence_ranges.into_iter().map(|(seq_id, range)| {
+                (
+                    seq_id,
+                    original_self_len + range.start..original_self_len + range.end,
+                )
+            }));
         self.ids.extend(pair.ids);
         self.type_ids.extend(pair.type_ids);
         self.tokens.extend(pair.tokens);
@@ -475,6 +555,7 @@ fn get_current_part<T: Clone>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::iter::FromIterator;
 
     #[test]
     fn merge_encodings() {
@@ -486,7 +567,7 @@ mod tests {
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],
             attention_mask: vec![1],
-            overflowing: vec![],
+            ..Default::default()
         };
         let b = Encoding {
             ids: vec![2],
@@ -496,7 +577,7 @@ mod tests {
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],
             attention_mask: vec![1],
-            overflowing: vec![],
+            ..Default::default()
         };
         a.merge_with(b, true);
 
@@ -510,7 +591,7 @@ mod tests {
                 offsets: vec![(0, 6), (6, 12)],
                 special_tokens_mask: vec![0, 0],
                 attention_mask: vec![1, 1],
-                overflowing: vec![],
+                ..Default::default()
             }
         );
     }
@@ -529,7 +610,7 @@ mod tests {
             offsets: vec![(0, 5), (6, 11), (11, 12)],
             special_tokens_mask: vec![0, 0, 0],
             attention_mask: vec![1, 1, 1],
-            overflowing: vec![],
+            ..Default::default()
         };
         a.truncate(2, 0);
 
@@ -551,8 +632,9 @@ mod tests {
                     offsets: vec![(11, 12)],
                     special_tokens_mask: vec![0],
                     attention_mask: vec![1],
-                    overflowing: vec![],
-                }]
+                    ..Default::default()
+                }],
+                ..Default::default()
             }
         );
     }
@@ -571,20 +653,13 @@ mod tests {
             offsets: vec![(0, 5), (6, 11), (11, 12)],
             special_tokens_mask: vec![0, 0, 0],
             attention_mask: vec![1, 1, 1],
-            overflowing: vec![],
+            ..Default::default()
         };
         a.truncate(0, 0);
 
         assert_eq!(
             a,
             Encoding {
-                ids: vec![],
-                type_ids: vec![],
-                tokens: vec![],
-                words: vec![],
-                offsets: vec![],
-                special_tokens_mask: vec![],
-                attention_mask: vec![],
                 overflowing: vec![Encoding {
                     ids: vec![1, 2, 3],
                     type_ids: vec![0, 0, 0],
@@ -598,7 +673,9 @@ mod tests {
                     special_tokens_mask: vec![0, 0, 0],
                     attention_mask: vec![1, 1, 1],
                     overflowing: vec![],
-                }]
+                    ..Default::default()
+                }],
+                ..Default::default()
             }
         );
     }
@@ -606,7 +683,9 @@ mod tests {
     #[test]
     fn mappings() {
         let encoding = Encoding {
+            ids: vec![0; 11], // Needed for Encoding::len
             tokens: vec![
+                // First sequence:
                 "He".into(),
                 "llo".into(),
                 "won".into(),
@@ -614,8 +693,14 @@ mod tests {
                 "ful".into(),
                 "friend".into(),
                 "!".into(),
+                // Second sequence:
+                "How".into(),
+                "are".into(),
+                "you".into(),
+                "?".into(),
             ],
             offsets: vec![
+                // First sequence:
                 (0, 2),
                 (2, 5),
                 (7, 10),
@@ -623,8 +708,14 @@ mod tests {
                 (13, 16),
                 (17, 23),
                 (23, 24),
+                // Second sequence:
+                (0, 3),
+                (4, 7),
+                (8, 11),
+                (11, 12),
             ],
             words: vec![
+                // First sequence:
                 Some(0),
                 Some(0),
                 Some(1),
@@ -632,32 +723,52 @@ mod tests {
                 Some(1),
                 Some(2),
                 Some(3),
+                // Second sequence:
+                Some(0),
+                Some(1),
+                Some(2),
+                Some(3),
             ],
+            sequence_ranges: HashMap::from_iter(vec![(0, 0..7), (1, 7..11)]),
             ..Default::default()
         };
-        assert_eq!(encoding.word_to_tokens(0), Some((0, 2)));
-        assert_eq!(encoding.word_to_tokens(1), Some((2, 5)));
-        assert_eq!(encoding.word_to_tokens(2), Some((5, 6)));
-        assert_eq!(encoding.word_to_tokens(3), Some((6, 7)));
+        assert_eq!(encoding.word_to_tokens(0, 0), Some((0, 2)));
+        assert_eq!(encoding.word_to_tokens(1, 0), Some((2, 5)));
+        assert_eq!(encoding.word_to_tokens(2, 0), Some((5, 6)));
+        assert_eq!(encoding.word_to_tokens(3, 0), Some((6, 7)));
+        assert_eq!(encoding.word_to_tokens(0, 1), Some((7, 8)));
+        assert_eq!(encoding.word_to_tokens(1, 1), Some((8, 9)));
+        assert_eq!(encoding.word_to_tokens(2, 1), Some((9, 10)));
+        assert_eq!(encoding.word_to_tokens(3, 1), Some((10, 11)));
 
-        assert_eq!(encoding.word_to_chars(0), Some((0, 5)));
-        assert_eq!(encoding.word_to_chars(1), Some((7, 16)));
+        assert_eq!(encoding.word_to_chars(0, 0), Some((0, 5)));
+        assert_eq!(encoding.word_to_chars(1, 0), Some((7, 16)));
+        assert_eq!(encoding.word_to_chars(0, 1), Some((0, 3)));
+        assert_eq!(encoding.word_to_chars(1, 1), Some((4, 7)));
 
-        assert_eq!(encoding.token_to_chars(0), Some((0, 2)));
-        assert_eq!(encoding.token_to_chars(1), Some((2, 5)));
+        assert_eq!(encoding.token_to_chars(0), Some((0, (0, 2))));
+        assert_eq!(encoding.token_to_chars(1), Some((0, (2, 5))));
+        assert_eq!(encoding.token_to_chars(7), Some((1, (0, 3))));
+        assert_eq!(encoding.token_to_chars(9), Some((1, (8, 11))));
 
-        assert_eq!(encoding.token_to_word(1), Some(0));
-        assert_eq!(encoding.token_to_word(2), Some(1));
-        assert_eq!(encoding.token_to_word(7), None);
+        assert_eq!(encoding.token_to_word(1), Some((0, 0)));
+        assert_eq!(encoding.token_to_word(2), Some((0, 1)));
+        assert_eq!(encoding.token_to_word(7), Some((1, 0)));
+        assert_eq!(encoding.token_to_word(9), Some((1, 2)));
+        assert_eq!(encoding.token_to_word(11), None);
 
-        assert_eq!(encoding.char_to_token(3), Some(1));
-        assert_eq!(encoding.char_to_token(8), Some(2));
-        assert_eq!(encoding.char_to_token(16), None);
-        assert_eq!(encoding.char_to_token(23), Some(6));
+        assert_eq!(encoding.char_to_token(3, 0), Some(1));
+        assert_eq!(encoding.char_to_token(8, 0), Some(2));
+        assert_eq!(encoding.char_to_token(16, 0), None);
+        assert_eq!(encoding.char_to_token(23, 0), Some(6));
+        assert_eq!(encoding.char_to_token(2, 1), Some(7));
+        assert_eq!(encoding.char_to_token(9, 1), Some(9));
 
-        assert_eq!(encoding.char_to_word(3), Some(0));
-        assert_eq!(encoding.char_to_word(8), Some(1));
-        assert_eq!(encoding.char_to_word(16), None);
-        assert_eq!(encoding.char_to_word(23), Some(3));
+        assert_eq!(encoding.char_to_word(3, 0), Some(0));
+        assert_eq!(encoding.char_to_word(8, 0), Some(1));
+        assert_eq!(encoding.char_to_word(16, 0), None);
+        assert_eq!(encoding.char_to_word(23, 0), Some(3));
+        assert_eq!(encoding.char_to_word(2, 1), Some(0));
+        assert_eq!(encoding.char_to_word(9, 1), Some(2));
     }
 }

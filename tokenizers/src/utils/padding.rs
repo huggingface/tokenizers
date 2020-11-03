@@ -84,6 +84,7 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
 mod tests {
     use super::*;
     use crate::tokenizer::Encoding;
+    use std::collections::HashMap;
 
     #[test]
     fn pad_to_multiple() {
@@ -98,6 +99,7 @@ mod tests {
                     vec![],
                     vec![],
                     vec![],
+                    HashMap::new(),
                 ),
                 Encoding::new(
                     vec![0, 1, 2],
@@ -108,6 +110,7 @@ mod tests {
                     vec![],
                     vec![],
                     vec![],
+                    HashMap::new(),
                 ),
             ]
         }
