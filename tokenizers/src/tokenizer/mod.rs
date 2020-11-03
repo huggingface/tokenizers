@@ -105,7 +105,9 @@ impl dyn PostProcessor {
     ) -> Result<Encoding> {
         match pair_encoding {
             None => Ok(encoding),
-            Some(pair) => {
+            Some(mut pair) => {
+                encoding.set_sequence_id(0);
+                pair.set_sequence_id(1);
                 encoding.merge_with(pair, false);
                 Ok(encoding)
             }
