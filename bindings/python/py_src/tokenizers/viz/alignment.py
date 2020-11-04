@@ -37,67 +37,73 @@ class Aligner:
         return colors
 
     @staticmethod
-    def charstate_partition_to_html(
+    def consecutive_chars_to_html(
         char_state_partition: List[CharState],
         text: str,
         encoding: Encoding,
-        annotations: AnnotationList,
     ):
-        style = ""
         first = char_state_partition[0]
         if first.char_ix is None:
             # its a special token
             stoken = encoding.tokens[first.token_ix]
+            #special tokens are represented as empty spans. We use the data attribute and css magic to display it
             return f'<span class="special-token" data-stoken={stoken}></span>'
+        #We're not in a special token so this group has a start and end.
         last = char_state_partition[-1]
         start = first.char_ix
         end = last.char_ix + 1
         span_text = text[start:end]
-        css_classes = []
-        data_items = {}
-        if first.anno_ix is not None:
-            # annotation = annotations[first.anno_ix]
-            # css_classes.append("annotatixxon")
-            # data_items["label"] = annotation.label
-            # data_items["color"] = "blue"  # todo change this
-            pass
+        css_classes = [] # What css classes will we apply on the resulting span
+        data_items = {} # What data attributes will we apply on the result span
         if first.token_ix is not None:
+            # We can either be in a token or not (e.g. in white space)
             css_classes.append("token")
             if first.token_ix % 2:
+                # We use this to color alternating tokens.
+                # A token might be split by an annotation that ends in the middle of it, so this lets us visually
+                # indicate a consecutive token despite its possible splitting in the html markup
                 css_classes.append("odd-token")
             else:
+                #Like above, but a different color so we can see the tokens alternate
                 css_classes.append("even-token")
             if encoding.special_tokens_mask[first.token_ix]:
+                #This is a special token that is in the text. probably UNK
                 css_classes.append("special-token")
+                #TODO is this the right name for the data attribute ?
                 data_items["stoken"] = encoding.tokens[first.token_ix]
         else:
+            #In this case we are looking at a group/single char that is not tokenized. e.g. white space
             css_classes.append("non-token")
         css = f'''class="{' '.join(css_classes)}"'''
         data = ""
         for key, val in data_items.items():
             data += f' data-{key}="val"'
-        return f"<span {css} {data} {style}>{span_text}</span>"
+        return f"<span {css} {data} >{span_text}</span>"
 
     @staticmethod
     def make_html(text: str, encoding: Encoding, annotations: AnnotationList):
         char_states = Aligner.__make_char_states(text, encoding, annotations)
-        current_partition = [char_states[0]]
+        current_consecutive_chars = [char_states[0]]
         prev_anno_ix = None
         spans = []
         label_colors_dict = Aligner.calculate_label_colors(annotations)
         for cs in char_states[1:]:
             cur_anno_ix = cs.anno_ix
             if cur_anno_ix != prev_anno_ix:
+                #If we've transitioned in or out of an annotation
                 spans.append(
-                    Aligner.charstate_partition_to_html(
-                        current_partition, text=text, encoding=encoding, annotations=annotations
+                    #Create a span from the current consecutive characters
+                    Aligner.consecutive_chars_to_html(
+                        current_consecutive_chars, text=text, encoding=encoding, annotations=annotations
                     )
                 )
-                current_partition = [cs]
+                current_consecutive_chars = [cs]
 
                 if prev_anno_ix is not None:
+                    # if we transitioned out of an annotation close it's span
                     spans.append("</span>")
                 if cur_anno_ix is not None:
+                    #If we entered a new annotation make a span for it
                     anno = annotations[cur_anno_ix]
                     label = anno.label
                     color = label_colors_dict[label]
@@ -106,31 +112,26 @@ class Aligner:
                     )
             prev_anno_ix = cur_anno_ix
 
-            if cs.partition_key() == current_partition[0].partition_key():
-                current_partition.append(cs)
+            if cs.partition_key() == current_consecutive_chars[0].partition_key():
+                #If the current charchter is in the same "group" as the previous one
+                current_consecutive_chars.append(cs)
             else:
-
+                # Otherwise we make a span for the previous group
                 spans.append(
-                    Aligner.charstate_partition_to_html(
-                        current_partition, text=text, encoding=encoding, annotations=annotations
+                    Aligner.consecutive_chars_to_html(
+                        current_consecutive_chars, text=text, encoding=encoding, annotations=annotations
                     )
                 )
-                current_partition = [cs]
-                if current_partition[0].anno_ix is not None:
-                    partition_prefix = (
-                        '<span class="annotation" style="color:green" data-label="xx">'
-                    )
-                    partition_suffix = "</span>"
-                else:
-                    partition_prefix = ""
-                    partition_suffix = ""
-
+                # An reset the consecutive_char_list to form a new group
+                current_consecutive_chars = [cs]
+        #All that's left is to fill out the final span
+        #TODO I think there is an edge case here where an annotation's span might not close
         spans.append(
-            Aligner.charstate_partition_to_html(
-                current_partition, text=text, encoding=encoding, annotations=annotations
+            Aligner.consecutive_chars_to_html(
+                current_consecutive_chars, text=text, encoding=encoding, annotations=annotations
             )
         )
-        res = HTMLBody(spans)
+        res = HTMLBody(spans) # Send the list of spans to the body of our html
         with open("/tmp/out.html", "w") as f:
             f.write(res)
         return res
