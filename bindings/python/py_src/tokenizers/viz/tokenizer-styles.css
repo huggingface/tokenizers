@@ -1,0 +1,120 @@
+.tokenized-text {
+  width:600px;
+  border:1px solid black;
+  box-sizing:border-box;
+  line-height:2.5rem;
+
+}
+
+.tok-text {
+
+
+}
+
+.token {
+  position:relative;
+  color:black;
+  letter-spacing:2px;
+}
+/* .token::after {
+  content:"";
+  position:absolute;
+  width:100%;
+  height:1rem;
+  top:0.15rem;
+  border-top:1px dotted #888888		;
+
+  border-right:0.1px dotted #888888	;
+} */
+.annotation{
+  white-space:nowrap; // Yoyoyoyo - ensures that annotations appear
+  border-radius:4px;
+  position:relative;
+  border: 1px solid black;
+
+   width:fit-content;
+}
+.annotation:before {
+  /*The before holds the text and the after holds the background*/
+  z-index:1000;
+  content:attr(data-label);
+  color:white;
+  position:absolute;
+  font-size:0.75rem;
+  text-align:center;
+  font-weight:bold;
+  text-overflow:ellipsis;
+  top:1.1rem;
+  line-height:0rem;
+  text-overflow: ellipsis;
+
+  left:0;
+  width:100%;
+
+  padding:0.5rem 0rem;
+}
+
+.annotation:after {
+  content:attr(data-label);
+  position:absolute;
+  font-size:0.75rem;
+  text-align:center;
+  font-weight:bold;
+  text-overflow:ellipsis;
+  top:1.1rem;
+  line-height:0;
+
+  left:0;
+  width:100%;
+
+  padding:0.5rem 0rem;
+  background-color: currentColor;
+}
+.annotation:hover::after{
+  min-width: fit-content;
+}
+.annotation:hover{
+  border-color: currentColor;
+  border: 2px solid;
+}
+.tok-stok:not(:empty){
+  position:relative;
+}
+.tok-stok:empty::before{
+  content:attr(data-stok);
+  background:#202020;
+  font-size:0.75rem;
+  color:white;
+  margin: 0 0.25rem;
+  padding: 0.25rem;
+  border-radius:4px
+  /* Special tokens that don't have text*/
+}
+
+.tok-stok:not(:empty):before {
+  /* Special tokens that have text*/
+  content:attr(data-stok);
+  position:absolute;
+  bottom:1.1rem;
+  min-width:100%;
+  width:fit-content;
+  height:1rem;
+  line-height:1rem;
+  font-size:0.75rem;
+  text-align:center;
+  color:white;
+  font-weight:bold;
+  background:#202020;
+  border-radius:10%;
+}
+.even-token{
+  background:#DCDCDC	;
+}
+.odd-token{
+  background:#A0A0A0;
+
+}
+.word {
+  letter-spacing:2px;
+  color:black
+}
