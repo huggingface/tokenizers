@@ -94,6 +94,24 @@ impl PyEncoding {
         .into()
     }
 
+    /// The number of sequences represented
+    ///
+    /// Returns:
+    ///     :obj:`int`: The number of sequences in this :class:`~tokenizers.Encoding`
+    #[getter]
+    fn get_n_sequences(&self) -> usize {
+        self.encoding.n_sequences()
+    }
+
+    /// Set the given sequence index
+    ///
+    /// Set the given sequence index for the whole range of tokens contained in this
+    /// :class:`~tokenizers.Encoding`.
+    #[text_signature = "($self, sequence_id)"]
+    fn set_sequence_id(&mut self, sequence_id: usize) {
+        self.encoding.set_sequence_id(sequence_id);
+    }
+
     /// The generated IDs
     ///
     /// The IDs are the main input to a Language Model. They are the token indices,
@@ -202,82 +220,144 @@ impl PyEncoding {
     }
 
     /// Get the encoded tokens corresponding to the word at the given index
-    /// in the input sequence.
+    /// in one of the input sequences.
     ///
     /// Args:
     ///     word_index (:obj:`int`):
-    ///         The index of a word in the input sequence.
+    ///         The index of a word in one of the input sequences.
+    ///     sequence_index (:obj:`int`, defaults to :obj:`0`):
+    ///         The index of the sequence that contains the target word
     ///
     /// Returns:
     ///     :obj:`Tuple[int, int]`: The range of tokens: :obj:`(first, last + 1)`
-    #[text_signature = "($self, word_index)"]
-    fn word_to_tokens(&self, word_index: u32) -> Option<(usize, usize)> {
-        self.encoding.word_to_tokens(word_index)
+    #[args(sequence_index = 0)]
+    #[text_signature = "($self, word_index, sequence_index=0)"]
+    fn word_to_tokens(&self, word_index: u32, sequence_index: usize) -> Option<(usize, usize)> {
+        self.encoding.word_to_tokens(word_index, sequence_index)
     }
 
-    /// Get the offsets of the word at the given index in the input sequence.
+    /// Get the offsets of the word at the given index in one of the input sequences.
     ///
     /// Args:
     ///     word_index (:obj:`int`):
-    ///         The index of a word in the input sequence.
+    ///         The index of a word in one of the input sequences.
+    ///     sequence_index (:obj:`int`, defaults to :obj:`0`):
+    ///         The index of the sequence that contains the target word
     ///
     /// Returns:
     ///     :obj:`Tuple[int, int]`: The range of characters (span) :obj:`(first, last + 1)`
-    #[text_signature = "($self, word_index)"]
-    fn word_to_chars(&self, word_index: u32) -> Option<Offsets> {
-        self.encoding.word_to_chars(word_index)
+    #[args(sequence_index = 0)]
+    #[text_signature = "($self, word_index, sequence_index=0)"]
+    fn word_to_chars(&self, word_index: u32, sequence_index: usize) -> Option<Offsets> {
+        self.encoding.word_to_chars(word_index, sequence_index)
     }
 
-    /// Get the offsets of the token at the given index
+    /// Get the index of the sequence represented by the given token.
+    ///
+    /// In the general use case, this method returns :obj:`0` for a single sequence or
+    /// the first sequence of a pair, and :obj:`1` for the second sequence of a pair
     ///
     /// Args:
     ///     token_index (:obj:`int`):
     ///         The index of a token in the encoded sequence.
     ///
     /// Returns:
-    ///     :obj:`Tuple[int, int]`: The token offsets :obj:`(first, last + 1)`
+    ///     :obj:`int`: The sequence id of the given token
     #[text_signature = "($self, token_index)"]
-    fn token_to_chars(&self, token_index: usize) -> Option<Offsets> {
-        self.encoding.token_to_chars(token_index)
+    fn token_to_sequence(&self, token_index: usize) -> Option<usize> {
+        self.encoding.token_to_sequence(token_index)
+    }
+
+    /// Get the offsets of the token at the given index.
+    ///
+    /// If the :class:`~tokenizers.Encoding` represents multiple sequences (namely
+    /// a pair of sequences), then this method returns a Tuple with both the relevant
+    /// sequence index, and the offsets.
+    ///
+    /// Args:
+    ///     token_index (:obj:`int`):
+    ///         The index of a token in the encoded sequence.
+    ///
+    /// Returns:
+    ///     :obj:`Tuple[int, int]` or :obj:`Tuple[int, Tuple[int, int]]`:
+    ///
+    ///     - For a single sequence: the token offsets:
+    ///       :obj:`Tuple[int, int]` of the form :obj:`(first, last + 1)`
+    ///
+    ///     - For pairs of sequence: A tuple with the sequence index, and the token offsets:
+    ///       :obj:`Tuple[int, Tuple[int, int]]` with offsets of the form :obj:`(first, last + 1)`
+    ///
+    #[text_signature = "($self, token_index)"]
+    fn token_to_chars(&self, token_index: usize) -> Option<PyObject> {
+        let (seq_idx, offsets) = self.encoding.token_to_chars(token_index)?;
+        Python::with_gil(|py| {
+            if self.encoding.n_sequences() > 1 {
+                Some((seq_idx, offsets).to_object(py))
+            } else {
+                Some(offsets.to_object(py))
+            }
+        })
     }
 
     /// Get the word that contains the token at the given index
     ///
+    /// If the :class:`~tokenizers.Encoding` represents multiple sequences (namely
+    /// a pair of sequences), then this method returns a Tuple with both the relevant
+    /// sequence index, and the word index.
+    ///
     /// Args:
     ///     token_index (:obj:`int`):
     ///         The index of a token in the encoded sequence.
     ///
     /// Returns:
-    ///     :obj:`int`: The index of the word in the input sequence.
+    ///     :obj:`int` or :obj:`Tuple[int, int]`:
+    ///
+    ///     - For a single sequence: The index of the word in the input sequence: :obj:`int`
+    ///     - For pairs of sequence: A tuple with the sequence index, and the index of the word
+    ///       in the said sequence: :obj:`Tuple[int, int]`
+    ///
     #[text_signature = "($self, token_index)"]
-    fn token_to_word(&self, token_index: usize) -> Option<u32> {
-        self.encoding.token_to_word(token_index)
+    fn token_to_word(&self, token_index: usize) -> Option<PyObject> {
+        let (seq_idx, word_idx) = self.encoding.token_to_word(token_index)?;
+        Python::with_gil(|py| {
+            if self.encoding.n_sequences() > 1 {
+                Some((seq_idx, word_idx).to_object(py))
+            } else {
+                Some(word_idx.to_object(py))
+            }
+        })
     }
 
-    /// Get the token that contains the char at the given position
+    /// Get the token that contains the char at the given position in the input sequence.
     ///
     /// Args:
     ///     char_pos (:obj:`int`):
     ///         The position of a char in the input string
+    ///     sequence_index (:obj:`int`, defaults to :obj:`0`):
+    ///         The index of the sequence that contains the target char
     ///
     /// Returns:
     ///     :obj:`int`: The index of the token that contains this char in the encoded sequence
-    #[text_signature = "($self, char_pos)"]
-    fn char_to_token(&self, char_pos: usize) -> Option<usize> {
-        self.encoding.char_to_token(char_pos)
+    #[args(sequence_index = 0)]
+    #[text_signature = "($self, char_pos, sequence_index=0)"]
+    fn char_to_token(&self, char_pos: usize, sequence_index: usize) -> Option<usize> {
+        self.encoding.char_to_token(char_pos, sequence_index)
     }
 
-    /// Get the word that contains the char at the given position
+    /// Get the word that contains the char at the given position in the input sequence.
     ///
     /// Args:
     ///     char_pos (:obj:`int`):
     ///         The position of a char in the input string
+    ///     sequence_index (:obj:`int`, defaults to :obj:`0`):
+    ///         The index of the sequence that contains the target char
     ///
     /// Returns:
     ///     :obj:`int`: The index of the word that contains this char in the input sequence
-    #[text_signature = "($self, char_pos)"]
-    fn char_to_word(&self, char_pos: usize) -> Option<u32> {
-        self.encoding.char_to_word(char_pos)
+    #[args(sequence_index = 0)]
+    #[text_signature = "($self, char_pos, sequence_index=0)"]
+    fn char_to_word(&self, char_pos: usize, sequence_index: usize) -> Option<u32> {
+        self.encoding.char_to_word(char_pos, sequence_index)
     }
 
     /// Pad the :class:`~tokenizers.Encoding` at the given length
@@ -335,6 +415,9 @@ impl PyEncoding {
     }
 
     /// Truncate the :class:`~tokenizers.Encoding` at the given length
+    ///
+    /// If this :class:`~tokenizers.Encoding` represents multiple sequences, when truncating
+    /// this information is lost. It will be considered as representing a single sequence.
     ///
     /// Args:
     ///     max_length (:obj:`int`):

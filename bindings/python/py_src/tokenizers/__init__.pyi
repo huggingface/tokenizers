@@ -275,6 +275,21 @@ class Encoding:
         """
         pass
     @property
+    def n_sequences(self) -> int:
+        """The number of sequences represented
+
+        Returns:
+            :obj:`int`: The number of sequences in this :class:`~tokenizers.Encoding`
+        """
+        pass
+    def set_sequence_id(self, sequence_index: int):
+        """Set the given sequence index
+
+        Set the given sequence index for the whole range of tokens contained in this
+        :class:`~tokenizers.Encoding`.
+        """
+        pass
+    @property
     def ids(self) -> List[int]:
         """The generated IDs
 
@@ -368,68 +383,110 @@ class Encoding:
         maximum length.
         """
         pass
-    def word_to_tokens(self, word_index: int) -> Optional[Tuple[int, int]]:
+    def word_to_tokens(self, word_index: int, sequence_index: int = 0) -> Optional[Tuple[int, int]]:
         """Get the encoded tokens corresponding to the word at the given index
-        in the input sequence.
+        in one of the input sequences.
 
         Args:
             word_index (:obj:`int`):
-                The index of a word in the input sequence.
+                The index of a word in one of the input sequences.
+            sequence_index (:obj:`int`, defaults to :obj:`0`):
+                The index of the sequence that contains the target word
 
         Returns:
             :obj:`Tuple[int, int]`: The range of tokens: :obj:`(first, last + 1)`
         """
         pass
-    def word_to_chars(self, word_index: int) -> Optional[Offsets]:
-        """Get the offsets of the word at the given index in the input sequence.
+    def word_to_chars(self, word_index: int, sequence_index: int = 0) -> Optional[Offsets]:
+        """Get the offsets of the word at the given index in one of the input sequences.
 
         Args:
             word_index (:obj:`int`):
-                The index of a word in the input sequence.
+                The index of a word in one of the input sequences.
+            sequence_index (:obj:`int`, defaults to :obj:`0`):
+                The index of the sequence that contains the target word
 
         Returns:
             :obj:`Tuple[int, int]`: The range of characters (span) :obj:`(first, last + 1)`
         """
         pass
-    def token_to_chars(self, token_index: int) -> Optional[Offsets]:
-        """Get the offsets of the token at the given index
+    def token_to_sequence(self, token_index: int) -> Optional[int]:
+        """Get the index of the sequence represented by the given token.
+
+        In the general use case, this method returns :obj:`0` for a single sequence or
+        the first sequence of a pair, and :obj:`1` for the second sequence of a pair
 
         Args:
             token_index (:obj:`int`):
                 The index of a token in the encoded sequence.
 
         Returns:
-            :obj:`Tuple[int, int]`: The token offsets :obj:`(first, last + 1)`
+            :obj:`int`: The sequence id of the given token
         """
         pass
-    def token_to_word(self, token_index: int) -> Optional[int]:
+    def token_to_chars(self, token_index: int) -> Optional[Union[Offsets, Tuple[int, Offsets]]]:
+        """Get the offsets of the token at the given index.
+
+        If the :class:`~tokenizers.Encoding` represents multiple sequences (namely
+        a pair of sequences), then this method returns a Tuple with both the relevant
+        sequence index, and the offsets.
+
+        Args:
+            token_index (:obj:`int`):
+                The index of a token in the encoded sequence.
+
+        Returns:
+            :obj:`Tuple[int, int]` or :obj:`Tuple[int, Tuple[int, int]]`:
+
+            - For a single sequence: the token offsets:
+              :obj:`Tuple[int, int]` of the form :obj:`(first, last + 1)`
+
+            - For pairs of sequence: A tuple with the sequence index, and the token offsets:
+              :obj:`Tuple[int, Tuple[int, int]]` with offsets of the form :obj:`(first, last + 1)`
+
+        """
+        pass
+    def token_to_word(self, token_index: int) -> Optional[Union[int, Tuple[int, int]]]:
         """Get the word that contains the token at the given index
 
+        If the :class:`~tokenizers.Encoding` represents multiple sequences (namely
+        a pair of sequences), then this method returns a Tuple with both the relevant
+        sequence index, and the word index.
+
         Args:
             token_index (:obj:`int`):
                 The index of a token in the encoded sequence.
 
         Returns:
-            :obj:`int`: The index of the word in the input sequence.
+            :obj:`int` or :obj:`Tuple[int, int]`:
+
+            - For a single sequence: The index of the word in the input sequence: :obj:`int`
+            - For pairs of sequence: A tuple with the sequence index, and the index of the word
+              in the said sequence: :obj:`Tuple[int, int]`
+
         """
         pass
-    def char_to_token(self, pos: int) -> Optional[int]:
-        """Get the token that contains the char at the given position
+    def char_to_token(self, pos: int, sequence_index: int = 0) -> Optional[int]:
+        """Get the token that contains the char at the given position in the input sequence.
 
         Args:
             char_pos (:obj:`int`):
                 The position of a char in the input string
+            sequence_index (:obj:`int`, defaults to :obj:`0`):
+                The index of the sequence that contains the target char
 
         Returns:
             :obj:`int`: The index of the token that contains this char in the encoded sequence
         """
         pass
-    def char_to_word(self, pos: int) -> Optional[int]:
-        """Get the word that contains the char at the given position
+    def char_to_word(self, pos: int, sequence_index: int = 0) -> Optional[int]:
+        """Get the word that contains the char at the given position in the input sequence.
 
         Args:
             char_pos (:obj:`int`):
                 The position of a char in the input string
+            sequence_index (:obj:`int`, defaults to :obj:`0`):
+                The index of the sequence that contains the target char
 
         Returns:
             :obj:`int`: The index of the word that contains this char in the input sequence
@@ -464,6 +521,9 @@ class Encoding:
         pass
     def truncate(self, max_length: int, stride: Optional[int] = 0):
         """Truncate the :class:`~tokenizers.Encoding` at the given length
+
+        If this :class:`~tokenizers.Encoding` represents multiple sequences, when truncating
+        this information is lost. It will be considered as representing a single sequence.
 
         Args:
             max_length (:obj:`int`):
