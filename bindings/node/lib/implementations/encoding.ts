@@ -29,6 +29,17 @@ export class Encoding {
   }
 
   /**
+   * Number of sequences
+   */
+  get nSequences(): number {
+    return this._rawEncoding.getNSequences();
+  }
+
+  setSequenceId(seqId: number) {
+    return this._rawEncoding.setSequenceId(seqId);
+  }
+
+  /**
    * Attention mask
    */
   get attentionMask(): number[] {
@@ -141,48 +152,76 @@ export class Encoding {
   }
 
   /**
-   * Get the encoded tokens corresponding to the word at the given index in the input
-   * sequence, with the form [startToken, endToken+1]
-   * @param word The position of a word in the input sequence
+   * Get the encoded tokens corresponding to the word at the given index in one of the input
+   * sequences, with the form [startToken, endToken+1]
+   * @param word The position of a word in one of the input sequences
+   * @param seqId The index of the input sequence that contains said word
    * @since 0.7.0
    */
-  wordToTokens(word: number): [number, number] | undefined {
-    return this._rawEncoding.wordToTokens(word);
+  wordToTokens(word: number, seqId?: number): [number, number] | undefined {
+    return this._rawEncoding.wordToTokens(word, seqId);
   }
 
   /**
    * Get the offsets of the word at the given index in the input sequence
    * @param word The index of the word in the input sequence
+   * @param seqId The index of the input sequence that contains said word
    * @since 0.7.0
    */
-  wordToChars(word: number): [number, number] | undefined {
-    return this._rawEncoding.wordToChars(word);
+  wordToChars(word: number, seqId?: number): [number, number] | undefined {
+    return this._rawEncoding.wordToChars(word, seqId);
+  }
+
+  /**
+   * Get the index of the sequence that contains the given token
+   * @param token The index of the token in the encoded sequence
+   */
+  tokenToSequence(token: number): number | undefined {
+    return this._rawEncoding.tokenToSequence(token);
   }
 
   /**
    * Get the offsets of the token at the given index
+   * If this encoding represents only one sequence, then only the offsets are returned.
+   * If this encoding represents more than one sequence, then it returns a tuple with the sequence
+   *   id in the first part
    * @param token The index of the token in the encoded sequence
    * @since 0.7.0
    */
-  tokenToChars(token: number): [number, number] | undefined {
+  tokenToChars(token: number): [number, number] | [number, [number, number]] | undefined {
     return this._rawEncoding.tokenToChars(token);
   }
 
   /**
    * Get the word that contains the token at the given index
+   * If this encoding represents only one sequence, then only the offsets are returned.
+   * If this encoding represents more than one sequence, then it returns a tuple with the sequence
+   *   id in the first part
    * @param token The index of the token  in the encoded sequence
    * @since 0.7.0
    */
-  tokenToWord(token: number): number | undefined {
+  tokenToWord(token: number): number | [number, number] | undefined {
     return this._rawEncoding.tokenToWord(token);
   }
 
   /**
    * Find the index of the token at the position of the given char
-   * @param pos The position of a char in the input string
+   * @param pos The position of a char in one of the input strings
+   * @param seqId The index of the input sequence that contains said char
+   * @since 0.6.0
    */
-  charToToken(pos: number): number | undefined {
-    return this._rawEncoding.charToToken(pos);
+  charToToken(pos: number, seqId?: number): number | undefined {
+    return this._rawEncoding.charToToken(pos, seqId);
+  }
+
+  /**
+   * Get the word that contains the given char
+   * @param pos The position of a char in the input string
+   * @param seqId The index of the input sequence that contains said char
+   * @since 0.7.0
+   */
+  charToWord(pos: number, seqId?: number): number | undefined {
+    return this._rawEncoding.charToWord(pos, seqId);
   }
 
   /**

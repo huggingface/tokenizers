@@ -5,52 +5,78 @@ import { PaddingDirection } from "./enums";
  */
 export interface RawEncoding {
   /**
-   * Get the encoded tokens corresponding to the word at the given index in the input
-   * sequence, with the form [startToken, endToken+1]
-   * @param word The position of a word in the input sequence
+   * Get the encoded tokens corresponding to the word at the given index in one of the input
+   * sequences, with the form [startToken, endToken+1]
+   * @param word The position of a word in one of the input sequences
+   * @param seqId The index of the input sequence that contains said word
    * @since 0.7.0
    */
-  wordToTokens(word: number): [number, number] | undefined;
+  wordToTokens(word: number, seqId?: number): [number, number] | undefined;
 
   /**
    * Get the offsets of the word at the given index in the input sequence
    * @param word The index of the word in the input sequence
+   * @param seqId The index of the input sequence that contains said word
    * @since 0.7.0
    */
-  wordToChars(word: number): [number, number] | undefined;
+  wordToChars(word: number, seqId?: number): [number, number] | undefined;
+
+  /**
+   * Get the index of the sequence that contains the given token
+   * @param token The index of the token in the encoded sequence
+   */
+  tokenToSequence(token: number): number | undefined;
 
   /**
    * Get the offsets of the token at the given index
+   * If this encoding represents only one sequence, then only the offsets are returned.
+   * If this encoding represents more than one sequence, then it returns a tuple with the sequence
+   *   id in the first part
    * @param token The index of the token in the encoded sequence
    * @since 0.7.0
    */
-  tokenToChars(token: number): [number, number] | undefined;
+  tokenToChars(token: number): [number, number] | [number, [number, number]] | undefined;
 
   /**
    * Get the word that contains the token at the given index
+   * If this encoding represents only one sequence, then only the offsets are returned.
+   * If this encoding represents more than one sequence, then it returns a tuple with the sequence
+   *   id in the first part
    * @param token The index of the token  in the encoded sequence
    * @since 0.7.0
    */
-  tokenToWord(token: number): number | undefined;
+  tokenToWord(token: number): number | [number, number] | undefined;
 
   /**
    * Find the index of the token at the position of the given char
-   * @param pos The position of a char in the input string
+   * @param pos The position of a char in one of the input strings
+   * @param seqId The index of the input sequence that contains said char
    * @since 0.6.0
    */
-  charToToken(pos: number): number | undefined;
+  charToToken(pos: number, seqId?: number): number | undefined;
 
   /**
    * Get the word that contains the given char
    * @param pos The position of a char in the input string
+   * @param seqId The index of the input sequence that contains said char
    * @since 0.7.0
    */
-  charToWord(pos: number): number | undefined;
+  charToWord(pos: number, seqId?: number): number | undefined;
 
   /**
    * Returns the attention mask
    */
   getAttentionMask(): number[];
+
+  /**
+   * Returns the number of sequences
+   */
+  getNSequences(): number;
+
+  /**
+   * Set the sequence id for this encoding
+   */
+  setSequenceId(seqId: number): undefined;
 
   /**
    * Returns the tokenized ids

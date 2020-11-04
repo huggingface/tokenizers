@@ -27,6 +27,28 @@ declare_types! {
             Ok(cx.number(length as f64).upcast())
         }
 
+        method getNSequences(mut cx) {
+            let this = cx.this();
+            let guard = cx.lock();
+            let n = this.borrow(&guard)
+                .encoding.as_ref().expect("Uninitialized Encoding")
+                .n_sequences();
+
+            Ok(cx.number(n as f64).upcast())
+        }
+
+        method setSequenceId(mut cx) {
+            let seq_id = cx.extract::<usize>(0)?;
+
+            let mut this = cx.this();
+            let guard = cx.lock();
+            this.borrow_mut(&guard)
+                .encoding.as_mut().expect("Uninitialized Encoding")
+                .set_sequence_id(seq_id);
+
+            Ok(cx.undefined().upcast())
+        }
+
         method getIds(mut cx) {
             // getIds(): number[]
 
@@ -145,16 +167,17 @@ declare_types! {
         }
 
         method wordToTokens(mut cx) {
-            // wordToTokens(word: number): [number, number] | undefined
+            // wordToTokens(word: number, seqId: number = 0): [number, number] | undefined
 
             let word = cx.extract::<u32>(0)?;
+            let seq_id = cx.extract_opt::<usize>(1)?.unwrap_or(0);
 
             let this = cx.this();
             let guard = cx.lock();
 
             let res = this.borrow(&guard)
                 .encoding.as_ref().expect("Uninitialized Encoding")
-                .word_to_tokens(word);
+                .word_to_tokens(word, seq_id);
 
             if let Some(tokens) = res {
                 Ok(neon_serde::to_value(&mut cx, &tokens)?)
@@ -164,71 +187,111 @@ declare_types! {
         }
 
         method wordToChars(mut cx) {
-            // wordToChars(word: number): [number, number] | undefined
+            // wordToChars(word: number, seqId: number = 0): [number, number] | undefined
 
-            let word = cx.argument::<JsNumber>(0)?.value() as u32;
+            let word = cx.extract::<u32>(0)?;
+            let seq_id = cx.extract_opt::<usize>(1)?.unwrap_or(0);
 
             let this = cx.this();
             let guard = cx.lock();
 
             let res = this.borrow(&guard)
                 .encoding.as_ref().expect("Uninitialized Encoding")
-                .word_to_chars(word);
+                .word_to_chars(word, seq_id);
 
             if let Some(offsets) = res {
                 Ok(neon_serde::to_value(&mut cx, &offsets)?)
+            } else {
+                Ok(cx.undefined().upcast())
+            }
+        }
+
+        method tokenToSequence(mut cx) {
+            // tokenToSequence(token: number): number | undefined
+
+            let token = cx.extract::<usize>(0)?;
+
+            let this = cx.this();
+            let guard = cx.lock();
+
+            let res = this.borrow(&guard)
+                .encoding.as_ref().expect("Uninitialized Encoding")
+                .token_to_sequence(token);
+
+            if let Some(seq) = res {
+                Ok(neon_serde::to_value(&mut cx, &seq)?)
             } else {
                 Ok(cx.undefined().upcast())
             }
         }
 
         method tokenToChars(mut cx) {
-            // tokenToChars(token: number): [number, number] | undefined
+            // tokenToChars(token: number): [number, number] [number, [number, number]] | undefined
 
-            let token = cx.argument::<JsNumber>(0)?.value() as usize;
+            let token = cx.extract::<usize>(0)?;
 
             let this = cx.this();
             let guard = cx.lock();
 
-            let res = this.borrow(&guard)
-                .encoding.as_ref().expect("Uninitialized Encoding")
-                .token_to_chars(token);
+            let (res, n_seq) = {
+                let borrowed = this.borrow(&guard);
+                let encoding = borrowed.encoding.as_ref().expect("Uninitialized Encoding");
 
-            if let Some(offsets) = res {
-                Ok(neon_serde::to_value(&mut cx, &offsets)?)
+                let res = encoding.token_to_chars(token);
+                let n_seq = encoding.n_sequences();
+                (res, n_seq)
+            };
+
+            if let Some((seq_id, offsets)) = res {
+                if n_seq > 1 {
+                    Ok(neon_serde::to_value(&mut cx, &(seq_id, offsets))?)
+                } else {
+                    Ok(neon_serde::to_value(&mut cx, &offsets)?)
+                }
             } else {
                 Ok(cx.undefined().upcast())
             }
         }
 
         method tokenToWord(mut cx) {
-            // tokenToWord(token: number): number | undefined
+            // tokenToWord(token: number): number | [number, number] | undefined
 
             let token = cx.argument::<JsNumber>(0)?.value() as usize;
 
             let this = cx.this();
             let guard = cx.lock();
-            let index = this.borrow(&guard)
-                .encoding.as_ref().expect("Uninitialized Encoding")
-                .token_to_word(token);
 
-            if let Some(index) = index {
-                Ok(cx.number(index as f64).upcast())
+            let (res, n_seq) = {
+                let borrowed = this.borrow(&guard);
+                let encoding = borrowed.encoding.as_ref().expect("Uninitialized Encoding");
+
+                let res = encoding.token_to_word(token);
+                let n_seq = encoding.n_sequences();
+                (res, n_seq)
+            };
+
+            if let Some((seq_id, index)) = res {
+                if n_seq > 1 {
+                    Ok(neon_serde::to_value(&mut cx, &(seq_id, index))?)
+                } else {
+                    Ok(cx.number(index as f64).upcast())
+                }
             } else {
                 Ok(cx.undefined().upcast())
             }
         }
 
         method charToToken(mut cx) {
-            // charToToken(pos: number): number | undefined
+            // charToToken(pos: number, seqId: number = 0): number | undefined
 
-            let pos = cx.argument::<JsNumber>(0)?.value() as usize;
+            let pos = cx.extract::<usize>(0)?;
+            let seq_id = cx.extract_opt::<usize>(1)?.unwrap_or(0);
 
             let this = cx.this();
             let guard = cx.lock();
             let index = this.borrow(&guard)
                 .encoding.as_ref().expect("Uninitialized Encoding")
-                .char_to_token(pos);
+                .char_to_token(pos, seq_id);
 
             if let Some(index) = index {
                 Ok(cx.number(index as f64).upcast())
@@ -238,15 +301,16 @@ declare_types! {
         }
 
         method charToWord(mut cx) {
-            // charToWord(pos: number): number | undefined
+            // charToWord(pos: number, seqId: number = 0): number | undefined
 
-            let pos = cx.argument::<JsNumber>(0)?.value() as usize;
+            let pos = cx.extract::<usize>(0)?;
+            let seq_id = cx.extract_opt::<usize>(1)?.unwrap_or(0);
 
             let this = cx.this();
             let guard = cx.lock();
             let index = this.borrow(&guard)
                 .encoding.as_ref().expect("Uninitialized Encoding")
-                .char_to_word(pos);
+                .char_to_word(pos, seq_id);
 
             if let Some(index) = index {
                 Ok(cx.number(index as f64).upcast())
