@@ -17,7 +17,7 @@ class TestQuicktour:
         # END train
         # START reload_model
         files = tokenizer.model.save("data", "wiki")
-        tokenizer.model = BPE.from_files(*files, unk_token="[UNK]")
+        tokenizer.model = BPE.from_file(*files, unk_token="[UNK]")
         # END reload_model
         # START save
         tokenizer.save("data/tokenizer-wiki.json")
