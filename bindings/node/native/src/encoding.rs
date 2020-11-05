@@ -233,21 +233,12 @@ declare_types! {
             let this = cx.this();
             let guard = cx.lock();
 
-            let (res, n_seq) = {
-                let borrowed = this.borrow(&guard);
-                let encoding = borrowed.encoding.as_ref().expect("Uninitialized Encoding");
+            let res = this.borrow(&guard)
+                .encoding.as_ref().expect("Uninitialized Encoding")
+                .token_to_chars(token);
 
-                let res = encoding.token_to_chars(token);
-                let n_seq = encoding.n_sequences();
-                (res, n_seq)
-            };
-
-            if let Some((seq_id, offsets)) = res {
-                if n_seq > 1 {
-                    Ok(neon_serde::to_value(&mut cx, &(seq_id, offsets))?)
-                } else {
-                    Ok(neon_serde::to_value(&mut cx, &offsets)?)
-                }
+            if let Some((_, offsets)) = res {
+                Ok(neon_serde::to_value(&mut cx, &offsets)?)
             } else {
                 Ok(cx.undefined().upcast())
             }
@@ -261,21 +252,12 @@ declare_types! {
             let this = cx.this();
             let guard = cx.lock();
 
-            let (res, n_seq) = {
-                let borrowed = this.borrow(&guard);
-                let encoding = borrowed.encoding.as_ref().expect("Uninitialized Encoding");
+            let res = this.borrow(&guard)
+                .encoding.as_ref().expect("Uninitialized Encoding")
+                .token_to_word(token);
 
-                let res = encoding.token_to_word(token);
-                let n_seq = encoding.n_sequences();
-                (res, n_seq)
-            };
-
-            if let Some((seq_id, index)) = res {
-                if n_seq > 1 {
-                    Ok(neon_serde::to_value(&mut cx, &(seq_id, index))?)
-                } else {
-                    Ok(cx.number(index as f64).upcast())
-                }
+            if let Some((_, index)) = res {
+                Ok(cx.number(index as f64).upcast())
             } else {
                 Ok(cx.undefined().upcast())
             }

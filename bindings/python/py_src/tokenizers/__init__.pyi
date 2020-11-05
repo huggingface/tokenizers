@@ -424,46 +424,34 @@ class Encoding:
             :obj:`int`: The sequence id of the given token
         """
         pass
-    def token_to_chars(self, token_index: int) -> Optional[Union[Offsets, Tuple[int, Offsets]]]:
+    def token_to_chars(self, token_index: int) -> Optional[Offsets]:
         """Get the offsets of the token at the given index.
 
-        If the :class:`~tokenizers.Encoding` represents multiple sequences (namely
-        a pair of sequences), then this method returns a Tuple with both the relevant
-        sequence index, and the offsets.
+        The returned offsets are related to the input sequence that contains the
+        token.  In order to determine in which input sequence it belongs, you
+        must call :meth:`~tokenizers.Encoding.token_to_sequence()`.
 
         Args:
             token_index (:obj:`int`):
                 The index of a token in the encoded sequence.
 
         Returns:
-            :obj:`Tuple[int, int]` or :obj:`Tuple[int, Tuple[int, int]]`:
-
-            - For a single sequence: the token offsets:
-              :obj:`Tuple[int, int]` of the form :obj:`(first, last + 1)`
-
-            - For pairs of sequence: A tuple with the sequence index, and the token offsets:
-              :obj:`Tuple[int, Tuple[int, int]]` with offsets of the form :obj:`(first, last + 1)`
-
+            :obj:`Tuple[int, int]`: The token offsets :obj:`(first, last + 1)`
         """
         pass
-    def token_to_word(self, token_index: int) -> Optional[Union[int, Tuple[int, int]]]:
-        """Get the word that contains the token at the given index
+    def token_to_word(self, token_index: int) -> Optional[int]:
+        """Get the index of the word that contains the token in one of the input sequences.
 
-        If the :class:`~tokenizers.Encoding` represents multiple sequences (namely
-        a pair of sequences), then this method returns a Tuple with both the relevant
-        sequence index, and the word index.
+        The returned word index is related to the input sequence that contains
+        the token.  In order to determine in which input sequence it belongs, you
+        must call :meth:`~tokenizers.Encoding.token_to_sequence()`.
 
         Args:
             token_index (:obj:`int`):
                 The index of a token in the encoded sequence.
 
         Returns:
-            :obj:`int` or :obj:`Tuple[int, int]`:
-
-            - For a single sequence: The index of the word in the input sequence: :obj:`int`
-            - For pairs of sequence: A tuple with the sequence index, and the index of the word
-              in the said sequence: :obj:`Tuple[int, int]`
-
+            :obj:`int`: The index of the word in the relevant input sequence.
         """
         pass
     def char_to_token(self, pos: int, sequence_index: int = 0) -> Optional[int]:
