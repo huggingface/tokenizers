@@ -90,7 +90,7 @@
 .annotation:hover{
   /* Emphasize the annotation start end with a border on hover*/
   border-color: currentColor;
-  border: 1px solid;
+  border: 2px solid;
 }
 .special-token:not(:empty){
   /*

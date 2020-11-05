@@ -1,27 +1,73 @@
-from collections import defaultdict
-from typing import List, Optional, Tuple, DefaultDict, Dict
 import itertools
+from typing import List, Optional, Tuple, Dict, Callable, Any
 from tokenizers import Tokenizer, Encoding
 from tokenizers.viz.templates import HTMLBody
 from tokenizers.viz.viztypes import (
-    Aligned,
     AnnotationList,
     PartialIntList,
     CharState,
-    CharStateKey,
     Annotation,
 )
 
 
-class Aligner:
-    def __init__(self, tokenizer: Tokenizer):
+class EncodingVisualizer:
+    def __init__(
+        self,
+        tokenizer: Tokenizer,
+        default_to_notebook: bool = False,
+        annotation_converter: Optional[Callable[[Any], Annotation]] = None,
+    ):
+        """
+
+        :param tokenizer: A tokenizer
+        :param default_to_notebook: Whether to render html output in a notebook by default
+        :param annotation_converter: An optional (lambda) function that takes an annotation in any format and returns
+               an Annotation object
+        """
+        self.tokenizer = tokenizer
+        self.default_to_notebook = default_to_notebook
+        self.annotation_coverter = annotation_converter
         pass
 
-    def __call__(self, text: str, encoding: Encoding, annotations: AnnotationList) -> Aligned:
-        pass
+    def __call__(
+        self,
+        text: str,
+        annotations: AnnotationList = [],
+        default_to_notebook: Optional[bool] = None,
+    ) -> Optional[str]:
+        """
+
+        :param text: The text to tokenize
+        :param annotations:  An optional list of annotations of the text
+        :param default_to_notebook: If True, will render the html in a notebook. Otherwise returns an html string. Defaults (False)
+        :return: The raw html or None
+        """
+        final_default_to_notebook = self.default_to_notebook
+        if default_to_notebook is not None:
+            final_default_to_notebook = default_to_notebook
+        if final_default_to_notebook:
+            try:
+                from IPython.core.display import display, HTML
+            except ImportError as e:
+                raise Exception(
+                    "We coulndt import Ipython utils for html display. Are you running in a notebook ? "
+                )
+        encoding = self.tokenizer.encode(text)
+        html = EncodingVisualizer.__make_html(text, encoding, annotations)
+        if final_default_to_notebook:
+            display(HTML(html))
+        else:
+            return html
 
     @staticmethod
     def calculate_label_colors(annotations: AnnotationList) -> Dict[str, str]:
+        """
+        Generates a color pallete for all the labels in a given set of annotations
+        :param annotations: A list of annotations
+        :return: A dictionary mapping a label name to it's hsl color
+        """
+        if len(annotations) == 0:
+            return {}
         labels = set(map(lambda x: x.label, annotations))
         num_labels = len(labels)
         h_step = int(255 / num_labels)
@@ -32,23 +78,36 @@ class Aligner:
         h = 10
         colors = {}
 
-        for label in sorted(labels): #sort so we always get the same colors for a given set of labels
+        for label in sorted(
+            labels
+        ):  # sort so we always get the same colors for a given set of labels
             colors[label] = f"hsl({h},{s}%,{l}%"
             h += h_step
         return colors
 
     @staticmethod
     def consecutive_chars_to_html(
-        char_state_partition: List[CharState], text: str, encoding: Encoding,
+        consecutive_chars_list: List[CharState], text: str, encoding: Encoding,
     ):
-        first = char_state_partition[0]
+        """
+        Converts a list of "consecutive chars" into a single HTML element.
+        Chars are consecutive if they fall under the same word, token and annotation.
+        The CharState class is a named tuple with a "partition_key" method that makes it easy to compare if two chars
+        are consecutive.
+
+        :param consecutive_chars_list: A list of CharStates that have been grouped together
+        :param text:  The original text being processed
+        :param encoding:  The encoding of t
+        :return:
+        """
+        first = consecutive_chars_list[0]
         if first.char_ix is None:
             # its a special token
             stoken = encoding.tokens[first.token_ix]
             # special tokens are represented as empty spans. We use the data attribute and css magic to display it
             return f'<span class="special-token" data-stoken={stoken}></span>'
         # We're not in a special token so this group has a start and end.
-        last = char_state_partition[-1]
+        last = consecutive_chars_list[-1]
         start = first.char_ix
         end = last.char_ix + 1
         span_text = text[start:end]
@@ -80,12 +139,12 @@ class Aligner:
         return f"<span {css} {data} >{span_text}</span>"
 
     @staticmethod
-    def make_html(text: str, encoding: Encoding, annotations: AnnotationList):
-        char_states = Aligner.__make_char_states(text, encoding, annotations)
+    def __make_html(text: str, encoding: Encoding, annotations: AnnotationList) -> str:
+        char_states = EncodingVisualizer.__make_char_states(text, encoding, annotations)
         current_consecutive_chars = [char_states[0]]
         prev_anno_ix = char_states[0].anno_ix
         spans = []
-        label_colors_dict = Aligner.calculate_label_colors(annotations)
+        label_colors_dict = EncodingVisualizer.calculate_label_colors(annotations)
         cur_anno_ix = char_states[0].anno_ix
         if cur_anno_ix is not None:
             # If we started in an  annotation make a span for it
@@ -100,7 +159,7 @@ class Aligner:
                 # If we've transitioned in or out of an annotation
                 spans.append(
                     # Create a span from the current consecutive characters
-                    Aligner.consecutive_chars_to_html(
+                    EncodingVisualizer.consecutive_chars_to_html(
                         current_consecutive_chars, text=text, encoding=encoding,
                     )
                 )
@@ -125,7 +184,7 @@ class Aligner:
             else:
                 # Otherwise we make a span for the previous group
                 spans.append(
-                    Aligner.consecutive_chars_to_html(
+                    EncodingVisualizer.consecutive_chars_to_html(
                         current_consecutive_chars, text=text, encoding=encoding,
                     )
                 )
@@ -134,7 +193,7 @@ class Aligner:
         # All that's left is to fill out the final span
         # TODO I think there is an edge case here where an annotation's span might not close
         spans.append(
-            Aligner.consecutive_chars_to_html(
+            EncodingVisualizer.consecutive_chars_to_html(
                 current_consecutive_chars, text=text, encoding=encoding,
             )
         )
@@ -196,8 +255,8 @@ class Aligner:
         :param annotations:
         :return:
         """
-        annotation_map = Aligner.__make_anno_map(text, annotations)
-        word_map, token_map = Aligner.__make_token_and_word_map(text, encoding)
+        annotation_map = EncodingVisualizer.__make_anno_map(text, annotations)
+        word_map, token_map = EncodingVisualizer.__make_token_and_word_map(text, encoding)
         # Todo make this a dataclass or named tuple
         char_states: List[CharState] = [
             CharState(char_ix=char_ix, word_ix=word_ix, token_ix=token_ix, anno_ix=anno_ix)
@@ -206,48 +265,3 @@ class Aligner:
             )
         ]
         return char_states
-
-
-if __name__ == "__main__":
-    from tokenizers import Tokenizer
-    from tokenizers import BertWordPieceTokenizer
-
-    tokenizer = BertWordPieceTokenizer("/tmp/bert-base-uncased-vocab.txt", lowercase=True)
-
-    text = """Tal 💩💩💩💩💩💩💩 💩💩 wrote this inspired by the pile of poo test which is 
-    
-    
-    an excellent edge case test for UTF16 this lib handles well 
-    
-    שלום לכולם ולילה טוב
-    
-            💩💩💩💩💩💩💩
-    
-    💩💩💩💩            💩💩💩💩💩💩💩         💩💩💩
-    """
-    encoding = tokenizer.encode(text, add_special_tokens=True)
-    print(encoding.tokens)
-    anno1 = Annotation(start=0, end=2, label="foo")
-    anno2 = Annotation(start=2, end=4, label="bar")
-    anno3 = Annotation(start=6, end=8, label="poo")
-    anno4 = Annotation(start=9, end=12, label="shoe")
-    for token_ix, token in enumerate(encoding.tokens):
-        token_start, token_end = encoding.token_to_chars(token_ix)
-        assert token_start < len(text), f"token ${token_ix} starts after the text ends"
-        assert token_end <= len(text), f"token ${token_ix} ends after the text ends"
-
-    Aligner.make_html(
-        text,
-        encoding=encoding,
-        annotations=[
-            anno1,
-            anno2,
-            anno3,
-            anno4,
-            Annotation(start=23, end=30, label="random"),
-            Annotation(start=63, end=70, label="foo"),
-            Annotation(start=80, end=95, label="bar"),
-            Annotation(start=120, end=128, label="bar"),
-            Annotation(start=152, end=155, label="poo"),
-        ],
-    )

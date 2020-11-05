@@ -9,35 +9,21 @@ with open(css_filename) as f:
     css = f.read()
 
 
-def AnnotationTemplate(children: List[str], color: str, label: str) -> str:
-    children_text = "".join(children)
-    f"""<span class="annotation" style="color:{color}" data-label={label}>{children_text}</span> """
 
 
-def RegularToken(text: str) -> str:
-    return f"""<span class="token">{text}</span>"""
+def HTMLBody(children: List[str],css_styles=css) -> str:
+    '''
 
-
-def SpecialToken(text: str, token: str) -> str:
-    return f"""<span class="special-token" data-token="{token}>{text}</span>"""
-
-
-def UntokenizedSpan(text: str) -> str:
-    return f"""<span class="untokenized">{text}</span>"""
-
-
-def Encoding(children: List[str]):
-    children_text = "".join(children)
-    return f"""<span class="enocding">{children_text}</span>"""
-
-
-def HTMLBody(children: List[str]):
+    :param children: A list of string rendered html nodes
+    :param css_styles:  Optional css styles to replace default styles styling
+    :return: An HTML string with style markup
+    '''
     children_text = "".join(children)
     return f"""
     <html>
         <head>
             <style>
-                {css}
+                {css_styles}
             </style>
         </head>
         <body>
