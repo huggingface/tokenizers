@@ -12,6 +12,12 @@ class TestEncoding:
         pair_encoding = tokenizer.encode("I love HuggingFace", "Do you?")
         return single_encoding, pair_encoding
 
+    def test_sequences(self, encodings):
+        single, pair = encodings
+
+        assert single.sequences == [None, 0, 0, 0, 0, None]
+        assert pair.sequences == [None, 0, 0, 0, 0, None, 1, 1, 1, None]
+
     def test_n_sequences(self, encodings):
         single, pair = encodings
         assert single.n_sequences == 1

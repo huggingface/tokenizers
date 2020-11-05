@@ -11,6 +11,7 @@ export class Encoding {
   private _tokens?: string[];
   private _typeIds?: number[];
   private _wordIndexes?: (number | undefined)[];
+  private _sequenceIndexes?: (number | undefined)[];
 
   constructor(private _rawEncoding: RawEncoding) {}
 
@@ -149,6 +150,14 @@ export class Encoding {
     }
 
     return (this._wordIndexes = this._rawEncoding.getWords());
+  }
+
+  get sequenceIndexes(): (number | undefined)[] {
+    if (this._sequenceIndexes) {
+      return this._sequenceIndexes;
+    }
+
+    return (this._sequenceIndexes = this._rawEncoding.getSequences());
   }
 
   /**

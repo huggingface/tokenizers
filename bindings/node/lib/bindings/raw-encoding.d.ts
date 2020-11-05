@@ -124,6 +124,11 @@ export interface RawEncoding {
   getWords(): (number | undefined)[];
 
   /**
+   * The sequences indices
+   */
+  getSequences(): (number | undefined)[];
+
+  /**
    * Pad the current Encoding at the given length
    *
    * @param length The length at which to pad
