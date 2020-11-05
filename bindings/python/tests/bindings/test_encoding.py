@@ -65,9 +65,9 @@ class TestEncoding:
 
         assert single.token_to_chars(0) == None
         assert single.token_to_chars(2) == (2, 6)
-        assert pair.token_to_chars(2) == (0, (2, 6))
+        assert pair.token_to_chars(2) == (2, 6)
         assert pair.token_to_chars(5) == None
-        assert pair.token_to_chars(6) == (1, (0, 2))
+        assert pair.token_to_chars(6) == (0, 2)
 
     def test_token_to_word(self, encodings):
         single, pair = encodings
@@ -75,11 +75,11 @@ class TestEncoding:
         assert single.token_to_word(0) == None
         assert single.token_to_word(1) == 0
         assert single.token_to_word(4) == 2
-        assert pair.token_to_word(1) == (0, 0)
-        assert pair.token_to_word(4) == (0, 2)
+        assert pair.token_to_word(1) == 0
+        assert pair.token_to_word(4) == 2
         assert pair.token_to_word(5) == None
-        assert pair.token_to_word(6) == (1, 0)
-        assert pair.token_to_word(7) == (1, 1)
+        assert pair.token_to_word(6) == 0
+        assert pair.token_to_word(7) == 1
 
     def test_char_to_token(self, encodings):
         single, pair = encodings

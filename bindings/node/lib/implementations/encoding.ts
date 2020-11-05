@@ -182,25 +182,29 @@ export class Encoding {
 
   /**
    * Get the offsets of the token at the given index
-   * If this encoding represents only one sequence, then only the offsets are returned.
-   * If this encoding represents more than one sequence, then it returns a tuple with the sequence
-   *   id in the first part
+   *
+   * The returned offsets are related to the input sequence that contains the
+   * token.  In order to determine in which input sequence it belongs, you
+   * must call `tokenToSequence`.
+   *
    * @param token The index of the token in the encoded sequence
    * @since 0.7.0
    */
-  tokenToChars(token: number): [number, number] | [number, [number, number]] | undefined {
+  tokenToChars(token: number): [number, number] | undefined {
     return this._rawEncoding.tokenToChars(token);
   }
 
   /**
    * Get the word that contains the token at the given index
-   * If this encoding represents only one sequence, then only the offsets are returned.
-   * If this encoding represents more than one sequence, then it returns a tuple with the sequence
-   *   id in the first part
+   *
+   * The returned index is related to the input sequence that contains the
+   * token.  In order to determine in which input sequence it belongs, you
+   * must call `tokenToSequence`.
+   *
    * @param token The index of the token  in the encoded sequence
    * @since 0.7.0
    */
-  tokenToWord(token: number): number | [number, number] | undefined {
+  tokenToWord(token: number): number | undefined {
     return this._rawEncoding.tokenToWord(token);
   }
 

@@ -160,8 +160,8 @@ describe("RawEncoding", () => {
     });
 
     it("returns the correct offsets with pair sequences", () => {
-      expect(encodingDual.tokenToChars(3)).toEqual([0, [11, 13]]);
-      expect(encodingDual.tokenToChars(7)).toEqual([1, [8, 13]]);
+      expect(encodingDual.tokenToChars(3)).toEqual([11, 13]);
+      expect(encodingDual.tokenToChars(7)).toEqual([8, 13]);
     });
 
     it("returns undefined when out of range token", () => {
@@ -177,8 +177,8 @@ describe("RawEncoding", () => {
     });
 
     it("returns the correct index with pair sequences", () => {
-      expect(encodingDual.tokenToWord(3)).toEqual([0, 3]);
-      expect(encodingDual.tokenToWord(7)).toEqual([1, 2]);
+      expect(encodingDual.tokenToWord(3)).toEqual(3);
+      expect(encodingDual.tokenToWord(7)).toEqual(2);
     });
 
     it("returns undefined when out of range token", () => {
