@@ -53,7 +53,7 @@ class EncodingVisualizer:
                     "We coulndt import Ipython utils for html display. Are you running in a notebook ? "
                 )
         if self.annotation_coverter is not None:
-            annotations =list(map(self.annotation_coverter,annotations))
+            annotations = list(map(self.annotation_coverter, annotations))
         encoding = self.tokenizer.encode(text)
         html = EncodingVisualizer.__make_html(text, encoding, annotations)
         if final_default_to_notebook:
@@ -89,7 +89,9 @@ class EncodingVisualizer:
 
     @staticmethod
     def consecutive_chars_to_html(
-        consecutive_chars_list: List[CharState], text: str, encoding: Encoding,
+        consecutive_chars_list: List[CharState],
+        text: str,
+        encoding: Encoding,
     ):
         """
         Converts a list of "consecutive chars" into a single HTML element.
@@ -162,7 +164,9 @@ class EncodingVisualizer:
                 spans.append(
                     # Create a span from the current consecutive characters
                     EncodingVisualizer.consecutive_chars_to_html(
-                        current_consecutive_chars, text=text, encoding=encoding,
+                        current_consecutive_chars,
+                        text=text,
+                        encoding=encoding,
                     )
                 )
                 current_consecutive_chars = [cs]
@@ -187,7 +191,9 @@ class EncodingVisualizer:
                 # Otherwise we make a span for the previous group
                 spans.append(
                     EncodingVisualizer.consecutive_chars_to_html(
-                        current_consecutive_chars, text=text, encoding=encoding,
+                        current_consecutive_chars,
+                        text=text,
+                        encoding=encoding,
                     )
                 )
                 # An reset the consecutive_char_list to form a new group
@@ -196,7 +202,9 @@ class EncodingVisualizer:
         # TODO I think there is an edge case here where an annotation's span might not close
         spans.append(
             EncodingVisualizer.consecutive_chars_to_html(
-                current_consecutive_chars, text=text, encoding=encoding,
+                current_consecutive_chars,
+                text=text,
+                encoding=encoding,
             )
         )
         res = HTMLBody(spans)  # Send the list of spans to the body of our html

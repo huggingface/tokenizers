@@ -9,15 +9,13 @@ with open(css_filename) as f:
     css = f.read()
 
 
-
-
-def HTMLBody(children: List[str],css_styles=css) -> str:
-    '''
+def HTMLBody(children: List[str], css_styles=css) -> str:
+    """
 
     :param children: A list of string rendered html nodes
     :param css_styles:  Optional css styles to replace default styles styling
     :return: An HTML string with style markup
-    '''
+    """
     children_text = "".join(children)
     return f"""
     <html>

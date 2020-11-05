@@ -84,7 +84,6 @@ from .tokenizers import (
     NormalizedString,
     PreTokenizedString,
     Token,
-
 )
 from .viz.visualizer import EncodingVisualizer
 from .tokenizers import decoders
