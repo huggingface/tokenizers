@@ -115,7 +115,7 @@ declare_types! {
         }
 
         method getWords(mut cx) {
-            // getWords(): number[]
+            // getWords(): (number | undefined)[]
 
             let this = cx.this();
             let guard = cx.lock();
@@ -123,6 +123,18 @@ declare_types! {
                 .encoding.as_ref().expect("Uninitialized Encoding")
                 .get_words()
                 .to_vec();
+
+            Ok(neon_serde::to_value(&mut cx, &ids)?)
+        }
+
+        method getSequences(mut cx) {
+            // getSequences(): (number | undefined)[]
+
+            let this = cx.this();
+            let guard = cx.lock();
+            let ids = this.borrow(&guard)
+                .encoding.as_ref().expect("Uninitialized Encoding")
+                .get_sequences();
 
             Ok(neon_serde::to_value(&mut cx, &ids)?)
         }

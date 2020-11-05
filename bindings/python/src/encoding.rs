@@ -152,6 +152,19 @@ impl PyEncoding {
         self.encoding.get_words().to_vec()
     }
 
+    /// The generated sequence indices.
+    ///
+    /// They represent the index of the input sequence associated to each token.
+    /// The sequence id can be None if the token is not related to any input sequence,
+    /// like for example with special tokens.
+    ///
+    /// Returns:
+    ///     A :obj:`List` of :obj:`Optional[int]`: A list of optional sequence index.
+    #[getter]
+    fn get_sequences(&self) -> Vec<Option<usize>> {
+        self.encoding.get_sequences()
+    }
+
     /// The generated type IDs
     ///
     /// Generally used for tasks like sequence classification or question answering,

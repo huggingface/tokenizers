@@ -129,6 +129,16 @@ impl Encoding {
         &self.words
     }
 
+    pub fn get_sequences(&self) -> Vec<Option<usize>> {
+        let mut sequences = vec![None; self.len()];
+        for seq_id in 0..self.n_sequences() {
+            let range = self.sequence_range(seq_id);
+            let seq_len = range.len();
+            sequences.splice(range, std::iter::repeat(Some(seq_id)).take(seq_len));
+        }
+        sequences
+    }
+
     pub fn get_words_mut(&mut self) -> &mut [Option<u32>] {
         &mut self.words
     }

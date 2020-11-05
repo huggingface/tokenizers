@@ -112,6 +112,13 @@ describe("RawEncoding", () => {
     });
   });
 
+  describe("getSequences", () => {
+    it("returns the correct list of indexes", () => {
+      expect(encoding.getSequences()).toEqual([0, 0, 0, 0, 0]);
+      expect(encodingDual.getSequences()).toEqual([0, 0, 0, 0, 0, 1, 1, 1, 1]);
+    });
+  });
+
   describe("wordToTokens", () => {
     it("returns the correct indexes", () => {
       const indexes = encoding.wordToTokens(3);

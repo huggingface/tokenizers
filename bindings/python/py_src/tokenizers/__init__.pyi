@@ -327,6 +327,17 @@ class Encoding:
         """
         pass
     @property
+    def sequences(self) -> List[Optional[int]]:
+        """The generated sequence indices.
+
+        They represent the index of the input sequence associated to each token.
+        The sequence id can be None if the token is not related to any input sequence,
+        like for example with special tokens.
+
+        Returns:
+            A :obj:`List` of :obj:`Optional[int]`: A list of optional sequence index.
+        """
+    @property
     def type_ids(self) -> List[int]:
         """The generated type IDs
 
