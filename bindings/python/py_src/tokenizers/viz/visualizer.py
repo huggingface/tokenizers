@@ -52,6 +52,8 @@ class EncodingVisualizer:
                 raise Exception(
                     "We coulndt import Ipython utils for html display. Are you running in a notebook ? "
                 )
+        if self.annotation_coverter is not None:
+            annotations =list(map(self.annotation_coverter,annotations))
         encoding = self.tokenizer.encode(text)
         html = EncodingVisualizer.__make_html(text, encoding, annotations)
         if final_default_to_notebook:
