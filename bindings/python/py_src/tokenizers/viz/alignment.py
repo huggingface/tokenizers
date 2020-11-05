@@ -38,23 +38,21 @@ class Aligner:
 
     @staticmethod
     def consecutive_chars_to_html(
-        char_state_partition: List[CharState],
-        text: str,
-        encoding: Encoding,
+        char_state_partition: List[CharState], text: str, encoding: Encoding,
     ):
         first = char_state_partition[0]
         if first.char_ix is None:
             # its a special token
             stoken = encoding.tokens[first.token_ix]
-            #special tokens are represented as empty spans. We use the data attribute and css magic to display it
+            # special tokens are represented as empty spans. We use the data attribute and css magic to display it
             return f'<span class="special-token" data-stoken={stoken}></span>'
-        #We're not in a special token so this group has a start and end.
+        # We're not in a special token so this group has a start and end.
         last = char_state_partition[-1]
         start = first.char_ix
         end = last.char_ix + 1
         span_text = text[start:end]
-        css_classes = [] # What css classes will we apply on the resulting span
-        data_items = {} # What data attributes will we apply on the result span
+        css_classes = []  # What css classes will we apply on the resulting span
+        data_items = {}  # What data attributes will we apply on the result span
         if first.token_ix is not None:
             # We can either be in a token or not (e.g. in white space)
             css_classes.append("token")
@@ -64,37 +62,45 @@ class Aligner:
                 # indicate a consecutive token despite its possible splitting in the html markup
                 css_classes.append("odd-token")
             else:
-                #Like above, but a different color so we can see the tokens alternate
+                # Like above, but a different color so we can see the tokens alternate
                 css_classes.append("even-token")
-            if encoding.special_tokens_mask[first.token_ix]:
-                #This is a special token that is in the text. probably UNK
+            if encoding.tokens[first.token_ix] == "[UNK]":
+                # This is a special token that is in the text. probably UNK
                 css_classes.append("special-token")
-                #TODO is this the right name for the data attribute ?
-                data_items["stoken"] = encoding.tokens[first.token_ix]
+                # TODO is this the right name for the data attribute ?
+                data_items["stok"] = encoding.tokens[first.token_ix]
         else:
-            #In this case we are looking at a group/single char that is not tokenized. e.g. white space
+            # In this case we are looking at a group/single char that is not tokenized. e.g. white space
             css_classes.append("non-token")
         css = f'''class="{' '.join(css_classes)}"'''
         data = ""
         for key, val in data_items.items():
-            data += f' data-{key}="val"'
+            data += f' data-{key}="{val}"'
         return f"<span {css} {data} >{span_text}</span>"
 
     @staticmethod
     def make_html(text: str, encoding: Encoding, annotations: AnnotationList):
         char_states = Aligner.__make_char_states(text, encoding, annotations)
         current_consecutive_chars = [char_states[0]]
-        prev_anno_ix = None
+        prev_anno_ix = char_states[0].anno_ix
         spans = []
         label_colors_dict = Aligner.calculate_label_colors(annotations)
+        cur_anno_ix = char_states[0].anno_ix
+        if cur_anno_ix is not None:
+            # If we started in an  annotation make a span for it
+            anno = annotations[cur_anno_ix]
+            label = anno.label
+            color = label_colors_dict[label]
+            spans.append(f'<span class="annotation" style="color:{color}" data-label="{label}">')
+
         for cs in char_states[1:]:
             cur_anno_ix = cs.anno_ix
             if cur_anno_ix != prev_anno_ix:
-                #If we've transitioned in or out of an annotation
+                # If we've transitioned in or out of an annotation
                 spans.append(
-                    #Create a span from the current consecutive characters
+                    # Create a span from the current consecutive characters
                     Aligner.consecutive_chars_to_html(
-                        current_consecutive_chars, text=text, encoding=encoding, annotations=annotations
+                        current_consecutive_chars, text=text, encoding=encoding,
                     )
                 )
                 current_consecutive_chars = [cs]
@@ -103,7 +109,7 @@ class Aligner:
                     # if we transitioned out of an annotation close it's span
                     spans.append("</span>")
                 if cur_anno_ix is not None:
-                    #If we entered a new annotation make a span for it
+                    # If we entered a new annotation make a span for it
                     anno = annotations[cur_anno_ix]
                     label = anno.label
                     color = label_colors_dict[label]
@@ -113,25 +119,25 @@ class Aligner:
             prev_anno_ix = cur_anno_ix
 
             if cs.partition_key() == current_consecutive_chars[0].partition_key():
-                #If the current charchter is in the same "group" as the previous one
+                # If the current charchter is in the same "group" as the previous one
                 current_consecutive_chars.append(cs)
             else:
                 # Otherwise we make a span for the previous group
                 spans.append(
                     Aligner.consecutive_chars_to_html(
-                        current_consecutive_chars, text=text, encoding=encoding, annotations=annotations
+                        current_consecutive_chars, text=text, encoding=encoding,
                     )
                 )
                 # An reset the consecutive_char_list to form a new group
                 current_consecutive_chars = [cs]
-        #All that's left is to fill out the final span
-        #TODO I think there is an edge case here where an annotation's span might not close
+        # All that's left is to fill out the final span
+        # TODO I think there is an edge case here where an annotation's span might not close
         spans.append(
             Aligner.consecutive_chars_to_html(
-                current_consecutive_chars, text=text, encoding=encoding, annotations=annotations
+                current_consecutive_chars, text=text, encoding=encoding,
             )
         )
-        res = HTMLBody(spans) # Send the list of spans to the body of our html
+        res = HTMLBody(spans)  # Send the list of spans to the body of our html
         with open("/tmp/out.html", "w") as f:
             f.write(res)
         return res
@@ -202,24 +208,45 @@ class Aligner:
 
 
 if __name__ == "__main__":
-    from tokenizers.trainers import BpeTrainer
     from tokenizers import Tokenizer
-    from tokenizers.models import BPE
-    import tokenizers
+    from tokenizers import BertWordPieceTokenizer
 
-    tokenizer = Tokenizer(BPE())
-    tokenizer.pre_tokenizer = tokenizers.pre_tokenizers.Whitespace()
+    tokenizer = BertWordPieceTokenizer("/tmp/bert-base-uncased-vocab.txt", lowercase=True)
 
-    trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
-    tokenizer.train(trainer, ["/home/tal/dev/lighttag/sample_data/fedreg.json"])
-    text = "i am tal  and I wrote this 💩💩💩 xxx"
+    text = """Tal 💩💩💩💩💩💩💩 💩💩 wrote this inspired by the pile of poo test which is 
+    
+    
+    an excellent edge case test for UTF16 this lib handles well 
+    
+    שלום לכולם ולילה טוב
+    
+            💩💩💩💩💩💩💩
+    
+    💩💩💩💩            💩💩💩💩💩💩💩         💩💩💩
+    """
     encoding = tokenizer.encode(text, add_special_tokens=True)
-    anno1 = Annotation(start=3, end=6, label="foo")
-    anno2 = Annotation(start=8, end=7, label="bar")
-    anno3 = Annotation(start=12, end=15, label="zab")
+    print(encoding.tokens)
+    anno1 = Annotation(start=0, end=2, label="foo")
+    anno2 = Annotation(start=2, end=4, label="bar")
+    anno3 = Annotation(start=6, end=8, label="poo")
+    anno4 = Annotation(start=9, end=12, label="shoe")
     for token_ix, token in enumerate(encoding.tokens):
         token_start, token_end = encoding.token_to_chars(token_ix)
         assert token_start < len(text), f"token ${token_ix} starts after the text ends"
         assert token_end <= len(text), f"token ${token_ix} ends after the text ends"
 
-    Aligner.make_html(text, encoding=encoding, annotations=[anno1, anno2, anno3])
+    Aligner.make_html(
+        text,
+        encoding=encoding,
+        annotations=[
+            anno1,
+            anno2,
+            anno3,
+            anno4,
+            Annotation(start=23, end=30, label="random"),
+            Annotation(start=63, end=70, label="foo"),
+            Annotation(start=80, end=95, label="bar"),
+            Annotation(start=120, end=128, label="bar"),
+            Annotation(start=152, end=155, label="poo"),
+        ],
+    )

@@ -1,17 +1,32 @@
 .tokenized-text {
-  width:600px;
-  border:1px solid black;
+  width:100%;
+  padding:2rem;
+  max-height: 400px;
+  overflow-y: auto;
   box-sizing:border-box;
-  line-height:2.5rem;
+  line-height:4rem;
+  font-family: "Roboto Light","Ubuntu Light","Ubuntu";
+  box-shadow: 2px 2px 2px rgba(0,0,0,0.2);
+  background-color: rgba(0,0,0,0.01);
+  letter-spacing:2px;
 
 }
-
+.non-token{
+  white-space: pre;
+  /*background-color: rgba(110,110,10,0.3);*/
+  letter-spacing:4px;
+  border-top:1px solid #A0A0A0;
+  border-bottom:1px solid #A0A0A0;
+  line-height: 1rem;
+  height: calc(100% - 2px);
+}
 .tok-text {
 
 
 }
 
 .token {
+  white-space: pre;
   position:relative;
   color:black;
   letter-spacing:2px;
@@ -30,7 +45,6 @@
   white-space:nowrap; // Yoyoyoyo - ensures that annotations appear
   border-radius:4px;
   position:relative;
-  border: 1px solid black;
 
    width:fit-content;
 }
@@ -40,11 +54,11 @@
   content:attr(data-label);
   color:white;
   position:absolute;
-  font-size:0.75rem;
+  font-size:1rem;
   text-align:center;
   font-weight:bold;
   text-overflow:ellipsis;
-  top:1.1rem;
+  top:1.75rem;
   line-height:0rem;
   text-overflow: ellipsis;
 
@@ -61,7 +75,7 @@
   text-align:center;
   font-weight:bold;
   text-overflow:ellipsis;
-  top:1.1rem;
+  top:1.75rem;
   line-height:0;
 
   left:0;
@@ -77,10 +91,10 @@
   border-color: currentColor;
   border: 2px solid;
 }
-.tok-stok:not(:empty){
+.special-token:not(:empty){
   position:relative;
 }
-.tok-stok:empty::before{
+.special-token:empty::before{
   content:attr(data-stok);
   background:#202020;
   font-size:0.75rem;
@@ -91,16 +105,16 @@
   /* Special tokens that don't have text*/
 }
 
-.tok-stok:not(:empty):before {
+.special-token:not(:empty):before {
   /* Special tokens that have text*/
   content:attr(data-stok);
   position:absolute;
-  bottom:1.1rem;
+  bottom:1.75rem;
   min-width:100%;
-  width:fit-content;
+  width:100%;
   height:1rem;
   line-height:1rem;
-  font-size:0.75rem;
+  font-size:1rem;
   text-align:center;
   color:white;
   font-weight:bold;
@@ -109,12 +123,10 @@
 }
 .even-token{
   background:#DCDCDC	;
+  border: 1px solid #DCDCDC;
 }
 .odd-token{
   background:#A0A0A0;
+  border: 1px solid #A0A0A0;
 
-}
-.word {
-  letter-spacing:2px;
-  color:black
 }
