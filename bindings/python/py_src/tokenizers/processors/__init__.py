@@ -1,7 +1,6 @@
-from .. import processors
-
-PostProcessor = processors.PostProcessor
-BertProcessing = processors.BertProcessing
-RobertaProcessing = processors.RobertaProcessing
-ByteLevel = processors.ByteLevel
-TemplateProcessing = processors.TemplateProcessing
+# Generated content DO NOT EDIT
+from tokenizers.tokenizers.processors import PostProcessor
+from tokenizers.tokenizers.processors import BertProcessing
+from tokenizers.tokenizers.processors import ByteLevel
+from tokenizers.tokenizers.processors import RobertaProcessing
+from tokenizers.tokenizers.processors import TemplateProcessing
