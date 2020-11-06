@@ -126,7 +126,10 @@ def do_black(content, is_pyi):
         string_normalization=True,
         experimental_string_processing=False,
     )
-    return black.format_file_contents(content, fast=True, mode=mode)
+    try:
+        return black.format_file_contents(content, fast=True, mode=mode)
+    except black.NothingChanged:
+        return content
 
 
 def write(module, directory, origin, check=False):
@@ -148,22 +151,30 @@ def write(module, directory, origin, check=False):
         with open(filename, "w") as f:
             f.write(pyi_content)
 
-    # filename = os.path.join(directory, "__init__.py")
-    # py_content = py_file(module, origin)
-    # py_content = do_black(py_content, is_pyi=False)
-    # os.makedirs(directory, exist_ok=True)
+    filename = os.path.join(directory, "__init__.py")
+    py_content = py_file(module, origin)
+    py_content = do_black(py_content, is_pyi=False)
+    os.makedirs(directory, exist_ok=True)
 
-    # if check:
-    #     with open(filename, "r") as f:
-    #         data = f.read()
-    #         assert (
-    #             data == py_content
-    #         ), f"The content of {filename} seems outdated, please run `python stub.py`"
-    # else:
-    #     with open(filename, "w") as f:
-    #         f.write(py_content)
+    is_auto = False
+    if not os.path.exists(filename):
+        is_auto = True
+    else:
+        with open(filename, "r") as f:
+            line = f.readline()
+            if line == GENERATED_COMMENT:
+                is_auto = True
 
-    do_black(filename, is_pyi=False)
+    if is_auto:
+        if check:
+            with open(filename, "r") as f:
+                data = f.read()
+                assert (
+                    data == py_content
+                ), f"The content of {filename} seems outdated, please run `python stub.py`"
+        else:
+            with open(filename, "w") as f:
+                f.write(py_content)
 
     for name, submodule in submodules:
         write(submodule, os.path.join(directory, name), f"{origin}.{name}", check=check)
