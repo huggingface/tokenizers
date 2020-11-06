@@ -139,12 +139,9 @@ def write(module, directory, origin, check=False):
     if check:
         with open(filename, "r") as f:
             data = f.read()
-            try:
-                assert data == pyi_content
-            except Exception:
-                import ipdb
-
-                ipdb.set_trace()
+            assert (
+                data == pyi_content
+            ), f"The content of {filename} seems outdated, please run `python stub.py`"
     else:
         with open(filename, "w") as f:
             f.write(pyi_content)
@@ -156,7 +153,9 @@ def write(module, directory, origin, check=False):
     if check:
         with open(filename, "r") as f:
             data = f.read()
-            assert data == py_content
+            assert (
+                data == py_content
+            ), f"The content of {filename} seems outdated, please run `python stub.py`"
     else:
         with open(filename, "w") as f:
             f.write(py_content)
