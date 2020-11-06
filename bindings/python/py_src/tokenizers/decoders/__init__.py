@@ -1,6 +1,7 @@
-# Generated content DO NOT EDIT
-from tokenizers.tokenizers.decoders import Decoder
-from tokenizers.tokenizers.decoders import BPEDecoder
-from tokenizers.tokenizers.decoders import ByteLevel
-from tokenizers.tokenizers.decoders import Metaspace
-from tokenizers.tokenizers.decoders import WordPiece
+from .. import decoders
+
+Decoder = decoders.Decoder
+ByteLevel = decoders.ByteLevel
+WordPiece = decoders.WordPiece
+Metaspace = decoders.Metaspace
+BPEDecoder = decoders.BPEDecoder

@@ -1,12 +1,13 @@
-# Generated content DO NOT EDIT
-from tokenizers.tokenizers.pre_tokenizers import PreTokenizer
-from tokenizers.tokenizers.pre_tokenizers import BertPreTokenizer
-from tokenizers.tokenizers.pre_tokenizers import ByteLevel
-from tokenizers.tokenizers.pre_tokenizers import CharDelimiterSplit
-from tokenizers.tokenizers.pre_tokenizers import Digits
-from tokenizers.tokenizers.pre_tokenizers import Metaspace
-from tokenizers.tokenizers.pre_tokenizers import Punctuation
-from tokenizers.tokenizers.pre_tokenizers import Sequence
-from tokenizers.tokenizers.pre_tokenizers import UnicodeScripts
-from tokenizers.tokenizers.pre_tokenizers import Whitespace
-from tokenizers.tokenizers.pre_tokenizers import WhitespaceSplit
+from .. import pre_tokenizers
+
+PreTokenizer = pre_tokenizers.PreTokenizer
+ByteLevel = pre_tokenizers.ByteLevel
+Whitespace = pre_tokenizers.Whitespace
+Punctuation = pre_tokenizers.Punctuation
+Sequence = pre_tokenizers.Sequence
+WhitespaceSplit = pre_tokenizers.WhitespaceSplit
+BertPreTokenizer = pre_tokenizers.BertPreTokenizer
+Metaspace = pre_tokenizers.Metaspace
+CharDelimiterSplit = pre_tokenizers.CharDelimiterSplit
+Digits = pre_tokenizers.Digits
+UnicodeScripts = pre_tokenizers.UnicodeScripts

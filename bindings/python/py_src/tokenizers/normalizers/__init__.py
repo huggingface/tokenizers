@@ -1,14 +1,29 @@
-# Generated content DO NOT EDIT
-from tokenizers.tokenizers.normalizers import Normalizer
-from tokenizers.tokenizers.normalizers import BertNormalizer
-from tokenizers.tokenizers.normalizers import Lowercase
-from tokenizers.tokenizers.normalizers import NFC
-from tokenizers.tokenizers.normalizers import NFD
-from tokenizers.tokenizers.normalizers import NFKC
-from tokenizers.tokenizers.normalizers import NFKD
-from tokenizers.tokenizers.normalizers import Nmt
-from tokenizers.tokenizers.normalizers import Precompiled
-from tokenizers.tokenizers.normalizers import Replace
-from tokenizers.tokenizers.normalizers import Sequence
-from tokenizers.tokenizers.normalizers import Strip
-from tokenizers.tokenizers.normalizers import StripAccents
+from .. import normalizers
+
+Normalizer = normalizers.Normalizer
+BertNormalizer = normalizers.BertNormalizer
+NFD = normalizers.NFD
+NFKD = normalizers.NFKD
+NFC = normalizers.NFC
+NFKC = normalizers.NFKC
+Sequence = normalizers.Sequence
+Lowercase = normalizers.Lowercase
+Strip = normalizers.Strip
+StripAccents = normalizers.StripAccents
+Nmt = normalizers.Nmt
+Precompiled = normalizers.Precompiled
+Replace = normalizers.Replace
+
+
+NORMALIZERS = {"nfc": NFC, "nfd": NFD, "nfkc": NFKC, "nfkd": NFKD}
+
+
+def unicode_normalizer_from_str(normalizer: str) -> Normalizer:
+    if normalizer not in NORMALIZERS:
+        raise ValueError(
+            "{} is not a known unicode normalizer. Available are {}".format(
+                normalizer, NORMALIZERS.keys()
+            )
+        )
+
+    return NORMALIZERS[normalizer]()

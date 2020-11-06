@@ -5,6 +5,7 @@ import black
 from pathlib import Path
 
 INDENT = " " * 4
+GENERATED_COMMENT = "# Generated content DO NOT EDIT\n"
 
 
 def do_indent(text: str, indent: str):
@@ -56,7 +57,7 @@ def get_module_members(module):
 def pyi_file(obj, indent=""):
     string = ""
     if inspect.ismodule(obj):
-        string += "#Generated content DO NOT EDIT\n"
+        string += GENERATED_COMMENT
         members = get_module_members(obj)
         for member in members:
             string += pyi_file(member, indent)
@@ -110,9 +111,10 @@ def pyi_file(obj, indent=""):
 def py_file(module, origin):
     members = get_module_members(module)
 
-    string = "#Generated content DO NOT EDIT\n"
+    string = GENERATED_COMMENT
     for member in members:
-        string += f"from {origin} import {member.__name__}\n"
+        name = member.__name__
+        string += f"from {origin} import {name}\n"
     return string
 
 
@@ -146,24 +148,25 @@ def write(module, directory, origin, check=False):
         with open(filename, "w") as f:
             f.write(pyi_content)
 
-    filename = os.path.join(directory, "__init__.py")
-    py_content = py_file(module, origin)
-    py_content = do_black(py_content, is_pyi=False)
-    os.makedirs(directory, exist_ok=True)
-    if check:
-        with open(filename, "r") as f:
-            data = f.read()
-            assert (
-                data == py_content
-            ), f"The content of {filename} seems outdated, please run `python stub.py`"
-    else:
-        with open(filename, "w") as f:
-            f.write(py_content)
+    # filename = os.path.join(directory, "__init__.py")
+    # py_content = py_file(module, origin)
+    # py_content = do_black(py_content, is_pyi=False)
+    # os.makedirs(directory, exist_ok=True)
+
+    # if check:
+    #     with open(filename, "r") as f:
+    #         data = f.read()
+    #         assert (
+    #             data == py_content
+    #         ), f"The content of {filename} seems outdated, please run `python stub.py`"
+    # else:
+    #     with open(filename, "w") as f:
+    #         f.write(py_content)
 
     do_black(filename, is_pyi=False)
 
     for name, submodule in submodules:
-        write(submodule, os.path.join(directory, name), f"{origin}.{name}")
+        write(submodule, os.path.join(directory, name), f"{origin}.{name}", check=check)
 
 
 if __name__ == "__main__":
@@ -173,4 +176,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     import tokenizers
 
-    write(tokenizers.tokenizers, "py_src/tokenizers/", "tokenizers.tokenizers", args.check)
+    write(tokenizers.tokenizers, "py_src/tokenizers/", "tokenizers.tokenizers", check=args.check)
