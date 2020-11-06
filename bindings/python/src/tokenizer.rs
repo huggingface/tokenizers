@@ -408,7 +408,7 @@ type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProc
 ///         The core algorithm that this :obj:`Tokenizer` should be using.
 ///
 #[pyclass(dict, module = "tokenizers", name=Tokenizer)]
-#[text_signature = "(model)"]
+#[text_signature = "(self, model)"]
 #[derive(Clone)]
 pub struct PyTokenizer {
     tokenizer: Tokenizer,

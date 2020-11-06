@@ -383,7 +383,7 @@ class Tokenizer:
 
     """
 
-    def __init__(model):
+    def __init__(self, model):
         pass
     def add_special_tokens(self, tokens):
         """
