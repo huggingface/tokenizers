@@ -112,9 +112,11 @@ def py_file(module, origin):
     members = get_module_members(module)
 
     string = GENERATED_COMMENT
+    string += f"from .. import {origin}\n"
+    string += "\n"
     for member in members:
         name = member.__name__
-        string += f"from {origin} import {name}\n"
+        string += f"{name} = {origin}.{name}\n"
     return string
 
 
@@ -177,7 +179,7 @@ def write(module, directory, origin, check=False):
                 f.write(py_content)
 
     for name, submodule in submodules:
-        write(submodule, os.path.join(directory, name), f"{origin}.{name}", check=check)
+        write(submodule, os.path.join(directory, name), f"{name}", check=check)
 
 
 if __name__ == "__main__":
@@ -187,4 +189,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     import tokenizers
 
-    write(tokenizers.tokenizers, "py_src/tokenizers/", "tokenizers.tokenizers", check=args.check)
+    write(tokenizers.tokenizers, "py_src/tokenizers/", "tokenizers", check=args.check)

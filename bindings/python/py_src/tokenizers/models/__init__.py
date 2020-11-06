@@ -1,9 +1,8 @@
-from typing import List, Tuple
-
-from .. import models, Offsets
+# Generated content DO NOT EDIT
+from .. import models
 
 Model = models.Model
 BPE = models.BPE
-WordPiece = models.WordPiece
-WordLevel = models.WordLevel
 Unigram = models.Unigram
+WordLevel = models.WordLevel
+WordPiece = models.WordPiece
