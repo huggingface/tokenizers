@@ -35,12 +35,55 @@ class AddedToken:
 
     def __init__(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True):
         pass
+    @property
+    def content(self):
+        """
+        Get the content of this :obj:`AddedToken`
+        """
+        pass
+    @property
+    def lstrip(self):
+        """
+        Get the value of the :obj:`lstrip` option
+        """
+        pass
+    @property
+    def normalized(self):
+        """
+        Get the value of the :obj:`normalized` option
+        """
+        pass
+    @property
+    def rstrip(self):
+        """
+        Get the value of the :obj:`rstrip` option
+        """
+        pass
+    @property
+    def single_word(self):
+        """
+        Get the value of the :obj:`single_word` option
+        """
+        pass
 
 class Encoding:
     """
     The :class:`~tokenizers.Encoding` represents the output of a :class:`~tokenizers.Tokenizer`.
     """
 
+    @property
+    def attention_mask(self):
+        """
+        The attention mask
+
+        This indicates to the LM which tokens should be attended to, and which should not.
+        This is especially important when batching sequences, where we need to applying
+        padding.
+
+        Returns:
+           :obj:`List[int]`: The attention mask
+        """
+        pass
     def char_to_token(self, char_pos, sequence_index=0):
         """
         Get the token that contains the char at the given position in the input sequence.
@@ -69,6 +112,18 @@ class Encoding:
             :obj:`int`: The index of the word that contains this char in the input sequence
         """
         pass
+    @property
+    def ids(self):
+        """
+        The generated IDs
+
+        The IDs are the main input to a Language Model. They are the token indices,
+        the numerical representations that a LM understands.
+
+        Returns:
+            :obj:`List[int]`: The list of IDs
+        """
+        pass
     @staticmethod
     def merge(encodings, growing_offsets=True):
         """
@@ -83,6 +138,41 @@ class Encoding:
 
         Returns:
             :class:`~tokenizers.Encoding`: The resulting Encoding
+        """
+        pass
+    @property
+    def n_sequences(self):
+        """
+        The number of sequences represented
+
+        Returns:
+            :obj:`int`: The number of sequences in this :class:`~tokenizers.Encoding`
+        """
+        pass
+    @property
+    def offsets(self):
+        """
+        The offsets associated to each token
+
+        These offsets let's you slice the input string, and thus retrieve the original
+        part that led to producing the corresponding token.
+
+        Returns:
+            A :obj:`List` of :obj:`Tuple[int, int]`: The list of offsets
+        """
+        pass
+    @property
+    def overflowing(self):
+        """
+        A :obj:`List` of overflowing :class:`~tokenizers.Encoding`
+
+        When using truncation, the :class:`~tokenizers.Tokenizer` takes care of splitting
+        the output into as many pieces as required to match the specified maximum length.
+        This field lets you retrieve all the subsequent pieces.
+
+        When you use pairs of sequences, the overflowing pieces will contain enough
+        variations to cover all the possible combinations, while respecting the provided
+        maximum length.
         """
         pass
     def pad(self, length, direction="right", pad_id=0, pad_type_id=0, pad_token="[PAD]"):
@@ -106,12 +196,36 @@ class Encoding:
                 The pad token to use
         """
         pass
+    @property
+    def sequences(self):
+        """
+        The generated sequence indices.
+
+        They represent the index of the input sequence associated to each token.
+        The sequence id can be None if the token is not related to any input sequence,
+        like for example with special tokens.
+
+        Returns:
+            A :obj:`List` of :obj:`Optional[int]`: A list of optional sequence index.
+        """
+        pass
     def set_sequence_id(self, sequence_id):
         """
         Set the given sequence index
 
         Set the given sequence index for the whole range of tokens contained in this
         :class:`~tokenizers.Encoding`.
+        """
+        pass
+    @property
+    def special_tokens_mask(self):
+        """
+        The special token mask
+
+        This indicates which tokens are special tokens, and which are not.
+
+        Returns:
+            :obj:`List[int]`: The special tokens mask
         """
         pass
     def token_to_chars(self, token_index):
@@ -161,6 +275,17 @@ class Encoding:
             :obj:`int`: The index of the word in the relevant input sequence.
         """
         pass
+    @property
+    def tokens(self):
+        """
+        The generated tokens
+
+        They are the string representation of the IDs.
+
+        Returns:
+            :obj:`List[str]`: The list of tokens
+        """
+        pass
     def truncate(self, max_length, stride=0):
         """
         Truncate the :class:`~tokenizers.Encoding` at the given length
@@ -174,6 +299,18 @@ class Encoding:
 
             stride (:obj:`int`, defaults to :obj:`0`):
                 The length of previous content to be included in each overflowing piece
+        """
+        pass
+    @property
+    def type_ids(self):
+        """
+        The generated type IDs
+
+        Generally used for tasks like sequence classification or question answering,
+        these tokens let the LM know which input sequence corresponds to each tokens.
+
+        Returns:
+            :obj:`List[int]`: The list of type ids
         """
         pass
     def word_to_chars(self, word_index, sequence_index=0):
@@ -203,6 +340,23 @@ class Encoding:
 
         Returns:
             :obj:`Tuple[int, int]`: The range of tokens: :obj:`(first, last + 1)`
+        """
+        pass
+    @property
+    def words(self):
+        """
+        The generated word indices.
+
+        They represent the index of the word associated to each token.
+        When the input is pre-tokenized, they correspond to the ID of the given input label,
+        otherwise they correspond to the words indices as defined by the
+        :class:`~tokenizers.pre_tokenizers.PreTokenizer` that was used.
+
+        For special tokens and such (any token that was generated from something that was
+        not part of the input), the output is :obj:`None`
+
+        Returns:
+            A :obj:`List` of :obj:`Optional[int]`: A list of optional word index.
         """
         pass
 
@@ -297,6 +451,12 @@ class Tokenizer:
 
         Returns:
             :obj:`List[str]`: A list of decoded strings
+        """
+        pass
+    @property
+    def decoder(self):
+        """
+        The `optional` :class:`~tokenizers.decoders.Decoder` in use by the Tokenizer
         """
         pass
     def enable_padding(
@@ -501,6 +661,12 @@ class Tokenizer:
             :obj:`Optional[str]`: An optional token, :obj:`None` if out of vocabulary
         """
         pass
+    @property
+    def model(self):
+        """
+        The :class:`~tokenizers.models.Model` in use by the Tokenizer
+        """
+        pass
     def no_padding(self):
         """
         Disable padding
@@ -509,6 +675,24 @@ class Tokenizer:
     def no_truncation(self):
         """
         Disable truncation
+        """
+        pass
+    @property
+    def normalizer(self):
+        """
+        The `optional` :class:`~tokenizers.normalizers.Normalizer` in use by the Tokenizer
+        """
+        pass
+    @property
+    def padding(self):
+        """
+        Get the current padding parameters
+
+        `Cannot be set, use` :meth:`~tokenizers.Tokenizer.enable_padding` `instead`
+
+        Returns:
+            (:obj:`dict`, `optional`):
+                A dict with the current padding parameters if padding is enabled
         """
         pass
     def post_process(self, encoding, pair=None, add_special_tokens=True):
@@ -535,6 +719,18 @@ class Tokenizer:
 
         Returns:
             :class:`~tokenizers.Encoding`: The final post-processed encoding
+        """
+        pass
+    @property
+    def post_processor(self):
+        """
+        The `optional` :class:`~tokenizers.processors.PostProcessor` in use by the Tokenizer
+        """
+        pass
+    @property
+    def pre_tokenizer(self):
+        """
+        The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
         """
         pass
     def save(self, pretty=False):
@@ -571,5 +767,17 @@ class Tokenizer:
 
         Returns:
             :obj:`Optional[int]`: An optional id, :obj:`None` if out of vocabulary
+        """
+        pass
+    @property
+    def truncation(self):
+        """
+        Get the currently set truncation parameters
+
+        `Cannot set, use` :meth:`~tokenizers.Tokenizer.enable_truncation` `instead`
+
+        Returns:
+            (:obj:`dict`, `optional`):
+                A dict with the current truncation parameters if truncation is enabled
         """
         pass

@@ -11,7 +11,7 @@ style:
 
 # Check the source code is formatted correctly
 check-style:
-	python stub.py
+	python stub.py --check
 	black --check --line-length 100 --target-version py35 examples py_src/tokenizers tests
 
 TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json

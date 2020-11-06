@@ -1,5 +1,6 @@
 import inspect
 import os
+import argparse
 import black
 from pathlib import Path
 
@@ -10,14 +11,17 @@ def do_indent(text: str, indent: str):
     return text.replace("\n", f"\n{indent}")
 
 
-def function(obj, indent):
+def function(obj, indent, text_signature=None):
+    if text_signature is None:
+        text_signature = obj.__text_signature__
     string = ""
-    string += f"{indent}def {obj.__name__}{obj.__text_signature__}:\n"
+    string += f"{indent}def {obj.__name__}{text_signature}:\n"
     indent += INDENT
     string += f'{indent}"""\n'
     string += f"{indent}{do_indent(obj.__doc__, indent)}\n"
     string += f'{indent}"""\n'
     string += f"{indent}pass\n"
+    string += "\n"
     string += "\n"
     return string
 
@@ -32,8 +36,11 @@ def member_sort(member):
 
 def fn_predicate(obj):
     value = inspect.ismethoddescriptor(obj) or inspect.isbuiltin(obj)
-
-    return value and obj.__doc__ and obj.__text_signature__ and not obj.__name__.startswith("_")
+    if value:
+        return obj.__doc__ and obj.__text_signature__ and not obj.__name__.startswith("_")
+    if inspect.isgetsetdescriptor(obj):
+        return obj.__doc__ and not obj.__name__.startswith("_")
+    return False
 
 
 def get_module_members(module):
@@ -91,6 +98,10 @@ def pyi_file(obj, indent=""):
     elif inspect.ismethoddescriptor(obj):
         string += function(obj, indent)
 
+    elif inspect.isgetsetdescriptor(obj):
+        # TODO it would be interesing to add the setter maybe ?
+        string += f"{indent}@property\n"
+        string += function(obj, indent, text_signature="(self)")
     else:
         raise Exception(f"Object {obj} is not supported")
     return string
@@ -105,42 +116,50 @@ def py_file(module, origin):
     return string
 
 
-def do_black(filename, is_pyi):
-    filename = Path(filename)
+def do_black(content, is_pyi):
     mode = black.Mode(
         target_versions={black.TargetVersion.PY36},
         line_length=100,
-        is_pyi=False,
+        is_pyi=is_pyi,
         string_normalization=True,
         experimental_string_processing=False,
     )
-    check = False
-    diff = False
-    color = False
-    quiet = True
-    verbose = False
-    report = black.Report(check=check, diff=diff, quiet=quiet, verbose=verbose)
-    write_back = black.WriteBack.from_configuration(check=check, diff=diff, color=color)
-    black.reformat_one(filename, fast=True, write_back=write_back, mode=mode, report=report)
+    return black.format_file_contents(content, fast=True, mode=mode)
 
 
-def write(module, directory, origin):
+def write(module, directory, origin, check=False):
     submodules = [
         (name, member) for name, member in inspect.getmembers(module) if inspect.ismodule(member)
     ]
 
     filename = os.path.join(directory, "__init__.pyi")
     pyi_content = pyi_file(module)
+    pyi_content = do_black(pyi_content, is_pyi=True)
     os.makedirs(directory, exist_ok=True)
-    with open(filename, "w") as f:
-        f.write(pyi_content)
-    do_black(filename, is_pyi=True)
+    if check:
+        with open(filename, "r") as f:
+            data = f.read()
+            try:
+                assert data == pyi_content
+            except Exception:
+                import ipdb
+
+                ipdb.set_trace()
+    else:
+        with open(filename, "w") as f:
+            f.write(pyi_content)
 
     filename = os.path.join(directory, "__init__.py")
     py_content = py_file(module, origin)
+    py_content = do_black(py_content, is_pyi=False)
     os.makedirs(directory, exist_ok=True)
-    with open(filename, "w") as f:
-        f.write(py_content)
+    if check:
+        with open(filename, "r") as f:
+            data = f.read()
+            assert data == py_content
+    else:
+        with open(filename, "w") as f:
+            f.write(py_content)
 
     do_black(filename, is_pyi=False)
 
@@ -149,6 +168,10 @@ def write(module, directory, origin):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check", action="store_true")
+
+    args = parser.parse_args()
     import tokenizers
 
-    write(tokenizers.tokenizers, "py_src/tokenizers/", "tokenizers.tokenizers")
+    write(tokenizers.tokenizers, "py_src/tokenizers/", "tokenizers.tokenizers", args.check)

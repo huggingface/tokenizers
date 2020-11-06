@@ -542,6 +542,10 @@ impl PyTokenizer {
         ToPyResult(self.tokenizer.save(path, pretty)).into()
     }
 
+    /// Return the number of special tokens that would be added for single/pair sentences.
+    /// :param is_pair: Boolean indicating if the input would be a single sentence or a pair
+    /// :return:
+    #[text_signature = "(self, is_pair)"]
     fn num_special_tokens_to_add(&self, is_pair: bool) -> PyResult<usize> {
         Ok(self
             .tokenizer

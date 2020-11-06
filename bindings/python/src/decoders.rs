@@ -15,6 +15,10 @@ use tokenizers as tk;
 
 use super::error::ToPyResult;
 
+/// Base class for all decoders
+///
+/// This class is not supposed to be instantiated directly. Instead, any implementation of
+/// a Decoder will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.decoders", name=Decoder)]
 #[derive(Clone, Deserialize, Serialize)]
 pub struct PyDecoder {
@@ -82,12 +86,16 @@ impl PyDecoder {
         }
     }
 
+    /// Decode the given list of string to a final string
+    #[text_signature = "(self, tokens)"]
     fn decode(&self, tokens: Vec<String>) -> PyResult<String> {
         ToPyResult(self.decoder.decode(tokens)).into()
     }
 }
 
+/// ByteLevel Decoder
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=ByteLevel)]
+#[text_signature = "(self)"]
 pub struct PyByteLevelDec {}
 #[pymethods]
 impl PyByteLevelDec {
@@ -97,7 +105,16 @@ impl PyByteLevelDec {
     }
 }
 
+/// Instantiate a new WordPiece Decoder
+///
+/// Args:
+///     prefix: str:
+///         The prefix to use for subwords that are not a beginning-of-word
+///     cleanup: bool:
+///         Whether to cleanup some tokenization artifacts. Mainly spaces before punctuation,
+///         and some abbreviated english forms.
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=WordPiece)]
+#[text_signature = "(self, prefix=\"##\", cleanup=True)"]
 pub struct PyWordPieceDec {}
 #[pymethods]
 impl PyWordPieceDec {
@@ -120,7 +137,18 @@ impl PyWordPieceDec {
     }
 }
 
+/// Instantiate a new Metaspace
+///
+/// Args:
+///     replacement: str:
+///         The replacement character. Must be exactly one character. By default we
+///         use the `▁` (U+2581) meta symbol (Same as in SentencePiece).
+///
+///     add_prefix_space: boolean:
+///         Whether to add a space to the first word if there isn't already one. This
+///         lets us treat `hello` exactly like `say hello`.
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=Metaspace)]
+#[text_signature = "(self, replacement = \"▁\", add_prefix_space = True)"]
 pub struct PyMetaspaceDec {}
 #[pymethods]
 impl PyMetaspaceDec {
@@ -153,7 +181,14 @@ impl PyMetaspaceDec {
     }
 }
 
+/// Instantiate a new BPEDecoder
+///
+/// Args:
+///     suffix: str:
+///         The suffix that was used to caracterize an end-of-word. This suffix will
+///         be replaced by whitespaces during the decoding
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=BPEDecoder)]
+#[text_signature = "(self, suffix=\"</w>\")"]
 pub struct PyBPEDecoder {}
 #[pymethods]
 impl PyBPEDecoder {
