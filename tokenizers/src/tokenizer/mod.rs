@@ -312,6 +312,7 @@ where
             added_vocabulary: self.added_vocabulary,
             truncation: self.truncation,
             padding: self.padding,
+            words: None,
         })
     }
 
@@ -419,6 +420,7 @@ where
             added_vocabulary: t.added_vocabulary,
             padding: t.padding,
             truncation: t.truncation,
+            words: t.words,
         })
     }
 }
@@ -459,6 +461,9 @@ pub struct TokenizerImpl<M, N, PT, PP, D> {
     // General processing parameters
     truncation: Option<TruncationParams>,
     padding: Option<PaddingParams>,
+
+    // Words
+    words: Option<HashMap<String, u32>>,
 }
 
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
@@ -482,6 +487,7 @@ where
 
             truncation: None,
             padding: None,
+            words: None,
         }
     }
 
@@ -959,8 +965,61 @@ where
             .collect()
     }
 
+    fn process_chunk<MN, T, B>(
+        &self,
+        trainer: &T,
+        chunk: B,
+        progress: &Option<ProgressBar>,
+    ) -> Result<HashMap<String, u32>>
+    where
+        T: Trainer<Model = MN> + Sync,
+        MN: Model,
+        B: BufRead + Send,
+    {
+        // We read new lines using this API instead of the Lines Iterator
+        // on purpose. We want to keep the `\n` and potential `\r` between each lines
+        // We use an iterator to be able to chain with par_bridge.
+        chunk
+            .lines_with_ending()
+            .maybe_par_bridge()
+            .map_with(progress, |progress, line| -> Result<HashMap<String, u32>> {
+                let newline = line?;
+                let b = newline.len();
+                let mut words = HashMap::new();
+                let normalized = self.do_normalize(newline)?;
+                let pre_tokenized = self.do_pre_tokenize(normalized)?;
+                trainer.process_tokens(
+                    &mut words,
+                    pre_tokenized
+                        .get_splits(OffsetReferential::Original, OffsetType::Byte)
+                        .into_iter()
+                        .map(|(s, _, _)| s.to_owned())
+                        .collect(),
+                );
+
+                if let Some(pbar) = progress {
+                    pbar.inc(b as u64);
+                }
+                Ok(words)
+            })
+            .reduce(
+                || Ok(HashMap::new()),
+                |acc, ws| {
+                    let mut acc = acc?;
+                    for (k, v) in ws? {
+                        acc.entry(k).and_modify(|c| *c += v).or_insert(v);
+                    }
+                    Ok(acc)
+                },
+            )
+    }
+
     /// Train a model and replace our current Model, using the given Trainer
-    fn word_count<MN, T>(&self, trainer: &T, files: Vec<String>) -> Result<HashMap<String, u32>>
+    fn word_count_from_files<MN, T>(
+        &self,
+        trainer: &T,
+        files: Vec<String>,
+    ) -> Result<HashMap<String, u32>>
     where
         T: Trainer<Model = MN> + Sync,
         MN: Model,
@@ -990,44 +1049,7 @@ where
             .map(|filename| -> Result<HashMap<String, u32>> {
                 let file = File::open(filename)?;
                 let file = BufReader::with_capacity(max_read, file);
-                // We read new lines using this API instead of the Lines Iterator
-                // on purpose. We want to keep the `\n` and potential `\r` between each lines
-                // We use an iterator to be able to chain with par_bridge.
-                file.lines_with_ending()
-                    .maybe_par_bridge()
-                    .map_with(
-                        &progress,
-                        |progress, line| -> Result<HashMap<String, u32>> {
-                            let newline = line?;
-                            let b = newline.len();
-                            let mut words = HashMap::new();
-                            let normalized = self.do_normalize(newline)?;
-                            let pre_tokenized = self.do_pre_tokenize(normalized)?;
-                            trainer.process_tokens(
-                                &mut words,
-                                pre_tokenized
-                                    .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                                    .into_iter()
-                                    .map(|(s, _, _)| s.to_owned())
-                                    .collect(),
-                            );
-
-                            if let Some(pbar) = progress {
-                                pbar.inc(b as u64);
-                            }
-                            Ok(words)
-                        },
-                    )
-                    .reduce(
-                        || Ok(HashMap::new()),
-                        |acc, ws| {
-                            let mut acc = acc?;
-                            for (k, v) in ws? {
-                                acc.entry(k).and_modify(|c| *c += v).or_insert(v);
-                            }
-                            Ok(acc)
-                        },
-                    )
+                self.process_chunk(trainer, file, &progress)
             })
             .try_fold(
                 HashMap::new(),
@@ -1044,6 +1066,53 @@ where
         Ok(words)
     }
 
+    pub fn feed_train_chunk<T, MN>(&mut self, trainer: &T, chunk: &str) -> Result<()>
+    where
+        T: Trainer<Model = MN> + Sync,
+        MN: Model,
+    {
+        let words = self.process_chunk(trainer, BufReader::new(chunk.as_bytes()), &None)?;
+        if let Some(train_words) = &mut self.words {
+            for (k, v) in words {
+                train_words.entry(k).and_modify(|c| *c += v).or_insert(v);
+            }
+        } else {
+            self.words = Some(words);
+        }
+        Ok(())
+    }
+
+    /// Train a model and return a new Tokenizer, using the given Trainer
+    pub fn train_from_buffer<B, T, TM>(self, trainer: &T) -> Result<TokenizerImpl<TM, N, PT, PP, D>>
+    where
+        T: Trainer<Model = TM> + Sync,
+        TM: Model,
+        B: BufRead + Sync + Send,
+    {
+        let words = self
+            .words
+            .clone()
+            .ok_or_else(|| Box::new(BuilderError("No training data fed yet".into())))?;
+        self._train(trainer, words)
+    }
+
+    /// Train a model and replace our current Model, using the given Trainer
+    pub fn train_and_replace_from_buffer<T>(&mut self, trainer: &T) -> Result<()>
+    where
+        T: Trainer<Model = M> + Sync,
+    {
+        let words = self
+            .words
+            .clone()
+            .ok_or_else(|| Box::new(BuilderError("No training data fed yet".into())))?;
+
+        let (model, special_tokens) = trainer.train(words)?;
+        self.model = model;
+        self.add_special_tokens(&special_tokens);
+
+        Ok(())
+    }
+
     /// Train a model and return a new Tokenizer, using the given Trainer
     pub fn train<T, TM>(
         self,
@@ -1054,8 +1123,34 @@ where
         T: Trainer<Model = TM> + Sync,
         TM: Model,
     {
-        let words = self.word_count(trainer, files)?;
+        let words = self.word_count_from_files(trainer, files)?;
 
+        self._train(trainer, words)
+    }
+
+    /// Train a model and replace our current Model, using the given Trainer
+    pub fn train_and_replace<T>(&mut self, trainer: &T, files: Vec<String>) -> Result<()>
+    where
+        T: Trainer<Model = M> + Sync,
+    {
+        let words = self.word_count_from_files(trainer, files)?;
+
+        let (model, special_tokens) = trainer.train(words)?;
+        self.model = model;
+        self.add_special_tokens(&special_tokens);
+
+        Ok(())
+    }
+
+    fn _train<T, TM>(
+        self,
+        trainer: &T,
+        words: HashMap<String, u32>,
+    ) -> Result<TokenizerImpl<TM, N, PT, PP, D>>
+    where
+        T: Trainer<Model = TM> + Sync,
+        TM: Model,
+    {
         let (model, special_tokens) = trainer.train(words)?;
         let mut new_tok = TokenizerImpl {
             normalizer: self.normalizer,
@@ -1066,25 +1161,12 @@ where
             added_vocabulary: self.added_vocabulary,
             truncation: self.truncation,
             padding: self.padding,
+            words: self.words,
         };
 
         new_tok.add_special_tokens(&special_tokens);
 
         Ok(new_tok)
-    }
-
-    /// Train a model and replace our current Model, using the given Trainer
-    pub fn train_and_replace<T>(&mut self, trainer: &T, files: Vec<String>) -> Result<()>
-    where
-        T: Trainer<Model = M> + Sync,
-    {
-        let words = self.word_count(trainer, files)?;
-
-        let (model, special_tokens) = trainer.train(words)?;
-        self.model = model;
-        self.add_special_tokens(&special_tokens);
-
-        Ok(())
     }
 }
 

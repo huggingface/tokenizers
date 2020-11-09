@@ -1035,6 +1035,33 @@ impl PyTokenizer {
         Ok(self.tokenizer.add_special_tokens(&tokens))
     }
 
+    fn train_from_iterator(&mut self, trainer: &PyTrainer, iterator: &PyAny) -> PyResult<()> {
+        let gil = Python::acquire_gil();
+        let mut iterator: PyIterator = iterator.iter()?;
+        while let Ok(Some(content)) = {
+            if let Some(value) = iterator.next() {
+                let item: &PyAny = value?;
+                if let Ok(s) = item.downcast::<PyString>() {
+                    let content: &str = s.to_str()?;
+                    Ok(Some(content))
+                } else {
+                    Err(exceptions::PyTypeError::new_err(
+                        "Invalid string in python iterator",
+                    ))
+                }
+            } else {
+                Ok(None)
+            }
+        } {
+            self.tokenizer
+                .feed_train_chunk(trainer, content)
+                .map_err(|_| exceptions::PyException::new_err("Cannot feed chunk"))?;
+        }
+        gil.python().allow_threads(|| {
+            ToPyResult(self.tokenizer.train_and_replace_from_buffer(trainer)).into()
+        })
+    }
+
     fn train(&mut self, trainer: &PyTrainer, files: Vec<String>) -> PyResult<()> {
         let gil = Python::acquire_gil();
         gil.python()
