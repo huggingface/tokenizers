@@ -1,5 +1,6 @@
 import itertools
 from typing import List, Optional, Tuple, Dict, Callable, Any
+import re
 from tokenizers import Tokenizer, Encoding
 from tokenizers.viz.templates import HTMLBody
 from tokenizers.viz.viztypes import (
@@ -11,10 +12,11 @@ from tokenizers.viz.viztypes import (
 
 
 class EncodingVisualizer:
+    unk_token_regex = re.compile('^(.{1}\b)?unk(\b.{1})?$')
     def __init__(
         self,
         tokenizer: Tokenizer,
-        default_to_notebook: bool = False,
+        default_to_notebook: bool = True,
         annotation_converter: Optional[Callable[[Any], Annotation]] = None,
     ):
         """
@@ -24,6 +26,16 @@ class EncodingVisualizer:
         :param annotation_converter: An optional (lambda) function that takes an annotation in any format and returns
                an Annotation object
         """
+        if default_to_notebook:
+            try:
+                from IPython.core.display import display, HTML
+            except ImportError as e:
+                raise Exception(
+                    '''We couldn't import IPython utils for html display. Are you running in a notebook ?.  
+                        You can also pass  default_to_notebook=False to get back raw HTML
+                    '''
+                )
+
         self.tokenizer = tokenizer
         self.default_to_notebook = default_to_notebook
         self.annotation_coverter = annotation_converter
@@ -50,7 +62,7 @@ class EncodingVisualizer:
                 from IPython.core.display import display, HTML
             except ImportError as e:
                 raise Exception(
-                    "We coulndt import Ipython utils for html display. Are you running in a notebook ? "
+                    "We couldn't import IPython utils for html display. Are you running in a notebook ? "
                 )
         if self.annotation_coverter is not None:
             annotations = list(map(self.annotation_coverter, annotations))
@@ -128,7 +140,7 @@ class EncodingVisualizer:
             else:
                 # Like above, but a different color so we can see the tokens alternate
                 css_classes.append("even-token")
-            if encoding.tokens[first.token_ix] == "[UNK]":
+            if EncodingVisualizer.unk_token_regex.match(encoding.tokens[first.token_ix]) is not None:
                 # This is a special token that is in the text. probably UNK
                 css_classes.append("special-token")
                 # TODO is this the right name for the data attribute ?
@@ -208,8 +220,6 @@ class EncodingVisualizer:
             )
         )
         res = HTMLBody(spans)  # Send the list of spans to the body of our html
-        with open("/tmp/out.html", "w") as f:
-            f.write(res)
         return res
 
     @staticmethod
@@ -241,13 +251,8 @@ class EncodingVisualizer:
         """
         word_map: PartialIntList = [None] * len(text)
         token_map: PartialIntList = [None] * len(text)
-        for token_ix, word_ix in enumerate(encoding.words):
-            token_start, token_end = encoding.token_to_chars(token_ix)
-            word_start, word_end = encoding.word_to_chars(word_ix) if word_ix else (0, 0)
-            for char_ix in range(token_start, token_end):
-                token_map[char_ix] = token_ix
-            for char_ix in range(word_start, word_end):
-                word_map[char_ix] = word_ix
+        word_map = [encoding.char_to_word(c) for c in range(len(text))]
+        token_map = [encoding.char_to_token(c) for c in range(len(text))]
         return word_map, token_map
 
     @staticmethod

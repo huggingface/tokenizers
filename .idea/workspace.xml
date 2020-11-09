@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ChangeListManager">
+    <list default="true" id="51a85e5c-2f9c-45a6-b543-ad7060e29409" name="Default Changelist" comment="">
+      <change beforePath="$PROJECT_DIR$/bindings/python/py_src/tokenizers/viz/visualizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/bindings/python/py_src/tokenizers/viz/visualizer.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="CSS File" />
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="JupyterTrust" id="abb9a40a-c351-4b9c-be7d-5515bafbf71b" />
+  <component name="ProjectId" id="1jnJuZYkwhvISM2YwfRNXLV2VoK" />
+  <component name="ProjectViewState">
+    <option name="autoscrollFromSource" value="true" />
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">
+    <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
+    <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
+    <property name="WebServerToolWindowFactoryState" value="false" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
+    <property name="list.type.of.created.stylesheet" value="CSS" />
+    <property name="node.js.detected.package.eslint" value="true" />
+    <property name="node.js.path.for.package.eslint" value="project" />
+    <property name="node.js.selected.package.eslint" value="(autodetect)" />
+    <property name="nodejs_package_manager_path" value="npm" />
+    <property name="settings.editor.selected.configurable" value="com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable" />
+    <property name="ts.external.directory.path" value="$APPLICATION_HOME_DIR$/plugins/JavaScriptLanguage/jsLanguageServicesImpl/external" />
+  </component>
+  <component name="SvnConfiguration">
+    <configuration />
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="51a85e5c-2f9c-45a6-b543-ad7060e29409" name="Default Changelist" comment="" />
+      <created>1604434145073</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1604434145073</updated>
+      <workItem from="1604434147904" duration="30902000" />
+      <workItem from="1604520820230" duration="14884000" />
+      <workItem from="1604951188964" duration="516000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="2" />
+  </component>
+  <component name="WindowStateProjectService">
+    <state x="2518" y="272" key="#xdebugger.evaluate" timestamp="1604517594193">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state x="2518" y="272" key="#xdebugger.evaluate/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604517594193" />
+    <state x="2533" y="282" width="424" height="484" key="FileChooserDialogImpl" timestamp="1604434202210">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state x="2533" y="282" width="424" height="484" key="FileChooserDialogImpl/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604434202210" />
+    <state width="1634" height="269" key="GridCell.Tab.0.bottom" timestamp="1604660959037">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state width="1634" height="269" key="GridCell.Tab.0.bottom/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604660959037" />
+    <state width="1634" height="269" key="GridCell.Tab.0.center" timestamp="1604660959037">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state width="1634" height="269" key="GridCell.Tab.0.center/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604660959037" />
+    <state width="1634" height="269" key="GridCell.Tab.0.left" timestamp="1604660959037">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state width="1634" height="269" key="GridCell.Tab.0.left/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604660959037" />
+    <state width="1634" height="269" key="GridCell.Tab.0.right" timestamp="1604660959037">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state width="1634" height="269" key="GridCell.Tab.0.right/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604660959037" />
+    <state width="1634" height="332" key="GridCell.Tab.1.bottom" timestamp="1604520802522">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state width="1634" height="332" key="GridCell.Tab.1.bottom/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604520802522" />
+    <state width="1634" height="332" key="GridCell.Tab.1.center" timestamp="1604520802522">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state width="1634" height="332" key="GridCell.Tab.1.center/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604520802522" />
+    <state width="1634" height="332" key="GridCell.Tab.1.left" timestamp="1604520802522">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state width="1634" height="332" key="GridCell.Tab.1.left/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604520802522" />
+    <state width="1634" height="332" key="GridCell.Tab.1.right" timestamp="1604520802522">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state width="1634" height="332" key="GridCell.Tab.1.right/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604520802522" />
+    <state x="2249" y="159" key="SettingsEditor" timestamp="1604434231677">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state x="2249" y="159" key="SettingsEditor/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604434231677" />
+    <state width="498" height="446" key="SwitcherDM" timestamp="1604517041326">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state width="498" height="446" key="SwitcherDM/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604517041326" />
+    <state x="2451" y="265" width="630" height="518" key="find.popup" timestamp="1604576210646">
+      <screen x="1920" y="0" width="1680" height="1050" />
+    </state>
+    <state x="2451" y="265" width="630" height="518" key="find.popup/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604576210646" />
+    <state x="575" y="258" width="768" height="680" key="search.everywhere.popup" timestamp="1604951354174">
+      <screen x="0" y="27" width="1920" height="1053" />
+    </state>
+    <state x="575" y="258" width="768" height="680" key="search.everywhere.popup/0.27.1920.1053/1920.0.1680.1050@0.27.1920.1053" timestamp="1604951354174" />
+    <state x="2423" y="230" width="672" height="678" key="search.everywhere.popup/0.27.1920.1053/1920.0.1680.1050@1920.0.1680.1050" timestamp="1604580927203" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/bindings/python/py_src/tokenizers/viz/visualizer.py</url>
+          <line>124</line>
+          <option name="timeStamp" value="10" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/bindings/python/py_src/tokenizers/viz/visualizer.py</url>
+          <line>119</line>
+          <option name="timeStamp" value="12" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/tokenizers$alignment.coverage" NAME="alignment Coverage Results" MODIFIED="1604521383106" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/bindings/python/py_src/tokenizers/viz" />
+  </component>
+</project>
