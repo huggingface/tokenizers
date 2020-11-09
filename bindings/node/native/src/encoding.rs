@@ -114,27 +114,27 @@ declare_types! {
             Ok(neon_serde::to_value(&mut cx, &tokens)?)
         }
 
-        method getWords(mut cx) {
-            // getWords(): (number | undefined)[]
+        method getWordIds(mut cx) {
+            // getWordIds(): (number | undefined)[]
 
             let this = cx.this();
             let guard = cx.lock();
             let ids = this.borrow(&guard)
                 .encoding.as_ref().expect("Uninitialized Encoding")
-                .get_words()
+                .get_word_ids()
                 .to_vec();
 
             Ok(neon_serde::to_value(&mut cx, &ids)?)
         }
 
-        method getSequences(mut cx) {
-            // getSequences(): (number | undefined)[]
+        method getSequenceIds(mut cx) {
+            // getSequenceIds(): (number | undefined)[]
 
             let this = cx.this();
             let guard = cx.lock();
             let ids = this.borrow(&guard)
                 .encoding.as_ref().expect("Uninitialized Encoding")
-                .get_sequences();
+                .get_sequence_ids();
 
             Ok(neon_serde::to_value(&mut cx, &ids)?)
         }

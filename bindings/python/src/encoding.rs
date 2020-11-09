@@ -5,7 +5,7 @@ use pyo3::{PyObjectProtocol, PySequenceProtocol};
 use tk::tokenizer::{Offsets, PaddingDirection};
 use tokenizers as tk;
 
-use crate::error::PyError;
+use crate::error::{deprecation_warning, PyError};
 
 /// The :class:`~tokenizers.Encoding` represents the output of a :class:`~tokenizers.Tokenizer`.
 #[pyclass(dict, module = "tokenizers", name=Encoding)]
@@ -137,6 +137,10 @@ impl PyEncoding {
 
     /// The generated word indices.
     ///
+    /// .. warning::
+    ///     This is deprecated and will be removed in a future version.
+    ///     Please use :obj:`~tokenizers.Encoding.word_ids` instead.
+    ///
     /// They represent the index of the word associated to each token.
     /// When the input is pre-tokenized, they correspond to the ID of the given input label,
     /// otherwise they correspond to the words indices as defined by the
@@ -148,8 +152,29 @@ impl PyEncoding {
     /// Returns:
     ///     A :obj:`List` of :obj:`Optional[int]`: A list of optional word index.
     #[getter]
-    fn get_words(&self) -> Vec<Option<u32>> {
-        self.encoding.get_words().to_vec()
+    fn get_words(&self) -> PyResult<Vec<Option<u32>>> {
+        deprecation_warning(
+            "0.9.4",
+            "Encoding.words is deprecated, please use Encoding.word_ids instead.",
+        )?;
+        Ok(self.get_word_ids())
+    }
+
+    /// The generated word indices.
+    ///
+    /// They represent the index of the word associated to each token.
+    /// When the input is pre-tokenized, they correspond to the ID of the given input label,
+    /// otherwise they correspond to the words indices as defined by the
+    /// :class:`~tokenizers.pre_tokenizers.PreTokenizer` that was used.
+    ///
+    /// For special tokens and such (any token that was generated from something that was
+    /// not part of the input), the output is :obj:`None`
+    ///
+    /// Returns:
+    ///     A :obj:`List` of :obj:`Optional[int]`: A list of optional word index.
+    #[getter]
+    fn get_word_ids(&self) -> Vec<Option<u32>> {
+        self.encoding.get_word_ids().to_vec()
     }
 
     /// The generated sequence indices.
@@ -161,8 +186,8 @@ impl PyEncoding {
     /// Returns:
     ///     A :obj:`List` of :obj:`Optional[int]`: A list of optional sequence index.
     #[getter]
-    fn get_sequences(&self) -> Vec<Option<usize>> {
-        self.encoding.get_sequences()
+    fn get_sequence_ids(&self) -> Vec<Option<usize>> {
+        self.encoding.get_sequence_ids()
     }
 
     /// The generated type IDs

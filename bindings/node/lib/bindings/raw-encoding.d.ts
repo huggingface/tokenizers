@@ -121,12 +121,12 @@ export interface RawEncoding {
    * The tokenized words indexes
    * @since 0.6.0
    */
-  getWords(): (number | undefined)[];
+  getWordIds(): (number | undefined)[];
 
   /**
    * The sequences indices
    */
-  getSequences(): (number | undefined)[];
+  getSequenceIds(): (number | undefined)[];
 
   /**
    * Pad the current Encoding at the given length

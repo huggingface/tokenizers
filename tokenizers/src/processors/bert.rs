@@ -52,7 +52,7 @@ impl PostProcessor for BertProcessing {
             &[self.sep.0.clone()],
         ]
         .concat();
-        let words = [&[None], &encoding.get_words()[..], &[None]].concat();
+        let words = [&[None], &encoding.get_word_ids()[..], &[None]].concat();
         let offsets = [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
         let special_tokens = [&[1u32], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
         let attention_mask = vec![1; ids.len()];
@@ -80,7 +80,7 @@ impl PostProcessor for BertProcessing {
                         &[self.sep.0.clone()],
                     ]
                     .concat();
-                    let words = [&[None], &encoding.get_words()[..], &[None]].concat();
+                    let words = [&[None], &encoding.get_word_ids()[..], &[None]].concat();
                     let offsets = [&[(0, 0)], &encoding.get_offsets()[..], &[(0, 0)]].concat();
                     let special_tokens =
                         [&[1u32], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
@@ -109,7 +109,7 @@ impl PostProcessor for BertProcessing {
             let pair_ids = [&encoding.get_ids()[..], &[self.sep.1]].concat();
             let pair_type_ids = [&encoding.get_type_ids()[..], &[1]].concat();
             let pair_tokens = [&encoding.get_tokens()[..], &[self.sep.0.clone()]].concat();
-            let pair_words = [&encoding.get_words()[..], &[None]].concat();
+            let pair_words = [&encoding.get_word_ids()[..], &[None]].concat();
             let pair_offsets = [&encoding.get_offsets()[..], &[(0, 0)]].concat();
             let pair_special_tokens =
                 [&vec![0u32; encoding.get_type_ids().len()][..], &[1]].concat();
@@ -134,7 +134,7 @@ impl PostProcessor for BertProcessing {
                         let pair_type_ids = [&encoding.get_type_ids()[..], &[1]].concat();
                         let pair_tokens =
                             [&encoding.get_tokens()[..], &[self.sep.0.clone()]].concat();
-                        let pair_words = [&encoding.get_words()[..], &[None]].concat();
+                        let pair_words = [&encoding.get_word_ids()[..], &[None]].concat();
                         let pair_offsets = [&encoding.get_offsets()[..], &[(0, 0)]].concat();
                         let pair_special_tokens =
                             [&vec![0u32; encoding.get_type_ids().len()][..], &[1]].concat();
