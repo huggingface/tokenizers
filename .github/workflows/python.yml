@@ -109,9 +109,11 @@ jobs:
       - name: Check style
         working-directory: ./bindings/python
         run: |
+          source .env/bin/activate
           make check-style
 
       - name: Run tests
         working-directory: ./bindings/python
         run: |
+          source .env/bin/activate
           make test
