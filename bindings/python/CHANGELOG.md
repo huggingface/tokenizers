@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4]
+
+### Fixed
+- [#492]: Fix `from_file` on `BertWordPieceTokenizer`
+- [#498]: Fix the link to download `sentencepiece_model_pb2.py`
+- [#500]: Fix a typo in the docs quicktour
+
+### Changed
+- [#506]: Improve Encoding mappings for pairs of sequence
+
 ## [0.9.3]
 
 ### Fixed
@@ -259,6 +269,11 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug with the IDs associated with added tokens.
 - Fix a bug that was causing crashes in Python 3.5
 
+
+[#506]: https://github.com/huggingface/tokenizers/pull/506
+[#500]: https://github.com/huggingface/tokenizers/pull/500
+[#498]: https://github.com/huggingface/tokenizers/pull/498
+[#492]: https://github.com/huggingface/tokenizers/pull/492
 [#481]: https://github.com/huggingface/tokenizers/pull/481
 [#480]: https://github.com/huggingface/tokenizers/pull/480
 [#477]: https://github.com/huggingface/tokenizers/pull/477
