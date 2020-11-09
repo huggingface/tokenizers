@@ -125,11 +125,15 @@ impl Encoding {
         &self.tokens[..]
     }
 
-    pub fn get_words(&self) -> &[Option<u32>] {
+    pub fn get_word_ids(&self) -> &[Option<u32>] {
         &self.words
     }
 
-    pub fn get_sequences(&self) -> Vec<Option<usize>> {
+    pub fn get_word_ids_mut(&mut self) -> &mut [Option<u32>] {
+        &mut self.words
+    }
+
+    pub fn get_sequence_ids(&self) -> Vec<Option<usize>> {
         let mut sequences = vec![None; self.len()];
         for seq_id in 0..self.n_sequences() {
             let range = self.sequence_range(seq_id);
@@ -137,10 +141,6 @@ impl Encoding {
             sequences.splice(range, std::iter::repeat(Some(seq_id)).take(seq_len));
         }
         sequences
-    }
-
-    pub fn get_words_mut(&mut self) -> &mut [Option<u32>] {
-        &mut self.words
     }
 
     pub fn get_ids(&self) -> &[u32] {

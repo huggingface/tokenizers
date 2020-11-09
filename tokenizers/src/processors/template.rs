@@ -571,7 +571,7 @@ impl TemplateProcessing {
                     ids.extend(encoding.get_ids());
                     type_ids.extend(std::iter::repeat(type_id).take(encoding.len()));
                     tokens.extend(encoding.get_tokens().iter().map(|s| s.to_owned()));
-                    words.extend(encoding.get_words());
+                    words.extend(encoding.get_word_ids());
                     offsets.extend(encoding.get_offsets());
                     special_tokens_mask.extend(encoding.get_special_tokens_mask());
                     attention_mask.extend(encoding.get_attention_mask());
@@ -587,7 +587,7 @@ impl TemplateProcessing {
                     ids.extend(pair.get_ids());
                     type_ids.extend(std::iter::repeat(type_id).take(pair.len()));
                     tokens.extend(pair.get_tokens().iter().map(|s| s.to_owned()));
-                    words.extend(pair.get_words());
+                    words.extend(pair.get_word_ids());
                     offsets.extend(pair.get_offsets());
                     special_tokens_mask.extend(pair.get_special_tokens_mask());
                     attention_mask.extend(pair.get_attention_mask());

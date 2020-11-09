@@ -94,7 +94,8 @@ describe("RawEncoding", () => {
     expect(typeof encoding.getSpecialTokensMask).toBe("function");
     expect(typeof encoding.getTokens).toBe("function");
     expect(typeof encoding.getTypeIds).toBe("function");
-    expect(typeof encoding.getWords).toBe("function");
+    expect(typeof encoding.getWordIds).toBe("function");
+    expect(typeof encoding.getSequenceIds).toBe("function");
     expect(typeof encoding.pad).toBe("function");
     expect(typeof encoding.truncate).toBe("function");
   });
@@ -105,17 +106,17 @@ describe("RawEncoding", () => {
     });
   });
 
-  describe("getWords", () => {
+  describe("getWordIds", () => {
     it("returns the correct list of indexes", () => {
-      const indexes = encoding.getWords();
+      const indexes = encoding.getWordIds();
       expect(indexes).toEqual([0, 1, 2, 3, 3]);
     });
   });
 
-  describe("getSequences", () => {
+  describe("getSequenceIds", () => {
     it("returns the correct list of indexes", () => {
-      expect(encoding.getSequences()).toEqual([0, 0, 0, 0, 0]);
-      expect(encodingDual.getSequences()).toEqual([0, 0, 0, 0, 0, 1, 1, 1, 1]);
+      expect(encoding.getSequenceIds()).toEqual([0, 0, 0, 0, 0]);
+      expect(encodingDual.getSequenceIds()).toEqual([0, 0, 0, 0, 0, 1, 1, 1, 1]);
     });
   });
 

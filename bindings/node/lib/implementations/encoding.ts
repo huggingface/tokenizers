@@ -149,7 +149,7 @@ export class Encoding {
       return this._wordIndexes;
     }
 
-    return (this._wordIndexes = this._rawEncoding.getWords());
+    return (this._wordIndexes = this._rawEncoding.getWordIds());
   }
 
   get sequenceIndexes(): (number | undefined)[] {
@@ -157,7 +157,7 @@ export class Encoding {
       return this._sequenceIndexes;
     }
 
-    return (this._sequenceIndexes = this._rawEncoding.getSequences());
+    return (this._sequenceIndexes = this._rawEncoding.getSequenceIds());
   }
 
   /**

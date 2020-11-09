@@ -78,7 +78,7 @@ fn byte_level_double_sequence() {
         ]
     );
     assert_eq!(
-        output.get_words(),
+        output.get_word_ids(),
         &[
             Some(0),
             Some(1),
@@ -126,7 +126,7 @@ fn byte_level_pre_tokenized_sequence() {
         &["ĠMy", "Ġname", "Ġis", "ĠAnth", "on", "ino"]
     );
     assert_eq!(
-        output.get_words(),
+        output.get_word_ids(),
         &[Some(0), Some(1), Some(2), Some(3), Some(3), Some(3)]
     );
     assert_eq!(
@@ -145,7 +145,7 @@ fn byte_level_pre_tokenized_sequence_with_trimming() {
     let output = tokenizer.encode(&input[..], false).unwrap();
 
     assert_eq!(
-        output.get_words(),
+        output.get_word_ids(),
         &[Some(0), Some(1), Some(2), Some(3), Some(3), Some(3)]
     );
     assert_eq!(
@@ -179,7 +179,7 @@ fn split_on_added_tokens_bert() {
         &["yesterday", "i", "saw", "a", "[MASK]", "far", "away"]
     );
     assert_eq!(
-        output.get_words(),
+        output.get_word_ids(),
         &[
             Some(0),
             Some(1),
