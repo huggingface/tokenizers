@@ -12,7 +12,7 @@ from tokenizers.viz.viztypes import (
 
 
 class EncodingVisualizer:
-    unk_token_regex = re.compile('^(.{1}\b)?unk(\b.{1})?$')
+    unk_token_regex = re.compile('(.{1}\b)?unk(\b.{1})?',flags=re.IGNORECASE)
     def __init__(
         self,
         tokenizer: Tokenizer,
@@ -140,7 +140,7 @@ class EncodingVisualizer:
             else:
                 # Like above, but a different color so we can see the tokens alternate
                 css_classes.append("even-token")
-            if EncodingVisualizer.unk_token_regex.match(encoding.tokens[first.token_ix]) is not None:
+            if EncodingVisualizer.unk_token_regex.search(encoding.tokens[first.token_ix]) is not None:
                 # This is a special token that is in the text. probably UNK
                 css_classes.append("special-token")
                 # TODO is this the right name for the data attribute ?
