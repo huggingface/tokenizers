@@ -64,6 +64,26 @@ jobs:
         run: |
           docker run --rm -v `pwd`/../..:/io quay.io/pypa/manylinux2014_aarch64 /bin/bash -c "cd /io/bindings/python; sh build-wheels.sh"
 
+  create_wheels_manylinux_2014_x390x:
+    runs-on: ubuntu-latest
+    name: Create wheels for manylinux2014 - S390X
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Pull images
+        run: |
+          docker pull multiarch/qemu-user-static
+          docker pull quay.io/pypa/manylinux2014_s390x:latest
+
+      - name: Install QEMU
+        run: |
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+      - name: Build and audit wheels
+        working-directory: ./bindings/python
+        run: |
+          docker run --rm -v `pwd`/../..:/io quay.io/pypa/manylinux2014_s390x /bin/bash -c "cd /io/bindings/python; sh build-wheels.sh"
+
   create_wheels_windows_32bit:
     name: Create wheels for windows 32-bit
     runs-on: windows-latest
