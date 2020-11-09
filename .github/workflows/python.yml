@@ -95,9 +95,6 @@ jobs:
           python-version: 3.6
           architecture: "x64"
 
-      - name: Install style dependencies
-        run: pip install black==20.8b1
-
       - name: Install
         working-directory: ./bindings/python
         run: |
@@ -110,6 +107,7 @@ jobs:
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
+          pip install black==20.8b1
           make check-style
 
       - name: Run tests
