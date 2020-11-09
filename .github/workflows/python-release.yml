@@ -1,9 +1,9 @@
 name: Python Release
 
-on:
-  push:
-    tags:
-      - python-v*
+on: push
+# push:
+    #    tags:
+    #      - python-v*
 
 env:
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -13,9 +13,9 @@ env:
 
 jobs:
 
-  create_wheels_manylinux:
+  create_wheels_manylinux_2010:
     runs-on: ubuntu-latest
-    name: Create wheels for manylinux
+    name: Create wheels for manylinux2010
     container: quay.io/pypa/manylinux2010_x86_64
     steps:
       - uses: actions/checkout@v1
@@ -24,18 +24,66 @@ jobs:
         working-directory: ./bindings/python
         run: sh build-wheels.sh
 
+  create_wheels_manylinux_2014_ppc64le:
+    runs-on: ubuntu-latest
+    name: Create wheels for manylinux2014 - PowerPC
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Pull images
+        run: |
+          docker pull multiarch/qemu-user-static
+          docker pull quay.io/pypa/manylinux2014_ppc64le:latest
+
+      - name: Install QEMU
+        run: |
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+      - name: Build and audit wheels
+        working-directory: ./bindings/python
+        run: |
+          docker run --rm -v `pwd`/../..:/io quay.io/pypa/manylinux2014_ppc64le /bin/bash -c "cd /io/bindings/python; sh build-wheels.sh"
+
+  create_wheels_manylinux_2014_aarch64:
+    runs-on: ubuntu-latest
+    name: Create wheels for manylinux2014 - Aarch64
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Pull images
+        run: |
+          docker pull multiarch/qemu-user-static
+          docker pull quay.io/pypa/manylinux2014_aarch64:latest
+
+      - name: Install QEMU
+        run: |
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+      - name: Build and audit wheels
+        working-directory: ./bindings/python
+        run: |
+          docker run --rm -v `pwd`/../..:/io quay.io/pypa/manylinux2014_aarch64 /bin/bash -c "cd /io/bindings/python; sh build-wheels.sh"
+
   create_wheels_windows_32bit:
     name: Create wheels for windows 32-bit
     runs-on: windows-latest
     strategy:
       matrix:
-        python: [3.5, 3.6, 3.7, 3.8]
+        python: [3.5, 3.6, 3.7, 3.8, 3.9]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable-i686-pc-windows-msvc
+          override: true
+
+      - name: Override toolchain
+        shell: bash
+        working-directory: ./bindings/python
+        run: echo "stable-i686-pc-windows-msvc" > rust-toolchain
 
       - name: Install Python
         uses: actions/setup-python@v1
@@ -46,7 +94,7 @@ jobs:
       - name: Install dependencies
         run: |
           # On old versions of python there is an old version of setuptools already installed
-          pip install setuptools wheel setuptools-rust --ignore-installed --force-reinstall
+          pip install setuptools wheel setuptools-rust==0.11.3 --ignore-installed --force-reinstall
 
       - name: Build wheel
         working-directory: ./bindings/python
@@ -67,13 +115,16 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macos-10.15]
-        python: [3.5, 3.6, 3.7, 3.8]
+        python: [3.5, 3.6, 3.7, 3.8, 3.9]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
       - name: Install Python
         uses: actions/setup-python@v1
@@ -84,7 +135,7 @@ jobs:
       - name: Install dependencies
         run: |
           # On old versions of python there is an old version of setuptools already installed
-          pip install setuptools wheel setuptools-rust --ignore-installed --force-reinstall
+          pip install setuptools wheel setuptools-rust==0.11.3 --ignore-installed --force-reinstall
 
       - name: Build wheel
         working-directory: ./bindings/python
@@ -101,33 +152,33 @@ jobs:
           pip install awscli
           aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$GITHUB_SHA"
 
-  upload_package:
-    name: Upload package to PyPi
-    runs-on: ubuntu-latest
-    needs: [create_wheels_manylinux, create_wheels_windows_32bit, create_wheels_others_64bit]
+          # upload_package:
+          #   name: Upload package to PyPi
+          #   runs-on: ubuntu-latest
+          #   needs: [create_wheels_manylinux, create_wheels_windows_32bit, create_wheels_others_64bit]
 
-    steps:
-      - uses: actions/checkout@v1
+          #   steps:
+          #     - uses: actions/checkout@v1
 
-      - name: Install Python
-        uses: actions/setup-python@v1
+          #     - name: Install Python
+          #       uses: actions/setup-python@v1
 
-      - name: Retrieve all wheels
-        shell: bash
-        run: |
-          pip install awscli
-          aws s3 sync "s3://tokenizers-releases/python/$GITHUB_SHA" ./bindings/python/dist
+          #     - name: Retrieve all wheels
+          #       shell: bash
+          #       run: |
+          #         pip install awscli
+          #         aws s3 sync "s3://tokenizers-releases/python/$GITHUB_SHA" ./bindings/python/dist
 
-      - name: Install dependencies
-        run: |
-          pip install setuptools wheel setuptools-rust
+          #     - name: Install dependencies
+          #       run: |
+          #         pip install setuptools wheel setuptools-rust
 
-      - name: Create source distribution
-        working-directory: ./bindings/python
-        run: sh build-sdist.sh
+          #     - name: Create source distribution
+          #       working-directory: ./bindings/python
+          #       run: sh build-sdist.sh
 
-      - name: Upload to PyPi
-        working-directory: ./bindings/python
-        run: |
-          pip install twine
-          twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
+          #     - name: Upload to PyPi
+          #       working-directory: ./bindings/python
+          #       run: |
+          #         pip install twine
+          #         twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
