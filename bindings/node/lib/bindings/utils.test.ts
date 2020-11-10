@@ -1,6 +1,7 @@
 import { promisify } from "util";
 
 import { BPE } from "./models";
+import { whitespacePreTokenizer } from "./pre-tokenizers";
 import { RawEncoding } from "./raw-encoding";
 import { EncodeOptions, InputSequence, Tokenizer } from "./tokenizer";
 import { mergeEncodings, slice } from "./utils";
@@ -121,7 +122,7 @@ describe("mergeEncodings", () => {
   beforeAll(async () => {
     const model = BPE.empty();
     const tokenizer = new Tokenizer(model);
-    tokenizer.preTokenizer = whitespacePreTokenizer();
+    tokenizer.setPreTokenizer(whitespacePreTokenizer());
     tokenizer.addTokens(["my", "name", "is", "john"]);
 
     encode = promisify(tokenizer.encode.bind(tokenizer));

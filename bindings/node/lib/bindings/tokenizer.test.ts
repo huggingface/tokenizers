@@ -132,7 +132,7 @@ describe("Tokenizer", () => {
 
       const model = BPE.empty();
       tokenizer = new Tokenizer(model);
-      tokenizer.preTokenizer = whitespacePreTokenizer();
+      tokenizer.setPreTokenizer(whitespacePreTokenizer());
       tokenizer.addTokens(["my", "name", "is", "john", new AddedToken("pair", false)]);
 
       encode = promisify(tokenizer.encode.bind(tokenizer));
@@ -384,7 +384,7 @@ describe("Tokenizer", () => {
     beforeAll(() => {
       const model = BPE.empty();
       tokenizer = new Tokenizer(model);
-      tokenizer.preTokenizer = whitespacePreTokenizer();
+      tokenizer.setPreTokenizer(whitespacePreTokenizer());
       tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
 
       encode = promisify(tokenizer.encode.bind(tokenizer));
