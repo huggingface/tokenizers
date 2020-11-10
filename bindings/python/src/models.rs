@@ -581,12 +581,12 @@ mod test {
         match *py_model.model.as_ref().read().unwrap() {
             ModelWrapper::BPE(_) => (),
             _ => panic!("Expected Bert postprocessor."),
-        }
+        };
 
         let py_model: PyModel = serde_json::from_str(&rs_wrapper_ser).unwrap();
         match *py_model.model.as_ref().read().unwrap() {
             ModelWrapper::BPE(_) => (),
             _ => panic!("Expected Bert postprocessor."),
-        }
+        };
     }
 }

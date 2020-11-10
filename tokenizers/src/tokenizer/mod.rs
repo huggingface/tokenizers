@@ -1056,7 +1056,7 @@ where
     }
 
     /// Train a model and replace our current Model, using the given Trainer
-    pub fn train<T>(&mut self, trainer: &T, files: Vec<String>) -> Result<()>
+    pub fn train<T>(&mut self, trainer: &T, files: Vec<String>) -> Result<&mut Self>
     where
         T: Trainer<Model = M> + Sync,
     {
@@ -1065,7 +1065,7 @@ where
         let special_tokens = trainer.train(words, &mut self.model)?;
         self.add_special_tokens(&special_tokens);
 
-        Ok(())
+        Ok(self)
     }
 }
 
