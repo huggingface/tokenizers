@@ -24,6 +24,8 @@ pub enum Error {
     MergeTokenOutOfVocabulary(String),
     /// If the provided unk token is out of vocabulary
     UnkTokenOutOfVocabulary(String),
+    /// If the provided unk token is not provided but wants to be used
+    UnkTokenNotDefined,
     /// Dropout not between 0 and 1.
     InvalidDropout,
 }
@@ -53,6 +55,10 @@ impl std::fmt::Display for Error {
             Error::UnkTokenOutOfVocabulary(token) => {
                 write!(f, "Unk token `{}` not found in the vocabulary", token)
             }
+            Error::UnkTokenNotDefined => write!(
+                f,
+                "Unk token was not defined but should be used to encode this string"
+            ),
             Error::InvalidDropout => write!(f, "Dropout should be between 0 and 1"),
         }
     }

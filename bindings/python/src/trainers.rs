@@ -97,6 +97,7 @@ impl PyBpeTrainer {
                         builder = builder.continuing_subword_prefix(val.extract()?)
                     }
                     "end_of_word_suffix" => builder = builder.end_of_word_suffix(val.extract()?),
+                    "unk_token" => builder = builder.unk_token(val.extract()?),
                     _ => println!("Ignored unknown kwargs option {}", key),
                 };
             }

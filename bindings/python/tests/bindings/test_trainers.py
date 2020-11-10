@@ -1,4 +1,5 @@
 import os
+import unittest
 import pytest
 import pickle
 
@@ -92,3 +93,31 @@ class TestUnigram:
             "t ",
             "[SEP]",
         ]
+
+
+class TestBpe(unittest.TestCase):
+    def setUp(self):
+        self.train_files = {"small": "tests/data/small.txt"}
+
+    def test_train(self):
+        tokenizer = Tokenizer(models.BPE())
+        tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+        trainer = trainers.BpeTrainer(unk_token="[UNK]", show_progress=False)
+        tokenizer.train(trainer, [self.train_files["small"]])
+
+        encoding = tokenizer.encode("ì")
+        self.assertEqual(encoding.ids, [0])
+        self.assertEqual(encoding.tokens, ["[UNK]"])
+
+        filename = "tests/data/unigram_trained.json"
+        tokenizer.save(filename)
+        os.remove(filename)
+
+    def test_train_no_unk(self):
+        tokenizer = Tokenizer(models.BPE())
+        tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+        trainer = trainers.BpeTrainer(show_progress=False)
+        tokenizer.train(trainer, [self.train_files["small"]])
+
+        with self.assertRaises(Exception):
+            tokenizer.encode("ì")
