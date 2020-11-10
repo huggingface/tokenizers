@@ -4,7 +4,7 @@
 .vim
 .env
 target
-
+.idea
 Cargo.lock
 
 /data

@@ -20,10 +20,13 @@ class EncodingVisualizer:
         annotation_converter: Optional[Callable[[Any], Annotation]] = None,
     ):
         """
-
-        :param tokenizer: A tokenizer
-        :param default_to_notebook: Whether to render html output in a notebook by default
-        :param annotation_converter: An optional (lambda) function that takes an annotation in any format and returns
+        Args:
+             tokenizer:
+                A tokenizer instance
+             default_to_notebook : bool:
+                Whether to render html output in a notebook by default
+             annotation_converter (`optional`) :
+                An optional (lambda) function that takes an annotation in any format and returns
                an Annotation object
         """
         if default_to_notebook:
@@ -48,11 +51,19 @@ class EncodingVisualizer:
         default_to_notebook: Optional[bool] = None,
     ) -> Optional[str]:
         """
+        Args:
+            text :str:
+                The text to tokenize
+            annotations : (`optional`) Any:
+                An optional list of annotations of the text. The can either be an annotation class or anything else
+                if you instantiated the visualizer with a converter function
+            default_to_notebook: bool:
+                If True, will render the html in a notebook. Otherwise returns an html string. Defaults (False)
 
-        :param text: The text to tokenize
-        :param annotations:  An optional list of annotations of the text
-        :param default_to_notebook: If True, will render the html in a notebook. Otherwise returns an html string. Defaults (False)
-        :return: The raw html or None
+        Returns:
+            The HTML string if default_to_notebook is False, otherwise (default) returns None and renders the HTML
+            in the notebook
+
         """
         final_default_to_notebook = self.default_to_notebook
         if default_to_notebook is not None:
@@ -77,8 +88,12 @@ class EncodingVisualizer:
     def calculate_label_colors(annotations: AnnotationList) -> Dict[str, str]:
         """
         Generates a color pallete for all the labels in a given set of annotations
-        :param annotations: A list of annotations
-        :return: A dictionary mapping a label name to it's hsl color
+        Args:
+          annotations:
+            A list of annotations
+        Returns:
+            dict: A dictionary mapping labels to colors in HSL format
+
         """
         if len(annotations) == 0:
             return {}
@@ -110,11 +125,16 @@ class EncodingVisualizer:
         Chars are consecutive if they fall under the same word, token and annotation.
         The CharState class is a named tuple with a "partition_key" method that makes it easy to compare if two chars
         are consecutive.
+        Args:
+            consecutive_chars_list:
+                A list of CharStates that have been grouped together
+            text:
+                The original text being processed
+            encoding:
+                The encoding returned from the tokenizer
+        Returns:
+            str : The HTML span for a set of consecutive chars
 
-        :param consecutive_chars_list: A list of CharStates that have been grouped together
-        :param text:  The original text being processed
-        :param encoding:  The encoding of t
-        :return:
         """
         first = consecutive_chars_list[0]
         if first.char_ix is None:
@@ -225,10 +245,13 @@ class EncodingVisualizer:
     @staticmethod
     def __make_anno_map(text: str, annotations: AnnotationList) -> PartialIntList:
         """
-
-        :param text: The raw text we want to align to
-        :param annotations: A (possibly empty) list of annotations
-        :return: A list of  length len(text) whose entry at index i is None if there is no annotation on charachter i
+        Args:
+            text:
+                The raw text we want to align to
+            annotations:
+                A (possibly empty) list of annotations
+        Returns:
+            A list of  length len(text) whose entry at index i is None if there is no annotation on charachter i
             or k, the index of the annotation that covers index i where k is with respect to the list of annotations
         """
         annotation_map = [None] * len(text)
@@ -242,15 +265,16 @@ class EncodingVisualizer:
         text: str, encoding: Encoding
     ) -> Tuple[PartialIntList, PartialIntList]:
         """
-
-        :param text: The text being aligned
-        :param encoding: The encoding of the text returned by a tokenizer
-        :return: A tuple of lists, each list is of length len(txt). The first list maps a charachter to a word
-         and the second list maps a charachter to a token. At index i, a value is None if there is no word/token that
-         corresponds to that charchter, otherwise the value is the index of the word/charachter in the encodings respective list
+        Args:
+            text: str:
+                The text being aligned
+            encoding: Encoding:
+                The encoding of the text returned by a tokenizer
+        Returns:
+            A tuple of lists, each list is of length len(txt). The first list maps a charachter to a word
+            and the second list maps a charachter to a token. At index i, a value is None if there is no word/token that
+            corresponds to that charchter, otherwise the value is the index of the word/charachter in the encodings respective list
         """
-        word_map: PartialIntList = [None] * len(text)
-        token_map: PartialIntList = [None] * len(text)
         word_map = [encoding.char_to_word(c) for c in range(len(text))]
         token_map = [encoding.char_to_token(c) for c in range(len(text))]
         return word_map, token_map
@@ -264,11 +288,15 @@ class EncodingVisualizer:
         which token_ix it corresponds to
         which word_ix it corresponds to
         which annotation_ix it corresponds to
-
-        :param text:
-        :param encoding:
-        :param annotations:
-        :return:
+        Args:
+            text: str:
+                The raw text we want to align to
+            annotations: List[Annotation]
+                A (possibly empty) list of annotations
+            encoding: Encoding:
+                The encoding returned from the tokenizer
+        Returns:
+            List[CharState] : A list of CharStates, indicating for each char in the text what it's state is
         """
         annotation_map = EncodingVisualizer.__make_anno_map(text, annotations)
         word_map, token_map = EncodingVisualizer.__make_token_and_word_map(text, encoding)

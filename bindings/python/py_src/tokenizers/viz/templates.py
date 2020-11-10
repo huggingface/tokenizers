@@ -11,10 +11,14 @@ with open(css_filename) as f:
 
 def HTMLBody(children: List[str], css_styles=css) -> str:
     """
-
-    :param children: A list of string rendered html nodes
-    :param css_styles:  Optional css styles to replace default styles styling
-    :return: An HTML string with style markup
+    Generates the full html with css from a list of html spans
+    Args:
+        children: List[str]:
+            A list of strings, assumed to be html elements
+        css_styles: (`optional`) str:
+            Optional alternative implementation of the css
+    Returns:
+        An HTML string with style markup
     """
     children_text = "".join(children)
     return f"""
