@@ -1159,6 +1159,25 @@ impl PyTokenizer {
         self.tokenizer.with_decoder(decoder.clone());
     }
 }
+#[pyproto]
+impl PyObjectProtocol for PyTokenizer {
+    fn __repr__(&self) -> PyResult<String> {
+        let mut inner = format!("model={}", self.tokenizer.get_model().__repr__()?,);
+        if let Some(normalizer) = self.tokenizer.get_normalizer() {
+            inner = format!("{}, normalizer={:?}", inner, normalizer.__repr__());
+        }
+        if let Some(pre_tokenizer) = self.tokenizer.get_pre_tokenizer() {
+            inner = format!("{}, pre_tokenizer={:?}", inner, pre_tokenizer.__repr__());
+        }
+        if let Some(decoder) = self.tokenizer.get_decoder() {
+            inner = format!("{}, decoder={:?}", inner, decoder.__repr__());
+        }
+        if let Some(processor) = self.tokenizer.get_post_processor() {
+            inner = format!("{}, processor={:?}", inner, processor.__repr__());
+        }
+        Ok(format!("Tokenizer({})", inner))
+    }
+}
 
 #[cfg(test)]
 mod test {

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3::PyObjectProtocol;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -135,6 +136,12 @@ impl PyPreTokenizer {
             .into_iter()
             .map(|(s, o, _)| (s.to_owned(), o))
             .collect())
+    }
+}
+#[pyproto]
+impl PyObjectProtocol for PyPreTokenizer {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{:?}", self.pretok))
     }
 }
 
@@ -311,7 +318,7 @@ impl PyUnicodeScripts {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct CustomPreTokenizer {
     inner: PyObject,
 }
@@ -355,7 +362,7 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerWrapper {
     Custom(CustomPreTokenizer),
@@ -374,7 +381,7 @@ impl Serialize for PyPreTokenizerWrapper {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerTypeWrapper {
     Sequence(Vec<Arc<PyPreTokenizerWrapper>>),

@@ -100,6 +100,13 @@ class TestTokenizer:
         assert tokens[0].normalized == True
         assert tokens[1].normalized == False
 
+    def test_repr(self):
+        tokenizer = Tokenizer(BPE())
+        assert (
+            repr(tokenizer)
+            == "Tokenizer(model=BPE(BPE { dropout: None, unk_token: None, continuing_subword_prefix: None, end_of_word_suffix: None, fuse_unk: false, vocab: 0, merges: 0 }))"
+        )
+
     def test_add_special_tokens(self):
         tokenizer = Tokenizer(BPE())
 

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3::PyObjectProtocol;
 
 use crate::encoding::PyEncoding;
 use crate::error::ToPyResult;
@@ -106,6 +107,12 @@ impl PyPostProcessor {
         ))
         .into_py()?;
         Ok(final_encoding.into())
+    }
+}
+#[pyproto]
+impl PyObjectProtocol for PyPostProcessor {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{:?}", self.processor))
     }
 }
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3::PyObjectProtocol;
 
 use crate::error::ToPyResult;
 use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
@@ -113,6 +114,12 @@ impl PyNormalizer {
         let mut normalized = NormalizedString::from(sequence);
         ToPyResult(self.normalizer.normalize(&mut normalized)).into_py()?;
         Ok(normalized.get().to_owned())
+    }
+}
+#[pyproto]
+impl PyObjectProtocol for PyNormalizer {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{:?}", self.normalizer))
     }
 }
 
@@ -254,7 +261,7 @@ impl PyStripAccents {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct CustomNormalizer {
     inner: PyObject,
 }
@@ -297,7 +304,7 @@ impl<'de> Deserialize<'de> for CustomNormalizer {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyNormalizerWrapper {
     Custom(CustomNormalizer),
@@ -316,7 +323,7 @@ impl Serialize for PyNormalizerWrapper {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyNormalizerTypeWrapper {
     Sequence(Vec<Arc<PyNormalizerWrapper>>),
