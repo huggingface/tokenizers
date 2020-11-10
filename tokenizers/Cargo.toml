@@ -47,12 +47,16 @@ clap = "2.33"
 unicode-normalization-alignments = "0.1"
 unicode_categories = "0.1"
 unicode-segmentation = "1.6"
-indicatif = "0.14"
+indicatif = {version = "0.15", optional = true}
 itertools = "0.9"
 log = "0.4"
 esaxx-rs = "0.1"
 derive_builder = "0.9"
 spm_precompiled = "0.1"
+
+[features]
+default = ["progressbar"]
+progressbar = ["indicatif"]
 
 [dev-dependencies]
 criterion = "0.3"

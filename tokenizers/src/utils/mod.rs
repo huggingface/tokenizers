@@ -2,6 +2,7 @@ pub mod cache;
 pub mod iter;
 pub mod padding;
 pub mod parallelism;
+pub mod progress;
 pub mod truncation;
 
 use serde::{Serialize, Serializer};

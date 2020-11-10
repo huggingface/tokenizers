@@ -3,7 +3,7 @@
 use super::{Pair, WithFirstLastIterator, Word, BPE};
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
-use indicatif::{ProgressBar, ProgressStyle};
+use crate::utils::progress::{ProgressBar, ProgressStyle};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
