@@ -189,15 +189,15 @@ pub struct BPE {
     cache: Option<Cache<String, Word>>,
     /// Dropout probability for merges. 0 = no dropout is the default. At 1.0, tokenization will
     /// perform no merges, so the result will just be characters.
-    pub(super) dropout: Option<f32>,
+    pub dropout: Option<f32>,
     /// The unknown token to be used when we encounter an unknown char
-    pub(super) unk_token: Option<String>,
+    pub unk_token: Option<String>,
     /// An optional prefix to use on any subword that exist only behind another one
-    pub(super) continuing_subword_prefix: Option<String>,
+    pub continuing_subword_prefix: Option<String>,
     /// An optional suffix to caracterize and end-of-word subword
-    pub(super) end_of_word_suffix: Option<String>,
+    pub end_of_word_suffix: Option<String>,
     /// Do multiple unk tokens get fused
-    pub(super) fuse_unk: bool,
+    pub fuse_unk: bool,
 }
 
 impl std::fmt::Debug for BPE {

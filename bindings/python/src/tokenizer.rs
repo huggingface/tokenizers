@@ -1045,7 +1045,9 @@ impl PyTokenizer {
         let trainer =
             trainer.map_or_else(|| self.tokenizer.get_model().get_trainer(), |t| t.clone());
         Python::with_gil(|py| {
-            py.allow_threads(|| ToPyResult(self.tokenizer.train(&trainer, files)).into())
+            py.allow_threads(|| {
+                ToPyResult(self.tokenizer.train(&trainer, files).map(|_| {})).into()
+            })
         })
     }
 
@@ -1173,15 +1175,15 @@ mod test {
     use super::*;
     use crate::models::PyModel;
     use crate::normalizers::{PyNormalizer, PyNormalizerTypeWrapper};
-    use std::sync::Arc;
+    use std::sync::{Arc, RwLock};
     use tempfile::NamedTempFile;
     use tk::normalizers::{Lowercase, NFKC};
 
     #[test]
     fn serialize() {
-        let mut tokenizer = Tokenizer::new(PyModel::new(Arc::new(
+        let mut tokenizer = Tokenizer::new(PyModel::new(Arc::new(RwLock::new(
             tk::models::bpe::BPE::default().into(),
-        )));
+        ))));
         tokenizer.with_normalizer(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(vec![
             Arc::new(NFKC.into()),
             Arc::new(Lowercase.into()),

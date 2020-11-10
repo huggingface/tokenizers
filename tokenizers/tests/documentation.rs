@@ -8,7 +8,7 @@ use tokenizers::{Tokenizer, TokenizerImpl};
 #[test]
 fn train_tokenizer() {
     let vocab_size: usize = 100;
-    let tokenizer = TokenizerBuilder::new()
+    let mut tokenizer = TokenizerBuilder::new()
         .with_model(BPE::default())
         .with_normalizer(Some(Sequence::new(vec![
             Strip::new(true, true).into(),
@@ -97,7 +97,7 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
         "data/wikitext-103-raw/wiki.test.raw".into(),
         "data/wikitext-103-raw/wiki.valid.raw".into(),
     ];
-    tokenizer.train_and_replace(&trainer, files)?;
+    tokenizer.train(&trainer, files)?;
     // END quicktour_train
     // START quicktour_reload_model
     use std::path::Path;
@@ -427,7 +427,7 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
         "data/wikitext-103-raw/wiki.test.raw".into(),
         "data/wikitext-103-raw/wiki.valid.raw".into(),
     ];
-    bert_tokenizer.train_and_replace(&trainer, files)?;
+    bert_tokenizer.train(&trainer, files)?;
 
     let model_files = bert_tokenizer
         .get_model()
