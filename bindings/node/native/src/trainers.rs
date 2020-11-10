@@ -116,6 +116,11 @@ impl FromJsValue for BpeTrainerOptions {
                     builder = builder.end_of_word_suffix(suffix);
                 }
             }
+            if let Ok(suffix) = options.get(cx, "unkToken") {
+                if let Some(suffix) = Option::from_value(suffix, cx)? {
+                    builder = builder.unk_token(suffix);
+                }
+            }
 
             Ok(Self(builder.build()))
         } else {
@@ -133,6 +138,7 @@ impl FromJsValue for BpeTrainerOptions {
 ///   showProgress?: bool = true,
 ///   continuingSubwordPrefix?: string = undefined,
 ///   endOfWordSuffix?: string = undefined,
+///   unkToken?: string = undefined,
 /// })
 fn bpe_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
     let trainer = cx

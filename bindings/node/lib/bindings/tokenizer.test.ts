@@ -5,6 +5,7 @@ import { promisify } from "util";
 
 import { PaddingDirection, TruncationStrategy } from "./enums";
 import { BPE } from "./models";
+import { whitespacePreTokenizer } from "./pre-tokenizers";
 import { RawEncoding } from "./raw-encoding";
 import {
   AddedToken,
@@ -131,6 +132,7 @@ describe("Tokenizer", () => {
 
       const model = BPE.empty();
       tokenizer = new Tokenizer(model);
+      tokenizer.preTokenizer = whitespacePreTokenizer();
       tokenizer.addTokens(["my", "name", "is", "john", new AddedToken("pair", false)]);
 
       encode = promisify(tokenizer.encode.bind(tokenizer));
@@ -382,6 +384,7 @@ describe("Tokenizer", () => {
     beforeAll(() => {
       const model = BPE.empty();
       tokenizer = new Tokenizer(model);
+      tokenizer.preTokenizer = whitespacePreTokenizer();
       tokenizer.addTokens(["my", "name", "is", "john", "pair"]);
 
       encode = promisify(tokenizer.encode.bind(tokenizer));

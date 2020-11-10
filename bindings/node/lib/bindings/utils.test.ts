@@ -121,6 +121,7 @@ describe("mergeEncodings", () => {
   beforeAll(async () => {
     const model = BPE.empty();
     const tokenizer = new Tokenizer(model);
+    tokenizer.preTokenizer = whitespacePreTokenizer();
     tokenizer.addTokens(["my", "name", "is", "john"]);
 
     encode = promisify(tokenizer.encode.bind(tokenizer));
