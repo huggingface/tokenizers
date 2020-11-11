@@ -3,8 +3,6 @@ pub(crate) use indicatif::{ProgressBar, ProgressStyle};
 
 #[cfg(not(feature = "progressbar"))]
 mod progressbar {
-    use std::sync::{Arc, RwLock};
-
     pub struct ProgressBar;
     impl ProgressBar {
         pub fn new(_length: u64) -> Self {
