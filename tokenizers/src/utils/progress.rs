@@ -1,8 +1,8 @@
 #[cfg(feature = "progressbar")]
-pub use indicatif::{ProgressBar, ProgressStyle};
+pub(crate) use indicatif::{ProgressBar, ProgressStyle};
 
 #[cfg(not(feature = "progressbar"))]
-pub mod progressbar {
+mod progressbar {
     use std::sync::{Arc, RwLock};
 
     pub struct ProgressBar;
@@ -31,4 +31,4 @@ pub mod progressbar {
     }
 }
 #[cfg(not(feature = "progressbar"))]
-pub use progressbar::{ProgressBar, ProgressStyle};
+pub(crate) use progressbar::{ProgressBar, ProgressStyle};
