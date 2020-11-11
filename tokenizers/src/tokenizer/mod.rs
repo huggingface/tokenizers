@@ -19,12 +19,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use indicatif::{ProgressBar, ProgressStyle};
 use serde::de::DeserializeOwned;
 use serde::export::Formatter;
 use serde::{Deserialize, Serialize};
 
 use crate::utils::parallelism::*;
+use crate::utils::progress::{ProgressBar, ProgressStyle};
 
 mod added_vocabulary;
 mod encoding;

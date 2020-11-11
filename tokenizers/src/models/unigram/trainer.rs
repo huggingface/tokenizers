@@ -1,6 +1,6 @@
 use crate::models::unigram::{lattice::Lattice, model::Unigram};
 use crate::tokenizer::{AddedToken, Result, Trainer};
-use indicatif::{ProgressBar, ProgressStyle};
+use crate::utils::progress::{ProgressBar, ProgressStyle};
 use log::debug;
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
