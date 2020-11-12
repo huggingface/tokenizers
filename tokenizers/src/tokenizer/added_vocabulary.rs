@@ -532,11 +532,15 @@ mod tests {
         fn should_show_progress(&self) -> bool {
             true
         }
-        fn train(
-            &self,
-            _words: HashMap<String, u32>,
-            _model: &mut ModelMock,
-        ) -> Result<Vec<AddedToken>> {
+        fn train(&self, _model: &mut ModelMock) -> Result<Vec<AddedToken>> {
+            unimplemented!()
+        }
+        fn feed<I, S, F>(&mut self, _iterator: I, _process: F) -> Result<()>
+        where
+            I: Iterator<Item = S> + Send,
+            S: AsRef<str> + Send,
+            F: Fn(&str) -> Result<Vec<String>> + Sync,
+        {
             unimplemented!()
         }
     }

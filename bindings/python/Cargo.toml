@@ -18,6 +18,7 @@ pyo3 = "0.12"
 numpy = { git = "https://github.com/pyo3/rust-numpy/", rev = "e331befa27fede78d4662edf08fa0508db39be01" }
 ndarray = "0.13"
 onig = { version = "6.0", default-features = false }
+crossbeam = "0.8"
 
 [dependencies.tokenizers]
 version = "*"
