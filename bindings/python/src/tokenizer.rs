@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 
 use numpy::PyArray1;
 use pyo3::exceptions;
@@ -457,8 +456,7 @@ impl PyTokenizer {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        let model: PyObject =
-            PyModel::new(Arc::new(RwLock::new(BPE::default().into()))).into_py(py);
+        let model = PyModel::from(BPE::default()).into_py(py);
         let args = PyTuple::new(py, vec![model]);
         Ok(args)
     }
@@ -1181,9 +1179,7 @@ mod test {
 
     #[test]
     fn serialize() {
-        let mut tokenizer = Tokenizer::new(PyModel::new(Arc::new(RwLock::new(
-            tk::models::bpe::BPE::default().into(),
-        ))));
+        let mut tokenizer = Tokenizer::new(PyModel::from(BPE::default()));
         tokenizer.with_normalizer(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(vec![
             Arc::new(NFKC.into()),
             Arc::new(Lowercase.into()),

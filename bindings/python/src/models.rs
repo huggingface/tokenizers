@@ -32,10 +32,6 @@ pub struct PyModel {
 }
 
 impl PyModel {
-    pub(crate) fn new(model: Arc<RwLock<ModelWrapper>>) -> Self {
-        PyModel { model }
-    }
-
     pub(crate) fn get_as_subtype(&self) -> PyResult<PyObject> {
         let base = self.clone();
         let gil = Python::acquire_gil();
@@ -78,6 +74,17 @@ impl Model for PyModel {
 
     fn get_trainer(&self) -> Self::Trainer {
         self.model.read().unwrap().get_trainer().into()
+    }
+}
+
+impl<I> From<I> for PyModel
+where
+    I: Into<ModelWrapper>,
+{
+    fn from(model: I) -> Self {
+        Self {
+            model: Arc::new(RwLock::new(model.into())),
+        }
     }
 }
 
@@ -262,7 +269,7 @@ impl PyBPE {
                 "Error while initializing BPE: {}",
                 e
             ))),
-            Ok(bpe) => Ok((PyBPE {}, PyModel::new(Arc::new(RwLock::new(bpe.into()))))),
+            Ok(bpe) => Ok((PyBPE {}, bpe.into())),
         }
     }
 }
@@ -432,10 +439,7 @@ impl PyWordPiece {
                 "Error while initializing WordPiece: {}",
                 e
             ))),
-            Ok(wordpiece) => Ok((
-                PyWordPiece {},
-                PyModel::new(Arc::new(RwLock::new(wordpiece.into()))),
-            )),
+            Ok(wordpiece) => Ok((PyWordPiece {}, wordpiece.into())),
         }
     }
 }
@@ -579,15 +583,9 @@ impl PyWordLevel {
                 }
             };
 
-            Ok((
-                PyWordLevel {},
-                PyModel::new(Arc::new(RwLock::new(model.into()))),
-            ))
+            Ok((PyWordLevel {}, model.into()))
         } else {
-            Ok((
-                PyWordLevel {},
-                PyModel::new(Arc::new(RwLock::new(WordLevel::default().into()))),
-            ))
+            Ok((PyWordLevel {}, WordLevel::default().into()))
         }
     }
 
@@ -661,15 +659,9 @@ impl PyUnigram {
                 let model = Unigram::from(vocab, unk_id).map_err(|e| {
                     exceptions::PyException::new_err(format!("Error while loading Unigram: {}", e))
                 })?;
-                Ok((
-                    PyUnigram {},
-                    PyModel::new(Arc::new(RwLock::new(model.into()))),
-                ))
+                Ok((PyUnigram {}, model.into()))
             }
-            (None, None) => Ok((
-                PyUnigram {},
-                PyModel::new(Arc::new(RwLock::new(Unigram::default().into()))),
-            )),
+            (None, None) => Ok((PyUnigram {}, Unigram::default().into())),
             _ => Err(exceptions::PyValueError::new_err(
                 "`vocab` and `unk_id` must be both specified",
             )),
@@ -681,13 +673,12 @@ impl PyUnigram {
 mod test {
     use crate::models::PyModel;
     use pyo3::prelude::*;
-    use std::sync::{Arc, RwLock};
     use tk::models::bpe::BPE;
     use tk::models::ModelWrapper;
 
     #[test]
     fn get_subtype() {
-        let py_model = PyModel::new(Arc::new(RwLock::new(BPE::default().into())));
+        let py_model = PyModel::from(BPE::default());
         let py_bpe = py_model.get_as_subtype().unwrap();
         let gil = Python::acquire_gil();
         assert_eq!(
@@ -703,7 +694,7 @@ mod test {
         let rs_wrapper: ModelWrapper = rs_bpe.into();
         let rs_wrapper_ser = serde_json::to_string(&rs_wrapper).unwrap();
 
-        let py_model = PyModel::new(Arc::new(RwLock::new(rs_wrapper)));
+        let py_model = PyModel::from(rs_wrapper);
         let py_ser = serde_json::to_string(&py_model).unwrap();
         assert_eq!(py_ser, rs_bpe_ser);
         assert_eq!(py_ser, rs_wrapper_ser);
