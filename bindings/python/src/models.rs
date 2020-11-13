@@ -287,6 +287,109 @@ enum PyMerges<'a> {
 
 #[pymethods]
 impl PyBPE {
+    #[getter]
+    fn get_dropout(self_: PyRef<Self>) -> Option<f64> {
+        let super_ = self_.as_ref();
+        let model = super_.model.read().unwrap();
+        if let ModelWrapper::BPE(ref bpe) = *model {
+            bpe.dropout.map(|d| d as f64)
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[setter]
+    fn set_dropout(self_: PyRef<Self>, dropout: Option<f32>) {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().unwrap();
+        if let ModelWrapper::BPE(ref mut bpe) = *model {
+            bpe.dropout = dropout;
+        }
+    }
+
+    #[getter]
+    fn get_unk_token(self_: PyRef<Self>) -> Option<String> {
+        let super_ = self_.as_ref();
+        let model = super_.model.read().unwrap();
+        if let ModelWrapper::BPE(ref bpe) = *model {
+            bpe.unk_token.clone()
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[setter]
+    fn set_unk_token(self_: PyRef<Self>, unk_token: Option<String>) {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().unwrap();
+        if let ModelWrapper::BPE(ref mut bpe) = *model {
+            bpe.unk_token = unk_token;
+        }
+    }
+
+    #[getter]
+    fn get_continuing_subword_prefix(self_: PyRef<Self>) -> Option<String> {
+        let super_ = self_.as_ref();
+        let model = super_.model.read().unwrap();
+        if let ModelWrapper::BPE(ref bpe) = *model {
+            bpe.continuing_subword_prefix.clone()
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[setter]
+    fn set_continuing_subword_prefix(
+        self_: PyRef<Self>,
+        continuing_subword_prefix: Option<String>,
+    ) {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().unwrap();
+        if let ModelWrapper::BPE(ref mut bpe) = *model {
+            bpe.continuing_subword_prefix = continuing_subword_prefix;
+        }
+    }
+
+    #[getter]
+    fn get_end_of_word_suffix(self_: PyRef<Self>) -> Option<String> {
+        let super_ = self_.as_ref();
+        let model = super_.model.read().unwrap();
+        if let ModelWrapper::BPE(ref bpe) = *model {
+            bpe.end_of_word_suffix.clone()
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[setter]
+    fn set_end_of_word_suffix(self_: PyRef<Self>, end_of_word_suffix: Option<String>) {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().unwrap();
+        if let ModelWrapper::BPE(ref mut bpe) = *model {
+            bpe.end_of_word_suffix = end_of_word_suffix;
+        }
+    }
+
+    #[getter]
+    fn get_fuse_unk(self_: PyRef<Self>) -> bool {
+        let super_ = self_.as_ref();
+        let model = super_.model.read().unwrap();
+        if let ModelWrapper::BPE(ref bpe) = *model {
+            bpe.fuse_unk
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[setter]
+    fn set_fuse_unk(self_: PyRef<Self>, fuse_unk: bool) {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().unwrap();
+        if let ModelWrapper::BPE(ref mut bpe) = *model {
+            bpe.fuse_unk = fuse_unk;
+        }
+    }
+
     #[new]
     #[args(kwargs = "**")]
     fn new(
