@@ -39,6 +39,33 @@ class TestBPE:
                 BPE,
             )
 
+    def test_can_modify(self):
+        model = BPE(
+            dropout=0.5,
+            unk_token="[UNK]",
+            continuing_subword_prefix="__prefix__",
+            end_of_word_suffix="__suffix__",
+            fuse_unk=False,
+        )
+
+        assert model.dropout == 0.5
+        assert model.unk_token == "[UNK]"
+        assert model.continuing_subword_prefix == "__prefix__"
+        assert model.end_of_word_suffix == "__suffix__"
+        assert model.fuse_unk == False
+
+        # Modify these
+        model.dropout = 0.1
+        assert pytest.approx(model.dropout) == 0.1
+        model.unk_token = "<unk>"
+        assert model.unk_token == "<unk>"
+        model.continuing_subword_prefix = None
+        assert model.continuing_subword_prefix == None
+        model.end_of_word_suffix = "suff"
+        assert model.end_of_word_suffix == "suff"
+        model.fuse_unk = True
+        assert model.fuse_unk == True
+
 
 class TestWordPiece:
     def test_instantiate(self, bert_files):
