@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use pyo3::exceptions;
 use pyo3::prelude::*;
@@ -48,40 +48,46 @@ impl PyPreTokenizer {
             PyPreTokenizerTypeWrapper::Sequence(_) => {
                 Py::new(py, (PySequence {}, base))?.into_py(py)
             }
-            PyPreTokenizerTypeWrapper::Single(ref inner) => match inner.as_ref() {
-                PyPreTokenizerWrapper::Custom(_) => Py::new(py, base)?.into_py(py),
-                PyPreTokenizerWrapper::Wrapped(inner) => match inner {
-                    PreTokenizerWrapper::Whitespace(_) => {
-                        Py::new(py, (PyWhitespace {}, base))?.into_py(py)
-                    }
-                    PreTokenizerWrapper::Split(_) => Py::new(py, (PySplit {}, base))?.into_py(py),
-                    PreTokenizerWrapper::Punctuation(_) => {
-                        Py::new(py, (PyPunctuation {}, base))?.into_py(py)
-                    }
-                    PreTokenizerWrapper::Sequence(_) => {
-                        Py::new(py, (PySequence {}, base))?.into_py(py)
-                    }
-                    PreTokenizerWrapper::Metaspace(_) => {
-                        Py::new(py, (PyMetaspace {}, base))?.into_py(py)
-                    }
-                    PreTokenizerWrapper::Delimiter(_) => {
-                        Py::new(py, (PyCharDelimiterSplit {}, base))?.into_py(py)
-                    }
-                    PreTokenizerWrapper::WhitespaceSplit(_) => {
-                        Py::new(py, (PyWhitespaceSplit {}, base))?.into_py(py)
-                    }
-                    PreTokenizerWrapper::ByteLevel(_) => {
-                        Py::new(py, (PyByteLevel {}, base))?.into_py(py)
-                    }
-                    PreTokenizerWrapper::BertPreTokenizer(_) => {
-                        Py::new(py, (PyBertPreTokenizer {}, base))?.into_py(py)
-                    }
-                    PreTokenizerWrapper::Digits(_) => Py::new(py, (PyDigits {}, base))?.into_py(py),
-                    PreTokenizerWrapper::UnicodeScripts(_) => {
-                        Py::new(py, (PyUnicodeScripts {}, base))?.into_py(py)
-                    }
-                },
-            },
+            PyPreTokenizerTypeWrapper::Single(ref inner) => {
+                match &*inner.as_ref().read().unwrap() {
+                    PyPreTokenizerWrapper::Custom(_) => Py::new(py, base)?.into_py(py),
+                    PyPreTokenizerWrapper::Wrapped(inner) => match inner {
+                        PreTokenizerWrapper::Whitespace(_) => {
+                            Py::new(py, (PyWhitespace {}, base))?.into_py(py)
+                        }
+                        PreTokenizerWrapper::Split(_) => {
+                            Py::new(py, (PySplit {}, base))?.into_py(py)
+                        }
+                        PreTokenizerWrapper::Punctuation(_) => {
+                            Py::new(py, (PyPunctuation {}, base))?.into_py(py)
+                        }
+                        PreTokenizerWrapper::Sequence(_) => {
+                            Py::new(py, (PySequence {}, base))?.into_py(py)
+                        }
+                        PreTokenizerWrapper::Metaspace(_) => {
+                            Py::new(py, (PyMetaspace {}, base))?.into_py(py)
+                        }
+                        PreTokenizerWrapper::Delimiter(_) => {
+                            Py::new(py, (PyCharDelimiterSplit {}, base))?.into_py(py)
+                        }
+                        PreTokenizerWrapper::WhitespaceSplit(_) => {
+                            Py::new(py, (PyWhitespaceSplit {}, base))?.into_py(py)
+                        }
+                        PreTokenizerWrapper::ByteLevel(_) => {
+                            Py::new(py, (PyByteLevel {}, base))?.into_py(py)
+                        }
+                        PreTokenizerWrapper::BertPreTokenizer(_) => {
+                            Py::new(py, (PyBertPreTokenizer {}, base))?.into_py(py)
+                        }
+                        PreTokenizerWrapper::Digits(_) => {
+                            Py::new(py, (PyDigits {}, base))?.into_py(py)
+                        }
+                        PreTokenizerWrapper::UnicodeScripts(_) => {
+                            Py::new(py, (PyUnicodeScripts {}, base))?.into_py(py)
+                        }
+                    },
+                }
+            }
         })
     }
 }
@@ -492,8 +498,8 @@ impl Serialize for PyPreTokenizerWrapper {
 #[derive(Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerTypeWrapper {
-    Sequence(Vec<Arc<PyPreTokenizerWrapper>>),
-    Single(Arc<PyPreTokenizerWrapper>),
+    Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),
+    Single(Arc<RwLock<PyPreTokenizerWrapper>>),
 }
 
 impl Serialize for PyPreTokenizerTypeWrapper {
@@ -527,7 +533,7 @@ where
     I: Into<PyPreTokenizerWrapper>,
 {
     fn from(pretok: I) -> Self {
-        PyPreTokenizerTypeWrapper::Single(Arc::new(pretok.into()))
+        PyPreTokenizerTypeWrapper::Single(Arc::new(RwLock::new(pretok.into())))
     }
 }
 
@@ -545,10 +551,11 @@ where
 impl PreTokenizer for PyPreTokenizerTypeWrapper {
     fn pre_tokenize(&self, pretok: &mut PreTokenizedString) -> tk::Result<()> {
         match self {
-            PyPreTokenizerTypeWrapper::Single(inner) => inner.pre_tokenize(pretok),
-            PyPreTokenizerTypeWrapper::Sequence(inner) => {
-                inner.iter().map(|n| n.pre_tokenize(pretok)).collect()
-            }
+            PyPreTokenizerTypeWrapper::Single(inner) => inner.read().unwrap().pre_tokenize(pretok),
+            PyPreTokenizerTypeWrapper::Sequence(inner) => inner
+                .iter()
+                .map(|n| n.read().unwrap().pre_tokenize(pretok))
+                .collect(),
         }
     }
 }
@@ -593,7 +600,7 @@ mod test {
         assert_eq!(py_ser, rs_ser);
         let py_pretok: PyPreTokenizer = serde_json::from_str(&rs_ser).unwrap();
         match py_pretok.pretok {
-            PyPreTokenizerTypeWrapper::Single(inner) => match inner.as_ref() {
+            PyPreTokenizerTypeWrapper::Single(inner) => match *inner.as_ref().read().unwrap() {
                 PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::Whitespace(_)) => {}
                 _ => panic!("Expected Whitespace"),
             },
