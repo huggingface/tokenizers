@@ -130,9 +130,9 @@ impl WordPieceBuilder {
 pub struct WordPiece {
     vocab: Vocab,
     vocab_r: VocabR,
-    unk_token: String,
-    continuing_subword_prefix: String,
-    max_input_chars_per_word: usize,
+    pub unk_token: String,
+    pub continuing_subword_prefix: String,
+    pub max_input_chars_per_word: usize,
 }
 
 impl std::fmt::Debug for WordPiece {
