@@ -4,9 +4,10 @@ use unicode_normalization_alignments::char::is_combining_mark;
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
+#[non_exhaustive]
 pub struct Strip {
-    strip_left: bool,
-    strip_right: bool,
+    pub strip_left: bool,
+    pub strip_right: bool,
 }
 
 impl Strip {

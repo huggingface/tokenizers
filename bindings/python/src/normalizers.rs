@@ -359,6 +359,26 @@ impl PyLowercase {
 pub struct PyStrip {}
 #[pymethods]
 impl PyStrip {
+    #[getter]
+    fn get_left(self_: PyRef<Self>) -> bool {
+        getter!(self_, StripNormalizer, strip_left)
+    }
+
+    #[setter]
+    fn set_left(self_: PyRef<Self>, left: bool) {
+        setter!(self_, StripNormalizer, strip_left, left)
+    }
+
+    #[getter]
+    fn get_right(self_: PyRef<Self>) -> bool {
+        getter!(self_, StripNormalizer, strip_right)
+    }
+
+    #[setter]
+    fn set_right(self_: PyRef<Self>, right: bool) {
+        setter!(self_, StripNormalizer, strip_right, right)
+    }
+
     #[new]
     #[args(left = "true", right = "true")]
     fn new(left: bool, right: bool) -> PyResult<(Self, PyNormalizer)> {
