@@ -1181,8 +1181,8 @@ mod test {
     fn serialize() {
         let mut tokenizer = Tokenizer::new(PyModel::from(BPE::default()));
         tokenizer.with_normalizer(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(vec![
-            Arc::new(NFKC.into()),
-            Arc::new(Lowercase.into()),
+            Arc::new(RwLock::new(NFKC.into())),
+            Arc::new(RwLock::new(Lowercase.into())),
         ])));
 
         let tmp = NamedTempFile::new().unwrap().into_temp_path();
