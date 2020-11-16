@@ -146,6 +146,34 @@ impl PyNormalizer {
     }
 }
 
+macro_rules! getter {
+    ($self: ident, $variant: ident, $name: ident) => {{
+        let super_ = $self.as_ref();
+        if let PyNormalizerTypeWrapper::Single(ref norm) = super_.normalizer {
+            let wrapper = norm.read().unwrap();
+            if let PyNormalizerWrapper::Wrapped(NormalizerWrapper::$variant(o)) = *wrapper {
+                o.$name
+            } else {
+                unreachable!()
+            }
+        } else {
+            unreachable!()
+        }
+    }};
+}
+
+macro_rules! setter {
+    ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
+        let super_ = $self.as_ref();
+        if let PyNormalizerTypeWrapper::Single(ref norm) = super_.normalizer {
+            let mut wrapper = norm.write().unwrap();
+            if let PyNormalizerWrapper::Wrapped(NormalizerWrapper::$variant(ref mut o)) = *wrapper {
+                o.$name = $value;
+            }
+        }
+    }};
+}
+
 /// BertNormalizer
 ///
 /// Takes care of normalizing raw text before giving it to a Bert model.
@@ -170,6 +198,51 @@ impl PyNormalizer {
 pub struct PyBertNormalizer {}
 #[pymethods]
 impl PyBertNormalizer {
+    #[getter]
+    fn get_clean_text(self_: PyRef<Self>) -> bool {
+        getter!(self_, BertNormalizer, clean_text)
+    }
+
+    #[setter]
+    fn set_clean_text(self_: PyRef<Self>, clean_text: bool) {
+        setter!(self_, BertNormalizer, clean_text, clean_text);
+    }
+
+    #[getter]
+    fn get_handle_chinese_chars(self_: PyRef<Self>) -> bool {
+        getter!(self_, BertNormalizer, handle_chinese_chars)
+    }
+
+    #[setter]
+    fn set_handle_chinese_chars(self_: PyRef<Self>, handle_chinese_chars: bool) {
+        setter!(
+            self_,
+            BertNormalizer,
+            handle_chinese_chars,
+            handle_chinese_chars
+        );
+    }
+
+    #[getter]
+    fn get_strip_accents(self_: PyRef<Self>) -> Option<bool> {
+        getter!(self_, BertNormalizer, strip_accents)
+    }
+
+    #[setter]
+    fn set_strip_accents(self_: PyRef<Self>, strip_accents: Option<bool>) {
+        setter!(self_, BertNormalizer, strip_accents, strip_accents);
+    }
+
+    #[getter]
+    fn get_lowercase(self_: PyRef<Self>) -> bool {
+        getter!(self_, BertNormalizer, lowercase)
+    }
+
+    #[setter]
+    fn set_lowercase(self_: PyRef<Self>, lowercase: bool) {
+        setter!(self_, BertNormalizer, lowercase, lowercase)
+    }
+
     #[new]
     #[args(
         clean_text = "true",
