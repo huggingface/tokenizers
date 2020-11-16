@@ -115,6 +115,18 @@ class TestStrip:
         output = normalizer.normalize_str("  hello  ")
         assert output == "hello"
 
+    def test_can_modify(self):
+        normalizer = Strip(left=True, right=True)
+
+        assert normalizer.left == True
+        assert normalizer.right == True
+
+        # Modify these
+        normalizer.left = False
+        assert normalizer.left == False
+        normalizer.right = False
+        assert normalizer.right == False
+
 
 class TestCustomNormalizer:
     class BadCustomNormalizer:
