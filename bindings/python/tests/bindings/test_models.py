@@ -120,3 +120,12 @@ class TestWordLevel:
             assert isinstance(WordLevel(roberta_files["vocab"]), Model)
         with pytest.deprecated_call():
             assert isinstance(WordLevel(roberta_files["vocab"]), WordLevel)
+
+    def test_can_modify(self):
+        model = WordLevel(unk_token="<oov>")
+
+        assert model.unk_token == "<oov>"
+
+        # Modify these
+        model.unk_token = "<unk>"
+        assert model.unk_token == "<unk>"
