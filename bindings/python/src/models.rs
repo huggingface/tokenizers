@@ -549,6 +549,66 @@ impl PyWordPiece {
 
 #[pymethods]
 impl PyWordPiece {
+    #[getter]
+    fn get_unk_token(self_: PyRef<Self>) -> String {
+        let super_ = self_.as_ref();
+        let model = super_.model.read().unwrap();
+        if let ModelWrapper::WordPiece(ref wp) = *model {
+            wp.unk_token.clone()
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[setter]
+    fn set_unk_token(self_: PyRef<Self>, unk_token: String) {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().unwrap();
+        if let ModelWrapper::WordPiece(ref mut wp) = *model {
+            wp.unk_token = unk_token;
+        }
+    }
+
+    #[getter]
+    fn get_continuing_subword_prefix(self_: PyRef<Self>) -> String {
+        let super_ = self_.as_ref();
+        let model = super_.model.read().unwrap();
+        if let ModelWrapper::WordPiece(ref wp) = *model {
+            wp.continuing_subword_prefix.clone()
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[setter]
+    fn set_continuing_subword_prefix(self_: PyRef<Self>, continuing_subword_prefix: String) {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().unwrap();
+        if let ModelWrapper::WordPiece(ref mut wp) = *model {
+            wp.continuing_subword_prefix = continuing_subword_prefix;
+        }
+    }
+
+    #[getter]
+    fn get_max_input_chars_per_word(self_: PyRef<Self>) -> usize {
+        let super_ = self_.as_ref();
+        let model = super_.model.read().unwrap();
+        if let ModelWrapper::WordPiece(ref wp) = *model {
+            wp.max_input_chars_per_word
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[setter]
+    fn set_max_input_chars_per_word(self_: PyRef<Self>, max: usize) {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().unwrap();
+        if let ModelWrapper::WordPiece(ref mut wp) = *model {
+            wp.max_input_chars_per_word = max;
+        }
+    }
+
     #[new]
     #[args(kwargs = "**")]
     fn new(vocab: Option<PyVocab>, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {

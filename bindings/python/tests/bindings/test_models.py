@@ -84,6 +84,25 @@ class TestWordPiece:
         with pytest.deprecated_call():
             assert isinstance(pickle.loads(pickle.dumps(WordPiece(bert_files["vocab"]))), WordPiece)
 
+    def test_can_modify(self):
+        model = WordPiece(
+            unk_token="<oov>",
+            continuing_subword_prefix="__prefix__",
+            max_input_chars_per_word=200,
+        )
+
+        assert model.unk_token == "<oov>"
+        assert model.continuing_subword_prefix == "__prefix__"
+        assert model.max_input_chars_per_word == 200
+
+        # Modify these
+        model.unk_token = "<unk>"
+        assert model.unk_token == "<unk>"
+        model.continuing_subword_prefix = "$$$"
+        assert model.continuing_subword_prefix == "$$$"
+        model.max_input_chars_per_word = 10
+        assert model.max_input_chars_per_word == 10
+
 
 class TestWordLevel:
     def test_instantiate(self, roberta_files):
