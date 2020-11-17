@@ -197,7 +197,7 @@ class Encoding:
         """
         pass
     @property
-    def sequences(self):
+    def sequence_ids(self):
         """
         The generated sequence indices.
 
@@ -313,6 +313,23 @@ class Encoding:
             :obj:`List[int]`: The list of type ids
         """
         pass
+    @property
+    def word_ids(self):
+        """
+        The generated word indices.
+
+        They represent the index of the word associated to each token.
+        When the input is pre-tokenized, they correspond to the ID of the given input label,
+        otherwise they correspond to the words indices as defined by the
+        :class:`~tokenizers.pre_tokenizers.PreTokenizer` that was used.
+
+        For special tokens and such (any token that was generated from something that was
+        not part of the input), the output is :obj:`None`
+
+        Returns:
+            A :obj:`List` of :obj:`Optional[int]`: A list of optional word index.
+        """
+        pass
     def word_to_chars(self, word_index, sequence_index=0):
         """
         Get the offsets of the word at the given index in one of the input sequences.
@@ -346,6 +363,10 @@ class Encoding:
     def words(self):
         """
         The generated word indices.
+
+        .. warning::
+            This is deprecated and will be removed in a future version.
+            Please use :obj:`~tokenizers.Encoding.word_ids` instead.
 
         They represent the index of the word associated to each token.
         When the input is pre-tokenized, they correspond to the ID of the given input label,
