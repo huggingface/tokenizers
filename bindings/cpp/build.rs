@@ -1,5 +1,11 @@
 fn main() {
-    let modules = ["normalizers", "pre_tokenizers"];
+    #[allow(unused_mut)]
+    let mut modules = vec!["normalizers", "pre_tokenizers"];
+
+    // can't do just cfg!(test), see https://github.com/rust-lang/cargo/issues/2549
+    if cfg!(feature = "test") {
+        modules.push("tests");
+    }
 
     let rust_sources: Vec<_> = modules
         .iter()
