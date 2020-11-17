@@ -22,6 +22,10 @@ use tokenizers as tk;
 use super::error::ToPyResult;
 use super::utils::*;
 
+/// Base class for all pre-tokenizers
+///
+/// This class is not supposed to be instantiated directly. Instead, any implementation of a
+/// PreTokenizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.pre_tokenizers", name=PreTokenizer)]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PyPreTokenizer {
@@ -121,10 +125,14 @@ impl PyPreTokenizer {
         }
     }
 
+    /// Pre tokenize the given PreTokenizedString in-place
+    #[text_signature = "(self, pretok)"]
     fn pre_tokenize(&self, pretok: &mut PyPreTokenizedString) -> PyResult<()> {
         ToPyResult(self.pretok.pre_tokenize(&mut pretok.pretok)).into()
     }
 
+    /// Pre tokenize the given sequence
+    #[text_signature = "(self, sequence)"]
     fn pre_tokenize_str(&self, s: &str) -> PyResult<Vec<(String, Offsets)>> {
         let mut pretokenized = tk::tokenizer::PreTokenizedString::from(s);
 
@@ -138,7 +146,19 @@ impl PyPreTokenizer {
     }
 }
 
+/// ByteLevel PreTokenizer
+///
+/// This pre-tokenizer takes care of replacing all bytes of the given string
+/// with a corresponding representation, as well as splitting into words.
+///
+/// Args:
+///     add_prefix_space: (`optional`) boolean:
+///         Whether to add a space to the first word if there isn't already one. This
+///         lets us treat `hello` exactly like `say hello`.
+/// Returns:
+///     PreTokenizer
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=ByteLevel)]
+#[text_signature = "(self, add_prefix_space=True)"]
 pub struct PyByteLevel {}
 #[pymethods]
 impl PyByteLevel {
@@ -161,7 +181,13 @@ impl PyByteLevel {
         Ok((PyByteLevel {}, byte_level.into()))
     }
 
+    /// Returns the alphabet used by this PreTokenizer.
+    ///
+    /// Since the ByteLevel works as its name suggests, at the byte level, it
+    /// encodes any byte to one visible character. This means that there is a
+    /// total of 256 different characters composing this alphabet.
     #[staticmethod]
+    #[text_signature = "()"]
     fn alphabet() -> Vec<String> {
         ByteLevel::alphabet()
             .into_iter()
@@ -170,7 +196,9 @@ impl PyByteLevel {
     }
 }
 
+/// This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Whitespace)]
+#[text_signature = "(self)"]
 pub struct PyWhitespace {}
 #[pymethods]
 impl PyWhitespace {
@@ -180,7 +208,9 @@ impl PyWhitespace {
     }
 }
 
+/// This pre-tokenizer simply splits on the whitespace. Works like `.split()`
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=WhitespaceSplit)]
+#[text_signature = "(self)"]
 pub struct PyWhitespaceSplit {}
 #[pymethods]
 impl PyWhitespaceSplit {
@@ -190,6 +220,11 @@ impl PyWhitespaceSplit {
     }
 }
 
+/// This pre-tokenizer simply splits on the provided char. Works like `.split(delimiter)`
+///
+/// Args:
+///     delimiter: str:
+///         The delimiter char that will be used to split input
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=CharDelimiterSplit)]
 pub struct PyCharDelimiterSplit {}
 #[pymethods]
@@ -210,7 +245,12 @@ impl PyCharDelimiterSplit {
     }
 }
 
+/// BertPreTokenizer
+///
+/// This pre-tokenizer splits tokens on spaces, and also on punctuation.
+/// Each occurence of a punctuation character will be treated separately.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=BertPreTokenizer)]
+#[text_signature = "(self)"]
 pub struct PyBertPreTokenizer {}
 #[pymethods]
 impl PyBertPreTokenizer {
@@ -220,7 +260,9 @@ impl PyBertPreTokenizer {
     }
 }
 
+/// This pre-tokenizer simply splits on punctuation as individual characters.`
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Punctuation)]
+#[text_signature = "(self)"]
 pub struct PyPunctuation {}
 #[pymethods]
 impl PyPunctuation {
@@ -230,7 +272,9 @@ impl PyPunctuation {
     }
 }
 
+/// This pre-tokenizer composes other pre_tokenizers and applies them in sequence
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Sequence)]
+#[text_signature = "(self, pretokenizers)"]
 pub struct PySequence {}
 #[pymethods]
 impl PySequence {
@@ -257,7 +301,20 @@ impl PySequence {
     }
 }
 
+/// Metaspace pre-tokenizer
+///
+/// This pre-tokenizer replaces any whitespace by the provided replacement character.
+/// It then tries to split on these spaces.
+/// Args:
+///     replacement: str:
+///         The replacement character. Must be exactly one character. By default we
+///         use the `▁` (U+2581) meta symbol (Same as in SentencePiece).
+///
+///     add_prefix_space: boolean:
+///         Whether to add a space to the first word if there isn't already one. This
+///         lets us treat `hello` exactly like `say hello`.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Metaspace)]
+#[text_signature = "(self, replacement=\"▁\", add_prefix_space=True)"]
 pub struct PyMetaspace {}
 #[pymethods]
 impl PyMetaspace {
@@ -290,7 +347,13 @@ impl PyMetaspace {
     }
 }
 
+/// This pre-tokenizer simply splits using the digits in separate tokens
+/// Args:
+///     individual_digits: bool:
+///         If set to True, digits will each be separated "Call 123 please" -> "Call ", "1", "2", "3", " please"
+///         If set to False, digits will grouped "Call 123 please" -> "Call ", "123", " please"
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Digits)]
+#[text_signature = "(self, individual_digits=False)"]
 pub struct PyDigits {}
 #[pymethods]
 impl PyDigits {
@@ -301,7 +364,12 @@ impl PyDigits {
     }
 }
 
+/// This pre-tokenizer splits on characters that belong to different language family
+/// It roughly follows https://github.com/google/sentencepiece/blob/master/data/Scripts.txt
+/// Actually Hiragana and Katakana are fused with Han, and 0x30FC is Han too.
+/// This mimicks SentencePiece Unigram implementation.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=UnicodeScripts)]
+#[text_signature = "(self)"]
 pub struct PyUnicodeScripts {}
 #[pymethods]
 impl PyUnicodeScripts {

@@ -1,13 +1,14 @@
+# Generated content DO NOT EDIT
 from .. import pre_tokenizers
 
 PreTokenizer = pre_tokenizers.PreTokenizer
-ByteLevel = pre_tokenizers.ByteLevel
-Whitespace = pre_tokenizers.Whitespace
-Punctuation = pre_tokenizers.Punctuation
-Sequence = pre_tokenizers.Sequence
-WhitespaceSplit = pre_tokenizers.WhitespaceSplit
 BertPreTokenizer = pre_tokenizers.BertPreTokenizer
-Metaspace = pre_tokenizers.Metaspace
+ByteLevel = pre_tokenizers.ByteLevel
 CharDelimiterSplit = pre_tokenizers.CharDelimiterSplit
 Digits = pre_tokenizers.Digits
+Metaspace = pre_tokenizers.Metaspace
+Punctuation = pre_tokenizers.Punctuation
+Sequence = pre_tokenizers.Sequence
 UnicodeScripts = pre_tokenizers.UnicodeScripts
+Whitespace = pre_tokenizers.Whitespace
+WhitespaceSplit = pre_tokenizers.WhitespaceSplit

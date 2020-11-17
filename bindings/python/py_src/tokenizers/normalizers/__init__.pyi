@@ -1,140 +1,258 @@
-from .. import NormalizedString
-from typing import Optional, List
-
+# Generated content DO NOT EDIT
 class Normalizer:
-    """Base class for all normalizers
+    """
+    Base class for all normalizers
 
     This class is not supposed to be instantiated directly. Instead, any implementation of a
     Normalizer will return an instance of this class when instantiated.
     """
 
-    def normalize(self, normalized: NormalizedString):
-        """ Normalize the given NormalizedString in-place """
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
         pass
-    def normalize_str(self, sequence: str) -> str:
-        """ Normalize the given str """
-        pass
-
-class BertNormalizer(Normalizer):
-    """BertNormalizer
-
-    Takes care of normalizing raw text before giving it to a Bert model.
-    This includes cleaning the text, handling accents, chinese chars and lowercasing
-    """
-
-    def __init__(
-        self,
-        clean_text: Optional[bool] = True,
-        handle_chinese_chars: Optional[bool] = True,
-        strip_accents: Optional[bool] = None,
-        lowercase: Optional[bool] = True,
-    ) -> None:
-        """Instantiate a BertNormalizer with the given options.
-
-        Args:
-            clean_text: (`optional`) boolean:
-                Whether to clean the text, by removing any control characters
-                and replacing all whitespaces by the classic one.
-
-            handle_chinese_chars: (`optional`) boolean:
-                Whether to handle chinese chars by putting spaces around them.
-
-            strip_accents: (`optional`) boolean:
-                Whether to strip all accents. If this option is not specified (ie == None),
-                then it will be determined by the value for `lowercase` (as in the original Bert).
-
-            lowercase: (`optional`) boolean:
-                Whether to lowercase.
-
-        Returns:
-            Normalizer
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
         """
         pass
 
-class NFD(Normalizer):
-    """ NFD Unicode Normalizer """
+class BertNormalizer(Normalizer):
+    """
+    BertNormalizer
 
-    def __init__(self) -> None:
-        """ Instantiate a new NFD Normalizer """
-        pass
+    Takes care of normalizing raw text before giving it to a Bert model.
+    This includes cleaning the text, handling accents, chinese chars and lowercasing
 
-class NFKD(Normalizer):
-    """ NFKD Unicode Normalizer """
+    Args:
+        clean_text: (`optional`) boolean:
+            Whether to clean the text, by removing any control characters
+            and replacing all whitespaces by the classic one.
 
-    def __init__(self) -> None:
-        """ Instantiate a new NFKD Normalizer """
-        pass
+        handle_chinese_chars: (`optional`) boolean:
+            Whether to handle chinese chars by putting spaces around them.
 
-class NFC(Normalizer):
-    """ NFC Unicode Normalizer """
+        strip_accents: (`optional`) boolean:
+            Whether to strip all accents. If this option is not specified (ie == None),
+            then it will be determined by the value for `lowercase` (as in the original Bert).
 
-    def __init__(self) -> None:
-        """ Instantiate a new NFC Normalizer """
-        pass
+        lowercase: (`optional`) boolean:
+            Whether to lowercase.
 
-class NFKC(Normalizer):
-    """ NFKC Unicode Normalizer """
-
-    def __init__(self) -> None:
-        """ Instantiate a new NFKC Normalizer """
-        pass
-
-class Sequence(Normalizer):
-    """Allows concatenating multiple other Normalizer as a Sequence.
-
-    All the normalizers run in sequence in the given order
+    Returns:
+        Normalizer
     """
 
-    def __init__(self, normalizers: List[Normalizer]) -> None:
-        """Instantiate a new normalization Sequence using the given normalizers
-
-        Args:
-            normalizers: List[Normalizer]:
-                A list of Normalizer to be run as a sequence
+    def __init__(
+        self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True
+    ):
+        pass
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
+        pass
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
         """
         pass
 
 class Lowercase(Normalizer):
-    """ Lowercase Normalizer """
+    """
+    Lowercase Normalizer
+    """
 
-    def __init__(self) -> None:
-        """ Instantiate a new Lowercase Normalizer """
+    def __init__(self):
+        pass
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
+        pass
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
+        """
         pass
 
-class Strip(Normalizer):
-    """ Strip normalizer """
+class NFC(Normalizer):
+    """
+    NFC Unicode Normalizer
+    """
 
-    def __init__(self, left: bool = True, right: bool = True) -> Normalizer:
+    def __init__(self):
+        pass
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
+        pass
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
+        """
         pass
 
-class StripAccents(Normalizer):
-    """ StripAccents normalizer """
+class NFD(Normalizer):
+    """
+    NFD Unicode Normalizer
+    """
 
-    def __init__(self) -> Normalizer:
+    def __init__(self):
+        pass
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
+        pass
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
+        """
+        pass
+
+class NFKC(Normalizer):
+    """
+    NFKC Unicode Normalizer
+    """
+
+    def __init__(self):
+        pass
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
+        pass
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
+        """
+        pass
+
+class NFKD(Normalizer):
+    """
+    NFKD Unicode Normalizer
+    """
+
+    def __init__(self):
+        pass
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
+        pass
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
+        """
         pass
 
 class Nmt(Normalizer):
-    """ Nmt normalizer """
+    """
+    Nmt normalizer
+    """
 
-    def __init__(self) -> Normalizer:
+    def __init__(self):
+        pass
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
+        pass
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
+        """
         pass
 
 class Precompiled(Normalizer):
-    """ Precompiled normalizer """
+    """
+    Precompiled normalizer
+    Don't use manually it is used for compatiblity for SentencePiece.
+    """
 
-    def __init__(self, precompiled_charsmap: bytes) -> Normalizer:
+    def __init__(self, precompiled_charsmap):
+        pass
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
+        pass
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
+        """
         pass
 
 class Replace(Normalizer):
-    """ Replace normalizer """
+    """
+    Replace normalizer
+    """
 
-    def __init__(self, pattern: str, content: str) -> Normalizer:
+    def __init__(self, pattern, content):
+        pass
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
+        pass
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
+        """
         pass
 
-def unicode_normalizer_from_str(normalizer: str) -> Normalizer:
+class Sequence(Normalizer):
     """
-    Instanciate unicode normalizer from the normalizer name
-    :param normalizer: Name of the normalizer
-    :return:
+    Allows concatenating multiple other Normalizer as a Sequence.
+    All the normalizers run in sequence in the given order
+
+    Args:
+        normalizers: List[Normalizer]:
+            A list of Normalizer to be run as a sequence
     """
-    pass
+
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
+        pass
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
+        """
+        pass
+
+class Strip(Normalizer):
+    """
+    Strip normalizer
+    """
+
+    def __init__(self, left=True, right=True):
+        pass
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
+        pass
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
+        """
+        pass
+
+class StripAccents(Normalizer):
+    def __init__(self):
+        pass
+    def normalize(self, normalized):
+        """
+        Normalize the given NormalizedString in-place
+        """
+        pass
+    def normalize_str(self, sequence):
+        """
+        Normalize the given str
+        """
+        pass

@@ -1,6 +1,7 @@
+# Generated content DO NOT EDIT
 from .. import trainers
 
 Trainer = trainers.Trainer
 BpeTrainer = trainers.BpeTrainer
-WordPieceTrainer = trainers.WordPieceTrainer
 UnigramTrainer = trainers.UnigramTrainer
+WordPieceTrainer = trainers.WordPieceTrainer

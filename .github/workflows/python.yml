@@ -11,26 +11,6 @@ on:
       - bindings/node/**
 
 jobs:
-  code_quality:
-    name: Check Code Quality
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v1
-
-      - name: Install Python
-        uses: actions/setup-python@v1
-        with:
-          python-version: 3.6
-          architecture: "x64"
-
-      - name: Install dependencies
-        run: pip install black==20.8b1
-
-      - name: Check style
-        working-directory: ./bindings/python
-        run: make check-style
-
   build_win_32:
     name: Check it builds for Windows 32-bit
     runs-on: windows-latest
@@ -115,11 +95,23 @@ jobs:
           python-version: 3.6
           architecture: "x64"
 
-      - name: Run tests
+      - name: Install
         working-directory: ./bindings/python
         run: |
           python -m venv .env
           source .env/bin/activate
           pip install pytest requests setuptools_rust numpy
           python setup.py develop
+
+      - name: Check style
+        working-directory: ./bindings/python
+        run: |
+          source .env/bin/activate
+          pip install black==20.8b1
+          make check-style
+
+      - name: Run tests
+        working-directory: ./bindings/python
+        run: |
+          source .env/bin/activate
           make test

@@ -106,6 +106,8 @@ impl PyModel {
         }
     }
 
+    /// Tokenize the given sequence
+    #[text_signature = "(self, tokens)"]
     fn tokenize(&self, tokens: &str) -> PyResult<Vec<PyToken>> {
         Ok(ToPyResult(self.model.tokenize(tokens))
             .into_py()?
@@ -114,14 +116,24 @@ impl PyModel {
             .collect())
     }
 
+    /// Returns the id associated with the given token
+    #[text_signature = "(self, tokens)"]
     fn token_to_id(&self, token: &str) -> Option<u32> {
         self.model.token_to_id(token)
     }
 
+    /// Returns the token associated with the given id
+    #[text_signature = "(self, id)"]
     fn id_to_token(&self, id: u32) -> Option<&str> {
         self.model.id_to_token(id)
     }
 
+    /// Save the current model
+    ///
+    /// Save the current model in the given folder, using the given name for the various
+    /// files that will get created.
+    /// Any file with the same name that already exist in this folder will be overwritten.
+    #[text_signature = "(self, folder, name)"]
     fn save(&self, folder: &str, name: Option<&str>) -> PyResult<Vec<String>> {
         let saved: PyResult<Vec<_>> = ToPyResult(self.model.save(Path::new(folder), name)).into();
 
@@ -132,9 +144,36 @@ impl PyModel {
     }
 }
 
-/// BPE Model
-/// Allows the creation of a BPE Model to be used with a Tokenizer
+/// Instantiate a BPE Model from the given vocab and merges.
+///
+/// Args:
+///    vocab: ('`optional`) Dict[str, int]:
+///        A dictionnary of string keys and their ids {"am": 0,...}
+///
+///    merges: (`optional`) string:
+///        A list of pairs of tokens [("a", "b"),...]
+///
+///    cache_capacity: (`optional`) int:
+///        The number of words that the BPE cache can contain. The cache allows
+///        to speed-up the process by keeping the result of the merge operations
+///        for a number of words.
+///
+///    dropout: (`optional`) Optional[float] [0, 1]:
+///        The BPE dropout to use. Must be an float between 0 and 1
+///
+///    unk_token: (`optional`) str:
+///        The unknown token to be used by the model.
+///
+///    continuing_subword_prefix: (`optional`) str:
+///        The prefix to attach to subword units that don't represent a beginning of word.
+///
+///    end_of_word_suffix: (`optional`) str:
+///        The suffix to attach to subword units that represent an end of word.
+///
+///    fuse_unk: (`optional`) bool:
+///        Multiple unk tokens get fused into only 1
 #[pyclass(extends=PyModel, module = "tokenizers.models", name=BPE)]
+#[text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None)"]
 pub struct PyBPE {}
 
 impl PyBPE {
@@ -225,7 +264,9 @@ impl PyBPE {
         PyBPE::with_builder(builder, kwargs)
     }
 
+    /// Read a vocab_filename and merge_filename and stores result in memory
     #[staticmethod]
+    #[text_signature = "(self, vocab_filename, merges_filename)"]
     fn read_file(vocab_filename: &str, merges_filename: &str) -> PyResult<(Vocab, Merges)> {
         BPE::read_file(vocab_filename, merges_filename).map_err(|e| {
             exceptions::PyValueError::new_err(format!(
@@ -235,8 +276,15 @@ impl PyBPE {
         })
     }
 
+    /// Convenient method to intialize a BPE from files
+    /// Roughly equivalent to
+    ///
+    /// def from_file(vocab_filename, merges_filenames, **kwargs):
+    ///     vocab, merges = BPE.read_file(vocab_filename, merges_filename)
+    ///     return BPE(vocab, merges, **kwargs)
     #[staticmethod]
     #[args(kwargs = "**")]
+    #[text_signature = "(vocab_filename, merge_filename, **kwargs)"]
     fn from_file(
         py: Python,
         vocab_filename: &str,
@@ -257,8 +305,20 @@ impl PyBPE {
     }
 }
 
-/// WordPiece Model
+/// WordPiece model
+/// Instantiate a WordPiece Model from the given vocab file.
+///
+/// Args:
+///     vocab: (`optional`) string:
+///         A dictionnary of string keys and their ids {"am": 0,...}
+///
+///     unk_token: (`optional`) str:
+///         The unknown token to be used by the model.
+///
+///     max_input_chars_per_word: (`optional`) int:
+///         The maximum number of characters to authorize in a single word.
 #[pyclass(extends=PyModel, module = "tokenizers.models", name=WordPiece)]
+#[text_signature = "(self, vocab, unk_token, max_input_chars_per_word)"]
 pub struct PyWordPiece {}
 
 impl PyWordPiece {
@@ -319,15 +379,24 @@ impl PyWordPiece {
         PyWordPiece::with_builder(builder, kwargs)
     }
 
+    /// Read a vocab_filename and stores result in memory
     #[staticmethod]
+    #[text_signature = "(vocab_filename)"]
     fn read_file(vocab_filename: &str) -> PyResult<Vocab> {
         WordPiece::read_file(vocab_filename).map_err(|e| {
             exceptions::PyValueError::new_err(format!("Error while reading WordPiece file: {}", e))
         })
     }
 
+    /// Convenient method to intialize a WordPiece from files
+    /// Roughly equivalent to
+    ///
+    /// def from_file(vocab_filename, **kwargs):
+    ///     vocab = WordPiece.read_file(vocab_filename)
+    ///     return WordPiece(vocab, **kwargs)
     #[staticmethod]
     #[args(kwargs = "**")]
+    #[text_signature = "(vocab_filename, merge_filename, **kwargs)"]
     fn from_file(py: Python, vocab_filename: &str, kwargs: Option<&PyDict>) -> PyResult<Py<Self>> {
         let vocab = WordPiece::read_file(vocab_filename).map_err(|e| {
             exceptions::PyValueError::new_err(format!("Error while reading WordPiece file: {}", e))
@@ -336,7 +405,18 @@ impl PyWordPiece {
     }
 }
 
+/// Most simple tokenizer model based on mapping token from a vocab file to their corresponding id.
+///
+/// Instantiate a WordLevel Model from the given vocab file.
+///
+///     Args:
+///         vocab: (`optional`) string:
+///             A dictionnary of string keys and their ids {"am": 0,...}
+///
+///         unk_token: str:
+///             The unknown token to be used by the model.
 #[pyclass(extends=PyModel, module = "tokenizers.models", name=WordLevel)]
+#[text_signature = "(self, vocab, unk_token)"]
 pub struct PyWordLevel {}
 
 impl PyWordLevel {
@@ -411,7 +491,16 @@ impl PyWordLevel {
     }
 }
 
+/// UnigramEncoding model class
+///
+/// Instantiate a Unigram Model from the given model file.
+///
+/// Args:
+///    vocab: ('`optional`) string:
+///        A list of vocabulary items and their relative score [("am", -0.2442),...]
+///
 #[pyclass(extends=PyModel, module = "tokenizers.models", name=Unigram)]
+#[text_signature = "(self, vocab)"]
 pub struct PyUnigram {}
 
 #[pymethods]
