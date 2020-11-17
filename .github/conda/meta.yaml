@@ -1,0 +1,28 @@
+{% set name = "tokenizers" %}
+{% set version = "master" %}
+
+package:
+  name: "{{ name|lower }}"
+  version: "{{ version }}"
+
+source:
+  path: ../../
+    
+
+requirements:
+  host:
+    - pip
+    - python
+    - setuptools-rust
+
+test:
+  imports:
+    - tokenizers
+    - tokenizers.models
+
+about:
+  home: https://huggingface.co
+  license: Apache License 2.0
+  license_file: LICENSE
+  summary: "💥Fast State-of-the-Art Tokenizers optimized for Research and Production"
+    
