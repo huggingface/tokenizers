@@ -1,0 +1,19 @@
+[package]
+name = "tokenizers-cpp"
+version = "0.1.0"
+authors = ["Alexey Romanov <romanov.alexey1@huawei.com>"]
+edition = "2018"
+
+[lib]
+name = "tokenizers"
+crate-type = ["cdylib"]
+
+[dependencies]
+cxx = "0.5.10"
+
+[dependencies.tokenizers]
+version = "*"
+path = "../../tokenizers"
+
+[build-dependencies]
+cxx-build = "0.5.10"
