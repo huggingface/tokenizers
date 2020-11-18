@@ -9,7 +9,7 @@
 namespace huggingface {
 namespace tokenizers {
 struct PreTokenizedString {
-    FFI_WRAPPER_MEMBERS(PreTokenizedString);
+    HFT_FFI_WRAPPER(PreTokenizedString);
 
 public:
     static HFT_RESULT(PreTokenizedString) from(const NormalizedString& str) {
@@ -18,7 +18,7 @@ public:
 };
 
 struct BertPreTokenizer {
-    FFI_WRAPPER_MEMBERS(BertPreTokenizer);
+    HFT_FFI_WRAPPER(BertPreTokenizer);
 
 public:
     BertPreTokenizer() : inner_(ffi::bert_pre_tokenizer()){};

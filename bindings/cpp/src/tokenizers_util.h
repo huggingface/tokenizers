@@ -2,7 +2,7 @@
 
 /** @file Shared code for all tokenizers-cpp modules (mostly macros) */
 
-#define BUILDER_ARG(type, name, default_value)                        \
+#define HFT_BUILDER_ARG(type, name, default_value)                    \
     type name = default_value;                                        \
     _Pragma("warning(suppress: 4458)") auto& with_##name(type name) { \
         this->name = name;                                            \
@@ -10,7 +10,7 @@
     }
 
 // Ideally we want inner_ to be private, but I couldn't make it compile
-#define FFI_WRAPPER_MEMBERS(type)                                              \
+#define HFT_FFI_WRAPPER(type)                                                  \
 public:                                                                        \
     type(const type&) = delete;                                                \
     type& operator=(const type&) = delete;                                     \

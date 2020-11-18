@@ -8,7 +8,7 @@
 namespace huggingface {
 namespace tokenizers {
 struct NormalizedString {
-    FFI_WRAPPER_MEMBERS(NormalizedString);
+    HFT_FFI_WRAPPER(NormalizedString);
 
 public:
     static HFT_RESULT(NormalizedString) from(const std::string& str) {
@@ -17,7 +17,7 @@ public:
 };
 
 struct BertNormalizer {
-    FFI_WRAPPER_MEMBERS(BertNormalizer);
+    HFT_FFI_WRAPPER(BertNormalizer);
 
 public:
     BertNormalizer(bool clean_text, bool handle_chinese_chars,
@@ -31,9 +31,9 @@ public:
 };
 
 struct BertNormalizerOptions {
-    BUILDER_ARG(bool, clean_text, true);
-    BUILDER_ARG(bool, handle_chinese_chars, true);
-    BUILDER_ARG(bool, lowercase, true);
+    HFT_BUILDER_ARG(bool, clean_text, true);
+    HFT_BUILDER_ARG(bool, handle_chinese_chars, true);
+    HFT_BUILDER_ARG(bool, lowercase, true);
 
     BertStripAccents strip_accents = BertStripAccents::DeterminedByLowercase;
 #pragma warning(suppress : 4458)
