@@ -1,5 +1,8 @@
 #pragma once
 
+#include "normalizers.h"
+#include "pre_tokenizers.h"
+
 #include <vector>
 #include <string>
 #include <memory>

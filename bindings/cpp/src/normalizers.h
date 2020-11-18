@@ -11,8 +11,9 @@ struct NormalizedString {
     FFI_WRAPPER_MEMBERS(NormalizedString);
 
 public:
-    explicit NormalizedString(const std::string& str)
-        : inner_(ffi::normalized_string(str)){};
+    static HFT_RESULT(NormalizedString) from(const std::string& str) {
+        HFT_TRY(NormalizedString, {ffi::normalized_string(str)});
+    }
 };
 
 struct BertNormalizer {
@@ -24,8 +25,8 @@ public:
         : inner_(ffi::bert_normalizer(clean_text, handle_chinese_chars,
                                       strip_accents, lowercase)){};
 
-    void normalize(NormalizedString& normalized) {
-        ffi::normalize_bert(*inner_, *normalized);
+    HFT_RESULT_VOID normalize(NormalizedString& normalized) {
+        HFT_TRY_VOID(ffi::normalize_bert(*inner_, *normalized));
     }
 };
 

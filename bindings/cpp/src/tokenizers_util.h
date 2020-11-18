@@ -1,5 +1,7 @@
 #pragma once
 
+/** @file Shared code for all tokenizers-cpp modules (mostly macros) */
+
 #define BUILDER_ARG(type, name, default_value)                        \
     type name = default_value;                                        \
     _Pragma("warning(suppress: 4458)") auto& with_##name(type name) { \
@@ -23,3 +25,44 @@ public:                                                                        \
     rust::Box<ffi::type> inner_;                                               \
                                                                                \
 private:
+
+#if !(defined(HFT_RESULT_VOID) && defined(HFT_RESULT) && \
+      defined(HFT_TRY_VOID) && defined(HFT_TRY))
+
+#if (defined(HFT_RESULT_VOID) || defined(HFT_RESULT) || \
+     defined(HFT_TRY_VOID) || defined(HFT_TRY))
+#error Either all or none of HFT_RESULT_VOID, HFT_RESULT, HFT_TRY_VOID, and HFT_TRY must be defined
+#endif
+
+/// C++-side equivalent of `Result<()>`. Can be defined as e.g.
+/// `std::expected<std::monostate, std::string>`. Default is `void`.
+#define HFT_RESULT_VOID void
+
+/// C++-side equivalent of `Result<T>`. Can be defined as e.g.
+/// `std::expected<T, std::string>`. Default is `T`.
+#define HFT_RESULT(T) T
+
+/// Calls a Rust function returning `Result<()>`. This should invoke `expr`,
+/// catch exceptions, and return a value of the type `HFT_RESULT_VOID`. E.g.
+/// ```
+/// try {
+///     function_call;
+///     return {};
+/// } catch (const std::exception& e) {
+///     return std::unexpected(std::string(e.what()));
+/// }
+/// ```
+#define HFT_TRY_VOID(expr) expr;
+
+/// Calls a Rust function returning `Result<T>`. If `HFT_RESULT`
+/// is redefined, this should return `expr` on success,
+/// and return a value of the corresponding type. E.g.
+/// ```
+/// try {
+///     return function_call;
+/// } catch (const std::exception& e) {
+///     return std::unexpected(std::string(e.what()));
+/// }
+/// ```
+#define HFT_TRY(T, expr) return expr;
+#endif

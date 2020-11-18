@@ -17,6 +17,7 @@ path = "../../tokenizers"
 
 [build-dependencies]
 cxx-build = "0.5.10"
+cc = "1.0.62"
 
 [features]
 test = []

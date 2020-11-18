@@ -28,4 +28,11 @@ fn main() {
     for file in rust_sources.iter().chain(cpp_headers.iter()) {
         println!("cargo:rerun-if-changed={}", file);
     }
+
+    if cfg!(feature = "test") {
+        cc::Build::new()
+            .includes(vec!["src", "target/cxxbridge"])
+            .file("src/redefine_result_tests.cpp")
+            .compile("redefine_result_tests");
+    }
 }
