@@ -11,10 +11,11 @@ fn main() {
         .iter()
         .map(|&name| format!("src/{}.rs", name))
         .collect();
-    let cpp_headers: Vec<_> = modules
+    let mut cpp_headers: Vec<_> = modules
         .iter()
         .map(|&name| format!("src/{}.h", name))
         .collect();
+    cpp_headers.push("src/tokenizers_util.h".to_string());
 
     let standard = "c++14";
 
