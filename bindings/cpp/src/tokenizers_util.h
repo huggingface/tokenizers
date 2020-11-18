@@ -1,12 +1,9 @@
 #pragma once
 
 #define BUILDER_ARG(type, name, default_value) \
-private:                                       \
-    type name##_ = default_value;              \
-                                               \
-public:                                        \
-    auto& name(type name) {                    \
-        this->name##_ = name;                  \
+    type name = default_value;                 \
+    auto& with_##name(type name) {             \
+        this->name = name;                     \
         return *this;                          \
     }
 

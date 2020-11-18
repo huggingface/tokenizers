@@ -25,24 +25,21 @@ struct BertNormalizer {
     }
 };
 
-class BertNormalizerOptions {
+struct BertNormalizerOptions {
     BUILDER_ARG(bool, clean_text, true);
     BUILDER_ARG(bool, handle_chinese_chars, true);
     BUILDER_ARG(bool, lowercase, true);
 
-private:
-    BertStripAccents strip_accents_ = BertStripAccents::DeterminedByLowercase;
-
-public:
-    BertNormalizerOptions& strip_accents(bool strip_accents) {
-        this->strip_accents_ =
+    BertStripAccents strip_accents = BertStripAccents::DeterminedByLowercase;
+    BertNormalizerOptions& with_strip_accents(bool strip_accents) {
+        this->strip_accents =
             strip_accents ? BertStripAccents::True : BertStripAccents::False;
         return *this;
     }
 
     BertNormalizer build() {
-        return {ffi::bert_normalizer(clean_text_, handle_chinese_chars_,
-                                     strip_accents_, lowercase_)};
+        return {ffi::bert_normalizer(clean_text, handle_chinese_chars,
+                                     strip_accents, lowercase)};
     }
 };
 
