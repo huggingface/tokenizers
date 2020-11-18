@@ -8,20 +8,24 @@
 namespace huggingface {
 namespace tokenizers {
 struct NormalizedString {
-    rust::Box<ffi::NormalizedString> inner_;
-    DELETE_COPY(NormalizedString);
+    FFI_WRAPPER_MEMBERS(NormalizedString);
 
-    static NormalizedString from(const std::string& str) {
-        return {ffi::normalized_string(str)};
-    }
+public:
+    explicit NormalizedString(const std::string& str)
+        : inner_(ffi::normalized_string(str)){};
 };
 
 struct BertNormalizer {
-    rust::Box<ffi::BertNormalizer> inner_;
-    DELETE_COPY(BertNormalizer);
+    FFI_WRAPPER_MEMBERS(BertNormalizer);
+
+public:
+    BertNormalizer(bool clean_text, bool handle_chinese_chars,
+                   BertStripAccents strip_accents, bool lowercase)
+        : inner_(ffi::bert_normalizer(clean_text, handle_chinese_chars,
+                                      strip_accents, lowercase)){};
 
     void normalize(NormalizedString& normalized) {
-        ffi::normalize_bert(*inner_, *normalized.inner_);
+        ffi::normalize_bert(*inner_, *normalized);
     }
 };
 
@@ -31,6 +35,7 @@ struct BertNormalizerOptions {
     BUILDER_ARG(bool, lowercase, true);
 
     BertStripAccents strip_accents = BertStripAccents::DeterminedByLowercase;
+#pragma warning(suppress : 4458)
     BertNormalizerOptions& with_strip_accents(bool strip_accents) {
         this->strip_accents =
             strip_accents ? BertStripAccents::True : BertStripAccents::False;
@@ -38,8 +43,8 @@ struct BertNormalizerOptions {
     }
 
     BertNormalizer build() {
-        return {ffi::bert_normalizer(clean_text, handle_chinese_chars,
-                                     strip_accents, lowercase)};
+        return BertNormalizer(clean_text, handle_chinese_chars, strip_accents,
+                              lowercase);
     }
 };
 
