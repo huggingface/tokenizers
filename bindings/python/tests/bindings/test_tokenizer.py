@@ -10,7 +10,7 @@ from ..utils import (
 
 from tokenizers import AddedToken, Tokenizer, Encoding
 from tokenizers.models import Model, BPE, WordPiece
-from tokenizers.pre_tokenizers import ByteLevel
+from tokenizers.pre_tokenizers import ByteLevel, Whitespace
 from tokenizers.processors import RobertaProcessing, BertProcessing
 from tokenizers.normalizers import Lowercase
 from tokenizers.implementations import BertWordPieceTokenizer
@@ -117,6 +117,7 @@ class TestTokenizer:
 
     def test_encode(self):
         tokenizer = Tokenizer(BPE())
+        tokenizer.pre_tokenizer = Whitespace()
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
 
         # Can encode single sequence
@@ -296,6 +297,7 @@ class TestTokenizer:
 
     def test_truncation(self):
         tokenizer = Tokenizer(BPE())
+        tokenizer.pre_tokenizer = Whitespace()
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.enable_truncation(2)
 
@@ -313,6 +315,7 @@ class TestTokenizer:
 
     def test_padding(self):
         tokenizer = Tokenizer(BPE())
+        tokenizer.pre_tokenizer = Whitespace()
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
 
         # By default it does nothing when encoding single sequence
@@ -373,6 +376,7 @@ class TestTokenizer:
 
     def test_post_process(self):
         tokenizer = Tokenizer(BPE())
+        tokenizer.pre_tokenizer = Whitespace()
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.enable_truncation(2)
         tokenizer.enable_padding(length=4)
@@ -389,6 +393,6 @@ class TestTokenizer:
         assert output.tokens == ["my", "pair", "[PAD]", "[PAD]"]
 
     def test_multiprocessing_with_parallelism(self):
-        tokenizer = Tokenizer(BPE())
+        tokenizer = Tokenizer(BPE(vocab={"[UNK]": 0}, merges=[], unk_token="[UNK]"))
         multiprocessing_with_parallelism(tokenizer, False)
         multiprocessing_with_parallelism(tokenizer, True)

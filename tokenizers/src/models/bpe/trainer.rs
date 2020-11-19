@@ -43,6 +43,7 @@ struct Config {
     initial_alphabet: HashSet<char>,
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
+    unk_token: Option<String>,
 }
 
 /// A `BpeTrainerBuilder` can be used to create a `BpeTrainer` with a custom
@@ -63,6 +64,7 @@ impl Default for BpeTrainerBuilder {
                 initial_alphabet: HashSet::new(),
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
+                unk_token: None,
             },
         }
     }
@@ -122,6 +124,12 @@ impl BpeTrainerBuilder {
         self
     }
 
+    /// Set the unk_token
+    pub fn unk_token(mut self, unk_token: String) -> Self {
+        self.config.unk_token = Some(unk_token);
+        self
+    }
+
     /// Constructs the final BpeTrainer
     pub fn build(self) -> BpeTrainer {
         BpeTrainer {
@@ -133,6 +141,7 @@ impl BpeTrainerBuilder {
             initial_alphabet: self.config.initial_alphabet,
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             end_of_word_suffix: self.config.end_of_word_suffix,
+            unk_token: self.config.unk_token,
         }
     }
 }
@@ -171,6 +180,8 @@ pub struct BpeTrainer {
     continuing_subword_prefix: Option<String>,
     /// An optional suffix to caracterize and end-of-word subword
     end_of_word_suffix: Option<String>,
+    /// An optional unk_token
+    unk_token: Option<String>,
 }
 
 impl Default for BpeTrainer {
@@ -407,6 +418,10 @@ impl BpeTrainer {
     pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<(BPE, Vec<AddedToken>)> {
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
+        if let Some(unk_token) = &self.unk_token {
+            word_to_id.insert(unk_token.to_string(), 0);
+            id_to_word.push(unk_token.to_string());
+        }
 
         let progress = self.setup_progress();
 
@@ -568,6 +583,9 @@ impl BpeTrainer {
         }
         if let Some(suffix) = &self.end_of_word_suffix {
             builder = builder.end_of_word_suffix(suffix.to_owned());
+        }
+        if let Some(unk_token) = &self.unk_token {
+            builder = builder.unk_token(unk_token.to_owned());
         }
         Ok((
             builder

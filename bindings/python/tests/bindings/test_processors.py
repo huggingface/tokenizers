@@ -5,7 +5,7 @@ from ..utils import data_dir, roberta_files
 
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
-from tokenizers.pre_tokenizers import ByteLevel as ByteLevelPreTokenizer
+from tokenizers.pre_tokenizers import ByteLevel as ByteLevelPreTokenizer, Whitespace
 from tokenizers.processors import (
     PostProcessor,
     BertProcessing,
@@ -28,6 +28,7 @@ class TestBertProcessing:
 
     def test_processing(self):
         tokenizer = Tokenizer(BPE())
+        tokenizer.pre_tokenizer = Whitespace()
         tokenizer.add_special_tokens(["[SEP]", "[CLS]"])
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.post_processor = BertProcessing(("[SEP]", 0), ("[CLS]", 1))
@@ -50,6 +51,7 @@ class TestRobertaProcessing:
 
     def test_processing(self):
         tokenizer = Tokenizer(BPE())
+        tokenizer.pre_tokenizer = Whitespace()
         tokenizer.add_special_tokens(["<s>", "</s>"])
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.post_processor = RobertaProcessing(("</s>", 1), ("<s>", 0))
@@ -152,6 +154,7 @@ class TestTemplateProcessing:
 
     def test_bert_parity(self):
         tokenizer = Tokenizer(BPE())
+        tokenizer.pre_tokenizer = Whitespace()
         tokenizer.add_special_tokens(["[SEP]", "[CLS]"])
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.post_processor = BertProcessing(("[SEP]", 0), ("[CLS]", 1))
@@ -164,6 +167,7 @@ class TestTemplateProcessing:
 
     def test_roberta_parity(self):
         tokenizer = Tokenizer(BPE())
+        tokenizer.pre_tokenizer = Whitespace()
         tokenizer.add_special_tokens(["<s>", "</s>"])
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.post_processor = RobertaProcessing(("</s>", 1), ("<s>", 0))

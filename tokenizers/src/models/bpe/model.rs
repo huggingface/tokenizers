@@ -383,6 +383,8 @@ impl BPE {
                         byte_len,
                     )),
                 };
+            } else {
+                return Err(Box::new(Error::UnkTokenNotDefined));
             }
         }
         if let Some((unk_id, unk_len)) = unk {
