@@ -2,8 +2,13 @@ from ..utils import data_dir, doc_wiki_tokenizer, doc_pipeline_bert_tokenizer
 from tokenizers import Tokenizer
 
 
+disable_printing = True
+original_print = print
+
+
 def print(*args, **kwargs):
-    pass
+    if not disable_printing:
+        original_print(*args, **kwargs)
 
 
 class TestPipeline:
@@ -103,7 +108,7 @@ class TestPipeline:
         from tokenizers import Tokenizer
         from tokenizers.models import WordPiece
 
-        bert_tokenizer = Tokenizer(WordPiece())
+        bert_tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
         # END bert_setup_tokenizer
         # START bert_setup_normalizer
         from tokenizers import normalizers
@@ -135,10 +140,7 @@ class TestPipeline:
             vocab_size=30522, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"]
         )
         files = [f"data/wikitext-103-raw/wiki.{split}.raw" for split in ["test", "train", "valid"]]
-        bert_tokenizer.train(trainer, files)
-
-        model_files = bert_tokenizer.model.save("data", "bert-wiki")
-        bert_tokenizer.model = WordPiece.from_file(*model_files, unk_token="[UNK]")
+        bert_tokenizer.train(files, trainer)
 
         bert_tokenizer.save("data/bert-wiki.json")
         # END bert_train_tokenizer
@@ -173,6 +175,7 @@ if __name__ == "__main__":
     from zipfile import ZipFile
     import os
 
+    disable_printing = False
     if not os.path.isdir("data/wikitext-103-raw"):
         print("Downloading wikitext-103...")
         wiki_text, _ = request.urlretrieve(

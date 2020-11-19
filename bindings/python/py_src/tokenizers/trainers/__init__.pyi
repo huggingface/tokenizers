@@ -83,6 +83,27 @@ class UnigramTrainer(Trainer):
     def __init__(self, vocab_size=8000, show_progress=True, special_tokens=[]):
         pass
 
+class WordLevelTrainer(Trainer):
+    """
+    Capable of training a WorldLevel model
+
+    Args:
+        vocab_size: unsigned int:
+            The size of the final vocabulary, including all tokens and alphabet.
+
+        min_frequency: unsigned int:
+            The minimum frequency a pair should have in order to be merged.
+
+        show_progress: boolean:
+            Whether to show progress bars while training.
+
+        special_tokens: List[Union[str, AddedToken]]:
+            A list of special tokens the model should know of.
+
+    Returns:
+        Trainer
+    """
+
 class WordPieceTrainer(Trainer):
     """
     Capable of training a WordPiece model

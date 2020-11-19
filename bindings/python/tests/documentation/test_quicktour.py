@@ -4,6 +4,14 @@ from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 
+disable_printing = True
+original_print = print
+
+
+def print(*args, **kwargs):
+    if not disable_printing:
+        original_print(*args, **kwargs)
+
 
 class TestQuicktour:
     # This method contains everything we don't want to run
@@ -13,12 +21,8 @@ class TestQuicktour:
 
         # START train
         files = [f"data/wikitext-103-raw/wiki.{split}.raw" for split in ["test", "train", "valid"]]
-        tokenizer.train(trainer, files)
+        tokenizer.train(files, trainer)
         # END train
-        # START reload_model
-        files = tokenizer.model.save("data", "wiki")
-        tokenizer.model = BPE.from_file(*files, unk_token="[UNK]")
-        # END reload_model
         # START save
         tokenizer.save("data/tokenizer-wiki.json")
         # END save
@@ -29,7 +33,7 @@ class TestQuicktour:
         from tokenizers import Tokenizer
         from tokenizers.models import BPE
 
-        tokenizer = Tokenizer(BPE())
+        tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
         # END init_tokenizer
         # START init_trainer
         from tokenizers.trainers import BpeTrainer
@@ -181,6 +185,7 @@ if __name__ == "__main__":
     from zipfile import ZipFile
     import os
 
+    disable_printing = False
     if not os.path.isdir("data/wikitext-103-raw"):
         print("Downloading wikitext-103...")
         wiki_text, _ = request.urlretrieve(
