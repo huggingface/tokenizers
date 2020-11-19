@@ -585,7 +585,7 @@ where
 
     /// Get the vocabulary
     pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
-        let mut final_vocab = self.model.get_vocab().clone();
+        let mut final_vocab = self.model.get_vocab();
 
         if with_added_tokens {
             let added_vocab = self.added_vocabulary.get_vocab();
@@ -763,7 +763,6 @@ where
                     .filter(|token| {
                         !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
                     })
-                    .map(|t| t.to_owned())
             })
             .collect::<Vec<_>>();
 
