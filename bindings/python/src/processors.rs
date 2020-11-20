@@ -93,14 +93,32 @@ impl PyPostProcessor {
     }
 
     /// Return the number of special tokens that would be added for single/pair sentences.
-    /// :param is_pair: Boolean indicating if the input would be a single sentence or a pair
-    /// :return:
+    ///
+    /// Args:
+    ///     is_pair (:obj:`bool`):
+    ///         Whether the input would be a pair of sequences
+    ///
+    /// Returns:
+    ///     :obj:`int`: The number of tokens to add
     #[text_signature = "(self, is_pair)"]
     fn num_special_tokens_to_add(&self, is_pair: bool) -> usize {
         self.processor.added_tokens(is_pair)
     }
 
     /// Post-process the given encodings, generating the final one
+    ///
+    /// Args:
+    ///     encoding (:class:`~tokenizers.Encoding`):
+    ///         The encoding for the first sequence
+    ///
+    ///     pair (:class:`~tokenizers.Encoding`, `optional`):
+    ///         The encoding for the pair sequence
+    ///
+    ///     add_special_tokens (:obj:`bool`):
+    ///         Whether to add the special tokens
+    ///
+    /// Return:
+    ///     :class:`~tokenizers.Encoding`: The final encoding
     #[args(pair = "None", add_special_tokens = "true")]
     #[text_signature = "(self, encoding, pair=None, add_special_tokens=True)"]
     fn process(
@@ -121,17 +139,16 @@ impl PyPostProcessor {
 
 /// This post-processor takes care of adding the special tokens needed by
 /// a Bert model:
+///
 ///     - a SEP token
 ///     - a CLS token
+///
 /// Args:
-///     sep: Tuple[str, int]:
+///     sep (:obj:`Tuple[str, int]`):
 ///         A tuple with the string representation of the SEP token, and its id
 ///
-///     cls: Tuple[str, int]:
+///     cls (:obj:`Tuple[str, int]`):
 ///         A tuple with the string representation of the CLS token, and its id
-///
-/// Returns:
-///     PostProcessor
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=BertProcessing)]
 #[text_signature = "(self, sep, cls)"]
 pub struct PyBertProcessing {}
@@ -152,29 +169,28 @@ impl PyBertProcessing {
 
 /// This post-processor takes care of adding the special tokens needed by
 /// a Roberta model:
+///
 ///     - a SEP token
 ///     - a CLS token
 ///
 /// It also takes care of trimming the offsets.
 /// By default, the ByteLevel BPE might include whitespaces in the produced tokens. If you don't
 /// want the offsets to include these whitespaces, then this PostProcessor should be initialized
-/// with `trim_offsets=True`
+/// with :obj:`trim_offsets=True`
+///
 /// Args:
-///     sep: Tuple[str, int]:
+///     sep (:obj:`Tuple[str, int]`):
 ///         A tuple with the string representation of the SEP token, and its id
 ///
-///     cls: Tuple[str, int]:
+///     cls (:obj:`Tuple[str, int]`):
 ///         A tuple with the string representation of the CLS token, and its id
 ///
-///     trim_offsets: bool:
+///     trim_offsets (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to trim the whitespaces from the produced offsets.
 ///
-///     add_prefix_space: bool:
+///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether the add_prefix_space option was enabled during pre-tokenization. This
 ///         is relevant because it defines the way the offsets are trimmed out.
-///
-/// Returns:
-///     PostProcessor
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=RobertaProcessing)]
 #[text_signature = "(self, sep, cls, trim_offsets=True, add_prefix_space=True)"]
 pub struct PyRobertaProcessing {}
@@ -203,11 +219,12 @@ impl PyRobertaProcessing {
 }
 
 /// This post-processor takes care of trimming the offsets.
+///
 /// By default, the ByteLevel BPE might include whitespaces in the produced tokens. If you don't
 /// want the offsets to include these whitespaces, then this PostProcessor must be used.
 ///
 /// Args:
-///     trim_offsets: bool:
+///     trim_offsets (:obj:`bool`):
 ///         Whether to trim the whitespaces from the produced offsets.
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=ByteLevel)]
 #[text_signature = "(self, trim_offsets=True)"]
@@ -215,19 +232,14 @@ pub struct PyByteLevel {}
 #[pymethods]
 impl PyByteLevel {
     #[new]
-    #[args(kwargs = "**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyPostProcessor)> {
+    #[args(trim_offsets = "None")]
+    fn new(trim_offsets: Option<bool>) -> PyResult<(Self, PyPostProcessor)> {
         let mut byte_level = ByteLevel::default();
 
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
-                    "trim_offsets" => byte_level = byte_level.trim_offsets(value.extract()?),
-                    _ => println!("Ignored unknown kwargs option {}", key),
-                }
-            }
+        if let Some(to) = trim_offsets {
+            byte_level = byte_level.trim_offsets(to);
         }
+
         Ok((
             PyByteLevel {},
             PyPostProcessor::new(Arc::new(byte_level.into())),
@@ -305,35 +317,36 @@ impl FromPyObject<'_> for PyTemplate {
 /// Provides a way to specify templates in order to add the special tokens to each
 /// input sequence as relevant.
 ///
-/// Let's take `BERT` tokenizer as an example. It uses two special tokens, used to
-/// delimitate each sequence. `[CLS]` is always used at the beginning of the first
-/// sequence, and `[SEP]` is added at the end of both the first, and the pair
+/// Let's take :obj:`BERT` tokenizer as an example. It uses two special tokens, used to
+/// delimitate each sequence. :obj:`[CLS]` is always used at the beginning of the first
+/// sequence, and :obj:`[SEP]` is added at the end of both the first, and the pair
 /// sequences. The final result looks like this:
-///     - Single sequence: `[CLS] Hello there [SEP]`
-///     - Pair sequences: `[CLS] My name is Anthony [SEP] What is my name? [SEP]`
-/// With the type ids as following:
-/// ```markdown
-/// [CLS]   ...   [SEP]   ...   [SEP]
-///   0      0      0      1      1
-/// ```
 ///
-/// You can achieve such behavior using a TemplateProcessing:
-/// ```
-/// TemplateProcessing(
-///     single="[CLS] $0 [SEP]",
-///     pair="[CLS] $A [SEP] $B:1 [SEP]:1",
-///     special_tokens=[("[CLS]", 1), ("[SEP]", 0)],
-/// )
-/// ```
+///     - Single sequence: :obj:`[CLS] Hello there [SEP]`
+///     - Pair sequences: :obj:`[CLS] My name is Anthony [SEP] What is my name? [SEP]`
 ///
-/// In this example, each input sequence is identified using a `$` construct. This identifier
+/// With the type ids as following::
+///
+///     [CLS]   ...   [SEP]   ...   [SEP]
+///       0      0      0      1      1
+///
+/// You can achieve such behavior using a TemplateProcessing::
+///
+///     TemplateProcessing(
+///         single="[CLS] $0 [SEP]",
+///         pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+///         special_tokens=[("[CLS]", 1), ("[SEP]", 0)],
+///     )
+///
+/// In this example, each input sequence is identified using a ``$`` construct. This identifier
 /// lets us specify each input sequence, and the type_id to use. When nothing is specified,
 /// it uses the default values. Here are the different ways to specify it:
-/// - Specifying the sequence, with default `type_id == 0`: `$A` or `$B`
-/// - Specifying the `type_id` with default `sequence == A`: `$0`, `$1`, `$2`, ...
-/// - Specifying both: `$A:0`, `$B:1`, ...
 ///
-/// The same construct is used for special tokens: `<identifier>(:<type_id>)?`.
+///     - Specifying the sequence, with default ``type_id == 0``: ``$A`` or ``$B``
+///     - Specifying the `type_id` with default ``sequence == A``: ``$0``, ``$1``, ``$2``, ...
+///     - Specifying both: ``$A:0``, ``$B:1``, ...
+///
+/// The same construct is used for special tokens: ``<identifier>(:<type_id>)?``.
 ///
 /// **Warning**: You must ensure that you are giving the correct tokens/ids as these
 /// will be added to the Encoding without any further check. If the given ids correspond
@@ -341,27 +354,30 @@ impl FromPyObject<'_> for PyTemplate {
 /// might lead to unexpected results.
 ///
 /// Args:
-///     single: Template
+///     single (:obj:`Template`):
 ///         The template used for single sequences
 ///
-///     pair: Template:
+///     pair (:obj:`Template`):
 ///         The template used when both sequences are specified
 ///
-///     special_tokens: Tokens:
+///     special_tokens (:obj:`Tokens`):
 ///         The list of special tokens used in each sequences
 ///
-/// Template: Union[str, List[str]]:
-///     - If a `str` is provided, the whitespace is used as delimiter between tokens
-///     - If a `List[str]` is provided, a list of tokens
+/// Types:
 ///
-/// Tokens: List[Union[Tuple[int, str], Tuple[str, int], dict]]:
-///     - A Tuple with both a token and its associated ID, in any order
-///     - A dict with the following keys:
-///         - "id": str => The special token id, as specified in the Template
-///         - "ids": List[int] => The associated IDs
-///         - "tokens": List[str] => The associated tokens
-///      The given dict expects the provided `ids` and `tokens` lists to have
-///      the same length.
+///     Template (:obj:`str` or :obj:`List`):
+///         - If a :obj:`str` is provided, the whitespace is used as delimiter between tokens
+///         - If a :obj:`List[str]` is provided, a list of tokens
+///
+///     Tokens (:obj:`List[Union[Tuple[int, str], Tuple[str, int], dict]]`):
+///         - A :obj:`Tuple` with both a token and its associated ID, in any order
+///         - A :obj:`dict` with the following keys:
+///             - "id": :obj:`str` => The special token id, as specified in the Template
+///             - "ids": :obj:`List[int]` => The associated IDs
+///             - "tokens": :obj:`List[str]` => The associated tokens
+///
+///          The given dict expects the provided :obj:`ids` and :obj:`tokens` lists to have
+///          the same length.
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=TemplateProcessing)]
 #[text_signature = "(self, single, pair, special_tokens)"]
 pub struct PyTemplateProcessing {}
