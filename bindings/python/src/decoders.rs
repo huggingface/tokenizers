@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::utils::PyChar;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -86,7 +87,14 @@ impl PyDecoder {
         }
     }
 
-    /// Decode the given list of string to a final string
+    /// Decode the given list of tokens to a final string
+    ///
+    /// Args:
+    ///     tokens (:obj:`List[str]`):
+    ///         The list of tokens to decode
+    ///
+    /// Returns:
+    ///     :obj:`str`: The decoded string
     #[text_signature = "(self, tokens)"]
     fn decode(&self, tokens: Vec<String>) -> PyResult<String> {
         ToPyResult(self.decoder.decode(tokens)).into()
@@ -94,6 +102,9 @@ impl PyDecoder {
 }
 
 /// ByteLevel Decoder
+///
+/// This decoder is to be used in tandem with the :class:`~tokenizers.pre_tokenizers.ByteLevel`
+/// :class:`~tokenizers.pre_tokenizers.PreTokenizer`.
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=ByteLevel)]
 #[text_signature = "(self)"]
 pub struct PyByteLevelDec {}
@@ -105,12 +116,13 @@ impl PyByteLevelDec {
     }
 }
 
-/// Instantiate a new WordPiece Decoder
+/// WordPiece Decoder
 ///
 /// Args:
-///     prefix: str:
+///     prefix (:obj:`str`, `optional`, defaults to :obj:`##`):
 ///         The prefix to use for subwords that are not a beginning-of-word
-///     cleanup: bool:
+///
+///     cleanup (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to cleanup some tokenization artifacts. Mainly spaces before punctuation,
 ///         and some abbreviated english forms.
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=WordPiece)]
@@ -119,32 +131,20 @@ pub struct PyWordPieceDec {}
 #[pymethods]
 impl PyWordPieceDec {
     #[new]
-    #[args(kwargs = "**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyDecoder)> {
-        let mut prefix = String::from("##");
-        let mut cleanup = true;
-
-        if let Some(kwargs) = kwargs {
-            if let Some(p) = kwargs.get_item("prefix") {
-                prefix = p.extract()?;
-            }
-            if let Some(c) = kwargs.get_item("cleanup") {
-                cleanup = c.extract()?;
-            }
-        }
-
+    #[args(prefix = "String::from(\"##\")", cleanup = "true")]
+    fn new(prefix: String, cleanup: bool) -> PyResult<(Self, PyDecoder)> {
         Ok((PyWordPieceDec {}, WordPiece::new(prefix, cleanup).into()))
     }
 }
 
-/// Instantiate a new Metaspace
+/// Metaspace Decoder
 ///
 /// Args:
-///     replacement: str:
+///     replacement (:obj:`str`, `optional`, defaults to :obj:`▁`):
 ///         The replacement character. Must be exactly one character. By default we
 ///         use the `▁` (U+2581) meta symbol (Same as in SentencePiece).
 ///
-///     add_prefix_space: boolean:
+///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=Metaspace)]
@@ -153,38 +153,19 @@ pub struct PyMetaspaceDec {}
 #[pymethods]
 impl PyMetaspaceDec {
     #[new]
-    #[args(kwargs = "**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyDecoder)> {
-        let mut replacement = '▁';
-        let mut add_prefix_space = true;
-
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
-                    "replacement" => {
-                        let s: &str = value.extract()?;
-                        replacement = s.chars().next().ok_or_else(|| {
-                            exceptions::PyValueError::new_err("replacement must be a character")
-                        })?;
-                    }
-                    "add_prefix_space" => add_prefix_space = value.extract()?,
-                    _ => println!("Ignored unknown kwarg option {}", key),
-                }
-            }
-        }
-
+    #[args(replacement = "PyChar('▁')", add_prefix_space = "true")]
+    fn new(replacement: PyChar, add_prefix_space: bool) -> PyResult<(Self, PyDecoder)> {
         Ok((
             PyMetaspaceDec {},
-            Metaspace::new(replacement, add_prefix_space).into(),
+            Metaspace::new(replacement.0, add_prefix_space).into(),
         ))
     }
 }
 
-/// Instantiate a new BPEDecoder
+/// BPEDecoder Decoder
 ///
 /// Args:
-///     suffix: str:
+///     suffix (:obj:`str`, `optional`, defaults to :obj:`</w>`):
 ///         The suffix that was used to caracterize an end-of-word. This suffix will
 ///         be replaced by whitespaces during the decoding
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=BPEDecoder)]
@@ -193,20 +174,8 @@ pub struct PyBPEDecoder {}
 #[pymethods]
 impl PyBPEDecoder {
     #[new]
-    #[args(kwargs = "**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyDecoder)> {
-        let mut suffix = String::from("</w>");
-
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
-                    "suffix" => suffix = value.extract()?,
-                    _ => println!("Ignored unknown kwarg option {}", key),
-                }
-            }
-        }
-
+    #[args(suffix = "String::from(\"</w>\")")]
+    fn new(suffix: String) -> PyResult<(Self, PyDecoder)> {
         Ok((PyBPEDecoder {}, BPEDecoder::new(suffix).into()))
     }
 }

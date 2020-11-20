@@ -38,7 +38,7 @@ class TestMetaspace:
     def test_instantiate(self):
         assert Metaspace() is not None
         assert Metaspace(replacement="-") is not None
-        with pytest.raises(Exception, match="replacement must be a character"):
+        with pytest.raises(ValueError, match="expected a string of length 1"):
             Metaspace(replacement="")
         assert Metaspace(add_prefix_space=True) is not None
         assert isinstance(Metaspace(), Decoder)
