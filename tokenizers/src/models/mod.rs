@@ -153,19 +153,19 @@ impl Trainer for TrainerWrapper {
         match self {
             TrainerWrapper::BpeTrainer(t) => match model {
                 ModelWrapper::BPE(bpe) => t.train(words, bpe),
-                _ => unreachable!(),
+                _ => Err("BpeTrainer can only train a BPE".into()),
             },
             TrainerWrapper::WordPieceTrainer(t) => match model {
                 ModelWrapper::WordPiece(wp) => t.train(words, wp),
-                _ => unreachable!(),
+                _ => Err("WordPieceTrainer can only train a WordPiece".into()),
             },
             TrainerWrapper::WordLevelTrainer(t) => match model {
                 ModelWrapper::WordLevel(wl) => t.train(words, wl),
-                _ => unreachable!(),
+                _ => Err("WordLevelTrainer can only train a WordLevel".into()),
             },
             TrainerWrapper::UnigramTrainer(t) => match model {
                 ModelWrapper::Unigram(u) => t.train(words, u),
-                _ => unreachable!(),
+                _ => Err("UnigramTrainer can only train a Unigram".into()),
             },
         }
     }
@@ -184,3 +184,17 @@ impl_enum_from!(BpeTrainer, TrainerWrapper, BpeTrainer);
 impl_enum_from!(WordPieceTrainer, TrainerWrapper, WordPieceTrainer);
 impl_enum_from!(UnigramTrainer, TrainerWrapper, UnigramTrainer);
 impl_enum_from!(WordLevelTrainer, TrainerWrapper, WordLevelTrainer);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trainer_wrapper_train_model_wrapper() {
+        let trainer = TrainerWrapper::BpeTrainer(BpeTrainer::default());
+        let mut model = ModelWrapper::Unigram(Unigram::default());
+
+        let result = trainer.train(HashMap::new(), &mut model);
+        assert!(result.is_err());
+    }
+}

@@ -92,3 +92,10 @@ class TestUnigram:
             "t ",
             "[SEP]",
         ]
+
+    def test_cannot_train_different_model(self):
+        tokenizer = Tokenizer(models.BPE())
+        trainer = trainers.UnigramTrainer(show_progress=False)
+
+        with pytest.raises(Exception, match="UnigramTrainer can only train a Unigram"):
+            tokenizer.train([], trainer)
