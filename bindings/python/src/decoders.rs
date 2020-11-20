@@ -3,6 +3,7 @@ use std::sync::Arc;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3::PyObjectProtocol;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::decoders::bpe::BPEDecoder;
@@ -90,6 +91,12 @@ impl PyDecoder {
     #[text_signature = "(self, tokens)"]
     fn decode(&self, tokens: Vec<String>) -> PyResult<String> {
         ToPyResult(self.decoder.decode(tokens)).into()
+    }
+}
+#[pyproto]
+impl PyObjectProtocol for PyDecoder {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{:?}", self.decoder))
     }
 }
 
@@ -211,7 +218,7 @@ impl PyBPEDecoder {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct CustomDecoder {
     inner: PyObject,
 }
@@ -254,7 +261,7 @@ impl<'de> Deserialize<'de> for CustomDecoder {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub(crate) enum PyDecoderWrapper {
     Custom(Arc<CustomDecoder>),

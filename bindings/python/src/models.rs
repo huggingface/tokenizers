@@ -7,6 +7,7 @@ use crate::trainers::PyTrainer;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3::PyObjectProtocol;
 use serde::{Deserialize, Serialize};
 use tk::models::bpe::{BpeBuilder, Merges, Vocab, BPE};
 use tk::models::unigram::Unigram;
@@ -155,6 +156,12 @@ impl PyModel {
         PyTrainer::from(self.model.read().unwrap().get_trainer()).get_as_subtype()
     }
 }
+#[pyproto]
+impl PyObjectProtocol for PyModel {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{:?}", self.model))
+    }
+}
 
 /// Instantiate a BPE Model from the given vocab and merges.
 ///
@@ -222,6 +229,12 @@ impl PyBPE {
             ))),
             Ok(bpe) => Ok((PyBPE {}, PyModel::new(Arc::new(RwLock::new(bpe.into()))))),
         }
+    }
+}
+#[pyproto]
+impl PyObjectProtocol for PyBPE {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok("BPE()".to_string())
     }
 }
 
@@ -543,6 +556,12 @@ impl PyUnigram {
                 "`vocab` and `unk_id` must be both specified",
             )),
         }
+    }
+}
+#[pyproto]
+impl PyObjectProtocol for PyUnigram {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok("Unigram()".to_string())
     }
 }
 
