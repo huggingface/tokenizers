@@ -9,12 +9,34 @@ class Normalizer:
 
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
 
@@ -26,22 +48,19 @@ class BertNormalizer(Normalizer):
     This includes cleaning the text, handling accents, chinese chars and lowercasing
 
     Args:
-        clean_text: (`optional`) boolean:
+        clean_text (:obj:`bool`, `optional`, defaults to :obj:`True`):
             Whether to clean the text, by removing any control characters
             and replacing all whitespaces by the classic one.
 
-        handle_chinese_chars: (`optional`) boolean:
+        handle_chinese_chars (:obj:`bool`, `optional`, defaults to :obj:`True`):
             Whether to handle chinese chars by putting spaces around them.
 
-        strip_accents: (`optional`) boolean:
+        strip_accents (:obj:`bool`, `optional`):
             Whether to strip all accents. If this option is not specified (ie == None),
             then it will be determined by the value for `lowercase` (as in the original Bert).
 
-        lowercase: (`optional`) boolean:
+        lowercase (:obj:`bool`, `optional`, defaults to :obj:`True`):
             Whether to lowercase.
-
-    Returns:
-        Normalizer
     """
 
     def __init__(
@@ -50,12 +69,34 @@ class BertNormalizer(Normalizer):
         pass
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
 
@@ -68,12 +109,34 @@ class Lowercase(Normalizer):
         pass
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
 
@@ -86,12 +149,34 @@ class NFC(Normalizer):
         pass
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
 
@@ -104,12 +189,34 @@ class NFD(Normalizer):
         pass
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
 
@@ -122,12 +229,34 @@ class NFKC(Normalizer):
         pass
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
 
@@ -140,12 +269,34 @@ class NFKD(Normalizer):
         pass
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
 
@@ -158,12 +309,34 @@ class Nmt(Normalizer):
         pass
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
 
@@ -177,12 +350,34 @@ class Precompiled(Normalizer):
         pass
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
 
@@ -195,12 +390,34 @@ class Replace(Normalizer):
         pass
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
 
@@ -210,18 +427,40 @@ class Sequence(Normalizer):
     All the normalizers run in sequence in the given order
 
     Args:
-        normalizers: List[Normalizer]:
+        normalizers (:obj:`List[Normalizer]`):
             A list of Normalizer to be run as a sequence
     """
 
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
 
@@ -234,25 +473,73 @@ class Strip(Normalizer):
         pass
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
 
 class StripAccents(Normalizer):
+    """
+    StripAccents normalizer
+    """
+
     def __init__(self):
         pass
     def normalize(self, normalized):
         """
-        Normalize the given NormalizedString in-place
+        Normalize a :class:`~tokenizers.NormalizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.NormalizedString` to
+        keep track of the alignment information. If you just want to see the result
+        of the normalization on a raw string, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+
+        Args:
+            normalized (:class:`~tokenizers.NormalizedString`):
+                The normalized string on which to apply this
+                :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
     def normalize_str(self, sequence):
         """
-        Normalize the given str
+        Normalize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+        information. If you need to get/convert offsets, you can use
+        :meth:`~tokenizers.normalizers.Normalizer.normalize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to normalize
+
+        Returns:
+            :obj:`str`: A string after normalization
         """
         pass
