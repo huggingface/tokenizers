@@ -2,11 +2,12 @@ extern crate tokenizers as tk;
 
 use crate::extraction::*;
 use crate::tasks::models::{BPEFromFilesTask, WordLevelFromFilesTask, WordPieceFromFilesTask};
+use crate::trainers::Trainer;
 use neon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use tk::models::{
     bpe::{BpeBuilder, Merges, Vocab},
@@ -21,37 +22,46 @@ use tk::Token;
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Model {
     #[serde(flatten)]
-    pub model: Option<Arc<ModelWrapper>>,
+    pub model: Option<Arc<RwLock<ModelWrapper>>>,
 }
 
-impl From<ModelWrapper> for Model {
-    fn from(wrapper: ModelWrapper) -> Self {
+impl<M> From<M> for Model
+where
+    M: Into<ModelWrapper>,
+{
+    fn from(wrapper: M) -> Self {
         Self {
-            model: Some(Arc::new(wrapper)),
+            model: Some(Arc::new(RwLock::new(wrapper.into()))),
         }
     }
 }
 
 impl tk::Model for Model {
+    type Trainer = Trainer;
+
     fn tokenize(&self, sequence: &str) -> tk::Result<Vec<Token>> {
         self.model
             .as_ref()
             .ok_or("Uninitialized Model")?
+            .read()
+            .unwrap()
             .tokenize(sequence)
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.model.as_ref()?.token_to_id(token)
+        self.model.as_ref()?.read().unwrap().token_to_id(token)
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
-        self.model.as_ref()?.id_to_token(id)
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.model.as_ref()?.read().unwrap().id_to_token(id)
     }
 
-    fn get_vocab(&self) -> &HashMap<String, u32> {
+    fn get_vocab(&self) -> HashMap<String, u32> {
         self.model
             .as_ref()
             .expect("Uninitialized Model")
+            .read()
+            .unwrap()
             .get_vocab()
     }
 
@@ -59,6 +69,8 @@ impl tk::Model for Model {
         self.model
             .as_ref()
             .expect("Uninitialized Model")
+            .read()
+            .unwrap()
             .get_vocab_size()
     }
 
@@ -66,7 +78,19 @@ impl tk::Model for Model {
         self.model
             .as_ref()
             .ok_or("Uninitialized Model")?
+            .read()
+            .unwrap()
             .save(folder, name)
+    }
+
+    fn get_trainer(&self) -> Self::Trainer {
+        self.model
+            .as_ref()
+            .expect("Uninitialized Model")
+            .read()
+            .unwrap()
+            .get_trainer()
+            .into()
     }
 }
 
@@ -86,7 +110,8 @@ declare_types! {
             let guard = cx.lock();
 
             let files = this.borrow(&guard)
-                .model.as_ref().unwrap()
+                .model.as_ref().expect("Uninitialized Model")
+                .read().unwrap()
                 .save(
                     Path::new(&folder),
                     name.as_deref()
@@ -153,7 +178,7 @@ fn bpe_init(mut cx: FunctionContext) -> JsResult<JsModel> {
 
     let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_model.borrow_mut(&guard).model = Some(Arc::new(model.into()));
+    js_model.borrow_mut(&guard).model = Some(Arc::new(RwLock::new(model.into())));
 
     Ok(js_model)
 }
@@ -191,7 +216,7 @@ fn bpe_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     let bpe = tk::models::bpe::BPE::default();
 
     let guard = cx.lock();
-    model.borrow_mut(&guard).model = Some(Arc::new(bpe.into()));
+    model.borrow_mut(&guard).model = Some(Arc::new(RwLock::new(bpe.into())));
 
     Ok(model)
 }
@@ -236,7 +261,7 @@ fn wordpiece_init(mut cx: FunctionContext) -> JsResult<JsModel> {
 
     let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_model.borrow_mut(&guard).model = Some(Arc::new(model.into()));
+    js_model.borrow_mut(&guard).model = Some(Arc::new(RwLock::new(model.into())));
 
     Ok(js_model)
 }
@@ -270,7 +295,7 @@ fn wordpiece_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     let wordpiece = tk::models::wordpiece::WordPiece::default();
 
     let guard = cx.lock();
-    model.borrow_mut(&guard).model = Some(Arc::new(wordpiece.into()));
+    model.borrow_mut(&guard).model = Some(Arc::new(RwLock::new(wordpiece.into())));
 
     Ok(model)
 }
@@ -305,7 +330,7 @@ fn wordlevel_init(mut cx: FunctionContext) -> JsResult<JsModel> {
 
     let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_model.borrow_mut(&guard).model = Some(Arc::new(model.into()));
+    js_model.borrow_mut(&guard).model = Some(Arc::new(RwLock::new(model.into())));
 
     Ok(js_model)
 }
@@ -337,7 +362,7 @@ fn wordlevel_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     let wordlevel = tk::models::wordlevel::WordLevel::default();
 
     let guard = cx.lock();
-    model.borrow_mut(&guard).model = Some(Arc::new(wordlevel.into()));
+    model.borrow_mut(&guard).model = Some(Arc::new(RwLock::new(wordlevel.into())));
 
     Ok(model)
 }
@@ -362,7 +387,7 @@ fn unigram_init(mut cx: FunctionContext) -> JsResult<JsModel> {
 
     let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_model.borrow_mut(&guard).model = Some(Arc::new(unigram.into()));
+    js_model.borrow_mut(&guard).model = Some(Arc::new(RwLock::new(unigram.into())));
 
     Ok(js_model)
 }
@@ -373,7 +398,7 @@ fn unigram_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
     let unigram = tk::models::unigram::Unigram::default();
 
     let guard = cx.lock();
-    model.borrow_mut(&guard).model = Some(Arc::new(unigram.into()));
+    model.borrow_mut(&guard).model = Some(Arc::new(RwLock::new(unigram.into())));
 
     Ok(model)
 }

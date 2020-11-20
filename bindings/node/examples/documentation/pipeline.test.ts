@@ -94,7 +94,7 @@ describe("pipelineExample", () => {
         let { Tokenizer } = require("tokenizers/bindings/tokenizer");
         let { WordPiece } = require("tokenizers/bindings/models");
 
-        let bertTokenizer = new Tokenizer(WordPiece.empty());
+        let bertTokenizer = new Tokenizer(WordPiece.init({}, { unkToken: "[UNK]" }));
         // END bert_setup_tokenizer
         // START bert_setup_normalizer
         let { sequenceNormalizer, lowercaseNormalizer, nfdNormalizer, stripAccentsNormalizer }
@@ -120,20 +120,13 @@ describe("pipelineExample", () => {
         // END bert_setup_processor
         // START bert_train_tokenizer
         let { wordPieceTrainer } = require("tokenizers/bindings/trainers");
-        let { promisify } = require("util");
 
         let trainer = wordPieceTrainer({
             vocabSize: 30522,
             specialTokens: ["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"]
         });
         let files = ["test", "train", "valid"].map(split => `data/wikitext-103-raw/wiki.${split}.raw`);
-        bertTokenizer.train(trainer, files);
-
-        let modelFiles = bertTokenizer.getModel().save("data", "bert-wiki");
-        let fromFile = promisify(WordPiece.fromFile);
-        bertTokenizer.setModel(await fromFile(modelFiles[0], {
-            unkToken: "[UNK]"
-        }));
+        bertTokenizer.train(files, trainer);
 
         bertTokenizer.save("data/bert-wiki.json")
         // END bert_train_tokenizer
