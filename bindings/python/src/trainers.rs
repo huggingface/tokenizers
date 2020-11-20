@@ -301,34 +301,41 @@ impl PyWordLevelTrainer {
     #[new]
     #[args(kwargs = "**")]
     pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
-        let mut trainer = tk::models::wordlevel::WordLevelTrainer::default();
+        let mut builder = tk::models::wordlevel::WordLevelTrainer::builder();
 
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
                 let key: &str = key.extract()?;
                 match key {
-                    "vocab_size" => trainer.vocab_size = val.extract()?,
-                    "min_frequency" => trainer.min_frequency = val.extract()?,
-                    "show_progress" => trainer.show_progress = val.extract()?,
+                    "vocab_size" => {
+                        builder.vocab_size(val.extract()?);
+                    }
+                    "min_frequency" => {
+                        builder.min_frequency(val.extract()?);
+                    }
+                    "show_progress" => {
+                        builder.show_progress(val.extract()?);
+                    }
                     "special_tokens" => {
-                        trainer.special_tokens = val
-                            .cast_as::<PyList>()?
-                            .into_iter()
-                            .map(|token| {
-                                if let Ok(content) = token.extract::<String>() {
-                                    Ok(PyAddedToken::from(content, Some(true)).get_token())
-                                } else if let Ok(mut token) =
-                                    token.extract::<PyRefMut<PyAddedToken>>()
-                                {
-                                    token.is_special_token = true;
-                                    Ok(token.get_token())
-                                } else {
-                                    Err(exceptions::PyTypeError::new_err(
-                                        "special_tokens must be a List[Union[str, AddedToken]]",
-                                    ))
-                                }
-                            })
-                            .collect::<PyResult<Vec<_>>>()?
+                        builder.special_tokens(
+                            val.cast_as::<PyList>()?
+                                .into_iter()
+                                .map(|token| {
+                                    if let Ok(content) = token.extract::<String>() {
+                                        Ok(PyAddedToken::from(content, Some(true)).get_token())
+                                    } else if let Ok(mut token) =
+                                        token.extract::<PyRefMut<PyAddedToken>>()
+                                    {
+                                        token.is_special_token = true;
+                                        Ok(token.get_token())
+                                    } else {
+                                        Err(exceptions::PyTypeError::new_err(
+                                            "special_tokens must be a List[Union[str, AddedToken]]",
+                                        ))
+                                    }
+                                })
+                                .collect::<PyResult<Vec<_>>>()?,
+                        );
                     }
                     _ => println!("Ignored unknown kwargs option {}", key),
                 }
@@ -337,7 +344,12 @@ impl PyWordLevelTrainer {
 
         Ok((
             PyWordLevelTrainer {},
-            PyTrainer::new(Arc::new(trainer.into())),
+            PyTrainer::new(Arc::new(
+                builder
+                    .build()
+                    .expect("WordLevelTrainerBuilder cannot fail")
+                    .into(),
+            )),
         ))
     }
 }
