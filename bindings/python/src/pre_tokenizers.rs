@@ -125,13 +125,38 @@ impl PyPreTokenizer {
         }
     }
 
-    /// Pre tokenize the given PreTokenizedString in-place
+    /// Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
+    ///
+    /// This method allows to modify a :class:`~tokenizers.PreTokenizedString` to
+    /// keep track of the pre-tokenization, and leverage the capabilities of the
+    /// :class:`~tokenizers.PreTokenizedString`. If you just want to see the result of
+    /// the pre-tokenization of a raw string, you can use
+    /// :meth:`~tokenizers.pre_tokenizers.PreTokenizer.pre_tokenize_str`
+    ///
+    /// Args:
+    ///     pretok (:class:`~tokenizers.PreTokenizedString):
+    ///         The pre-tokenized string on which to apply this
+    ///         :class:`~tokenizers.pre_tokenizers.PreTokenizer`
     #[text_signature = "(self, pretok)"]
     fn pre_tokenize(&self, pretok: &mut PyPreTokenizedString) -> PyResult<()> {
         ToPyResult(self.pretok.pre_tokenize(&mut pretok.pretok)).into()
     }
 
-    /// Pre tokenize the given sequence
+    /// Pre tokenize the given string
+    ///
+    /// This method provides a way to visualize the effect of a
+    /// :class:`~tokenizers.pre_tokenizers.PreTokenizer` but it does not keep track of the
+    /// alignment, nor does it provide all the capabilities of the
+    /// :class:`~tokenizers.PreTokenizedString`. If you need some of these, you can use
+    /// :meth:`~tokenizers.pre_tokenizers.PreTokenizer.pre_tokenize`
+    ///
+    /// Args:
+    ///     sequence (:obj:`str`):
+    ///         A string to pre-tokeize
+    ///
+    /// Returns:
+    ///     :obj:`List[Tuple[str, Offsets]]`:
+    ///         A list of tuple with the pre-tokenized parts and their offsets
     #[text_signature = "(self, sequence)"]
     fn pre_tokenize_str(&self, s: &str) -> PyResult<Vec<(String, Offsets)>> {
         let mut pretokenized = tk::tokenizer::PreTokenizedString::from(s);
@@ -152,40 +177,33 @@ impl PyPreTokenizer {
 /// with a corresponding representation, as well as splitting into words.
 ///
 /// Args:
-///     add_prefix_space: (`optional`) boolean:
+///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
-/// Returns:
-///     PreTokenizer
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=ByteLevel)]
 #[text_signature = "(self, add_prefix_space=True)"]
 pub struct PyByteLevel {}
 #[pymethods]
 impl PyByteLevel {
     #[new]
-    #[args(kwargs = "**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyPreTokenizer)> {
-        let mut byte_level = ByteLevel::default();
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
-                    "add_prefix_space" => {
-                        byte_level = byte_level.add_prefix_space(value.extract()?)
-                    }
-                    _ => println!("Ignored unknown kwargs option {}", key),
-                }
-            }
-        }
-
-        Ok((PyByteLevel {}, byte_level.into()))
+    #[args(add_prefix_space = "true")]
+    fn new(add_prefix_space: bool) -> PyResult<(Self, PyPreTokenizer)> {
+        Ok((
+            PyByteLevel {},
+            ByteLevel::default()
+                .add_prefix_space(add_prefix_space)
+                .into(),
+        ))
     }
 
     /// Returns the alphabet used by this PreTokenizer.
     ///
     /// Since the ByteLevel works as its name suggests, at the byte level, it
-    /// encodes any byte to one visible character. This means that there is a
+    /// encodes each byte value to a unique visible character. This means that there is a
     /// total of 256 different characters composing this alphabet.
+    ///
+    /// Returns:
+    ///     :obj:`List[str]`: A list of characters that compose the alphabet
     #[staticmethod]
     #[text_signature = "()"]
     fn alphabet() -> Vec<String> {
@@ -230,13 +248,10 @@ pub struct PyCharDelimiterSplit {}
 #[pymethods]
 impl PyCharDelimiterSplit {
     #[new]
-    pub fn new(delimiter: &str) -> PyResult<(Self, PyPreTokenizer)> {
-        let chr_delimiter = delimiter.chars().next().ok_or_else(|| {
-            exceptions::PyValueError::new_err("delimiter must be a single character")
-        })?;
+    pub fn new(delimiter: PyChar) -> PyResult<(Self, PyPreTokenizer)> {
         Ok((
             PyCharDelimiterSplit {},
-            CharDelimiterSplit::new(chr_delimiter).into(),
+            CharDelimiterSplit::new(delimiter.0).into(),
         ))
     }
 
@@ -305,53 +320,41 @@ impl PySequence {
 ///
 /// This pre-tokenizer replaces any whitespace by the provided replacement character.
 /// It then tries to split on these spaces.
+///
 /// Args:
-///     replacement: str:
+///     replacement (:obj:`str`, `optional`, defaults to :obj:`▁`):
 ///         The replacement character. Must be exactly one character. By default we
 ///         use the `▁` (U+2581) meta symbol (Same as in SentencePiece).
 ///
-///     add_prefix_space: boolean:
+///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Metaspace)]
-#[text_signature = "(self, replacement=\"▁\", add_prefix_space=True)"]
+#[text_signature = "(self, replacement=\"_\", add_prefix_space=True)"]
 pub struct PyMetaspace {}
 #[pymethods]
 impl PyMetaspace {
     #[new]
-    #[args(kwargs = "**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyPreTokenizer)> {
-        let mut replacement = '▁';
-        let mut add_prefix_space = true;
-
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
-                    "replacement" => {
-                        let s: &str = value.extract()?;
-                        replacement = s.chars().next().ok_or_else(|| {
-                            exceptions::PyValueError::new_err("replacement must be a character")
-                        })?;
-                    }
-                    "add_prefix_space" => add_prefix_space = value.extract()?,
-                    _ => println!("Ignored unknown kwarg option {}", key),
-                }
-            }
-        }
-
+    #[args(replacement = "PyChar('▁')", add_prefix_space = "true")]
+    fn new(replacement: PyChar, add_prefix_space: bool) -> PyResult<(Self, PyPreTokenizer)> {
         Ok((
             PyMetaspace {},
-            Metaspace::new(replacement, add_prefix_space).into(),
+            Metaspace::new(replacement.0, add_prefix_space).into(),
         ))
     }
 }
 
 /// This pre-tokenizer simply splits using the digits in separate tokens
+///
 /// Args:
-///     individual_digits: bool:
-///         If set to True, digits will each be separated "Call 123 please" -> "Call ", "1", "2", "3", " please"
-///         If set to False, digits will grouped "Call 123 please" -> "Call ", "123", " please"
+///     individual_digits (:obj:`bool`, `optional`, defaults to :obj:`False`):
+///         If set to True, digits will each be separated as follows::
+///
+///             "Call 123 please" -> "Call ", "1", "2", "3", " please"
+///
+///         If set to False, digits will grouped as follows::
+///
+///             "Call 123 please" -> "Call ", "123", " please"
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Digits)]
 #[text_signature = "(self, individual_digits=False)"]
 pub struct PyDigits {}
