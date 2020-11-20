@@ -15,38 +15,7 @@ use crate::tokenizer::PyAddedToken;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Trainer will return an instance of this class when instantiated.
-///
-/// Args:
-///     vocab_size: unsigned int:
-///         The size of the final vocabulary, including all tokens and alphabet.
-///
-///     min_frequency: unsigned int:
-///         The minimum frequency a pair should have in order to be merged.
-///
-///     show_progress: boolean:
-///         Whether to show progress bars while training.
-///
-///     special_tokens: List[Union[str, AddedToken]]:
-///         A list of special tokens the model should know of.
-///
-///     limit_alphabet: unsigned int:
-///         The maximum different characters to keep in the alphabet.
-///
-///     initial_alphabet: List[str]:
-///         A list of characters to include in the initial alphabet, even
-///         if not seen in the training dataset.
-///         If the strings contain more than one character, only the first one
-///         is kept.
-///
-///     continuing_subword_prefix: Optional[str]:
-///         A prefix to be used for every subword that is not a beginning-of-word.
-///
-///     end_of_word_suffix: Optional[str]:
-///         A suffix to be used for every subword that is a end-of-word.
-///
-/// Returns:
-///     Trainer
-#[pyclass(name=Trainer)]
+#[pyclass(name=Trainer, module = "tokenizers.trainers", name=Trainer)]
 #[derive(Clone)]
 #[text_signature = "(self, vocab_size=30000, min_frequency=0,show_progress=True, special_tokens=[],limit_alphabet=None, initial_alphabet = [], continuing_subword_prefix=None, end_of_word_suffix=None)"]
 pub struct PyTrainer {
@@ -108,15 +77,39 @@ where
     }
 }
 
-/// Capable of training a BPE model
-#[pyclass(extends=PyTrainer, name=BpeTrainer)]
+/// Trainer capable of training a BPE model
+///
+/// Args:
+///     vocab_size (:obj:`int`, `optional`):
+///         The size of the final vocabulary, including all tokens and alphabet.
+///
+///     min_frequency (:obj:`int`, `optional`):
+///         The minimum frequency a pair should have in order to be merged.
+///
+///     show_progress (:obj:`bool`, `optional`):
+///         Whether to show progress bars while training.
+///
+///     special_tokens (:obj:`List[Union[str, AddedToken]]`, `optional`):
+///         A list of special tokens the model should know of.
+///
+///     limit_alphabet (:obj:`int`, `optional`):
+///         The maximum different characters to keep in the alphabet.
+///
+///     initial_alphabet (:obj:`List[str]`, `optional`):
+///         A list of characters to include in the initial alphabet, even
+///         if not seen in the training dataset.
+///         If the strings contain more than one character, only the first one
+///         is kept.
+///
+///     continuing_subword_prefix (:obj:`str`, `optional`):
+///         A prefix to be used for every subword that is not a beginning-of-word.
+///
+///     end_of_word_suffix (:obj:`str`, `optional`):
+///         A suffix to be used for every subword that is a end-of-word.
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=BpeTrainer)]
 pub struct PyBpeTrainer {}
 #[pymethods]
 impl PyBpeTrainer {
-    /// new(/ vocab_size, min_frequency)
-    /// --
-    ///
-    /// Create a new BpeTrainer with the given configuration
     #[new]
     #[args(kwargs = "**")]
     pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
@@ -176,46 +169,40 @@ impl PyBpeTrainer {
     }
 }
 
-/// Capable of training a WordPiece model
+/// Trainer capable of training a WordPiece model
+///
 /// Args:
-///     vocab_size: unsigned int:
+///     vocab_size (:obj:`int`, `optional`):
 ///         The size of the final vocabulary, including all tokens and alphabet.
 ///
-///     min_frequency: unsigned int:
+///     min_frequency (:obj:`int`, `optional`):
 ///         The minimum frequency a pair should have in order to be merged.
 ///
-///     show_progress: boolean:
+///     show_progress (:obj:`bool`, `optional`):
 ///         Whether to show progress bars while training.
 ///
-///     special_tokens: List[Union[str, AddedToken]]:
+///     special_tokens (:obj:`List[Union[str, AddedToken]]`, `optional`):
 ///         A list of special tokens the model should know of.
 ///
-///     limit_alphabet: unsigned int:
+///     limit_alphabet (:obj:`int`, `optional`):
 ///         The maximum different characters to keep in the alphabet.
 ///
-///     initial_alphabet: List[str]:
+///     initial_alphabet (:obj:`List[str]`, `optional`):
 ///         A list of characters to include in the initial alphabet, even
 ///         if not seen in the training dataset.
 ///         If the strings contain more than one character, only the first one
 ///         is kept.
 ///
-///     continuing_subword_prefix: Optional[str]:
+///     continuing_subword_prefix (:obj:`str`, `optional`):
 ///         A prefix to be used for every subword that is not a beginning-of-word.
 ///
-///     end_of_word_suffix: Optional[str]:
+///     end_of_word_suffix (:obj:`str`, `optional`):
 ///         A suffix to be used for every subword that is a end-of-word.
-///
-/// Returns:
-///     Trainer
-#[pyclass(extends=PyTrainer, name=WordPieceTrainer)]
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=WordPieceTrainer)]
 #[text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet= [],continuing_subword_prefix=\"##\", end_of_word_suffix=None)"]
 pub struct PyWordPieceTrainer {}
 #[pymethods]
 impl PyWordPieceTrainer {
-    /// new(/ vocab_size, min_frequency)
-    /// --
-    ///
-    /// Create a new BpeTrainer with the given configuration
     #[new]
     #[args(kwargs = "**")]
     pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
@@ -276,28 +263,24 @@ impl PyWordPieceTrainer {
     }
 }
 
-/// Capable of training a WorldLevel model
+/// Trainer capable of training a WorldLevel model
 ///
 /// Args:
-///     vocab_size: unsigned int:
+///     vocab_size (:obj:`int`, `optional`):
 ///         The size of the final vocabulary, including all tokens and alphabet.
 ///
-///     min_frequency: unsigned int:
+///     min_frequency (:obj:`int`, `optional`):
 ///         The minimum frequency a pair should have in order to be merged.
 ///
-///     show_progress: boolean:
+///     show_progress (:obj:`bool`, `optional`):
 ///         Whether to show progress bars while training.
 ///
-///     special_tokens: List[Union[str, AddedToken]]:
+///     special_tokens (:obj:`List[Union[str, AddedToken]]`):
 ///         A list of special tokens the model should know of.
-///
-/// Returns:
-///     Trainer
-#[pyclass(extends=PyTrainer, name=WordLevelTrainer)]
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=WordLevelTrainer)]
 pub struct PyWordLevelTrainer {}
 #[pymethods]
 impl PyWordLevelTrainer {
-    /// Create a new WordLevelTrainer with the given configuration
     #[new]
     #[args(kwargs = "**")]
     pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
@@ -354,32 +337,28 @@ impl PyWordLevelTrainer {
     }
 }
 
-/// Capable of training a Unigram model
+/// Trainer capable of training a Unigram model
 ///
 /// Args:
-///     vocab_size: unsigned int:
+///     vocab_size (:obj:`int`):
 ///         The size of the final vocabulary, including all tokens and alphabet.
 ///
-///     show_progress: boolean:
+///     show_progress (:obj:`bool`):
 ///         Whether to show progress bars while training.
 ///
-///     special_tokens: List[Union[str, AddedToken]]:
+///     special_tokens (:obj:`List[Union[str, AddedToken]]`):
 ///         A list of special tokens the model should know of.
 ///
-///     initial_alphabet: List[str]:
+///     initial_alphabet (:obj:`List[str]`):
 ///         A list of characters to include in the initial alphabet, even
 ///         if not seen in the training dataset.
 ///         If the strings contain more than one character, only the first one
 ///         is kept.
-///
-/// Returns:
-///     Trainer
-#[pyclass(extends=PyTrainer, name=UnigramTrainer)]
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=UnigramTrainer)]
 #[text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens= [])"]
 pub struct PyUnigramTrainer {}
 #[pymethods]
 impl PyUnigramTrainer {
-    /// Create a new UnigramTrainer with the given configuration
     #[new]
     #[args(kwargs = "**")]
     pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
