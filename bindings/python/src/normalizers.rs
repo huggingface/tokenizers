@@ -109,13 +109,35 @@ impl PyNormalizer {
         }
     }
 
-    /// Normalize the given NormalizedString in-place
+    /// Normalize a :class:`~tokenizers.NormalizedString` in-place
+    ///
+    /// This method allows to modify a :class:`~tokenizers.NormalizedString` to
+    /// keep track of the alignment information. If you just want to see the result
+    /// of the normalization on a raw string, you can use
+    /// :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
+    ///
+    /// Args:
+    ///     normalized (:class:`~tokenizers.NormalizedString`):
+    ///         The normalized string on which to apply this
+    ///         :class:`~tokenizers.normalizers.Normalizer`
     #[text_signature = "(self, normalized)"]
     fn normalize(&self, normalized: &mut PyNormalizedString) -> PyResult<()> {
         ToPyResult(self.normalizer.normalize(&mut normalized.normalized)).into()
     }
 
-    /// Normalize the given str
+    /// Normalize the given string
+    ///
+    /// This method provides a way to visualize the effect of a
+    /// :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
+    /// information. If you need to get/convert offsets, you can use
+    /// :meth:`~tokenizers.normalizers.Normalizer.normalize`
+    ///
+    /// Args:
+    ///     sequence (:obj:`str`):
+    ///         A string to normalize
+    ///
+    /// Returns:
+    ///     :obj:`str`: A string after normalization
     #[text_signature = "(self, sequence)"]
     fn normalize_str(&self, sequence: &str) -> PyResult<String> {
         let mut normalized = NormalizedString::from(sequence);
@@ -130,47 +152,37 @@ impl PyNormalizer {
 /// This includes cleaning the text, handling accents, chinese chars and lowercasing
 ///
 /// Args:
-///     clean_text: (`optional`) boolean:
+///     clean_text (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to clean the text, by removing any control characters
 ///         and replacing all whitespaces by the classic one.
 ///
-///     handle_chinese_chars: (`optional`) boolean:
+///     handle_chinese_chars (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to handle chinese chars by putting spaces around them.
 ///
-///     strip_accents: (`optional`) boolean:
+///     strip_accents (:obj:`bool`, `optional`):
 ///         Whether to strip all accents. If this option is not specified (ie == None),
 ///         then it will be determined by the value for `lowercase` (as in the original Bert).
 ///
-///     lowercase: (`optional`) boolean:
+///     lowercase (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to lowercase.
-///
-/// Returns:
-///     Normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=BertNormalizer)]
 #[text_signature = "(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True)"]
 pub struct PyBertNormalizer {}
 #[pymethods]
 impl PyBertNormalizer {
     #[new]
-    #[args(kwargs = "**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyNormalizer)> {
-        let mut clean_text = true;
-        let mut handle_chinese_chars = true;
-        let mut strip_accents = None;
-        let mut lowercase = true;
-
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
-                    "clean_text" => clean_text = value.extract()?,
-                    "handle_chinese_chars" => handle_chinese_chars = value.extract()?,
-                    "strip_accents" => strip_accents = value.extract()?,
-                    "lowercase" => lowercase = value.extract()?,
-                    _ => println!("Ignored unknown kwargs option {}", key),
-                }
-            }
-        }
+    #[args(
+        clean_text = "true",
+        handle_chinese_chars = "true",
+        strip_accents = "None",
+        lowercase = "true"
+    )]
+    fn new(
+        clean_text: bool,
+        handle_chinese_chars: bool,
+        strip_accents: Option<bool>,
+        lowercase: bool,
+    ) -> PyResult<(Self, PyNormalizer)> {
         let normalizer =
             BertNormalizer::new(clean_text, handle_chinese_chars, strip_accents, lowercase);
         Ok((PyBertNormalizer {}, normalizer.into()))
@@ -229,7 +241,7 @@ impl PyNFKC {
 /// All the normalizers run in sequence in the given order
 ///
 /// Args:
-///     normalizers: List[Normalizer]:
+///     normalizers (:obj:`List[Normalizer]`):
 ///         A list of Normalizer to be run as a sequence
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Sequence)]
 pub struct PySequence {}
@@ -275,24 +287,13 @@ pub struct PyStrip {}
 #[pymethods]
 impl PyStrip {
     #[new]
-    #[args(kwargs = "**")]
-    fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyNormalizer)> {
-        let mut left = true;
-        let mut right = true;
-
-        if let Some(kwargs) = kwargs {
-            if let Some(l) = kwargs.get_item("left") {
-                left = l.extract()?;
-            }
-            if let Some(r) = kwargs.get_item("right") {
-                right = r.extract()?;
-            }
-        }
-
+    #[args(left = "true", right = "true")]
+    fn new(left: bool, right: bool) -> PyResult<(Self, PyNormalizer)> {
         Ok((PyStrip {}, Strip::new(left, right).into()))
     }
 }
 
+/// StripAccents normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=StripAccents)]
 #[text_signature = "(self)"]
 pub struct PyStripAccents {}
@@ -301,6 +302,57 @@ impl PyStripAccents {
     #[new]
     fn new() -> PyResult<(Self, PyNormalizer)> {
         Ok((PyStripAccents {}, StripAccents.into()))
+    }
+}
+
+/// Nmt normalizer
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Nmt)]
+#[text_signature = "(self)"]
+pub struct PyNmt {}
+#[pymethods]
+impl PyNmt {
+    #[new]
+    fn new() -> PyResult<(Self, PyNormalizer)> {
+        Ok((PyNmt {}, Nmt.into()))
+    }
+}
+
+/// Precompiled normalizer
+/// Don't use manually it is used for compatiblity for SentencePiece.
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Precompiled)]
+#[text_signature = "(self, precompiled_charsmap)"]
+pub struct PyPrecompiled {}
+#[pymethods]
+impl PyPrecompiled {
+    #[new]
+    fn new(py_precompiled_charsmap: &PyBytes) -> PyResult<(Self, PyNormalizer)> {
+        let precompiled_charsmap: &[u8] = FromPyObject::extract(py_precompiled_charsmap)?;
+        Ok((
+            PyPrecompiled {},
+            Precompiled::from(precompiled_charsmap)
+                .map_err(|e| {
+                    exceptions::PyException::new_err(format!(
+                        "Error while attempting to build Precompiled normalizer: {}",
+                        e
+                    ))
+                })?
+                .into(),
+        ))
+    }
+}
+
+/// Replace normalizer
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Replace)]
+#[text_signature = "(self, pattern, content)"]
+pub struct PyReplace {}
+#[pymethods]
+impl PyReplace {
+    #[new]
+    fn new(pattern: PyPattern, content: String) -> PyResult<(Self, PyNormalizer)> {
+        Ok((
+            PyReplace {},
+            ToPyResult(Replace::new(pattern, content)).into_py()?.into(),
+        ))
     }
 }
 
@@ -436,57 +488,6 @@ impl Normalizer for PyNormalizerWrapper {
             PyNormalizerWrapper::Wrapped(inner) => inner.normalize(normalized),
             PyNormalizerWrapper::Custom(inner) => inner.normalize(normalized),
         }
-    }
-}
-
-/// Nmt normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Nmt)]
-#[text_signature = "(self)"]
-pub struct PyNmt {}
-#[pymethods]
-impl PyNmt {
-    #[new]
-    fn new() -> PyResult<(Self, PyNormalizer)> {
-        Ok((PyNmt {}, Nmt.into()))
-    }
-}
-
-/// Precompiled normalizer
-/// Don't use manually it is used for compatiblity for SentencePiece.
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Precompiled)]
-#[text_signature = "(self, precompiled_charsmap)"]
-pub struct PyPrecompiled {}
-#[pymethods]
-impl PyPrecompiled {
-    #[new]
-    fn new(py_precompiled_charsmap: &PyBytes) -> PyResult<(Self, PyNormalizer)> {
-        let precompiled_charsmap: &[u8] = FromPyObject::extract(py_precompiled_charsmap)?;
-        Ok((
-            PyPrecompiled {},
-            Precompiled::from(precompiled_charsmap)
-                .map_err(|e| {
-                    exceptions::PyException::new_err(format!(
-                        "Error while attempting to build Precompiled normalizer: {}",
-                        e
-                    ))
-                })?
-                .into(),
-        ))
-    }
-}
-
-/// Replace normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Replace)]
-#[text_signature = "(self, pattern, content)"]
-pub struct PyReplace {}
-#[pymethods]
-impl PyReplace {
-    #[new]
-    fn new(pattern: PyPattern, content: String) -> PyResult<(Self, PyNormalizer)> {
-        Ok((
-            PyReplace {},
-            ToPyResult(Replace::new(pattern, content)).into_py()?.into(),
-        ))
     }
 }
 
