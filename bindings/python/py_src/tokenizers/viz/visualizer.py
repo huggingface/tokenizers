@@ -152,6 +152,8 @@ class EncodingVisualizer:
         if first.token_ix is not None:
             # We can either be in a token or not (e.g. in white space)
             css_classes.append("token")
+            if first.is_multitoken:
+                css_classes.append("multi-token")
             if first.token_ix % 2:
                 # We use this to color alternating tokens.
                 # A token might be split by an annotation that ends in the middle of it, so this lets us visually
@@ -260,24 +262,6 @@ class EncodingVisualizer:
                 annotation_map[i] = anno_ix
         return annotation_map
 
-    @staticmethod
-    def __make_token_and_word_map(
-        text: str, encoding: Encoding
-    ) -> Tuple[PartialIntList, PartialIntList]:
-        """
-        Args:
-            text: str:
-                The text being aligned
-            encoding: Encoding:
-                The encoding of the text returned by a tokenizer
-        Returns:
-            A tuple of lists, each list is of length len(txt). The first list maps a charachter to a word
-            and the second list maps a charachter to a token. At index i, a value is None if there is no word/token that
-            corresponds to that charchter, otherwise the value is the index of the word/charachter in the encodings respective list
-        """
-        word_map = [encoding.char_to_word(c) for c in range(len(text))]
-        token_map = [encoding.char_to_token(c) for c in range(len(text))]
-        return word_map, token_map
 
     @staticmethod
     def __make_char_states(
@@ -299,12 +283,13 @@ class EncodingVisualizer:
             List[CharState] : A list of CharStates, indicating for each char in the text what it's state is
         """
         annotation_map = EncodingVisualizer.__make_anno_map(text, annotations)
-        word_map, token_map = EncodingVisualizer.__make_token_and_word_map(text, encoding)
         # Todo make this a dataclass or named tuple
-        char_states: List[CharState] = [
-            CharState(char_ix=char_ix, word_ix=word_ix, token_ix=token_ix, anno_ix=anno_ix)
-            for char_ix, (word_ix, token_ix, anno_ix) in enumerate(
-                itertools.zip_longest(word_map, token_map, annotation_map, fillvalue=None)
-            )
-        ]
+        char_states: List[CharState] = [ CharState(char_ix) for char_ix in range(len(text))]
+        for token_ix,token in enumerate(encoding.tokens):
+            start,end = encoding.token_to_chars(token_ix)
+            for i in range(start,end):
+                char_states[i].tokens.append(token_ix)
+        for char_ix,anno_ix in enumerate(annotation_map):
+            char_states[char_ix].anno_ix=anno_ix
+
         return char_states
