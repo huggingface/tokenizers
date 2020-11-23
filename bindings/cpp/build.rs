@@ -20,7 +20,7 @@ fn main() {
     let standard = "c++14";
 
     cxx_build::bridges(&rust_sources)
-        .include("src")
+        .includes(&["src", "thirdparty"])
         .flag_if_supported(format!("-std={}", &standard).as_str())
         .flag_if_supported(format!("/std:{}", &standard).as_str())
         .compile("tokenizers-cpp");
@@ -31,7 +31,7 @@ fn main() {
 
     if cfg!(feature = "test") {
         cc::Build::new()
-            .includes(vec!["src", "target/cxxbridge"])
+            .includes(&["src", "target/cxxbridge", "thirdparty"])
             .file("src/redefine_result_tests.cpp")
             .compile("redefine_result_tests");
     }
