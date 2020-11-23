@@ -1,5 +1,8 @@
 #pragma once
 
+#include <nonstd/string_view.hpp>
+#include <rust/cxx.h>
+
 /** @file Shared code for all tokenizers-cpp modules (mostly macros) */
 
 #define HFT_BUILDER_ARG(type, name, default_value)                    \
@@ -66,3 +69,15 @@ private:
 /// ```
 #define HFT_TRY(T, expr) return expr;
 #endif
+
+namespace huggingface {
+namespace tokenizers {
+inline rust::Str string_view_to_str(nonstd::string_view string_view) {
+    return {string_view.data(), string_view.size()};
+}
+
+inline nonstd::string_view str_to_string_view(rust::Str str) {
+    return {str.data(), str.size()};
+}
+}  // namespace tokenizers
+}  // namespace huggingface

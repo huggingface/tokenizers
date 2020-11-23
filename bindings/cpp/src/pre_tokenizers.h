@@ -12,8 +12,15 @@ struct PreTokenizedString {
     HFT_FFI_WRAPPER(PreTokenizedString);
 
 public:
-    static HFT_RESULT(PreTokenizedString) from(const NormalizedString& str) {
-        HFT_TRY(PreTokenizedString, {ffi::pre_tokenized_string(*str)});
+    explicit PreTokenizedString(const NormalizedString& str)
+        : inner_(ffi::normalized_to_pre_tokenized_string(*str)){};
+
+    explicit PreTokenizedString(nonstd::string_view str)
+        : inner_(ffi::str_to_pre_tokenized_string(string_view_to_str(str))){};
+
+    rust::Vec<Split> get_splits(OffsetReferential offset_ref,
+                                OffsetType offset_type) {
+        return ffi::get_splits(*inner_, offset_ref, offset_type);
     }
 };
 

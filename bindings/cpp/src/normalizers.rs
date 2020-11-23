@@ -2,9 +2,8 @@ use tk::normalizer::NormalizedString;
 use tk::normalizers::{BertNormalizer, NormalizerWrapper};
 use tk::Normalizer;
 
-#[cxx::bridge(namespace = "huggingface::tokenizers::ffi")]
+#[cxx::bridge(namespace = "huggingface::tokenizers")]
 mod ffi {
-    #[namespace = "huggingface::tokenizers"]
     pub enum BertStripAccents {
         DeterminedByLowercase,
         False,
@@ -15,12 +14,13 @@ mod ffi {
         include!("normalizers.h");
     }
 
+    #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {
         type NormalizedString;
         type NormalizerWrapper;
         type BertNormalizer;
 
-        fn normalized_string(str: &CxxString) -> Result<Box<NormalizedString>>;
+        fn normalized_string(str: &str) -> Box<NormalizedString>;
 
         fn bert_normalizer(
             clean_text: bool,
@@ -38,15 +38,16 @@ mod ffi {
             normalizer: &BertNormalizer,
             normalized: &mut NormalizedString,
         ) -> Result<()>;
+
+        fn get_normalized(normalized: &NormalizedString) -> &str;
+        fn get_original(normalized: &NormalizedString) -> &str;
     }
 }
 
-use cxx::CxxString;
 use ffi::BertStripAccents;
-use std::str::Utf8Error;
 
-fn normalized_string(str: &CxxString) -> Result<Box<NormalizedString>, Utf8Error> {
-    Ok(Box::new(NormalizedString::from(str.to_str()?)))
+fn normalized_string(str: &str) -> Box<NormalizedString> {
+    Box::new(NormalizedString::from(str))
 }
 
 fn bert_normalizer(
@@ -81,4 +82,12 @@ fn normalize_bert(
     normalized: &mut NormalizedString,
 ) -> tk::Result<()> {
     normalizer.normalize(normalized)
+}
+
+fn get_normalized(normalized: &NormalizedString) -> &str {
+    normalized.get()
+}
+
+fn get_original(normalized: &NormalizedString) -> &str {
+    normalized.get_original()
 }
