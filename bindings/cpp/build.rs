@@ -23,6 +23,8 @@ fn main() {
         .includes(&["src", "thirdparty"])
         .flag_if_supported(format!("-std={}", &standard).as_str())
         .flag_if_supported(format!("/std:{}", &standard).as_str())
+        // enable exception handling for MSVC
+        .flag_if_supported("/EHsc")
         .compile("tokenizers-cpp");
 
     for file in rust_sources.iter().chain(cpp_headers.iter()) {
@@ -33,6 +35,7 @@ fn main() {
         cc::Build::new()
             .includes(&["src", "target/cxxbridge", "thirdparty"])
             .file("src/redefine_result_tests.cpp")
+            .flag_if_supported("/EHsc")
             .compile("redefine_result_tests");
     }
 }
