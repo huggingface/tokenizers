@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 /// Allows decoding Original BPE by joining all the tokens and then replacing
 /// the suffix used to identify end-of-words by whitespaces
 #[serde(tag = "type")]
+#[non_exhaustive]
 pub struct BPEDecoder {
-    suffix: String,
+    pub suffix: String,
 }
 
 impl BPEDecoder {

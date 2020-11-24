@@ -19,6 +19,10 @@ impl Sequence {
     pub fn get_normalizers(&self) -> &[NormalizerWrapper] {
         &self.normalizers
     }
+
+    pub fn get_normalizers_mut(&mut self) -> &mut [NormalizerWrapper] {
+        &mut self.normalizers
+    }
 }
 
 impl Normalizer for Sequence {
