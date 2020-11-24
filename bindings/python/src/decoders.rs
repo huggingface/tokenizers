@@ -115,7 +115,7 @@ macro_rules! getter {
         } else {
             unreachable!()
         }
-    }}
+    }};
 }
 
 macro_rules! setter {

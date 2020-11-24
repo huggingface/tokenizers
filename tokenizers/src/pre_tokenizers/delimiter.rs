@@ -4,8 +4,9 @@ use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterB
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
+#[non_exhaustive]
 pub struct CharDelimiterSplit {
-    delimiter: char,
+    pub delimiter: char,
 }
 
 impl CharDelimiterSplit {

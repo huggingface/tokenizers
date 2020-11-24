@@ -6,8 +6,9 @@ use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterB
 /// Pre tokenizes the numbers into single tokens. If individual_digits is set
 /// to true, then all digits are splitted into individual tokens.
 #[serde(tag = "type")]
+#[non_exhaustive]
 pub struct Digits {
-    individual_digits: bool,
+    pub individual_digits: bool,
 }
 
 impl Digits {

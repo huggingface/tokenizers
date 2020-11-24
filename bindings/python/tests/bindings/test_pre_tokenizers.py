@@ -30,6 +30,15 @@ class TestByteLevel:
         assert isinstance(ByteLevel.alphabet(), list)
         assert len(ByteLevel.alphabet()) == 256
 
+    def test_can_modify(self):
+        pretok = ByteLevel(add_prefix_space=False)
+
+        assert pretok.add_prefix_space == False
+
+        # Modify these
+        pretok.add_prefix_space = True
+        assert pretok.add_prefix_space == True
+
 
 class TestSplit:
     def test_instantiate(self):
@@ -82,6 +91,18 @@ class TestMetaspace:
         assert isinstance(Metaspace(), Metaspace)
         assert isinstance(pickle.loads(pickle.dumps(Metaspace())), Metaspace)
 
+    def test_can_modify(self):
+        pretok = Metaspace(replacement="$", add_prefix_space=False)
+
+        assert pretok.replacement == "$"
+        assert pretok.add_prefix_space == False
+
+        # Modify these
+        pretok.replacement = "%"
+        assert pretok.replacement == "%"
+        pretok.add_prefix_space = True
+        assert pretok.add_prefix_space == True
+
 
 class TestCharDelimiterSplit:
     def test_instantiate(self):
@@ -91,6 +112,14 @@ class TestCharDelimiterSplit:
         assert isinstance(CharDelimiterSplit(" "), PreTokenizer)
         assert isinstance(CharDelimiterSplit(" "), CharDelimiterSplit)
         assert isinstance(pickle.loads(pickle.dumps(CharDelimiterSplit("-"))), CharDelimiterSplit)
+
+    def test_can_modify(self):
+        pretok = CharDelimiterSplit("@")
+        assert pretok.delimiter == "@"
+
+        # Modify these
+        pretok.delimiter = "!"
+        assert pretok.delimiter == "!"
 
 
 class TestPunctuation:
@@ -137,6 +166,14 @@ class TestDigits:
         assert isinstance(Digits(True), Digits)
         assert isinstance(Digits(False), Digits)
         assert isinstance(pickle.loads(pickle.dumps(Digits())), Digits)
+
+    def test_can_modify(self):
+        pretok = Digits(individual_digits=False)
+        assert pretok.individual_digits == False
+
+        # Modify these
+        pretok.individual_digits = True
+        assert pretok.individual_digits == True
 
 
 class TestUnicodeScripts:

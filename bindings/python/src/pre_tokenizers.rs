@@ -179,6 +179,45 @@ impl PyPreTokenizer {
     }
 }
 
+macro_rules! getter {
+    ($self: ident, $variant: ident, $($name: tt)+) => {{
+        let super_ = $self.as_ref();
+        if let PyPreTokenizerTypeWrapper::Single(ref single) = super_.pretok {
+            if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::$variant(ref pretok)) =
+                *single.read().unwrap() {
+                    pretok.$($name)+
+                } else {
+                    unreachable!()
+                }
+        } else {
+            unreachable!()
+        }
+    }};
+}
+
+macro_rules! setter {
+    ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
+        let super_ = $self.as_ref();
+        if let PyPreTokenizerTypeWrapper::Single(ref single) = super_.pretok {
+            if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::$variant(ref mut pretok)) =
+                *single.write().unwrap()
+            {
+                pretok.$name = $value;
+            }
+        }
+    }};
+    ($self: ident, $variant: ident, @$name: ident, $value: expr) => {{
+        let super_ = $self.as_ref();
+        if let PyPreTokenizerTypeWrapper::Single(ref single) = super_.pretok {
+            if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::$variant(ref mut pretok)) =
+                *single.write().unwrap()
+            {
+                pretok.$name($value);
+            }
+        }
+    }};
+}
+
 /// ByteLevel PreTokenizer
 ///
 /// This pre-tokenizer takes care of replacing all bytes of the given string
@@ -193,6 +232,16 @@ impl PyPreTokenizer {
 pub struct PyByteLevel {}
 #[pymethods]
 impl PyByteLevel {
+    #[getter]
+    fn get_add_prefix_space(self_: PyRef<Self>) -> bool {
+        getter!(self_, ByteLevel, add_prefix_space)
+    }
+
+    #[setter]
+    fn set_add_prefix_space(self_: PyRef<Self>, add_prefix_space: bool) {
+        setter!(self_, ByteLevel, add_prefix_space, add_prefix_space);
+    }
+
     #[new]
     #[args(add_prefix_space = "true")]
     fn new(add_prefix_space: bool) -> PyResult<(Self, PyPreTokenizer)> {
@@ -297,6 +346,16 @@ impl PySplit {
 pub struct PyCharDelimiterSplit {}
 #[pymethods]
 impl PyCharDelimiterSplit {
+    #[getter]
+    fn get_delimiter(self_: PyRef<Self>) -> String {
+        getter!(self_, Delimiter, delimiter.to_string())
+    }
+
+    #[setter]
+    fn set_delimiter(self_: PyRef<Self>, delimiter: PyChar) {
+        setter!(self_, Delimiter, delimiter, delimiter.0);
+    }
+
     #[new]
     pub fn new(delimiter: PyChar) -> PyResult<(Self, PyPreTokenizer)> {
         Ok((
@@ -384,6 +443,26 @@ impl PySequence {
 pub struct PyMetaspace {}
 #[pymethods]
 impl PyMetaspace {
+    #[getter]
+    fn get_replacement(self_: PyRef<Self>) -> String {
+        getter!(self_, Metaspace, get_replacement().to_string())
+    }
+
+    #[setter]
+    fn set_replacement(self_: PyRef<Self>, replacement: PyChar) {
+        setter!(self_, Metaspace, @set_replacement, replacement.0);
+    }
+
+    #[getter]
+    fn get_add_prefix_space(self_: PyRef<Self>) -> bool {
+        getter!(self_, Metaspace, add_prefix_space)
+    }
+
+    #[setter]
+    fn set_add_prefix_space(self_: PyRef<Self>, add_prefix_space: bool) {
+        setter!(self_, Metaspace, add_prefix_space, add_prefix_space);
+    }
+
     #[new]
     #[args(replacement = "PyChar('▁')", add_prefix_space = "true")]
     fn new(replacement: PyChar, add_prefix_space: bool) -> PyResult<(Self, PyPreTokenizer)> {
@@ -410,6 +489,16 @@ impl PyMetaspace {
 pub struct PyDigits {}
 #[pymethods]
 impl PyDigits {
+    #[getter]
+    fn get_individual_digits(self_: PyRef<Self>) -> bool {
+        getter!(self_, Digits, individual_digits)
+    }
+
+    #[setter]
+    fn set_individual_digits(self_: PyRef<Self>, individual_digits: bool) {
+        setter!(self_, Digits, individual_digits, individual_digits);
+    }
+
     #[new]
     #[args(individual_digits = false)]
     fn new(individual_digits: bool) -> PyResult<(Self, PyPreTokenizer)> {
