@@ -1,11 +1,9 @@
-#pragma once
-
 #include <cstddef>
 
 template <typename T>
 struct fake_result {
-    static fake_result<T> success(T&& x) { return {}; }
-    static fake_result<T> error(const char* message) { return {}; }
+    static fake_result<T> success(T&&) { return {}; }
+    static fake_result<T> error(const char*) { return {}; }
 };
 
 #define HFT_RESULT_VOID fake_result<std::nullptr_t>

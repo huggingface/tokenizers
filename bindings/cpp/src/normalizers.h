@@ -45,12 +45,14 @@ struct BertNormalizerOptions {
     HFT_BUILDER_ARG(bool, lowercase, true);
 
     BertStripAccents strip_accents = BertStripAccents::DeterminedByLowercase;
-#pragma warning(suppress : 4458)
+    HFT_DISABLE_WARNING_PUSH
+    HFT_DISABLE_WARNING(-Wshadow, 4458)
     BertNormalizerOptions& with_strip_accents(bool strip_accents) {
         this->strip_accents =
             strip_accents ? BertStripAccents::True : BertStripAccents::False;
         return *this;
     }
+    HFT_DISABLE_WARNING_POP
 
     BertNormalizer build() {
         return BertNormalizer(clean_text, handle_chinese_chars, strip_accents,

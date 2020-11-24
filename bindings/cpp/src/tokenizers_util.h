@@ -5,12 +5,38 @@
 
 /** @file Shared code for all tokenizers-cpp modules (mostly macros) */
 
-#define HFT_BUILDER_ARG(type, name, default_value)                    \
-    type name = default_value;                                        \
-    _Pragma("warning(suppress: 4458)") auto& with_##name(type name) { \
-        this->name = name;                                            \
-        return *this;                                                 \
-    }
+// code adapted from
+// https://www.fluentcpp.com/2019/08/30/how-to-disable-a-warning-in-cpp/
+// to disable warnings in a cross-compiler way
+#if defined(_MSC_VER)
+#define HFT_DISABLE_WARNING_PUSH __pragma(warning(push))
+#define HFT_DISABLE_WARNING_POP __pragma(warning(pop))
+#define HFT_DISABLE_WARNING(gcc_name, msvc_numbers) \
+    __pragma(warning(disable : msvc_numbers))
+
+#elif defined(__GNUC__)
+#define HFT_DO_PRAGMA(X) _Pragma(#X)
+#define HFT_DISABLE_WARNING_PUSH HFT_DO_PRAGMA(GCC diagnostic push)
+#define HFT_DISABLE_WARNING_POP HFT_DO_PRAGMA(GCC diagnostic pop)
+#define HFT_DISABLE_WARNING(gcc_name, msvc_numbers) \
+    HFT_DO_PRAGMA(GCC diagnostic ignored #gcc_name)
+
+#else
+#define HFT_DISABLE_WARNING_PUSH
+#define HFT_DISABLE_WARNING_POP
+#define HFT_DISABLE_WARNING(gcc_name, msvc_numbers)
+
+#endif
+
+#define HFT_BUILDER_ARG(type, name, default_value) \
+    type name = default_value;                     \
+    HFT_DISABLE_WARNING_PUSH                       \
+    HFT_DISABLE_WARNING(-Wshadow, 4458)            \
+    auto& with_##name(type name) {                 \
+        this->name = name;                         \
+        return *this;                              \
+    }                                              \
+    HFT_DISABLE_WARNING_POP
 
 // Ideally we want inner_ to be private, but I couldn't make it compile
 #define HFT_FFI_WRAPPER(type)                                                  \
