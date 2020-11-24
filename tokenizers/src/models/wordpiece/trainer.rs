@@ -85,6 +85,70 @@ pub struct WordPieceTrainer {
 }
 
 impl WordPieceTrainer {
+    pub fn min_frequency(&self) -> u32 {
+        self.bpe_trainer.min_frequency
+    }
+
+    pub fn set_min_frequency(&mut self, freq: u32) {
+        self.bpe_trainer.min_frequency = freq;
+    }
+
+    pub fn vocab_size(&self) -> usize {
+        self.bpe_trainer.vocab_size
+    }
+
+    pub fn set_vocab_size(&mut self, size: usize) {
+        self.bpe_trainer.vocab_size = size;
+    }
+
+    pub fn show_progress(&self) -> bool {
+        self.bpe_trainer.show_progress
+    }
+
+    pub fn set_show_progress(&mut self, show_progress: bool) {
+        self.bpe_trainer.show_progress = show_progress;
+    }
+
+    pub fn special_tokens(&self) -> &[AddedToken] {
+        &self.bpe_trainer.special_tokens
+    }
+
+    pub fn set_special_tokens(&mut self, special_tokens: Vec<AddedToken>) {
+        self.bpe_trainer.special_tokens = special_tokens;
+    }
+
+    pub fn limit_alphabet(&self) -> Option<usize> {
+        self.bpe_trainer.limit_alphabet
+    }
+
+    pub fn set_limit_alphabet(&mut self, limit: Option<usize>) {
+        self.bpe_trainer.limit_alphabet = limit;
+    }
+
+    pub fn initial_alphabet(&self) -> &HashSet<char> {
+        &self.bpe_trainer.initial_alphabet
+    }
+
+    pub fn set_initial_alphabet(&mut self, alphabet: HashSet<char>) {
+        self.bpe_trainer.initial_alphabet = alphabet;
+    }
+
+    pub fn continuing_subword_prefix(&self) -> &Option<String> {
+        &self.bpe_trainer.continuing_subword_prefix
+    }
+
+    pub fn set_continuing_subword_prefix(&mut self, prefix: Option<String>) {
+        self.bpe_trainer.continuing_subword_prefix = prefix;
+    }
+
+    pub fn end_of_word_suffix(&self) -> &Option<String> {
+        &self.bpe_trainer.end_of_word_suffix
+    }
+
+    pub fn set_end_of_word_suffix(&mut self, suffix: Option<String>) {
+        self.bpe_trainer.end_of_word_suffix = suffix;
+    }
+
     pub fn builder() -> WordPieceTrainerBuilder {
         WordPieceTrainerBuilder::default()
     }
