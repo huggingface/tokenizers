@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use crate::utils::PyChar;
 use pyo3::exceptions;
@@ -38,7 +38,7 @@ impl PyDecoder {
         let py = gil.python();
         Ok(match &self.decoder {
             PyDecoderWrapper::Custom(_) => Py::new(py, base)?.into_py(py),
-            PyDecoderWrapper::Wrapped(inner) => match inner.as_ref() {
+            PyDecoderWrapper::Wrapped(inner) => match &*inner.as_ref().read().unwrap() {
                 DecoderWrapper::Metaspace(_) => Py::new(py, (PyMetaspaceDec {}, base))?.into_py(py),
                 DecoderWrapper::WordPiece(_) => Py::new(py, (PyWordPieceDec {}, base))?.into_py(py),
                 DecoderWrapper::ByteLevel(_) => Py::new(py, (PyByteLevelDec {}, base))?.into_py(py),
@@ -58,7 +58,9 @@ impl Decoder for PyDecoder {
 impl PyDecoder {
     #[staticmethod]
     fn custom(decoder: PyObject) -> PyResult<Self> {
-        let decoder = PyDecoderWrapper::Custom(CustomDecoder::new(decoder).map(Arc::new)?);
+        let decoder = PyDecoderWrapper::Custom(
+            CustomDecoder::new(decoder).map(|d| Arc::new(RwLock::new(d)))?,
+        );
         Ok(PyDecoder::new(decoder))
     }
 
@@ -101,6 +103,40 @@ impl PyDecoder {
     }
 }
 
+macro_rules! getter {
+    ($self: ident, $variant: ident, $($name: tt)+) => {{
+        let super_ = $self.as_ref();
+        if let PyDecoderWrapper::Wrapped(ref wrap) = super_.decoder {
+            if let DecoderWrapper::$variant(ref dec) = *wrap.read().unwrap() {
+                dec.$($name)+
+            } else {
+                unreachable!()
+            }
+        } else {
+            unreachable!()
+        }
+    }}
+}
+
+macro_rules! setter {
+    ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
+        let super_ = $self.as_ref();
+        if let PyDecoderWrapper::Wrapped(ref wrap) = super_.decoder {
+            if let DecoderWrapper::$variant(ref mut dec) = *wrap.write().unwrap() {
+                dec.$name = $value;
+            }
+        }
+    }};
+    ($self: ident, $variant: ident, @$name: ident, $value: expr) => {{
+        let super_ = $self.as_ref();
+        if let PyDecoderWrapper::Wrapped(ref wrap) = super_.decoder {
+            if let DecoderWrapper::$variant(ref mut dec) = *wrap.write().unwrap() {
+                dec.$name($value);
+            }
+        }
+    }};
+}
+
 /// ByteLevel Decoder
 ///
 /// This decoder is to be used in tandem with the :class:`~tokenizers.pre_tokenizers.ByteLevel`
@@ -130,6 +166,26 @@ impl PyByteLevelDec {
 pub struct PyWordPieceDec {}
 #[pymethods]
 impl PyWordPieceDec {
+    #[getter]
+    fn get_prefix(self_: PyRef<Self>) -> String {
+        getter!(self_, WordPiece, prefix.clone())
+    }
+
+    #[setter]
+    fn set_prefix(self_: PyRef<Self>, prefix: String) {
+        setter!(self_, WordPiece, prefix, prefix);
+    }
+
+    #[getter]
+    fn get_cleanup(self_: PyRef<Self>) -> bool {
+        getter!(self_, WordPiece, cleanup)
+    }
+
+    #[setter]
+    fn set_cleanup(self_: PyRef<Self>, cleanup: bool) {
+        setter!(self_, WordPiece, cleanup, cleanup);
+    }
+
     #[new]
     #[args(prefix = "String::from(\"##\")", cleanup = "true")]
     fn new(prefix: String, cleanup: bool) -> PyResult<(Self, PyDecoder)> {
@@ -152,6 +208,26 @@ impl PyWordPieceDec {
 pub struct PyMetaspaceDec {}
 #[pymethods]
 impl PyMetaspaceDec {
+    #[getter]
+    fn get_replacement(self_: PyRef<Self>) -> String {
+        getter!(self_, Metaspace, get_replacement().to_string())
+    }
+
+    #[setter]
+    fn set_replacement(self_: PyRef<Self>, replacement: PyChar) {
+        setter!(self_, Metaspace, @set_replacement, replacement.0);
+    }
+
+    #[getter]
+    fn get_add_prefix_space(self_: PyRef<Self>) -> bool {
+        getter!(self_, Metaspace, add_prefix_space)
+    }
+
+    #[setter]
+    fn set_add_prefix_space(self_: PyRef<Self>, add_prefix_space: bool) {
+        setter!(self_, Metaspace, add_prefix_space, add_prefix_space);
+    }
+
     #[new]
     #[args(replacement = "PyChar('▁')", add_prefix_space = "true")]
     fn new(replacement: PyChar, add_prefix_space: bool) -> PyResult<(Self, PyDecoder)> {
@@ -173,6 +249,16 @@ impl PyMetaspaceDec {
 pub struct PyBPEDecoder {}
 #[pymethods]
 impl PyBPEDecoder {
+    #[getter]
+    fn get_suffix(self_: PyRef<Self>) -> String {
+        getter!(self_, BPE, suffix.clone())
+    }
+
+    #[setter]
+    fn set_suffix(self_: PyRef<Self>, suffix: String) {
+        setter!(self_, BPE, suffix, suffix);
+    }
+
     #[new]
     #[args(suffix = "String::from(\"</w>\")")]
     fn new(suffix: String) -> PyResult<(Self, PyDecoder)> {
@@ -226,8 +312,8 @@ impl<'de> Deserialize<'de> for CustomDecoder {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub(crate) enum PyDecoderWrapper {
-    Custom(Arc<CustomDecoder>),
-    Wrapped(Arc<DecoderWrapper>),
+    Custom(Arc<RwLock<CustomDecoder>>),
+    Wrapped(Arc<RwLock<DecoderWrapper>>),
 }
 
 impl<I> From<I> for PyDecoderWrapper
@@ -235,7 +321,7 @@ where
     I: Into<DecoderWrapper>,
 {
     fn from(norm: I) -> Self {
-        PyDecoderWrapper::Wrapped(Arc::new(norm.into()))
+        PyDecoderWrapper::Wrapped(Arc::new(RwLock::new(norm.into())))
     }
 }
 
@@ -253,15 +339,15 @@ where
 impl Decoder for PyDecoderWrapper {
     fn decode(&self, tokens: Vec<String>) -> tk::Result<String> {
         match self {
-            PyDecoderWrapper::Wrapped(inner) => inner.decode(tokens),
-            PyDecoderWrapper::Custom(inner) => inner.decode(tokens),
+            PyDecoderWrapper::Wrapped(inner) => inner.read().unwrap().decode(tokens),
+            PyDecoderWrapper::Custom(inner) => inner.read().unwrap().decode(tokens),
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
+    use std::sync::{Arc, RwLock};
 
     use pyo3::prelude::*;
     use tk::decoders::metaspace::Metaspace;
@@ -289,7 +375,7 @@ mod test {
         assert_eq!(py_ser, rs_ser);
         let py_dec: PyDecoder = serde_json::from_str(&rs_ser).unwrap();
         match py_dec.decoder {
-            PyDecoderWrapper::Wrapped(msp) => match msp.as_ref() {
+            PyDecoderWrapper::Wrapped(msp) => match *msp.as_ref().read().unwrap() {
                 DecoderWrapper::Metaspace(_) => {}
                 _ => panic!("Expected Metaspace"),
             },
@@ -301,7 +387,8 @@ mod test {
             let obj: PyObject = Py::new(py, py_msp).unwrap().into_py(py);
             obj
         });
-        let py_seq = PyDecoderWrapper::Custom(Arc::new(CustomDecoder::new(obj).unwrap()));
+        let py_seq =
+            PyDecoderWrapper::Custom(Arc::new(RwLock::new(CustomDecoder::new(obj).unwrap())));
         assert!(serde_json::to_string(&py_seq).is_err());
     }
 }

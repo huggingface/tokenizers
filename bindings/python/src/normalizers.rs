@@ -3,6 +3,7 @@ use std::sync::{Arc, RwLock};
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3::PySequenceProtocol;
 
 use crate::error::ToPyResult;
 use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
@@ -338,6 +339,13 @@ impl PySequence {
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
         Ok(PyTuple::new(py, &[PyList::empty(py)]))
+    }
+}
+
+#[pyproto]
+impl PySequenceProtocol for PySequence {
+    fn __len__(&self) -> usize {
+        0
     }
 }
 
