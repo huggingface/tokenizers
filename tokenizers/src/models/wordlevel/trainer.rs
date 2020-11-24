@@ -2,20 +2,21 @@ use super::WordLevel;
 use crate::{AddedToken, Result, Trainer};
 use std::collections::HashMap;
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Builder)]
 pub struct WordLevelTrainer {
     /// The minimum frequency a word must have to be part of the vocabulary
     #[builder(default)]
-    min_frequency: u32,
+    pub min_frequency: u32,
     /// The target vocabulary size
     #[builder(default)]
-    vocab_size: usize,
+    pub vocab_size: usize,
     /// Whether to show progress while training
     #[builder(default)]
-    show_progress: bool,
+    pub show_progress: bool,
     /// A list of special tokens that the model should know of
     #[builder(default)]
-    special_tokens: Vec<AddedToken>,
+    pub special_tokens: Vec<AddedToken>,
 }
 
 impl Default for WordLevelTrainer {

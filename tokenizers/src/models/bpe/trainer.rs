@@ -154,24 +154,26 @@ impl BpeTrainerBuilder {
 /// let mut model = BPE::default();
 /// let special_tokens = trainer.train(word_counts, &mut model).unwrap();
 /// ```
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BpeTrainer {
     /// The minimum frequency a pair must have to produce a merge operation
-    min_frequency: u32,
+    pub min_frequency: u32,
     /// The target vocabulary size
-    vocab_size: usize,
+    pub vocab_size: usize,
     /// Whether to show progress while training
-    show_progress: bool,
+    pub show_progress: bool,
     /// A list of special tokens that the model should know of
-    special_tokens: Vec<AddedToken>,
+    pub special_tokens: Vec<AddedToken>,
     /// Whether to limit the number of initial tokens that can be kept before computing merges
-    limit_alphabet: Option<usize>,
+    pub limit_alphabet: Option<usize>,
     /// The initial alphabet we want absolutely to include. This allows to cover
     /// some characters that are not necessarily in the training set
-    initial_alphabet: HashSet<char>,
+    pub initial_alphabet: HashSet<char>,
     /// An optional prefix to use on any subword that exist only behind another one
-    continuing_subword_prefix: Option<String>,
+    pub continuing_subword_prefix: Option<String>,
     /// An optional suffix to caracterize and end-of-word subword
-    end_of_word_suffix: Option<String>,
+    pub end_of_word_suffix: Option<String>,
 }
 
 impl Default for BpeTrainer {

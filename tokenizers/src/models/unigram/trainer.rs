@@ -36,28 +36,29 @@ fn to_log_prob(pieces: &mut [SentencePiece]) {
 }
 
 /// A `UnigramTrainer` can train a `Unigram` model from `word_counts`.
+#[non_exhaustive]
 #[derive(Builder, Debug, Clone)]
 pub struct UnigramTrainer {
     #[builder(default = "true")]
-    show_progress: bool,
+    pub show_progress: bool,
     #[builder(default = "8000")]
-    vocab_size: u32,
+    pub vocab_size: u32,
     #[builder(default = "2")]
-    n_sub_iterations: u32,
+    pub n_sub_iterations: u32,
     #[builder(default = "0.75")]
-    shrinking_factor: f64,
+    pub shrinking_factor: f64,
     #[builder(default = "vec![]")]
-    special_tokens: Vec<AddedToken>,
+    pub special_tokens: Vec<AddedToken>,
     #[builder(default = "HashSet::new()")]
-    initial_alphabet: HashSet<char>,
+    pub initial_alphabet: HashSet<char>,
 
     #[builder(default = "None")]
-    unk_token: Option<String>,
+    pub unk_token: Option<String>,
 
     #[builder(default = "16")]
-    max_piece_length: usize,
+    pub max_piece_length: usize,
     #[builder(default = "1_000_000")]
-    seed_size: usize,
+    pub seed_size: usize,
 }
 
 impl Default for UnigramTrainer {
