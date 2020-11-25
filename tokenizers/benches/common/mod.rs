@@ -61,7 +61,7 @@ where
 pub fn iter_bench_train<T, M, N, PT, PP, D>(
     iters: u64,
     tokenizer: &mut TokenizerImpl<M, N, PT, PP, D>,
-    trainer: &T,
+    trainer: &mut T,
     files: Vec<String>,
 ) -> Duration
 where
@@ -75,7 +75,7 @@ where
     let mut duration = Duration::new(0, 0);
     for _i in 0..iters {
         let start = Instant::now();
-        tokenizer.train(trainer, files.clone()).unwrap();
+        tokenizer.train_from_files(trainer, files.clone()).unwrap();
         duration = duration.checked_add(start.elapsed()).unwrap();
     }
     duration
