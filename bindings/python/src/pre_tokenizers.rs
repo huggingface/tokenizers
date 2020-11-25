@@ -242,7 +242,7 @@ impl PyWhitespaceSplit {
 ///     invert: bool:
 ///         Whether to invert the pattern.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Split)]
-#[text_signature = "(self, pattern, behavior, invert)"]
+#[text_signature = "(self, pattern=\" \", behavior=\"removed\", invert=False)"]
 pub struct PySplit {}
 #[pymethods]
 impl PySplit {
@@ -252,6 +252,10 @@ impl PySplit {
             PySplit {},
             ToPyResult(Split::new(pattern, behavior.into(), invert)).into_py()?.into(),
         ))
+    }
+
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
+        Ok(PyTuple::new(py, &[" "], &["removed"], true))
     }
 }
 
@@ -332,8 +336,7 @@ impl PySequence {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        Ok(PyTuple::new(py, &[PyList::empty(py)]))
-    }
+        Ok(PyTuple::new(py, &[PyList::empty(py)])) }
 }
 
 /// Metaspace pre-tokenizer

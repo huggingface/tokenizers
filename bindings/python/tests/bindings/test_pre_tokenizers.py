@@ -31,12 +31,24 @@ class TestByteLevel:
         assert len(ByteLevel.alphabet()) == 256
 
 
+class TestSplit:
+    def test_instantiate(self):
+        #        assert Split() is not None
+        #        assert isinstance(pickle.loads(pickle.dumps(Split())), Split)
+
+        pre_tok = Split(pattern=" ", behavior="removed", invert=False)
+        assert pre_tok is not None
+        assert isinstance(pre_tok, PreTokenizer)
+        #        assert isinstance(pickle.loads(pickle.dumps(pre_tok)), Split)
+
+
 class TestWhitespace:
     def test_instantiate(self):
         assert Whitespace() is not None
         assert isinstance(Whitespace(), PreTokenizer)
         assert isinstance(Whitespace(), Whitespace)
         assert isinstance(pickle.loads(pickle.dumps(Whitespace())), Whitespace)
+
 
 class TestWhitespaceSplit:
     def test_instantiate(self):
