@@ -205,7 +205,7 @@ class Split(PreTokenizer):
             Whether to invert the pattern.
     """
 
-    def __init__(self, pattern, behavior, invert):
+    def __init__(self, pattern, behavior, invert=False):
         pass
     def pre_tokenize(self, pretok):
         """

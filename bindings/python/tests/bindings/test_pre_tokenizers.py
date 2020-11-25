@@ -33,10 +33,16 @@ class TestByteLevel:
 
 class TestSplit:
     def test_instantiate(self):
-        pre_tokenizer = Split(" ", "removed")
+        pre_tokenizer = Split(pattern=" ", behavior="removed")
         assert pre_tokenizer is not None
-        assert isinstance(pre_tok, PreTokenizer)
+        assert isinstance(pre_tokenizer, PreTokenizer)
         assert isinstance(pickle.loads(pickle.dumps(Split(" ", "removed"))), Split)
+
+        # test with invert=True
+        pre_tokenizer_with_invert = Split(pattern=" ", behavior="isolated", invert=True)
+        assert pre_tokenizer_with_invert is not None
+        assert isinstance(pre_tokenizer_with_invert, PreTokenizer)
+        assert isinstance(pickle.loads(pickle.dumps(Split(" ", "removed", True))), Split)
 
 
 class TestWhitespace:
