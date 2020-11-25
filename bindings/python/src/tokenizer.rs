@@ -1102,10 +1102,13 @@ impl PyTokenizer {
             //  - A string
             iterator.iter()?.flat_map(|seq| match seq {
                 Ok(s) => {
-                    if let Ok(iter) = s.iter() {
-                        itertools::Either::Left(iter.map(|i| i?.extract::<&str>()))
+                    if let Ok(s) = s.downcast::<PyString>() {
+                        itertools::Either::Right(std::iter::once(s.to_str()))
                     } else {
-                        itertools::Either::Right(std::iter::once(s.extract::<&str>()))
+                        match s.iter() {
+                            Ok(iter) => itertools::Either::Left(iter.map(|i| i?.extract::<&str>())),
+                            Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
+                        }
                     }
                 }
                 Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
