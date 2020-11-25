@@ -138,7 +138,7 @@ tokenizer.post_processor = processors.ByteLevel(trim_offsets=True)
 
 # And then train
 trainer = trainers.BpeTrainer(vocab_size=20000, min_frequency=2)
-tokenizer.train([
+tokenizer.train(files=[
 	"./path/to/dataset/1.txt",
 	"./path/to/dataset/2.txt",
 	"./path/to/dataset/3.txt"
