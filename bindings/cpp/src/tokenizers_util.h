@@ -96,6 +96,12 @@ private:
 #define HFT_TRY(T, expr) return expr;
 #endif
 
+#define HFT_OPTION(expr)                                                       \
+    [&]() {                                                                    \
+        auto e = expr;                                                         \
+        return e.has_value ? nonstd::make_optional(e.value) : nonstd::nullopt; \
+    }()
+
 namespace huggingface {
 namespace tokenizers {
 inline rust::Str string_view_to_str(nonstd::string_view string_view) {
@@ -105,5 +111,13 @@ inline rust::Str string_view_to_str(nonstd::string_view string_view) {
 inline nonstd::string_view str_to_string_view(rust::Str str) {
     return {str.data(), str.size()};
 }
+
+inline rust::String to_rust_string(nonstd::string_view string_view) {
+    return {string_view.data(), string_view.size()};
+}
+
+inline rust::String to_rust_string(std::string string) { return string; }
+
+inline rust::String to_rust_string(const char* ptr) { return ptr; }
 }  // namespace tokenizers
 }  // namespace huggingface

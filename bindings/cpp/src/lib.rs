@@ -1,5 +1,6 @@
 extern crate tokenizers as tk;
 
+mod models;
 mod normalizers;
 mod pre_tokenizers;
 

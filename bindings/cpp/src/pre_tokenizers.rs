@@ -19,10 +19,11 @@ mod ffi {
         original: String,
         start: usize,
         end: usize,
-        has_tokens: bool,
+        // FIXME temporarily removed to work around a CXX conflict
+        // has_tokens: bool,
         // NOTE CxxVector<Token> is not supported,
         //  &Vec<Token> is not supported in shared types
-        tokens: Vec<Token>,
+        // tokens: Vec<Token>,
     }
 
     extern "C++" {
@@ -104,11 +105,12 @@ fn get_splits(
     pre_tokenized
         .get_splits(offset_ref, offset_type)
         .into_iter()
-        .map(|(original, (start, end), tokens)| ffi::Split {
+        .map(|(original, (start, end), _tokens)| ffi::Split {
             original: original.to_string(),
             start,
             end,
-            has_tokens: tokens.is_some(),
-            tokens: tokens.as_ref().map_or_else(|| vec![], |v| v.clone()),
+            // FIXME temporarily removed to work around a CXX conflict
+            // has_tokens: tokens.is_some(),
+            // tokens: tokens.as_ref().map_or_else(|| vec![], |v| v.clone()),
         }).collect()
 }

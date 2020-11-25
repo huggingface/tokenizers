@@ -1,6 +1,6 @@
 fn main() {
     #[allow(unused_mut)]
-    let mut modules = vec!["normalizers", "pre_tokenizers"];
+    let mut modules = vec!["normalizers", "pre_tokenizers", "models"];
 
     // can't do just cfg!(test), see https://github.com/rust-lang/cargo/issues/2549
     if cfg!(feature = "test") {
