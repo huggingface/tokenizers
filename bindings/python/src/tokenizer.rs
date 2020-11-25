@@ -1104,15 +1104,30 @@ impl PyTokenizer {
                     .map(|_| {})
             });
 
-            ResultShunt::process(iterator.map(|seq| seq?.extract::<&str>()), |iter| {
-                if let Some(send) = sender.take() {
-                    for seq in iter {
-                        send.send(seq)
-                            .map_err(|e| exceptions::PyException::new_err(e.to_string()))?;
+            ResultShunt::process(
+                // Each element of the iterator can either be:
+                //  - An iterator, to allow batching
+                //  - A string
+                iterator.flat_map(|seq| match seq {
+                    Ok(s) => {
+                        if let Ok(iter) = s.iter() {
+                            itertools::Either::Left(iter.map(|i| i?.extract::<&str>()))
+                        } else {
+                            itertools::Either::Right(std::iter::once(s.extract::<&str>()))
+                        }
                     }
-                }
-                Ok(())
-            })?
+                    Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
+                }),
+                |iter| {
+                    if let Some(send) = sender.take() {
+                        for seq in iter {
+                            send.send(seq)
+                                .map_err(|e| exceptions::PyException::new_err(e.to_string()))?;
+                        }
+                    }
+                    Ok(())
+                },
+            )?
         })
         .unwrap()
     }
