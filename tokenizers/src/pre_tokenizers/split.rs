@@ -2,7 +2,7 @@ use onig::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{
-    pattern::{Invert}, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
+    pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
 
 /// Represents the different patterns that `Split` can use
@@ -30,8 +30,8 @@ impl From<&str> for SplitPattern {
 #[serde(tag = "type")]
 struct SplitDeserializer {
     pattern: SplitPattern,
-    behavior:SplitDelimiterBehavior,
-    invert: bool
+    behavior: SplitDelimiterBehavior,
+    invert: bool,
 }
 
 impl std::convert::TryFrom<SplitDeserializer> for Split {
@@ -49,7 +49,7 @@ pub struct Split {
     #[serde(skip)]
     regex: Regex,
     behavior: SplitDelimiterBehavior,
-    invert: bool
+    invert: bool,
 }
 
 impl Clone for Split {
@@ -60,12 +60,18 @@ impl Clone for Split {
 
 impl PartialEq for Split {
     fn eq(&self, other: &Split) -> bool {
-        self.pattern == other.pattern && self.behavior == other.behavior && self.invert == other.invert
+        self.pattern == other.pattern
+            && self.behavior == other.behavior
+            && self.invert == other.invert
     }
 }
 
 impl Split {
-    pub fn new<I: Into<SplitPattern>>(pattern: I, behavior: SplitDelimiterBehavior, invert: bool) -> Result<Self> {
+    pub fn new<I: Into<SplitPattern>>(
+        pattern: I,
+        behavior: SplitDelimiterBehavior,
+        invert: bool,
+    ) -> Result<Self> {
         let pattern: SplitPattern = pattern.into();
         let regex = match &pattern {
             SplitPattern::String(s) => Regex::new(&regex::escape(s))?,
@@ -76,21 +82,17 @@ impl Split {
             pattern,
             regex,
             behavior,
-            invert
+            invert,
         })
     }
 }
 
 impl PreTokenizer for Split {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        if self.invert { 
-            pretokenized.split(|_, normalized| {
-                normalized.split(Invert(&self.regex), self.behavior)
-            })
+        if self.invert {
+            pretokenized.split(|_, normalized| normalized.split(Invert(&self.regex), self.behavior))
         } else {
-            pretokenized.split(|_, normalized| {
-                normalized.split(&self.regex, self.behavior)
-            })
+            pretokenized.split(|_, normalized| normalized.split(&self.regex, self.behavior))
         }
     }
 }
@@ -98,8 +100,8 @@ impl PreTokenizer for Split {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use SplitDelimiterBehavior::*;
     use crate::{OffsetReferential, OffsetType, PreTokenizer};
+    use SplitDelimiterBehavior::*;
 
     #[test]
     fn basic() {
@@ -190,11 +192,20 @@ mod tests {
         let mut pretok_str_for_string = pretok_str_for_regex.clone();
 
         // pre-tokenizer splits on " " - one from Regex, one from string
-        let pretokenizer_regex = Split::new(SplitPattern::Regex(r"\s+".into()), SplitDelimiterBehavior::Removed, false).unwrap();
+        let pretokenizer_regex = Split::new(
+            SplitPattern::Regex(r"\s+".into()),
+            SplitDelimiterBehavior::Removed,
+            false,
+        )
+        .unwrap();
         let pretokenizer_string = Split::new(" ", SplitDelimiterBehavior::Removed, false).unwrap();
 
-        pretokenizer_regex.pre_tokenize(&mut pretok_str_for_regex).unwrap();
-        pretokenizer_string.pre_tokenize(&mut pretok_str_for_string).unwrap();
+        pretokenizer_regex
+            .pre_tokenize(&mut pretok_str_for_regex)
+            .unwrap();
+        pretokenizer_string
+            .pre_tokenize(&mut pretok_str_for_string)
+            .unwrap();
 
         assert_eq!(pretok_str_for_regex, pretok_str_for_string);
     }
@@ -206,10 +217,13 @@ mod tests {
 
         // one pre-tokenizer splits on " " - one splits inverted on "Hello"
         let pretokenizer = Split::new(" ", SplitDelimiterBehavior::Removed, false).unwrap();
-        let pretokenizer_invert = Split::new("Hello", SplitDelimiterBehavior::Removed, true).unwrap();
+        let pretokenizer_invert =
+            Split::new("Hello", SplitDelimiterBehavior::Removed, true).unwrap();
 
         pretokenizer.pre_tokenize(&mut pretok_str).unwrap();
-        pretokenizer_invert.pre_tokenize(&mut pretok_str_for_invert).unwrap();
+        pretokenizer_invert
+            .pre_tokenize(&mut pretok_str_for_invert)
+            .unwrap();
 
         assert_eq!(pretok_str, pretok_str_for_invert);
     }
@@ -219,12 +233,14 @@ mod tests {
         use SplitDelimiterBehavior::*;
 
         let split = Split::new("Hello", Removed, true).unwrap();
-        let split_s = r#"{"type":"Split","pattern":{"String":"Hello"},"behavior":"Removed","invert":true}"#;
+        let split_s =
+            r#"{"type":"Split","pattern":{"String":"Hello"},"behavior":"Removed","invert":true}"#;
         assert_eq!(serde_json::to_string(&split).unwrap(), split_s);
         assert_eq!(serde_json::from_str::<Split>(split_s).unwrap(), split);
 
         let split = Split::new(SplitPattern::Regex(r"\s+".into()), Isolated, false).unwrap();
-        let split_s = r#"{"type":"Split","pattern":{"Regex":"\\s+"},"behavior":"Isolated","invert":false}"#;
+        let split_s =
+            r#"{"type":"Split","pattern":{"Regex":"\\s+"},"behavior":"Isolated","invert":false}"#;
         assert_eq!(serde_json::to_string(&split).unwrap(), split_s);
         assert_eq!(serde_json::from_str::<Split>(split_s).unwrap(), split);
     }
