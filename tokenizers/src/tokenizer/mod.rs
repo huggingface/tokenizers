@@ -23,6 +23,7 @@ use serde::de::DeserializeOwned;
 use serde::export::Formatter;
 use serde::{Deserialize, Serialize};
 
+use crate::utils::iter::ResultShunt;
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
 
@@ -124,7 +125,7 @@ pub trait Decoder {
 }
 
 /// A `Trainer` has the responsibility to train a model. We feed it with lines/sentences
-/// and it returns a `Model` when done.
+/// and then it can train the given `Model`.
 pub trait Trainer {
     type Model: Model + Sized;
     /// Whether we should show progress during the training.
@@ -132,7 +133,8 @@ pub trait Trainer {
     /// The actual training method. This will return a new trained Model as well as a list
     /// of `special_tokens` to be added directly to the tokenizer along with the model.
     fn train(&self, model: &mut Self::Model) -> Result<Vec<AddedToken>>;
-    /// Process an iterator of sequences already pre-processed by the Tokenizer
+    /// Process an iterator of sequences, calling `process` for each of them in order to
+    /// pre-process the said sequence as relevant.
     fn feed<I, S, F>(&mut self, iterator: I, process: F) -> Result<()>
     where
         I: Iterator<Item = S> + Send,
@@ -962,12 +964,20 @@ where
             .collect()
     }
 
+    /// Train our Model from files
     pub fn train_from_files<T>(&mut self, trainer: &mut T, files: Vec<String>) -> Result<&mut Self>
     where
         T: Trainer<Model = M> + Sync,
     {
+        let mut len = 0;
+        for file in files.iter() {
+            len += File::open(file)
+                .and_then(|f| f.metadata())
+                .map(|m| m.len())?;
+        }
+
         let max_read = 1_000_000;
-        use crate::utils::iter::ResultShunt;
+
         ResultShunt::process(
             files.into_iter().flat_map(|filename| {
                 match File::open(filename) {
@@ -981,12 +991,52 @@ where
                     Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
                 }
             }),
-            |iter| self.train(trainer, iter).map(|_| {}),
+            |sequences| -> Result<()> {
+                let progress = if trainer.should_show_progress() {
+                    let progress = ProgressBar::new(len);
+                    progress.set_style(
+                        ProgressStyle::default_bar()
+                            .template("[{elapsed_precise}] {msg:<40!} {wide_bar} {percent:>18!}%"),
+                    );
+                    progress
+                        .set_message(&format!("Pre-processing files ({:.2} Mo)", len / 1_000_000));
+                    progress.set_draw_delta(len / 100); // Redraw only every 2%
+                    Some(progress)
+                } else {
+                    None
+                };
+
+                trainer.feed(
+                    sequences.map(|s| {
+                        if let Some(progress) = &progress {
+                            progress.inc(s.len() as u64)
+                        }
+                        s
+                    }),
+                    |seq| {
+                        let normalized = self.do_normalize(seq.as_ref())?;
+                        let pre_tokenized = self.do_pre_tokenize(normalized)?;
+                        Ok(pre_tokenized
+                            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+                            .into_iter()
+                            .map(|(s, _, _)| s.to_owned())
+                            .collect())
+                    },
+                )?;
+
+                if let Some(pbar) = progress {
+                    pbar.finish();
+                }
+                let special_tokens = trainer.train(&mut self.model)?;
+                self.add_special_tokens(&special_tokens);
+
+                Ok(())
+            },
         )??;
         Ok(self)
     }
 
-    /// Train a model and replace our current Model, using the given Trainer
+    /// Train our Model, using the given Trainer and iterator
     pub fn train<T, I, S>(&mut self, trainer: &mut T, sequences: I) -> Result<&mut Self>
     where
         T: Trainer<Model = M> + Sync,
@@ -1002,7 +1052,12 @@ where
                     .template("[{elapsed_precise}] {msg:<40!} {wide_bar} {pos:<9!}/{len:>9!}"),
             );
             progress.set_message("Pre-processing sequences");
-            progress.set_draw_delta(len / 100); // Redraw only every 2%
+            if len > 0 {
+                progress.set_draw_delta(len / 100); // Redraw only every 2%
+            } else {
+                // Trying to have a good default to avoid progress tracking being the bottleneck
+                progress.set_draw_delta(1000);
+            }
             Some(progress)
         } else {
             None
@@ -1010,9 +1065,9 @@ where
 
         trainer.feed(
             sequences.map(|s| {
-                // if let Some(progress) = &progress {
-                //     progress.inc(1)
-                // }
+                if let Some(progress) = &progress {
+                    progress.inc(1)
+                }
                 s
             }),
             |seq| {
