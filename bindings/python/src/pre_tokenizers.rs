@@ -242,11 +242,12 @@ impl PyWhitespaceSplit {
 ///     invert: bool:
 ///         Whether to invert the pattern.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Split)]
-#[text_signature = "(self, pattern=\" \", behavior=\"removed\", invert=False)"]
+#[text_signature = "(self, pattern, behavior, invert=False)"]
 pub struct PySplit {}
 #[pymethods]
 impl PySplit {
     #[new]
+    #[args(invert = false)]
     fn new(pattern: PyPattern, behavior: PySplitDelimiterBehavior, invert: bool) -> PyResult<(Self, PyPreTokenizer)> {
         Ok((
             PySplit {},
@@ -255,7 +256,7 @@ impl PySplit {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        Ok(PyTuple::new(py, &[" "], &["removed"], true))
+        Ok(PyTuple::new(py, &[" ",  "removed"]))
     }
 }
 
