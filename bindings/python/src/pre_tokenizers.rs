@@ -12,9 +12,9 @@ use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk::pre_tokenizers::digits::Digits;
 use tk::pre_tokenizers::metaspace::Metaspace;
 use tk::pre_tokenizers::punctuation::Punctuation;
+use tk::pre_tokenizers::split::Split;
 use tk::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
-use tk::pre_tokenizers::split::Split;
 use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::tokenizer::Offsets;
 use tk::{PreTokenizedString, PreTokenizer};
@@ -54,9 +54,7 @@ impl PyPreTokenizer {
                     PreTokenizerWrapper::Whitespace(_) => {
                         Py::new(py, (PyWhitespace {}, base))?.into_py(py)
                     }
-                    PreTokenizerWrapper::Split(_) => {
-                        Py::new(py, (PySplit {}, base))?.into_py(py)
-                    }
+                    PreTokenizerWrapper::Split(_) => Py::new(py, (PySplit {}, base))?.into_py(py),
                     PreTokenizerWrapper::Punctuation(_) => {
                         Py::new(py, (PyPunctuation {}, base))?.into_py(py)
                     }
@@ -226,8 +224,8 @@ impl PyWhitespaceSplit {
 
 /// Split PreTokenizer
 ///
-/// This versatile pre-tokenizer splits using the provided pattern and 
-/// according to the provided behavior. The pattern can be inverted by 
+/// This versatile pre-tokenizer splits using the provided pattern and
+/// according to the provided behavior. The pattern can be inverted by
 /// making use of the invert flag.
 ///
 /// Args:
@@ -248,15 +246,21 @@ pub struct PySplit {}
 impl PySplit {
     #[new]
     #[args(invert = false)]
-    fn new(pattern: PyPattern, behavior: PySplitDelimiterBehavior, invert: bool) -> PyResult<(Self, PyPreTokenizer)> {
+    fn new(
+        pattern: PyPattern,
+        behavior: PySplitDelimiterBehavior,
+        invert: bool,
+    ) -> PyResult<(Self, PyPreTokenizer)> {
         Ok((
             PySplit {},
-            ToPyResult(Split::new(pattern, behavior.into(), invert)).into_py()?.into(),
+            ToPyResult(Split::new(pattern, behavior.into(), invert))
+                .into_py()?
+                .into(),
         ))
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        Ok(PyTuple::new(py, &[" ",  "removed"]))
+        Ok(PyTuple::new(py, &[" ", "removed"]))
     }
 }
 
@@ -337,7 +341,8 @@ impl PySequence {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        Ok(PyTuple::new(py, &[PyList::empty(py)])) }
+        Ok(PyTuple::new(py, &[PyList::empty(py)]))
+    }
 }
 
 /// Metaspace pre-tokenizer

@@ -44,7 +44,7 @@ impl From<PyPattern<'_>> for tk::normalizers::replace::ReplacePattern {
     }
 }
 
-impl From<PyPattern<'_>> for tk::pre_tokenizers::split::SplitPattern{
+impl From<PyPattern<'_>> for tk::pre_tokenizers::split::SplitPattern {
     fn from(pattern: PyPattern<'_>) -> Self {
         match pattern {
             PyPattern::Str(s) => Self::String(s.to_owned()),
