@@ -70,7 +70,7 @@ pub fn bench_bert(c: &mut Criterion) {
 }
 
 fn bench_train(c: &mut Criterion) {
-    let trainer = WordPieceTrainerBuilder::default()
+    let mut trainer = WordPieceTrainerBuilder::default()
         .show_progress(false)
         .build();
     type Tok = TokenizerImpl<
@@ -87,7 +87,7 @@ fn bench_train(c: &mut Criterion) {
             iter_bench_train(
                 iters,
                 &mut tokenizer,
-                &trainer,
+                &mut trainer,
                 vec!["data/small.txt".to_string()],
             )
         })
@@ -100,7 +100,7 @@ fn bench_train(c: &mut Criterion) {
             iter_bench_train(
                 iters,
                 &mut tokenizer,
-                &trainer,
+                &mut trainer,
                 vec!["data/big.txt".to_string()],
             )
         })
