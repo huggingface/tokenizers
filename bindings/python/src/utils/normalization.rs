@@ -44,6 +44,15 @@ impl From<PyPattern<'_>> for tk::normalizers::replace::ReplacePattern {
     }
 }
 
+impl From<PyPattern<'_>> for tk::pre_tokenizers::split::SplitPattern{
+    fn from(pattern: PyPattern<'_>) -> Self {
+        match pattern {
+            PyPattern::Str(s) => Self::String(s.to_owned()),
+            PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),
+        }
+    }
+}
+
 #[derive(Debug, Clone, FromPyObject)]
 pub enum PyRange<'s> {
     #[pyo3(annotation = "int")]

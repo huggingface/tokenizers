@@ -14,6 +14,7 @@ use tk::pre_tokenizers::metaspace::Metaspace;
 use tk::pre_tokenizers::punctuation::Punctuation;
 use tk::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
+use tk::pre_tokenizers::split::Split;
 use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::tokenizer::Offsets;
 use tk::{PreTokenizedString, PreTokenizer};
@@ -52,6 +53,9 @@ impl PyPreTokenizer {
                 PyPreTokenizerWrapper::Wrapped(inner) => match inner {
                     PreTokenizerWrapper::Whitespace(_) => {
                         Py::new(py, (PyWhitespace {}, base))?.into_py(py)
+                    }
+                    PreTokenizerWrapper::Split(_) => {
+                        Py::new(py, (PySplit {}, base))?.into_py(py)
                     }
                     PreTokenizerWrapper::Punctuation(_) => {
                         Py::new(py, (PyPunctuation {}, base))?.into_py(py)
@@ -217,6 +221,37 @@ impl PyWhitespaceSplit {
     #[new]
     fn new() -> PyResult<(Self, PyPreTokenizer)> {
         Ok((PyWhitespaceSplit {}, WhitespaceSplit.into()))
+    }
+}
+
+/// Split PreTokenizer
+///
+/// This versatile pre-tokenizer splits using the provided pattern and 
+/// according to the provided behavior. The pattern can be inverted by 
+/// making use of the invert flag.
+///
+/// Args:
+///     pattern: Pattern:
+///         A pattern used to split the string. Usually a string or a Regex
+///
+///     behavior: SplitDelimiterBehavior:
+///         The behavior to use when splitting.
+///         Choices: "removed", "isolated", "merged_with_previous", "merged_with_next",
+///         "contiguous"
+///
+///     invert: bool:
+///         Whether to invert the pattern.
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Split)]
+#[text_signature = "(self, pattern, behavior, invert)"]
+pub struct PySplit {}
+#[pymethods]
+impl PySplit {
+    #[new]
+    fn new(pattern: PyPattern, behavior: PySplitDelimiterBehavior, invert: bool) -> PyResult<(Self, PyPreTokenizer)> {
+        Ok((
+            PySplit {},
+            ToPyResult(Split::new(pattern, behavior.into(), invert)).into_py()?.into(),
+        ))
     }
 }
 

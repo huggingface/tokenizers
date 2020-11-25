@@ -13,6 +13,7 @@ from tokenizers.pre_tokenizers import (
     Sequence,
     Digits,
     UnicodeScripts,
+    Split,
 )
 
 
@@ -36,7 +37,6 @@ class TestWhitespace:
         assert isinstance(Whitespace(), PreTokenizer)
         assert isinstance(Whitespace(), Whitespace)
         assert isinstance(pickle.loads(pickle.dumps(Whitespace())), Whitespace)
-
 
 class TestWhitespaceSplit:
     def test_instantiate(self):
