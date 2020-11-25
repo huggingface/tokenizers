@@ -1080,6 +1080,7 @@ version = "0.9.4"
 dependencies = [
  "crossbeam",
  "env_logger",
+ "itertools 0.9.0",
  "libc",
  "ndarray",
  "numpy",
