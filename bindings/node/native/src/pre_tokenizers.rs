@@ -5,9 +5,9 @@ use neon::prelude::*;
 use std::sync::Arc;
 
 use serde::{ser::SerializeStruct, Serialize, Serializer};
+use tk::normalizer::SplitDelimiterBehavior;
 use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::PreTokenizedString;
-use tk::normalizer::SplitDelimiterBehavior;
 
 #[derive(Clone)]
 struct JsSplitDelimiterBehavior(SplitDelimiterBehavior);
@@ -23,8 +23,9 @@ impl FromJsValue for JsSplitDelimiterBehavior {
             "merged_with_next" => Ok(SplitDelimiterBehavior::MergedWithNext),
             "contiguous" => Ok(SplitDelimiterBehavior::Contiguous),
             _ => Err(Error(
-                 "Wrong value for SplitDelimiterBehavior, expected one of: \
-                 `removed, isolated, merged_with_previous, merged_with_next, contiguous`".into()
+                "Wrong value for SplitDelimiterBehavior, expected one of: \
+                 `removed, isolated, merged_with_previous, merged_with_next, contiguous`"
+                    .into(),
             )),
         }?))
     }
