@@ -5,7 +5,8 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 
 use super::{
-    DestroyPtr, PyNormalizedString, PyNormalizedStringRefMut, RefMutContainer, RefMutGuard, PyPattern
+    DestroyPtr, PyNormalizedString, PyNormalizedStringRefMut, PyPattern, RefMutContainer,
+    RefMutGuard,
 };
 use crate::encoding::PyEncoding;
 use crate::error::ToPyResult;
