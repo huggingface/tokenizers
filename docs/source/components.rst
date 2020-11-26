@@ -203,6 +203,19 @@ the ByteLevel)
 
        Output: ```"Hello", "123", "there"```
 
+   * - Split
+     - Versatile pre-tokenizer that splits on provided pattern and according to provided behavior. Optionally, invert flag can be provided to invert the pattern.
+
+         - pattern should be either a custom string or regexp.
+         - behavior should be one of :obj:`"removed"`, :obj:`"isolated"`, :obj:`"merged_with_previous"`, :obj:`"merged_with_next"`, or :obj:`"contiguous"`.
+         - invert should be a boolean flag.
+
+     - Example with `pattern` = :obj:`" "`, `behavior` = :obj:`"isolated"`, `invert` = :obj:`False`:
+        
+        Input: ``"Hello, how are you?"``
+
+        Output: ```"Hello,", " ", "how", " ", "are", " ", "you?"```
+
    * - Sequence
      - Lets you compose multiple ``PreTokenizer`` that will be run in the given order
      - :entity:`PreTokenizer.Sequence`
