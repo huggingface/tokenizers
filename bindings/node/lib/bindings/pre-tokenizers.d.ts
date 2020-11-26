@@ -40,6 +40,24 @@ export function whitespacePreTokenizer(): PreTokenizer;
 export function whitespaceSplitPreTokenizer(): PreTokenizer;
 
 /**
+ * Returns a Split PreTokenizer
+ * This versatile pre-tokenizer splits using the provided pattern and
+ * according to the provided behavior. The pattern can be inverted by
+ * making use of the invert flag.
+ *
+ * @param [pattern] A pattern used to split the string. Usually a string or a Regex.
+ * @param [behavior] The behavior to use when splitting.
+ * Choices: "removed", "isolated", "merged_with_previous", "merged_with_next",
+ * "contiguous".
+ * @param [invert=false] Whether to invert the pattern.
+ */
+export function splitPreTokenizer(
+  pattern?: string,
+  behavior?: string,
+  invert?: boolean
+): PreTokenizer;
+
+/**
  * Returns a new Bert PreTokenizer.
  * This pre-tokenizer splits tokens on spaces, and also on punctuation.
  * Each occurrence of a punctuation character will be treated separately.
