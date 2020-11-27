@@ -85,7 +85,6 @@ from .tokenizers import (
     PreTokenizedString,
     Token,
 )
-from .viz.visualizer import EncodingVisualizer
 from .tokenizers import decoders
 from .tokenizers import models
 from .tokenizers import normalizers

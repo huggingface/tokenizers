@@ -1,18 +1,72 @@
+import os
 import itertools
-from typing import List, Optional, Tuple, Dict, Callable, Any
 import re
+from typing import List, Optional, Tuple, Dict, Callable, Any, NamedTuple
+from string import Template
+from typing import List
+
 from tokenizers import Tokenizer, Encoding
-from tokenizers.viz.templates import HTMLBody
-from tokenizers.viz.viztypes import (
-    AnnotationList,
-    PartialIntList,
-    CharState,
-    Annotation,
-)
+
+dirname = os.path.dirname(__file__)
+css_filename = os.path.join(dirname, "visualizer-styles.css")
+with open(css_filename) as f:
+    css = f.read()
+
+
+class Annotation:
+    start: int
+    end: int
+    label: int
+
+    def __init__(self, start: int, end: int, label: str):
+        self.start = start
+        self.end = end
+        self.label = label
+
+
+AnnotationList = List[Annotation]
+PartialIntList = List[Optional[int]]
+
+
+class CharStateKey(NamedTuple):
+    token_ix: Optional[int]
+    anno_ix: Optional[int]
+
+
+class CharState:
+    char_ix: Optional[int]
+
+    def __init__(self, char_ix):
+        self.char_ix = char_ix
+
+        self.anno_ix: Optional[int] = None
+        self.tokens: List[int] = []
+
+    @property
+    def token_ix(self):
+        return self.tokens[0] if len(self.tokens) > 0 else None
+
+    @property
+    def is_multitoken(self):
+        """
+        BPE tokenizers can output more than one token for a char
+        """
+        return len(self.tokens) > 1
+
+    def partition_key(self) -> CharStateKey:
+        return CharStateKey(
+            token_ix=self.token_ix,
+            anno_ix=self.anno_ix,
+        )
+
+
+class Aligned:
+    pass
 
 
 class EncodingVisualizer:
-    unk_token_regex = re.compile('(.{1}\b)?unk(\b.{1})?',flags=re.IGNORECASE)
+    unk_token_regex = re.compile("(.{1}\b)?(unk|oov)(\b.{1})?", flags=re.IGNORECASE)
+
     def __init__(
         self,
         tokenizer: Tokenizer,
@@ -20,23 +74,29 @@ class EncodingVisualizer:
         annotation_converter: Optional[Callable[[Any], Annotation]] = None,
     ):
         """
+        Build an EncodingVisualizer
+
         Args:
-             tokenizer:
+
+             tokenizer (:class:`~tokenizers.Tokenizer`):
                 A tokenizer instance
-             default_to_notebook : bool:
+
+             default_to_notebook (:obj:`bool`):
                 Whether to render html output in a notebook by default
-             annotation_converter (`optional`) :
+
+             annotation_converter (:obj:`Callable`, `optional`):
                 An optional (lambda) function that takes an annotation in any format and returns
-               an Annotation object
+                an Annotation object
         """
         if default_to_notebook:
             try:
                 from IPython.core.display import display, HTML
             except ImportError as e:
                 raise Exception(
-                    '''We couldn't import IPython utils for html display. Are you running in a notebook ?.  
-                        You can also pass  default_to_notebook=False to get back raw HTML
-                    '''
+                    """We couldn't import IPython utils for html display.
+                        Are you running in a notebook?
+                        You can also pass `default_to_notebook=False` to get back raw HTML
+                    """
                 )
 
         self.tokenizer = tokenizer
@@ -51,18 +111,22 @@ class EncodingVisualizer:
         default_to_notebook: Optional[bool] = None,
     ) -> Optional[str]:
         """
+        Build a visualization of the given text
+
         Args:
-            text :str:
+            text (:obj:`str`):
                 The text to tokenize
-            annotations : (`optional`) Any:
-                An optional list of annotations of the text. The can either be an annotation class or anything else
-                if you instantiated the visualizer with a converter function
-            default_to_notebook: bool:
-                If True, will render the html in a notebook. Otherwise returns an html string. Defaults (False)
+
+            annotations (:obj:`List[Annotation]`, `optional`):
+                An optional list of annotations of the text. The can either be an annotation class
+                or anything else if you instantiated the visualizer with a converter function
+
+            default_to_notebook (:obj:`bool`, `optional`, defaults to `False`):
+                If True, will render the html in a notebook. Otherwise returns an html string.
 
         Returns:
-            The HTML string if default_to_notebook is False, otherwise (default) returns None and renders the HTML
-            in the notebook
+            The HTML string if default_to_notebook is False, otherwise (default) returns None and
+            renders the HTML in the notebook
 
         """
         final_default_to_notebook = self.default_to_notebook
@@ -73,7 +137,8 @@ class EncodingVisualizer:
                 from IPython.core.display import display, HTML
             except ImportError as e:
                 raise Exception(
-                    "We couldn't import IPython utils for html display. Are you running in a notebook ? "
+                    """We couldn't import IPython utils for html display.
+                    Are you running in a notebook?"""
                 )
         if self.annotation_coverter is not None:
             annotations = list(map(self.annotation_coverter, annotations))
@@ -87,13 +152,14 @@ class EncodingVisualizer:
     @staticmethod
     def calculate_label_colors(annotations: AnnotationList) -> Dict[str, str]:
         """
-        Generates a color pallete for all the labels in a given set of annotations
-        Args:
-          annotations:
-            A list of annotations
-        Returns:
-            dict: A dictionary mapping labels to colors in HSL format
+        Generates a color palette for all the labels in a given set of annotations
 
+        Args:
+          annotations (:obj:`Annotation):
+            A list of annotations
+
+        Returns:
+            :obj:`dict`: A dictionary mapping labels to colors in HSL format
         """
         if len(annotations) == 0:
             return {}
@@ -123,24 +189,28 @@ class EncodingVisualizer:
         """
         Converts a list of "consecutive chars" into a single HTML element.
         Chars are consecutive if they fall under the same word, token and annotation.
-        The CharState class is a named tuple with a "partition_key" method that makes it easy to compare if two chars
-        are consecutive.
-        Args:
-            consecutive_chars_list:
-                A list of CharStates that have been grouped together
-            text:
-                The original text being processed
-            encoding:
-                The encoding returned from the tokenizer
-        Returns:
-            str : The HTML span for a set of consecutive chars
+        The CharState class is a named tuple with a "partition_key" method that makes it easy to
+        compare if two chars are consecutive.
 
+        Args:
+            consecutive_chars_list (:obj:`List[CharState]`):
+                A list of CharStates that have been grouped together
+
+            text (:obj:`str`):
+                The original text being processed
+
+            encoding (:class:`~tokenizers.Encoding`):
+                The encoding returned from the tokenizer
+
+        Returns:
+            :obj:`str`: The HTML span for a set of consecutive chars
         """
         first = consecutive_chars_list[0]
         if first.char_ix is None:
             # its a special token
             stoken = encoding.tokens[first.token_ix]
-            # special tokens are represented as empty spans. We use the data attribute and css magic to display it
+            # special tokens are represented as empty spans. We use the data attribute and css
+            # magic to display it
             return f'<span class="special-token" data-stoken={stoken}></span>'
         # We're not in a special token so this group has a start and end.
         last = consecutive_chars_list[-1]
@@ -156,19 +226,24 @@ class EncodingVisualizer:
                 css_classes.append("multi-token")
             if first.token_ix % 2:
                 # We use this to color alternating tokens.
-                # A token might be split by an annotation that ends in the middle of it, so this lets us visually
-                # indicate a consecutive token despite its possible splitting in the html markup
+                # A token might be split by an annotation that ends in the middle of it, so this
+                # lets us visually indicate a consecutive token despite its possible splitting in
+                # the html markup
                 css_classes.append("odd-token")
             else:
                 # Like above, but a different color so we can see the tokens alternate
                 css_classes.append("even-token")
-            if EncodingVisualizer.unk_token_regex.search(encoding.tokens[first.token_ix]) is not None:
+            if (
+                EncodingVisualizer.unk_token_regex.search(encoding.tokens[first.token_ix])
+                is not None
+            ):
                 # This is a special token that is in the text. probably UNK
                 css_classes.append("special-token")
                 # TODO is this the right name for the data attribute ?
                 data_items["stok"] = encoding.tokens[first.token_ix]
         else:
-            # In this case we are looking at a group/single char that is not tokenized. e.g. white space
+            # In this case we are looking at a group/single char that is not tokenized.
+            # e.g. white space
             css_classes.append("non-token")
         css = f'''class="{' '.join(css_classes)}"'''
         data = ""
@@ -248,13 +323,16 @@ class EncodingVisualizer:
     def __make_anno_map(text: str, annotations: AnnotationList) -> PartialIntList:
         """
         Args:
-            text:
+            text (:obj:`str`):
                 The raw text we want to align to
-            annotations:
+
+            annotations (:obj:`AnnotationList`):
                 A (possibly empty) list of annotations
+
         Returns:
-            A list of  length len(text) whose entry at index i is None if there is no annotation on charachter i
-            or k, the index of the annotation that covers index i where k is with respect to the list of annotations
+            A list of  length len(text) whose entry at index i is None if there is no annotation on
+            charachter i or k, the index of the annotation that covers index i where k is with
+            respect to the list of annotations
         """
         annotation_map = [None] * len(text)
         for anno_ix, a in enumerate(annotations):
@@ -262,34 +340,72 @@ class EncodingVisualizer:
                 annotation_map[i] = anno_ix
         return annotation_map
 
-
     @staticmethod
     def __make_char_states(
         text: str, encoding: Encoding, annotations: AnnotationList
     ) -> List[CharState]:
         """
-        For each charachter in the original text, we emit a tuple representing it's "state" -
-        which token_ix it corresponds to
-        which word_ix it corresponds to
-        which annotation_ix it corresponds to
+        For each character in the original text, we emit a tuple representing it's "state":
+
+            * which token_ix it corresponds to
+            * which word_ix it corresponds to
+            * which annotation_ix it corresponds to
+
         Args:
-            text: str:
+            text (:obj:`str`):
                 The raw text we want to align to
-            annotations: List[Annotation]
+
+            annotations (:obj:`List[Annotation]`):
                 A (possibly empty) list of annotations
-            encoding: Encoding:
+
+            encoding: (:class:`~tokenizers.Encoding`):
                 The encoding returned from the tokenizer
+
         Returns:
-            List[CharState] : A list of CharStates, indicating for each char in the text what it's state is
+            :obj:`List[CharState]`: A list of CharStates, indicating for each char in the text what
+            it's state is
         """
         annotation_map = EncodingVisualizer.__make_anno_map(text, annotations)
         # Todo make this a dataclass or named tuple
-        char_states: List[CharState] = [ CharState(char_ix) for char_ix in range(len(text))]
-        for token_ix,token in enumerate(encoding.tokens):
-            start,end = encoding.token_to_chars(token_ix)
-            for i in range(start,end):
-                char_states[i].tokens.append(token_ix)
-        for char_ix,anno_ix in enumerate(annotation_map):
-            char_states[char_ix].anno_ix=anno_ix
+        char_states: List[CharState] = [CharState(char_ix) for char_ix in range(len(text))]
+        for token_ix, token in enumerate(encoding.tokens):
+            offsets = encoding.token_to_chars(token_ix)
+            if offsets is not None:
+                start, end = offsets
+                for i in range(start, end):
+                    char_states[i].tokens.append(token_ix)
+        for char_ix, anno_ix in enumerate(annotation_map):
+            char_states[char_ix].anno_ix = anno_ix
 
         return char_states
+
+
+def HTMLBody(children: List[str], css_styles=css) -> str:
+    """
+    Generates the full html with css from a list of html spans
+
+    Args:
+        children (:obj:`List[str]`):
+            A list of strings, assumed to be html elements
+
+        css_styles (:obj:`str`, `optional`):
+            Optional alternative implementation of the css
+
+    Returns:
+        :obj:`str`: An HTML string with style markup
+    """
+    children_text = "".join(children)
+    return f"""
+    <html>
+        <head>
+            <style>
+                {css_styles}
+            </style>
+        </head>
+        <body>
+            <div class="tokenized-text" dir=auto>
+            {children_text}
+            </div>
+        </body>
+    </html>
+    """
