@@ -4,8 +4,7 @@ use crate::extraction::*;
 use crate::models::Model;
 use crate::tokenizer::AddedToken;
 use neon::prelude::*;
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use tk::models::{
     bpe::BpeTrainer, unigram::UnigramTrainer, wordlevel::WordLevelTrainer,
@@ -15,13 +14,13 @@ use tk::models::{
 /// Trainer
 #[derive(Clone)]
 pub struct Trainer {
-    pub trainer: Option<Arc<TrainerWrapper>>,
+    pub trainer: Option<Arc<RwLock<TrainerWrapper>>>,
 }
 
 impl From<TrainerWrapper> for Trainer {
     fn from(trainer: TrainerWrapper) -> Self {
         Self {
-            trainer: Some(Arc::new(trainer)),
+            trainer: Some(Arc::new(RwLock::new(trainer))),
         }
     }
 }
@@ -33,20 +32,19 @@ impl tk::Trainer for Trainer {
         self.trainer
             .as_ref()
             .expect("Uninitialized Trainer")
+            .read()
+            .unwrap()
             .should_show_progress()
     }
 
-    fn train(
-        &self,
-        words: HashMap<String, u32>,
-        model: &mut Self::Model,
-    ) -> tk::Result<Vec<tk::AddedToken>> {
+    fn train(&self, model: &mut Self::Model) -> tk::Result<Vec<tk::AddedToken>> {
         let special_tokens = self
             .trainer
             .as_ref()
             .ok_or("Uninitialized Trainer")?
+            .read()
+            .unwrap()
             .train(
-                words,
                 &mut model
                     .model
                     .as_ref()
@@ -58,11 +56,18 @@ impl tk::Trainer for Trainer {
         Ok(special_tokens)
     }
 
-    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
+    fn feed<I, S, F>(&mut self, iterator: I, process: F) -> tk::Result<()>
+    where
+        I: Iterator<Item = S> + Send,
+        S: AsRef<str> + Send,
+        F: Fn(&str) -> tk::Result<Vec<String>> + Sync,
+    {
         self.trainer
             .as_ref()
-            .expect("Uninitialized Trainer")
-            .process_tokens(words, tokens)
+            .ok_or("Uninitialized Trainer")?
+            .write()
+            .unwrap()
+            .feed(iterator, process)
     }
 }
 
@@ -162,7 +167,7 @@ fn bpe_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
 
     let mut js_trainer = JsTrainer::new::<_, JsTrainer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_trainer.borrow_mut(&guard).trainer = Some(Arc::new(trainer.into()));
+    js_trainer.borrow_mut(&guard).trainer = Some(Arc::new(RwLock::new(trainer.into())));
 
     Ok(js_trainer)
 }
@@ -254,7 +259,7 @@ fn wordpiece_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
 
     let mut js_trainer = JsTrainer::new::<_, JsTrainer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_trainer.borrow_mut(&guard).trainer = Some(Arc::new(trainer.into()));
+    js_trainer.borrow_mut(&guard).trainer = Some(Arc::new(RwLock::new(trainer.into())));
 
     Ok(js_trainer)
 }
@@ -327,7 +332,7 @@ fn wordlevel_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
 
     let mut js_trainer = JsTrainer::new::<_, JsTrainer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_trainer.borrow_mut(&guard).trainer = Some(Arc::new(trainer.into()));
+    js_trainer.borrow_mut(&guard).trainer = Some(Arc::new(RwLock::new(trainer.into())));
 
     Ok(js_trainer)
 }
@@ -424,7 +429,7 @@ fn unigram_trainer(mut cx: FunctionContext) -> JsResult<JsTrainer> {
 
     let mut js_trainer = JsTrainer::new::<_, JsTrainer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    js_trainer.borrow_mut(&guard).trainer = Some(Arc::new(trainer.into()));
+    js_trainer.borrow_mut(&guard).trainer = Some(Arc::new(RwLock::new(trainer.into())));
 
     Ok(js_trainer)
 }
