@@ -1068,7 +1068,20 @@ impl PyTokenizer {
         Ok(self.tokenizer.add_special_tokens(&tokens))
     }
 
+    /// Train the Tokenizer using the given files.
+    ///
+    /// Reads the files line by line, while keeping all the whitespace, even new lines.
+    /// If you want to train from data store in-memory, you can check
+    /// :meth:`~tokenizers.Tokenizer.train_from_iterator`
+    ///
+    /// Args:
+    ///     files (:obj:`List[str]`):
+    ///         A list of path to the files that we should use for training
+    ///
+    ///     trainer (:obj:`~tokenizers.trainers.Trainer`, `optional`):
+    ///         An optional trainer that should be used to train our Model
     #[args(trainer = "None")]
+    #[text_signature = "(self, files, trainer = None)"]
     fn train(&mut self, files: Vec<String>, trainer: Option<&mut PyTrainer>) -> PyResult<()> {
         let mut trainer =
             trainer.map_or_else(|| self.tokenizer.get_model().get_trainer(), |t| t.clone());
@@ -1084,7 +1097,27 @@ impl PyTokenizer {
         })
     }
 
+    /// Train the Tokenizer using the provided iterator.
+    ///
+    /// You can provide anything that is a Python Iterator
+    ///
+    ///     * A list of sequences :obj:`List[str]`
+    ///     * A generator that yields :obj:`str` or :obj:`List[str]`
+    ///     * A Numpy array of strings
+    ///     * ...
+    ///
+    /// Args:
+    ///     iterator (:obj:`Iterator`):
+    ///         Any iterator over strings or list of strings
+    ///
+    ///     trainer (:obj:`~tokenizers.trainers.Trainer`, `optional`):
+    ///         An optional trainer that should be used to train our Model
+    ///
+    ///     length (:obj:`int`, `optional`):
+    ///         The total number of sequences in the iterator. This is used to
+    ///         provide meaningful progress tracking
     #[args(trainer = "None", length = "None")]
+    #[text_signature = "(self, iterator, trainer=None, length=None)"]
     fn train_from_iterator(
         &mut self,
         iterator: &PyAny,
