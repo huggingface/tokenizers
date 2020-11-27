@@ -13,6 +13,7 @@ from tokenizers.pre_tokenizers import (
     Sequence,
     Digits,
     UnicodeScripts,
+    Split,
 )
 
 
@@ -28,6 +29,22 @@ class TestByteLevel:
     def test_has_alphabet(self):
         assert isinstance(ByteLevel.alphabet(), list)
         assert len(ByteLevel.alphabet()) == 256
+
+
+class TestSplit:
+    def test_instantiate(self):
+        pre_tokenizer = Split(pattern=" ", behavior="removed")
+        assert pre_tokenizer is not None
+        assert isinstance(pre_tokenizer, PreTokenizer)
+        assert isinstance(pre_tokenizer, Split)
+        assert isinstance(pickle.loads(pickle.dumps(Split(" ", "removed"))), Split)
+
+        # test with invert=True
+        pre_tokenizer_with_invert = Split(pattern=" ", behavior="isolated", invert=True)
+        assert pre_tokenizer_with_invert is not None
+        assert isinstance(pre_tokenizer_with_invert, PreTokenizer)
+        assert isinstance(pre_tokenizer_with_invert, Split)
+        assert isinstance(pickle.loads(pickle.dumps(Split(" ", "removed", True))), Split)
 
 
 class TestWhitespace:

@@ -392,6 +392,40 @@ class Sequence(PreTokenizer):
         """
         pass
 
+class Split(PreTokenizer):
+    """
+    Split PreTokenizer
+
+    This versatile pre-tokenizer splits using the provided pattern and
+    according to the provided behavior. The pattern can be inverted by
+    making use of the invert flag.
+
+    Args:
+        pattern (:obj:`str` or :class:`~tokenizers.Regex`):
+            A pattern used to split the string. Usually a string or a Regex
+
+        behavior (:class:`~tokenizers.SplitDelimiterBehavior`):
+            The behavior to use when splitting.
+            Choices: "removed", "isolated", "merged_with_previous", "merged_with_next",
+            "contiguous"
+
+        invert (:obj:`bool`, `optional`, defaults to :obj:`False`):
+            Whether to invert the pattern.
+    """
+
+    def __init__(self, pattern, behavior, invert=False):
+        pass
+    def pre_tokenize(self, pretok):
+        """
+        Pre tokenize the given PreTokenizedString in-place
+        """
+        pass
+    def pre_tokenize_str(self, sequence):
+        """
+        Pre tokenize the given sequence
+        """
+        pass
+
 class UnicodeScripts(PreTokenizer):
     """
     This pre-tokenizer splits on characters that belong to different language family

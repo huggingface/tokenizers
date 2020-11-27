@@ -21,7 +21,7 @@ impl From<&str> for ReplacePattern {
     }
 }
 
-/// We use this custom deserializer to provided the value for `regex` for `Replace`
+/// We use this custom deserializer to provide the value for `regex` for `Replace`
 #[doc(hidden)]
 #[derive(Deserialize)]
 #[serde(tag = "type")]

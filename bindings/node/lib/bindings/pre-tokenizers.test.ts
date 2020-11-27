@@ -3,6 +3,7 @@ import {
   metaspacePreTokenizer,
   punctuationPreTokenizer,
   sequencePreTokenizer,
+  splitPreTokenizer,
   whitespaceSplitPreTokenizer,
 } from "./pre-tokenizers";
 
@@ -40,6 +41,13 @@ describe("metaspacePreTokenizer", () => {
 describe("punctuationPreTokenizer", () => {
   it("instantiates correctly without any parameter", () => {
     const processor = punctuationPreTokenizer();
+    expect(processor.constructor.name).toEqual("PreTokenizer");
+  });
+});
+
+describe("splitPreTokenizer", () => {
+  it("instantiates correctly with invert parameter", () => {
+    const processor = splitPreTokenizer(" ", "mergedWithPrevious", false);
     expect(processor.constructor.name).toEqual("PreTokenizer");
   });
 });
