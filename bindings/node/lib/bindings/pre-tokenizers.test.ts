@@ -47,7 +47,7 @@ describe("punctuationPreTokenizer", () => {
 
 describe("splitPreTokenizer", () => {
   it("instantiates correctly with invert parameter", () => {
-    const processor = splitPreTokenizer(" ", "isolated", false);
+    const processor = splitPreTokenizer(" ", "mergedWithPrevious", false);
     expect(processor.constructor.name).toEqual("PreTokenizer");
   });
 });

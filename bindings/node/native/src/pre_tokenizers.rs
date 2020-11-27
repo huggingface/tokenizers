@@ -19,12 +19,12 @@ impl FromJsValue for JsSplitDelimiterBehavior {
         Ok(Self(match s.as_ref() {
             "removed" => Ok(SplitDelimiterBehavior::Removed),
             "isolated" => Ok(SplitDelimiterBehavior::Isolated),
-            "merged_with_previous" => Ok(SplitDelimiterBehavior::MergedWithPrevious),
-            "merged_with_next" => Ok(SplitDelimiterBehavior::MergedWithNext),
+            "mergedWithPrevious" => Ok(SplitDelimiterBehavior::MergedWithPrevious),
+            "mergedWithNext" => Ok(SplitDelimiterBehavior::MergedWithNext),
             "contiguous" => Ok(SplitDelimiterBehavior::Contiguous),
             _ => Err(Error(
                 "Wrong value for SplitDelimiterBehavior, expected one of: \
-                 `removed, isolated, merged_with_previous, merged_with_next, contiguous`"
+                 `removed, isolated, mergedWithPrevious, mergedWithNext, contiguous`"
                     .into(),
             )),
         }?))
@@ -188,7 +188,7 @@ fn metaspace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
 /// split(invert: bool = false)
 fn split(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let pattern: String = cx.extract::<String>(0)?;
-    let behavior: JsSplitDelimiterBehavior = cx.extract::<JsSplitDelimiterBehavior>(1)?;
+    let behavior: SplitDelimiterBehavior = cx.extract::<JsSDB>(1)?.0;
     let invert: bool = cx.extract_opt::<bool>(2)?.unwrap_or(false);
 
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;

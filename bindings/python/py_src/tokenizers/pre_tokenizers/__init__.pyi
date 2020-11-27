@@ -193,15 +193,15 @@ class Split(PreTokenizer):
     making use of the invert flag.
 
     Args:
-        pattern: Pattern:
+        pattern (:obj:`str` or :class:`~tokenizers.Regex`):
             A pattern used to split the string. Usually a string or a Regex
 
-        behavior: SplitDelimiterBehavior:
+        behavior (:class:`~tokenizers.SplitDelimiterBehavior`):
             The behavior to use when splitting.
             Choices: "removed", "isolated", "merged_with_previous", "merged_with_next",
             "contiguous"
 
-        invert: bool:
+        invert (:obj:`bool`, `optional`, defaults to :obj:`False`):
             Whether to invert the pattern.
     """
 

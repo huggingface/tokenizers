@@ -5,22 +5,12 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 
 use super::{
-    DestroyPtr, PyNormalizedString, PyNormalizedStringRefMut, PyPattern, RefMutContainer,
-    RefMutGuard,
+    DestroyPtr, PyNormalizedString, PyNormalizedStringRefMut, RefMutContainer, RefMutGuard,
 };
 use crate::encoding::PyEncoding;
 use crate::error::ToPyResult;
 use crate::token::PyToken;
 use tk::{OffsetReferential, OffsetType, Offsets, PreTokenizedString, Token};
-
-impl From<PyPattern<'_>> for tk::pre_tokenizers::split::SplitPattern {
-    fn from(pattern: PyPattern<'_>) -> Self {
-        match pattern {
-            PyPattern::Str(s) => Self::String(s.to_owned()),
-            PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),
-        }
-    }
-}
 
 fn split(pretok: &mut PreTokenizedString, func: &PyAny) -> PyResult<()> {
     if !func.is_callable() {

@@ -36,12 +36,14 @@ class TestSplit:
         pre_tokenizer = Split(pattern=" ", behavior="removed")
         assert pre_tokenizer is not None
         assert isinstance(pre_tokenizer, PreTokenizer)
+        assert isinstance(pre_tokenizer, Split)
         assert isinstance(pickle.loads(pickle.dumps(Split(" ", "removed"))), Split)
 
         # test with invert=True
         pre_tokenizer_with_invert = Split(pattern=" ", behavior="isolated", invert=True)
         assert pre_tokenizer_with_invert is not None
         assert isinstance(pre_tokenizer_with_invert, PreTokenizer)
+        assert isinstance(pre_tokenizer_with_invert, Split)
         assert isinstance(pickle.loads(pickle.dumps(Split(" ", "removed", True))), Split)
 
 
