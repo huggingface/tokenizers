@@ -47,7 +47,7 @@ export function whitespaceSplitPreTokenizer(): PreTokenizer;
  *
  * @param [pattern] A pattern used to split the string. Usually a string or a Regex.
  * @param [behavior] The behavior to use when splitting.
- * Choices: "removed", "isolated", "merged_with_previous", "merged_with_next",
+ * Choices: "removed", "isolated", "mergedWithPrevious", "mergedWithNext",
  * "contiguous".
  * @param [invert=false] Whether to invert the pattern.
  */
