@@ -188,7 +188,7 @@ fn metaspace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
 /// split(invert: bool = false)
 fn split(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let pattern: String = cx.extract::<String>(0)?;
-    let behavior: SplitDelimiterBehavior = cx.extract::<JsSDB>(1)?.0;
+    let behavior: JsSplitDelimiterBehavior = cx.extract::<JsSplitDelimiterBehavior>(1)?;
     let invert: bool = cx.extract_opt::<bool>(2)?.unwrap_or(false);
 
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
