@@ -15,5 +15,6 @@ def batch_iterator():
     for i in range(0, len(dataset["train"]), batch_length):
         yield dataset["train"][i : i + batch_length]["text"]
 
+
 # And finally train
 bpe_tokenizer.train_from_iterator(batch_iterator(), length=len(dataset["train"]))

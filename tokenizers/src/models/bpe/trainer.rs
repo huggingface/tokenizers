@@ -138,22 +138,21 @@ impl BpeTrainerBuilder {
     }
 }
 
-/// In charge of training a `BPE` model from a mapping of words to word counts.
+/// In charge of training a `BPE` model
 ///
 /// # Examples
 ///
 /// ```
-/// use std::collections::HashMap;
 /// use tokenizers::tokenizer::Trainer;
 /// use tokenizers::models::bpe::{BPE, BpeTrainer};
 ///
-/// let word_counts: HashMap<String, u32> = [
-///     (String::from("Hello"), 1),
-///     (String::from("World"), 1),
-/// ].iter().cloned().collect();
-/// let trainer = BpeTrainer::default();
+/// let sequences = vec![ "Hello", "World" ];
+///
+/// let mut trainer = BpeTrainer::default();
+/// trainer.feed(sequences.iter(), |s| Ok(vec![s.to_owned()]));
+///
 /// let mut model = BPE::default();
-/// let special_tokens = trainer.train(word_counts, &mut model).unwrap();
+/// let special_tokens = trainer.train(&mut model).unwrap();
 /// ```
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
