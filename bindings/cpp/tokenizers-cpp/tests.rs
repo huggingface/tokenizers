@@ -1,6 +1,6 @@
 #[cxx::bridge(namespace = "huggingface::tokenizers")]
 mod ffi {
-    extern "C++" {
+    unsafe extern "C++" {
         include!("tokenizers-cpp/tests.h");
 
         // returns true on success

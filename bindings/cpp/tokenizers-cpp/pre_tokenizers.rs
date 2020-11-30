@@ -1,7 +1,3 @@
-use tk::normalizer::NormalizedString;
-use tk::pre_tokenizers::{bert::BertPreTokenizer, PreTokenizerWrapper};
-use tk::{PreTokenizedString, PreTokenizer, Token};
-
 #[cxx::bridge(namespace = "huggingface::tokenizers")]
 mod ffi {
     pub enum OffsetReferential {
@@ -38,7 +34,9 @@ mod ffi {
         type PreTokenizerWrapper;
         type BertPreTokenizer;
 
-        fn normalized_to_pre_tokenized_string(normalized: &NormalizedString) -> Box<PreTokenizedString>;
+        fn normalized_to_pre_tokenized_string(
+            normalized: &NormalizedString,
+        ) -> Box<PreTokenizedString>;
         fn str_to_pre_tokenized_string(str: &str) -> Box<PreTokenizedString>;
 
         fn bert_pre_tokenizer() -> Box<BertPreTokenizer>;
@@ -61,16 +59,30 @@ mod ffi {
     }
 }
 
+use derive_more::{Deref, DerefMut, From};
+use tk::{pre_tokenizers::bert::BertPreTokenizer as TkBertPreTokenizer, PreTokenizer};
+
+#[derive(Deref, DerefMut, From)]
+struct NormalizedString(tk::NormalizedString);
+#[derive(Deref, DerefMut, From)]
+struct Token(tk::Token);
+#[derive(Deref, DerefMut, From)]
+struct PreTokenizedString(tk::PreTokenizedString);
+#[derive(Deref, DerefMut, From)]
+struct BertPreTokenizer(TkBertPreTokenizer);
+#[derive(Deref, DerefMut, From)]
+struct PreTokenizerWrapper(tk::pre_tokenizers::PreTokenizerWrapper);
+
 fn normalized_to_pre_tokenized_string(normalized: &NormalizedString) -> Box<PreTokenizedString> {
-    Box::new(normalized.clone().into())
+    Box::new(PreTokenizedString(normalized.0.clone().into()))
 }
 
 fn str_to_pre_tokenized_string(str: &str) -> Box<PreTokenizedString> {
-    Box::new(str.into())
+    Box::new(PreTokenizedString(str.into()))
 }
 
 fn bert_pre_tokenizer() -> Box<BertPreTokenizer> {
-    Box::new(BertPreTokenizer)
+    Box::new(BertPreTokenizer(TkBertPreTokenizer))
 }
 
 fn pre_tokenize_any(
@@ -112,5 +124,6 @@ fn get_splits(
             // FIXME temporarily removed to work around a CXX conflict
             // has_tokens: tokens.is_some(),
             // tokens: tokens.as_ref().map_or_else(|| vec![], |v| v.clone()),
-        }).collect()
+        })
+        .collect()
 }

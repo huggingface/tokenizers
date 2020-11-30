@@ -1,7 +1,3 @@
-use tk::normalizer::NormalizedString;
-use tk::normalizers::{BertNormalizer, NormalizerWrapper};
-use tk::Normalizer;
-
 #[cxx::bridge(namespace = "huggingface::tokenizers")]
 mod ffi {
     pub enum BertStripAccents {
@@ -44,10 +40,20 @@ mod ffi {
     }
 }
 
+use derive_more::{Deref, DerefMut, From};
+use tk::{normalizers::BertNormalizer as TkBertNormalizer, Normalizer};
+
+#[derive(Deref, DerefMut, From)]
+struct NormalizedString(tk::NormalizedString);
+#[derive(Deref, DerefMut, From)]
+struct NormalizerWrapper(tk::NormalizerWrapper);
+#[derive(Deref, DerefMut, From)]
+struct BertNormalizer(TkBertNormalizer);
+
 use ffi::BertStripAccents;
 
 fn normalized_string(str: &str) -> Box<NormalizedString> {
-    Box::new(NormalizedString::from(str))
+    Box::new(NormalizedString(str.into()))
 }
 
 fn bert_normalizer(
@@ -62,12 +68,12 @@ fn bert_normalizer(
         BertStripAccents::True => Some(true),
         _ => None,
     };
-    Box::new(BertNormalizer::new(
+    Box::new(BertNormalizer(TkBertNormalizer::new(
         clean_text,
         handle_chinese_chars,
         strip_accents,
         lowercase,
-    ))
+    )))
 }
 
 fn normalize_any(

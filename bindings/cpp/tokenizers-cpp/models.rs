@@ -1,6 +1,3 @@
-use tk::models::bpe::{BpeBuilder as TkBpeBuilder, BPE};
-use tk::{Model, Result, Token};
-
 #[cxx::bridge(namespace = "huggingface::tokenizers")]
 mod ffi {
     #[namespace = "huggingface::tokenizers::ffi"]
@@ -66,10 +63,20 @@ mod ffi {
     }
 }
 
+use derive_more::{Deref, DerefMut, From};
 use ffi::*;
+use tk::models::bpe::BpeBuilder as TkBpeBuilder;
+use tk::{Model, Result};
+
+#[derive(Deref, DerefMut, From)]
+struct Token(tk::Token);
+#[derive(Deref, DerefMut, From)]
+struct BPE(tk::models::bpe::BPE);
 
 fn tokenize_bpe(model: &BPE, sequence: &str) -> Result<Vec<Token>> {
-    model.tokenize(sequence)
+    model
+        .tokenize(sequence)
+        .map(|tokens| tokens.into_iter().map(|token| Token(token)).collect())
 }
 
 fn token_to_id_bpe(model: &BPE, token: &str) -> OptionU32 {
@@ -136,7 +143,7 @@ fn bpe_builder() -> Box<BpeBuilder> {
 fn build_bpe(builder: &mut BpeBuilder) -> Result<Box<BPE>> {
     match builder.0.take() {
         None => Err("Empty BpeBuilder".into()),
-        Some(b) => Ok(Box::new(b.build()?)),
+        Some(b) => Ok(Box::new(BPE(b.build()?))),
     }
 }
 
