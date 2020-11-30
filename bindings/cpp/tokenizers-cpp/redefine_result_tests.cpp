@@ -24,5 +24,5 @@ struct fake_result {
         return fake_result<T>::error(e.what());        \
     }
 
-#include "normalizers.h"
-#include "pre_tokenizers.h"
+#include "tokenizers-cpp/normalizers.h"
+#include "tokenizers-cpp/pre_tokenizers.h"

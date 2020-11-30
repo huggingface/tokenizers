@@ -1,7 +1,7 @@
 #[cxx::bridge(namespace = "huggingface::tokenizers")]
 mod ffi {
     extern "C++" {
-        include!("tests.h");
+        include!("tokenizers-cpp/tests.h");
 
         // returns true on success
         pub fn run_tests() -> bool;

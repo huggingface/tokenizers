@@ -2,9 +2,9 @@
 
 #define DOCTEST_CONFIG_IMPLEMENT
 
-#include "normalizers.h"
-#include "pre_tokenizers.h"
-#include "tokenizers-cpp/src/tests.rs.h"
+#include "tokenizers-cpp/normalizers.h"
+#include "tokenizers-cpp/pre_tokenizers.h"
+#include "tokenizers-cpp/tests.rs.h"
 #include "rust/cxx.h"
 
 #include <doctest/doctest.h>

@@ -9,18 +9,18 @@ fn main() {
 
     let rust_sources: Vec<_> = modules
         .iter()
-        .map(|&name| format!("src/{}.rs", name))
+        .map(|&name| format!("tokenizers-cpp/{}.rs", name))
         .collect();
     let mut cpp_headers: Vec<_> = modules
         .iter()
-        .map(|&name| format!("src/{}.h", name))
+        .map(|&name| format!("tokenizers-cpp/{}.h", name))
         .collect();
-    cpp_headers.push("src/tokenizers_util.h".to_string());
+    cpp_headers.push("tokenizers-cpp/common.h".to_string());
 
     let standard = "c++14";
 
     cxx_build::bridges(&rust_sources)
-        .includes(&["src", "thirdparty"])
+        .includes(&[".", "target/cxxbridge/tokenizers-cpp", "thirdparty"])
         .flag_if_supported(format!("-std={}", &standard).as_str())
         .flag_if_supported(format!("/std:{}", &standard).as_str())
         // enable exception handling for MSVC
@@ -33,8 +33,13 @@ fn main() {
 
     if cfg!(feature = "test") {
         cc::Build::new()
-            .includes(&["src", "target/cxxbridge", "thirdparty"])
-            .file("src/redefine_result_tests.cpp")
+            .includes(&[
+                ".",
+                "target/cxxbridge",
+                "target/cxxbridge/tokenizers-cpp",
+                "thirdparty",
+            ])
+            .file("tokenizers-cpp/redefine_result_tests.cpp")
             .flag_if_supported("/EHsc")
             .compile("redefine_result_tests");
     }

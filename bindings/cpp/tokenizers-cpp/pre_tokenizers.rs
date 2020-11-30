@@ -27,7 +27,7 @@ mod ffi {
     }
 
     extern "C++" {
-        include!("pre_tokenizers.h");
+        include!("tokenizers-cpp/pre_tokenizers.h");
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]

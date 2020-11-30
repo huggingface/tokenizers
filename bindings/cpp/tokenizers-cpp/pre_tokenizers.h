@@ -1,8 +1,8 @@
 #pragma once
 
-#include "tokenizers_util.h"
-#include "normalizers.h"
-#include "tokenizers-cpp/src/pre_tokenizers.rs.h"
+#include "tokenizers-cpp/common.h"
+#include "tokenizers-cpp/normalizers.h"
+#include "tokenizers-cpp/pre_tokenizers.rs.h"
 
 #include <string>
 

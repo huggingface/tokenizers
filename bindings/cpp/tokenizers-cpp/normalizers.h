@@ -1,7 +1,7 @@
 #pragma once
 
-#include "tokenizers_util.h"
-#include "tokenizers-cpp/src/normalizers.rs.h"
+#include "tokenizers-cpp/common.h"
+#include "tokenizers-cpp/normalizers.rs.h"
 
 #include <string>
 
