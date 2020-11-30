@@ -26,3 +26,5 @@ struct fake_result {
 
 #include "tokenizers-cpp/normalizers.h"
 #include "tokenizers-cpp/pre_tokenizers.h"
+#include "tokenizers-cpp/models.h"
+#include "tokenizers-cpp/processors.h"
