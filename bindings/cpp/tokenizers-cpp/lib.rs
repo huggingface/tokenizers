@@ -1,6 +1,7 @@
 extern crate derive_more;
 extern crate tokenizers as tk;
 
+mod decoders;
 mod macros;
 mod models;
 mod normalizers;
