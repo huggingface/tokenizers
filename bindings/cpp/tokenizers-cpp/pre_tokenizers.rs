@@ -32,14 +32,11 @@ mod ffi {
         type NormalizedString;
         type PreTokenizedString;
         type PreTokenizerWrapper;
-        type BertPreTokenizer;
 
         fn normalized_to_pre_tokenized_string(
             normalized: &NormalizedString,
         ) -> Box<PreTokenizedString>;
         fn str_to_pre_tokenized_string(str: &str) -> Box<PreTokenizedString>;
-
-        fn bert_pre_tokenizer() -> Box<BertPreTokenizer>;
 
         fn pre_tokenize_any(
             pre_tokenizer: &PreTokenizerWrapper,
@@ -47,7 +44,6 @@ mod ffi {
         ) -> Result<()>;
 
         fn pre_tokenize_bert(
-            pre_tokenizer: &BertPreTokenizer,
             pre_tokenized: &mut PreTokenizedString,
         ) -> Result<()>;
 
@@ -60,7 +56,7 @@ mod ffi {
 }
 
 use derive_more::{Deref, DerefMut, From};
-use tk::{pre_tokenizers::bert::BertPreTokenizer as TkBertPreTokenizer, PreTokenizer};
+use tk::{pre_tokenizers::bert::BertPreTokenizer, PreTokenizer};
 
 #[derive(Deref, DerefMut, From)]
 struct NormalizedString(tk::NormalizedString);
@@ -68,8 +64,6 @@ struct NormalizedString(tk::NormalizedString);
 struct Token(tk::Token);
 #[derive(Deref, DerefMut, From)]
 struct PreTokenizedString(tk::PreTokenizedString);
-#[derive(Deref, DerefMut, From)]
-struct BertPreTokenizer(TkBertPreTokenizer);
 #[derive(Deref, DerefMut, From)]
 struct PreTokenizerWrapper(tk::pre_tokenizers::PreTokenizerWrapper);
 
@@ -81,10 +75,6 @@ fn str_to_pre_tokenized_string(str: &str) -> Box<PreTokenizedString> {
     Box::new(PreTokenizedString(str.into()))
 }
 
-fn bert_pre_tokenizer() -> Box<BertPreTokenizer> {
-    Box::new(BertPreTokenizer(TkBertPreTokenizer))
-}
-
 fn pre_tokenize_any(
     pre_tokenizer: &PreTokenizerWrapper,
     pre_tokenized: &mut PreTokenizedString,
@@ -93,10 +83,9 @@ fn pre_tokenize_any(
 }
 
 fn pre_tokenize_bert(
-    pre_tokenizer: &BertPreTokenizer,
     pre_tokenized: &mut PreTokenizedString,
 ) -> tk::Result<()> {
-    pre_tokenizer.pre_tokenize(pre_tokenized)
+    BertPreTokenizer.pre_tokenize(pre_tokenized)
 }
 
 fn get_splits(

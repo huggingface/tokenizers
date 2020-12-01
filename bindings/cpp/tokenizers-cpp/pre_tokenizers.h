@@ -25,13 +25,9 @@ public:
 };
 
 struct BertPreTokenizer {
-    HFT_FFI_WRAPPER(BertPreTokenizer);
-
 public:
-    BertPreTokenizer() : inner_(ffi::bert_pre_tokenizer()){};
-
     HFT_RESULT_VOID pre_tokenize(PreTokenizedString& pre_tokenized) {
-        HFT_TRY_VOID(ffi::pre_tokenize_bert(*inner_, *pre_tokenized));
+        HFT_TRY_VOID(ffi::pre_tokenize_bert(*pre_tokenized));
     }
 };
 
