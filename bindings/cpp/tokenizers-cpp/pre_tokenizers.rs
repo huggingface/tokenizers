@@ -44,9 +44,7 @@ mod ffi {
             pre_tokenized: &mut PreTokenizedString,
         ) -> Result<()>;
 
-        fn pre_tokenize_bert(
-            pre_tokenized: &mut PreTokenizedString,
-        ) -> Result<()>;
+        fn pre_tokenize_bert(pre_tokenized: &mut PreTokenizedString) -> Result<()>;
 
         fn get_splits(
             pre_tokenized: &PreTokenizedString,
@@ -83,9 +81,7 @@ fn pre_tokenize_any(
     pre_tokenizer.pre_tokenize(pre_tokenized)
 }
 
-fn pre_tokenize_bert(
-    pre_tokenized: &mut PreTokenizedString,
-) -> tk::Result<()> {
+fn pre_tokenize_bert(pre_tokenized: &mut PreTokenizedString) -> tk::Result<()> {
     BertPreTokenizer.pre_tokenize(pre_tokenized)
 }
 
@@ -94,18 +90,12 @@ fn get_splits(
     offset_ref: ffi::OffsetReferential,
     offset_type: ffi::OffsetType,
 ) -> Vec<ffi::Split> {
-    let offset_ref = match offset_ref {
-        ffi::OffsetReferential::Original => tk::OffsetReferential::Original,
-        ffi::OffsetReferential::Normalized => tk::OffsetReferential::Normalized,
-        _ => panic!("Illegal OffsetReferential value"),
-    };
-    let offset_type = match offset_type {
-        ffi::OffsetType::Byte => tk::OffsetType::Byte,
-        ffi::OffsetType::Char => tk::OffsetType::Char,
-        _ => panic!("Illegal OffsetType value"),
-    };
+    use crate::forward_cxx_enum;
     pre_tokenized
-        .get_splits(offset_ref, offset_type)
+        .get_splits(
+            forward_cxx_enum!(offset_ref, OffsetReferential, Original, Normalized),
+            forward_cxx_enum!(offset_type, OffsetType, Byte, Char),
+        )
         .into_iter()
         .map(|(original, (start, end), _tokens)| ffi::Split {
             original: original.to_string(),
