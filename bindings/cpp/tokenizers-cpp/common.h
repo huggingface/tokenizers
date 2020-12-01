@@ -55,6 +55,9 @@ public:                                                                        \
                                                                                \
 private:
 
+// TODO should be a function, but I haven't figured out the proper declaration
+#define HFT_CONSUME(wrapper) std::move(wrapper).inner_
+
 #if !(defined(HFT_RESULT_VOID) && defined(HFT_RESULT) && \
       defined(HFT_TRY_VOID) && defined(HFT_TRY))
 

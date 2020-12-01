@@ -33,6 +33,7 @@ mod ffi {
         type PreTokenizedString;
         type PreTokenizerWrapper;
 
+        // FIXME change to take Box<NormalizedString> after https://github.com/dtolnay/cxx/issues/496 is fixed
         fn normalized_to_pre_tokenized_string(
             normalized: &NormalizedString,
         ) -> Box<PreTokenizedString>;

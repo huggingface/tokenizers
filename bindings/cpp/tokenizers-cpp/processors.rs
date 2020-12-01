@@ -26,13 +26,13 @@ mod ffi {
         fn added_tokens_bert(post_processor: &BertProcessing, is_pair: bool) -> usize;
         fn process_bert(
             post_processor: &BertProcessing,
-            encoding: &Encoding,
+            encoding: Box<Encoding>,
             add_special_tokens: bool,
         ) -> Result<Box<Encoding>>;
         fn process_pair_bert(
             post_processor: &BertProcessing,
-            encoding: &Encoding,
-            pair_encoding: &Encoding,
+            encoding: Box<Encoding>,
+            pair_encoding: Box<Encoding>,
             add_special_tokens: bool,
         ) -> Result<Box<Encoding>>;
     }
@@ -66,11 +66,11 @@ fn added_tokens_bert(post_processor: &BertProcessing, is_pair: bool) -> usize {
 
 fn process_bert(
     post_processor: &BertProcessing,
-    encoding: &Encoding,
+    encoding: Box<Encoding>,
     add_special_tokens: bool,
 ) -> Result<Box<Encoding>> {
     Ok(Box::new(Encoding(post_processor.process(
-        encoding.0.clone(),
+        (*encoding).0,
         None,
         add_special_tokens,
     )?)))
@@ -78,13 +78,13 @@ fn process_bert(
 
 fn process_pair_bert(
     post_processor: &BertProcessing,
-    encoding: &Encoding,
-    pair_encoding: &Encoding,
+    encoding: Box<Encoding>,
+    pair_encoding: Box<Encoding>,
     add_special_tokens: bool,
 ) -> Result<Box<Encoding>> {
     Ok(Box::new(Encoding(post_processor.process(
-        encoding.0.clone(),
-        Some(pair_encoding.0.clone()),
+        (*encoding).0,
+        Some((*pair_encoding).0),
         add_special_tokens,
     )?)))
 }

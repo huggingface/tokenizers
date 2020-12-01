@@ -26,17 +26,17 @@ public:
               {to_rust_string(cls.first), cls.second})){};
 
     HFT_RESULT(Encoding)
-    process(const Encoding& encoding, bool add_special_tokens) {
-        HFT_TRY(Encoding,
-                {ffi::process_bert(*inner_, *encoding, add_special_tokens)});
+    process(Encoding&& encoding, bool add_special_tokens) {
+        HFT_TRY(Encoding, {ffi::process_bert(*inner_, HFT_CONSUME(encoding),
+                                             add_special_tokens)});
     }
 
     HFT_RESULT(Encoding)
-    process(const Encoding& encoding, const Encoding& pair_encoding,
+    process(Encoding&& encoding, Encoding&& pair_encoding,
             bool add_special_tokens) {
-        HFT_TRY(Encoding,
-                {ffi::process_pair_bert(*inner_, *encoding, *pair_encoding,
-                                        add_special_tokens)});
+        HFT_TRY(Encoding, {ffi::process_pair_bert(
+                              *inner_, HFT_CONSUME(encoding),
+                              HFT_CONSUME(pair_encoding), add_special_tokens)});
     }
 };
 
