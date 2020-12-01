@@ -43,8 +43,8 @@
 public:                                                                        \
     type(const type&) = delete;                                                \
     type& operator=(const type&) = delete;                                     \
-    type(type&&) = default;                                                    \
-    type& operator=(type&&) = default;                                         \
+    type(type&&) noexcept = default;                                           \
+    type& operator=(type&&) noexcept = default;                                \
     const ffi::type* operator->() const noexcept {                             \
         return inner_.operator->();                                            \
     }                                                                          \
