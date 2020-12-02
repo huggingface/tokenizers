@@ -39,6 +39,19 @@ public:
     }
 };
 
+struct NormalizerWrapper {
+    HFT_FFI_WRAPPER(NormalizerWrapper);
+
+public:
+    // NormalizerWrapper(BertNormalizer&& bert)
+    //     : inner_(ffi::bert_normalizer(clean_text, handle_chinese_chars,
+    //                                   strip_accents, lowercase)){};
+
+    HFT_RESULT_VOID normalize(NormalizedString& normalized) {
+        HFT_TRY_VOID(ffi::normalize_any(*inner_, *normalized));
+    }
+};
+
 struct BertNormalizerOptions {
     HFT_BUILDER_ARG(bool, clean_text, true);
     HFT_BUILDER_ARG(bool, handle_chinese_chars, true);

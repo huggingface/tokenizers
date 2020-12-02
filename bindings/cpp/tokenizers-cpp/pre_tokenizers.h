@@ -31,5 +31,11 @@ public:
     }
 };
 
+struct PreTokenizerWrapper {
+    HFT_FFI_WRAPPER(PreTokenizerWrapper);
+
+public:
+};
+
 }  // namespace tokenizers
 }  // namespace huggingface

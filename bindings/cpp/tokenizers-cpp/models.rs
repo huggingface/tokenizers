@@ -33,6 +33,7 @@ mod ffi {
         type Token;
         type BPE;
         type BpeBuilder;
+        type ModelWrapper;
 
         fn tokenize_bpe(model: &BPE, sequence: &str) -> Result<Vec<Token>>;
         fn token_to_id_bpe(model: &BPE, token: &str) -> OptionU32;
@@ -63,6 +64,7 @@ mod ffi {
     }
 }
 
+use crate::wrap_option;
 use derive_more::{Deref, DerefMut, From};
 use ffi::*;
 use tk::models::bpe::BpeBuilder as TkBpeBuilder;
@@ -72,6 +74,8 @@ use tk::{Model, Result};
 struct Token(tk::Token);
 #[derive(Deref, DerefMut, From)]
 struct BPE(tk::models::bpe::BPE);
+#[derive(Deref, DerefMut, From)]
+struct ModelWrapper(tk::ModelWrapper);
 
 fn tokenize_bpe(model: &BPE, sequence: &str) -> Result<Vec<Token>> {
     model
@@ -80,19 +84,11 @@ fn tokenize_bpe(model: &BPE, sequence: &str) -> Result<Vec<Token>> {
 }
 
 fn token_to_id_bpe(model: &BPE, token: &str) -> OptionU32 {
-    let id = model.token_to_id(token);
-    OptionU32 {
-        has_value: id.is_some(),
-        value: id.unwrap_or(0),
-    }
+    wrap_option!(model.token_to_id(token), OptionU32, 0)
 }
 
 fn id_to_token_bpe(model: &BPE, id: u32) -> OptionString {
-    let token = model.id_to_token(id);
-    OptionString {
-        has_value: token.is_some(),
-        value: token.unwrap_or("".to_string()),
-    }
+    wrap_option!(model.id_to_token(id), OptionString, "".to_string())
 }
 
 fn get_vocab_bpe(model: &BPE) -> Vec<KVStringU32> {

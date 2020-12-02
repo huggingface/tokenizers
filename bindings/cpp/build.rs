@@ -6,6 +6,7 @@ fn main() {
         "models",
         "processors",
         "decoders",
+        "tokenizer",
     ];
 
     // can't do just cfg!(test), see https://github.com/rust-lang/cargo/issues/2549
@@ -21,7 +22,10 @@ fn main() {
         .iter()
         .map(|&name| format!("tokenizers-cpp/{}.h", name))
         .collect();
-    cpp_headers.push("tokenizers-cpp/common.h".to_string());
+    cpp_headers.extend_from_slice(&[
+        "tokenizers-cpp/common.h".to_string(),
+        "tokenizers-cpp/input_sequence.h".to_string(),
+    ]);
 
     let standard = "c++14";
 

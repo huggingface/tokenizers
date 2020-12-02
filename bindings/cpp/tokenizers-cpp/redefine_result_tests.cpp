@@ -29,3 +29,4 @@ struct fake_result {
 #include "tokenizers-cpp/models.h"
 #include "tokenizers-cpp/processors.h"
 #include "tokenizers-cpp/decoders.h"
+#include "tokenizers-cpp/tokenizer.h"

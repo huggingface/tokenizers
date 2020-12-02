@@ -40,5 +40,11 @@ public:
     }
 };
 
+struct PostProcessorWrapper {
+    HFT_FFI_WRAPPER(PostProcessorWrapper);
+
+public:
+};
+
 }  // namespace tokenizers
 }  // namespace huggingface

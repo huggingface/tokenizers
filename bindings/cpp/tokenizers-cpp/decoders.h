@@ -18,5 +18,11 @@ public:
     }
 };
 
+struct DecoderWrapper {
+    HFT_FFI_WRAPPER(DecoderWrapper);
+
+public:
+};
+
 }  // namespace tokenizers
 }  // namespace huggingface

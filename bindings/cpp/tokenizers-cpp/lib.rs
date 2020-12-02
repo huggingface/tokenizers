@@ -7,6 +7,7 @@ mod models;
 mod normalizers;
 mod pre_tokenizers;
 mod processors;
+mod tokenizer;
 
 #[cfg(test)]
 mod tests;
