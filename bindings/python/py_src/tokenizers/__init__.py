@@ -91,6 +91,7 @@ from .tokenizers import normalizers
 from .tokenizers import pre_tokenizers
 from .tokenizers import processors
 from .tokenizers import trainers
+
 from .implementations import (
     ByteLevelBPETokenizer,
     CharBPETokenizer,
