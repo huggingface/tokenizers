@@ -65,6 +65,22 @@ class Aligned:
 
 
 class EncodingVisualizer:
+    """
+    Build an EncodingVisualizer
+
+    Args:
+
+         tokenizer (:class:`~tokenizers.Tokenizer`):
+            A tokenizer instance
+
+         default_to_notebook (:obj:`bool`):
+            Whether to render html output in a notebook by default
+
+         annotation_converter (:obj:`Callable`, `optional`):
+            An optional (lambda) function that takes an annotation in any format and returns
+            an Annotation object
+    """
+
     unk_token_regex = re.compile("(.{1}\b)?(unk|oov)(\b.{1})?", flags=re.IGNORECASE)
 
     def __init__(
@@ -73,21 +89,6 @@ class EncodingVisualizer:
         default_to_notebook: bool = True,
         annotation_converter: Optional[Callable[[Any], Annotation]] = None,
     ):
-        """
-        Build an EncodingVisualizer
-
-        Args:
-
-             tokenizer (:class:`~tokenizers.Tokenizer`):
-                A tokenizer instance
-
-             default_to_notebook (:obj:`bool`):
-                Whether to render html output in a notebook by default
-
-             annotation_converter (:obj:`Callable`, `optional`):
-                An optional (lambda) function that takes an annotation in any format and returns
-                an Annotation object
-        """
         if default_to_notebook:
             try:
                 from IPython.core.display import display, HTML
@@ -155,7 +156,7 @@ class EncodingVisualizer:
         Generates a color palette for all the labels in a given set of annotations
 
         Args:
-          annotations (:obj:`Annotation):
+          annotations (:obj:`Annotation`):
             A list of annotations
 
         Returns:

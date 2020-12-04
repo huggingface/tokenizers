@@ -78,3 +78,13 @@ Trainers
 
 .. automodule:: tokenizers.trainers
     :members:
+
+
+Visualizer
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: tokenizers.tools.Annotation
+    :members:
+
+.. autoclass:: tokenizers.tools.EncodingVisualizer
+    :members: __call__
