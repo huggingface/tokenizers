@@ -10,7 +10,7 @@ function push_version() {
     # Always use the statics from master (saved when deploying master)
     rm -rf build/html/_static
     cp -r _static build/html
-    rsync -zvr --delete build/html/ "$HOST_NAME:$DOC_PATH/$3/$2"
+    rsync -zvr --delete build/html/ "deploy_host:$DOC_PATH/$3/$2"
 }
 
 function deploy_doc(){
@@ -22,13 +22,13 @@ function deploy_doc(){
         for LANG in "${LANGUAGES[@]}"; do
             make clean
             make html O="-t $LANG"
-            ssh "$HOST_NAME" "mkdir -p $DOC_PATH/$LANG"
-            rsync -zvr --delete build/html/ "$HOST_NAME:$DOC_PATH/$LANG/$2"
+            ssh deploy_host "mkdir -p $DOC_PATH/$LANG"
+            rsync -zvr --delete build/html/ "deploy_host:$DOC_PATH/$LANG/$2"
             cp -r build/html/_static .
         done
-    elif [ "$4" != "override" ] && ssh "$HOST_NAME" "[ -d $DOC_PATH/$3/$2 ]"; then
+    elif [ "$4" != "override" ] && ssh deploy_host "[ -d $DOC_PATH/$3/$2 ]"; then
         echo "Directory" $2 "already exists"
-        rsync -zvr --delete _static/ "$HOST_NAME:$DOC_PATH/$3/$2/_static"
+        rsync -zvr --delete _static/ "deploy_host:$DOC_PATH/$3/$2/_static"
     else
         push_version $1 $2 $3
     fi

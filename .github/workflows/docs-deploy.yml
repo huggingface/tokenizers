@@ -20,6 +20,10 @@ jobs:
           key: ${{ secrets.DOC_SSH_KEY }}
           name: id_rsa
           known_hosts: ${{ secrets.DOC_KNOWN_HOST }}
+          config: |
+            Host deploy_host
+              HostName ${{ secrets.DOC_HOST }}
+              User ${{ secrets.DOC_SSH_USER }}
 
       - name: Install Python
         uses: actions/setup-python@v1
@@ -40,6 +44,5 @@ jobs:
 
       - name: Deploy documentation
         env:
-          HOST_NAME: ${{ secrets.DOC_HOST }}
           DOC_PATH: ${{ secrets.DOC_PATH }}
         run: ./.github/deploy_doc.sh
