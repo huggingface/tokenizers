@@ -4,9 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.10.0rc1]
 
 ### Added
+- [#508]: Add a Visualizer for notebooks to help understand how the tokenizers work
 - [#519]: Add a `WordLevelTrainer` used to train a `WordLevel` model
 - [#533]: Add support for conda builds
 - [#542]: Add Split pre-tokenizer to easily split using a pattern
@@ -298,6 +299,7 @@ delimiter (Works like `.split(delimiter)`)
 [#530]: https://github.com/huggingface/tokenizers/pull/530
 [#519]: https://github.com/huggingface/tokenizers/pull/519
 [#509]: https://github.com/huggingface/tokenizers/pull/509
+[#508]: https://github.com/huggingface/tokenizers/pull/508
 [#506]: https://github.com/huggingface/tokenizers/pull/506
 [#500]: https://github.com/huggingface/tokenizers/pull/500
 [#498]: https://github.com/huggingface/tokenizers/pull/498
