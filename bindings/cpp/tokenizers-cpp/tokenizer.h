@@ -42,22 +42,25 @@ struct Tokenizer {
     HFT_FFI_WRAPPER(Tokenizer);
 
 public:
-    Tokenizer& with_normalizer(NormalizerWrapper&& normalizer) {
+    explicit Tokenizer(Model&& model)
+        : inner_(ffi::tokenizer(*(model.inner_))){};
+
+    Tokenizer& with_normalizer(Normalizer&& normalizer) {
         ffi::set_normalizer(*inner_, *(normalizer.inner_));
         return *this;
     }
 
-    Tokenizer& with_pre_tokenizer(PreTokenizerWrapper&& pre_tokenizer) {
+    Tokenizer& with_pre_tokenizer(PreTokenizer&& pre_tokenizer) {
         ffi::set_pre_tokenizer(*inner_, *(pre_tokenizer.inner_));
         return *this;
     }
 
-    Tokenizer& with_post_processor(PostProcessorWrapper&& post_processor) {
+    Tokenizer& with_post_processor(PostProcessor&& post_processor) {
         ffi::set_post_processor(*inner_, *(post_processor.inner_));
         return *this;
     }
 
-    Tokenizer& with_decoder(DecoderWrapper&& decoder) {
+    Tokenizer& with_decoder(Decoder&& decoder) {
         ffi::set_decoder(*inner_, *(decoder.inner_));
         return *this;
     }

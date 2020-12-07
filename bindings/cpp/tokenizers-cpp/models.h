@@ -53,11 +53,25 @@ public:
     }
 };
 
+struct Model {
+    HFT_FFI_WRAPPER(Model);
+
+public:
+};
+
 struct BpeBuilder {
     HFT_FFI_WRAPPER(BpeBuilder);
 
 public:
-    HFT_RESULT(BPE) build() { HFT_TRY(BPE, {ffi::build_bpe(*inner_)}); }
+    BpeBuilder() : inner_(ffi::bpe_builder()){};
+
+    HFT_RESULT(Model) build() {
+        HFT_TRY(Model, {ffi::build_bpe_wrapper(*inner_)});
+    }
+
+    HFT_RESULT(BPE) build_unwrapped() {
+        HFT_TRY(BPE, {ffi::build_bpe(*inner_)});
+    }
 
     BpeBuilder& files(nonstd::string_view vocab, nonstd::string_view merges) {
         ffi::files_bpe(*inner_, to_rust_string(vocab), to_rust_string(merges));
@@ -116,12 +130,6 @@ public:
         ffi::fuse_unk_bpe(*inner_, fuse_unk);
         return *this;
     }
-};
-
-struct ModelWrapper {
-    HFT_FFI_WRAPPER(ModelWrapper);
-
-public:
 };
 
 }  // namespace tokenizers

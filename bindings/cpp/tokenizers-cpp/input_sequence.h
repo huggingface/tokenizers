@@ -29,6 +29,7 @@ public:
     InputSequence() = delete;
     InputSequence(nonstd::string_view str)
         : tag_(STR), str_(string_view_to_str(str)){};
+    InputSequence(const char* str) : InputSequence(nonstd::string_view(str)){};
     InputSequence(nonstd::span<std::string> strs)
         : tag_(STRING_VEC), string_vec_() {
         fill_vec(string_vec_, strs, [](auto x) { return rust::String(x); });

@@ -60,22 +60,27 @@ mod ffi {
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]
+    unsafe extern "C++" {
+        include!("tokenizers-cpp/tokenizer.h");
+        type Normalizer = crate::normalizers::Normalizer;
+        type PreTokenizer = crate::pre_tokenizers::PreTokenizer;
+        type Model = crate::models::Model;
+        type PostProcessor = crate::processors::PostProcessor;
+        type Decoder = crate::decoders::Decoder;
+    }
+
+    #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {
         type Encoding_1;
-        type ModelWrapper;
-        type NormalizerWrapper;
-        type PreTokenizerWrapper;
-        type PostProcessorWrapper;
-        type DecoderWrapper;
         type Tokenizer;
 
         // FIXME many of the below functions should take Box, not &.
         //  Look for clone() in the implementations.
-        fn tokenizer(model: &ModelWrapper) -> Box<Tokenizer>;
-        fn set_normalizer(tokenizer: &mut Tokenizer, normalizer: &NormalizerWrapper);
-        fn set_pre_tokenizer(tokenizer: &mut Tokenizer, pre_tokenizer: &PreTokenizerWrapper);
-        fn set_post_processor(tokenizer: &mut Tokenizer, post_processor: &PostProcessorWrapper);
-        fn set_decoder(tokenizer: &mut Tokenizer, decoder: &DecoderWrapper);
+        fn tokenizer(model: &Model) -> Box<Tokenizer>;
+        fn set_normalizer(tokenizer: &mut Tokenizer, normalizer: &Normalizer);
+        fn set_pre_tokenizer(tokenizer: &mut Tokenizer, pre_tokenizer: &PreTokenizer);
+        fn set_post_processor(tokenizer: &mut Tokenizer, post_processor: &PostProcessor);
+        fn set_decoder(tokenizer: &mut Tokenizer, decoder: &Decoder);
         fn set_padding(
             tokenizer: &mut Tokenizer,
             is_fixed_length: bool,
@@ -144,51 +149,58 @@ mod ffi {
     }
 }
 
-use crate::{forward_cxx_enum, wrap_option};
-use cxx::CxxVector;
-use derive_more::{Deref, DerefMut, From, Into};
+use crate::{forward_cxx_enum, models::Model, normalizers::Normalizer, wrap_option};
+use cxx::{kind::Opaque, type_id, CxxVector, ExternType};
+use derive_more::{Deref, DerefMut};
 use ffi::*;
 use tk::{EncodeInput, PaddingParams, PaddingStrategy, Result, TruncationParams};
 
-#[derive(Deref, DerefMut, From, Into)]
+#[derive(Deref, DerefMut)]
 #[allow(non_camel_case_types)]
 struct Encoding_1(tk::Encoding);
-#[derive(Deref, DerefMut, From, Into)]
-struct ModelWrapper(tk::ModelWrapper);
 
-#[derive(Deref, DerefMut, From, Into)]
-struct NormalizerWrapper(tk::NormalizerWrapper);
+// TODO why is this necessary?
+macro_rules! impl_extern_type {
+    ($name:ident, $ffi_name:literal) => {
+        unsafe impl ExternType for $name {
+            type Id = type_id!($ffi_name);
 
-#[derive(Deref, DerefMut, From, Into)]
-struct PreTokenizerWrapper(tk::PreTokenizerWrapper);
-
-#[derive(Deref, DerefMut, From, Into)]
-struct PostProcessorWrapper(tk::PostProcessorWrapper);
-
-#[derive(Deref, DerefMut, From, Into)]
-struct DecoderWrapper(tk::DecoderWrapper);
-
-#[derive(Deref, DerefMut, From, Into)]
-struct Tokenizer(tk::Tokenizer);
-
-fn tokenizer(model: &ModelWrapper) -> Box<Tokenizer> {
-    Box::new(Tokenizer(tk::Tokenizer::new(model.0.clone())))
+            type Kind = Opaque;
+        }
+    };
 }
 
-fn set_normalizer(tokenizer: &mut Tokenizer, normalizer: &NormalizerWrapper) {
-    tokenizer.with_normalizer(normalizer.0.clone());
+impl_extern_type!(Normalizer, "huggingface::tokenizers::ffi::Normalizer");
+
+impl_extern_type!(Model, "huggingface::tokenizers::ffi::Model");
+
+impl_extern_type!(PreTokenizer, "huggingface::tokenizers::ffi::PreTokenizer");
+
+impl_extern_type!(PostProcessor, "huggingface::tokenizers::ffi::PostProcessor");
+
+impl_extern_type!(Decoder, "huggingface::tokenizers::ffi::Decoder");
+
+#[derive(Deref, DerefMut)]
+struct Tokenizer(tk::TokenizerImpl<Model, Normalizer, PreTokenizer, PostProcessor, Decoder>);
+
+fn tokenizer(model: &Model) -> Box<Tokenizer> {
+    Box::new(Tokenizer(tk::TokenizerImpl::new(model.clone())))
 }
 
-fn set_pre_tokenizer(tokenizer: &mut Tokenizer, pre_tokenizer: &PreTokenizerWrapper) {
-    tokenizer.with_pre_tokenizer(pre_tokenizer.0.clone());
+fn set_normalizer(tokenizer: &mut Tokenizer, normalizer: &Normalizer) {
+    tokenizer.with_normalizer(normalizer.clone());
 }
 
-fn set_post_processor(tokenizer: &mut Tokenizer, post_processor: &PostProcessorWrapper) {
-    tokenizer.with_post_processor(post_processor.0.clone());
+fn set_pre_tokenizer(tokenizer: &mut Tokenizer, pre_tokenizer: &PreTokenizer) {
+    tokenizer.with_pre_tokenizer(pre_tokenizer.clone());
 }
 
-fn set_decoder(tokenizer: &mut Tokenizer, decoder: &DecoderWrapper) {
-    tokenizer.with_decoder(decoder.0.clone());
+fn set_post_processor(tokenizer: &mut Tokenizer, post_processor: &PostProcessor) {
+    tokenizer.with_post_processor(post_processor.clone());
+}
+
+fn set_decoder(tokenizer: &mut Tokenizer, decoder: &Decoder) {
+    tokenizer.with_decoder(decoder.clone());
 }
 
 fn set_padding(

@@ -18,10 +18,14 @@ public:
     }
 };
 
-struct DecoderWrapper {
-    HFT_FFI_WRAPPER(DecoderWrapper);
+struct Decoder {
+    HFT_FFI_WRAPPER(Decoder);
 
 public:
+    static Decoder byte_level(bool add_prefix_space, bool trim_offsets) {
+        return {
+            ffi::byte_level_decoder_wrapper(add_prefix_space, trim_offsets)};
+    }
 };
 
 }  // namespace tokenizers

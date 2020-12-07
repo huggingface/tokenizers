@@ -16,12 +16,13 @@ mod ffi {
     #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {
         type Encoding;
-        type PostProcessorWrapper;
+        type PostProcessor;
         type BertProcessing;
 
         fn encoding_with_capacity(len: usize) -> Box<Encoding>;
 
         fn bert_post_processor(sep: KVStringU32, cls: KVStringU32) -> Box<BertProcessing>;
+        fn bert_post_processor_wrapper(sep: KVStringU32, cls: KVStringU32) -> Box<PostProcessor>;
 
         fn added_tokens_bert(post_processor: &BertProcessing, is_pair: bool) -> usize;
         fn process_bert(
@@ -40,12 +41,32 @@ mod ffi {
 
 use derive_more::{Deref, DerefMut, From};
 use ffi::*;
-use tk::{processors::bert::BertProcessing as TkBertProcessing, PostProcessor, Result};
+use tk::{
+    processors::bert::BertProcessing as TkBertProcessing, PostProcessor as PostProcessorTrait,
+    Result,
+};
 
 #[derive(Deref, DerefMut, From)]
-struct Encoding(tk::Encoding);
-#[derive(Deref, DerefMut, From)]
-struct PostProcessorWrapper(tk::PostProcessorWrapper);
+pub struct Encoding(pub tk::Encoding);
+
+#[derive(Deref, DerefMut, From, Clone)]
+pub struct PostProcessor(pub tk::PostProcessorWrapper);
+
+impl PostProcessorTrait for PostProcessor {
+    fn added_tokens(&self, is_pair: bool) -> usize {
+        self.0.added_tokens(is_pair)
+    }
+
+    fn process(
+        &self,
+        encoding: tk::Encoding,
+        pair_encoding: Option<tk::Encoding>,
+        add_special_tokens: bool,
+    ) -> Result<tk::Encoding> {
+        self.0.process(encoding, pair_encoding, add_special_tokens)
+    }
+}
+
 #[derive(Deref, DerefMut, From)]
 struct BertProcessing(TkBertProcessing);
 
@@ -58,6 +79,12 @@ fn bert_post_processor(sep: KVStringU32, cls: KVStringU32) -> Box<BertProcessing
         (sep.key, sep.value),
         (cls.key, cls.value),
     )))
+}
+
+fn bert_post_processor_wrapper(sep: KVStringU32, cls: KVStringU32) -> Box<PostProcessor> {
+    Box::new(PostProcessor(
+        TkBertProcessing::new((sep.key, sep.value), (cls.key, cls.value)).into(),
+    ))
 }
 
 fn added_tokens_bert(post_processor: &BertProcessing, is_pair: bool) -> usize {

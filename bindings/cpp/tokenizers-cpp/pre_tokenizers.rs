@@ -31,7 +31,7 @@ mod ffi {
         type Token;
         type NormalizedString;
         type PreTokenizedString;
-        type PreTokenizerWrapper;
+        type PreTokenizer;
 
         // FIXME change to take Box<NormalizedString> after https://github.com/dtolnay/cxx/issues/496 is fixed
         fn normalized_to_pre_tokenized_string(
@@ -39,8 +39,10 @@ mod ffi {
         ) -> Box<PreTokenizedString>;
         fn str_to_pre_tokenized_string(str: &str) -> Box<PreTokenizedString>;
 
+        fn bert_pre_tokenizer_wrapper() -> Box<PreTokenizer>;
+
         fn pre_tokenize_any(
-            pre_tokenizer: &PreTokenizerWrapper,
+            pre_tokenizer: &PreTokenizer,
             pre_tokenized: &mut PreTokenizedString,
         ) -> Result<()>;
 
@@ -55,7 +57,7 @@ mod ffi {
 }
 
 use derive_more::{Deref, DerefMut, From};
-use tk::{pre_tokenizers::bert::BertPreTokenizer, PreTokenizer};
+use tk::{pre_tokenizers::bert::BertPreTokenizer, PreTokenizer as PreTokenizerTrait, Result};
 
 #[derive(Deref, DerefMut, From)]
 struct NormalizedString(tk::NormalizedString);
@@ -63,8 +65,14 @@ struct NormalizedString(tk::NormalizedString);
 struct Token(tk::Token);
 #[derive(Deref, DerefMut, From)]
 struct PreTokenizedString(tk::PreTokenizedString);
-#[derive(Deref, DerefMut, From)]
-struct PreTokenizerWrapper(tk::pre_tokenizers::PreTokenizerWrapper);
+#[derive(Deref, DerefMut, From, Clone)]
+pub struct PreTokenizer(pub tk::pre_tokenizers::PreTokenizerWrapper);
+
+impl PreTokenizerTrait for PreTokenizer {
+    fn pre_tokenize(&self, pretokenized: &mut tk::PreTokenizedString) -> Result<()> {
+        self.0.pre_tokenize(pretokenized)
+    }
+}
 
 fn normalized_to_pre_tokenized_string(normalized: &NormalizedString) -> Box<PreTokenizedString> {
     Box::new(PreTokenizedString(normalized.0.clone().into()))
@@ -74,14 +82,18 @@ fn str_to_pre_tokenized_string(str: &str) -> Box<PreTokenizedString> {
     Box::new(PreTokenizedString(str.into()))
 }
 
+fn bert_pre_tokenizer_wrapper() -> Box<PreTokenizer> {
+    Box::new(PreTokenizer(BertPreTokenizer.into()))
+}
+
 fn pre_tokenize_any(
-    pre_tokenizer: &PreTokenizerWrapper,
+    pre_tokenizer: &PreTokenizer,
     pre_tokenized: &mut PreTokenizedString,
-) -> tk::Result<()> {
+) -> Result<()> {
     pre_tokenizer.pre_tokenize(pre_tokenized)
 }
 
-fn pre_tokenize_bert(pre_tokenized: &mut PreTokenizedString) -> tk::Result<()> {
+fn pre_tokenize_bert(pre_tokenized: &mut PreTokenizedString) -> Result<()> {
     BertPreTokenizer.pre_tokenize(pre_tokenized)
 }
 

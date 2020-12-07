@@ -40,10 +40,16 @@ public:
     }
 };
 
-struct PostProcessorWrapper {
-    HFT_FFI_WRAPPER(PostProcessorWrapper);
+struct PostProcessor {
+    HFT_FFI_WRAPPER(PostProcessor);
 
 public:
+    static PostProcessor bert(std::pair<nonstd::string_view, uint32_t> sep,
+                              std::pair<nonstd::string_view, uint32_t> cls) {
+        return {ffi::bert_post_processor_wrapper(
+            {to_rust_string(sep.first), sep.second},
+            {to_rust_string(cls.first), cls.second})};
+    }
 };
 
 }  // namespace tokenizers

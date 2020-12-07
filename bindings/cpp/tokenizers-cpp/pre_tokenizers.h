@@ -31,10 +31,11 @@ public:
     }
 };
 
-struct PreTokenizerWrapper {
-    HFT_FFI_WRAPPER(PreTokenizerWrapper);
+struct PreTokenizer {
+    HFT_FFI_WRAPPER(PreTokenizer);
 
 public:
+    static PreTokenizer bert() { return {ffi::bert_pre_tokenizer_wrapper()}; }
 };
 
 }  // namespace tokenizers

@@ -2,8 +2,7 @@
 
 #define DOCTEST_CONFIG_IMPLEMENT
 
-#include "tokenizers-cpp/normalizers.h"
-#include "tokenizers-cpp/pre_tokenizers.h"
+#include "tokenizers-cpp/tokenizer.h"
 #include "tokenizers-cpp/tests.rs.h"
 #include "rust/cxx.h"
 
@@ -58,6 +57,18 @@ TEST_SUITE("Pre-tokenizers") {
                                     splits[i].end};
             CHECK_MESSAGE(actual == expected[i], "mismatched splits at " << i);
         }
+    }
+}
+
+TEST_SUITE("Tokenizers") {
+    TEST_CASE("Example") {
+        // example use of a tokenizer
+        // just validates it can run and not throw
+        Tokenizer tokenizer(BpeBuilder().build());
+
+        tokenizer.with_normalizer(BertNormalizerOptions().build());
+
+        tokenizer.encode("blablabla", true);
     }
 }
 

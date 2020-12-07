@@ -1,5 +1,5 @@
 #[cxx::bridge(namespace = "huggingface::tokenizers")]
-mod ffi {
+pub mod ffi {
     pub enum BertStripAccents {
         DeterminedByLowercase,
         False,
@@ -13,10 +13,17 @@ mod ffi {
     #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {
         type NormalizedString;
-        type NormalizerWrapper;
+        type Normalizer;
         type BertNormalizer;
 
         fn normalized_string(str: &str) -> Box<NormalizedString>;
+
+        fn bert_normalizer_wrapper(
+            clean_text: bool,
+            handle_chinese_chars: bool,
+            strip_accents: BertStripAccents,
+            lowercase: bool,
+        ) -> Box<Normalizer>;
 
         fn bert_normalizer(
             clean_text: bool,
@@ -25,10 +32,7 @@ mod ffi {
             lowercase: bool,
         ) -> Box<BertNormalizer>;
 
-        fn normalize_any(
-            normalizer: &NormalizerWrapper,
-            normalized: &mut NormalizedString,
-        ) -> Result<()>;
+        fn normalize_any(normalizer: &Normalizer, normalized: &mut NormalizedString) -> Result<()>;
 
         fn normalize_bert(
             normalizer: &BertNormalizer,
@@ -41,12 +45,20 @@ mod ffi {
 }
 
 use derive_more::{Deref, DerefMut, From};
-use tk::{normalizers::BertNormalizer as TkBertNormalizer, Normalizer};
+use tk::{normalizers::BertNormalizer as TkBertNormalizer, Normalizer as NormalizerTrait, Result};
 
 #[derive(Deref, DerefMut, From)]
 struct NormalizedString(tk::NormalizedString);
-#[derive(Deref, DerefMut, From)]
-struct NormalizerWrapper(tk::NormalizerWrapper);
+
+#[derive(Deref, DerefMut, From, Clone)]
+pub struct Normalizer(pub tk::NormalizerWrapper);
+
+impl NormalizerTrait for Normalizer {
+    fn normalize(&self, normalized: &mut tk::NormalizedString) -> Result<()> {
+        self.0.normalize(normalized)
+    }
+}
+
 #[derive(Deref, DerefMut, From)]
 struct BertNormalizer(TkBertNormalizer);
 
@@ -56,19 +68,39 @@ fn normalized_string(str: &str) -> Box<NormalizedString> {
     Box::new(NormalizedString(str.into()))
 }
 
+fn tk_bert_normalizer(
+    clean_text: bool,
+    handle_chinese_chars: bool,
+    strip_accents: BertStripAccents,
+    lowercase: bool,
+) -> TkBertNormalizer {
+    let strip_accents = match strip_accents {
+        BertStripAccents::False => Some(false),
+        BertStripAccents::True => Some(true),
+        BertStripAccents::DeterminedByLowercase => None,
+        _ => None,
+    };
+    TkBertNormalizer::new(clean_text, handle_chinese_chars, strip_accents, lowercase)
+}
+
+fn bert_normalizer_wrapper(
+    clean_text: bool,
+    handle_chinese_chars: bool,
+    strip_accents: BertStripAccents,
+    lowercase: bool,
+) -> Box<Normalizer> {
+    Box::new(Normalizer(
+        tk_bert_normalizer(clean_text, handle_chinese_chars, strip_accents, lowercase).into(),
+    ))
+}
+
 fn bert_normalizer(
     clean_text: bool,
     handle_chinese_chars: bool,
     strip_accents: BertStripAccents,
     lowercase: bool,
 ) -> Box<BertNormalizer> {
-    let strip_accents = match strip_accents {
-        BertStripAccents::DeterminedByLowercase => None,
-        BertStripAccents::False => Some(false),
-        BertStripAccents::True => Some(true),
-        _ => None,
-    };
-    Box::new(BertNormalizer(TkBertNormalizer::new(
+    Box::new(BertNormalizer(tk_bert_normalizer(
         clean_text,
         handle_chinese_chars,
         strip_accents,
@@ -76,17 +108,11 @@ fn bert_normalizer(
     )))
 }
 
-fn normalize_any(
-    normalizer: &NormalizerWrapper,
-    normalized: &mut NormalizedString,
-) -> tk::Result<()> {
+fn normalize_any(normalizer: &Normalizer, normalized: &mut NormalizedString) -> Result<()> {
     normalizer.normalize(normalized)
 }
 
-fn normalize_bert(
-    normalizer: &BertNormalizer,
-    normalized: &mut NormalizedString,
-) -> tk::Result<()> {
+fn normalize_bert(normalizer: &BertNormalizer, normalized: &mut NormalizedString) -> Result<()> {
     normalizer.normalize(normalized)
 }
 

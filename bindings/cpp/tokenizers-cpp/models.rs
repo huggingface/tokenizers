@@ -33,7 +33,7 @@ mod ffi {
         type Token;
         type BPE;
         type BpeBuilder;
-        type ModelWrapper;
+        type Model;
 
         fn tokenize_bpe(model: &BPE, sequence: &str) -> Result<Vec<Token>>;
         fn token_to_id_bpe(model: &BPE, token: &str) -> OptionU32;
@@ -49,6 +49,7 @@ mod ffi {
 
         fn bpe_builder() -> Box<BpeBuilder>;
         fn build_bpe(builder: &mut BpeBuilder) -> Result<Box<BPE>>;
+        fn build_bpe_wrapper(builder: &mut BpeBuilder) -> Result<Box<Model>>;
         fn files_bpe(builder: &mut BpeBuilder, vocab: String, merges: String);
         fn vocab_and_merges_bpe(
             builder: &mut BpeBuilder,
@@ -64,18 +65,79 @@ mod ffi {
     }
 }
 
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
+
 use crate::wrap_option;
 use derive_more::{Deref, DerefMut, From};
 use ffi::*;
 use tk::models::bpe::BpeBuilder as TkBpeBuilder;
-use tk::{Model, Result};
+use tk::{Model as ModelTrait, Result, Trainer as TrainerTrait};
 
 #[derive(Deref, DerefMut, From)]
 struct Token(tk::Token);
 #[derive(Deref, DerefMut, From)]
 struct BPE(tk::models::bpe::BPE);
+
+#[derive(Deref, DerefMut, From, Clone)]
+pub struct Model(pub tk::ModelWrapper);
+
 #[derive(Deref, DerefMut, From)]
-struct ModelWrapper(tk::ModelWrapper);
+pub struct Trainer(pub tk::models::TrainerWrapper);
+
+impl ModelTrait for Model {
+    type Trainer = crate::models::Trainer;
+
+    fn tokenize(&self, sequence: &str) -> Result<Vec<tk::Token>> {
+        self.0.tokenize(sequence)
+    }
+
+    fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.0.token_to_id(token)
+    }
+
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.0.id_to_token(id)
+    }
+
+    fn get_vocab(&self) -> HashMap<String, u32> {
+        self.0.get_vocab()
+    }
+
+    fn get_vocab_size(&self) -> usize {
+        self.0.get_vocab_size()
+    }
+
+    fn save(&self, folder: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf>> {
+        self.0.save(folder, prefix)
+    }
+
+    fn get_trainer(&self) -> Self::Trainer {
+        Trainer(self.0.get_trainer())
+    }
+}
+
+impl TrainerTrait for Trainer {
+    type Model = crate::models::Model;
+
+    fn should_show_progress(&self) -> bool {
+        self.0.should_show_progress()
+    }
+
+    fn train(&self, model: &mut Self::Model) -> Result<Vec<tk::AddedToken>> {
+        self.0.train(model)
+    }
+
+    fn feed<I, S, F>(&mut self, iterator: I, process: F) -> Result<()>
+    where
+        I: Iterator<Item = S> + Send,
+        S: AsRef<str> + Send,
+        F: Fn(&str) -> Result<Vec<String>> + Sync {
+        self.0.feed(iterator, process)
+    }
+}
 
 fn tokenize_bpe(model: &BPE, sequence: &str) -> Result<Vec<Token>> {
     model
@@ -142,6 +204,14 @@ fn build_bpe(builder: &mut BpeBuilder) -> Result<Box<BPE>> {
         Some(b) => Ok(Box::new(BPE(b.build()?))),
     }
 }
+
+fn build_bpe_wrapper(builder: &mut BpeBuilder) -> Result<Box<Model>> {
+    match builder.0.take() {
+        None => Err("Empty BpeBuilder".into()),
+        Some(b) => Ok(Box::new(Model(b.build()?.into()))),
+    }
+}
+
 
 fn files_bpe(builder: &mut BpeBuilder, vocab: String, merges: String) {
     builder.0 = builder.0.take().map(|b| b.files(vocab, merges));
