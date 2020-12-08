@@ -25,32 +25,18 @@ public:
     }
 };
 
-struct BertNormalizer {
-    HFT_FFI_WRAPPER(BertNormalizer);
-
-public:
-    BertNormalizer(bool clean_text, bool handle_chinese_chars,
-                   BertStripAccents strip_accents, bool lowercase)
-        : inner_(ffi::bert_normalizer(clean_text, handle_chinese_chars,
-                                      strip_accents, lowercase)){};
-
-    HFT_RESULT_VOID normalize(NormalizedString& normalized) {
-        HFT_TRY_VOID(ffi::normalize_bert(*inner_, *normalized));
-    }
-};
-
 struct Normalizer {
     HFT_FFI_WRAPPER(Normalizer);
 
 public:
     static Normalizer bert(bool clean_text, bool handle_chinese_chars,
                            BertStripAccents strip_accents, bool lowercase) {
-        return {ffi::bert_normalizer_wrapper(clean_text, handle_chinese_chars,
-                                             strip_accents, lowercase)};
+        return {ffi::bert_normalizer(clean_text, handle_chinese_chars,
+                                     strip_accents, lowercase)};
     }
 
     HFT_RESULT_VOID normalize(NormalizedString& normalized) {
-        HFT_TRY_VOID(ffi::normalize_any(*inner_, *normalized));
+        HFT_TRY_VOID(ffi::normalize(*inner_, *normalized));
     }
 };
 
@@ -72,11 +58,6 @@ struct BertNormalizerOptions {
     Normalizer build() {
         return Normalizer::bert(clean_text, handle_chinese_chars, strip_accents,
                                 lowercase);
-    }
-
-    BertNormalizer build_unwrapped() {
-        return BertNormalizer(clean_text, handle_chinese_chars, strip_accents,
-                              lowercase);
     }
 };
 

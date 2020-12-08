@@ -17,21 +17,19 @@ mod ffi {
     extern "Rust" {
         type Encoding;
         type PostProcessor;
-        type BertProcessing;
 
         fn encoding_with_capacity(len: usize) -> Box<Encoding>;
 
-        fn bert_post_processor(sep: KVStringU32, cls: KVStringU32) -> Box<BertProcessing>;
-        fn bert_post_processor_wrapper(sep: KVStringU32, cls: KVStringU32) -> Box<PostProcessor>;
+        fn bert_post_processor(sep: KVStringU32, cls: KVStringU32) -> Box<PostProcessor>;
 
-        fn added_tokens_bert(post_processor: &BertProcessing, is_pair: bool) -> usize;
-        fn process_bert(
-            post_processor: &BertProcessing,
+        fn added_tokens(post_processor: &PostProcessor, is_pair: bool) -> usize;
+        fn process(
+            post_processor: &PostProcessor,
             encoding: Box<Encoding>,
             add_special_tokens: bool,
         ) -> Result<Box<Encoding>>;
-        fn process_pair_bert(
-            post_processor: &BertProcessing,
+        fn process_pair(
+            post_processor: &PostProcessor,
             encoding: Box<Encoding>,
             pair_encoding: Box<Encoding>,
             add_special_tokens: bool,
@@ -67,32 +65,22 @@ impl PostProcessorTrait for PostProcessor {
     }
 }
 
-#[derive(Deref, DerefMut, From)]
-struct BertProcessing(TkBertProcessing);
-
 fn encoding_with_capacity(len: usize) -> Box<Encoding> {
     Box::new(Encoding(tk::Encoding::with_capacity(len)))
 }
 
-fn bert_post_processor(sep: KVStringU32, cls: KVStringU32) -> Box<BertProcessing> {
-    Box::new(BertProcessing(TkBertProcessing::new(
-        (sep.key, sep.value),
-        (cls.key, cls.value),
-    )))
-}
-
-fn bert_post_processor_wrapper(sep: KVStringU32, cls: KVStringU32) -> Box<PostProcessor> {
+fn bert_post_processor(sep: KVStringU32, cls: KVStringU32) -> Box<PostProcessor> {
     Box::new(PostProcessor(
         TkBertProcessing::new((sep.key, sep.value), (cls.key, cls.value)).into(),
     ))
 }
 
-fn added_tokens_bert(post_processor: &BertProcessing, is_pair: bool) -> usize {
+fn added_tokens(post_processor: &PostProcessor, is_pair: bool) -> usize {
     post_processor.added_tokens(is_pair)
 }
 
-fn process_bert(
-    post_processor: &BertProcessing,
+fn process(
+    post_processor: &PostProcessor,
     encoding: Box<Encoding>,
     add_special_tokens: bool,
 ) -> Result<Box<Encoding>> {
@@ -103,8 +91,8 @@ fn process_bert(
     )?)))
 }
 
-fn process_pair_bert(
-    post_processor: &BertProcessing,
+fn process_pair(
+    post_processor: &PostProcessor,
     encoding: Box<Encoding>,
     pair_encoding: Box<Encoding>,
     add_special_tokens: bool,

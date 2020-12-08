@@ -39,14 +39,12 @@ mod ffi {
         ) -> Box<PreTokenizedString>;
         fn str_to_pre_tokenized_string(str: &str) -> Box<PreTokenizedString>;
 
-        fn bert_pre_tokenizer_wrapper() -> Box<PreTokenizer>;
+        fn bert_pre_tokenizer() -> Box<PreTokenizer>;
 
-        fn pre_tokenize_any(
+        fn pre_tokenize(
             pre_tokenizer: &PreTokenizer,
             pre_tokenized: &mut PreTokenizedString,
         ) -> Result<()>;
-
-        fn pre_tokenize_bert(pre_tokenized: &mut PreTokenizedString) -> Result<()>;
 
         fn get_splits(
             pre_tokenized: &PreTokenizedString,
@@ -82,19 +80,15 @@ fn str_to_pre_tokenized_string(str: &str) -> Box<PreTokenizedString> {
     Box::new(PreTokenizedString(str.into()))
 }
 
-fn bert_pre_tokenizer_wrapper() -> Box<PreTokenizer> {
+fn bert_pre_tokenizer() -> Box<PreTokenizer> {
     Box::new(PreTokenizer(BertPreTokenizer.into()))
 }
 
-fn pre_tokenize_any(
+fn pre_tokenize(
     pre_tokenizer: &PreTokenizer,
     pre_tokenized: &mut PreTokenizedString,
 ) -> Result<()> {
     pre_tokenizer.pre_tokenize(pre_tokenized)
-}
-
-fn pre_tokenize_bert(pre_tokenized: &mut PreTokenizedString) -> Result<()> {
-    BertPreTokenizer.pre_tokenize(pre_tokenized)
 }
 
 fn get_splits(

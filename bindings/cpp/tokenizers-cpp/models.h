@@ -10,29 +10,38 @@
 
 namespace huggingface {
 namespace tokenizers {
-struct BPE {
-    HFT_FFI_WRAPPER(BPE);
+
+struct BpeBuilder;
+
+struct Model {
+    HFT_FFI_WRAPPER(Model);
 
 public:
+    // static HFT_RESULT(Model) bpe(BpeBuilder& builder) {
+    //     return builder.build();
+    // }
+
     HFT_RESULT(rust::Vec<ffi::Token>) tokenize(nonstd::string_view sequence) {
         HFT_TRY(rust::Vec<ffi::Token>,
-                ffi::tokenize_bpe(*inner_, string_view_to_str(sequence)));
+                ffi::tokenize(*inner_, string_view_to_str(sequence)));
     }
 
     nonstd::optional<uint32_t> token_to_id(nonstd::string_view token) {
         return HFT_OPTION(
-            ffi::token_to_id_bpe(*inner_, string_view_to_str(token)));
+            ffi::token_to_id_model(*inner_, string_view_to_str(token)));
     }
 
     nonstd::optional<std::string> id_to_token(uint32_t id) {
-        ffi::OptionString opt_token(ffi::id_to_token_bpe(*inner_, id));
+        ffi::OptionString opt_token(ffi::id_to_token_model(*inner_, id));
         return opt_token.has_value
                    ? nonstd::make_optional(std::string(opt_token.value))
                    : nonstd::nullopt;
     }
 
+    size_t get_vocab_size() { return ffi::get_vocab_size_model(*inner_); }
+
     std::unordered_map<std::string, uint32_t> get_vocab() {
-        rust::Vec<ffi::KVStringU32> entries(ffi::get_vocab_bpe(*inner_));
+        rust::Vec<ffi::KVStringU32> entries(ffi::get_vocab_model(*inner_));
         std::unordered_map<std::string, uint32_t> vocab;
         for (auto& entry : entries) {
             vocab[std::string(entry.key)] = entry.value;
@@ -42,21 +51,15 @@ public:
 
     HFT_RESULT(rust::Vec<rust::String>) save(nonstd::string_view folder) {
         HFT_TRY(rust::Vec<rust::String>,
-                ffi::save_bpe(*inner_, string_view_to_str(folder), false, {}));
+                ffi::save(*inner_, string_view_to_str(folder), false, {}));
     }
 
     HFT_RESULT(rust::Vec<rust::String>)
     save(nonstd::string_view folder, nonstd::string_view prefix) {
         HFT_TRY(rust::Vec<rust::String>,
-                ffi::save_bpe(*inner_, string_view_to_str(folder), true,
-                              string_view_to_str(prefix)));
+                ffi::save(*inner_, string_view_to_str(folder), true,
+                          string_view_to_str(prefix)));
     }
-};
-
-struct Model {
-    HFT_FFI_WRAPPER(Model);
-
-public:
 };
 
 struct BpeBuilder {
@@ -65,13 +68,7 @@ struct BpeBuilder {
 public:
     BpeBuilder() : inner_(ffi::bpe_builder()){};
 
-    HFT_RESULT(Model) build() {
-        HFT_TRY(Model, {ffi::build_bpe_wrapper(*inner_)});
-    }
-
-    HFT_RESULT(BPE) build_unwrapped() {
-        HFT_TRY(BPE, {ffi::build_bpe(*inner_)});
-    }
+    HFT_RESULT(Model) build() { HFT_TRY(Model, {ffi::build_bpe(*inner_)}); }
 
     BpeBuilder& files(nonstd::string_view vocab, nonstd::string_view merges) {
         ffi::files_bpe(*inner_, to_rust_string(vocab), to_rust_string(merges));

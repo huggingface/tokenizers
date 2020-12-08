@@ -31,25 +31,20 @@ mod ffi {
     #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {
         type Token;
-        type BPE;
         type BpeBuilder;
         type Model;
 
-        fn tokenize_bpe(model: &BPE, sequence: &str) -> Result<Vec<Token>>;
-        fn token_to_id_bpe(model: &BPE, token: &str) -> OptionU32;
-        fn id_to_token_bpe(model: &BPE, id: u32) -> OptionString;
-        fn get_vocab_bpe(model: &BPE) -> Vec<KVStringU32>;
-        fn get_vocab_size_bpe(model: &BPE) -> usize;
-        fn save_bpe(
-            model: &BPE,
-            folder: &str,
-            has_prefix: bool,
-            prefix: &str,
-        ) -> Result<Vec<String>>;
+        fn tokenize(model: &Model, sequence: &str) -> Result<Vec<Token>>;
+        // `_model` suffix to avoid conflict with tokenizer.rs
+        fn token_to_id_model(model: &Model, token: &str) -> OptionU32;
+        fn id_to_token_model(model: &Model, id: u32) -> OptionString;
+        fn get_vocab_model(model: &Model) -> Vec<KVStringU32>;
+        fn get_vocab_size_model(model: &Model) -> usize;
+        fn save(model: &Model, folder: &str, has_prefix: bool, prefix: &str)
+            -> Result<Vec<String>>;
 
         fn bpe_builder() -> Box<BpeBuilder>;
-        fn build_bpe(builder: &mut BpeBuilder) -> Result<Box<BPE>>;
-        fn build_bpe_wrapper(builder: &mut BpeBuilder) -> Result<Box<Model>>;
+        fn build_bpe(builder: &mut BpeBuilder) -> Result<Box<Model>>;
         fn files_bpe(builder: &mut BpeBuilder, vocab: String, merges: String);
         fn vocab_and_merges_bpe(
             builder: &mut BpeBuilder,
@@ -78,8 +73,6 @@ use tk::{Model as ModelTrait, Result, Trainer as TrainerTrait};
 
 #[derive(Deref, DerefMut, From)]
 struct Token(tk::Token);
-#[derive(Deref, DerefMut, From)]
-struct BPE(tk::models::bpe::BPE);
 
 #[derive(Deref, DerefMut, From, Clone)]
 pub struct Model(pub tk::ModelWrapper);
@@ -134,26 +127,27 @@ impl TrainerTrait for Trainer {
     where
         I: Iterator<Item = S> + Send,
         S: AsRef<str> + Send,
-        F: Fn(&str) -> Result<Vec<String>> + Sync {
+        F: Fn(&str) -> Result<Vec<String>> + Sync,
+    {
         self.0.feed(iterator, process)
     }
 }
 
-fn tokenize_bpe(model: &BPE, sequence: &str) -> Result<Vec<Token>> {
+fn tokenize(model: &Model, sequence: &str) -> Result<Vec<Token>> {
     model
         .tokenize(sequence)
         .map(|tokens| tokens.into_iter().map(|token| Token(token)).collect())
 }
 
-fn token_to_id_bpe(model: &BPE, token: &str) -> OptionU32 {
+fn token_to_id_model(model: &Model, token: &str) -> OptionU32 {
     wrap_option!(model.token_to_id(token), OptionU32, 0)
 }
 
-fn id_to_token_bpe(model: &BPE, id: u32) -> OptionString {
+fn id_to_token_model(model: &Model, id: u32) -> OptionString {
     wrap_option!(model.id_to_token(id), OptionString, "".to_string())
 }
 
-fn get_vocab_bpe(model: &BPE) -> Vec<KVStringU32> {
+fn get_vocab_model(model: &Model) -> Vec<KVStringU32> {
     model
         .get_vocab()
         .iter()
@@ -164,11 +158,11 @@ fn get_vocab_bpe(model: &BPE) -> Vec<KVStringU32> {
         .collect()
 }
 
-fn get_vocab_size_bpe(model: &BPE) -> usize {
+fn get_vocab_size_model(model: &Model) -> usize {
     model.get_vocab_size()
 }
 
-fn save_bpe(model: &BPE, folder: &str, has_prefix: bool, prefix: &str) -> Result<Vec<String>> {
+fn save(model: &Model, folder: &str, has_prefix: bool, prefix: &str) -> Result<Vec<String>> {
     let prefix = if has_prefix { Some(prefix) } else { None };
     let mut error: Option<tk::Error> = None;
     let result = model.save(folder.as_ref(), prefix).map(|paths| {
@@ -198,20 +192,12 @@ fn bpe_builder() -> Box<BpeBuilder> {
     Box::new(BpeBuilder(Some(TkBpeBuilder::new())))
 }
 
-fn build_bpe(builder: &mut BpeBuilder) -> Result<Box<BPE>> {
-    match builder.0.take() {
-        None => Err("Empty BpeBuilder".into()),
-        Some(b) => Ok(Box::new(BPE(b.build()?))),
-    }
-}
-
-fn build_bpe_wrapper(builder: &mut BpeBuilder) -> Result<Box<Model>> {
+fn build_bpe(builder: &mut BpeBuilder) -> Result<Box<Model>> {
     match builder.0.take() {
         None => Err("Empty BpeBuilder".into()),
         Some(b) => Ok(Box::new(Model(b.build()?.into()))),
     }
 }
-
 
 fn files_bpe(builder: &mut BpeBuilder, vocab: String, merges: String) {
     builder.0 = builder.0.take().map(|b| b.files(vocab, merges));

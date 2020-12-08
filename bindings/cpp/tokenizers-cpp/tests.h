@@ -41,7 +41,7 @@ TEST_SUITE("Pre-tokenizers") {
         );
         */
         // clang-format on
-        BertPreTokenizer pretok;
+        PreTokenizer pretok = PreTokenizer::bert();
         PreTokenizedString pretokenized("Hey friend!     How are you?!?");
         pretok.pre_tokenize(pretokenized);
         auto splits = pretokenized.get_splits(OffsetReferential::Original,

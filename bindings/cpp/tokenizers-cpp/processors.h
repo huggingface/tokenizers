@@ -15,40 +15,29 @@ struct Encoding {
 public:
 };
 
-struct BertProcessing {
-    HFT_FFI_WRAPPER(BertProcessing);
-
-public:
-    BertProcessing(std::pair<nonstd::string_view, uint32_t> sep,
-                   std::pair<nonstd::string_view, uint32_t> cls)
-        : inner_(ffi::bert_post_processor(
-              {to_rust_string(sep.first), sep.second},
-              {to_rust_string(cls.first), cls.second})){};
-
-    HFT_RESULT(Encoding)
-    process(Encoding&& encoding, bool add_special_tokens) {
-        HFT_TRY(Encoding, {ffi::process_bert(*inner_, HFT_CONSUME(encoding),
-                                             add_special_tokens)});
-    }
-
-    HFT_RESULT(Encoding)
-    process(Encoding&& encoding, Encoding&& pair_encoding,
-            bool add_special_tokens) {
-        HFT_TRY(Encoding, {ffi::process_pair_bert(
-                              *inner_, HFT_CONSUME(encoding),
-                              HFT_CONSUME(pair_encoding), add_special_tokens)});
-    }
-};
-
 struct PostProcessor {
     HFT_FFI_WRAPPER(PostProcessor);
 
 public:
     static PostProcessor bert(std::pair<nonstd::string_view, uint32_t> sep,
                               std::pair<nonstd::string_view, uint32_t> cls) {
-        return {ffi::bert_post_processor_wrapper(
-            {to_rust_string(sep.first), sep.second},
-            {to_rust_string(cls.first), cls.second})};
+        return {
+            ffi::bert_post_processor({to_rust_string(sep.first), sep.second},
+                                     {to_rust_string(cls.first), cls.second})};
+    }
+
+    HFT_RESULT(Encoding)
+    process(Encoding&& encoding, bool add_special_tokens) {
+        HFT_TRY(Encoding, {ffi::process(*inner_, HFT_CONSUME(encoding),
+                                        add_special_tokens)});
+    }
+
+    HFT_RESULT(Encoding)
+    process(Encoding&& encoding, Encoding&& pair_encoding,
+            bool add_special_tokens) {
+        HFT_TRY(Encoding, {ffi::process_pair(*inner_, HFT_CONSUME(encoding),
+                                             HFT_CONSUME(pair_encoding),
+                                             add_special_tokens)});
     }
 };
 

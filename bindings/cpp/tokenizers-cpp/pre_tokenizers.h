@@ -24,18 +24,15 @@ public:
     }
 };
 
-struct BertPreTokenizer {
-public:
-    HFT_RESULT_VOID pre_tokenize(PreTokenizedString& pre_tokenized) {
-        HFT_TRY_VOID(ffi::pre_tokenize_bert(*pre_tokenized));
-    }
-};
-
 struct PreTokenizer {
     HFT_FFI_WRAPPER(PreTokenizer);
 
 public:
-    static PreTokenizer bert() { return {ffi::bert_pre_tokenizer_wrapper()}; }
+    static PreTokenizer bert() { return {ffi::bert_pre_tokenizer()}; }
+
+    HFT_RESULT_VOID pre_tokenize(PreTokenizedString& pre_tokenized) {
+        HFT_TRY_VOID(ffi::pre_tokenize(**this, *pre_tokenized));
+    }
 };
 
 }  // namespace tokenizers

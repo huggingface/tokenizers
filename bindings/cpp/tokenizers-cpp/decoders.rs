@@ -7,12 +7,10 @@ mod ffi {
     #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {
         type Decoder;
-        type ByteLevelDecoder;
 
-        fn byte_level_decoder(add_prefix_space: bool, trim_offsets: bool) -> Box<ByteLevelDecoder>;
-        fn byte_level_decoder_wrapper(add_prefix_space: bool, trim_offsets: bool) -> Box<Decoder>;
+        fn byte_level_decoder(add_prefix_space: bool, trim_offsets: bool) -> Box<Decoder>;
 
-        fn decode_byte_level(decoder: &ByteLevelDecoder, tokens: Vec<String>) -> Result<String>;
+        fn decode_decoder(decoder: &Decoder, tokens: Vec<String>) -> Result<String>;
     }
 }
 
@@ -28,23 +26,13 @@ impl DecoderTrait for Decoder {
     }
 }
 
-#[derive(Deref, DerefMut)]
-struct ByteLevelDecoder(TkByteLevelDecoder);
-
-fn byte_level_decoder(add_prefix_space: bool, trim_offsets: bool) -> Box<ByteLevelDecoder> {
-    Box::new(ByteLevelDecoder(TkByteLevelDecoder::new(
-        add_prefix_space,
-        trim_offsets,
-    )))
-}
-
-fn byte_level_decoder_wrapper(add_prefix_space: bool, trim_offsets: bool) -> Box<Decoder> {
+fn byte_level_decoder(add_prefix_space: bool, trim_offsets: bool) -> Box<Decoder> {
     Box::new(Decoder(TkByteLevelDecoder::new(
         add_prefix_space,
         trim_offsets,
     ).into()))
 }
 
-fn decode_byte_level(decoder: &ByteLevelDecoder, tokens: Vec<String>) -> Result<String> {
+fn decode_decoder(decoder: &Decoder, tokens: Vec<String>) -> Result<String> {
     decoder.decode(tokens)
 }
