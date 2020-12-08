@@ -15,20 +15,18 @@ mod ffi {
         original: String,
         start: usize,
         end: usize,
-        // FIXME temporarily removed to work around a CXX conflict
-        // has_tokens: bool,
-        // NOTE CxxVector<Token> is not supported,
-        //  &Vec<Token> is not supported in shared types
-        // tokens: Vec<Token>,
+        has_tokens: bool,
+        tokens: Tokens,
     }
 
     extern "C++" {
         include!("tokenizers-cpp/pre_tokenizers.h");
+        include!("tokenizers-cpp/tokens.h");
+        type Tokens = crate::models::ffi::Tokens;
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {
-        type Token;
         type NormalizedString;
         type PreTokenizedString;
         type PreTokenizer;
@@ -55,12 +53,11 @@ mod ffi {
 }
 
 use derive_more::{Deref, DerefMut, From};
+use ffi::*;
 use tk::{pre_tokenizers::bert::BertPreTokenizer, PreTokenizer as PreTokenizerTrait, Result};
 
 #[derive(Deref, DerefMut, From)]
 struct NormalizedString(tk::NormalizedString);
-#[derive(Deref, DerefMut, From)]
-struct Token(tk::Token);
 #[derive(Deref, DerefMut, From)]
 struct PreTokenizedString(tk::PreTokenizedString);
 #[derive(Deref, DerefMut, From, Clone)]
@@ -103,13 +100,14 @@ fn get_splits(
             forward_cxx_enum!(offset_type, OffsetType, Byte, Char),
         )
         .into_iter()
-        .map(|(original, (start, end), _tokens)| ffi::Split {
+        .map(|(original, (start, end), tokens)| ffi::Split {
             original: original.to_string(),
             start,
             end,
-            // FIXME temporarily removed to work around a CXX conflict
-            // has_tokens: tokens.is_some(),
-            // tokens: tokens.as_ref().map_or_else(|| vec![], |v| v.clone()),
+            has_tokens: tokens.is_some(),
+            tokens: tokens
+                .as_ref()
+                .map_or_else(|| Tokens::default(), |v| v.into()),
         })
         .collect()
 }

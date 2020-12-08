@@ -26,15 +26,17 @@ pub mod ffi {
 
     extern "C++" {
         include!("tokenizers-cpp/models.h");
+        include!("tokenizers-cpp/tokens.h");
+        type Token = crate::tokens::ffi::Token;
+        type Tokens = crate::tokens::ffi::Tokens;
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {
-        type Token;
         type BpeBuilder;
         type Model;
 
-        fn tokenize(model: &Model, sequence: &str) -> Result<Vec<Token>>;
+        fn tokenize(model: &Model, sequence: &str) -> Result<Tokens>;
         // `_model` suffix to avoid conflict with tokenizer.rs
         fn token_to_id_model(model: &Model, token: &str) -> OptionU32;
         fn id_to_token_model(model: &Model, id: u32) -> OptionString;
@@ -70,9 +72,6 @@ use derive_more::{Deref, DerefMut, From};
 use ffi::*;
 use tk::models::bpe::BpeBuilder as TkBpeBuilder;
 use tk::{Model as ModelTrait, Result, Trainer as TrainerTrait};
-
-#[derive(Deref, DerefMut, From)]
-struct Token(tk::Token);
 
 #[derive(Deref, DerefMut, From, Clone)]
 pub struct Model(pub tk::ModelWrapper);
@@ -133,10 +132,8 @@ impl TrainerTrait for Trainer {
     }
 }
 
-fn tokenize(model: &Model, sequence: &str) -> Result<Vec<Token>> {
-    model
-        .tokenize(sequence)
-        .map(|tokens| tokens.into_iter().map(|token| Token(token)).collect())
+fn tokenize(model: &Model, sequence: &str) -> Result<Tokens> {
+    Ok(model.tokenize(sequence)?.into())
 }
 
 fn token_to_id_model(model: &Model, token: &str) -> OptionU32 {

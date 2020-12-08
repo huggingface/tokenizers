@@ -7,6 +7,7 @@ fn main() {
         "processors",
         "decoders",
         "tokenizer",
+        "tokens",
     ];
 
     // can't do just cfg!(test), see https://github.com/rust-lang/cargo/issues/2549

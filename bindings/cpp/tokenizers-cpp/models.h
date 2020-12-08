@@ -21,9 +21,9 @@ public:
     //     return builder.build();
     // }
 
-    HFT_RESULT(rust::Vec<ffi::Token>) tokenize(nonstd::string_view sequence) {
-        HFT_TRY(rust::Vec<ffi::Token>,
-                ffi::tokenize(*inner_, string_view_to_str(sequence)));
+    HFT_RESULT(rust::Vec<Token>) tokenize(nonstd::string_view sequence) {
+        HFT_TRY(rust::Vec<Token>,
+                ffi::tokenize(*inner_, string_view_to_str(sequence)).tokens);
     }
 
     nonstd::optional<uint32_t> token_to_id(nonstd::string_view token) {

@@ -9,6 +9,8 @@ mod ffi {
 
     extern "C++" {
         include!("tokenizers-cpp/processors.h");
+        include!("tokenizers-cpp/tokens.h");
+        type Tokens = crate::tokens::ffi::Tokens;
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]
