@@ -5,8 +5,6 @@
 
 #include <nonstd/span.hpp>
 #include <string>
-// for std::pair
-#include <utility>
 
 namespace huggingface {
 namespace tokenizers {
@@ -83,11 +81,11 @@ struct PostProcessor {
     HFT_FFI_WRAPPER(PostProcessor);
 
 public:
-    static PostProcessor bert(std::pair<nonstd::string_view, uint32_t> sep,
-                              std::pair<nonstd::string_view, uint32_t> cls) {
-        return {
-            ffi::bert_post_processor({to_rust_string(sep.first), sep.second},
-                                     {to_rust_string(cls.first), cls.second})};
+    static PostProcessor bert(nonstd::string_view sep_token, uint32_t sep_id,
+                              nonstd::string_view cls_token, uint32_t cls_id) {
+        return {ffi::bert_post_processor(string_view_to_str(sep_token), sep_id,
+                                         string_view_to_str(cls_token),
+                                         cls_id)};
     }
 
     HFT_RESULT(Encoding)

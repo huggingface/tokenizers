@@ -1,12 +1,5 @@
 #[cxx::bridge(namespace = "huggingface::tokenizers")]
 mod ffi {
-    // can't reuse from `models` because it contains String
-    #[namespace = "huggingface::tokenizers::ffi"]
-    pub struct KVStringU32 {
-        pub key: String,
-        pub value: u32,
-    }
-
     #[namespace = "huggingface::tokenizers::ffi"]
     pub struct OptionU32 {
         pub has_value: bool,
@@ -41,7 +34,12 @@ mod ffi {
 
         fn encoding_with_capacity(len: usize) -> Box<Encoding>;
 
-        fn bert_post_processor(sep: KVStringU32, cls: KVStringU32) -> Box<PostProcessor>;
+        fn bert_post_processor(
+            sep_token: &str,
+            sep_id: u32,
+            cls_token: &str,
+            cls_id: u32,
+        ) -> Box<PostProcessor>;
 
         fn added_tokens(post_processor: &PostProcessor, is_pair: bool) -> usize;
         fn process(
@@ -180,9 +178,18 @@ fn encoding_with_capacity(len: usize) -> Box<Encoding> {
     Box::new(Encoding(tk::Encoding::with_capacity(len)))
 }
 
-fn bert_post_processor(sep: KVStringU32, cls: KVStringU32) -> Box<PostProcessor> {
+fn bert_post_processor(
+    sep_token: &str,
+    sep_id: u32,
+    cls_token: &str,
+    cls_id: u32,
+) -> Box<PostProcessor> {
     Box::new(PostProcessor(
-        TkBertProcessing::new((sep.key, sep.value), (cls.key, cls.value)).into(),
+        TkBertProcessing::new(
+            (sep_token.to_string(), sep_id),
+            (cls_token.to_string(), cls_id),
+        )
+        .into(),
     ))
 }
 
