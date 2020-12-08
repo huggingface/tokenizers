@@ -16,19 +16,14 @@ mod ffi {
         Char,
     }
 
-    // FIXME not reused from models to work around https://github.com/dtolnay/cxx/issues/535
-    #[namespace = "huggingface::tokenizers::ffi"]
-    pub struct OptionU32 {
-        pub has_value: bool,
-        pub value: u32,
-    }
-
+    // can't reuse from `models` because it contains String
     #[namespace = "huggingface::tokenizers::ffi"]
     pub struct OptionString {
         pub has_value: bool,
         pub value: String,
     }
 
+    // can't reuse from `models` because it contains String
     #[namespace = "huggingface::tokenizers::ffi"]
     pub struct KVStringU32_1 {
         pub key: String,
@@ -67,6 +62,7 @@ mod ffi {
         type Model = crate::models::Model;
         type PostProcessor = crate::processors::PostProcessor;
         type Decoder = crate::decoders::Decoder;
+        type OptionU32 = crate::models::ffi::OptionU32;
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]
