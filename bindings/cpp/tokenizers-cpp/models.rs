@@ -1,5 +1,5 @@
 #[cxx::bridge(namespace = "huggingface::tokenizers")]
-mod ffi {
+pub mod ffi {
     #[namespace = "huggingface::tokenizers::ffi"]
     pub struct OptionU32 {
         pub has_value: bool,

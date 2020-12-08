@@ -1,16 +1,11 @@
 #[cxx::bridge(namespace = "huggingface::tokenizers")]
 mod ffi {
-    #[namespace = "huggingface::tokenizers::ffi"]
-    pub struct KVStringU32 {
-        pub key: String,
-        pub value: u32,
-    }
-
     extern "C++" {
         include!("tokenizers-cpp/processors.h");
-    // include!("tokenizers-cpp/models.rs.h");
+        include!("tokenizers-cpp/models.h");
 
-    // type KVStringU32 = crate::models::ffi::KVStringU32;
+        #[namespace = "huggingface::tokenizers::ffi"]
+        type KVStringU32 = crate::models::ffi::KVStringU32;
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]
