@@ -38,9 +38,9 @@
     }                                              \
     HFT_DISABLE_WARNING_POP
 
-// Ideally we want inner_ to be private, but I couldn't make it compile
 #define HFT_FFI_WRAPPER(type)                                                  \
 public:                                                                        \
+    type(rust::Box<ffi::type>&& inner) : inner_(std::move(inner)) {};          \
     type(const type&) = delete;                                                \
     type& operator=(const type&) = delete;                                     \
     type(type&&) noexcept = default;                                           \
@@ -51,12 +51,10 @@ public:                                                                        \
     ffi::type* operator->() noexcept { return inner_.operator->(); }           \
     const ffi::type& operator*() const noexcept { return inner_.operator*(); } \
     ffi::type& operator*() noexcept { return inner_.operator*(); }             \
-    rust::Box<ffi::type> inner_;                                               \
+    rust::Box<ffi::type>&& consume() { return std::move(inner_); }             \
                                                                                \
-private:
-
-// TODO should be a function, but I haven't figured out the proper declaration
-#define HFT_CONSUME(wrapper) std::move(wrapper).inner_
+private:                                                                       \
+    rust::Box<ffi::type> inner_;
 
 #if !(defined(HFT_RESULT_VOID) && defined(HFT_RESULT) && \
       defined(HFT_TRY_VOID) && defined(HFT_TRY))

@@ -28,15 +28,15 @@ public:
 
     HFT_RESULT(Encoding)
     process(Encoding&& encoding, bool add_special_tokens) {
-        HFT_TRY(Encoding, {ffi::process(*inner_, HFT_CONSUME(encoding),
+        HFT_TRY(Encoding, {ffi::process(*inner_, encoding.consume(),
                                         add_special_tokens)});
     }
 
     HFT_RESULT(Encoding)
     process(Encoding&& encoding, Encoding&& pair_encoding,
             bool add_special_tokens) {
-        HFT_TRY(Encoding, {ffi::process_pair(*inner_, HFT_CONSUME(encoding),
-                                             HFT_CONSUME(pair_encoding),
+        HFT_TRY(Encoding, {ffi::process_pair(*inner_, encoding.consume(),
+                                             pair_encoding.consume(),
                                              add_special_tokens)});
     }
 };
