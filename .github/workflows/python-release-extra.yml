@@ -104,10 +104,6 @@ jobs:
         run: |
           pip install setuptools wheel setuptools-rust
 
-      - name: Create source distribution
-        working-directory: ./bindings/python
-        run: sh build-sdist.sh
-
       - name: Upload to PyPi
         working-directory: ./bindings/python
         run: |
