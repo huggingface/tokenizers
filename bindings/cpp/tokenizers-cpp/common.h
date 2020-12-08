@@ -121,16 +121,16 @@ inline rust::String to_rust_string(std::string string) { return string; }
 
 inline rust::String to_rust_string(const char* ptr) { return ptr; }
 
-template <typename T, typename Container, typename F>
-void fill_vec(rust::Vec<T>& vec, Container cpp_container, F f) {
+template <typename Vec, typename Container, typename F>
+void fill_vec(Vec& vec, const Container& cpp_container, F f) {
     vec.reserve(cpp_container.size());
     for (auto x : cpp_container) {
         vec.push_back(f(x));
     }
 }
 
-template <typename T, typename Container>
-void fill_vec(rust::Vec<T>& vec, Container cpp_container) {
+template <typename Vec, typename Container>
+void fill_vec(Vec& vec, const Container& cpp_container) {
     fill_vec(vec, cpp_container, [](auto x) { return x; });
 }
 }  // namespace tokenizers
