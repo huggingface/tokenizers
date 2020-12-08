@@ -7,13 +7,13 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Builder)]
 pub struct WordLevelTrainer {
     /// The minimum frequency a word must have to be part of the vocabulary
-    #[builder(default)]
+    #[builder(default = "0")]
     pub min_frequency: u32,
     /// The target vocabulary size
-    #[builder(default)]
+    #[builder(default = "30_000")]
     pub vocab_size: usize,
     /// Whether to show progress while training
-    #[builder(default)]
+    #[builder(default = "true")]
     pub show_progress: bool,
     /// A list of special tokens that the model should know of
     #[builder(default)]
@@ -25,13 +25,7 @@ pub struct WordLevelTrainer {
 
 impl Default for WordLevelTrainer {
     fn default() -> Self {
-        Self {
-            min_frequency: 0,
-            vocab_size: 30_000,
-            show_progress: true,
-            special_tokens: vec![],
-            words: HashMap::new(),
-        }
+        Self::builder().build().unwrap()
     }
 }
 
