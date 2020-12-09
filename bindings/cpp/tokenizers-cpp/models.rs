@@ -33,7 +33,6 @@ pub mod ffi {
 
     #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {
-        type BpeBuilder;
         type Model;
 
         fn tokenize(model: &Model, sequence: &str) -> Result<Tokens>;
@@ -44,21 +43,21 @@ pub mod ffi {
         fn get_vocab_size_model(model: &Model) -> usize;
         fn save(model: &Model, folder: &str, has_prefix: bool, prefix: &str)
             -> Result<Vec<String>>;
+    }
 
+    #[namespace = "huggingface::tokenizers::ffi"]
+    extern "Rust" {
+        type BpeBuilder;
         fn bpe_builder() -> Box<BpeBuilder>;
-        fn build_bpe(builder: &mut BpeBuilder) -> Result<Box<Model>>;
-        fn files_bpe(builder: &mut BpeBuilder, vocab: String, merges: String);
-        fn vocab_and_merges_bpe(
-            builder: &mut BpeBuilder,
-            vocab: Vec<KVStringU32>,
-            merges: Vec<StringString>,
-        );
-        fn cache_capacity_bpe(builder: &mut BpeBuilder, capacity: usize);
-        fn unk_token_bpe(builder: &mut BpeBuilder, unk_token: String);
-        fn dropout_bpe(builder: &mut BpeBuilder, dropout: f32);
-        fn continuing_subword_prefix_bpe(builder: &mut BpeBuilder, prefix: String);
-        fn end_of_word_suffix_bpe(builder: &mut BpeBuilder, suffix: String);
-        fn fuse_unk_bpe(builder: &mut BpeBuilder, fuse_unk: bool);
+        fn build(&mut self) -> Result<Box<Model>>;
+        fn files(&mut self, vocab: String, merges: String);
+        fn vocab_and_merges(&mut self, vocab: Vec<KVStringU32>, merges: Vec<StringString>);
+        fn cache_capacity(&mut self, capacity: usize);
+        fn unk_token(&mut self, unk_token: String);
+        fn dropout(&mut self, dropout: f32);
+        fn continuing_subword_prefix(&mut self, prefix: String);
+        fn end_of_word_suffix(&mut self, suffix: String);
+        fn fuse_unk(&mut self, fuse_unk: bool);
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]
@@ -224,44 +223,42 @@ fn bpe_builder() -> Box<BpeBuilder> {
     Box::new(BpeBuilder(Some(TkBpeBuilder::new())))
 }
 
-fn build_bpe(builder: &mut BpeBuilder) -> Result<Box<Model>> {
-    build(builder, |b| b.build())
-}
+impl BpeBuilder {
+    fn build(&mut self) -> Result<Box<Model>> {
+        build(self, |b| b.build())
+    }
 
-fn files_bpe(builder: &mut BpeBuilder, vocab: String, merges: String) {
-    update_builder(builder, |b| b.files(vocab, merges));
-}
+    fn files(&mut self, vocab: String, merges: String) {
+        update_builder(self, |b| b.files(vocab, merges));
+    }
 
-fn vocab_and_merges_bpe(
-    builder: &mut BpeBuilder,
-    vocab: Vec<KVStringU32>,
-    merges: Vec<StringString>,
-) {
-    let merges = merges.into_iter().map(|ss| (ss.first, ss.second)).collect();
-    update_builder(builder, |b| b.vocab_and_merges(make_vocab(vocab), merges));
-}
+    fn vocab_and_merges(&mut self, vocab: Vec<KVStringU32>, merges: Vec<StringString>) {
+        let merges = merges.into_iter().map(|ss| (ss.first, ss.second)).collect();
+        update_builder(self, |b| b.vocab_and_merges(make_vocab(vocab), merges));
+    }
 
-fn cache_capacity_bpe(builder: &mut BpeBuilder, capacity: usize) {
-    update_builder(builder, |b| b.cache_capacity(capacity));
-}
+    fn cache_capacity(&mut self, capacity: usize) {
+        update_builder(self, |b| b.cache_capacity(capacity));
+    }
 
-fn unk_token_bpe(builder: &mut BpeBuilder, unk_token: String) {
-    update_builder(builder, |b| b.unk_token(unk_token));
-}
+    fn unk_token(&mut self, unk_token: String) {
+        update_builder(self, |b| b.unk_token(unk_token));
+    }
 
-fn dropout_bpe(builder: &mut BpeBuilder, dropout: f32) {
-    update_builder(builder, |b| b.dropout(dropout));
-}
-fn continuing_subword_prefix_bpe(builder: &mut BpeBuilder, prefix: String) {
-    update_builder(builder, |b| b.continuing_subword_prefix(prefix));
-}
+    fn dropout(&mut self, dropout: f32) {
+        update_builder(self, |b| b.dropout(dropout));
+    }
+    fn continuing_subword_prefix(&mut self, prefix: String) {
+        update_builder(self, |b| b.continuing_subword_prefix(prefix));
+    }
 
-fn end_of_word_suffix_bpe(builder: &mut BpeBuilder, suffix: String) {
-    update_builder(builder, |b| b.end_of_word_suffix(suffix));
-}
+    fn end_of_word_suffix(&mut self, suffix: String) {
+        update_builder(self, |b| b.end_of_word_suffix(suffix));
+    }
 
-fn fuse_unk_bpe(builder: &mut BpeBuilder, fuse_unk: bool) {
-    update_builder(builder, |b| b.fuse_unk(fuse_unk));
+    fn fuse_unk(&mut self, fuse_unk: bool) {
+        update_builder(self, |b| b.fuse_unk(fuse_unk));
+    }
 }
 
 #[derive(Deref, DerefMut)]

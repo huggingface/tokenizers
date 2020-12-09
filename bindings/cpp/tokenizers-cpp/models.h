@@ -75,10 +75,10 @@ public:
         return builder;
     }
 
-    HFT_RESULT(Model) build() { HFT_TRY(Model, {ffi::build_bpe(*inner_)}); }
+    HFT_RESULT(Model) build() { HFT_TRY(Model, {inner_->build()}); }
 
     BpeBuilder& files(nonstd::string_view vocab, nonstd::string_view merges) {
-        ffi::files_bpe(*inner_, to_rust_string(vocab), to_rust_string(merges));
+        inner_->files(to_rust_string(vocab), to_rust_string(merges));
         return *this;
     }
 
@@ -97,37 +97,37 @@ public:
             return {to_rust_string(kv.first), to_rust_string(kv.second)};
         });
 
-        ffi::vocab_and_merges_bpe(*inner_, vocab_ffi, merges_ffi);
+        inner_->vocab_and_merges(vocab_ffi, merges_ffi);
         return *this;
     }
 
     BpeBuilder& cache_capacity(size_t capacity) {
-        ffi::cache_capacity_bpe(*inner_, capacity);
+        inner_->cache_capacity(capacity);
         return *this;
     }
 
     BpeBuilder& unk_token(nonstd::string_view unk_token) {
-        ffi::unk_token_bpe(*inner_, to_rust_string(unk_token));
+        inner_->unk_token(to_rust_string(unk_token));
         return *this;
     }
 
     BpeBuilder& dropout(float dropout) {
-        ffi::dropout_bpe(*inner_, dropout);
+        inner_->dropout(dropout);
         return *this;
     }
 
     BpeBuilder& continuing_subword_prefix(nonstd::string_view prefix) {
-        ffi::continuing_subword_prefix_bpe(*inner_, to_rust_string(prefix));
+        inner_->continuing_subword_prefix(to_rust_string(prefix));
         return *this;
     }
 
     BpeBuilder& end_of_word_suffix(nonstd::string_view suffix) {
-        ffi::end_of_word_suffix_bpe(*inner_, to_rust_string(suffix));
+        inner_->end_of_word_suffix(to_rust_string(suffix));
         return *this;
     }
 
     BpeBuilder& fuse_unk(bool fuse_unk) {
-        ffi::fuse_unk_bpe(*inner_, fuse_unk);
+        inner_->fuse_unk(fuse_unk);
         return *this;
     }
 };
