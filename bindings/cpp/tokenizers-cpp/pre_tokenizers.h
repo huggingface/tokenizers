@@ -30,6 +30,10 @@ struct PreTokenizer {
 public:
     static PreTokenizer bert() { return {ffi::bert_pre_tokenizer()}; }
 
+    static PreTokenizer byte_level(bool add_prefix_space, bool trim_offsets) {
+        return {ffi::byte_level_pre_tokenizer(add_prefix_space, trim_offsets)};
+    }
+
     HFT_RESULT_VOID pre_tokenize(PreTokenizedString& pre_tokenized) {
         HFT_TRY_VOID(ffi::pre_tokenize(**this, *pre_tokenized));
     }

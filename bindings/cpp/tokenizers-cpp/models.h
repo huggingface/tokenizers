@@ -12,14 +12,14 @@ namespace huggingface {
 namespace tokenizers {
 
 struct BpeBuilder;
+struct WordPieceBuilder;
 
 struct Model {
     HFT_FFI_WRAPPER(Model);
 
 public:
-    // static HFT_RESULT(Model) bpe(BpeBuilder& builder) {
-    //     return builder.build();
-    // }
+    static HFT_RESULT(Model) bpe(BpeBuilder& builder);
+    static HFT_RESULT(Model) word_piece(WordPieceBuilder& builder);
 
     HFT_RESULT(rust::Vec<Token>) tokenize(nonstd::string_view sequence) {
         HFT_TRY(rust::Vec<Token>,
@@ -68,6 +68,13 @@ struct BpeBuilder {
 public:
     BpeBuilder() : inner_(ffi::bpe_builder()){};
 
+    static BpeBuilder from_file(nonstd::string_view vocab,
+                                nonstd::string_view merges) {
+        BpeBuilder builder;
+        builder.files(vocab, merges);
+        return builder;
+    }
+
     HFT_RESULT(Model) build() { HFT_TRY(Model, {ffi::build_bpe(*inner_)}); }
 
     BpeBuilder& files(nonstd::string_view vocab, nonstd::string_view merges) {
@@ -81,18 +88,14 @@ public:
     template <typename Vocab, typename Merges>
     BpeBuilder& vocab_and_merges(Vocab vocab, Merges merges) {
         rust::Vec<ffi::KVStringU32> vocab_ffi;
-        vocab_ffi.reserve(vocab.size());
-        for (auto& kv : vocab) {
-            vocab_ffi.push_back(
-                {to_rust_string(kv.first), to_rust_string(kv.second)});
-        }
+        fill_vec(vocab_ffi, vocab, [](auto& kv) {
+            return {to_rust_string(kv.first), to_rust_string(kv.second)};
+        });
 
         rust::Vec<ffi::StringString> merges_ffi;
-        merges_ffi.reserve(merges.size);
-        for (auto& merge : merges) {
-            merges_ffi.push_back(
-                {to_rust_string(merge.first), to_rust_string(merge.second)});
-        }
+        fill_vec(merges_ffi, merges, [](auto& kv) {
+            return {to_rust_string(kv.first), to_rust_string(kv.second)};
+        });
 
         ffi::vocab_and_merges_bpe(*inner_, vocab_ffi, merges_ffi);
         return *this;
@@ -128,6 +131,63 @@ public:
         return *this;
     }
 };
+
+struct WordPieceBuilder {
+    HFT_FFI_WRAPPER(WordPieceBuilder);
+
+public:
+    WordPieceBuilder() : inner_(ffi::word_piece_builder()){};
+
+    static WordPieceBuilder from_file(nonstd::string_view vocab) {
+        WordPieceBuilder builder;
+        builder.files(vocab);
+        return builder;
+    }
+
+    HFT_RESULT(Model) build() { HFT_TRY(Model, {inner_->build()}); }
+
+    WordPieceBuilder& files(nonstd::string_view vocab) {
+        inner_->files(string_view_to_str(vocab));
+        return *this;
+    }
+
+    /// Vocab must be any container of std::pair<S, uint32_t>,
+    /// where to_rust_string(S) returns a rust::String
+    template <typename Vocab>
+    WordPieceBuilder& vocab(Vocab vocab) {
+        rust::Vec<ffi::KVStringU32> vocab_ffi;
+        fill_vec(vocab_ffi, vocab, [](auto& kv) {
+            return {to_rust_string(kv.first), to_rust_string(kv.second)};
+        });
+
+        inner_->vocab(vocab_ffi);
+        return *this;
+    }
+
+    WordPieceBuilder& unk_token(nonstd::string_view unk_token) {
+        inner_->unk_token(string_view_to_str(unk_token));
+        return *this;
+    }
+
+    WordPieceBuilder& continuing_subword_prefix(nonstd::string_view prefix) {
+        inner_->continuing_subword_prefix(string_view_to_str(prefix));
+        return *this;
+    }
+
+    WordPieceBuilder& max_input_chars_per_word(
+        size_t max_input_chars_per_word) {
+        inner_->max_input_chars_per_word(max_input_chars_per_word);
+        return *this;
+    }
+};
+
+inline HFT_RESULT(Model) Model::bpe(BpeBuilder& builder) {
+    return builder.build();
+}
+
+inline HFT_RESULT(Model) Model::word_piece(WordPieceBuilder& builder) {
+    return builder.build();
+}
 
 }  // namespace tokenizers
 }  // namespace huggingface

@@ -39,6 +39,11 @@ mod ffi {
 
         fn bert_pre_tokenizer() -> Box<PreTokenizer>;
 
+        fn byte_level_pre_tokenizer(
+            add_prefix_space: bool,
+            trim_offsets: bool,
+        ) -> Box<PreTokenizer>;
+
         fn pre_tokenize(
             pre_tokenizer: &PreTokenizer,
             pre_tokenized: &mut PreTokenizedString,
@@ -54,14 +59,17 @@ mod ffi {
 
 use derive_more::{Deref, DerefMut, From};
 use ffi::*;
-use tk::{pre_tokenizers::bert::BertPreTokenizer, PreTokenizer as PreTokenizerTrait, Result};
+use tk::{
+    pre_tokenizers::{bert::BertPreTokenizer, byte_level::ByteLevel, PreTokenizerWrapper},
+    PreTokenizer as PreTokenizerTrait, Result,
+};
 
 #[derive(Deref, DerefMut, From)]
 struct NormalizedString(tk::NormalizedString);
 #[derive(Deref, DerefMut, From)]
 struct PreTokenizedString(tk::PreTokenizedString);
 #[derive(Deref, DerefMut, From, Clone)]
-pub struct PreTokenizer(pub tk::pre_tokenizers::PreTokenizerWrapper);
+pub struct PreTokenizer(pub PreTokenizerWrapper);
 
 impl PreTokenizerTrait for PreTokenizer {
     fn pre_tokenize(&self, pretokenized: &mut tk::PreTokenizedString) -> Result<()> {
@@ -79,6 +87,12 @@ fn str_to_pre_tokenized_string(str: &str) -> Box<PreTokenizedString> {
 
 fn bert_pre_tokenizer() -> Box<PreTokenizer> {
     Box::new(PreTokenizer(BertPreTokenizer.into()))
+}
+
+fn byte_level_pre_tokenizer(add_prefix_space: bool, trim_offsets: bool) -> Box<PreTokenizer> {
+    Box::new(PreTokenizer(
+        ByteLevel::new(add_prefix_space, trim_offsets).into(),
+    ))
 }
 
 fn pre_tokenize(

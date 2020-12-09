@@ -14,6 +14,20 @@
 
 namespace huggingface {
 namespace tokenizers {
+static std::string data_dir_;
+
+inline std::string data_file(std::string name) { return data_dir_ + name; }
+
+#define COMPARE_CONTAINERS(actual, expected)                                  \
+    do {                                                                      \
+        auto actual_ = actual;                                                \
+        auto expected_ = expected;                                            \
+        REQUIRE(actual_.size() == expected_.size());                          \
+        for (size_t i = 0; i < actual_.size(); i++) {                         \
+            REQUIRE_MESSAGE(actual_[i] == expected_[i], "mismatch at " << i); \
+        }                                                                     \
+    } while (false)
+
 TEST_SUITE("Pre-tokenizers") {
     TEST_CASE("BERT basic") {
         // clang-format off
@@ -61,19 +75,47 @@ TEST_SUITE("Pre-tokenizers") {
 }
 
 TEST_SUITE("Tokenizers") {
-    TEST_CASE("Example") {
-        // example use of a tokenizer
-        // just validates it can run and not throw
-        Tokenizer tokenizer(BpeBuilder().build());
+    TEST_CASE("Bert") {
+        Tokenizer tokenizer(
+            WordPieceBuilder()
+                .files(data_file("/bert-base-uncased-vocab.txt"))
+                .unk_token("[UNK]")
+                .max_input_chars_per_word(100)
+                .build());
 
-        tokenizer.with_normalizer(BertNormalizerOptions().build());
+        tokenizer.with_normalizer(BertNormalizerOptions().build())
+            .with_pre_tokenizer(PreTokenizer::bert())
+            .with_post_processor(
+                PostProcessor::bert("[SEP]", 101, "[CLS]", 102));
 
-        tokenizer.encode("blablabla", true);
+        Encoding encoding = tokenizer.encode("My name is John", true);
+        std::vector<rust::String> expected_tokens{"[CLS]", "my",   "name",
+                                                  "is",    "john", "[SEP]"};
+        COMPARE_CONTAINERS(expected_tokens, encoding.get_tokens());
+        std::vector<uint32_t> expected_ids{102, 2026, 2171, 2003, 2198, 101};
+        COMPARE_CONTAINERS(expected_ids, encoding.get_ids());
+    }
+
+    TEST_CASE("GPT2") {
+        Tokenizer tokenizer(BpeBuilder()
+                                .files(data_file("/gpt2-vocab.json"),
+                                       data_file("/gpt2-merges.txt"))
+                                .build());
+
+        tokenizer.with_pre_tokenizer(PreTokenizer::byte_level(false, true));
+
+        Encoding encoding = tokenizer.encode("My name is John", true);
+        std::vector<rust::String> expected_tokens{"My", "Ġname", "Ġis",
+                                                  "ĠJohn"};
+        COMPARE_CONTAINERS(expected_tokens, encoding.get_tokens());
+        std::vector<uint32_t> expected_ids{3666, 1438, 318, 1757};
+        COMPARE_CONTAINERS(expected_ids, encoding.get_ids());
     }
 }
 
-inline bool run_tests() {
+inline bool run_tests(rust::Str data_dir) {
     doctest::Context context;
+    data_dir_ = std::string(data_dir);
     return context.run() == 0;
 }
 }  // namespace tokenizers

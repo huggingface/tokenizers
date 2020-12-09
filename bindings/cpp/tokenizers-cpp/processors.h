@@ -88,6 +88,8 @@ public:
                                          cls_id)};
     }
 
+    static PostProcessor bert() { return bert("[SEP]", 101, "[CLS]", 102); }
+
     HFT_RESULT(Encoding)
     process(Encoding&& encoding, bool add_special_tokens) {
         HFT_TRY(Encoding, {ffi::process(*inner_, encoding.consume(),

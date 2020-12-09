@@ -13,6 +13,10 @@ public:
         return {ffi::byte_level_decoder(add_prefix_space, trim_offsets)};
     }
 
+    static Decoder word_piece(nonstd::string_view prefix, bool cleanup) {
+        return {ffi::word_piece_decoder(string_view_to_str(prefix), cleanup)};
+    }
+
     HFT_RESULT(rust::String) decode(rust::Vec<rust::String>&& tokens) {
         HFT_TRY(rust::String, ffi::decode_decoder(*inner_, std::move(tokens)));
     }

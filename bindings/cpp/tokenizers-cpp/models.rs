@@ -60,6 +60,18 @@ pub mod ffi {
         fn end_of_word_suffix_bpe(builder: &mut BpeBuilder, suffix: String);
         fn fuse_unk_bpe(builder: &mut BpeBuilder, fuse_unk: bool);
     }
+
+    #[namespace = "huggingface::tokenizers::ffi"]
+    extern "Rust" {
+        type WordPieceBuilder;
+        fn word_piece_builder() -> Box<WordPieceBuilder>;
+        fn build(&mut self) -> Result<Box<Model>>;
+        fn vocab(&mut self, vocab: Vec<KVStringU32>);
+        fn files(&mut self, vocab: &str);
+        fn unk_token(&mut self, unk_token: &str);
+        fn continuing_subword_prefix(&mut self, continuing_subword_prefix: &str);
+        fn max_input_chars_per_word(&mut self, max_input_chars_per_word: usize);
+    }
 }
 
 use std::{
@@ -70,8 +82,10 @@ use std::{
 use crate::wrap_option;
 use derive_more::{Deref, DerefMut, From};
 use ffi::*;
-use tk::models::bpe::BpeBuilder as TkBpeBuilder;
-use tk::{Model as ModelTrait, Result, Trainer as TrainerTrait};
+use tk::{
+    models::{bpe::BpeBuilder as TkBpeBuilder, wordpiece::WordPieceBuilder as TkWordPieceBuilder},
+    Model as ModelTrait, Result, Trainer as TrainerTrait,
+};
 
 #[derive(Deref, DerefMut, From, Clone)]
 pub struct Model(pub tk::ModelWrapper);
@@ -183,6 +197,27 @@ fn save(model: &Model, folder: &str, has_prefix: bool, prefix: &str) -> Result<V
     }
 }
 
+fn update_builder<T, F: FnOnce(T) -> T>(opt: &mut Option<T>, f: F) {
+    *opt = opt.take().map(f)
+}
+
+fn build<T, M: Into<tk::ModelWrapper>, F: FnOnce(T) -> Result<M>>(
+    opt: &mut Option<T>,
+    build_f: F,
+) -> Result<Box<Model>> {
+    match opt.take() {
+        None => Err("Empty Builder".into()),
+        Some(b) => Ok(Box::new(Model(build_f(b)?.into()))),
+    }
+}
+
+type Vocab = HashMap<String, u32>;
+
+fn make_vocab(entries: Vec<KVStringU32>) -> Vocab {
+    entries.into_iter().map(|kv| (kv.key, kv.value)).collect()
+}
+
+#[derive(Deref, DerefMut)]
 struct BpeBuilder(Option<TkBpeBuilder>);
 
 fn bpe_builder() -> Box<BpeBuilder> {
@@ -190,14 +225,11 @@ fn bpe_builder() -> Box<BpeBuilder> {
 }
 
 fn build_bpe(builder: &mut BpeBuilder) -> Result<Box<Model>> {
-    match builder.0.take() {
-        None => Err("Empty BpeBuilder".into()),
-        Some(b) => Ok(Box::new(Model(b.build()?.into()))),
-    }
+    build(builder, |b| b.build())
 }
 
 fn files_bpe(builder: &mut BpeBuilder, vocab: String, merges: String) {
-    builder.0 = builder.0.take().map(|b| b.files(vocab, merges));
+    update_builder(builder, |b| b.files(vocab, merges));
 }
 
 fn vocab_and_merges_bpe(
@@ -205,33 +237,66 @@ fn vocab_and_merges_bpe(
     vocab: Vec<KVStringU32>,
     merges: Vec<StringString>,
 ) {
-    let vocab = vocab.into_iter().map(|kv| (kv.key, kv.value)).collect();
     let merges = merges.into_iter().map(|ss| (ss.first, ss.second)).collect();
-    builder.0 = builder.0.take().map(|b| b.vocab_and_merges(vocab, merges));
+    update_builder(builder, |b| b.vocab_and_merges(make_vocab(vocab), merges));
 }
 
 fn cache_capacity_bpe(builder: &mut BpeBuilder, capacity: usize) {
-    builder.0 = builder.0.take().map(|b| b.cache_capacity(capacity));
+    update_builder(builder, |b| b.cache_capacity(capacity));
 }
 
 fn unk_token_bpe(builder: &mut BpeBuilder, unk_token: String) {
-    builder.0 = builder.0.take().map(|b| b.unk_token(unk_token));
+    update_builder(builder, |b| b.unk_token(unk_token));
 }
 
 fn dropout_bpe(builder: &mut BpeBuilder, dropout: f32) {
-    builder.0 = builder.0.take().map(|b| b.dropout(dropout));
+    update_builder(builder, |b| b.dropout(dropout));
 }
 fn continuing_subword_prefix_bpe(builder: &mut BpeBuilder, prefix: String) {
-    builder.0 = builder
-        .0
-        .take()
-        .map(|b| b.continuing_subword_prefix(prefix));
+    update_builder(builder, |b| b.continuing_subword_prefix(prefix));
 }
 
 fn end_of_word_suffix_bpe(builder: &mut BpeBuilder, suffix: String) {
-    builder.0 = builder.0.take().map(|b| b.end_of_word_suffix(suffix));
+    update_builder(builder, |b| b.end_of_word_suffix(suffix));
 }
 
 fn fuse_unk_bpe(builder: &mut BpeBuilder, fuse_unk: bool) {
-    builder.0 = builder.0.take().map(|b| b.fuse_unk(fuse_unk));
+    update_builder(builder, |b| b.fuse_unk(fuse_unk));
+}
+
+#[derive(Deref, DerefMut)]
+struct WordPieceBuilder(Option<TkWordPieceBuilder>);
+
+fn word_piece_builder() -> Box<WordPieceBuilder> {
+    Box::new(WordPieceBuilder(Some(TkWordPieceBuilder::new())))
+}
+
+impl WordPieceBuilder {
+    fn build(&mut self) -> Result<Box<Model>> {
+        build(self, |b| b.build())
+    }
+
+    fn files(&mut self, vocab: &str) {
+        update_builder(self, |b| b.files(vocab.to_string()))
+    }
+
+    fn vocab(&mut self, vocab: Vec<KVStringU32>) {
+        update_builder(self, |b| b.vocab(make_vocab(vocab)))
+    }
+
+    fn unk_token(&mut self, unk_token: &str) {
+        update_builder(self, |b| b.unk_token(unk_token.to_string()))
+    }
+
+    fn continuing_subword_prefix(&mut self, continuing_subword_prefix: &str) {
+        update_builder(self, |b| {
+            b.continuing_subword_prefix(continuing_subword_prefix.to_string())
+        })
+    }
+
+    fn max_input_chars_per_word(&mut self, max_input_chars_per_word: usize) {
+        update_builder(self, |b| {
+            b.max_input_chars_per_word(max_input_chars_per_word)
+        })
+    }
 }
