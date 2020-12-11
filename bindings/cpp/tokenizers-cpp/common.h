@@ -105,11 +105,11 @@ private:                                                                       \
 
 namespace huggingface {
 namespace tokenizers {
-inline rust::Str string_view_to_str(nonstd::string_view string_view) {
+inline rust::Str to_rust_str(nonstd::string_view string_view) {
     return {string_view.data(), string_view.size()};
 }
 
-inline nonstd::string_view str_to_string_view(rust::Str str) {
+inline nonstd::string_view to_string_view(rust::Str str) {
     return {str.data(), str.size()};
 }
 

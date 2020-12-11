@@ -12,16 +12,16 @@ struct NormalizedString {
 
 public:
     explicit NormalizedString(nonstd::string_view str)
-        : inner_(ffi::normalized_string(string_view_to_str(str))) {}
+        : inner_(ffi::normalized_string(to_rust_str(str))) {}
 
     operator nonstd::string_view() { return get_normalized(); }
 
     nonstd::string_view get_normalized() {
-        return str_to_string_view(ffi::get_normalized(*inner_));
+        return to_string_view(ffi::get_normalized(*inner_));
     }
 
     nonstd::string_view get_original() {
-        return str_to_string_view(ffi::get_original(*inner_));
+        return to_string_view(ffi::get_original(*inner_));
     }
 };
 
