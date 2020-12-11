@@ -193,6 +193,15 @@ template <typename Vec, typename Container>
 void fill_vec(Vec& vec, const Container& cpp_container) {
     fill_vec(vec, cpp_container, [](auto x) { return x; });
 }
+
+template <class F>
+void vararg_for(F f) {}
+
+template <class F, class Arg, class... Args>
+void vararg_for(F f, Arg arg, Args... args) {
+    f(std::forward<Arg>(arg));
+    vararg_for(f, std::forward<Args>(args)...);
+}
 }
 }  // namespace tokenizers
 }  // namespace huggingface

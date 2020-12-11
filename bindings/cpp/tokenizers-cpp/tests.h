@@ -28,6 +28,108 @@ inline std::string data_file(std::string name) { return data_dir_ + name; }
         }                                                                     \
     } while (false)
 
+TEST_SUITE("Normalizers") {
+    void check_normalizer(const Normalizer& normalizer,
+                          nonstd::string_view original,
+                          nonstd::string_view expected) {
+        NormalizedString n(original);
+        normalizer.normalize(n);
+        CHECK(n.get_normalized() == expected);
+    }
+
+    TEST_CASE("Replace literal") {
+        // clang-format off
+        /*
+        let original = "This is a ''test''";
+        let normalized = "This is a \"test\"";
+
+        let mut n = NormalizedString::from(original);
+        Replace::new("''", "\"").unwrap().normalize(&mut n).unwrap();
+
+        assert_eq!(&n.get(), &normalized);
+        */
+        // clang-format on
+        check_normalizer(Normalizer::replace_literal("''", "\""),
+                         "This is a ''test''", "This is a \"test\"");
+    }
+
+    TEST_CASE("Replace regex") {
+        // clang-format off
+        /*
+        let original = "This     is   a         test";
+        let normalized = "This is a test";
+
+        let mut n = NormalizedString::from(original);
+        Replace::new(ReplacePattern::Regex(r"\s+".into()), ' ')
+            .unwrap()
+            .normalize(&mut n)
+            .unwrap();
+
+        assert_eq!(&n.get(), &normalized);
+        */
+        // clang-format on
+        check_normalizer(Normalizer::replace_regex(R"(\s+)", " "),
+                         "This     is   a         test", "This is a test");
+    }
+
+    TEST_CASE("NFKC") {
+        // clang-format off
+        /*
+        let original = "\u{fb01}".to_string();
+        let normalized = "fi".to_string();
+        let mut n = NormalizedString::from(original.clone());
+        NFKC.normalize(&mut n).unwrap();
+
+        assert_eq!(
+            n,
+            NormalizedString::new(original, normalized, vec![(0, 3), (0, 3)], 0)
+        );
+
+        assert_eq!(n.alignments_original(), vec![(0, 2), (0, 2), (0, 2)]);
+        */
+        // clang-format on
+        check_normalizer(Normalizer::nfkc(), "ﬁ", "fi");
+    }
+
+    TEST_CASE("Sequence") {
+        // clang-format off
+        /*
+        let original: String = "Cụ thể, bạn sẽ tham gia một nhóm các giám đốc điều hành tổ chức, các nhà lãnh đạo doanh nghiệp, các học giả, chuyên gia phát triển và tình nguyện viên riêng biệt trong lĩnh vực phi lợi nhuận…".to_string();
+        let normalized = "cu the, ban se tham gia mot nhom cac giam đoc đieu hanh to chuc, cac nha lanh đao doanh nghiep, cac hoc gia, chuyen gia phat trien va tinh nguyen vien rieng biet trong linh vuc phi loi nhuan...".to_string();
+        let mut n = NormalizedString::from(original);
+        NFKD.normalize(&mut n).unwrap();
+        StripAccents.normalize(&mut n).unwrap();
+        Lowercase.normalize(&mut n).unwrap();
+        assert_eq!(&n.get(), &normalized);
+        */
+        // clang-format on
+        std::string original =
+            "Cụ thể, bạn sẽ tham gia một nhóm các giám đốc điều hành tổ chức, "
+            "các nhà lãnh đạo doanh nghiệp, các học giả, chuyên gia phát triển "
+            "và tình nguyện viên riêng biệt trong lĩnh vực phi lợi nhuận…";
+        std::string expected =
+            "cu the, ban se tham gia mot nhom cac giam đoc đieu hanh to chuc, "
+            "cac nha lanh đao doanh nghiep, cac hoc gia, chuyen gia phat trien "
+            "va tinh nguyen vien rieng biet trong linh vuc phi loi nhuan...";
+
+        SUBCASE("dynamic") {
+            std::vector<Normalizer> normalizers;
+            normalizers.push_back(Normalizer::nfkd());
+            normalizers.push_back(Normalizer::strip_accents());
+            normalizers.push_back(Normalizer::lowercase());
+            check_normalizer(Normalizer::sequence(normalizers), original,
+                             expected);
+        }
+
+        SUBCASE("static") {
+            check_normalizer(Normalizer::sequence(Normalizer::nfkd(),
+                                                  Normalizer::strip_accents(),
+                                                  Normalizer::lowercase()),
+                             original, expected);
+        }
+    }
+}
+
 TEST_SUITE("Pre-tokenizers") {
     TEST_CASE("BERT basic") {
         // clang-format off
@@ -83,7 +185,7 @@ TEST_SUITE("Tokenizers") {
                 .max_input_chars_per_word(100)
                 .build());
 
-        tokenizer.with_normalizer(BertNormalizerOptions().build())
+        tokenizer.with_normalizer(Normalizer::bert())
             .with_pre_tokenizer(PreTokenizer::bert())
             .with_post_processor(
                 PostProcessor::bert("[SEP]", 101, "[CLS]", 102));
