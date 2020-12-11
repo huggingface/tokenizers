@@ -23,7 +23,7 @@ public:
 
     HFT_RESULT(rust::Vec<Token>) tokenize(nonstd::string_view sequence) {
         HFT_TRY(rust::Vec<Token>,
-                ffi::tokenize(*inner_, string_view_to_str(sequence)).tokens);
+                ffi::tokenize(*inner_, string_view_to_str(sequence)));
     }
 
     nonstd::optional<uint32_t> token_to_id(nonstd::string_view token) {

@@ -16,13 +16,13 @@ mod ffi {
         start: usize,
         end: usize,
         has_tokens: bool,
-        tokens: Tokens,
+        tokens: Vec<Token>,
     }
 
     extern "C++" {
         include!("tokenizers-cpp/pre_tokenizers.h");
         include!("tokenizers-cpp/tokens.h");
-        type Tokens = crate::models::ffi::Tokens;
+        type Token = crate::models::ffi::Token;
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]
@@ -58,11 +58,12 @@ mod ffi {
 }
 
 use derive_more::{Deref, DerefMut, From};
-use ffi::*;
 use tk::{
     pre_tokenizers::{bert::BertPreTokenizer, byte_level::ByteLevel, PreTokenizerWrapper},
     PreTokenizer as PreTokenizerTrait, Result,
 };
+
+use crate::tokens::wrap_tokens_ref;
 
 #[derive(Deref, DerefMut, From)]
 struct NormalizedString(tk::NormalizedString);
@@ -121,7 +122,7 @@ fn get_splits(
             has_tokens: tokens.is_some(),
             tokens: tokens
                 .as_ref()
-                .map_or_else(|| Tokens::default(), |v| v.into()),
+                .map_or_else(|| vec![], wrap_tokens_ref),
         })
         .collect()
 }

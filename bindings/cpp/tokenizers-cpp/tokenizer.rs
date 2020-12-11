@@ -16,20 +16,6 @@ mod ffi {
         Char,
     }
 
-    // can't reuse from `models` because it contains String
-    #[namespace = "huggingface::tokenizers::ffi"]
-    pub struct OptionString {
-        pub has_value: bool,
-        pub value: String,
-    }
-
-    // can't reuse from `models` because it contains String
-    #[namespace = "huggingface::tokenizers::ffi"]
-    pub struct KVStringU32_1 {
-        pub key: String,
-        pub value: u32,
-    }
-
     pub enum InputSequenceTag {
         Str,
         String,
@@ -63,6 +49,8 @@ mod ffi {
         type PostProcessor = crate::processors::PostProcessor;
         type Decoder = crate::decoders::Decoder;
         type OptionU32 = crate::models::ffi::OptionU32;
+        type OptionString = crate::models::ffi::OptionString;
+        type KVStringU32 = crate::models::ffi::KVStringU32;
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]
@@ -98,7 +86,7 @@ mod ffi {
 
         fn token_to_id(tokenizer: &Tokenizer, token: &str) -> OptionU32;
         fn id_to_token(tokenizer: &Tokenizer, id: u32) -> OptionString;
-        fn get_vocab(tokenizer: &Tokenizer, with_added_tokens: bool) -> Vec<KVStringU32_1>;
+        fn get_vocab(tokenizer: &Tokenizer, with_added_tokens: bool) -> Vec<KVStringU32>;
         fn get_vocab_size(tokenizer: &Tokenizer, with_added_tokens: bool) -> usize;
 
         fn encode(
@@ -259,11 +247,11 @@ fn token_to_id(tokenizer: &Tokenizer, token: &str) -> OptionU32 {
     wrap_option!(tokenizer.token_to_id(token), OptionU32, 0)
 }
 
-fn get_vocab(tokenizer: &Tokenizer, with_added_tokens: bool) -> Vec<KVStringU32_1> {
+fn get_vocab(tokenizer: &Tokenizer, with_added_tokens: bool) -> Vec<KVStringU32> {
     tokenizer
         .get_vocab(with_added_tokens)
         .iter()
-        .map(|(k, v)| KVStringU32_1 {
+        .map(|(k, v)| KVStringU32 {
             key: k.clone(),
             value: *v,
         })

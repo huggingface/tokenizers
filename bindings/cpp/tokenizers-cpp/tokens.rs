@@ -7,11 +7,6 @@ pub mod ffi {
         pub start: usize,
         pub end: usize,
     }
-
-    #[derive(PartialEq, Eq, Hash, Default, Debug, Clone)]
-    pub struct Tokens {
-        pub tokens: Vec<Token>,
-    }
 }
 
 use ffi::*;
@@ -38,18 +33,10 @@ impl From<&tk::Token> for Token {
     }
 }
 
-impl From<Vec<tk::Token>> for Tokens {
-    fn from(tokens: Vec<tk::Token>) -> Self {
-        Tokens {
-            tokens: tokens.into_iter().map(|token| token.into()).collect(),
-        }
-    }
+pub(crate) fn wrap_tokens(tokens: Vec<tk::Token>) -> Vec<Token> {
+    tokens.into_iter().map(|token| token.into()).collect()
 }
 
-impl From<&Vec<tk::Token>> for Tokens {
-    fn from(tokens: &Vec<tk::Token>) -> Self {
-        Tokens {
-            tokens: tokens.into_iter().map(|token| token.into()).collect(),
-        }
-    }
+pub(crate) fn wrap_tokens_ref(tokens: &Vec<tk::Token>) -> Vec<Token> {
+    tokens.into_iter().map(|token| token.into()).collect()
 }

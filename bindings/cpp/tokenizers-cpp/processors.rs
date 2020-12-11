@@ -1,12 +1,6 @@
 #[cxx::bridge(namespace = "huggingface::tokenizers")]
 mod ffi {
     #[namespace = "huggingface::tokenizers::ffi"]
-    pub struct OptionU32 {
-        pub has_value: bool,
-        pub value: u32,
-    }
-
-    #[namespace = "huggingface::tokenizers::ffi"]
     pub struct OptionUsize {
         pub has_value: bool,
         pub value: usize,
@@ -20,13 +14,13 @@ mod ffi {
 
     extern "C++" {
         include!("tokenizers-cpp/processors.h");
-        include!("tokenizers-cpp/tokens.h");
         include!("tokenizers-cpp/models.h");
-        type Tokens = crate::tokens::ffi::Tokens;
-    // FIXME still running into `Rust Vec containing C++ type is not supported yet`
-    // #[namespace = "huggingface::tokenizers::ffi"]
-    // type OptionU32 = crate::models::ffi::OptionU32;
+
+        #[namespace = "huggingface::tokenizers::ffi"]
+        type OptionU32 = crate::models::ffi::OptionU32;
     }
+
+    impl Vec<OptionU32> {}
 
     #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {

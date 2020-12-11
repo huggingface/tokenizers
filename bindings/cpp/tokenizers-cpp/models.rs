@@ -28,14 +28,15 @@ pub mod ffi {
         include!("tokenizers-cpp/models.h");
         include!("tokenizers-cpp/tokens.h");
         type Token = crate::tokens::ffi::Token;
-        type Tokens = crate::tokens::ffi::Tokens;
     }
+
+    impl Vec<Token> {}
 
     #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {
         type Model;
 
-        fn tokenize(model: &Model, sequence: &str) -> Result<Tokens>;
+        fn tokenize(model: &Model, sequence: &str) -> Result<Vec<Token>>;
         // `_model` suffix to avoid conflict with tokenizer.rs
         fn token_to_id_model(model: &Model, token: &str) -> OptionU32;
         fn id_to_token_model(model: &Model, id: u32) -> OptionString;
@@ -78,7 +79,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::wrap_option;
+use crate::{tokens::wrap_tokens, wrap_option};
 use derive_more::{Deref, DerefMut, From};
 use ffi::*;
 use tk::{
@@ -145,8 +146,8 @@ impl TrainerTrait for Trainer {
     }
 }
 
-fn tokenize(model: &Model, sequence: &str) -> Result<Tokens> {
-    Ok(model.tokenize(sequence)?.into())
+fn tokenize(model: &Model, sequence: &str) -> Result<Vec<Token>> {
+    Ok(wrap_tokens(model.tokenize(sequence)?))
 }
 
 fn token_to_id_model(model: &Model, token: &str) -> OptionU32 {

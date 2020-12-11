@@ -10,7 +10,7 @@ path = "tokenizers-cpp/lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-cxx = "1.0.13"
+cxx = "1.0.15"
 derive_more = "0.99.11"
 
 [dependencies.tokenizers]
@@ -18,7 +18,7 @@ version = "*"
 path = "../../tokenizers"
 
 [build-dependencies]
-cxx-build = "1.0.13"
+cxx-build = "1.0.15"
 cc = "1.0.66"
 
 [features]
