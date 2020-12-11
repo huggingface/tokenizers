@@ -12,6 +12,7 @@ tokenizers/data
 bindings/python/tests/data
 docs/build/
 docs/make.bat
+bindings/cpp/docs/doxygen
 
 __pycache__
 pip-wheel-metadata
