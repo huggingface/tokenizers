@@ -135,7 +135,7 @@ public:
     HFT_RESULT(rust::String)
     decode(nonstd::span<uint32_t> ids, bool skip_special_tokens) {
         rust::Vec<uint32_t> ids_vec;
-        fill_vec(ids_vec, ids);
+        ffi::fill_vec(ids_vec, ids);
         return decode(std::move(ids_vec), skip_special_tokens);
     }
 

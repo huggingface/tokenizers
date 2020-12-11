@@ -29,14 +29,16 @@ public:
     std::vector<nonstd::optional<uint32_t>> get_word_ids() const noexcept {
         auto word_ids = inner_->get_word_ids();
         std::vector<nonstd::optional<uint32_t>> result;
-        fill_vec(result, word_ids, [](auto x) { return HFT_OPTION(x); });
+        ffi::fill_vec(result, word_ids,
+                      [](auto x) { return ffi::to_optional(x); });
         return result;
     }
 
     std::vector<nonstd::optional<size_t>> get_sequence_ids() const noexcept {
         auto sequence_ids = inner_->get_sequence_ids();
         std::vector<nonstd::optional<size_t>> result;
-        fill_vec(result, sequence_ids, [](auto x) { return HFT_OPTION(x); });
+        ffi::fill_vec(result, sequence_ids,
+                      [](auto x) { return ffi::to_optional(x); });
         return result;
     }
 
@@ -51,7 +53,7 @@ public:
     std::vector<Offsets> get_offsets() const noexcept {
         auto offsets = inner_->get_offsets();
         std::vector<Offsets> result;
-        fill_vec(result, offsets);
+        ffi::fill_vec(result, offsets);
         return result;
     }
 
@@ -83,8 +85,8 @@ struct PostProcessor {
 public:
     static PostProcessor bert(nonstd::string_view sep_token, uint32_t sep_id,
                               nonstd::string_view cls_token, uint32_t cls_id) {
-        return {ffi::bert_post_processor(to_rust_str(sep_token), sep_id,
-                                         to_rust_str(cls_token), cls_id)};
+        return {ffi::bert_post_processor(ffi::to_rust_str(sep_token), sep_id,
+                                         ffi::to_rust_str(cls_token), cls_id)};
     }
 
     static PostProcessor bert() { return bert("[SEP]", 101, "[CLS]", 102); }

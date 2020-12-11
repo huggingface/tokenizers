@@ -1,9 +1,10 @@
 #pragma once
 
+#include <nonstd/optional.hpp>
 #include <nonstd/string_view.hpp>
 #include <rust/cxx.h>
 
-/** @file Shared code for all tokenizers-cpp modules (mostly macros) */
+/** @file common.h Shared code for all tokenizers-cpp modules (mostly macros) */
 
 // code adapted from
 // https://www.fluentcpp.com/2019/08/30/how-to-disable-a-warning-in-cpp/
@@ -28,6 +29,27 @@
 
 #endif
 
+/**
+ * @def HFT_DISABLE_WARNING_PUSH
+ *
+ * @brief Begins a section where some warnings are disabled
+ */
+
+/**
+ * @def HFT_DISABLE_WARNING_POP
+ *
+ * @brief Ends a section where some warnings are disabled
+ */
+
+/**
+ * @def HFT_DISABLE_WARNING
+ *
+ * @brief Disables specific warnings
+ */
+
+/**
+ * @brief For builder members
+ */
 #define HFT_BUILDER_ARG(type, name, default_value) \
     type name = default_value;                     \
     HFT_DISABLE_WARNING_PUSH                       \
@@ -38,6 +60,12 @@
     }                                              \
     HFT_DISABLE_WARNING_POP
 
+/**
+ * @brief Declares standard members of every FFI wrapper
+ *
+ * Disables copy constructor/assignment, enables move constructor/assignment,
+ * and dereference operators.
+ */
 #define HFT_FFI_WRAPPER(type)                                                  \
 public:                                                                        \
     type(rust::Box<ffi::type>&& inner) : inner_(std::move(inner)) {};          \
@@ -97,30 +125,56 @@ private:                                                                       \
 #define HFT_TRY(T, expr) return expr;
 #endif
 
-#define HFT_OPTION(expr)                                                       \
-    [&]() {                                                                    \
-        auto e = expr;                                                         \
-        return e.has_value ? nonstd::make_optional(e.value) : nonstd::nullopt; \
-    }()
-
 namespace huggingface {
 namespace tokenizers {
+namespace ffi {
+/**
+ * @brief Converts an FFI Option-like struct with `has_value` and `value` fields
+ * to a nonstd::optional.
+ */
+template <typename OptionLike>
+auto to_optional(OptionLike e) {
+    return e.has_value ? nonstd::make_optional(e.value) : nonstd::nullopt;
+}
+
+/**
+ * @brief Converts the argument to `rust::Str`
+ */
 inline rust::Str to_rust_str(nonstd::string_view string_view) {
     return {string_view.data(), string_view.size()};
 }
 
+/**
+ * @brief Converts the argument to `nonstd::string_view`
+ */
 inline nonstd::string_view to_string_view(rust::Str str) {
     return {str.data(), str.size()};
 }
 
+/**
+ * @brief Converts the argument to `rust::String`
+ */
 inline rust::String to_rust_string(nonstd::string_view string_view) {
     return {string_view.data(), string_view.size()};
 }
 
+/**
+ * @brief Converts the argument to `rust::String`
+ */
 inline rust::String to_rust_string(std::string string) { return string; }
 
+/**
+ * @brief Converts the argument to `rust::String`
+ */
 inline rust::String to_rust_string(const char* ptr) { return ptr; }
 
+/**
+ * @brief Fills a vector with transformed data from another container
+ *
+ * @param vec The vector to fill (assumed to be empty initially)
+ * @param cpp_container The source container
+ * @param f The lambda to transform elements of cpp_container
+ */
 template <typename Vec, typename Container, typename F>
 void fill_vec(Vec& vec, const Container& cpp_container, F f) {
     vec.reserve(cpp_container.size());
@@ -129,9 +183,16 @@ void fill_vec(Vec& vec, const Container& cpp_container, F f) {
     }
 }
 
+/**
+ * @brief Fills a vector with data from another container (like fill_vec(Vec&, const Container&, F) but with identity function).
+ *
+ * @param vec The vector to fill (assumed to be empty initially)
+ * @param cpp_container The source container
+ */
 template <typename Vec, typename Container>
 void fill_vec(Vec& vec, const Container& cpp_container) {
     fill_vec(vec, cpp_container, [](auto x) { return x; });
+}
 }
 }  // namespace tokenizers
 }  // namespace huggingface

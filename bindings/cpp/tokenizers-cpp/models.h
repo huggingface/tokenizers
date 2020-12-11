@@ -23,11 +23,12 @@ public:
 
     HFT_RESULT(rust::Vec<Token>) tokenize(nonstd::string_view sequence) {
         HFT_TRY(rust::Vec<Token>,
-                ffi::tokenize(*inner_, to_rust_str(sequence)));
+                ffi::tokenize(*inner_, ffi::to_rust_str(sequence)));
     }
 
     nonstd::optional<uint32_t> token_to_id(nonstd::string_view token) {
-        return HFT_OPTION(ffi::token_to_id_model(*inner_, to_rust_str(token)));
+        return ffi::to_optional(
+            ffi::token_to_id_model(*inner_, ffi::to_rust_str(token)));
     }
 
     nonstd::optional<std::string> id_to_token(uint32_t id) {
@@ -50,13 +51,14 @@ public:
 
     HFT_RESULT(rust::Vec<rust::String>) save(nonstd::string_view folder) {
         HFT_TRY(rust::Vec<rust::String>,
-                ffi::save(*inner_, to_rust_str(folder), false, {}));
+                ffi::save(*inner_, ffi::to_rust_str(folder), false, {}));
     }
 
     HFT_RESULT(rust::Vec<rust::String>)
     save(nonstd::string_view folder, nonstd::string_view prefix) {
-        HFT_TRY(rust::Vec<rust::String>, ffi::save(*inner_, to_rust_str(folder),
-                                                   true, to_rust_str(prefix)));
+        HFT_TRY(rust::Vec<rust::String>,
+                ffi::save(*inner_, ffi::to_rust_str(folder), true,
+                          ffi::to_rust_str(prefix)));
     }
 };
 
@@ -76,7 +78,7 @@ public:
     HFT_RESULT(Model) build() { HFT_TRY(Model, {inner_->build()}); }
 
     BpeBuilder& files(nonstd::string_view vocab, nonstd::string_view merges) {
-        inner_->files(to_rust_string(vocab), to_rust_string(merges));
+        inner_->files(ffi::to_rust_string(vocab), ffi::to_rust_string(merges));
         return *this;
     }
 
@@ -87,12 +89,14 @@ public:
     BpeBuilder& vocab_and_merges(Vocab vocab, Merges merges) {
         rust::Vec<ffi::KVStringU32> vocab_ffi;
         fill_vec(vocab_ffi, vocab, [](auto& kv) {
-            return {to_rust_string(kv.first), to_rust_string(kv.second)};
+            return {ffi::to_rust_string(kv.first),
+                    ffi::to_rust_string(kv.second)};
         });
 
         rust::Vec<ffi::StringString> merges_ffi;
         fill_vec(merges_ffi, merges, [](auto& kv) {
-            return {to_rust_string(kv.first), to_rust_string(kv.second)};
+            return {ffi::to_rust_string(kv.first),
+                    ffi::to_rust_string(kv.second)};
         });
 
         inner_->vocab_and_merges(vocab_ffi, merges_ffi);
@@ -105,7 +109,7 @@ public:
     }
 
     BpeBuilder& unk_token(nonstd::string_view unk_token) {
-        inner_->unk_token(to_rust_string(unk_token));
+        inner_->unk_token(ffi::to_rust_string(unk_token));
         return *this;
     }
 
@@ -115,12 +119,12 @@ public:
     }
 
     BpeBuilder& continuing_subword_prefix(nonstd::string_view prefix) {
-        inner_->continuing_subword_prefix(to_rust_string(prefix));
+        inner_->continuing_subword_prefix(ffi::to_rust_string(prefix));
         return *this;
     }
 
     BpeBuilder& end_of_word_suffix(nonstd::string_view suffix) {
-        inner_->end_of_word_suffix(to_rust_string(suffix));
+        inner_->end_of_word_suffix(ffi::to_rust_string(suffix));
         return *this;
     }
 
@@ -145,7 +149,7 @@ public:
     HFT_RESULT(Model) build() { HFT_TRY(Model, {inner_->build()}); }
 
     WordPieceBuilder& files(nonstd::string_view vocab) {
-        inner_->files(to_rust_str(vocab));
+        inner_->files(ffi::to_rust_str(vocab));
         return *this;
     }
 
@@ -155,7 +159,8 @@ public:
     WordPieceBuilder& vocab(Vocab vocab) {
         rust::Vec<ffi::KVStringU32> vocab_ffi;
         fill_vec(vocab_ffi, vocab, [](auto& kv) {
-            return {to_rust_string(kv.first), to_rust_string(kv.second)};
+            return {ffi::to_rust_string(kv.first),
+                    ffi::to_rust_string(kv.second)};
         });
 
         inner_->vocab(vocab_ffi);
@@ -163,12 +168,12 @@ public:
     }
 
     WordPieceBuilder& unk_token(nonstd::string_view unk_token) {
-        inner_->unk_token(to_rust_str(unk_token));
+        inner_->unk_token(ffi::to_rust_str(unk_token));
         return *this;
     }
 
     WordPieceBuilder& continuing_subword_prefix(nonstd::string_view prefix) {
-        inner_->continuing_subword_prefix(to_rust_str(prefix));
+        inner_->continuing_subword_prefix(ffi::to_rust_str(prefix));
         return *this;
     }
 

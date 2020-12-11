@@ -11,17 +11,17 @@ struct NormalizedString {
     HFT_FFI_WRAPPER(NormalizedString);
 
 public:
-    explicit NormalizedString(nonstd::string_view str)
-        : inner_(ffi::normalized_string(to_rust_str(str))) {}
+    explicit NormalizedString(nonstd::string_view str) noexcept
+        : inner_(ffi::normalized_string(ffi::to_rust_str(str))) {}
 
     operator nonstd::string_view() { return get_normalized(); }
 
-    nonstd::string_view get_normalized() {
-        return to_string_view(ffi::get_normalized(*inner_));
+    nonstd::string_view get_normalized() noexcept {
+        return ffi::to_string_view(ffi::get_normalized(*inner_));
     }
 
-    nonstd::string_view get_original() {
-        return to_string_view(ffi::get_original(*inner_));
+    nonstd::string_view get_original() noexcept {
+        return ffi::to_string_view(ffi::get_original(*inner_));
     }
 };
 

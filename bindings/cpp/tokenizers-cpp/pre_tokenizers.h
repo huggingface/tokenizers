@@ -16,7 +16,7 @@ public:
         : inner_(ffi::normalized_to_pre_tokenized_string(*str)){};
 
     explicit PreTokenizedString(nonstd::string_view str)
-        : inner_(ffi::str_to_pre_tokenized_string(to_rust_str(str))){};
+        : inner_(ffi::str_to_pre_tokenized_string(ffi::to_rust_str(str))){};
 
     rust::Vec<Split> get_splits(OffsetReferential offset_ref,
                                 OffsetType offset_type) {
