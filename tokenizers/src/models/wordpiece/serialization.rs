@@ -15,6 +15,7 @@ impl Serialize for WordPiece {
         // Small fields first
         model.serialize_field("unk_token", &self.unk_token)?;
         model.serialize_field("continuing_subword_prefix", &self.continuing_subword_prefix)?;
+        model.serialize_field("end_of_word_suffix", &self.end_of_word_suffix)?;
         model.serialize_field("max_input_chars_per_word", &self.max_input_chars_per_word)?;
 
         // Then large ones
@@ -35,6 +36,7 @@ impl<'de> Deserialize<'de> for WordPiece {
             &[
                 "unk_token",
                 "continuing_subword_prefix",
+                "end_of_word_suffix",
                 "max_input_chars_per_word",
                 "vocab",
             ],
@@ -61,6 +63,9 @@ impl<'de> Visitor<'de> for WordPieceVisitor {
                 "unk_token" => builder = builder.unk_token(map.next_value()?),
                 "continuing_subword_prefix" => {
                     builder = builder.continuing_subword_prefix(map.next_value()?)
+                }
+                "end_of_word_suffix" => {
+                    builder = builder.end_of_word_suffix(map.next_value()?)
                 }
                 "max_input_chars_per_word" => {
                     builder = builder.max_input_chars_per_word(map.next_value()?)
