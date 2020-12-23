@@ -20,9 +20,10 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         replacement: str = "▁",
         add_prefix_space: bool = True,
         dropout: Optional[float] = None,
+        fuse_unk: Optional[bool] = False,
     ):
         if vocab is not None and merges is not None:
-            tokenizer = Tokenizer(BPE(vocab, merges, dropout=dropout, unk_token=unk_token))
+            tokenizer = Tokenizer(BPE(vocab, merges, dropout=dropout, unk_token=unk_token, fuse_unk=fuse_unk))
         else:
             tokenizer = Tokenizer(BPE())
 
