@@ -12,16 +12,19 @@ pub mod ffi {
         pub value: String,
     }
 
-    #[namespace = "huggingface::tokenizers::ffi"]
-    pub struct KVStringU32 {
-        pub key: String,
-        pub value: u32,
+    pub struct TokenAndId {
+        pub token: String,
+        pub id: u32,
     }
 
-    #[namespace = "huggingface::tokenizers::ffi"]
-    pub struct StringString {
+    pub struct Merge {
         pub first: String,
         pub second: String,
+    }
+
+    pub struct UnigramEntry {
+        pub token: String,
+        pub log_prob: f64,
     }
 
     extern "C++" {
@@ -40,10 +43,18 @@ pub mod ffi {
         // `_model` suffix to avoid conflict with tokenizer.rs
         fn token_to_id_model(model: &Model, token: &str) -> OptionU32;
         fn id_to_token_model(model: &Model, id: u32) -> OptionString;
-        fn get_vocab_model(model: &Model) -> Vec<KVStringU32>;
+        fn get_vocab_model(model: &Model) -> Vec<TokenAndId>;
         fn get_vocab_size_model(model: &Model) -> usize;
         fn save(model: &Model, folder: &str, has_prefix: bool, prefix: &str)
             -> Result<Vec<String>>;
+
+        fn unigram_model(
+            vocab: &[UnigramEntry],
+            has_unk_id: bool,
+            unk_id: usize,
+        ) -> Result<Box<Model>>;
+
+        fn unigram_load_model(path: &str) -> Result<Box<Model>>;
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]
@@ -51,13 +62,13 @@ pub mod ffi {
         type BpeBuilder;
         fn bpe_builder() -> Box<BpeBuilder>;
         fn build(&mut self) -> Result<Box<Model>>;
-        fn files(&mut self, vocab: String, merges: String);
-        fn vocab_and_merges(&mut self, vocab: Vec<KVStringU32>, merges: Vec<StringString>);
+        fn files(&mut self, vocab: &str, merges: &str);
+        fn vocab_and_merges(&mut self, vocab: &[TokenAndId], merges: &[Merge]);
         fn cache_capacity(&mut self, capacity: usize);
-        fn unk_token(&mut self, unk_token: String);
+        fn unk_token(&mut self, unk_token: &str);
         fn dropout(&mut self, dropout: f32);
-        fn continuing_subword_prefix(&mut self, prefix: String);
-        fn end_of_word_suffix(&mut self, suffix: String);
+        fn continuing_subword_prefix(&mut self, prefix: &str);
+        fn end_of_word_suffix(&mut self, suffix: &str);
         fn fuse_unk(&mut self, fuse_unk: bool);
     }
 
@@ -66,11 +77,21 @@ pub mod ffi {
         type WordPieceBuilder;
         fn word_piece_builder() -> Box<WordPieceBuilder>;
         fn build(&mut self) -> Result<Box<Model>>;
-        fn vocab(&mut self, vocab: Vec<KVStringU32>);
+        fn vocab(&mut self, vocab: &[TokenAndId]);
         fn files(&mut self, vocab: &str);
         fn unk_token(&mut self, unk_token: &str);
         fn continuing_subword_prefix(&mut self, continuing_subword_prefix: &str);
         fn max_input_chars_per_word(&mut self, max_input_chars_per_word: usize);
+    }
+
+    #[namespace = "huggingface::tokenizers::ffi"]
+    extern "Rust" {
+        type WordLevelBuilder;
+        fn word_level_builder() -> Box<WordLevelBuilder>;
+        fn build(&mut self) -> Result<Box<Model>>;
+        fn vocab(&mut self, vocab: &[TokenAndId]);
+        fn files(&mut self, vocab: &str);
+        fn unk_token(&mut self, unk_token: &str);
     }
 }
 
@@ -80,17 +101,21 @@ use std::{
 };
 
 use crate::{tokens::wrap_tokens, wrap_option};
-use derive_more::{Deref, DerefMut, From};
+use derive_more::{Deref, DerefMut};
 use ffi::*;
 use tk::{
-    models::{bpe::BpeBuilder as TkBpeBuilder, wordpiece::WordPieceBuilder as TkWordPieceBuilder},
-    Model as ModelTrait, Result, Trainer as TrainerTrait,
+    models::{
+        bpe::BpeBuilder as TkBpeBuilder, unigram::Unigram,
+        wordlevel::WordLevelBuilder as TkWordLevelBuilder,
+        wordpiece::WordPieceBuilder as TkWordPieceBuilder,
+    },
+    Model as ModelTrait, ModelWrapper, Result, Trainer as TrainerTrait,
 };
 
-#[derive(Deref, DerefMut, From, Clone)]
-pub struct Model(pub tk::ModelWrapper);
+#[derive(Deref, DerefMut, Clone)]
+pub struct Model(pub ModelWrapper);
 
-#[derive(Deref, DerefMut, From)]
+#[derive(Deref, DerefMut)]
 pub struct Trainer(pub tk::models::TrainerWrapper);
 
 impl ModelTrait for Model {
@@ -158,23 +183,34 @@ fn id_to_token_model(model: &Model, id: u32) -> OptionString {
     wrap_option!(model.id_to_token(id), OptionString, "".to_string())
 }
 
-fn get_vocab_model(model: &Model) -> Vec<KVStringU32> {
-    model
-        .get_vocab()
+pub(crate) fn vocab_to_vec(vocab: Vocab) -> Vec<TokenAndId> {
+    vocab
         .iter()
-        .map(|(k, v)| KVStringU32 {
-            key: k.clone(),
-            value: *v,
+        .map(|(k, v)| TokenAndId {
+            token: k.clone(),
+            id: *v,
         })
         .collect()
+}
+
+fn get_vocab_model(model: &Model) -> Vec<TokenAndId> {
+    vocab_to_vec(model.get_vocab())
 }
 
 fn get_vocab_size_model(model: &Model) -> usize {
     model.get_vocab_size()
 }
 
+fn some_if<T>(has_value: bool, value: T) -> Option<T> {
+    if has_value {
+        Some(value)
+    } else {
+        None
+    }
+}
+
 fn save(model: &Model, folder: &str, has_prefix: bool, prefix: &str) -> Result<Vec<String>> {
-    let prefix = if has_prefix { Some(prefix) } else { None };
+    let prefix = some_if(has_prefix, prefix);
     let mut error: Option<tk::Error> = None;
     let result = model.save(folder.as_ref(), prefix).map(|paths| {
         paths
@@ -197,24 +233,41 @@ fn save(model: &Model, folder: &str, has_prefix: bool, prefix: &str) -> Result<V
     }
 }
 
+fn make_model<M: Into<ModelWrapper>>(model: Result<M>) -> Result<Box<Model>> {
+    Ok(Box::new(Model(model?.into())))
+}
+
+fn unigram_model(vocab: &[UnigramEntry], has_unk_id: bool, unk_id: usize) -> Result<Box<Model>> {
+    let vocab = vocab
+        .iter()
+        .map(|sf| (sf.token.clone(), sf.log_prob))
+        .collect();
+    let unk_id = some_if(has_unk_id, unk_id);
+    make_model(Unigram::from(vocab, unk_id))
+}
+
+fn unigram_load_model(path: &str) -> Result<Box<Model>> {
+    make_model(Unigram::load(path))
+}
+
 fn update_builder<T, F: FnOnce(T) -> T>(opt: &mut Option<T>, f: F) {
     *opt = opt.take().map(f)
 }
 
-fn build<T, M: Into<tk::ModelWrapper>, F: FnOnce(T) -> Result<M>>(
+fn build<T, M: Into<ModelWrapper>, F: FnOnce(T) -> Result<M>>(
     opt: &mut Option<T>,
     build_f: F,
 ) -> Result<Box<Model>> {
     match opt.take() {
         None => Err("Empty Builder".into()),
-        Some(b) => Ok(Box::new(Model(build_f(b)?.into()))),
+        Some(b) => make_model(build_f(b)),
     }
 }
 
 type Vocab = HashMap<String, u32>;
 
-fn make_vocab(entries: Vec<KVStringU32>) -> Vocab {
-    entries.into_iter().map(|kv| (kv.key, kv.value)).collect()
+fn make_vocab(entries: &[TokenAndId]) -> Vocab {
+    entries.iter().map(|kv| (kv.token.clone(), kv.id)).collect()
 }
 
 #[derive(Deref, DerefMut)]
@@ -229,12 +282,15 @@ impl BpeBuilder {
         build(self, |b| b.build())
     }
 
-    fn files(&mut self, vocab: String, merges: String) {
-        update_builder(self, |b| b.files(vocab, merges));
+    fn files(&mut self, vocab: &str, merges: &str) {
+        update_builder(self, |b| b.files(vocab.to_string(), merges.to_string()));
     }
 
-    fn vocab_and_merges(&mut self, vocab: Vec<KVStringU32>, merges: Vec<StringString>) {
-        let merges = merges.into_iter().map(|ss| (ss.first, ss.second)).collect();
+    fn vocab_and_merges(&mut self, vocab: &[TokenAndId], merges: &[Merge]) {
+        let merges = merges
+            .iter()
+            .map(|ss| (ss.first.clone(), ss.second.clone()))
+            .collect();
         update_builder(self, |b| b.vocab_and_merges(make_vocab(vocab), merges));
     }
 
@@ -242,19 +298,19 @@ impl BpeBuilder {
         update_builder(self, |b| b.cache_capacity(capacity));
     }
 
-    fn unk_token(&mut self, unk_token: String) {
-        update_builder(self, |b| b.unk_token(unk_token));
+    fn unk_token(&mut self, unk_token: &str) {
+        update_builder(self, |b| b.unk_token(unk_token.to_string()));
     }
 
     fn dropout(&mut self, dropout: f32) {
         update_builder(self, |b| b.dropout(dropout));
     }
-    fn continuing_subword_prefix(&mut self, prefix: String) {
-        update_builder(self, |b| b.continuing_subword_prefix(prefix));
+    fn continuing_subword_prefix(&mut self, prefix: &str) {
+        update_builder(self, |b| b.continuing_subword_prefix(prefix.to_string()));
     }
 
-    fn end_of_word_suffix(&mut self, suffix: String) {
-        update_builder(self, |b| b.end_of_word_suffix(suffix));
+    fn end_of_word_suffix(&mut self, suffix: &str) {
+        update_builder(self, |b| b.end_of_word_suffix(suffix.to_string()));
     }
 
     fn fuse_unk(&mut self, fuse_unk: bool) {
@@ -278,7 +334,7 @@ impl WordPieceBuilder {
         update_builder(self, |b| b.files(vocab.to_string()))
     }
 
-    fn vocab(&mut self, vocab: Vec<KVStringU32>) {
+    fn vocab(&mut self, vocab: &[TokenAndId]) {
         update_builder(self, |b| b.vocab(make_vocab(vocab)))
     }
 
@@ -296,5 +352,30 @@ impl WordPieceBuilder {
         update_builder(self, |b| {
             b.max_input_chars_per_word(max_input_chars_per_word)
         })
+    }
+}
+
+#[derive(Deref, DerefMut)]
+struct WordLevelBuilder(Option<TkWordLevelBuilder>);
+
+fn word_level_builder() -> Box<WordLevelBuilder> {
+    Box::new(WordLevelBuilder(Some(TkWordLevelBuilder::new())))
+}
+
+impl WordLevelBuilder {
+    fn build(&mut self) -> Result<Box<Model>> {
+        build(self, |b| b.build())
+    }
+
+    fn files(&mut self, vocab: &str) {
+        update_builder(self, |b| b.files(vocab.to_string()))
+    }
+
+    fn vocab(&mut self, vocab: &[TokenAndId]) {
+        update_builder(self, |b| b.vocab(make_vocab(vocab)))
+    }
+
+    fn unk_token(&mut self, unk_token: &str) {
+        update_builder(self, |b| b.unk_token(unk_token.to_string()))
     }
 }

@@ -16,7 +16,15 @@ namespace huggingface {
 namespace tokenizers {
 static std::string data_dir_;
 
-inline std::string data_file(std::string name) { return data_dir_ + name; }
+inline std::string data_file(std::string name) {
+    return data_dir_ + "/" + name;
+}
+
+inline std::string gpt2_vocab() { return data_file("gpt2-vocab.json"); }
+inline std::string gpt2_merges() { return data_file("gpt2-merges.txt"); }
+inline std::string bert_vocab() {
+    return data_file("bert-base-uncased-vocab.txt");
+}
 
 #define COMPARE_CONTAINERS(actual, expected)                                  \
     do {                                                                      \
@@ -265,14 +273,51 @@ TEST_SUITE("Pre-tokenizers") {
     }
 }
 
+TEST_SUITE("Models") {
+    // these tests verify models can be initialized, actual use is in Tokenizers
+    // tests
+    TEST_CASE("BPE") {
+        BpeBuilder().files(gpt2_vocab(), gpt2_merges()).build();
+
+        BpeBuilder()
+            .vocab_and_merges({{"a", 0}, {"b", 1}, {"ab", 2}}, {{"a", "b"}})
+            .dropout(0.5f)
+            .build();
+    }
+
+    TEST_CASE("WordPiece") {
+        WordPieceBuilder().files(bert_vocab()).build();
+
+        WordPieceBuilder()
+            .vocab({{"a", 0}, {"b", 1}, {"ab", 2}})
+            .continuing_subword_prefix("##")
+            .build();
+    }
+
+    TEST_CASE("WordLevel") {
+        WordLevelBuilder().files(gpt2_vocab()).build();
+
+        WordLevelBuilder().vocab({{"a", 0}, {"b", 1}, {"ab", 2}}).build();
+
+        std::unordered_map<std::string, uint32_t> vocab{
+            {"a", 0}, {"b", 1}, {"ab", 2}};
+        WordLevelBuilder().vocab(vocab).build();
+    }
+
+    TEST_CASE("Unigram") {
+        Model::unigram(data_file("unigram.json"));
+
+        Model::unigram({{"<unk>", 0.0}, {"hello", 1.0}}, 0);
+    }
+}
+
 TEST_SUITE("Tokenizers") {
     TEST_CASE("Bert") {
-        Tokenizer tokenizer(
-            WordPieceBuilder()
-                .files(data_file("/bert-base-uncased-vocab.txt"))
-                .unk_token("[UNK]")
-                .max_input_chars_per_word(100)
-                .build());
+        Tokenizer tokenizer(WordPieceBuilder()
+                                .files(bert_vocab())
+                                .unk_token("[UNK]")
+                                .max_input_chars_per_word(100)
+                                .build());
 
         tokenizer.with_normalizer(Normalizer::bert())
             .with_pre_tokenizer(PreTokenizer::bert())
@@ -288,10 +333,8 @@ TEST_SUITE("Tokenizers") {
     }
 
     TEST_CASE("GPT2") {
-        Tokenizer tokenizer(BpeBuilder()
-                                .files(data_file("/gpt2-vocab.json"),
-                                       data_file("/gpt2-merges.txt"))
-                                .build());
+        Tokenizer tokenizer(
+            BpeBuilder().files(gpt2_vocab(), gpt2_merges()).build());
 
         tokenizer.with_pre_tokenizer(PreTokenizer::byte_level(false));
 

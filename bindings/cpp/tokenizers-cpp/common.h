@@ -2,7 +2,9 @@
 
 #include <nonstd/optional.hpp>
 #include <nonstd/string_view.hpp>
+#include <nonstd/span.hpp>
 #include <rust/cxx.h>
+#include <initializer_list>
 
 /** @file common.h Shared code for all tokenizers-cpp modules (mostly macros) */
 
@@ -138,6 +140,14 @@ auto to_optional(OptionLike e) {
 }
 
 /**
+ * @brief Converts an initializer_list to a span.
+ */
+template <typename T>
+nonstd::span<const T> to_span(std::initializer_list<T> list) {
+    return {list.begin(), list.size()};
+}
+
+/**
  * @brief Converts the argument to `rust::Str`
  */
 inline rust::Str to_rust_str(nonstd::string_view string_view) {
@@ -164,9 +174,47 @@ inline rust::String to_rust_string(nonstd::string_view string_view) {
 inline rust::String to_rust_string(std::string string) { return string; }
 
 /**
+ * @brief Converts the argument to `rust::String`. This overload exists for use
+ * in templates.
+ */
+inline rust::String to_rust_string(rust::String string) { return string; }
+
+/**
  * @brief Converts the argument to `rust::String`
  */
 inline rust::String to_rust_string(const char* ptr) { return ptr; }
+
+/**
+ * @brief Converts the argument to `rust::Slice`
+ */
+template <typename T>
+inline rust::Slice<const T> to_rust_slice(nonstd::span<T> span) {
+    return {span.data(), span.size()};
+}
+
+/**
+ * @brief Converts the argument to `rust::Slice`
+ */
+template <typename T>
+inline rust::Slice<const T> to_rust_slice(std::vector<T> vec) {
+    return {vec.data(), vec.size()};
+}
+
+/**
+ * @brief Converts the argument to `rust::Slice`
+ */
+template <typename T>
+inline rust::Slice<const T> to_rust_slice(std::initializer_list<T> list) {
+    return {list.begin(), list.size()};
+}
+
+/**
+ * @brief Converts the argument to `rust::Slice`
+ */
+template <typename T>
+inline rust::Slice<const T> to_rust_slice(rust::Vec<T> vec) {
+    return {vec.data(), vec.size()};
+}
 
 /**
  * @brief Fills a vector with transformed data from another container

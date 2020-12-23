@@ -50,7 +50,8 @@ mod ffi {
         type Decoder = crate::decoders::Decoder;
         type OptionU32 = crate::models::ffi::OptionU32;
         type OptionString = crate::models::ffi::OptionString;
-        type KVStringU32 = crate::models::ffi::KVStringU32;
+        #[namespace = "huggingface::tokenizers"]
+        type TokenAndId = crate::models::ffi::TokenAndId;
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]
@@ -86,7 +87,7 @@ mod ffi {
 
         fn token_to_id(tokenizer: &Tokenizer, token: &str) -> OptionU32;
         fn id_to_token(tokenizer: &Tokenizer, id: u32) -> OptionString;
-        fn get_vocab(tokenizer: &Tokenizer, with_added_tokens: bool) -> Vec<KVStringU32>;
+        fn get_vocab(tokenizer: &Tokenizer, with_added_tokens: bool) -> Vec<TokenAndId>;
         fn get_vocab_size(tokenizer: &Tokenizer, with_added_tokens: bool) -> usize;
 
         fn encode(
@@ -133,7 +134,7 @@ mod ffi {
     }
 }
 
-use crate::{forward_cxx_enum, models::Model, normalizers::Normalizer, wrap_option};
+use crate::{forward_cxx_enum, models::vocab_to_vec, wrap_option};
 use cxx::{kind::Opaque, type_id, CxxVector, ExternType};
 use derive_more::{Deref, DerefMut};
 use ffi::*;
@@ -247,15 +248,8 @@ fn token_to_id(tokenizer: &Tokenizer, token: &str) -> OptionU32 {
     wrap_option!(tokenizer.token_to_id(token), OptionU32, 0)
 }
 
-fn get_vocab(tokenizer: &Tokenizer, with_added_tokens: bool) -> Vec<KVStringU32> {
-    tokenizer
-        .get_vocab(with_added_tokens)
-        .iter()
-        .map(|(k, v)| KVStringU32 {
-            key: k.clone(),
-            value: *v,
-        })
-        .collect()
+fn get_vocab(tokenizer: &Tokenizer, with_added_tokens: bool) -> Vec<TokenAndId> {
+    vocab_to_vec(tokenizer.get_vocab(with_added_tokens))
 }
 
 fn get_vocab_size(tokenizer: &Tokenizer, with_added_tokens: bool) -> usize {
