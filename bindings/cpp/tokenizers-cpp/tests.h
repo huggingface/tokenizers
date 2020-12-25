@@ -323,6 +323,33 @@ TEST_SUITE("PostProcessors") {
     }
 }
 
+TEST_SUITE("Decoders") {
+    TEST_CASE("Byte-level") {
+        CHECK(Decoder::byte_level().decode({"My", "Ġname", "Ġis", "ĠJohn"}) ==
+              "My name is John");
+    }
+
+    TEST_CASE("WordPiece") {
+        CHECK(Decoder::word_piece().decode({"I", "'m", "Jo", "##hn"}) ==
+              "I'm John");
+        CHECK(Decoder::word_piece("__", false)
+                  .decode({"I", "'m", "Jo", "__hn"}) == "I 'm John");
+    }
+
+    TEST_CASE("BPE") {
+        CHECK(Decoder::bpe().decode({"My</w>", "na", "me</w>", "is</w>", "Jo",
+                                     "hn</w>"}) == "My name is John");
+    }
+
+    TEST_CASE("Metaspace") {
+        CHECK(Decoder::metaspace().decode({"▁My", "▁name", "▁is", "▁John"}) ==
+              "My name is John");
+        CHECK(Decoder::metaspace('-', false)
+                  .decode({"-My", "-name", "-is", "-John"}) ==
+              " My name is John");
+    }
+}
+
 TEST_SUITE("Tokenizers") {
     TEST_CASE("Bert") {
         Tokenizer tokenizer(WordPieceBuilder()

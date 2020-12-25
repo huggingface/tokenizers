@@ -8,8 +8,14 @@ mod ffi {
     extern "Rust" {
         type Decoder;
 
-        fn byte_level_decoder(add_prefix_space: bool, trim_offsets: bool) -> Box<Decoder>;
+        // ignoring ByteLevel::new arguments, as Decoder it doesn't care.
+        fn byte_level_decoder() -> Box<Decoder>;
+
         fn word_piece_decoder(prefix: &str, cleanup: bool) -> Box<Decoder>;
+
+        fn bpe_decoder(suffix: &str) -> Box<Decoder>;
+
+        fn metaspace_decoder(replacement_cp: u32, add_prefix_space: bool) -> Result<Box<Decoder>>;
 
         fn decode_decoder(decoder: &Decoder, tokens: Vec<String>) -> Result<String>;
     }
@@ -17,12 +23,15 @@ mod ffi {
 
 use derive_more::{Deref, DerefMut};
 use tk::{
-    decoders::{byte_level::ByteLevel, wordpiece::WordPiece},
-    Decoder as DecoderTrait, Result,
+    decoders::{bpe::BPEDecoder, byte_level::ByteLevel, wordpiece::WordPiece},
+    pre_tokenizers::metaspace::Metaspace,
+    Decoder as DecoderTrait, DecoderWrapper, Result,
 };
 
+use crate::pre_tokenizers::u32_to_char;
+
 #[derive(Deref, DerefMut, Clone)]
-pub struct Decoder(pub tk::DecoderWrapper);
+pub struct Decoder(pub DecoderWrapper);
 
 impl DecoderTrait for Decoder {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
@@ -30,14 +39,27 @@ impl DecoderTrait for Decoder {
     }
 }
 
-fn byte_level_decoder(add_prefix_space: bool, trim_offsets: bool) -> Box<Decoder> {
-    Box::new(Decoder(
-        ByteLevel::new(add_prefix_space, trim_offsets).into(),
-    ))
+fn make_decoder<D: Into<DecoderWrapper>>(decoder: D) -> Box<Decoder> {
+    Box::new(Decoder(decoder.into()))
+}
+
+fn byte_level_decoder() -> Box<Decoder> {
+    make_decoder(ByteLevel::default())
 }
 
 fn word_piece_decoder(prefix: &str, cleanup: bool) -> Box<Decoder> {
-    Box::new(Decoder(WordPiece::new(prefix.to_string(), cleanup).into()))
+    make_decoder(WordPiece::new(prefix.to_string(), cleanup))
+}
+
+fn bpe_decoder(suffix: &str) -> Box<Decoder> {
+    make_decoder(BPEDecoder::new(suffix.to_string()))
+}
+
+fn metaspace_decoder(replacement_cp: u32, add_prefix_space: bool) -> Result<Box<Decoder>> {
+    Ok(make_decoder(Metaspace::new(
+        u32_to_char(replacement_cp, "Replacement")?,
+        add_prefix_space,
+    )))
 }
 
 fn decode_decoder(decoder: &Decoder, tokens: Vec<String>) -> Result<String> {

@@ -162,7 +162,7 @@ fn byte_level_pre_tokenizer(add_prefix_space: bool) -> Box<PreTokenizer> {
     make_pre_tokenizer(ByteLevel::new(add_prefix_space, true))
 }
 
-fn u32_to_char(value: u32, name: &str) -> Result<char> {
+pub fn u32_to_char(value: u32, name: &str) -> Result<char> {
     std::char::from_u32(value)
         .ok_or_else(|| format!("{} is invalid Unicode scalar value: {}", name, value).into())
 }
