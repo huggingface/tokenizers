@@ -6,10 +6,16 @@ mod ffi {
         pub value: usize,
     }
 
-    #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Default, Debug, Clone)]
+    #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Clone)]
     pub struct Offsets {
         pub start: usize,
         pub end: usize,
+    }
+
+    #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Clone)]
+    pub struct SpecialToken {
+        pub token: String,
+        pub id: u32,
     }
 
     extern "C++" {
@@ -33,6 +39,20 @@ mod ffi {
             sep_id: u32,
             cls_token: &str,
             cls_id: u32,
+        ) -> Box<PostProcessor>;
+
+        fn byte_level_post_processor(
+            add_prefix_space: bool,
+            trim_offsets: bool,
+        ) -> Box<PostProcessor>;
+
+        fn roberta_post_processor(
+            sep_token: &str,
+            sep_id: u32,
+            cls_token: &str,
+            cls_id: u32,
+            add_prefix_space: bool,
+            trim_offsets: bool,
         ) -> Box<PostProcessor>;
 
         fn added_tokens(post_processor: &PostProcessor, is_pair: bool) -> usize;
@@ -66,19 +86,34 @@ mod ffi {
         fn get_attention_mask(&self) -> &[u32];
         fn get_overflowing(&self) -> Vec<Encoding>;
     }
+
+    #[namespace = "huggingface::tokenizers::ffi"]
+    extern "Rust" {
+        type TemplateProcessingBuilder;
+
+        fn template_processing_builder() -> Box<TemplateProcessingBuilder>;
+
+        fn single(&mut self, sequence_template: &str) -> Result<()>;
+        fn pair(&mut self, sequence_template: &str) -> Result<()>;
+        fn special_tokens(&mut self, tokens: &[SpecialToken]);
+        fn build(&self) -> Result<Box<PostProcessor>>;
+    }
 }
 
 use crate::wrap_option;
-use derive_more::{Deref, DerefMut, From};
+use derive_more::{Deref, DerefMut};
 use ffi::*;
 use tk::{
-    processors::bert::BertProcessing as TkBertProcessing, PostProcessor as PostProcessorTrait,
-    Result,
+    processors::{
+        bert::BertProcessing, byte_level::ByteLevel, roberta::RobertaProcessing,
+        template::TemplateProcessingBuilder as TkTemplateProcessingBuilder,
+    },
+    PostProcessor as PostProcessorTrait, PostProcessorWrapper, Result,
 };
 
 // TODO may move Encoding to a separate module, but this depends on
 //  the second part of https://github.com/dtolnay/cxx/issues/496
-#[derive(Deref, DerefMut, From)]
+#[derive(Deref, DerefMut)]
 pub struct Encoding(pub tk::Encoding);
 
 impl Encoding {
@@ -150,8 +185,8 @@ impl Encoding {
     }
 }
 
-#[derive(Deref, DerefMut, From, Clone)]
-pub struct PostProcessor(pub tk::PostProcessorWrapper);
+#[derive(Deref, DerefMut, Clone)]
+pub struct PostProcessor(pub PostProcessorWrapper);
 
 impl PostProcessorTrait for PostProcessor {
     fn added_tokens(&self, is_pair: bool) -> usize {
@@ -172,19 +207,74 @@ fn encoding_with_capacity(len: usize) -> Box<Encoding> {
     Box::new(Encoding(tk::Encoding::with_capacity(len)))
 }
 
+fn make_post_processor<PP: Into<PostProcessorWrapper>>(post_processor: PP) -> Box<PostProcessor> {
+    Box::new(PostProcessor(post_processor.into()))
+}
+
 fn bert_post_processor(
     sep_token: &str,
     sep_id: u32,
     cls_token: &str,
     cls_id: u32,
 ) -> Box<PostProcessor> {
-    Box::new(PostProcessor(
-        TkBertProcessing::new(
+    make_post_processor(BertProcessing::new(
+        (sep_token.to_string(), sep_id),
+        (cls_token.to_string(), cls_id),
+    ))
+}
+
+fn byte_level_post_processor(add_prefix_space: bool, trim_offsets: bool) -> Box<PostProcessor> {
+    make_post_processor(ByteLevel::new(add_prefix_space, trim_offsets))
+}
+
+fn roberta_post_processor(
+    sep_token: &str,
+    sep_id: u32,
+    cls_token: &str,
+    cls_id: u32,
+    add_prefix_space: bool,
+    trim_offsets: bool,
+) -> Box<PostProcessor> {
+    make_post_processor(
+        RobertaProcessing::new(
             (sep_token.to_string(), sep_id),
             (cls_token.to_string(), cls_id),
         )
-        .into(),
+        .add_prefix_space(add_prefix_space)
+        .trim_offsets(trim_offsets),
+    )
+}
+
+struct TemplateProcessingBuilder(TkTemplateProcessingBuilder);
+type TPResult<T> = std::result::Result<T, String>;
+
+fn template_processing_builder() -> Box<TemplateProcessingBuilder> {
+    Box::new(TemplateProcessingBuilder(
+        TkTemplateProcessingBuilder::default(),
     ))
+}
+
+impl TemplateProcessingBuilder {
+    fn single(&mut self, sequence_template: &str) -> TPResult<()> {
+        self.0.try_single(sequence_template).map(|_| ())
+    }
+
+    fn pair(&mut self, sequence_template: &str) -> TPResult<()> {
+        self.0.try_pair(sequence_template).map(|_| ())
+    }
+
+    fn special_tokens(&mut self, tokens: &[SpecialToken]) {
+        self.0.special_tokens(
+            tokens
+                .iter()
+                .map(|t| (t.token.as_str(), t.id))
+                .collect::<Vec<(&str, u32)>>(),
+        );
+    }
+
+    fn build(&self) -> TPResult<Box<PostProcessor>> {
+        Ok(make_post_processor(self.0.build()?))
+    }
 }
 
 fn added_tokens(post_processor: &PostProcessor, is_pair: bool) -> usize {

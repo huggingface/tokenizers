@@ -311,6 +311,18 @@ TEST_SUITE("Models") {
     }
 }
 
+TEST_SUITE("PostProcessors") {
+    TEST_CASE("Template") {
+        // verifies BERT post-processor can be built with a
+        // TemplateProcessingBuilder
+        TemplateProcessingBuilder()
+            .single("[CLS] $0 [SEP]")
+            .pair("[CLS]:0 $A:0 [SEP]:0 $B:1 [SEP]:1")
+            .special_tokens({{"[CLS]", 101}, {"[SEP]", 102}})
+            .build();
+    }
+}
+
 TEST_SUITE("Tokenizers") {
     TEST_CASE("Bert") {
         Tokenizer tokenizer(WordPieceBuilder()

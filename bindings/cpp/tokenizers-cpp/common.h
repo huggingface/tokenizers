@@ -70,7 +70,7 @@
  */
 #define HFT_FFI_WRAPPER(type)                                                  \
 public:                                                                        \
-    type(rust::Box<ffi::type>&& inner) : inner_(std::move(inner)) {};          \
+    type(rust::Box<ffi::type>&& inner) : inner_(std::move(inner)){};           \
     type(const type&) = delete;                                                \
     type& operator=(const type&) = delete;                                     \
     type(type&&) noexcept = default;                                           \
@@ -126,6 +126,44 @@ private:                                                                       \
 /// ```
 #define HFT_TRY(T, expr) return expr;
 #endif
+
+#ifndef HFT_RESULT_SUPPORTS_REFERENCES
+/**
+ * @brief Define to `false` if you define HFT_RESULT(T) to a type which can't be
+ * instantiated with reference types.
+ */
+#define HFT_RESULT_SUPPORTS_REFERENCES true
+#endif
+
+#if HFT_RESULT_SUPPORTS_REFERENCES
+
+#define HFT_REF(T) T&
+#define HFT_WRAP_REF(expr) expr
+
+#else
+
+#include <functional>
+#define HFT_REF(T) std::reference_wrapper<T>
+#define HFT_WRAP_REF(expr) std::ref(expr)
+
+#endif
+
+/**
+ * @def HFT_REF
+ *
+ * @brief Either T& if it can be used as argument of HFT_RESULT, or
+ * std::reference_wrapper<T> if it can't.
+ *
+ * @see HFT_RESULT_SUPPORTS_REFERENCES
+ */
+
+/**
+ * @def HFT_WRAP_REF
+ *
+ * @brief Converts T& to HTF_REF(T)
+ *
+ * @see HFT_RESULT_SUPPORTS_REFERENCES
+ */
 
 namespace huggingface {
 namespace tokenizers {
@@ -232,7 +270,8 @@ void fill_vec(Vec& vec, const Container& cpp_container, F f) {
 }
 
 /**
- * @brief Fills a vector with data from another container (like fill_vec(Vec&, const Container&, F) but with identity function).
+ * @brief Fills a vector with data from another container (like fill_vec(Vec&,
+ * const Container&, F) but with identity function).
  *
  * @param vec The vector to fill (assumed to be empty initially)
  * @param cpp_container The source container
@@ -250,6 +289,6 @@ void vararg_for(F f, Arg arg, Args... args) {
     f(std::forward<Arg>(arg));
     vararg_for(f, std::forward<Args>(args)...);
 }
-}
+}  // namespace ffi
 }  // namespace tokenizers
 }  // namespace huggingface
