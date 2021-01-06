@@ -628,8 +628,10 @@ impl PyTokenizer {
     #[args(kwargs = "**")]
     #[text_signature = "(self, max_length, stride=0, strategy='longest_first')"]
     fn enable_truncation(&mut self, max_length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
-        let mut params = TruncationParams::default();
-        params.max_length = max_length;
+        let mut params = TruncationParams {
+            max_length,
+            ..Default::default()
+        };
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {

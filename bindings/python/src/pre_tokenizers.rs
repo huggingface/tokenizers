@@ -643,8 +643,7 @@ impl PreTokenizer for PyPreTokenizerTypeWrapper {
             PyPreTokenizerTypeWrapper::Single(inner) => inner.read().unwrap().pre_tokenize(pretok),
             PyPreTokenizerTypeWrapper::Sequence(inner) => inner
                 .iter()
-                .map(|n| n.read().unwrap().pre_tokenize(pretok))
-                .collect(),
+                .try_for_each(|n| n.read().unwrap().pre_tokenize(pretok)),
         }
     }
 }
