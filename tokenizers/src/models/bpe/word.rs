@@ -244,11 +244,11 @@ impl Word {
         self.symbols.iter().map(|s| s.c).collect()
     }
 
-    pub(super) fn get_chars_iter<'a>(&'a self) -> impl Iterator<Item = u32> + 'a {
+    pub(super) fn get_chars_iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.symbols.iter().map(|s| s.c)
     }
 
-    pub(super) fn get_offsets_iter<'a>(&'a self) -> impl Iterator<Item = (usize, usize)> + 'a {
+    pub(super) fn get_offsets_iter(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
         let mut pos = 0;
         self.symbols.iter().map(move |symbol| {
             let new_pos = pos + symbol.len;
