@@ -8,7 +8,7 @@ from ..normalizers import (
 )
 from .base_tokenizer import BaseTokenizer
 
-from typing import Optional, List, Union, Dict, Tuple
+from typing import Optional, List, Union, Dict, Tuple, Iterator
 
 
 class CharBPETokenizer(BaseTokenizer):
@@ -124,3 +124,27 @@ class CharBPETokenizer(BaseTokenizer):
         if isinstance(files, str):
             files = [files]
         self._tokenizer.train(files, trainer=trainer)
+
+    def train_from_iterator(
+        self,
+        iterator: Union[Iterator[str], Iterator[Iterator[str]]],
+        vocab_size: int = 30000,
+        min_frequency: int = 2,
+        special_tokens: List[Union[str, AddedToken]] = ["<unk>"],
+        limit_alphabet: int = 1000,
+        initial_alphabet: List[str] = [],
+        suffix: Optional[str] = "</w>",
+        show_progress: bool = True,
+    ):
+        """ Train the model using the given iterator """
+
+        trainer = trainers.BpeTrainer(
+            vocab_size=vocab_size,
+            min_frequency=min_frequency,
+            special_tokens=special_tokens,
+            limit_alphabet=limit_alphabet,
+            initial_alphabet=initial_alphabet,
+            end_of_word_suffix=suffix,
+            show_progress=show_progress,
+        )
+        self._tokenizer.train_from_iterator(iterator, trainer=trainer)

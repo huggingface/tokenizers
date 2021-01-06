@@ -11,7 +11,7 @@ from tokenizers.models import Unigram
 import json
 from .base_tokenizer import BaseTokenizer
 
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Iterator
 
 
 class SentencePieceUnigramTokenizer(BaseTokenizer):
@@ -76,6 +76,23 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         if isinstance(files, str):
             files = [files]
         self._tokenizer.train(files, trainer=trainer)
+
+    def train_from_iterator(
+        self,
+        iterator: Union[Iterator[str], Iterator[Iterator[str]]],
+        vocab_size: int = 8000,
+        show_progress: bool = True,
+        special_tokens: List[Union[str, AddedToken]] = [],
+    ):
+        """ Train the model using the given iterator """
+
+        trainer = trainers.UnigramTrainer(
+            vocab_size=vocab_size,
+            special_tokens=special_tokens,
+            show_progress=show_progress,
+        )
+
+        self._tokenizer.train_from_iterator(iterator, trainer=trainer)
 
     @staticmethod
     def from_spm(filename: str):

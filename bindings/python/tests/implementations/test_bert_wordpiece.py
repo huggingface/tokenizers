@@ -4,7 +4,7 @@ from ..utils import data_dir, bert_files, multiprocessing_with_parallelism
 from tokenizers import BertWordPieceTokenizer
 
 
-class TestBertWordPieceBPE:
+class TestBertWordPieceTokenizer:
     def test_basic_encode(self, bert_files):
         tokenizer = BertWordPieceTokenizer.from_file(bert_files["vocab"])
 
@@ -44,3 +44,11 @@ class TestBertWordPieceBPE:
         tokenizer = BertWordPieceTokenizer.from_file(bert_files["vocab"])
         multiprocessing_with_parallelism(tokenizer, False)
         multiprocessing_with_parallelism(tokenizer, True)
+
+    def test_train_from_iterator(self):
+        text = ["A first sentence", "Another sentence", "And a last one"]
+        tokenizer = BertWordPieceTokenizer()
+        tokenizer.train_from_iterator(text, show_progress=False)
+
+        output = tokenizer.encode("A sentence")
+        assert output.tokens == ["a", "sentence"]

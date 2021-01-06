@@ -10,7 +10,7 @@ from tokenizers.models import BPE
 from tokenizers.normalizers import unicode_normalizer_from_str, Lowercase, Sequence
 from .base_tokenizer import BaseTokenizer
 
-from typing import Optional, List, Union, Dict, Tuple
+from typing import Optional, List, Union, Dict, Tuple, Iterator
 
 
 class ByteLevelBPETokenizer(BaseTokenizer):
@@ -102,3 +102,22 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         if isinstance(files, str):
             files = [files]
         self._tokenizer.train(files, trainer=trainer)
+
+    def train_from_iterator(
+        self,
+        iterator: Union[Iterator[str], Iterator[Iterator[str]]],
+        vocab_size: int = 30000,
+        min_frequency: int = 2,
+        show_progress: bool = True,
+        special_tokens: List[Union[str, AddedToken]] = [],
+    ):
+        """ Train the model using the given iterator """
+
+        trainer = trainers.BpeTrainer(
+            vocab_size=vocab_size,
+            min_frequency=min_frequency,
+            show_progress=show_progress,
+            special_tokens=special_tokens,
+            initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
+        )
+        self._tokenizer.train_from_iterator(iterator, trainer=trainer)
