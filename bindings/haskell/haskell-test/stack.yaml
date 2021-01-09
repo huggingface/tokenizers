@@ -1,0 +1,8 @@
+resolver:
+  url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/16/28.yaml
+
+packages:
+- .
+
+extra-lib-dirs:
+  - ./lib

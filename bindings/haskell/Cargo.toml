@@ -1,0 +1,12 @@
+[package]
+name = "tokenizers-haskell"
+version = "0.1.0"
+authors = ["austinvhuang <austinh@alum.mit.edu>"]
+edition = "2018"
+
+[lib]
+name = "haskell"
+crate-type = ["cdylib"]
+
+[dependencies]
+tokenizers = { path = "../../tokenizers" }
