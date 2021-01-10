@@ -2,7 +2,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use tokenizers::models::bpe::BPE;
-use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+// use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::tokenizer::{Tokenizer};
 
 #[no_mangle]
