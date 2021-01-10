@@ -2,11 +2,35 @@
 
 module Lib where
 
-import Foreign.C.Types
-import Foreign.C.String
+import Foreign.Ptr
+-- import Foreign.ForeignPtr
+import Foreign.C.String ( CString, newCString )
 
-foreign import ccall unsafe "tokenize" r_tokenize :: CString -> IO ()
+data CTokenizer
 
-tokenize x = do
+data Tokenizer = Tokenizer { 
+  tk :: Ptr CTokenizer,
+  vocab :: String,
+  merges :: String
+  }
+
+instance Show Tokenizer where
+  show (Tokenizer _ vocab merges) = "Huggingface Tokenizer Object\n  vocab: " ++ vocab ++ "\n  merges: " ++ merges 
+
+foreign import ccall unsafe "tokenize_test" r_tokenize_test :: CString -> IO ()
+foreign import ccall unsafe "mk_tokenizer" r_mk_tokenizer :: CString -> CString -> IO (Ptr CTokenizer)
+foreign import ccall unsafe "tokenize" r_tokenize :: CString -> Ptr CTokenizer -> IO ()
+
+tokenizeTest x = do
     str <- newCString (x ++ "\0")
-    r_tokenize str
+    r_tokenize_test str
+
+mkTokenizer vocab merges = do
+  cvocab <- newCString $ vocab ++ "\0"
+  cmerges <- newCString $ merges ++ "\0"
+  result <- r_mk_tokenizer cvocab cmerges
+  pure (Tokenizer result vocab merges)
+
+tokenize text (Tokenizer tokenizer _ _) = do
+  str <- newCString (text ++ "\0")
+  r_tokenize str tokenizer
