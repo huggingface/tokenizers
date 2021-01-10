@@ -1,7 +1,7 @@
 all: download run
 
 clean:
-	rm -f roberta-base-vocab.txt*
+	rm -f roberta-base-vocab.json*
 	rm -f roberta-base-merges.txt*
 
 download: clean
