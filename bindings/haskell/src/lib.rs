@@ -1,7 +1,7 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use std::os::raw::c_float;
 
-use tokenizers::
 use tokenizers::models::bpe::BpeBuilder;
 use tokenizers::models::bpe::BPE;
 // use tokenizers::pre_tokenizers::byte_level::ByteLevel;
@@ -9,6 +9,7 @@ use tokenizers::tokenizer::Tokenizer;
 
 #[no_mangle]
 pub extern "C" fn mk_roberta_tokenizer() {
+    // TODO
 }
 
 #[no_mangle]
@@ -24,6 +25,18 @@ pub extern "C" fn mk_bpe_builder_from_files(
         } else {
             panic!("Unable to read parameters.");
         }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn bpe_dropout(ptr: *mut BpeBuilder, dropout: c_float) {
+    unsafe {
+        let builder = {
+            assert!(!ptr.is_null());
+            &mut *ptr
+        };
+        // builder.dropout(dropout);
+        // TODO
     }
 }
 

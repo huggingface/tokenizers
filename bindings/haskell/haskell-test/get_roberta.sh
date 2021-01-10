@@ -1,6 +1,4 @@
-# See 
-# https://github.com/huggingface/transformers/issues/1083
-# https://huggingface.co/transformers/v1.1.0/_modules/pytorch_transformers/tokenization_roberta.html
+# See tokenization_roberta_fast.py
 
 wget https://huggingface.co/roberta-base/resolve/main/vocab.json -O roberta-base-vocab.json
 wget https://huggingface.co/roberta-base/resolve/main/merges.txt -O roberta-base-merges.txt
