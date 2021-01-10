@@ -1,21 +1,41 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
+use tokenizers::
+use tokenizers::models::bpe::BpeBuilder;
 use tokenizers::models::bpe::BPE;
 // use tokenizers::pre_tokenizers::byte_level::ByteLevel;
-use tokenizers::tokenizer::{Tokenizer};
+use tokenizers::tokenizer::Tokenizer;
+
+#[no_mangle]
+pub extern "C" fn mk_roberta_tokenizer() {
+}
+
+#[no_mangle]
+pub extern "C" fn mk_bpe_builder_from_files(
+    cvocab: *const c_char,
+    cmerges: *const c_char,
+) -> *mut BpeBuilder {
+    unsafe {
+        let vocab = CStr::from_ptr(cvocab);
+        let merges = CStr::from_ptr(cmerges);
+        if let (Ok(vocab_file), Ok(merges_file)) = (vocab.to_str(), merges.to_str()) {
+            Box::into_raw(Box::new(BPE::from_file(vocab_file, merges_file)))
+        } else {
+            panic!("Unable to read parameters.");
+        }
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn mk_tokenizer(cvocab: *const c_char, cmerges: *const c_char) -> *mut Tokenizer {
     unsafe {
         let vocab = CStr::from_ptr(cvocab);
         let merges = CStr::from_ptr(cmerges);
-        if let (Ok(vocab_file), Ok(merges_file)) = (vocab.to_str(), merges.to_str()) { 
-        let bpe_builder = BPE::from_file(vocab_file, merges_file);
-        let bpe = bpe_builder
-                    .dropout(0.1)
-        .build().unwrap();
-        return Box::into_raw(Box::new(Tokenizer::new(bpe)))
+        if let (Ok(vocab_file), Ok(merges_file)) = (vocab.to_str(), merges.to_str()) {
+            let bpe_builder = BPE::from_file(vocab_file, merges_file);
+            let bpe = bpe_builder.build().unwrap();
+            return Box::into_raw(Box::new(Tokenizer::new(bpe)));
         } else {
             panic!("Unable to read parameters.");
         }
