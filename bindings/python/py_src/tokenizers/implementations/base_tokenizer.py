@@ -314,17 +314,17 @@ class BaseTokenizer:
         """
         return self._tokenizer.id_to_token(id)
 
-    def save_model(self, directory: str, name: Optional[str] = None):
+    def save_model(self, directory: str, prefix: Optional[str] = None):
         """Save the current model to the given directory
 
         Args:
             directory: str:
                 A path to the destination directory
 
-            name: (Optional) str:
-                The name of the tokenizer, to be used in the saved files
+            prefix: (Optional) str:
+                An optional prefix, used to prefix each file name
         """
-        return self._tokenizer.model.save(directory, name=name)
+        return self._tokenizer.model.save(directory, prefix=prefix)
 
     def save(self, path: str, pretty: bool = False):
         """Save the current Tokenizer at the given path

@@ -183,7 +183,22 @@ impl PyModel {
     /// Returns:
     ///     :obj:`List[str]`: The list of saved files
     #[text_signature = "(self, folder, prefix)"]
-    fn save(&self, folder: &str, prefix: Option<&str>) -> PyResult<Vec<String>> {
+    fn save<'a>(
+        &self,
+        folder: &str,
+        mut prefix: Option<&'a str>,
+        name: Option<&'a str>,
+    ) -> PyResult<Vec<String>> {
+        if name.is_some() {
+            deprecation_warning(
+                "0.10.0",
+                "Parameter `name` of Model.save has been renamed `prefix`",
+            )?;
+            if prefix.is_none() {
+                prefix = name;
+            }
+        }
+
         let saved: PyResult<Vec<_>> =
             ToPyResult(self.model.read().unwrap().save(Path::new(folder), prefix)).into();
 
