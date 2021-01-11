@@ -71,7 +71,7 @@ use tk::{
 };
 
 #[derive(Deref, DerefMut)]
-struct NormalizedString(tk::NormalizedString);
+pub struct NormalizedString(pub tk::NormalizedString);
 
 #[derive(Deref, DerefMut, Clone)]
 pub struct Normalizer(pub tk::NormalizerWrapper);

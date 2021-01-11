@@ -134,8 +134,8 @@ mod ffi {
     }
 }
 
-use crate::{forward_cxx_enum, models::vocab_to_vec, wrap_option};
-use cxx::{kind::Opaque, type_id, CxxVector, ExternType};
+use crate::{forward_cxx_enum, models::vocab_to_vec, wrap_option, impl_extern_type};
+use cxx::CxxVector;
 use derive_more::{Deref, DerefMut};
 use ffi::*;
 use tk::{EncodeInput, PaddingParams, PaddingStrategy, Result, TruncationParams};
@@ -143,17 +143,6 @@ use tk::{EncodeInput, PaddingParams, PaddingStrategy, Result, TruncationParams};
 #[derive(Deref, DerefMut)]
 #[allow(non_camel_case_types)]
 struct Encoding_1(tk::Encoding);
-
-// TODO why is this necessary?
-macro_rules! impl_extern_type {
-    ($name:ident, $ffi_name:literal) => {
-        unsafe impl ExternType for $name {
-            type Id = type_id!($ffi_name);
-
-            type Kind = Opaque;
-        }
-    };
-}
 
 impl_extern_type!(Normalizer, "huggingface::tokenizers::ffi::Normalizer");
 

@@ -28,14 +28,16 @@ mod ffi {
     }
 
     extern "C++" {
+        include!("tokenizers-cpp/normalizers.h");
         include!("tokenizers-cpp/pre_tokenizers.h");
         include!("tokenizers-cpp/tokens.h");
         type Token = crate::models::ffi::Token;
+        #[namespace = "huggingface::tokenizers::ffi"]
+        type NormalizedString = crate::normalizers::NormalizedString;
     }
 
     #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {
-        type NormalizedString;
         type PreTokenizedString;
         type PreTokenizer;
         type PreTokenizerVec;
@@ -104,7 +106,7 @@ mod ffi {
     }
 }
 
-use crate::{forward_cxx_enum, tokens::wrap_tokens_ref};
+use crate::{forward_cxx_enum, impl_extern_type, tokens::wrap_tokens_ref};
 use derive_more::{Deref, DerefMut};
 use ffi::*;
 use tk::{
@@ -124,8 +126,7 @@ use tk::{
     PreTokenizer as PreTokenizerTrait, Result,
 };
 
-#[derive(Deref, DerefMut)]
-struct NormalizedString(tk::NormalizedString);
+impl_extern_type!(NormalizedString, "huggingface::tokenizers::ffi::NormalizedString");
 
 #[derive(Deref, DerefMut)]
 struct PreTokenizedString(tk::PreTokenizedString);
