@@ -20,7 +20,6 @@ use std::{
 };
 
 use serde::de::DeserializeOwned;
-use serde::export::Formatter;
 use serde::{Deserialize, Serialize};
 
 use crate::utils::iter::ResultShunt;
@@ -245,7 +244,7 @@ pub struct BuilderError(String);
 impl std::error::Error for BuilderError {}
 
 impl fmt::Display for BuilderError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
