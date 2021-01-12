@@ -694,10 +694,9 @@ where
 
         // Encode each sequence
         let encoding = self.encode_single_sequence(sequence, 0, OffsetType::Byte)?;
-        let pair_encoding = match pair {
-            Some(sequence) => Some(self.encode_single_sequence(sequence, 1, OffsetType::Byte)?),
-            None => None,
-        };
+        let pair_encoding = pair
+            .map(|sequence| self.encode_single_sequence(sequence, 1, OffsetType::Byte))
+            .transpose()?;
 
         // And finally post process
         self.post_process(encoding, pair_encoding, add_special_tokens)
@@ -738,10 +737,9 @@ where
 
         // Encode each sequence
         let encoding = self.encode_single_sequence(sequence, 0, OffsetType::Char)?;
-        let pair_encoding = match pair {
-            Some(sequence) => Some(self.encode_single_sequence(sequence, 1, OffsetType::Char)?),
-            None => None,
-        };
+        let pair_encoding = pair
+            .map(|sequence| self.encode_single_sequence(sequence, 1, OffsetType::Char))
+            .transpose()?;
 
         // And finally post process
         self.post_process(encoding, pair_encoding, add_special_tokens)
