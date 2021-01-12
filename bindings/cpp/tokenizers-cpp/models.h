@@ -15,6 +15,17 @@ struct BpeBuilder;
 struct WordPieceBuilder;
 struct WordLevelBuilder;
 
+namespace ffi {
+inline std::unordered_map<std::string, uint32_t> vocab_to_map(
+    const rust::Vec<TokenAndId>& entries) {
+    std::unordered_map<std::string, uint32_t> vocab;
+    for (auto& entry : entries) {
+        vocab[std::string(entry.token)] = entry.id;
+    }
+    return vocab;
+}
+}  // namespace ffi
+
 /**
  * @brief Represents a model used during Tokenization (like BPE or Word or
  * Unigram).
@@ -126,12 +137,7 @@ public:
      * @brief Returns the entire vocabulary mapping (token -> ID).
      */
     std::unordered_map<std::string, uint32_t> get_vocab() {
-        rust::Vec<TokenAndId> entries(ffi::get_vocab_model(*inner_));
-        std::unordered_map<std::string, uint32_t> vocab;
-        for (auto& entry : entries) {
-            vocab[std::string(entry.token)] = entry.id;
-        }
-        return vocab;
+        return ffi::vocab_to_map(ffi::get_vocab_model(*inner_));
     }
 
     /**

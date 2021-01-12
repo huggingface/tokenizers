@@ -134,7 +134,7 @@ mod ffi {
     }
 }
 
-use crate::{forward_cxx_enum, models::vocab_to_vec, wrap_option, impl_extern_type};
+use crate::{forward_cxx_enum, impl_extern_type, models::vocab_to_vec, wrap_option};
 use cxx::CxxVector;
 use derive_more::{Deref, DerefMut};
 use ffi::*;
