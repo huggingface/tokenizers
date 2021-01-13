@@ -19,6 +19,7 @@ instance Show Tokenizer where
 
 foreign import ccall unsafe "tokenize_test" r_tokenize_test :: CString -> IO ()
 foreign import ccall unsafe "mk_tokenizer" r_mk_tokenizer :: CString -> CString -> IO (Ptr CTokenizer)
+foreign import ccall unsafe "mk_roberta_tokenizer" r_mk_roberta_tokenizer :: CString -> CString -> IO (Ptr CTokenizer)
 foreign import ccall unsafe "tokenize" r_tokenize :: CString -> Ptr CTokenizer -> IO ()
 
 tokenizeTest x = do
@@ -29,6 +30,13 @@ mkTokenizer vocab merges = do
   cvocab <- newCString $ vocab ++ "\0"
   cmerges <- newCString $ merges ++ "\0"
   result <- r_mk_tokenizer cvocab cmerges
+  pure (Tokenizer result vocab merges)
+
+
+mkRobertaTokenizer vocab merges = do
+  cvocab <- newCString $ vocab ++ "\0"
+  cmerges <- newCString $ merges ++ "\0"
+  result <- r_mk_roberta_tokenizer cvocab cmerges
   pure (Tokenizer result vocab merges)
 
 tokenize text (Tokenizer tokenizer _ _) = do

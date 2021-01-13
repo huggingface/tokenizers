@@ -2,8 +2,37 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use tokenizers::models::bpe::BpeBuilder;
-use tokenizers::models::bpe::BPE;
+//use tokenizers::models::bpe::BPE;
 use tokenizers::tokenizer::Tokenizer;
+
+use tokenizers::decoders::DecoderWrapper;
+use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
+use tokenizers::normalizers::{strip::Strip, unicode::NFC, utils::Sequence, NormalizerWrapper};
+use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::processors::roberta::RobertaProcessing;
+
+#[no_mangle]
+pub extern "C" fn mk_roberta_tokenizer(
+    cvocab: *const c_char,
+    cmerges: *const c_char,
+) -> *mut Tokenizer {
+    unsafe {
+        let vocab = CStr::from_ptr(cvocab);
+        let merges = CStr::from_ptr(cmerges);
+
+        if let (Ok(vocab_file), Ok(merges_file)) = (vocab.to_str(), merges.to_str()) {
+        let bpe_builder = BPE::from_file(vocab_file, merges_file);
+        let bpe = bpe_builder.build().unwrap();
+        let mut tokenizer = Tokenizer::new(bpe);
+        tokenizer.with_pre_tokenizer(ByteLevel::default());
+        tokenizer.with_post_processor(RobertaProcessing::default());
+        return Box::into_raw(Box::new(tokenizer));
+
+        } else {
+            panic!("Unable to read parameters.");
+        }
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn mk_bpe_builder_from_files(
