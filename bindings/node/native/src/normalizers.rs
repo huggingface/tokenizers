@@ -189,27 +189,24 @@ fn sequence(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     let normalizers = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
     let mut sequence = Vec::with_capacity(normalizers.len());
 
-    normalizers
-        .into_iter()
-        .map(
-            |normalizer| match normalizer.downcast::<JsNormalizer>().or_throw(&mut cx) {
-                Ok(normalizer) => {
-                    let guard = cx.lock();
-                    let normalizer = normalizer.borrow(&guard).normalizer.clone();
-                    if let Some(normalizer) = normalizer {
-                        match normalizer {
-                            JsNormalizerWrapper::Sequence(seq) => sequence.extend(seq),
-                            JsNormalizerWrapper::Wrapped(inner) => sequence.push(inner),
-                        }
-                        Ok(())
-                    } else {
-                        cx.throw_error("Uninitialized Normalizer")
+    normalizers.into_iter().try_for_each(|normalizer| {
+        match normalizer.downcast::<JsNormalizer>().or_throw(&mut cx) {
+            Ok(normalizer) => {
+                let guard = cx.lock();
+                let normalizer = normalizer.borrow(&guard).normalizer.clone();
+                if let Some(normalizer) = normalizer {
+                    match normalizer {
+                        JsNormalizerWrapper::Sequence(seq) => sequence.extend(seq),
+                        JsNormalizerWrapper::Wrapped(inner) => sequence.push(inner),
                     }
+                    Ok(())
+                } else {
+                    cx.throw_error("Uninitialized Normalizer")
                 }
-                Err(e) => Err(e),
-            },
-        )
-        .collect::<NeonResult<_>>()?;
+            }
+            Err(e) => Err(e),
+        }
+    })?;
 
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();

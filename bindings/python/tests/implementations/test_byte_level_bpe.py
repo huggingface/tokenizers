@@ -89,3 +89,11 @@ class TestByteLevelBPE:
         tokenizer = ByteLevelBPETokenizer.from_file(roberta_files["vocab"], roberta_files["merges"])
         multiprocessing_with_parallelism(tokenizer, False)
         multiprocessing_with_parallelism(tokenizer, True)
+
+    def test_train_from_iterator(self):
+        text = ["A first sentence", "Another sentence", "And a last one"]
+        tokenizer = ByteLevelBPETokenizer()
+        tokenizer.train_from_iterator(text, show_progress=False)
+
+        output = tokenizer.encode("A sentence")
+        assert output.tokens == ["A", "Ġsentence"]

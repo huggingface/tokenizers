@@ -214,27 +214,25 @@ fn sequence(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let pretokenizers = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
     let mut sequence = Vec::with_capacity(pretokenizers.len());
 
-    pretokenizers
-        .into_iter()
-        .map(
-            |pretokenizer| match pretokenizer.downcast::<JsPreTokenizer>().or_throw(&mut cx) {
-                Ok(pretokenizer) => {
-                    let guard = cx.lock();
-                    let pretok = (*pretokenizer.borrow(&guard)).pretok.clone();
-                    if let Some(pretokenizer) = pretok {
-                        match pretokenizer {
-                            JsPreTokenizerWrapper::Sequence(seq) => sequence.extend(seq),
-                            JsPreTokenizerWrapper::Wrapped(inner) => sequence.push(inner),
-                        }
-                        Ok(())
-                    } else {
-                        cx.throw_error("Uninitialized PreTokenizer")
+    pretokenizers.into_iter().try_for_each(|pretokenizer| {
+        match pretokenizer.downcast::<JsPreTokenizer>().or_throw(&mut cx) {
+            Ok(pretokenizer) => {
+                let guard = cx.lock();
+                let pretok = (*pretokenizer.borrow(&guard)).pretok.clone();
+                if let Some(pretokenizer) = pretok {
+                    match pretokenizer {
+                        JsPreTokenizerWrapper::Sequence(seq) => sequence.extend(seq),
+                        JsPreTokenizerWrapper::Wrapped(inner) => sequence.push(inner),
                     }
+                    Ok(())
+                } else {
+                    cx.throw_error("Uninitialized PreTokenizer")
                 }
-                Err(e) => Err(e),
-            },
-        )
-        .collect::<NeonResult<_>>()?;
+            }
+            Err(e) => Err(e),
+        }
+    })?;
+
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
     pretok.borrow_mut(&guard).pretok = Some(JsPreTokenizerWrapper::Sequence(sequence));

@@ -247,14 +247,13 @@ impl Encoding {
     /// Get the offsets of the word at the given index in the input sequence.
     pub fn word_to_chars(&self, word: u32, sequence_id: usize) -> Option<Offsets> {
         self.word_to_tokens(word, sequence_id)
-            .map(|(start, end)| {
+            .and_then(|(start, end)| {
                 if end == 0 {
                     None
                 } else {
                     Some((self.offsets[start].0, self.offsets[end - 1].1))
                 }
             })
-            .flatten()
     }
 
     /// Get the offsets of the token at the given index.
@@ -288,8 +287,7 @@ impl Encoding {
     pub fn char_to_word(&self, pos: usize, sequence_id: usize) -> Option<u32> {
         Some(
             self.char_to_token(pos, sequence_id)
-                .map(|token| self.token_to_word(token))
-                .flatten()?
+                .and_then(|token| self.token_to_word(token))?
                 .1,
         )
     }

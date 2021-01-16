@@ -651,11 +651,10 @@ mod tests {
         let required_chars = trainer.required_chars(&sentences);
         assert_eq!(
             required_chars,
-            HashSet::from_iter(
-                vec!["こ", "ん", "に", "ち", "は", "友", "達", "a", "b", "c", "d", "e", "f"]
-                    .into_iter()
-                    .map(|s| s.to_owned())
-            )
+            vec!["こ", "ん", "に", "ち", "は", "友", "達", "a", "b", "c", "d", "e", "f"]
+                .into_iter()
+                .map(|s| s.to_owned())
+                .collect::<HashSet<_>>()
         );
     }
 

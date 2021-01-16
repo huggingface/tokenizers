@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.10.0rc1]
+## [0.10.0]
 
 ### Added
 - [#508]: Add a Visualizer for notebooks to help understand how the tokenizers work
@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [#533]: Add support for conda builds
 - [#542]: Add Split pre-tokenizer to easily split using a pattern
 - [#544]: Ability to train from memory. This also improves the integration with `datasets`
+- [#590]: Add getters/setters for components on BaseTokenizer
+- [#574]: Add `fust_unk` option to SentencePieceBPETokenizer
 
 ### Changed
 - [#509]: Automatically stubbing the `.pyi` files
@@ -291,6 +293,8 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#590]: https://github.com/huggingface/tokenizers/pull/590
+[#574]: https://github.com/huggingface/tokenizers/pull/574
 [#544]: https://github.com/huggingface/tokenizers/pull/544
 [#542]: https://github.com/huggingface/tokenizers/pull/542
 [#539]: https://github.com/huggingface/tokenizers/pull/539

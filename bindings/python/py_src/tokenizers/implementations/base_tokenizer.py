@@ -1,4 +1,9 @@
 from tokenizers import Tokenizer, Encoding, AddedToken, InputSequence, EncodeInput
+from tokenizers.models import Model
+from tokenizers.normalizers import Normalizer
+from tokenizers.pre_tokenizers import PreTokenizer
+from tokenizers.processors import PostProcessor
+from tokenizers.decoders import Decoder
 
 from typing import List, Union, Tuple, Optional, Dict
 
@@ -309,17 +314,17 @@ class BaseTokenizer:
         """
         return self._tokenizer.id_to_token(id)
 
-    def save_model(self, directory: str, name: Optional[str] = None):
+    def save_model(self, directory: str, prefix: Optional[str] = None):
         """Save the current model to the given directory
 
         Args:
             directory: str:
                 A path to the destination directory
 
-            name: (Optional) str:
-                The name of the tokenizer, to be used in the saved files
+            prefix: (Optional) str:
+                An optional prefix, used to prefix each file name
         """
-        return self._tokenizer.model.save(directory, name=name)
+        return self._tokenizer.model.save(directory, prefix=prefix)
 
     def save(self, path: str, pretty: bool = False):
         """Save the current Tokenizer at the given path
@@ -366,3 +371,43 @@ class BaseTokenizer:
             The resulting Encoding
         """
         return self._tokenizer.post_process(encoding, pair, add_special_tokens)
+
+    @property
+    def model(self) -> Model:
+        return self._tokenizer.model
+
+    @model.setter
+    def model(self, model: Model):
+        self._tokenizer.model = model
+
+    @property
+    def normalizer(self) -> Normalizer:
+        return self._tokenizer.normalizer
+
+    @normalizer.setter
+    def normalizer(self, normalizer: Normalizer):
+        self._tokenizer.normalizer = normalizer
+
+    @property
+    def pre_tokenizer(self) -> PreTokenizer:
+        return self._tokenizer.pre_tokenizer
+
+    @pre_tokenizer.setter
+    def pre_tokenizer(self, pre_tokenizer: PreTokenizer):
+        self._tokenizer.pre_tokenizer = pre_tokenizer
+
+    @property
+    def post_processor(self) -> PostProcessor:
+        return self._tokenizer.post_processor
+
+    @post_processor.setter
+    def post_processor(self, post_processor: PostProcessor):
+        self._tokenizer.post_processor = post_processor
+
+    @property
+    def decoder(self) -> Decoder:
+        return self._tokenizer.decoder
+
+    @decoder.setter
+    def decoder(self, decoder: Decoder):
+        self._tokenizer.decoder = decoder

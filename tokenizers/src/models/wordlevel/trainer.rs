@@ -130,8 +130,10 @@ mod tests {
         .cloned()
         .collect();
 
-        let mut trainer = WordLevelTrainer::default();
-        trainer.vocab_size = 5;
+        let mut trainer = WordLevelTrainer {
+            vocab_size: 5,
+            ..Default::default()
+        };
 
         let mut model = WordLevel::default();
         trainer.do_train(&word_counts, &mut model).unwrap();
