@@ -399,6 +399,10 @@ TEST_SUITE("Tokenizers") {
                                                   "ĠJohn"};
         std::vector<uint32_t> expected_ids{3666, 1438, 318, 1757};
         check_encoding(encoding, expected_tokens, expected_ids);
+
+        Encoding encoding_pretokenized =
+            tokenizer.encode({"My", " name", " is", " John"}, true);
+        check_encoding(encoding_pretokenized, expected_tokens, expected_ids);
     }
 }
 

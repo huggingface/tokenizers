@@ -12,17 +12,17 @@ namespace tokenizers {
 // StrSlice, &[&str] not supported by cxx
 // StrVec, Vec<&str> not supported by cxx
 // StrVec in particular will be useful
-enum class InputSequenceTag : uint8_t { Str, String, StringVec, StringSlice };
+enum class InputSequenceTag : uint8_t { Str, String, StringSlice };
 
 class InputSequence {
 private:
     // this could be (non)std::variant, but I don't want to add the
     // dependency just for a single use
-    enum { STR, STRING, STRING_VEC } tag_;
+    enum { STR, STRING, STRING_VECTOR } tag_;
     union {
         rust::Str str_;
         rust::String string_;
-        rust::Vec<rust::String> string_vec_;
+        std::vector<rust::String> string_vector_;
     };
 
 public:
@@ -35,8 +35,8 @@ public:
             case STRING:
                 string_ = other.string_;
                 break;
-            case STRING_VEC:
-                string_vec_ = other.string_vec_;
+            case STRING_VECTOR:
+                string_vector_ = other.string_vector_;
                 break;
             default:
                 // we really shouldn't get here!
@@ -46,11 +46,18 @@ public:
     };
     InputSequence(nonstd::string_view str)
         : tag_(STR), str_(ffi::to_rust_str(str)){};
+    InputSequence(std::string&& str)
+        : tag_(STRING), string_(ffi::to_rust_string(str)){};
+    InputSequence(rust::String&& str) : tag_(STRING), string_(str){};
     InputSequence(const char* str) : InputSequence(nonstd::string_view(str)){};
     InputSequence(nonstd::span<std::string> strs)
-        : tag_(STRING_VEC), string_vec_() {
-        ffi::fill_vec(string_vec_, strs,
+        : tag_(STRING_VECTOR), string_vector_() {
+        ffi::fill_vec(string_vector_, strs,
                       [](auto x) { return rust::String(x); });
+    };
+    InputSequence(std::initializer_list<rust::String> strs)
+        : tag_(STRING_VECTOR), string_vector_() {
+        ffi::fill_vec(string_vector_, strs);
     };
     // TODO add other constructors
 
@@ -62,8 +69,8 @@ public:
             case STRING:
                 string_.~String();
                 break;
-            case STRING_VEC:
-                string_vec_.~Vec();
+            case STRING_VECTOR:
+                string_vector_.~vector();
                 break;
             default:
                 // we really shouldn't get here!
@@ -74,11 +81,10 @@ public:
     InputSequenceTag get_tag() const {
         switch (tag_) {
             case STR:
-                return InputSequenceTag::Str;
             case STRING:
                 return InputSequenceTag::Str;
-            case STRING_VEC:
-                return InputSequenceTag::StringVec;
+            case STRING_VECTOR:
+                return InputSequenceTag::StringSlice;
             default:
                 throw std::logic_error("invalid tag");
         }
@@ -104,14 +110,10 @@ public:
         }
     }
 
-    rust::Vec<rust::String> get_string_vec() const {
-        throw std::logic_error("wrong tag to return a Vec<String>");
-    }
-
     rust::Slice<const rust::String> get_string_slice() const {
         switch (tag_) {
-            case STRING_VEC:
-                return {string_vec_.data(), string_vec_.size()};
+            case STRING_VECTOR:
+                return {string_vector_.data(), string_vector_.size()};
             default:
                 throw std::logic_error("wrong tag to return a [String]");
         }

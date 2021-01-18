@@ -19,7 +19,6 @@ mod ffi {
     pub enum InputSequenceTag {
         Str,
         String,
-        StringVec,
         StringSlice,
     }
 
@@ -32,7 +31,6 @@ mod ffi {
         // these should ideally be `unsafe`, but rustfmt removes the keyword
         fn get_str(self: &InputSequence) -> &str;
         fn get_string(self: &InputSequence) -> String;
-        fn get_string_vec(self: &InputSequence) -> Vec<String>;
         fn get_string_slice(self: &InputSequence) -> &[String];
 
         type InputSequencePair;
@@ -257,7 +255,6 @@ impl<'s> From<&'s InputSequence> for tk::InputSequence<'s> {
             InputSequenceTag::Str => input.get_str().into(),
             InputSequenceTag::String => input.get_string().into(),
             InputSequenceTag::StringSlice => input.get_string_slice().into(),
-            InputSequenceTag::StringVec => input.get_string_vec().into(),
             x => panic!("Illegal InputSequenceTag value {}", x.repr),
         }
     }
