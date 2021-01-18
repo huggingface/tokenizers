@@ -114,6 +114,9 @@ use tk::{
 // TODO may move Encoding to a separate module, but this depends on
 //  the second part of https://github.com/dtolnay/cxx/issues/496
 #[derive(Deref, DerefMut)]
+// TODO intended to guarantee the representation is the same as for Encoding_1,
+//  remove when that's removed
+#[repr(C)]
 pub struct Encoding(pub tk::Encoding);
 
 impl Encoding {

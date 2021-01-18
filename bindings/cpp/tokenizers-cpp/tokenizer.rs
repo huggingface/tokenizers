@@ -56,8 +56,10 @@ mod ffi {
 
     #[namespace = "huggingface::tokenizers::ffi"]
     extern "Rust" {
-        type Encoding_1;
+        type Encoding1;
         type Tokenizer;
+
+        fn box_encoding1(encoding: &Encoding1) -> Box<Encoding1>;
 
         // FIXME many of the below functions should take Box, not &.
         //  Look for clone() in the implementations.
@@ -95,14 +97,14 @@ mod ffi {
             input: &InputSequence,
             add_special_tokens: bool,
             offset_type: OffsetType,
-        ) -> Result<Box<Encoding_1>>;
+        ) -> Result<Box<Encoding1>>;
 
         fn encode_pair(
             tokenizer: &Tokenizer,
             input: &InputSequencePair,
             add_special_tokens: bool,
             offset_type: OffsetType,
-        ) -> Result<Box<Encoding_1>>;
+        ) -> Result<Box<Encoding1>>;
 
         // TODO use &[InputSequence] when it's supported (similar for encode_pair_batch)
         fn encode_batch(
@@ -110,14 +112,14 @@ mod ffi {
             input: &CxxVector<InputSequence>,
             add_special_tokens: bool,
             offset_type: OffsetType,
-        ) -> Result<Vec<Encoding_1>>;
+        ) -> Result<Vec<Encoding1>>;
 
         fn encode_pair_batch(
             tokenizer: &Tokenizer,
             input: &CxxVector<InputSequencePair>,
             add_special_tokens: bool,
             offset_type: OffsetType,
-        ) -> Result<Vec<Encoding_1>>;
+        ) -> Result<Vec<Encoding1>>;
 
         fn decode(
             tokenizer: &Tokenizer,
@@ -140,9 +142,13 @@ use derive_more::{Deref, DerefMut};
 use ffi::*;
 use tk::{EncodeInput, PaddingParams, PaddingStrategy, Result, TruncationParams};
 
-#[derive(Deref, DerefMut)]
-#[allow(non_camel_case_types)]
-struct Encoding_1(tk::Encoding);
+#[derive(Deref, DerefMut, Clone)]
+#[repr(C)]
+struct Encoding1(tk::Encoding);
+
+fn box_encoding1(encoding: &Encoding1) -> Box<Encoding1> {
+    Box::new(encoding.clone())
+}
 
 impl_extern_type!(Normalizer, "huggingface::tokenizers::ffi::Normalizer");
 
@@ -268,8 +274,8 @@ fn encode_impl<'s, I: Into<EncodeInput<'s>>>(
     input: I,
     add_special_tokens: bool,
     offset_type: OffsetType,
-) -> Result<Box<Encoding_1>> {
-    Ok(Box::new(Encoding_1(match offset_type {
+) -> Result<Box<Encoding1>> {
+    Ok(Box::new(Encoding1(match offset_type {
         OffsetType::Byte => tokenizer.encode(input, add_special_tokens)?,
         OffsetType::Char => tokenizer.encode_char_offsets(input, add_special_tokens)?,
         x => panic!("Illegal OffsetType value {}", x.repr),
@@ -281,7 +287,7 @@ fn encode(
     input: &InputSequence,
     add_special_tokens: bool,
     offset_type: OffsetType,
-) -> Result<Box<Encoding_1>> {
+) -> Result<Box<Encoding1>> {
     encode_impl(tokenizer, input, add_special_tokens, offset_type)
 }
 
@@ -290,7 +296,7 @@ fn encode_pair(
     input: &InputSequencePair,
     add_special_tokens: bool,
     offset_type: OffsetType,
-) -> Result<Box<Encoding_1>> {
+) -> Result<Box<Encoding1>> {
     encode_impl(tokenizer, input, add_special_tokens, offset_type)
 }
 
@@ -300,7 +306,7 @@ fn encode_pair(
 //     input: &CxxVector<I>,
 //     add_special_tokens: bool,
 //     offset_type: OffsetType,
-// ) -> Result<Vec<Encoding_1>> {
+// ) -> Result<Vec<Encoding1>> {
 //     let input: Vec<_> = input.iter().map(|x| EncodeInput::from(x)).collect();
 //     Ok((match offset_type {
 //         OffsetType::Byte => tokenizer.encode_batch(input, add_special_tokens),
@@ -308,7 +314,7 @@ fn encode_pair(
 //         x => panic!("Illegal OffsetType value {}", x.repr),
 //     })?
 //     .into_iter()
-//     .map(|x| Encoding_1(x))
+//     .map(|x| Encoding1(x))
 //     .collect())
 // }
 
@@ -317,7 +323,7 @@ fn encode_batch(
     input: &CxxVector<InputSequence>,
     add_special_tokens: bool,
     offset_type: OffsetType,
-) -> Result<Vec<Encoding_1>> {
+) -> Result<Vec<Encoding1>> {
     let input: Vec<_> = input.iter().map(|x| EncodeInput::from(x)).collect();
     Ok((match offset_type {
         OffsetType::Byte => tokenizer.encode_batch(input, add_special_tokens),
@@ -325,7 +331,7 @@ fn encode_batch(
         x => panic!("Illegal OffsetType value {}", x.repr),
     })?
     .into_iter()
-    .map(|x| Encoding_1(x))
+    .map(|x| Encoding1(x))
     .collect())
 }
 
@@ -334,7 +340,7 @@ fn encode_pair_batch(
     input: &CxxVector<InputSequencePair>,
     add_special_tokens: bool,
     offset_type: OffsetType,
-) -> Result<Vec<Encoding_1>> {
+) -> Result<Vec<Encoding1>> {
     let input: Vec<_> = input.iter().map(|x| EncodeInput::from(x)).collect();
     Ok((match offset_type {
         OffsetType::Byte => tokenizer.encode_batch(input, add_special_tokens),
@@ -342,7 +348,7 @@ fn encode_pair_batch(
         x => panic!("Illegal OffsetType value {}", x.repr),
     })?
     .into_iter()
-    .map(|x| Encoding_1(x))
+    .map(|x| Encoding1(x))
     .collect())
 }
 

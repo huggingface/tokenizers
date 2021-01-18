@@ -351,6 +351,15 @@ TEST_SUITE("Decoders") {
 }
 
 TEST_SUITE("Tokenizers") {
+    void check_encoding(const Encoding& encoding,
+                        const std::vector<rust::String>& expected_tokens,
+                        const std::vector<uint32_t>& expected_ids = {}) {
+        COMPARE_CONTAINERS(expected_tokens, encoding.get_tokens());
+        if (!expected_tokens.empty() && !expected_ids.empty()) {
+            COMPARE_CONTAINERS(expected_ids, encoding.get_ids());
+        }
+    }
+
     TEST_CASE("Bert") {
         Tokenizer tokenizer(WordPieceBuilder()
                                 .files(bert_vocab())
@@ -368,7 +377,15 @@ TEST_SUITE("Tokenizers") {
                                                   "is",    "john", "[SEP]"};
         COMPARE_CONTAINERS(expected_tokens, encoding.get_tokens());
         std::vector<uint32_t> expected_ids{102, 2026, 2171, 2003, 2198, 101};
-        COMPARE_CONTAINERS(expected_ids, encoding.get_ids());
+        check_encoding(encoding, expected_tokens, expected_ids);
+
+        tokenizer.with_padding({});
+        std::vector<Encoding> batch_encoding =
+            tokenizer.encode_batch({"My name is John", "My name"});
+        check_encoding(batch_encoding[0], expected_tokens, expected_ids);
+        check_encoding(batch_encoding[1],
+                       {"[CLS]", "my", "name", "[SEP]", "[PAD]", "[PAD]"},
+                       {102, 2026, 2171, 101, 0, 0});
     }
 
     TEST_CASE("GPT2") {
@@ -380,9 +397,8 @@ TEST_SUITE("Tokenizers") {
         Encoding encoding = tokenizer.encode("My name is John", true);
         std::vector<rust::String> expected_tokens{"My", "Ġname", "Ġis",
                                                   "ĠJohn"};
-        COMPARE_CONTAINERS(expected_tokens, encoding.get_tokens());
         std::vector<uint32_t> expected_ids{3666, 1438, 318, 1757};
-        COMPARE_CONTAINERS(expected_ids, encoding.get_ids());
+        check_encoding(encoding, expected_tokens, expected_ids);
     }
 }
 

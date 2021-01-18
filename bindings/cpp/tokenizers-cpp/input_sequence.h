@@ -27,6 +27,23 @@ private:
 
 public:
     InputSequence() = delete;
+    InputSequence(const InputSequence& other) : tag_(other.tag_) {
+        switch (tag_) {
+            case STR:
+                str_ = other.str_;
+                break;
+            case STRING:
+                string_ = other.string_;
+                break;
+            case STRING_VEC:
+                string_vec_ = other.string_vec_;
+                break;
+            default:
+                // we really shouldn't get here!
+                assert(false &&
+                       "a tag was not covered in the copy constructor");
+        }
+    };
     InputSequence(nonstd::string_view str)
         : tag_(STR), str_(ffi::to_rust_str(str)){};
     InputSequence(const char* str) : InputSequence(nonstd::string_view(str)){};

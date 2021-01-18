@@ -113,6 +113,28 @@ struct TruncationParams {
 struct Tokenizer {
     HFT_FFI_WRAPPER(Tokenizer);
 
+private:
+    // FIXME workaround for https://github.com/dtolnay/cxx/issues/496,
+    //  remove together with Encoding1
+    static Encoding wrap_encoding1(rust::Box<ffi::Encoding1>&& encoding_ffi) {
+        return {std::move(
+            reinterpret_cast<rust::Box<ffi::Encoding>&>(encoding_ffi))};
+    }
+
+    static std::vector<Encoding> wrap_encoding1_batch(
+        const rust::Vec<ffi::Encoding1>& encodings_ffi) {
+        std::vector<Encoding> result;
+        // NOTE the line below doesn't compile under GCC/Clang with
+        //  error: explicit specialization of 'size' after instantiation
+        //  Not sure what makes it different from other uses of size on
+        //  rust::Vec
+        // result.reserve(encodings_ffi.size());
+        for (const ffi::Encoding1& encoding_ffi : encodings_ffi) {
+            result.push_back(wrap_encoding1(ffi::box_encoding1(encoding_ffi)));
+        }
+        return result;
+    }
+
 public:
     /**
      * @brief Constructs a Tokenizer from a model.
@@ -219,12 +241,9 @@ public:
     HFT_RESULT(Encoding)
     encode(const InputSequence& input, bool add_special_tokens = true,
            OffsetType offset_type = OffsetType::Byte) {
-        HFT_TRY(
-            Encoding,
-            // FIXME workaround for https://github.com/dtolnay/cxx/issues/496,
-            //  remove together with Encoding_1
-            {reinterpret_cast<rust::Box<ffi::Encoding>&&>(
-                ffi::encode(*inner_, input, add_special_tokens, offset_type))});
+        HFT_TRY(Encoding,
+                wrap_encoding1(ffi::encode(*inner_, input, add_special_tokens,
+                                           offset_type)));
     }
 
     /**
@@ -239,8 +258,8 @@ public:
     encode_pair(const InputSequencePair& input, bool add_special_tokens,
                 OffsetType offset_type = OffsetType::Byte) {
         HFT_TRY(Encoding,
-                {reinterpret_cast<rust::Box<ffi::Encoding>&&>(ffi::encode_pair(
-                    *inner_, input, add_special_tokens, offset_type))});
+                wrap_encoding1(ffi::encode_pair(
+                    *inner_, input, add_special_tokens, offset_type)));
     }
 
     /**
@@ -251,13 +270,13 @@ public:
      * @param offset_type Whether byte or char offsets should be used in the
      * returned encoding.
      */
-    HFT_RESULT(Encoding)
+    HFT_RESULT(std::vector<Encoding>)
     encode_batch(const std::vector<InputSequence>& input,
                  bool add_special_tokens = true,
                  OffsetType offset_type = OffsetType::Byte) {
-        HFT_TRY(Encoding,
-                {reinterpret_cast<rust::Box<ffi::Encoding>&&>(ffi::encode_batch(
-                    *inner_, input, add_special_tokens, offset_type))});
+        HFT_TRY(std::vector<Encoding>,
+                wrap_encoding1_batch(ffi::encode_batch(
+                    *inner_, input, add_special_tokens, offset_type)));
     }
 
     /**
@@ -268,14 +287,13 @@ public:
      * @param offset_type Whether byte or char offsets should be used in the
      * returned encoding.
      */
-    HFT_RESULT(Encoding)
+    HFT_RESULT(std::vector<Encoding>)
     encode_pair_batch(const std::vector<InputSequencePair>& input,
                       bool add_special_tokens = true,
                       OffsetType offset_type = OffsetType::Byte) {
-        HFT_TRY(Encoding,
-                {reinterpret_cast<rust::Box<ffi::Encoding>&&>(
-                    ffi::encode_pair_batch(*inner_, input, add_special_tokens,
-                                           offset_type))});
+        HFT_TRY(std::vector<Encoding>,
+                wrap_encoding1_batch(ffi::encode_pair_batch(
+                    *inner_, input, add_special_tokens, offset_type)));
     }
 
     /**
