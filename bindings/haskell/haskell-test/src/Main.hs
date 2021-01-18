@@ -4,8 +4,6 @@ import Lib
 
 test string tokenizer = do
   putStrLn $ "\n----\n" ++ string ++ ""
-  tokenize string tokenizer
-
   putStrLn "\nRetrieve data in Haskell\n"
   encoding <- encode tokenizer string
   result <- getTokens encoding
