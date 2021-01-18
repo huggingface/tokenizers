@@ -11,6 +11,7 @@ import Foreign.C.Types
 data CTokenizer
 data CEncoding
 data CTokens
+data CIDs
 
 data Tokenizer = Tokenizer {
   tok :: Ptr CTokenizer,
@@ -63,3 +64,16 @@ getTokens (Encoding encoding) = do
     [0 .. sz-1]
 
 cleanTokens xs = [x | x <- xs, x `notElem` "\288"]
+
+
+getIDs:: Encoding -> IO [Int]
+getIDs (Encoding encoding) = do
+  ptr <- r_get_tokens encoding
+  -- 1st value of struct is the # of tokens
+  sz <- fromIntegral <$> (peek (castPtr ptr) :: IO CUInt) :: IO Int
+  print $ "SIZE " ++ show sz
+  -- 2nd value of struct is the array of tokens
+  tokens <- peekByteOff ptr 8 :: IO (Ptr CUInt) 
+  (mapM 
+    (\idx -> (peekByteOff tokens (8*idx) :: IO CUInt) >>= \x -> pure $ fromIntegral x)  -- TODO: as Int
+    [0 .. sz-1]) 
