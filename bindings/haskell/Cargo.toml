@@ -10,3 +10,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 tokenizers = { path = "../../tokenizers" }
+libc = "0.2"

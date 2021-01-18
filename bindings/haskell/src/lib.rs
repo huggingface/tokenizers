@@ -1,15 +1,15 @@
 use std::ffi::CStr;
+use std::ffi::CString;
+use std::mem::forget;
 use std::os::raw::c_char;
 
 use tokenizers::models::bpe::BpeBuilder;
-//use tokenizers::models::bpe::BPE;
+use tokenizers::models::bpe::BPE;
+use tokenizers::tokenizer::Encoding;
 use tokenizers::tokenizer::Tokenizer;
-
-use tokenizers::decoders::DecoderWrapper;
-use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
-use tokenizers::normalizers::{strip::Strip, unicode::NFC, utils::Sequence, NormalizerWrapper};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::processors::roberta::RobertaProcessing;
+
 
 #[no_mangle]
 pub extern "C" fn mk_roberta_tokenizer(
@@ -33,6 +33,7 @@ pub extern "C" fn mk_roberta_tokenizer(
         }
     }
 }
+
 
 #[no_mangle]
 pub extern "C" fn mk_bpe_builder_from_files(
@@ -62,6 +63,59 @@ pub extern "C" fn mk_tokenizer(cvocab: *const c_char, cmerges: *const c_char) ->
         } else {
             panic!("Unable to read parameters.");
         }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn encode(text: *const c_char, ptr: *mut Tokenizer) -> *mut Encoding {
+    unsafe {
+        let cstring = CStr::from_ptr(text);
+        let tokenizer = {
+            assert!(!ptr.is_null());
+            &mut *ptr
+        };
+        if let Ok(input) = cstring.to_str() {
+            let encoding = tokenizer.encode(input, false).unwrap();
+            return Box::into_raw(Box::new(encoding));
+        } else {
+            panic!("Unable to read parameters.");
+        }
+    }
+}
+
+// https://users.rust-lang.org/t/solved-how-to-export-vec-string-to-c-with-ffi/7121
+#[repr(C)]
+pub struct Array {
+    data: *const *const c_char
+}
+
+#[no_mangle]
+pub extern "C" fn get_tokens(ptr: *mut Encoding) -> *const *const c_char {
+    unsafe {
+        let encoding = {
+            assert!(!ptr.is_null());
+            &mut *ptr
+        };
+        let result = encoding.get_tokens();
+        let mut cstr_vec: Vec<CString> = vec![];
+        for s in result {
+            let cstr = CString::new(s.as_str()).unwrap();
+            cstr_vec.push(cstr);
+        }
+        cstr_vec.shrink_to_fit();
+
+        let mut c_char_vec: Vec<*const c_char> = vec![];
+        for s in &cstr_vec {
+            let value = s.as_ptr();
+            forget(value);
+            c_char_vec.push(value);
+        }
+
+        let array = c_char_vec.as_ptr();
+        // todo - do this without leaking
+        forget(cstr_vec);
+        forget(c_char_vec);
+        return array;
     }
 }
 
