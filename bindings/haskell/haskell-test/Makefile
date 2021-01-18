@@ -11,5 +11,6 @@ download: clean
 run:
 	export LD_LIBRARY_PATH=`pwd`/lib; stack run haskell-test
 
-watcher:
-	export LD_LIBRARY_PATH=`pwd`/lib; stack run haskell-test
+watch:
+	ghcid -c "stack ghci haskell-test" -Tmain
+
