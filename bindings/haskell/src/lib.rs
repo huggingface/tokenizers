@@ -1,7 +1,8 @@
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::mem::forget;
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_int};
+use std::mem;
 
 use tokenizers::models::bpe::BpeBuilder;
 use tokenizers::models::bpe::BPE;
@@ -85,12 +86,13 @@ pub extern "C" fn encode(text: *const c_char, ptr: *mut Tokenizer) -> *mut Encod
 
 // https://users.rust-lang.org/t/solved-how-to-export-vec-string-to-c-with-ffi/7121
 #[repr(C)]
-pub struct Array {
+pub struct CTokens {
+    length: c_int,
     data: *const *const c_char
 }
 
 #[no_mangle]
-pub extern "C" fn get_tokens(ptr: *mut Encoding) -> *const *const c_char {
+pub extern "C" fn get_tokens(ptr: *mut Encoding) -> *mut CTokens {
     unsafe {
         let encoding = {
             assert!(!ptr.is_null());
@@ -103,19 +105,22 @@ pub extern "C" fn get_tokens(ptr: *mut Encoding) -> *const *const c_char {
             cstr_vec.push(cstr);
         }
         cstr_vec.shrink_to_fit();
+        println!("LENGTH: {:?}", cstr_vec.len());
 
         let mut c_char_vec: Vec<*const c_char> = vec![];
         for s in &cstr_vec {
             let value = s.as_ptr();
-            forget(value);
             c_char_vec.push(value);
         }
+        println!("EL0: {:?}", c_char_vec[0]);
+        println!("EL1: {:?}", c_char_vec[1]);
 
-        let array = c_char_vec.as_ptr();
+        let array = CTokens { length: cstr_vec.len() as c_int, data: c_char_vec.as_ptr()};
+        // println!("Struct Size: {:?}", mem::size_of::<CTokens>());
         // todo - do this without leaking
         forget(cstr_vec);
         forget(c_char_vec);
-        return array;
+        return Box::into_raw(Box::new(array));
     }
 }
 

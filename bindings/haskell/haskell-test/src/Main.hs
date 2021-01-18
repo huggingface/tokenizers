@@ -8,7 +8,9 @@ test string tokenizer = do
 
   putStrLn "\nRetrieve data in Haskell\n"
   encoding <- encode tokenizer string
-  getTokens encoding
+  result <- getTokens encoding
+  putStrLn "Haskell List:"
+  print (cleanTokens <$> result)
 
 main :: IO ()
 main = do
