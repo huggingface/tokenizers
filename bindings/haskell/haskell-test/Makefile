@@ -14,3 +14,5 @@ run:
 watch:
 	ghcid -c "stack ghci haskell-test" -Tmain
 
+download-vocab:
+	stack build haskell-test:exe:download-vocab
