@@ -17,3 +17,13 @@ executable haskell-test
   build-depends:       base >= 4.7 && < 5
   extra-libraries:     haskell
   extra-lib-dirs:      ./lib
+
+executable download-vocab
+  hs-source-dirs:      src
+  main-is:             Download.hs
+  other-modules:       Lib
+  default-language:    Haskell2010
+  build-depends:       base >= 4.7 && < 5
+                     , containers
+  extra-libraries:     haskell
+
