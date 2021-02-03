@@ -411,6 +411,20 @@ impl PyNormalizedStringRefMut {
     pub fn destroyed_error() -> PyErr {
         exceptions::PyException::new_err("Cannot use a NormalizedStringRefMut outside `normalize`")
     }
+
+    /// Provides a way to access a reference to the underlying NormalizedString
+    pub fn map_as_ref<F: FnOnce(&NormalizedString) -> U, U>(&self, f: F) -> PyResult<U> {
+        self.inner
+            .map(f)
+            .ok_or_else(PyNormalizedStringRefMut::destroyed_error)
+    }
+
+    /// Provides a way to access a mutable reference to the underlying NormalizedString
+    pub fn map_as_mut<F: FnOnce(&mut NormalizedString) -> U, U>(&mut self, f: F) -> PyResult<U> {
+        self.inner
+            .map_mut(f)
+            .ok_or_else(PyNormalizedStringRefMut::destroyed_error)
+    }
 }
 
 #[pymethods]
