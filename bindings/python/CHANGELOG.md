@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- [#616]: Fix SentencePiece tokenizers conversion
+
 ## [0.10.0]
 
 ### Added
@@ -22,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 `tokenizer.model.dropout = 0.1`)
 - [#538]: The API Reference has been improved and is now up-to-date.
 
-## Fixed
+### Fixed
 - [#519]: During training, the `Model` is now trained in-place. This fixes several bugs that were
 forcing to reload the `Model` after a training.
 - [#539]: Fix `BaseTokenizer` enable_truncation docstring
@@ -293,6 +298,7 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#616]: https://github.com/huggingface/tokenizers/pull/616
 [#590]: https://github.com/huggingface/tokenizers/pull/590
 [#574]: https://github.com/huggingface/tokenizers/pull/574
 [#544]: https://github.com/huggingface/tokenizers/pull/544
