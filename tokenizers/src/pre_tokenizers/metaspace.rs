@@ -40,11 +40,11 @@ impl Default for Metaspace {
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         pretokenized.split(|_, mut normalized| {
+            normalized.replace(' ', &self.str_rep)?;
             if self.add_prefix_space && !normalized.get().starts_with(self.replacement) {
                 normalized.prepend(&self.str_rep);
             }
 
-            normalized.replace(' ', &self.str_rep)?;
             normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
         })
     }
