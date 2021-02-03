@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - [#616]: Fix SentencePiece tokenizers conversion
-- [#616]: Fix offsets produced by Precompiled Normalizer (used by tokenizers converted from SPM)
+- [#617]: Fix offsets produced by Precompiled Normalizer (used by tokenizers converted from SPM)
+- [#618]: Fix Normalizer.normalize with `PyNormalizedStringRefMut`
 
 ## [0.10.0]
 
@@ -299,6 +300,7 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#618]: https://github.com/huggingface/tokenizers/pull/618
 [#617]: https://github.com/huggingface/tokenizers/pull/617
 [#616]: https://github.com/huggingface/tokenizers/pull/616
 [#590]: https://github.com/huggingface/tokenizers/pull/590
