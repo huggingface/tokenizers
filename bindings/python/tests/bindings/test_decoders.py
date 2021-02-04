@@ -1,5 +1,6 @@
 import pytest
 import pickle
+import json
 
 from tokenizers.decoders import Decoder, ByteLevel, WordPiece, Metaspace, BPEDecoder
 
@@ -14,6 +15,12 @@ class TestByteLevel:
     def test_decoding(self):
         decoder = ByteLevel()
         assert decoder.decode(["My", "Ġname", "Ġis", "ĠJohn"]) == "My name is John"
+
+    def test_manual_reload(self):
+        byte_level = ByteLevel()
+        state = json.loads(byte_level.__getstate__())
+        reloaded = ByteLevel(**state)
+        assert isinstance(reloaded, ByteLevel)
 
 
 class TestWordPiece:

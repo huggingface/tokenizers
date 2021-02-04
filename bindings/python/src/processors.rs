@@ -232,8 +232,11 @@ pub struct PyByteLevel {}
 #[pymethods]
 impl PyByteLevel {
     #[new]
-    #[args(trim_offsets = "None")]
-    fn new(trim_offsets: Option<bool>) -> PyResult<(Self, PyPostProcessor)> {
+    #[args(trim_offsets = "None", _kwargs = "**")]
+    fn new(
+        trim_offsets: Option<bool>,
+        _kwargs: Option<&PyDict>,
+    ) -> PyResult<(Self, PyPostProcessor)> {
         let mut byte_level = ByteLevel::default();
 
         if let Some(to) = trim_offsets {

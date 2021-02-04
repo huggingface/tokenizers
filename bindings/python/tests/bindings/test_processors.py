@@ -1,5 +1,6 @@
 import pytest
 import pickle
+import json
 
 from ..utils import data_dir, roberta_files
 
@@ -83,6 +84,12 @@ class TestByteLevelProcessing:
         output = tokenizer.encode("My name is John")
         assert output.tokens == ["ĠMy", "Ġname", "Ġis", "ĠJohn"]
         assert output.offsets == [(0, 2), (3, 7), (8, 10), (11, 15)]
+
+    def test_manual_reload(self):
+        byte_level = ByteLevel()
+        state = json.loads(byte_level.__getstate__())
+        reloaded = ByteLevel(**state)
+        assert isinstance(reloaded, ByteLevel)
 
 
 class TestTemplateProcessing:
