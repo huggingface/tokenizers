@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [#617]: Fix offsets produced by Precompiled Normalizer (used by tokenizers converted from SPM)
 - [#618]: Fix Normalizer.normalize with `PyNormalizedStringRefMut`
 - [#620]: Fix serialization/deserialization for overlapping models
+- [#621]: Fix `ByteLevel` instantiation from a previously saved state (using `__getstate__()`)
 
 ## [0.10.0]
 
@@ -301,6 +302,7 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#621]: https://github.com/huggingface/tokenizers/pull/621
 [#620]: https://github.com/huggingface/tokenizers/pull/620
 [#618]: https://github.com/huggingface/tokenizers/pull/618
 [#617]: https://github.com/huggingface/tokenizers/pull/617
