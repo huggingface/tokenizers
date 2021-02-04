@@ -11,9 +11,10 @@ impl Serialize for BPE {
     where
         S: Serializer,
     {
-        let mut model = serializer.serialize_struct("BPE", 6)?;
+        let mut model = serializer.serialize_struct("BPE", 8)?;
 
         // Start by small fields
+        model.serialize_field("type", "BPE")?;
         model.serialize_field("dropout", &self.dropout)?;
         model.serialize_field("unk_token", &self.unk_token)?;
         model.serialize_field("continuing_subword_prefix", &self.continuing_subword_prefix)?;
@@ -48,6 +49,7 @@ impl<'de> Deserialize<'de> for BPE {
         deserializer.deserialize_struct(
             "BPE",
             &[
+                "type",
                 "dropout",
                 "unk_token",
                 "continuing_subword_prefix",
@@ -105,6 +107,15 @@ impl<'de> Visitor<'de> for BPEVisitor {
                 }
                 "vocab" => vocab = Some(map.next_value()?),
                 "merges" => merges = Some(map.next_value()?),
+                "type" => match map.next_value()? {
+                    "BPE" => {}
+                    u => {
+                        return Err(serde::de::Error::invalid_value(
+                            serde::de::Unexpected::Str(u),
+                            &"BPE",
+                        ))
+                    }
+                },
                 _ => {}
             }
         }
