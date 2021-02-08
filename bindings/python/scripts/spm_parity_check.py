@@ -131,12 +131,12 @@ def check_diff(spm_diff, tok_diff, sp, tok):
     if spm_diff == list(reversed(tok_diff)):
         # AAA -> AA+A vs A+AA case.
         return True
-    # elif len(spm_diff) == len(tok_diff) and tok.decode(spm_diff) == tok.decode(
-    #     tok_diff
-    # ):
-    #     # Second order OK
-    #     # Barrich -> Barr + ich vs Bar + rich
-    #     return True
+    elif len(spm_diff) == len(tok_diff) and tok.decode(spm_diff) == tok.decode(
+        tok_diff
+    ):
+        # Second order OK
+        # Barrich -> Barr + ich vs Bar + rich
+        return True
     spm_reencoded = sp.encode(sp.decode(spm_diff))
     tok_reencoded = tok.encode(tok.decode(spm_diff)).ids
     if spm_reencoded != spm_diff and spm_reencoded == tok_reencoded:
@@ -265,7 +265,7 @@ def check_encode(args):
             else:
                 perfect += 1
 
-            assert ids == encoded.ids, f"line {i}: {line} : {ids} != {encoded.ids}"
+            assert ids == encoded.ids, f"line {i}: {line} : \n\n{ids}\n{encoded.ids}\n{list(zip(encoded.ids, encoded.tokens))}"
 
     print(f"({perfect} / {imperfect} / {wrong} ----- {perfect + imperfect + wrong})")
     total = perfect + imperfect + wrong

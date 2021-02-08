@@ -14,7 +14,7 @@ class TestTrainFromIterators:
         tokenizer = Tokenizer(models.Unigram())
         tokenizer.normalizer = normalizers.NFKC()
         tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
-        tokenizer.decoders = decoders.ByteLevel()
+        tokenizer.decoder = decoders.ByteLevel()
 
         trainer = trainers.UnigramTrainer(
             vocab_size=20000,

@@ -1,11 +1,4 @@
-from tokenizers import (
-    Tokenizer,
-    AddedToken,
-    pre_tokenizers,
-    decoders,
-    trainers,
-    normalizers,
-)
+from tokenizers import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers, normalizers, Regex
 import os
 from tokenizers.models import Unigram
 import json
@@ -33,18 +26,10 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
             tokenizer = Tokenizer(Unigram())
 
         tokenizer.normalizer = normalizers.Sequence(
-            [
-                normalizers.Nmt(),
-                normalizers.NFKC(),
-            ]
+            [normalizers.Nmt(), normalizers.NFKC(), normalizers.Replace(Regex(" {2,}"), " ")]
         )
-        tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
-            [
-                pre_tokenizers.WhitespaceSplit(),
-                pre_tokenizers.Metaspace(
-                    replacement=replacement, add_prefix_space=add_prefix_space
-                ),
-            ]
+        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(
+            replacement=replacement, add_prefix_space=add_prefix_space
         )
         tokenizer.decoder = decoders.Metaspace(
             replacement=replacement, add_prefix_space=add_prefix_space
@@ -124,14 +109,14 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
 
         tokenizer = Tokenizer(Unigram(vocab, unk_id))
 
-        tokenizer.normalizer = normalizers.Precompiled(precompiled_charsmap)
-        tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
+        tokenizer.normalizer = normalizers.Sequence(
             [
-                pre_tokenizers.WhitespaceSplit(),
-                pre_tokenizers.Metaspace(
-                    replacement=replacement, add_prefix_space=add_prefix_space
-                ),
+                normalizers.Precompiled(precompiled_charsmap),
+                normalizers.Replace(Regex(" {2,}"), " "),
             ]
+        )
+        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(
+            replacement=replacement, add_prefix_space=add_prefix_space
         )
         tokenizer.decoder = decoders.Metaspace(
             replacement=replacement, add_prefix_space=add_prefix_space

@@ -1,6 +1,34 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 pub use spm_precompiled::Precompiled;
+use std::cmp::Ordering;
 use unicode_segmentation::UnicodeSegmentation;
+
+fn replace(transformations: &mut Vec<(char, isize)>, old_part: &str, new_part: &str) {
+    let old_count = old_part.chars().count() as isize;
+    let new_count = new_part.chars().count() as isize;
+    let diff = new_count - old_count;
+
+    // If we are just replacing characters, all changes should be == 0
+    transformations.extend(new_part.chars().map(|c| (c, 0)));
+
+    match diff.cmp(&0) {
+        // If we are adding some characters, the last DIFF characters shoud be == 1
+        Ordering::Greater => {
+            transformations
+                .iter_mut()
+                .rev()
+                .take(diff as usize)
+                .for_each(|(_, cs)| *cs = 1);
+        }
+        // If we are removing some characters, the last one should be == -DIFF
+        Ordering::Less => {
+            if let Some((_, cs)) = transformations.last_mut() {
+                *cs = diff;
+            }
+        }
+        _ => {}
+    }
+}
 
 impl Normalizer for Precompiled {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
@@ -19,16 +47,7 @@ impl Normalizer for Precompiled {
             if grapheme.len() < 6 {
                 if let Some(norm) = self.transform(grapheme) {
                     modified = true;
-                    let old_count = grapheme.chars().count() as isize;
-                    let new_count = norm.chars().count() as isize;
-                    for (i, c) in norm.chars().enumerate() {
-                        let n = if i == 0 {
-                            new_count - old_count
-                        } else {
-                            i as isize
-                        };
-                        transformations.push((c, n));
-                    }
+                    replace(&mut transformations, grapheme, norm);
                     return;
                 }
             }
@@ -36,16 +55,7 @@ impl Normalizer for Precompiled {
                 let part = &grapheme[char_index..char_index + c.len_utf8()];
                 if let Some(norm) = self.transform(part) {
                     modified = true;
-                    let old_count = part.chars().count() as isize;
-                    let new_count = norm.chars().count() as isize;
-                    for (i, c) in norm.chars().enumerate() {
-                        let n = if i == 0 {
-                            new_count - old_count
-                        } else {
-                            i as isize
-                        };
-                        transformations.push((c, n));
-                    }
+                    replace(&mut transformations, part, norm);
                 } else {
                     transformations.push((c, 0));
                 }

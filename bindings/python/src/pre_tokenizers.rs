@@ -243,8 +243,8 @@ impl PyByteLevel {
     }
 
     #[new]
-    #[args(add_prefix_space = "true")]
-    fn new(add_prefix_space: bool) -> PyResult<(Self, PyPreTokenizer)> {
+    #[args(add_prefix_space = "true", _kwargs = "**")]
+    fn new(add_prefix_space: bool, _kwargs: Option<&PyDict>) -> PyResult<(Self, PyPreTokenizer)> {
         Ok((
             PyByteLevel {},
             ByteLevel::default()

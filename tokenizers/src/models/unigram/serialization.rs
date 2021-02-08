@@ -10,8 +10,9 @@ impl Serialize for Unigram {
     where
         S: Serializer,
     {
-        let mut model = serializer.serialize_struct("Unigram", 2)?;
+        let mut model = serializer.serialize_struct("Unigram", 3)?;
 
+        model.serialize_field("type", "Unigram")?;
         model.serialize_field("unk_id", &self.unk_id)?;
         model.serialize_field("vocab", &self.vocab)?;
 
@@ -24,7 +25,7 @@ impl<'de> Deserialize<'de> for Unigram {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_struct("Unigram", &["vocab", "unk_id"], UnigramVisitor)
+        deserializer.deserialize_struct("Unigram", &["type", "vocab", "unk_id"], UnigramVisitor)
     }
 }
 
@@ -48,6 +49,15 @@ impl<'de> Visitor<'de> for UnigramVisitor {
                     unk_id = map.next_value()?;
                 }
                 "vocab" => vocab = Some(map.next_value()?),
+                "type" => match map.next_value()? {
+                    "Unigram" => {}
+                    u => {
+                        return Err(serde::de::Error::invalid_value(
+                            serde::de::Unexpected::Str(u),
+                            &"Unigram",
+                        ))
+                    }
+                },
                 _ => (),
             }
         }
