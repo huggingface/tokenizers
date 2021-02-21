@@ -383,9 +383,18 @@ impl Tokenizer {
     > {
         self.0
     }
+    
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
         let content = read_to_string(file)?;
         Ok(serde_json::from_str(&content)?)
+    }
+}
+
+impl std::str::FromStr for Tokenizer {
+    type Err = Box<dyn std::error::Error + Send + Sync>;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Ok(serde_json::from_str(s)?)
     }
 }
 

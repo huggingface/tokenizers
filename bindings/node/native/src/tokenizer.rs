@@ -966,8 +966,8 @@ pub fn tokenizer_from_string(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
 pub fn tokenizer_from_file(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
     let s = cx.extract::<String>(0)?;
 
-    let tokenizer =
-        tk::tokenizer::TokenizerImpl::from_file(s).map_err(|e| Error(format!("{}", e)))?;
+    let tokenizer = tk::tokenizer::TokenizerImpl::from_file(s)
+        .map_err(|e| Error(format!("Error loading from file{}", e)))?;
 
     let mut js_tokenizer = JsTokenizer::new::<_, JsTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
