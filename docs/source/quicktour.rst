@@ -202,7 +202,35 @@ to use:
         :end-before: END train
         :dedent: 8
 
-This should only take a few seconds to train our tokenizer on the full wikitext dataset!
+This should only take a few seconds to train our tokenizer on the full wikitext dataset! Once this
+is done, we need to save the model and reinstantiate it with the unknown token, or this token won't
+be used. This will be simplified in a further release, to let you set the :entity:`unk_token` when
+first instantiating the model.
+
+.. only:: python
+
+    .. literalinclude:: ../../bindings/python/tests/documentation/test_quicktour.py
+        :language: python
+        :start-after: START reload_model
+        :end-before: END reload_model
+        :dedent: 8
+
+.. only:: rust
+
+    .. literalinclude:: ../../tokenizers/tests/documentation.rs
+        :language: rust
+        :start-after: START quicktour_reload_model
+        :end-before: END quicktour_reload_model
+        :dedent: 4
+
+.. only:: node
+
+    .. literalinclude:: ../../bindings/node/examples/documentation/quicktour.test.ts
+        :language: javascript
+        :start-after: START reload_model
+        :end-before: END reload_model
+        :dedent: 8
+
 To save the tokenizer in one file that contains all its configuration and vocabulary, just use the
 :entity:`Tokenizer.save` method:
 

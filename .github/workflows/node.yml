@@ -76,4 +76,4 @@ jobs:
 
       - name: Run JS tests
         working-directory: ./bindings/node
-        run: npm test
+        run: make test

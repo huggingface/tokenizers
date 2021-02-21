@@ -22,7 +22,38 @@ use super::pre_tokenizers::PyPreTokenizer;
 use super::trainers::PyTrainer;
 use crate::processors::PyPostProcessor;
 
+/// Represents a token that can be be added to a :class:`~tokenizers.Tokenizer`.
+/// It can have special options that defines the way it should behave.
+///
+/// Args:
+///     content (:obj:`str`): The content of the token
+///
+///     single_word (:obj:`bool`, defaults to :obj:`False`):
+///         Defines whether this token should only match single words. If :obj:`True`, this
+///         token will never match inside of a word. For example the token ``ing`` would match
+///         on ``tokenizing`` if this option is :obj:`False`, but not if it is :obj:`True`.
+///         The notion of "`inside of a word`" is defined by the word boundaries pattern in
+///         regular expressions (ie. the token should start and end with word boundaries).
+///
+///     lstrip (:obj:`bool`, defaults to :obj:`False`):
+///         Defines whether this token should strip all potential whitespaces on its left side.
+///         If :obj:`True`, this token will greedily match any whitespace on its left. For
+///         example if we try to match the token ``[MASK]`` with ``lstrip=True``, in the text
+///         ``"I saw a [MASK]"``, we would match on ``" [MASK]"``. (Note the space on the left).
+///
+///     rstrip (:obj:`bool`, defaults to :obj:`False`):
+///         Defines whether this token should strip all potential whitespaces on its right
+///         side. If :obj:`True`, this token will greedily match any whitespace on its right.
+///         It works just like :obj:`lstrip` but on the right.
+///
+///     normalized (:obj:`bool`, defaults to :obj:`True` with :meth:`~tokenizers.Tokenizer.add_tokens` and :obj:`False` with :meth:`~tokenizers.Tokenizer.add_special_tokens`):
+///         Defines whether this token should match against the normalized version of the input
+///         text. For example, with the added token ``"yesterday"``, and a normalizer in charge of
+///         lowercasing the text, the token could be extract from the input ``"I saw a lion
+///         Yesterday"``.
+///
 #[pyclass(dict, module = "tokenizers", name=AddedToken)]
+#[text_signature = "(content, single_word=False, lstrip=False, rstrip=False, normalized=True)"]
 pub struct PyAddedToken {
     pub content: String,
     pub is_special_token: bool,
@@ -80,7 +111,7 @@ impl PyAddedToken {
 impl PyAddedToken {
     #[new]
     #[args(kwargs = "**")]
-    fn new(content: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<Self> {
+    fn __new__(content: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<Self> {
         let mut token = PyAddedToken::from(content.unwrap_or(""), None);
 
         if let Some(kwargs) = kwargs {
@@ -123,26 +154,31 @@ impl PyAddedToken {
         }
     }
 
+    /// Get the content of this :obj:`AddedToken`
     #[getter]
     fn get_content(&self) -> &str {
         &self.content
     }
 
+    /// Get the value of the :obj:`rstrip` option
     #[getter]
     fn get_rstrip(&self) -> bool {
         self.get_token().rstrip
     }
 
+    /// Get the value of the :obj:`lstrip` option
     #[getter]
     fn get_lstrip(&self) -> bool {
         self.get_token().lstrip
     }
 
+    /// Get the value of the :obj:`single_word` option
     #[getter]
     fn get_single_word(&self) -> bool {
         self.get_token().single_word
     }
 
+    /// Get the value of the :obj:`normalized` option
     #[getter]
     fn get_normalized(&self) -> bool {
         self.get_token().normalized
@@ -364,7 +400,15 @@ impl<'s> From<PreTokenizedEncodeInput<'s>> for tk::tokenizer::EncodeInput<'s> {
 
 type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProcessor, PyDecoder>;
 
+/// A :obj:`Tokenizer` works as a pipeline. It processes some raw text as input
+/// and outputs an :class:`~tokenizers.Encoding`.
+///
+/// Args:
+///     model (:class:`~tokenizers.models.Model`):
+///         The core algorithm that this :obj:`Tokenizer` should be using.
+///
 #[pyclass(dict, module = "tokenizers", name=Tokenizer)]
+#[text_signature = "(model)"]
 #[derive(Clone)]
 pub struct PyTokenizer {
     tokenizer: Tokenizer,
@@ -418,19 +462,48 @@ impl PyTokenizer {
         Ok(args)
     }
 
+    /// Instantiate a new :class:`~tokenizers.Tokenizer` from the given JSON string.
+    ///
+    /// Args:
+    ///     json (:obj:`str`):
+    ///         A valid JSON string representing a previously serialized
+    ///         :class:`~tokenizers.Tokenizer`
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
-    fn from_str(s: &str) -> PyResult<Self> {
-        let tokenizer: PyResult<_> = ToPyResult(s.parse()).into();
+    #[text_signature = "(json)"]
+    fn from_str(json: &str) -> PyResult<Self> {
+        let tokenizer: PyResult<_> = ToPyResult(json.parse()).into();
         Ok(Self::new(tokenizer?))
     }
 
+    /// Instantiate a new :class:`~tokenizers.Tokenizer` from the file at the given path.
+    ///
+    /// Args:
+    ///     path (:obj:`str`):
+    ///         A path to a local JSON file representing a previously serialized
+    ///         :class:`~tokenizers.Tokenizer`
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
+    #[text_signature = "(path)"]
     fn from_file(path: &str) -> PyResult<Self> {
         let tokenizer: PyResult<_> = ToPyResult(Tokenizer::from_file(path)).into();
         Ok(Self::new(tokenizer?))
     }
 
+    /// Instantiate a new :class:`~tokenizers.Tokenizer` from the given buffer.
+    ///
+    /// Args:
+    ///     buffer (:obj:`bytes`):
+    ///         A buffer containing a previously serialized :class:`~tokenizers.Tokenizer`
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
+    #[text_signature = "(buffer)"]
     fn from_buffer(buffer: &PyBytes) -> PyResult<Self> {
         let tokenizer = serde_json::from_slice(buffer.as_bytes()).map_err(|e| {
             exceptions::PyValueError::new_err(format!(
@@ -441,12 +514,30 @@ impl PyTokenizer {
         Ok(Self { tokenizer })
     }
 
+    /// Gets a serialized string representing this :class:`~tokenizers.Tokenizer`.
+    ///
+    /// Args:
+    ///     pretty (:obj:`bool`, defaults to :obj:`False`):
+    ///         Whether the JSON string should be pretty formatted.
+    ///
+    /// Returns:
+    ///     :obj:`str`: A string representing the serialized Tokenizer
     #[args(pretty = false)]
+    #[text_signature = "($self, pretty=False)"]
     fn to_str(&self, pretty: bool) -> PyResult<String> {
         ToPyResult(self.tokenizer.to_string(pretty)).into()
     }
 
+    /// Save the :class:`~tokenizers.Tokenizer` to the file at the given path.
+    ///
+    /// Args:
+    ///     path (:obj:`str`):
+    ///         A path to a file in which to save the serialized tokenizer.
+    ///
+    ///     pretty (:obj:`bool`, defaults to :obj:`False`):
+    ///         Whether the JSON file should be pretty formatted.
     #[args(pretty = false)]
+    #[text_signature = "($self, pretty=False)"]
     fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
         ToPyResult(self.tokenizer.save(path, pretty)).into()
     }
@@ -458,17 +549,49 @@ impl PyTokenizer {
             .map_or(0, |p| p.added_tokens(is_pair)))
     }
 
+    /// Get the underlying vocabulary
+    ///
+    /// Args:
+    ///     with_added_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to include the added tokens
+    ///
+    /// Returns:
+    ///     :obj:`Dict[str, int]`: The vocabulary
     #[args(with_added_tokens = true)]
+    #[text_signature = "($self, with_added_tokens=True)"]
     fn get_vocab(&self, with_added_tokens: bool) -> PyResult<HashMap<String, u32>> {
         Ok(self.tokenizer.get_vocab(with_added_tokens))
     }
 
+    /// Get the size of the underlying vocabulary
+    ///
+    /// Args:
+    ///     with_added_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to include the added tokens
+    ///
+    /// Returns:
+    ///     :obj:`int`: The size of the vocabulary
     #[args(with_added_tokens = true)]
+    #[text_signature = "($self, with_added_tokens=True)"]
     fn get_vocab_size(&self, with_added_tokens: bool) -> PyResult<usize> {
         Ok(self.tokenizer.get_vocab_size(with_added_tokens))
     }
 
+    /// Enable truncation
+    ///
+    /// Args:
+    ///     max_length (:obj:`int`):
+    ///         The max length at which to truncate
+    ///
+    ///     stride (:obj:`int`, `optional`):
+    ///         The length of the previous first sequence to be included in the overflowing
+    ///         sequence
+    ///
+    ///     strategy (:obj:`str`, `optional`, defaults to :obj:`longest_first`):
+    ///         The strategy used to truncation. Can be one of ``longest_first``, ``only_first`` or
+    ///         ``only_second``.
     #[args(kwargs = "**")]
+    #[text_signature = "($self, max_length, stride=0, strategy='longest_first')"]
     fn enable_truncation(&mut self, max_length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut params = TruncationParams::default();
         params.max_length = max_length;
@@ -502,10 +625,19 @@ impl PyTokenizer {
         Ok(())
     }
 
+    /// Disable truncation
+    #[text_signature = "($self)"]
     fn no_truncation(&mut self) {
         self.tokenizer.with_truncation(None);
     }
 
+    /// Get the currently set truncation parameters
+    ///
+    /// `Cannot set, use` :meth:`~tokenizers.Tokenizer.enable_truncation` `instead`
+    ///
+    /// Returns:
+    ///     (:obj:`dict`, `optional`):
+    ///         A dict with the current truncation parameters if truncation is enabled
     #[getter]
     fn get_truncation<'py>(&self, py: Python<'py>) -> PyResult<Option<&'py PyDict>> {
         self.tokenizer.get_truncation().map_or(Ok(None), |params| {
@@ -519,7 +651,31 @@ impl PyTokenizer {
         })
     }
 
+    /// Enable the padding
+    ///
+    /// Args:
+    ///     direction (:obj:`str`, `optional`, defaults to :obj:`right`):
+    ///         The direction in which to pad. Can be either ``right`` or ``left``
+    ///
+    ///     pad_to_multiple_of (:obj:`int`, `optional`):
+    ///         If specified, the padding length should always snap to the next multiple of the
+    ///         given value. For example if we were going to pad witha length of 250 but
+    ///         ``pad_to_multiple_of=8`` then we will pad to 256.
+    ///
+    ///     pad_id (:obj:`int`, defaults to 0):
+    ///         The id to be used when padding
+    ///
+    ///     pad_type_id (:obj:`int`, defaults to 0):
+    ///         The type id to be used when padding
+    ///
+    ///     pad_token (:obj:`str`, defaults to :obj:`[PAD]`):
+    ///         The pad token to be used when padding
+    ///
+    ///     length (:obj:`int`, `optional`):
+    ///         If specified, the length at which to pad. If not specified we pad using the size of
+    ///         the longest sequence in a batch.
     #[args(kwargs = "**")]
+    #[text_signature = "($self, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]', length=None, pad_to_multiple_of=None)"]
     fn enable_padding(&mut self, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut params = PaddingParams::default();
 
@@ -576,10 +732,19 @@ impl PyTokenizer {
         Ok(())
     }
 
+    /// Disable padding
+    #[text_signature = "($self)"]
     fn no_padding(&mut self) {
         self.tokenizer.with_padding(None);
     }
 
+    /// Get the current padding parameters
+    ///
+    /// `Cannot be set, use` :meth:`~tokenizers.Tokenizer.enable_padding` `instead`
+    ///
+    /// Returns:
+    ///     (:obj:`dict`, `optional`):
+    ///         A dict with the current padding parameters if padding is enabled
     #[getter]
     fn get_padding<'py>(&self, py: Python<'py>) -> PyResult<Option<&'py PyDict>> {
         self.tokenizer.get_padding().map_or(Ok(None), |params| {
@@ -602,15 +767,42 @@ impl PyTokenizer {
         })
     }
 
-    /// Input can be:
-    /// encode("A single sequence")
-    /// encode("A sequence", "And its pair")
-    /// encode([ "A", "pre", "tokenized", "sequence" ], is_pretokenized=True)
-    /// encode(
-    ///     [ "A", "pre", "tokenized", "sequence" ], [ "And", "its", "pair" ],
-    ///     is_pretokenized=True
-    /// )
+    /// Encode the given sequence and pair. This method can process raw text sequences
+    /// as well as already pre-tokenized sequences.
+    ///
+    /// Example:
+    ///     Here are some examples of the inputs that are accepted::
+    ///
+    ///         encode("A single sequence")`
+    ///         encode("A sequence", "And its pair")`
+    ///         encode([ "A", "pre", "tokenized", "sequence" ], is_pretokenized=True)`
+    ///         encode(
+    ///             [ "A", "pre", "tokenized", "sequence" ], [ "And", "its", "pair" ],
+    ///             is_pretokenized=True
+    ///         )
+    ///
+    /// Args:
+    ///     sequence (:obj:`~tokenizers.InputSequence`):
+    ///         The main input sequence we want to encode. This sequence can be either raw
+    ///         text or pre-tokenized, according to the ``is_pretokenized`` argument:
+    ///
+    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextInputSequence`
+    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedInputSequence`
+    ///
+    ///     pair (:obj:`~tokenizers.InputSequence`, `optional`):
+    ///         An optional input sequence. The expected format is the same that for ``sequence``.
+    ///
+    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+    ///         Whether the input is already pre-tokenized
+    ///
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to add the special tokens
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.Encoding`: The encoded result
+    ///
     #[args(pair = "None", is_pretokenized = "false", add_special_tokens = "true")]
+    #[text_signature = "($self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True)"]
     fn encode(
         &self,
         sequence: &PyAny,
@@ -643,14 +835,39 @@ impl PyTokenizer {
         .into()
     }
 
-    /// Input can be:
-    /// encode_batch([
-    ///   "A single sequence",
-    ///   ("A tuple with a sequence", "And its pair"),
-    ///   [ "A", "pre", "tokenized", "sequence" ],
-    ///   ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
-    /// ])
+    /// Encode the given batch of inputs. This method accept both raw text sequences
+    /// as well as already pre-tokenized sequences.
+    ///
+    /// Example:
+    ///     Here are some examples of the inputs that are accepted::
+    ///
+    ///         encode_batch([
+    ///             "A single sequence",
+    ///             ("A tuple with a sequence", "And its pair"),
+    ///             [ "A", "pre", "tokenized", "sequence" ],
+    ///             ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
+    ///         ])
+    ///
+    /// Args:
+    ///     input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
+    ///         A list of single sequences or pair sequences to encode. Each sequence
+    ///         can be either raw text or pre-tokenized, according to the ``is_pretokenized``
+    ///         argument:
+    ///
+    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
+    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
+    ///
+    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+    ///         Whether the input is already pre-tokenized
+    ///
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to add the special tokens
+    ///
+    /// Returns:
+    ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
+    ///
     #[args(is_pretokenized = "false", add_special_tokens = "true")]
+    #[text_signature = "($self, input, is_pretokenized=False, add_special_tokens=True)"]
     fn encode_batch(
         &self,
         input: Vec<&PyAny>,
@@ -679,37 +896,88 @@ impl PyTokenizer {
         })
     }
 
-    fn decode(&self, ids: Vec<u32>, skip_special_tokens: Option<bool>) -> PyResult<String> {
-        ToPyResult(
-            self.tokenizer
-                .decode(ids, skip_special_tokens.unwrap_or(true)),
-        )
-        .into()
+    /// Decode the given list of ids back to a string
+    ///
+    /// This is used to decode anything coming back from a Language Model
+    ///
+    /// Args:
+    ///     ids (A :obj:`List/Tuple` of :obj:`int`):
+    ///         The list of ids that we want to decode
+    ///
+    ///     skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether the special tokens should be removed from the decoded string
+    ///
+    /// Returns:
+    ///     :obj:`str`: The decoded string
+    #[args(skip_special_tokens = true)]
+    #[text_signature = "($self, ids, skip_special_tokens=True)"]
+    fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> PyResult<String> {
+        ToPyResult(self.tokenizer.decode(ids, skip_special_tokens)).into()
     }
 
+    /// Decode a batch of ids back to their corresponding string
+    ///
+    /// Args:
+    ///     sequences (:obj:`List` of :obj:`List[int]`):
+    ///         The batch of sequences we want to decode
+    ///
+    ///     skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether the special tokens should be removed from the decoded strings
+    ///
+    /// Returns:
+    ///     :obj:`List[str]`: A list of decoded strings
+    #[args(skip_special_tokens = true)]
+    #[text_signature = "($self, sequences, skip_special_tokens=True)"]
     fn decode_batch(
         &self,
-        sentences: Vec<Vec<u32>>,
-        skip_special_tokens: Option<bool>,
+        sequences: Vec<Vec<u32>>,
+        skip_special_tokens: bool,
     ) -> PyResult<Vec<String>> {
         let gil = Python::acquire_gil();
         gil.python().allow_threads(|| {
-            ToPyResult(
-                self.tokenizer
-                    .decode_batch(sentences, skip_special_tokens.unwrap_or(true)),
-            )
-            .into()
+            ToPyResult(self.tokenizer.decode_batch(sequences, skip_special_tokens)).into()
         })
     }
 
+    /// Convert the given token to its corresponding id if it exists
+    ///
+    /// Args:
+    ///     token (:obj:`str`):
+    ///         The token to convert
+    ///
+    /// Returns:
+    ///     :obj:`Optional[int]`: An optional id, :obj:`None` if out of vocabulary
+    #[text_signature = "($self, token)"]
     fn token_to_id(&self, token: &str) -> Option<u32> {
         self.tokenizer.token_to_id(token)
     }
 
+    /// Convert the given id to its corresponding token if it exists
+    ///
+    /// Args:
+    ///     id (:obj:`int`):
+    ///         The id to convert
+    ///
+    /// Returns:
+    ///     :obj:`Optional[str]`: An optional token, :obj:`None` if out of vocabulary
+    #[text_signature = "($self, id)"]
     fn id_to_token(&self, id: u32) -> Option<&str> {
         self.tokenizer.id_to_token(id)
     }
 
+    /// Add the given tokens to the vocabulary
+    ///
+    /// The given tokens are added only if they don't already exist in the vocabulary.
+    /// Each token then gets a new attributed id.
+    ///
+    /// Args:
+    ///     tokens (A :obj:`List` of :class:`~tokenizers.AddedToken` or :obj:`str`):
+    ///         The list of tokens we want to add to the vocabulary. Each token can be either a
+    ///         string or an instance of :class:`~tokenizers.AddedToken` for more customization.
+    ///
+    /// Returns:
+    ///     :obj:`int`: The number of tokens that were created in the vocabulary
+    #[text_signature = "($self, tokens)"]
     fn add_tokens(&mut self, tokens: &PyList) -> PyResult<usize> {
         let tokens = tokens
             .into_iter()
@@ -730,6 +998,23 @@ impl PyTokenizer {
         Ok(self.tokenizer.add_tokens(&tokens))
     }
 
+    /// Add the given special tokens to the Tokenizer.
+    ///
+    /// If these tokens are already part of the vocabulary, it just let the Tokenizer know about
+    /// them. If they don't exist, the Tokenizer creates them, giving them a new id.
+    ///
+    /// These special tokens will never be processed by the model (ie won't be split into
+    /// multiple tokens), and they can be removed from the output when decoding.
+    ///
+    /// Args:
+    ///     tokens (A :obj:`List` of :class:`~tokenizers.AddedToken` or :obj:`str`):
+    ///         The list of special tokens we want to add to the vocabulary. Each token can either
+    ///         be a string or an instance of :class:`~tokenizers.AddedToken` for more
+    ///         customization.
+    ///
+    /// Returns:
+    ///     :obj:`int`: The number of tokens that were created in the vocabulary
+    #[text_signature = "($self, tokens)"]
     fn add_special_tokens(&mut self, tokens: &PyList) -> PyResult<usize> {
         let tokens = tokens
             .into_iter()
@@ -756,7 +1041,30 @@ impl PyTokenizer {
             .allow_threads(|| ToPyResult(self.tokenizer.train_and_replace(trainer, files)).into())
     }
 
+    /// Apply all the post-processing steps to the given encodings.
+    ///
+    /// The various steps are:
+    ///
+    ///     1. Truncate according to the set truncation params (provided with
+    ///        :meth:`~tokenizers.Tokenizer.enable_truncation`)
+    ///     2. Apply the :class:`~tokenizers.processors.PostProcessor`
+    ///     3. Pad according to the set padding params (provided with
+    ///        :meth:`~tokenizers.Tokenizer.enable_padding`)
+    ///
+    /// Args:
+    ///     encoding (:class:`~tokenizers.Encoding`):
+    ///         The :class:`~tokenizers.Encoding` corresponding to the main sequence.
+    ///
+    ///     pair (:class:`~tokenizers.Encoding`, `optional`):
+    ///         An optional :class:`~tokenizers.Encoding` corresponding to the pair sequence.
+    ///
+    ///     add_special_tokens (:obj:`bool`):
+    ///         Whether to add the special tokens
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.Encoding`: The final post-processed encoding
     #[args(pair = "None", add_special_tokens = true)]
+    #[text_signature = "($self, encoding, pair=None, add_special_tokens=True)"]
     fn post_process(
         &self,
         encoding: &PyEncoding,
@@ -775,16 +1083,19 @@ impl PyTokenizer {
         .into()
     }
 
+    /// The :class:`~tokenizers.models.Model` in use by the Tokenizer
     #[getter]
     fn get_model(&self) -> PyResult<PyObject> {
         self.tokenizer.get_model().get_as_subtype()
     }
 
+    /// Set the :class:`~tokenizers.models.Model`
     #[setter]
     fn set_model(&mut self, model: PyRef<PyModel>) {
         self.tokenizer.with_model(model.clone());
     }
 
+    /// The `optional` :class:`~tokenizers.normalizers.Normalizer` in use by the Tokenizer
     #[getter]
     fn get_normalizer(&self) -> PyResult<PyObject> {
         if let Some(n) = self.tokenizer.get_normalizer() {
@@ -794,11 +1105,13 @@ impl PyTokenizer {
         }
     }
 
+    /// Set the :class:`~tokenizers.normalizers.Normalizer`
     #[setter]
     fn set_normalizer(&mut self, normalizer: PyRef<PyNormalizer>) {
         self.tokenizer.with_normalizer(normalizer.clone());
     }
 
+    /// The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
     #[getter]
     fn get_pre_tokenizer(&self) -> PyResult<PyObject> {
         if let Some(pt) = self.tokenizer.get_pre_tokenizer() {
@@ -808,11 +1121,13 @@ impl PyTokenizer {
         }
     }
 
+    /// Set the :class:`~tokenizers.normalizers.Normalizer`
     #[setter]
     fn set_pre_tokenizer(&mut self, pretok: PyRef<PyPreTokenizer>) {
         self.tokenizer.with_pre_tokenizer(pretok.clone());
     }
 
+    /// The `optional` :class:`~tokenizers.processors.PostProcessor` in use by the Tokenizer
     #[getter]
     fn get_post_processor(&self) -> PyResult<PyObject> {
         if let Some(n) = self.tokenizer.get_post_processor() {
@@ -822,11 +1137,13 @@ impl PyTokenizer {
         }
     }
 
+    /// Set the :class:`~tokenizers.processors.PostProcessor`
     #[setter]
     fn set_post_processor(&mut self, processor: PyRef<PyPostProcessor>) {
         self.tokenizer.with_post_processor(processor.clone());
     }
 
+    /// The `optional` :class:`~tokenizers.decoders.Decoder` in use by the Tokenizer
     #[getter]
     fn get_decoder(&self) -> PyResult<PyObject> {
         if let Some(dec) = self.tokenizer.get_decoder() {
@@ -836,6 +1153,7 @@ impl PyTokenizer {
         }
     }
 
+    /// Set the :class:`~tokenizers.decoders.Decoder`
     #[setter]
     fn set_decoder(&mut self, decoder: PyRef<PyDecoder>) {
         self.tokenizer.with_decoder(decoder.clone());

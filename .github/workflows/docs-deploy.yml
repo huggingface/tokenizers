@@ -1,0 +1,45 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+        with:
+          fetch-depth: 0
+
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.DOC_SSH_KEY }}
+          name: id_rsa
+          known_hosts: ${{ secrets.DOC_KNOWN_HOST }}
+
+      - name: Install Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.6
+
+      - name: Install Python dependencies
+        run: pip install sphinx sphinx_rtd_theme setuptools-rust
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build tokenizers
+        working-directory: ./bindings/python
+        run: python setup.py install
+
+      - name: Deploy documentation
+        env:
+          HOST_NAME: ${{ secrets.DOC_HOST }}
+          DOC_PATH: ${{ secrets.DOC_PATH }}
+        run: ./.github/deploy_doc.sh

@@ -255,130 +255,184 @@ class Regex:
         pass
 
 class Encoding:
-    """ An Encoding as returned by the Tokenizer """
+    """
+    The :class:`~tokenizers.Encoding` represents the output of a :class:`~tokenizers.Tokenizer`.
+    """
 
     @staticmethod
     def merge(encodings: List[Encoding], growing_offsets: bool = True) -> Encoding:
-        """Merge the list of Encoding into one final Encoding
+        """Merge the list of encodings into one final :class:`~tokenizers.Encoding`
 
         Args:
-            encodings: List[Encoding]:
-                The list of encodings
+            encodings (A :obj:`List` of :class:`~tokenizers.Encoding`):
+                The list of encodings that should be merged in one
 
-            growing_offsets: bool:
+            growing_offsets (:obj:`bool`, defaults to :obj:`True`):
                 Whether the offsets should accumulate while merging
 
         Returns:
-            The resulting Encoding
+            :class:`~tokenizers.Encoding`: The resulting Encoding
         """
         pass
     @property
     def ids(self) -> List[int]:
-        """ The tokenized ids """
+        """The generated IDs
+
+        The IDs are the main input to a Language Model. They are the token indices,
+        the numerical representations that a LM understands.
+
+        Returns:
+            :obj:`List[int]`: The list of IDs
+        """
         pass
     @property
     def tokens(self) -> List[str]:
-        """ The tokenized strings """
+        """The generated tokens
+
+        They are the string representation of the IDs.
+
+        Returns:
+            :obj:`List[str]`: The list of tokens
+        """
         pass
     @property
     def words(self) -> List[Optional[int]]:
-        """ The tokenized words index """
+        """The generated word indices.
+
+        They represent the index of the word associated to each token.
+        When the input is pre-tokenized, they correspond to the ID of the given input label,
+        otherwise they correspond to the words indices as defined by the
+        :class:`~tokenizers.pre_tokenizers.PreTokenizer` that was used.
+
+        For special tokens and such (any token that was generated from something that was
+        not part of the input), the output is :obj:`None`
+
+        Returns:
+            A :obj:`List` of :obj:`Optional[int]`: A list of optional word index.
+        """
         pass
     @property
     def type_ids(self) -> List[int]:
-        """ The type ids """
+        """The generated type IDs
+
+        Generally used for tasks like sequence classification or question answering,
+        these tokens let the LM know which input sequence corresponds to each tokens.
+
+        Returns:
+            :obj:`List[int]`: The list of type ids
+        """
         pass
     @property
     def offsets(self) -> List[Offsets]:
-        """The offsets.
-        These offsets can be used to index any `IndexableString` directly. If you want to
-        index the original `str`, make sure to retrieve the converted offsets using the `.offsets`
-        method on the `original_str`.
+        """The offsets associated to each token
+
+        These offsets let's you slice the input string, and thus retrieve the original
+        part that led to producing the corresponding token.
+
+        Returns:
+            A :obj:`List` of :obj:`Tuple[int, int]`: The list of offsets
         """
         pass
     @property
     def special_tokens_mask(self) -> List[int]:
-        """ The special tokens mask """
+        """The special token mask
+
+        This indicates which tokens are special tokens, and which are not.
+
+        Returns:
+            :obj:`List[int]`: The special tokens mask
+        """
         pass
     @property
     def attention_mask(self) -> List[int]:
-        """ The attention mask """
+        """The attention mask
+
+        This indicates to the LM which tokens should be attended to, and which should not.
+        This is especially important when batching sequences, where we need to applying
+        padding.
+
+        Returns:
+           :obj:`List[int]`: The attention mask
+        """
         pass
     @property
     def overflowing(self) -> Optional[Encoding]:
-        """ The overflowing encoding, after truncation """
+        """A :obj:`List` of overflowing :class:`~tokenizers.Encoding`
+
+        When using truncation, the :class:`~tokenizers.Tokenizer` takes care of splitting
+        the output into as many pieces as required to match the specified maximum length.
+        This field lets you retrieve all the subsequent pieces.
+
+        When you use pairs of sequences, the overflowing pieces will contain enough
+        variations to cover all the possible combinations, while respecting the provided
+        maximum length.
+        """
         pass
     def word_to_tokens(self, word_index: int) -> Optional[Tuple[int, int]]:
-        """
-        Get the encoded tokens corresponding to the word at the given index in the input
-        sequence, with the form [start_token, end_token + 1]
+        """Get the encoded tokens corresponding to the word at the given index
+        in the input sequence.
 
         Args:
-            word_index: int:
-                The index of the word in the input sequence.
+            word_index (:obj:`int`):
+                The index of a word in the input sequence.
 
         Returns:
-            The range of tokens with the form [start_token, end_token + 1]
+            :obj:`Tuple[int, int]`: The range of tokens: :obj:`(first, last + 1)`
         """
         pass
     def word_to_chars(self, word_index: int) -> Optional[Offsets]:
-        """
-        Get the offsets of the word at the given index in the input sequence.
+        """Get the offsets of the word at the given index in the input sequence.
 
         Args:
-            word_index: int:
-                The index of the word in the input sequence.
+            word_index (:obj:`int`):
+                The index of a word in the input sequence.
 
         Returns:
-            The word offsets
+            :obj:`Tuple[int, int]`: The range of characters (span) :obj:`(first, last + 1)`
         """
         pass
     def token_to_chars(self, token_index: int) -> Optional[Offsets]:
-        """
-        Get the offsets of the token at the given index
+        """Get the offsets of the token at the given index
 
         Args:
-            token_index: int:
-                The index of the token in the encoded sequence.
+            token_index (:obj:`int`):
+                The index of a token in the encoded sequence.
 
         Returns:
-            The token offsets
+            :obj:`Tuple[int, int]`: The token offsets :obj:`(first, last + 1)`
         """
         pass
     def token_to_word(self, token_index: int) -> Optional[int]:
-        """
-        Get the word that contains the token at the given index
+        """Get the word that contains the token at the given index
 
         Args:
-            token_index: int:
-                The index of the token in the encoded sequence.
+            token_index (:obj:`int`):
+                The index of a token in the encoded sequence.
 
         Returns:
-            The index of the word in the input sequence.
+            :obj:`int`: The index of the word in the input sequence.
         """
         pass
     def char_to_token(self, pos: int) -> Optional[int]:
-        """
-        Get the token that contains the char at the given position
+        """Get the token that contains the char at the given position
 
         Args:
-            pos: int:
+            char_pos (:obj:`int`):
                 The position of a char in the input string
 
         Returns:
-            The index of the token that contains this char
+            :obj:`int`: The index of the token that contains this char in the encoded sequence
         """
         pass
     def char_to_word(self, pos: int) -> Optional[int]:
-        """
-        Get the word that contains the given char.
+        """Get the word that contains the char at the given position
 
         Args:
-            pos: int:
+            char_pos (:obj:`int`):
                 The position of a char in the input string
 
         Returns:
-            The index of the word that contains this char
+            :obj:`int`: The index of the word that contains this char in the input sequence
         """
         pass
     def pad(
@@ -389,42 +443,69 @@ class Encoding:
         pad_token: Optional[str] = "[PAD]",
         direction: Optional[str] = "right",
     ):
-        """Pad the current Encoding at the given length
+        """Pad the :class:`~tokenizers.Encoding` at the given length
 
         Args:
-            length: int:
-                The length at which to pad
+            length (:obj:`int`):
+                The desired length
 
-            direction: (`optional`) str:
-                Can be one of: `right` or `left`
+            direction: (:obj:`str`, defaults to :obj:`right`):
+                The expected padding direction. Can be either :obj:`right` or :obj:`left`
 
-            pad_id: (`optional`) unsigned int:
-                The indice to be used when padding
+            pad_id (:obj:`int`, defaults to :obj:`0`):
+                The ID corresponding to the padding token
 
-            pad_type_id: (`optional`) unsigned int:
-                The type indice to be used when padding
+            pad_type_id (:obj:`int`, defaults to :obj:`0`):
+                The type ID corresponding to the padding token
 
-            pad_token: (`optional`) str:
-                The pad token to be used when padding
+            pad_token (:obj:`str`, defaults to `[PAD]`):
+                The pad token to use
         """
         pass
     def truncate(self, max_length: int, stride: Optional[int] = 0):
-        """Truncate the current Encoding at the given max_length
+        """Truncate the :class:`~tokenizers.Encoding` at the given length
 
         Args:
-            max_length: int:
-                The maximum length to be kept
+            max_length (:obj:`int`):
+                The desired length
 
-            stride: (`optional`) unsigned int:
-                The length of the previous first sequence to be included
-                in the overflowing sequence
+            stride (:obj:`int`, defaults to :obj:`0`):
+                The length of previous content to be included in each overflowing piece
         """
         pass
 
 class AddedToken:
-    """AddedToken represents a token to be added to a Tokenizer
+    """AddedToken
 
-    An AddedToken can have special options defining the way it should behave.
+    Represents a token that can be be added to a :class:`~tokenizers.Tokenizer`.
+    It can have special options that defines the way it should behave.
+
+    Args:
+        content (:obj:`str`): The content of the token
+
+        single_word (:obj:`bool`, defaults to :obj:`False`):
+            Defines whether this token should only match single words. If :obj:`True`, this
+            token will never match inside of a word. For example the token ``ing`` would match
+            on ``tokenizing`` if this option is :obj:`False`, but not if it is :obj:`True`.
+            The notion of "`inside of a word`" is defined by the word boundaries pattern in
+            regular expressions (ie. the token should start and end with word boundaries).
+
+        lstrip (:obj:`bool`, defaults to :obj:`False`):
+            Defines whether this token should strip all potential whitespaces on its left side.
+            If :obj:`True`, this token will greedily match any whitespace on its left. For
+            example if we try to match the token ``[MASK]`` with ``lstrip=True``, in the text
+            ``"I saw a [MASK]"``, we would match on ``" [MASK]"``. (Note the space on the left).
+
+        rstrip (:obj:`bool`, defaults to :obj:`False`):
+            Defines whether this token should strip all potential whitespaces on its right
+            side. If :obj:`True`, this token will greedily match any whitespace on its right.
+            It works just like :obj:`lstrip` but on the right.
+
+        normalized (:obj:`bool`, defaults to :obj:`True` with :meth:`~tokenizers.Tokenizer.add_tokens` and :obj:`False` with :meth:`~tokenizers.Tokenizer.add_special_tokens`):
+            Defines whether this token should match against the normalized version of the input
+            text. For example, with the added token ``"yesterday"``, and a normalizer in charge of
+            lowercasing the text, the token could be extract from the input ``"I saw a lion
+            Yesterday"``.
     """
 
     def __new__(
@@ -438,55 +519,54 @@ class AddedToken:
         """Instantiate a new AddedToken
 
         Args:
-            content: str:
-                The content of the token
+            content (:obj:`str`): The content of the token
 
-            single_word: bool
-                Whether this token should only match against single words. If True,
-                this token will never match inside of a word. For example the token `ing` would
-                match on `tokenizing` if this option if False, but not if this option is True.
+            single_word (:obj:`bool`, defaults to :obj:`False`):
+                Defines whether this token should only match single words. If :obj:`True`, this
+                token will never match inside of a word. For example the token ``ing`` would match
+                on ``tokenizing`` if this option is :obj:`False`, but not if it is :obj:`True`.
+                The notion of "`inside of a word`" is defined by the word boundaries pattern in
+                regular expressions (ie. the token should start and end with word boundaries).
 
-            lstrip: bool
-                Whether this token should strip all potential whitespaces on the left side.
-                If True, this token will greedily match any whitespace on the left. For example,
-                if we try to match the token `[MASK]` with lstrip=True, in the text `I saw a [MASK]`
-                we will match on ` [MASK]`.
+            lstrip (:obj:`bool`, defaults to :obj:`False`):
+                Defines whether this token should strip all potential whitespaces on its left side.
+                If :obj:`True`, this token will greedily match any whitespace on its left. For
+                example if we try to match the token ``[MASK]`` with ``lstrip=True``, in the text
+                ``"I saw a [MASK]"``, we would match on ``" [MASK]"``. (Note the space on the left).
 
-            rstrip: bool
-                Whether this token should strip all potential whitespaces on the right side.
-                If True, this token will greedily match any whitespace on the right. It works just
-                like lstrip, but on the right.
+            rstrip (:obj:`bool`, defaults to :obj:`False`):
+                Defines whether this token should strip all potential whitespaces on its right
+                side. If :obj:`True`, this token will greedily match any whitespace on its right.
+                It works just like :obj:`lstrip` but on the right.
 
-            normalized: bool:
-                Whether this token should be match the normalized version of the input text. For
-                example, with the added token `yesterday` and a normalizer in charge of lowercasing
-                the text, the token could be extract from the input `I saw a lion Yesterday`.
+            normalized (:obj:`bool`, defaults to :obj:`True` with :meth:`~tokenizers.Tokenizer.add_tokens` and :obj:`False` with :meth:`~tokenizers.Tokenizer.add_special_tokens`):
+                Defines whether this token should match against the normalized version of the input
+                text. For example, with the added token ``"yesterday"``, and a normalizer in charge of
+                lowercasing the text, the token could be extract from the input ``"I saw a lion
+                Yesterday"``.
         """
         pass
 
 class Tokenizer:
     """Tokenizer
 
-    A Tokenizer works as a pipeline, it processes some raw text as input and outputs
-    an `Encoding`.
+    A :obj:`Tokenizer` works as a pipeline. It processes some raw text as input
+    and outputs an :class:`~tokenizers.Encoding`.
 
-    The various steps of the pipeline are:
-        1. The `Normalizer`: in charge of normalizing the text. Common examples of
-           normalization are the unicode normalization standards, such as NFD or NFKC.
-        2. The `PreTokenizer`: in charge of creating initial words splits in the text.
-           The most common way of splitting text is simply on whitespace.
-        3. The `Model`: in charge of doing the actual tokenization. An example of a
-           `Model` would be `BPE` or `WordPiece`.
-        4. The `PostProcessor`: in charge of post-processing the `Encoding` to add anything
-           relevant that, for example, a language model would need, such as special tokens.
+    Args:
+        model (:class:`~tokenizers.models.Model`):
+            The core algorithm that this :obj:`Tokenizer` should be using.
     """
 
     def __new__(cls, model: models.Model) -> Tokenizer:
         """Instantiate a new Tokenizer using the given Model
 
+        A :obj:`Tokenizer` works as a pipeline. It processes some raw text as input
+        and outputs an :class:`~tokenizers.Encoding`.
+
         Args:
-            model: models.Model:
-                The model to be used with this Tokenizer
+            model (:class:`~tokenizers.models.Model`):
+                The core algorithm that this :obj:`Tokenizer` should be using.
 
         Returns:
             Tokenizer
@@ -494,57 +574,62 @@ class Tokenizer:
         pass
     @staticmethod
     def from_str(s: str) -> Tokenizer:
-        """Instantiate a new Tokenizer from the given JSON string
+        """Instantiate a new :class:`~tokenizers.Tokenizer` from the given JSON string.
 
         Args:
-            s: str:
-                A JSON string representation of the Tokenizer
+            json (:obj:`str`):
+                A valid JSON string representing a previously serialized
+                :class:`~tokenizers.Tokenizer`
 
         Returns:
-            Tokenizer
+            :class:`~tokenizers.Tokenizer`: The new tokenizer
         """
         pass
     @staticmethod
     def from_file(path: str) -> Tokenizer:
-        """Instantiate a new Tokenizer from the given file
+        """Instantiate a new :class:`~tokenizers.Tokenizer` from the file at the given path.
 
         Args:
-            path: str:
-                Path to a file containing a Tokenizer
+            path (:obj:`str`):
+                A path to a local JSON file representing a previously serialized
+                :class:`~tokenizers.Tokenizer`
 
         Returns:
-            Tokenizer
+            :class:`~tokenizers.Tokenizer`: The new tokenizer
         """
         pass
     @staticmethod
     def from_buffer(buffer: bytes) -> Tokenizer:
-        """Instantiate a new Tokenizer from the given buffer
+        """Instantiate a new :class:`~tokenizers.Tokenizer` from the given buffer.
 
         Args:
-            buffer: bytes:
-                A buffer used to instantiate a new Tokenizer
+            buffer (:obj:`bytes`):
+                A buffer containing a previously serialized :class:`~tokenizers.Tokenizer`
 
         Returns:
-            Tokenizer
+            :class:`~tokenizers.Tokenizer`: The new tokenizer
         """
         pass
     def to_str(self, pretty: bool = False) -> str:
-        """Get a serialized JSON version of the Tokenizer as a str
+        """Gets a serialized string representing this :class:`~tokenizers.Tokenizer`.
 
         Args:
-            pretty: bool:
-                Whether the JSON string should be prettified
+            pretty (:obj:`bool`, defaults to :obj:`False`):
+                Whether the JSON string should be pretty formatted.
 
         Returns:
-            str
+            :obj:`str`: A string representing the serialized Tokenizer
         """
         pass
     def save(self, path: str, pretty: bool = False):
-        """Save the Tokenizer as JSON to the given path
+        """Save the :class:`~tokenizers.Tokenizer` to the file at the given path.
 
         Args:
-            pretty: bool:
-                Whether the JSON string should be prettified
+            path (:obj:`str`):
+                A path to a file in which to save the serialized tokenizer.
+
+            pretty (:obj:`bool`, defaults to :obj:`False`):
+                Whether the JSON file should be pretty formatted.
         """
         pass
     @property
@@ -593,40 +678,41 @@ class Tokenizer:
         """
         pass
     def get_vocab(self, with_added_tokens: bool = True) -> Dict[str, int]:
-        """Returns the vocabulary
+        """Get the underlying vocabulary
 
         Args:
-            with_added_tokens: boolean:
-                Whether to include the added tokens in the vocabulary
+            with_added_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to include the added tokens
 
         Returns:
-            The vocabulary
+            :obj:`Dict[str, int]`: The vocabulary
         """
         pass
     def get_vocab_size(self, with_added_tokens: bool = True) -> int:
-        """Returns the size of the vocabulary
+        """Get the size of the underlying vocabulary
 
         Args:
-            with_added_tokens: boolean:
-                Whether to include the added tokens in the vocabulary's size
+            with_added_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to include the added tokens
 
         Returns:
-            The size of the vocabulary
+            :obj:`int`: The size of the vocabulary
         """
         pass
     def enable_truncation(self, max_length: int, stride: Optional[int], strategy: Optional[str]):
-        """Enable the truncation
+        """Enable truncation
 
         Args:
-            max_length: unsigned int:
-                The maximum length at which to truncate
+            max_length (:obj:`int`):
+                The max length at which to truncate
 
-            stride: (`optional`) unsigned int:
-                The length of the previous first sequence to be included
-                in the overflowing sequence
+            stride (:obj:`int`, `optional`):
+                The length of the previous first sequence to be included in the overflowing
+                sequence
 
-            strategy: (`optional) str:
-                Can be one of `longest_first`, `only_first` or `only_second`
+            strategy (:obj:`str`, `optional`, defaults to :obj:`longest_first`):
+                The strategy used to truncation. Can be one of ``longest_first``, ``only_first`` or
+                ``only_second``.
         """
         pass
     def no_truncation(self):
@@ -634,11 +720,13 @@ class Tokenizer:
         pass
     @property
     def truncation(self) -> Optional[dict]:
-        """Get the current truncation parameters
+        """Get the currently set truncation parameters
+
+        `Cannot set, use` :meth:`~tokenizers.Tokenizer.enable_truncation` `instead`
 
         Returns:
-            None if truncation is disabled, a dict with the current truncation parameters if
-            truncation is enabled
+            (:obj:`dict`, `optional`):
+                A dict with the current truncation parameters if truncation is enabled
         """
         pass
     def enable_padding(
@@ -653,26 +741,26 @@ class Tokenizer:
         """Enable the padding
 
         Args:
-            direction: (`optional`) str:
-                Can be one of: `right` or `left`
+            direction (:obj:`str`, `optional`, defaults to :obj:`right`):
+                The direction in which to pad. Can be either ``right`` or ``left``
 
-            pad_to_multiple_of: (`optional`) unsigned int:
-                If specified, the padding length should always snap to the next multiple of
-                the given value. For example if we were going to pad with a length of 250 but
-                `pad_to_multiple_of=8` then we will pad to 256.
+            pad_to_multiple_of (:obj:`int`, `optional`):
+                If specified, the padding length should always snap to the next multiple of the
+                given value. For example if we were going to pad witha length of 250 but
+                ``pad_to_multiple_of=8`` then we will pad to 256.
 
-            pad_id: (`optional`) unsigned int:
-                The indice to be used when padding
+            pad_id (:obj:`int`, defaults to 0):
+                The id to be used when padding
 
-            pad_type_id: (`optional`) unsigned int:
-                The type indice to be used when padding
+            pad_type_id (:obj:`int`, defaults to 0):
+                The type id to be used when padding
 
-            pad_token: (`optional`) str:
+            pad_token (:obj:`str`, defaults to :obj:`[PAD]`):
                 The pad token to be used when padding
 
-            length: (`optional`) unsigned int:
-                If specified, the length at which to pad. If not specified
-                we pad using the size of the longest sequence in a batch
+            length (:obj:`int`, `optional`):
+                If specified, the length at which to pad. If not specified we pad using the size of
+                the longest sequence in a batch.
         """
         pass
     def no_padding(self):
@@ -682,9 +770,11 @@ class Tokenizer:
     def padding(self) -> Optional[dict]:
         """Get the current padding parameters
 
+        `Cannot be set, use` :meth:`~tokenizers.Tokenizer.enable_padding` `instead`
+
         Returns:
-            None if padding is disabled, a dict with the currently set parameters
-            if the padding is enabled.
+            (:obj:`dict`, `optional`):
+                A dict with the current padding parameters if padding is enabled
         """
         pass
     def encode(
@@ -694,26 +784,39 @@ class Tokenizer:
         is_pretokenized: bool = False,
         add_special_tokens: bool = True,
     ) -> Encoding:
-        """Encode the given sequence and pair. This method can process raw text sequences as well
-        as already pre-tokenized sequences.
+        """Encode the given sequence and pair. This method can process raw text sequences
+        as well as already pre-tokenized sequences.
+
+        Example:
+            Here are some examples of the inputs that are accepted::
+
+                encode("A single sequence")`
+                encode("A sequence", "And its pair")`
+                encode([ "A", "pre", "tokenized", "sequence" ], is_pretokenized=True)`
+                encode(
+                    [ "A", "pre", "tokenized", "sequence" ], [ "And", "its", "pair" ],
+                    is_pretokenized=True
+                )
 
         Args:
-            sequence: InputSequence:
-                The sequence we want to encode. This sequence can be either raw text or
-                pre-tokenized, according to the `is_pretokenized` argument:
+            sequence (:obj:`~tokenizers.InputSequence`):
+                The main input sequence we want to encode. This sequence can be either raw
+                text or pre-tokenized, according to the ``is_pretokenized`` argument:
 
-                - If `is_pretokenized=False`: `InputSequence` is expected to be `str`
-                - If `is_pretokenized=True`: `InputSequence` is expected to be
-                    `Union[List[str], Tuple[str]]`
+                - If ``is_pretokenized=False``: :class:`~tokenizers.TextInputSequence`
+                - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedInputSequence`
 
-            is_pretokenized: bool:
+            pair (:obj:`~tokenizers.InputSequence`, `optional`):
+                An optional input sequence. The expected format is the same that for ``sequence``.
+
+            is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
                 Whether the input is already pre-tokenized
 
-            add_special_tokens: bool:
-                Whether to add the special tokens while encoding.
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add the special tokens
 
         Returns:
-            An Encoding
+            :class:`~tokenizers.Encoding`: The encoded result
         """
         pass
     def encode_batch(
@@ -722,109 +825,125 @@ class Tokenizer:
         is_pretokenized: bool = False,
         add_special_tokens: bool = True,
     ) -> List[Encoding]:
-        """Encode the given inputs. This method accept both raw text sequences as well as already
-        pre-tokenized sequences.
+        """Encode the given batch of inputs. This method accept both raw text sequences
+        as well as already pre-tokenized sequences.
+
+        Example:
+            Here are some examples of the inputs that are accepted::
+
+                encode_batch([
+                    "A single sequence",
+                    ("A tuple with a sequence", "And its pair"),
+                    [ "A", "pre", "tokenized", "sequence" ],
+                    ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
+                ])
 
         Args:
-            inputs: List[EncodeInput]:
-                A list of single sequences or pair sequences to encode. Each `EncodeInput` is
-                expected to be of the following form:
-                    `Union[InputSequence, Tuple[InputSequence, InputSequence]]`
+            input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
+                A list of single sequences or pair sequences to encode. Each sequence
+                can be either raw text or pre-tokenized, according to the ``is_pretokenized``
+                argument:
 
-                Each `InputSequence` can either be raw text or pre-tokenized,
-                according to the `is_pretokenized` argument:
+                - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
+                - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
 
-                - If `is_pretokenized=False`: `InputSequence` is expected to be `str`
-                - If `is_pretokenized=True`: `InputSequence` is expected to be
-                    `Union[List[str], Tuple[str]]`
+            is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+                Whether the input is already pre-tokenized
 
-            is_pretokenized: bool:
-                Whether the input is already pre-tokenized.
-
-            add_special_tokens: bool:
-                Whether to add the special tokens while encoding.
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add the special tokens
 
         Returns:
-            A list of Encoding
+            A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
+
         """
         pass
     def decode(self, ids: List[int], skip_special_tokens: Optional[bool] = True) -> str:
-        """Decode the given list of ids to a string sequence
+        """Decode the given list of ids back to a string
+
+        This is used to decode anything coming back from a Language Model
 
         Args:
-            ids: List[unsigned int]:
-                A list of ids to be decoded
+            ids (A :obj:`List/Tuple` of :obj:`int`):
+                The list of ids that we want to decode
 
-            skip_special_tokens: (`optional`) boolean:
-                Whether to remove all the special tokens from the output string
+            skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether the special tokens should be removed from the decoded string
 
         Returns:
-            The decoded string
+            :obj:`str`: The decoded string
         """
         pass
     def decode_batch(
         self, sequences: List[List[int]], skip_special_tokens: Optional[bool] = True
     ) -> str:
-        """Decode the list of sequences to a list of string sequences
+        """Decode a batch of ids back to their corresponding string
 
         Args:
-            sequences: List[List[unsigned int]]:
-                A list of sequence of ids to be decoded
+            sequences (:obj:`List` of :obj:`List[int]`):
+                The batch of sequences we want to decode
 
-            skip_special_tokens: (`optional`) boolean:
-                Whether to remove all the special tokens from the output strings
+            skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether the special tokens should be removed from the decoded strings
 
         Returns:
-            A list of decoded strings
+            :obj:`List[str]`: A list of decoded strings
         """
         pass
     def token_to_id(self, token: str) -> Optional[int]:
-        """Convert the given token to its corresponding id
+        """Convert the given token to its corresponding id if it exists
 
         Args:
-            token: str:
+            token (:obj:`str`):
                 The token to convert
 
         Returns:
-            The corresponding id if it exists, None otherwise
+            :obj:`Optional[int]`: An optional id, :obj:`None` if out of vocabulary
         """
         pass
     def id_to_token(self, id: int) -> Optional[str]:
-        """Convert the given token id to its corresponding string
+        """Convert the given id to its corresponding token if it exists
 
         Args:
-            token: id:
-                The token id to convert
+            id (:obj:`int`):
+                The id to convert
 
         Returns:
-            The corresponding string if it exists, None otherwise
+            :obj:`Optional[str]`: An optional token, :obj:`None` if out of vocabulary
         """
         pass
     def add_tokens(self, tokens: List[Union[str, AddedToken]]) -> int:
         """Add the given tokens to the vocabulary
 
+        The given tokens are added only if they don't already exist in the vocabulary.
+        Each token then gets a new attributed id.
+
         Args:
-            tokens: List[Union[str, AddedToken]]:
-                A list of tokens to add to the vocabulary. Each token can either be
-                a string, or an instance of AddedToken
+            tokens (A :obj:`List` of :class:`~tokenizers.AddedToken` or :obj:`str`):
+                The list of tokens we want to add to the vocabulary. Each token can be either a
+                string or an instance of :class:`~tokenizers.AddedToken` for more customization.
 
         Returns:
-            The number of tokens that were added to the vocabulary
+            :obj:`int`: The number of tokens that were created in the vocabulary
         """
         pass
     def add_special_tokens(self, tokens: List[Union[str, AddedToken]]) -> int:
-        """Add the given special tokens to the vocabulary, and treat them as special tokens.
+        """Add the given special tokens to the Tokenizer.
 
-        The special tokens will never be processed by the model, and will be
-        removed while decoding.
+        If these tokens are already part of the vocabulary, it just let the Tokenizer know about
+        them. If they don't exist, the Tokenizer creates them, giving them a new id.
+
+        These special tokens will never be processed by the model (ie won't be split into
+        multiple tokens), and they can be removed from the output when decoding.
 
         Args:
-            tokens: List[Union[str, AddedToken]]:
-                The list of special tokens to add. Each token can either be a string
-                or an instance of AddedToken
+            tokens (A :obj:`List` of :class:`~tokenizers.AddedToken` or :obj:`str`):
+                The list of special tokens we want to add to the vocabulary. Each token can either
+                be a string or an instance of :class:`~tokenizers.AddedToken` for more
+                customization.
 
         Returns:
-            The number of tokens that were added to the vocabulary
+            :obj:`int`: The number of tokens that were created in the vocabulary
         """
         pass
     def post_process(
@@ -836,21 +955,24 @@ class Tokenizer:
         """Apply all the post-processing steps to the given encodings.
 
         The various steps are:
-            1. Truncate according to global params (provided to `enable_truncation`)
-            2. Apply the PostProcessor
-            3. Pad according to global params. (provided to `enable_padding`)
+
+            1. Truncate according to the set truncation params (provided with
+               :meth:`~tokenizers.Tokenizer.enable_truncation`)
+            2. Apply the :class:`~tokenizers.processors.PostProcessor`
+            3. Pad according to the set padding params (provided with
+               :meth:`~tokenizers.Tokenizer.enable_padding`)
 
         Args:
-            encoding: Encoding:
-                The main Encoding to post process
+            encoding (:class:`~tokenizers.Encoding`):
+                The :class:`~tokenizers.Encoding` corresponding to the main sequence.
 
-            pair: Optional[Encoding]:
-                An optional pair Encoding
+            pair (:class:`~tokenizers.Encoding`, `optional`):
+                An optional :class:`~tokenizers.Encoding` corresponding to the pair sequence.
 
-            add_special_tokens: bool:
-                Whether to add special tokens
+            add_special_tokens (:obj:`bool`):
+                Whether to add the special tokens
 
         Returns:
-            The resulting Encoding
+            :class:`~tokenizers.Encoding`: The final post-processed encoding
         """
         pass

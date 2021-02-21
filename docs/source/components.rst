@@ -21,16 +21,6 @@ to customize its behavior. This page lists most provided components.
         ``Sequence([NFKC(), Lowercase()])``
     PreTokenizer.Sequence
         ``Sequence([Punctuation(), WhitespaceSplit()])``
-    SplitDelimiterBehavior.removed
-        :obj:`removed`
-    SplitDelimiterBehavior.isolated
-        :obj:`isolated`
-    SplitDelimiterBehavior.merged_with_previous
-        :obj:`merged_with_previous`
-    SplitDelimiterBehavior.merged_with_next
-        :obj:`merged_with_next`
-    SplitDelimiterBehavior.contiguous
-        :obj:`contiguous`
 
 .. entities:: rust
 
@@ -46,16 +36,6 @@ to customize its behavior. This page lists most provided components.
         ``Sequence::new(vec![NFKC, Lowercase])``
     PreTokenizer.Sequence
         ``Sequence::new(vec![Punctuation, WhitespaceSplit])``
-    SplitDelimiterBehavior.removed
-        :obj:`Removed`
-    SplitDelimiterBehavior.isolated
-        :obj:`Isolated`
-    SplitDelimiterBehavior.merged_with_previous
-        :obj:`MergedWithPrevious`
-    SplitDelimiterBehavior.merged_with_next
-        :obj:`MergedWithNext`
-    SplitDelimiterBehavior.contiguous
-        :obj:`Contiguous`
 
 .. entities:: node
 
@@ -71,16 +51,6 @@ to customize its behavior. This page lists most provided components.
         ..
     PreTokenizer.Sequence
         ..
-    SplitDelimiterBehavior.removed
-        :obj:`removed`
-    SplitDelimiterBehavior.isolated
-        :obj:`isolated`
-    SplitDelimiterBehavior.merged_with_previous
-        :obj:`mergedWithPrevious`
-    SplitDelimiterBehavior.merged_with_next
-        :obj:`mergedWithNext`
-    SplitDelimiterBehavior.contiguous
-        :obj:`contiguous`
 
 Normalizers
 ----------------------------------------------------------------------------------------------------
@@ -232,27 +202,6 @@ the ByteLevel)
      - Input: ``"Hello123there"``
 
        Output: ```"Hello", "123", "there"```
-
-   * - Split
-     - Versatile pre-tokenizer that splits on provided pattern and according to provided behavior.
-       The pattern can be inverted if necessary.
-
-         - pattern should be either a custom string or regexp.
-         - behavior should be one of:
-
-            * :entity:`SplitDelimiterBehavior.removed`
-            * :entity:`SplitDelimiterBehavior.isolated`
-            * :entity:`SplitDelimiterBehavior.merged_with_previous`
-            * :entity:`SplitDelimiterBehavior.merged_with_next`
-            * :entity:`SplitDelimiterBehavior.contiguous`
-
-         - invert should be a boolean flag.
-
-     - Example with `pattern` = :obj:`" "`, `behavior` = :obj:`"isolated"`, `invert` = :obj:`False`:
-
-        Input: ``"Hello, how are you?"``
-
-        Output: ```"Hello,", " ", "how", " ", "are", " ", "you?"```
 
    * - Sequence
      - Lets you compose multiple ``PreTokenizer`` that will be run in the given order

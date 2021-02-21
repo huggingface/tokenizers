@@ -12,7 +12,7 @@ style:
 check-style:
 	npm run lint-check
 
-TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
+TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json
 
 # Launch the test suite
 test: $(TESTS_RESOURCES)
@@ -28,3 +28,11 @@ $(DATA_DIR)/small.txt : $(DATA_DIR)/big.txt
 $(DATA_DIR)/roberta.json :
 	$(dir_guard)
 	wget https://storage.googleapis.com/tokenizers/roberta.json -O $@
+
+$(DATA_DIR)/tokenizer-wiki.json :
+	$(dir_guard)
+	wget https://s3.amazonaws.com/models.huggingface.co/bert/anthony/doc-quicktour/tokenizer.json -O $@
+
+$(DATA_DIR)/bert-wiki.json :
+	$(dir_guard)
+	wget https://s3.amazonaws.com/models.huggingface.co/bert/anthony/doc-pipeline/tokenizer.json -O $@

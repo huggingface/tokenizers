@@ -9,8 +9,6 @@ class TestByteLevelBPE:
         tokenizer = ByteLevelBPETokenizer.from_file(roberta_files["vocab"], roberta_files["merges"])
         output = tokenizer.encode("The quick brown fox jumps over the lazy dog")
 
-        tokenizer.save("roberta.json")
-
         assert output.ids == [133, 2119, 6219, 23602, 13855, 81, 5, 22414, 2335]
         assert output.tokens == [
             "The",

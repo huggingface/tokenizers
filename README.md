@@ -35,58 +35,43 @@ We provide bindings to the following languages (more to come!):
   - [Python](https://github.com/huggingface/tokenizers/tree/master/bindings/python)
   - [Node.js](https://github.com/huggingface/tokenizers/tree/master/bindings/node)
  
-## Quick examples using Python:
+## Quick example using Python:
 
-Start using in a matter of seconds:
-
-```python
-# Tokenizers provides ultra-fast implementations of most current tokenizers:
->>> from tokenizers import Tokenizer
-# Ultra-fast => they can encode 1GB of text in ~20sec on a standard server's CPU
-# Tokenizers can be easily instantiated from standard files
->>> tokenizer = Tokenizer.from_file("bert-base-uncased-vocab.json")
-Tokenizer(vocabulary_size=30522, model=BertWordPiece, add_special_tokens=True, unk_token=[UNK], 
-          sep_token=[SEP], cls_token=[CLS], clean_text=True, handle_chinese_chars=True, 
-          strip_accents=True, lowercase=True, wordpieces_prefix=##)
-
-# Tokenizers provide exhaustive outputs: tokens, mapping to original string, attention/special token masks.
-# They also handle model's max input lengths as well as padding (to directly encode in padded batches)
->>> output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
-Encoding(num_tokens=13, attributes=[ids, type_ids, tokens, offsets, attention_mask, special_tokens_mask, overflowing, original_str, normalized_str])
->>> print(output.ids, output.tokens, output.offsets)
-[101, 7592, 1010, 1061, 1005, 2035, 999, 2129, 2024, 2017, 100, 1029, 102]
-['[CLS]', 'hello', ',', 'y', "'", 'all', '!', 'how', 'are', 'you', '[UNK]', '?', '[SEP]']
-[(0, 0), (0, 5), (5, 6), (7, 8), (8, 9), (9, 12), (12, 13), (14, 17), (18, 21), (22, 25), (26, 27),
- (28, 29), (0, 0)]
-# Here is an example using the offsets mapping to retrieve the string corresponding to the 10th token:
->>> output.original_str[output.offsets[10]]
-'😁'
-```
-
-And training a new vocabulary is just as easy:
+Choose your model between Byte-Pair Encoding, WordPiece or Unigram and instantiate a tokenizer:
 
 ```python
-# You can also train a BPE/Byte-levelBPE/WordPiece vocabulary on your own files
->>> unk_token = "[UNK]"
->>> replacement = "▁"
->>> add_prefix_space = True
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
 
->>> tokenizer = Tokenizer(BPE(unk_token=unk_token))
->>> tokenizer.normalizer = NFKC()
->>> tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(
-        replacement=replacement, add_prefix_space=add_prefix_space
-    )
->>> tokenizer.decoder = decoders.Metaspace(
-        replacement=replacement, add_prefix_space=add_prefix_space
-    )
->>> tokenizer.add_special_tokens([unk_token])
->>> tokenizer.train(["wiki.test.raw"], vocab_size=20000)
-[00:00:00] Tokenize words                 ████████████████████████████████████████   20993/20993
-[00:00:00] Count pairs                    ████████████████████████████████████████   20993/20993
-[00:00:03] Compute merges                 ████████████████████████████████████████   19375/19375
+tokenizer = Tokenizer(BPE())
 ```
 
-You can check the guide [to build your own tokenizer](...)
+You can customize how pre-tokenization (e.g., splitting into words) is done:
+
+```python
+from tokenizers.pre_tokenizers import Whitespace
+
+tokenizer.pre_tokenizer = Whitespace()
+```
+
+Then training your tokenizer on a set of files just takes two lines of codes:
+
+```python
+from tokenizers.trainers import BpeTrainer
+
+trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
+tokenizer.train(trainer, ["wiki.train.raw", "wiki.valid.raw", "wiki.test.raw"])
+```
+
+Once your tokenizer is trained, encode any text with just one line:
+```python
+output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+print(output.tokens)
+# ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?"]
+```
+
+Check the [python documentation](https://huggingface.co/docs/tokenizers/python/latest) or the 
+[python quicktour](https://huggingface.co/docs/tokenizers/python/latest/quicktour.html) to learn more!
  
 ## Contributors
   

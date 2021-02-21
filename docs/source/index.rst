@@ -32,13 +32,6 @@ Main features:
     pipeline
     components
 
-.. toctree-tags::
-    :maxdepth: 3
-    :caption: Using 🤗 Tokenizers
-    :glob:
-
-    :python:tutorials/python/*
-
 .. toctree::
     :maxdepth: 3
     :caption: API Reference

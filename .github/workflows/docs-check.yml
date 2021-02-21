@@ -1,0 +1,41 @@
+name: Documentation
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Install Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.6
+
+      - name: Install dependencies
+        run: pip install sphinx sphinx_rtd_theme setuptools-rust
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build tokenizers
+        working-directory: ./bindings/python
+        run: python setup.py install
+
+      - name: Build documentation
+        working-directory: ./docs
+        run: make clean && make html_all O="-W --keep-going"
+
+      - name: Upload built doc
+        uses: actions/upload-artifact@v2
+        with:
+          name: documentation
+          path: ./docs/build/*
