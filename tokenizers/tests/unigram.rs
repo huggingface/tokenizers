@@ -52,6 +52,7 @@ fn test_train_unigram_from_file() {
 
     let trainer = UnigramTrainer::builder()
         .show_progress(false)
+        .unk_token(Some("<UNK>".into()))
         .build()
         .unwrap();
     let (model, _) = trainer.train(word_counts).unwrap();
