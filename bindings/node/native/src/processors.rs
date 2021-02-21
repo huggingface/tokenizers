@@ -95,10 +95,49 @@ fn bytelevel(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     Ok(processor)
 }
 
+/// template_processing(
+///   single: String,
+///   pair?:  String,
+///   special_tokens?: [String, number][] = [],
+/// )
+fn template_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
+    let mut i = 1;
+    let special_tokens = loop {
+        if let Ok(Some(spe)) = cx.extract_opt::<Vec<(String, u32)>>(i) {
+            break spe;
+        }
+        i += 1;
+        if i == 3 {
+            break vec![];
+        }
+    };
+
+    let single = cx.extract::<String>(0)?;
+    let pair = cx.extract_opt::<String>(1)?;
+
+    let mut builder = tk::processors::template::TemplateProcessing::builder();
+    builder.try_single(single).map_err(Error)?;
+    builder.special_tokens(special_tokens);
+    if let Some(pair) = pair {
+        builder.try_pair(pair).map_err(Error)?;
+    }
+    let processor = builder.build().map_err(Error)?;
+
+    let mut js_processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    js_processor.borrow_mut(&guard).processor = Some(Arc::new(processor.into()));
+
+    Ok(js_processor)
+}
+
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_BertProcessing", prefix), bert_processing)?;
     m.export_function(&format!("{}_RobertaProcessing", prefix), roberta_processing)?;
     m.export_function(&format!("{}_ByteLevel", prefix), bytelevel)?;
+    m.export_function(
+        &format!("{}_TemplateProcessing", prefix),
+        template_processing,
+    )?;
     Ok(())
 }
