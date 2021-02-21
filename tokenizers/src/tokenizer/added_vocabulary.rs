@@ -202,10 +202,10 @@ impl AddedVocabulary {
     }
 
     /// Get the token matching the given id if it exists
-    pub fn id_to_token<'s>(&'s self, id: u32, model: &'s impl Model) -> Option<&'s str> {
+    pub fn id_to_token(&self, id: u32, model: &impl Model) -> Option<String> {
         self.added_tokens_map_r
             .get(&id)
-            .map(|t| t.content.as_ref())
+            .map(|t| t.content.clone())
             .or_else(|| model.id_to_token(id))
     }
 
@@ -499,7 +499,7 @@ mod tests {
     use super::*;
     use crate::normalizers::utils::Lowercase;
     use crate::normalizers::NormalizerWrapper;
-    use crate::{OffsetReferential, OffsetType, Result, Token};
+    use crate::{OffsetReferential, OffsetType, Result, Token, Trainer};
     use std::path::{Path, PathBuf};
 
     #[derive(Serialize, Deserialize)]
@@ -526,24 +526,44 @@ mod tests {
         }
     }
 
+    struct TrainerMock;
+    impl Trainer for TrainerMock {
+        type Model = ModelMock;
+        fn should_show_progress(&self) -> bool {
+            true
+        }
+        fn train(
+            &self,
+            _words: HashMap<String, u32>,
+            _model: &mut ModelMock,
+        ) -> Result<Vec<AddedToken>> {
+            unimplemented!()
+        }
+    }
+
     impl Model for ModelMock {
+        type Trainer = TrainerMock;
+
         fn tokenize(&self, _sequence: &str) -> Result<Vec<Token>> {
             unimplemented!()
         }
         fn token_to_id(&self, token: &str) -> Option<u32> {
             self.vocab.get(token).copied()
         }
-        fn id_to_token(&self, id: u32) -> Option<&str> {
-            self.vocab_r.get(&id).map(String::as_ref)
+        fn id_to_token(&self, id: u32) -> Option<String> {
+            self.vocab_r.get(&id).cloned()
         }
-        fn get_vocab(&self) -> &HashMap<String, u32> {
-            &self.vocab
+        fn get_vocab(&self) -> HashMap<String, u32> {
+            self.vocab.clone()
         }
         fn get_vocab_size(&self) -> usize {
             self.vocab.len()
         }
         fn save(&self, _folder: &Path, _name: Option<&str>) -> Result<Vec<PathBuf>> {
             unimplemented!()
+        }
+        fn get_trainer(&self) -> Self::Trainer {
+            TrainerMock
         }
     }
 

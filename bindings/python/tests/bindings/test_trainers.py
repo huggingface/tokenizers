@@ -41,7 +41,7 @@ class TestUnigram:
             del os.environ["TOKENIZERS_PARALLELISM"]
 
         trainer = trainers.BpeTrainer(special_tokens=["<unk>"], show_progress=False)
-        bpe_tokenizer.train(trainer, [train_files["small"]])
+        bpe_tokenizer.train([train_files["small"]], trainer=trainer)
 
     def test_train_with_special_tokens(self):
         filename = "tests/data/dummy-unigram-special_tokens-train.txt"
@@ -76,7 +76,7 @@ class TestUnigram:
             show_progress=False, special_tokens=["[PAD]", "[SEP]", "[CLS]"], unk_token="[UNK]"
         )
 
-        tokenizer.train(trainer, [filename])
+        tokenizer.train([filename], trainer=trainer)
 
         assert tokenizer.encode("[CLS] This is a test [SEP]").tokens == [
             "[CLS]",
@@ -92,3 +92,10 @@ class TestUnigram:
             "t ",
             "[SEP]",
         ]
+
+    def test_cannot_train_different_model(self):
+        tokenizer = Tokenizer(models.BPE())
+        trainer = trainers.UnigramTrainer(show_progress=False)
+
+        with pytest.raises(Exception, match="UnigramTrainer can only train a Unigram"):
+            tokenizer.train([], trainer)

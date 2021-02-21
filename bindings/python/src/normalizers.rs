@@ -17,6 +17,10 @@ use tk::normalizers::{
 use tk::{NormalizedString, Normalizer};
 use tokenizers as tk;
 
+/// Base class for all normalizers
+///
+/// This class is not supposed to be instantiated directly. Instead, any implementation of a
+/// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name=Normalizer)]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PyNormalizer {
@@ -107,10 +111,14 @@ impl PyNormalizer {
         }
     }
 
+    /// Normalize the given NormalizedString in-place
+    #[text_signature = "(self, normalized)"]
     fn normalize(&self, normalized: &mut PyNormalizedString) -> PyResult<()> {
         ToPyResult(self.normalizer.normalize(&mut normalized.normalized)).into()
     }
 
+    /// Normalize the given str
+    #[text_signature = "(self, sequence)"]
     fn normalize_str(&self, sequence: &str) -> PyResult<String> {
         let mut normalized = NormalizedString::from(sequence);
         ToPyResult(self.normalizer.normalize(&mut normalized)).into_py()?;
@@ -118,7 +126,30 @@ impl PyNormalizer {
     }
 }
 
+/// BertNormalizer
+///
+/// Takes care of normalizing raw text before giving it to a Bert model.
+/// This includes cleaning the text, handling accents, chinese chars and lowercasing
+///
+/// Args:
+///     clean_text: (`optional`) boolean:
+///         Whether to clean the text, by removing any control characters
+///         and replacing all whitespaces by the classic one.
+///
+///     handle_chinese_chars: (`optional`) boolean:
+///         Whether to handle chinese chars by putting spaces around them.
+///
+///     strip_accents: (`optional`) boolean:
+///         Whether to strip all accents. If this option is not specified (ie == None),
+///         then it will be determined by the value for `lowercase` (as in the original Bert).
+///
+///     lowercase: (`optional`) boolean:
+///         Whether to lowercase.
+///
+/// Returns:
+///     Normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=BertNormalizer)]
+#[text_signature = "(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True)"]
 pub struct PyBertNormalizer {}
 #[pymethods]
 impl PyBertNormalizer {
@@ -155,7 +186,9 @@ impl PyBertNormalizer {
     }
 }
 
+/// NFD Unicode Normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=NFD)]
+#[text_signature = "(self)"]
 pub struct PyNFD {}
 #[pymethods]
 impl PyNFD {
@@ -165,7 +198,9 @@ impl PyNFD {
     }
 }
 
+/// NFKD Unicode Normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=NFKD)]
+#[text_signature = "(self)"]
 pub struct PyNFKD {}
 #[pymethods]
 impl PyNFKD {
@@ -175,7 +210,9 @@ impl PyNFKD {
     }
 }
 
+/// NFC Unicode Normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=NFC)]
+#[text_signature = "(self)"]
 pub struct PyNFC {}
 #[pymethods]
 impl PyNFC {
@@ -185,7 +222,9 @@ impl PyNFC {
     }
 }
 
+/// NFKC Unicode Normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=NFKC)]
+#[text_signature = "(self)"]
 pub struct PyNFKC {}
 #[pymethods]
 impl PyNFKC {
@@ -195,6 +234,12 @@ impl PyNFKC {
     }
 }
 
+/// Allows concatenating multiple other Normalizer as a Sequence.
+/// All the normalizers run in sequence in the given order
+///
+/// Args:
+///     normalizers: List[Normalizer]:
+///         A list of Normalizer to be run as a sequence
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Sequence)]
 pub struct PySequence {}
 #[pymethods]
@@ -220,7 +265,9 @@ impl PySequence {
     }
 }
 
+/// Lowercase Normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Lowercase)]
+#[text_signature = "(self)"]
 pub struct PyLowercase {}
 #[pymethods]
 impl PyLowercase {
@@ -230,7 +277,9 @@ impl PyLowercase {
     }
 }
 
+/// Strip normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Strip)]
+#[text_signature = "(self, left=True, right=True)"]
 pub struct PyStrip {}
 #[pymethods]
 impl PyStrip {
@@ -254,6 +303,7 @@ impl PyStrip {
 }
 
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=StripAccents)]
+#[text_signature = "(self)"]
 pub struct PyStripAccents {}
 #[pymethods]
 impl PyStripAccents {
@@ -398,7 +448,9 @@ impl Normalizer for PyNormalizerWrapper {
     }
 }
 
+/// Nmt normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Nmt)]
+#[text_signature = "(self)"]
 pub struct PyNmt {}
 #[pymethods]
 impl PyNmt {
@@ -408,7 +460,10 @@ impl PyNmt {
     }
 }
 
+/// Precompiled normalizer
+/// Don't use manually it is used for compatiblity for SentencePiece.
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Precompiled)]
+#[text_signature = "(self, precompiled_charsmap)"]
 pub struct PyPrecompiled {}
 #[pymethods]
 impl PyPrecompiled {
@@ -429,7 +484,9 @@ impl PyPrecompiled {
     }
 }
 
+/// Replace normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Replace)]
+#[text_signature = "(self, pattern, content)"]
 pub struct PyReplace {}
 #[pymethods]
 impl PyReplace {

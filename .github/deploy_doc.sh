@@ -14,7 +14,7 @@ function push_version() {
 }
 
 function deploy_doc(){
-    echo "Creating doc at commit $1 for language $3 and pushing to folder $2"
+    echo "Creating doc at $1 for language $3 and pushing to folder $2"
     git checkout $1
     cd "$GITHUB_WORKSPACE/docs"
     if [ "$2" == "master" ]; then
@@ -44,8 +44,9 @@ deploy_doc "$GITHUB_SHA" latest rust override
 deploy_doc "$GITHUB_SHA" latest node override
 
 # Python versions
-deploy_doc "$GITHUB_SHA" v0.9.0 python override
-deploy_doc "$GITHUB_SHA" v0.9.1 python override
-deploy_doc "$GITHUB_SHA" v0.9.2 python override
-deploy_doc "$GITHUB_SHA" v0.9.3 python override
-deploy_doc "$GITHUB_SHA" latest python override
+deploy_doc "558f2d87795ffc9d9786f1e923398e3eebe14187" v0.9.0 python
+deploy_doc "558f2d87795ffc9d9786f1e923398e3eebe14187" v0.9.1 python
+deploy_doc "558f2d87795ffc9d9786f1e923398e3eebe14187" v0.9.2 python
+deploy_doc "558f2d87795ffc9d9786f1e923398e3eebe14187" v0.9.3 python
+deploy_doc "python-v0.9.4" v0.9.4 python
+deploy_doc "python-v0.9.4" latest python override

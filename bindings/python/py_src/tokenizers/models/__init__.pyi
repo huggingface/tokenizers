@@ -1,34 +1,37 @@
-from .. import Encoding, Offsets, Token
-from typing import List, Optional, Union, Tuple, Dict
-
+# Generated content DO NOT EDIT
 class Model:
-    """Base class for all models
-
-    This class is not supposed to be instantiated directly. Instead, any implementation of
-    a Model will return a instance of this class when instantiated.
+    """
+    A Model represents some tokenization algorithm like BPE or Word
+    This class cannot be constructed directly. Please use one of the concrete models.
     """
 
-    def tokenize(self, sequence: str) -> List[Token]:
-        """ Tokenize the given sequence """
+    def id_to_token(self, id):
+        """
+        Returns the token associated with the given id
+        """
         pass
-    def token_to_id(self, token: str) -> Optional[int]:
-        """ Returns the id associated with the given token """
-        pass
-    def id_to_token(self, id: int) -> Optional[str]:
-        """ Returns the token associated with the given id """
-        pass
-    def save(self, folder: str, name: Optional[str] = None) -> List[str]:
-        """Save the current model
+    def save(self, folder, name):
+        """
+        Save the current model
 
         Save the current model in the given folder, using the given name for the various
         files that will get created.
         Any file with the same name that already exist in this folder will be overwritten.
         """
         pass
+    def token_to_id(self, tokens):
+        """
+        Returns the id associated with the given token
+        """
+        pass
+    def tokenize(self, tokens):
+        """
+        Tokenize the given sequence
+        """
+        pass
 
 class BPE(Model):
-    """BytePairEncoding model class
-
+    """
     Instantiate a BPE Model from the given vocab and merges.
 
     Args:
@@ -61,21 +64,18 @@ class BPE(Model):
 
     def __init__(
         self,
-        vocab: Optional[Union[str, Dict[str, int]]],
-        merges: Optional[Union[str, List[Tuple[str, str]]]],
-        cache_capacity: Optional[int],
-        dropout: Optional[float],
-        unk_token: Optional[str],
-        continuing_subword_prefix: Optional[str],
-        end_of_word_suffix: Optional[str],
-        fuse_unk: Optional[bool],
+        vocab=None,
+        merges=None,
+        cache_capacity=None,
+        dropout=None,
+        unk_token=None,
+        continuing_subword_prefix=None,
+        end_of_word_suffix=None,
+        fuse_unk=None,
     ):
         pass
     @staticmethod
-    def read_file(vocab_filename: str, merges_filename: str) -> Tuple[Vocab, Merges]:
-        pass
-    @staticmethod
-    def from_file(vocab_filename: str, merges_filename: str, **kwargs) -> BPE:
+    def from_file(vocab_filename, merge_filename, **kwargs):
         """
         Convenient method to intialize a BPE from files
         Roughly equivalent to
@@ -85,42 +85,73 @@ class BPE(Model):
             return BPE(vocab, merges, **kwargs)
         """
         pass
+    def id_to_token(self, id):
+        """
+        Returns the token associated with the given id
+        """
+        pass
+    @staticmethod
+    def read_file(self, vocab_filename, merges_filename):
+        """
+        Read a vocab_filename and merge_filename and stores result in memory
+        """
+        pass
+    def save(self, folder, name):
+        """
+        Save the current model
 
-class WordPiece(Model):
-    """WordPiece model class
+        Save the current model in the given folder, using the given name for the various
+        files that will get created.
+        Any file with the same name that already exist in this folder will be overwritten.
+        """
+        pass
+    def token_to_id(self, tokens):
+        """
+        Returns the id associated with the given token
+        """
+        pass
+    def tokenize(self, tokens):
+        """
+        Tokenize the given sequence
+        """
+        pass
 
-    Instantiate a WordPiece Model from the given vocab file.
+class Unigram(Model):
+    """
+    UnigramEncoding model class
 
-        Args:
-            vocab: (`optional`) string:
-                A dictionnary of string keys and their ids {"am": 0,...}
+    Instantiate a Unigram Model from the given model file.
 
-            unk_token: (`optional`) str:
-                The unknown token to be used by the model.
+    Args:
+       vocab: ('`optional`) string:
+           A list of vocabulary items and their relative score [("am", -0.2442),...]
 
-            max_input_chars_per_word: (`optional`) int:
-                The maximum number of characters to authorize in a single word.
     """
 
-    def __init__(
-        self,
-        vocab: Optional[Union[str, Dict[str, int]]],
-        unk_token: Optional[str],
-        max_input_chars_per_word: Optional[int],
-    ):
+    def __init__(self, vocab):
         pass
-    @staticmethod
-    def read_file(vocab_filename: str) -> Vocab:
-        pass
-    @staticmethod
-    def from_file(vocab_filename: str, **kwargs) -> WordPiece:
+    def id_to_token(self, id):
         """
-        Convenient method to intialize a WordPiece from file
-        Roughly equivalent to
+        Returns the token associated with the given id
+        """
+        pass
+    def save(self, folder, name):
+        """
+        Save the current model
 
-        def from_file(vocab_filename, **kwargs):
-            vocab, merges = WordPiece.read_file(vocab_filename)
-            return WordPiece(vocab, **kwargs)
+        Save the current model in the given folder, using the given name for the various
+        files that will get created.
+        Any file with the same name that already exist in this folder will be overwritten.
+        """
+        pass
+    def token_to_id(self, tokens):
+        """
+        Returns the id associated with the given token
+        """
+        pass
+    def tokenize(self, tokens):
+        """
+        Tokenize the given sequence
         """
         pass
 
@@ -138,34 +169,89 @@ class WordLevel(Model):
                 The unknown token to be used by the model.
     """
 
-    def __init__(self, vocab: Optional[Union[str, Dict[str, int]]], unk_token: Optional[str]):
+    def __init__(self, vocab, unk_token):
         pass
-    @staticmethod
-    def read_file(vocab_filename: str) -> Vocab:
-        pass
-    @staticmethod
-    def from_file(vocab_filename: str, **kwargs) -> WordLevelg:
+    def id_to_token(self, id):
         """
-        Convenient method to intialize a WordLevelg from file
+        Returns the token associated with the given id
+        """
+        pass
+    def save(self, folder, name):
+        """
+        Save the current model
+
+        Save the current model in the given folder, using the given name for the various
+        files that will get created.
+        Any file with the same name that already exist in this folder will be overwritten.
+        """
+        pass
+    def token_to_id(self, tokens):
+        """
+        Returns the id associated with the given token
+        """
+        pass
+    def tokenize(self, tokens):
+        """
+        Tokenize the given sequence
+        """
+        pass
+
+class WordPiece(Model):
+    """
+    WordPiece model
+    Instantiate a WordPiece Model from the given vocab file.
+
+    Args:
+        vocab: (`optional`) string:
+            A dictionnary of string keys and their ids {"am": 0,...}
+
+        unk_token: (`optional`) str:
+            The unknown token to be used by the model.
+
+        max_input_chars_per_word: (`optional`) int:
+            The maximum number of characters to authorize in a single word.
+    """
+
+    def __init__(self, vocab, unk_token, max_input_chars_per_word):
+        pass
+    @staticmethod
+    def from_file(vocab_filename, merge_filename, **kwargs):
+        """
+        Convenient method to intialize a WordPiece from files
         Roughly equivalent to
 
         def from_file(vocab_filename, **kwargs):
-            vocab, merges = WordLevelg.read_file(vocab_filename)
-            return WordLevelg(vocab, **kwargs)
+            vocab = WordPiece.read_file(vocab_filename)
+            return WordPiece(vocab, **kwargs)
         """
         pass
-
-class Unigram(Model):
-    """UnigramEncoding model class
-
-    Instantiate a Unigram Model from the given model file.
-
-    Args:
-       vocab: ('`optional`) string:
-           A list of vocabulary items and their relative score [("am", -0.2442),...]
-
-    """
-
+    def id_to_token(self, id):
+        """
+        Returns the token associated with the given id
+        """
+        pass
     @staticmethod
-    def __init__(self, vocab: Optional[List[Tuple[str, float]]]):
+    def read_file(vocab_filename):
+        """
+        Read a vocab_filename and stores result in memory
+        """
+        pass
+    def save(self, folder, name):
+        """
+        Save the current model
+
+        Save the current model in the given folder, using the given name for the various
+        files that will get created.
+        Any file with the same name that already exist in this folder will be overwritten.
+        """
+        pass
+    def token_to_id(self, tokens):
+        """
+        Returns the id associated with the given token
+        """
+        pass
+    def tokenize(self, tokens):
+        """
+        Tokenize the given sequence
+        """
         pass

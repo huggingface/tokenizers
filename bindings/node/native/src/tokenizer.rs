@@ -12,6 +12,7 @@ use crate::trainers::JsTrainer;
 use neon::prelude::*;
 use std::sync::{Arc, RwLock};
 
+use tk::Model as ModelTrait;
 use tk::TokenizerImpl;
 
 // AddedToken
@@ -634,7 +635,7 @@ declare_types! {
             let guard = cx.lock();
             let token = this.borrow(&guard)
                 .tokenizer.read().unwrap()
-                .id_to_token(id).map(|t| t.to_owned());
+                .id_to_token(id);
 
             if let Some(token) = token {
                 Ok(cx.string(token).upcast())
@@ -745,18 +746,29 @@ declare_types! {
         }
 
         method train(mut cx) {
-            // train(trainer: JsTrainer, files: string[])
+            // train(files: string[], trainer?: Trainer)
 
-            let trainer = cx.argument::<JsTrainer>(0)?;
-            let files = cx.extract::<Vec<String>>(1)?;
+            let files = cx.extract::<Vec<String>>(0)?;
+            let trainer = if let Some(val) = cx.argument_opt(1) {
+                let js_trainer = val.downcast::<JsTrainer>().or_throw(&mut cx)?;
+                let guard = cx.lock();
+
+                let trainer = js_trainer.borrow(&guard).clone();
+                trainer
+            } else {
+                let this = cx.this();
+                let guard = cx.lock();
+
+                let trainer = this.borrow(&guard).tokenizer.read().unwrap().get_model().get_trainer();
+                trainer
+            };
 
             let mut this = cx.this();
             let guard = cx.lock();
 
-            let trainer = trainer.borrow(&guard).clone();
             this.borrow_mut(&guard)
                 .tokenizer.write().unwrap()
-                .train_and_replace(&trainer, files)
+                .train(&trainer, files)
                 .map_err(|e| Error(format!("{}", e)))?;
 
             Ok(cx.undefined().upcast())

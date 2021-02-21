@@ -8,7 +8,7 @@ use tokenizers::{Tokenizer, TokenizerImpl};
 #[test]
 fn train_tokenizer() {
     let vocab_size: usize = 100;
-    let tokenizer = TokenizerBuilder::new()
+    let mut tokenizer = TokenizerBuilder::new()
         .with_model(BPE::default())
         .with_normalizer(Some(Sequence::new(vec![
             Strip::new(true, true).into(),
@@ -70,7 +70,12 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
         PreTokenizerWrapper,
         PostProcessorWrapper,
         DecoderWrapper,
-    > = TokenizerImpl::new(BPE::default());
+    > = TokenizerImpl::new(
+        BPE::builder()
+            .unk_token("[UNK]".to_string())
+            .build()
+            .unwrap(),
+    );
     // END quicktour_init_tokenizer
     // START quicktour_init_trainer
     use tokenizers::models::bpe::BpeTrainer;
@@ -97,24 +102,8 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
         "data/wikitext-103-raw/wiki.test.raw".into(),
         "data/wikitext-103-raw/wiki.valid.raw".into(),
     ];
-    tokenizer.train_and_replace(&trainer, files)?;
+    tokenizer.train(&trainer, files)?;
     // END quicktour_train
-    // START quicktour_reload_model
-    use std::path::Path;
-    use tokenizers::Model;
-
-    let saved_files = tokenizer
-        .get_model()
-        .save(&Path::new("data"), Some("wiki"))?;
-    tokenizer.with_model(
-        BPE::from_file(
-            saved_files[0].to_str().unwrap(),
-            &saved_files[1].to_str().unwrap(),
-        )
-        .unk_token("[UNK]".to_string())
-        .build()?,
-    );
-    // END quicktour_reload_model
     // START quicktour_save
     tokenizer.save("data/tokenizer-wiki.json", false)?;
     // END quicktour_save
@@ -375,7 +364,12 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
     use tokenizers::models::wordpiece::WordPiece;
     use tokenizers::Tokenizer;
 
-    let mut bert_tokenizer = Tokenizer::new(WordPiece::default());
+    let mut bert_tokenizer = Tokenizer::new(
+        WordPiece::builder()
+            .unk_token("[UNK]".to_string())
+            .build()
+            .unwrap(),
+    );
     // END bert_setup_tokenizer
     // START bert_setup_normalizer
     use tokenizers::normalizers::utils::Sequence as NormalizerSequence;
@@ -407,9 +401,7 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
     );
     // END bert_setup_processor
     // START bert_train_tokenizer
-    use std::path::Path;
     use tokenizers::models::{wordpiece::WordPieceTrainer, TrainerWrapper};
-    use tokenizers::Model;
 
     let trainer: TrainerWrapper = WordPieceTrainer::builder()
         .vocab_size(30_522)
@@ -427,17 +419,7 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
         "data/wikitext-103-raw/wiki.test.raw".into(),
         "data/wikitext-103-raw/wiki.valid.raw".into(),
     ];
-    bert_tokenizer.train_and_replace(&trainer, files)?;
-
-    let model_files = bert_tokenizer
-        .get_model()
-        .save(&Path::new("data"), Some("bert-wiki"))?;
-    bert_tokenizer.with_model(
-        WordPiece::from_file(model_files[0].to_str().unwrap())
-            .unk_token("[UNK]".to_string())
-            .build()
-            .unwrap(),
-    );
+    bert_tokenizer.train(&trainer, files)?;
 
     bert_tokenizer.save("data/bert-wiki.json", false)?;
     // END bert_train_tokenizer

@@ -1,4 +1,4 @@
-use super::{super::OrderedVocabIter, Error, Pair, Word};
+use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY};
 use crate::utils::iter::ResultShunt;
@@ -189,15 +189,15 @@ pub struct BPE {
     cache: Option<Cache<String, Word>>,
     /// Dropout probability for merges. 0 = no dropout is the default. At 1.0, tokenization will
     /// perform no merges, so the result will just be characters.
-    pub(super) dropout: Option<f32>,
+    pub dropout: Option<f32>,
     /// The unknown token to be used when we encounter an unknown char
-    pub(super) unk_token: Option<String>,
+    pub unk_token: Option<String>,
     /// An optional prefix to use on any subword that exist only behind another one
-    pub(super) continuing_subword_prefix: Option<String>,
+    pub continuing_subword_prefix: Option<String>,
     /// An optional suffix to caracterize and end-of-word subword
-    pub(super) end_of_word_suffix: Option<String>,
+    pub end_of_word_suffix: Option<String>,
     /// Do multiple unk tokens get fused
-    pub(super) fuse_unk: bool,
+    pub fuse_unk: bool,
 }
 
 impl std::fmt::Debug for BPE {
@@ -318,8 +318,8 @@ impl BPE {
         }
     }
 
-    pub fn get_vocab(&self) -> &Vocab {
-        &self.vocab
+    pub fn get_vocab(&self) -> Vocab {
+        self.vocab.clone()
     }
 
     pub fn get_unk_token(&self) -> &Option<String> {
@@ -415,8 +415,10 @@ impl BPE {
 }
 
 impl Model for BPE {
-    fn get_vocab(&self) -> &HashMap<String, u32> {
-        &self.vocab
+    type Trainer = BpeTrainer;
+
+    fn get_vocab(&self) -> HashMap<String, u32> {
+        self.vocab.clone()
     }
 
     fn get_vocab_size(&self) -> usize {
@@ -440,8 +442,8 @@ impl Model for BPE {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
-        self.vocab_r.get(&id).map(String::as_ref)
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.vocab_r.get(&id).cloned()
     }
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
@@ -486,6 +488,10 @@ impl Model for BPE {
         )?;
 
         Ok(vec![vocab_path, merges_path])
+    }
+
+    fn get_trainer(&self) -> BpeTrainer {
+        BpeTrainer::default()
     }
 }
 

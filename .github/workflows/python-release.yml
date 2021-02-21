@@ -10,13 +10,14 @@ env:
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   AWS_DEFAULT_REGION: us-east-1
   PYPI_TOKEN: ${{ secrets.PYPI_TOKEN_DIST }}
+  DIST_DIR: ${{ github.sha }}
 
 jobs:
 
   create_wheels_manylinux:
     runs-on: ubuntu-latest
-    name: Create wheels for manylinux
-    container: quay.io/pypa/manylinux1_x86_64
+    name: Create wheels for manylinux2010
+    container: quay.io/pypa/manylinux2010_x86_64
     steps:
       - uses: actions/checkout@v1
 
@@ -29,7 +30,7 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        python: [3.5, 3.6, 3.7, 3.8]
+        python: [3.5, 3.6, 3.7, 3.8, 3.9]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
@@ -37,13 +38,13 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2020-05-14-i686-pc-windows-msvc
+          toolchain: stable-i686-pc-windows-msvc
           override: true
 
       - name: Override toolchain
         shell: bash
         working-directory: ./bindings/python
-        run: echo "nightly-2020-05-14-i686-pc-windows-msvc" > rust-toolchain
+        run: echo "stable-i686-pc-windows-msvc" > rust-toolchain
 
       - name: Install Python
         uses: actions/setup-python@v1
@@ -54,7 +55,7 @@ jobs:
       - name: Install dependencies
         run: |
           # On old versions of python there is an old version of setuptools already installed
-          pip install setuptools wheel setuptools-rust --ignore-installed --force-reinstall
+          pip install setuptools wheel setuptools-rust==0.11.3 --ignore-installed --force-reinstall
 
       - name: Build wheel
         working-directory: ./bindings/python
@@ -64,7 +65,7 @@ jobs:
         shell: bash
         run: |
           pip install awscli
-          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$GITHUB_SHA"
+          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
 
 
   create_wheels_others_64bit:
@@ -75,7 +76,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macos-10.15]
-        python: [3.5, 3.6, 3.7, 3.8]
+        python: [3.5, 3.6, 3.7, 3.8, 3.9]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
@@ -83,7 +84,7 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2020-05-18
+          toolchain: stable
           override: true
 
       - name: Install Python
@@ -95,7 +96,7 @@ jobs:
       - name: Install dependencies
         run: |
           # On old versions of python there is an old version of setuptools already installed
-          pip install setuptools wheel setuptools-rust --ignore-installed --force-reinstall
+          pip install setuptools wheel setuptools-rust==0.11.3 --ignore-installed --force-reinstall
 
       - name: Build wheel
         working-directory: ./bindings/python
@@ -110,7 +111,7 @@ jobs:
         shell: bash
         run: |
           pip install awscli
-          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$GITHUB_SHA"
+          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
 
   upload_package:
     name: Upload package to PyPi
@@ -127,7 +128,7 @@ jobs:
         shell: bash
         run: |
           pip install awscli
-          aws s3 sync "s3://tokenizers-releases/python/$GITHUB_SHA" ./bindings/python/dist
+          aws s3 sync "s3://tokenizers-releases/python/$DIST_DIR" ./bindings/python/dist
 
       - name: Install dependencies
         run: |

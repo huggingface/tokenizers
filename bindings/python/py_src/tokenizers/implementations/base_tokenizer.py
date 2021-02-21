@@ -117,7 +117,7 @@ class BaseTokenizer:
                 The length of the previous first sequence to be included
                 in the overflowing sequence
 
-            strategy: (`optional) str:
+            strategy: (`optional`) str:
                 Can be one of `longest_first`, `only_first` or `only_second`
         """
         return self._tokenizer.enable_truncation(max_length, stride=stride, strategy=strategy)

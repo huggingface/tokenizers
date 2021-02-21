@@ -43,7 +43,7 @@
 //! ```
 //!
 //! ## Training and serialization example
-//!  
+//!
 //! ```no_run
 //! use tokenizers::decoders::DecoderWrapper;
 //! use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
@@ -71,7 +71,7 @@
 //!         ])
 //!         .build();
 //!
-//!     let tokenizer = TokenizerBuilder::new()
+//!     let mut tokenizer = TokenizerBuilder::new()
 //!         .with_model(BPE::default())
 //!         .with_normalizer(Some(Sequence::new(vec![
 //!             Strip::new(true, true).into(),
@@ -100,6 +100,11 @@
 //! by the total number of core/threads your CPU provides but this can be tuned by setting the `RAYON_RS_NUM_CPUS`
 //! environment variable. As an example setting `RAYON_RS_NUM_CPUS=4` will allocate a maximum of 4 threads.
 //! **_Please note this behavior may evolve in the future_**
+//!
+//! # Features
+//! **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
+//!   compilation for certain targets is not supported by the [termios](https://crates.io/crates/termios)
+//!   dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
 
 #[macro_use]
 extern crate log;

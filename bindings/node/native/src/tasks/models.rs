@@ -2,7 +2,7 @@ extern crate tokenizers as tk;
 
 use crate::models::*;
 use neon::prelude::*;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tk::models::bpe::{BpeBuilder, BPE};
 use tk::models::wordlevel::{WordLevel, WordLevelBuilder};
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
@@ -34,7 +34,7 @@ impl Task for WordPieceFromFilesTask {
 
         let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
         let guard = cx.lock();
-        js_model.borrow_mut(&guard).model = Some(Arc::new(wordpiece.into()));
+        js_model.borrow_mut(&guard).model = Some(Arc::new(RwLock::new(wordpiece.into())));
 
         Ok(js_model.upcast())
     }
@@ -67,7 +67,7 @@ impl Task for WordLevelFromFilesTask {
 
         let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
         let guard = cx.lock();
-        js_model.borrow_mut(&guard).model = Some(Arc::new(wordlevel.into()));
+        js_model.borrow_mut(&guard).model = Some(Arc::new(RwLock::new(wordlevel.into())));
 
         Ok(js_model.upcast())
     }
@@ -100,7 +100,7 @@ impl Task for BPEFromFilesTask {
 
         let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
         let guard = cx.lock();
-        js_model.borrow_mut(&guard).model = Some(Arc::new(bpe.into()));
+        js_model.borrow_mut(&guard).model = Some(Arc::new(RwLock::new(bpe.into())));
 
         Ok(js_model.upcast())
     }

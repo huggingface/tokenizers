@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize, Serializer};
 
 use crate::models::bpe::{BpeTrainer, BPE};
 use crate::models::unigram::{Unigram, UnigramTrainer};
-use crate::models::wordlevel::WordLevel;
+use crate::models::wordlevel::{WordLevel, WordLevelTrainer};
 use crate::models::wordpiece::{WordPiece, WordPieceTrainer};
 use crate::{AddedToken, Model, Result, Token, Trainer};
 
@@ -53,6 +53,8 @@ impl_enum_from!(BPE, ModelWrapper, BPE);
 impl_enum_from!(Unigram, ModelWrapper, Unigram);
 
 impl Model for ModelWrapper {
+    type Trainer = TrainerWrapper;
+
     fn tokenize(&self, tokens: &str) -> Result<Vec<Token>> {
         use ModelWrapper::*;
         match self {
@@ -73,7 +75,7 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
+    fn id_to_token(&self, id: u32) -> Option<String> {
         use ModelWrapper::*;
         match self {
             WordLevel(t) => t.id_to_token(id),
@@ -83,7 +85,7 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn get_vocab(&self) -> &HashMap<String, u32> {
+    fn get_vocab(&self) -> HashMap<String, u32> {
         use ModelWrapper::*;
         match self {
             WordLevel(t) => t.get_vocab(),
@@ -112,11 +114,22 @@ impl Model for ModelWrapper {
             Unigram(t) => t.save(folder, name),
         }
     }
+
+    fn get_trainer(&self) -> Self::Trainer {
+        use ModelWrapper::*;
+        match self {
+            WordLevel(t) => t.get_trainer().into(),
+            WordPiece(t) => t.get_trainer().into(),
+            BPE(t) => t.get_trainer().into(),
+            Unigram(t) => t.get_trainer().into(),
+        }
+    }
 }
 
 pub enum TrainerWrapper {
     BpeTrainer(BpeTrainer),
     WordPieceTrainer(WordPieceTrainer),
+    WordLevelTrainer(WordLevelTrainer),
     UnigramTrainer(UnigramTrainer),
 }
 
@@ -127,15 +140,33 @@ impl Trainer for TrainerWrapper {
         match self {
             TrainerWrapper::BpeTrainer(bpe) => bpe.should_show_progress(),
             TrainerWrapper::WordPieceTrainer(wpt) => wpt.should_show_progress(),
+            TrainerWrapper::WordLevelTrainer(wpt) => wpt.should_show_progress(),
             TrainerWrapper::UnigramTrainer(wpt) => wpt.should_show_progress(),
         }
     }
 
-    fn train(&self, words: HashMap<String, u32>) -> Result<(Self::Model, Vec<AddedToken>)> {
+    fn train(
+        &self,
+        words: HashMap<String, u32>,
+        model: &mut ModelWrapper,
+    ) -> Result<Vec<AddedToken>> {
         match self {
-            TrainerWrapper::BpeTrainer(bpe) => bpe.train(words).map(|(m, t)| (m.into(), t)),
-            TrainerWrapper::WordPieceTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),
-            TrainerWrapper::UnigramTrainer(wpt) => wpt.train(words).map(|(m, t)| (m.into(), t)),
+            TrainerWrapper::BpeTrainer(t) => match model {
+                ModelWrapper::BPE(bpe) => t.train(words, bpe),
+                _ => Err("BpeTrainer can only train a BPE".into()),
+            },
+            TrainerWrapper::WordPieceTrainer(t) => match model {
+                ModelWrapper::WordPiece(wp) => t.train(words, wp),
+                _ => Err("WordPieceTrainer can only train a WordPiece".into()),
+            },
+            TrainerWrapper::WordLevelTrainer(t) => match model {
+                ModelWrapper::WordLevel(wl) => t.train(words, wl),
+                _ => Err("WordLevelTrainer can only train a WordLevel".into()),
+            },
+            TrainerWrapper::UnigramTrainer(t) => match model {
+                ModelWrapper::Unigram(u) => t.train(words, u),
+                _ => Err("UnigramTrainer can only train a Unigram".into()),
+            },
         }
     }
 
@@ -143,6 +174,7 @@ impl Trainer for TrainerWrapper {
         match self {
             TrainerWrapper::BpeTrainer(bpe) => bpe.process_tokens(words, tokens),
             TrainerWrapper::WordPieceTrainer(wpt) => wpt.process_tokens(words, tokens),
+            TrainerWrapper::WordLevelTrainer(wpt) => wpt.process_tokens(words, tokens),
             TrainerWrapper::UnigramTrainer(wpt) => wpt.process_tokens(words, tokens),
         }
     }
@@ -151,3 +183,18 @@ impl Trainer for TrainerWrapper {
 impl_enum_from!(BpeTrainer, TrainerWrapper, BpeTrainer);
 impl_enum_from!(WordPieceTrainer, TrainerWrapper, WordPieceTrainer);
 impl_enum_from!(UnigramTrainer, TrainerWrapper, UnigramTrainer);
+impl_enum_from!(WordLevelTrainer, TrainerWrapper, WordLevelTrainer);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trainer_wrapper_train_model_wrapper() {
+        let trainer = TrainerWrapper::BpeTrainer(BpeTrainer::default());
+        let mut model = ModelWrapper::Unigram(Unigram::default());
+
+        let result = trainer.train(HashMap::new(), &mut model);
+        assert!(result.is_err());
+    }
+}

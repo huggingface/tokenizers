@@ -1,0 +1,115 @@
+name: Python Release extra
+
+on:
+  push:
+    tags:
+      - python-v*
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: us-east-1
+  PYPI_TOKEN: ${{ secrets.PYPI_TOKEN_DIST }}
+  DIST_DIR: '${{ github.sha }}_extra'
+
+jobs:
+
+  create_wheels_manylinux_2014_ppc64le:
+    runs-on: ubuntu-latest
+    name: Create wheels for manylinux2014 - PowerPC
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Pull images
+        run: |
+          docker pull multiarch/qemu-user-static
+          docker pull quay.io/pypa/manylinux2014_ppc64le:latest
+
+      - name: Install QEMU
+        run: |
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+      - name: Build and audit wheels
+        working-directory: ./bindings/python
+        run: |
+          docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION -e DIST_DIR \
+            --rm -v `pwd`/../..:/io quay.io/pypa/manylinux2014_ppc64le \
+            /bin/bash -c "cd /io/bindings/python; sh build-wheels.sh"
+
+  create_wheels_manylinux_2014_aarch64:
+    runs-on: ubuntu-latest
+    name: Create wheels for manylinux2014 - Aarch64
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Pull images
+        run: |
+          docker pull multiarch/qemu-user-static
+          docker pull quay.io/pypa/manylinux2014_aarch64:latest
+
+      - name: Install QEMU
+        run: |
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+      - name: Build and audit wheels
+        working-directory: ./bindings/python
+        run: |
+          docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION -e DIST_DIR \
+            --rm -v `pwd`/../..:/io quay.io/pypa/manylinux2014_aarch64 \
+            /bin/bash -c "cd /io/bindings/python; sh build-wheels.sh"
+
+  create_wheels_manylinux_2014_x390x:
+    runs-on: ubuntu-latest
+    name: Create wheels for manylinux2014 - S390X
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Pull images
+        run: |
+          docker pull multiarch/qemu-user-static
+          docker pull quay.io/pypa/manylinux2014_s390x:latest
+
+      - name: Install QEMU
+        run: |
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+      - name: Build and audit wheels
+        working-directory: ./bindings/python
+        run: |
+          docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION -e DIST_DIR \
+            --rm -v `pwd`/../..:/io quay.io/pypa/manylinux2014_s390x \
+            /bin/bash -c "cd /io/bindings/python; sh build-wheels.sh"
+
+  upload_package:
+    name: Upload package to PyPi
+    runs-on: ubuntu-latest
+    needs:
+      - create_wheels_manylinux_2014_ppc64le
+      - create_wheels_manylinux_2014_aarch64
+      - create_wheels_manylinux_2014_x390x
+
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Install Python
+        uses: actions/setup-python@v1
+
+      - name: Retrieve all wheels
+        shell: bash
+        run: |
+          pip install awscli
+          aws s3 sync "s3://tokenizers-releases/python/$DIST_DIR" ./bindings/python/dist
+
+      - name: Install dependencies
+        run: |
+          pip install setuptools wheel setuptools-rust
+
+      - name: Create source distribution
+        working-directory: ./bindings/python
+        run: sh build-sdist.sh
+
+      - name: Upload to PyPi
+        working-directory: ./bindings/python
+        run: |
+          pip install twine
+          twine upload dist/* -u __token__ -p "$PYPI_TOKEN"

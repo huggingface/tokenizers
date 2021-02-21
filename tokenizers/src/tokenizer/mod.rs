@@ -19,12 +19,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use indicatif::{ProgressBar, ProgressStyle};
 use serde::de::DeserializeOwned;
 use serde::export::Formatter;
 use serde::{Deserialize, Serialize};
 
 use crate::utils::parallelism::*;
+use crate::utils::progress::{ProgressBar, ProgressStyle};
 
 mod added_vocabulary;
 mod encoding;
@@ -68,20 +68,23 @@ pub trait PreTokenizer {
 
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
 pub trait Model {
+    type Trainer: Trainer + Sync;
     /// Tokenize the given sequence into multiple underlying `Token`. The `offsets` on the `Token`
     /// are expected to be relative to the given sequence.
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>>;
     /// Find the ID associated to a string token
     fn token_to_id(&self, token: &str) -> Option<u32>;
     /// Find the string token associated to an ID
-    fn id_to_token(&self, id: u32) -> Option<&str>;
+    fn id_to_token(&self, id: u32) -> Option<String>;
     /// Retrieve the entire vocabulary mapping (token -> ID)
-    fn get_vocab(&self) -> &HashMap<String, u32>;
+    fn get_vocab(&self) -> HashMap<String, u32>;
     /// Retrieve the size of the vocabulary
     fn get_vocab_size(&self) -> usize;
     /// Save the current `Model` in the given folder, using the given `prefix` for the various
     /// files that need to be saved.
     fn save(&self, folder: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf>>;
+    /// Get an instance of a Trainer capable of training this Model
+    fn get_trainer(&self) -> <Self as Model>::Trainer;
 }
 
 /// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
@@ -105,7 +108,9 @@ impl dyn PostProcessor {
     ) -> Result<Encoding> {
         match pair_encoding {
             None => Ok(encoding),
-            Some(pair) => {
+            Some(mut pair) => {
+                encoding.set_sequence_id(0);
+                pair.set_sequence_id(1);
                 encoding.merge_with(pair, false);
                 Ok(encoding)
             }
@@ -129,9 +134,17 @@ pub trait Trainer {
     fn train(
         &self,
         words: HashMap<String, u32>,
-    ) -> Result<(<Self as Trainer>::Model, Vec<AddedToken>)>;
+        model: &mut Self::Model,
+    ) -> Result<Vec<AddedToken>>;
     /// Process a bunch of token, counting them as relevant.
-    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>);
+    fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
+        for token in tokens {
+            words
+                .entry(token.clone())
+                .and_modify(|c| *c += 1)
+                .or_insert(1);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -572,7 +585,7 @@ where
 
     /// Get the vocabulary
     pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
-        let mut final_vocab = self.model.get_vocab().clone();
+        let mut final_vocab = self.model.get_vocab();
 
         if with_added_tokens {
             let added_vocab = self.added_vocabulary.get_vocab();
@@ -603,7 +616,7 @@ where
     }
 
     /// Converts an id to the corresponding token.
-    pub fn id_to_token(&self, id: u32) -> Option<&str> {
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.added_vocabulary.id_to_token(id, &self.model)
     }
 
@@ -750,7 +763,6 @@ where
                     .filter(|token| {
                         !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
                     })
-                    .map(|t| t.to_owned())
             })
             .collect::<Vec<_>>();
 
@@ -1042,47 +1054,17 @@ where
         Ok(words)
     }
 
-    /// Train a model and return a new Tokenizer, using the given Trainer
-    pub fn train<T, TM>(
-        self,
-        trainer: &T,
-        files: Vec<String>,
-    ) -> Result<TokenizerImpl<TM, N, PT, PP, D>>
-    where
-        T: Trainer<Model = TM> + Sync,
-        TM: Model,
-    {
-        let words = self.word_count(trainer, files)?;
-
-        let (model, special_tokens) = trainer.train(words)?;
-        let mut new_tok = TokenizerImpl {
-            normalizer: self.normalizer,
-            pre_tokenizer: self.pre_tokenizer,
-            model,
-            post_processor: self.post_processor,
-            decoder: self.decoder,
-            added_vocabulary: self.added_vocabulary,
-            truncation: self.truncation,
-            padding: self.padding,
-        };
-
-        new_tok.add_special_tokens(&special_tokens);
-
-        Ok(new_tok)
-    }
-
     /// Train a model and replace our current Model, using the given Trainer
-    pub fn train_and_replace<T>(&mut self, trainer: &T, files: Vec<String>) -> Result<()>
+    pub fn train<T>(&mut self, trainer: &T, files: Vec<String>) -> Result<&mut Self>
     where
         T: Trainer<Model = M> + Sync,
     {
         let words = self.word_count(trainer, files)?;
 
-        let (model, special_tokens) = trainer.train(words)?;
-        self.model = model;
+        let special_tokens = trainer.train(words, &mut self.model)?;
         self.add_special_tokens(&special_tokens);
 
-        Ok(())
+        Ok(self)
     }
 }
 

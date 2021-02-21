@@ -11,14 +11,69 @@ use tokenizers as tk;
 use crate::models::PyModel;
 use crate::tokenizer::PyAddedToken;
 
+/// Base class for all trainers
+///
+/// This class is not supposed to be instantiated directly. Instead, any implementation of a
+/// Trainer will return an instance of this class when instantiated.
+///
+/// Args:
+///     vocab_size: unsigned int:
+///         The size of the final vocabulary, including all tokens and alphabet.
+///
+///     min_frequency: unsigned int:
+///         The minimum frequency a pair should have in order to be merged.
+///
+///     show_progress: boolean:
+///         Whether to show progress bars while training.
+///
+///     special_tokens: List[Union[str, AddedToken]]:
+///         A list of special tokens the model should know of.
+///
+///     limit_alphabet: unsigned int:
+///         The maximum different characters to keep in the alphabet.
+///
+///     initial_alphabet: List[str]:
+///         A list of characters to include in the initial alphabet, even
+///         if not seen in the training dataset.
+///         If the strings contain more than one character, only the first one
+///         is kept.
+///
+///     continuing_subword_prefix: Optional[str]:
+///         A prefix to be used for every subword that is not a beginning-of-word.
+///
+///     end_of_word_suffix: Optional[str]:
+///         A suffix to be used for every subword that is a end-of-word.
+///
+/// Returns:
+///     Trainer
 #[pyclass(name=Trainer)]
+#[derive(Clone)]
+#[text_signature = "(self, vocab_size=30000, min_frequency=0,show_progress=True, special_tokens=[],limit_alphabet=None, initial_alphabet = [], continuing_subword_prefix=None, end_of_word_suffix=None)"]
 pub struct PyTrainer {
-    pub trainer: TrainerWrapper,
+    pub trainer: Arc<TrainerWrapper>,
 }
 
 impl PyTrainer {
-    pub fn new(trainer: TrainerWrapper) -> Self {
+    pub(crate) fn new(trainer: Arc<TrainerWrapper>) -> Self {
         PyTrainer { trainer }
+    }
+
+    pub(crate) fn get_as_subtype(&self) -> PyResult<PyObject> {
+        let base = self.clone();
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        Ok(match self.trainer.as_ref() {
+            TrainerWrapper::BpeTrainer(_) => Py::new(py, (PyBpeTrainer {}, base))?.into_py(py),
+            TrainerWrapper::WordPieceTrainer(_) => {
+                Py::new(py, (PyWordPieceTrainer {}, base))?.into_py(py)
+            }
+            TrainerWrapper::WordLevelTrainer(_) => {
+                Py::new(py, (PyWordLevelTrainer {}, base))?.into_py(py)
+            }
+            TrainerWrapper::UnigramTrainer(_) => {
+                Py::new(py, (PyUnigramTrainer {}, base))?.into_py(py)
+            }
+        })
     }
 }
 
@@ -29,11 +84,12 @@ impl Trainer for PyTrainer {
         self.trainer.should_show_progress()
     }
 
-    fn train(&self, words: HashMap<String, u32>) -> tk::Result<(PyModel, Vec<tk::AddedToken>)> {
-        self.trainer.train(words).map(|(m, t)| {
-            let m = PyModel { model: Arc::new(m) };
-            (m, t)
-        })
+    fn train(
+        &self,
+        words: HashMap<String, u32>,
+        model: &mut PyModel,
+    ) -> tk::Result<Vec<tk::AddedToken>> {
+        self.trainer.train(words, &mut model.model.write().unwrap())
     }
 
     fn process_tokens(&self, words: &mut HashMap<String, u32>, tokens: Vec<String>) {
@@ -41,6 +97,18 @@ impl Trainer for PyTrainer {
     }
 }
 
+impl<I> From<I> for PyTrainer
+where
+    I: Into<TrainerWrapper>,
+{
+    fn from(trainer: I) -> Self {
+        PyTrainer {
+            trainer: trainer.into().into(),
+        }
+    }
+}
+
+/// Capable of training a BPE model
 #[pyclass(extends=PyTrainer, name=BpeTrainer)]
 pub struct PyBpeTrainer {}
 #[pymethods]
@@ -101,11 +169,46 @@ impl PyBpeTrainer {
                 };
             }
         }
-        Ok((PyBpeTrainer {}, PyTrainer::new(builder.build().into())))
+        Ok((
+            PyBpeTrainer {},
+            PyTrainer::new(Arc::new(builder.build().into())),
+        ))
     }
 }
 
+/// Capable of training a WordPiece model
+/// Args:
+///     vocab_size: unsigned int:
+///         The size of the final vocabulary, including all tokens and alphabet.
+///
+///     min_frequency: unsigned int:
+///         The minimum frequency a pair should have in order to be merged.
+///
+///     show_progress: boolean:
+///         Whether to show progress bars while training.
+///
+///     special_tokens: List[Union[str, AddedToken]]:
+///         A list of special tokens the model should know of.
+///
+///     limit_alphabet: unsigned int:
+///         The maximum different characters to keep in the alphabet.
+///
+///     initial_alphabet: List[str]:
+///         A list of characters to include in the initial alphabet, even
+///         if not seen in the training dataset.
+///         If the strings contain more than one character, only the first one
+///         is kept.
+///
+///     continuing_subword_prefix: Optional[str]:
+///         A prefix to be used for every subword that is not a beginning-of-word.
+///
+///     end_of_word_suffix: Optional[str]:
+///         A suffix to be used for every subword that is a end-of-word.
+///
+/// Returns:
+///     Trainer
 #[pyclass(extends=PyTrainer, name=WordPieceTrainer)]
+#[text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet= [],continuing_subword_prefix=\"##\", end_of_word_suffix=None)"]
 pub struct PyWordPieceTrainer {}
 #[pymethods]
 impl PyWordPieceTrainer {
@@ -168,12 +271,111 @@ impl PyWordPieceTrainer {
 
         Ok((
             PyWordPieceTrainer {},
-            PyTrainer::new(builder.build().into()),
+            PyTrainer::new(Arc::new(builder.build().into())),
         ))
     }
 }
 
+/// Capable of training a WorldLevel model
+///
+/// Args:
+///     vocab_size: unsigned int:
+///         The size of the final vocabulary, including all tokens and alphabet.
+///
+///     min_frequency: unsigned int:
+///         The minimum frequency a pair should have in order to be merged.
+///
+///     show_progress: boolean:
+///         Whether to show progress bars while training.
+///
+///     special_tokens: List[Union[str, AddedToken]]:
+///         A list of special tokens the model should know of.
+///
+/// Returns:
+///     Trainer
+#[pyclass(extends=PyTrainer, name=WordLevelTrainer)]
+pub struct PyWordLevelTrainer {}
+#[pymethods]
+impl PyWordLevelTrainer {
+    /// Create a new WordLevelTrainer with the given configuration
+    #[new]
+    #[args(kwargs = "**")]
+    pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
+        let mut builder = tk::models::wordlevel::WordLevelTrainer::builder();
+
+        if let Some(kwargs) = kwargs {
+            for (key, val) in kwargs {
+                let key: &str = key.extract()?;
+                match key {
+                    "vocab_size" => {
+                        builder.vocab_size(val.extract()?);
+                    }
+                    "min_frequency" => {
+                        builder.min_frequency(val.extract()?);
+                    }
+                    "show_progress" => {
+                        builder.show_progress(val.extract()?);
+                    }
+                    "special_tokens" => {
+                        builder.special_tokens(
+                            val.cast_as::<PyList>()?
+                                .into_iter()
+                                .map(|token| {
+                                    if let Ok(content) = token.extract::<String>() {
+                                        Ok(PyAddedToken::from(content, Some(true)).get_token())
+                                    } else if let Ok(mut token) =
+                                        token.extract::<PyRefMut<PyAddedToken>>()
+                                    {
+                                        token.is_special_token = true;
+                                        Ok(token.get_token())
+                                    } else {
+                                        Err(exceptions::PyTypeError::new_err(
+                                            "special_tokens must be a List[Union[str, AddedToken]]",
+                                        ))
+                                    }
+                                })
+                                .collect::<PyResult<Vec<_>>>()?,
+                        );
+                    }
+                    _ => println!("Ignored unknown kwargs option {}", key),
+                }
+            }
+        }
+
+        Ok((
+            PyWordLevelTrainer {},
+            PyTrainer::new(Arc::new(
+                builder
+                    .build()
+                    .expect("WordLevelTrainerBuilder cannot fail")
+                    .into(),
+            )),
+        ))
+    }
+}
+
+/// Capable of training a Unigram model
+///
+/// Args:
+///     vocab_size: unsigned int:
+///         The size of the final vocabulary, including all tokens and alphabet.
+///
+///     show_progress: boolean:
+///         Whether to show progress bars while training.
+///
+///     special_tokens: List[Union[str, AddedToken]]:
+///         A list of special tokens the model should know of.
+///
+///     initial_alphabet: List[str]:
+///         A list of characters to include in the initial alphabet, even
+///         if not seen in the training dataset.
+///         If the strings contain more than one character, only the first one
+///         is kept.
+///
+/// Returns:
+///     Trainer
 #[pyclass(extends=PyTrainer, name=UnigramTrainer)]
+#[text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens= [])"]
 pub struct PyUnigramTrainer {}
 #[pymethods]
 impl PyUnigramTrainer {
@@ -235,6 +437,9 @@ impl PyUnigramTrainer {
             builder.build().map_err(|e| {
                 exceptions::PyException::new_err(format!("Cannot build UnigramTrainer: {}", e))
             })?;
-        Ok((PyUnigramTrainer {}, PyTrainer::new(trainer.into())))
+        Ok((
+            PyUnigramTrainer {},
+            PyTrainer::new(Arc::new(trainer.into())),
+        ))
     }
 }

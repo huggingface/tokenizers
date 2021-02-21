@@ -8,6 +8,10 @@ use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
 mod serialization;
+mod trainer;
+
+// Re-export
+pub use trainer::*;
 
 type Vocab = HashMap<String, u32>;
 
@@ -161,6 +165,8 @@ impl Default for WordLevel {
 }
 
 impl Model for WordLevel {
+    type Trainer = WordLevelTrainer;
+
     fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
         Ok(vec![Token {
             id: *self
@@ -177,12 +183,12 @@ impl Model for WordLevel {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<&str> {
-        self.vocab_r.get(&id).map(String::as_ref)
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.vocab_r.get(&id).cloned()
     }
 
-    fn get_vocab(&self) -> &HashMap<String, u32> {
-        &self.vocab
+    fn get_vocab(&self) -> HashMap<String, u32> {
+        self.vocab.clone()
     }
 
     fn get_vocab_size(&self) -> usize {
@@ -205,5 +211,9 @@ impl Model for WordLevel {
         vocab_file.write_all(&serialized.as_bytes())?;
 
         Ok(vec![vocab_path])
+    }
+
+    fn get_trainer(&self) -> Self::Trainer {
+        WordLevelTrainer::default()
     }
 }

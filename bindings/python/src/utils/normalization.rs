@@ -173,6 +173,15 @@ fn slice(
         .flatten())
 }
 
+/// NormalizedString
+///
+/// A NormalizedString takes care of modifying an "original" string, to obtain a "normalized" one.
+/// While making all the requested modifications, it keeps track of the alignment information
+/// between the two versions of the string.
+///
+/// Args:
+///     sequence: str:
+///         The string sequence used to initialize this NormalizedString
 #[pyclass(module = "tokenizers", name=NormalizedString)]
 #[derive(Clone)]
 pub struct PyNormalizedString {
@@ -186,6 +195,7 @@ impl PyNormalizedString {
         NormalizedString::from(s).into()
     }
 
+    /// The normalized part of the string
     #[getter]
     fn get_normalized(&self) -> &str {
         self.normalized.get()
@@ -196,70 +206,119 @@ impl PyNormalizedString {
         self.normalized.get_original()
     }
 
+    /// Runs the NFD normalization
+    #[text_signature = "(self)"]
     fn nfd(&mut self) {
         self.normalized.nfd();
     }
 
+    /// Runs the NFKD normalization
+    #[text_signature = "(self)"]
     fn nfkd(&mut self) {
         self.normalized.nfkd();
     }
 
+    /// Runs the NFC normalization
+    #[text_signature = "(self)"]
     fn nfc(&mut self) {
         self.normalized.nfc();
     }
 
+    /// Runs the NFKC normalization
+    #[text_signature = "(self)"]
     fn nfkc(&mut self) {
         self.normalized.nfkc();
     }
 
+    /// Lowercase the string
+    #[text_signature = "(self)"]
     fn lowercase(&mut self) {
         self.normalized.lowercase();
     }
 
+    /// Uppercase the string
+    #[text_signature = "(self)"]
     fn uppercase(&mut self) {
         self.normalized.uppercase();
     }
 
+    /// Prepend the given sequence to the string
+    #[text_signature = "(self, s)"]
     fn prepend(&mut self, s: &str) {
         self.normalized.prepend(s);
     }
 
+    /// Append the given sequence to the string
+    #[text_signature = "(self, s)"]
     fn append(&mut self, s: &str) {
         self.normalized.append(s);
     }
 
+    /// Strip the left of the string
+    #[text_signature = "(self)"]
     fn lstrip(&mut self) {
         self.normalized.lstrip();
     }
 
+    /// Strip the right of the string
+    #[text_signature = "(self)"]
     fn rstrip(&mut self) {
         self.normalized.rstrip();
     }
 
+    /// Strip both ends of the string
+    #[text_signature = "(self)"]
     fn strip(&mut self) {
         self.normalized.strip();
     }
 
+    /// Clears the string
+    #[text_signature = "(self)"]
     fn clear(&mut self) {
         self.normalized.clear();
     }
 
+    /// Slice the string using the given range
+    #[text_signature = "(self, range)"]
     fn slice(&self, range: PyRange) -> PyResult<Option<PyNormalizedString>> {
         slice(&self.normalized, &range)
     }
 
+    /// Filter each character of the string using the given func
+    #[text_signature = "(self, func)"]
     fn filter(&mut self, func: &PyAny) -> PyResult<()> {
         filter(&mut self.normalized, func)
     }
 
+    /// Calls the given function for each character of the string
+    #[text_signature = "(self, func)"]
     fn for_each(&self, func: &PyAny) -> PyResult<()> {
         for_each(&self.normalized, func)
     }
 
+    /// Calls the given function for each character of the string
+    ///
+    /// Replaces each character of the string using the returned value. Each
+    /// returned value **must** be a str of length 1 (ie a character).
+    #[text_signature = "(self, func)"]
     fn map(&mut self, func: &PyAny) -> PyResult<()> {
         map(&mut self.normalized, func)
     }
 
+    /// Split the NormalizedString using the given pattern and the specified behavior
+    ///
+    /// Args:
+    ///     pattern: Pattern:
+    ///         A pattern used to split the string. Usually a string or a Regex
+    ///
+    ///     behavior: SplitDelimiterBehavior:
+    ///         The behavior to use when splitting.
+    ///         Choices: "removed", "isolated", "merged_with_previous", "merged_with_next",
+    ///         "contiguous"
+    ///
+    /// Returns:
+    ///     A list of NormalizedString, representing each split
+    #[text_signature = "(self, pattern, behavior)"]
     fn split(
         &mut self,
         pattern: PyPattern,
@@ -272,6 +331,15 @@ impl PyNormalizedString {
             .collect())
     }
 
+    /// Replace the content of the given pattern with the provided content
+    ///
+    /// Args:
+    ///     pattern: Pattern:
+    ///         A pattern used to match the string. Usually a string or a Regex
+    ///
+    ///     content: str:
+    ///         The content to be used as replacement
+    #[text_signature = "(self, pattern, content)"]
     fn replace(&mut self, pattern: PyPattern, content: &str) -> PyResult<()> {
         ToPyResult(self.normalized.replace(pattern, content)).into()
     }

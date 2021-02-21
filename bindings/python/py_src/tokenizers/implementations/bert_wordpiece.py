@@ -118,4 +118,4 @@ class BertWordPieceTokenizer(BaseTokenizer):
         )
         if isinstance(files, str):
             files = [files]
-        self._tokenizer.train(trainer, files)
+        self._tokenizer.train(files, trainer=trainer)

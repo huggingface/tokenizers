@@ -1,5 +1,5 @@
 use super::WordPiece;
-use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder};
+use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder, BPE};
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use std::collections::{HashMap, HashSet};
 
@@ -89,18 +89,34 @@ impl WordPieceTrainer {
         WordPieceTrainerBuilder::default()
     }
 
-    pub fn train(&self, word_counts: HashMap<String, u32>) -> Result<(WordPiece, Vec<AddedToken>)> {
-        let (bpe, tokens) = self.bpe_trainer.train(word_counts)?;
-        Ok((WordPiece::from_bpe(&bpe), tokens))
+    pub fn train(
+        &self,
+        word_counts: HashMap<String, u32>,
+        model: &mut WordPiece,
+    ) -> Result<Vec<AddedToken>> {
+        let mut bpe = BPE::default();
+        let special_tokens = self.bpe_trainer.train(word_counts, &mut bpe)?;
+        let new_wordpiece = WordPiece::from_bpe(&bpe);
+
+        // Transfer the vocab
+        model.vocab = new_wordpiece.vocab;
+        model.vocab_r = new_wordpiece.vocab_r;
+        // The continuing_subword_prefix is the only other option to be overriden by the trainer
+        model.continuing_subword_prefix = new_wordpiece.continuing_subword_prefix;
+
+        Ok(special_tokens)
     }
 }
 
 impl Trainer for WordPieceTrainer {
     type Model = WordPiece;
 
-    fn train(&self, word_counts: HashMap<String, u32>) -> Result<(WordPiece, Vec<AddedToken>)> {
-        let (wp, tokens) = self.train(word_counts)?;
-        Ok((wp, tokens))
+    fn train(
+        &self,
+        word_counts: HashMap<String, u32>,
+        model: &mut WordPiece,
+    ) -> Result<Vec<AddedToken>> {
+        self.train(word_counts, model)
     }
 
     fn process_tokens(&self, mut words: &mut HashMap<String, u32>, tokens: Vec<String>) {

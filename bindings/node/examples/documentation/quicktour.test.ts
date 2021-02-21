@@ -16,7 +16,7 @@ describe("quicktourExample", () => {
         let { Tokenizer } = require("tokenizers/bindings/tokenizer");
         let { BPE } = require("tokenizers/bindings/models");
 
-        let tokenizer = new Tokenizer(BPE.empty());
+        let tokenizer = new Tokenizer(BPE.init({}, [], { unkToken: "[UNK]" }));
         // END init_tokenizer
         // START init_trainer
         let { bpeTrainer } = require("tokenizers/bindings/trainers");
@@ -32,17 +32,8 @@ describe("quicktourExample", () => {
         // END init_pretok
         // START train
         let files = ["test", "train", "valid"].map(split => `data/wikitext-103-raw/wiki.${split}.raw`);
-        tokenizer.train(trainer, files);
+        tokenizer.train(files, trainer);
         // END train
-        // START reload_model
-        let { promisify } = require("util");
-
-        let modelFiles = tokenizer.getModel().save("data", "wiki");
-        let fromFile = promisify(BPE.fromFile);
-        tokenizer.setModel(await fromFile(modelFiles[0], modelFiles[1], {
-            unkToken: "[UNK]"
-        }));
-        // END reload_model
         // START save
         tokenizer.save("data/tokenizer-wiki.json");
         // END save

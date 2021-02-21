@@ -38,7 +38,7 @@ describe("Can modify pretokenizers on the fly", () => {
     tokenizer.setPreTokenizer(sequencePreTokenizer([whitespacePreTokenizer()]));
 
     encoding = await encode(input, null);
-    expect(encoding.getIds()).toEqual([0, 1, 2, 3, 4, 6]);
+    expect(encoding.getIds()).toEqual([0, 1, 2, 3, 4, 8]);
 
     // Change pre tokenizer
     tokenizer.setPreTokenizer(
@@ -46,13 +46,15 @@ describe("Can modify pretokenizers on the fly", () => {
     );
 
     encoding = await encode(input, null);
-    expect(encoding.getIds()).toEqual([0, 1, 2, 3, 4, 6, 6, 6]);
+    expect(encoding.getIds()).toEqual([0, 1, 2, 3, 4, 8, 8, 8]);
   });
 });
 
 describe("RawEncoding", () => {
   const originalString = "my name is john";
+  const originalPairString = "what is yours?";
   let encoding: RawEncoding;
+  let encodingDual: RawEncoding;
   let encode: (
     sequence: InputSequence,
     pair?: InputSequence | null,
@@ -74,6 +76,7 @@ describe("RawEncoding", () => {
 
   beforeEach(async () => {
     encoding = await encode(originalString, null);
+    encodingDual = await encode(originalString, originalPairString);
   });
 
   it("has a list of defined methods", async () => {
@@ -91,7 +94,8 @@ describe("RawEncoding", () => {
     expect(typeof encoding.getSpecialTokensMask).toBe("function");
     expect(typeof encoding.getTokens).toBe("function");
     expect(typeof encoding.getTypeIds).toBe("function");
-    expect(typeof encoding.getWords).toBe("function");
+    expect(typeof encoding.getWordIds).toBe("function");
+    expect(typeof encoding.getSequenceIds).toBe("function");
     expect(typeof encoding.pad).toBe("function");
     expect(typeof encoding.truncate).toBe("function");
   });
@@ -102,10 +106,17 @@ describe("RawEncoding", () => {
     });
   });
 
-  describe("getWords", () => {
+  describe("getWordIds", () => {
     it("returns the correct list of indexes", () => {
-      const indexes = encoding.getWords();
+      const indexes = encoding.getWordIds();
       expect(indexes).toEqual([0, 1, 2, 3, 3]);
+    });
+  });
+
+  describe("getSequenceIds", () => {
+    it("returns the correct list of indexes", () => {
+      expect(encoding.getSequenceIds()).toEqual([0, 0, 0, 0, 0]);
+      expect(encodingDual.getSequenceIds()).toEqual([0, 0, 0, 0, 0, 1, 1, 1, 1]);
     });
   });
 
@@ -113,6 +124,11 @@ describe("RawEncoding", () => {
     it("returns the correct indexes", () => {
       const indexes = encoding.wordToTokens(3);
       expect(indexes).toEqual([3, 5]);
+    });
+
+    it("returns the corrent indexes with pair sequences", () => {
+      expect(encodingDual.wordToTokens(3, 0)).toEqual([3, 5]);
+      expect(encodingDual.wordToTokens(3, 1)).toEqual([8, 9]);
     });
 
     it("returns undefined when out of range word", () => {
@@ -127,9 +143,21 @@ describe("RawEncoding", () => {
       expect(offsets).toEqual([11, 15]);
     });
 
+    it("returns the correct offsets with pair sequences", () => {
+      expect(encodingDual.wordToChars(3, 0)).toEqual([11, 15]);
+      expect(encodingDual.wordToChars(3, 1)).toEqual([13, 14]);
+    });
+
     it("returns undefined when out of range word", () => {
       const offsets = encoding.wordToChars(100);
       expect(offsets).toBeUndefined();
+    });
+  });
+
+  describe("tokenToSequence", () => {
+    it("returns the correct value", () => {
+      expect(encodingDual.tokenToSequence(4)).toEqual(0);
+      expect(encodingDual.tokenToSequence(6)).toEqual(1);
     });
   });
 
@@ -137,6 +165,11 @@ describe("RawEncoding", () => {
     it("returns the correct offsets", () => {
       const offsets = encoding.tokenToChars(3);
       expect(offsets).toEqual([11, 13]);
+    });
+
+    it("returns the correct offsets with pair sequences", () => {
+      expect(encodingDual.tokenToChars(3)).toEqual([11, 13]);
+      expect(encodingDual.tokenToChars(7)).toEqual([8, 13]);
     });
 
     it("returns undefined when out of range token", () => {
@@ -151,6 +184,11 @@ describe("RawEncoding", () => {
       expect(index).toEqual(3);
     });
 
+    it("returns the correct index with pair sequences", () => {
+      expect(encodingDual.tokenToWord(3)).toEqual(3);
+      expect(encodingDual.tokenToWord(7)).toEqual(2);
+    });
+
     it("returns undefined when out of range token", () => {
       const index = encoding.tokenToWord(100);
       expect(index).toBeUndefined();
@@ -163,6 +201,11 @@ describe("RawEncoding", () => {
       expect(index).toEqual(1);
     });
 
+    it("returns the correct index with pair sequences", () => {
+      expect(encodingDual.charToToken(3, 0)).toEqual(1);
+      expect(encodingDual.charToToken(3, 1)).toEqual(5);
+    });
+
     it("returns undefined when out of range char", () => {
       const index = encoding.charToToken(100);
       expect(index).toBeUndefined();
@@ -173,6 +216,11 @@ describe("RawEncoding", () => {
     it("returns the correct index", () => {
       const index = encoding.charToWord(3);
       expect(index).toEqual(1);
+    });
+
+    it("returns the correct index with pair sequences", () => {
+      expect(encodingDual.charToWord(3, 0)).toEqual(1);
+      expect(encodingDual.charToWord(3, 1)).toEqual(0);
     });
 
     it("returns undefined when out of range char", () => {
