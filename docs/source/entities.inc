@@ -1,0 +1,152 @@
+.. entities:: python
+
+    :global:
+
+    class
+        class
+    classmethod
+        class method
+    Tokenizer
+        :class:`~tokenizers.Tokenizer`
+    Tokenizer.train
+        :meth:`~tokenizers.Tokenizer.train`
+    Tokenizer.save
+        :meth:`~tokenizers.Tokenizer.save`
+    Tokenizer.from_file
+        :meth:`~tokenizers.Tokenizer.from_file`
+    Tokenizer.encode
+        :meth:`~tokenizers.Tokenizer.encode`
+    Tokenizer.encode_batch
+        :meth:`~tokenizers.Tokenizer.encode_batch`
+    Tokenizer.decode
+        :meth:`~tokenizers.Tokenizer.decode`
+    Tokenizer.decode_batch
+        :meth:`~tokenizers.Tokenizer.decode_batch`
+    Tokenizer.token_to_id
+        :meth:`~tokenizers.Tokenizer.token_to_id`
+    Tokenizer.enable_padding
+        :meth:`~tokenizers.Tokenizer.enable_padding`
+    Encoding
+        :class:`~tokenizers.Encoding`
+    TemplateProcessing
+        :class:`~tokenizers.processors.TemplateProcessing`
+    Normalizer
+        :class:`~tokenizers.normalizers.Normalizer`
+    normalizers.Sequence
+        :class:`~tokenizers.normalizers.Sequence`
+    pre_tokenizers.Whitespace
+        :class:`~tokenizers.pre_tokenizers.Whitespace`
+    PreTokenizer
+        :class:`~tokenizers.pre_tokenizers.PreTokenizer`
+    models.BPE
+        :class:`~tokenizers.models.BPE`
+    models.Unigram
+        :class:`~tokenizers.models.Unigram`
+    models.WordLevel
+        :class:`~tokenizers.models.WordLevel`
+    models.WordPiece
+        :class:`~tokenizers.models.WordPiece`
+    Decoder
+        :class:`~tokenizers.decoders.Decoder`
+
+.. entities:: rust
+
+    :global:
+
+    class
+        struct
+    classmethod
+        static method
+    Tokenizer
+        :rust:struct:`~tokenizers::tokenizer::Tokenizer`
+    Tokenizer.train
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::train`
+    Tokenizer.save
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::save`
+    Tokenizer.from_file
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::from_file`
+    Tokenizer.encode
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::encode`
+    Tokenizer.encode_batch
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::encode_batch`
+    Tokenizer.decode
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::decode`
+    Tokenizer.decode_batch
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::decode_batch`
+    Tokenizer.token_to_id
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::token_to_id`
+    Tokenizer.enable_padding
+        :rust:meth:`~tokenizers::tokenizer::Tokenizer::enable_padding`
+    Encoding
+        :rust:struct:`~tokenizers::tokenizer::Encoding`
+    TemplateProcessing
+        :rust:struct:`~tokenizers::processors::template::TemplateProcessing`
+    Normalizer
+        :rust:trait:`~tokenizers::tokenizer::Normalizer`
+    normalizers.Sequence
+        :rust:struct:`~tokenizers::normalizers::utils::Sequence`
+    pre_tokenizers.Whitespace
+        :rust:struct:`~tokenizers::normalizers::whitespace::Whitespace`
+    PreTokenizer
+        :rust:trait:`~tokenizers::tokenizer::PreTokenizer`
+    models.BPE
+        :rust:struct:`~tokenizers::models::bpe::BPE`
+    models.Unigram
+        :rust:struct:`~tokenizers::models::unigram::Unigram`
+    models.WordLevel
+        :rust:struct:`~tokenizers::models::wordlevel::WordLevel`
+    models.WordPiece
+        :rust:struct:`~tokenizers::models::wordpiece::WordPiece`
+    Decoder
+        :rust:trait:`~tokenizers::tokenizer::Decoder`
+
+.. entities:: node
+
+    :global:
+
+    class
+        class
+    classmethod
+        static method
+    Tokenizer
+        :obj:`Tokenizer`
+    Tokenizer.train
+        :obj:`Tokenizer.train()`
+    Tokenizer.save
+        :obj:`Tokenizer.save()`
+    Tokenizer.from_file
+        :obj:`Tokenizer.fromFile()`
+    Tokenizer.encode
+        :obj:`Tokenizer.encode()`
+    Tokenizer.encode_batch
+        :obj:`Tokenizer.encodeBatch()`
+    Tokenizer.decode
+        :obj:`Tokenizer.decode()`
+    Tokenizer.decode_batch
+        :obj:`Tokenizer.decodeBatch()`
+    Tokenizer.token_to_id
+        :obj:`Tokenizer.tokenToId()`
+    Tokenizer.enable_padding
+        :obj:`Tokenizer.setPadding()`
+    Encoding
+        :obj:`Encoding`
+    TemplateProcessing
+        :obj:`TemplateProcessing`
+    Normalizer
+        :obj:`Normalizer`
+    normalizers.Sequence
+        :obj:`Sequence`
+    pre_tokenizers.Whitespace
+        :obj:`Whitespace`
+    PreTokenizer
+        :obj:`PreTokenizer`
+    models.BPE
+        :obj:`BPE`
+    models.Unigram
+        :obj:`Unigram`
+    models.WordLevel
+        :obj:`WordLevel`
+    models.WordPiece
+        :obj:`WordPiece`
+    Decoder
+        :obj:`Decoder`
