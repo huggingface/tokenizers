@@ -751,7 +751,9 @@ impl PyTokenizer {
     }
 
     fn train(&mut self, trainer: &PyTrainer, files: Vec<String>) -> PyResult<()> {
-        ToPyResult(self.tokenizer.train_and_replace(trainer, files)).into()
+        let gil = Python::acquire_gil();
+        gil.python()
+            .allow_threads(|| ToPyResult(self.tokenizer.train_and_replace(trainer, files)).into())
     }
 
     #[args(pair = "None", add_special_tokens = true)]
