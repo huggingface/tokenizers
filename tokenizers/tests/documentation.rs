@@ -20,7 +20,7 @@ fn train_tokenizer() {
         .build()
         .unwrap();
 
-    let trainer = BpeTrainerBuilder::new()
+    let mut trainer = BpeTrainerBuilder::new()
         .show_progress(false)
         .vocab_size(vocab_size)
         .min_frequency(0)
@@ -35,7 +35,7 @@ fn train_tokenizer() {
 
     let pretty = true;
     tokenizer
-        .train(&trainer, vec!["data/small.txt".to_string()])
+        .train_from_files(&mut trainer, vec!["data/small.txt".to_string()])
         .unwrap()
         .save("data/tokenizer.json", pretty)
         .unwrap();
@@ -80,7 +80,7 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
     // START quicktour_init_trainer
     use tokenizers::models::bpe::BpeTrainer;
 
-    let trainer = BpeTrainer::builder()
+    let mut trainer = BpeTrainer::builder()
         .special_tokens(vec![
             AddedToken::from("[UNK]", true),
             AddedToken::from("[CLS]", true),
@@ -102,7 +102,7 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
         "data/wikitext-103-raw/wiki.test.raw".into(),
         "data/wikitext-103-raw/wiki.valid.raw".into(),
     ];
-    tokenizer.train(&trainer, files)?;
+    tokenizer.train_from_files(&mut trainer, files)?;
     // END quicktour_train
     // START quicktour_save
     tokenizer.save("data/tokenizer-wiki.json", false)?;
@@ -403,7 +403,7 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
     // START bert_train_tokenizer
     use tokenizers::models::{wordpiece::WordPieceTrainer, TrainerWrapper};
 
-    let trainer: TrainerWrapper = WordPieceTrainer::builder()
+    let mut trainer: TrainerWrapper = WordPieceTrainer::builder()
         .vocab_size(30_522)
         .special_tokens(vec![
             AddedToken::from("[UNK]", true),
@@ -419,7 +419,7 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
         "data/wikitext-103-raw/wiki.test.raw".into(),
         "data/wikitext-103-raw/wiki.valid.raw".into(),
     ];
-    bert_tokenizer.train(&trainer, files)?;
+    bert_tokenizer.train_from_files(&mut trainer, files)?;
 
     bert_tokenizer.save("data/bert-wiki.json", false)?;
     // END bert_train_tokenizer

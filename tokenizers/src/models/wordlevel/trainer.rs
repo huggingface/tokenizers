@@ -1,4 +1,5 @@
 use super::WordLevel;
+use crate::utils::parallelism::*;
 use crate::{AddedToken, Result, Trainer};
 use std::collections::HashMap;
 
@@ -17,6 +18,9 @@ pub struct WordLevelTrainer {
     /// A list of special tokens that the model should know of
     #[builder(default)]
     pub special_tokens: Vec<AddedToken>,
+
+    #[builder(default, private)]
+    words: HashMap<String, u32>,
 }
 
 impl Default for WordLevelTrainer {
@@ -26,6 +30,7 @@ impl Default for WordLevelTrainer {
             vocab_size: 30_000,
             show_progress: true,
             special_tokens: vec![],
+            words: HashMap::new(),
         }
     }
 }
@@ -35,12 +40,12 @@ impl WordLevelTrainer {
         WordLevelTrainerBuilder::default()
     }
 
-    fn train(
+    fn do_train(
         &self,
-        word_counts: HashMap<String, u32>,
+        word_counts: &HashMap<String, u32>,
         model: &mut WordLevel,
     ) -> Result<Vec<AddedToken>> {
-        let mut ordered_counts = word_counts.into_iter().collect::<Vec<_>>();
+        let mut ordered_counts = word_counts.iter().collect::<Vec<_>>();
         ordered_counts.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
         let word_level = WordLevel::builder()
             .vocab(
@@ -50,8 +55,8 @@ impl WordLevelTrainer {
                     .chain(
                         ordered_counts
                             .into_iter()
-                            .filter(|(_, n)| *n >= self.min_frequency)
-                            .map(|(w, _)| w),
+                            .filter(|(_, n)| **n >= self.min_frequency)
+                            .map(|(w, _)| w.to_owned()),
                     )
                     .take(self.vocab_size)
                     .enumerate()
@@ -72,17 +77,44 @@ impl Trainer for WordLevelTrainer {
     type Model = WordLevel;
 
     /// Train a WordLevel model
-    fn train(
-        &self,
-        word_counts: HashMap<String, u32>,
-        model: &mut WordLevel,
-    ) -> Result<Vec<AddedToken>> {
-        self.train(word_counts, model)
+    fn train(&self, model: &mut WordLevel) -> Result<Vec<AddedToken>> {
+        self.do_train(&self.words, model)
     }
 
     /// Whether we should show progress
     fn should_show_progress(&self) -> bool {
         self.show_progress
+    }
+
+    fn feed<I, S, F>(&mut self, iterator: I, process: F) -> Result<()>
+    where
+        I: Iterator<Item = S> + Send,
+        S: AsRef<str> + Send,
+        F: Fn(&str) -> Result<Vec<String>> + Sync,
+    {
+        let words: Result<HashMap<String, u32>> = iterator
+            .maybe_par_bridge()
+            .map(|sequence| {
+                let words = process(sequence.as_ref())?;
+                let mut map = HashMap::new();
+                for word in words {
+                    map.entry(word).and_modify(|c| *c += 1).or_insert(1);
+                }
+                Ok(map)
+            })
+            .reduce(
+                || Ok(HashMap::new()),
+                |acc, ws| {
+                    let mut acc = acc?;
+                    for (k, v) in ws? {
+                        acc.entry(k).and_modify(|c| *c += v).or_insert(v);
+                    }
+                    Ok(acc)
+                },
+            );
+
+        self.words = words?;
+        Ok(())
     }
 }
 
@@ -108,7 +140,7 @@ mod tests {
         trainer.vocab_size = 5;
 
         let mut model = WordLevel::default();
-        trainer.train(word_counts.clone(), &mut model).unwrap();
+        trainer.do_train(&word_counts, &mut model).unwrap();
         let expected_vocab: HashMap<String, u32> = [
             ("the".into(), 0),
             ("are".into(), 1),
@@ -124,7 +156,7 @@ mod tests {
         // If we specify a min_frequency
         trainer.min_frequency = 15;
         let mut model = WordLevel::default();
-        trainer.train(word_counts, &mut model).unwrap();
+        trainer.do_train(&word_counts, &mut model).unwrap();
         let expected_vocab: HashMap<String, u32> = [
             ("the".into(), 0),
             ("are".into(), 1),

@@ -58,6 +58,7 @@ setup(
         "tokenizers.processors",
         "tokenizers.trainers",
         "tokenizers.implementations",
+        "tokenizers.tools",
     ],
     package_data={
         "tokenizers": ["py.typed", "__init__.pyi"],
@@ -68,6 +69,7 @@ setup(
         "tokenizers.processors": ["py.typed", "__init__.pyi"],
         "tokenizers.trainers": ["py.typed", "__init__.pyi"],
         "tokenizers.implementations": ["py.typed"],
+        "tokenizers.tools": ["py.typed", "visualizer-styles.css"],
     },
     zip_safe=False,
 )

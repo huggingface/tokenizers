@@ -1068,14 +1068,92 @@ impl PyTokenizer {
         Ok(self.tokenizer.add_special_tokens(&tokens))
     }
 
+    /// Train the Tokenizer using the given files.
+    ///
+    /// Reads the files line by line, while keeping all the whitespace, even new lines.
+    /// If you want to train from data store in-memory, you can check
+    /// :meth:`~tokenizers.Tokenizer.train_from_iterator`
+    ///
+    /// Args:
+    ///     files (:obj:`List[str]`):
+    ///         A list of path to the files that we should use for training
+    ///
+    ///     trainer (:obj:`~tokenizers.trainers.Trainer`, `optional`):
+    ///         An optional trainer that should be used to train our Model
     #[args(trainer = "None")]
-    fn train(&mut self, files: Vec<String>, trainer: Option<&PyTrainer>) -> PyResult<()> {
-        let trainer =
+    #[text_signature = "(self, files, trainer = None)"]
+    fn train(&mut self, files: Vec<String>, trainer: Option<&mut PyTrainer>) -> PyResult<()> {
+        let mut trainer =
             trainer.map_or_else(|| self.tokenizer.get_model().get_trainer(), |t| t.clone());
         Python::with_gil(|py| {
             py.allow_threads(|| {
-                ToPyResult(self.tokenizer.train(&trainer, files).map(|_| {})).into()
+                ToPyResult(
+                    self.tokenizer
+                        .train_from_files(&mut trainer, files)
+                        .map(|_| {}),
+                )
+                .into()
             })
+        })
+    }
+
+    /// Train the Tokenizer using the provided iterator.
+    ///
+    /// You can provide anything that is a Python Iterator
+    ///
+    ///     * A list of sequences :obj:`List[str]`
+    ///     * A generator that yields :obj:`str` or :obj:`List[str]`
+    ///     * A Numpy array of strings
+    ///     * ...
+    ///
+    /// Args:
+    ///     iterator (:obj:`Iterator`):
+    ///         Any iterator over strings or list of strings
+    ///
+    ///     trainer (:obj:`~tokenizers.trainers.Trainer`, `optional`):
+    ///         An optional trainer that should be used to train our Model
+    ///
+    ///     length (:obj:`int`, `optional`):
+    ///         The total number of sequences in the iterator. This is used to
+    ///         provide meaningful progress tracking
+    #[args(trainer = "None", length = "None")]
+    #[text_signature = "(self, iterator, trainer=None, length=None)"]
+    fn train_from_iterator(
+        &mut self,
+        iterator: &PyAny,
+        trainer: Option<&mut PyTrainer>,
+        length: Option<usize>,
+    ) -> PyResult<()> {
+        use crate::utils::PySendIterator;
+
+        let mut trainer =
+            trainer.map_or_else(|| self.tokenizer.get_model().get_trainer(), |t| t.clone());
+
+        let py_send = PySendIterator::new(
+            // Each element of the iterator can either be:
+            //  - An iterator, to allow batching
+            //  - A string
+            iterator.iter()?.flat_map(|seq| match seq {
+                Ok(s) => {
+                    if let Ok(s) = s.downcast::<PyString>() {
+                        itertools::Either::Right(std::iter::once(s.to_str()))
+                    } else {
+                        match s.iter() {
+                            Ok(iter) => itertools::Either::Left(iter.map(|i| i?.extract::<&str>())),
+                            Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
+                        }
+                    }
+                }
+                Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
+            }),
+            length,
+        );
+
+        py_send.execute(|iter| {
+            self.tokenizer
+                .train(&mut trainer, iter)
+                .map(|_| {})
+                .map_err(|e| exceptions::PyException::new_err(e.to_string()))
         })
     }
 

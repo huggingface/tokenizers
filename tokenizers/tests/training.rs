@@ -20,9 +20,9 @@ fn bpe_values_after_training() {
     )
     .build()
     .unwrap();
-    let trainer = tokenizer.get_model().get_trainer();
+    let mut trainer = tokenizer.get_model().get_trainer();
     tokenizer
-        .train(&trainer, vec!["./data/small.txt".to_string()])
+        .train_from_files(&mut trainer, vec!["./data/small.txt".to_string()])
         .unwrap();
     assert_eq!(tokenizer.get_model().dropout, Some(0.1));
     assert_eq!(tokenizer.get_model().unk_token, Some("[UNK]".to_string()));

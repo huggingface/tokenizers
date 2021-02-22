@@ -1,7 +1,7 @@
 use super::WordPiece;
 use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder, BPE};
 use crate::tokenizer::{AddedToken, Result, Trainer};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
 /// configuration.
@@ -153,13 +153,9 @@ impl WordPieceTrainer {
         WordPieceTrainerBuilder::default()
     }
 
-    pub fn train(
-        &self,
-        word_counts: HashMap<String, u32>,
-        model: &mut WordPiece,
-    ) -> Result<Vec<AddedToken>> {
+    pub fn train(&self, model: &mut WordPiece) -> Result<Vec<AddedToken>> {
         let mut bpe = BPE::default();
-        let special_tokens = self.bpe_trainer.train(word_counts, &mut bpe)?;
+        let special_tokens = self.bpe_trainer.train(&mut bpe)?;
         let new_wordpiece = WordPiece::from_bpe(&bpe);
 
         // Transfer the vocab
@@ -175,19 +171,20 @@ impl WordPieceTrainer {
 impl Trainer for WordPieceTrainer {
     type Model = WordPiece;
 
-    fn train(
-        &self,
-        word_counts: HashMap<String, u32>,
-        model: &mut WordPiece,
-    ) -> Result<Vec<AddedToken>> {
-        self.train(word_counts, model)
-    }
-
-    fn process_tokens(&self, mut words: &mut HashMap<String, u32>, tokens: Vec<String>) {
-        self.bpe_trainer.process_tokens(&mut words, tokens)
+    fn train(&self, model: &mut WordPiece) -> Result<Vec<AddedToken>> {
+        self.train(model)
     }
 
     fn should_show_progress(&self) -> bool {
         self.bpe_trainer.should_show_progress()
+    }
+
+    fn feed<I, S, F>(&mut self, iterator: I, process: F) -> Result<()>
+    where
+        I: Iterator<Item = S> + Send,
+        S: AsRef<str> + Send,
+        F: Fn(&str) -> Result<Vec<String>> + Sync,
+    {
+        self.bpe_trainer.feed(iterator, process)
     }
 }

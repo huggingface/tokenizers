@@ -749,7 +749,7 @@ declare_types! {
             // train(files: string[], trainer?: Trainer)
 
             let files = cx.extract::<Vec<String>>(0)?;
-            let trainer = if let Some(val) = cx.argument_opt(1) {
+            let mut trainer = if let Some(val) = cx.argument_opt(1) {
                 let js_trainer = val.downcast::<JsTrainer>().or_throw(&mut cx)?;
                 let guard = cx.lock();
 
@@ -768,7 +768,7 @@ declare_types! {
 
             this.borrow_mut(&guard)
                 .tokenizer.write().unwrap()
-                .train(&trainer, files)
+                .train_from_files(&mut trainer, files)
                 .map_err(|e| Error(format!("{}", e)))?;
 
             Ok(cx.undefined().upcast())

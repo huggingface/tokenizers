@@ -58,7 +58,7 @@
 //! fn main() -> Result<()> {
 //!     let vocab_size: usize = 100;
 //!
-//!     let trainer = BpeTrainerBuilder::new()
+//!     let mut trainer = BpeTrainerBuilder::new()
 //!         .show_progress(true)
 //!         .vocab_size(vocab_size)
 //!         .min_frequency(0)
@@ -84,8 +84,8 @@
 //!
 //!     let pretty = false;
 //!     tokenizer
-//!         .train(
-//!             &trainer,
+//!         .train_from_files(
+//!             &mut trainer,
 //!             vec!["path/to/vocab.txt".to_string()],
 //!         )?
 //!         .save("tokenizer.json", pretty)?;

@@ -1,5 +1,6 @@
 use crate::models::unigram::{lattice::Lattice, model::Unigram};
 use crate::tokenizer::{AddedToken, Result, Trainer};
+use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
 use log::debug;
 use std::cmp::Reverse;
@@ -58,7 +59,9 @@ pub struct UnigramTrainer {
     #[builder(default = "16")]
     pub max_piece_length: usize,
     #[builder(default = "1_000_000")]
-    pub seed_size: usize,
+    seed_size: usize,
+    #[builder(default = "HashMap::new()")]
+    words: HashMap<String, u32>,
 }
 
 impl Default for UnigramTrainer {
@@ -451,7 +454,11 @@ impl UnigramTrainer {
             .collect();
         new_pieces
     }
-    pub fn _train(&self, sentences: Vec<Sentence>, model: &mut Unigram) -> Result<Vec<AddedToken>> {
+    pub fn do_train(
+        &self,
+        sentences: Vec<Sentence>,
+        model: &mut Unigram,
+    ) -> Result<Vec<AddedToken>> {
         let progress = self.setup_progress();
         //
         // 1. Compute frequent substrings
@@ -533,18 +540,45 @@ impl Trainer for UnigramTrainer {
     type Model = Unigram;
 
     /// Train a Unigram model
-    fn train(
-        &self,
-        word_counts: HashMap<String, u32>,
-        model: &mut Unigram,
-    ) -> Result<Vec<AddedToken>> {
-        let sentences: Vec<_> = word_counts.into_iter().collect();
-        self._train(sentences, model)
+    fn train(&self, model: &mut Unigram) -> Result<Vec<AddedToken>> {
+        let sentences: Vec<_> = self.words.iter().map(|(s, i)| (s.to_owned(), *i)).collect();
+        self.do_train(sentences, model)
     }
 
     /// Whether we should show progress
     fn should_show_progress(&self) -> bool {
         self.show_progress
+    }
+
+    fn feed<I, S, F>(&mut self, iterator: I, process: F) -> Result<()>
+    where
+        I: Iterator<Item = S> + Send,
+        S: AsRef<str> + Send,
+        F: Fn(&str) -> Result<Vec<String>> + Sync,
+    {
+        let words: Result<HashMap<String, u32>> = iterator
+            .maybe_par_bridge()
+            .map(|sequence| {
+                let words = process(sequence.as_ref())?;
+                let mut map = HashMap::new();
+                for word in words {
+                    map.entry(word).and_modify(|c| *c += 1).or_insert(1);
+                }
+                Ok(map)
+            })
+            .reduce(
+                || Ok(HashMap::new()),
+                |acc, ws| {
+                    let mut acc = acc?;
+                    for (k, v) in ws? {
+                        acc.entry(k).and_modify(|c| *c += v).or_insert(v);
+                    }
+                    Ok(acc)
+                },
+            );
+
+        self.words = words?;
+        Ok(())
     }
 }
 
@@ -640,10 +674,7 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .train(
-                HashMap::from_iter(vec![("The".into(), 12), ("are".into(), 11)]),
-                &mut unigram,
-            )
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -665,10 +696,7 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .train(
-                HashMap::from_iter(vec![("The".into(), 12), ("are".into(), 11)]),
-                &mut unigram,
-            )
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -684,10 +712,7 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .train(
-                HashMap::from_iter(vec![("The".into(), 12), ("are".into(), 11)]),
-                &mut unigram,
-            )
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -707,10 +732,7 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .train(
-                HashMap::from_iter(vec![("The".into(), 12), ("are".into(), 11)]),
-                &mut unigram,
-            )
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
             .unwrap();
 
         let mut pieces = unigram.iter();
