@@ -43,6 +43,10 @@ export interface BertWordPieceOptions {
    */
   stripAccents?: boolean;
   /**
+   * @default 0
+   */
+  normOptions?: number;
+  /**
    * @default "[UNK]"
    */
   unkToken?: Token;
@@ -103,6 +107,7 @@ export class BertWordPieceTokenizer extends BaseTokenizer<BertTokenizerConfig> {
     padToken: "[PAD]",
     sepToken: "[SEP]",
     stripAccents: true,
+    normOptions: 0,
     unkToken: "[UNK]",
     wordpiecesPrefix: "##",
   };

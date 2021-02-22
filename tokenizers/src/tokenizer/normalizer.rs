@@ -143,6 +143,11 @@ impl NormalizedString {
         &self.normalized
     }
 
+    /// Set the normalized string (unsafe)
+    pub fn set_normalized(&mut self, s: String) {
+        self.normalized = s;
+    }
+
     /// Return the original string
     pub fn get_original(&self) -> &str {
         &self.original

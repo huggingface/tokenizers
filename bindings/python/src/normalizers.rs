@@ -9,6 +9,8 @@ use crate::error::ToPyResult;
 use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+#[cfg(feature = "opencc")]
+use tk::normalizers::opencc_enabled as opencc_enabled_;
 use tk::normalizers::{
     BertNormalizer, Lowercase, Nmt, NormalizerWrapper, Precompiled, Replace, Strip, StripAccents,
     NFC, NFD, NFKC, NFKD,
@@ -272,16 +274,23 @@ impl PyBertNormalizer {
         clean_text = "true",
         handle_chinese_chars = "true",
         strip_accents = "None",
-        lowercase = "true"
+        lowercase = "true",
+        norm_options = "0"
     )]
     fn new(
         clean_text: bool,
         handle_chinese_chars: bool,
         strip_accents: Option<bool>,
         lowercase: bool,
+        norm_options: u32,
     ) -> PyResult<(Self, PyNormalizer)> {
-        let normalizer =
-            BertNormalizer::new(clean_text, handle_chinese_chars, strip_accents, lowercase);
+        let normalizer = BertNormalizer::new(
+            clean_text,
+            handle_chinese_chars,
+            strip_accents,
+            lowercase,
+            norm_options,
+        );
         Ok((PyBertNormalizer {}, normalizer.into()))
     }
 }
@@ -696,4 +705,10 @@ mod test {
             _ => panic!("Expected single"),
         };
     }
+}
+
+#[cfg(feature = "opencc")]
+#[pyfunction]
+pub fn opencc_enabled() -> bool {
+    opencc_enabled_()
 }

@@ -29,6 +29,7 @@ tempfile = "3.1"
 
 [features]
 default = ["pyo3/extension-module"]
+opencc = ["tokenizers/opencc"]
 
 [target.x86_64-apple-darwin]
 rustflags = [

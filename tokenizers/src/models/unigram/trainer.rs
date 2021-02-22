@@ -177,7 +177,7 @@ impl UnigramTrainer {
         &self,
         sentences: &[Sentence],
         _progress: &Option<ProgressBar>,
-    ) -> Result<Vec<SentencePiece>> {
+    ) -> Vec<SentencePiece> {
         // Put all sentences in a string, separated by \0
         let total: usize = sentences
             .iter()
@@ -245,7 +245,7 @@ impl UnigramTrainer {
             }
         }
         to_log_prob(&mut seed_sentencepieces);
-        Ok(seed_sentencepieces)
+        seed_sentencepieces
     }
     fn prune_sentence_pieces(
         &self,
@@ -469,7 +469,7 @@ impl UnigramTrainer {
 
         // We use a UNK token when training, whatever the `self.unk_token`
         pieces.push(("<UNK>".into(), f64::NAN));
-        pieces.extend(self.make_seed_sentence_pieces(&sentences, &progress)?);
+        pieces.extend(self.make_seed_sentence_pieces(&sentences, &progress));
         self.finalize_progress(&progress, sentences.len());
 
         // Useful to check compatibility with spm.
@@ -604,9 +604,7 @@ mod tests {
         assert_eq!(required_chars.len(), 13);
 
         let progress = None;
-        let table = trainer
-            .make_seed_sentence_pieces(&sentences, &progress)
-            .unwrap();
+        let table = trainer.make_seed_sentence_pieces(&sentences, &progress);
 
         let target_strings = vec![
             "s", "i", " ", "達", "友", "ん", "は", "に", "ち", "こ", "h", "a", "T", "is ", "s ",

@@ -8,6 +8,14 @@ use std::sync::Arc;
 use tk::normalizers::NormalizerWrapper;
 use tk::NormalizedString;
 
+#[cfg(feature = "opencc")]
+use tk::normalizers::opencc_enabled as opencc_enabled_;
+
+#[cfg(feature = "opencc")]
+fn opencc_enabled() -> bool {
+    opencc_enabled_()
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum JsNormalizerWrapper {
@@ -94,6 +102,7 @@ struct BertNormalizerOptions {
     handle_chinese_chars: bool,
     strip_accents: Option<bool>,
     lowercase: bool,
+    norm_options: u32,
 }
 impl Default for BertNormalizerOptions {
     fn default() -> Self {
@@ -102,6 +111,7 @@ impl Default for BertNormalizerOptions {
             handle_chinese_chars: true,
             strip_accents: None,
             lowercase: true,
+            norm_options: 0,
         }
     }
 }
@@ -111,6 +121,7 @@ impl Default for BertNormalizerOptions {
 ///   handleChineseChars?: bool = true,
 ///   stripAccents?: bool = true,
 ///   lowercase?: bool = true
+///   normOptions?: int = 0
 /// })
 fn bert_normalizer(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     let options = cx
@@ -125,6 +136,7 @@ fn bert_normalizer(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
             options.handle_chinese_chars,
             options.strip_accents,
             options.lowercase,
+            options.norm_options,
         )
         .into(),
     );
@@ -268,6 +280,8 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_Lowercase", prefix), lowercase)?;
     m.export_function(&format!("{}_Strip", prefix), strip)?;
     m.export_function(&format!("{}_StripAccents", prefix), strip_accents)?;
+    #[cfg(feature = "opencc")]
+    m.export_function(&format!("{}_OpenccEnabled", prefix), opencc_enabled)?;
     m.export_function(&format!("{}_Nmt", prefix), nmt)?;
     m.export_function(&format!("{}_Precompiled", prefix), precompiled)?;
     m.export_function(&format!("{}_Replace", prefix), replace)?;

@@ -64,7 +64,7 @@ class BertNormalizer(Normalizer):
     """
 
     def __init__(
-        self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True
+        self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True, norm_options=0
     ):
         pass
     def normalize(self, normalized):
@@ -543,3 +543,6 @@ class StripAccents(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
+def opencc_enabled() -> bool:
+    pass
