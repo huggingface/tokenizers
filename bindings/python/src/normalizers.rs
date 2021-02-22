@@ -284,8 +284,13 @@ impl PyBertNormalizer {
         lowercase: bool,
         norm_options: u32,
     ) -> PyResult<(Self, PyNormalizer)> {
-        let normalizer =
-            BertNormalizer::new(clean_text, handle_chinese_chars, strip_accents, lowercase, norm_options);
+        let normalizer = BertNormalizer::new(
+            clean_text,
+            handle_chinese_chars,
+            strip_accents,
+            lowercase,
+            norm_options,
+        );
         Ok((PyBertNormalizer {}, normalizer.into()))
     }
 }

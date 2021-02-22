@@ -371,6 +371,7 @@ mod tests {
     #[test]
     fn basic() {
         if opencc_enabled() {
+            println!("opencc is enabeld");
             let norm = BertNormalizer::new(
                 true,
                 true,
@@ -389,6 +390,8 @@ mod tests {
             input = NormalizedString::from("头部");
             let _ = norm.normalize(&mut input).unwrap();
             assert_eq!(input.get(), " 頭  部 ");
+        }else{
+            println!("opencc is not enabeld");
         }
     }
 }

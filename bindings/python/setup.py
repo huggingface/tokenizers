@@ -6,7 +6,7 @@ extras = {}
 extras["testing"] = ["pytest"]
 
 features = []
-print(sys.argv)
+
 for feature in ("opencc",):
     if "--%s"%feature in sys.argv:
         features.append("%s"%feature)
