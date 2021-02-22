@@ -439,10 +439,7 @@ impl Model for Unigram {
     }
 
     fn id_to_token(&self, id: u32) -> Option<String> {
-        match self.vocab.get(id as usize) {
-            Some(item) => Some(item.0.clone()),
-            None => None,
-        }
+        self.vocab.get(id as usize).map(|item| item.0.clone())
     }
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {

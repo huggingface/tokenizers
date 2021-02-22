@@ -6,11 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- [#616]: Fix SentencePiece tokenizers conversion
+
+## [0.10.0]
+
 ### Added
+- [#508]: Add a Visualizer for notebooks to help understand how the tokenizers work
 - [#519]: Add a `WordLevelTrainer` used to train a `WordLevel` model
 - [#533]: Add support for conda builds
 - [#542]: Add Split pre-tokenizer to easily split using a pattern
 - [#544]: Ability to train from memory. This also improves the integration with `datasets`
+- [#590]: Add getters/setters for components on BaseTokenizer
+- [#574]: Add `fust_unk` option to SentencePieceBPETokenizer
 
 ### Changed
 - [#509]: Automatically stubbing the `.pyi` files
@@ -19,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 `tokenizer.model.dropout = 0.1`)
 - [#538]: The API Reference has been improved and is now up-to-date.
 
-## Fixed
+### Fixed
 - [#519]: During training, the `Model` is now trained in-place. This fixes several bugs that were
 forcing to reload the `Model` after a training.
 - [#539]: Fix `BaseTokenizer` enable_truncation docstring
@@ -290,6 +298,9 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#616]: https://github.com/huggingface/tokenizers/pull/616
+[#590]: https://github.com/huggingface/tokenizers/pull/590
+[#574]: https://github.com/huggingface/tokenizers/pull/574
 [#544]: https://github.com/huggingface/tokenizers/pull/544
 [#542]: https://github.com/huggingface/tokenizers/pull/542
 [#539]: https://github.com/huggingface/tokenizers/pull/539
@@ -298,6 +309,7 @@ delimiter (Works like `.split(delimiter)`)
 [#530]: https://github.com/huggingface/tokenizers/pull/530
 [#519]: https://github.com/huggingface/tokenizers/pull/519
 [#509]: https://github.com/huggingface/tokenizers/pull/509
+[#508]: https://github.com/huggingface/tokenizers/pull/508
 [#506]: https://github.com/huggingface/tokenizers/pull/506
 [#500]: https://github.com/huggingface/tokenizers/pull/500
 [#498]: https://github.com/huggingface/tokenizers/pull/498

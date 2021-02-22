@@ -39,14 +39,16 @@ impl Normalizer for NFKC {
 fn do_nmt(normalized: &mut NormalizedString) {
     // Ascii Control characters
     normalized
-        .filter(|c| match c as u32 {
-            0x0001..=0x0008 => false,
-            0x000B => false,
-            0x000E..=0x001F => false,
-            0x007F => false,
-            0x008F => false,
-            0x009F => false,
-            _ => true,
+        .filter(|c| {
+            !matches!(
+                c as u32,
+                0x0001..=0x0008 |
+                0x000B |
+                0x000E..=0x001F |
+                0x007F |
+                0x008F |
+                0x009F
+            )
         })
         // Other code points considered as whitespace.
         .map(|c| match c as u32 {

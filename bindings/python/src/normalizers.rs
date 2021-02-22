@@ -582,8 +582,7 @@ impl Normalizer for PyNormalizerTypeWrapper {
             PyNormalizerTypeWrapper::Single(inner) => inner.read().unwrap().normalize(normalized),
             PyNormalizerTypeWrapper::Sequence(inner) => inner
                 .iter()
-                .map(|n| n.read().unwrap().normalize(normalized))
-                .collect(),
+                .try_for_each(|n| n.read().unwrap().normalize(normalized)),
         }
     }
 }

@@ -5,7 +5,7 @@ from tokenizers.pre_tokenizers import BertPreTokenizer
 from tokenizers.processors import BertProcessing
 from .base_tokenizer import BaseTokenizer
 
-from typing import Optional, List, Union, Dict
+from typing import Optional, List, Union, Dict, Iterator
 
 
 class BertWordPieceTokenizer(BaseTokenizer):
@@ -119,3 +119,33 @@ class BertWordPieceTokenizer(BaseTokenizer):
         if isinstance(files, str):
             files = [files]
         self._tokenizer.train(files, trainer=trainer)
+
+    def train_from_iterator(
+        self,
+        iterator: Union[Iterator[str], Iterator[Iterator[str]]],
+        vocab_size: int = 30000,
+        min_frequency: int = 2,
+        limit_alphabet: int = 1000,
+        initial_alphabet: List[str] = [],
+        special_tokens: List[Union[str, AddedToken]] = [
+            "[PAD]",
+            "[UNK]",
+            "[CLS]",
+            "[SEP]",
+            "[MASK]",
+        ],
+        show_progress: bool = True,
+        wordpieces_prefix: str = "##",
+    ):
+        """ Train the model using the given iterator """
+
+        trainer = trainers.WordPieceTrainer(
+            vocab_size=vocab_size,
+            min_frequency=min_frequency,
+            limit_alphabet=limit_alphabet,
+            initial_alphabet=initial_alphabet,
+            special_tokens=special_tokens,
+            show_progress=show_progress,
+            continuing_subword_prefix=wordpieces_prefix,
+        )
+        self._tokenizer.train_from_iterator(iterator, trainer=trainer)

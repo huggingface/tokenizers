@@ -39,7 +39,7 @@ rust_version = "latest"
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ["sphinx.ext.autodoc", "sphinx.ext.napoleon", "entities", "rust_doc"]
+extensions = ["sphinx.ext.autodoc", "sphinx.ext.napoleon", "entities", "rust_doc", "toctree_tags"]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -69,6 +69,10 @@ html_static_path = ["_static"]
 
 
 def setup(app):
+    for language in languages:
+        if not tags.has(language):
+            exclude_patterns.append(f"tutorials/{language}/*")
+
     app.add_css_file("css/huggingface.css")
     app.add_css_file("css/code-snippets.css")
     app.add_js_file("js/custom.js")
