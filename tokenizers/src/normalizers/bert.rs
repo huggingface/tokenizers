@@ -390,7 +390,7 @@ mod tests {
             input = NormalizedString::from("头部");
             let _ = norm.normalize(&mut input).unwrap();
             assert_eq!(input.get(), " 頭  部 ");
-        }else{
+        } else {
             println!("opencc is not enabeld");
         }
     }
