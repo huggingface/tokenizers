@@ -13,6 +13,7 @@ from tokenizers.pre_tokenizers import (
     Sequence,
     Digits,
     UnicodeScripts,
+    Split,
 )
 
 
@@ -28,6 +29,31 @@ class TestByteLevel:
     def test_has_alphabet(self):
         assert isinstance(ByteLevel.alphabet(), list)
         assert len(ByteLevel.alphabet()) == 256
+
+    def test_can_modify(self):
+        pretok = ByteLevel(add_prefix_space=False)
+
+        assert pretok.add_prefix_space == False
+
+        # Modify these
+        pretok.add_prefix_space = True
+        assert pretok.add_prefix_space == True
+
+
+class TestSplit:
+    def test_instantiate(self):
+        pre_tokenizer = Split(pattern=" ", behavior="removed")
+        assert pre_tokenizer is not None
+        assert isinstance(pre_tokenizer, PreTokenizer)
+        assert isinstance(pre_tokenizer, Split)
+        assert isinstance(pickle.loads(pickle.dumps(Split(" ", "removed"))), Split)
+
+        # test with invert=True
+        pre_tokenizer_with_invert = Split(pattern=" ", behavior="isolated", invert=True)
+        assert pre_tokenizer_with_invert is not None
+        assert isinstance(pre_tokenizer_with_invert, PreTokenizer)
+        assert isinstance(pre_tokenizer_with_invert, Split)
+        assert isinstance(pickle.loads(pickle.dumps(Split(" ", "removed", True))), Split)
 
 
 class TestWhitespace:
@@ -58,22 +84,42 @@ class TestMetaspace:
     def test_instantiate(self):
         assert Metaspace() is not None
         assert Metaspace(replacement="-") is not None
-        with pytest.raises(Exception, match="replacement must be a character"):
+        with pytest.raises(ValueError, match="expected a string of length 1"):
             Metaspace(replacement="")
         assert Metaspace(add_prefix_space=True) is not None
         assert isinstance(Metaspace(), PreTokenizer)
         assert isinstance(Metaspace(), Metaspace)
         assert isinstance(pickle.loads(pickle.dumps(Metaspace())), Metaspace)
 
+    def test_can_modify(self):
+        pretok = Metaspace(replacement="$", add_prefix_space=False)
+
+        assert pretok.replacement == "$"
+        assert pretok.add_prefix_space == False
+
+        # Modify these
+        pretok.replacement = "%"
+        assert pretok.replacement == "%"
+        pretok.add_prefix_space = True
+        assert pretok.add_prefix_space == True
+
 
 class TestCharDelimiterSplit:
     def test_instantiate(self):
         assert CharDelimiterSplit("-") is not None
-        with pytest.raises(Exception, match="delimiter must be a single character"):
+        with pytest.raises(ValueError, match="expected a string of length 1"):
             CharDelimiterSplit("")
         assert isinstance(CharDelimiterSplit(" "), PreTokenizer)
         assert isinstance(CharDelimiterSplit(" "), CharDelimiterSplit)
         assert isinstance(pickle.loads(pickle.dumps(CharDelimiterSplit("-"))), CharDelimiterSplit)
+
+    def test_can_modify(self):
+        pretok = CharDelimiterSplit("@")
+        assert pretok.delimiter == "@"
+
+        # Modify these
+        pretok.delimiter = "!"
+        assert pretok.delimiter == "!"
 
 
 class TestPunctuation:
@@ -120,6 +166,14 @@ class TestDigits:
         assert isinstance(Digits(True), Digits)
         assert isinstance(Digits(False), Digits)
         assert isinstance(pickle.loads(pickle.dumps(Digits())), Digits)
+
+    def test_can_modify(self):
+        pretok = Digits(individual_digits=False)
+        assert pretok.individual_digits == False
+
+        # Modify these
+        pretok.individual_digits = True
+        assert pretok.individual_digits == True
 
 
 class TestUnicodeScripts:

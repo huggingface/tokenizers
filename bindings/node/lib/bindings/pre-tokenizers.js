@@ -11,4 +11,5 @@ module.exports = {
   punctuationPreTokenizer: native.pre_tokenizers_Punctuation,
   sequencePreTokenizer: native.pre_tokenizers_Sequence,
   digitsPreTokenizer: native.pre_tokenizers_Digits,
+  splitPreTokenizer: native.pre_tokenizers_Split,
 };

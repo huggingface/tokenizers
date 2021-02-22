@@ -3,6 +3,8 @@ use crate::{Offsets, Result};
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
 
+use serde::{Deserialize, Serialize};
+
 /// Add or Substract a signed isize on a usize. Makes sure of avoiding
 /// any substraction overflow, flooring at 0.
 macro_rules! apply_signed {
@@ -89,7 +91,7 @@ where
 ///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
 ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
 ///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,

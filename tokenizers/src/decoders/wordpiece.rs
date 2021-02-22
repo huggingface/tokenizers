@@ -6,11 +6,12 @@ use serde::{Deserialize, Serialize};
 /// The WordPiece decoder takes care of decoding a list of wordpiece tokens
 /// back into a readable string.
 #[serde(tag = "type")]
+#[non_exhaustive]
 pub struct WordPiece {
     /// The prefix to be used for continuing subwords
-    prefix: String,
+    pub prefix: String,
     /// Whether to cleanup some tokenization artifacts (spaces before punctuation, ...)
-    cleanup: bool,
+    pub cleanup: bool,
 }
 
 impl WordPiece {

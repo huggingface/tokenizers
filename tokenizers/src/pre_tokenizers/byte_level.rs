@@ -45,12 +45,13 @@ lazy_static! {
 /// of all the required processing steps to transform a UTF-8 string as needed before and after the
 /// BPE model does its job.
 #[serde(tag = "type")]
+#[non_exhaustive]
 pub struct ByteLevel {
     /// Whether to add a leading space to the first word. This allows to treat the leading word
     /// just as any other word.
-    add_prefix_space: bool,
+    pub add_prefix_space: bool,
     /// Whether the post processing step should trim offsets to avoid including whitespaces.
-    trim_offsets: bool,
+    pub trim_offsets: bool,
 }
 impl Default for ByteLevel {
     fn default() -> Self {

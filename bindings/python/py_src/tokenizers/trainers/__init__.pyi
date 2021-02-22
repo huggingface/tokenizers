@@ -5,37 +5,6 @@ class Trainer:
 
     This class is not supposed to be instantiated directly. Instead, any implementation of a
     Trainer will return an instance of this class when instantiated.
-
-    Args:
-        vocab_size: unsigned int:
-            The size of the final vocabulary, including all tokens and alphabet.
-
-        min_frequency: unsigned int:
-            The minimum frequency a pair should have in order to be merged.
-
-        show_progress: boolean:
-            Whether to show progress bars while training.
-
-        special_tokens: List[Union[str, AddedToken]]:
-            A list of special tokens the model should know of.
-
-        limit_alphabet: unsigned int:
-            The maximum different characters to keep in the alphabet.
-
-        initial_alphabet: List[str]:
-            A list of characters to include in the initial alphabet, even
-            if not seen in the training dataset.
-            If the strings contain more than one character, only the first one
-            is kept.
-
-        continuing_subword_prefix: Optional[str]:
-            A prefix to be used for every subword that is not a beginning-of-word.
-
-        end_of_word_suffix: Optional[str]:
-            A suffix to be used for every subword that is a end-of-word.
-
-    Returns:
-        Trainer
     """
 
     def __init__(
@@ -53,31 +22,56 @@ class Trainer:
 
 class BpeTrainer(Trainer):
     """
-    Capable of training a BPE model
-    """
-
-class UnigramTrainer(Trainer):
-    """
-    Capable of training a Unigram model
+    Trainer capable of training a BPE model
 
     Args:
-        vocab_size: unsigned int:
+        vocab_size (:obj:`int`, `optional`):
             The size of the final vocabulary, including all tokens and alphabet.
 
-        show_progress: boolean:
+        min_frequency (:obj:`int`, `optional`):
+            The minimum frequency a pair should have in order to be merged.
+
+        show_progress (:obj:`bool`, `optional`):
             Whether to show progress bars while training.
 
-        special_tokens: List[Union[str, AddedToken]]:
+        special_tokens (:obj:`List[Union[str, AddedToken]]`, `optional`):
             A list of special tokens the model should know of.
 
-        initial_alphabet: List[str]:
+        limit_alphabet (:obj:`int`, `optional`):
+            The maximum different characters to keep in the alphabet.
+
+        initial_alphabet (:obj:`List[str]`, `optional`):
             A list of characters to include in the initial alphabet, even
             if not seen in the training dataset.
             If the strings contain more than one character, only the first one
             is kept.
 
-    Returns:
-        Trainer
+        continuing_subword_prefix (:obj:`str`, `optional`):
+            A prefix to be used for every subword that is not a beginning-of-word.
+
+        end_of_word_suffix (:obj:`str`, `optional`):
+            A suffix to be used for every subword that is a end-of-word.
+    """
+
+class UnigramTrainer(Trainer):
+    """
+    Trainer capable of training a Unigram model
+
+    Args:
+        vocab_size (:obj:`int`):
+            The size of the final vocabulary, including all tokens and alphabet.
+
+        show_progress (:obj:`bool`):
+            Whether to show progress bars while training.
+
+        special_tokens (:obj:`List[Union[str, AddedToken]]`):
+            A list of special tokens the model should know of.
+
+        initial_alphabet (:obj:`List[str]`):
+            A list of characters to include in the initial alphabet, even
+            if not seen in the training dataset.
+            If the strings contain more than one character, only the first one
+            is kept.
     """
 
     def __init__(self, vocab_size=8000, show_progress=True, special_tokens=[]):
@@ -85,58 +79,53 @@ class UnigramTrainer(Trainer):
 
 class WordLevelTrainer(Trainer):
     """
-    Capable of training a WorldLevel model
+    Trainer capable of training a WorldLevel model
 
     Args:
-        vocab_size: unsigned int:
+        vocab_size (:obj:`int`, `optional`):
             The size of the final vocabulary, including all tokens and alphabet.
 
-        min_frequency: unsigned int:
+        min_frequency (:obj:`int`, `optional`):
             The minimum frequency a pair should have in order to be merged.
 
-        show_progress: boolean:
+        show_progress (:obj:`bool`, `optional`):
             Whether to show progress bars while training.
 
-        special_tokens: List[Union[str, AddedToken]]:
+        special_tokens (:obj:`List[Union[str, AddedToken]]`):
             A list of special tokens the model should know of.
-
-    Returns:
-        Trainer
     """
 
 class WordPieceTrainer(Trainer):
     """
-    Capable of training a WordPiece model
+    Trainer capable of training a WordPiece model
+
     Args:
-        vocab_size: unsigned int:
+        vocab_size (:obj:`int`, `optional`):
             The size of the final vocabulary, including all tokens and alphabet.
 
-        min_frequency: unsigned int:
+        min_frequency (:obj:`int`, `optional`):
             The minimum frequency a pair should have in order to be merged.
 
-        show_progress: boolean:
+        show_progress (:obj:`bool`, `optional`):
             Whether to show progress bars while training.
 
-        special_tokens: List[Union[str, AddedToken]]:
+        special_tokens (:obj:`List[Union[str, AddedToken]]`, `optional`):
             A list of special tokens the model should know of.
 
-        limit_alphabet: unsigned int:
+        limit_alphabet (:obj:`int`, `optional`):
             The maximum different characters to keep in the alphabet.
 
-        initial_alphabet: List[str]:
+        initial_alphabet (:obj:`List[str]`, `optional`):
             A list of characters to include in the initial alphabet, even
             if not seen in the training dataset.
             If the strings contain more than one character, only the first one
             is kept.
 
-        continuing_subword_prefix: Optional[str]:
+        continuing_subword_prefix (:obj:`str`, `optional`):
             A prefix to be used for every subword that is not a beginning-of-word.
 
-        end_of_word_suffix: Optional[str]:
+        end_of_word_suffix (:obj:`str`, `optional`):
             A suffix to be used for every subword that is a end-of-word.
-
-    Returns:
-        Trainer
     """
 
     def __init__(

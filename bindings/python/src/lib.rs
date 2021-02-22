@@ -76,6 +76,7 @@ fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<pre_tokenizers::PyByteLevel>()?;
     m.add_class::<pre_tokenizers::PyWhitespace>()?;
     m.add_class::<pre_tokenizers::PyWhitespaceSplit>()?;
+    m.add_class::<pre_tokenizers::PySplit>()?;
     m.add_class::<pre_tokenizers::PyBertPreTokenizer>()?;
     m.add_class::<pre_tokenizers::PyMetaspace>()?;
     m.add_class::<pre_tokenizers::PyCharDelimiterSplit>()?;

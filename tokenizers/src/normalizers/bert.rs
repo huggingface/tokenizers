@@ -147,19 +147,20 @@ fn is_chinese_char(c: char) -> bool {
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
+#[non_exhaustive]
 pub struct BertNormalizer {
     /// Whether to do the bert basic cleaning:
     ///   1. Remove any control characters
     ///   2. Replace all sorts of whitespace by the classic one ` `
-    clean_text: bool,
+    pub clean_text: bool,
     /// Whether to put spaces around chinese characters so they get split
-    handle_chinese_chars: bool,
+    pub handle_chinese_chars: bool,
     /// Whether to strip accents
-    strip_accents: Option<bool>,
+    pub strip_accents: Option<bool>,
     /// Whether to lowercase the input
-    lowercase: bool,
+    pub lowercase: bool,
     /// Normalization Options
-    norm_options: u32,
+    pub norm_options: u32,
 }
 
 impl Default for BertNormalizer {

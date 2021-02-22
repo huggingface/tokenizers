@@ -107,7 +107,7 @@ impl WordLevelBuilder {
 pub struct WordLevel {
     vocab: HashMap<String, u32>,
     vocab_r: HashMap<u32, String>,
-    unk_token: String,
+    pub unk_token: String,
 }
 
 impl std::fmt::Debug for WordLevel {

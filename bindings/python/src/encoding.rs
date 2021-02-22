@@ -33,7 +33,7 @@ impl PyObjectProtocol for PyEncoding {
 
 #[pyproto]
 impl PySequenceProtocol for PyEncoding {
-    fn __len__(self) -> PyResult<usize> {
+    fn __len__(&self) -> PyResult<usize> {
         Ok(self.encoding.len())
     }
 }

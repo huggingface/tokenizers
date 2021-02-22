@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- [#542]: Add Split pre-tokenizer to easily split using a pattern
+
+### Changed
+- [#530]: The various attributes on each component can be get/set
+
 ## [0.9.4]
 
 ### Fixed
@@ -270,6 +278,8 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#542]: https://github.com/huggingface/tokenizers/pull/542
+[#530]: https://github.com/huggingface/tokenizers/pull/530
 [#506]: https://github.com/huggingface/tokenizers/pull/506
 [#500]: https://github.com/huggingface/tokenizers/pull/500
 [#498]: https://github.com/huggingface/tokenizers/pull/498

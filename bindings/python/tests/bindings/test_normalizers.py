@@ -117,6 +117,25 @@ END"""
         )
         output = subprocess.check_output(cmd, shell=True).decode().rstrip("\n")
         assert output == " 頭  部 ", output
+    def test_can_modify(self):
+        normalizer = BertNormalizer(
+            clean_text=True, handle_chinese_chars=True, strip_accents=True, lowercase=True
+        )
+
+        assert normalizer.clean_text == True
+        assert normalizer.handle_chinese_chars == True
+        assert normalizer.strip_accents == True
+        assert normalizer.lowercase == True
+
+        # Modify these
+        normalizer.clean_text = False
+        assert normalizer.clean_text == False
+        normalizer.handle_chinese_chars = False
+        assert normalizer.handle_chinese_chars == False
+        normalizer.strip_accents = None
+        assert normalizer.strip_accents == None
+        normalizer.lowercase = False
+        assert normalizer.lowercase == False
 
 
 class TestSequence:
@@ -168,6 +187,18 @@ class TestStrip:
 
         output = normalizer.normalize_str("  hello  ")
         assert output == "hello"
+
+    def test_can_modify(self):
+        normalizer = Strip(left=True, right=True)
+
+        assert normalizer.left == True
+        assert normalizer.right == True
+
+        # Modify these
+        normalizer.left = False
+        assert normalizer.left == False
+        normalizer.right = False
+        assert normalizer.right == False
 
 
 class TestCustomNormalizer:

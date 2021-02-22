@@ -39,6 +39,33 @@ class TestBPE:
                 BPE,
             )
 
+    def test_can_modify(self):
+        model = BPE(
+            dropout=0.5,
+            unk_token="[UNK]",
+            continuing_subword_prefix="__prefix__",
+            end_of_word_suffix="__suffix__",
+            fuse_unk=False,
+        )
+
+        assert model.dropout == 0.5
+        assert model.unk_token == "[UNK]"
+        assert model.continuing_subword_prefix == "__prefix__"
+        assert model.end_of_word_suffix == "__suffix__"
+        assert model.fuse_unk == False
+
+        # Modify these
+        model.dropout = 0.1
+        assert pytest.approx(model.dropout) == 0.1
+        model.unk_token = "<unk>"
+        assert model.unk_token == "<unk>"
+        model.continuing_subword_prefix = None
+        assert model.continuing_subword_prefix == None
+        model.end_of_word_suffix = "suff"
+        assert model.end_of_word_suffix == "suff"
+        model.fuse_unk = True
+        assert model.fuse_unk == True
+
 
 class TestWordPiece:
     def test_instantiate(self, bert_files):
@@ -57,6 +84,25 @@ class TestWordPiece:
         with pytest.deprecated_call():
             assert isinstance(pickle.loads(pickle.dumps(WordPiece(bert_files["vocab"]))), WordPiece)
 
+    def test_can_modify(self):
+        model = WordPiece(
+            unk_token="<oov>",
+            continuing_subword_prefix="__prefix__",
+            max_input_chars_per_word=200,
+        )
+
+        assert model.unk_token == "<oov>"
+        assert model.continuing_subword_prefix == "__prefix__"
+        assert model.max_input_chars_per_word == 200
+
+        # Modify these
+        model.unk_token = "<unk>"
+        assert model.unk_token == "<unk>"
+        model.continuing_subword_prefix = "$$$"
+        assert model.continuing_subword_prefix == "$$$"
+        model.max_input_chars_per_word = 10
+        assert model.max_input_chars_per_word == 10
+
 
 class TestWordLevel:
     def test_instantiate(self, roberta_files):
@@ -74,3 +120,12 @@ class TestWordLevel:
             assert isinstance(WordLevel(roberta_files["vocab"]), Model)
         with pytest.deprecated_call():
             assert isinstance(WordLevel(roberta_files["vocab"]), WordLevel)
+
+    def test_can_modify(self):
+        model = WordLevel(unk_token="<oov>")
+
+        assert model.unk_token == "<oov>"
+
+        # Modify these
+        model.unk_token = "<unk>"
+        assert model.unk_token == "<unk>"

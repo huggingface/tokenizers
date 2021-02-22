@@ -60,11 +60,9 @@ opencc-rust = { version = "1.1.5", package = 'opencc-rust', default-features = f
 [features]
 default = ["progressbar"]
 progressbar = ["indicatif"]
+opencc = ["opencc-rust"]
 
 [dev-dependencies]
 criterion = "0.3"
 tempfile = "3.1"
 assert_approx_eq = "1.1"
-
-[features]
-opencc = ["opencc-rust"]

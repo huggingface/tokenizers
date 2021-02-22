@@ -5,8 +5,37 @@ use neon::prelude::*;
 use std::sync::Arc;
 
 use serde::{ser::SerializeStruct, Serialize, Serializer};
+use tk::normalizer::SplitDelimiterBehavior;
 use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::PreTokenizedString;
+
+#[derive(Clone)]
+struct JsSplitDelimiterBehavior(SplitDelimiterBehavior);
+
+impl FromJsValue for JsSplitDelimiterBehavior {
+    fn from_value<'c, C: Context<'c>>(from: Handle<'c, JsValue>, _cx: &mut C) -> LibResult<Self> {
+        let s = from.downcast::<JsString>()?.value();
+
+        Ok(Self(match s.as_ref() {
+            "removed" => Ok(SplitDelimiterBehavior::Removed),
+            "isolated" => Ok(SplitDelimiterBehavior::Isolated),
+            "mergedWithPrevious" => Ok(SplitDelimiterBehavior::MergedWithPrevious),
+            "mergedWithNext" => Ok(SplitDelimiterBehavior::MergedWithNext),
+            "contiguous" => Ok(SplitDelimiterBehavior::Contiguous),
+            _ => Err(Error(
+                "Wrong value for SplitDelimiterBehavior, expected one of: \
+                 `removed, isolated, mergedWithPrevious, mergedWithNext, contiguous`"
+                    .into(),
+            )),
+        }?))
+    }
+}
+
+impl<'s> From<JsSplitDelimiterBehavior> for SplitDelimiterBehavior {
+    fn from(v: JsSplitDelimiterBehavior) -> Self {
+        v.0
+    }
+}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
@@ -156,6 +185,22 @@ fn metaspace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     Ok(pretok)
 }
 
+/// split(invert: bool = false)
+fn split(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
+    let pattern: String = cx.extract::<String>(0)?;
+    let behavior: JsSplitDelimiterBehavior = cx.extract::<JsSplitDelimiterBehavior>(1)?;
+    let invert: bool = cx.extract_opt::<bool>(2)?.unwrap_or(false);
+
+    let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    pretok.borrow_mut(&guard).pretok = Some(
+        tk::pre_tokenizers::split::Split::new(pattern, behavior.into(), invert)
+            .map_err(|e| Error(e.to_string()))?
+            .into(),
+    );
+    Ok(pretok)
+}
+
 /// punctuation()
 fn punctuation(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
@@ -231,6 +276,7 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_WhitespaceSplit", prefix), whitespace_split)?;
     m.export_function(&format!("{}_BertPreTokenizer", prefix), bert_pre_tokenizer)?;
     m.export_function(&format!("{}_Metaspace", prefix), metaspace)?;
+    m.export_function(&format!("{}_Split", prefix), split)?;
     m.export_function(
         &format!("{}_CharDelimiterSplit", prefix),
         char_delimiter_split,

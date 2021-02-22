@@ -8,6 +8,7 @@ use pyo3::{PyMappingProtocol, PyObjectProtocol};
 use tk::normalizer::{char_to_bytes, NormalizedString, Range, SplitDelimiterBehavior};
 use tk::pattern::Pattern;
 
+/// Represents a Pattern as used by `NormalizedString`
 #[derive(Clone, FromPyObject)]
 pub enum PyPattern<'p> {
     #[pyo3(annotation = "str")]
@@ -36,6 +37,15 @@ impl Pattern for PyPattern<'_> {
 }
 
 impl From<PyPattern<'_>> for tk::normalizers::replace::ReplacePattern {
+    fn from(pattern: PyPattern<'_>) -> Self {
+        match pattern {
+            PyPattern::Str(s) => Self::String(s.to_owned()),
+            PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),
+        }
+    }
+}
+
+impl From<PyPattern<'_>> for tk::pre_tokenizers::split::SplitPattern {
     fn from(pattern: PyPattern<'_>) -> Self {
         match pattern {
             PyPattern::Str(s) => Self::String(s.to_owned()),
