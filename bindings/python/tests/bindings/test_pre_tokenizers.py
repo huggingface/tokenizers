@@ -1,5 +1,6 @@
 import pytest
 import pickle
+import json
 
 from tokenizers.pre_tokenizers import (
     PreTokenizer,
@@ -38,6 +39,12 @@ class TestByteLevel:
         # Modify these
         pretok.add_prefix_space = True
         assert pretok.add_prefix_space == True
+
+    def test_manual_reload(self):
+        byte_level = ByteLevel()
+        state = json.loads(byte_level.__getstate__())
+        reloaded = ByteLevel(**state)
+        assert isinstance(reloaded, ByteLevel)
 
 
 class TestSplit:
