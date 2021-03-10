@@ -20,7 +20,7 @@ use tokenizers as tk;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of
 /// a PostProcessor will return an instance of this class when instantiated.
-#[pyclass(dict, module = "tokenizers.processors", name=PostProcessor)]
+#[pyclass(dict, module = "tokenizers.processors", name = "PostProcessor")]
 #[derive(Clone, Deserialize, Serialize)]
 pub struct PyPostProcessor {
     #[serde(flatten)]
@@ -100,7 +100,7 @@ impl PyPostProcessor {
     ///
     /// Returns:
     ///     :obj:`int`: The number of tokens to add
-    #[text_signature = "(self, is_pair)"]
+    #[pyo3(text_signature = "(self, is_pair)")]
     fn num_special_tokens_to_add(&self, is_pair: bool) -> usize {
         self.processor.added_tokens(is_pair)
     }
@@ -120,7 +120,7 @@ impl PyPostProcessor {
     /// Return:
     ///     :class:`~tokenizers.Encoding`: The final encoding
     #[args(pair = "None", add_special_tokens = "true")]
-    #[text_signature = "(self, encoding, pair=None, add_special_tokens=True)"]
+    #[pyo3(text_signature = "(self, encoding, pair=None, add_special_tokens=True)")]
     fn process(
         &self,
         encoding: &PyEncoding,
@@ -149,8 +149,8 @@ impl PyPostProcessor {
 ///
 ///     cls (:obj:`Tuple[str, int]`):
 ///         A tuple with the string representation of the CLS token, and its id
-#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=BertProcessing)]
-#[text_signature = "(self, sep, cls)"]
+#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "BertProcessing")]
+#[pyo3(text_signature = "(self, sep, cls)")]
 pub struct PyBertProcessing {}
 #[pymethods]
 impl PyBertProcessing {
@@ -191,8 +191,8 @@ impl PyBertProcessing {
 ///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether the add_prefix_space option was enabled during pre-tokenization. This
 ///         is relevant because it defines the way the offsets are trimmed out.
-#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=RobertaProcessing)]
-#[text_signature = "(self, sep, cls, trim_offsets=True, add_prefix_space=True)"]
+#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "RobertaProcessing")]
+#[pyo3(text_signature = "(self, sep, cls, trim_offsets=True, add_prefix_space=True)")]
 pub struct PyRobertaProcessing {}
 #[pymethods]
 impl PyRobertaProcessing {
@@ -226,8 +226,8 @@ impl PyRobertaProcessing {
 /// Args:
 ///     trim_offsets (:obj:`bool`):
 ///         Whether to trim the whitespaces from the produced offsets.
-#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=ByteLevel)]
-#[text_signature = "(self, trim_offsets=True)"]
+#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "ByteLevel")]
+#[pyo3(text_signature = "(self, trim_offsets=True)")]
 pub struct PyByteLevel {}
 #[pymethods]
 impl PyByteLevel {
@@ -378,8 +378,8 @@ impl FromPyObject<'_> for PyTemplate {
 ///
 ///          The given dict expects the provided :obj:`ids` and :obj:`tokens` lists to have
 ///          the same length.
-#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=TemplateProcessing)]
-#[text_signature = "(self, single, pair, special_tokens)"]
+#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "TemplateProcessing")]
+#[pyo3(text_signature = "(self, single, pair, special_tokens)")]
 pub struct PyTemplateProcessing {}
 #[pymethods]
 impl PyTemplateProcessing {
@@ -429,7 +429,7 @@ mod test {
         let gil = Python::acquire_gil();
         assert_eq!(
             "tokenizers.processors.BertProcessing",
-            py_bert.as_ref(gil.python()).get_type().name()
+            py_bert.as_ref(gil.python()).get_type().name().unwrap()
         );
     }
 

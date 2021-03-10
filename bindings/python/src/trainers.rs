@@ -15,9 +15,9 @@ use crate::utils::PyChar;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Trainer will return an instance of this class when instantiated.
-#[pyclass(name=Trainer, module = "tokenizers.trainers", name=Trainer)]
+#[pyclass(module = "tokenizers.trainers", name = "Trainer")]
 #[derive(Clone)]
-#[text_signature = "(self, vocab_size=30000, min_frequency=0,show_progress=True, special_tokens=[],limit_alphabet=None, initial_alphabet = [], continuing_subword_prefix=None, end_of_word_suffix=None)"]
+#[pyo3(text_signature = "(self, vocab_size=30000, min_frequency=0,show_progress=True, special_tokens=[],limit_alphabet=None, initial_alphabet = [], continuing_subword_prefix=None, end_of_word_suffix=None)")]
 pub struct PyTrainer {
     pub trainer: Arc<RwLock<TrainerWrapper>>,
 }
@@ -132,7 +132,7 @@ macro_rules! setter {
 ///
 ///     end_of_word_suffix (:obj:`str`, `optional`):
 ///         A suffix to be used for every subword that is a end-of-word.
-#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=BpeTrainer)]
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "BpeTrainer")]
 pub struct PyBpeTrainer {}
 #[pymethods]
 impl PyBpeTrainer {
@@ -336,8 +336,8 @@ impl PyBpeTrainer {
 ///
 ///     end_of_word_suffix (:obj:`str`, `optional`):
 ///         A suffix to be used for every subword that is a end-of-word.
-#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=WordPieceTrainer)]
-#[text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet= [],continuing_subword_prefix=\"##\", end_of_word_suffix=None)"]
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "WordPieceTrainer")]
+#[pyo3(text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet= [],continuing_subword_prefix=\"##\", end_of_word_suffix=None)")]
 pub struct PyWordPieceTrainer {}
 #[pymethods]
 impl PyWordPieceTrainer {
@@ -527,7 +527,7 @@ impl PyWordPieceTrainer {
 ///
 ///     special_tokens (:obj:`List[Union[str, AddedToken]]`):
 ///         A list of special tokens the model should know of.
-#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=WordLevelTrainer)]
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "WordLevelTrainer")]
 pub struct PyWordLevelTrainer {}
 #[pymethods]
 impl PyWordLevelTrainer {
@@ -683,8 +683,8 @@ impl PyWordLevelTrainer {
 ///     n_sub_iterations (:obj:`int`):
 ///         The number of iterations of the EM algorithm to perform before
 ///         pruning the vocabulary.
-#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=UnigramTrainer)]
-#[text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens=[], shrinking_factor=0.75, unk_token=None, max_piece_length=16, n_sub_iterations=2)"]
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "UnigramTrainer")]
+#[pyo3(text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens=[], shrinking_factor=0.75, unk_token=None, max_piece_length=16, n_sub_iterations=2)")]
 pub struct PyUnigramTrainer {}
 #[pymethods]
 impl PyUnigramTrainer {

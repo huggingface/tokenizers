@@ -43,7 +43,7 @@ impl PyNormalizedStringMut<'_> {
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Normalizer will return an instance of this class when instantiated.
-#[pyclass(dict, module = "tokenizers.normalizers", name=Normalizer)]
+#[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer")]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PyNormalizer {
     #[serde(flatten)]
@@ -144,7 +144,7 @@ impl PyNormalizer {
     ///     normalized (:class:`~tokenizers.NormalizedString`):
     ///         The normalized string on which to apply this
     ///         :class:`~tokenizers.normalizers.Normalizer`
-    #[text_signature = "(self, normalized)"]
+    #[pyo3(text_signature = "(self, normalized)")]
     fn normalize(&self, mut normalized: PyNormalizedStringMut) -> PyResult<()> {
         normalized.normalize_with(&self.normalizer)
     }
@@ -162,7 +162,7 @@ impl PyNormalizer {
     ///
     /// Returns:
     ///     :obj:`str`: A string after normalization
-    #[text_signature = "(self, sequence)"]
+    #[pyo3(text_signature = "(self, sequence)")]
     fn normalize_str(&self, sequence: &str) -> PyResult<String> {
         let mut normalized = NormalizedString::from(sequence);
         ToPyResult(self.normalizer.normalize(&mut normalized)).into_py()?;
@@ -217,8 +217,8 @@ macro_rules! setter {
 ///
 ///     lowercase (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to lowercase.
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=BertNormalizer)]
-#[text_signature = "(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True)"]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "BertNormalizer")]
+#[pyo3(text_signature = "(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True)")]
 pub struct PyBertNormalizer {}
 #[pymethods]
 impl PyBertNormalizer {
@@ -287,8 +287,8 @@ impl PyBertNormalizer {
 }
 
 /// NFD Unicode Normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=NFD)]
-#[text_signature = "(self)"]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "NFD")]
+#[pyo3(text_signature = "(self)")]
 pub struct PyNFD {}
 #[pymethods]
 impl PyNFD {
@@ -299,8 +299,8 @@ impl PyNFD {
 }
 
 /// NFKD Unicode Normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=NFKD)]
-#[text_signature = "(self)"]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "NFKD")]
+#[pyo3(text_signature = "(self)")]
 pub struct PyNFKD {}
 #[pymethods]
 impl PyNFKD {
@@ -311,8 +311,8 @@ impl PyNFKD {
 }
 
 /// NFC Unicode Normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=NFC)]
-#[text_signature = "(self)"]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "NFC")]
+#[pyo3(text_signature = "(self)")]
 pub struct PyNFC {}
 #[pymethods]
 impl PyNFC {
@@ -323,8 +323,8 @@ impl PyNFC {
 }
 
 /// NFKC Unicode Normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=NFKC)]
-#[text_signature = "(self)"]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "NFKC")]
+#[pyo3(text_signature = "(self)")]
 pub struct PyNFKC {}
 #[pymethods]
 impl PyNFKC {
@@ -340,7 +340,7 @@ impl PyNFKC {
 /// Args:
 ///     normalizers (:obj:`List[Normalizer]`):
 ///         A list of Normalizer to be run as a sequence
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Sequence)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Sequence")]
 pub struct PySequence {}
 #[pymethods]
 impl PySequence {
@@ -373,8 +373,8 @@ impl PySequenceProtocol for PySequence {
 }
 
 /// Lowercase Normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Lowercase)]
-#[text_signature = "(self)"]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Lowercase")]
+#[pyo3(text_signature = "(self)")]
 pub struct PyLowercase {}
 #[pymethods]
 impl PyLowercase {
@@ -385,8 +385,8 @@ impl PyLowercase {
 }
 
 /// Strip normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Strip)]
-#[text_signature = "(self, left=True, right=True)"]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Strip")]
+#[pyo3(text_signature = "(self, left=True, right=True)")]
 pub struct PyStrip {}
 #[pymethods]
 impl PyStrip {
@@ -418,8 +418,8 @@ impl PyStrip {
 }
 
 /// StripAccents normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=StripAccents)]
-#[text_signature = "(self)"]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "StripAccents")]
+#[pyo3(text_signature = "(self)")]
 pub struct PyStripAccents {}
 #[pymethods]
 impl PyStripAccents {
@@ -430,8 +430,8 @@ impl PyStripAccents {
 }
 
 /// Nmt normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Nmt)]
-#[text_signature = "(self)"]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Nmt")]
+#[pyo3(text_signature = "(self)")]
 pub struct PyNmt {}
 #[pymethods]
 impl PyNmt {
@@ -443,8 +443,8 @@ impl PyNmt {
 
 /// Precompiled normalizer
 /// Don't use manually it is used for compatiblity for SentencePiece.
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Precompiled)]
-#[text_signature = "(self, precompiled_charsmap)"]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Precompiled")]
+#[pyo3(text_signature = "(self, precompiled_charsmap)")]
 pub struct PyPrecompiled {}
 #[pymethods]
 impl PyPrecompiled {
@@ -466,8 +466,8 @@ impl PyPrecompiled {
 }
 
 /// Replace normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Replace)]
-#[text_signature = "(self, pattern, content)"]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Replace")]
+#[pyo3(text_signature = "(self, pattern, content)")]
 pub struct PyReplace {}
 #[pymethods]
 impl PyReplace {
@@ -631,7 +631,7 @@ mod test {
         let gil = Python::acquire_gil();
         assert_eq!(
             "tokenizers.normalizers.NFC",
-            py_nfc.as_ref(gil.python()).get_type().name()
+            py_nfc.as_ref(gil.python()).get_type().name().unwrap()
         );
     }
 
