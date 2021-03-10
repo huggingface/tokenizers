@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 use tk::Token;
 
-#[pyclass(module = "tokenizers", name=Token)]
+#[pyclass(module = "tokenizers", name = "Token")]
 #[derive(Clone)]
 pub struct PyToken {
     token: Token,

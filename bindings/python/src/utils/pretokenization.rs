@@ -147,8 +147,8 @@ fn to_encoding(
 /// Args:
 ///     sequence: str:
 ///         The string sequence used to initialize this PreTokenizedString
-#[pyclass(module = "tokenizers", name=PreTokenizedString)]
-#[text_signature = "(self, sequence)"]
+#[pyclass(module = "tokenizers", name = "PreTokenizedString")]
+#[pyo3(text_signature = "(self, sequence)")]
 pub struct PyPreTokenizedString {
     pub(crate) pretok: tk::PreTokenizedString,
 }
@@ -182,7 +182,7 @@ impl PyPreTokenizedString {
     ///         just return it directly.
     ///         In order for the offsets to be tracked accurately, any returned `NormalizedString`
     ///         should come from calling either `.split` or `.slice` on the received one.
-    #[text_signature = "(self, func)"]
+    #[pyo3(text_signature = "(self, func)")]
     fn split(&mut self, func: &PyAny) -> PyResult<()> {
         split(&mut self.pretok, func)
     }
@@ -194,7 +194,7 @@ impl PyPreTokenizedString {
     ///         The function used to normalize each underlying split. This function
     ///         does not need to return anything, just calling the methods on the provided
     ///         NormalizedString allow its modification.
-    #[text_signature = "(self, func)"]
+    #[pyo3(text_signature = "(self, func)")]
     fn normalize(&mut self, func: &PyAny) -> PyResult<()> {
         normalize(&mut self.pretok, func)
     }
@@ -205,7 +205,7 @@ impl PyPreTokenizedString {
     ///     func: Callable[[str], List[Token]]:
     ///         The function used to tokenize each underlying split. This function must return
     ///         a list of Token generated from the input str.
-    #[text_signature = "(self, func)"]
+    #[pyo3(text_signature = "(self, func)")]
     fn tokenize(&mut self, func: &PyAny) -> PyResult<()> {
         tokenize(&mut self.pretok, func)
     }
@@ -224,7 +224,7 @@ impl PyPreTokenizedString {
     /// Returns:
     ///     An Encoding
     #[args(type_id = "0", word_idx = "None")]
-    #[text_signature = "(self, type_id=0, word_idx=None)"]
+    #[pyo3(text_signature = "(self, type_id=0, word_idx=None)")]
     fn to_encoding(&self, type_id: u32, word_idx: Option<u32>) -> PyResult<PyEncoding> {
         to_encoding(&self.pretok, type_id, word_idx)
     }
@@ -249,7 +249,7 @@ impl PyPreTokenizedString {
         offset_referential = "PyOffsetReferential(OffsetReferential::Original)",
         offset_type = "PyOffsetType(OffsetType::Char)"
     )]
-    #[text_signature = "(self, offset_referential=\"original\", offset_type=\"char\")"]
+    #[pyo3(text_signature = "(self, offset_referential=\"original\", offset_type=\"char\")")]
     fn get_splits(
         &self,
         offset_referential: PyOffsetReferential,
@@ -259,7 +259,7 @@ impl PyPreTokenizedString {
     }
 }
 
-#[pyclass(module = "tokenizers", name=PreTokenizedString)]
+#[pyclass(module = "tokenizers", name = "PreTokenizedString")]
 #[derive(Clone)]
 pub struct PyPreTokenizedStringRefMut {
     inner: RefMutContainer<PreTokenizedString>,
