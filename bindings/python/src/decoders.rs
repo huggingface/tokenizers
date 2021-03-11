@@ -57,11 +57,9 @@ impl Decoder for PyDecoder {
 #[pymethods]
 impl PyDecoder {
     #[staticmethod]
-    fn custom(decoder: PyObject) -> PyResult<Self> {
-        let decoder = PyDecoderWrapper::Custom(
-            CustomDecoder::new(decoder).map(|d| Arc::new(RwLock::new(d)))?,
-        );
-        Ok(PyDecoder::new(decoder))
+    fn custom(decoder: PyObject) -> Self {
+        let decoder = PyDecoderWrapper::Custom(Arc::new(RwLock::new(CustomDecoder::new(decoder))));
+        PyDecoder::new(decoder)
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
@@ -147,8 +145,8 @@ pub struct PyByteLevelDec {}
 #[pymethods]
 impl PyByteLevelDec {
     #[new]
-    fn new() -> PyResult<(Self, PyDecoder)> {
-        Ok((PyByteLevelDec {}, ByteLevel::default().into()))
+    fn new() -> (Self, PyDecoder) {
+        (PyByteLevelDec {}, ByteLevel::default().into())
     }
 }
 
@@ -188,8 +186,8 @@ impl PyWordPieceDec {
 
     #[new]
     #[args(prefix = "String::from(\"##\")", cleanup = "true")]
-    fn new(prefix: String, cleanup: bool) -> PyResult<(Self, PyDecoder)> {
-        Ok((PyWordPieceDec {}, WordPiece::new(prefix, cleanup).into()))
+    fn new(prefix: String, cleanup: bool) -> (Self, PyDecoder) {
+        (PyWordPieceDec {}, WordPiece::new(prefix, cleanup).into())
     }
 }
 
@@ -230,11 +228,11 @@ impl PyMetaspaceDec {
 
     #[new]
     #[args(replacement = "PyChar('▁')", add_prefix_space = "true")]
-    fn new(replacement: PyChar, add_prefix_space: bool) -> PyResult<(Self, PyDecoder)> {
-        Ok((
+    fn new(replacement: PyChar, add_prefix_space: bool) -> (Self, PyDecoder) {
+        (
             PyMetaspaceDec {},
             Metaspace::new(replacement.0, add_prefix_space).into(),
-        ))
+        )
     }
 }
 
@@ -261,8 +259,8 @@ impl PyBPEDecoder {
 
     #[new]
     #[args(suffix = "String::from(\"</w>\")")]
-    fn new(suffix: String) -> PyResult<(Self, PyDecoder)> {
-        Ok((PyBPEDecoder {}, BPEDecoder::new(suffix).into()))
+    fn new(suffix: String) -> (Self, PyDecoder) {
+        (PyBPEDecoder {}, BPEDecoder::new(suffix).into())
     }
 }
 
@@ -272,8 +270,8 @@ pub(crate) struct CustomDecoder {
 }
 
 impl CustomDecoder {
-    pub(crate) fn new(inner: PyObject) -> PyResult<Self> {
-        Ok(CustomDecoder { inner })
+    pub(crate) fn new(inner: PyObject) -> Self {
+        CustomDecoder { inner }
     }
 }
 
@@ -387,8 +385,7 @@ mod test {
             let obj: PyObject = Py::new(py, py_msp).unwrap().into_py(py);
             obj
         });
-        let py_seq =
-            PyDecoderWrapper::Custom(Arc::new(RwLock::new(CustomDecoder::new(obj).unwrap())));
+        let py_seq = PyDecoderWrapper::Custom(Arc::new(RwLock::new(CustomDecoder::new(obj))));
         assert!(serde_json::to_string(&py_seq).is_err());
     }
 }

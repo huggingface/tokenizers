@@ -91,12 +91,12 @@ where
 #[pymethods]
 impl PyModel {
     #[new]
-    fn __new__() -> PyResult<Self> {
+    fn __new__() -> Self {
         // Instantiate a default empty model. This doesn't really make sense, but we need
         // to be able to instantiate an empty model for pickle capabilities.
-        Ok(PyModel {
+        PyModel {
             model: Arc::new(RwLock::new(BPE::default().into())),
-        })
+        }
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {

@@ -155,15 +155,15 @@ pub struct PyBertProcessing {}
 #[pymethods]
 impl PyBertProcessing {
     #[new]
-    fn new(sep: (String, u32), cls: (String, u32)) -> PyResult<(Self, PyPostProcessor)> {
-        Ok((
+    fn new(sep: (String, u32), cls: (String, u32)) -> (Self, PyPostProcessor) {
+        (
             PyBertProcessing {},
             PyPostProcessor::new(Arc::new(BertProcessing::new(sep, cls).into())),
-        ))
+        )
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        Ok(PyTuple::new(py, &[("", 0), ("", 0)]))
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
+        PyTuple::new(py, &[("", 0), ("", 0)])
     }
 }
 
@@ -203,18 +203,18 @@ impl PyRobertaProcessing {
         cls: (String, u32),
         trim_offsets: bool,
         add_prefix_space: bool,
-    ) -> PyResult<(Self, PyPostProcessor)> {
+    ) -> (Self, PyPostProcessor) {
         let proc = RobertaProcessing::new(sep, cls)
             .trim_offsets(trim_offsets)
             .add_prefix_space(add_prefix_space);
-        Ok((
+        (
             PyRobertaProcessing {},
             PyPostProcessor::new(Arc::new(proc.into())),
-        ))
+        )
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        Ok(PyTuple::new(py, &[("", 0), ("", 0)]))
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
+        PyTuple::new(py, &[("", 0), ("", 0)])
     }
 }
 
@@ -233,20 +233,17 @@ pub struct PyByteLevel {}
 impl PyByteLevel {
     #[new]
     #[args(trim_offsets = "None", _kwargs = "**")]
-    fn new(
-        trim_offsets: Option<bool>,
-        _kwargs: Option<&PyDict>,
-    ) -> PyResult<(Self, PyPostProcessor)> {
+    fn new(trim_offsets: Option<bool>, _kwargs: Option<&PyDict>) -> (Self, PyPostProcessor) {
         let mut byte_level = ByteLevel::default();
 
         if let Some(to) = trim_offsets {
             byte_level = byte_level.trim_offsets(to);
         }
 
-        Ok((
+        (
             PyByteLevel {},
             PyPostProcessor::new(Arc::new(byte_level.into())),
-        ))
+        )
     }
 }
 
