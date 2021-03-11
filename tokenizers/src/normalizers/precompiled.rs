@@ -20,10 +20,10 @@ fn replace(transformations: &mut Vec<(char, isize)>, old_part: &str, new_part: &
                 .take(diff as usize)
                 .for_each(|(_, cs)| *cs = 1);
         }
-        // If we are removing some characters, the last one should be == -DIFF
+        // If we are removing some characters, the last one should include the diff
         Ordering::Less => {
             if let Some((_, cs)) = transformations.last_mut() {
-                *cs = diff;
+                *cs += diff;
             }
         }
         _ => {}
@@ -65,5 +65,25 @@ impl Normalizer for Precompiled {
             normalized.transform(transformations.into_iter(), 0);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expansion_followed_by_removal() {
+        // Simulate transformations from "™\x1eg" to "TMg"
+        let mut transformations = vec![];
+
+        let mut n = NormalizedString::from("™\x1eg");
+        replace(&mut transformations, "™", "TM");
+        replace(&mut transformations, "\x1e", "");
+        transformations.push(('g', 0));
+
+        n.transform(transformations.into_iter(), 0);
+
+        assert_eq!(n.get(), "TMg");
     }
 }
