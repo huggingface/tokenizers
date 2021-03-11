@@ -41,10 +41,10 @@ impl PySequenceProtocol for PyEncoding {
 #[pymethods]
 impl PyEncoding {
     #[new]
-    fn new() -> PyResult<Self> {
-        Ok(Self {
+    fn new() -> Self {
+        Self {
             encoding: tk::tokenizer::Encoding::default(),
-        })
+        }
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
@@ -441,8 +441,7 @@ impl PyEncoding {
     ///         The length of previous content to be included in each overflowing piece
     #[args(stride = "0")]
     #[text_signature = "(self, max_length, stride=0)"]
-    fn truncate(&mut self, max_length: usize, stride: usize) -> PyResult<()> {
+    fn truncate(&mut self, max_length: usize, stride: usize) {
         self.encoding.truncate(max_length, stride);
-        Ok(())
     }
 }

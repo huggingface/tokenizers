@@ -487,10 +487,9 @@ impl PyTokenizer {
         }
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
         let model = PyModel::from(BPE::default()).into_py(py);
-        let args = PyTuple::new(py, vec![model]);
-        Ok(args)
+        PyTuple::new(py, vec![model])
     }
 
     /// Instantiate a new :class:`~tokenizers.Tokenizer` from the given JSON string.
@@ -577,11 +576,10 @@ impl PyTokenizer {
     /// :param is_pair: Boolean indicating if the input would be a single sentence or a pair
     /// :return:
     #[text_signature = "(self, is_pair)"]
-    fn num_special_tokens_to_add(&self, is_pair: bool) -> PyResult<usize> {
-        Ok(self
-            .tokenizer
+    fn num_special_tokens_to_add(&self, is_pair: bool) -> usize {
+        self.tokenizer
             .get_post_processor()
-            .map_or(0, |p| p.added_tokens(is_pair)))
+            .map_or(0, |p| p.added_tokens(is_pair))
     }
 
     /// Get the underlying vocabulary
@@ -594,8 +592,8 @@ impl PyTokenizer {
     ///     :obj:`Dict[str, int]`: The vocabulary
     #[args(with_added_tokens = true)]
     #[text_signature = "(self, with_added_tokens=True)"]
-    fn get_vocab(&self, with_added_tokens: bool) -> PyResult<HashMap<String, u32>> {
-        Ok(self.tokenizer.get_vocab(with_added_tokens))
+    fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+        self.tokenizer.get_vocab(with_added_tokens)
     }
 
     /// Get the size of the underlying vocabulary
@@ -608,8 +606,8 @@ impl PyTokenizer {
     ///     :obj:`int`: The size of the vocabulary
     #[args(with_added_tokens = true)]
     #[text_signature = "(self, with_added_tokens=True)"]
-    fn get_vocab_size(&self, with_added_tokens: bool) -> PyResult<usize> {
-        Ok(self.tokenizer.get_vocab_size(with_added_tokens))
+    fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
+        self.tokenizer.get_vocab_size(with_added_tokens)
     }
 
     /// Enable truncation

@@ -25,21 +25,21 @@ impl PyToken {
     }
 
     #[getter]
-    fn get_id(&self) -> PyResult<u32> {
-        Ok(self.token.id)
+    fn get_id(&self) -> u32 {
+        self.token.id
     }
 
     #[getter]
-    fn get_value(&self) -> PyResult<&str> {
-        Ok(&self.token.value)
+    fn get_value(&self) -> &str {
+        &self.token.value
     }
 
     #[getter]
-    fn get_offsets(&self) -> PyResult<(usize, usize)> {
-        Ok(self.token.offsets)
+    fn get_offsets(&self) -> (usize, usize) {
+        self.token.offsets
     }
 
-    fn as_tuple(&self) -> PyResult<(u32, &str, (usize, usize))> {
-        Ok((self.token.id, &self.token.value, self.token.offsets))
+    fn as_tuple(&self) -> (u32, &str, (usize, usize)) {
+        (self.token.id, &self.token.value, self.token.offsets)
     }
 }

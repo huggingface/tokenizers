@@ -101,10 +101,10 @@ impl PreTokenizer for PyPreTokenizer {
 #[pymethods]
 impl PyPreTokenizer {
     #[staticmethod]
-    fn custom(pretok: PyObject) -> PyResult<Self> {
-        Ok(PyPreTokenizer {
+    fn custom(pretok: PyObject) -> Self {
+        PyPreTokenizer {
             pretok: PyPreTokenizerWrapper::Custom(CustomPreTokenizer::new(pretok)).into(),
-        })
+        }
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
@@ -244,13 +244,13 @@ impl PyByteLevel {
 
     #[new]
     #[args(add_prefix_space = "true", _kwargs = "**")]
-    fn new(add_prefix_space: bool, _kwargs: Option<&PyDict>) -> PyResult<(Self, PyPreTokenizer)> {
-        Ok((
+    fn new(add_prefix_space: bool, _kwargs: Option<&PyDict>) -> (Self, PyPreTokenizer) {
+        (
             PyByteLevel {},
             ByteLevel::default()
                 .add_prefix_space(add_prefix_space)
                 .into(),
-        ))
+        )
     }
 
     /// Returns the alphabet used by this PreTokenizer.
@@ -278,8 +278,8 @@ pub struct PyWhitespace {}
 #[pymethods]
 impl PyWhitespace {
     #[new]
-    fn new() -> PyResult<(Self, PyPreTokenizer)> {
-        Ok((PyWhitespace {}, Whitespace::default().into()))
+    fn new() -> (Self, PyPreTokenizer) {
+        (PyWhitespace {}, Whitespace::default().into())
     }
 }
 
@@ -290,8 +290,8 @@ pub struct PyWhitespaceSplit {}
 #[pymethods]
 impl PyWhitespaceSplit {
     #[new]
-    fn new() -> PyResult<(Self, PyPreTokenizer)> {
-        Ok((PyWhitespaceSplit {}, WhitespaceSplit.into()))
+    fn new() -> (Self, PyPreTokenizer) {
+        (PyWhitespaceSplit {}, WhitespaceSplit.into())
     }
 }
 
@@ -332,8 +332,8 @@ impl PySplit {
         ))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        Ok(PyTuple::new(py, &[" ", "removed"]))
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
+        PyTuple::new(py, &[" ", "removed"])
     }
 }
 
@@ -364,8 +364,8 @@ impl PyCharDelimiterSplit {
         ))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        Ok(PyTuple::new(py, &[" "]))
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
+        PyTuple::new(py, &[" "])
     }
 }
 
@@ -379,8 +379,8 @@ pub struct PyBertPreTokenizer {}
 #[pymethods]
 impl PyBertPreTokenizer {
     #[new]
-    fn new() -> PyResult<(Self, PyPreTokenizer)> {
-        Ok((PyBertPreTokenizer {}, BertPreTokenizer.into()))
+    fn new() -> (Self, PyPreTokenizer) {
+        (PyBertPreTokenizer {}, BertPreTokenizer.into())
     }
 }
 
@@ -391,8 +391,8 @@ pub struct PyPunctuation {}
 #[pymethods]
 impl PyPunctuation {
     #[new]
-    fn new() -> PyResult<(Self, PyPreTokenizer)> {
-        Ok((PyPunctuation {}, Punctuation.into()))
+    fn new() -> (Self, PyPreTokenizer) {
+        (PyPunctuation {}, Punctuation.into())
     }
 }
 
@@ -420,8 +420,8 @@ impl PySequence {
         ))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<&'p PyTuple> {
-        Ok(PyTuple::new(py, &[PyList::empty(py)]))
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
+        PyTuple::new(py, &[PyList::empty(py)])
     }
 }
 
@@ -465,11 +465,11 @@ impl PyMetaspace {
 
     #[new]
     #[args(replacement = "PyChar('▁')", add_prefix_space = "true")]
-    fn new(replacement: PyChar, add_prefix_space: bool) -> PyResult<(Self, PyPreTokenizer)> {
-        Ok((
+    fn new(replacement: PyChar, add_prefix_space: bool) -> (Self, PyPreTokenizer) {
+        (
             PyMetaspace {},
             Metaspace::new(replacement.0, add_prefix_space).into(),
-        ))
+        )
     }
 }
 
@@ -501,8 +501,8 @@ impl PyDigits {
 
     #[new]
     #[args(individual_digits = false)]
-    fn new(individual_digits: bool) -> PyResult<(Self, PyPreTokenizer)> {
-        Ok((PyDigits {}, Digits::new(individual_digits).into()))
+    fn new(individual_digits: bool) -> (Self, PyPreTokenizer) {
+        (PyDigits {}, Digits::new(individual_digits).into())
     }
 }
 
@@ -516,8 +516,8 @@ pub struct PyUnicodeScripts {}
 #[pymethods]
 impl PyUnicodeScripts {
     #[new]
-    fn new() -> PyResult<(Self, PyPreTokenizer)> {
-        Ok((PyUnicodeScripts {}, UnicodeScripts::new().into()))
+    fn new() -> (Self, PyPreTokenizer) {
+        (PyUnicodeScripts {}, UnicodeScripts::new().into())
     }
 }
 
