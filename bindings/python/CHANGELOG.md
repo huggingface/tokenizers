@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - [#652]: Fix offsets for `Precompiled` corner case
+- [#656]: Fix BPE `continuing_subword_prefix`
 
 ## [0.10.1]
 
@@ -307,6 +308,7 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#656]: https://github.com/huggingface/tokenizers/pull/656
 [#652]: https://github.com/huggingface/tokenizers/pull/652
 [#621]: https://github.com/huggingface/tokenizers/pull/621
 [#620]: https://github.com/huggingface/tokenizers/pull/620
