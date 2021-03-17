@@ -43,6 +43,11 @@ describe("punctuationPreTokenizer", () => {
     const processor = punctuationPreTokenizer();
     expect(processor.constructor.name).toEqual("PreTokenizer");
   });
+
+  it("instantiates correctly with non-default split delimeter", () => {
+    const processor = punctuationPreTokenizer("removed");
+    expect(processor.constructor.name).toEqual("PreTokenizer");
+  });
 });
 
 describe("splitPreTokenizer", () => {

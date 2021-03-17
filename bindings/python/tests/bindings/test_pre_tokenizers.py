@@ -132,6 +132,7 @@ class TestCharDelimiterSplit:
 class TestPunctuation:
     def test_instantiate(self):
         assert Punctuation() is not None
+        assert Punctuation("removed") is not None
         assert isinstance(Punctuation(), PreTokenizer)
         assert isinstance(Punctuation(), Punctuation)
         assert isinstance(pickle.loads(pickle.dumps(Punctuation())), Punctuation)
