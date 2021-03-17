@@ -19,7 +19,11 @@ use tokenizers::decoders::DecoderWrapper;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::processors::PostProcessorWrapper;
 
+use pprof::criterion::{Output, PProfProfiler};
+
 static BATCH_SIZE: usize = 1_000;
+static BERT_SAMPLE_SIZE: usize = 20;
+static BENCHES_SAMPLE_SIZE: usize = 10;
 
 type BertTokenizer = TokenizerImpl<
     WordPiece,
@@ -109,14 +113,32 @@ fn bench_train(c: &mut Criterion) {
 
 criterion_group! {
     name = bert_benches;
-    config = Criterion::default().sample_size(20);
+    config = Criterion::default().sample_size(BERT_SAMPLE_SIZE);
     targets = bench_bert
 }
-
 criterion_group! {
     name = benches_train;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(BENCHES_SAMPLE_SIZE);
     targets = bench_train
 }
 
+criterion_group! {
+    name = bert_benches_profiling;
+    config = Criterion::default().
+        sample_size(BERT_SAMPLE_SIZE).
+        with_profiler(PProfProfiler::new(100,Output::Flamegraph(None)));
+    targets = bench_bert
+}
+criterion_group! {
+    name = benches_train_profiling;
+    config = Criterion::default().
+        sample_size(BENCHES_SAMPLE_SIZE).
+        with_profiler(PProfProfiler::new(100,Output::Flamegraph(None)));
+    targets = bench_train
+}
+
+#[cfg(not(feature = "profiling"))]
 criterion_main!(bert_benches, benches_train);
+
+#[cfg(feature = "profiling")]
+criterion_main!(bert_benches_profiling, benches_train_profiling);

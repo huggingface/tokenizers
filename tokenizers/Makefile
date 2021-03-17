@@ -1,6 +1,7 @@
 DATA_DIR = data
 BENCHMARK_DIR = benches
 TESTS_DIR = tests
+PROFILING_TIME ?= 5
 
 dir_guard=@mkdir -p $(@D)
 
@@ -11,6 +12,10 @@ TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigr
 .PHONY : build
 build :
 	cargo build --all-targets
+
+.PHONY : clean
+clean :
+	cargo clean
 
 .PHONY : release
 release :
@@ -44,6 +49,10 @@ all-checks : lint test doc
 .PHONY : bench
 bench : $(BENCHMARK_RESOURCES)
 	cargo bench -- --verbose
+
+.PHONY : profiling
+profiling : $(BENCHMARK_RESOURCES)
+	cargo bench --features profiling -- --verbose --profile-time=$(PROFILING_TIME)
 
 $(DATA_DIR)/gpt2-% :
 	$(dir_guard)

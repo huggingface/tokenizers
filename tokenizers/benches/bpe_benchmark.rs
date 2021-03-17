@@ -18,7 +18,11 @@ use tokenizers::Tokenizer;
 use common::{iter_bench_encode, iter_bench_encode_batch, iter_bench_train};
 use std::ops::Deref;
 
+use pprof::criterion::{Output, PProfProfiler};
+
 static BATCH_SIZE: usize = 1_000;
+static BENCHES_SAMPLE_SIZE: usize = 20;
+static BENCHES_TRAIN_SAMPLE_SIZE: usize = 10;
 
 fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer {
     let mut tokenizer = Tokenizer::new(bpe);
@@ -102,12 +106,30 @@ fn bench_train(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().sample_size(20);
+    config = Criterion::default().sample_size(BENCHES_SAMPLE_SIZE);
     targets = bench_gpt2
 }
 criterion_group! {
     name = benches_train;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(BENCHES_TRAIN_SAMPLE_SIZE);
     targets = bench_train
 }
+
+criterion_group! {
+    name = benches_profiling;
+    config = Criterion::default().sample_size(BENCHES_SAMPLE_SIZE).
+        with_profiler(PProfProfiler::new(100,Output::Flamegraph(None)));
+    targets = bench_gpt2
+}
+criterion_group! {
+    name = benches_train_profiling;
+    config = Criterion::default().sample_size(BENCHES_TRAIN_SAMPLE_SIZE).
+        with_profiler(PProfProfiler::new(100,Output::Flamegraph(None)));
+    targets = bench_train
+}
+
+#[cfg(not(feature = "profiling"))]
 criterion_main!(benches, benches_train);
+
+#[cfg(feature = "profiling")]
+criterion_main!(benches_profiling, benches_train_profiling);
