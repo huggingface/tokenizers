@@ -58,7 +58,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
+          args: --manifest-path ./tokenizers/Cargo.toml --all-targets --features default,progressbar -- -D warnings
 
       - name: Run Tests
         if: matrix.os != 'windows-latest'
