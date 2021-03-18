@@ -1006,7 +1006,7 @@ class Tokenizer:
         The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
         """
         pass
-    def save(self, pretty=False):
+    def save(self, pretty=True):
         """
         Save the :class:`~tokenizers.Tokenizer` to the file at the given path.
 
@@ -1014,7 +1014,7 @@ class Tokenizer:
             path (:obj:`str`):
                 A path to a file in which to save the serialized tokenizer.
 
-            pretty (:obj:`bool`, defaults to :obj:`False`):
+            pretty (:obj:`bool`, defaults to :obj:`True`):
                 Whether the JSON file should be pretty formatted.
         """
         pass

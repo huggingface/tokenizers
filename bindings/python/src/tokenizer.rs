@@ -601,10 +601,10 @@ impl PyTokenizer {
     ///     path (:obj:`str`):
     ///         A path to a file in which to save the serialized tokenizer.
     ///
-    ///     pretty (:obj:`bool`, defaults to :obj:`False`):
+    ///     pretty (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether the JSON file should be pretty formatted.
-    #[args(pretty = false)]
-    #[text_signature = "(self, pretty=False)"]
+    #[args(pretty = true)]
+    #[text_signature = "(self, pretty=True)"]
     fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
         ToPyResult(self.tokenizer.save(path, pretty)).into()
     }
