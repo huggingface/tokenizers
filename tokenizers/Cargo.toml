@@ -63,4 +63,6 @@ profiling = []
 criterion = "0.3"
 tempfile = "3.1"
 assert_approx_eq = "1.1"
+
+[target.'cfg(unix)'.dev-dependencies]
 pprof = { version = "0.4", features = ["flamegraph","criterion"] } 

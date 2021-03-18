@@ -18,6 +18,7 @@ use tokenizers::Tokenizer;
 use common::{iter_bench_encode, iter_bench_encode_batch, iter_bench_train};
 use std::ops::Deref;
 
+#[cfg(all(unix, feature = "profiling"))]
 use pprof::criterion::{Output, PProfProfiler};
 
 static BATCH_SIZE: usize = 1_000;
@@ -115,12 +116,14 @@ criterion_group! {
     targets = bench_train
 }
 
+#[cfg(all(unix, feature = "profiling"))]
 criterion_group! {
     name = benches_profiling;
     config = Criterion::default().sample_size(BENCHES_SAMPLE_SIZE).
         with_profiler(PProfProfiler::new(100,Output::Flamegraph(None)));
     targets = bench_gpt2
 }
+#[cfg(all(unix, feature = "profiling"))]
 criterion_group! {
     name = benches_train_profiling;
     config = Criterion::default().sample_size(BENCHES_TRAIN_SAMPLE_SIZE).
@@ -131,5 +134,5 @@ criterion_group! {
 #[cfg(not(feature = "profiling"))]
 criterion_main!(benches, benches_train);
 
-#[cfg(feature = "profiling")]
+#[cfg(all(unix, feature = "profiling"))]
 criterion_main!(benches_profiling, benches_train_profiling);

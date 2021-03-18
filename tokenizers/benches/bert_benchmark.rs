@@ -19,6 +19,7 @@ use tokenizers::decoders::DecoderWrapper;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::processors::PostProcessorWrapper;
 
+#[cfg(all(unix, feature = "profiling"))]
 use pprof::criterion::{Output, PProfProfiler};
 
 static BATCH_SIZE: usize = 1_000;
@@ -122,6 +123,7 @@ criterion_group! {
     targets = bench_train
 }
 
+#[cfg(all(unix, feature = "profiling"))]
 criterion_group! {
     name = bert_benches_profiling;
     config = Criterion::default().
@@ -129,6 +131,7 @@ criterion_group! {
         with_profiler(PProfProfiler::new(100,Output::Flamegraph(None)));
     targets = bench_bert
 }
+#[cfg(all(unix, feature = "profiling"))]
 criterion_group! {
     name = benches_train_profiling;
     config = Criterion::default().
@@ -140,5 +143,5 @@ criterion_group! {
 #[cfg(not(feature = "profiling"))]
 criterion_main!(bert_benches, benches_train);
 
-#[cfg(feature = "profiling")]
+#[cfg(all(unix, feature = "profiling"))]
 criterion_main!(bert_benches_profiling, benches_train_profiling);
