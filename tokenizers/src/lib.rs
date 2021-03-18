@@ -105,6 +105,9 @@
 //! **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
 //!   compilation for certain targets is not supported by the [termios](https://crates.io/crates/termios)
 //!   dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
+//! **profiling**: You can profile the benches **only on Unix** by invoking `make profiling`.
+//!   It results in a flame graph for each benches located at
+//!   `target/criterion/<name-of-benchmark>/profile/<name-of-benchmark>.svg`
 
 #[macro_use]
 extern crate log;

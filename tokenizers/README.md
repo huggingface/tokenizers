@@ -117,7 +117,7 @@ environment variable. As an example setting `RAYON_RS_NUM_CPUS=4` will allocate 
 ## Features
 **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
   compilation for certain targets is not supported by the [termios](https://crates.io/crates/termios)
-  dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.  
+  dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
 **profiling**: You can profile the benches **only on Unix** by invoking `make profiling`.
-  It results in a flame graph for each benches located at 
+  It results in a flame graph for each benches located at
   `target/criterion/<name-of-benchmark>/profile/<name-of-benchmark>.svg`
