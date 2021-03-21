@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+import Tokenizers
 
 test string tokenizer = do
   putStrLn $ "\n----\n" ++ string ++ ""
