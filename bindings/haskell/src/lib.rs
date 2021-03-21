@@ -6,11 +6,20 @@ use std::mem;
 
 use tokenizers::models::bpe::BpeBuilder;
 use tokenizers::models::bpe::BPE;
+use tokenizers::models::unigram::*;
 use tokenizers::tokenizer::Encoding;
 use tokenizers::tokenizer::Tokenizer;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::processors::roberta::RobertaProcessing;
 
+
+#[no_mangle]
+pub extern "C" fn mk_t5_tokenizer(cvocab_file: *const c_char, ctokenizer_file: *const c_char,) -> *mut Tokenizer {
+    unsafe {
+        // let t = Tokenizer::new();
+        unimplemented!()
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn mk_roberta_tokenizer(

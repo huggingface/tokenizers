@@ -1,6 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 
-module Lib where
+module Tokenizers where
 
 import Foreign.Ptr
 -- import Foreign.ForeignPtr
