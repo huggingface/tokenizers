@@ -464,8 +464,12 @@ impl PyMetaspace {
     }
 
     #[new]
-    #[args(replacement = "PyChar('▁')", add_prefix_space = "true")]
-    fn new(replacement: PyChar, add_prefix_space: bool) -> (Self, PyPreTokenizer) {
+    #[args(replacement = "PyChar('▁')", add_prefix_space = "true", _kwargs = "**")]
+    fn new(
+        replacement: PyChar,
+        add_prefix_space: bool,
+        _kwargs: Option<&PyDict>,
+    ) -> (Self, PyPreTokenizer) {
         (
             PyMetaspace {},
             Metaspace::new(replacement.0, add_prefix_space).into(),
