@@ -2,14 +2,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Replaces all the whitespaces by the provided meta character and then
 /// splits on this character
-#[serde(tag = "type")]
+#[serde(tag = "type", from = "MetaspaceDeserializer")]
 pub struct Metaspace {
     replacement: char,
-    str_rep: String,
     pub add_prefix_space: bool,
+    #[serde(skip)]
+    str_rep: String,
+}
+
+#[doc(hidden)]
+#[derive(Deserialize)]
+#[serde(tag = "type")]
+pub struct MetaspaceDeserializer {
+    replacement: char,
+    add_prefix_space: bool,
+}
+
+impl From<MetaspaceDeserializer> for Metaspace {
+    fn from(v: MetaspaceDeserializer) -> Metaspace {
+        Metaspace::new(v.replacement, v.add_prefix_space)
+    }
 }
 
 impl Metaspace {
@@ -75,6 +90,17 @@ impl Decoder for Metaspace {
 mod tests {
     use super::*;
     use crate::{OffsetReferential, OffsetType};
+
+    #[test]
+    fn serialization() {
+        let metaspace = Metaspace::new('_', true);
+        let metaspace_s = r#"{"type":"Metaspace","replacement":"_","add_prefix_space":true}"#;
+        assert_eq!(serde_json::to_string(&metaspace).unwrap(), metaspace_s);
+        assert_eq!(
+            serde_json::from_str::<Metaspace>(metaspace_s).unwrap(),
+            metaspace
+        );
+    }
 
     #[test]
     fn basic() {
