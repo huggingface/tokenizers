@@ -1,4 +1,5 @@
 #![warn(clippy::all)]
+#![allow(clippy::upper_case_acronyms)]
 #![doc(html_favicon_url = "https://huggingface.co/favicon.ico")]
 #![doc(html_logo_url = "https://huggingface.co/landing/assets/huggingface_logo.svg")]
 

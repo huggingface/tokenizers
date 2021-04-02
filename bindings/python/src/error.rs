@@ -23,10 +23,9 @@ impl Display for PyError {
 impl std::error::Error for PyError {}
 
 pub struct ToPyResult<T>(pub Result<T>);
-impl<T> std::convert::Into<PyResult<T>> for ToPyResult<T> {
-    fn into(self) -> PyResult<T> {
-        self.0
-            .map_err(|e| exceptions::PyException::new_err(format!("{}", e)))
+impl<T> From<ToPyResult<T>> for PyResult<T> {
+    fn from(v: ToPyResult<T>) -> Self {
+        v.0.map_err(|e| exceptions::PyException::new_err(format!("{}", e)))
     }
 }
 impl<T> ToPyResult<T> {

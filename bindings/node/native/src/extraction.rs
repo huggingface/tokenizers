@@ -89,10 +89,9 @@ impl<'c, T: neon::object::This> Extract for CallContext<'c, T> {
         self.argument_opt(pos)
             .map(|v| {
                 let vec = v.downcast::<JsArray>()?.to_vec(self)?;
-                Ok(vec
-                    .into_iter()
+                vec.into_iter()
                     .map(|v| E::from_value(v, self))
-                    .collect::<LibResult<Vec<_>>>()?)
+                    .collect::<LibResult<Vec<_>>>()
             })
             .map_or(Ok(None), |v| v.map(Some))
     }

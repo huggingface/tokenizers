@@ -1,4 +1,5 @@
 #![warn(clippy::all)]
+#![allow(clippy::upper_case_acronyms)]
 
 extern crate tokenizers as tk;
 
