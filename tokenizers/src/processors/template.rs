@@ -526,15 +526,13 @@ impl TemplateProcessing {
             .take_overflowing()
             .into_iter()
             .flat_map(|encoding| {
-                let mut overflowings = vec![];
-
                 // 1. The pair itself
-                overflowings.push(self.apply_template(
+                let mut overflowings = vec![self.apply_template(
                     template,
                     encoding.clone(),
                     pair.clone(),
                     add_special_tokens,
-                ));
+                )];
 
                 // 2. Its overflowings
                 for other_o in &pair_overflowing {

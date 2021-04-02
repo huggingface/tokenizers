@@ -252,7 +252,7 @@ impl Unigram {
             /// The starting position (in utf-8) of this node. The entire best
             /// path can be constructed by backtracking along this link.
             starts_at: Option<usize>,
-        };
+        }
         impl Default for BestPathNode {
             fn default() -> Self {
                 Self {
