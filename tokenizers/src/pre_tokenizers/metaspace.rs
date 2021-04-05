@@ -100,6 +100,15 @@ mod tests {
             serde_json::from_str::<Metaspace>(metaspace_s).unwrap(),
             metaspace
         );
+
+        // Also check it can deserialize previous versions
+        let metaspace = Metaspace::new('_', true);
+        let metaspace_s =
+            r#"{"type":"Metaspace","str_rep":"_","replacement":"_","add_prefix_space":true}"#;
+        assert_eq!(
+            serde_json::from_str::<Metaspace>(metaspace_s).unwrap(),
+            metaspace
+        );
     }
 
     #[test]
