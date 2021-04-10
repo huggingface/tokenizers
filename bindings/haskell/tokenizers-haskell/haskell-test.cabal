@@ -5,25 +5,31 @@ version:             0.1.0.0
 homepage:            https://github.com/githubuser/haskell-test#readme
 author:              Austin Huang
 maintainer:          austinh@alum.mit.edu
-category:            Web
+category:            Machine Learning
 build-type:          Simple
 cabal-version:       >=1.10
+
+library tokenizers
+  exposed-modules:  Tokenizers
+  hs-source-dirs:   src
+  default-language: Haskell2010
+  build-depends:       base >= 4.7 && < 5
+  extra-lib-dirs:      ./lib
 
 executable haskell-test
   hs-source-dirs:      src
   main-is:             Main.hs
-  other-modules:       Lib
   default-language:    Haskell2010
   build-depends:       base >= 4.7 && < 5
+                      , tokenizers
   extra-libraries:     haskell
   extra-lib-dirs:      ./lib
 
-executable download-vocab
-  hs-source-dirs:      src
-  main-is:             Download.hs
-  other-modules:       Lib
-  default-language:    Haskell2010
-  build-depends:       base >= 4.7 && < 5
-                     , containers
-  extra-libraries:     haskell
-
+-- executable download-vocab
+--   hs-source-dirs:      src
+--   main-is:             Download.hs
+--   default-language:    Haskell2010
+--   build-depends:       base >= 4.7 && < 5
+--                      , containers
+--                      , tokenizers
+--   extra-libraries:     haskell
