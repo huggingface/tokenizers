@@ -1,6 +1,6 @@
 all:
 	cargo build --release
-	cd haskell-test; make all
+	cd tokenizers-haskell; make all
 
 watch:
 	cargo watch -x "build --release"

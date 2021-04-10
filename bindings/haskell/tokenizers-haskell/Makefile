@@ -11,8 +11,8 @@ download: clean
 run:
 	export LD_LIBRARY_PATH=`pwd`/lib; stack run haskell-test
 
-watch:
-	ghcid -c "stack ghci haskell-test" -Tmain
+# watch:
+#	ghcid -c "stack ghci haskell-test:haskell-test" -Tmain
 
 download-vocab:
 	stack build haskell-test:exe:download-vocab
