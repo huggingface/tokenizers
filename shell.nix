@@ -5,7 +5,9 @@ with pkgs;
 
 let
 
-  shell = {};
+  shell = mkShell {
+    nativeBuildInputs = [ cargo ];
+  };
 
 in
 
