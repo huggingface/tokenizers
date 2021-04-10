@@ -58,24 +58,27 @@ getTokens (Encoding encoding) = do
   -- 1st value of struct is the # of tokens
   sz <- fromIntegral <$> (peek (castPtr ptr) :: IO CInt) :: IO Int
   -- 2nd value of struct is the array of tokens
-  tokens <- peekByteOff ptr 8 :: IO (Ptr CString) 
+  tokens <- peekByteOff ptr step :: IO (Ptr CString) 
   mapM 
-    (\idx -> peekByteOff tokens (8*idx) >>= peekCString) 
+    (\idx -> peekByteOff tokens (step*idx) >>= peekCString) 
     [0 .. sz-1]
+  where
+    step = 8
 
 cleanTokens xs = [x | x <- xs, x `notElem` "\288"]
 
+foreign import ccall unsafe "get_ids" r_get_ids :: Ptr CEncoding -> IO (Ptr CIDs)
 
 getIDs:: Encoding -> IO [Int]
 getIDs (Encoding encoding) = do
-  ptr <- r_get_tokens encoding
+  ptr <- r_get_ids encoding
   -- 1st value of struct is the # of tokens
   sz <- fromIntegral <$> (peek (castPtr ptr) :: IO CUInt) :: IO Int
   print $ "SIZE " ++ show sz
   -- 2nd value of struct is the array of tokens
   tokens <- peekByteOff ptr step :: IO (Ptr CUInt) 
   (mapM 
-    (\idx -> (peekByteOff tokens (step*idx) :: IO CUInt) >>= \x -> pure $ fromIntegral x)  -- TODO: as Int
+    (\idx -> (peekByteOff tokens (step*idx) :: IO CUInt) >>= \x -> pure $ fromIntegral x)
     [0 .. sz-1]) 
   where
     step = 8

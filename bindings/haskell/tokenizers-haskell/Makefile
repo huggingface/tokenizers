@@ -13,6 +13,8 @@ run:
 
 # watch:
 #	ghcid -c "stack ghci haskell-test:haskell-test" -Tmain
+watch:
+	rg --files -t hs | entr -s "export LD_LIBRARY_PATH=`pwd`/lib;stack run haskell-test"
 
 download-vocab:
 	stack build haskell-test:exe:download-vocab
