@@ -5,7 +5,10 @@ with pkgs;
 
 let
 
-  pkg = naersk.buildPackage ../tokenizers;
+  pkg = naersk.buildPackage {
+    src = ../tokenizers;
+    buildInputs = [ libiconv pkgconfig ];
+  };
 
 in
 
