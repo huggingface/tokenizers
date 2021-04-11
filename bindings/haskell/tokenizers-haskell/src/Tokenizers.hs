@@ -81,6 +81,4 @@ getIDs (Encoding encoding) = do
     (\idx -> (peekByteOff tokens (step*idx) :: IO CUInt) >>= \x -> pure $ fromIntegral x)
     [0 .. sz-1]) 
   where
-    step = 4
-
-
+    step = 8
