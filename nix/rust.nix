@@ -7,13 +7,8 @@ let
 
   self = rec {
     tokenizers = naersk.buildPackage {
-      src = ../tokenizers;
+      src = ../.;
       buildInputs = [ libiconv pkgconfig ];
-    };
-
-    tokenizers-haskell = naersk.buildPackage {
-      src = ../bindings/haskell;
-      buildInputs = [ tokenizers ];
     };
   };
 
