@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "tokenizers",
+    "bindings/haskell",
+]
