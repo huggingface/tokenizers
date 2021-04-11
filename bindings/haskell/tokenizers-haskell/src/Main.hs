@@ -8,7 +8,7 @@ test string tokenizer = do
   result <- getTokens encoding
   putStrLn "Haskell Token List:"
   print (cleanTokens <$> result)
-  putStrLn "IDs:"
+  putStrLn "Haskell IDs:"
   result <- getIDs encoding -- not working yet
   print result
 
@@ -25,5 +25,7 @@ main = do
   test "hey hey there hey hey hey there hey" tokenizer
   test "hi hi hi hello hello" tokenizer
   test "hi" tokenizer
-  test "hi hi hi hi hi hi" tokenizer
+  test "hi hi hi hi hi hi hi hi" tokenizer
+  test "hi there hi there hi there hi there hi there hi there hi there hi there" tokenizer
+  test "hello world. Let's try tokenizing this. hi hi hi and hello hello" tokenizer
 
