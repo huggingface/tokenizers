@@ -6,7 +6,7 @@ edition = "2018"
 
 [lib]
 name = "tokenizers_haskell"
-crate-type = ["cdylib"]
+crate-type = ["staticlib"]
 
 [dependencies]
 tokenizers = { path = "../../tokenizers" }
