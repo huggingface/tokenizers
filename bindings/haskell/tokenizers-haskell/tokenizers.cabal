@@ -24,7 +24,7 @@ executable haskell-test
   build-depends:       base >= 4.7 && < 5
                       , tokenizers
   extra-libraries:    tokenizers_haskell
-  extra-lib-dirs:     ./lib
+--  extra-lib-dirs:     ./lib
 
 -- executable download-vocab
 --   hs-source-dirs:      src
