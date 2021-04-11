@@ -3,7 +3,7 @@
 let
 
   sources = import ./sources.nix { inherit pkgs; };
-  nixpkgsSrc = sources.nixpkgs;
+  nixpkgsSrc = sources.nixpkgs-unstable;
 
   overlays =
     [ (pkgs: _: with pkgs; {

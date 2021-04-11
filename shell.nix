@@ -6,7 +6,7 @@ with pkgs;
 let
 
   shell = mkShell {
-    nativeBuildInputs = [ cargo ];
+    nativeBuildInputs = [ cargo libiconv pkgconfig ];
   };
 
 in
