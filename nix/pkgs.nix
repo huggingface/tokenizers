@@ -1,5 +1,5 @@
 pkgs: _: with pkgs; {
-  tokenizers = import ./rust.nix {
+  tokenizersPackages = import ./rust.nix {
     inherit
       pkgs
       ;

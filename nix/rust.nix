@@ -5,11 +5,18 @@ with pkgs;
 
 let
 
-  pkg = naersk.buildPackage {
-    src = ../tokenizers;
-    buildInputs = [ libiconv pkgconfig ];
+  self = rec {
+    tokenizers = naersk.buildPackage {
+      src = ../tokenizers;
+      buildInputs = [ libiconv pkgconfig ];
+    };
+
+    tokenizers-haskell = naersk.buildPackage {
+      src = ../bindings/haskell;
+      buildInputs = [ tokenizers ];
+    };
   };
 
 in
 
-  pkg
+  self
