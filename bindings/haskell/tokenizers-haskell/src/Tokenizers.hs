@@ -58,7 +58,7 @@ getTokens (Encoding encoding) = do
   -- 1st value of struct is the # of tokens
   sz <- fromIntegral <$> (peek (castPtr ptr) :: IO CInt) :: IO Int
   -- 2nd value of struct is the array of tokens
-  tokens <- peekByteOff ptr step :: IO (Ptr CString) 
+  tokens <- peekByteOff ptr 8 :: IO (Ptr CString) 
   mapM 
     (\idx -> peekByteOff tokens (step*idx) >>= peekCString) 
     [0 .. sz-1]
@@ -74,11 +74,11 @@ getIDs (Encoding encoding) = do
   ptr <- r_get_ids encoding
   -- 1st value of struct is the # of tokens
   sz <- fromIntegral <$> (peek (castPtr ptr) :: IO CUInt) :: IO Int
-  print $ "SIZE " ++ show sz
+  -- print $ "SIZE " ++ show sz
   -- 2nd value of struct is the array of tokens
-  tokens <- peekByteOff ptr step :: IO (Ptr CUInt) 
+  tokens <- peekByteOff ptr 8 :: IO (Ptr CUInt) 
   (mapM 
-    (\idx -> (peekByteOff tokens (step*idx) :: IO CUInt) >>= \x -> pure $ fromIntegral x)
+    (\idx -> (peekByteOff tokens (step*idx) :: IO CUInt) >>= (pure . fromIntegral))
     [0 .. sz-1]) 
   where
-    step = 8
+    step = 4
