@@ -6,7 +6,10 @@ with pkgs;
 let
 
   self = {
-    inherit tokenizers;
+    inherit (tokenizersPackages)
+      tokenizers
+      tokenizers-haskell
+      ;
     
     shell = import ./shell.nix {
       inherit pkgs;
