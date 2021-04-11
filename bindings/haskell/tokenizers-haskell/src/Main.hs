@@ -25,5 +25,5 @@ main = do
   test "hey hey there hey hey hey there hey" tokenizer
   test "hi hi hi hello hello" tokenizer
   test "hi" tokenizer
-  test "hi" tokenizer
+  test "hi hi hi hi hi hi" tokenizer
 

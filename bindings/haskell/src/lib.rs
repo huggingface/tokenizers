@@ -127,9 +127,8 @@ pub extern "C" fn get_ids(ptr: *mut Encoding) -> *mut CIDs {
         for id in result {
             println!("{} ", id);
         }
-        forget(result);
+        // forget(result);
         let mut array = CIDs { length: result.len() as c_uint, data: result.as_ptr()};
-        // let mut array = CIDs { length: result.len() as c_uint, data: result.as_ptr()};
         return Box::into_raw(Box::new(array));
     }
 }
