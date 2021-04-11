@@ -14,7 +14,7 @@ library
   hs-source-dirs:   src
   default-language: Haskell2010
   build-depends:       base >= 4.7 && < 5
-  extra-libraries:    haskell
+  extra-libraries:    tokenizers_haskell
 
 executable haskell-test
   hs-source-dirs:      src
@@ -23,7 +23,7 @@ executable haskell-test
   default-language:    Haskell2010
   build-depends:       base >= 4.7 && < 5
                       , tokenizers
-  extra-libraries:    haskell
+  extra-libraries:    tokenizers_haskell
   extra-lib-dirs:     ./lib
 
 -- executable download-vocab
@@ -33,4 +33,4 @@ executable haskell-test
 --   build-depends:       base >= 4.7 && < 5
 --                      , containers
 --                      , tokenizers
---   extra-libraries:     haskell
+--   extra-libraries:     tokenizers_haskell
