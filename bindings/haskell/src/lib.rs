@@ -122,10 +122,14 @@ pub extern "C" fn get_ids(ptr: *mut Encoding) -> *mut CIDs {
             assert!(!ptr.is_null());
             &mut *ptr
         };
-        let result = encoding.get_ids();
-        println!("rust encoding 1st element \n{}", encoding.get_ids()[0]);
+        let mut result = encoding.get_ids();
+        println!("rust encoding:");
+        for id in result {
+            println!("{} ", id);
+        }
         forget(result);
-        let array = CIDs { length: result.len() as c_uint, data: result.as_ptr()};
+        let mut array = CIDs { length: result.len() as c_uint, data: result.as_ptr()};
+        // let mut array = CIDs { length: result.len() as c_uint, data: result.as_ptr()};
         return Box::into_raw(Box::new(array));
     }
 }
