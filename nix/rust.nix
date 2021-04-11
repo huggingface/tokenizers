@@ -1,11 +1,21 @@
-{ pkgs
+{ stdenv
+, pkgs
 }:
 
 with pkgs;
 
 let
 
-  self = rec {
+  patchLibs =
+    if stdenv.isDarwin
+    then ''
+      install_name_tool -id $out/lib/libtokenizers_haskell.dylib $out/lib/libtokenizers_haskell.dylib
+    ''
+    else ''
+      patchelf --set-rpath "${rpath}:$out/lib" $out/lib/libtokenizers_haskell.so
+    '';
+
+  self = {
     tokenizers = naersk.buildPackage {
       src = ../.;
       buildInputs = [ libiconv pkgconfig ];
@@ -26,6 +36,7 @@ let
       copyBins = false;
       copyLibs = true;
       copyTarget = false;
+      overrideMain = x: x // { postInstall = patchLibs; };
     };
   };
 
