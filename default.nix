@@ -8,6 +8,7 @@ let
   self = {
     inherit (tokenizersPackages)
       tokenizers
+      tokenizers-haskell
       ;
     
     shell = import ./shell.nix {
