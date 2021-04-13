@@ -85,9 +85,9 @@ checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
 name = "cast"
-version = "0.2.3"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b9434b9a5aa1450faa3f9cb14ea0e8c53bb5d2b3c1bfd1ab4fc03e9f33fbfb0"
+checksum = "cc38c385bfd7e444464011bb24820f40dd1c76bcdfa1b78611cb7c2e5cafab75"
 dependencies = [
  "rustc_version",
 ]
@@ -688,7 +688,7 @@ dependencies = [
 [[package]]
 name = "rayon-cond"
 version = "0.1.0"
-source = "git+https://github.com/n1t0/rayon-cond#c56e4f1ded0fcb92eac70e0533703bba3ca2983f"
+source = "git+https://github.com/n1t0/rayon-cond?rev=c56e4f1ded0fcb92eac70e0533703bba3ca2983f#c56e4f1ded0fcb92eac70e0533703bba3ca2983f"
 dependencies = [
  "either",
  "itertools 0.8.2",
