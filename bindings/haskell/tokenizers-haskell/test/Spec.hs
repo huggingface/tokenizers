@@ -28,4 +28,3 @@ main = do
   test "hi hi hi hi hi hi hi hi" tokenizer
   test "hi there hi there hi there hi there hi there hi there hi there hi there" tokenizer
   test "hello world. Let's try tokenizing this. hi hi hi and hello hello" tokenizer
-
