@@ -12,7 +12,7 @@ let
       install_name_tool -id $out/lib/libtokenizers_haskell.dylib $out/lib/libtokenizers_haskell.dylib
     ''
     else ''
-      patchelf --set-rpath "${rpath}:$out/lib" $out/lib/libtokenizers_haskell.so
+      patchelf --set-rpath "$out/lib" $out/lib/libtokenizers_haskell.so
     '';
 
   self = {
