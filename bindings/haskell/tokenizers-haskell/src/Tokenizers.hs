@@ -79,8 +79,8 @@ foreign import ccall unsafe "add_special_token"
   r_add_special_token ::
     Ptr CTokenizer -> CString -> IO ()
 
-add_special_token :: Tokenizer -> String -> IO ()
-add_special_token (Tokenizer tokenizer _ _) token = do
+addSpecialToken :: Tokenizer -> String -> IO ()
+addSpecialToken (Tokenizer tokenizer _ _) token = do
   str <- newCString token
   r_add_special_token tokenizer str
 
