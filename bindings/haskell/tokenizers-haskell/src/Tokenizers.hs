@@ -77,12 +77,12 @@ encode (Tokenizer tokenizer _ _) text = do
 
 foreign import ccall unsafe "add_special_token"
   r_add_special_token ::
-    Ptr CTokenizer -> CString -> IO ()
+    CString -> Ptr CTokenizer -> IO ()
 
 addSpecialToken :: Tokenizer -> String -> IO ()
 addSpecialToken (Tokenizer tokenizer _ _) token = do
   str <- newCString token
-  r_add_special_token tokenizer str
+  r_add_special_token str tokenizer
 
 foreign import ccall unsafe "get_tokens"
   r_get_tokens ::
