@@ -81,7 +81,7 @@ foreign import ccall unsafe "add_special_token"
 
 add_special_token :: Tokenizer -> String -> IO ()
 add_special_token (Tokenizer tokenizer _ _) token = do
-  str <- newCString text
+  str <- newCString token
   r_add_special_token tokenizer str
 
 foreign import ccall unsafe "get_tokens"
