@@ -75,6 +75,15 @@ encode (Tokenizer tokenizer _ _) text = do
   encoding <- r_encode str tokenizer
   pure (Encoding encoding)
 
+foreign import ccall unsafe "add_special_token"
+  r_add_special_token ::
+    Ptr CTokenizer -> CString -> IO ()
+
+add_special_token :: Tokenizer -> String -> IO ()
+add_special_token (Tokenizer tokenizer _ _) token = do
+  str <- newCString text
+  r_add_special_token tokenizer str
+
 foreign import ccall unsafe "get_tokens"
   r_get_tokens ::
     Ptr CEncoding -> IO (Ptr CTokens)

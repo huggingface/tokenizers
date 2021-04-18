@@ -2,13 +2,13 @@ use std::ffi::CStr;
 use std::ffi::CString;
 use std::mem::forget;
 use std::os::raw::{c_char, c_int, c_uint};
-
 use tokenizers::models::bpe::BPE;
 use tokenizers::models::wordpiece::WordPiece;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::processors::roberta::RobertaProcessing;
 use tokenizers::tokenizer::Encoding;
 use tokenizers::tokenizer::Tokenizer;
+use tokenizers::AddedToken;
 
 #[no_mangle]
 pub extern "C" fn mk_wordpiece_tokenizer(cvocab: *const c_char) -> *mut Tokenizer {
@@ -77,6 +77,23 @@ pub extern "C" fn encode(text: *const c_char, ptr: *mut Tokenizer) -> *mut Encod
             return Box::into_raw(Box::new(encoding));
         } else {
             panic!("Unable to read parameters.");
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn add_special_token(ctoken: *const c_char, ptr: *mut Tokenizer) -> () {
+    unsafe {
+        let cstring = CStr::from_ptr(ctoken);
+        let tokenizer = {
+            assert!(!ptr.is_null());
+            &mut *ptr
+        };
+        if let Ok(s) = cstring.to_str() {
+            let token = AddedToken::from(s, true);
+            tokenizer.add_special_tokens(&[token]);
+        } else {
+            panic!("Unable to read token.");
         }
     }
 }
