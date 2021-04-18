@@ -39,7 +39,7 @@ pub extern "C" fn mk_roberta_tokenizer(
             let mut tokenizer = Tokenizer::new(bpe);
             tokenizer.with_pre_tokenizer(ByteLevel::default());
             tokenizer.with_post_processor(
-                RobertaProcessing::new(("</s>".to_string(), 2), ("<s>".to_string(), 2))
+                RobertaProcessing::new(("</s>".to_string(), 2), ("<s>".to_string(), 0))
                     .trim_offsets(true)
                     .add_prefix_space(false),
             );
