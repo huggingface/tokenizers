@@ -38,7 +38,11 @@ pub extern "C" fn mk_roberta_tokenizer(
             let bpe = bpe_builder.build().unwrap();
             let mut tokenizer = Tokenizer::new(bpe);
             tokenizer.with_pre_tokenizer(ByteLevel::default());
-            tokenizer.with_post_processor(RobertaProcessing::default());
+            tokenizer.with_post_processor(
+                RobertaProcessing::new(("</s>".to_string(), 2), ("<s>".to_string(), 2))
+                    .trim_offsets(true)
+                    .add_prefix_space(false),
+            );
             return Box::into_raw(Box::new(tokenizer));
         } else {
             panic!("Unable to read parameters.");
