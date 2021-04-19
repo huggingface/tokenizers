@@ -10,21 +10,32 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:  Tokenizers
-  hs-source-dirs:   src
+  exposed-modules:
+      Tokenizers
+      Paths_tokenizers
+  autogen-modules:
+      Paths_tokenizers
+  hs-source-dirs:
+      src
+  ghc-options: -W -Wall -dcore-lint
+  build-depends:
+      base >= 4.7 && < 5
+  extra-libraries:
+      tokenizers_haskell
   default-language: Haskell2010
-  build-depends:       base >= 4.7 && < 5
-  extra-libraries:    haskell
 
-executable haskell-test
-  hs-source-dirs:      src
-  main-is:             Main.hs
-  other-modules:       Tokenizers
-  default-language:    Haskell2010
-  build-depends:       base >= 4.7 && < 5
-                      , tokenizers
-  extra-libraries:    haskell
-  extra-lib-dirs:     ./lib
+test-suite tokenizers-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  hs-source-dirs:
+      test
+  ghc-options: -W -Wall -dcore-lint
+  build-depends:
+      base >= 4.7 && < 5
+    , tokenizers
+  extra-libraries:
+      tokenizers_haskell
+  default-language: Haskell2010
 
 -- executable download-vocab
 --   hs-source-dirs:      src
@@ -33,4 +44,4 @@ executable haskell-test
 --   build-depends:       base >= 4.7 && < 5
 --                      , containers
 --                      , tokenizers
---   extra-libraries:     haskell
+--   extra-libraries:     tokenizers_haskell

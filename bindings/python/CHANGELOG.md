@@ -4,7 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.10.1-rc1]
+## [0.10.2]
+
+### Fixed
+- [#652]: Fix offsets for `Precompiled` corner case
+- [#656]: Fix BPE `continuing_subword_prefix`
+- [#674]: Fix `Metaspace` serialization problems
+
+## [0.10.1]
 
 ### Fixed
 - [#616]: Fix SentencePiece tokenizers conversion
@@ -302,6 +309,9 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#674]: https://github.com/huggingface/tokenizers/pull/674
+[#656]: https://github.com/huggingface/tokenizers/pull/656
+[#652]: https://github.com/huggingface/tokenizers/pull/652
 [#621]: https://github.com/huggingface/tokenizers/pull/621
 [#620]: https://github.com/huggingface/tokenizers/pull/620
 [#618]: https://github.com/huggingface/tokenizers/pull/618

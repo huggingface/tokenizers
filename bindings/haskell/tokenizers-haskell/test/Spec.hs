@@ -1,7 +1,8 @@
 module Main where
 
-import Tokenizers
+import Tokenizers (Tokenizer, cleanTokens, encode, getIDs, getTokens, mkRobertaTokenizer)
 
+test :: String -> Tokenizer -> IO ()
 test string tokenizer = do
   putStrLn $ "\n----\n" ++ string ++ ""
   encoding <- encode tokenizer string
@@ -9,7 +10,7 @@ test string tokenizer = do
   putStrLn "Haskell Token List:"
   print (cleanTokens <$> result)
   putStrLn "Haskell IDs:"
-  result <- getIDs encoding -- not working yet
+  result <- getIDs encoding
   print result
 
 main :: IO ()
@@ -28,4 +29,3 @@ main = do
   test "hi hi hi hi hi hi hi hi" tokenizer
   test "hi there hi there hi there hi there hi there hi there hi there hi there" tokenizer
   test "hello world. Let's try tokenizing this. hi hi hi and hello hello" tokenizer
-

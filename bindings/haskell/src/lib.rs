@@ -2,22 +2,26 @@ use std::ffi::CStr;
 use std::ffi::CString;
 use std::mem::forget;
 use std::os::raw::{c_char, c_int, c_uint};
-use std::mem;
-
-use tokenizers::models::bpe::BpeBuilder;
 use tokenizers::models::bpe::BPE;
-use tokenizers::models::unigram::*;
-use tokenizers::tokenizer::Encoding;
-use tokenizers::tokenizer::Tokenizer;
+use tokenizers::models::wordpiece::WordPiece;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::processors::roberta::RobertaProcessing;
-
+use tokenizers::tokenizer::Encoding;
+use tokenizers::tokenizer::Tokenizer;
+use tokenizers::AddedToken;
 
 #[no_mangle]
-pub extern "C" fn mk_t5_tokenizer(cvocab_file: *const c_char, ctokenizer_file: *const c_char,) -> *mut Tokenizer {
+pub extern "C" fn mk_wordpiece_tokenizer(cvocab: *const c_char) -> *mut Tokenizer {
     unsafe {
-        // let t = Tokenizer::new();
-        unimplemented!()
+        let vocab = CStr::from_ptr(cvocab);
+        if let Ok(vocab_file) = vocab.to_str() {
+            let wp_builder = WordPiece::from_file(vocab_file);
+            let wp = wp_builder.build().unwrap();
+            let mut tokenizer = Tokenizer::new(wp);
+            return Box::into_raw(Box::new(tokenizer));
+        } else {
+            panic!("Unable to read parameters.");
+        }
     }
 }
 
@@ -30,12 +34,16 @@ pub extern "C" fn mk_roberta_tokenizer(
         let vocab = CStr::from_ptr(cvocab);
         let merges = CStr::from_ptr(cmerges);
         if let (Ok(vocab_file), Ok(merges_file)) = (vocab.to_str(), merges.to_str()) {
-        let bpe_builder = BPE::from_file(vocab_file, merges_file);
-        let bpe = bpe_builder.build().unwrap();
-        let mut tokenizer = Tokenizer::new(bpe);
-        tokenizer.with_pre_tokenizer(ByteLevel::default());
-        tokenizer.with_post_processor(RobertaProcessing::default());
-        return Box::into_raw(Box::new(tokenizer));
+            let bpe_builder = BPE::from_file(vocab_file, merges_file);
+            let bpe = bpe_builder.build().unwrap();
+            let mut tokenizer = Tokenizer::new(bpe);
+            tokenizer.with_pre_tokenizer(ByteLevel::default());
+            tokenizer.with_post_processor(
+                RobertaProcessing::new(("</s>".to_string(), 2), ("<s>".to_string(), 0))
+                    .trim_offsets(true)
+                    .add_prefix_space(false),
+            );
+            return Box::into_raw(Box::new(tokenizer));
         } else {
             panic!("Unable to read parameters.");
         }
@@ -43,7 +51,10 @@ pub extern "C" fn mk_roberta_tokenizer(
 }
 
 #[no_mangle]
-pub extern "C" fn mk_tokenizer(cvocab: *const c_char, cmerges: *const c_char) -> *mut Tokenizer {
+pub extern "C" fn mk_bpe_tokenizer(
+    cvocab: *const c_char,
+    cmerges: *const c_char,
+) -> *mut Tokenizer {
     unsafe {
         let vocab = CStr::from_ptr(cvocab);
         let merges = CStr::from_ptr(cmerges);
@@ -74,10 +85,27 @@ pub extern "C" fn encode(text: *const c_char, ptr: *mut Tokenizer) -> *mut Encod
     }
 }
 
+#[no_mangle]
+pub extern "C" fn add_special_token(ctoken: *const c_char, ptr: *mut Tokenizer) -> () {
+    unsafe {
+        let cstring = CStr::from_ptr(ctoken);
+        let tokenizer = {
+            assert!(!ptr.is_null());
+            &mut *ptr
+        };
+        if let Ok(s) = cstring.to_str() {
+            let token = AddedToken::from(s, true);
+            tokenizer.add_special_tokens(&[token]);
+        } else {
+            panic!("Unable to read token.");
+        }
+    }
+}
+
 #[repr(C)]
 pub struct CTokens {
     length: c_int,
-    data: *const *const c_char
+    data: *const *const c_char,
 }
 
 #[no_mangle]
@@ -101,7 +129,10 @@ pub extern "C" fn get_tokens(ptr: *mut Encoding) -> *mut CTokens {
             c_char_vec.push(value);
         }
 
-        let array = CTokens { length: cstr_vec.len() as c_int, data: c_char_vec.as_ptr()};
+        let array = CTokens {
+            length: cstr_vec.len() as c_int,
+            data: c_char_vec.as_ptr(),
+        };
         // todo - do this without leaking
         forget(cstr_vec);
         forget(c_char_vec);
@@ -112,7 +143,7 @@ pub extern "C" fn get_tokens(ptr: *mut Encoding) -> *mut CTokens {
 #[repr(C)]
 pub struct CIDs {
     length: c_uint,
-    data: *const c_uint
+    data: *const c_uint,
 }
 
 #[no_mangle]
@@ -130,7 +161,10 @@ pub extern "C" fn get_ids(ptr: *mut Encoding) -> *mut CIDs {
         }
         */
         // forget(result);
-        let mut array = CIDs { length: result.len() as c_uint, data: result.as_ptr()};
+        let mut array = CIDs {
+            length: result.len() as c_uint,
+            data: result.as_ptr(),
+        };
         return Box::into_raw(Box::new(array));
     }
 }
