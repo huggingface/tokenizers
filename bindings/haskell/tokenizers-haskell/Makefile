@@ -1,4 +1,4 @@
-all: download run
+all: download test
 
 clean:
 	rm -f roberta-base-vocab.json*
@@ -8,13 +8,11 @@ clean:
 download: clean
 	./get_roberta.sh
 
-run:
-	export LD_LIBRARY_PATH=`pwd`/lib; stack run haskell-test
+test:
+	export LD_LIBRARY_PATH=`pwd`/lib; stack test
 
-# watch:
-#	ghcid -c "stack ghci haskell-test:haskell-test" -Tmain
 watch:
-	rg --files -t hs | entr -s "export LD_LIBRARY_PATH=`pwd`/lib;stack run haskell-test"
+	rg --files -t hs | entr -s "export LD_LIBRARY_PATH=`pwd`/lib; stack test"
 
 download-vocab:
 	stack build haskell-test:exe:download-vocab
