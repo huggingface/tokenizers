@@ -11,6 +11,52 @@ use tokenizers::tokenizer::Tokenizer;
 use tokenizers::AddedToken;
 
 #[no_mangle]
+pub extern "C" fn deserialize_tokenizer(cconfig: *const c_char) -> *mut Tokenizer {
+    unsafe {
+        let config = CStr::from_ptr(cconfig);
+        if let Ok(config_file) = config.to_str() {
+            if let Ok(tokenizer) = Tokenizer::from_file(config_file) {
+                return Box::into_raw(Box::new(tokenizer));
+            } else {
+                panic!("Unable to read tokenizer from file.");
+            }
+        } else {
+            panic!("Unable to read config.");
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn serialize_tokenizer(cconfig: *const c_char, ptr: *mut Tokenizer) -> () {
+    unsafe {
+        let config = CStr::from_ptr(cconfig);
+        let tokenizer = {
+            assert!(!ptr.is_null());
+            &mut *ptr
+        };
+        if let Ok(config_file) = config.to_str() {
+            if let Ok(res) = tokenizer.save(config_file, false) {
+                return res;
+            } else {
+                panic!("Unable to save tokenizer to file.");
+            }
+        } else {
+            panic!("Unable to read config.");
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn free_tokenizer(ptr: *mut Tokenizer) -> () {
+    unsafe { Box::from_raw(ptr) };
+}
+
+#[no_mangle]
+pub extern "C" fn free_cstr(ptr: *mut c_char) -> () {
+    unsafe { CString::from_raw(ptr) };
+}
+
+#[no_mangle]
 pub extern "C" fn mk_wordpiece_tokenizer(cvocab: *const c_char) -> *mut Tokenizer {
     unsafe {
         let vocab = CStr::from_ptr(cvocab);
@@ -82,6 +128,27 @@ pub extern "C" fn encode(text: *const c_char, ptr: *mut Tokenizer) -> *mut Encod
         } else {
             panic!("Unable to read parameters.");
         }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn decode(clength: c_uint, cids: *const c_uint, ptr: *mut Tokenizer) -> *mut c_char {
+    let tokenizer = unsafe {
+        assert!(!ptr.is_null());
+        &mut *ptr
+    };
+    let mut ids: Vec<u32> = vec![];
+    for n in 0..clength {
+        let p = unsafe { cids.offset(n as isize) };
+        unsafe { ids.push(*p) };
+    }
+    ids.shrink_to_fit();
+    if let Ok(res) = tokenizer.decode(ids, false) {
+        let c_str = CString::new(res).unwrap();
+        let ptr = c_str.into_raw();
+        return ptr;
+    } else {
+        panic!("Unable to decode ids.");
     }
 }
 

@@ -32,6 +32,8 @@ test-suite tokenizers-test
   ghc-options: -W -Wall -dcore-lint
   build-depends:
       base >= 4.7 && < 5
+    , tasty
+    , tasty-hunit
     , tokenizers
   extra-libraries:
       tokenizers_haskell

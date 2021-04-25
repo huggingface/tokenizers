@@ -2,8 +2,10 @@
 
 module Tokenizers where
 
-import Foreign.C.String (CString, newCString, peekCString)
-import Foreign.C.Types (CInt, CUInt)
+import Control.Applicative (empty)
+import Foreign.C.String (CString, peekCString, withCString)
+import Foreign.C.Types (CInt, CUInt (..))
+import Foreign.Marshal.Array (withArrayLen)
 import Foreign.Ptr (Ptr, castPtr)
 import Foreign.Storable (Storable (peek, peekByteOff))
 
@@ -33,15 +35,38 @@ instance Show Tokenizer where
       <> "\n"
       <> maybe mempty ("  merges: " <>) merges
 
+foreign import ccall unsafe "deserialize_tokenizer"
+  r_deserialize_tokenizer ::
+    CString -> IO (Ptr CTokenizer)
+
+createTokenizerFromConfig :: FilePath -> IO Tokenizer
+createTokenizerFromConfig config =
+  withCString
+    config
+    ( \cconfig ->
+        Tokenizer
+          <$> r_deserialize_tokenizer cconfig <*> pure empty <*> pure empty
+    )
+
+foreign import ccall unsafe "serialize_tokenizer"
+  r_serialize_tokenizer ::
+    CString -> Ptr CTokenizer -> IO ()
+
+saveTokenizerToConfig :: Tokenizer -> FilePath -> IO ()
+saveTokenizerToConfig (Tokenizer tokenizer _ _) config = do
+  withCString
+    config
+    (`r_serialize_tokenizer` tokenizer)
+
 foreign import ccall unsafe "mk_wordpiece_tokenizer"
   r_mk_wordpiece_tokenizer ::
     CString -> IO (Ptr CTokenizer)
 
 mkWordPieceTokenizer :: FilePath -> IO Tokenizer
 mkWordPieceTokenizer vocab = do
-  cvocab <- newCString $ vocab ++ "\0"
-  result <- r_mk_wordpiece_tokenizer cvocab
-  pure (Tokenizer result vocab Nothing)
+  withCString vocab $ \cvocab -> do
+    result <- r_mk_wordpiece_tokenizer cvocab
+    pure (Tokenizer result vocab Nothing)
 
 foreign import ccall unsafe "mk_bpe_tokenizer"
   r_mk_bpe_tokenizer ::
@@ -49,10 +74,10 @@ foreign import ccall unsafe "mk_bpe_tokenizer"
 
 mkBPETokenizer :: FilePath -> FilePath -> IO Tokenizer
 mkBPETokenizer vocab merges = do
-  cvocab <- newCString $ vocab ++ "\0"
-  cmerges <- newCString $ merges ++ "\0"
-  result <- r_mk_bpe_tokenizer cvocab cmerges
-  pure (Tokenizer result vocab (Just merges))
+  withCString vocab $ \cvocab -> do
+    withCString merges $ \cmerges -> do
+      result <- r_mk_bpe_tokenizer cvocab cmerges
+      pure (Tokenizer result vocab (Just merges))
 
 foreign import ccall unsafe "mk_roberta_tokenizer"
   r_mk_roberta_tokenizer ::
@@ -60,10 +85,10 @@ foreign import ccall unsafe "mk_roberta_tokenizer"
 
 mkRobertaTokenizer :: FilePath -> FilePath -> IO Tokenizer
 mkRobertaTokenizer vocab merges = do
-  cvocab <- newCString $ vocab ++ "\0"
-  cmerges <- newCString $ merges ++ "\0"
-  result <- r_mk_roberta_tokenizer cvocab cmerges
-  pure (Tokenizer result vocab (Just merges))
+  withCString vocab $ \cvocab -> do
+    withCString merges $ \cmerges -> do
+      result <- r_mk_roberta_tokenizer cvocab cmerges
+      pure (Tokenizer result vocab (Just merges))
 
 foreign import ccall unsafe "encode"
   r_encode ::
@@ -71,9 +96,37 @@ foreign import ccall unsafe "encode"
 
 encode :: Tokenizer -> String -> IO Encoding
 encode (Tokenizer tokenizer _ _) text = do
-  str <- newCString text
-  encoding <- r_encode str tokenizer
+  encoding <-
+    withCString
+      text
+      (`r_encode` tokenizer)
   pure (Encoding encoding)
+
+foreign import ccall unsafe "free_tokenizer"
+  r_free_tokenizer ::
+    Ptr CTokenizer -> IO ()
+
+freeTokenizer :: Tokenizer -> IO ()
+freeTokenizer (Tokenizer tokenizer _ _) =
+  r_free_tokenizer tokenizer
+
+foreign import ccall unsafe "decode"
+  r_decode ::
+    CUInt -> Ptr CUInt -> Ptr CTokenizer -> IO CString
+
+foreign import ccall unsafe "free_cstr"
+  r_free_cstr ::
+    CString -> IO ()
+
+decode :: Tokenizer -> [Int] -> IO String
+decode (Tokenizer tokenizer _ _) ids = do
+  cstr <-
+    withArrayLen
+      ((\i -> fromIntegral i :: CUInt) <$> ids)
+      (\len ptr -> r_decode (fromIntegral len) ptr tokenizer)
+  str <- peekCString cstr
+  r_free_cstr cstr
+  pure str
 
 foreign import ccall unsafe "add_special_token"
   r_add_special_token ::
@@ -81,8 +134,8 @@ foreign import ccall unsafe "add_special_token"
 
 addSpecialToken :: Tokenizer -> String -> IO ()
 addSpecialToken (Tokenizer tokenizer _ _) token = do
-  str <- newCString token
-  r_add_special_token str tokenizer
+  withCString token $ \str -> do
+    r_add_special_token str tokenizer
 
 foreign import ccall unsafe "get_tokens"
   r_get_tokens ::
