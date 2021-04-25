@@ -3,6 +3,7 @@
 module Tokenizers where
 
 import Control.Applicative (empty)
+import Control.Exception (bracket)
 import Foreign.C.String (CString, peekCString, withCString)
 import Foreign.C.Types (CInt, CUInt (..))
 import Foreign.Marshal.Array (withArrayLen)
@@ -47,6 +48,12 @@ createTokenizerFromConfig config =
         Tokenizer
           <$> r_deserialize_tokenizer cconfig <*> pure empty <*> pure empty
     )
+
+withTokenizerFromConfig :: FilePath -> (Tokenizer -> IO a) -> IO a
+withTokenizerFromConfig config =
+  bracket
+    (createTokenizerFromConfig config)
+    freeTokenizer
 
 foreign import ccall unsafe "serialize_tokenizer"
   r_serialize_tokenizer ::
