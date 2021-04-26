@@ -20,6 +20,7 @@ library
   ghc-options: -W -Wall -dcore-lint
   build-depends:
       base >= 4.7 && < 5
+    , bytestring
   extra-libraries:
       tokenizers_haskell
   default-language: Haskell2010
@@ -32,6 +33,7 @@ test-suite tokenizers-test
   ghc-options: -W -Wall -dcore-lint
   build-depends:
       base >= 4.7 && < 5
+    , bytestring
     , tasty
     , tasty-hunit
     , tokenizers

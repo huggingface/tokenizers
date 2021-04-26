@@ -2,6 +2,7 @@ use std::ffi::CStr;
 use std::ffi::CString;
 use std::mem::forget;
 use std::os::raw::{c_char, c_int, c_uint};
+use std::str::FromStr;
 use tokenizers::models::bpe::BPE;
 use tokenizers::models::wordpiece::WordPiece;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
@@ -22,6 +23,22 @@ pub extern "C" fn deserialize_tokenizer(cconfig: *const c_char) -> *mut Tokenize
             }
         } else {
             panic!("Unable to read config.");
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn deserialize_tokenizer_from_json(cjson: *const c_char) -> *mut Tokenizer {
+    unsafe {
+        let json = CStr::from_ptr(cjson);
+        if let Ok(json_str) = json.to_str() {
+            if let Ok(tokenizer) = Tokenizer::from_str(json_str) {
+                return Box::into_raw(Box::new(tokenizer));
+            } else {
+                panic!("Unable to read tokenizer from json.");
+            }
+        } else {
+            panic!("Unable to read json string.");
         }
     }
 }

@@ -5,7 +5,8 @@ module Main where
 
 import qualified Test.Tasty as T
 import qualified Test.Tasty.HUnit as H
-import Tokenizers (Tokenizer, addSpecialToken, cleanTokens, createTokenizerFromConfig, decode, encode, freeTokenizer, getIDs, getTokens, mkRobertaTokenizer)
+import qualified Data.ByteString as BS (readFile)
+import Tokenizers (Tokenizer, addSpecialToken, cleanTokens, createTokenizerFromConfigFile, createTokenizerFromJSONConfig, decode, encode, freeTokenizer, getIDs, getTokens, mkRobertaTokenizer)
 
 data TestItem
   = Group String [TestItem]
@@ -95,9 +96,11 @@ testTree =
     (toTest testData)
   where
     createTokenizers = do
-      bartTokenizer <- createTokenizerFromConfig "models/bart-base-tokenizer.json"
-      robertaTokenizer <- createTokenizerFromConfig "models/roberta-base-tokenizer.json"
-      t5Tokenizer <- createTokenizerFromConfig "models/t5-base-tokenizer.json"
+      bartTokenizer <- do
+        json <- BS.readFile "models/bart-base-tokenizer.json"
+        createTokenizerFromJSONConfig json
+      robertaTokenizer <- createTokenizerFromConfigFile "models/roberta-base-tokenizer.json"
+      t5Tokenizer <- createTokenizerFromConfigFile "models/t5-base-tokenizer.json"
       pure $ TestTokenizers {..}
     freeTokenizers TestTokenizers {..} = do
       freeTokenizer bartTokenizer
