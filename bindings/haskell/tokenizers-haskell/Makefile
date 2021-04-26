@@ -1,12 +1,12 @@
 all: download test
 
-clean:
-	rm -f roberta-base-vocab.json*
-	rm -f roberta-base-merges.txt*
-	rm -f roberta-base-tokenizer.json*
+clean-models:
+	rm -f models/*
 
-download: clean
+download: clean-models
+	./get_bart.sh
 	./get_roberta.sh
+	./get_t5.sh
 
 test:
 	export LD_LIBRARY_PATH=`pwd`/lib; stack test

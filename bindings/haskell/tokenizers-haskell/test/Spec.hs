@@ -1,21 +1,32 @@
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE RecordWildCards #-}
+
 module Main where
 
-import Tokenizers (Tokenizer, cleanTokens, encode, getIDs, getTokens, mkRobertaTokenizer)
+import qualified Test.Tasty as T
+import qualified Test.Tasty.HUnit as H
+import Tokenizers (Tokenizer, addSpecialToken, cleanTokens, createTokenizerFromConfig, decode, encode, freeTokenizer, getIDs, getTokens, mkRobertaTokenizer)
 
-test :: String -> Tokenizer -> IO ()
-test string tokenizer = do
-  putStrLn $ "\n----\n" ++ string ++ ""
-  encoding <- encode tokenizer string
-  result <- getTokens encoding
-  putStrLn "Haskell Token List:"
-  print (cleanTokens <$> result)
-  putStrLn "Haskell IDs:"
-  result <- getIDs encoding
-  print result
+data TestItem
+  = Group String [TestItem]
+  | EncodeBart String [Int]
+  | DecodeBart [Int] String
+  | EncodeRoberta String [Int]
+  | DecodeRoberta [Int] String
+  | EncodeT5 String [Int]
+  | DecodeT5 [Int] String
+  deriving stock (Eq, Show)
 
-main :: IO ()
-main = do
-  tokenizer <- mkRobertaTokenizer "roberta-base-vocab.json" "roberta-base-merges.txt"
+data TestTokenizers = TestTokenizers
+  { bartTokenizer :: Tokenizer,
+    robertaTokenizer :: Tokenizer,
+    t5Tokenizer :: Tokenizer
+  }
+
+testDrive :: IO ()
+testDrive = do
+  tokenizer <- mkRobertaTokenizer "models/roberta-base-vocab.json" "models/roberta-base-merges.txt"
+  mapM_ (addSpecialToken tokenizer) ["<s>", "</s>", "<unk>", "<pad>", "<mask>"]
   print tokenizer
   test "Hey there!" tokenizer
   test "The quick brown fox jumped over the lazy dogs." tokenizer
@@ -29,3 +40,100 @@ main = do
   test "hi hi hi hi hi hi hi hi" tokenizer
   test "hi there hi there hi there hi there hi there hi there hi there hi there" tokenizer
   test "hello world. Let's try tokenizing this. hi hi hi and hello hello" tokenizer
+  freeTokenizer tokenizer
+  where
+    test :: String -> Tokenizer -> IO ()
+    test string tokenizer = do
+      putStrLn $ "\n----\n" ++ string ++ ""
+      encoding <- encode tokenizer string
+      result <- getTokens encoding
+      putStrLn "Haskell Token List:"
+      print (cleanTokens <$> result)
+      putStrLn "Haskell IDs:"
+      result <- getIDs encoding
+      print result
+
+bartTests :: [TestItem]
+bartTests =
+  [ EncodeBart "<s>Hello world!</s>" [0, 31414, 232, 328, 2],
+    EncodeBart "<s>Hello <mask>!</s><pad>" [0, 31414, 50264, 328, 2, 1],
+    EncodeBart "<s>   Hello   <mask>  !    </s>  <pad>" [0, 1437, 1437, 20920, 1437, 1437, 50264, 1437, 27785, 1437, 1437, 1437, 1437, 2, 1437, 1437, 1],
+    DecodeBart [0, 31414, 50264, 328, 2, 1] "<s>Hello<mask>!</s><pad>",
+    DecodeBart [0, 1437, 1437, 20920, 1437, 1437, 50264, 1437, 27785, 1437, 1437, 1437, 1437, 2, 1437, 1437, 1] "<s>   Hello  <mask>  !    </s>  <pad>"
+  ]
+
+robertaTests :: [TestItem]
+robertaTests =
+  [ EncodeRoberta "<s>Hello world!</s>" [0, 31414, 232, 328, 2],
+    EncodeRoberta "<s>Hello <mask>!</s><pad>" [0, 31414, 50264, 328, 2, 1],
+    EncodeRoberta "<s>   Hello   <mask>  !    </s>  <pad>" [0, 1437, 1437, 20920, 1437, 1437, 50264, 1437, 27785, 1437, 1437, 1437, 1437, 2, 1437, 1437, 1],
+    DecodeRoberta [0, 1437, 1437, 20920, 1437, 1437, 50264, 1437, 27785, 1437, 1437, 1437, 1437, 2, 1437, 1437, 1] "<s>   Hello  <mask>  !    </s>  <pad>"
+  ]
+
+t5Tests :: [TestItem]
+t5Tests =
+  [ EncodeT5 "<pad>Hello world!</s>" [0, 8774, 296, 55, 1],
+    EncodeT5 "<pad>Hello <extra_id_0>!</s><pad>" [0, 8774, 32099, 3, 55, 1, 0],
+    EncodeT5 "<pad>    Hello   <extra_id_0>  !   </s>   <pad>" [0, 8774, 32099, 3, 55, 1, 0],
+    DecodeT5 [0, 8774, 32099, 3, 55, 1, 0] "<pad> Hello<extra_id_0> !</s><pad>"
+  ]
+
+testData :: TestItem
+testData =
+  Group
+    "tests"
+    [ Group "Bart" bartTests,
+      Group "Roberta" robertaTests,
+      Group "T5" t5Tests
+    ]
+
+testTree :: T.TestTree
+testTree =
+  T.withResource
+    createTokenizers
+    freeTokenizers
+    (toTest testData)
+  where
+    createTokenizers = do
+      bartTokenizer <- createTokenizerFromConfig "models/bart-base-tokenizer.json"
+      robertaTokenizer <- createTokenizerFromConfig "models/roberta-base-tokenizer.json"
+      t5Tokenizer <- createTokenizerFromConfig "models/t5-base-tokenizer.json"
+      pure $ TestTokenizers {..}
+    freeTokenizers TestTokenizers {..} = do
+      freeTokenizer bartTokenizer
+      freeTokenizer robertaTokenizer
+      freeTokenizer t5Tokenizer
+    toTest :: TestItem -> IO TestTokenizers -> T.TestTree
+    toTest (Group name tests) mtokenizers =
+      T.testGroup name $ toTest <$> tests <*> pure mtokenizers
+    toTest (EncodeBart s expected) mtokenizers = H.testCase ("Encode " <> show s) $ do
+      TestTokenizers {..} <- mtokenizers
+      enc <- encode bartTokenizer s
+      ids <- getIDs enc
+      H.assertEqual "Unexpected encoding result" expected ids
+    toTest (DecodeBart ids expected) mtokenizers = H.testCase ("Decode " <> show ids) $ do
+      TestTokenizers {..} <- mtokenizers
+      s <- decode bartTokenizer ids
+      H.assertEqual "Unexpected decoding result" expected s
+    toTest (EncodeRoberta s expected) mtokenizers = H.testCase ("Encode " <> show s) $ do
+      TestTokenizers {..} <- mtokenizers
+      enc <- encode robertaTokenizer s
+      ids <- getIDs enc
+      H.assertEqual "Unexpected encoding result" expected ids
+    toTest (DecodeRoberta ids expected) mtokenizers = H.testCase ("Decode " <> show ids) $ do
+      TestTokenizers {..} <- mtokenizers
+      s <- decode robertaTokenizer ids
+      H.assertEqual "Unexpected decoding result" expected s
+    toTest (EncodeT5 s expected) mtokenizers = H.testCase ("Encode " <> show s) $ do
+      TestTokenizers {..} <- mtokenizers
+      enc <- encode t5Tokenizer s
+      ids <- getIDs enc
+      H.assertEqual "Unexpected encoding result" expected ids
+    toTest (DecodeT5 ids expected) mtokenizers = H.testCase ("Decode " <> show ids) $ do
+      TestTokenizers {..} <- mtokenizers
+      s <- decode t5Tokenizer ids
+      H.assertEqual "Unexpected decoding result" expected s
+
+-- | Run 'stack ghci --test' to get a REPL for the tests.
+main :: IO ()
+main = T.defaultMain testTree
