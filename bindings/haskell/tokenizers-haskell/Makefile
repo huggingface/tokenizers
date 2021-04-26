@@ -8,11 +8,14 @@ download: clean-models
 	./get_roberta.sh
 	./get_t5.sh
 
-test:
+test: FORCE
 	export LD_LIBRARY_PATH=`pwd`/lib; stack test
 
-watch:
+watch: FORCE
 	rg --files -t hs | entr -s "export LD_LIBRARY_PATH=`pwd`/lib; stack test"
 
-download-vocab:
+download-vocab: FORCE
 	stack build haskell-test:exe:download-vocab
+
+FORCE: ;
+
