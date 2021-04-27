@@ -22,3 +22,5 @@ pip-wheel-metadata
 
 .vscode
 *.code-workspace
+
+.stack-work
