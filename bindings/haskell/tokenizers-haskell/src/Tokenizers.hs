@@ -4,6 +4,8 @@ module Tokenizers where
 
 import Control.Applicative (empty)
 import Control.Exception (bracket)
+import Data.ByteString (ByteString)
+import Data.ByteString.Unsafe (unsafeUseAsCString)
 import Foreign.C.String (CString, peekCString, withCString)
 import Foreign.C.Types (CInt, CUInt (..))
 import Foreign.Marshal.Array (withArrayLen)
@@ -40,8 +42,8 @@ foreign import ccall unsafe "deserialize_tokenizer"
   r_deserialize_tokenizer ::
     CString -> IO (Ptr CTokenizer)
 
-createTokenizerFromConfig :: FilePath -> IO Tokenizer
-createTokenizerFromConfig config =
+createTokenizerFromConfigFile :: FilePath -> IO Tokenizer
+createTokenizerFromConfigFile config =
   withCString
     config
     ( \cconfig ->
@@ -49,18 +51,31 @@ createTokenizerFromConfig config =
           <$> r_deserialize_tokenizer cconfig <*> pure empty <*> pure empty
     )
 
-withTokenizerFromConfig :: FilePath -> (Tokenizer -> IO a) -> IO a
-withTokenizerFromConfig config =
+foreign import ccall unsafe "deserialize_tokenizer_from_json"
+  r_deserialize_tokenizer_from_json ::
+    CString -> IO (Ptr CTokenizer)
+
+createTokenizerFromJSONConfig :: ByteString -> IO Tokenizer
+createTokenizerFromJSONConfig json =
+  unsafeUseAsCString
+    json
+    ( \cjson ->
+        Tokenizer
+          <$> r_deserialize_tokenizer_from_json cjson <*> pure empty <*> pure empty
+    )
+
+withTokenizerFromConfigFile :: FilePath -> (Tokenizer -> IO a) -> IO a
+withTokenizerFromConfigFile config =
   bracket
-    (createTokenizerFromConfig config)
+    (createTokenizerFromConfigFile config)
     freeTokenizer
 
 foreign import ccall unsafe "serialize_tokenizer"
   r_serialize_tokenizer ::
     CString -> Ptr CTokenizer -> IO ()
 
-saveTokenizerToConfig :: Tokenizer -> FilePath -> IO ()
-saveTokenizerToConfig (Tokenizer tokenizer _ _) config = do
+saveTokenizerToConfigFile :: Tokenizer -> FilePath -> IO ()
+saveTokenizerToConfigFile (Tokenizer tokenizer _ _) config = do
   withCString
     config
     (`r_serialize_tokenizer` tokenizer)
