@@ -28,23 +28,27 @@ impl Default for WordPiece {
         }
     }
 }
+pub fn cleanup(dirty_input: String) -> String {
+    let clean_input = dirty_input
+        .replace(" .", ".")
+        .replace(" ?", "?")
+        .replace(" !", "!")
+        .replace(" ,", ",")
+        .replace(" ' ", "'")
+        .replace(" n't", "n't")
+        .replace(" 'm", "'m")
+        .replace(" do not", " don't")
+        .replace(" 's", "'s")
+        .replace(" 've", "'ve")
+        .replace(" 're", "'re");
+    clean_input
+}
 
 impl Decoder for WordPiece {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
         let mut output = tokens.join(" ").replace(&format!(" {}", self.prefix), "");
         if self.cleanup {
-            output = output
-                .replace(" .", ".")
-                .replace(" ?", "?")
-                .replace(" !", "!")
-                .replace(" ,", ",")
-                .replace(" ' ", "'")
-                .replace(" n't", "n't")
-                .replace(" 'm", "'m")
-                .replace(" do not", " don't")
-                .replace(" 's", "'s")
-                .replace(" 've", "'ve")
-                .replace(" 're", "'re");
+            output = cleanup(output);
         }
 
         Ok(output)
