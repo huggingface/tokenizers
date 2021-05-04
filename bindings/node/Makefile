@@ -27,7 +27,7 @@ $(DATA_DIR)/small.txt : $(DATA_DIR)/big.txt
 
 $(DATA_DIR)/roberta.json :
 	$(dir_guard)
-	wget https://storage.googleapis.com/tokenizers/roberta.json -O $@
+	wget https://huggingface.co/roberta-large/raw/main/tokenizer.json -O $@
 
 $(DATA_DIR)/tokenizer-wiki.json :
 	$(dir_guard)
