@@ -1,4 +1,4 @@
-import { bpeDecoder, metaspaceDecoder, wordPieceDecoder } from "./decoders";
+import { bpeDecoder, ctcDecoder, metaspaceDecoder, wordPieceDecoder } from "./decoders";
 
 describe("wordPieceDecoder", () => {
   it("accepts `undefined` as first parameter", () => {
@@ -29,5 +29,16 @@ describe("metaspaceDecoder", () => {
 describe("bpeDecoder", () => {
   it("accepts `undefined` as parameter", () => {
     expect(bpeDecoder(undefined)).toBeDefined();
+  });
+});
+
+describe("ctcDecoder", () => {
+  it("accepts `undefined` as parameter", () => {
+    expect(ctcDecoder(undefined)).toBeDefined();
+  });
+  it("encodes correctly", () => {
+    expect(
+      ctcDecoder().decode(["<pad>", "h", "h", "e", "e", "l", "l", "<pad>", "l", "l", "o"])
+    ).toEqual("hello");
   });
 });

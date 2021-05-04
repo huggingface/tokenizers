@@ -8,6 +8,7 @@ use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::decoders::bpe::BPEDecoder;
 use tk::decoders::byte_level::ByteLevel;
+use tk::decoders::ctc::CTCDecoder;
 use tk::decoders::metaspace::Metaspace;
 use tk::decoders::wordpiece::WordPiece;
 use tk::decoders::DecoderWrapper;
@@ -43,6 +44,7 @@ impl PyDecoder {
                 DecoderWrapper::WordPiece(_) => Py::new(py, (PyWordPieceDec {}, base))?.into_py(py),
                 DecoderWrapper::ByteLevel(_) => Py::new(py, (PyByteLevelDec {}, base))?.into_py(py),
                 DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base))?.into_py(py),
+                DecoderWrapper::CTC(_) => Py::new(py, (PyCTCDecoder {}, base))?.into_py(py),
             },
         })
     }
@@ -261,6 +263,65 @@ impl PyBPEDecoder {
     #[args(suffix = "String::from(\"</w>\")")]
     fn new(suffix: String) -> (Self, PyDecoder) {
         (PyBPEDecoder {}, BPEDecoder::new(suffix).into())
+    }
+}
+
+/// CTCDecoder Decoder
+///
+/// Args:
+///     pad_token (:obj:`str`, `optional`, defaults to :obj:`<pad>`):
+///         The pad token used by CTC to delimit a new token.
+///     word_delimiter_token (:obj:`str`, `optional`, defaults to :obj:`|`):
+///         The word delimiter token used if `cleanup` is used and will be replaced by
+///         a space
+///     cleanup (:obj:`bool`, `optional`, defaults to :obj:`True`):
+///         Cleaning up the resulting string by removing english abbreviations
+#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=CTCDecoder)]
+#[text_signature = "(self, pad_token=\"<pad>\", word_delimiter_token=\"|\", cleanup=True)"]
+pub struct PyCTCDecoder {}
+#[pymethods]
+impl PyCTCDecoder {
+    #[getter]
+    fn get_pad_token(self_: PyRef<Self>) -> String {
+        getter!(self_, CTC, pad_token.clone())
+    }
+
+    #[setter]
+    fn set_pad_token(self_: PyRef<Self>, pad_token: String) {
+        setter!(self_, CTC, pad_token, pad_token);
+    }
+
+    #[getter]
+    fn get_word_delimiter_token(self_: PyRef<Self>) -> String {
+        getter!(self_, CTC, word_delimiter_token.clone())
+    }
+
+    #[setter]
+    fn set_word_delimiter_token(self_: PyRef<Self>, word_delimiter_token: String) {
+        setter!(self_, CTC, word_delimiter_token, word_delimiter_token);
+    }
+
+    #[getter]
+    fn get_cleanup(self_: PyRef<Self>) -> bool {
+        getter!(self_, CTC, cleanup)
+    }
+
+    #[setter]
+    fn set_cleanup(self_: PyRef<Self>, cleanup: bool) {
+        setter!(self_, CTC, cleanup, cleanup);
+    }
+
+    #[new]
+    #[args(
+        pad_token = "String::from(\"<pad>\")",
+        word_delimiter_token = "String::from(\"|\")",
+        cleanup = "true"
+    )]
+    fn new(pad_token: String, word_delimiter_token: String, cleanup: bool) -> (Self, PyDecoder) {
+        (
+            PyCTCDecoder {},
+            CTCDecoder::new(pad_token, word_delimiter_token, cleanup).into(),
+        )
     }
 }
 

@@ -87,6 +87,7 @@ fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<decoders::PyWordPieceDec>()?;
     m.add_class::<decoders::PyMetaspaceDec>()?;
     m.add_class::<decoders::PyBPEDecoder>()?;
+    m.add_class::<decoders::PyCTCDecoder>()?;
     Ok(())
 }
 
