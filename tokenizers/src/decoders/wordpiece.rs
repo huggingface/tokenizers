@@ -29,7 +29,7 @@ impl Default for WordPiece {
     }
 }
 pub fn cleanup(dirty_input: String) -> String {
-    let clean_input = dirty_input
+    dirty_input
         .replace(" .", ".")
         .replace(" ?", "?")
         .replace(" !", "!")
@@ -40,8 +40,7 @@ pub fn cleanup(dirty_input: String) -> String {
         .replace(" do not", " don't")
         .replace(" 's", "'s")
         .replace(" 've", "'ve")
-        .replace(" 're", "'re");
-    clean_input
+        .replace(" 're", "'re")
 }
 
 impl Decoder for WordPiece {
