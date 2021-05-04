@@ -3,19 +3,27 @@
 
 module Main where
 
+import qualified Data.ByteString.Lazy as LBS (toStrict)
+import Data.Hashable (hash)
+import qualified Network.HTTP.Client as HTTP
+import qualified Network.HTTP.Client.TLS as HTTP
 import qualified Test.Tasty as T
 import qualified Test.Tasty.HUnit as H
-import qualified Data.ByteString as BS (readFile)
-import Tokenizers (Tokenizer, addSpecialToken, cleanTokens, createTokenizerFromConfigFile, createTokenizerFromJSONConfig, decode, encode, freeTokenizer, getIDs, getTokens, mkRobertaTokenizer)
+import Tokenizers (Tokenizer, addSpecialToken, cleanTokens, createTokenizerFromJSONConfig, decode, encode, freeTokenizer, getIDs, getTokens, mkRobertaTokenizer)
 
 data TestItem
   = Group String [TestItem]
   | EncodeBart String [Int]
   | DecodeBart [Int] String
+  | MassDecodeBart [Int] [Int]
+  | IncrementalDecodeBart [Int] [Int]
   | EncodeRoberta String [Int]
   | DecodeRoberta [Int] String
   | EncodeT5 String [Int]
   | DecodeT5 [Int] String
+  | MassDecodeT5 [Int] [Int]
+  | IncrementalDecodeT5 [Int] [Int]
+  | IncrementalDecodeT5Fail [Int] [Int]
   deriving stock (Eq, Show)
 
 data TestTokenizers = TestTokenizers
@@ -60,7 +68,14 @@ bartTests =
     EncodeBart "<s>Hello <mask>!</s><pad>" [0, 31414, 50264, 328, 2, 1],
     EncodeBart "<s>   Hello   <mask>  !    </s>  <pad>" [0, 1437, 1437, 20920, 1437, 1437, 50264, 1437, 27785, 1437, 1437, 1437, 1437, 2, 1437, 1437, 1],
     DecodeBart [0, 31414, 50264, 328, 2, 1] "<s>Hello<mask>!</s><pad>",
-    DecodeBart [0, 1437, 1437, 20920, 1437, 1437, 50264, 1437, 27785, 1437, 1437, 1437, 1437, 2, 1437, 1437, 1] "<s>   Hello  <mask>  !    </s>  <pad>"
+    DecodeBart [0, 1437, 1437, 20920, 1437, 1437, 50264, 1437, 27785, 1437, 1437, 1437, 1437, 2, 1437, 1437, 1] "<s>   Hello  <mask>  !    </s>  <pad>",
+    MassDecodeBart [0, 21959, 1721, 44664, 2103, 4, 42351, 11974, 2103] ([0 .. 50107] <> [50109 .. 100000]),
+    IncrementalDecodeBart [0] [31414, 50264, 328, 2, 1],
+    IncrementalDecodeBart [0, 31414] [50264, 328, 2, 1],
+    IncrementalDecodeBart [0, 31414, 50264, 328] [2, 1],
+    IncrementalDecodeBart [0, 1437, 1437] [20920, 1437, 1437, 50264, 1437, 27785, 1437, 1437, 1437, 1437, 2, 1437, 1437, 1],
+    IncrementalDecodeBart [0, 1437, 1437, 20920] [1437, 1437, 50264, 1437, 27785, 1437, 1437, 1437, 1437, 2, 1437, 1437, 1],
+    IncrementalDecodeBart [0, 1437, 1437, 20920, 1437, 1437, 50264] [1437, 27785, 1437, 1437, 1437, 1437, 2, 1437, 1437, 1]
   ]
 
 robertaTests :: [TestItem]
@@ -76,7 +91,11 @@ t5Tests =
   [ EncodeT5 "<pad>Hello world!</s>" [0, 8774, 296, 55, 1],
     EncodeT5 "<pad>Hello <extra_id_0>!</s><pad>" [0, 8774, 32099, 3, 55, 1, 0],
     EncodeT5 "<pad>    Hello   <extra_id_0>  !   </s>   <pad>" [0, 8774, 32099, 3, 55, 1, 0],
-    DecodeT5 [0, 8774, 32099, 3, 55, 1, 0] "<pad> Hello<extra_id_0> !</s><pad>"
+    DecodeT5 [0, 8774, 32099, 3, 55, 1, 0] "<pad> Hello<extra_id_0> !</s><pad>",
+    MassDecodeT5 [0, 8774, 32099, 3, 55, 1] [0 .. 100000],
+    IncrementalDecodeT5Fail [0] [8774, 32099, 3, 55, 1, 0],
+    IncrementalDecodeT5 [0, 8774, 32099, 3, 55] [1, 0],
+    IncrementalDecodeT5Fail [0, 4219, 834, 7, 9963, 1820, 1738] [3476]
   ]
 
 testData :: TestItem
@@ -95,12 +114,26 @@ testTree =
     freeTokenizers
     (toTest testData)
   where
+    createTokenizer url expectedHash = do
+      manager <- HTTP.newTlsManagerWith HTTP.tlsManagerSettings
+      request <- HTTP.parseRequest url
+      response <- HTTP.httpLbs request manager
+      let body = LBS.toStrict . HTTP.responseBody $ response
+      H.assertEqual "Unexpected json hash" expectedHash (hash body)
+      createTokenizerFromJSONConfig body
     createTokenizers = do
-      bartTokenizer <- do
-        json <- BS.readFile "models/bart-base-tokenizer.json"
-        createTokenizerFromJSONConfig json
-      robertaTokenizer <- createTokenizerFromConfigFile "models/roberta-base-tokenizer.json"
-      t5Tokenizer <- createTokenizerFromConfigFile "models/t5-base-tokenizer.json"
+      bartTokenizer <-
+        createTokenizer
+          "https://huggingface.co/facebook/bart-base/resolve/main/tokenizer.json"
+          (-5675567303366998911)
+      robertaTokenizer <-
+        createTokenizer
+          "https://huggingface.co/roberta-base/resolve/main/tokenizer.json"
+          (-5675567303366998911)
+      t5Tokenizer <-
+        createTokenizer
+          "https://huggingface.co/t5-base/resolve/main/tokenizer.json"
+          (-6144928463468424742)
       pure $ TestTokenizers {..}
     freeTokenizers TestTokenizers {..} = do
       freeTokenizer bartTokenizer
@@ -118,6 +151,15 @@ testTree =
       TestTokenizers {..} <- mtokenizers
       s <- decode bartTokenizer ids
       H.assertEqual "Unexpected decoding result" expected s
+    toTest (MassDecodeBart ids tokens) mtokenizers = H.testCase ("MassDecode " <> show ids) $ do
+      TestTokenizers {..} <- mtokenizers
+      mapM_ (\token -> decode bartTokenizer (ids <> [token])) tokens
+    toTest (IncrementalDecodeBart ids otherIds) mtokenizers = H.testCase ("Incrementally decode " <> show ids <> " " <> show otherIds) $ do
+      TestTokenizers {..} <- mtokenizers
+      s <- decode bartTokenizer ids
+      s' <- decode bartTokenizer otherIds
+      s'' <- decode bartTokenizer $ ids <> otherIds
+      H.assertEqual "Unexpected decoding result" s'' (s <> s')
     toTest (EncodeRoberta s expected) mtokenizers = H.testCase ("Encode " <> show s) $ do
       TestTokenizers {..} <- mtokenizers
       enc <- encode robertaTokenizer s
@@ -136,6 +178,21 @@ testTree =
       TestTokenizers {..} <- mtokenizers
       s <- decode t5Tokenizer ids
       H.assertEqual "Unexpected decoding result" expected s
+    toTest (MassDecodeT5 ids tokens) mtokenizers = H.testCase ("MassDecode " <> show ids) $ do
+      TestTokenizers {..} <- mtokenizers
+      mapM_ (\token -> decode t5Tokenizer (ids <> [token])) tokens
+    toTest (IncrementalDecodeT5 ids otherIds) mtokenizers = H.testCase ("Incrementally decode " <> show ids <> " " <> show otherIds) $ do
+      TestTokenizers {..} <- mtokenizers
+      s <- decode t5Tokenizer ids
+      s' <- decode t5Tokenizer otherIds
+      s'' <- decode t5Tokenizer $ ids <> otherIds
+      H.assertEqual "Unexpected decoding result" s'' (s <> s')
+    toTest (IncrementalDecodeT5Fail ids otherIds) mtokenizers = H.testCase ("Incrementally decode " <> show ids <> " " <> show otherIds) $ do
+      TestTokenizers {..} <- mtokenizers
+      s <- decode t5Tokenizer ids
+      s' <- decode t5Tokenizer otherIds
+      s'' <- decode t5Tokenizer $ ids <> otherIds
+      H.assertBool "Unexpected decoding result" (s'' /= (s <> s'))
 
 -- | Run 'stack ghci --test' to get a REPL for the tests.
 main :: IO ()

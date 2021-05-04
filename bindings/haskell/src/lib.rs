@@ -15,14 +15,12 @@ use tokenizers::AddedToken;
 pub extern "C" fn deserialize_tokenizer(cconfig: *const c_char) -> *mut Tokenizer {
     unsafe {
         let config = CStr::from_ptr(cconfig);
-        if let Ok(config_file) = config.to_str() {
-            if let Ok(tokenizer) = Tokenizer::from_file(config_file) {
-                return Box::into_raw(Box::new(tokenizer));
-            } else {
-                panic!("Unable to read tokenizer from file.");
-            }
-        } else {
-            panic!("Unable to read config.");
+        match config.to_str() {
+            Ok(config_file) => match Tokenizer::from_file(config_file) {
+                Ok(tokenizer) => return Box::into_raw(Box::new(tokenizer)),
+                Err(error) => panic!("Unable to read tokenizer from file: {:?}", error),
+            },
+            Err(error) => panic!("Unable to read config: {:?}", error),
         }
     }
 }
@@ -31,14 +29,12 @@ pub extern "C" fn deserialize_tokenizer(cconfig: *const c_char) -> *mut Tokenize
 pub extern "C" fn deserialize_tokenizer_from_json(cjson: *const c_char) -> *mut Tokenizer {
     unsafe {
         let json = CStr::from_ptr(cjson);
-        if let Ok(json_str) = json.to_str() {
-            if let Ok(tokenizer) = Tokenizer::from_str(json_str) {
-                return Box::into_raw(Box::new(tokenizer));
-            } else {
-                panic!("Unable to read tokenizer from json.");
-            }
-        } else {
-            panic!("Unable to read json string.");
+        match json.to_str() {
+            Ok(json_str) => match Tokenizer::from_str(json_str) {
+                Ok(tokenizer) => return Box::into_raw(Box::new(tokenizer)),
+                Err(error) => panic!("Unable to read tokenizer from json: {:?}", error),
+            },
+            Err(error) => panic!("Unable to read json string: {:?}", error),
         }
     }
 }
@@ -51,14 +47,12 @@ pub extern "C" fn serialize_tokenizer(cconfig: *const c_char, ptr: *mut Tokenize
             assert!(!ptr.is_null());
             &mut *ptr
         };
-        if let Ok(config_file) = config.to_str() {
-            if let Ok(res) = tokenizer.save(config_file, false) {
-                return res;
-            } else {
-                panic!("Unable to save tokenizer to file.");
-            }
-        } else {
-            panic!("Unable to read config.");
+        match config.to_str() {
+            Ok(config_file) => match tokenizer.save(config_file, false) {
+                Ok(res) => return res,
+                Err(error) => panic!("Unable to save tokenizer to file: {:?}", error),
+            },
+            Err(error) => panic!("Unable to read config: {:?}", error),
         }
     }
 }
@@ -160,12 +154,19 @@ pub extern "C" fn decode(clength: c_uint, cids: *const c_uint, ptr: *mut Tokeniz
         unsafe { ids.push(*p) };
     }
     ids.shrink_to_fit();
-    if let Ok(res) = tokenizer.decode(ids, false) {
-        let c_str = CString::new(res).unwrap();
-        let ptr = c_str.into_raw();
-        return ptr;
-    } else {
-        panic!("Unable to decode ids.");
+    let ids_ = ids.clone();
+    match tokenizer.decode(ids, false) {
+        Ok(res) => {
+            let res_ = res.clone();
+            match CString::new(res) {
+                Ok(c_str) => {
+                    let ptr = c_str.into_raw();
+                    return ptr;
+                }
+                Err(error) => panic!("Unable to convert tokenizer result to CString: {:?} {:?} {:?}", error, res_, ids_),
+            }
+        },
+        Err(error) => panic!("Unable to decode ids: {:?}", error),
     }
 }
 
@@ -177,11 +178,12 @@ pub extern "C" fn add_special_token(ctoken: *const c_char, ptr: *mut Tokenizer) 
             assert!(!ptr.is_null());
             &mut *ptr
         };
-        if let Ok(s) = cstring.to_str() {
-            let token = AddedToken::from(s, true);
-            tokenizer.add_special_tokens(&[token]);
-        } else {
-            panic!("Unable to read token.");
+        match cstring.to_str() {
+            Ok(s) => {
+                let token = AddedToken::from(s, true);
+                tokenizer.add_special_tokens(&[token]);
+            }
+            Err(error) => panic!("Unable to read token: {:?}", error),
         }
     }
 }

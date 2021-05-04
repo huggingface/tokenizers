@@ -34,6 +34,9 @@ test-suite tokenizers-test
   build-depends:
       base >= 4.7 && < 5
     , bytestring
+    , hashable
+    , http-client
+    , http-client-tls
     , tasty
     , tasty-hunit
     , tokenizers

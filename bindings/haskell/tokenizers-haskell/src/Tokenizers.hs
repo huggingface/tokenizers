@@ -4,8 +4,7 @@ module Tokenizers where
 
 import Control.Applicative (empty)
 import Control.Exception (bracket)
-import Data.ByteString (ByteString)
-import Data.ByteString.Unsafe (unsafeUseAsCString)
+import Data.ByteString (ByteString, useAsCString)
 import Foreign.C.String (CString, peekCString, withCString)
 import Foreign.C.Types (CInt, CUInt (..))
 import Foreign.Marshal.Array (withArrayLen)
@@ -57,7 +56,7 @@ foreign import ccall unsafe "deserialize_tokenizer_from_json"
 
 createTokenizerFromJSONConfig :: ByteString -> IO Tokenizer
 createTokenizerFromJSONConfig json =
-  unsafeUseAsCString
+  useAsCString
     json
     ( \cjson ->
         Tokenizer
