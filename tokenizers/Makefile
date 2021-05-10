@@ -55,7 +55,7 @@ $(DATA_DIR)/bert-% :
 
 $(DATA_DIR)/unigram% :
 	$(dir_guard)
-	wget https://storage.googleapis.com/tokenizers/unigram$* -O $@
+	wget https://huggingface.co/Narsil/small/raw/main/unigram$* -O $@
 
 $(DATA_DIR)/albert-base-v1-tokenizer.json :
 	$(dir_guard)
@@ -70,7 +70,7 @@ $(DATA_DIR)/small.txt : $(DATA_DIR)/big.txt
 
 $(DATA_DIR)/roberta.json :
 	$(dir_guard)
-	wget https://storage.googleapis.com/tokenizers/roberta.json -O $@
+	wget https://huggingface.co/Narsil/small/raw/main/roberta.json -O $@
 
 $(DATA_DIR)/tokenizer-wiki.json :
 	$(dir_guard)
