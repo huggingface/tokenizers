@@ -877,7 +877,7 @@ where
         let final_encoding = if let Some(processor) = &self.post_processor {
             processor.process(encoding, pair_encoding, add_special_tokens)?
         } else {
-            PostProcessor::default_process(encoding, pair_encoding, add_special_tokens)?
+            <dyn PostProcessor>::default_process(encoding, pair_encoding, add_special_tokens)?
         };
 
         // 3. Then we pad if needed
