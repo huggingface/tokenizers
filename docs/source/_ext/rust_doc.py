@@ -10,7 +10,7 @@ logger = sphinx.util.logging.getLogger(__name__)
 
 class RustRef:
     def __call__(self, name, rawtext, text, lineno, inliner, options={}, content=[]):
-        doctype = name.split(":")[1]
+        doctype = name.split("_")[1]
         parts = text.split("::")
 
         if text.startswith("~"):
@@ -87,10 +87,10 @@ class RustRef:
 
 
 def setup(app):
-    app.add_role("rust:struct", RustRef())
-    app.add_role("rust:func", RustRef())
-    app.add_role("rust:meth", RustRef())
-    app.add_role("rust:trait", RustRef())
+    app.add_role("rust_struct", RustRef())
+    app.add_role("rust_func", RustRef())
+    app.add_role("rust_meth", RustRef())
+    app.add_role("rust_trait", RustRef())
 
     return {
         "version": "0.1",
