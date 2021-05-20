@@ -167,7 +167,7 @@ impl PostProcessor for ByteLevel {
             }
         }
 
-        PostProcessor::default_process(encoding, pair_encoding, add_special_tokens)
+        <dyn PostProcessor>::default_process(encoding, pair_encoding, add_special_tokens)
     }
 }
 

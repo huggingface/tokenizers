@@ -1,4 +1,5 @@
 pub mod bpe;
+pub mod ctc;
 pub mod wordpiece;
 
 // Re-export these as decoders
@@ -8,6 +9,7 @@ pub use super::pre_tokenizers::metaspace;
 use serde::{Deserialize, Serialize};
 
 use crate::decoders::bpe::BPEDecoder;
+use crate::decoders::ctc::CTC;
 use crate::decoders::wordpiece::WordPiece;
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::metaspace::Metaspace;
@@ -20,6 +22,7 @@ pub enum DecoderWrapper {
     ByteLevel(ByteLevel),
     WordPiece(WordPiece),
     Metaspace(Metaspace),
+    CTC(CTC),
 }
 
 impl Decoder for DecoderWrapper {
@@ -29,6 +32,7 @@ impl Decoder for DecoderWrapper {
             DecoderWrapper::ByteLevel(bl) => bl.decode(tokens),
             DecoderWrapper::Metaspace(ms) => ms.decode(tokens),
             DecoderWrapper::WordPiece(wp) => wp.decode(tokens),
+            DecoderWrapper::CTC(ctc) => ctc.decode(tokens),
         }
     }
 }
@@ -37,3 +41,4 @@ impl_enum_from!(BPEDecoder, DecoderWrapper, BPE);
 impl_enum_from!(ByteLevel, DecoderWrapper, ByteLevel);
 impl_enum_from!(Metaspace, DecoderWrapper, Metaspace);
 impl_enum_from!(WordPiece, DecoderWrapper, WordPiece);
+impl_enum_from!(CTC, DecoderWrapper, CTC);

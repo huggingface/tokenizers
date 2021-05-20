@@ -58,47 +58,47 @@
     classmethod
         static method
     Tokenizer
-        :rust:struct:`~tokenizers::tokenizer::Tokenizer`
+        :rust_struct:`~tokenizers::tokenizer::Tokenizer`
     Tokenizer.train
-        :rust:meth:`~tokenizers::tokenizer::Tokenizer::train`
+        :rust_meth:`~tokenizers::tokenizer::Tokenizer::train`
     Tokenizer.save
-        :rust:meth:`~tokenizers::tokenizer::Tokenizer::save`
+        :rust_meth:`~tokenizers::tokenizer::Tokenizer::save`
     Tokenizer.from_file
-        :rust:meth:`~tokenizers::tokenizer::Tokenizer::from_file`
+        :rust_meth:`~tokenizers::tokenizer::Tokenizer::from_file`
     Tokenizer.encode
-        :rust:meth:`~tokenizers::tokenizer::Tokenizer::encode`
+        :rust_meth:`~tokenizers::tokenizer::Tokenizer::encode`
     Tokenizer.encode_batch
-        :rust:meth:`~tokenizers::tokenizer::Tokenizer::encode_batch`
+        :rust_meth:`~tokenizers::tokenizer::Tokenizer::encode_batch`
     Tokenizer.decode
-        :rust:meth:`~tokenizers::tokenizer::Tokenizer::decode`
+        :rust_meth:`~tokenizers::tokenizer::Tokenizer::decode`
     Tokenizer.decode_batch
-        :rust:meth:`~tokenizers::tokenizer::Tokenizer::decode_batch`
+        :rust_meth:`~tokenizers::tokenizer::Tokenizer::decode_batch`
     Tokenizer.token_to_id
-        :rust:meth:`~tokenizers::tokenizer::Tokenizer::token_to_id`
+        :rust_meth:`~tokenizers::tokenizer::Tokenizer::token_to_id`
     Tokenizer.enable_padding
-        :rust:meth:`~tokenizers::tokenizer::Tokenizer::enable_padding`
+        :rust_meth:`~tokenizers::tokenizer::Tokenizer::enable_padding`
     Encoding
-        :rust:struct:`~tokenizers::tokenizer::Encoding`
+        :rust_struct:`~tokenizers::tokenizer::Encoding`
     TemplateProcessing
-        :rust:struct:`~tokenizers::processors::template::TemplateProcessing`
+        :rust_struct:`~tokenizers::processors::template::TemplateProcessing`
     Normalizer
-        :rust:trait:`~tokenizers::tokenizer::Normalizer`
+        :rust_trait:`~tokenizers::tokenizer::Normalizer`
     normalizers.Sequence
-        :rust:struct:`~tokenizers::normalizers::utils::Sequence`
+        :rust_struct:`~tokenizers::normalizers::utils::Sequence`
     pre_tokenizers.Whitespace
-        :rust:struct:`~tokenizers::normalizers::whitespace::Whitespace`
+        :rust_struct:`~tokenizers::normalizers::whitespace::Whitespace`
     PreTokenizer
-        :rust:trait:`~tokenizers::tokenizer::PreTokenizer`
+        :rust_trait:`~tokenizers::tokenizer::PreTokenizer`
     models.BPE
-        :rust:struct:`~tokenizers::models::bpe::BPE`
+        :rust_struct:`~tokenizers::models::bpe::BPE`
     models.Unigram
-        :rust:struct:`~tokenizers::models::unigram::Unigram`
+        :rust_struct:`~tokenizers::models::unigram::Unigram`
     models.WordLevel
-        :rust:struct:`~tokenizers::models::wordlevel::WordLevel`
+        :rust_struct:`~tokenizers::models::wordlevel::WordLevel`
     models.WordPiece
-        :rust:struct:`~tokenizers::models::wordpiece::WordPiece`
+        :rust_struct:`~tokenizers::models::wordpiece::WordPiece`
     Decoder
-        :rust:trait:`~tokenizers::tokenizer::Decoder`
+        :rust_trait:`~tokenizers::tokenizer::Decoder`
 
 .. entities:: node
 

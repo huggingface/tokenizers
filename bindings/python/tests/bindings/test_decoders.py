@@ -2,7 +2,7 @@ import pytest
 import pickle
 import json
 
-from tokenizers.decoders import Decoder, ByteLevel, WordPiece, Metaspace, BPEDecoder
+from tokenizers.decoders import Decoder, ByteLevel, WordPiece, Metaspace, BPEDecoder, CTC
 
 
 class TestByteLevel:
@@ -108,3 +108,45 @@ class TestBPEDecoder:
         # Modify these
         decoder.suffix = "</w>"
         assert decoder.suffix == "</w>"
+
+
+class TestCTCDecoder:
+    def test_instantiate(self):
+        assert CTC() is not None
+        assert CTC(pad_token="[PAD]") is not None
+        assert isinstance(CTC(), Decoder)
+        assert isinstance(CTC(), CTC)
+        assert isinstance(pickle.loads(pickle.dumps(CTC())), CTC)
+
+    def test_decoding(self):
+        decoder = CTC()
+        assert (
+            decoder.decode(
+                ["<pad>", "<pad>", "h", "e", "e", "l", "l", "<pad>", "l", "o", "o", "o", "<pad>"]
+            )
+            == "hello"
+        )
+        decoder = CTC(pad_token="[PAD]")
+        assert (
+            decoder.decode(
+                ["[PAD]", "[PAD]", "h", "e", "e", "l", "l", "[PAD]", "l", "o", "o", "o", "[PAD]"]
+            )
+            == "hello"
+        )
+
+    def test_can_modify(self):
+        decoder = CTC(pad_token="[PAD]")
+
+        assert decoder.pad_token == "[PAD]"
+        assert decoder.word_delimiter_token == "|"
+        assert decoder.cleanup == True
+
+        # Modify these
+        decoder.pad_token = "{pad}"
+        assert decoder.pad_token == "{pad}"
+
+        decoder.word_delimiter_token = "_"
+        assert decoder.word_delimiter_token == "_"
+
+        decoder.cleanup = False
+        assert decoder.cleanup == False

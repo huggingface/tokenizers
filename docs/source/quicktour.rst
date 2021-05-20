@@ -44,7 +44,7 @@ Training the tokenizer
 .. entities:: rust
 
     BpeTrainer
-        :rust:struct:`~tokenizers::models::bpe::BpeTrainer`
+        :rust_struct:`~tokenizers::models::bpe::BpeTrainer`
     vocab_size
         :obj:`vocab_size`
     min_frequency
