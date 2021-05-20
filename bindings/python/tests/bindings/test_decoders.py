@@ -2,7 +2,7 @@ import pytest
 import pickle
 import json
 
-from tokenizers.decoders import Decoder, ByteLevel, WordPiece, Metaspace, BPEDecoder, CTCDecoder
+from tokenizers.decoders import Decoder, ByteLevel, WordPiece, Metaspace, BPEDecoder, CTC
 
 
 class TestByteLevel:
@@ -112,21 +112,21 @@ class TestBPEDecoder:
 
 class TestCTCDecoder:
     def test_instantiate(self):
-        assert CTCDecoder() is not None
-        assert CTCDecoder(pad_token="[PAD]") is not None
-        assert isinstance(CTCDecoder(), Decoder)
-        assert isinstance(CTCDecoder(), CTCDecoder)
-        assert isinstance(pickle.loads(pickle.dumps(CTCDecoder())), CTCDecoder)
+        assert CTC() is not None
+        assert CTC(pad_token="[PAD]") is not None
+        assert isinstance(CTC(), Decoder)
+        assert isinstance(CTC(), CTC)
+        assert isinstance(pickle.loads(pickle.dumps(CTC())), CTC)
 
     def test_decoding(self):
-        decoder = CTCDecoder()
+        decoder = CTC()
         assert (
             decoder.decode(
                 ["<pad>", "<pad>", "h", "e", "e", "l", "l", "<pad>", "l", "o", "o", "o", "<pad>"]
             )
             == "hello"
         )
-        decoder = CTCDecoder(pad_token="[PAD]")
+        decoder = CTC(pad_token="[PAD]")
         assert (
             decoder.decode(
                 ["[PAD]", "[PAD]", "h", "e", "e", "l", "l", "[PAD]", "l", "o", "o", "o", "[PAD]"]
@@ -135,7 +135,7 @@ class TestCTCDecoder:
         )
 
     def test_can_modify(self):
-        decoder = CTCDecoder(pad_token="[PAD]")
+        decoder = CTC(pad_token="[PAD]")
 
         assert decoder.pad_token == "[PAD]"
         assert decoder.word_delimiter_token == "|"

@@ -110,7 +110,7 @@ fn ctc_decoder(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     let mut decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
     let guard = cx.lock();
     decoder.borrow_mut(&guard).decoder = Some(Arc::new(
-        tk::decoders::ctc::CTCDecoder::new(pad_token, word_delimiter_token, cleanup).into(),
+        tk::decoders::ctc::CTC::new(pad_token, word_delimiter_token, cleanup).into(),
     ));
     Ok(decoder)
 }
@@ -121,6 +121,6 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_WordPiece", prefix), wordpiece)?;
     m.export_function(&format!("{}_Metaspace", prefix), metaspace)?;
     m.export_function(&format!("{}_BPEDecoder", prefix), bpe_decoder)?;
-    m.export_function(&format!("{}_CTCDecoder", prefix), ctc_decoder)?;
+    m.export_function(&format!("{}_CTC", prefix), ctc_decoder)?;
     Ok(())
 }

@@ -40,8 +40,9 @@ export function bpeDecoder(suffix?: string): Decoder;
 /**
  * Instantiate a new CTC Decoder
  * @param [pad_token='pad'] The pad token used by CTC to delimit a new token.
- * @param [word_delimiter_token='|'] The word delimiter token used if `cleanup` is used and will be replaced by a space
- * @param [cleanup=true] Cleaning up the resulting string by removing english abbreviations
+ * @param [word_delimiter_token='|'] The word delimiter token. It will be replaced by a space
+ * @param [cleanup=true] Whether to cleanup some tokenization artifacts.
+ * Mainly spaces before punctuation, and some abbreviated english forms.
  */
 export function ctcDecoder(
   pad_token?: string,

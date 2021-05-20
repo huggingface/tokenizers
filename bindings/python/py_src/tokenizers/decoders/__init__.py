@@ -5,4 +5,4 @@ ByteLevel = decoders.ByteLevel
 WordPiece = decoders.WordPiece
 Metaspace = decoders.Metaspace
 BPEDecoder = decoders.BPEDecoder
-CTCDecoder = decoders.CTCDecoder
+CTC = decoders.CTC

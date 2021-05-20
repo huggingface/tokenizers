@@ -8,7 +8,7 @@ use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::decoders::bpe::BPEDecoder;
 use tk::decoders::byte_level::ByteLevel;
-use tk::decoders::ctc::CTCDecoder;
+use tk::decoders::ctc::CTC;
 use tk::decoders::metaspace::Metaspace;
 use tk::decoders::wordpiece::WordPiece;
 use tk::decoders::DecoderWrapper;
@@ -266,17 +266,17 @@ impl PyBPEDecoder {
     }
 }
 
-/// CTCDecoder Decoder
+/// CTC Decoder
 ///
 /// Args:
 ///     pad_token (:obj:`str`, `optional`, defaults to :obj:`<pad>`):
 ///         The pad token used by CTC to delimit a new token.
 ///     word_delimiter_token (:obj:`str`, `optional`, defaults to :obj:`|`):
-///         The word delimiter token used if `cleanup` is used and will be replaced by
-///         a space
+///         The word delimiter token. It will be replaced by a <space>
 ///     cleanup (:obj:`bool`, `optional`, defaults to :obj:`True`):
-///         Cleaning up the resulting string by removing english abbreviations
-#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=CTCDecoder)]
+///         Whether to cleanup some tokenization artifacts.
+///         Mainly spaces before punctuation, and some abbreviated english forms.
+#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=CTC)]
 #[text_signature = "(self, pad_token=\"<pad>\", word_delimiter_token=\"|\", cleanup=True)"]
 pub struct PyCTCDecoder {}
 #[pymethods]
@@ -320,7 +320,7 @@ impl PyCTCDecoder {
     fn new(pad_token: String, word_delimiter_token: String, cleanup: bool) -> (Self, PyDecoder) {
         (
             PyCTCDecoder {},
-            CTCDecoder::new(pad_token, word_delimiter_token, cleanup).into(),
+            CTC::new(pad_token, word_delimiter_token, cleanup).into(),
         )
     }
 }

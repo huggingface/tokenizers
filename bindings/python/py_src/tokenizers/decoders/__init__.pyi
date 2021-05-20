@@ -68,18 +68,18 @@ class ByteLevel(Decoder):
         """
         pass
 
-class CTCDecoder(Decoder):
+class CTC(Decoder):
     """
-    CTCDecoder Decoder
+    CTC Decoder
 
     Args:
         pad_token (:obj:`str`, `optional`, defaults to :obj:`<pad>`):
             The pad token used by CTC to delimit a new token.
         word_delimiter_token (:obj:`str`, `optional`, defaults to :obj:`|`):
-            The word delimiter token used if `cleanup` is used and will be replaced by
-            a space
+            The word delimiter token. It will be replaced by a <space>
         cleanup (:obj:`bool`, `optional`, defaults to :obj:`True`):
-            Cleaning up the resulting string by removing english abbreviations
+            Whether to cleanup some tokenization artifacts.
+            Mainly spaces before punctuation, and some abbreviated english forms.
     """
 
     def __init__(self, pad_token="<pad>", word_delimiter_token="|", cleanup=True):

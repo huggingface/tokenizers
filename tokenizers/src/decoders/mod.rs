@@ -9,7 +9,7 @@ pub use super::pre_tokenizers::metaspace;
 use serde::{Deserialize, Serialize};
 
 use crate::decoders::bpe::BPEDecoder;
-use crate::decoders::ctc::CTCDecoder;
+use crate::decoders::ctc::CTC;
 use crate::decoders::wordpiece::WordPiece;
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::metaspace::Metaspace;
@@ -22,7 +22,7 @@ pub enum DecoderWrapper {
     ByteLevel(ByteLevel),
     WordPiece(WordPiece),
     Metaspace(Metaspace),
-    CTC(CTCDecoder),
+    CTC(CTC),
 }
 
 impl Decoder for DecoderWrapper {
@@ -41,4 +41,4 @@ impl_enum_from!(BPEDecoder, DecoderWrapper, BPE);
 impl_enum_from!(ByteLevel, DecoderWrapper, ByteLevel);
 impl_enum_from!(Metaspace, DecoderWrapper, Metaspace);
 impl_enum_from!(WordPiece, DecoderWrapper, WordPiece);
-impl_enum_from!(CTCDecoder, DecoderWrapper, CTC);
+impl_enum_from!(CTC, DecoderWrapper, CTC);
