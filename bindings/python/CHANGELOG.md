@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- [#693]: Add a CTC Decoder for Wave2Vec models
+
 ## [0.10.2]
 
 ### Fixed
@@ -309,6 +314,7 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#694]: https://github.com/huggingface/tokenizers/pull/694
 [#674]: https://github.com/huggingface/tokenizers/pull/674
 [#656]: https://github.com/huggingface/tokenizers/pull/656
 [#652]: https://github.com/huggingface/tokenizers/pull/652
