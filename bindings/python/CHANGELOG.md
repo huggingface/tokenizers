@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- [#686]: Fix SPM conversion process for whitespace deduplication
+
 ### Added
 - [#693]: Add a CTC Decoder for Wave2Vec models
 
