@@ -30,7 +30,7 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        python: [3.5, 3.6, 3.7, 3.8, 3.9]
+        python: [3.6, 3.7, 3.8, 3.9]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
@@ -76,7 +76,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macos-10.15]
-        python: [3.5, 3.6, 3.7, 3.8, 3.9]
+        python: [3.6, 3.7, 3.8, 3.9]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
