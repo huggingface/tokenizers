@@ -122,7 +122,7 @@ def py_file(module, origin):
 
 def do_black(content, is_pyi):
     mode = black.Mode(
-        target_versions={black.TargetVersion.PY35},
+        target_versions={black.TargetVersion.PY36},
         line_length=100,
         is_pyi=is_pyi,
         string_normalization=True,

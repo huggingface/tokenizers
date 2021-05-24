@@ -3,5 +3,5 @@ requires = ["setuptools", "wheel", "setuptools-rust"]
 build-backend = "setuptools.build_meta"
 
 [tool.black]
-target-version = ['py35']
+target-version = ['py36']
 line-length = 100
