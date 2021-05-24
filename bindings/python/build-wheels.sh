@@ -20,5 +20,5 @@ done
 rm dist/*-linux_*
 
 # Upload wheels
-# /opt/python/cp37-cp37m/bin/pip install -U awscli
-# /opt/python/cp37-cp37m/bin/python -m awscli s3 sync --exact-timestamps ./dist "s3://tokenizers-releases/python/$DIST_DIR"
+/opt/python/cp37-cp37m/bin/pip install -U awscli
+/opt/python/cp37-cp37m/bin/python -m awscli s3 sync --exact-timestamps ./dist "s3://tokenizers-releases/python/$DIST_DIR"
