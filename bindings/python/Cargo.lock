@@ -993,7 +993,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers-python"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "env_logger",
  "itertools 0.9.0",
