@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - [#686]: Fix SPM conversion process for whitespace deduplication
+- [#707]: Fix stripping strings containing Unicode characters
 
 ### Added
 - [#693]: Add a CTC Decoder for Wave2Vec models
@@ -317,6 +318,7 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#707]: https://github.com/huggingface/tokenizers/pull/707
 [#693]: https://github.com/huggingface/tokenizers/pull/693
 [#686]: https://github.com/huggingface/tokenizers/pull/686
 [#674]: https://github.com/huggingface/tokenizers/pull/674

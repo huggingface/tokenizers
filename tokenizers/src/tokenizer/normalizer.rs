@@ -736,12 +736,13 @@ impl NormalizedString {
         };
 
         if leading_spaces > 0 || trailing_spaces > 0 {
+            let count = self.get().chars().count();
             let transformation = self
                 .normalized
                 .chars()
                 .enumerate()
                 .filter_map(|(i, c)| {
-                    if i < leading_spaces || i >= self.len() - trailing_spaces {
+                    if i < leading_spaces || i >= count - trailing_spaces {
                         None
                     } else if i == self.len() - trailing_spaces - 1 {
                         Some((c, -(trailing_spaces as isize)))
@@ -1271,6 +1272,17 @@ mod tests {
         assert_eq!(
             n.get_range_original(Range::Normalized(0..n.normalized.len())),
             Some("This is an example")
+        );
+    }
+
+    #[test]
+    fn strip_unicode() {
+        let mut n = NormalizedString::from("  你好asa \n");
+        n.strip();
+        assert_eq!(&n.normalized, "你好asa");
+        assert_eq!(
+            n.get_range_original(Range::Normalized(0..n.normalized.len())),
+            Some("你好asa")
         );
     }
 
