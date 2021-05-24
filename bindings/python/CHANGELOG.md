@@ -317,7 +317,8 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
-[#694]: https://github.com/huggingface/tokenizers/pull/694
+[#693]: https://github.com/huggingface/tokenizers/pull/693
+[#686]: https://github.com/huggingface/tokenizers/pull/686
 [#674]: https://github.com/huggingface/tokenizers/pull/674
 [#656]: https://github.com/huggingface/tokenizers/pull/656
 [#652]: https://github.com/huggingface/tokenizers/pull/652
