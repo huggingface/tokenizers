@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - [#693]: Add a CTC Decoder for Wave2Vec models
 
+### Removed
+- [#714]: Removed support for Python 3.5
+
 ## [0.10.2]
 
 ### Fixed
@@ -318,6 +321,7 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#714]: https://github.com/huggingface/tokenizers/pull/714
 [#707]: https://github.com/huggingface/tokenizers/pull/707
 [#693]: https://github.com/huggingface/tokenizers/pull/693
 [#686]: https://github.com/huggingface/tokenizers/pull/686
