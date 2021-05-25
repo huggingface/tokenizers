@@ -31,7 +31,7 @@ jobs:
           python-version: 3.6
 
       - name: Install Python dependencies
-        run: pip install sphinx sphinx_rtd_theme setuptools-rust
+        run: pip install sphinx sphinx_rtd_theme setuptools-rust docutils==0.16.0
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
