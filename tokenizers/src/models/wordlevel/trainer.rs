@@ -40,7 +40,19 @@ impl WordLevelTrainer {
         model: &mut WordLevel,
     ) -> Result<Vec<AddedToken>> {
         let mut ordered_counts = word_counts.iter().collect::<Vec<_>>();
-        ordered_counts.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+
+        //sort the word counts first by inverse counts and then by word, in order
+        //to keep the sorting deterministic in case of equal counts
+        let cmp = |l: &(&String, &u32), r: &(&String, &u32)| -> std::cmp::Ordering {
+            let count_comp: std::cmp::Ordering = l.1.cmp(&r.1);
+            if count_comp != Equal {
+                return count_comp.reverse()
+            }
+            return l.0.cmp(&r.0);
+        };
+
+        ordered_counts.sort_by(cmp);
+
         let word_level = WordLevel::builder()
             .vocab(
                 self.special_tokens
