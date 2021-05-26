@@ -46,7 +46,7 @@ impl WordLevelTrainer {
         let cmp = |l: &(&String, &u32), r: &(&String, &u32)| -> std::cmp::Ordering {
             let count_comp: std::cmp::Ordering = l.1.cmp(&r.1);
             if count_comp != Equal {
-                return count_comp.reverse()
+                return count_comp.reverse();
             }
             return l.0.cmp(&r.0);
         };
