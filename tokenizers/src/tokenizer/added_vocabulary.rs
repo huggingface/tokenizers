@@ -198,15 +198,23 @@ impl AddedVocabulary {
         self.added_tokens_map
             .get(token)
             .copied()
+            // In order to prevent id collisions added ids start
+            // where model ids end
+            .map(|id| id + (model.get_vocab_size() as u32))
             .or_else(|| model.token_to_id(token))
     }
 
     /// Get the token matching the given id if it exists
     pub fn id_to_token(&self, id: u32, model: &impl Model) -> Option<String> {
-        self.added_tokens_map_r
-            .get(&id)
-            .map(|t| t.content.clone())
-            .or_else(|| model.id_to_token(id))
+        if id < model.get_vocab_size() as u32 {
+            return model.id_to_token(id);
+        }
+        // Id is outside of model vocab reverse offset and
+        // look trough added tokens
+        let relative_id = id - (model.get_vocab_size() as u32);
+        return self.added_tokens_map_r
+            .get(&relative_id)
+            .map(|t| t.content.clone());
     }
 
     /// Check if a token is a special token
@@ -249,7 +257,7 @@ impl AddedVocabulary {
                 ignored += 1;
                 id
             } else {
-                let new_id = (model.get_vocab_size() + self.added_tokens_map.len()) as u32;
+                let new_id = self.added_tokens_map.len() as u32;
                 self.added_tokens_map.insert(token.content.clone(), new_id);
 
                 if !self.special_tokens_set.contains(&token.content) {
