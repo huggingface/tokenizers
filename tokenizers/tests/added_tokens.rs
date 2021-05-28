@@ -1,7 +1,10 @@
 mod common;
 
+use tokenizers::models::TrainerWrapper;
+use tokenizers::models::wordlevel::WordLevelTrainerBuilder;
 use common::*;
-use tokenizers::tokenizer::AddedToken;
+use tokenizers::models::wordlevel::WordLevel;
+use tokenizers::{Tokenizer, AddedToken};
 
 #[test]
 fn add_tokens() {
@@ -26,6 +29,24 @@ fn add_tokens() {
     );
     assert_eq!(tokenizer.token_to_id("hello"), Some(2));
     assert_eq!(tokenizer.token_to_id("world"), Some(3));
+}
+
+#[test]
+fn add_tokens_with_model_change() {
+    let mut tokenizer = Tokenizer::new(WordLevel::default());
+    let mut trainer: TrainerWrapper = WordLevelTrainerBuilder::default()
+        .show_progress(false)
+        .build().unwrap().into();
+
+    tokenizer.add_tokens(&[AddedToken::from("hello", true)]);
+
+    tokenizer.train(&mut trainer, ["new"].iter()).unwrap();
+
+    tokenizer.add_tokens(&[AddedToken::from("world", true)]);
+
+    assert_eq!(tokenizer.token_to_id("new"), Some(0));
+    assert_eq!(tokenizer.token_to_id("hello"), Some(1));
+    assert_eq!(tokenizer.token_to_id("world"), Some(2));
 }
 
 #[test]
