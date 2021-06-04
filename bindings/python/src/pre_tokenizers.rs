@@ -679,7 +679,7 @@ mod test {
         let gil = Python::acquire_gil();
         assert_eq!(
             "tokenizers.pre_tokenizers.Whitespace",
-            py_wsp.as_ref(gil.python()).get_type().name()
+            py_wsp.as_ref(gil.python()).get_type().name().unwrap()
         );
     }
 

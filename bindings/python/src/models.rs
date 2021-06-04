@@ -809,7 +809,7 @@ mod test {
         let gil = Python::acquire_gil();
         assert_eq!(
             "tokenizers.models.BPE",
-            py_bpe.as_ref(gil.python()).get_type().name()
+            py_bpe.as_ref(gil.python()).get_type().name().unwrap()
         );
     }
 

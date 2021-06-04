@@ -421,7 +421,7 @@ mod test {
         let gil = Python::acquire_gil();
         assert_eq!(
             "tokenizers.decoders.Metaspace",
-            py_meta.as_ref(gil.python()).get_type().name()
+            py_meta.as_ref(gil.python()).get_type().name().unwrap()
         );
     }
 
