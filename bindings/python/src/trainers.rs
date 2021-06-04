@@ -15,7 +15,7 @@ use crate::utils::PyChar;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Trainer will return an instance of this class when instantiated.
-#[pyclass(name=Trainer, module = "tokenizers.trainers", name="Trainer")]
+#[pyclass(module = "tokenizers.trainers", name="Trainer")]
 #[derive(Clone)]
 #[text_signature = "(self, vocab_size=30000, min_frequency=0,show_progress=True, special_tokens=[],limit_alphabet=None, initial_alphabet = [], continuing_subword_prefix=None, end_of_word_suffix=None)"]
 pub struct PyTrainer {
