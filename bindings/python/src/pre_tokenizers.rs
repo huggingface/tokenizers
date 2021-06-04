@@ -27,7 +27,7 @@ use super::utils::*;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// PreTokenizer will return an instance of this class when instantiated.
-#[pyclass(dict, module = "tokenizers.pre_tokenizers", name=PreTokenizer)]
+#[pyclass(dict, module = "tokenizers.pre_tokenizers", name="PreTokenizer")]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PyPreTokenizer {
     #[serde(flatten)]
@@ -227,7 +227,7 @@ macro_rules! setter {
 ///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=ByteLevel)]
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name="ByteLevel")]
 #[text_signature = "(self, add_prefix_space=True)"]
 pub struct PyByteLevel {}
 #[pymethods]
@@ -272,7 +272,7 @@ impl PyByteLevel {
 }
 
 /// This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Whitespace)]
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name="Whitespace")]
 #[text_signature = "(self)"]
 pub struct PyWhitespace {}
 #[pymethods]
@@ -284,7 +284,7 @@ impl PyWhitespace {
 }
 
 /// This pre-tokenizer simply splits on the whitespace. Works like `.split()`
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=WhitespaceSplit)]
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name="WhitespaceSplit")]
 #[text_signature = "(self)"]
 pub struct PyWhitespaceSplit {}
 #[pymethods]
@@ -312,7 +312,7 @@ impl PyWhitespaceSplit {
 ///
 ///     invert (:obj:`bool`, `optional`, defaults to :obj:`False`):
 ///         Whether to invert the pattern.
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Split)]
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name="Split")]
 #[text_signature = "(self, pattern, behavior, invert=False)"]
 pub struct PySplit {}
 #[pymethods]
@@ -342,7 +342,7 @@ impl PySplit {
 /// Args:
 ///     delimiter: str:
 ///         The delimiter char that will be used to split input
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=CharDelimiterSplit)]
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name="CharDelimiterSplit")]
 pub struct PyCharDelimiterSplit {}
 #[pymethods]
 impl PyCharDelimiterSplit {
@@ -373,7 +373,7 @@ impl PyCharDelimiterSplit {
 ///
 /// This pre-tokenizer splits tokens on spaces, and also on punctuation.
 /// Each occurence of a punctuation character will be treated separately.
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=BertPreTokenizer)]
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name="BertPreTokenizer")]
 #[text_signature = "(self)"]
 pub struct PyBertPreTokenizer {}
 #[pymethods]
@@ -385,7 +385,7 @@ impl PyBertPreTokenizer {
 }
 
 /// This pre-tokenizer simply splits on punctuation as individual characters.`
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Punctuation)]
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name="Punctuation")]
 #[text_signature = "(self)"]
 pub struct PyPunctuation {}
 #[pymethods]
@@ -397,7 +397,7 @@ impl PyPunctuation {
 }
 
 /// This pre-tokenizer composes other pre_tokenizers and applies them in sequence
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Sequence)]
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name="Sequence")]
 #[text_signature = "(self, pretokenizers)"]
 pub struct PySequence {}
 #[pymethods]
@@ -438,7 +438,7 @@ impl PySequence {
 ///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Metaspace)]
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name="Metaspace")]
 #[text_signature = "(self, replacement=\"_\", add_prefix_space=True)"]
 pub struct PyMetaspace {}
 #[pymethods]
@@ -488,7 +488,7 @@ impl PyMetaspace {
 ///         If set to False, digits will grouped as follows::
 ///
 ///             "Call 123 please" -> "Call ", "123", " please"
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Digits)]
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name="Digits")]
 #[text_signature = "(self, individual_digits=False)"]
 pub struct PyDigits {}
 #[pymethods]
@@ -514,7 +514,7 @@ impl PyDigits {
 /// It roughly follows https://github.com/google/sentencepiece/blob/master/data/Scripts.txt
 /// Actually Hiragana and Katakana are fused with Han, and 0x30FC is Han too.
 /// This mimicks SentencePiece Unigram implementation.
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=UnicodeScripts)]
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name="UnicodeScripts")]
 #[text_signature = "(self)"]
 pub struct PyUnicodeScripts {}
 #[pymethods]

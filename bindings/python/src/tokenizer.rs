@@ -55,7 +55,7 @@ use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
 ///         lowercasing the text, the token could be extract from the input ``"I saw a lion
 ///         Yesterday"``.
 ///
-#[pyclass(dict, module = "tokenizers", name=AddedToken)]
+#[pyclass(dict, module = "tokenizers", name="AddedToken")]
 #[text_signature = "(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True)"]
 pub struct PyAddedToken {
     pub content: String,
@@ -438,7 +438,7 @@ type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProc
 ///     model (:class:`~tokenizers.models.Model`):
 ///         The core algorithm that this :obj:`Tokenizer` should be using.
 ///
-#[pyclass(dict, module = "tokenizers", name=Tokenizer)]
+#[pyclass(dict, module = "tokenizers", name="Tokenizer")]
 #[text_signature = "(self, model)"]
 #[derive(Clone)]
 pub struct PyTokenizer {

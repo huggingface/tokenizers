@@ -21,7 +21,7 @@ use super::error::ToPyResult;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of
 /// a Decoder will return an instance of this class when instantiated.
-#[pyclass(dict, module = "tokenizers.decoders", name=Decoder)]
+#[pyclass(dict, module = "tokenizers.decoders", name="Decoder")]
 #[derive(Clone, Deserialize, Serialize)]
 pub struct PyDecoder {
     #[serde(flatten)]
@@ -141,7 +141,7 @@ macro_rules! setter {
 ///
 /// This decoder is to be used in tandem with the :class:`~tokenizers.pre_tokenizers.ByteLevel`
 /// :class:`~tokenizers.pre_tokenizers.PreTokenizer`.
-#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=ByteLevel)]
+#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name="ByteLevel")]
 #[text_signature = "(self)"]
 pub struct PyByteLevelDec {}
 #[pymethods]
@@ -161,7 +161,7 @@ impl PyByteLevelDec {
 ///     cleanup (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to cleanup some tokenization artifacts. Mainly spaces before punctuation,
 ///         and some abbreviated english forms.
-#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=WordPiece)]
+#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name="WordPiece")]
 #[text_signature = "(self, prefix=\"##\", cleanup=True)"]
 pub struct PyWordPieceDec {}
 #[pymethods]
@@ -203,7 +203,7 @@ impl PyWordPieceDec {
 ///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
-#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=Metaspace)]
+#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name="Metaspace")]
 #[text_signature = "(self, replacement = \"▁\", add_prefix_space = True)"]
 pub struct PyMetaspaceDec {}
 #[pymethods]
@@ -244,7 +244,7 @@ impl PyMetaspaceDec {
 ///     suffix (:obj:`str`, `optional`, defaults to :obj:`</w>`):
 ///         The suffix that was used to caracterize an end-of-word. This suffix will
 ///         be replaced by whitespaces during the decoding
-#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=BPEDecoder)]
+#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name="BPEDecoder")]
 #[text_signature = "(self, suffix=\"</w>\")"]
 pub struct PyBPEDecoder {}
 #[pymethods]
@@ -276,7 +276,7 @@ impl PyBPEDecoder {
 ///     cleanup (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to cleanup some tokenization artifacts.
 ///         Mainly spaces before punctuation, and some abbreviated english forms.
-#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=CTC)]
+#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name="CTC")]
 #[text_signature = "(self, pad_token=\"<pad>\", word_delimiter_token=\"|\", cleanup=True)"]
 pub struct PyCTCDecoder {}
 #[pymethods]

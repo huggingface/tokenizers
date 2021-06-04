@@ -24,7 +24,7 @@ use super::error::{deprecation_warning, ToPyResult};
 /// will contain and manage the learned vocabulary.
 ///
 /// This class cannot be constructed directly. Please use one of the concrete models.
-#[pyclass(module = "tokenizers.models", name=Model)]
+#[pyclass(module = "tokenizers.models", name="Model")]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PyModel {
     #[serde(flatten)]
@@ -248,7 +248,7 @@ impl PyModel {
 ///
 ///     fuse_unk (:obj:`bool`, `optional`):
 ///         Whether to fuse any subsequent unknown tokens into a single one
-#[pyclass(extends=PyModel, module = "tokenizers.models", name=BPE)]
+#[pyclass(extends=PyModel, module = "tokenizers.models", name="BPE")]
 #[text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None)"]
 pub struct PyBPE {}
 
@@ -502,7 +502,7 @@ impl PyBPE {
 ///
 ///     max_input_chars_per_word (:obj:`int`, `optional`):
 ///         The maximum number of characters to authorize in a single word.
-#[pyclass(extends=PyModel, module = "tokenizers.models", name=WordPiece)]
+#[pyclass(extends=PyModel, module = "tokenizers.models", name="WordPiece")]
 #[text_signature = "(self, vocab, unk_token, max_input_chars_per_word)"]
 pub struct PyWordPiece {}
 
@@ -663,7 +663,7 @@ impl PyWordPiece {
 ///
 ///     unk_token (:obj:`str`, `optional`):
 ///         The unknown token to be used by the model.
-#[pyclass(extends=PyModel, module = "tokenizers.models", name=WordLevel)]
+#[pyclass(extends=PyModel, module = "tokenizers.models", name="WordLevel")]
 #[text_signature = "(self, vocab, unk_token)"]
 pub struct PyWordLevel {}
 
@@ -772,7 +772,7 @@ impl PyWordLevel {
 /// Args:
 ///     vocab (:obj:`List[Tuple[str, float]]`, `optional`):
 ///         A list of vocabulary items and their relative score [("am", -0.2442),...]
-#[pyclass(extends=PyModel, module = "tokenizers.models", name=Unigram)]
+#[pyclass(extends=PyModel, module = "tokenizers.models", name="Unigram")]
 #[text_signature = "(self, vocab)"]
 pub struct PyUnigram {}
 

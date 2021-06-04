@@ -8,7 +8,7 @@ use tokenizers as tk;
 use crate::error::{deprecation_warning, PyError};
 
 /// The :class:`~tokenizers.Encoding` represents the output of a :class:`~tokenizers.Tokenizer`.
-#[pyclass(dict, module = "tokenizers", name=Encoding)]
+#[pyclass(dict, module = "tokenizers", name="Encoding")]
 #[repr(transparent)]
 pub struct PyEncoding {
     pub encoding: tk::tokenizer::Encoding,

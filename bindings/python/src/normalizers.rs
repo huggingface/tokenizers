@@ -43,7 +43,7 @@ impl PyNormalizedStringMut<'_> {
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Normalizer will return an instance of this class when instantiated.
-#[pyclass(dict, module = "tokenizers.normalizers", name=Normalizer)]
+#[pyclass(dict, module = "tokenizers.normalizers", name="Normalizer")]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PyNormalizer {
     #[serde(flatten)]
@@ -217,7 +217,7 @@ macro_rules! setter {
 ///
 ///     lowercase (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to lowercase.
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=BertNormalizer)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name="BertNormalizer")]
 #[text_signature = "(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True)"]
 pub struct PyBertNormalizer {}
 #[pymethods]
@@ -287,7 +287,7 @@ impl PyBertNormalizer {
 }
 
 /// NFD Unicode Normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=NFD)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name="NFD")]
 #[text_signature = "(self)"]
 pub struct PyNFD {}
 #[pymethods]
@@ -299,7 +299,7 @@ impl PyNFD {
 }
 
 /// NFKD Unicode Normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=NFKD)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name="NFKD")]
 #[text_signature = "(self)"]
 pub struct PyNFKD {}
 #[pymethods]
@@ -311,7 +311,7 @@ impl PyNFKD {
 }
 
 /// NFC Unicode Normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=NFC)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name="NFC")]
 #[text_signature = "(self)"]
 pub struct PyNFC {}
 #[pymethods]
@@ -323,7 +323,7 @@ impl PyNFC {
 }
 
 /// NFKC Unicode Normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=NFKC)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name="NFKC")]
 #[text_signature = "(self)"]
 pub struct PyNFKC {}
 #[pymethods]
@@ -340,7 +340,7 @@ impl PyNFKC {
 /// Args:
 ///     normalizers (:obj:`List[Normalizer]`):
 ///         A list of Normalizer to be run as a sequence
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Sequence)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name="Sequence")]
 pub struct PySequence {}
 #[pymethods]
 impl PySequence {
@@ -373,7 +373,7 @@ impl PySequenceProtocol for PySequence {
 }
 
 /// Lowercase Normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Lowercase)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name="Lowercase")]
 #[text_signature = "(self)"]
 pub struct PyLowercase {}
 #[pymethods]
@@ -385,7 +385,7 @@ impl PyLowercase {
 }
 
 /// Strip normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Strip)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name="Strip")]
 #[text_signature = "(self, left=True, right=True)"]
 pub struct PyStrip {}
 #[pymethods]
@@ -418,7 +418,7 @@ impl PyStrip {
 }
 
 /// StripAccents normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=StripAccents)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name="StripAccents")]
 #[text_signature = "(self)"]
 pub struct PyStripAccents {}
 #[pymethods]
@@ -430,7 +430,7 @@ impl PyStripAccents {
 }
 
 /// Nmt normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Nmt)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name="Nmt")]
 #[text_signature = "(self)"]
 pub struct PyNmt {}
 #[pymethods]
@@ -443,7 +443,7 @@ impl PyNmt {
 
 /// Precompiled normalizer
 /// Don't use manually it is used for compatiblity for SentencePiece.
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Precompiled)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name="Precompiled")]
 #[text_signature = "(self, precompiled_charsmap)"]
 pub struct PyPrecompiled {}
 #[pymethods]
@@ -466,7 +466,7 @@ impl PyPrecompiled {
 }
 
 /// Replace normalizer
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name=Replace)]
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name="Replace")]
 #[text_signature = "(self, pattern, content)"]
 pub struct PyReplace {}
 #[pymethods]

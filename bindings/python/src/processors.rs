@@ -20,7 +20,7 @@ use tokenizers as tk;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of
 /// a PostProcessor will return an instance of this class when instantiated.
-#[pyclass(dict, module = "tokenizers.processors", name=PostProcessor)]
+#[pyclass(dict, module = "tokenizers.processors", name="PostProcessor")]
 #[derive(Clone, Deserialize, Serialize)]
 pub struct PyPostProcessor {
     #[serde(flatten)]
@@ -149,7 +149,7 @@ impl PyPostProcessor {
 ///
 ///     cls (:obj:`Tuple[str, int]`):
 ///         A tuple with the string representation of the CLS token, and its id
-#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=BertProcessing)]
+#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name="BertProcessing")]
 #[text_signature = "(self, sep, cls)"]
 pub struct PyBertProcessing {}
 #[pymethods]
@@ -191,7 +191,7 @@ impl PyBertProcessing {
 ///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether the add_prefix_space option was enabled during pre-tokenization. This
 ///         is relevant because it defines the way the offsets are trimmed out.
-#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=RobertaProcessing)]
+#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name="RobertaProcessing")]
 #[text_signature = "(self, sep, cls, trim_offsets=True, add_prefix_space=True)"]
 pub struct PyRobertaProcessing {}
 #[pymethods]
@@ -226,7 +226,7 @@ impl PyRobertaProcessing {
 /// Args:
 ///     trim_offsets (:obj:`bool`):
 ///         Whether to trim the whitespaces from the produced offsets.
-#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=ByteLevel)]
+#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name="ByteLevel")]
 #[text_signature = "(self, trim_offsets=True)"]
 pub struct PyByteLevel {}
 #[pymethods]
@@ -378,7 +378,7 @@ impl FromPyObject<'_> for PyTemplate {
 ///
 ///          The given dict expects the provided :obj:`ids` and :obj:`tokens` lists to have
 ///          the same length.
-#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name=TemplateProcessing)]
+#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name="TemplateProcessing")]
 #[text_signature = "(self, single, pair, special_tokens)"]
 pub struct PyTemplateProcessing {}
 #[pymethods]

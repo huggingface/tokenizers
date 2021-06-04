@@ -15,7 +15,7 @@ use crate::utils::PyChar;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Trainer will return an instance of this class when instantiated.
-#[pyclass(name=Trainer, module = "tokenizers.trainers", name=Trainer)]
+#[pyclass(name=Trainer, module = "tokenizers.trainers", name="Trainer")]
 #[derive(Clone)]
 #[text_signature = "(self, vocab_size=30000, min_frequency=0,show_progress=True, special_tokens=[],limit_alphabet=None, initial_alphabet = [], continuing_subword_prefix=None, end_of_word_suffix=None)"]
 pub struct PyTrainer {
@@ -132,7 +132,7 @@ macro_rules! setter {
 ///
 ///     end_of_word_suffix (:obj:`str`, `optional`):
 ///         A suffix to be used for every subword that is a end-of-word.
-#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=BpeTrainer)]
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name="BpeTrainer")]
 pub struct PyBpeTrainer {}
 #[pymethods]
 impl PyBpeTrainer {
@@ -337,7 +337,7 @@ impl PyBpeTrainer {
 ///
 ///     end_of_word_suffix (:obj:`str`, `optional`):
 ///         A suffix to be used for every subword that is a end-of-word.
-#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=WordPieceTrainer)]
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name="WordPieceTrainer")]
 #[text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet= [],continuing_subword_prefix=\"##\", end_of_word_suffix=None)"]
 pub struct PyWordPieceTrainer {}
 #[pymethods]
@@ -529,7 +529,7 @@ impl PyWordPieceTrainer {
 ///
 ///     special_tokens (:obj:`List[Union[str, AddedToken]]`):
 ///         A list of special tokens the model should know of.
-#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=WordLevelTrainer)]
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name="WordLevelTrainer")]
 pub struct PyWordLevelTrainer {}
 #[pymethods]
 impl PyWordLevelTrainer {
@@ -671,7 +671,7 @@ impl PyWordLevelTrainer {
 ///         if not seen in the training dataset.
 ///         If the strings contain more than one character, only the first one
 ///         is kept.
-#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=UnigramTrainer)]
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name="UnigramTrainer")]
 #[text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens= [])"]
 pub struct PyUnigramTrainer {}
 #[pymethods]
