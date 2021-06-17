@@ -308,10 +308,16 @@ class Metaspace(PreTokenizer):
 
 class Punctuation(PreTokenizer):
     """
-    This pre-tokenizer simply splits on punctuation as individual characters.`
+    This pre-tokenizer simply splits on punctuation as individual characters.
+
+    Args:
+        behavior (:class:`~tokenizers.SplitDelimiterBehavior`):
+            The behavior to use when splitting.
+            Choices: "removed", "isolated" (default), "merged_with_previous", "merged_with_next",
+            "contiguous"
     """
 
-    def __init__(self):
+    def __init__(self, behavior="isolated"):
         pass
     def pre_tokenize(self, pretok):
         """

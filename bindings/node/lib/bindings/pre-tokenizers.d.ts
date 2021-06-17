@@ -90,10 +90,14 @@ export function charDelimiterSplitPreTokenizer(delimiter: string): PreTokenizer;
 
 /**
  * Returns a new Punctuation PreTokenizer.
- * This pre-tokenizer splits tokens on punctuation.
- * Each occurrence of a punctuation character will be treated separately.
+ * This pre-tokenizer splits tokens on punctuation according to the provided behavior.
+ * Each occurrence of a punctuation character is treated separately.
+ *
+ * @param [behavior="isolated"] The behavior to use when splitting.
+ * Choices: "removed", "isolated", "mergedWithPrevious", "mergedWithNext",
+ * "contiguous"
  */
-export function punctuationPreTokenizer(): PreTokenizer;
+export function punctuationPreTokenizer(behavior?: string): PreTokenizer;
 
 /**
  * Returns a new Sequence PreTokenizer.

@@ -92,7 +92,7 @@ impl PyRange<'_> {
 }
 
 #[derive(Clone)]
-pub struct PySplitDelimiterBehavior(SplitDelimiterBehavior);
+pub struct PySplitDelimiterBehavior(pub SplitDelimiterBehavior);
 
 impl FromPyObject<'_> for PySplitDelimiterBehavior {
     fn extract(obj: &PyAny) -> PyResult<Self> {

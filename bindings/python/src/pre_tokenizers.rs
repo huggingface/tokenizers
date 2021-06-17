@@ -6,6 +6,7 @@ use pyo3::types::*;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use tk::normalizer::SplitDelimiterBehavior;
 use tk::pre_tokenizers::bert::BertPreTokenizer;
 use tk::pre_tokenizers::byte_level::ByteLevel;
 use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
@@ -384,15 +385,22 @@ impl PyBertPreTokenizer {
     }
 }
 
-/// This pre-tokenizer simply splits on punctuation as individual characters.`
+/// This pre-tokenizer simply splits on punctuation as individual characters.
+///
+/// Args:
+///     behavior (:class:`~tokenizers.SplitDelimiterBehavior`):
+///         The behavior to use when splitting.
+///         Choices: "removed", "isolated" (default), "merged_with_previous", "merged_with_next",
+///         "contiguous"
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=Punctuation)]
-#[text_signature = "(self)"]
+#[text_signature = "(self, behavior=\"isolated\")"]
 pub struct PyPunctuation {}
 #[pymethods]
 impl PyPunctuation {
     #[new]
-    fn new() -> (Self, PyPreTokenizer) {
-        (PyPunctuation {}, Punctuation.into())
+    #[args(behavior = "PySplitDelimiterBehavior(SplitDelimiterBehavior::Isolated)")]
+    fn new(behavior: PySplitDelimiterBehavior) -> (Self, PyPreTokenizer) {
+        (PyPunctuation {}, Punctuation::new(behavior.into()).into())
     }
 }
 

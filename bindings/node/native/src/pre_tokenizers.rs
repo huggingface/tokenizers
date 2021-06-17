@@ -203,9 +203,15 @@ fn split(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
 
 /// punctuation()
 fn punctuation(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
+    let behavior: JsSplitDelimiterBehavior = cx
+        .extract_opt::<JsSplitDelimiterBehavior>(0)?
+        .unwrap_or(JsSplitDelimiterBehavior(SplitDelimiterBehavior::Isolated));
+
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    pretok.borrow_mut(&guard).pretok = Some(tk::pre_tokenizers::punctuation::Punctuation.into());
+    pretok.borrow_mut(&guard).pretok =
+        Some(tk::pre_tokenizers::punctuation::Punctuation::new(behavior.into()).into());
+
     Ok(pretok)
 }
 
