@@ -403,7 +403,7 @@ class WordPiece(Model):
                 The path to a :obj:`vocab.txt` file
 
         Returns:
-            :class:`~tokenizers.models.WordPiece`: And instance of WordPiece loaded from file
+            :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
         """
         pass
     def id_to_token(self, id):
