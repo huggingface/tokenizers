@@ -2,7 +2,7 @@ from setuptools import setup
 from setuptools_rust import Binding, RustExtension
 
 extras = {}
-extras["testing"] = ["pytest"]
+extras["testing"] = ["pytest", "requests", "numpy", "datasets"]
 
 setup(
     name="tokenizers",
