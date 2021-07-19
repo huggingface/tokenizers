@@ -8,7 +8,7 @@ from typing import Optional, List, Union, Iterator
 
 
 class SentencePieceUnigramTokenizer(BaseTokenizer):
-    """SentencePiece Unigram Tokenizer
+    """SentencePiece Unigram Tokenizers
 
     Represents the Unigram algorithm, with the pretokenization used by SentencePiece
     """
