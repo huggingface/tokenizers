@@ -291,8 +291,7 @@ impl PyBpeTrainer {
                             alphabet
                                 .into_iter()
                                 .map(|s| s.chars().next())
-                                .filter(|c| c.is_some())
-                                .map(|c| c.unwrap())
+                                .flatten()
                                 .collect(),
                         );
                     }
@@ -497,8 +496,7 @@ impl PyWordPieceTrainer {
                             alphabet
                                 .into_iter()
                                 .map(|s| s.chars().next())
-                                .filter(|c| c.is_some())
-                                .map(|c| c.unwrap())
+                                .flatten()
                                 .collect(),
                         );
                     }
@@ -773,8 +771,7 @@ impl PyUnigramTrainer {
                             alphabet
                                 .into_iter()
                                 .map(|s| s.chars().next())
-                                .filter(|c| c.is_some())
-                                .map(|c| c.unwrap())
+                                .flatten()
                                 .collect(),
                         )
                     }
