@@ -28,7 +28,7 @@ class TestSentencePieceUnigram:
 
         with pytest.raises(Exception) as excinfo:
             _ = tokenizer.encode("A sentence 🤗")
-        assert str(excinfo.value) == 'Encountered an unknown token but `unk_id` is missing' 
+        assert str(excinfo.value) == "Encountered an unknown token but `unk_id` is missing"
 
     def test_train_with_unk_token(self, tmpdir):
         p = tmpdir.mkdir("tmpdir").join("file.txt")
@@ -51,7 +51,7 @@ class TestSentencePieceUnigram:
 
         with pytest.raises(Exception) as excinfo:
             _ = tokenizer.encode("A sentence 🤗")
-        assert str(excinfo.value) == 'Encountered an unknown token but `unk_id` is missing' 
+        assert str(excinfo.value) == "Encountered an unknown token but `unk_id` is missing"
 
     def test_train_from_iterator_with_unk_token(self):
         text = ["A first sentence", "Another sentence", "And a last one"]
