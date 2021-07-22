@@ -40,6 +40,7 @@ class TestSentencePieceUnigram:
         )
         output = tokenizer.encode("A sentence 🤗")
         assert output.ids[-1] == 0
+        assert output.tokens == ["▁A", "▁", "s", "en", "t", "en", "c", "e", "▁", "🤗"]
 
     def test_train_from_iterator(self):
         text = ["A first sentence", "Another sentence", "And a last one"]
@@ -61,3 +62,4 @@ class TestSentencePieceUnigram:
         )
         output = tokenizer.encode("A sentence 🤗")
         assert output.ids[-1] == 0
+        assert output.tokens == ["▁A", "▁", "s", "en", "t", "en", "c", "e", "▁", "🤗"]
