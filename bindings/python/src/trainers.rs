@@ -669,8 +669,11 @@ impl PyWordLevelTrainer {
 ///         if not seen in the training dataset.
 ///         If the strings contain more than one character, only the first one
 ///         is kept.
+///
+///     unk_token (:obj:`str`, `optional`):
+///         The unknown token to be used by the model.
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=UnigramTrainer)]
-#[text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens= [])"]
+#[text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens= [], unk_token=None)"]
 pub struct PyUnigramTrainer {}
 #[pymethods]
 impl PyUnigramTrainer {

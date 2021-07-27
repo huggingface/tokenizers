@@ -72,9 +72,12 @@ class UnigramTrainer(Trainer):
             if not seen in the training dataset.
             If the strings contain more than one character, only the first one
             is kept.
+
+        unk_token (:obj:`str`, `optional`):
+            The unknown token to be used by the model.
     """
 
-    def __init__(self, vocab_size=8000, show_progress=True, special_tokens=[]):
+    def __init__(self, vocab_size=8000, show_progress=True, special_tokens=[], unk_token=None):
         pass
 
 class WordLevelTrainer(Trainer):
