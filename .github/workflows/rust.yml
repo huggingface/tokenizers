@@ -1,89 +1,30 @@
-name: Rust
+name: libtokenizers_haskell
 
-on:
-  push:
-    branches:
-      - master
-  pull_request:
-
+on: [push, pull_request]
 jobs:
   build:
     runs-on: ${{ matrix.os }}
-    env:
-      MACOSX_DEPLOYMENT_TARGET: 10.11
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
-
+        os: [ubuntu-latest, macOS-latest]
     steps:
-      - uses: actions/checkout@v1
-
+      - uses: actions/checkout@v2
       - name: Install Rust Stable
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           components: rustfmt, clippy
           override: true
-
-      # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
       - if: matrix.os == 'ubuntu-latest'
         run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
+      - name: Build libtokenizers_haskell
+        run: |
+          cd bindings/haskell
+          make
 
-      - name: Install cargo-readme for Ubuntu
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions-rs/cargo@v1
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v2
         with:
-          command: install
-          args: cargo-readme
-
-      - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --all-targets --verbose --manifest-path ./tokenizers/Cargo.toml
-
-      - name: Lint with RustFmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --manifest-path ./tokenizers/Cargo.toml -- --check
-
-      - name: Lint Benchmarks with RustFmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/bpe_benchmark.rs --check
-
-      - name: Lint with Clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
-
-      - name: Run Tests
-        if: matrix.os != 'windows-latest'
-        shell: bash
-        working-directory: ./tokenizers
-        run: make test
-
-      # Skip integration tests for now on Windows
-      - name: Run lib Tests on Windows
-        if: matrix.os == 'windows-latest'
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --manifest-path ./tokenizers/Cargo.toml --lib
-
-      - name: Run doc Tests on Windows
-        if: matrix.os == 'windows-latest'
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --manifest-path ./tokenizers/Cargo.toml --doc
-
-      # Verify that Readme.md is up to date.
-      - name: Make sure, Readme generated from lib.rs matches actual Readme
-        if: matrix.os == 'ubuntu-latest'
-        shell: bash
-        working-directory: ./tokenizers
-        run: cargo readme > must_match_readme.md && diff must_match_readme.md README.md
+          name: libtokenizers_haskell
+          path: |
+            target/release/libtokenizers_haskell.*
