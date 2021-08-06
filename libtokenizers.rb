@@ -8,6 +8,7 @@ class Libtokenizers < Formula
   bottle :unneeded
 
   def install
+    system "bash", "-c", "install -d #{lib}"
     system "bash", "-c", "cp -a lib/* #{lib}"
   end
 end
