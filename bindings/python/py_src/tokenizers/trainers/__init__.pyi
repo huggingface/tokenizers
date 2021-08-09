@@ -86,7 +86,6 @@ class UnigramTrainer(Trainer):
         n_sub_iterations (:obj:`int`):
             The number of iterations of the EM algorithm to perform before
             pruning the vocabulary.
-
     """
 
     def __init__(
