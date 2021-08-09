@@ -684,7 +684,7 @@ impl PyWordLevelTrainer {
 ///         The number of iterations of the EM algorithm to perform before
 ///         pruning the vocabulary.
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name=UnigramTrainer)]
-#[text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens= [])"]
+#[text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens=[], shrinking_factor=0.75, unk_token=None, max_piece_length=16, n_sub_iterations=2)"]
 pub struct PyUnigramTrainer {}
 #[pymethods]
 impl PyUnigramTrainer {
