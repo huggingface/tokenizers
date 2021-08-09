@@ -374,7 +374,7 @@ impl Encoding {
 
             part_id += 1;
             overflowing.push(o);
-            prev_encoding = &overflowing.last().unwrap();
+            prev_encoding = overflowing.last().unwrap();
         }
 
         self.overflowing = overflowing;

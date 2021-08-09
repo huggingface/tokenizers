@@ -866,7 +866,7 @@ where
                     };
                     truncate_encodings(encoding, pair_encoding, &params)?
                 } else {
-                    truncate_encodings(encoding, pair_encoding, &trunc)?
+                    truncate_encodings(encoding, pair_encoding, trunc)?
                 }
             } else {
                 (encoding, pair_encoding)
@@ -917,7 +917,7 @@ where
 
         if let Some(params) = &self.padding {
             // We do the padding here to make sure we handle the batch padding
-            pad_encodings(&mut encodings, &params)?;
+            pad_encodings(&mut encodings, params)?;
         }
 
         Ok(encodings)
@@ -940,7 +940,7 @@ where
 
         if let Some(params) = &self.padding {
             // We do the padding here to make sure we handle the batch padding
-            pad_encodings(&mut encodings, &params)?;
+            pad_encodings(&mut encodings, params)?;
         }
 
         Ok(encodings)
@@ -1140,7 +1140,7 @@ where
         let serialized = self.to_string(pretty)?;
 
         let mut file = File::create(path)?;
-        file.write_all(&serialized.as_bytes())?;
+        file.write_all(serialized.as_bytes())?;
 
         Ok(())
     }

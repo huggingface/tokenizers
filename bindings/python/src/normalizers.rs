@@ -669,7 +669,7 @@ mod test {
     #[test]
     fn deserialize_sequence() {
         let string = r#"{"type": "NFKC"}"#;
-        let normalizer: PyNormalizer = serde_json::from_str(&string).unwrap();
+        let normalizer: PyNormalizer = serde_json::from_str(string).unwrap();
         match normalizer.normalizer {
             PyNormalizerTypeWrapper::Single(inner) => match *inner.as_ref().read().unwrap() {
                 PyNormalizerWrapper::Wrapped(NormalizerWrapper::NFKC(_)) => {}

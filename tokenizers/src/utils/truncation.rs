@@ -262,7 +262,7 @@ mod tests {
         n1: usize,
         n2: usize,
     ) {
-        match truncate_encodings(encoding1, Some(encoding2), &params) {
+        match truncate_encodings(encoding1, Some(encoding2), params) {
             Ok((e1, Some(e2))) => {
                 assert!(e1.get_ids().len() == n1);
                 assert!(e2.get_ids().len() == n2);
