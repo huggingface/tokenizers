@@ -228,7 +228,7 @@ impl AddedVocabulary {
             }
         }
         // Then we delegate to `add_tokens`, that will take care of refreshing added tokens too.
-        self.add_tokens(&tokens, model, normalizer)
+        self.add_tokens(tokens, model, normalizer)
     }
 
     /// Add some tokens to the vocabulary

@@ -553,7 +553,7 @@ impl PyNormalizedStringRefMut {
 
     fn slice(&self, range: PyRange) -> PyResult<Option<PyNormalizedString>> {
         self.inner
-            .map(|n| slice(&n, &range))
+            .map(|n| slice(n, &range))
             .ok_or_else(PyNormalizedStringRefMut::destroyed_error)?
     }
 
@@ -566,7 +566,7 @@ impl PyNormalizedStringRefMut {
 
     fn for_each(&self, func: &PyAny) -> PyResult<()> {
         self.inner
-            .map(|n| for_each(&n, func))
+            .map(|n| for_each(n, func))
             .ok_or_else(PyNormalizedStringRefMut::destroyed_error)??;
         Ok(())
     }

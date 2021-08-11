@@ -21,7 +21,6 @@ where
     ordered.serialize(serializer)
 }
 
-#[macro_use]
 macro_rules! impl_enum_from (
     ($from_ty:ty, $enum:ty, $variant:ident) => {
         impl From<$from_ty> for $enum {
@@ -32,7 +31,6 @@ macro_rules! impl_enum_from (
     }
 );
 
-#[macro_use]
 macro_rules! impl_serde_unit_struct (
     ($visitor:ident, $self_ty:tt) => {
         impl serde::Serialize for $self_ty {

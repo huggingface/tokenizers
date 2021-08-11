@@ -256,7 +256,7 @@ impl<'a> Lattice<'a> {
                     if node.borrow().id == self.bos_node().borrow().id {
                         let mut hypothesis = vec![];
                         let mut next: HypothesisRef =
-                            Rc::clone(&top.borrow().next.as_ref().unwrap());
+                            Rc::clone(top.borrow().next.as_ref().unwrap());
                         while next.borrow().next.is_some() {
                             hypothesis.push(next.borrow().node_ref.clone());
                             let c: HypothesisRef = next.clone();
@@ -325,7 +325,7 @@ impl<'a> Lattice<'a> {
         }
     }
     pub fn sentence(&self) -> &str {
-        &self.sentence
+        self.sentence
     }
 
     pub fn populate_marginal(&self, freq: f64, expected: &mut Vec<f64>) -> f64 {
