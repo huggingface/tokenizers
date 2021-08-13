@@ -751,6 +751,7 @@ impl PyWordLevel {
     ///     :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
     #[classmethod]
     #[args(unk_token = "None")]
+    #[text_signature = "(vocab, unk_token)"]
     fn from_file(
         _cls: &PyType,
         py: Python,
