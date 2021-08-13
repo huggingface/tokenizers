@@ -636,7 +636,7 @@ impl PyWordPiece {
     ///         The path to a :obj:`vocab.txt` file
     ///
     /// Returns:
-    ///     :class:`~tokenizers.models.WordPiece`: And instance of WordPiece loaded from file
+    ///     :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
     #[classmethod]
     #[args(kwargs = "**")]
     #[text_signature = "(vocab, **kwargs)"]
@@ -748,9 +748,10 @@ impl PyWordLevel {
     ///         The path to a :obj:`vocab.json` file
     ///
     /// Returns:
-    ///     :class:`~tokenizers.models.WordLevel`: And instance of WordLevel loaded from file
+    ///     :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
     #[classmethod]
     #[args(unk_token = "None")]
+    #[text_signature = "(vocab, unk_token)"]
     fn from_file(
         _cls: &PyType,
         py: Python,
