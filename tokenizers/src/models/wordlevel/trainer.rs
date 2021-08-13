@@ -1,6 +1,7 @@
 use super::WordLevel;
 use crate::utils::parallelism::*;
 use crate::{AddedToken, Result, Trainer};
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 #[non_exhaustive]
@@ -43,12 +44,12 @@ impl WordLevelTrainer {
 
         //sort the word counts first by inverse counts and then by word, in order
         //to keep the sorting deterministic in case of equal counts
-        let cmp = |l: &(&String, &u32), r: &(&String, &u32)| -> std::cmp::Ordering {
-            let count_comp: std::cmp::Ordering = l.1.cmp(&r.1);
-            if count_comp != Equal {
+        let cmp = |l: &(&String, &u32), r: &(&String, &u32)| -> Ordering {
+            let count_comp: Ordering = l.1.cmp(r.1);
+            if count_comp != Ordering::Equal {
                 return count_comp.reverse();
             }
-            return l.0.cmp(&r.0);
+            l.0.cmp(r.0)
         };
 
         ordered_counts.sort_by(cmp);
