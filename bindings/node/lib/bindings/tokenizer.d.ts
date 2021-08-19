@@ -124,6 +124,14 @@ export class Tokenizer {
   static fromString(s: string): Tokenizer;
 
   /**
+   * Instantiate a new Tokenizer from an existing file on the
+   * Hugging Face Hub. Any model repo containing a `tokenizer.json`
+   * can be used here.
+   * @param identifier A model identifier on the Hub
+   */
+  static fromPretrained(s: string): Tokenizer;
+
+  /**
    * Add the given tokens to the vocabulary
    *
    * @param tokens A list of tokens to add to the vocabulary.

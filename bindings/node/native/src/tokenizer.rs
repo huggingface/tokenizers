@@ -1008,6 +1008,51 @@ pub fn tokenizer_from_file(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
     Ok(js_tokenizer)
 }
 
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FromPretrainedParametersJs {
+    #[serde(default)]
+    revision: Option<String>,
+    #[serde(default)]
+    auth_token: Option<String>,
+}
+
+impl From<FromPretrainedParametersJs> for tk::FromPretrainedParameters {
+    fn from(o: FromPretrainedParametersJs) -> Self {
+        let mut params = Self::default();
+        if let Some(revision) = o.revision {
+            params.revision = revision;
+        }
+        if let Some(auth_token) = o.auth_token {
+            params.auth_token = Some(auth_token);
+        }
+        params
+    }
+}
+
+pub fn tokenizer_from_pretrained(mut cx: FunctionContext) -> JsResult<JsTokenizer> {
+    let s = cx.extract::<String>(0)?;
+    let mut p: tk::FromPretrainedParameters = cx
+        .extract_opt::<FromPretrainedParametersJs>(1)?
+        .unwrap_or_else(FromPretrainedParametersJs::default)
+        .into();
+
+    p.user_agent = [("bindings", "Node.js"), ("version", crate::VERSION)]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+
+    let tokenizer = tk::tokenizer::TokenizerImpl::from_pretrained(s, Some(p))
+        .map_err(|e| Error(format!("Error loading from pretrained {}", e)))?;
+
+    let js_model: Handle<JsModel> = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
+    let mut js_tokenizer = JsTokenizer::new(&mut cx, vec![js_model])?;
+    let guard = cx.lock();
+    js_tokenizer.borrow_mut(&guard).tokenizer = Arc::new(RwLock::new(tokenizer));
+
+    Ok(js_tokenizer)
+}
+
 pub fn register(m: &mut ModuleContext, prefix: &str) -> Result<(), neon::result::Throw> {
     m.export_class::<JsAddedToken>(&format!("{}_AddedToken", prefix))?;
     m.export_class::<JsTokenizer>(&format!("{}_Tokenizer", prefix))?;
@@ -1018,6 +1063,10 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> Result<(), neon::result:
     m.export_function(
         &format!("{}_Tokenizer_from_file", prefix),
         tokenizer_from_file,
+    )?;
+    m.export_function(
+        &format!("{}_Tokenizer_from_pretrained", prefix),
+        tokenizer_from_pretrained,
     )?;
     Ok(())
 }
