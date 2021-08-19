@@ -397,6 +397,13 @@ impl Tokenizer {
         let content = read_to_string(file)?;
         Ok(serde_json::from_str(&content)?)
     }
+    pub fn from_pretrained<S: AsRef<str>>(
+        identifier: S,
+        params: Option<FromPretrainedParameters>,
+    ) -> Result<Self> {
+        let tokenizer_file = from_pretrained(identifier, params)?;
+        Tokenizer::from_file(tokenizer_file)
+    }
 }
 
 impl std::str::FromStr for Tokenizer {
