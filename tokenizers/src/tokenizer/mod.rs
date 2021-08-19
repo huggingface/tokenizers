@@ -22,6 +22,7 @@ use std::{
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use crate::utils::from_pretrained::{from_pretrained, FromPretrainedParameters};
 use crate::utils::iter::ResultShunt;
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
@@ -1115,6 +1116,25 @@ where
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
         let content = read_to_string(file)?;
         Ok(serde_json::from_str(&content)?)
+    }
+}
+
+impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
+where
+    M: DeserializeOwned + Model,
+    N: DeserializeOwned + Normalizer,
+    PT: DeserializeOwned + PreTokenizer,
+    PP: DeserializeOwned + PostProcessor,
+    D: DeserializeOwned + Decoder,
+{
+    /// Instantiate a new Tokenizer from a file hosted on the Hugging Face Hub.
+    /// It expects the `identifier` of a model that includes a `tokenizer.json` file.
+    pub fn from_pretrained<S: AsRef<str>>(
+        identifier: S,
+        params: Option<FromPretrainedParameters>,
+    ) -> Result<Self> {
+        let tokenizer_file = from_pretrained(identifier, params)?;
+        TokenizerImpl::from_file(tokenizer_file)
     }
 }
 
