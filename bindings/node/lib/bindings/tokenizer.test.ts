@@ -64,6 +64,7 @@ describe("Tokenizer", () => {
 
     expect(typeof Tokenizer.fromFile).toBe("function");
     expect(typeof Tokenizer.fromString).toBe("function");
+    expect(typeof Tokenizer.fromPretrained).toBe("function");
 
     expect(typeof tokenizer.addSpecialTokens).toBe("function");
     expect(typeof tokenizer.addTokens).toBe("function");

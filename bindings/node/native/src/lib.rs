@@ -23,6 +23,8 @@ mod utils;
 
 use neon::prelude::*;
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 register_module!(mut m, {
     // Tokenizer
     tokenizer::register(&mut m, "tokenizer")?;
