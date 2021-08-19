@@ -567,7 +567,7 @@ impl PyTokenizer {
         revision: String,
         auth_token: Option<String>,
     ) -> PyResult<Self> {
-        let params = tk::utils::from_pretrained::FromPretrainedParameters {
+        let params = tk::FromPretrainedParameters {
             revision,
             auth_token,
             user_agent: [("bindings", "Python"), ("version", crate::VERSION)]

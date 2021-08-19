@@ -129,3 +129,6 @@ pub use tokenizer::*;
 
 // Re-export also parallelism utils
 pub use utils::parallelism;
+
+// Re-export for from_pretrained
+pub use utils::from_pretrained::FromPretrainedParameters;
