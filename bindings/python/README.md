@@ -68,6 +68,14 @@ pip install setuptools_rust
 python setup.py install
 ```
 
+### Load a pretrained tokenizer from the Hub
+
+```python
+from tokenizers import Tokenizer
+
+tokenizer = Tokenizer.from_pretrained("bert-base-cased")
+```
+
 ### Using the provided Tokenizers
 
 We provide some pre-build tokenizers to cover the most common cases. You can easily load one of
