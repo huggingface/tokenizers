@@ -392,3 +392,17 @@ class TestTokenizer:
         tokenizer = Tokenizer(BPE())
         multiprocessing_with_parallelism(tokenizer, False)
         multiprocessing_with_parallelism(tokenizer, True)
+
+    def test_from_pretrained(self):
+        tokenizer = Tokenizer.from_pretrained("bert-base-cased")
+        output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
+        assert output.tokens == ["Hey", "there", "dear", "friend", "!"]
+
+    def test_from_pretrained_revision(self):
+        tokenizer = Tokenizer.from_pretrained("anthony/tokenizers-test")
+        output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
+        assert output.tokens == ["hey", "there", "dear", "friend", "!"]
+
+        tokenizer = Tokenizer.from_pretrained("anthony/tokenizers-test", revision="gpt-2")
+        output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
+        assert output.tokens == ["Hey", "Ġthere", "Ġdear", "Ġfriend", "!"]
