@@ -95,6 +95,33 @@ describe("Tokenizer", () => {
     expect(typeof tokenizer.train).toBe("function");
   });
 
+  it("can be instantiated from the hub", async () => {
+    let tokenizer: Tokenizer;
+    let encode: (
+      sequence: InputSequence,
+      pair?: InputSequence | null,
+      options?: EncodeOptions | null
+    ) => Promise<RawEncoding>;
+    let output: RawEncoding;
+
+    tokenizer = Tokenizer.fromPretrained("bert-base-cased");
+    encode = promisify(tokenizer.encode.bind(tokenizer));
+    output = await encode("Hey there dear friend!", null, { addSpecialTokens: false });
+    expect(output.getTokens()).toEqual(["Hey", "there", "dear", "friend", "!"]);
+
+    tokenizer = Tokenizer.fromPretrained("anthony/tokenizers-test");
+    encode = promisify(tokenizer.encode.bind(tokenizer));
+    output = await encode("Hey there dear friend!", null, { addSpecialTokens: false });
+    expect(output.getTokens()).toEqual(["hey", "there", "dear", "friend", "!"]);
+
+    tokenizer = Tokenizer.fromPretrained("anthony/tokenizers-test", {
+      revision: "gpt-2",
+    });
+    encode = promisify(tokenizer.encode.bind(tokenizer));
+    output = await encode("Hey there dear friend!", null, { addSpecialTokens: false });
+    expect(output.getTokens()).toEqual(["Hey", "Ġthere", "Ġdear", "Ġfriend", "!"]);
+  });
+
   describe("addTokens", () => {
     it("accepts a list of string as new tokens when initial model is empty", () => {
       const model = BPE.empty();
