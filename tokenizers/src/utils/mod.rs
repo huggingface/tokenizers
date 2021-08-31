@@ -1,15 +1,15 @@
-pub mod cache;
-pub mod from_pretrained;
+pub(crate) mod cache;
+pub(crate) mod from_pretrained;
 pub mod iter;
 pub mod padding;
 pub mod parallelism;
-pub mod progress;
+pub(crate) mod progress;
 pub mod truncation;
 
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 
-pub fn ordered_map<S, K, V>(
+pub(crate) fn ordered_map<S, K, V>(
     value: &HashMap<K, V>,
     serializer: S,
 ) -> std::result::Result<S::Ok, S::Error>
