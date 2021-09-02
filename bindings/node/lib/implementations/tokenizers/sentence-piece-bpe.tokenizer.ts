@@ -62,9 +62,7 @@ type SentencePieceBPETokenizerConfig = SentencePieceBPETokenizerOptions &
 /**
  * Represents the BPE algorithm, with the pretokenization used by SentencePiece
  */
-export class SentencePieceBPETokenizer extends BaseTokenizer<
-  SentencePieceBPETokenizerConfig
-> {
+export class SentencePieceBPETokenizer extends BaseTokenizer<SentencePieceBPETokenizerConfig> {
   private static readonly defaultOptions: SentencePieceBPETokenizerConfig = {
     addPrefixSpace: true,
     replacement: "▁",
