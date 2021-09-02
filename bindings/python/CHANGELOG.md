@@ -4,10 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] 
+## [Unreleased]
 
 ### Added
 - [#657]: Add SplitDelimiterBehavior customization to Punctuation constructor
+
+### Changed
+- [#793]: Saving a pretty JSON file by default when saving a tokenizer
 
 ## [0.10.3]
 
@@ -326,6 +329,7 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#793]: https://github.com/huggingface/tokenizers/pull/793
 [#714]: https://github.com/huggingface/tokenizers/pull/714
 [#707]: https://github.com/huggingface/tokenizers/pull/707
 [#693]: https://github.com/huggingface/tokenizers/pull/693
