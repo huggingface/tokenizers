@@ -428,9 +428,9 @@ dependencies = [
 
 [[package]]
 name = "esaxx-rs"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "138c07ec623d898d1cfa74d7f3608be24070e1989e5e6c7e8d9145eba61b1dc7"
+checksum = "6f4617b351b734e97a3dd32022a721471349aa3038d4132beee8568cdfa7e716"
 dependencies = [
  "cc",
 ]
