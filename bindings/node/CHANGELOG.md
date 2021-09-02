@@ -1,3 +1,24 @@
+# [0.8.0](https://github.com/huggingface/tokenizers/compare/node-v0.7.0...node-v0.8.0) (2021-09-02)
+
+### BREACKING CHANGES
+- Many improvements on the Trainer ([#519](https://github.com/huggingface/tokenizers/pull/519)).
+The files must now be provided first when calling `tokenizer.train(files, trainer)`.
+
+### Features
+- Adding the `TemplateProcessing`
+- Add `WordLevel` and `Unigram` models ([#490](https://github.com/huggingface/tokenizers/pull/490))
+- Add `nmtNormalizer` and `precompiledNormalizer` normalizers ([#490](https://github.com/huggingface/tokenizers/pull/490))
+- Add `templateProcessing` post-processor ([#490](https://github.com/huggingface/tokenizers/pull/490))
+- Add `digitsPreTokenizer` pre-tokenizer ([#490](https://github.com/huggingface/tokenizers/pull/490))
+- Add support for mapping to sequences ([#506](https://github.com/huggingface/tokenizers/pull/506))
+- Add `splitPreTokenizer` pre-tokenizer ([#542](https://github.com/huggingface/tokenizers/pull/542))
+- Add `behavior` option to the `punctuationPreTokenizer` ([#657](https://github.com/huggingface/tokenizers/pull/657))
+- Add the ability to load tokenizers from the Hugging Face Hub using `fromPretrained` ([#780](https://github.com/huggingface/tokenizers/pull/780))
+
+### Fixes
+- Fix a bug where long tokenizer.json files would be incorrectly deserialized ([#459](https://github.com/huggingface/tokenizers/pull/459))
+- Fix RobertaProcessing deserialization in PostProcessorWrapper ([#464](https://github.com/huggingface/tokenizers/pull/464))
+
 # [0.7.0](https://github.com/huggingface/tokenizers/compare/node-v0.6.2...node-v0.7.0) (2020-07-01)
 
 ### BREAKING CHANGES
