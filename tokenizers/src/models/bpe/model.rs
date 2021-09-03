@@ -465,7 +465,7 @@ impl Model for BPE {
         let mut vocab_file = File::create(&vocab_path)?;
         let order_vocab_iter = OrderedVocabIter::new(&self.vocab_r);
         let serialized = serde_json::to_string(&order_vocab_iter)?;
-        vocab_file.write_all(&serialized.as_bytes())?;
+        vocab_file.write_all(serialized.as_bytes())?;
 
         // Write merges.txt
         let merges_file_name = match name {

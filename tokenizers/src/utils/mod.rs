@@ -1,14 +1,15 @@
-pub mod cache;
+pub(crate) mod cache;
+pub(crate) mod from_pretrained;
 pub mod iter;
 pub mod padding;
 pub mod parallelism;
-pub mod progress;
+pub(crate) mod progress;
 pub mod truncation;
 
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 
-pub fn ordered_map<S, K, V>(
+pub(crate) fn ordered_map<S, K, V>(
     value: &HashMap<K, V>,
     serializer: S,
 ) -> std::result::Result<S::Ok, S::Error>
@@ -21,7 +22,6 @@ where
     ordered.serialize(serializer)
 }
 
-#[macro_use]
 macro_rules! impl_enum_from (
     ($from_ty:ty, $enum:ty, $variant:ident) => {
         impl From<$from_ty> for $enum {
@@ -32,7 +32,6 @@ macro_rules! impl_enum_from (
     }
 );
 
-#[macro_use]
 macro_rules! impl_serde_unit_struct (
     ($visitor:ident, $self_ty:tt) => {
         impl serde::Serialize for $self_ty {

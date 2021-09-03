@@ -26,8 +26,6 @@ pub enum TruncationError {
     SecondSequenceNotProvided,
     /// We cannot truncate the target sequence enough to respect the provided max length.
     SequenceTooShort,
-    /// We cannot truncate with the given constraints.
-    MaxLengthTooLow,
 }
 
 impl std::fmt::Display for TruncationError {
@@ -41,10 +39,6 @@ impl std::fmt::Display for TruncationError {
                 fmt,
                 "Truncation error: Sequence to truncate too short to respect the provided max_length"
             ),
-            MaxLengthTooLow => write!(
-                fmt,
-                "Truncation error: Specified max length is too low \
-                    to respect the various constraints"),
         }
     }
 }
@@ -262,7 +256,7 @@ mod tests {
         n1: usize,
         n2: usize,
     ) {
-        match truncate_encodings(encoding1, Some(encoding2), &params) {
+        match truncate_encodings(encoding1, Some(encoding2), params) {
             Ok((e1, Some(e2))) => {
                 assert!(e1.get_ids().len() == n1);
                 assert!(e2.get_ids().len() == n2);

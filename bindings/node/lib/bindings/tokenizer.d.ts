@@ -7,6 +7,19 @@ import { PreTokenizer } from "./pre-tokenizers";
 import { RawEncoding } from "./raw-encoding";
 import { Trainer } from "./trainers";
 
+export interface FromPretrainedOptions {
+  /**
+   * The revision to download
+   * @default "main"
+   */
+  revision?: string;
+  /**
+   * The auth token to use to access private repositories on the Hugging Face Hub
+   * @default undefined
+   */
+  authToken?: string;
+}
+
 export interface TruncationOptions {
   /**
    * The length of the previous sequence to be included in the overflowing sequence
@@ -122,6 +135,15 @@ export class Tokenizer {
    * @param s A JSON string representation of the Tokenizer
    */
   static fromString(s: string): Tokenizer;
+
+  /**
+   * Instantiate a new Tokenizer from an existing file on the
+   * Hugging Face Hub. Any model repo containing a `tokenizer.json`
+   * can be used here.
+   * @param identifier A model identifier on the Hub
+   * @param options Additional options
+   */
+  static fromPretrained(s: string, options?: FromPretrainedOptions): Tokenizer;
 
   /**
    * Add the given tokens to the vocabulary

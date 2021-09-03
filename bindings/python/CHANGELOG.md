@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- [#657]: Add SplitDelimiterBehavior customization to Punctuation constructor
+
+### Changed
+- [#793]: Saving a pretty JSON file by default when saving a tokenizer
+
+## [0.10.3]
+
+### Fixed
+- [#686]: Fix SPM conversion process for whitespace deduplication
+- [#707]: Fix stripping strings containing Unicode characters
+
+### Added
+- [#693]: Add a CTC Decoder for Wave2Vec models
+
+### Removed
+- [#714]: Removed support for Python 3.5
+
 ## [0.10.2]
 
 ### Fixed
@@ -309,7 +329,13 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#793]: https://github.com/huggingface/tokenizers/pull/793
+[#714]: https://github.com/huggingface/tokenizers/pull/714
+[#707]: https://github.com/huggingface/tokenizers/pull/707
+[#693]: https://github.com/huggingface/tokenizers/pull/693
+[#686]: https://github.com/huggingface/tokenizers/pull/686
 [#674]: https://github.com/huggingface/tokenizers/pull/674
+[#657]: https://github.com/huggingface/tokenizers/pull/657
 [#656]: https://github.com/huggingface/tokenizers/pull/656
 [#652]: https://github.com/huggingface/tokenizers/pull/652
 [#621]: https://github.com/huggingface/tokenizers/pull/621

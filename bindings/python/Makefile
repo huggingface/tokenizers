@@ -7,12 +7,12 @@ dir_guard=@mkdir -p $(@D)
 # Format source code automatically
 style:
 	python stub.py
-	black --line-length 100 --target-version py35 examples py_src/tokenizers tests
+	black --line-length 100 --target-version py36 examples py_src/tokenizers tests
 
 # Check the source code is formatted correctly
 check-style:
 	python stub.py --check
-	black --check --line-length 100 --target-version py35 examples py_src/tokenizers tests
+	black --check --line-length 100 --target-version py36 examples py_src/tokenizers tests
 
 TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 
@@ -30,4 +30,4 @@ $(DATA_DIR)/small.txt : $(DATA_DIR)/big.txt
 
 $(DATA_DIR)/roberta.json :
 	$(dir_guard)
-	wget https://storage.googleapis.com/tokenizers/roberta.json -O $@
+	wget https://huggingface.co/roberta-large/raw/main/tokenizer.json -O $@

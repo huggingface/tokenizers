@@ -326,7 +326,7 @@ class BaseTokenizer:
         """
         return self._tokenizer.model.save(directory, prefix=prefix)
 
-    def save(self, path: str, pretty: bool = False):
+    def save(self, path: str, pretty: bool = True):
         """Save the current Tokenizer at the given path
 
         Args:

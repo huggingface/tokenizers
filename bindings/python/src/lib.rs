@@ -18,6 +18,8 @@ mod utils;
 use pyo3::prelude::*;
 use pyo3::wrap_pymodule;
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 // For users using multiprocessing in python, it is quite easy to fork the process running
 // tokenizers, ending up with a deadlock because we internaly make use of multithreading. So
 // we register a callback to be called in the event of a fork so that we can warn the user.
@@ -87,6 +89,7 @@ fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<decoders::PyWordPieceDec>()?;
     m.add_class::<decoders::PyMetaspaceDec>()?;
     m.add_class::<decoders::PyBPEDecoder>()?;
+    m.add_class::<decoders::PyCTCDecoder>()?;
     Ok(())
 }
 

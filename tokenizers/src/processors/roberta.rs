@@ -74,7 +74,11 @@ impl PostProcessor for RobertaProcessing {
         }
 
         if !add_special_tokens {
-            return PostProcessor::default_process(encoding, pair_encoding, add_special_tokens);
+            return <dyn PostProcessor>::default_process(
+                encoding,
+                pair_encoding,
+                add_special_tokens,
+            );
         }
 
         let ids = [&[self.cls.1], encoding.get_ids(), &[self.sep.1]].concat();

@@ -858,6 +858,26 @@ class Tokenizer:
         """
         pass
     @staticmethod
+    def from_pretrained(identifier, revision="main", auth_token=None):
+        """
+        Instantiate a new :class:`~tokenizers.Tokenizer` from an existing file on the
+        Hugging Face Hub.
+
+        Args:
+            identifier (:obj:`str`):
+                The identifier of a Model on the Hugging Face Hub, that contains
+                a tokenizer.json file
+            revision (:obj:`str`, defaults to `main`):
+                A branch or commit id
+            auth_token (:obj:`str`, `optional`, defaults to `None`):
+                An optional auth token used to access private repositories on the
+                Hugging Face Hub
+
+        Returns:
+            :class:`~tokenizers.Tokenizer`: The new tokenizer
+        """
+        pass
+    @staticmethod
     def from_str(json):
         """
         Instantiate a new :class:`~tokenizers.Tokenizer` from the given JSON string.
@@ -986,7 +1006,7 @@ class Tokenizer:
         The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
         """
         pass
-    def save(self, pretty=False):
+    def save(self, pretty=True):
         """
         Save the :class:`~tokenizers.Tokenizer` to the file at the given path.
 
@@ -994,7 +1014,7 @@ class Tokenizer:
             path (:obj:`str`):
                 A path to a file in which to save the serialized tokenizer.
 
-            pretty (:obj:`bool`, defaults to :obj:`False`):
+            pretty (:obj:`bool`, defaults to :obj:`True`):
                 Whether the JSON file should be pretty formatted.
         """
         pass

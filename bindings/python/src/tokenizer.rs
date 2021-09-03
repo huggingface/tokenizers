@@ -544,6 +544,43 @@ impl PyTokenizer {
         Ok(Self { tokenizer })
     }
 
+    /// Instantiate a new :class:`~tokenizers.Tokenizer` from an existing file on the
+    /// Hugging Face Hub.
+    ///
+    /// Args:
+    ///     identifier (:obj:`str`):
+    ///         The identifier of a Model on the Hugging Face Hub, that contains
+    ///         a tokenizer.json file
+    ///     revision (:obj:`str`, defaults to `main`):
+    ///         A branch or commit id
+    ///     auth_token (:obj:`str`, `optional`, defaults to `None`):
+    ///         An optional auth token used to access private repositories on the
+    ///         Hugging Face Hub
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
+    #[staticmethod]
+    #[args(revision = "String::from(\"main\")", auth_token = "None")]
+    #[text_signature = "(identifier, revision=\"main\", auth_token=None)"]
+    fn from_pretrained(
+        identifier: &str,
+        revision: String,
+        auth_token: Option<String>,
+    ) -> PyResult<Self> {
+        let params = tk::FromPretrainedParameters {
+            revision,
+            auth_token,
+            user_agent: [("bindings", "Python"), ("version", crate::VERSION)]
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        };
+
+        let tokenizer: PyResult<_> =
+            ToPyResult(Tokenizer::from_pretrained(identifier, Some(params))).into();
+        Ok(Self::new(tokenizer?))
+    }
+
     /// Gets a serialized string representing this :class:`~tokenizers.Tokenizer`.
     ///
     /// Args:
@@ -564,10 +601,10 @@ impl PyTokenizer {
     ///     path (:obj:`str`):
     ///         A path to a file in which to save the serialized tokenizer.
     ///
-    ///     pretty (:obj:`bool`, defaults to :obj:`False`):
+    ///     pretty (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether the JSON file should be pretty formatted.
-    #[args(pretty = false)]
-    #[text_signature = "(self, pretty=False)"]
+    #[args(pretty = true)]
+    #[text_signature = "(self, pretty=True)"]
     fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
         ToPyResult(self.tokenizer.save(path, pretty)).into()
     }

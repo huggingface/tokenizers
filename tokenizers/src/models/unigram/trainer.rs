@@ -189,7 +189,7 @@ impl UnigramTrainer {
         let c_sentence_boundary = '\0';
         let k_sentence_boundary = '\0'.to_string();
         for (string, n) in sentences {
-            flat_string.push_str(&string);
+            flat_string.push_str(string);
             // XXX
             // Comment suggests we add sentence boundary, but it seems to be missing from actual
             // code in spm.
@@ -613,7 +613,7 @@ mod tests {
         let strings: Vec<_> = table.iter().map(|(string, _)| string).collect();
         assert_eq!(strings, target_strings);
 
-        let scores: Vec<_> = table.iter().map(|(_, score)| score).collect();
+        let scores = table.iter().map(|(_, score)| score);
         let target_scores = vec![
             -2.5649493574615367, // 2.0
             -2.5649493574615367, // 2.0
@@ -632,7 +632,7 @@ mod tests {
             -1.8718021769015916, // 4.0
         ];
 
-        for (score, target_score) in scores.into_iter().zip(target_scores) {
+        for (score, target_score) in scores.zip(target_scores) {
             assert_approx_eq!(*score, target_score, 0.01);
         }
     }

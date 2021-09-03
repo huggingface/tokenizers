@@ -97,11 +97,30 @@ fn bpe_decoder(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     Ok(decoder)
 }
 
+/// ctc_decoder(pad_token: String = "<pad>", word_delimiter_token: String = "|", cleanup = true)
+fn ctc_decoder(mut cx: FunctionContext) -> JsResult<JsDecoder> {
+    let pad_token = cx
+        .extract_opt::<String>(0)?
+        .unwrap_or_else(|| String::from("<pad>"));
+    let word_delimiter_token = cx
+        .extract_opt::<String>(1)?
+        .unwrap_or_else(|| String::from("|"));
+    let cleanup = cx.extract_opt::<bool>(2)?.unwrap_or(true);
+
+    let mut decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    decoder.borrow_mut(&guard).decoder = Some(Arc::new(
+        tk::decoders::ctc::CTC::new(pad_token, word_delimiter_token, cleanup).into(),
+    ));
+    Ok(decoder)
+}
+
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_ByteLevel", prefix), byte_level)?;
     m.export_function(&format!("{}_WordPiece", prefix), wordpiece)?;
     m.export_function(&format!("{}_Metaspace", prefix), metaspace)?;
     m.export_function(&format!("{}_BPEDecoder", prefix), bpe_decoder)?;
+    m.export_function(&format!("{}_CTC", prefix), ctc_decoder)?;
     Ok(())
 }

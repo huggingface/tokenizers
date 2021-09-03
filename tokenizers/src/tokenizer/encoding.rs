@@ -176,7 +176,7 @@ impl Encoding {
     }
 
     pub fn take_overflowing(&mut self) -> Vec<Encoding> {
-        std::mem::replace(&mut self.overflowing, vec![])
+        std::mem::take(&mut self.overflowing)
     }
 
     pub(crate) fn process_tokens_with_offsets_mut<F>(&mut self, func: F)
@@ -374,7 +374,7 @@ impl Encoding {
 
             part_id += 1;
             overflowing.push(o);
-            prev_encoding = &overflowing.last().unwrap();
+            prev_encoding = overflowing.last().unwrap();
         }
 
         self.overflowing = overflowing;

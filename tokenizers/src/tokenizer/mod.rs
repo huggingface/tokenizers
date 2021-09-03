@@ -22,6 +22,7 @@ use std::{
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use crate::utils::from_pretrained::{from_pretrained, FromPretrainedParameters};
 use crate::utils::iter::ResultShunt;
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
@@ -395,6 +396,13 @@ impl Tokenizer {
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
         let content = read_to_string(file)?;
         Ok(serde_json::from_str(&content)?)
+    }
+    pub fn from_pretrained<S: AsRef<str>>(
+        identifier: S,
+        params: Option<FromPretrainedParameters>,
+    ) -> Result<Self> {
+        let tokenizer_file = from_pretrained(identifier, params)?;
+        Tokenizer::from_file(tokenizer_file)
     }
 }
 
@@ -866,7 +874,7 @@ where
                     };
                     truncate_encodings(encoding, pair_encoding, &params)?
                 } else {
-                    truncate_encodings(encoding, pair_encoding, &trunc)?
+                    truncate_encodings(encoding, pair_encoding, trunc)?
                 }
             } else {
                 (encoding, pair_encoding)
@@ -877,7 +885,7 @@ where
         let final_encoding = if let Some(processor) = &self.post_processor {
             processor.process(encoding, pair_encoding, add_special_tokens)?
         } else {
-            PostProcessor::default_process(encoding, pair_encoding, add_special_tokens)?
+            <dyn PostProcessor>::default_process(encoding, pair_encoding, add_special_tokens)?
         };
 
         // 3. Then we pad if needed
@@ -917,7 +925,7 @@ where
 
         if let Some(params) = &self.padding {
             // We do the padding here to make sure we handle the batch padding
-            pad_encodings(&mut encodings, &params)?;
+            pad_encodings(&mut encodings, params)?;
         }
 
         Ok(encodings)
@@ -940,7 +948,7 @@ where
 
         if let Some(params) = &self.padding {
             // We do the padding here to make sure we handle the batch padding
-            pad_encodings(&mut encodings, &params)?;
+            pad_encodings(&mut encodings, params)?;
         }
 
         Ok(encodings)
@@ -1120,6 +1128,25 @@ where
 
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
+    M: DeserializeOwned + Model,
+    N: DeserializeOwned + Normalizer,
+    PT: DeserializeOwned + PreTokenizer,
+    PP: DeserializeOwned + PostProcessor,
+    D: DeserializeOwned + Decoder,
+{
+    /// Instantiate a new Tokenizer from a file hosted on the Hugging Face Hub.
+    /// It expects the `identifier` of a model that includes a `tokenizer.json` file.
+    pub fn from_pretrained<S: AsRef<str>>(
+        identifier: S,
+        params: Option<FromPretrainedParameters>,
+    ) -> Result<Self> {
+        let tokenizer_file = from_pretrained(identifier, params)?;
+        TokenizerImpl::from_file(tokenizer_file)
+    }
+}
+
+impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
+where
     M: Serialize,
     N: Serialize,
     PT: Serialize,
@@ -1140,7 +1167,7 @@ where
         let serialized = self.to_string(pretty)?;
 
         let mut file = File::create(path)?;
-        file.write_all(&serialized.as_bytes())?;
+        file.write_all(serialized.as_bytes())?;
 
         Ok(())
     }

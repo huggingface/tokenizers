@@ -2,7 +2,7 @@
 authors = ["Anthony MOI <m.anthony.moi@gmail.com>"]
 edition = "2018"
 name = "tokenizers"
-version = "0.10.1"
+version = "0.11.0"
 homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
 documentation = "https://docs.rs/tokenizers/"
@@ -40,7 +40,7 @@ onig = { version = "6.0", default-features = false }
 regex = "1.3"
 regex-syntax = "0.6"
 rayon = "1.3"
-rayon-cond = { version = "*", git = "https://github.com/n1t0/rayon-cond", rev = "c56e4f1ded0fcb92eac70e0533703bba3ca2983f" }
+rayon-cond = "0.1"
 serde = { version = "1.0", features = [ "derive" ] }
 serde_json = "1.0"
 clap = "2.33"
@@ -53,6 +53,9 @@ log = "0.4"
 esaxx-rs = "0.1"
 derive_builder = "0.9"
 spm_precompiled = "0.1"
+dirs = "3.0"
+reqwest = "0.11"
+cached-path = "0.5"
 
 [features]
 default = ["progressbar"]

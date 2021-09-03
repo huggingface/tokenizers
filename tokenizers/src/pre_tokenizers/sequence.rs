@@ -33,7 +33,7 @@ mod tests {
     fn sequence_basic() {
         let pretokenizers = vec![
             PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),
-            PreTokenizerWrapper::Punctuation(Punctuation),
+            PreTokenizerWrapper::Punctuation(Punctuation::default()),
         ];
         let pretok = Sequence::new(pretokenizers);
         let mut pretokenized: PreTokenizedString = "Hey friend!     How are you?!?".into();

@@ -228,7 +228,7 @@ impl AddedVocabulary {
             }
         }
         // Then we delegate to `add_tokens`, that will take care of refreshing added tokens too.
-        self.add_tokens(&tokens, model, normalizer)
+        self.add_tokens(tokens, model, normalizer)
     }
 
     /// Add some tokens to the vocabulary
@@ -646,8 +646,8 @@ mod tests {
             0
         );
         assert_eq!(vocab.len(), 2); // Did not add a new token, since it exist in the original model
-        assert_eq!(vocab.is_special_token("test"), true);
-        assert_eq!(vocab.added_tokens_map.contains_key("test"), false);
+        assert!(vocab.is_special_token("test"));
+        assert!(!vocab.added_tokens_map.contains_key("test"));
     }
 
     #[test]

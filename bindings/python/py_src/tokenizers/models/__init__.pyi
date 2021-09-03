@@ -294,6 +294,28 @@ class WordLevel(Model):
 
     def __init__(self, vocab, unk_token):
         pass
+    @staticmethod
+    def from_file(vocab, unk_token):
+        """
+        Instantiate a WordLevel model from the given file
+
+        This method is roughly equivalent to doing::
+
+            vocab = WordLevel.read_file(vocab_filename)
+            wordlevel = WordLevel(vocab)
+
+        If you don't need to keep the :obj:`vocab` values lying around, this method is
+        more optimized than manually calling :meth:`~tokenizers.models.WordLevel.read_file` to
+        initialize a :class:`~tokenizers.models.WordLevel`
+
+        Args:
+            vocab (:obj:`str`):
+                The path to a :obj:`vocab.json` file
+
+        Returns:
+            :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
+        """
+        pass
     def id_to_token(self, id):
         """
         Get the token associated to an ID
@@ -403,7 +425,7 @@ class WordPiece(Model):
                 The path to a :obj:`vocab.txt` file
 
         Returns:
-            :class:`~tokenizers.models.WordPiece`: And instance of WordPiece loaded from file
+            :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
         """
         pass
     def id_to_token(self, id):

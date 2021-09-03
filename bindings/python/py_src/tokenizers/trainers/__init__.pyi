@@ -72,9 +72,32 @@ class UnigramTrainer(Trainer):
             if not seen in the training dataset.
             If the strings contain more than one character, only the first one
             is kept.
+
+        shrinking_factor (:obj:`float`):
+            The shrinking factor used at each step of the training to prune the
+            vocabulary.
+
+        unk_token (:obj:`str`):
+            The token used for out-of-vocabulary tokens.
+
+        max_piece_length (:obj:`int`):
+            The maximum length of a given token.
+
+        n_sub_iterations (:obj:`int`):
+            The number of iterations of the EM algorithm to perform before
+            pruning the vocabulary.
     """
 
-    def __init__(self, vocab_size=8000, show_progress=True, special_tokens=[]):
+    def __init__(
+        self,
+        vocab_size=8000,
+        show_progress=True,
+        special_tokens=[],
+        shrinking_factor=0.75,
+        unk_token=None,
+        max_piece_length=16,
+        n_sub_iterations=2,
+    ):
         pass
 
 class WordLevelTrainer(Trainer):
