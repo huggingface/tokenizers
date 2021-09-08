@@ -4,12 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0]
 
 ### Added
 - [#657]: Add SplitDelimiterBehavior customization to Punctuation constructor
 
 ### Changed
+- [#718]: Fix `WordLevel` tokenizer determinism during training
+- [#762]: Add a way to specify the unknown token in `SentencePieceUnigramTokenizer`
+- [#770]: Improved documentation for `UnigramTrainer`
+- [#780]: Add `Tokenizer.from_pretrained` to load tokenizers from the Hugging Face Hub
 - [#793]: Saving a pretty JSON file by default when saving a tokenizer
 
 ## [0.10.3]
@@ -330,6 +334,10 @@ delimiter (Works like `.split(delimiter)`)
 
 
 [#793]: https://github.com/huggingface/tokenizers/pull/793
+[#780]: https://github.com/huggingface/tokenizers/pull/780
+[#770]: https://github.com/huggingface/tokenizers/pull/770
+[#762]: https://github.com/huggingface/tokenizers/pull/762
+[#718]: https://github.com/huggingface/tokenizers/pull/718
 [#714]: https://github.com/huggingface/tokenizers/pull/714
 [#707]: https://github.com/huggingface/tokenizers/pull/707
 [#693]: https://github.com/huggingface/tokenizers/pull/693
