@@ -21,6 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v1
 
+      - name: Install dependencies
+        run: yum install -y openssl-devel
+
       - name: Build and audit wheels
         working-directory: ./bindings/python
         run: sh build-wheels.sh
