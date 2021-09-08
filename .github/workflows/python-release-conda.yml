@@ -73,6 +73,7 @@ jobs:
       - name: Install miniconda
         uses: conda-incubator/setup-miniconda@v2
         with:
+          miniconda-version: "latest"
           auto-update-conda: true
           auto-activate-base: false
           activate-environment: "build-tokenizers"
