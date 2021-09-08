@@ -58,6 +58,10 @@ jobs:
   build_and_package_linux:
     runs-on: ubuntu-latest
     container: quay.io/pypa/manylinux2014_x86_64
+    strategy:
+      fail-fast: false
+      matrix:
+        python: [3.6, 3.7, 3.8, 3.9]
     defaults:
       run:
         shell: bash -l {0}
