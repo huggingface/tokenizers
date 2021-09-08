@@ -26,6 +26,7 @@ jobs:
       - name: Install miniconda
         uses: conda-incubator/setup-miniconda@v2
         with:
+          miniconda-version: "latest"
           auto-update-conda: true
           auto-activate-base: false
           activate-environment: "build-tokenizers"
@@ -88,7 +89,7 @@ jobs:
       - name: Setup conda env
         run: |
           conda install setuptools-rust
-          conda install -c defaults anaconda-client conda-build
+          conda install -c conda-forge anaconda-client conda-build
 
       - name: Extract version
         working-directory: ./bindings/python
