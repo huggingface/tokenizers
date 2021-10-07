@@ -145,11 +145,15 @@ tokenizer.decoder = decoders.ByteLevel()
 tokenizer.post_processor = processors.ByteLevel(trim_offsets=True)
 
 # And then train
-trainer = trainers.BpeTrainer(vocab_size=20000, min_frequency=2)
+trainer = trainers.BpeTrainer(
+    vocab_size=20000,
+    min_frequency=2,
+    initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
+)
 tokenizer.train([
-	"./path/to/dataset/1.txt",
-	"./path/to/dataset/2.txt",
-	"./path/to/dataset/3.txt"
+    "./path/to/dataset/1.txt",
+    "./path/to/dataset/2.txt",
+    "./path/to/dataset/3.txt"
 ], trainer=trainer)
 
 # And Save it
