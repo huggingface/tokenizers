@@ -1,0 +1,27 @@
+
+//gradle has api and application plugins
+plugins {
+    id 'application'
+}
+
+group 'co.huggingface'
+version '1.0-SNAPSHOT'
+
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'net.java.dev.jna:jna:5.10.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+}
+
+application {
+    mainClass = 'co.hugginface.tokenizers.App'
+}
+
+test {
+    useJUnitPlatform()
+}
