@@ -2,20 +2,21 @@ package co.hugginface.tokenizers;
 
 import com.sun.jna.*;
 
-class CBertTokenizer extends PointerType {
-    private JnaCBertTokenizer INTERFACE = JnaCBertTokenizer.INSTANCE;
+class JTokenizer extends PointerType {
+    private JnaJTokenizer INTERFACE = JnaJTokenizer.INSTANCE;
 
-    public CBertTokenizer() {
-        Pointer pointer = INTERFACE.CBertTokenizer_new();
+    //check if it isnt null and create exception if it is
+    public JTokenizer(String identifier) {
+        Pointer pointer = INTERFACE.JTokenizer_from_pretrained(identifier);
         this.setPointer(pointer);
     }
     public void close() {
         Pointer p = this.getPointer();
-        INTERFACE.CBertTokenizer_drop(p);
+        INTERFACE.JTokenizer_drop(p);
     }
-    public void someMethod(){
+    public void printTokenizer(){
         Pointer p = this.getPointer();
-        INTERFACE.CBertTokenizer_some_method(p);
+        INTERFACE.JTokenizer_print_tokenizer(p);
     }
 
 }
@@ -24,8 +25,8 @@ public class App {
 
 
     public static void main(String[] args) {
-        CBertTokenizer tokenizer = new CBertTokenizer();
-        tokenizer.someMethod();
+        JTokenizer tokenizer = new JTokenizer("sentence-transformers/LaBSE");
+        tokenizer.printTokenizer();
         tokenizer.close();
     }
 }
