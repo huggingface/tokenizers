@@ -2,6 +2,7 @@ package co.hugginface.tokenizers;
 
 import com.sun.jna.*;
 
+//Implement AutoCloseble?
 class JTokenizer extends PointerType {
     private JnaJTokenizer INTERFACE = JnaJTokenizer.INSTANCE;
 
@@ -25,7 +26,7 @@ public class App {
 
 
     public static void main(String[] args) {
-        JTokenizer tokenizer = new JTokenizer("sentence-transformers/LaBSE");
+        JTokenizer tokenizer = new JTokenizer("xlm-roberta-base");
         tokenizer.printTokenizer();
         tokenizer.close();
     }
