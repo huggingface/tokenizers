@@ -2,32 +2,19 @@ package co.hugginface.tokenizers;
 
 import com.sun.jna.*;
 
-//Implement AutoCloseble?
-class JTokenizer extends PointerType {
-    private JnaJTokenizer INTERFACE = JnaJTokenizer.INSTANCE;
-
-    //check if it isnt null and create exception if it is
-    public JTokenizer(String identifier) {
-        Pointer pointer = INTERFACE.JTokenizer_from_pretrained(identifier);
-        this.setPointer(pointer);
-    }
-    public void close() {
-        Pointer p = this.getPointer();
-        INTERFACE.JTokenizer_drop(p);
-    }
-    public void printTokenizer(){
-        Pointer p = this.getPointer();
-        INTERFACE.JTokenizer_print_tokenizer(p);
-    }
-
-}
+import java.util.Arrays;
+import java.util.List;
 
 public class App {
 
 
     public static void main(String[] args) {
-        JTokenizer tokenizer = new JTokenizer("xlm-roberta-base");
-        tokenizer.printTokenizer();
+        String identifier = "bert-base-uncased";
+        JnaJTokenizer.JTokenizer tokenizer = new JnaJTokenizer.JTokenizer(identifier);
+        String tokenizeMe = "I love Java";
+        List<Long> ids = tokenizer.encodeFromStr(tokenizeMe);
+
+        System.out.println(String.format("ids from java: %s", Arrays.toString(ids.toArray())));
         tokenizer.close();
     }
 }

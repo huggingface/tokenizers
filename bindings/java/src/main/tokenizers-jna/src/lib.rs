@@ -3,7 +3,8 @@ extern crate tokenizers as tk;
 
 use std::borrow::Borrow;
 use std::ffi::CString;
-use std::fmt;
+use std::ffi::CStr;
+use std::{fmt, u32};
 use std::os::raw::c_char;
 use std::ptr::null_mut;
 
@@ -11,9 +12,11 @@ use tk::tokenizer::EncodeInput;
 use tk::tokenizer::InputSequence;
 use tk::{Encoding, Tokenizer};
 
-use libc::boolean_t;
+use libc::{boolean_t, size_t};
 use std::ops::Deref;
 use tk::FromPretrainedParameters;
+use std::mem::ManuallyDrop;
+use std::slice;
 
 //JInputSequence
 //JEncoding
@@ -25,19 +28,20 @@ use tk::FromPretrainedParameters;
 type Result<T> = std::result::Result<T, JError>;
 pub struct JError;
 
+//remove the J as its private and the pub
 pub struct JInputSequence<'s> {
     pub input_sequence: tk::InputSequence<'s>,
 }
 //todo: make from pair
 impl JInputSequence<'_> {
-    pub fn from_str(st: &str) -> JInputSequence {
+    pub fn from_str(st: String) -> JInputSequence<'static> {
         let inputSequence = InputSequence::from(st);
         return JInputSequence {
             input_sequence: inputSequence,
         }
     }
 
-    pub fn from_vec_str(vec: Vec<&str>) -> JInputSequence {
+    pub fn from_vec_str(vec: Vec<String>) -> JInputSequence<'static> {
         let inputSequence = InputSequence::from(vec);
         return  JInputSequence {
             input_sequence: inputSequence,
@@ -56,15 +60,21 @@ pub struct JEncoding {
 
 impl JEncoding {
 
-    pub fn get_ids(&self) -> &[u32] {
-       let e = &self.encoding.as_ref().expect("Unitialized encoding");
-        return e.get_ids();
+    //get length
 
+    pub fn get_length(&self) -> usize {
+        let e = &self.encoding.as_ref().expect("Unitialized encoding");
+        return e.get_ids().to_vec().len();
     }
 
-    pub fn get_tokens(&self) -> &[String] {
+    pub fn get_ids(&self) -> Vec<u32> {
+       let e = &self.encoding.as_ref().expect("Unitialized encoding");
+        return e.get_ids().to_vec();
+    }
+
+    pub fn get_tokens(&self) -> Vec<String> {
         let e = &self.encoding.as_ref().expect("Unitialized encoding");
-        return e.get_tokens();
+        return e.get_tokens().to_vec();
     }
 
 }
@@ -122,7 +132,6 @@ impl JTokenizer {
     }
 
     pub fn print_tokenizer(&self) {
-        // let instance = unsafe{ &*(self.tokenizer) };
         match &self.tokenizer {
             Some(value) => {
                 let string = value.to_string(true);
@@ -146,9 +155,37 @@ impl JTokenizer {
 //maybe inject handle pointer instead (PointerByReference in jna)
 // and return error code if allocation fails
 //assert pointer not null
+
+// #[no_mangle]
+// pub unsafe extern "C" fn JInputSequence_from_str(str: *const c_char) -> *mut JInputSequence<'static> {
+//     let cstr = unsafe { CStr::from_ptr(str).to_string_lossy().to_string() };
+//     let inputSequence = Box::new(JInputSequence::from_str(cstr));
+//     Box::into_raw(inputSequence)
+// }
+
+// #[no_mangle]
+// pub unsafe extern "C" fn JInputSequence_from_vec_str(vec: **const c_char, len: usize) -> *mut JInputSequence {
+//     let slice = unsafe { Vec::from_raw_parts(ptr, len, len) };
+//     let mut v = vec![];
+//
+//     for elem in slice {
+//         let s = CStr::from_ptr(elem).to_string_lossy().to_string();
+//         v.push(s)
+//     }
+//     let inputSequence = Box::new(JInputSequence::from_vec_str(v));
+//     Box::into_raw(inputSequence)
+// }
+
+// #[no_mangle]
+// pub unsafe extern "C" fn JInputSequence_drop(p: *mut JInputSequence) {
+//     Box::from_raw(p);
+// }
+//
+
+//TODO: assert not null in all the pointers
 #[no_mangle]
-pub unsafe extern "C" fn JTokenizer_from_pretrained(identifier: *mut c_char) -> *mut JTokenizer {
-    let cstr = unsafe { CString::from_raw(identifier).to_string_lossy().to_string() };
+pub unsafe extern "C" fn JTokenizer_from_pretrained(identifier: *const c_char) -> *mut JTokenizer {
+    let cstr = unsafe { CStr::from_ptr(identifier).to_string_lossy().to_string() };
     let boxed_a = Box::new(JTokenizer::from_pretrained(&cstr));
     Box::into_raw(boxed_a)
 }
@@ -159,10 +196,59 @@ pub unsafe extern "C" fn JTokenizer_drop(p: *mut JTokenizer) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn JTokenizer_encode_from_str(tokenizer: *mut JTokenizer, input: *const c_char) -> *mut JEncoding  {
+    let instance = &*tokenizer;
+    let cstr = unsafe { CStr::from_ptr(input).to_string_lossy().to_string() };
+    let inputSequence = JInputSequence::from_str(cstr);
+    let encodings =  Box::new(instance.encode(&inputSequence));
+    return Box::into_raw(encodings);
+    //println!("my tokens {:?}", e.get_tokens());
+    //return e.get_ids().clone();
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn JTokenizer_print_tokenizer(a: *mut JTokenizer) {
     let a = &*a;
     a.print_tokenizer();
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn JEncoding_drop(p: *mut JEncoding) {
+    Box::from_raw(p);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn JEncoding_get_length(a: *mut JEncoding) -> size_t {
+    let encodings = &*a;
+    return  encodings.get_length();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn JEncoding_get_ids(a: *mut JEncoding, buffer: *mut i64, sizeBuffer: size_t)   {
+
+    let encodings = &*a;
+    let len =  encodings.get_length();
+    let vector = encodings.get_ids();
+    println!("I was called in rust. tokenizer: {:?} {:?}", sizeBuffer, len);
+    println!("I was called in rust. ids: {:?} ", vector);
+    assert_eq!(sizeBuffer, len);
+    for item in vector {
+        let converted = i64::from(item);
+        println!("I was called in rust. converted: {:?} ", converted);
+        buffer.write(converted)
+    }
+}
+
+// #[no_mangle]
+// pub unsafe extern "C" fn get_ids(a: *mut JEncoding) {
+//     let a = &*a;
+//     a.print_tokenizer();
+// }
+//
+//
+
+
+
 
 // pub fn print_string(my_string: &str) {
 //     println!("ccz {:?}", my_string);
