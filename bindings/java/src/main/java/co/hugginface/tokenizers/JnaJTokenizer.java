@@ -2,41 +2,57 @@ package co.hugginface.tokenizers;
 
 import com.sun.jna.*;
 
+import java.awt.*;
+import java.lang.ref.Cleaner;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
 public interface JnaJTokenizer extends Library {
 
-    JnaJTokenizer INSTANCE = (JnaJTokenizer) Native.load("/Users/andreaduque/Workspace/tokenizers/bindings/java/src/main/tokenizers-jna/target/debug/libtokenizers_jna.dylib", JnaJTokenizer.class);
+    JnaJTokenizer INSTANCE = (JnaJTokenizer) Native.load("/Users/nguyen/src/tokenizers/bindings/java/src/main/tokenizers-jna/target/debug/libtokenizers_jna.dylib", JnaJTokenizer.class);
 
-    //Implement AutoCloseble?
+    // to automatically free memory on the Rust side when GC'ed on JVM
+    static final Cleaner cleaner = Cleaner.create();
+
     class JTokenizer extends PointerType {
+
+        // according to https://techinplanet.com/java-9-cleaner-cleaner-cleanable-objects/,
+        // it is wise to keep the cleaner runnables as a static class
+        private static class CleanJTokenizer implements Runnable {
+            private Pointer ptr;
+
+            public CleanJTokenizer(Pointer ptr) {
+                this.ptr = ptr;
+            }
+
+            @Override
+            public void run() {
+                JnaJTokenizer.INSTANCE.JTokenizer_drop(this.ptr);
+            }
+        }
 
         //check if it isnt null and create exception if it is
         public JTokenizer(String identifier) {
             Pointer pointer = INSTANCE.JTokenizer_from_pretrained(identifier);
             this.setPointer(pointer);
+            cleaner.register(this, new CleanJTokenizer(pointer));
         }
-        public void close() {
-            Pointer p = this.getPointer();
-            INSTANCE.JTokenizer_drop(p);
-        }
+
         public void printTokenizer(){
             Pointer p = this.getPointer();
             INSTANCE.JTokenizer_print_tokenizer(p);
         }
+
         //overloading with different types
         public List<Long> encodeFromStr(String value){
             Pointer p = this.getPointer();
             Pointer pEncodings = INSTANCE.JTokenizer_encode_from_str(p, value);
             JEncoding encoding = new JEncoding(pEncodings);
             List<Long> ids = encoding.getIds();
-            encoding.close();
             return ids;
         }
     }
-
 
     //the encoding IDS are unsigned, but I think this isnt java supported
 
@@ -47,9 +63,26 @@ public interface JnaJTokenizer extends Library {
 
     class JEncoding extends PointerType {
 
+        // according to https://techinplanet.com/java-9-cleaner-cleaner-cleanable-objects/,
+        // it is wise to keep the cleaner runnables as a static class
+        class CleanJEncoding implements Runnable {
+            Pointer ptr;
+
+            public CleanJEncoding(Pointer ptr) {
+                this.ptr = ptr;
+            }
+
+            @Override
+            public void run() {
+                JnaJTokenizer.INSTANCE.JEncoding_drop(this.ptr);
+            }
+        }
+
         public JEncoding(Pointer initializer) {
             this.setPointer(initializer);
+            JnaJTokenizer.cleaner.register(this, new CleanJEncoding(initializer));
         }
+
         public size_t getLength() {
             Pointer encodings = this.getPointer();
             size_t length = INSTANCE.JEncoding_get_length(encodings);
@@ -66,10 +99,7 @@ public interface JnaJTokenizer extends Library {
             long[] ids = buffer.getLongArray(0, isSizeInt);
             return Arrays.stream(ids).boxed().collect(Collectors.toList());
         }
-        public void close() {
-            Pointer p = this.getPointer();
-            INSTANCE.JEncoding_drop(p);
-        }
+
 //        public void printTokenizer(){
 //            Pointer p = this.getPointer();
 //            INSTANCE.JTokenizer_print_tokenizer(p);
