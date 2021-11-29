@@ -12,19 +12,37 @@ pub struct FFITokenizer {
 }
 
 #[ffi_export]
-fn create_tokenizer() -> repr_c::Box<FFITokenizer>
+fn tokenizer_new() -> repr_c::Box<FFITokenizer>
 {
     let identifier = "setu4993/LaBSE";
     let parameters = FromPretrainedParameters::default();
     let tk_result = Tokenizer::from_pretrained(identifier, Some(parameters));
     match tk_result {
         Ok(v) => repr_c::Box::new(FFITokenizer { tokenizer: v }),
-        Err(e) => panic!("identifier not found"),
+        Err(_e) => panic!("identifier not found"),
     }
 }
 
 #[ffi_export]
-fn destroy_tokenizer(ptr: repr_c::Box<FFITokenizer>)
+fn tokenizer_drop(ptr: repr_c::Box<FFITokenizer>)
+{
+    drop(ptr);
+}
+
+#[derive_ReprC]
+#[repr(C)]
+pub struct FFIEncoding {
+    ids: repr_c::Vec<u32>,
+    type_ids: repr_c::Vec<u32>,
+    foo: repr_c::Vec<Option<repr_c::Box<u32>>>,
+    tokens: repr_c::Vec<repr_c::String>,
+    words: repr_c::Vec<Option<repr_c::Box<u32>>>,
+    special_token_mask: repr_c::Vec<u32>,
+    attention_mask: repr_c::Vec<u32>
+}
+
+#[ffi_export]
+fn encoding_drop(ptr: repr_c::Box<FFIEncoding>) 
 {
     drop(ptr);
 }
