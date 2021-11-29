@@ -1,0 +1,56 @@
+repositories {
+    mavenCentral()
+}
+
+def moveTarget(String os) {
+   def buildDir = "${project.buildDir}/classes/java/main/${os}-x86-64"
+   file(buildDir).mkdirs()
+
+   def targetDir = "${project.projectDir}/src/main/rust/target/debug"
+   def tree = fileTree(targetDir)
+
+   tree.include("libtokenizers_jna.*")
+
+   copy {
+       from tree.files
+
+       into buildDir
+   }
+}
+
+task buildProject(dependsOn: 'compileJava') {
+    doLast{
+     exec {
+            commandLine 'bash', 'build.sh'
+        }
+
+       def currentOs = System.properties['os.name']
+        if (currentOs.startsWith("Mac")) {
+            moveTarget("darwin")
+        }else if (currentOs.startsWith("Linux")){
+          moveTarget("linux")
+        }
+        else {
+            throw new IllegalStateException("Unsupported os: " + currentOs)
+        }
+    }
+
+}
+
+clean.doFirst {
+    delete "./src/main/rust/target"
+}
+
+dependencies {
+    implementation 'net.java.dev.jna:jna:5.10.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+}
+
+application {
+    mainClass = 'co.hugginface.tokenizers.App'
+}
+
+test {
+    useJUnitPlatform()
+}
