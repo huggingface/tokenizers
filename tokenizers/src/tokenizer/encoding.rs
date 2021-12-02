@@ -689,6 +689,62 @@ mod tests {
     }
 
     #[test]
+    fn truncate_overflow_with_stride() {
+        let mut enc = Encoding {
+            ids: vec![1, 2, 3, 4, 5],
+            type_ids: vec![0, 0, 0, 0, 0],
+            tokens: vec![
+                String::from("42"),
+                String::from("is"),
+                String::from("the"),
+                String::from("answer"),
+                String::from("!"),
+            ],
+            words: vec![Some(0), Some(1), Some(2), Some(3), Some(4)],
+            offsets: vec![(0, 2), (2, 4), (4, 7), (7, 13), (13, 14)],
+            special_tokens_mask: vec![0, 0, 0, 0, 0],
+            attention_mask: vec![1, 1, 1, 1, 1],
+            overflowing: vec![],
+            ..Default::default()
+        };
+        enc.truncate(4, 2);
+
+        assert_eq!(
+            enc,
+            Encoding {
+                ids: vec![1, 2, 3, 4],
+                type_ids: vec![0, 0, 0, 0],
+                tokens: vec![
+                    String::from("42"),
+                    String::from("is"),
+                    String::from("the"),
+                    String::from("answer"),
+                ],
+                words: vec![Some(0), Some(1), Some(2), Some(3)],
+                offsets: vec![(0, 2), (2, 4), (4, 7), (7, 13)],
+                special_tokens_mask: vec![0, 0, 0, 0],
+                attention_mask: vec![1, 1, 1, 1],
+                overflowing: vec![Encoding {
+                    ids: vec![3, 4, 5],
+                    type_ids: vec![0, 0, 0],
+                    tokens: vec![
+                        String::from("the"),
+                        String::from("answer"),
+                        String::from("!"),
+                    ],
+                    words: vec![Some(2), Some(3), Some(4)],
+                    offsets: vec![(4, 7), (7, 13), (13, 14)],
+                    special_tokens_mask: vec![0, 0, 0],
+                    attention_mask: vec![1, 1, 1],
+                    overflowing: vec![],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
     fn mappings() {
         let encoding = Encoding {
             ids: vec![0; 11], // Needed for Encoding::len
