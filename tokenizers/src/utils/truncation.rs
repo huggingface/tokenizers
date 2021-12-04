@@ -67,9 +67,9 @@ pub fn truncate_encodings(
     params: &TruncationParams,
 ) -> Result<(Encoding, Option<Encoding>)> {
     if params.max_length == 0 {
-        encoding.truncate(0, params.stride);
+        encoding.truncate(0, params.stride, true);
         if let Some(other_encoding) = pair_encoding.as_mut() {
-            other_encoding.truncate(0, params.stride);
+            other_encoding.truncate(0, params.stride, true);
         }
         return Ok((encoding, pair_encoding));
     }
@@ -129,10 +129,10 @@ pub fn truncate_encodings(
                 if swap {
                     mem::swap(&mut n1, &mut n2);
                 }
-                encoding.truncate(n1, params.stride);
-                other_encoding.truncate(n2, params.stride);
+                encoding.truncate(n1, params.stride, true);
+                other_encoding.truncate(n2, params.stride, true);
             } else {
-                encoding.truncate(total_length - to_remove, params.stride);
+                encoding.truncate(total_length - to_remove, params.stride, true);
             }
         }
         TruncationStrategy::OnlyFirst | TruncationStrategy::OnlySecond => {
@@ -146,7 +146,7 @@ pub fn truncate_encodings(
 
             let target_len = target.get_ids().len();
             if target_len > to_remove {
-                target.truncate(target_len - to_remove, params.stride);
+                target.truncate(target_len - to_remove, params.stride, true);
             } else {
                 return Err(Box::new(TruncationError::SequenceTooShort));
             }

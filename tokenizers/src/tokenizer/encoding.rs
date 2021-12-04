@@ -3,6 +3,7 @@ use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::ops::Range;
 
 /// Represents the output of a `Tokenizer`.
@@ -292,10 +293,47 @@ impl Encoding {
         )
     }
 
+    pub fn split_overflow(
+        &mut self,
+        max_len: usize,
+        left: bool,
+    ) -> (
+        Vec<u32>,
+        Vec<u32>,
+        Vec<String>,
+        Vec<Option<u32>>,
+        Vec<(usize, usize)>,
+        Vec<u32>,
+        Vec<u32>,
+    ) {
+        if left {
+            (
+                self.ids.split_off(max_len),
+                self.type_ids.split_off(max_len),
+                self.tokens.split_off(max_len),
+                self.words.split_off(max_len),
+                self.offsets.split_off(max_len),
+                self.special_tokens_mask.split_off(max_len),
+                self.attention_mask.split_off(max_len),
+            )
+        } else {
+            let at = self.ids.len() - max_len;
+            (
+                split_off_back(&mut self.ids, at),
+                split_off_back(&mut self.type_ids, at),
+                split_off_back(&mut self.tokens, at),
+                split_off_back(&mut self.words, at),
+                split_off_back(&mut self.offsets, at),
+                split_off_back(&mut self.special_tokens_mask, at),
+                split_off_back(&mut self.attention_mask, at),
+            )
+        }
+    }
+
     /// Truncate the current `Encoding`.
     ///
     /// Panic if `stride >= max_len`
-    pub fn truncate(&mut self, max_len: usize, stride: usize) {
+    pub fn truncate(&mut self, max_len: usize, stride: usize, left: bool) {
         if max_len >= self.ids.len() {
             return;
         }
@@ -306,38 +344,47 @@ impl Encoding {
             return;
         }
 
-        // Get the main overflowing part
-        let o_ids = self.ids.split_off(max_len);
-        let o_type_ids = self.type_ids.split_off(max_len);
-        let o_tokens = self.tokens.split_off(max_len);
-        let o_words = self.words.split_off(max_len);
-        let o_offsets = self.offsets.split_off(max_len);
-        let o_spe_toks = self.special_tokens_mask.split_off(max_len);
-        let o_attent = self.attention_mask.split_off(max_len);
+        assert!(stride < max_len);
 
-        // When truncating, we loose the `sequence_ranges` information.
+        // Get the main overflowing part
+        let (o_ids, o_type_ids, o_tokens, o_words, o_offsets, o_spe_toks, o_attent) =
+            self.split_overflow(max_len, left);
+
+        // When truncating, we lose the `sequence_ranges` information.
         self.sequence_ranges.clear();
 
         // Now we need to separate the overflowing part into as many Encoding as needed
-        assert!(stride < max_len);
         let part_size = max_len - stride;
         let mut overflowing = vec![];
-        let mut part_id = 0;
+
+        let mut part_id = if left {
+            0
+        } else {
+            if o_ids.len() > part_size + 1 {
+                o_ids.len() - part_size
+            } else {
+                1
+            }
+        };
         let mut prev_encoding: &Encoding = self;
 
         loop {
-            if part_size * part_id >= o_ids.len() {
+            if left && part_size * part_id >= o_ids.len() {
+                break;
+            }
+            if !left && part_id == 0 {
                 break;
             }
 
             let o = Encoding {
-                ids: get_current_part(&prev_encoding.ids, &o_ids, part_size, part_id, stride),
+                ids: get_current_part(&prev_encoding.ids, &o_ids, part_size, part_id, stride, left),
                 type_ids: get_current_part(
                     &prev_encoding.type_ids,
                     &o_type_ids,
                     part_size,
                     part_id,
                     stride,
+                    left,
                 ),
                 tokens: get_current_part(
                     &prev_encoding.tokens,
@@ -345,14 +392,23 @@ impl Encoding {
                     part_size,
                     part_id,
                     stride,
+                    left,
                 ),
-                words: get_current_part(&prev_encoding.words, &o_words, part_size, part_id, stride),
+                words: get_current_part(
+                    &prev_encoding.words,
+                    &o_words,
+                    part_size,
+                    part_id,
+                    stride,
+                    left,
+                ),
                 offsets: get_current_part(
                     &prev_encoding.offsets,
                     &o_offsets,
                     part_size,
                     part_id,
                     stride,
+                    left,
                 ),
                 special_tokens_mask: get_current_part(
                     &prev_encoding.special_tokens_mask,
@@ -360,6 +416,7 @@ impl Encoding {
                     part_size,
                     part_id,
                     stride,
+                    left,
                 ),
                 attention_mask: get_current_part(
                     &prev_encoding.attention_mask,
@@ -367,12 +424,17 @@ impl Encoding {
                     part_size,
                     part_id,
                     stride,
+                    left,
                 ),
                 overflowing: vec![],
                 sequence_ranges: HashMap::new(),
             };
 
-            part_id += 1;
+            if left {
+                part_id += 1
+            } else {
+                part_id -= 1
+            };
             overflowing.push(o);
             prev_encoding = overflowing.last().unwrap();
         }
@@ -544,20 +606,50 @@ impl std::iter::FromIterator<(u32, String, (usize, usize), Option<u32>, u32)> fo
 }
 
 #[inline]
+fn split_off_back<T>(vec: &mut Vec<T>, at: usize) -> Vec<T> {
+    assert!(vec.len() >= at);
+    let mut other = Vec::with_capacity(at);
+    let left_over_len = vec.len() - at;
+    let at_isize = at.try_into().unwrap();
+    unsafe {
+        std::ptr::copy_nonoverlapping(vec.as_ptr(), other.as_mut_ptr(), at);
+        other.set_len(at);
+        std::ptr::copy(
+            vec.as_ptr().offset(at_isize),
+            vec.as_mut_ptr(),
+            left_over_len,
+        );
+        vec.set_len(left_over_len);
+    }
+    other
+}
+
+#[inline]
 fn get_current_part<T: Clone>(
     prev: &[T],
     current: &[T],
     size: usize,
     idx: usize,
     stride: usize,
+    left: bool,
 ) -> Vec<T> {
-    let curr_slice = if (idx + 1) * size > current.len() {
-        &current[idx * size..]
+    if left {
+        let curr_slice = if (idx + 1) * size > current.len() {
+            &current[idx * size..]
+        } else {
+            &current[idx * size..(idx + 1) * size]
+        };
+        let prev_slice = &prev[prev.len() - stride..];
+        [prev_slice, curr_slice].concat()
     } else {
-        &current[idx * size..(idx + 1) * size]
-    };
-    let prev_slice = &prev[prev.len() - stride..];
-    [prev_slice, curr_slice].concat()
+        let curr_slice = if idx * size > current.len() {
+            &current[(idx - 1) * size..]
+        } else {
+            &current[(idx - 1) * size..idx * size]
+        };
+        let prev_slice = &prev[..stride];
+        [curr_slice, prev_slice].concat()
+    }
 }
 
 #[cfg(test)]
@@ -620,7 +712,7 @@ mod tests {
             attention_mask: vec![1, 1, 1],
             ..Default::default()
         };
-        a.truncate(2, 0);
+        a.truncate(2, 0, true);
 
         assert_eq!(
             a,
@@ -663,7 +755,7 @@ mod tests {
             attention_mask: vec![1, 1, 1],
             ..Default::default()
         };
-        a.truncate(0, 0);
+        a.truncate(0, 0, true);
 
         assert_eq!(
             a,
@@ -707,7 +799,7 @@ mod tests {
             overflowing: vec![],
             ..Default::default()
         };
-        enc.truncate(4, 2);
+        enc.truncate(4, 2, true);
 
         assert_eq!(
             enc,
@@ -737,6 +829,49 @@ mod tests {
                     special_tokens_mask: vec![0, 0, 0],
                     attention_mask: vec![1, 1, 1],
                     overflowing: vec![],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn truncate_right() {
+        let mut a = Encoding {
+            ids: vec![1, 2, 3],
+            type_ids: vec![0, 0, 0],
+            tokens: vec![
+                String::from("Hello"),
+                String::from("World"),
+                String::from("!"),
+            ],
+            words: vec![Some(0), Some(1), Some(2)],
+            offsets: vec![(0, 5), (6, 11), (11, 12)],
+            special_tokens_mask: vec![0, 0, 0],
+            attention_mask: vec![1, 1, 1],
+            ..Default::default()
+        };
+        a.truncate(2, 0, false);
+
+        assert_eq!(
+            a,
+            Encoding {
+                ids: vec![2, 3],
+                type_ids: vec![0, 0],
+                tokens: vec![String::from("World"), String::from("!")],
+                words: vec![Some(1), Some(2)],
+                offsets: vec![(6, 11), (11, 12)],
+                special_tokens_mask: vec![0, 0],
+                attention_mask: vec![1, 1],
+                overflowing: vec![Encoding {
+                    ids: vec![1],
+                    type_ids: vec![0],
+                    tokens: vec![String::from("Hello")],
+                    words: vec![Some(0)],
+                    offsets: vec![(0, 5)],
+                    special_tokens_mask: vec![0],
+                    attention_mask: vec![1],
                     ..Default::default()
                 }],
                 ..Default::default()
