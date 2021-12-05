@@ -439,9 +439,13 @@ impl PyEncoding {
     ///
     ///     stride (:obj:`int`, defaults to :obj:`0`):
     ///         The length of previous content to be included in each overflowing piece
+    ///
+    ///     left (:obj:`bool`, defaults to :obj:`True`)
+    ///         Flag setting truncate direction
     #[args(stride = "0")]
-    #[text_signature = "(self, max_length, stride=0)"]
-    fn truncate(&mut self, max_length: usize, stride: usize) {
-        self.encoding.truncate(max_length, stride);
+    #[args(left = true)]
+    #[text_signature = "(self, max_length, stride=0, left=True)"]
+    fn truncate(&mut self, max_length: usize, stride: usize, left: bool) {
+        self.encoding.truncate(max_length, stride, left);
     }
 }

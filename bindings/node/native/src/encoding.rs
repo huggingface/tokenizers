@@ -340,16 +340,17 @@ declare_types! {
         }
 
         method truncate(mut cx) {
-            // truncate(length: number, stride: number = 0)
+            // truncate(length: number, stride: number = 0, left: boolean = true)
 
             let length = cx.extract::<usize>(0)?;
             let stride = cx.extract_opt::<usize>(1)?.unwrap_or(0);
+            let left = cx.extract_opt::<bool>(2)?.unwrap_or(true);
 
             let mut this = cx.this();
             let guard = cx.lock();
             this.borrow_mut(&guard)
                 .encoding.as_mut().expect("Uninitialized Encoding")
-                .truncate(length, stride);
+                .truncate(length, stride, left);
 
             Ok(cx.undefined().upcast())
         }

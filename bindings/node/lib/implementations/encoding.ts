@@ -13,7 +13,7 @@ export class Encoding {
   private _wordIndexes?: (number | undefined)[];
   private _sequenceIndexes?: (number | undefined)[];
 
-  constructor(private _rawEncoding: RawEncoding) {}
+  constructor(private _rawEncoding: RawEncoding) { }
 
   /**
    * Merge a list of Encoding into one final Encoding
@@ -254,9 +254,10 @@ export class Encoding {
    * @param length The maximum length to be kept
    * @param [stride=0] The length of the previous first sequence
    * to be included in the overflowing sequence
+   * @param [left=true] Flag setting truncate direction
    */
-  truncate(length: number, stride?: number): void {
-    this._rawEncoding.truncate(length, stride);
+  truncate(length: number, stride?: number, left?: boolean): void {
+    this._rawEncoding.truncate(length, stride, left);
     this.resetInternalProperties();
   }
 
