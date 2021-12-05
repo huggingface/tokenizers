@@ -359,12 +359,10 @@ impl Encoding {
 
         let mut part_id = if left {
             0
+        } else if o_ids.len() > part_size + 1 {
+            o_ids.len() - part_size
         } else {
-            if o_ids.len() > part_size + 1 {
-                o_ids.len() - part_size
-            } else {
-                1
-            }
+            1
         };
         let mut prev_encoding: &Encoding = self;
 
