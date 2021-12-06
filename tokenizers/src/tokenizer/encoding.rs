@@ -3,7 +3,6 @@ use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::ops::Range;
 
 /// Represents the output of a `Tokenizer`.
@@ -319,13 +318,13 @@ impl Encoding {
         } else {
             let at = self.ids.len() - max_len;
             (
-                split_off_back(&mut self.ids, at),
-                split_off_back(&mut self.type_ids, at),
-                split_off_back(&mut self.tokens, at),
-                split_off_back(&mut self.words, at),
-                split_off_back(&mut self.offsets, at),
-                split_off_back(&mut self.special_tokens_mask, at),
-                split_off_back(&mut self.attention_mask, at),
+                self.ids.drain(..at).collect(),
+                self.type_ids.drain(..at).collect(),
+                self.tokens.drain(..at).collect(),
+                self.words.drain(..at).collect(),
+                self.offsets.drain(..at).collect(),
+                self.special_tokens_mask.drain(..at).collect(),
+                self.attention_mask.drain(..at).collect(),
             )
         }
     }
@@ -601,25 +600,6 @@ impl std::iter::FromIterator<(u32, String, (usize, usize), Option<u32>, u32)> fo
 
         encoding
     }
-}
-
-#[inline]
-fn split_off_back<T>(vec: &mut Vec<T>, at: usize) -> Vec<T> {
-    assert!(vec.len() >= at);
-    let mut other = Vec::with_capacity(at);
-    let left_over_len = vec.len() - at;
-    let at_isize = at.try_into().unwrap();
-    unsafe {
-        std::ptr::copy_nonoverlapping(vec.as_ptr(), other.as_mut_ptr(), at);
-        other.set_len(at);
-        std::ptr::copy(
-            vec.as_ptr().offset(at_isize),
-            vec.as_mut_ptr(),
-            left_over_len,
-        );
-        vec.set_len(left_over_len);
-    }
-    other
 }
 
 #[inline]
