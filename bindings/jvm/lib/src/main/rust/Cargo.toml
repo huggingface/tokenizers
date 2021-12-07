@@ -1,0 +1,14 @@
+[package]
+name = "safer-ffi-tokenizers"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokenizers = {  path = "../../../../../../tokenizers", version = "*" }
+safer-ffi = { version = "0.0.6", features = ["proc_macros"] }
+
+[lib]
+crate_type = ["cdylib"]
+
+[features]
+c-headers = ["safer-ffi/headers"]

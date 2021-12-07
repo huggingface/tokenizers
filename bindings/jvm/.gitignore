@@ -1,0 +1,14 @@
+**/gradle/
+**/.gradle
+**/build/
+!src/**/build/
+lib/gradle/*
+
+# Ignore Gradle GUI config
+gradle-app.setting
+
+# Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
+!gradle-wrapper.jar
+
+# downloadable test big.txt
+lib/src/jmh/resources/big.txt
