@@ -185,7 +185,11 @@ pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
 
         if leading_spaces > 0 || trailing_spaces > 0 {
             if leading_spaces > 0 {
-                if i == 0 && add_prefix_space && leading_spaces == 1 {
+                // If user uses `is_pretokenized=True` we might have
+                // offsets that might begin at the start of the string but are
+                // NOT the first token.
+                let is_first = i == 0 || offsets.0 == 0;
+                if is_first && add_prefix_space && leading_spaces == 1 {
                     // If we are processing the first pair of offsets, with `add_prefix_space`,
                     // then we shouldn't remove anything we added. If there are more than one
                     // leading spaces though, it means we didn't add them, and they should be
@@ -380,6 +384,39 @@ mod tests {
                 .map(|(_, o, _)| &input[o.0..o.1])
                 .collect::<Vec<_>>(),
             vec!["i", "⭢", "j"]
+        );
+    }
+
+    #[test]
+    fn processor_trims_offsets_pre_tokenized() {
+        // If user uses `is_pretokenized=True` we might have
+        // offsets that might begin at the start of the string but are
+        // NOT the first token.
+        let mut encoding = Encoding::new(
+            vec![0; 5],
+            vec![],
+            vec!["Ġl".into(), "ove".into(), "Ġl".into(), "ove".into()],
+            vec![],
+            vec![(0, 1), (1, 4), (0, 1), (1, 4)],
+            vec![],
+            vec![],
+            vec![],
+            HashMap::new(),
+        );
+        process_offsets(&mut encoding, true);
+        assert_eq!(
+            encoding,
+            Encoding::new(
+                vec![0; 5],
+                vec![],
+                vec!["Ġl".into(), "ove".into(), "Ġl".into(), "ove".into()],
+                vec![],
+                vec![(0, 1), (1, 4), (0, 1), (1, 4)],
+                vec![],
+                vec![],
+                vec![],
+                HashMap::new(),
+            )
         );
     }
 
