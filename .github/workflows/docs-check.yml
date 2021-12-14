@@ -16,7 +16,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v1
         with:
-          python-version: 3.6
+          python-version: 3.9
 
       - name: Install dependencies
         run: pip install sphinx sphinx_rtd_theme setuptools-rust
