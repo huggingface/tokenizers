@@ -62,14 +62,14 @@ impl PostProcessor for RobertaProcessing {
             encoding
                 .get_overflowing_mut()
                 .iter_mut()
-                .for_each(|mut encoding| process_offsets(&mut encoding, self.add_prefix_space));
+                .for_each(|encoding| process_offsets(encoding, self.add_prefix_space));
 
-            if let Some(mut encoding) = pair_encoding.as_mut() {
-                process_offsets(&mut encoding, self.add_prefix_space);
+            if let Some(encoding) = pair_encoding.as_mut() {
+                process_offsets(encoding, self.add_prefix_space);
                 encoding
                     .get_overflowing_mut()
                     .iter_mut()
-                    .for_each(|mut encoding| process_offsets(&mut encoding, self.add_prefix_space));
+                    .for_each(|encoding| process_offsets(encoding, self.add_prefix_space));
             }
         }
 

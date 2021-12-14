@@ -11,7 +11,7 @@ pub enum EncodeTask<'s> {
 }
 
 pub enum EncodeOutput {
-    Single(Encoding),
+    Single(Box<Encoding>),
     Batch(Vec<Encoding>),
 }
 
@@ -35,7 +35,7 @@ impl Task for EncodeTask<'static> {
                         *add_special_tokens,
                     )
                     .map_err(|e| format!("{}", e))
-                    .map(EncodeOutput::Single)
+                    .map(|item| EncodeOutput::Single(Box::new(item)))
             }
             EncodeTask::Batch(worker, input, add_special_tokens) => {
                 let mut input: Option<Vec<EncodeInput>> =
@@ -65,7 +65,7 @@ impl Task for EncodeTask<'static> {
                 let mut js_encoding = JsEncoding::new::<_, JsEncoding, _>(&mut cx, vec![])?;
                 // Set the actual encoding
                 let guard = cx.lock();
-                js_encoding.borrow_mut(&guard).encoding = Some(encoding);
+                js_encoding.borrow_mut(&guard).encoding = Some(*encoding);
                 Ok(js_encoding.upcast())
             }
             EncodeOutput::Batch(encodings) => {

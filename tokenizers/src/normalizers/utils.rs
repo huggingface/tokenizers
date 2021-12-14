@@ -26,9 +26,9 @@ impl Sequence {
 }
 
 impl Normalizer for Sequence {
-    fn normalize(&self, mut normalized: &mut NormalizedString) -> Result<()> {
+    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         for normalizer in &self.normalizers {
-            normalizer.normalize(&mut normalized)?;
+            normalizer.normalize(normalized)?;
         }
         Ok(())
     }

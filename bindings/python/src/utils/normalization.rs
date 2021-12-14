@@ -559,7 +559,7 @@ impl PyNormalizedStringRefMut {
 
     fn filter(&mut self, func: &PyAny) -> PyResult<()> {
         self.inner
-            .map_mut(|mut n| filter(&mut n, func))
+            .map_mut(|n| filter(n, func))
             .ok_or_else(PyNormalizedStringRefMut::destroyed_error)??;
         Ok(())
     }
@@ -573,7 +573,7 @@ impl PyNormalizedStringRefMut {
 
     fn map(&mut self, func: &PyAny) -> PyResult<()> {
         self.inner
-            .map_mut(|mut n| map(&mut n, func))
+            .map_mut(|n| map(n, func))
             .ok_or_else(PyNormalizedStringRefMut::destroyed_error)??;
         Ok(())
     }

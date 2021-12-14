@@ -102,7 +102,7 @@ pub fn from_pretrained<S: AsRef<str>>(
     identifier: S,
     params: Option<FromPretrainedParameters>,
 ) -> Result<PathBuf> {
-    let params = params.unwrap_or_else(FromPretrainedParameters::default);
+    let params = params.unwrap_or_default();
     let cache_dir = ensure_cache_dir()?;
 
     // Build a custom HTTP Client using our user-agent and custom headers

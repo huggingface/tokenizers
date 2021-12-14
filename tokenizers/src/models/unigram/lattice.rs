@@ -56,8 +56,8 @@ pub struct Lattice<'a> {
     nodes: Vec<NodeRef>,
     pub(super) begin_nodes: Vec<Vec<NodeRef>>,
     pub(super) end_nodes: Vec<Vec<NodeRef>>,
-    bos_id: usize,
-    eos_id: usize,
+    _bos_id: usize,
+    _eos_id: usize,
 }
 
 impl std::fmt::Display for Lattice<'_> {
@@ -158,8 +158,8 @@ impl<'a> Lattice<'a> {
             nodes,
             begin_nodes,
             end_nodes,
-            bos_id,
-            eos_id,
+            _bos_id: bos_id,
+            _eos_id: eos_id,
         }
     }
 
