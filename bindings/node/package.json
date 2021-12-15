@@ -29,7 +29,7 @@
     "eslint-plugin-prettier": "^3.4.1",
     "eslint-plugin-simple-import-sort": "^5.0.3",
     "jest": "^26.6.3",
-    "neon-cli": "^0.3.3",
+    "neon-cli": "^0.9.1",
     "prettier": "^2.3.2",
     "shelljs": "^0.8.3",
     "ts-jest": "^26.5.6",
