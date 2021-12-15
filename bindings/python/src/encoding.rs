@@ -51,7 +51,7 @@ impl PyEncoding {
         let data = serde_json::to_string(&self.encoding).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle Encoding: {}",
-                e.to_string()
+                e
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
@@ -63,7 +63,7 @@ impl PyEncoding {
                 self.encoding = serde_json::from_slice(s.as_bytes()).map_err(|e| {
                     exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle Encoding: {}",
-                        e.to_string()
+                        e
                     ))
                 })?;
                 Ok(())

@@ -103,7 +103,7 @@ impl PyModel {
         let data = serde_json::to_string(&self.model).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle Model: {}",
-                e.to_string()
+                e
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
@@ -115,7 +115,7 @@ impl PyModel {
                 self.model = serde_json::from_slice(s.as_bytes()).map_err(|e| {
                     exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle Model: {}",
-                        e.to_string()
+                        e
                     ))
                 })?;
                 Ok(())

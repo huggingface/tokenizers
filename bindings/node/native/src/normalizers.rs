@@ -115,7 +115,7 @@ impl Default for BertNormalizerOptions {
 fn bert_normalizer(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     let options = cx
         .extract_opt::<BertNormalizerOptions>(0)?
-        .unwrap_or_else(BertNormalizerOptions::default);
+        .unwrap_or_default();
 
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();

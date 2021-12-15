@@ -168,9 +168,7 @@ impl BpeOptions {
 fn bpe_init(mut cx: FunctionContext) -> JsResult<JsModel> {
     let vocab = cx.extract::<Vocab>(0)?;
     let merges = cx.extract::<Merges>(1)?;
-    let options = cx
-        .extract_opt::<BpeOptions>(2)?
-        .unwrap_or_else(BpeOptions::default);
+    let options = cx.extract_opt::<BpeOptions>(2)?.unwrap_or_default();
 
     let mut builder = tk::models::bpe::BPE::builder().vocab_and_merges(vocab, merges);
     builder = options.apply_to_bpe_builder(builder);
@@ -251,9 +249,7 @@ impl WordPieceOptions {
 /// })
 fn wordpiece_init(mut cx: FunctionContext) -> JsResult<JsModel> {
     let vocab = cx.extract::<HashMap<String, u32>>(0)?;
-    let options = cx
-        .extract_opt::<WordPieceOptions>(1)?
-        .unwrap_or_else(WordPieceOptions::default);
+    let options = cx.extract_opt::<WordPieceOptions>(1)?.unwrap_or_default();
 
     let mut builder = tk::models::wordpiece::WordPiece::builder().vocab(vocab);
     builder = options.apply_to_wordpiece_builder(builder);
@@ -320,9 +316,7 @@ impl WordLevelOptions {
 /// }, callback)
 fn wordlevel_init(mut cx: FunctionContext) -> JsResult<JsModel> {
     let vocab = cx.extract::<HashMap<String, u32>>(0)?;
-    let options = cx
-        .extract_opt::<WordLevelOptions>(1)?
-        .unwrap_or_else(WordLevelOptions::default);
+    let options = cx.extract_opt::<WordLevelOptions>(1)?.unwrap_or_default();
 
     let mut builder = tk::models::wordlevel::WordLevel::builder().vocab(vocab);
     builder = options.apply_to_wordlevel_builder(builder);
@@ -378,9 +372,7 @@ struct UnigramOptions {
 /// })
 fn unigram_init(mut cx: FunctionContext) -> JsResult<JsModel> {
     let vocab = cx.extract::<Vec<(String, f64)>>(0)?;
-    let options = cx
-        .extract_opt::<UnigramOptions>(1)?
-        .unwrap_or_else(UnigramOptions::default);
+    let options = cx.extract_opt::<UnigramOptions>(1)?.unwrap_or_default();
 
     let unigram = tk::models::unigram::Unigram::from(vocab, options.unk_id)
         .map_err(|e| Error(e.to_string()))?;

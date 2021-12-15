@@ -112,7 +112,7 @@ impl PyPreTokenizer {
         let data = serde_json::to_string(&self.pretok).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle PreTokenizer: {}",
-                e.to_string()
+                e
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).to_object(py))

@@ -16,7 +16,7 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        python: [3.6, 3.7, 3.8, 3.9]
+        python: [3.7, 3.8, 3.9]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
@@ -34,7 +34,7 @@ jobs:
 
 
       - name: Install Python
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python }}
           architecture: x86
@@ -45,6 +45,7 @@ jobs:
           command: build
           args: --manifest-path ./bindings/python/Cargo.toml
 
+
   build_and_test:
     name: Check everything builds & tests
     runs-on: ${{ matrix.os }}
@@ -54,6 +55,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
+        
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
@@ -61,20 +63,17 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
 
-          # # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
-          # - run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
+      - name: Cache Cargo Registry
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
-          # - name: Cache Cargo Registry
-          #   uses: actions/cache@v1
-          #   with:
-          #     path: ~/.cargo/registry
-          #     key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-          # - name: Cache Cargo Build Target
-          #   uses: actions/cache@v1
-          #   with:
-          #     path: ./bindings/python/target
-          #     key: ${{ runner.os }}-cargo-python-build-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache Cargo Build Target
+        uses: actions/cache@v1
+        with:
+          path: ./bindings/python/target
+          key: ${{ runner.os }}-cargo-python-build-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Lint with RustFmt
         uses: actions-rs/cargo@v1
@@ -90,9 +89,9 @@ jobs:
           args: --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Install Python
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v2
         with:
-          python-version: 3.6
+          python-version: 3.9
           architecture: "x64"
 
       - name: Install
@@ -100,7 +99,8 @@ jobs:
         run: |
           python -m venv .env
           source .env/bin/activate
-          pip install pytest requests setuptools_rust numpy "pyarrow<3.0.0" datasets
+          pip install -U pip
+          pip install pytest requests setuptools_rust numpy pyarrow datasets
           python setup.py develop
 
       - name: Check style
