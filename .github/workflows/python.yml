@@ -46,7 +46,7 @@ jobs:
           args: --manifest-path ./bindings/python/Cargo.toml
 
       - name: Install dev version
-        run: sudo apt-get install -y lib${{ matrix.python }}}-dev
+        run: sudo apt-get install -y libpython${{ matrix.python }}-dev
 
   build_and_test:
     name: Check everything builds & tests
