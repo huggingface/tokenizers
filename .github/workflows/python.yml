@@ -96,6 +96,7 @@ jobs:
         working-directory: ./bindings/python
         run: |
           python -m venv .env
+          sudo apt-get install lib${{ matrix.python}}-dev
           source .env/bin/activate
           pip install -U pip
           pip install pytest requests setuptools_rust numpy pyarrow datasets
