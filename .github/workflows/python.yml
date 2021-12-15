@@ -34,7 +34,7 @@ jobs:
 
 
       - name: Install Python
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python }}
           architecture: x86
@@ -89,13 +89,10 @@ jobs:
           args: --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Install Python
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v2
         with:
           python-version: 3.9
           architecture: "x64"
-
-      - name: Install dev version
-        run: apt-get install -y libpython3.9-dev
 
       - name: Install
         working-directory: ./bindings/python
