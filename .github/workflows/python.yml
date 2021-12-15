@@ -45,8 +45,6 @@ jobs:
           command: build
           args: --manifest-path ./bindings/python/Cargo.toml
 
-      - name: Install dev version
-        run: apt-get install -y libpython${{ matrix.python }}-dev
 
   build_and_test:
     name: Check everything builds & tests
@@ -57,6 +55,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
+        
+      - name: Install dev version
+        run: apt-get install -y libpython${{ matrix.python }}-dev
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
