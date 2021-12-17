@@ -69,11 +69,11 @@ jobs:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Cache Cargo Build Target
-        uses: actions/cache@v1
-        with:
-          path: ./bindings/python/target
-          key: ${{ runner.os }}-cargo-python-build-${{ hashFiles('**/Cargo.lock') }}
+          # - name: Cache Cargo Build Target
+          #   uses: actions/cache@v1
+          #   with:
+          #     path: ./bindings/python/target
+          #     key: ${{ runner.os }}-cargo-python-build-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Lint with RustFmt
         uses: actions-rs/cargo@v1
