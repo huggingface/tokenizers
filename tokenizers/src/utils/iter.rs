@@ -1,6 +1,6 @@
 //! This comes from the Rust libcore and is duplicated here because it is not exported
-//! (cf https://github.com/rust-lang/rust/blob/25091ed9b7739e12466fb2490baa1e8a2815121c/src/libcore/iter/adapters/mod.rs#L2664)
-//! We are now using the version from https://stackoverflow.com/questions/44544323/how-to-unzip-a-sequence-of-resulta-b-e-to-a-veca-vecb-and-stop-on-f
+//! (cf <https://github.com/rust-lang/rust/blob/25091ed9b7739e12466fb2490baa1e8a2815121c/src/libcore/iter/adapters/mod.rs#L2664>)
+//! We are now using the version from <https://stackoverflow.com/questions/44544323/how-to-unzip-a-sequence-of-resulta-b-e-to-a-veca-vecb-and-stop-on-f>
 //! because the one from the libcore seems to cause overflowing stacks in some cases
 //! It also contains a lines_with_ending that copies std::io::BufRead but keeps line endings.
 use std::io::BufRead;
