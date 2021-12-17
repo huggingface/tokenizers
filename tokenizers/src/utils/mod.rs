@@ -1,4 +1,5 @@
 pub(crate) mod cache;
+#[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
 pub mod iter;
 pub mod padding;

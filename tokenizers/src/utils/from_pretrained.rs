@@ -1,7 +1,6 @@
 use crate::Result;
 use cached_path::CacheBuilder;
 use itertools::Itertools;
-use reqwest::{blocking::Client, header};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -96,6 +95,7 @@ impl Default for FromPretrainedParameters {
     }
 }
 
+#[cfg(feature = "http")]
 /// Downloads and cache the identified tokenizer if it exists on
 /// the Hugging Face Hub, and returns a local path to the file
 pub fn from_pretrained<S: AsRef<str>>(
@@ -106,14 +106,14 @@ pub fn from_pretrained<S: AsRef<str>>(
     let cache_dir = ensure_cache_dir()?;
 
     // Build a custom HTTP Client using our user-agent and custom headers
-    let mut headers = header::HeaderMap::new();
+    let mut headers = reqwest::header::HeaderMap::new();
     if let Some(ref token) = params.auth_token {
         headers.insert(
             "Authorization",
-            header::HeaderValue::from_str(&format!("Bearer {}", token))?,
+            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token))?,
         );
     }
-    let client_builder = Client::builder()
+    let client_builder = reqwest::blocking::Client::builder()
         .user_agent(user_agent(params.user_agent))
         .default_headers(headers);
 

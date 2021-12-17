@@ -1,3 +1,4 @@
+#![cfg(feature = "http")]
 use tokenizers::{FromPretrainedParameters, Result, Tokenizer};
 
 #[test]
