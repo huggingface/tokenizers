@@ -110,7 +110,7 @@ pub fn from_pretrained<S: AsRef<str>>(
     if let Some(ref token) = params.auth_token {
         headers.insert(
             "Authorization",
-            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token))?,
+            header::HeaderValue::from_str(&format!("Bearer {}", token))?,
         );
     }
     let client_builder = Client::builder()
