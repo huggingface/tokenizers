@@ -122,5 +122,5 @@ jobs:
           conda list
           conda-build .github/conda --python=${{ matrix.python }}
 
-          # - name: Upload to Anaconda
-          #   run: anaconda upload `conda-build .github/conda --output` --force
+      - name: Upload to Anaconda
+        run: anaconda upload `conda-build .github/conda --output` --force

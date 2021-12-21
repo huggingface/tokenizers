@@ -113,8 +113,8 @@ jobs:
         run: |
           pip install setuptools wheel setuptools-rust
 
-          # - name: Upload to PyPi
-          #   working-directory: ./bindings/python
-          #   run: |
-          #     pip install twine
-          #     twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
+      - name: Upload to PyPi
+        working-directory: ./bindings/python
+        run: |
+          pip install twine
+          twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
