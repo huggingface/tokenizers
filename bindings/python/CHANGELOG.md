@@ -342,6 +342,12 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#850]: https://github.com/huggingface/tokenizers/pull/850
+[#846]: https://github.com/huggingface/tokenizers/pull/846
+[#844]: https://github.com/huggingface/tokenizers/pull/844
+[#845]: https://github.com/huggingface/tokenizers/pull/845
+[#851]: https://github.com/huggingface/tokenizers/pull/851
+[#585]: https://github.com/huggingface/tokenizers/pull/585
 [#793]: https://github.com/huggingface/tokenizers/pull/793
 [#780]: https://github.com/huggingface/tokenizers/pull/780
 [#770]: https://github.com/huggingface/tokenizers/pull/770
