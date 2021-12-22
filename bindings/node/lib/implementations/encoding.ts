@@ -13,7 +13,7 @@ export class Encoding {
   private _wordIndexes?: (number | undefined)[];
   private _sequenceIndexes?: (number | undefined)[];
 
-  constructor(private _rawEncoding: RawEncoding) { }
+  constructor(private _rawEncoding: RawEncoding) {}
 
   /**
    * Merge a list of Encoding into one final Encoding
@@ -256,7 +256,7 @@ export class Encoding {
    * to be included in the overflowing sequence
    * @param [direction='right'] Truncate direction
    */
-  truncate(length: number, stride?: number, direction: string = 'right'): void {
+  truncate(length: number, stride?: number, direction = "right"): void {
     this._rawEncoding.truncate(length, stride, direction);
     this.resetInternalProperties();
   }
