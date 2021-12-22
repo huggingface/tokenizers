@@ -447,14 +447,12 @@ impl PyEncoding {
     #[args(direction = "\"right\"")]
     #[text_signature = "(self, max_length, stride=0, direction='right')"]
     fn truncate(&mut self, max_length: usize, stride: usize, direction: &str) {
-        if direction != "left" && direction != "right" {
-            panic!("Invalid truncation direction value : {}", direction);
-        }
-        let tdir = if direction == "right" {
-            TruncateDirection::Right
-        } else {
-            TruncateDirection::Left
+        let tdir = match direction {
+            "left" => TruncateDirection::Left,
+            "right" => TruncateDirection::Right,
+            _ => panic!("Invalid truncation direction value : {}", direction),
         };
+
         self.encoding.truncate(max_length, stride, tdir);
     }
 }

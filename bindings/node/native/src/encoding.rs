@@ -348,15 +348,12 @@ declare_types! {
             let stride = cx.extract_opt::<usize>(1)?.unwrap_or(0);
             let direction = cx.extract_opt::<String>(2)?.unwrap_or_else(|| String::from("right"));
 
-            if direction != "right" && direction != "left" {
-                panic!("Invalid truncation direction value : {}", direction);
-            }
-
-            let tdir = if direction == "right" {
-                TruncateDirection::Right
-            } else {
-                TruncateDirection::Left
+            let tdir = match direction.as_str() {
+                "left" => TruncateDirection::Left,
+                "right" => TruncateDirection::Right,
+                _ => panic!("Invalid truncation direction value : {}", direction),
             };
+
             let mut this = cx.this();
             let guard = cx.lock();
             this.borrow_mut(&guard)
