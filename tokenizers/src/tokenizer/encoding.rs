@@ -315,14 +315,14 @@ impl Encoding {
 
         let offset = max_len - stride;
         let mut end = false;
-        let parts_ranges: Vec<std::ops::Range<usize>> = match direction {
+        let parts_ranges: Vec<(usize, usize)> = match direction {
             TruncateDirection::Right => (0..encoding_len)
                 .step_by(offset)
                 .filter_map(|start| {
                     if !end {
                         let stop = std::cmp::min(start + max_len, encoding_len);
                         end = stop == encoding_len;
-                        Some(start..stop)
+                        Some((start, stop))
                     } else {
                         None
                     }
@@ -336,7 +336,7 @@ impl Encoding {
                     let start = if stop < max_len { 0 } else { stop - max_len };
                     if start < stop && !end {
                         end = start == 0;
-                        Some(start..stop)
+                        Some((start, stop))
                     } else {
                         None
                     }
@@ -345,15 +345,15 @@ impl Encoding {
         };
 
         let mut i = 0;
-        let range = &parts_ranges[i];
+        let (start, stop) = parts_ranges[i];
         let mut new_encoding = Encoding {
-            ids: self.ids[range.start..range.end].to_vec(),
-            type_ids: self.type_ids[range.start..range.end].to_vec(),
-            tokens: self.tokens[range.start..range.end].to_vec(),
-            words: self.words[range.start..range.end].to_vec(),
-            offsets: self.offsets[range.start..range.end].to_vec(),
-            special_tokens_mask: self.special_tokens_mask[range.start..range.end].to_vec(),
-            attention_mask: self.attention_mask[range.start..range.end].to_vec(),
+            ids: self.ids[start..stop].to_vec(),
+            type_ids: self.type_ids[start..stop].to_vec(),
+            tokens: self.tokens[start..stop].to_vec(),
+            words: self.words[start..stop].to_vec(),
+            offsets: self.offsets[start..stop].to_vec(),
+            special_tokens_mask: self.special_tokens_mask[start..stop].to_vec(),
+            attention_mask: self.attention_mask[start..stop].to_vec(),
             overflowing: vec![],
             sequence_ranges: HashMap::new(),
         };
@@ -363,15 +363,15 @@ impl Encoding {
                 break;
             }
             i += 1;
-            let range = &parts_ranges[i];
+            let (start, stop) = parts_ranges[i];
             new_encoding.overflowing.push(Encoding {
-                ids: self.ids[range.start..range.end].to_vec(),
-                type_ids: self.type_ids[range.start..range.end].to_vec(),
-                tokens: self.tokens[range.start..range.end].to_vec(),
-                words: self.words[range.start..range.end].to_vec(),
-                offsets: self.offsets[range.start..range.end].to_vec(),
-                special_tokens_mask: self.special_tokens_mask[range.start..range.end].to_vec(),
-                attention_mask: self.attention_mask[range.start..range.end].to_vec(),
+                ids: self.ids[start..stop].to_vec(),
+                type_ids: self.type_ids[start..stop].to_vec(),
+                tokens: self.tokens[start..stop].to_vec(),
+                words: self.words[start..stop].to_vec(),
+                offsets: self.offsets[start..stop].to_vec(),
+                special_tokens_mask: self.special_tokens_mask[start..stop].to_vec(),
+                attention_mask: self.attention_mask[start..stop].to_vec(),
                 overflowing: vec![],
                 sequence_ranges: HashMap::new(),
             });
