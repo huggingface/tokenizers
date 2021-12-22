@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::mem;
 
+pub enum TruncateDirection {
+    Left,
+    Right,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TruncationParams {
     pub max_length: usize,
@@ -67,9 +72,9 @@ pub fn truncate_encodings(
     params: &TruncationParams,
 ) -> Result<(Encoding, Option<Encoding>)> {
     if params.max_length == 0 {
-        encoding.truncate(0, params.stride, true);
+        encoding.truncate(0, params.stride, TruncateDirection::Right);
         if let Some(other_encoding) = pair_encoding.as_mut() {
-            other_encoding.truncate(0, params.stride, true);
+            other_encoding.truncate(0, params.stride, TruncateDirection::Right);
         }
         return Ok((encoding, pair_encoding));
     }
@@ -129,10 +134,14 @@ pub fn truncate_encodings(
                 if swap {
                     mem::swap(&mut n1, &mut n2);
                 }
-                encoding.truncate(n1, params.stride, true);
-                other_encoding.truncate(n2, params.stride, true);
+                encoding.truncate(n1, params.stride, TruncateDirection::Right);
+                other_encoding.truncate(n2, params.stride, TruncateDirection::Right);
             } else {
-                encoding.truncate(total_length - to_remove, params.stride, true);
+                encoding.truncate(
+                    total_length - to_remove,
+                    params.stride,
+                    TruncateDirection::Right,
+                );
             }
         }
         TruncationStrategy::OnlyFirst | TruncationStrategy::OnlySecond => {
@@ -146,7 +155,11 @@ pub fn truncate_encodings(
 
             let target_len = target.get_ids().len();
             if target_len > to_remove {
-                target.truncate(target_len - to_remove, params.stride, true);
+                target.truncate(
+                    target_len - to_remove,
+                    params.stride,
+                    TruncateDirection::Right,
+                );
             } else {
                 return Err(Box::new(TruncationError::SequenceTooShort));
             }

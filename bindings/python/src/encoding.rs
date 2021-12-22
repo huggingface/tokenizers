@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3::{PyObjectProtocol, PySequenceProtocol};
 use tk::tokenizer::{Offsets, PaddingDirection};
+use tk::utils::truncation::TruncateDirection;
 use tokenizers as tk;
 
 use crate::error::{deprecation_warning, PyError};
@@ -440,12 +441,20 @@ impl PyEncoding {
     ///     stride (:obj:`int`, defaults to :obj:`0`):
     ///         The length of previous content to be included in each overflowing piece
     ///
-    ///     left (:obj:`bool`, defaults to :obj:`True`)
-    ///         Flag setting truncate direction
+    ///     direction (:obj:`str`, defaults to :obj:`right`)
+    ///         Truncate direction
     #[args(stride = "0")]
-    #[args(left = true)]
-    #[text_signature = "(self, max_length, stride=0, left=True)"]
-    fn truncate(&mut self, max_length: usize, stride: usize, left: bool) {
-        self.encoding.truncate(max_length, stride, left);
+    #[args(direction = "\"right\"")]
+    #[text_signature = "(self, max_length, stride=0, direction='right')"]
+    fn truncate(&mut self, max_length: usize, stride: usize, direction: &str) {
+        if direction != "left" && direction != "right" {
+            panic!("Invalid truncation direction value : {}", direction);
+        }
+        let tdir = if direction == "right" {
+            TruncateDirection::Right
+        } else {
+            TruncateDirection::Left
+        };
+        self.encoding.truncate(max_length, stride, tdir);
     }
 }

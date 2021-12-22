@@ -142,9 +142,9 @@ export interface RawEncoding {
    * @param length The maximum length to be kept
    * @param [stride=0] The length of the previous first sequence
    * to be included in the overflowing sequence
-   * @param [left=true] Flag setting truncate direction
+   * @param [direction='right'] Truncate direction
    */
-  truncate(length: number, stride?: number, left?: boolean): void;
+  truncate(length: number, stride?: number, direction?: string): void;
 }
 
 interface PaddingOptions {

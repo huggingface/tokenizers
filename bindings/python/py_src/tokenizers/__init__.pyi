@@ -286,7 +286,7 @@ class Encoding:
             :obj:`List[str]`: The list of tokens
         """
         pass
-    def truncate(self, max_length, stride=0, left=True):
+    def truncate(self, max_length, stride=0, direction="right"):
         """
         Truncate the :class:`~tokenizers.Encoding` at the given length
 
@@ -300,8 +300,8 @@ class Encoding:
             stride (:obj:`int`, defaults to :obj:`0`):
                 The length of previous content to be included in each overflowing piece
 
-            left (:obj:`bool`, defaults to :obj:`True`)
-                Flag setting truncate direction
+            direction (:obj:`str`, defaults to :obj:`right`)
+                Truncate direction
         """
         pass
     @property
