@@ -376,7 +376,7 @@ impl Encoding {
                 sequence_ranges: HashMap::new(),
             });
         }
-        let _ = std::mem::replace(self, new_encoding);
+        *self = new_encoding;
     }
 
     /// Merge all Encodings together
