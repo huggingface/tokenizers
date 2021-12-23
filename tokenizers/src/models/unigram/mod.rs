@@ -3,7 +3,7 @@ mod lattice;
 mod model;
 mod serialization;
 mod trainer;
-mod trie;
+pub mod trie;
 
 pub use lattice::*;
 pub use model::*;

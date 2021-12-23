@@ -21,6 +21,12 @@ pub struct Trie<Label> {
     root: Node<Label>,
 }
 
+impl<Label> std::fmt::Debug for Trie<Label> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Trie(...)",)
+    }
+}
+
 impl<Label: Eq + Hash + Copy> Trie<Label> {
     pub fn push(&mut self, element: &[Label]) {
         let mut node = &mut self.root;
