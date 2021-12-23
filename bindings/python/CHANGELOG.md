@@ -10,7 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [#585] Conda version should now work on old CentOS
 - [#844] Fixing interaction between `is_pretokenized` and `trim_offsets`.
-- [#846] Clippy fixes
 - [#851] Doc links
 
 ### Added
@@ -343,7 +342,6 @@ delimiter (Works like `.split(delimiter)`)
 
 
 [#850]: https://github.com/huggingface/tokenizers/pull/850
-[#846]: https://github.com/huggingface/tokenizers/pull/846
 [#844]: https://github.com/huggingface/tokenizers/pull/844
 [#845]: https://github.com/huggingface/tokenizers/pull/845
 [#851]: https://github.com/huggingface/tokenizers/pull/851
