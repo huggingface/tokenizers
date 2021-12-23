@@ -4,6 +4,8 @@ use crate::extraction::*;
 use crate::tokenizer::PaddingParams;
 use neon::prelude::*;
 
+use tk::utils::truncation::TruncateDirection;
+
 /// Encoding
 pub struct Encoding {
     pub encoding: Option<tk::tokenizer::Encoding>,
@@ -340,16 +342,23 @@ declare_types! {
         }
 
         method truncate(mut cx) {
-            // truncate(length: number, stride: number = 0)
+            // truncate(length: number, stride: number = 0, direction: string = 'right')
 
             let length = cx.extract::<usize>(0)?;
             let stride = cx.extract_opt::<usize>(1)?.unwrap_or(0);
+            let direction = cx.extract_opt::<String>(2)?.unwrap_or_else(|| String::from("right"));
+
+            let tdir = match direction.as_str() {
+                "left" => TruncateDirection::Left,
+                "right" => TruncateDirection::Right,
+                _ => panic!("Invalid truncation direction value : {}", direction),
+            };
 
             let mut this = cx.this();
             let guard = cx.lock();
             this.borrow_mut(&guard)
                 .encoding.as_mut().expect("Uninitialized Encoding")
-                .truncate(length, stride);
+                .truncate(length, stride, tdir);
 
             Ok(cx.undefined().upcast())
         }

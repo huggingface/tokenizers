@@ -1,6 +1,7 @@
 use crate::parallelism::*;
 use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
+use crate::utils::truncation::TruncateDirection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -294,9 +295,10 @@ impl Encoding {
 
     /// Truncate the current `Encoding`.
     ///
-    /// Panic if `stride >= max_len`
-    pub fn truncate(&mut self, max_len: usize, stride: usize) {
-        if max_len >= self.ids.len() {
+    /// Panics if `stride >= max_len`
+    pub fn truncate(&mut self, max_len: usize, stride: usize, direction: TruncateDirection) {
+        let encoding_len = self.ids.len();
+        if max_len >= encoding_len {
             return;
         }
 
@@ -306,78 +308,75 @@ impl Encoding {
             return;
         }
 
-        // Get the main overflowing part
-        let o_ids = self.ids.split_off(max_len);
-        let o_type_ids = self.type_ids.split_off(max_len);
-        let o_tokens = self.tokens.split_off(max_len);
-        let o_words = self.words.split_off(max_len);
-        let o_offsets = self.offsets.split_off(max_len);
-        let o_spe_toks = self.special_tokens_mask.split_off(max_len);
-        let o_attent = self.attention_mask.split_off(max_len);
+        assert!(stride < max_len);
 
-        // When truncating, we loose the `sequence_ranges` information.
+        // When truncating, we lose the `sequence_ranges` information.
         self.sequence_ranges.clear();
 
-        // Now we need to separate the overflowing part into as many Encoding as needed
-        assert!(stride < max_len);
-        let part_size = max_len - stride;
-        let mut overflowing = vec![];
-        let mut part_id = 0;
-        let mut prev_encoding: &Encoding = self;
+        let offset = max_len - stride;
+        let mut end = false;
+        let parts_ranges: Vec<(usize, usize)> = match direction {
+            TruncateDirection::Right => (0..encoding_len)
+                .step_by(offset)
+                .filter_map(|start| {
+                    if !end {
+                        let stop = std::cmp::min(start + max_len, encoding_len);
+                        end = stop == encoding_len;
+                        Some((start, stop))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            TruncateDirection::Left => (0..encoding_len)
+                .rev()
+                .step_by(offset)
+                .filter_map(|stop| {
+                    let stop = stop + 1;
+                    let start = if stop < max_len { 0 } else { stop - max_len };
+                    if start < stop && !end {
+                        end = start == 0;
+                        Some((start, stop))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+        };
+
+        let mut i = 0;
+        let (start, stop) = parts_ranges[i];
+        let mut new_encoding = Encoding {
+            ids: self.ids[start..stop].to_vec(),
+            type_ids: self.type_ids[start..stop].to_vec(),
+            tokens: self.tokens[start..stop].to_vec(),
+            words: self.words[start..stop].to_vec(),
+            offsets: self.offsets[start..stop].to_vec(),
+            special_tokens_mask: self.special_tokens_mask[start..stop].to_vec(),
+            attention_mask: self.attention_mask[start..stop].to_vec(),
+            overflowing: vec![],
+            sequence_ranges: HashMap::new(),
+        };
 
         loop {
-            if part_size * part_id >= o_ids.len() {
+            if i == parts_ranges.len() - 1 {
                 break;
             }
-
-            let o = Encoding {
-                ids: get_current_part(&prev_encoding.ids, &o_ids, part_size, part_id, stride),
-                type_ids: get_current_part(
-                    &prev_encoding.type_ids,
-                    &o_type_ids,
-                    part_size,
-                    part_id,
-                    stride,
-                ),
-                tokens: get_current_part(
-                    &prev_encoding.tokens,
-                    &o_tokens,
-                    part_size,
-                    part_id,
-                    stride,
-                ),
-                words: get_current_part(&prev_encoding.words, &o_words, part_size, part_id, stride),
-                offsets: get_current_part(
-                    &prev_encoding.offsets,
-                    &o_offsets,
-                    part_size,
-                    part_id,
-                    stride,
-                ),
-                special_tokens_mask: get_current_part(
-                    &prev_encoding.special_tokens_mask,
-                    &o_spe_toks,
-                    part_size,
-                    part_id,
-                    stride,
-                ),
-                attention_mask: get_current_part(
-                    &prev_encoding.attention_mask,
-                    &o_attent,
-                    part_size,
-                    part_id,
-                    stride,
-                ),
+            i += 1;
+            let (start, stop) = parts_ranges[i];
+            new_encoding.overflowing.push(Encoding {
+                ids: self.ids[start..stop].to_vec(),
+                type_ids: self.type_ids[start..stop].to_vec(),
+                tokens: self.tokens[start..stop].to_vec(),
+                words: self.words[start..stop].to_vec(),
+                offsets: self.offsets[start..stop].to_vec(),
+                special_tokens_mask: self.special_tokens_mask[start..stop].to_vec(),
+                attention_mask: self.attention_mask[start..stop].to_vec(),
                 overflowing: vec![],
                 sequence_ranges: HashMap::new(),
-            };
-
-            part_id += 1;
-            overflowing.push(o);
-            prev_encoding = overflowing.last().unwrap();
+            });
         }
-
-        self.overflowing = overflowing;
+        *self = new_encoding;
     }
 
     /// Merge all Encodings together
@@ -543,23 +542,6 @@ impl std::iter::FromIterator<(u32, String, (usize, usize), Option<u32>, u32)> fo
     }
 }
 
-#[inline]
-fn get_current_part<T: Clone>(
-    prev: &[T],
-    current: &[T],
-    size: usize,
-    idx: usize,
-    stride: usize,
-) -> Vec<T> {
-    let curr_slice = if (idx + 1) * size > current.len() {
-        &current[idx * size..]
-    } else {
-        &current[idx * size..(idx + 1) * size]
-    };
-    let prev_slice = &prev[prev.len() - stride..];
-    [prev_slice, curr_slice].concat()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -620,7 +602,7 @@ mod tests {
             attention_mask: vec![1, 1, 1],
             ..Default::default()
         };
-        a.truncate(2, 0);
+        a.truncate(2, 0, TruncateDirection::Right);
 
         assert_eq!(
             a,
@@ -663,7 +645,7 @@ mod tests {
             attention_mask: vec![1, 1, 1],
             ..Default::default()
         };
-        a.truncate(0, 0);
+        a.truncate(0, 0, TruncateDirection::Right);
 
         assert_eq!(
             a,
@@ -681,6 +663,105 @@ mod tests {
                     special_tokens_mask: vec![0, 0, 0],
                     attention_mask: vec![1, 1, 1],
                     overflowing: vec![],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn truncate_overflow_with_stride() {
+        let mut enc = Encoding {
+            ids: vec![1, 2, 3, 4, 5],
+            type_ids: vec![0, 0, 0, 0, 0],
+            tokens: vec![
+                String::from("42"),
+                String::from("is"),
+                String::from("the"),
+                String::from("answer"),
+                String::from("!"),
+            ],
+            words: vec![Some(0), Some(1), Some(2), Some(3), Some(4)],
+            offsets: vec![(0, 2), (2, 4), (4, 7), (7, 13), (13, 14)],
+            special_tokens_mask: vec![0, 0, 0, 0, 0],
+            attention_mask: vec![1, 1, 1, 1, 1],
+            overflowing: vec![],
+            ..Default::default()
+        };
+        enc.truncate(4, 2, TruncateDirection::Right);
+
+        assert_eq!(
+            enc,
+            Encoding {
+                ids: vec![1, 2, 3, 4],
+                type_ids: vec![0, 0, 0, 0],
+                tokens: vec![
+                    String::from("42"),
+                    String::from("is"),
+                    String::from("the"),
+                    String::from("answer"),
+                ],
+                words: vec![Some(0), Some(1), Some(2), Some(3)],
+                offsets: vec![(0, 2), (2, 4), (4, 7), (7, 13)],
+                special_tokens_mask: vec![0, 0, 0, 0],
+                attention_mask: vec![1, 1, 1, 1],
+                overflowing: vec![Encoding {
+                    ids: vec![3, 4, 5],
+                    type_ids: vec![0, 0, 0],
+                    tokens: vec![
+                        String::from("the"),
+                        String::from("answer"),
+                        String::from("!"),
+                    ],
+                    words: vec![Some(2), Some(3), Some(4)],
+                    offsets: vec![(4, 7), (7, 13), (13, 14)],
+                    special_tokens_mask: vec![0, 0, 0],
+                    attention_mask: vec![1, 1, 1],
+                    overflowing: vec![],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn truncate_left() {
+        let mut a = Encoding {
+            ids: vec![1, 2, 3],
+            type_ids: vec![0, 0, 0],
+            tokens: vec![
+                String::from("Hello"),
+                String::from("World"),
+                String::from("!"),
+            ],
+            words: vec![Some(0), Some(1), Some(2)],
+            offsets: vec![(0, 5), (6, 11), (11, 12)],
+            special_tokens_mask: vec![0, 0, 0],
+            attention_mask: vec![1, 1, 1],
+            ..Default::default()
+        };
+        a.truncate(2, 0, TruncateDirection::Left);
+
+        assert_eq!(
+            a,
+            Encoding {
+                ids: vec![2, 3],
+                type_ids: vec![0, 0],
+                tokens: vec![String::from("World"), String::from("!")],
+                words: vec![Some(1), Some(2)],
+                offsets: vec![(6, 11), (11, 12)],
+                special_tokens_mask: vec![0, 0],
+                attention_mask: vec![1, 1],
+                overflowing: vec![Encoding {
+                    ids: vec![1],
+                    type_ids: vec![0],
+                    tokens: vec![String::from("Hello")],
+                    words: vec![Some(0)],
+                    offsets: vec![(0, 5)],
+                    special_tokens_mask: vec![0],
+                    attention_mask: vec![1],
                     ..Default::default()
                 }],
                 ..Default::default()
