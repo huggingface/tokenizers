@@ -20,6 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v1
 
+      - name: Upgrade libssl
+        run: sudo apt-get install -y libssl-dev
+
       - name: Pull images
         run: |
           docker pull multiarch/qemu-user-static
@@ -34,13 +37,16 @@ jobs:
         run: |
           docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION -e DIST_DIR \
             --rm -v `pwd`/../..:/io quay.io/pypa/manylinux2014_ppc64le \
-            /bin/bash -c "cd /io/bindings/python; sh build-wheels.sh"
+            /bin/bash -c "yum install -y openssl-devel && cd /io/bindings/python; sh build-wheels.sh"
 
   create_wheels_manylinux_2014_aarch64:
     runs-on: ubuntu-latest
     name: Create wheels for manylinux2014 - Aarch64
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
+
+      - name: Upgrade libssl
+        run: sudo apt-get install -y libssl-dev
 
       - name: Pull images
         run: |
@@ -56,13 +62,16 @@ jobs:
         run: |
           docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION -e DIST_DIR \
             --rm -v `pwd`/../..:/io quay.io/pypa/manylinux2014_aarch64 \
-            /bin/bash -c "cd /io/bindings/python; sh build-wheels.sh"
+            /bin/bash -c "yum install -y openssl-devel && cd /io/bindings/python; sh build-wheels.sh"
 
   create_wheels_manylinux_2014_x390x:
     runs-on: ubuntu-latest
     name: Create wheels for manylinux2014 - S390X
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
+
+      - name: Upgrade libssl
+        run: sudo apt-get install -y libssl-dev
 
       - name: Pull images
         run: |
@@ -78,7 +87,7 @@ jobs:
         run: |
           docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION -e DIST_DIR \
             --rm -v `pwd`/../..:/io quay.io/pypa/manylinux2014_s390x \
-            /bin/bash -c "cd /io/bindings/python; sh build-wheels.sh"
+            /bin/bash -c "yum install -y openssl-devel && cd /io/bindings/python; sh build-wheels.sh"
 
   upload_package:
     name: Upload package to PyPi
@@ -89,7 +98,7 @@ jobs:
       - create_wheels_manylinux_2014_x390x
 
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
 
       - name: Install Python
         uses: actions/setup-python@v1

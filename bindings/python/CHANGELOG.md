@@ -6,10 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.11.0]
 
+### Fixed
+
+- [#585] Conda version should now work on old CentOS
+- [#844] Fixing interaction between `is_pretokenized` and `trim_offsets`.
+- [#851] Doc links
+
 ### Added
 - [#657]: Add SplitDelimiterBehavior customization to Punctuation constructor
+- [#845]: Documentation for `Decoders`.
 
 ### Changed
+- [#850]: Added a feature gate to enable disabling `http` features
 - [#718]: Fix `WordLevel` tokenizer determinism during training
 - [#762]: Add a way to specify the unknown token in `SentencePieceUnigramTokenizer`
 - [#770]: Improved documentation for `UnigramTrainer`
@@ -333,6 +341,11 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#850]: https://github.com/huggingface/tokenizers/pull/850
+[#844]: https://github.com/huggingface/tokenizers/pull/844
+[#845]: https://github.com/huggingface/tokenizers/pull/845
+[#851]: https://github.com/huggingface/tokenizers/pull/851
+[#585]: https://github.com/huggingface/tokenizers/pull/585
 [#793]: https://github.com/huggingface/tokenizers/pull/793
 [#780]: https://github.com/huggingface/tokenizers/pull/780
 [#770]: https://github.com/huggingface/tokenizers/pull/770

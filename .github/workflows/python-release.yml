@@ -19,7 +19,11 @@ jobs:
     name: Create wheels for manylinux2010
     container: quay.io/pypa/manylinux2010_x86_64
     steps:
+      # v1 is required when using manylinux2010
       - uses: actions/checkout@v1
+
+      - name: Install dependencies
+        run: yum install -y openssl-devel
 
       - name: Build and audit wheels
         working-directory: ./bindings/python
@@ -33,7 +37,7 @@ jobs:
         python: [3.7, 3.8, 3.9]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v1
+        uses: actions/checkout@v2
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
@@ -79,7 +83,7 @@ jobs:
         python: [3.7, 3.8, 3.9]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v1
+        uses: actions/checkout@v2
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
