@@ -4,7 +4,7 @@ use crate::extraction::*;
 use crate::tokenizer::PaddingParams;
 use neon::prelude::*;
 
-use tk::utils::truncation::TruncateDirection;
+use tk::utils::truncation::TruncationDirection;
 
 /// Encoding
 pub struct Encoding {
@@ -349,8 +349,8 @@ declare_types! {
             let direction = cx.extract_opt::<String>(2)?.unwrap_or_else(|| String::from("right"));
 
             let tdir = match direction.as_str() {
-                "left" => TruncateDirection::Left,
-                "right" => TruncateDirection::Right,
+                "left" => TruncationDirection::Left,
+                "right" => TruncationDirection::Right,
                 _ => panic!("Invalid truncation direction value : {}", direction),
             };
 

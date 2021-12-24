@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3::{PyObjectProtocol, PySequenceProtocol};
 use tk::tokenizer::{Offsets, PaddingDirection};
-use tk::utils::truncation::TruncateDirection;
+use tk::utils::truncation::TruncationDirection;
 use tokenizers as tk;
 
 use crate::error::{deprecation_warning, PyError};
@@ -448,8 +448,8 @@ impl PyEncoding {
     #[text_signature = "(self, max_length, stride=0, direction='right')"]
     fn truncate(&mut self, max_length: usize, stride: usize, direction: &str) {
         let tdir = match direction {
-            "left" => TruncateDirection::Left,
-            "right" => TruncateDirection::Right,
+            "left" => TruncationDirection::Left,
+            "right" => TruncationDirection::Right,
             _ => panic!("Invalid truncation direction value : {}", direction),
         };
 

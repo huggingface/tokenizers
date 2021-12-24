@@ -1,7 +1,7 @@
 use crate::parallelism::*;
 use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
-use crate::utils::truncation::TruncateDirection;
+use crate::utils::truncation::TruncationDirection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -296,7 +296,7 @@ impl Encoding {
     /// Truncate the current `Encoding`.
     ///
     /// Panics if `stride >= max_len`
-    pub fn truncate(&mut self, max_len: usize, stride: usize, direction: TruncateDirection) {
+    pub fn truncate(&mut self, max_len: usize, stride: usize, direction: TruncationDirection) {
         let encoding_len = self.ids.len();
         if max_len >= encoding_len {
             return;
@@ -316,7 +316,7 @@ impl Encoding {
         let offset = max_len - stride;
         let mut end = false;
         let parts_ranges: Vec<(usize, usize)> = match direction {
-            TruncateDirection::Right => (0..encoding_len)
+            TruncationDirection::Right => (0..encoding_len)
                 .step_by(offset)
                 .filter_map(|start| {
                     if !end {
@@ -328,7 +328,7 @@ impl Encoding {
                     }
                 })
                 .collect(),
-            TruncateDirection::Left => (0..encoding_len)
+            TruncationDirection::Left => (0..encoding_len)
                 .rev()
                 .step_by(offset)
                 .filter_map(|stop| {
@@ -602,7 +602,7 @@ mod tests {
             attention_mask: vec![1, 1, 1],
             ..Default::default()
         };
-        a.truncate(2, 0, TruncateDirection::Right);
+        a.truncate(2, 0, TruncationDirection::Right);
 
         assert_eq!(
             a,
@@ -645,7 +645,7 @@ mod tests {
             attention_mask: vec![1, 1, 1],
             ..Default::default()
         };
-        a.truncate(0, 0, TruncateDirection::Right);
+        a.truncate(0, 0, TruncationDirection::Right);
 
         assert_eq!(
             a,
@@ -689,7 +689,7 @@ mod tests {
             overflowing: vec![],
             ..Default::default()
         };
-        enc.truncate(4, 2, TruncateDirection::Right);
+        enc.truncate(4, 2, TruncationDirection::Right);
 
         assert_eq!(
             enc,
@@ -742,7 +742,7 @@ mod tests {
             attention_mask: vec![1, 1, 1],
             ..Default::default()
         };
-        a.truncate(2, 0, TruncateDirection::Left);
+        a.truncate(2, 0, TruncationDirection::Left);
 
         assert_eq!(
             a,
