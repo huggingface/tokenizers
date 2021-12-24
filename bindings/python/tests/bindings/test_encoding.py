@@ -106,3 +106,16 @@ class TestEncoding:
         assert pair.char_to_word(2, 0) == 1
         assert pair.char_to_word(2, 1) == None
         assert pair.char_to_word(3, 1) == 1
+
+    def test_truncation(self, encodings):
+        single, _ = encodings
+        single.truncate(2, 1, "right")
+        assert single.tokens == ["[CLS]", "i"]
+        assert single.overflowing[0].tokens == ["i", "love"]
+
+    def test_invalid_truncate_direction(self, encodings):
+        single, _ = encodings
+        invalid_direction = "not_a_direction_:("
+        with pytest.raises(ValueError) as excinfo:
+            single.truncate(2, 1, invalid_direction)
+        assert f"Invalid truncation direction value : {invalid_direction}" in str(excinfo.value)
