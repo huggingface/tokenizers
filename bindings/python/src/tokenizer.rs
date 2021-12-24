@@ -10,7 +10,7 @@ use pyo3::PyObjectProtocol;
 use tk::models::bpe::BPE;
 use tk::tokenizer::{
     Model, PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
-    TruncationParams, TruncationStrategy,
+    TruncationDirection,, TruncationParams, TruncationStrategy, 
 };
 use tk::utils::iter::ResultShunt;
 use tokenizers as tk;
@@ -661,7 +661,7 @@ impl PyTokenizer {
     ///         The strategy used to truncation. Can be one of ``longest_first``, ``only_first`` or
     ///         ``only_second``.
     #[args(kwargs = "**")]
-    #[text_signature = "(self, max_length, stride=0, strategy='longest_first')"]
+    #[text_signature = "(self, max_length, stride=0, strategy='longest_first', direction='right')"]
     fn enable_truncation(&mut self, max_length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut params = TruncationParams {
             max_length,
@@ -686,6 +686,19 @@ impl PyTokenizer {
                             ))
                             .into_pyerr::<exceptions::PyValueError>()),
                         }?
+                    }
+                    "direction" => {
+                        let value: &str = value.extract()?;
+                        params.direction = match value {
+                            "left" => Ok(TruncationDirection::Left),
+                            "right" => Ok(TruncationDirection::Right),
+                            other => Err(PyError(format!(
+                                "Unknown `direction`: `{}`. Use \
+                                 one of `left` or `right`",
+                                other
+                            ))
+                            .into_pyerr::<exceptions::PyValueError>()),
+                        }?;
                     }
                     _ => println!("Ignored unknown kwarg option {}", key),
                 }
