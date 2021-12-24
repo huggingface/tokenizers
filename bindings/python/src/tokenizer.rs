@@ -731,6 +731,7 @@ impl PyTokenizer {
             dict.set_item("max_length", params.max_length)?;
             dict.set_item("stride", params.stride)?;
             dict.set_item("strategy", params.strategy.as_ref())?;
+            dict.set_item("direction", params.direction.as_ref())?;
 
             Ok(Some(dict))
         })
