@@ -2,8 +2,8 @@ name: Python Release - Conda
 
 on:
   push:
-    tags:
-      - python-v*
+    # tags:
+    #   - python-v*
 
 env:
   ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
