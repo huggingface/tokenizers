@@ -10,7 +10,7 @@ use pyo3::PyObjectProtocol;
 use tk::models::bpe::BPE;
 use tk::tokenizer::{
     Model, PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
-    TruncationParams, TruncationStrategy,
+    TruncationDirection, TruncationParams, TruncationStrategy,
 };
 use tk::utils::iter::ResultShunt;
 use tokenizers as tk;
