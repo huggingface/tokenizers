@@ -105,9 +105,8 @@ describe("RawEncoding", () => {
       expect(encoding.truncate(10, undefined)).toBeUndefined();
     });
     it("should throw an Error on invalid direction", () => {
-      const invalid_dir = "not_valid";
-      const t = () => encoding.truncate(10, 3, invalid_dir);
-      expect(t).toThrow(`Invalid truncation direction value : ${invalid_dir}`);
+      const t = () => encoding.truncate(10, 3, "not_valid");
+      expect(t).toThrow(`Invalid truncation direction value : not_valid`);
     });
   });
 
