@@ -115,7 +115,6 @@ class TestEncoding:
 
     def test_invalid_truncate_direction(self, encodings):
         single, _ = encodings
-        invalid_direction = "not_a_direction_:("
         with pytest.raises(ValueError) as excinfo:
-            single.truncate(2, 1, invalid_direction)
-        assert f"Invalid truncation direction value : {invalid_direction}" in str(excinfo.value)
+            single.truncate(2, 1, "not_a_direction")
+        assert "Invalid truncation direction value : not_a_direction" == str(excinfo.value)
