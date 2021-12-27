@@ -104,6 +104,10 @@ describe("RawEncoding", () => {
     it("accepts `undefined` as second parameter", () => {
       expect(encoding.truncate(10, undefined)).toBeUndefined();
     });
+    it("should throw an Error on invalid direction", () => {
+      const t = () => encoding.truncate(10, 3, "not_valid");
+      expect(t).toThrow(`Invalid truncation direction value : not_valid`);
+    });
   });
 
   describe("getWordIds", () => {

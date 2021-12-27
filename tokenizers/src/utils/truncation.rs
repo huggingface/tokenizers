@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::mem;
 
-pub enum TruncateDirection {
+pub enum TruncationDirection {
     Left,
     Right,
 }
@@ -72,9 +72,9 @@ pub fn truncate_encodings(
     params: &TruncationParams,
 ) -> Result<(Encoding, Option<Encoding>)> {
     if params.max_length == 0 {
-        encoding.truncate(0, params.stride, TruncateDirection::Right);
+        encoding.truncate(0, params.stride, TruncationDirection::Right);
         if let Some(other_encoding) = pair_encoding.as_mut() {
-            other_encoding.truncate(0, params.stride, TruncateDirection::Right);
+            other_encoding.truncate(0, params.stride, TruncationDirection::Right);
         }
         return Ok((encoding, pair_encoding));
     }
@@ -134,13 +134,13 @@ pub fn truncate_encodings(
                 if swap {
                     mem::swap(&mut n1, &mut n2);
                 }
-                encoding.truncate(n1, params.stride, TruncateDirection::Right);
-                other_encoding.truncate(n2, params.stride, TruncateDirection::Right);
+                encoding.truncate(n1, params.stride, TruncationDirection::Right);
+                other_encoding.truncate(n2, params.stride, TruncationDirection::Right);
             } else {
                 encoding.truncate(
                     total_length - to_remove,
                     params.stride,
-                    TruncateDirection::Right,
+                    TruncationDirection::Right,
                 );
             }
         }
@@ -158,7 +158,7 @@ pub fn truncate_encodings(
                 target.truncate(
                     target_len - to_remove,
                     params.stride,
-                    TruncateDirection::Right,
+                    TruncationDirection::Right,
                 );
             } else {
                 return Err(Box::new(TruncationError::SequenceTooShort));
