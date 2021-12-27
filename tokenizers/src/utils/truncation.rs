@@ -3,13 +3,24 @@ use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::mem;
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum TruncationDirection {
     Left,
     Right,
 }
 
+impl std::convert::AsRef<str> for TruncationDirection {
+    fn as_ref(&self) -> &str {
+        match self {
+            TruncationDirection::Left => "left",
+            TruncationDirection::Right => "right",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TruncationParams {
+    pub direction: TruncationDirection,
     pub max_length: usize,
     pub strategy: TruncationStrategy,
     pub stride: usize,
@@ -21,6 +32,7 @@ impl Default for TruncationParams {
             max_length: 512,
             strategy: TruncationStrategy::LongestFirst,
             stride: 0,
+            direction: TruncationDirection::Right,
         }
     }
 }
@@ -72,9 +84,9 @@ pub fn truncate_encodings(
     params: &TruncationParams,
 ) -> Result<(Encoding, Option<Encoding>)> {
     if params.max_length == 0 {
-        encoding.truncate(0, params.stride, TruncationDirection::Right);
+        encoding.truncate(0, params.stride, params.direction);
         if let Some(other_encoding) = pair_encoding.as_mut() {
-            other_encoding.truncate(0, params.stride, TruncationDirection::Right);
+            other_encoding.truncate(0, params.stride, params.direction);
         }
         return Ok((encoding, pair_encoding));
     }
@@ -134,14 +146,10 @@ pub fn truncate_encodings(
                 if swap {
                     mem::swap(&mut n1, &mut n2);
                 }
-                encoding.truncate(n1, params.stride, TruncationDirection::Right);
-                other_encoding.truncate(n2, params.stride, TruncationDirection::Right);
+                encoding.truncate(n1, params.stride, params.direction);
+                other_encoding.truncate(n2, params.stride, params.direction);
             } else {
-                encoding.truncate(
-                    total_length - to_remove,
-                    params.stride,
-                    TruncationDirection::Right,
-                );
+                encoding.truncate(total_length - to_remove, params.stride, params.direction);
             }
         }
         TruncationStrategy::OnlyFirst | TruncationStrategy::OnlySecond => {
@@ -155,11 +163,7 @@ pub fn truncate_encodings(
 
             let target_len = target.get_ids().len();
             if target_len > to_remove {
-                target.truncate(
-                    target_len - to_remove,
-                    params.stride,
-                    TruncationDirection::Right,
-                );
+                target.truncate(target_len - to_remove, params.stride, params.direction);
             } else {
                 return Err(Box::new(TruncationError::SequenceTooShort));
             }
@@ -284,6 +288,7 @@ mod tests {
             max_length: 7,
             strategy: TruncationStrategy::LongestFirst,
             stride: 0,
+            direction: TruncationDirection::Right,
         };
 
         truncate_and_assert(get_empty(), get_empty(), &params, 0, 0);
@@ -313,6 +318,7 @@ mod tests {
             max_length: 0,
             strategy: TruncationStrategy::LongestFirst,
             stride: 0,
+            direction: TruncationDirection::Right,
         };
 
         truncate_and_assert(get_empty(), get_short(), &params, 0, 0);

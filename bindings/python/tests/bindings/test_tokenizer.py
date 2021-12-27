@@ -125,7 +125,9 @@ class TestTokenizer:
         assert type(output.ids) == list
         assert type(output.type_ids) == list
         assert type(output.offsets) == list
-        assert type(output.words) == list
+        with pytest.warns(DeprecationWarning):
+            assert type(output.words) == list
+        assert type(output.word_ids) == list
         assert type(output.special_tokens_mask) == list
         assert type(output.attention_mask) == list
         assert type(output.overflowing) == list
@@ -310,6 +312,14 @@ class TestTokenizer:
         # Can get the params and give them to enable_truncation
         trunc = tokenizer.truncation
         tokenizer.enable_truncation(**trunc)
+
+        # Left truncation direction
+        tokenizer.enable_truncation(2, direction="left")
+        output = tokenizer.encode("my name is john")
+        assert output.tokens == ["is", "john"]
+
+        output = tokenizer.encode("my name is john", "pair")
+        assert output.tokens == ["john", "pair"]
 
     def test_padding(self):
         tokenizer = Tokenizer(BPE())
