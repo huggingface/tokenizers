@@ -1,10 +1,13 @@
-import { PaddingDirection, TruncationStrategy } from "../../bindings/enums";
+import {
+  PaddingDirection,
+  TruncationDirection,
+  TruncationStrategy,
+} from "../../bindings/enums";
 import { BPE } from "../../bindings/models";
 import {
   PaddingConfiguration,
   Tokenizer,
   TruncationConfiguration,
-  TruncationDirection,
 } from "../../bindings/tokenizer";
 import { BaseTokenizer } from "./base.tokenizer";
 
@@ -30,7 +33,7 @@ describe("BaseTokenizer", () => {
       const expectedConfig: TruncationConfiguration = {
         maxLength: 2,
         strategy: TruncationStrategy.LongestFirst,
-        direction: TruncationDirection.Left,
+        direction: TruncationDirection.Right,
         stride: 0,
       };
       expect(tokenizer.truncation).toEqual(expectedConfig);
