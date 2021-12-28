@@ -3,7 +3,7 @@
 
 import { promisify } from "util";
 
-import { PaddingDirection, TruncationStrategy } from "./enums";
+import { PaddingDirection, TruncationDirection, TruncationStrategy } from "./enums";
 import { BPE } from "./models";
 import { RawEncoding } from "./raw-encoding";
 import {
@@ -376,6 +376,7 @@ describe("Tokenizer", () => {
         maxLength: 2,
         strategy: TruncationStrategy.LongestFirst,
         stride: 0,
+        direction: TruncationDirection.Right,
       };
       expect(truncation).toEqual(expectedConfig);
     });

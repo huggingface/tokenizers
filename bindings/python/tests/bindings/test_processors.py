@@ -154,7 +154,7 @@ class TestTemplateProcessing:
         with pytest.raises(Exception, match="Cannot build Piece"):
             processor = TemplateProcessing(single="[CLS] $A: [SEP]")
         # Special tokens must be provided when used in template:
-        with pytest.raises(Exception, match="Missing SpecialToken\(s\) with id\(s\)"):
+        with pytest.raises(Exception, match="Missing SpecialToken\\(s\\) with id\\(s\\)"):
             processor = TemplateProcessing(single=["[CLS]"])
 
     def test_bert_parity(self):

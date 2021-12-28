@@ -441,7 +441,7 @@ impl PyEncoding {
     ///     stride (:obj:`int`, defaults to :obj:`0`):
     ///         The length of previous content to be included in each overflowing piece
     ///
-    ///     direction (:obj:`str`, defaults to :obj:`right`)
+    ///     direction (:obj:`str`, defaults to :obj:`right`):
     ///         Truncate direction
     #[args(stride = "0")]
     #[args(direction = "\"right\"")]

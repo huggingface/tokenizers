@@ -300,7 +300,7 @@ class Encoding:
             stride (:obj:`int`, defaults to :obj:`0`):
                 The length of previous content to be included in each overflowing piece
 
-            direction (:obj:`str`, defaults to :obj:`right`)
+            direction (:obj:`str`, defaults to :obj:`right`):
                 Truncate direction
         """
         pass
@@ -743,7 +743,7 @@ class Tokenizer:
                 the longest sequence in a batch.
         """
         pass
-    def enable_truncation(self, max_length, stride=0, strategy="longest_first"):
+    def enable_truncation(self, max_length, stride=0, strategy="longest_first", direction="right"):
         """
         Enable truncation
 
@@ -758,6 +758,9 @@ class Tokenizer:
             strategy (:obj:`str`, `optional`, defaults to :obj:`longest_first`):
                 The strategy used to truncation. Can be one of ``longest_first``, ``only_first`` or
                 ``only_second``.
+
+            direction (:obj:`str`, defaults to :obj:`right`):
+                Truncate direction
         """
         pass
     def encode(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True):

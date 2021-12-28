@@ -42,7 +42,9 @@ pub use crate::processors::PostProcessorWrapper;
 // And some other types
 pub use crate::utils::iter::LinesWithEnding;
 pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, PaddingStrategy};
-pub use crate::utils::truncation::{truncate_encodings, TruncationParams, TruncationStrategy};
+pub use crate::utils::truncation::{
+    truncate_encodings, TruncationDirection, TruncationParams, TruncationStrategy,
+};
 pub use added_vocabulary::*;
 pub use encoding::*;
 pub use normalizer::{NormalizedString, OffsetReferential, SplitDelimiterBehavior};

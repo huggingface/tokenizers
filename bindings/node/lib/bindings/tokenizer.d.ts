@@ -1,5 +1,5 @@
 import { Decoder } from "./decoders";
-import { PaddingDirection, TruncationStrategy } from "./enums";
+import { PaddingDirection, TruncationDirection, TruncationStrategy } from "./enums";
 import { Model } from "./models";
 import { Normalizer } from "./normalizers";
 import { PostProcessor } from "./post-processors";
@@ -35,6 +35,12 @@ export interface TruncationOptions {
    * @default TruncationStrategy.LongestFirst
    */
   strategy?: TruncationStrategy;
+
+  /**
+   * Which side to truncate
+   * @default TruncationDirection.Left
+   */
+  direction?: TruncationDirection;
 }
 
 export interface TruncationConfiguration extends Required<TruncationOptions> {
