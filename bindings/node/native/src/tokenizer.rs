@@ -260,6 +260,13 @@ pub enum TruncationStrategyDef {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(remote = "tk::TruncationDirection", rename_all = "camelCase")]
+pub enum TruncationDirectionDef {
+    Left,
+    Right,
+}
+
+#[derive(Serialize, Deserialize)]
 #[serde(
     remote = "tk::TruncationParams",
     rename_all = "camelCase",
@@ -269,6 +276,8 @@ pub struct TruncationParamsDef {
     max_length: usize,
     #[serde(with = "TruncationStrategyDef")]
     strategy: tk::TruncationStrategy,
+    #[serde(with = "TruncationDirectionDef")]
+    direction: tk::TruncationDirection,
     stride: usize,
 }
 
