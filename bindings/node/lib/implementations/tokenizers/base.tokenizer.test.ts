@@ -3,6 +3,7 @@ import { BPE } from "../../bindings/models";
 import {
   PaddingConfiguration,
   Tokenizer,
+  TruncationDirection,
   TruncationConfiguration,
 } from "../../bindings/tokenizer";
 import { BaseTokenizer } from "./base.tokenizer";
@@ -29,6 +30,7 @@ describe("BaseTokenizer", () => {
       const expectedConfig: TruncationConfiguration = {
         maxLength: 2,
         strategy: TruncationStrategy.LongestFirst,
+        direction: TruncationDirection.Left
         stride: 0,
       };
       expect(tokenizer.truncation).toEqual(expectedConfig);
