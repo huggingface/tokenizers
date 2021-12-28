@@ -4,6 +4,11 @@ export enum TruncationStrategy {
   OnlySecond = "only_second",
 }
 
+export enum TruncationDirection {
+  Left = "left",
+  Right = "right",
+}
+
 export enum PaddingDirection {
   Left = "left",
   Right = "right",
