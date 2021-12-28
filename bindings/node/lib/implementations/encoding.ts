@@ -36,7 +36,7 @@ export class Encoding {
     return this._rawEncoding.getNSequences();
   }
 
-  setSequenceId(seqId: number) {
+  setSequenceId(seqId: number): void {
     return this._rawEncoding.setSequenceId(seqId);
   }
 
