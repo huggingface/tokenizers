@@ -291,7 +291,7 @@ impl AddedVocabulary {
                     .added_tokens_map
                     .get(match_)
                     .unwrap_or_else(|| self.shadow_map.get(match_).unwrap());
-                let added_token = &self.added_tokens_map_r.get(&id).unwrap();
+                let added_token = &self.added_tokens_map_r.get(id).unwrap();
 
                 if added_token.single_word {
                     let start_space =
