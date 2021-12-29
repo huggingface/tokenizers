@@ -76,7 +76,7 @@ where
                 .states
                 .iter()
                 .filter_map(|(start, node)| {
-                    if !result.is_none() {
+                    if result.is_some() {
                         None
                     } else if node.is_leaf {
                         // Lookahead to match longest first
@@ -123,17 +123,15 @@ where
                         }
                         result = Some((*start, stop, skip));
                         None
-                    } else if let Some(subnode) = node.children.get(&label) {
-                        Some((*start, subnode))
                     } else {
-                        None
+                        node.children.get(label).map(|subnode| (*start, subnode))
                     }
                 })
                 .collect();
-            if !result.is_none() {
+            if result.is_some() {
                 self.states.clear();
             }
-            if let Some(subnode) = self.root.children.get(&label) {
+            if let Some(subnode) = self.root.children.get(label) {
                 self.states.push((self.index, subnode));
             }
             self.index += 1;
@@ -153,7 +151,7 @@ where
             }
         }
         self.states.clear();
-        return result;
+        result
     }
 }
 
