@@ -5,6 +5,7 @@ pub mod iter;
 pub mod padding;
 pub mod parallelism;
 pub(crate) mod progress;
+pub mod trie;
 pub mod truncation;
 
 use serde::{Serialize, Serializer};

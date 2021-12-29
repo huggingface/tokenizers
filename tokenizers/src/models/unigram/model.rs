@@ -1,10 +1,9 @@
-use super::{
-    lattice::Lattice,
-    trainer::UnigramTrainer,
+use super::{lattice::Lattice, trainer::UnigramTrainer};
+use crate::tokenizer::{Model, Result, Token};
+use crate::utils::{
+    cache::Cache,
     trie::{Trie, TrieBuilder},
 };
-use crate::tokenizer::{Model, Result, Token};
-use crate::utils::cache::Cache;
 
 use std::collections::HashMap;
 use std::convert::TryInto;
