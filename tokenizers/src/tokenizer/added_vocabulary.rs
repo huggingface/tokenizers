@@ -1,7 +1,7 @@
 use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
 };
-use crate::models::unigram::trie::Trie;
+use crate::utils::trie::Trie;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 
@@ -108,6 +108,9 @@ pub(super) struct AddedVocabulary {
     /// Contains the mapping from String (token content) to ID. This map contains both special
     /// tokens and classic added tokens that were added to the this vocabulary.
     added_tokens_map: HashMap<String, u32>,
+    /// This is used for tokens already contained in a vocabulary.
+    /// It is not part of the vocabulary.
+    shadow_map: HashMap<String, u32>,
     /// Contains the mapping from ID to AddedToken for all the added tokens, both special
     /// and classic.
     added_tokens_map_r: HashMap<u32, AddedToken>,
@@ -131,6 +134,7 @@ impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
             added_tokens_map: HashMap::new(),
+            shadow_map: HashMap::new(),
             added_tokens_map_r: HashMap::new(),
             added_tokens: vec![],
             special_tokens: vec![],
@@ -204,6 +208,7 @@ impl AddedVocabulary {
 
             let id = if let Some(id) = self.token_to_id(&token.content, model) {
                 ignored += 1;
+                self.shadow_map.insert(token.content.clone(), id);
                 id
             } else {
                 let new_id = (model.get_vocab_size() + self.added_tokens_map.len()) as u32;
@@ -277,90 +282,67 @@ impl AddedVocabulary {
         if sentence.is_empty() {
             return vec![(None, (0, 0))];
         }
-        return vec![(None, (0, 0))];
 
-        // let mut matches = split_re
-        //     .0
-        //     .matches(sentence)
-        //     .into_iter()
-        //     .flat_map(|idx| {
-        //         regex::Regex::new(&split_re.0.patterns()[idx])
-        //             .unwrap()
-        //             .find_iter(sentence)
-        //             .map(|m| (idx, (m.start(), m.end())))
-        //             .collect::<Vec<_>>()
-        //     })
-        //     .collect::<Vec<_>>();
+        let mut start_offset = 0;
+        let mut splits = split_trie
+            .matches(sentence.as_bytes())
+            .flat_map(|(start, stop)| {
+                let mut start = start;
+                let mut stop = stop;
 
-        // // We sort all the matches by their start and then by their pattern id
-        // matches.sort_by(
-        //     |(idxa, (sa, _)), (idxb, (sb, _))| {
-        //         if sa != sb {
-        //             sa.cmp(sb)
-        //         } else {
-        //             idxa.cmp(idxb)
-        //         }
-        //     },
-        // );
+                let match_ = &sentence[start..stop];
+                let id = self
+                    .added_tokens_map
+                    .get(match_)
+                    .unwrap_or_else(|| self.shadow_map.get(match_).unwrap());
+                let added_token = &self.added_tokens_map_r.get(&id).unwrap();
 
-        // // Select the matches (if some are overlapping) we want to keep
-        // let mut i = 0;
-        // let mut current_offset = 0;
-        // let mut splits = Vec::with_capacity(matches.len());
-        // while i < matches.len() {
-        //     let (idx, (start, end)) = matches[i];
+                if added_token.single_word {
+                    let start_space =
+                        start == 0 || sentence.as_bytes().get(start - 1) == Some(&b' ');
+                    let stop_space =
+                        stop == sentence.len() || sentence.as_bytes().get(stop + 1) == Some(&b' ');
 
-        //     // current match is before the currentt offset, let's skip it
-        //     if start < current_offset {
-        //         i += 1;
-        //         continue;
-        //     }
+                    if !stop_space || !start_space {
+                        // Discard not single word
+                        return vec![];
+                    }
+                }
+                if added_token.lstrip {
+                    while start > 0 {
+                        if let Some(b' ') = sentence.as_bytes().get(start - 1) {
+                            start -= 1;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                if added_token.rstrip {
+                    while stop < sentence.len() {
+                        if let Some(b' ') = sentence.as_bytes().get(stop) {
+                            stop += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                }
 
-        //     // Find out if we have overlapping neighbors. If so, we keep the one with the lowest
-        //     // idx, and apply it, then continue. All others will be skipped since `current_offset`
-        //     // will have been increased
-        //     if i + 1 < matches.len() {
-        //         if let Some((idx, (s, e))) = matches[i..]
-        //             .iter()
-        //             .take_while(|(_, (s, e))| *s < end && start < *e)
-        //             .min() // Order on idx first
-        //             .copied()
-        //         {
-        //             splits.push((idx, (s, e)));
-        //             current_offset = e;
-        //             i += 1;
-        //             continue;
-        //         }
-        //     }
+                let mut splits = vec![];
+                if start_offset < start {
+                    splits.push((None, (start_offset, start)));
+                }
+                splits.push((Some(*id), (start, stop)));
+                start_offset = stop;
+                splits
+            })
+            .collect::<Vec<_>>();
 
-        //     // We didn't find overlapping neighbors, apply ourself
-        //     splits.push((idx, (start, end)));
-        //     current_offset = end;
-        //     i += 1;
-        // }
+        let total_byte_len = sentence.len();
+        if start_offset != total_byte_len {
+            splits.push((None, (start_offset, total_byte_len)));
+        }
 
-        // // We also insert the splits that are inbetween the added tokens, to split the entire string
-        // let mut start_offset = 0;
-        // let mut splits = splits
-        //     .into_iter()
-        //     .flat_map(|(idx, (start, end))| {
-        //         let mut splits = vec![];
-        //         if start_offset < start {
-        //             splits.push((None, (start_offset, start)));
-        //         }
-        //         splits.push((Some(split_re.1[idx] as u32), (start, end)));
-        //         start_offset = end;
-
-        //         splits
-        //     })
-        //     .collect::<Vec<_>>();
-
-        // let total_byte_len = sentence.len();
-        // if start_offset != total_byte_len {
-        //     splits.push((None, (start_offset, total_byte_len)));
-        // }
-
-        // splits
+        splits
     }
 
     /// Split the input sentence to extract anything we found from the `MatchingSet`, as well as
