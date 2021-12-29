@@ -107,7 +107,11 @@ fn overlapping_tokens() {
 
     assert_eq!(output.get_tokens(), &["I", "Ġlike", "Ġ", "danc", "ing"]);
 
-    let mut tokenizer = get_byte_level(false, false);
+    // Breaking change but following `transformers` breaking change.
+    // This behavior is deemed not used in practice:
+    // https://github.com/huggingface/transformers/pull/13220
+    //
+    // let mut tokenizer = get_byte_level(false, false);
 
     // tokenizer.add_special_tokens(&[AddedToken::from("nci", true)]);
     // tokenizer.add_special_tokens(&[AddedToken::from("danc", true)]);
