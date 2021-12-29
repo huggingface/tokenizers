@@ -66,11 +66,11 @@ pub struct MatchesIterator<'a, 'b, Label> {
 
 impl<'a, 'b, Label> Iterator for MatchesIterator<'a, 'b, Label>
 where
-    Label: Eq + Hash + Copy,
+    Label: Eq + Hash + Copy + std::fmt::Debug,
 {
     type Item = (usize, usize);
     fn next(&mut self) -> Option<Self::Item> {
-        for label in &self.content[self.index..] {
+        for (current, label) in self.content.iter().enumerate().skip(self.index) {
             let mut result = None;
             self.states = self
                 .states
@@ -101,9 +101,14 @@ where
                             // Here lookstart == start and
                             //      looktrie_pointer == trie_pointer
                             // It wasn't updated yet so indices are current ones
-                            let mut lookahead_index = self.index;
+                            let mut lookahead_index = current;
 
                             let mut next_char = self.content.get(lookahead_index);
+                            if looktrie_pointer.is_leaf {
+                                start = lookstart;
+                                stop = lookahead_index;
+                                skip = lookahead_index;
+                            }
                             while let Some(nchar) = next_char {
                                 if let Some(sublooktrie_pointer) =
                                     looktrie_pointer.children.get(nchar)
@@ -128,20 +133,17 @@ where
                     }
                 })
                 .collect();
-            if result.is_some() {
-                self.states.clear();
-            }
-            if let Some(subnode) = self.root.children.get(label) {
-                self.states.push((self.index, subnode));
-            }
-            self.index += 1;
-
             if let Some((start, stop, skip)) = result {
                 if skip > self.index {
                     self.index = skip;
                 }
+                self.states.clear();
                 return Some((start, stop));
             }
+            if let Some(subnode) = self.root.children.get(label) {
+                self.states.push((current, subnode));
+            }
+            self.index += 1;
         }
         let mut result = None;
         for (start, node) in &self.states {
@@ -269,6 +271,19 @@ mod tests {
             trie.matches("This is something [SPECIAL_TOKEN]".as_bytes())
                 .collect::<Vec<_>>(),
             vec![(18, 33)]
+        );
+    }
+
+    #[test]
+    fn test_trie_skip_does_not_seed() {
+        let mut trie = Trie::default();
+        trie.push(b"ABC");
+        trie.push(b"B");
+        trie.push(b"CD");
+        trie.push(b"D");
+        assert_eq!(
+            trie.matches("ABCD".as_bytes()).collect::<Vec<_>>(),
+            vec![(0, 3), (3, 4)]
         );
     }
 

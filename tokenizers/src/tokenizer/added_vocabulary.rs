@@ -287,10 +287,11 @@ impl AddedVocabulary {
                 let mut stop = stop;
 
                 let match_ = &sentence[start..stop];
-                let id = self
-                    .added_tokens_map
-                    .get(match_)
-                    .unwrap_or_else(|| self.shadow_map.get(match_).unwrap());
+                let id = self.added_tokens_map.get(match_).unwrap_or_else(|| {
+                    self.shadow_map
+                        .get(match_)
+                        .unwrap_or_else(|| panic!("Expected to find an id for {:?}", match_))
+                });
                 let added_token = &self.added_tokens_map_r.get(id).unwrap();
 
                 if added_token.single_word {
