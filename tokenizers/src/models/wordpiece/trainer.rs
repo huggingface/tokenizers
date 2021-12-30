@@ -160,6 +160,7 @@ impl WordPieceTrainer {
 
         // Transfer the vocab
         model.vocab = new_wordpiece.vocab;
+        model.trie = new_wordpiece.trie;
         model.vocab_r = new_wordpiece.vocab_r;
         // The continuing_subword_prefix is the only other option to be overriden by the trainer
         model.continuing_subword_prefix = new_wordpiece.continuing_subword_prefix;

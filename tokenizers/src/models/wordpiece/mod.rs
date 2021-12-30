@@ -121,9 +121,10 @@ impl WordPieceBuilder {
             let chars = if key.starts_with(&self.config.continuing_subword_prefix) {
                 key.chars().skip(n).collect::<Vec<_>>()
             } else {
-                key.chars().collect::<Vec<_>>()
+                let mut chars = vec!['▁'];
+                chars.extend(key.chars().collect::<Vec<_>>());
+                chars
             };
-            println!("Saving in trie {:?}", chars);
             trie.push(&chars);
         }
 
@@ -235,10 +236,11 @@ impl Model for WordPiece {
     }
 
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
-        println!("Sequence {:?}", sequence);
-        println!("Vocab {:?}", self.vocab);
-        let chars: Vec<_> = sequence.chars().collect();
-        if chars.len() > self.max_input_chars_per_word {
+        let mut chars = Vec::with_capacity(sequence.len());
+        chars.push('▁');
+        chars.extend(sequence.chars().collect::<Vec<_>>());
+
+        if chars.len() > self.max_input_chars_per_word + 1 {
             return Ok(vec![Token {
                 value: self.unk_token.clone(),
                 id: *self
@@ -259,13 +261,12 @@ impl Model for WordPiece {
                 if start_offset < start {
                     is_bad = true;
                 }
+
                 subsplits.push((start, stop));
                 start_offset = stop;
                 subsplits
             })
             .collect();
-        println!("Splits {:?}", splits);
-        println!("Is bad {:?}", is_bad);
         if start_offset != chars.len() {
             is_bad = true;
         }
@@ -273,15 +274,18 @@ impl Model for WordPiece {
         let sub_tokens: Vec<_> = splits
             .into_iter()
             .filter_map(|(start, stop)| {
+                // Removing artificial '▁' used for start matching
+                let start = if start == 0 { start + 1 } else { start };
                 let mut substr: Cow<str> = Cow::Owned(String::from_iter(&chars[start..stop]));
-                if start > 0 {
+                if start > 1 {
                     substr = Cow::Owned(format!("{}{}", self.continuing_subword_prefix, substr));
                 }
                 if self.vocab.contains_key(substr.as_ref()) {
                     Some(Token {
                         id: self.vocab[substr.as_ref()],
                         value: substr.to_string(),
-                        offsets: (start, stop),
+                        // Removing extra index from '▁' used.
+                        offsets: (start - 1, stop - 1),
                     })
                 } else {
                     is_bad = true;
@@ -347,5 +351,72 @@ mod tests {
     #[test]
     fn test_error_display() {
         assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
+    }
+
+    #[test]
+    fn test_tokenize() {
+        let vocab = HashMap::from([("a".to_string(), 0), ("sentence".to_string(), 1)]);
+        let builder = WordPieceBuilder::default().vocab(vocab);
+        let model = builder.build().unwrap();
+
+        assert_eq!(
+            model.tokenize("a").unwrap(),
+            vec![Token {
+                value: "a".to_string(),
+                id: 0,
+                offsets: (0, 1),
+            }]
+        );
+
+        assert_eq!(
+            model.tokenize("sentence").unwrap(),
+            vec![Token {
+                value: "sentence".to_string(),
+                id: 1,
+                offsets: (0, 8),
+            }]
+        );
+    }
+
+    #[test]
+    fn test_tokenize_piece() {
+        let vocab = HashMap::from([
+            ("##na".to_string(), 0),
+            ("ba".to_string(), 1),
+            ("[UNK]".to_string(), 2),
+        ]);
+        let builder = WordPieceBuilder::default().vocab(vocab);
+        let model = builder.build().unwrap();
+
+        assert_eq!(
+            model.tokenize("banana").unwrap(),
+            vec![
+                Token {
+                    value: "ba".to_string(),
+                    id: 1,
+                    offsets: (0, 2),
+                },
+                Token {
+                    value: "##na".to_string(),
+                    id: 0,
+                    offsets: (2, 4),
+                },
+                Token {
+                    value: "##na".to_string(),
+                    id: 0,
+                    offsets: (4, 6),
+                },
+            ]
+        );
+
+        // Starting `na` is invalid,
+        assert_eq!(
+            model.tokenize("nanana").unwrap(),
+            vec![Token {
+                value: "[UNK]".to_string(),
+                id: 2,
+                offsets: (0, 6),
+            }]
+        );
     }
 }
