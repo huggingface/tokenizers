@@ -3,6 +3,7 @@
 
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
+use crate::utils::trie::Trie;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -10,6 +11,7 @@ use std::{
     fs::File,
     io::prelude::*,
     io::{BufRead, BufReader},
+    iter::FromIterator,
     path::{Path, PathBuf},
 };
 
@@ -113,9 +115,22 @@ impl WordPieceBuilder {
             .map(|(key, val)| (*val, key.to_owned()))
             .collect();
 
+        let mut trie = Trie::default();
+        let n = self.config.continuing_subword_prefix.chars().count();
+        for key in self.config.vocab.keys() {
+            let chars = if key.starts_with(&self.config.continuing_subword_prefix) {
+                key.chars().skip(n).collect::<Vec<_>>()
+            } else {
+                key.chars().collect::<Vec<_>>()
+            };
+            println!("Saving in trie {:?}", chars);
+            trie.push(&chars);
+        }
+
         Ok(WordPiece {
             vocab: self.config.vocab,
             vocab_r,
+            trie,
             unk_token: self.config.unk_token,
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             max_input_chars_per_word: self.config.max_input_chars_per_word,
@@ -126,13 +141,24 @@ impl WordPieceBuilder {
 /// A
 /// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 /// model.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct WordPiece {
     vocab: Vocab,
     vocab_r: VocabR,
+    trie: Trie<char>,
     pub unk_token: String,
     pub continuing_subword_prefix: String,
     pub max_input_chars_per_word: usize,
+}
+
+impl PartialEq for WordPiece {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.vocab == rhs.vocab
+            && self.vocab_r == rhs.vocab_r
+            && self.unk_token == rhs.unk_token
+            && self.continuing_subword_prefix == rhs.continuing_subword_prefix
+            && self.max_input_chars_per_word == rhs.max_input_chars_per_word
+    }
 }
 
 impl std::fmt::Debug for WordPiece {
@@ -151,6 +177,7 @@ impl Default for WordPiece {
         Self {
             vocab: HashMap::new(),
             vocab_r: HashMap::new(),
+            trie: Trie::default(),
             unk_token: String::from("[UNK]"),
             continuing_subword_prefix: String::from("##"),
             max_input_chars_per_word: 100,
@@ -208,8 +235,10 @@ impl Model for WordPiece {
     }
 
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
-        let char_len = sequence.chars().count();
-        if char_len > self.max_input_chars_per_word {
+        println!("Sequence {:?}", sequence);
+        println!("Vocab {:?}", self.vocab);
+        let chars: Vec<_> = sequence.chars().collect();
+        if chars.len() > self.max_input_chars_per_word {
             return Ok(vec![Token {
                 value: self.unk_token.clone(),
                 id: *self
@@ -221,38 +250,45 @@ impl Model for WordPiece {
         }
 
         let mut is_bad = false;
-        let mut start = 0;
-        let mut sub_tokens: Vec<Token> = vec![];
+        let mut start_offset = 0;
+        let splits: Vec<_> = self
+            .trie
+            .matches(&chars)
+            .flat_map(|(start, stop)| {
+                let mut subsplits = vec![];
+                if start_offset < start {
+                    is_bad = true;
+                }
+                subsplits.push((start, stop));
+                start_offset = stop;
+                subsplits
+            })
+            .collect();
+        println!("Splits {:?}", splits);
+        println!("Is bad {:?}", is_bad);
+        if start_offset != chars.len() {
+            is_bad = true;
+        }
 
-        while start < sequence.len() {
-            let mut end = sequence.len();
-            let mut cur_str = None;
-
-            while start < end {
-                let mut substr: Cow<str> = Cow::Borrowed(&sequence[start..end]);
-
+        let sub_tokens: Vec<_> = splits
+            .into_iter()
+            .filter_map(|(start, stop)| {
+                let mut substr: Cow<str> = Cow::Owned(String::from_iter(&chars[start..stop]));
                 if start > 0 {
                     substr = Cow::Owned(format!("{}{}", self.continuing_subword_prefix, substr));
                 }
                 if self.vocab.contains_key(substr.as_ref()) {
-                    cur_str = Some(Token {
+                    Some(Token {
                         id: self.vocab[substr.as_ref()],
                         value: substr.to_string(),
-                        offsets: (start, end),
-                    });
-                    break;
+                        offsets: (start, stop),
+                    })
+                } else {
+                    is_bad = true;
+                    None
                 }
-                end -= substr.chars().last().map_or(1, |c| c.len_utf8());
-            }
-
-            if cur_str.is_none() {
-                is_bad = true;
-                break;
-            }
-
-            sub_tokens.push(cur_str.unwrap());
-            start = end;
-        }
+            })
+            .collect();
 
         if is_bad {
             Ok(vec![Token {
