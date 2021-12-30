@@ -251,50 +251,46 @@ impl Model for WordPiece {
             }]);
         }
 
-        let mut is_bad = false;
         let mut start_offset = 0;
-        let splits: Vec<_> = self
-            .trie
-            .matches(&chars)
-            .flat_map(|(start, stop)| {
-                let mut subsplits = vec![];
-                if start_offset < start {
-                    is_bad = true;
-                }
-
-                subsplits.push((start, stop));
-                start_offset = stop;
-                subsplits
-            })
-            .collect();
-        if start_offset != chars.len() {
-            is_bad = true;
+        let mut sub_tokens = vec![];
+        for (start, stop) in self.trie.matches(&chars) {
+            if start_offset < start {
+                return Ok(vec![Token {
+                    value: self.unk_token.clone(),
+                    id: *self
+                        .vocab
+                        .get(&self.unk_token)
+                        .ok_or(Error::MissingUnkToken)?,
+                    offsets: (0, sequence.len()),
+                }]);
+            }
+            let start = if start == 0 { start + 1 } else { start };
+            let mut substr: Cow<str> = Cow::Owned(String::from_iter(&chars[start..stop]));
+            if start > 1 {
+                substr = Cow::Owned(format!("{}{}", self.continuing_subword_prefix, substr));
+            }
+            if self.vocab.contains_key(substr.as_ref()) {
+                let token = Token {
+                    id: self.vocab[substr.as_ref()],
+                    value: substr.to_string(),
+                    // Removing extra index from '▁' used.
+                    offsets: (start - 1, stop - 1),
+                };
+                sub_tokens.push(token);
+            } else {
+                return Ok(vec![Token {
+                    value: self.unk_token.clone(),
+                    id: *self
+                        .vocab
+                        .get(&self.unk_token)
+                        .ok_or(Error::MissingUnkToken)?,
+                    offsets: (0, sequence.len()),
+                }]);
+            }
+            start_offset = stop;
         }
 
-        let sub_tokens: Vec<_> = splits
-            .into_iter()
-            .filter_map(|(start, stop)| {
-                // Removing artificial '▁' used for start matching
-                let start = if start == 0 { start + 1 } else { start };
-                let mut substr: Cow<str> = Cow::Owned(String::from_iter(&chars[start..stop]));
-                if start > 1 {
-                    substr = Cow::Owned(format!("{}{}", self.continuing_subword_prefix, substr));
-                }
-                if self.vocab.contains_key(substr.as_ref()) {
-                    Some(Token {
-                        id: self.vocab[substr.as_ref()],
-                        value: substr.to_string(),
-                        // Removing extra index from '▁' used.
-                        offsets: (start - 1, stop - 1),
-                    })
-                } else {
-                    is_bad = true;
-                    None
-                }
-            })
-            .collect();
-
-        if is_bad {
+        if start_offset != chars.len() {
             Ok(vec![Token {
                 value: self.unk_token.clone(),
                 id: *self
