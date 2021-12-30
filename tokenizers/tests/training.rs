@@ -52,7 +52,7 @@ fn bpe_continuing_subword_prefix_error() {
     tokenizer
         .train_from_files(&mut trainer, vec!["./data/small.txt".to_string()])
         .unwrap();
-    tokenizer.save("tokenizer.json", true);
+    tokenizer.save("tokenizer.json", true).unwrap();
     let tokenizer = Tokenizer::from_file("tokenizer.json").unwrap();
     assert_eq!(tokenizer.get_vocab_size(false), 1526);
 
