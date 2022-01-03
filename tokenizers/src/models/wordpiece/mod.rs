@@ -11,7 +11,6 @@ use std::{
     fs::File,
     io::prelude::*,
     io::{BufRead, BufReader},
-    iter::FromIterator,
     path::{Path, PathBuf},
 };
 
@@ -116,16 +115,13 @@ impl WordPieceBuilder {
             .collect();
 
         let mut trie = Trie::default();
-        let n = self.config.continuing_subword_prefix.chars().count();
+        let n = self.config.continuing_subword_prefix.len();
         for key in self.config.vocab.keys() {
-            let chars = if key.starts_with(&self.config.continuing_subword_prefix) {
-                key.chars().skip(n).collect::<Vec<_>>()
+            if key.starts_with(&self.config.continuing_subword_prefix) {
+                trie.push(&key[n..].as_bytes());
             } else {
-                let mut chars = vec!['▁'];
-                chars.extend(key.chars().collect::<Vec<_>>());
-                chars
-            };
-            trie.push(&chars);
+                trie.push(&format!("▁{}", key).as_bytes());
+            }
         }
 
         Ok(WordPiece {
@@ -146,7 +142,7 @@ impl WordPieceBuilder {
 pub struct WordPiece {
     vocab: Vocab,
     vocab_r: VocabR,
-    trie: Trie<char>,
+    trie: Trie<u8>,
     pub unk_token: String,
     pub continuing_subword_prefix: String,
     pub max_input_chars_per_word: usize,
@@ -236,18 +232,18 @@ impl Model for WordPiece {
     }
 
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
-        let mut chars = Vec::with_capacity(sequence.len());
-        chars.push('▁');
-        chars.extend(sequence.chars().collect::<Vec<_>>());
+        let n = sequence.chars().count();
+        let prefix = "▁";
+        let offset = prefix.len();
 
-        if chars.len() > self.max_input_chars_per_word + 1 {
+        if n > self.max_input_chars_per_word + offset {
             return Ok(vec![Token {
                 value: self.unk_token.clone(),
                 id: *self
                     .vocab
                     .get(&self.unk_token)
                     .ok_or(Error::MissingUnkToken)?,
-                offsets: (0, chars.len() - 1),
+                offsets: (0, sequence.len()),
             }]);
         }
 
@@ -257,13 +253,15 @@ impl Model for WordPiece {
                 id,
                 value: sequence.to_string(),
                 // Removing extra index from '▁' used.
-                offsets: (0, chars.len() - 1),
+                offsets: (0, sequence.len()),
             }]);
         }
 
+        let word = format!("{}{}", prefix, sequence);
+
         let mut start_offset = 0;
         let mut sub_tokens = vec![];
-        for (start, stop) in self.trie.matches(&chars) {
+        for (start, stop) in self.trie.matches(&word.as_bytes()) {
             if start_offset < start {
                 return Ok(vec![Token {
                     value: self.unk_token.clone(),
@@ -274,17 +272,23 @@ impl Model for WordPiece {
                     offsets: (0, sequence.len()),
                 }]);
             }
-            let start = if start == 0 { start + 1 } else { start };
-            let mut substr: Cow<str> = Cow::Owned(String::from_iter(&chars[start..stop]));
-            if start > 1 {
-                substr = Cow::Owned(format!("{}{}", self.continuing_subword_prefix, substr));
-            }
-            if self.vocab.contains_key(substr.as_ref()) {
+            let (start, substr) = if start == 0 {
+                let substr: Cow<str> = Cow::Borrowed(&word[start + offset..stop]);
+                (start + offset, substr)
+            } else {
+                let substr: Cow<str> = Cow::Owned(format!(
+                    "{}{}",
+                    self.continuing_subword_prefix,
+                    &word[start..stop]
+                ));
+                (start, substr)
+            };
+            if let Some(&id) = self.vocab.get(substr.as_ref()) {
                 let token = Token {
-                    id: self.vocab[substr.as_ref()],
+                    id,
                     value: substr.to_string(),
                     // Removing extra index from '▁' used.
-                    offsets: (start - 1, stop - 1),
+                    offsets: (start - offset, stop - offset),
                 };
                 sub_tokens.push(token);
             } else {
@@ -300,7 +304,7 @@ impl Model for WordPiece {
             start_offset = stop;
         }
 
-        if start_offset != chars.len() {
+        if start_offset != sequence.len() + offset {
             Ok(vec![Token {
                 value: self.unk_token.clone(),
                 id: *self

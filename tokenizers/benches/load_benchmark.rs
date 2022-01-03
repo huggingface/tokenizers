@@ -15,6 +15,8 @@ fn bench_load(c: &mut Criterion) {
     c.bench_function("Loading tokenizer with many saved tokens", |b| {
         b.iter(|| Tokenizer::from_file("_tok.json").unwrap())
     });
+
+    std::fs::remove_file("_tok.json").unwrap();
 }
 criterion_group! {
     name = benches_load;
