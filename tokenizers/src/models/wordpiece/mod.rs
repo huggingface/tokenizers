@@ -247,7 +247,17 @@ impl Model for WordPiece {
                     .vocab
                     .get(&self.unk_token)
                     .ok_or(Error::MissingUnkToken)?,
-                offsets: (0, sequence.len()),
+                offsets: (0, chars.len() - 1),
+            }]);
+        }
+
+        // Short path for full words.
+        if let Some(&id) = self.vocab.get(sequence) {
+            return Ok(vec![Token {
+                id,
+                value: sequence.to_string(),
+                // Removing extra index from '▁' used.
+                offsets: (0, chars.len() - 1),
             }]);
         }
 
