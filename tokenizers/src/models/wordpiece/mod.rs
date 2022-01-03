@@ -118,9 +118,9 @@ impl WordPieceBuilder {
         let n = self.config.continuing_subword_prefix.len();
         for key in self.config.vocab.keys() {
             if key.starts_with(&self.config.continuing_subword_prefix) {
-                trie.push(&key[n..].as_bytes());
+                trie.push(key[n..].as_bytes());
             } else {
-                trie.push(&format!("▁{}", key).as_bytes());
+                trie.push(format!("▁{}", key).as_bytes());
             }
         }
 
@@ -261,7 +261,7 @@ impl Model for WordPiece {
 
         let mut start_offset = 0;
         let mut sub_tokens = vec![];
-        for (start, stop) in self.trie.matches(&word.as_bytes()) {
+        for (start, stop) in self.trie.matches(word.as_bytes()) {
             if start_offset < start {
                 return Ok(vec![Token {
                     value: self.unk_token.clone(),
