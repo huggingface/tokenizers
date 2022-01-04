@@ -71,30 +71,35 @@ impl WordPieceBuilder {
     }
 
     /// Set the input files.
+    #[must_use]
     pub fn files(mut self, vocab: String) -> Self {
         self.config.files = Some(vocab);
         self
     }
 
     /// Set the vocab (token -> ID) mapping.
+    #[must_use]
     pub fn vocab(mut self, vocab: Vocab) -> Self {
         self.config.vocab = vocab;
         self
     }
 
     /// The the `UNK` token for the vocab.
+    #[must_use]
     pub fn unk_token(mut self, unk_token: String) -> Self {
         self.config.unk_token = unk_token;
         self
     }
 
     /// Set the prefix for continuing subwords.
+    #[must_use]
     pub fn continuing_subword_prefix(mut self, continuing_subword_prefix: String) -> Self {
         self.config.continuing_subword_prefix = continuing_subword_prefix;
         self
     }
 
     /// Set the maximum number of input characters per word.
+    #[must_use]
     pub fn max_input_chars_per_word(mut self, max_input_chars_per_word: usize) -> Self {
         self.config.max_input_chars_per_word = max_input_chars_per_word;
         self

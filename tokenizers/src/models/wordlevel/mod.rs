@@ -65,18 +65,21 @@ impl WordLevelBuilder {
     }
 
     /// Set the input files.
+    #[must_use]
     pub fn files(mut self, vocab: String) -> Self {
         self.config.files = Some(vocab);
         self
     }
 
     /// Set the vocab (token -> ID) mapping.
+    #[must_use]
     pub fn vocab(mut self, vocab: HashMap<String, u32>) -> Self {
         self.config.vocab = vocab;
         self
     }
 
     /// The the `UNK` token for the vocab.
+    #[must_use]
     pub fn unk_token(mut self, unk_token: String) -> Self {
         self.config.unk_token = unk_token;
         self

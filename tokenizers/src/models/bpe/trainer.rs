@@ -75,48 +75,56 @@ impl BpeTrainerBuilder {
     }
 
     /// Set the expected minimum frequency
+    #[must_use]
     pub fn min_frequency(mut self, frequency: u32) -> Self {
         self.config.min_frequency = frequency;
         self
     }
 
     /// Set the vocabulary size
+    #[must_use]
     pub fn vocab_size(mut self, size: usize) -> Self {
         self.config.vocab_size = size;
         self
     }
 
     /// Set whether to show progress
+    #[must_use]
     pub fn show_progress(mut self, show: bool) -> Self {
         self.config.show_progress = show;
         self
     }
 
     /// Set the special tokens
+    #[must_use]
     pub fn special_tokens(mut self, tokens: Vec<AddedToken>) -> Self {
         self.config.special_tokens = tokens;
         self
     }
 
     /// Set whether to limit the alphabet
+    #[must_use]
     pub fn limit_alphabet(mut self, limit: usize) -> Self {
         self.config.limit_alphabet = Some(limit);
         self
     }
 
     /// Set the initial alphabet
+    #[must_use]
     pub fn initial_alphabet(mut self, alphabet: HashSet<char>) -> Self {
         self.config.initial_alphabet = alphabet;
         self
     }
 
     /// Set the continuing_subword_prefix
+    #[must_use]
     pub fn continuing_subword_prefix(mut self, prefix: String) -> Self {
         self.config.continuing_subword_prefix = Some(prefix);
         self
     }
 
     /// Set the end_of_word_suffix
+    #[must_use]
     pub fn end_of_word_suffix(mut self, suffix: String) -> Self {
         self.config.end_of_word_suffix = Some(suffix);
         self
@@ -498,7 +506,7 @@ impl BpeTrainer {
             let new_token_id = word_to_id
                 .get(&new_token)
                 .copied()
-                .unwrap_or_else(|| id_to_word.len() as u32);
+                .unwrap_or(id_to_word.len() as u32);
             if word_to_id.get(&new_token).is_none() {
                 id_to_word.push(new_token.clone());
                 word_to_id.insert(new_token.clone(), new_token_id);
