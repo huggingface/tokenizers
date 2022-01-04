@@ -239,3 +239,17 @@ class TestUnigram:
         assert trainer.special_tokens == []
         trainer.initial_alphabet = ["d", "z"]
         assert sorted(trainer.initial_alphabet) == ["d", "z"]
+
+    def test_continuing_prefix_trainer_mistmatch(self):
+        UNK = "[UNK]"
+        special_tokens = [UNK]
+        tokenizer = Tokenizer(models.BPE(unk_token=UNK, continuing_subword_prefix="##"))
+        trainer = trainers.BpeTrainer(special_tokens=special_tokens)
+        tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
+            [pre_tokenizers.Whitespace(), pre_tokenizers.Digits(individual_digits=True)]
+        )
+        tokenizer.train(files=["data/big.txt"], trainer=trainer)
+
+        tokenizer.save("data/tokenizer.json")
+
+        tokenizer.from_file("data/tokenizer.json")

@@ -575,9 +575,13 @@ impl BpeTrainer {
 
         if let Some(prefix) = &self.continuing_subword_prefix {
             model.continuing_subword_prefix = Some(prefix.to_owned());
+        } else {
+            model.continuing_subword_prefix = None;
         }
         if let Some(suffix) = &self.end_of_word_suffix {
             model.end_of_word_suffix = Some(suffix.to_owned());
+        } else {
+            model.end_of_word_suffix = None;
         }
 
         Ok(self.special_tokens.clone())
