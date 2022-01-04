@@ -174,13 +174,13 @@ fn slice(
 ) -> PyResult<Option<PyNormalizedString>> {
     let n_char = normalized.len();
     let char_range = range.to_range(n_char)?;
-    Ok(char_to_bytes(normalized.get(), char_range)
-        .map(|bytes_range| {
+    Ok(
+        char_to_bytes(normalized.get(), char_range).and_then(|bytes_range| {
             normalized
                 .slice(Range::Normalized(bytes_range))
                 .map(|n| n.into())
-        })
-        .flatten())
+        }),
+    )
 }
 
 /// NormalizedString

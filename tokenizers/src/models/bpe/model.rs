@@ -59,12 +59,14 @@ impl BpeBuilder {
     }
 
     /// Set the input files.
+    #[must_use]
     pub fn files(mut self, vocab: String, merges: String) -> Self {
         self.config.files = Some((vocab, merges));
         self
     }
 
     /// Set the vocab (token -> ID) and merges mappings.
+    #[must_use]
     pub fn vocab_and_merges(mut self, vocab: Vocab, merges: Merges) -> Self {
         self.config.vocab = vocab;
         self.config.merges = merges;
@@ -72,36 +74,42 @@ impl BpeBuilder {
     }
 
     /// Set the cache's capacity. Set to 0 if you want to disable caching.
+    #[must_use]
     pub fn cache_capacity(mut self, capacity: usize) -> Self {
         self.config.cache_capacity = capacity;
         self
     }
 
     /// Use [dropout](https://arxiv.org/abs/1910.13267) with the model.
+    #[must_use]
     pub fn dropout(mut self, dropout: f32) -> Self {
         self.config.dropout = Some(dropout);
         self
     }
 
     /// Set the `UNK` token for the vocab.
+    #[must_use]
     pub fn unk_token(mut self, unk_token: String) -> Self {
         self.config.unk_token = Some(unk_token);
         self
     }
 
     /// Set the `continuing_subword_prefix` option.
+    #[must_use]
     pub fn continuing_subword_prefix(mut self, prefix: String) -> Self {
         self.config.continuing_subword_prefix = Some(prefix);
         self
     }
 
     /// Set the `end_of_word_suffix` option.
+    #[must_use]
     pub fn end_of_word_suffix(mut self, prefix: String) -> Self {
         self.config.end_of_word_suffix = Some(prefix);
         self
     }
 
     /// Set the `fuse_unk` option.
+    #[must_use]
     pub fn fuse_unk(mut self, fuse_unk: bool) -> Self {
         self.config.fuse_unk = fuse_unk;
         self

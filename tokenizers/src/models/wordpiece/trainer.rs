@@ -24,48 +24,56 @@ impl WordPieceTrainerBuilder {
     }
 
     /// Set the expected minimum frequency
+    #[must_use]
     pub fn min_frequency(mut self, frequency: u32) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.min_frequency(frequency);
         self
     }
 
     /// Set the vocabulary size
+    #[must_use]
     pub fn vocab_size(mut self, size: usize) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.vocab_size(size);
         self
     }
 
     /// Set whether to show progress
+    #[must_use]
     pub fn show_progress(mut self, show: bool) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.show_progress(show);
         self
     }
 
     /// Set the special tokens
+    #[must_use]
     pub fn special_tokens(mut self, tokens: Vec<AddedToken>) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.special_tokens(tokens);
         self
     }
 
     /// Set whether to limit the alphabet
+    #[must_use]
     pub fn limit_alphabet(mut self, limit: usize) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.limit_alphabet(limit);
         self
     }
 
     /// Set the initial alphabet
+    #[must_use]
     pub fn initial_alphabet(mut self, alphabet: HashSet<char>) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.initial_alphabet(alphabet);
         self
     }
 
     /// Set the continuing_subword_prefix
+    #[must_use]
     pub fn continuing_subword_prefix(mut self, prefix: String) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.continuing_subword_prefix(prefix);
         self
     }
 
     /// Set the end_of_word_suffix
+    #[must_use]
     pub fn end_of_word_suffix(mut self, suffix: String) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.end_of_word_suffix(suffix);
         self

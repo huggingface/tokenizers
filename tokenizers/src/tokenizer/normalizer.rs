@@ -217,7 +217,7 @@ impl NormalizedString {
                 _ => None,
             }
         } else {
-            self.alignments.get(target).map(expand_alignments).flatten()
+            self.alignments.get(target).and_then(expand_alignments)
         }
     }
 
@@ -862,7 +862,7 @@ pub fn get_range_of<T: RangeBounds<usize>>(s: &str, range: T) -> Option<&str> {
             .char_indices()
             .map(|(i, _)| i)
             .nth(end as usize)
-            .unwrap_or_else(|| s.len());
+            .unwrap_or(s.len());
         Some(&s[start_b..end_b])
     }
 }

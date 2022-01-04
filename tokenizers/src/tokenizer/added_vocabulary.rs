@@ -35,24 +35,28 @@ impl AddedToken {
     }
     /// Specify whether this token should only match on whole single words, and never
     /// part of a word.
+    #[must_use]
     pub fn single_word(mut self, single_word: bool) -> Self {
         self.single_word = single_word;
         self
     }
     /// Specify whether this token should include all the whitespaces on its left, in
     /// order to strip them out.
+    #[must_use]
     pub fn lstrip(mut self, lstrip: bool) -> Self {
         self.lstrip = lstrip;
         self
     }
     /// Specify whether this token should include all the whitespaces on its right, in
     /// order to strip them out.
+    #[must_use]
     pub fn rstrip(mut self, rstrip: bool) -> Self {
         self.rstrip = rstrip;
         self
     }
     /// Specify whether this token should be normalized and match against its normalized
     /// version in the input text.
+    #[must_use]
     pub fn normalized(mut self, normalized: bool) -> Self {
         self.normalized = normalized;
         self

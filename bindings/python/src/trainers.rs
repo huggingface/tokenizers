@@ -290,8 +290,7 @@ impl PyBpeTrainer {
                         builder = builder.initial_alphabet(
                             alphabet
                                 .into_iter()
-                                .map(|s| s.chars().next())
-                                .flatten()
+                                .filter_map(|s| s.chars().next())
                                 .collect(),
                         );
                     }
@@ -495,8 +494,7 @@ impl PyWordPieceTrainer {
                         builder = builder.initial_alphabet(
                             alphabet
                                 .into_iter()
-                                .map(|s| s.chars().next())
-                                .flatten()
+                                .filter_map(|s| s.chars().next())
                                 .collect(),
                         );
                     }
@@ -784,8 +782,7 @@ impl PyUnigramTrainer {
                         builder.initial_alphabet(
                             alphabet
                                 .into_iter()
-                                .map(|s| s.chars().next())
-                                .flatten()
+                                .filter_map(|s| s.chars().next())
                                 .collect(),
                         )
                     }

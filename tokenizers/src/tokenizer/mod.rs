@@ -323,42 +323,49 @@ where
     }
 
     /// Set the model.
+    #[must_use]
     pub fn with_model(mut self, model: M) -> Self {
         self.model = Some(model);
         self
     }
 
     /// Set the normalizer.
+    #[must_use]
     pub fn with_normalizer(mut self, normalizer: Option<N>) -> Self {
         self.normalizer = normalizer;
         self
     }
 
     /// Set the pre-tokenizer.
+    #[must_use]
     pub fn with_pre_tokenizer(mut self, pretokenizer: Option<PT>) -> Self {
         self.pre_tokenizer = pretokenizer;
         self
     }
 
     /// Set the post-processor.
+    #[must_use]
     pub fn with_post_processor(mut self, post_processor: Option<PP>) -> Self {
         self.post_processor = post_processor;
         self
     }
 
     /// Set the decoder.
+    #[must_use]
     pub fn with_decoder(mut self, decoder: Option<D>) -> Self {
         self.decoder = decoder;
         self
     }
 
     /// Set the trunaction parameters.
+    #[must_use]
     pub fn with_truncation(mut self, trunc: Option<TruncationParams>) -> Self {
         self.truncation = trunc;
         self
     }
 
     /// Set the padding parameters.
+    #[must_use]
     pub fn with_padding(mut self, padding: Option<PaddingParams>) -> Self {
         self.padding = padding;
         self

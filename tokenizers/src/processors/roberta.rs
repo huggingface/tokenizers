@@ -32,10 +32,14 @@ impl RobertaProcessing {
             ..Default::default()
         }
     }
+
+    #[must_use]
     pub fn trim_offsets(mut self, v: bool) -> Self {
         self.trim_offsets = v;
         self
     }
+
+    #[must_use]
     pub fn add_prefix_space(mut self, v: bool) -> Self {
         self.add_prefix_space = v;
         self
