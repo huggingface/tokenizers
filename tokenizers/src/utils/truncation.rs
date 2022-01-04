@@ -8,6 +8,11 @@ pub enum TruncationDirection {
     Left,
     Right,
 }
+impl Default for TruncationDirection {
+    fn default() -> Self {
+        TruncationDirection::Right
+    }
+}
 
 impl std::convert::AsRef<str> for TruncationDirection {
     fn as_ref(&self) -> &str {
@@ -20,6 +25,7 @@ impl std::convert::AsRef<str> for TruncationDirection {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TruncationParams {
+    #[serde(default)]
     pub direction: TruncationDirection,
     pub max_length: usize,
     pub strategy: TruncationStrategy,
@@ -30,9 +36,9 @@ impl Default for TruncationParams {
     fn default() -> Self {
         Self {
             max_length: 512,
-            strategy: TruncationStrategy::LongestFirst,
+            strategy: TruncationStrategy::default(),
             stride: 0,
-            direction: TruncationDirection::Right,
+            direction: TruncationDirection::default(),
         }
     }
 }
@@ -66,6 +72,12 @@ pub enum TruncationStrategy {
     LongestFirst,
     OnlyFirst,
     OnlySecond,
+}
+
+impl Default for TruncationStrategy {
+    fn default() -> Self {
+        TruncationStrategy::LongestFirst
+    }
 }
 
 impl std::convert::AsRef<str> for TruncationStrategy {
@@ -324,5 +336,14 @@ mod tests {
         truncate_and_assert(get_empty(), get_short(), &params, 0, 0);
         truncate_and_assert(get_medium(), get_medium(), &params, 0, 0);
         truncate_and_assert(get_long(), get_long(), &params, 0, 0);
+    }
+
+    #[test]
+    fn test_deserialize_defaults() {
+        let old_truncation_params = r#"{"max_length":256,"strategy":"LongestFirst","stride":0}"#;
+
+        let params: TruncationParams = serde_json::from_str(old_truncation_params).unwrap();
+
+        assert_eq!(params.direction, TruncationDirection::Right);
     }
 }
