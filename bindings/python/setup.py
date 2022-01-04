@@ -7,7 +7,7 @@ extras["docs"] = ["sphinx", "sphinx_rtd_theme", "setuptools_rust"]
 
 setup(
     name="tokenizers",
-    version="0.11.1",
+    version="0.11.2",
     description="Fast and Customizable Tokenizers",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
