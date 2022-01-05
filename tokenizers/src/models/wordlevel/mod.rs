@@ -177,7 +177,10 @@ impl Model for WordLevel {
                 .get(&*token)
                 .or_else(|| self.vocab.get(&*self.unk_token))
                 .ok_or(Error::MissingUnkToken)?,
-            value: token.to_owned(),
+            value: self
+                .vocab
+                .get(&*token)
+                .map_or(self.unk_token.clone(), |_| token.to_owned()),
             offsets: (0, token.len()),
         }])
     }
@@ -218,5 +221,28 @@ impl Model for WordLevel {
 
     fn get_trainer(&self) -> Self::Trainer {
         WordLevelTrainer::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unk() {
+        let vocab: Vocab = [("<unk>".into(), 0), ("a".into(), 1), ("b".into(), 2)]
+            .iter()
+            .cloned()
+            .collect();
+        let wordlevel = WordLevelBuilder::default()
+            .vocab(vocab)
+            .unk_token("<unk>".to_string())
+            .build()
+            .unwrap();
+        let tokens = wordlevel.tokenize("c").unwrap();
+        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
+
+        let tokens = wordlevel.tokenize("a").unwrap();
+        assert_eq!(tokens, vec![Token::new(1u32, "a".into(), (0, 1)),]);
     }
 }
