@@ -171,18 +171,21 @@ impl Model for WordLevel {
     type Trainer = WordLevelTrainer;
 
     fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
-        Ok(vec![Token {
-            id: *self
-                .vocab
-                .get(&*token)
-                .or_else(|| self.vocab.get(&*self.unk_token))
-                .ok_or(Error::MissingUnkToken)?,
-            value: self
-                .vocab
-                .get(&*token)
-                .map_or(self.unk_token.clone(), |_| token.to_owned()),
-            offsets: (0, token.len()),
-        }])
+        if let Some(&id) = self.vocab.get(token) {
+            Ok(vec![Token {
+                id,
+                value: token.to_owned(),
+                offsets: (0, token.len()),
+            }])
+        } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
+            Ok(vec![Token {
+                id: unk_id,
+                value: self.unk_token.to_owned(),
+                offsets: (0, token.len()),
+            }])
+        } else {
+            Err(Box::new(Error::MissingUnkToken))
+        }
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
@@ -244,5 +247,16 @@ mod tests {
 
         let tokens = wordlevel.tokenize("a").unwrap();
         assert_eq!(tokens, vec![Token::new(1u32, "a".into(), (0, 1)),]);
+    }
+
+    #[test]
+    fn test_tokenize_missing_unk_token() {
+        let vocab: Vocab = [("a".into(), 0), ("b".into(), 1)].iter().cloned().collect();
+        let wordlevel = WordLevelBuilder::default().vocab(vocab).build().unwrap();
+        let tokens = wordlevel.tokenize("a").unwrap();
+        assert_eq!(tokens, vec![Token::new(0u32, "a".into(), (0, 1)),]);
+
+        let error = wordlevel.tokenize("c").err().unwrap();
+        assert!(error.is::<Error>());
     }
 }
