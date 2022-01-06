@@ -229,7 +229,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_unk() {
+    fn test_tokenize_unk() {
         let vocab: Vocab = [("<unk>".into(), 0), ("a".into(), 1), ("b".into(), 2)]
             .iter()
             .cloned()
