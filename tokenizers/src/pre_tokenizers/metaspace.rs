@@ -1,11 +1,11 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 /// Replaces all the whitespaces by the provided meta character and then
 /// splits on this character
-#[serde(tag = "type", from = "MetaspaceDeserializer")]
+#[serde(tag = "type")]
 pub struct Metaspace {
     replacement: char,
     pub add_prefix_space: bool,
@@ -13,17 +13,28 @@ pub struct Metaspace {
     str_rep: String,
 }
 
-#[doc(hidden)]
-#[derive(Deserialize)]
-#[serde(tag = "type")]
-pub struct MetaspaceDeserializer {
-    replacement: char,
-    add_prefix_space: bool,
-}
+impl<'de> Deserialize<'de> for Metaspace {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        enum Type {
+            Metaspace,
+        }
 
-impl From<MetaspaceDeserializer> for Metaspace {
-    fn from(v: MetaspaceDeserializer) -> Metaspace {
-        Metaspace::new(v.replacement, v.add_prefix_space)
+        #[derive(Deserialize)]
+        pub struct MetaspaceHelper {
+            #[serde(rename = "type")]
+            _type: Type,
+            replacement: char,
+            pub add_prefix_space: bool,
+            #[serde(skip, rename = "str_rep")]
+            _str_rep: String,
+        }
+
+        let helper = MetaspaceHelper::deserialize(deserializer)?;
+        Ok(Metaspace::new(helper.replacement, helper.add_prefix_space))
     }
 }
 

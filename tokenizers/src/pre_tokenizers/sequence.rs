@@ -1,11 +1,33 @@
 use crate::pre_tokenizers::PreTokenizerWrapper;
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(tag = "type")]
 pub struct Sequence {
     pretokenizers: Vec<PreTokenizerWrapper>,
+}
+
+impl<'de> Deserialize<'de> for Sequence {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        enum Type {
+            Sequence,
+        }
+
+        #[derive(Deserialize)]
+        pub struct SequenceHelper {
+            #[serde(rename = "type")]
+            _type: Type,
+            pretokenizers: Vec<PreTokenizerWrapper>,
+        }
+
+        let helper = SequenceHelper::deserialize(deserializer)?;
+        Ok(Sequence::new(helper.pretokenizers))
+    }
 }
 
 impl Sequence {
