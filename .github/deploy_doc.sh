@@ -49,5 +49,6 @@ deploy_doc "558f2d87795ffc9d9786f1e923398e3eebe14187" v0.9.1 python
 deploy_doc "558f2d87795ffc9d9786f1e923398e3eebe14187" v0.9.2 python
 deploy_doc "558f2d87795ffc9d9786f1e923398e3eebe14187" v0.9.3 python
 deploy_doc "python-v0.9.4" v0.9.4 python
-deploy_doc "python-v0.10.0" v0.10.0 python
-deploy_doc "python-v0.10.0" latest python override
+deploy_doc "python-v0.10.3" v0.10.3 python
+deploy_doc "python-v0.11.3" v0.11.3 python
+deploy_doc "$GITHUB_SHA" latest python override
