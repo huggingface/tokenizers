@@ -4,7 +4,7 @@ use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Whitespace;
 impl_serde_unit_struct!(WhitespaceVisitor, Whitespace);
 
@@ -27,7 +27,7 @@ impl PreTokenizer for Whitespace {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct WhitespaceSplit;
 impl_serde_unit_struct!(WhitespaceSplitVisitor, WhitespaceSplit);
 

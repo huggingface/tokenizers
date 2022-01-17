@@ -5,7 +5,7 @@ fn is_bert_punc(x: char) -> bool {
     char::is_ascii_punctuation(&x) || x.is_punctuation()
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct BertPreTokenizer;
 impl_serde_unit_struct!(BertVisitor, BertPreTokenizer);
 

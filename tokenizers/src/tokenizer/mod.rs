@@ -403,7 +403,8 @@ impl Tokenizer {
     }
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
         let content = read_to_string(file)?;
-        Ok(serde_json::from_str(&content)?)
+        let tokenizer = serde_json::from_str(&content)?;
+        Ok(tokenizer)
     }
     #[cfg(feature = "http")]
     pub fn from_pretrained<S: AsRef<str>>(
@@ -1131,7 +1132,8 @@ where
     /// Instantiate a new Tokenizer from the given file
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
         let content = read_to_string(file)?;
-        Ok(serde_json::from_str(&content)?)
+        let tokenizer = serde_json::from_str(&content)?;
+        Ok(tokenizer)
     }
 }
 

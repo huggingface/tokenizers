@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use onig::Regex;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
     Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,
@@ -40,7 +40,7 @@ lazy_static! {
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
 }
 
-#[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq)]
+#[derive(Serialize, Copy, Clone, Debug, PartialEq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
 /// of all the required processing steps to transform a UTF-8 string as needed before and after the
 /// BPE model does its job.
@@ -53,6 +53,30 @@ pub struct ByteLevel {
     /// Whether the post processing step should trim offsets to avoid including whitespaces.
     pub trim_offsets: bool,
 }
+
+impl<'de> Deserialize<'de> for ByteLevel {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        enum Type {
+            ByteLevel,
+        }
+
+        #[derive(Deserialize)]
+        pub struct ByteLevelHelper {
+            #[serde(rename = "type")]
+            _type: Type,
+            add_prefix_space: bool,
+            trim_offsets: bool,
+        }
+
+        let helper = ByteLevelHelper::deserialize(deserializer)?;
+        Ok(ByteLevel::new(helper.add_prefix_space, helper.trim_offsets))
+    }
+}
+
 impl Default for ByteLevel {
     fn default() -> Self {
         Self {

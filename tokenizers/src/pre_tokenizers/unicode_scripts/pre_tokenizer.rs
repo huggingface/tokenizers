@@ -1,7 +1,7 @@
 use crate::pre_tokenizers::unicode_scripts::scripts::{get_script, Script};
 use crate::tokenizer::{normalizer::Range, PreTokenizedString, PreTokenizer, Result};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UnicodeScripts;
 impl_serde_unit_struct!(UnicodeScriptsVisitor, UnicodeScripts);
 

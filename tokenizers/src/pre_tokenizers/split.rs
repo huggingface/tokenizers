@@ -1,5 +1,5 @@
 use onig::Regex;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
@@ -24,32 +24,38 @@ impl From<&str> for SplitPattern {
     }
 }
 
-/// We use this custom deserializer to provide the value for `regex` for `Split`
-#[doc(hidden)]
-#[derive(Deserialize)]
+#[derive(Debug, Serialize)]
 #[serde(tag = "type")]
-struct SplitDeserializer {
-    pattern: SplitPattern,
-    behavior: SplitDelimiterBehavior,
-    invert: bool,
-}
-
-impl std::convert::TryFrom<SplitDeserializer> for Split {
-    type Error = Box<dyn std::error::Error + Send + Sync>;
-
-    fn try_from(v: SplitDeserializer) -> Result<Self> {
-        Split::new(v.pattern, v.behavior, v.invert)
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type", try_from = "SplitDeserializer")]
 pub struct Split {
     pattern: SplitPattern,
     #[serde(skip)]
     regex: Regex,
     behavior: SplitDelimiterBehavior,
     invert: bool,
+}
+
+impl<'de> Deserialize<'de> for Split {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        enum Type {
+            Split,
+        }
+
+        #[derive(Deserialize)]
+        pub struct SplitHelper {
+            #[serde(rename = "type")]
+            _type: Type,
+            pattern: SplitPattern,
+            behavior: SplitDelimiterBehavior,
+            invert: bool,
+        }
+
+        let helper = SplitHelper::deserialize(deserializer)?;
+        Split::new(helper.pattern, helper.behavior, helper.invert).map_err(serde::de::Error::custom)
+    }
 }
 
 impl Clone for Split {
