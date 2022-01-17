@@ -6,6 +6,7 @@ fn is_bert_punc(x: char) -> bool {
 }
 
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct BertPreTokenizer;
 impl_serde_unit_struct!(BertVisitor, BertPreTokenizer);
 

@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use unicode_categories::UnicodeCategories;
@@ -7,11 +7,33 @@ fn is_punc(x: char) -> bool {
     char::is_ascii_punctuation(&x) || x.is_punctuation()
 }
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
-#[serde(tag = "type")]
+#[derive(Serialize, Copy, Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct Punctuation {
-    #[serde(default = "default_split")]
     behavior: SplitDelimiterBehavior,
+}
+
+impl<'de> Deserialize<'de> for Punctuation {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        enum Type {
+            Punctuation,
+        }
+
+        #[derive(Deserialize)]
+        pub struct PunctuationHelper {
+            #[serde(rename = "type")]
+            _type: Type,
+            #[serde(default = "default_split")]
+            behavior: SplitDelimiterBehavior,
+        }
+
+        let helper = PunctuationHelper::deserialize(deserializer)?;
+        Ok(Punctuation::new(helper.behavior))
+    }
 }
 
 fn default_split() -> SplitDelimiterBehavior {
@@ -65,6 +87,18 @@ mod tests {
 
     #[test]
     fn deserialization() {
-        let _punctuation: Punctuation = serde_json::from_str(r#"{"type": "punctuation"}"#).unwrap();
+        let punctuation: Punctuation = serde_json::from_str(r#"{"type": "Punctuation"}"#).unwrap();
+        assert_eq!(punctuation, Punctuation::default());
+        assert_eq!(
+            punctuation,
+            Punctuation::new(SplitDelimiterBehavior::Isolated)
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn deserialization_erroneous() {
+        let _punctuation: Punctuation =
+            serde_json::from_str(r#"{"type": "WhitespaceSplit"}"#).unwrap();
     }
 }
