@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1]
+
+- [#882] Fixing Punctuation deserialize without argument.
+- [#868] Fixing missing direction in TruncationParams
+- [#860] Adding TruncationSide to TruncationParams
+
 ## [0.11.0]
 
 ### Fixed
@@ -125,6 +131,9 @@ advised, but that's not the question)
 split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
+[#882]: https://github.com/huggingface/tokenizers/pull/850
+[#868]: https://github.com/huggingface/tokenizers/pull/850
+[#860]: https://github.com/huggingface/tokenizers/pull/850
 [#403]: https://github.com/huggingface/tokenizers/pull/403
 [#377]: https://github.com/huggingface/tokenizers/pull/377
 [#355]: https://github.com/huggingface/tokenizers/pull/355
