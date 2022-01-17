@@ -10,7 +10,12 @@ fn is_punc(x: char) -> bool {
 #[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 #[serde(tag = "type")]
 pub struct Punctuation {
+    #[serde(default = "default_split")]
     behavior: SplitDelimiterBehavior,
+}
+
+fn default_split() -> SplitDelimiterBehavior {
+    SplitDelimiterBehavior::Isolated
 }
 
 impl Punctuation {
@@ -56,5 +61,10 @@ mod tests {
                 ("?", (29, 30)),
             ]
         );
+    }
+
+    #[test]
+    fn deserialization() {
+        let _punctuation: Punctuation = serde_json::from_str(r#"{"type": "punctuation"}"#).unwrap();
     }
 }
