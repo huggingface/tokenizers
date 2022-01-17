@@ -9,6 +9,7 @@ fn is_punc(x: char) -> bool {
 
 #[derive(Serialize, Copy, Clone, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
+#[serde(tag = "type")]
 pub struct Punctuation {
     behavior: SplitDelimiterBehavior,
 }
