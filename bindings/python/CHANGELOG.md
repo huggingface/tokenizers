@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.4]
+
+- [#884] Fixing bad deserialization following inclusion of a default for Punctuation
+
 ## [0.11.3]
 
 - [#882] Fixing Punctuation deserialize without argument.
@@ -347,9 +351,10 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
-[#882]: https://github.com/huggingface/tokenizers/pull/850
-[#868]: https://github.com/huggingface/tokenizers/pull/850
-[#860]: https://github.com/huggingface/tokenizers/pull/850
+[#884]: https://github.com/huggingface/tokenizers/pull/884
+[#882]: https://github.com/huggingface/tokenizers/pull/882
+[#868]: https://github.com/huggingface/tokenizers/pull/868
+[#860]: https://github.com/huggingface/tokenizers/pull/860
 [#850]: https://github.com/huggingface/tokenizers/pull/850
 [#844]: https://github.com/huggingface/tokenizers/pull/844
 [#845]: https://github.com/huggingface/tokenizers/pull/845
