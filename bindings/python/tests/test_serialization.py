@@ -1,5 +1,10 @@
-from tokenizers import Tokenizer, models, normalizers
-from .utils import data_dir, albert_base
+from tokenizers import Tokenizer
+import os
+import unittest
+from .utils import albert_base
+import json
+from huggingface_hub import HfApi, hf_hub_url, cached_download
+import tqdm
 
 
 class TestSerialization:
@@ -8,3 +13,56 @@ class TestSerialization:
         # This used to fail because of BufReader that would fail because the
         # file exceeds the buffer capacity
         tokenizer = Tokenizer.from_file(albert_base)
+
+
+def check(tokenizer_file) -> bool:
+    with open(tokenizer_file, "r") as f:
+        data = json.load(f)
+    if "pre_tokenizer" not in data:
+        return True
+    if "type" not in data["pre_tokenizer"]:
+        return False
+    if data["pre_tokenizer"]["type"] == "Sequence":
+        for pre_tok in data["pre_tokenizer"]["pretokenizers"]:
+            if "type" not in pre_tok:
+                return False
+    return True
+
+
+def slow(test_case):
+    """
+    Decorator marking a test as slow.
+
+    Slow tests are skipped by default. Set the RUN_SLOW environment variable to a truthy value to run them.
+
+    """
+    if os.getenv("RUN_SLOW") != "1":
+        return unittest.skip("use `RUN_SLOW=1` to run")(test_case)
+    else:
+        return test_case
+
+
+@slow
+class TestFullDeserialization(unittest.TestCase):
+    def test_full_deserialization_hub(self):
+        # Check we can read this file.
+        # This used to fail because of BufReader that would fail because the
+        # file exceeds the buffer capacity
+        api = HfApi()
+
+        models = api.list_models(filter="transformers")
+
+        for model in tqdm.tqdm(models):
+            model_id = model.modelId
+            for model_file in model.siblings:
+                filename = model_file.rfilename
+                if filename == "tokenizer.json":
+                    tokenizer_file = cached_download(hf_hub_url(model_id, filename=filename))
+
+                    is_ok = check(tokenizer_file)
+                    if not is_ok:
+                        print(f"{model_id} is affected by no type")
+                    try:
+                        Tokenizer.from_file(tokenizer_file)
+                    except:
+                        print(f"{model_id} is not loadable")
