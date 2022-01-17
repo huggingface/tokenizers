@@ -1,7 +1,7 @@
 from tokenizers import Tokenizer
 import os
 import unittest
-from .utils import albert_base
+from .utils import data_dir, albert_base
 import json
 from huggingface_hub import HfApi, hf_hub_url, cached_download
 import tqdm
@@ -50,19 +50,33 @@ class TestFullDeserialization(unittest.TestCase):
         # file exceeds the buffer capacity
         api = HfApi()
 
-        models = api.list_models(filter="transformers")
+        not_loadable = []
+        invalid_pre_tokenizer = []
 
-        for model in tqdm.tqdm(models):
-            model_id = model.modelId
-            for model_file in model.siblings:
-                filename = model_file.rfilename
-                if filename == "tokenizer.json":
-                    tokenizer_file = cached_download(hf_hub_url(model_id, filename=filename))
+        # models = api.list_models(filter="transformers")
+        # for model in tqdm.tqdm(models):
+        #     model_id = model.modelId
+        #     for model_file in model.siblings:
+        #         filename = model_file.rfilename
+        #         if filename == "tokenizer.json":
+        #             all_models.append((model_id, filename))
 
-                    is_ok = check(tokenizer_file)
-                    if not is_ok:
-                        print(f"{model_id} is affected by no type")
-                    try:
-                        Tokenizer.from_file(tokenizer_file)
-                    except:
-                        print(f"{model_id} is not loadable")
+        all_models = [("HueyNemud/das22-10-camembert_pretrained", "tokenizer.json")]
+        for (model_id, filename) in tqdm.tqdm(all_models):
+            tokenizer_file = cached_download(hf_hub_url(model_id, filename=filename))
+
+            is_ok = check(tokenizer_file)
+            if not is_ok:
+                print(f"{model_id} is affected by no type")
+                invalid_pre_tokenizer.append(model_id)
+            try:
+                Tokenizer.from_file(tokenizer_file)
+            except Exception as e:
+                print(f"{model_id} is not loadable: {e}")
+                not_loadable.append(model_id)
+            except:
+                print(f"{model_id} is not loadable: Rust error")
+                not_loadable.append(model_id)
+
+            self.assertEqual(invalid_pre_tokenizer, [])
+            self.assertEqual(not_loadable, [])

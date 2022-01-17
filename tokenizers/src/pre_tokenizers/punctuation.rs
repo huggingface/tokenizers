@@ -7,8 +7,7 @@ fn is_punc(x: char) -> bool {
     char::is_ascii_punctuation(&x) || x.is_punctuation()
 }
 
-#[derive(Serialize, Copy, Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq))]
+#[derive(Serialize, Copy, Clone, Debug, PartialEq)]
 #[serde(tag = "type")]
 pub struct Punctuation {
     behavior: SplitDelimiterBehavior,

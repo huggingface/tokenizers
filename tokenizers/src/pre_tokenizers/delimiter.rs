@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(test, derive(PartialEq))]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub struct CharDelimiterSplit {

@@ -23,8 +23,7 @@ use crate::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use crate::{PreTokenizedString, PreTokenizer};
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq))]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 #[serde(untagged)]
 pub enum PreTokenizerWrapper {
     BertPreTokenizer(BertPreTokenizer),
@@ -77,6 +76,26 @@ mod tests {
     #[test]
     fn test_deserialize() {
         let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(r#"{"type":"Sequence","pretokenizers":[{"type":"WhitespaceSplit"},{"type":"Metaspace","replacement":"▁","str_rep":"▁","add_prefix_space":true}]}"#).unwrap();
+
+        assert_eq!(
+            pre_tokenizer,
+            PreTokenizerWrapper::Sequence(Sequence::new(vec![
+                PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit {}),
+                PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true))
+            ]))
+        );
+
+        let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(
+            r#"{"type":"Metaspace","replacement":"▁","add_prefix_space":true}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            pre_tokenizer,
+            PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true))
+        );
+
+        let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(r#"{"type":"Sequence","pretokenizers":[{"type":"WhitespaceSplit"},{"type":"Metaspace","replacement":"▁","add_prefix_space":true}]}"#).unwrap();
 
         assert_eq!(
             pre_tokenizer,

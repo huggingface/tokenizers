@@ -109,6 +109,12 @@ mod tests {
             serde_json::from_str::<Metaspace>(metaspace_s).unwrap(),
             metaspace
         );
+
+        let metaspace_parsed: Metaspace = serde_json::from_str(
+            r#"{"type":"Metaspace","replacement":"_","add_prefix_space":true}"#,
+        )
+        .unwrap();
+        assert_eq!(metaspace_parsed, metaspace);
     }
 
     #[test]
