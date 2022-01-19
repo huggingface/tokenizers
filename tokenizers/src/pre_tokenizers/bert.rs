@@ -1,13 +1,14 @@
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 
 fn is_bert_punc(x: char) -> bool {
     char::is_ascii_punctuation(&x) || x.is_punctuation()
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BertPreTokenizer;
-impl_serde_unit_struct!(BertVisitor, BertPreTokenizer);
+// impl_serde_unit_struct!(BertVisitor, BertPreTokenizer);
 
 impl PreTokenizer for BertPreTokenizer {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {

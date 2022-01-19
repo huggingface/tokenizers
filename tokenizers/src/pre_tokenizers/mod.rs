@@ -24,11 +24,11 @@ use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use crate::{PreTokenizedString, PreTokenizer};
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
-#[serde(untagged)]
+#[serde(tag = "type")]
 pub enum PreTokenizerWrapper {
     BertPreTokenizer(BertPreTokenizer),
     ByteLevel(ByteLevel),
-    Delimiter(CharDelimiterSplit),
+    CharDelimiterSplit(CharDelimiterSplit),
     Metaspace(Metaspace),
     Whitespace(Whitespace),
     Sequence(Sequence),
@@ -44,7 +44,7 @@ impl PreTokenizer for PreTokenizerWrapper {
         match self {
             PreTokenizerWrapper::BertPreTokenizer(bpt) => bpt.pre_tokenize(normalized),
             PreTokenizerWrapper::ByteLevel(bpt) => bpt.pre_tokenize(normalized),
-            PreTokenizerWrapper::Delimiter(dpt) => dpt.pre_tokenize(normalized),
+            PreTokenizerWrapper::CharDelimiterSplit(dpt) => dpt.pre_tokenize(normalized),
             PreTokenizerWrapper::Metaspace(mspt) => mspt.pre_tokenize(normalized),
             PreTokenizerWrapper::Whitespace(wspt) => wspt.pre_tokenize(normalized),
             PreTokenizerWrapper::Punctuation(tok) => tok.pre_tokenize(normalized),
@@ -59,7 +59,7 @@ impl PreTokenizer for PreTokenizerWrapper {
 
 impl_enum_from!(BertPreTokenizer, PreTokenizerWrapper, BertPreTokenizer);
 impl_enum_from!(ByteLevel, PreTokenizerWrapper, ByteLevel);
-impl_enum_from!(CharDelimiterSplit, PreTokenizerWrapper, Delimiter);
+impl_enum_from!(CharDelimiterSplit, PreTokenizerWrapper, CharDelimiterSplit);
 impl_enum_from!(Whitespace, PreTokenizerWrapper, Whitespace);
 impl_enum_from!(Punctuation, PreTokenizerWrapper, Punctuation);
 impl_enum_from!(Sequence, PreTokenizerWrapper, Sequence);

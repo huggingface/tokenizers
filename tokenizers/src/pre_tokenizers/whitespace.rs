@@ -3,10 +3,11 @@ use regex::Regex;
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Whitespace;
-impl_serde_unit_struct!(WhitespaceVisitor, Whitespace);
+// impl_serde_unit_struct!(WhitespaceVisitor, Whitespace);
 
 impl Default for Whitespace {
     fn default() -> Self {
@@ -27,9 +28,9 @@ impl PreTokenizer for Whitespace {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WhitespaceSplit;
-impl_serde_unit_struct!(WhitespaceSplitVisitor, WhitespaceSplit);
+// impl_serde_unit_struct!(WhitespaceSplitVisitor, WhitespaceSplit);
 
 impl PreTokenizer for WhitespaceSplit {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {

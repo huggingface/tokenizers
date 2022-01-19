@@ -25,8 +25,6 @@ impl<'de> Deserialize<'de> for Metaspace {
 
         #[derive(Deserialize)]
         pub struct MetaspaceHelper {
-            #[serde(rename = "type")]
-            _type: Type,
             replacement: char,
             pub add_prefix_space: bool,
             #[serde(skip, rename = "str_rep")]

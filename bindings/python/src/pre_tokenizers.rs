@@ -68,7 +68,7 @@ impl PyPreTokenizer {
                         PreTokenizerWrapper::Metaspace(_) => {
                             Py::new(py, (PyMetaspace {}, base))?.into_py(py)
                         }
-                        PreTokenizerWrapper::Delimiter(_) => {
+                        PreTokenizerWrapper::CharDelimiterSplit(_) => {
                             Py::new(py, (PyCharDelimiterSplit {}, base))?.into_py(py)
                         }
                         PreTokenizerWrapper::WhitespaceSplit(_) => {
@@ -349,12 +349,12 @@ pub struct PyCharDelimiterSplit {}
 impl PyCharDelimiterSplit {
     #[getter]
     fn get_delimiter(self_: PyRef<Self>) -> String {
-        getter!(self_, Delimiter, delimiter.to_string())
+        getter!(self_, CharDelimiterSplit, delimiter.to_string())
     }
 
     #[setter]
     fn set_delimiter(self_: PyRef<Self>, delimiter: PyChar) {
-        setter!(self_, Delimiter, delimiter, delimiter.0);
+        setter!(self_, CharDelimiterSplit, delimiter, delimiter.0);
     }
 
     #[new]
