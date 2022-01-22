@@ -1,34 +1,13 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::utils::macro_rules_attribute;
 
-#[derive(Copy, Clone, Debug, Serialize, PartialEq)]
-#[serde(tag = "type")]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[non_exhaustive]
+#[macro_rules_attribute(impl_serde_type!)]
 pub struct CharDelimiterSplit {
     pub delimiter: char,
-}
-
-impl<'de> Deserialize<'de> for CharDelimiterSplit {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        enum Type {
-            CharDelimiterSplit,
-        }
-
-        #[derive(Deserialize)]
-        pub struct CharDelimiterSplitHelper {
-            #[serde(rename = "type")]
-            _type: Type,
-            delimiter: char,
-        }
-
-        let helper = CharDelimiterSplitHelper::deserialize(deserializer)?;
-        Ok(CharDelimiterSplit::new(helper.delimiter))
-    }
 }
 
 impl CharDelimiterSplit {

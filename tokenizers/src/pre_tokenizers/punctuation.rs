@@ -1,39 +1,18 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::utils::macro_rules_attribute;
 use unicode_categories::UnicodeCategories;
 
 fn is_punc(x: char) -> bool {
     char::is_ascii_punctuation(&x) || x.is_punctuation()
 }
 
-#[derive(Serialize, Copy, Clone, Debug, PartialEq)]
-#[serde(tag = "type")]
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[macro_rules_attribute(impl_serde_type!)]
 pub struct Punctuation {
+    #[serde(default = "default_split")]
     behavior: SplitDelimiterBehavior,
-}
-
-impl<'de> Deserialize<'de> for Punctuation {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        enum Type {
-            Punctuation,
-        }
-
-        #[derive(Deserialize)]
-        pub struct PunctuationHelper {
-            #[serde(rename = "type")]
-            _type: Type,
-            #[serde(default = "default_split")]
-            behavior: SplitDelimiterBehavior,
-        }
-
-        let helper = PunctuationHelper::deserialize(deserializer)?;
-        Ok(Punctuation::new(helper.behavior))
-    }
 }
 
 fn default_split() -> SplitDelimiterBehavior {

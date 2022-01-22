@@ -74,3 +74,110 @@ macro_rules! impl_serde_unit_struct (
         }
     }
 );
+
+/// Implement `serde::{Serialize, Serializer}` with `#[serde(tag = "type")]` attribute for a given struct.
+/// Panic when a json string being deserilized misses field `type`.
+///
+/// # Examples
+///
+/// ```
+/// # #[macro_use] extern crate tokenizers;
+/// use serde::{Serialize, Deserialize};
+///
+/// fn main() {
+///    impl_serde_type!{
+///        #[derive(Debug)]
+///        struct Point {
+///            x: i32,
+///            #[serde(default = "default_y")]
+///            y: i32,
+///        }
+///    }
+///    fn default_y() -> i32 {
+///        5
+///    }
+///
+///    let point = Point { x: 1, y: 2 };
+///    let serialized_s = r#"{"type":"Point","x":1,"y":2}"#;
+///    assert_eq!(serde_json::to_string(&point).unwrap(), serialized_s);
+/// }
+/// ```
+///
+/// ```should_panic
+/// # #[macro_use] extern crate tokenizers;
+/// use serde::{Serialize, Deserialize};
+///
+/// fn main() {
+///    impl_serde_type!{
+///        #[derive(Debug)]
+///        struct Point1D {
+///            x: i32,
+///        }
+///    }
+///
+///    let serialized_s = r#"{"x":1}"#;
+///    let deserialized: Point1D = serde_json::from_str(serialized_s).unwrap();
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_serde_type{
+    (
+     $(#[$meta:meta])*
+     $vis:vis struct $struct_name:ident {
+        $(
+        $(#[$field_meta:meta])*
+        $field_vis:vis $field_name:ident : $field_type:ty
+        ),*$(,)+
+    }
+    ) => {
+        use paste::paste;
+
+        paste!{
+            $(#[$meta])*
+            #[derive(Serialize, Deserialize)]
+            #[serde(tag = "type", from = $struct_name "Deserilaizer")]
+            $vis struct $struct_name{
+                $(
+                    $(#[$field_meta])*
+                    $field_vis $field_name : $field_type,
+                )*
+            }
+
+            #[doc(hidden)]
+            $(#[$meta])*
+            #[derive(Deserialize)]
+            #[serde(tag = "type", remote = $struct_name "")]
+            struct [<$struct_name Def>]{
+                $(
+                    $(#[$field_meta])*
+                    $field_vis $field_name : $field_type,
+                )*
+            }
+
+            #[doc(hidden)]
+            #[derive(Deserialize)]
+            enum [<$struct_name Type>] {
+                $struct_name,
+            }
+
+            #[doc(hidden)]
+            #[derive(Deserialize)]
+            struct [<$struct_name Deserilaizer>] {
+                #[allow(dead_code)]
+                r#type: [<$struct_name Type>],
+                #[serde(flatten, with = $struct_name "Def")]
+                r#struct: $struct_name,
+            }
+
+            #[doc(hidden)]
+            impl std::convert::From<[<$struct_name Deserilaizer>]> for $struct_name {
+                fn from(v: [<$struct_name Deserilaizer>]) -> Self {
+                    v.r#struct
+                }
+            }
+        }
+    }
+}
+
+// Re-export macro_rules_attribute
+pub use proc_macros::macro_rules_attribute;
