@@ -251,7 +251,7 @@ impl AddedVocabulary {
                 (
                     token,
                     self.token_to_id(&token.content, model)
-                        .expect("Missing additional token"),
+                        .unwrap_or_else(|| panic!("Missing additional token {:?}", token)),
                 )
             })
             .partition(|(token, _)| token.normalized);

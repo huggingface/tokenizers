@@ -1136,6 +1136,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "paste"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0744126afe1a6dd7f394cb50a716dbe086cb06e255e53d8d0185d82828358fb5"
+
+[[package]]
 name = "percent-encoding"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1173,6 +1179,10 @@ checksum = "ba508cc11742c0dc5c1659771673afbab7a0efab23aa17e854cbab0837ed0b43"
 dependencies = [
  "unicode-xid",
 ]
+
+[[package]]
+name = "proc_macros"
+version = "0.1.0"
 
 [[package]]
 name = "quote"
@@ -1668,7 +1678,7 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokenizers"
-version = "0.11.1"
+version = "0.11.2"
 dependencies = [
  "aho-corasick",
  "cached-path",
@@ -1681,6 +1691,8 @@ dependencies = [
  "lazy_static",
  "log",
  "onig",
+ "paste",
+ "proc_macros",
  "rand 0.7.3",
  "rayon",
  "rayon-cond",

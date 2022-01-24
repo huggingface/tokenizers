@@ -176,6 +176,55 @@ macro_rules! impl_serde_type{
                 }
             }
         }
+    };
+    (
+     $(#[$meta:meta])*
+     $vis:vis struct $struct_name:ident;
+    ) => {
+        use paste::paste;
+
+        paste!{
+            $(#[$meta])*
+            $vis struct $struct_name;
+
+            impl serde::Serialize for $struct_name {
+                fn serialize<S>(&self, serializer: S)  -> std::result::Result<S::Ok, S::Error> where
+                    S: serde::ser::Serializer {
+                        use serde::ser::SerializeStruct;
+                        let struct_name_str = stringify!($struct_name);
+                        let mut m = serializer.serialize_struct(struct_name_str,1)?;
+                        m.serialize_field("type", struct_name_str)?;
+                        m.end()
+                }
+            }
+
+            impl<'de> serde::Deserialize<'de> for $struct_name {
+                fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error> where
+                    D: serde::de::Deserializer<'de> {
+                    deserializer.deserialize_map([<$struct_name Visitor>])
+                }
+            }
+
+            struct [<$struct_name Visitor>];
+            impl<'de> serde::de::Visitor<'de> for [<$struct_name Visitor>] {
+                type Value = $struct_name;
+                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    write!(formatter, stringify!($struct_name))
+                }
+
+                fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error> where
+                    A: serde::de::MapAccess<'de>, {
+                    let struct_name_str = stringify!($struct_name);
+                    let maybe_type = map.next_entry::<String, String>()?;
+                    let maybe_type_str = maybe_type.as_ref().map(|(k, v)| (k.as_str(), v.as_str()));
+                    match maybe_type_str {
+                        Some(("type", stringify!($struct_name))) => Ok($struct_name),
+                        Some((_, ty)) => Err(serde::de::Error::custom(&format!("Expected {}, got {}", struct_name_str, ty))),
+                        None => Err(serde::de::Error::custom(&format!("Expected type : {}", struct_name_str)))
+                    }
+                }
+            }
+        }
     }
 }
 

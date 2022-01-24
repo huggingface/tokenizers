@@ -3,10 +3,12 @@ use regex::Regex;
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
+use crate::utils::macro_rules_attribute;
 
 #[derive(Clone, Debug, PartialEq)]
+#[macro_rules_attribute(impl_serde_type!)]
 pub struct Whitespace;
-impl_serde_unit_struct!(WhitespaceVisitor, Whitespace);
+// impl_serde_unit_struct!(WhitespaceVisitor, Whitespace);
 
 impl Default for Whitespace {
     fn default() -> Self {
