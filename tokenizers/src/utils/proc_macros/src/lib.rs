@@ -1,9 +1,7 @@
-//! Do not use this crate directly. Instead, use [`::macro_rules_attribute`](
-//! https://docs.rs/macro_rules_attribute)
-
 extern crate proc_macro;
 use ::proc_macro::*;
 
+// Original: https://crates.io/crates/macro_rules_attribute
 /// Applies the given `macro_rules!` macro to the decorated item.
 ///
 /// This, as with any `proc_macro_attribute`, **consumes** the item it
@@ -117,6 +115,7 @@ fn macro_rules_attribute (
     ret
 }
 
+// Original: https://crates.io/crates/macro_rules_attribute
 /// Applies the given `macro_rules!` macro to the decorated item.
 ///
 /// This, as with any `#[derive(...)]`, **does not consume** the item it
