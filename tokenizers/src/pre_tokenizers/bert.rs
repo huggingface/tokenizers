@@ -1,4 +1,5 @@
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::utils::macro_rules_attribute;
 use unicode_categories::UnicodeCategories;
 
 fn is_bert_punc(x: char) -> bool {
@@ -6,8 +7,8 @@ fn is_bert_punc(x: char) -> bool {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[macro_rules_attribute(impl_serde_type!)]
 pub struct BertPreTokenizer;
-impl_serde_unit_struct!(BertVisitor, BertPreTokenizer);
 
 impl PreTokenizer for BertPreTokenizer {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
