@@ -157,7 +157,7 @@ macro_rules! impl_serde_type{
             }
 
             #[doc(hidden)]
-            impl std::convert::From<[<$struct_name Deserilaizer>]> for $struct_name {
+            impl std::convert::From<[<$struct_name Deserializer>]> for $struct_name {
                 fn from(v: [<$struct_name Deserilaizer>]) -> Self {
                     v.r#struct
                 }
