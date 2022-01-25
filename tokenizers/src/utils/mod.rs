@@ -122,7 +122,7 @@ macro_rules! impl_serde_type{
         paste::paste!{
             $(#[$meta])*
             #[derive(Serialize, Deserialize)]
-            #[serde(tag = "type", from = $struct_name "Deserilaizer")]
+            #[serde(tag = "type", from = $struct_name "Deserializer")]
             $vis struct $struct_name{
                 $(
                     $(#[$field_meta])*
@@ -149,7 +149,7 @@ macro_rules! impl_serde_type{
 
             #[doc(hidden)]
             #[derive(Deserialize)]
-            struct [<$struct_name Deserilaizer>] {
+            struct [<$struct_name Deserializer>] {
                 #[allow(dead_code)]
                 r#type: [<$struct_name Type>],
                 #[serde(flatten, with = $struct_name "Def")]
@@ -158,7 +158,7 @@ macro_rules! impl_serde_type{
 
             #[doc(hidden)]
             impl std::convert::From<[<$struct_name Deserializer>]> for $struct_name {
-                fn from(v: [<$struct_name Deserilaizer>]) -> Self {
+                fn from(v: [<$struct_name Deserializer>]) -> Self {
                     v.r#struct
                 }
             }
