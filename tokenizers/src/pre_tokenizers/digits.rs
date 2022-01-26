@@ -1,36 +1,15 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::utils::macro_rules_attribute;
 
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 /// Pre tokenizes the numbers into single tokens. If individual_digits is set
 /// to true, then all digits are splitted into individual tokens.
-#[serde(tag = "type")]
 #[non_exhaustive]
+#[macro_rules_attribute(impl_serde_type!)]
 pub struct Digits {
     pub individual_digits: bool,
-}
-
-impl<'de> Deserialize<'de> for Digits {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        enum Type {
-            Digits,
-        }
-
-        #[derive(Deserialize)]
-        pub struct DigitsHelper {
-            #[serde(rename = "type")]
-            _type: Type,
-            individual_digits: bool,
-        }
-
-        let helper = DigitsHelper::deserialize(deserializer)?;
-        Ok(Digits::new(helper.individual_digits))
-    }
 }
 
 impl Digits {

@@ -1,4 +1,5 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use crate::utils::macro_rules_attribute;
 use serde::{Deserialize, Serialize};
 use unicode_normalization_alignments::char::is_combining_mark;
 
@@ -43,8 +44,8 @@ impl Normalizer for Strip {
 // It's different from unidecode as it does not attempt to modify
 // non ascii languages.
 #[derive(Copy, Clone, Debug)]
+#[macro_rules_attribute(impl_serde_type!)]
 pub struct StripAccents;
-impl_serde_unit_struct!(StripAccentsVisitor, StripAccents);
 
 impl Normalizer for StripAccents {
     /// Strip the normalized string inplace
