@@ -45,9 +45,9 @@ impl<'de> Deserialize<'de> for Split {
         }
 
         #[derive(Deserialize)]
-        struct SplitHelper {
-            #[allow(dead_code)]
-            r#type: Type,
+        pub struct SplitHelper {
+            #[serde(rename = "type")]
+            _type: Type,
             pattern: SplitPattern,
             behavior: SplitDelimiterBehavior,
             invert: bool,

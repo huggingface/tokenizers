@@ -24,11 +24,13 @@ impl<'de> Deserialize<'de> for Metaspace {
         }
 
         #[derive(Deserialize)]
-        struct MetaspaceHelper {
-            #[allow(dead_code)]
-            r#type: Type,
+        pub struct MetaspaceHelper {
+            #[serde(rename = "type")]
+            _type: Type,
             replacement: char,
-            add_prefix_space: bool,
+            pub add_prefix_space: bool,
+            #[serde(skip, rename = "str_rep")]
+            _str_rep: String,
         }
 
         let helper = MetaspaceHelper::deserialize(deserializer)?;
