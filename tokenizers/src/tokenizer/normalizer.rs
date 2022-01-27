@@ -116,7 +116,7 @@ pub struct NormalizedString {
     normalized: String,
     /// Mapping from normalized string to original one: (start, end) for each
     /// byte of the normalized string
-    alignments: Vec<(usize, usize)>,
+    pub(crate) alignments: Vec<(usize, usize)>,
     /// If this NormalizedString is a slice of a bigger one, we keep the track
     /// of the missing part, so that we can still give offsets from this original
     /// string.
@@ -578,12 +578,23 @@ impl NormalizedString {
                     apply_signed!(range.end, offset);
 
                     let mut new_len = 0;
-                    let removed_chars = self.normalized[range.clone()].chars().count();
+                    let before_chars = self.normalized[range.clone()].chars().count();
+                    let after_chars = content.chars().count();
+                    let (replaced_chars, removed_chars) = if after_chars < before_chars {
+                        (after_chars, before_chars - after_chars)
+                    } else {
+                        (before_chars, 0)
+                    };
+                    let nrange = Range::Normalized(range);
                     self.transform_range(
-                        Range::Normalized(range),
-                        content.chars().map(|c| {
+                        nrange,
+                        content.chars().enumerate().map(|(i, c)| {
                             new_len += c.len_utf8();
-                            (c, 1)
+                            if i < replaced_chars {
+                                (c, 0)
+                            } else {
+                                (c, 1)
+                            }
                         }),
                         removed_chars,
                     );
@@ -772,7 +783,7 @@ impl NormalizedString {
     }
 
     /// Recalculate original alignments
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn alignments_original(&self) -> Vec<(usize, usize)> {
         // Start, end are in alignments
         // offset, length are in alignments_original
@@ -2204,5 +2215,51 @@ mod tests {
         s.transform(transforms, 0);
         s.lowercase();
         assert_eq!(s.get(), "a...");
+    }
+
+    #[test]
+    fn normalizer_replace() {
+        let mut s = NormalizedString::from("abc");
+        s.replace("abc", "xxx").unwrap();
+        assert_eq!(s.get(), "xxx");
+        assert_eq!(s.alignments, vec![(0, 1), (1, 2), (2, 3)]);
+        assert_eq!(s.alignments_original(), vec![(0, 1), (1, 2), (2, 3)]);
+
+        // Replacement > original
+        let mut s = NormalizedString::from("abc");
+        s.replace("b", "xxx").unwrap();
+        assert_eq!(s.get(), "axxxc");
+        assert_eq!(s.alignments, vec![(0, 1), (1, 2), (1, 2), (1, 2), (2, 3)]);
+        assert_eq!(s.alignments_original(), vec![(0, 1), (1, 4), (4, 5)]);
+
+        // Replacement < original
+        let mut s = NormalizedString::from("abcd");
+        s.replace("bc", "x").unwrap();
+        assert_eq!(s.get(), "axd");
+        assert_eq!(s.alignments, vec![(0, 1), (2, 3), (3, 4)]);
+        assert_eq!(
+            s.alignments_original(),
+            vec![(0, 1), (1, 1), (1, 2), (2, 3)]
+        );
+
+        // Multi byte char
+        let string = "é";
+        assert_eq!(string.chars().count(), 1);
+        assert_eq!(string.bytes().count(), 2);
+        let mut s = NormalizedString::from(string);
+        s.replace("é", "abcd").unwrap();
+        assert_eq!(s.get(), "abcd");
+        assert_eq!(s.alignments, vec![(0, 2), (0, 2), (0, 2), (0, 2)]);
+        assert_eq!(s.alignments_original(), vec![(0, 4), (0, 4)]);
+
+        // Multi char grapheme
+        let string = "̀e";
+        assert_eq!(string.chars().count(), 2);
+        assert_eq!(string.bytes().count(), 3);
+        let mut s = NormalizedString::from(string);
+        s.replace("̀e", "abcd").unwrap();
+        assert_eq!(s.get(), "abcd");
+        assert_eq!(s.alignments, vec![(0, 2), (2, 3), (2, 3), (2, 3)]);
+        assert_eq!(s.alignments_original(), vec![(0, 1), (0, 1), (1, 4),]);
     }
 }
