@@ -373,30 +373,44 @@ impl BPE {
                     unk = None;
                 }
                 word.add(*id, byte_len);
-            } else if let Some(unk_token) = &self.unk_token {
-                unk = match (unk, self.fuse_unk) {
-                    (Some((unk_id, unk_len)), true) => {
-                        // Fuse unk
-                        Some((unk_id, unk_len + byte_len))
+            } else {
+                let tokens: Option<Vec<_>> = s
+                    .bytes()
+                    .map(|b| -> Option<&u32> {
+                        let code = format!("<{:#02X}>", b);
+                        self.vocab.get(&code)
+                    })
+                    .collect();
+                if let Some(tokens) = tokens {
+                    for t in tokens {
+                        word.add(*t, 1);
                     }
-                    (Some((unk_id, unk_len)), false) => {
-                        // Do not fuse unk, add the previous one
-                        word.add(unk_id, unk_len);
-                        Some((
+                    continue;
+                }
+                if let Some(unk_token) = &self.unk_token {
+                    unk = match (unk, self.fuse_unk) {
+                        (Some((unk_id, unk_len)), true) => {
+                            // Fuse unk
+                            Some((unk_id, unk_len + byte_len))
+                        }
+                        (Some((unk_id, unk_len)), false) => {
+                            // Do not fuse unk, add the previous one
+                            word.add(unk_id, unk_len);
+                            Some((
+                                *self.vocab.get(unk_token).ok_or_else(|| {
+                                    Error::UnkTokenOutOfVocabulary(unk_token.to_owned())
+                                })?,
+                                byte_len,
+                            ))
+                        }
+                        _ => Some((
                             *self.vocab.get(unk_token).ok_or_else(|| {
                                 Error::UnkTokenOutOfVocabulary(unk_token.to_owned())
                             })?,
                             byte_len,
-                        ))
-                    }
-                    _ => Some((
-                        *self
-                            .vocab
-                            .get(unk_token)
-                            .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk_token.to_owned()))?,
-                        byte_len,
-                    )),
-                };
+                        )),
+                    };
+                }
             }
         }
         if let Some((unk_id, unk_len)) = unk {
