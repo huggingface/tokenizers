@@ -78,9 +78,21 @@ impl PreTokenizer for Metaspace {
 
 impl Decoder for Metaspace {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
-        Ok(tokens
-            .iter()
-            .flat_map(|t| t.chars())
+        let string: String = String::from_utf8_lossy(
+            &tokens
+                .iter()
+                .flat_map(|t| {
+                    if t.len() == 6 && t.starts_with('<') && t.ends_with('>') {
+                        vec![u8::from_str_radix(&t[3..5], 16).unwrap()]
+                    } else {
+                        t.bytes().collect::<Vec<_>>()
+                    }
+                })
+                .collect::<Vec<_>>(),
+        )
+        .to_string();
+        Ok(string
+            .chars()
             .enumerate()
             .filter_map(|(i, c)| {
                 if c == self.replacement {

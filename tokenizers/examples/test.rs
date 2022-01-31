@@ -9,4 +9,17 @@ fn main() {
             .unwrap()
             .get_tokens()
     );
+    println!(
+        "{}",
+        tokenizer
+            .decode(
+                tokenizer
+                    .encode("換金方法としてはコイン商への売却の他、", false)
+                    .unwrap()
+                    .get_ids()
+                    .to_vec(),
+                false
+            )
+            .unwrap()
+    );
 }
