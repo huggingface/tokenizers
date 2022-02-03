@@ -82,7 +82,7 @@ impl Decoder for Metaspace {
             &tokens
                 .iter()
                 .flat_map(|t| {
-                    if t.len() == 6 && t.starts_with('<') && t.ends_with('>') {
+                    if t.len() == 6 && t.starts_with("<0x") && t.ends_with('>') {
                         if let Ok(byte) = u8::from_str_radix(&t[3..5], 16) {
                             vec![byte]
                         } else {
