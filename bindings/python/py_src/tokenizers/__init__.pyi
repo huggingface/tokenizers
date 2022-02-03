@@ -1012,7 +1012,7 @@ class Tokenizer:
         The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
         """
         pass
-    def save(self, pretty=True):
+    def save(self, path: str, pretty=True):
         """
         Save the :class:`~tokenizers.Tokenizer` to the file at the given path.
 
@@ -1036,7 +1036,7 @@ class Tokenizer:
             :obj:`str`: A string representing the serialized Tokenizer
         """
         pass
-    def token_to_id(self, token):
+    def token_to_id(self, token:str):
         """
         Convert the given token to its corresponding id if it exists
 
