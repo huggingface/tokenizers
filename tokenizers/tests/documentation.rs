@@ -59,6 +59,24 @@ fn load_tokenizer() {
 }
 
 #[test]
+fn load_tokenizer_from_string() {
+    let tokenizer_content = std::fs::read_to_string("data/roberta.json").unwrap();
+    let tokenizer = Tokenizer::from_string(tokenizer_content).unwrap();
+
+    let example = "This is an example";
+    let ids = vec![713, 16, 41, 1246];
+    let tokens = vec!["This", "Ġis", "Ġan", "Ġexample"];
+
+    let encodings = tokenizer.encode(example, false).unwrap();
+
+    assert_eq!(encodings.get_ids(), ids);
+    assert_eq!(encodings.get_tokens(), tokens);
+
+    let decoded = tokenizer.decode(ids, false).unwrap();
+    assert_eq!(decoded, example);
+}
+
+#[test]
 #[ignore]
 fn quicktour_slow_train() -> tokenizers::Result<()> {
     // START quicktour_init_tokenizer
