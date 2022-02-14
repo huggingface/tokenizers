@@ -61,7 +61,7 @@ fn load_tokenizer() {
 #[test]
 fn load_tokenizer_from_string() {
     let tokenizer_content = std::fs::read_to_string("data/roberta.json").unwrap();
-    let tokenizer = Tokenizer::from_string(tokenizer_content).unwrap();
+    let tokenizer = Tokenizer::from_string(tokenizer_content.as_str()).unwrap();
 
     let example = "This is an example";
     let ids = vec![713, 16, 41, 1246];
