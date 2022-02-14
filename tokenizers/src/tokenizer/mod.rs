@@ -406,9 +406,8 @@ impl Tokenizer {
         let tokenizer = serde_json::from_str(&content)?;
         Ok(tokenizer)
     }
-    pub fn from_string(content: String) -> Result<Self> {
-        let tokenizer = serde_json::from_str(&content)?;
-        Ok(tokenizer)
+    pub fn from_string(content: &str) -> Result<Self> {
+        serde_json::from_str(content)
     }
     #[cfg(feature = "http")]
     pub fn from_pretrained<S: AsRef<str>>(
