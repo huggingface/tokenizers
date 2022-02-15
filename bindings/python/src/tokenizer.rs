@@ -604,7 +604,7 @@ impl PyTokenizer {
     ///     pretty (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether the JSON file should be pretty formatted.
     #[args(pretty = true)]
-    #[text_signature = "(self, pretty=True)"]
+    #[text_signature = "(self, path, pretty=True)"]
     fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
         ToPyResult(self.tokenizer.save(path, pretty)).into()
     }
