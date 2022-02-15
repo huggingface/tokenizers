@@ -1,5 +1,5 @@
 use crate::parallelism::*;
-use crate::tokenizer::{Offsets, Token};
+use crate::tokenizer::{AddedVocabulary, Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
 use serde::{Deserialize, Serialize};
@@ -511,6 +511,17 @@ impl Encoding {
             }
         }
     }
+
+    pub(super) fn update_special_tokens_mask(&mut self, added_vocab: &AddedVocabulary) {
+        self.special_tokens_mask
+            .iter_mut()
+            .zip(self.tokens.iter())
+            .for_each(|(special_tokens_mask, token)| {
+                if added_vocab.is_special_token(token) {
+                    *special_tokens_mask = 1;
+                }
+            })
+    }
 }
 
 impl std::iter::FromIterator<Encoding> for Encoding {
@@ -859,5 +870,130 @@ mod tests {
         assert_eq!(encoding.char_to_word(23, 0), Some(3));
         assert_eq!(encoding.char_to_word(2, 1), Some(0));
         assert_eq!(encoding.char_to_word(9, 1), Some(2));
+    }
+
+    #[test]
+    fn test_update_special_tokens_mask() {
+        use crate::normalizers::Lowercase;
+        use crate::tokenizer::AddedVocabulary;
+        use crate::{AddedToken, Model};
+        use crate::{Result, Token, Trainer};
+        use std::path::{Path, PathBuf};
+
+        #[derive(Serialize, Deserialize)]
+        struct ModelMock {
+            vocab: HashMap<String, u32>,
+            vocab_r: HashMap<u32, String>,
+        }
+        impl ModelMock {
+            pub fn new<I>(iter: I) -> Self
+            where
+                I: IntoIterator<Item = &'static (&'static str, u32)>,
+            {
+                let vocab: HashMap<String, u32> = iter
+                    .into_iter()
+                    .map(|&(tok, id)| (tok.to_string(), id))
+                    .collect();
+                Self {
+                    vocab_r: vocab
+                        .iter()
+                        .map(|(tok, id)| (*id, tok.to_owned()))
+                        .collect(),
+                    vocab,
+                }
+            }
+        }
+
+        struct TrainerMock;
+        impl Trainer for TrainerMock {
+            type Model = ModelMock;
+            fn should_show_progress(&self) -> bool {
+                true
+            }
+            fn train(&self, _model: &mut ModelMock) -> Result<Vec<AddedToken>> {
+                unimplemented!()
+            }
+            fn feed<I, S, F>(&mut self, _iterator: I, _process: F) -> Result<()>
+            where
+                I: Iterator<Item = S> + Send,
+                S: AsRef<str> + Send,
+                F: Fn(&str) -> Result<Vec<String>> + Sync,
+            {
+                unimplemented!()
+            }
+        }
+        impl Model for ModelMock {
+            type Trainer = TrainerMock;
+
+            fn tokenize(&self, _sequence: &str) -> Result<Vec<Token>> {
+                unimplemented!()
+            }
+            fn token_to_id(&self, token: &str) -> Option<u32> {
+                self.vocab.get(token).copied()
+            }
+            fn id_to_token(&self, id: u32) -> Option<String> {
+                self.vocab_r.get(&id).cloned()
+            }
+            fn get_vocab(&self) -> HashMap<String, u32> {
+                self.vocab.clone()
+            }
+            fn get_vocab_size(&self) -> usize {
+                self.vocab.len()
+            }
+            fn save(&self, _folder: &Path, _name: Option<&str>) -> Result<Vec<PathBuf>> {
+                unimplemented!()
+            }
+            fn get_trainer(&self) -> Self::Trainer {
+                TrainerMock
+            }
+        }
+
+        let mut encoding = Encoding {
+            ids: vec![1, 2, 3],
+            type_ids: vec![0, 0, 0],
+            tokens: vec![
+                String::from("Hello"),
+                String::from("World"),
+                String::from("!"),
+            ],
+            words: vec![Some(0), Some(1), Some(2)],
+            offsets: vec![(0, 5), (6, 11), (11, 12)],
+            special_tokens_mask: vec![0, 0, 0],
+            attention_mask: vec![1, 1, 1],
+            ..Default::default()
+        };
+
+        let model = ModelMock::new(&[]);
+        let normalizer = Lowercase;
+
+        let mut vocab = AddedVocabulary::new();
+        vocab.add_special_tokens(
+            &[
+                AddedToken::from("World", true).lstrip(true).rstrip(true),
+                AddedToken::from("name", false),
+            ],
+            &model,
+            Some(&normalizer),
+        );
+
+        encoding.update_special_tokens_mask(&vocab);
+        assert_eq!(
+            encoding,
+            Encoding {
+                ids: vec![1, 2, 3],
+                type_ids: vec![0, 0, 0],
+                tokens: vec![
+                    String::from("Hello"),
+                    String::from("World"),
+                    String::from("!"),
+                ],
+                words: vec![Some(0), Some(1), Some(2)],
+                offsets: vec![(0, 5), (6, 11), (11, 12)],
+                // XXX: Here
+                special_tokens_mask: vec![0, 1, 0],
+                attention_mask: vec![1, 1, 1],
+                ..Default::default()
+            }
+        );
     }
 }

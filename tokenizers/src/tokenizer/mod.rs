@@ -644,7 +644,7 @@ where
                 .added_vocabulary
                 .extract_and_normalize(self.normalizer.as_ref(), subseq);
             let pre_tokenized = self.do_pre_tokenize(normalized)?;
-            let subseq_encoding = self.do_tokenize(
+            let mut subseq_encoding = self.do_tokenize(
                 pre_tokenized,
                 type_id,
                 if is_pre_tokenized {
@@ -654,6 +654,7 @@ where
                 },
                 offsets_type,
             )?;
+            subseq_encoding.update_special_tokens_mask(&self.added_vocabulary);
 
             Ok(subseq_encoding)
         };

@@ -95,7 +95,7 @@ impl PostProcessor for RobertaProcessing {
         .concat();
         let words = [&[None], encoding.get_word_ids(), &[None]].concat();
         let offsets = [&[(0, 0)], encoding.get_offsets(), &[(0, 0)]].concat();
-        let special_tokens = [&[1u32], &vec![0; encoding.get_ids().len()][..], &[1]].concat();
+        let special_tokens = [&[1u32], encoding.get_special_tokens_mask(), &[1]].concat();
         let attention_mask = vec![1; ids.len()];
 
         // For compatibility with `TemplateProcessing`, the sequence_ranges shouldn't contain
