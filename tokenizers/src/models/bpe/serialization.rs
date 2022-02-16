@@ -30,14 +30,14 @@ impl Serialize for BPE {
             .map(|(pair, (rank, _))| (pair, rank))
             .collect();
         merges.sort_unstable_by_key(|k| *k.1);
-        let merges_str = merges
+        let merges = merges
             .into_iter()
-            .map(|(pair, _)| format!("{} {}", self.vocab_r[&pair.0], self.vocab_r[&pair.1]))
+            .map(|(pair, _)| (self.vocab_r[&pair.0].clone(), self.vocab_r[&pair.1].clone()))
             .collect::<Vec<_>>();
         let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
 
         model.serialize_field("vocab", &ordered_vocab)?;
-        model.serialize_field("merges", &merges_str)?;
+        model.serialize_field("merges", &merges)?;
 
         model.end()
     }
@@ -81,7 +81,14 @@ impl<'de> Visitor<'de> for BPEVisitor {
     {
         let mut builder = BpeBuilder::new();
         let mut vocab: Option<HashMap<String, u32>> = None;
-        let mut merges: Option<Vec<String>> = None;
+
+        #[derive(Debug, Deserialize)]
+        #[serde(untagged)]
+        enum MergeType {
+            Tuple(Vec<(String, String)>),
+            Legacy(Vec<String>),
+        }
+        let mut merges: Option<MergeType> = None;
         while let Some(key) = map.next_key::<String>()? {
             match key.as_ref() {
                 "dropout" => {
@@ -134,8 +141,12 @@ impl<'de> Visitor<'de> for BPEVisitor {
             }
         }
         if let (Some(vocab), Some(merges)) = (vocab, merges) {
-            let merges =
-                convert_merges_to_hashmap(merges.into_iter(), &vocab).map_err(Error::custom)?;
+            let merges = match merges {
+                MergeType::Tuple(merges) => merges,
+                MergeType::Legacy(merges) => {
+                    convert_merges_to_hashmap(merges.into_iter(), &vocab).map_err(Error::custom)?
+                }
+            };
             builder = builder.vocab_and_merges(vocab, merges);
             Ok(builder.build().map_err(Error::custom)?)
         } else {
