@@ -6,6 +6,7 @@ pub mod padding;
 pub mod parallelism;
 pub(crate) mod progress;
 pub mod truncation;
+pub mod regex;
 
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};

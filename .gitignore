@@ -3,6 +3,7 @@
 
 .vim
 .env
+.venv
 target
 .idea
 Cargo.lock

@@ -1,5 +1,5 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use onig::Regex;
+use crate::utils::regex::Regex;
 use serde::{Deserialize, Serialize};
 
 /// Represents the different patterns that `Replace` can use
@@ -65,8 +65,8 @@ impl Replace {
     pub fn new<I: Into<ReplacePattern>, C: Into<String>>(pattern: I, content: C) -> Result<Self> {
         let pattern: ReplacePattern = pattern.into();
         let regex = match &pattern {
-            ReplacePattern::String(s) => Regex::new(&regex::escape(s))?,
-            ReplacePattern::Regex(r) => Regex::new(r)?,
+            ReplacePattern::String(s) => Regex::new(regex::escape(s)),
+            ReplacePattern::Regex(r) => Regex::new(r.to_owned()),
         };
 
         Ok(Self {

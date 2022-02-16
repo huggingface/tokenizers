@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use onig::Regex;
+use crate::utils::regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{
@@ -34,8 +34,7 @@ fn bytes_char() -> HashMap<u8, char> {
 
 lazy_static! {
     static ref RE: Regex =
-        Regex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
-            .unwrap();
+        Regex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+".to_string());
     static ref BYTES_CHAR: HashMap<u8, char> = bytes_char();
     static ref CHAR_BYTES: HashMap<char, u8> =
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();

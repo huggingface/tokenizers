@@ -1,4 +1,4 @@
-use onig::Regex;
+use crate::utils::regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
@@ -80,8 +80,8 @@ impl Split {
     ) -> Result<Self> {
         let pattern: SplitPattern = pattern.into();
         let regex = match &pattern {
-            SplitPattern::String(s) => Regex::new(&regex::escape(s))?,
-            SplitPattern::Regex(r) => Regex::new(r)?,
+            SplitPattern::String(s) => Regex::new(regex::escape(s)),
+            SplitPattern::Regex(r) => Regex::new(r.to_owned()),
         };
 
         Ok(Self {

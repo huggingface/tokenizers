@@ -59,7 +59,7 @@ impl Pattern for &Regex {
     }
 }
 
-impl Pattern for &onig::Regex {
+impl Pattern for &crate::utils::regex::Regex {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         if inside.is_empty() {
             return Ok(vec![((0, 0), false)]);
@@ -67,12 +67,12 @@ impl Pattern for &onig::Regex {
 
         let mut prev = 0;
         let mut splits = Vec::with_capacity(inside.len());
-        for (start, end) in self.find_iter(inside) {
-            if prev != start {
-                splits.push(((prev, start), false));
+        for m in self.find_iter(inside) {
+            if prev != m.start() {
+                splits.push(((prev, m.start()), false));
             }
-            splits.push(((start, end), true));
-            prev = end;
+            splits.push(((m.start(), m.end()), true));
+            prev = m.end();
         }
         if prev != inside.len() {
             splits.push(((prev, inside.len()), false))
@@ -205,8 +205,8 @@ mod tests {
     }
 
     #[test]
-    fn onig_regex() {
-        let is_whitespace = onig::Regex::new(r"\s+").unwrap();
+    fn abstract_regex() {
+        let is_whitespace = crate::utils::regex::Regex::new(r"\s+".to_string());
         do_test!("a   b", &is_whitespace => vec![((0, 1), false), ((1, 4), true), ((4, 5), false)]);
         do_test!("   a   b   ", &is_whitespace =>
             vec![((0, 3), true), ((3, 4), false), ((4, 7), true), ((7, 8), false), ((8, 11), true)]
