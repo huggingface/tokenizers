@@ -46,7 +46,7 @@ lazy_static! {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum RegexType {
-    ORIGNAL,
+    ORIGINAL,
     WHITESPACE,
 }
 
