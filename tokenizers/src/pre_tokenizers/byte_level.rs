@@ -69,7 +69,7 @@ impl Default for ByteLevel {
         Self {
             add_prefix_space: true,
             trim_offsets: true,
-            regex_type: RegexType.WHITESPACE
+            regex_type: RegexType::WHITESPACE
         }
     }
 }
@@ -107,8 +107,8 @@ impl ByteLevel {
 
     pub fn regex(&self) -> &Regex {
         match self.regex_type {
-            RegexType.ORIGINAL => &ORIGINAL_RE
-            RegexType.WHITESPACE => &WHITESPACE_RE
+            RegexType::ORIGINAL => &ORIGINAL_RE
+            RegexType::WHITESPACE => &WHITESPACE_RE
         }
     }
 }
