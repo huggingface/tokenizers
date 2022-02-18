@@ -107,8 +107,8 @@ impl ByteLevel {
 
     pub fn regex(&self) -> &Regex {
         match self.regex_type {
-            RegexType::ORIGINAL => &ORIGINAL_RE
-            RegexType::WHITESPACE => &WHITESPACE_RE
+            RegexType::ORIGINAL => &ORIGINAL_RE,
+            RegexType::WHITESPACE => &WHITESPACE_RE,
         }
     }
 }
