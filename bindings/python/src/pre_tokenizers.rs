@@ -245,16 +245,17 @@ impl PyByteLevel {
 
     #[new]
     #[args(add_prefix_space = "true", regex_type = "original", _kwargs = "**")]
-    fn new(add_prefix_space: bool, _kwargs: Option<&PyDict>) -> (Self, PyPreTokenizer) {
+    fn new(add_prefix_space: bool, regex_type: str, _kwargs: Option<&PyDict>) -> (Self, PyPreTokenizer) {
         (
             PyByteLevel {},
             ByteLevel::default()
                 .add_prefix_space(add_prefix_space)
+//                 .regex_type(regex_type) # TODO: use enum
                 .regex_type(
                     match regex_type {
                         "original" => RegexType::ORIGINAL,
                         "whitespace" => RegexType::WHITESPACE,
-                        _ => unimplemented!()
+                        _ => unimplemented!() // TODO: throw errors
                     }
                 )
                 .into(),
