@@ -229,7 +229,7 @@ macro_rules! setter {
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=ByteLevel)]
-#[text_signature = "(self, add_prefix_space=True)"]
+#[text_signature = "(self, add_prefix_space=True, trim_offsets=True, regex_type='WHITESPACE')"]
 pub struct PyByteLevel {}
 #[pymethods]
 impl PyByteLevel {
