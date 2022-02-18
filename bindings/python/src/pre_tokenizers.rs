@@ -251,14 +251,12 @@ impl PyByteLevel {
             PyByteLevel {},
             ByteLevel::default()
                 .add_prefix_space(add_prefix_space)
-//                 .regex_type(regex_type) # TODO: use enum
-                .regex_type(
-                    match regex_type {
-                        "original" => RegexType::ORIGINAL,
-                        "whitespace" => RegexType::WHITESPACE,
-                        _ => unimplemented!() // TODO: throw errors
-                    }
-                )
+                // .regex_type(regex_type) # TODO: use enum
+                .regex_type(match regex_type {
+                    "original" => RegexType::ORIGINAL,
+                    "whitespace" => RegexType::WHITESPACE,
+                    _ => unimplemented!() // TODO: throw errors
+                })
                 .into(),
         )
     }
