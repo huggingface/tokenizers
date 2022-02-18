@@ -44,7 +44,7 @@ lazy_static! {
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum RegexType {
     ORIGINAL,
     WHITESPACE,
