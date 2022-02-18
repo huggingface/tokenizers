@@ -70,7 +70,7 @@ impl Default for ByteLevel {
         Self {
             add_prefix_space: true,
             trim_offsets: true,
-            regex_type: RegexType::WHITESPACE
+            regex_type: RegexType::ORIGINAL
         }
     }
 }
