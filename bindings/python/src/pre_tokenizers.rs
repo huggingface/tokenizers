@@ -246,7 +246,7 @@ impl PyByteLevel {
 
     #[new]
     #[args(add_prefix_space = "true", regex_type = "original", _kwargs = "**")]
-    fn new(add_prefix_space: bool, regex_type: str, _kwargs: Option<&PyDict>) -> (Self, PyPreTokenizer) {
+    fn new(add_prefix_space: bool, regex_type: &str, _kwargs: Option<&PyDict>) -> (Self, PyPreTokenizer) {
         (
             PyByteLevel {},
             ByteLevel::default()
