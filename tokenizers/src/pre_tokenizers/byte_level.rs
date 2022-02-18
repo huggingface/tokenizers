@@ -44,6 +44,8 @@ lazy_static! {
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
 pub enum RegexType {
     ORIGNAL,
     WHITESPACE,
@@ -61,7 +63,7 @@ pub struct ByteLevel {
     pub add_prefix_space: bool,
     /// Whether the post processing step should trim offsets to avoid including whitespaces.
     pub trim_offsets: bool,
-    pub regex_type:  RegexType
+    pub regex_type: RegexType
 }
 
 impl Default for ByteLevel {
