@@ -36,9 +36,7 @@ lazy_static! {
     static ref ORIGINAL_RE: Regex =
         Regex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
             .unwrap();
-    static ref WHITESPACE_RE: Regex =
-        Regex::new(r" ?[^ ]+")
-            .unwrap();
+    static ref WHITESPACE_RE: Regex = Regex::new(r" ?[^ ]+").unwrap();
     static ref BYTES_CHAR: HashMap<u8, char> = bytes_char();
     static ref CHAR_BYTES: HashMap<char, u8> =
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
@@ -48,6 +46,12 @@ lazy_static! {
 pub enum RegexType {
     ORIGINAL,
     WHITESPACE,
+}
+
+impl Default for RegexType {
+    fn default() -> Self {
+        RegexType::ORIGINAL
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -62,6 +66,7 @@ pub struct ByteLevel {
     pub add_prefix_space: bool,
     /// Whether the post processing step should trim offsets to avoid including whitespaces.
     pub trim_offsets: bool,
+    #[serde(default = "RegexType::default")]
     pub regex_type: RegexType,
 }
 
@@ -70,7 +75,7 @@ impl Default for ByteLevel {
         Self {
             add_prefix_space: true,
             trim_offsets: true,
-            regex_type: RegexType::ORIGINAL
+            regex_type: RegexType::ORIGINAL,
         }
     }
 }
@@ -241,6 +246,7 @@ mod tests {
         Decoder, Encoding, OffsetReferential, OffsetType, PostProcessor, PreTokenizedString,
         PreTokenizer,
     };
+    use serde_json;
     use std::iter::FromIterator;
 
     #[test]
@@ -534,5 +540,22 @@ mod tests {
                 .unwrap(),
             "Hello there dear friend! [PA D]"
         );
+    }
+
+    #[test]
+    fn deserialize_backward_insurance() {
+        // Before regex_type
+        let byte_level: ByteLevel = serde_json::from_str(
+            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false}"#,
+        )
+        .unwrap();
+        assert_eq!(byte_level.regex_type, RegexType::ORIGINAL);
+
+        // Loading works, new future BC test.
+        let byte_level: ByteLevel = serde_json::from_str(
+            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "regex_type": "WHITESPACE"}"#,
+        )
+        .unwrap();
+        assert_eq!(byte_level.regex_type, RegexType::WHITESPACE);
     }
 }
