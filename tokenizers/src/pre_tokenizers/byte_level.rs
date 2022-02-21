@@ -47,6 +47,7 @@ lazy_static! {
 pub enum RegexType {
     ORIGINAL,
     WHITESPACE,
+    NO_REGEX,
 }
 
 impl Default for RegexType {
@@ -112,10 +113,11 @@ impl ByteLevel {
         self
     }
 
-    pub fn regex(&self) -> &Regex {
+    pub fn regex(&self) -> Option<&Regex> {
         match self.regex_type {
-            RegexType::ORIGINAL => &ORIGINAL_RE,
-            RegexType::WHITESPACE => &WHITESPACE_RE,
+            RegexType::ORIGINAL => Some(&ORIGINAL_RE),
+            RegexType::WHITESPACE => Some(&WHITESPACE_RE),
+            RegexType::NO_REGEX => None,
         }
     }
 }
@@ -125,13 +127,14 @@ impl ByteLevel {
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        let re_ref: &Regex = self.regex();
-        pretokenized.split(|_, mut normalized| {
-            if self.add_prefix_space && !normalized.get().starts_with(' ') {
-                normalized.prepend(" ");
-            }
-            normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
-        })?;
+        if let Some(re_ref) = self.regex() {
+            pretokenized.split(|_, mut normalized| {
+                if self.add_prefix_space && !normalized.get().starts_with(' ') {
+                    normalized.prepend(" ");
+                }
+                normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
+            })?;
+        }
         pretokenized.normalize(|normalized| {
             let s = normalized.get();
             let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());
