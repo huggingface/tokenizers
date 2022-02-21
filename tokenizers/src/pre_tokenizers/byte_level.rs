@@ -43,6 +43,7 @@ lazy_static! {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum RegexType {
     ORIGINAL,
     WHITESPACE,
@@ -553,7 +554,7 @@ mod tests {
 
         // Loading works, new future BC test.
         let byte_level: ByteLevel = serde_json::from_str(
-            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "regex_type": "WHITESPACE"}"#,
+            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "regex_type": "whitespace"}"#,
         )
         .unwrap();
         assert_eq!(byte_level.regex_type, RegexType::WHITESPACE);
