@@ -1012,7 +1012,7 @@ class Tokenizer:
         The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
         """
         pass
-    def save(self, pretty=True):
+    def save(self, path, pretty=True):
         """
         Save the :class:`~tokenizers.Tokenizer` to the file at the given path.
 
