@@ -102,7 +102,7 @@ class ByteLevel(PreTokenizer):
             lets us treat `hello` exactly like `say hello`.
     """
 
-    def __init__(self, add_prefix_space=True):
+    def __init__(self, add_prefix_space=True, trim_offsets=True, regex_type="original"):
         pass
     @staticmethod
     def alphabet():
