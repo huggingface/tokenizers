@@ -33,12 +33,26 @@ fn bytes_char() -> HashMap<u8, char> {
 }
 
 lazy_static! {
-    static ref RE: Regex =
+    static ref ORIGINAL_RE: Regex =
         Regex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
             .unwrap();
+    static ref WHITESPACE_RE: Regex = Regex::new(r" ?[^ ]+").unwrap();
     static ref BYTES_CHAR: HashMap<u8, char> = bytes_char();
     static ref CHAR_BYTES: HashMap<char, u8> =
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum RegexType {
+    ORIGINAL,
+    WHITESPACE,
+}
+
+impl Default for RegexType {
+    fn default() -> Self {
+        RegexType::ORIGINAL
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -53,6 +67,8 @@ pub struct ByteLevel {
     pub add_prefix_space: bool,
     /// Whether the post processing step should trim offsets to avoid including whitespaces.
     pub trim_offsets: bool,
+    #[serde(default = "RegexType::default")]
+    pub regex_type: RegexType,
 }
 
 impl Default for ByteLevel {
@@ -60,15 +76,17 @@ impl Default for ByteLevel {
         Self {
             add_prefix_space: true,
             trim_offsets: true,
+            regex_type: RegexType::ORIGINAL,
         }
     }
 }
 
 impl ByteLevel {
-    pub fn new(add_prefix_space: bool, trim_offsets: bool) -> Self {
+    pub fn new(add_prefix_space: bool, trim_offsets: bool, regex_type: RegexType) -> Self {
         ByteLevel {
             add_prefix_space,
             trim_offsets,
+            regex_type,
         }
     }
 
@@ -87,6 +105,19 @@ impl ByteLevel {
         self.trim_offsets = v;
         self
     }
+
+    #[must_use]
+    pub fn regex_type(mut self, v: RegexType) -> Self {
+        self.regex_type = v;
+        self
+    }
+
+    pub fn regex(&self) -> &Regex {
+        match self.regex_type {
+            RegexType::ORIGINAL => &ORIGINAL_RE,
+            RegexType::WHITESPACE => &WHITESPACE_RE,
+        }
+    }
 }
 
 /// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
@@ -94,7 +125,7 @@ impl ByteLevel {
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        let re_ref: &Regex = &RE;
+        let re_ref: &Regex = self.regex();
         pretokenized.split(|_, mut normalized| {
             if self.add_prefix_space && !normalized.get().starts_with(' ') {
                 normalized.prepend(" ");
@@ -216,6 +247,7 @@ mod tests {
         Decoder, Encoding, OffsetReferential, OffsetType, PostProcessor, PreTokenizedString,
         PreTokenizer,
     };
+    use serde_json;
     use std::iter::FromIterator;
 
     #[test]
@@ -509,5 +541,22 @@ mod tests {
                 .unwrap(),
             "Hello there dear friend! [PA D]"
         );
+    }
+
+    #[test]
+    fn deserialize_backward_insurance() {
+        // Before regex_type
+        let byte_level: ByteLevel = serde_json::from_str(
+            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false}"#,
+        )
+        .unwrap();
+        assert_eq!(byte_level.regex_type, RegexType::ORIGINAL);
+
+        // Loading works, new future BC test.
+        let byte_level: ByteLevel = serde_json::from_str(
+            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "regex_type": "whitespace"}"#,
+        )
+        .unwrap();
+        assert_eq!(byte_level.regex_type, RegexType::WHITESPACE);
     }
 }
