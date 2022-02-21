@@ -33,10 +33,9 @@ fn bytes_char() -> HashMap<u8, char> {
 }
 
 lazy_static! {
-    static ref ORIGINAL_RE: Regex =
+    static ref RE: Regex =
         Regex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
             .unwrap();
-    static ref WHITESPACE_RE: Regex = Regex::new(r" ?[^ ]+").unwrap();
     static ref BYTES_CHAR: HashMap<u8, char> = bytes_char();
     static ref CHAR_BYTES: HashMap<char, u8> =
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
@@ -46,7 +45,6 @@ lazy_static! {
 #[serde(rename_all = "lowercase")]
 pub enum RegexType {
     ORIGINAL,
-    WHITESPACE,
     NO_REGEX,
 }
 
@@ -115,8 +113,7 @@ impl ByteLevel {
 
     pub fn regex(&self) -> Option<&Regex> {
         match self.regex_type {
-            RegexType::ORIGINAL => Some(&ORIGINAL_RE),
-            RegexType::WHITESPACE => Some(&WHITESPACE_RE),
+            RegexType::ORIGINAL => Some(&RE),
             RegexType::NO_REGEX => None,
         }
     }
@@ -557,9 +554,9 @@ mod tests {
 
         // Loading works, new future BC test.
         let byte_level: ByteLevel = serde_json::from_str(
-            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "regex_type": "whitespace"}"#,
+            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "regex_type": "no_regex"}"#,
         )
         .unwrap();
-        assert_eq!(byte_level.regex_type, RegexType::WHITESPACE);
+        assert_eq!(byte_level.regex_type, RegexType::NO_REGEX);
     }
 }
