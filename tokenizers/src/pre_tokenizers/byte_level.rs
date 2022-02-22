@@ -45,7 +45,7 @@ lazy_static! {
 #[serde(rename_all = "lowercase")]
 pub enum RegexType {
     ORIGINAL,
-    NO_REGEX,
+    NOREGEX,
 }
 
 impl Default for RegexType {
@@ -114,7 +114,7 @@ impl ByteLevel {
     pub fn regex(&self) -> Option<&Regex> {
         match self.regex_type {
             RegexType::ORIGINAL => Some(&RE),
-            RegexType::NO_REGEX => None,
+            RegexType::NOREGEX => None,
         }
     }
 }
@@ -131,7 +131,7 @@ impl PreTokenizer for ByteLevel {
                 }
                 normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
             })?;
-        }
+        };
         pretokenized.normalize(|normalized| {
             let s = normalized.get();
             let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());

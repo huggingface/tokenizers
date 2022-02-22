@@ -255,10 +255,9 @@ impl PyByteLevel {
             PyByteLevel {},
             ByteLevel::default()
                 .add_prefix_space(add_prefix_space)
-                // .regex_type(regex_type) # TODO: use enum
                 .regex_type(match regex_type {
                     "original" => RegexType::ORIGINAL,
-                    "no_regex" => RegexType::NO_REGEX,
+                    "no_regex" => RegexType::NOREGEX,
                     _ => unimplemented!(), // TODO: throw errors
                 })
                 .into(),
