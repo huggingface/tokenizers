@@ -554,7 +554,7 @@ mod tests {
 
         // Loading works, new future BC test.
         let byte_level: ByteLevel = serde_json::from_str(
-            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "regex_type": "no_regex"}"#,
+            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "regex_type": "noregex"}"#,
         )
         .unwrap();
         assert_eq!(byte_level.regex_type, RegexType::NOREGEX);
