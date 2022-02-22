@@ -130,9 +130,9 @@ impl PreTokenizer for ByteLevel {
                 normalized.prepend(" ");
             }
             if let Some(re_ref) = regex {
-                return normalized.split(re_ref, SplitDelimiterBehavior::Isolated);
+                normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
             } else {
-                return Ok(vec![normalized]);
+                Ok(vec![normalized])
             }
         })?;
         pretokenized.normalize(|normalized| {
