@@ -124,14 +124,17 @@ impl ByteLevel {
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        if let Some(re_ref) = self.regex() {
-            pretokenized.split(|_, mut normalized| {
-                if self.add_prefix_space && !normalized.get().starts_with(' ') {
-                    normalized.prepend(" ");
-                }
-                normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
-            })?;
-        };
+        let regex: Option<&Regex> = self.regex();
+        pretokenized.split(|_, mut normalized| {
+            if self.add_prefix_space && !normalized.get().starts_with(' ') {
+                normalized.prepend(" ");
+            }
+            if let Some(re_ref) = regex {
+                return normalized.split(re_ref, SplitDelimiterBehavior::Isolated);
+            } else {
+                return Ok(vec![normalized]);
+            }
+        })?;
         pretokenized.normalize(|normalized| {
             let s = normalized.get();
             let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());
