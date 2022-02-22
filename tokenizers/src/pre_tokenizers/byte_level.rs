@@ -557,6 +557,6 @@ mod tests {
             r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "regex_type": "no_regex"}"#,
         )
         .unwrap();
-        assert_eq!(byte_level.regex_type, RegexType::NO_REGEX);
+        assert_eq!(byte_level.regex_type, RegexType::NOREGEX);
     }
 }
