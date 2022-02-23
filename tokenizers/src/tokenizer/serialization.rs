@@ -152,17 +152,21 @@ where
 
         // We take care of deserializing the added_tokens (instead of `AddedVocabulary` directly
         // because it let us check that associated IDs are still good, and warn the user otherwise
-        tokenizer.add_special_tokens(tokens.iter().
-            filter(|added_token_with_id| added_token_with_id.special).
-            map(|added_token_with_id| added_token_with_id.token.clone()).
-            collect::<Vec<_>>().
-            as_slice()
+        tokenizer.add_special_tokens(
+            tokens
+                .iter()
+                .filter(|added_token_with_id| added_token_with_id.special)
+                .map(|added_token_with_id| added_token_with_id.token.clone())
+                .collect::<Vec<_>>()
+                .as_slice(),
         );
-        tokenizer.add_tokens(tokens.iter().
-            filter(|added_token_with_id| !added_token_with_id.special).
-            map(|added_token_with_id| added_token_with_id.token.clone()).
-            collect::<Vec<_>>().
-            as_slice()
+        tokenizer.add_tokens(
+            tokens
+                .iter()
+                .filter(|added_token_with_id| !added_token_with_id.special)
+                .map(|added_token_with_id| added_token_with_id.token.clone())
+                .collect::<Vec<_>>()
+                .as_slice(),
         );
 
         for token in tokens {
