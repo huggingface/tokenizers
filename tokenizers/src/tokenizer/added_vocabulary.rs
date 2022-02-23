@@ -304,7 +304,7 @@ impl AddedVocabulary {
             if added_token.single_word {
                 let start_space = start == 0 || sentence.as_bytes().get(start - 1) == Some(&b' ');
                 let stop_space =
-                    stop == sentence.len() || sentence.as_bytes().get(stop + 1) == Some(&b' ');
+                    stop == sentence.len() || sentence.as_bytes().get(stop) == Some(&b' ');
 
                 if !stop_space || !start_space {
                     // Discard not single word
@@ -697,5 +697,44 @@ mod tests {
         let vocab = AddedVocabulary::new();
         let matches = vocab.find_matches("", &vocab.split_trie);
         assert_eq!(matches, vec![(None, (0, 0))]);
+    }
+
+    #[test]
+    fn test_single_word_is_correct() {
+        // Is able to extract both normal and special tokens, with various options (lstrip, rstrip,
+        // single_word, normalized)
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer = Lowercase;
+
+        vocab.add_tokens(
+            &[AddedToken::from("<mask>", false).single_word(true)],
+            &model,
+            Some(&normalizer),
+        );
+        // Left, in the middle, non single world left, non single word right, end of sentence valid
+        let result = vocab.extract_and_normalize(
+            Some(&normalizer),
+            "<mask> My name <mask> A<mask> <mask>ony <mask>",
+        );
+        assert_eq!(
+            result
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
+                .into_iter()
+                .map(|(s, _, tokens)| (
+                    s,
+                    tokens
+                        .as_ref()
+                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("<mask>", Some(vec![0])),
+                (" my name ", None),
+                ("<mask>", Some(vec![0])),
+                (" a<mask> <mask>ony ", None),
+                ("<mask>", Some(vec![0]))
+            ]
+        );
     }
 }
