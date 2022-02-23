@@ -33,10 +33,9 @@ fn bytes_char() -> HashMap<u8, char> {
 }
 
 lazy_static! {
-    static ref ORIGINAL_RE: Regex =
+    static ref RE: Regex =
         Regex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
             .unwrap();
-    static ref WHITESPACE_RE: Regex = Regex::new(r" ?[^ ]+").unwrap();
     static ref BYTES_CHAR: HashMap<u8, char> = bytes_char();
     static ref CHAR_BYTES: HashMap<char, u8> =
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
@@ -46,7 +45,7 @@ lazy_static! {
 #[serde(rename_all = "lowercase")]
 pub enum RegexType {
     ORIGINAL,
-    WHITESPACE,
+    NOREGEX,
 }
 
 impl Default for RegexType {
@@ -112,10 +111,10 @@ impl ByteLevel {
         self
     }
 
-    pub fn regex(&self) -> &Regex {
+    pub fn regex(&self) -> Option<&Regex> {
         match self.regex_type {
-            RegexType::ORIGINAL => &ORIGINAL_RE,
-            RegexType::WHITESPACE => &WHITESPACE_RE,
+            RegexType::ORIGINAL => Some(&RE),
+            RegexType::NOREGEX => None,
         }
     }
 }
@@ -125,12 +124,16 @@ impl ByteLevel {
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        let re_ref: &Regex = self.regex();
+        let regex: Option<&Regex> = self.regex();
         pretokenized.split(|_, mut normalized| {
             if self.add_prefix_space && !normalized.get().starts_with(' ') {
                 normalized.prepend(" ");
             }
-            normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
+            if let Some(re_ref) = regex {
+                normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
+            } else {
+                Ok(vec![normalized])
+            }
         })?;
         pretokenized.normalize(|normalized| {
             let s = normalized.get();
@@ -554,9 +557,9 @@ mod tests {
 
         // Loading works, new future BC test.
         let byte_level: ByteLevel = serde_json::from_str(
-            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "regex_type": "whitespace"}"#,
+            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "regex_type": "noregex"}"#,
         )
         .unwrap();
-        assert_eq!(byte_level.regex_type, RegexType::WHITESPACE);
+        assert_eq!(byte_level.regex_type, RegexType::NOREGEX);
     }
 }
