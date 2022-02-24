@@ -293,14 +293,13 @@ impl UnigramTrainer {
         let mut vsum = 0.0;
         let mut freq: Vec<f64> = vec![0.0; pieces.len()];
         let mut inverted: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
-        // TODO reparallelize this
+
         use rayon::current_num_threads;
         use rayon::iter::ParallelIterator;
         use rayon::iter::IndexedParallelIterator;
         use rayon::iter::IntoParallelRefIterator;
 
         let chunk_size = std::cmp::max(sentences.len() / current_num_threads(), 1);
-        // TODO reparallelize this.
         let collected: Vec<(f64, Vec<f64>, Vec<Vec<usize>>)> = sentences
             .par_iter()
             .enumerate()
