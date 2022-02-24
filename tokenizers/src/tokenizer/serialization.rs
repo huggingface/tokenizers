@@ -150,34 +150,17 @@ where
             .build()
             .map_err(|e| V::Error::custom(e.to_string()))?;
 
+        let mut regular_tokens = vec![];
+        let mut special_tokens = vec![];
         // We take care of deserializing the added_tokens (instead of `AddedVocabulary` directly
         // because it let us check that associated IDs are still good, and warn the user otherwise
-        tokenizer.add_special_tokens(
-            tokens
-                .iter()
-                .filter(|added_token_with_id| added_token_with_id.special)
-                .map(|added_token_with_id| added_token_with_id.token.clone())
-                .collect::<Vec<_>>()
-                .as_slice(),
-        );
-        tokenizer.add_tokens(
-            tokens
-                .iter()
-                .filter(|added_token_with_id| !added_token_with_id.special)
-                .map(|added_token_with_id| added_token_with_id.token.clone())
-                .collect::<Vec<_>>()
-                .as_slice(),
-        );
-
         for token in tokens {
-            let tk = token.token.content.clone();
-
             // Warn the user if the id is different than expected
-            let received_id = tokenizer.token_to_id(&tk);
+            let received_id = tokenizer.token_to_id(&token.token.content);
             if received_id != Some(token.id) {
                 warn!(
                     "Warning: Token '{}' was expected to have ID '{}' but was given ID '{}'",
-                    tk,
+                    token.token.content,
                     token.id,
                     if let Some(rid) = received_id {
                         rid.to_string()
@@ -186,7 +169,15 @@ where
                     }
                 );
             }
+
+            if token.special {
+                special_tokens.push(token.token);
+            } else {
+                regular_tokens.push(token.token);
+            }
         }
+        tokenizer.add_special_tokens(&special_tokens[..]);
+        tokenizer.add_tokens(&regular_tokens[..]);
 
         Ok(tokenizer)
     }
