@@ -397,23 +397,47 @@ impl UnigramTrainer {
     }
 
     fn run_e_step(&self, model: &Unigram, sentences: &[Sentence]) -> (f64, u32, Vec<f64>) {
+        let all_sentence_freq: u32 = sentences.iter().map(|(_a, b)| *b).sum();
+
+        use rayon::current_num_threads;
+        use rayon::iter::ParallelIterator;
+        use rayon::prelude::ParallelSlice;
+
+        let chunk_size = std::cmp::max(sentences.len() / current_num_threads(), 1);
+        // TODO reparallelize this.
+        let collected: Vec<(f64, u32, Vec<f64>)> = sentences
+            .par_chunks(chunk_size)
+            .map(|sentences_chunk| {
+                let mut expected: Vec<f64> = vec![0.0; model.len()];
+                let mut objs: f64 = 0.0;
+                let mut ntokens: u32 = 0;
+
+                for (string, freq) in sentences_chunk {
+                    let mut lattice = Lattice::from(string, model.bos_id, model.eos_id);
+                    model.populate_nodes(&mut lattice);
+
+                    let z: f64 = lattice.populate_marginal(*freq as f64, &mut expected);
+                    if z.is_nan() {
+                        panic!("likelihood is NAN. Input sentence may be too long.");
+                    }
+                    ntokens += lattice.viterbi().len() as u32;
+                    objs -= z / (all_sentence_freq as f64);
+                }
+                (objs, ntokens, expected)
+            })
+            .collect();
+
         let mut expected: Vec<f64> = vec![0.0; model.len()];
         let mut objs: f64 = 0.0;
         let mut ntokens: u32 = 0;
 
-        let all_sentence_freq: u32 = sentences.iter().map(|(_a, b)| *b).sum();
-
-        // TODO reparallelize this.
-        for (string, freq) in sentences {
-            let mut lattice = Lattice::from(string, model.bos_id, model.eos_id);
-            model.populate_nodes(&mut lattice);
-            let z: f64 = lattice.populate_marginal(*freq as f64, &mut expected);
-            ntokens += lattice.viterbi().len() as u32;
-            if z.is_nan() {
-                panic!("likelihood is NAN. Input sentence may be too long.");
-            }
-
-            objs -= z / (all_sentence_freq as f64);
+        for (lobjs, lntokens, lexpected) in collected {
+            objs += lobjs;
+            ntokens += lntokens;
+            expected
+                .iter_mut()
+                .zip(lexpected)
+                .for_each(|(global_el, local_el)| *global_el += local_el)
         }
 
         (objs, ntokens, expected)
