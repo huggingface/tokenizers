@@ -294,15 +294,50 @@ impl UnigramTrainer {
         let mut freq: Vec<f64> = vec![0.0; pieces.len()];
         let mut inverted: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
         // TODO reparallelize this
-        for (i, (sentence, count)) in sentences.iter().enumerate() {
-            let mut lattice = Lattice::from(sentence, bos_id, eos_id);
-            model.populate_nodes(&mut lattice);
-            vsum += *count as f64;
-            for node_ref in lattice.viterbi() {
-                let id = node_ref.borrow().id;
-                freq[id] += *count as f64;
-                inverted[id].push(i);
-            }
+        use rayon::current_num_threads;
+        use rayon::iter::ParallelIterator;
+        use rayon::iter::IndexedParallelIterator;
+        use rayon::iter::IntoParallelRefIterator;
+
+        let chunk_size = std::cmp::max(sentences.len() / current_num_threads(), 1);
+        // TODO reparallelize this.
+        let collected: Vec<(f64, Vec<f64>, Vec<Vec<usize>>)> = sentences
+            .par_iter()
+            .enumerate()
+            .chunks(chunk_size)
+            .map(|enumerated_sentence_count_chunk| {
+                let mut vsum = 0.0;
+                let mut freq: Vec<f64> = vec![0.0; pieces.len()];
+                let mut inverted: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
+
+                for (i, (sentence, count)) in enumerated_sentence_count_chunk {
+                    let mut lattice = Lattice::from(sentence, bos_id, eos_id);
+                    model.populate_nodes(&mut lattice);
+                    vsum += *count as f64;
+                    for node_ref in lattice.viterbi() {
+                        let id = node_ref.borrow().id;
+                        freq[id] += *count as f64;
+                        inverted[id].push(i);
+                    }
+                }
+                (vsum, freq, inverted)
+            })
+            .collect();
+
+        let mut vsum = 0.0;
+        let mut freq: Vec<f64> = vec![0.0; pieces.len()];
+        let mut inverted: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
+
+        for (lvsum, lfreq, linverted) in collected {
+            vsum += lvsum;
+            freq
+                .iter_mut()
+                .zip(lfreq)
+                .for_each(|(global_el, local_el)| *global_el += local_el);
+            inverted
+                .iter_mut()
+                .zip(linverted)
+                .for_each(|(global_el, local_el)| global_el.extend(local_el))
         }
 
         let sum: f64 = freq.iter().sum();
@@ -455,6 +490,7 @@ impl UnigramTrainer {
 
         let mut sum = 0.0;
         let expected_frequency_threshold = 0.5;
+
         for (i, (freq, (piece, _score))) in expected.iter().zip(pieces).enumerate() {
             // Always keep unk.
             if i == 0 {
