@@ -298,12 +298,15 @@ impl UnigramTrainer {
         use rayon::iter::IndexedParallelIterator;
         use rayon::iter::IntoParallelRefIterator;
         use rayon::iter::ParallelIterator;
+        use rayon::prelude::ParallelSlice;
 
         let chunk_size = std::cmp::max(sentences.len() / current_num_threads(), 1);
-        let collected: Vec<(f64, Vec<f64>, Vec<Vec<usize>>)> = sentences
-            .par_iter()
+        let indexed_sentences: Vec<(usize, &Sentence)> = sentences
+            .iter()
             .enumerate()
-            .chunks(chunk_size)
+            .collect();
+        let collected: Vec<(f64, Vec<f64>, Vec<Vec<usize>>)> = indexed_sentences
+            .par_chunks(chunk_size)
             .map(|enumerated_sentence_count_chunk| {
                 let mut vsum = 0.0;
                 let mut freq: Vec<f64> = vec![0.0; pieces.len()];
@@ -316,7 +319,7 @@ impl UnigramTrainer {
                     for node_ref in lattice.viterbi() {
                         let id = node_ref.borrow().id;
                         freq[id] += *count as f64;
-                        inverted[id].push(i);
+                        inverted[id].push(*i);
                     }
                 }
                 (vsum, freq, inverted)
