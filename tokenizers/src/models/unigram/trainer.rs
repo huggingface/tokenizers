@@ -290,13 +290,7 @@ impl UnigramTrainer {
         // Second, segments all sentences to compute likelihood
         // with a unigram language model. inverted[i] stores
         // the set of sentence index where the sentencepieces[i] appears.
-        let mut vsum = 0.0;
-        let mut freq: Vec<f64> = vec![0.0; pieces.len()];
-        let mut inverted: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
-
         use rayon::current_num_threads;
-        use rayon::iter::IndexedParallelIterator;
-        use rayon::iter::IntoParallelRefIterator;
         use rayon::iter::ParallelIterator;
         use rayon::prelude::ParallelSlice;
 
