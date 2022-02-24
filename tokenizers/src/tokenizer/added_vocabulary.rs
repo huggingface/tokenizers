@@ -2,6 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
 };
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
+use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 
@@ -90,6 +91,37 @@ impl std::cmp::Eq for AddedToken {}
 
 type MatchingSet = (AhoCorasick, Vec<u32>);
 
+lazy_static! {
+    static ref STARTS_WITH_WORD: Regex = Regex::new(r"^\w").unwrap();
+    static ref ENDS_WITH_WORD: Regex = Regex::new(r"\w$").unwrap();
+    static ref RIGHTMOST_SPACE_AT_START: Regex = Regex::new(r"^\s*").unwrap();
+    static ref LEFTMOST_SPACE_AT_END: Regex = Regex::new(r"\s*$").unwrap();
+}
+
+fn ends_with_word(sentence: &str) -> bool {
+    ENDS_WITH_WORD.is_match(sentence)
+}
+
+fn starts_with_word(sentence: &str) -> bool {
+    STARTS_WITH_WORD.is_match(sentence)
+}
+
+fn space_leftmost_at_end(sentence: &str) -> usize {
+    if let Some(match_) = LEFTMOST_SPACE_AT_END.find(sentence) {
+        match_.start()
+    } else {
+        // This should never happen since the Regex should match all the time
+        sentence.len()
+    }
+}
+fn space_rightmost_at_start(sentence: &str) -> usize {
+    if let Some(match_) = RIGHTMOST_SPACE_AT_START.find(sentence) {
+        match_.end()
+    } else {
+        // This should never happen since the Regex should match all the time
+        0
+    }
+}
 ///
 /// A vocabulary built on top of the Model
 ///
@@ -302,9 +334,8 @@ impl AddedVocabulary {
             let id = split_re.1[aho_id];
             let added_token = &self.added_tokens_map_r.get(&id).unwrap();
             if added_token.single_word {
-                let start_space = start == 0 || sentence.as_bytes().get(start - 1) == Some(&b' ');
-                let stop_space =
-                    stop == sentence.len() || sentence.as_bytes().get(stop) == Some(&b' ');
+                let start_space = start == 0 || !ends_with_word(&sentence[..start]);
+                let stop_space = stop == sentence.len() || !starts_with_word(&sentence[stop..]);
 
                 if !stop_space || !start_space {
                     // Discard not single word
@@ -312,22 +343,17 @@ impl AddedVocabulary {
                 }
             }
             if added_token.lstrip {
-                while start > 0 {
-                    if let Some(b' ') = sentence.as_bytes().get(start - 1) {
-                        start -= 1;
-                    } else {
-                        break;
-                    }
-                }
+                // This will be strictly inferior to start and in correct sentence offset
+                let newstart = space_leftmost_at_end(&sentence[..start]);
+
+                // The previous match could have already matched those spaces
+                // Ignore them if it's already matched
+                start = std::cmp::max(newstart, start_offset);
             }
             if added_token.rstrip {
-                while stop < sentence.len() {
-                    if let Some(b' ') = sentence.as_bytes().get(stop) {
-                        stop += 1;
-                    } else {
-                        break;
-                    }
-                }
+                // This will starting a the stop+1 character, so we need
+                // to add the previous stop value
+                stop += space_rightmost_at_start(&sentence[stop..])
             }
             if start_offset < start {
                 splits.push((None, (start_offset, start)));
@@ -467,6 +493,21 @@ mod tests {
                 vocab,
             }
         }
+    }
+
+    fn simplify_output(result: &'_ PreTokenizedString) -> Vec<(&'_ str, Option<Vec<u32>>)> {
+        result
+            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, _, tokens)| {
+                (
+                    s,
+                    tokens
+                        .as_ref()
+                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>()),
+                )
+            })
+            .collect::<Vec<_>>()
     }
 
     struct TrainerMock;
@@ -669,16 +710,7 @@ mod tests {
             vocab.extract_and_normalize(Some(&normalizer), "[CLS] My name is Anthony [SEP]");
 
         assert_eq!(
-            result
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, _, tokens)| (
-                    s,
-                    tokens
-                        .as_ref()
-                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
-                ))
-                .collect::<Vec<_>>(),
+            simplify_output(&result),
             vec![
                 ("[CLS]", Some(vec![3])),
                 // This one includes both spaces because of the lstrip & rstrip
@@ -718,22 +750,71 @@ mod tests {
             "<mask> My name <mask> A<mask> <mask>ony <mask>",
         );
         assert_eq!(
-            result
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, _, tokens)| (
-                    s,
-                    tokens
-                        .as_ref()
-                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
-                ))
-                .collect::<Vec<_>>(),
+            simplify_output(&result),
             vec![
                 ("<mask>", Some(vec![0])),
                 (" my name ", None),
                 ("<mask>", Some(vec![0])),
                 (" a<mask> <mask>ony ", None),
                 ("<mask>", Some(vec![0]))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_single_word_is_unicode_correct() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer = Lowercase;
+
+        vocab.add_tokens(
+            &[AddedToken::from("<mask>", false).single_word(true)],
+            &model,
+            Some(&normalizer),
+        );
+        let result = vocab.extract_and_normalize(Some(&normalizer), "<mask>, <mask>- ◌̰<mask>");
+        assert_eq!(
+            simplify_output(&result),
+            vec![
+                // Punctuation is not word
+                ("<mask>", Some(vec![0])),
+                (", ", None),
+                // dash is not word
+                ("<mask>", Some(vec![0])),
+                // This is unicode combining mark character and is word: https://en.wikipedia.org/wiki/Combining_Diacritical_Marks
+                ("- ◌̰<mask>", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_lstrip_unicode_space() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer = Lowercase;
+
+        vocab.add_tokens(
+            &[AddedToken::from("<mask>", false)
+                .lstrip(true)
+                .rstrip(true)
+                .single_word(true)],
+            &model,
+            Some(&normalizer),
+        );
+        let result = vocab
+            .extract_and_normalize(Some(&normalizer), "Hi <mask> there\t<mask>\t<mask>\u{2000}");
+        assert_eq!(
+            simplify_output(&result),
+            vec![
+                ("hi", None),
+                // Regular space
+                (" <mask> ", Some(vec![0])),
+                ("there", None),
+                // \t is a spacing character
+                ("\t<mask>\t", Some(vec![0])),
+                // Non overlapping
+                // \u{2000} is mongolian vowel separator: https://jkorpela.fi/chars/spaces.html
+                ("<mask>\u{2000}", Some(vec![0])),
             ]
         );
     }
