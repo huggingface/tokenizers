@@ -295,9 +295,9 @@ impl UnigramTrainer {
         let mut inverted: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
 
         use rayon::current_num_threads;
-        use rayon::iter::ParallelIterator;
         use rayon::iter::IndexedParallelIterator;
         use rayon::iter::IntoParallelRefIterator;
+        use rayon::iter::ParallelIterator;
 
         let chunk_size = std::cmp::max(sentences.len() / current_num_threads(), 1);
         let collected: Vec<(f64, Vec<f64>, Vec<Vec<usize>>)> = sentences
@@ -329,8 +329,7 @@ impl UnigramTrainer {
 
         for (lvsum, lfreq, linverted) in collected {
             vsum += lvsum;
-            freq
-                .iter_mut()
+            freq.iter_mut()
                 .zip(lfreq)
                 .for_each(|(global_el, local_el)| *global_el += local_el);
             inverted
