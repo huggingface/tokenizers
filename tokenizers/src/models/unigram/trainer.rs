@@ -295,10 +295,7 @@ impl UnigramTrainer {
         use rayon::prelude::ParallelSlice;
 
         let chunk_size = std::cmp::max(sentences.len() / current_num_threads(), 1);
-        let indexed_sentences: Vec<(usize, &Sentence)> = sentences
-            .iter()
-            .enumerate()
-            .collect();
+        let indexed_sentences: Vec<(usize, &Sentence)> = sentences.iter().enumerate().collect();
         let collected: Vec<(f64, Vec<f64>, Vec<Vec<usize>>)> = indexed_sentences
             .par_chunks(chunk_size)
             .map(|enumerated_sentence_count_chunk| {
