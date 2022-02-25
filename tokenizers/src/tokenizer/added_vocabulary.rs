@@ -23,6 +23,8 @@ pub struct AddedToken {
     pub rstrip: bool,
     /// Whether this token should be normalized
     pub normalized: bool,
+    /// Whether this token is special
+    pub special: bool,
 }
 
 impl AddedToken {
@@ -32,6 +34,7 @@ impl AddedToken {
         AddedToken {
             content: content.into(),
             normalized: !special,
+            special,
             ..Default::default()
         }
     }
@@ -72,6 +75,7 @@ impl Default for AddedToken {
             lstrip: false,
             rstrip: false,
             normalized: true,
+            special: false,
         }
     }
 }
@@ -224,13 +228,6 @@ impl AddedVocabulary {
         model: &impl Model,
         normalizer: Option<&N>,
     ) -> usize {
-        for token in tokens {
-            if !token.content.is_empty() && !self.special_tokens_set.contains(&token.content) {
-                self.special_tokens.push(token.to_owned());
-                self.special_tokens_set.insert(token.content.clone());
-            }
-        }
-        // Then we delegate to `add_tokens`, that will take care of refreshing added tokens too.
         self.add_tokens(tokens, model, normalizer)
     }
 
@@ -241,6 +238,18 @@ impl AddedVocabulary {
         model: &impl Model,
         normalizer: Option<&N>,
     ) -> usize {
+        // Handle special tokens (if any)
+        for token in tokens {
+            if token.special
+                && !token.content.is_empty()
+                && !self.special_tokens_set.contains(&token.content)
+            {
+                self.special_tokens.push(token.to_owned());
+                self.special_tokens_set.insert(token.content.clone());
+            }
+        }
+
+        // Then we delegate to `add_tokens`, that will take care of refreshing added tokens too.
         let mut ignored = 0;
         for token in tokens {
             if token.content.is_empty() {
@@ -435,9 +444,8 @@ impl AddedVocabulary {
 pub(super) struct AddedTokenWithId {
     /// The id assigned to this token
     pub id: u32,
-    /// Whether this is a special token
-    pub special: bool,
-
+    // /// Whether this is a special token
+    // pub special: bool,
     #[serde(flatten)]
     /// The target AddedToken
     pub token: AddedToken,
@@ -453,7 +461,7 @@ impl Serialize for AddedVocabulary {
             .iter()
             .map(|(id, token)| AddedTokenWithId {
                 id: *id,
-                special: self.special_tokens_set.contains(&token.content),
+                // special: self.special_tokens_set.contains(&token.content),
                 token: token.clone(),
             })
             .collect::<Vec<_>>();
