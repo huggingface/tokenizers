@@ -444,8 +444,6 @@ impl AddedVocabulary {
 pub(super) struct AddedTokenWithId {
     /// The id assigned to this token
     pub id: u32,
-    // /// Whether this is a special token
-    // pub special: bool,
     #[serde(flatten)]
     /// The target AddedToken
     pub token: AddedToken,
@@ -461,7 +459,6 @@ impl Serialize for AddedVocabulary {
             .iter()
             .map(|(id, token)| AddedTokenWithId {
                 id: *id,
-                // special: self.special_tokens_set.contains(&token.content),
                 token: token.clone(),
             })
             .collect::<Vec<_>>();

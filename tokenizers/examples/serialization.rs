@@ -6,7 +6,7 @@ fn main() {
     let mut tokenizer = Tokenizer::new(WordPiece::default());
 
     // Mix special land n
-    let tokens: Vec<_> = (0..3)
+    let tokens: Vec<_> = (0..120_000)
         .map(|i| AddedToken::from(format!("[SPECIAL_{}]", i), i % 2 == 0))
         .collect();
     tokenizer.add_tokens(&tokens);
@@ -15,5 +15,5 @@ fn main() {
     let start = std::time::Instant::now();
     let _tok = Tokenizer::from_file("_tok.json").unwrap();
     println!("Took {:?}", start.elapsed());
-    //std::fs::remove_file("_tok.json").unwrap();
+    std::fs::remove_file("_tok.json").unwrap();
 }
