@@ -5,7 +5,8 @@ fn main() {
     let start = std::time::Instant::now();
     let mut tokenizer = Tokenizer::new(WordPiece::default());
 
-    // Mix special land n
+    // Mix special and not special
+    // You can make sure ids are in order, and special status is correct.
     let tokens: Vec<_> = (0..120_000)
         .map(|i| AddedToken::from(format!("[SPECIAL_{}]", i), i % 2 == 0))
         .collect();
