@@ -296,7 +296,7 @@ impl UnigramTrainer {
 
         let chunk_size = std::cmp::max(sentences.len() / current_num_threads(), 1);
         let indexed_sentences: Vec<(usize, &Sentence)> = sentences.iter().enumerate().collect();
-        let collected: Vec<(f64, Vec<f64>, Vec<Vec<usize>>)> = indexed_sentences
+        let collected: (f64, Vec<f64>, Vec<Vec<usize>>) = indexed_sentences
             .par_chunks(chunk_size)
             .map(|enumerated_sentence_count_chunk| {
                 let mut vsum = 0.0;
@@ -315,22 +315,25 @@ impl UnigramTrainer {
                 }
                 (vsum, freq, inverted)
             })
-            .collect();
+            .reduce(
+                || (0.0, vec![0.0; pieces.len()], vec![Vec::new(); pieces.len()]),
+                |(vsum, freq, inverted), (lvsum, lfreq, linverted)| {
+                    (
+                        vsum + lvsum,
+                        freq.iter()
+                            .zip(lfreq)
+                            .map(|(global_el, local_el)| global_el + local_el)
+                            .collect(),
+                        inverted
+                            .iter()
+                            .zip(linverted)
+                            .map(|(global_el, local_el)| [&global_el[..], &local_el[..]].concat())
+                            .collect(),
+                    )
+                },
+            );
 
-        let mut vsum = 0.0;
-        let mut freq: Vec<f64> = vec![0.0; pieces.len()];
-        let mut inverted: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
-
-        for (lvsum, lfreq, linverted) in collected {
-            vsum += lvsum;
-            freq.iter_mut()
-                .zip(lfreq)
-                .for_each(|(global_el, local_el)| *global_el += local_el);
-            inverted
-                .iter_mut()
-                .zip(linverted)
-                .for_each(|(global_el, local_el)| global_el.extend(local_el))
-        }
+        let (vsum, freq, inverted) = collected;
 
         let sum: f64 = freq.iter().sum();
         let logsum = sum.ln();
@@ -431,8 +434,7 @@ impl UnigramTrainer {
         use rayon::prelude::ParallelSlice;
 
         let chunk_size = std::cmp::max(sentences.len() / current_num_threads(), 1);
-        // TODO reparallelize this.
-        let collected: Vec<(f64, u32, Vec<f64>)> = sentences
+        let collected: (f64, u32, Vec<f64>) = sentences
             .par_chunks(chunk_size)
             .map(|sentences_chunk| {
                 let mut expected: Vec<f64> = vec![0.0; model.len()];
@@ -452,22 +454,22 @@ impl UnigramTrainer {
                 }
                 (objs, ntokens, expected)
             })
-            .collect();
+            .reduce(
+                || (0.0, 0, vec![0.0; model.len()]),
+                |(objs, ntokens, expected), (lobjs, lntokens, lexpected)| {
+                    (
+                        objs + lobjs,
+                        ntokens + lntokens,
+                        expected
+                            .iter()
+                            .zip(lexpected)
+                            .map(|(global_el, local_el)| global_el + local_el)
+                            .collect(),
+                    )
+                },
+            );
 
-        let mut expected: Vec<f64> = vec![0.0; model.len()];
-        let mut objs: f64 = 0.0;
-        let mut ntokens: u32 = 0;
-
-        for (lobjs, lntokens, lexpected) in collected {
-            objs += lobjs;
-            ntokens += lntokens;
-            expected
-                .iter_mut()
-                .zip(lexpected)
-                .for_each(|(global_el, local_el)| *global_el += local_el)
-        }
-
-        (objs, ntokens, expected)
+        collected
     }
     fn run_m_step(&self, pieces: &[SentencePiece], expected: &[f64]) -> Vec<SentencePiece> {
         if pieces.len() != expected.len() {
