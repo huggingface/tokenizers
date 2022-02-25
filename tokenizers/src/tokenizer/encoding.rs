@@ -110,7 +110,11 @@ impl Encoding {
 
     /// Return the number of sequences combined in this Encoding
     pub fn n_sequences(&self) -> usize {
-        self.sequence_ranges.len().max(1)
+        if self.sequence_ranges.is_empty() {
+            1
+        } else {
+            self.sequence_ranges.len()
+        }
     }
 
     /// Set the given sequence id for the whole range of tokens contained in this Encoding
