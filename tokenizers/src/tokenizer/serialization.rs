@@ -150,11 +150,9 @@ where
             .build()
             .map_err(|e| V::Error::custom(e.to_string()))?;
 
-        let mut regular_tokens = vec![];
-        let mut special_tokens = vec![];
         // We take care of deserializing the added_tokens (instead of `AddedVocabulary` directly
         // because it let us check that associated IDs are still good, and warn the user otherwise
-        for token in tokens {
+        for token in &tokens {
             // Warn the user if the id is different than expected
             let received_id = tokenizer.token_to_id(&token.token.content);
             if received_id != Some(token.id) {
@@ -169,15 +167,9 @@ where
                     }
                 );
             }
-
-            if token.special {
-                special_tokens.push(token.token);
-            } else {
-                regular_tokens.push(token.token);
-            }
         }
-        tokenizer.add_special_tokens(&special_tokens[..]);
-        tokenizer.add_tokens(&regular_tokens[..]);
+        let added_tokens: Vec<_> = tokens.into_iter().map(|token| token.token).collect();
+        tokenizer.add_special_tokens(&added_tokens);
 
         Ok(tokenizer)
     }
