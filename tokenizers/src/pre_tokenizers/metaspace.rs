@@ -34,7 +34,7 @@ impl<'de> Deserialize<'de> for Metaspace {
         }
 
         let helper = MetaspaceHelper::deserialize(deserializer)?;
-        Ok(Metaspace::new(helper.replacement, helper.add_prefix_space))
+        Ok(Self::new(helper.replacement, helper.add_prefix_space))
     }
 }
 

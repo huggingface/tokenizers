@@ -39,10 +39,10 @@ impl Encoding {
         offsets: Vec<Offsets>,
         special_tokens_mask: Vec<u32>,
         attention_mask: Vec<u32>,
-        overflowing: Vec<Encoding>,
+        overflowing: Vec<Self>,
         sequence_ranges: HashMap<usize, Range<usize>>,
     ) -> Self {
-        Encoding {
+        Self {
             ids,
             type_ids,
             tokens,
@@ -56,7 +56,7 @@ impl Encoding {
     }
 
     pub fn with_capacity(len: usize) -> Self {
-        Encoding {
+        Self {
             ids: Vec::with_capacity(len),
             type_ids: Vec::with_capacity(len),
             tokens: Vec::with_capacity(len),
@@ -85,7 +85,7 @@ impl Encoding {
             },
         );
 
-        Encoding {
+        Self {
             ids,
             tokens,
             offsets,
@@ -110,11 +110,7 @@ impl Encoding {
 
     /// Return the number of sequences combined in this Encoding
     pub fn n_sequences(&self) -> usize {
-        if self.sequence_ranges.is_empty() {
-            1
-        } else {
-            self.sequence_ranges.len()
-        }
+        self.sequence_ranges.len().min(1)
     }
 
     /// Set the given sequence id for the whole range of tokens contained in this Encoding

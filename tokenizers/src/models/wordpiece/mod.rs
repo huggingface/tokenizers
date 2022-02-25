@@ -26,7 +26,7 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::MissingUnkToken => write!(
+            Self::MissingUnkToken => write!(
                 fmt,
                 "WordPiece error: Missing [UNK] token from the vocabulary"
             ),

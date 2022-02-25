@@ -58,72 +58,65 @@ impl Model for ModelWrapper {
     type Trainer = TrainerWrapper;
 
     fn tokenize(&self, tokens: &str) -> Result<Vec<Token>> {
-        use ModelWrapper::*;
         match self {
-            WordLevel(t) => t.tokenize(tokens),
-            WordPiece(t) => t.tokenize(tokens),
-            BPE(t) => t.tokenize(tokens),
-            Unigram(t) => t.tokenize(tokens),
+            Self::WordLevel(t) => t.tokenize(tokens),
+            Self::WordPiece(t) => t.tokenize(tokens),
+            Self::BPE(t) => t.tokenize(tokens),
+            Self::Unigram(t) => t.tokenize(tokens),
         }
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
-        use ModelWrapper::*;
         match self {
-            WordLevel(t) => t.token_to_id(token),
-            WordPiece(t) => t.token_to_id(token),
-            BPE(t) => t.token_to_id(token),
-            Unigram(t) => t.token_to_id(token),
+            Self::WordLevel(t) => t.token_to_id(token),
+            Self::WordPiece(t) => t.token_to_id(token),
+            Self::BPE(t) => t.token_to_id(token),
+            Self::Unigram(t) => t.token_to_id(token),
         }
     }
 
     fn id_to_token(&self, id: u32) -> Option<String> {
-        use ModelWrapper::*;
         match self {
-            WordLevel(t) => t.id_to_token(id),
-            WordPiece(t) => t.id_to_token(id),
-            BPE(t) => t.id_to_token(id),
-            Unigram(t) => t.id_to_token(id),
+            Self::WordLevel(t) => t.id_to_token(id),
+            Self::WordPiece(t) => t.id_to_token(id),
+            Self::BPE(t) => t.id_to_token(id),
+            Self::Unigram(t) => t.id_to_token(id),
         }
     }
 
     fn get_vocab(&self) -> HashMap<String, u32> {
-        use ModelWrapper::*;
         match self {
-            WordLevel(t) => t.get_vocab(),
-            WordPiece(t) => t.get_vocab(),
-            BPE(t) => t.get_vocab(),
-            Unigram(t) => t.get_vocab(),
+            Self::WordLevel(t) => t.get_vocab(),
+            Self::WordPiece(t) => t.get_vocab(),
+            Self::BPE(t) => t.get_vocab(),
+            Self::Unigram(t) => t.get_vocab(),
         }
     }
 
     fn get_vocab_size(&self) -> usize {
-        use ModelWrapper::*;
         match self {
-            WordLevel(t) => t.get_vocab_size(),
-            WordPiece(t) => t.get_vocab_size(),
-            BPE(t) => t.get_vocab_size(),
-            Unigram(t) => t.get_vocab_size(),
+            Self::WordLevel(t) => t.get_vocab_size(),
+            Self::WordPiece(t) => t.get_vocab_size(),
+            Self::BPE(t) => t.get_vocab_size(),
+            Self::Unigram(t) => t.get_vocab_size(),
         }
     }
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
-        use ModelWrapper::*;
         match self {
-            WordLevel(t) => t.save(folder, name),
-            WordPiece(t) => t.save(folder, name),
-            BPE(t) => t.save(folder, name),
-            Unigram(t) => t.save(folder, name),
+            Self::WordLevel(t) => t.save(folder, name),
+            Self::WordPiece(t) => t.save(folder, name),
+            Self::BPE(t) => t.save(folder, name),
+            Self::Unigram(t) => t.save(folder, name),
         }
     }
 
     fn get_trainer(&self) -> Self::Trainer {
-        use ModelWrapper::*;
         match self {
-            WordLevel(t) => t.get_trainer().into(),
-            WordPiece(t) => t.get_trainer().into(),
-            BPE(t) => t.get_trainer().into(),
-            Unigram(t) => t.get_trainer().into(),
+            Self::WordLevel(t) => t.get_trainer().into(),
+            Self::WordPiece(t) => t.get_trainer().into(),
+            Self::BPE(t) => t.get_trainer().into(),
+            Self::Unigram(t) => t.get_trainer().into(),
         }
     }
 }
@@ -140,28 +133,28 @@ impl Trainer for TrainerWrapper {
 
     fn should_show_progress(&self) -> bool {
         match self {
-            TrainerWrapper::BpeTrainer(bpe) => bpe.should_show_progress(),
-            TrainerWrapper::WordPieceTrainer(wpt) => wpt.should_show_progress(),
-            TrainerWrapper::WordLevelTrainer(wpt) => wpt.should_show_progress(),
-            TrainerWrapper::UnigramTrainer(wpt) => wpt.should_show_progress(),
+            Self::BpeTrainer(bpe) => bpe.should_show_progress(),
+            Self::WordPieceTrainer(wpt) => wpt.should_show_progress(),
+            Self::WordLevelTrainer(wpt) => wpt.should_show_progress(),
+            Self::UnigramTrainer(wpt) => wpt.should_show_progress(),
         }
     }
 
     fn train(&self, model: &mut ModelWrapper) -> Result<Vec<AddedToken>> {
         match self {
-            TrainerWrapper::BpeTrainer(t) => match model {
+            Self::BpeTrainer(t) => match model {
                 ModelWrapper::BPE(bpe) => t.train(bpe),
                 _ => Err("BpeTrainer can only train a BPE".into()),
             },
-            TrainerWrapper::WordPieceTrainer(t) => match model {
+            Self::WordPieceTrainer(t) => match model {
                 ModelWrapper::WordPiece(wp) => t.train(wp),
                 _ => Err("WordPieceTrainer can only train a WordPiece".into()),
             },
-            TrainerWrapper::WordLevelTrainer(t) => match model {
+            Self::WordLevelTrainer(t) => match model {
                 ModelWrapper::WordLevel(wl) => t.train(wl),
                 _ => Err("WordLevelTrainer can only train a WordLevel".into()),
             },
-            TrainerWrapper::UnigramTrainer(t) => match model {
+            Self::UnigramTrainer(t) => match model {
                 ModelWrapper::Unigram(u) => t.train(u),
                 _ => Err("UnigramTrainer can only train a Unigram".into()),
             },
@@ -175,10 +168,10 @@ impl Trainer for TrainerWrapper {
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
         match self {
-            TrainerWrapper::BpeTrainer(bpe) => bpe.feed(iterator, process),
-            TrainerWrapper::WordPieceTrainer(wpt) => wpt.feed(iterator, process),
-            TrainerWrapper::WordLevelTrainer(wpt) => wpt.feed(iterator, process),
-            TrainerWrapper::UnigramTrainer(wpt) => wpt.feed(iterator, process),
+            Self::BpeTrainer(bpe) => bpe.feed(iterator, process),
+            Self::WordPieceTrainer(wpt) => wpt.feed(iterator, process),
+            Self::WordLevelTrainer(wpt) => wpt.feed(iterator, process),
+            Self::UnigramTrainer(wpt) => wpt.feed(iterator, process),
         }
     }
 }

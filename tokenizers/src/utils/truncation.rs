@@ -76,16 +76,16 @@ pub enum TruncationStrategy {
 
 impl Default for TruncationStrategy {
     fn default() -> Self {
-        TruncationStrategy::LongestFirst
+        Self::LongestFirst
     }
 }
 
 impl std::convert::AsRef<str> for TruncationStrategy {
     fn as_ref(&self) -> &str {
         match self {
-            TruncationStrategy::LongestFirst => "longest_first",
-            TruncationStrategy::OnlyFirst => "only_first",
-            TruncationStrategy::OnlySecond => "only_second",
+            Self::LongestFirst => "longest_first",
+            Self::OnlyFirst => "only_first",
+            Self::OnlySecond => "only_second",
         }
     }
 }

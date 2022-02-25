@@ -37,18 +37,18 @@ pub enum NormalizerWrapper {
 impl Normalizer for NormalizerWrapper {
     fn normalize(&self, normalized: &mut NormalizedString) -> crate::Result<()> {
         match self {
-            NormalizerWrapper::BertNormalizer(bn) => bn.normalize(normalized),
-            NormalizerWrapper::StripNormalizer(sn) => sn.normalize(normalized),
-            NormalizerWrapper::StripAccents(sn) => sn.normalize(normalized),
-            NormalizerWrapper::NFC(nfc) => nfc.normalize(normalized),
-            NormalizerWrapper::NFD(nfd) => nfd.normalize(normalized),
-            NormalizerWrapper::NFKC(nfkc) => nfkc.normalize(normalized),
-            NormalizerWrapper::NFKD(nfkd) => nfkd.normalize(normalized),
-            NormalizerWrapper::Sequence(sequence) => sequence.normalize(normalized),
-            NormalizerWrapper::Lowercase(lc) => lc.normalize(normalized),
-            NormalizerWrapper::Nmt(lc) => lc.normalize(normalized),
-            NormalizerWrapper::Precompiled(lc) => lc.normalize(normalized),
-            NormalizerWrapper::Replace(lc) => lc.normalize(normalized),
+            Self::BertNormalizer(bn) => bn.normalize(normalized),
+            Self::StripNormalizer(sn) => sn.normalize(normalized),
+            Self::StripAccents(sn) => sn.normalize(normalized),
+            Self::NFC(nfc) => nfc.normalize(normalized),
+            Self::NFD(nfd) => nfd.normalize(normalized),
+            Self::NFKC(nfkc) => nfkc.normalize(normalized),
+            Self::NFKD(nfkd) => nfkd.normalize(normalized),
+            Self::Sequence(sequence) => sequence.normalize(normalized),
+            Self::Lowercase(lc) => lc.normalize(normalized),
+            Self::Nmt(lc) => lc.normalize(normalized),
+            Self::Precompiled(lc) => lc.normalize(normalized),
+            Self::Replace(lc) => lc.normalize(normalized),
         }
     }
 }

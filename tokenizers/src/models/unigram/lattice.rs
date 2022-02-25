@@ -16,8 +16,8 @@ struct Hypothesis {
     gx: f64,
 }
 impl Hypothesis {
-    pub fn new(node_ref: NodeRef, next: Option<HypothesisRef>, fx: f64, gx: f64) -> Hypothesis {
-        Hypothesis {
+    pub fn new(node_ref: NodeRef, next: Option<HypothesisRef>, fx: f64, gx: f64) -> Self {
+        Self {
             node_ref,
             next,
             fx,
@@ -26,19 +26,19 @@ impl Hypothesis {
     }
 }
 impl PartialEq for Hypothesis {
-    fn eq(&self, other: &Hypothesis) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         self.fx == other.fx
     }
 }
 impl Eq for Hypothesis {}
 impl PartialOrd for Hypothesis {
-    fn partial_cmp(&self, other: &Hypothesis) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 // TODO Maybe use Ordered Floats (https://docs.rs/ordered-float/1.0.2/ordered_float/)
 impl Ord for Hypothesis {
-    fn cmp(&self, other: &Hypothesis) -> Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         if self.fx < other.fx {
             Ordering::Less
         } else {
@@ -102,8 +102,8 @@ impl PartialEq for Node {
 }
 
 impl Node {
-    pub fn new(id: usize, node_id: usize, pos: usize, length: usize, score: f64) -> Node {
-        Node {
+    pub fn new(id: usize, node_id: usize, pos: usize, length: usize, score: f64) -> Self {
+        Self {
             id,
             node_id,
             pos,
@@ -135,7 +135,7 @@ fn log_sum_exp(x: f64, y: f64, init_mode: bool) -> f64 {
 }
 
 impl<'a> Lattice<'a> {
-    pub fn from(sentence: &'a str, bos_id: usize, eos_id: usize) -> Lattice<'a> {
+    pub fn from(sentence: &'a str, bos_id: usize, eos_id: usize) -> Self {
         let len = sentence.bytes().count();
         let k_reserved_node_size = 16;
         // We are adding 2 tokens, bos and eos
@@ -152,7 +152,7 @@ impl<'a> Lattice<'a> {
         nodes.push(bos);
         nodes.push(eos);
 
-        Lattice {
+        Self {
             sentence,
             len,
             nodes,

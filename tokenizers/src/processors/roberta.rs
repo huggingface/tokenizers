@@ -26,7 +26,7 @@ impl Default for RobertaProcessing {
 
 impl RobertaProcessing {
     pub fn new(sep: (String, u32), cls: (String, u32)) -> Self {
-        RobertaProcessing {
+        Self {
             sep,
             cls,
             ..Default::default()

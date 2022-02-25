@@ -13,13 +13,13 @@ pub struct BPEDecoder {
 
 impl BPEDecoder {
     pub fn new(suffix: String) -> Self {
-        BPEDecoder { suffix }
+        Self { suffix }
     }
 }
 
 impl Default for BPEDecoder {
     fn default() -> Self {
-        BPEDecoder::new("</w>".into())
+        Self::new("</w>".into())
     }
 }
 

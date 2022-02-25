@@ -42,17 +42,17 @@ pub enum PreTokenizerWrapper {
 impl PreTokenizer for PreTokenizerWrapper {
     fn pre_tokenize(&self, normalized: &mut PreTokenizedString) -> crate::Result<()> {
         match self {
-            PreTokenizerWrapper::BertPreTokenizer(bpt) => bpt.pre_tokenize(normalized),
-            PreTokenizerWrapper::ByteLevel(bpt) => bpt.pre_tokenize(normalized),
-            PreTokenizerWrapper::Delimiter(dpt) => dpt.pre_tokenize(normalized),
-            PreTokenizerWrapper::Metaspace(mspt) => mspt.pre_tokenize(normalized),
-            PreTokenizerWrapper::Whitespace(wspt) => wspt.pre_tokenize(normalized),
-            PreTokenizerWrapper::Punctuation(tok) => tok.pre_tokenize(normalized),
-            PreTokenizerWrapper::Sequence(tok) => tok.pre_tokenize(normalized),
-            PreTokenizerWrapper::Split(tok) => tok.pre_tokenize(normalized),
-            PreTokenizerWrapper::WhitespaceSplit(wspt) => wspt.pre_tokenize(normalized),
-            PreTokenizerWrapper::Digits(wspt) => wspt.pre_tokenize(normalized),
-            PreTokenizerWrapper::UnicodeScripts(us) => us.pre_tokenize(normalized),
+            Self::BertPreTokenizer(bpt) => bpt.pre_tokenize(normalized),
+            Self::ByteLevel(bpt) => bpt.pre_tokenize(normalized),
+            Self::Delimiter(dpt) => dpt.pre_tokenize(normalized),
+            Self::Metaspace(mspt) => mspt.pre_tokenize(normalized),
+            Self::Whitespace(wspt) => wspt.pre_tokenize(normalized),
+            Self::Punctuation(tok) => tok.pre_tokenize(normalized),
+            Self::Sequence(tok) => tok.pre_tokenize(normalized),
+            Self::Split(tok) => tok.pre_tokenize(normalized),
+            Self::WhitespaceSplit(wspt) => wspt.pre_tokenize(normalized),
+            Self::Digits(wspt) => wspt.pre_tokenize(normalized),
+            Self::UnicodeScripts(us) => us.pre_tokenize(normalized),
         }
     }
 }
