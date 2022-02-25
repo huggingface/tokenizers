@@ -110,10 +110,6 @@ fn space_leftmost_at_end(sentence: &str) -> usize {
     if let Some(match_) = LEFTMOST_SPACE_AT_END.find(sentence) {
         match_.start()
     } else {
-        // This should never happen since the Regex should match all the time
-        // It didn't match any space, so we can safely return sentence.len() to be the leftmot space and the
-        // end
-        warn!("Warning in leftmost_at_end code path, we expect the regex to match always and it didn't, Please report this.");
         sentence.len()
     }
 }
@@ -121,10 +117,6 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
     if let Some(match_) = RIGHTMOST_SPACE_AT_START.find(sentence) {
         match_.end()
     } else {
-        // This should never happen since the Regex should match all the time
-        // It didn't match any space, so we can safely return 0 to be the rightmost space and the
-        // start
-        warn!("Warning in leftmost_at_end code path, we expect the regex to match always and it didn't, Please report this.");
         0
     }
 }
