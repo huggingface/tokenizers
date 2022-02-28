@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.3]
+
+- [#919] Fixing single_word AddedToken. (regression from 0.11.2)
+- [#916] Deserializing faster `added_tokens` by loading them in batch.
+
 ## [0.11.2]
 
 - [#884] Fixing bad deserialization following inclusion of a default for Punctuation
@@ -135,6 +140,8 @@ advised, but that's not the question)
 split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
+[#919]: https://github.com/huggingface/tokenizers/pull/919
+[#916]: https://github.com/huggingface/tokenizers/pull/916
 [#884]: https://github.com/huggingface/tokenizers/pull/884
 [#882]: https://github.com/huggingface/tokenizers/pull/882
 [#868]: https://github.com/huggingface/tokenizers/pull/868

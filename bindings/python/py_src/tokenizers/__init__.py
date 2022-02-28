@@ -1,4 +1,4 @@
-__version__ = "0.11.0"
+__version__ = "0.11.6"
 
 from typing import Tuple, Union, Tuple, List
 from enum import Enum

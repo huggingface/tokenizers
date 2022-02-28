@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.6]
+
+- [#919] Fixing single_word AddedToken. (regression from 0.11.2)
+- [#916] Deserializing faster `added_tokens` by loading them in batch.
+
 ## [0.11.5]
 
 - [#895] Build `python 3.10` wheels.
@@ -355,6 +360,8 @@ delimiter (Works like `.split(delimiter)`)
 - Fix a bug that was causing crashes in Python 3.5
 
 
+[#919]: https://github.com/huggingface/tokenizers/pull/919
+[#916]: https://github.com/huggingface/tokenizers/pull/916
 [#895]: https://github.com/huggingface/tokenizers/pull/895
 [#884]: https://github.com/huggingface/tokenizers/pull/884
 [#882]: https://github.com/huggingface/tokenizers/pull/882
