@@ -10,10 +10,7 @@ on:
 
 jobs:
   rust_publish:
-    strategy:
-      matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
@@ -27,7 +24,7 @@ jobs:
         uses: actions/cache@v1
         with:
           path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          key: ubuntu-latest-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Publish package rust
         working-directory: ./tokenizers
