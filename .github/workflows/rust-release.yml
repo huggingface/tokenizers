@@ -1,4 +1,4 @@
-name: Node Release
+name: Rust Release
 
 env:
   CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
@@ -30,6 +30,6 @@ jobs:
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Publish package rust
-        working-directory: ./bindings/node
+        working-directory: ./tokenizers
         run: cargo publish --token ${CRATES_TOKEN}
 
