@@ -151,6 +151,8 @@ jobs:
       - name: Build wheel
         working-directory: ./bindings/python
         run: python setup.py bdist_wheel
+        env:
+          CARGO_BUILD_TARGET: aarch64-apple-darwin
 
       - name: Rename wheels
         shell: bash
