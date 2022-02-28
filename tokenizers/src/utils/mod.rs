@@ -205,4 +205,4 @@ macro_rules! impl_serde_type{
 }
 
 // Re-export macro_rules_attribute
-pub use proc_macros::macro_rules_attribute;
+pub use macro_rules_attribute::macro_rules_attribute;
