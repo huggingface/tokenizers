@@ -66,7 +66,7 @@ impl Default for ByteLevel {
 
 impl ByteLevel {
     pub fn new(add_prefix_space: bool, trim_offsets: bool) -> Self {
-        ByteLevel {
+        Self {
             add_prefix_space,
             trim_offsets,
         }

@@ -75,13 +75,13 @@ pub enum UnigramError {
 impl std::fmt::Display for UnigramError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            UnigramError::EmptyVocabulary => {
+            Self::EmptyVocabulary => {
                 write!(f, "The vocabulary is empty but at least <unk> is needed")
             }
-            UnigramError::UnkIdNotInVocabulary => {
+            Self::UnkIdNotInVocabulary => {
                 write!(f, "The `unk_id` is larger than vocabulary size")
             }
-            UnigramError::MissingUnkId => {
+            Self::MissingUnkId => {
                 write!(f, "Encountered an unknown token but `unk_id` is missing")
             }
         }
@@ -134,7 +134,7 @@ impl Unigram {
         let fuse_unk = true;
         let is_optimized = true;
 
-        Ok(Unigram {
+        Ok(Self {
             vocab,
             token_to_ids,
             trie,

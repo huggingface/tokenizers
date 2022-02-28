@@ -79,7 +79,7 @@ impl Word {
     }
 
     pub(super) fn with_capacity(capacity: usize) -> Self {
-        Word {
+        Self {
             symbols: Vec::with_capacity(capacity),
         }
     }

@@ -21,7 +21,7 @@ impl Default for BertProcessing {
 
 impl BertProcessing {
     pub fn new(sep: (String, u32), cls: (String, u32)) -> Self {
-        BertProcessing { sep, cls }
+        Self { sep, cls }
     }
 }
 

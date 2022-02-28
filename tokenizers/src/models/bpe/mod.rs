@@ -30,30 +30,30 @@ pub enum Error {
 
 impl From<io::Error> for Error {
     fn from(error: io::Error) -> Self {
-        Error::Io(error)
+        Self::Io(error)
     }
 }
 
 impl From<serde_json::Error> for Error {
     fn from(error: serde_json::Error) -> Self {
-        Error::JsonError(error)
+        Self::JsonError(error)
     }
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Error::Io(e) => write!(f, "IoError: {}", e),
-            Error::JsonError(e) => write!(f, "JsonError: {}", e),
-            Error::BadVocabulary => write!(f, "Bad vocabulary json file"),
-            Error::BadMerges(line) => write!(f, "Merges text file invalid at line {}", line),
-            Error::MergeTokenOutOfVocabulary(token) => {
+            Self::Io(e) => write!(f, "IoError: {}", e),
+            Self::JsonError(e) => write!(f, "JsonError: {}", e),
+            Self::BadVocabulary => write!(f, "Bad vocabulary json file"),
+            Self::BadMerges(line) => write!(f, "Merges text file invalid at line {}", line),
+            Self::MergeTokenOutOfVocabulary(token) => {
                 write!(f, "Token `{}` out of vocabulary", token)
             }
-            Error::UnkTokenOutOfVocabulary(token) => {
+            Self::UnkTokenOutOfVocabulary(token) => {
                 write!(f, "Unk token `{}` not found in the vocabulary", token)
             }
-            Error::InvalidDropout => write!(f, "Dropout should be between 0 and 1"),
+            Self::InvalidDropout => write!(f, "Dropout should be between 0 and 1"),
         }
     }
 }
@@ -61,8 +61,8 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Io(e) => Some(e),
-            Error::JsonError(e) => Some(e),
+            Self::Io(e) => Some(e),
+            Self::JsonError(e) => Some(e),
             _ => None,
         }
     }

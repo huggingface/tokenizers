@@ -98,7 +98,7 @@ pub enum Piece {
 }
 
 impl Piece {
-    fn extract_id(s: &str) -> Option<Piece> {
+    fn extract_id(s: &str) -> Option<Self> {
         if s.starts_with('$') {
             let rest = &s['$'.len_utf8()..];
 
@@ -135,10 +135,10 @@ impl Piece {
         }
     }
 
-    fn with_type_id(self, type_id: u32) -> Piece {
+    fn with_type_id(self, type_id: u32) -> Self {
         match self {
-            Piece::Sequence { id, .. } => Piece::Sequence { id, type_id },
-            Piece::SpecialToken { id, .. } => Piece::SpecialToken { id, type_id },
+            Self::Sequence { id, .. } => Self::Sequence { id, type_id },
+            Self::SpecialToken { id, .. } => Self::SpecialToken { id, type_id },
         }
     }
 }
@@ -153,10 +153,10 @@ impl TryFrom<String> for Piece {
         match parts.as_slice() {
             [id, type_id] => {
                 let type_id: u32 = type_id.parse().map_err(|_| err())?;
-                let piece = Piece::extract_id(id).ok_or_else(err)?;
+                let piece = Self::extract_id(id).ok_or_else(err)?;
                 Ok(piece.with_type_id(type_id))
             }
-            [id] => Piece::extract_id(id).ok_or_else(err),
+            [id] => Self::extract_id(id).ok_or_else(err),
             _ => Err(err()),
         }
     }

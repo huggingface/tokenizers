@@ -31,7 +31,7 @@ impl AddedToken {
     /// Build this token from the given content, specifying if it is intented to be a
     /// special token. Special tokens are not normalized by default.
     pub fn from<S: Into<String>>(content: S, special: bool) -> Self {
-        AddedToken {
+        Self {
             content: content.into(),
             normalized: !special,
             special,
@@ -69,7 +69,7 @@ impl AddedToken {
 }
 impl Default for AddedToken {
     fn default() -> Self {
-        AddedToken {
+        Self {
             content: String::new(),
             single_word: false,
             lstrip: false,

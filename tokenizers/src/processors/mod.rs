@@ -26,10 +26,10 @@ pub enum PostProcessorWrapper {
 impl PostProcessor for PostProcessorWrapper {
     fn added_tokens(&self, is_pair: bool) -> usize {
         match self {
-            PostProcessorWrapper::Bert(bert) => bert.added_tokens(is_pair),
-            PostProcessorWrapper::ByteLevel(bl) => bl.added_tokens(is_pair),
-            PostProcessorWrapper::Roberta(roberta) => roberta.added_tokens(is_pair),
-            PostProcessorWrapper::Template(template) => template.added_tokens(is_pair),
+            Self::Bert(bert) => bert.added_tokens(is_pair),
+            Self::ByteLevel(bl) => bl.added_tokens(is_pair),
+            Self::Roberta(roberta) => roberta.added_tokens(is_pair),
+            Self::Template(template) => template.added_tokens(is_pair),
         }
     }
 
@@ -40,16 +40,10 @@ impl PostProcessor for PostProcessorWrapper {
         add_special_tokens: bool,
     ) -> Result<Encoding> {
         match self {
-            PostProcessorWrapper::Bert(bert) => {
-                bert.process(encoding, pair_encoding, add_special_tokens)
-            }
-            PostProcessorWrapper::ByteLevel(bl) => {
-                bl.process(encoding, pair_encoding, add_special_tokens)
-            }
-            PostProcessorWrapper::Roberta(roberta) => {
-                roberta.process(encoding, pair_encoding, add_special_tokens)
-            }
-            PostProcessorWrapper::Template(template) => {
+            Self::Bert(bert) => bert.process(encoding, pair_encoding, add_special_tokens),
+            Self::ByteLevel(bl) => bl.process(encoding, pair_encoding, add_special_tokens),
+            Self::Roberta(roberta) => roberta.process(encoding, pair_encoding, add_special_tokens),
+            Self::Template(template) => {
                 template.process(encoding, pair_encoding, add_special_tokens)
             }
         }

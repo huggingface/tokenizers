@@ -151,7 +151,7 @@ pub struct Token {
 }
 impl Token {
     pub fn new(id: u32, value: String, offsets: (usize, usize)) -> Self {
-        Token { id, value, offsets }
+        Self { id, value, offsets }
     }
 }
 
@@ -166,55 +166,55 @@ pub enum InputSequence<'s> {
 
 impl<'s> From<Cow<'s, str>> for InputSequence<'s> {
     fn from(input: Cow<'s, str>) -> Self {
-        InputSequence::Raw(input)
+        Self::Raw(input)
     }
 }
 
 impl<'s> From<&'s str> for InputSequence<'s> {
     fn from(input: &'s str) -> Self {
-        InputSequence::Raw(Cow::Borrowed(input))
+        Self::Raw(Cow::Borrowed(input))
     }
 }
 
 impl From<String> for InputSequence<'_> {
     fn from(input: String) -> Self {
-        InputSequence::Raw(Cow::Owned(input))
+        Self::Raw(Cow::Owned(input))
     }
 }
 
 impl<'s> From<&'s [&'s str]> for InputSequence<'s> {
     fn from(input: &'s [&'s str]) -> Self {
-        InputSequence::PreTokenized(Cow::Borrowed(input))
+        Self::PreTokenized(Cow::Borrowed(input))
     }
 }
 
 impl<'s> From<Vec<&'s str>> for InputSequence<'s> {
     fn from(input: Vec<&'s str>) -> Self {
-        InputSequence::PreTokenized(Cow::Owned(input))
+        Self::PreTokenized(Cow::Owned(input))
     }
 }
 
 impl<'s> From<&'s [String]> for InputSequence<'s> {
     fn from(input: &'s [String]) -> Self {
-        InputSequence::PreTokenizedOwned(Cow::Borrowed(input))
+        Self::PreTokenizedOwned(Cow::Borrowed(input))
     }
 }
 
 impl<'s> From<Vec<String>> for InputSequence<'s> {
     fn from(input: Vec<String>) -> Self {
-        InputSequence::PreTokenizedOwned(Cow::Owned(input))
+        Self::PreTokenizedOwned(Cow::Owned(input))
     }
 }
 
 impl<'s> From<Vec<Cow<'s, str>>> for InputSequence<'s> {
     fn from(input: Vec<Cow<'s, str>>) -> Self {
-        InputSequence::PreTokenizedCow(Cow::Owned(input))
+        Self::PreTokenizedCow(Cow::Owned(input))
     }
 }
 
 impl<'s> From<&'s [Cow<'s, str>]> for InputSequence<'s> {
     fn from(input: &'s [Cow<'s, str>]) -> Self {
-        InputSequence::PreTokenizedCow(Cow::Borrowed(input))
+        Self::PreTokenizedCow(Cow::Borrowed(input))
     }
 }
 
@@ -226,7 +226,7 @@ pub enum EncodeInput<'s> {
 
 impl<'s, I: Into<InputSequence<'s>>> From<I> for EncodeInput<'s> {
     fn from(input: I) -> Self {
-        EncodeInput::Single(input.into())
+        Self::Single(input.into())
     }
 }
 
@@ -236,7 +236,7 @@ where
     I2: Into<InputSequence<'s>>,
 {
     fn from(input: (I1, I2)) -> Self {
-        EncodeInput::Dual(input.0.into(), input.1.into())
+        Self::Dual(input.0.into(), input.1.into())
     }
 }
 
@@ -290,7 +290,7 @@ where
 {
     /// Get an empty TokenizerBuilder.
     pub fn new() -> Self {
-        TokenizerBuilder {
+        Self {
             model: None,
             normalizer: None,
             pre_tokenizer: None,
@@ -494,7 +494,7 @@ where
 {
     /// Instantiate a new Tokenizer, with the given Model
     pub fn new(model: M) -> Self {
-        TokenizerImpl {
+        Self {
             normalizer: None,
             pre_tokenizer: None,
             model,

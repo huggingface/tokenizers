@@ -11,13 +11,13 @@ pub enum ReplacePattern {
 
 impl From<String> for ReplacePattern {
     fn from(v: String) -> Self {
-        ReplacePattern::String(v)
+        Self::String(v)
     }
 }
 
 impl From<&str> for ReplacePattern {
     fn from(v: &str) -> Self {
-        ReplacePattern::String(v.to_owned())
+        Self::String(v.to_owned())
     }
 }
 
@@ -34,7 +34,7 @@ impl std::convert::TryFrom<ReplaceDeserializer> for Replace {
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
     fn try_from(v: ReplaceDeserializer) -> Result<Self> {
-        Replace::new(v.pattern, v.content)
+        Self::new(v.pattern, v.content)
     }
 }
 
@@ -51,12 +51,12 @@ pub struct Replace {
 
 impl Clone for Replace {
     fn clone(&self) -> Self {
-        Replace::new(self.pattern.clone(), &self.content).unwrap()
+        Self::new(self.pattern.clone(), &self.content).unwrap()
     }
 }
 
 impl PartialEq for Replace {
-    fn eq(&self, other: &Replace) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         self.pattern == other.pattern && self.content == other.content
     }
 }

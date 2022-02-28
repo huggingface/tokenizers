@@ -14,13 +14,13 @@ pub enum SplitPattern {
 
 impl From<String> for SplitPattern {
     fn from(v: String) -> Self {
-        SplitPattern::String(v)
+        Self::String(v)
     }
 }
 
 impl From<&str> for SplitPattern {
     fn from(v: &str) -> Self {
-        SplitPattern::String(v.to_owned())
+        Self::String(v.to_owned())
     }
 }
 
@@ -54,18 +54,18 @@ impl<'de> Deserialize<'de> for Split {
         }
 
         let helper = SplitHelper::deserialize(deserializer)?;
-        Split::new(helper.pattern, helper.behavior, helper.invert).map_err(serde::de::Error::custom)
+        Self::new(helper.pattern, helper.behavior, helper.invert).map_err(serde::de::Error::custom)
     }
 }
 
 impl Clone for Split {
     fn clone(&self) -> Self {
-        Split::new(self.pattern.clone(), self.behavior, self.invert).unwrap()
+        Self::new(self.pattern.clone(), self.behavior, self.invert).unwrap()
     }
 }
 
 impl PartialEq for Split {
-    fn eq(&self, other: &Split) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         self.pattern == other.pattern
             && self.behavior == other.behavior
             && self.invert == other.invert

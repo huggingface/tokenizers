@@ -12,7 +12,7 @@ pub struct CharDelimiterSplit {
 
 impl CharDelimiterSplit {
     pub fn new(delimiter: char) -> Self {
-        CharDelimiterSplit { delimiter }
+        Self { delimiter }
     }
 }
 

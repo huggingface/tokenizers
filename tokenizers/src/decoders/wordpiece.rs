@@ -23,7 +23,7 @@ impl WordPiece {
 impl Default for WordPiece {
     fn default() -> Self {
         Self {
-            prefix: String::from("##"),
+            prefix: "##".to_owned(),
             cleanup: true,
         }
     }

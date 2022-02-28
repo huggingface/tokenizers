@@ -284,7 +284,7 @@ impl BPE {
 
     /// Initialize a BpeBuilder model from vocab and merges files
     pub fn from_file(vocab: &str, merges: &str) -> BpeBuilder {
-        BPE::builder().files(vocab.to_owned(), merges.to_owned())
+        Self::builder().files(vocab.to_owned(), merges.to_owned())
     }
 
     /// Read the given files to extract the vocab and merges

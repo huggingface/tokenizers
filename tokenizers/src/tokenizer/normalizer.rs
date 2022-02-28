@@ -41,8 +41,8 @@ where
     /// Unwrap the underlying range
     pub fn unwrap(self) -> T {
         match self {
-            Range::Original(r) => r,
-            Range::Normalized(r) => r,
+            Self::Original(r) => r,
+            Self::Normalized(r) => r,
         }
     }
 

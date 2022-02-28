@@ -69,7 +69,7 @@ where
 
 impl<Label> Default for Trie<Label> {
     fn default() -> Self {
-        Trie {
+        Self {
             root: Node::default(),
         }
     }
@@ -83,7 +83,7 @@ pub struct Node<Label> {
 
 impl<Label> Default for Node<Label> {
     fn default() -> Self {
-        Node {
+        Self {
             is_leaf: false,
             children: HashMap::new(),
         }

@@ -39,10 +39,10 @@ impl Encoding {
         offsets: Vec<Offsets>,
         special_tokens_mask: Vec<u32>,
         attention_mask: Vec<u32>,
-        overflowing: Vec<Encoding>,
+        overflowing: Vec<Self>,
         sequence_ranges: HashMap<usize, Range<usize>>,
     ) -> Self {
-        Encoding {
+        Self {
             ids,
             type_ids,
             tokens,
@@ -56,7 +56,7 @@ impl Encoding {
     }
 
     pub fn with_capacity(len: usize) -> Self {
-        Encoding {
+        Self {
             ids: Vec::with_capacity(len),
             type_ids: Vec::with_capacity(len),
             tokens: Vec::with_capacity(len),
@@ -85,7 +85,7 @@ impl Encoding {
             },
         );
 
-        Encoding {
+        Self {
             ids,
             tokens,
             offsets,
