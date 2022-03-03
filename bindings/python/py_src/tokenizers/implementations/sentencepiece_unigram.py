@@ -85,6 +85,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         show_progress: bool = True,
         special_tokens: List[Union[str, AddedToken]] = [],
         unk_token: Optional[str] = None,
+        length: Optional[int] = None,
     ):
         """
         Train the model using the given iterator
@@ -109,7 +110,11 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
             unk_token=unk_token,
         )
 
-        self._tokenizer.train_from_iterator(iterator, trainer=trainer)
+        self._tokenizer.train_from_iterator(
+            iterator,
+            trainer=trainer,
+            length=length,
+        )
 
     @staticmethod
     def from_spm(filename: str):
