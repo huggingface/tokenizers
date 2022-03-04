@@ -25,9 +25,14 @@ impl Default for BPEDecoder {
 
 impl Decoder for BPEDecoder {
     fn decode(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+        let n = tokens.len() - 1;
         Ok(tokens
             .into_iter()
-            .map(|token| token.replace(&self.suffix, " "))
+            .enumerate()
+            .map(|(i, token)| {
+                let replacement = if i == n { "" } else { " " };
+                token.replace(&self.suffix, replacement)
+            })
             .collect())
     }
 }

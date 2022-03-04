@@ -80,20 +80,23 @@ impl Decoder for Metaspace {
     fn decode(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         Ok(tokens
             .iter()
-            .flat_map(|t| t.chars())
             .enumerate()
-            .filter_map(|(i, c)| {
-                if c == self.replacement {
-                    if i == 0 && self.add_prefix_space {
-                        None
-                    } else {
-                        Some(' ')
-                    }
-                } else {
-                    Some(c)
-                }
+            .map(|(i, token)| {
+                token
+                    .chars()
+                    .flat_map(|c| {
+                        if c == self.replacement {
+                            if i == 0 && self.add_prefix_space {
+                                None
+                            } else {
+                                Some(' ')
+                            }
+                        } else {
+                            Some(c)
+                        }
+                    })
+                    .collect::<String>()
             })
-            .map(|c| c.to_string())
             .collect())
     }
 }
