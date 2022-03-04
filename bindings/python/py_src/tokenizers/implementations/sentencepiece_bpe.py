@@ -88,6 +88,7 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         limit_alphabet: int = 1000,
         initial_alphabet: List[str] = [],
         show_progress: bool = True,
+        length: Optional[int] = None,
     ):
         """ Train the model using the given iterator """
 
@@ -99,4 +100,8 @@ class SentencePieceBPETokenizer(BaseTokenizer):
             initial_alphabet=initial_alphabet,
             show_progress=show_progress,
         )
-        self._tokenizer.train_from_iterator(iterator, trainer=trainer)
+        self._tokenizer.train_from_iterator(
+            iterator,
+            trainer=trainer,
+            length=length,
+        )

@@ -135,6 +135,7 @@ class CharBPETokenizer(BaseTokenizer):
         initial_alphabet: List[str] = [],
         suffix: Optional[str] = "</w>",
         show_progress: bool = True,
+        length: Optional[int] = None,
     ):
         """ Train the model using the given iterator """
 
@@ -147,4 +148,8 @@ class CharBPETokenizer(BaseTokenizer):
             end_of_word_suffix=suffix,
             show_progress=show_progress,
         )
-        self._tokenizer.train_from_iterator(iterator, trainer=trainer)
+        self._tokenizer.train_from_iterator(
+            iterator,
+            trainer=trainer,
+            length=length,
+        )

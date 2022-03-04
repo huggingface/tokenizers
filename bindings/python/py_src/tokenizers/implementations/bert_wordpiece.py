@@ -133,6 +133,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
         ],
         show_progress: bool = True,
         wordpieces_prefix: str = "##",
+        length: Optional[int] = None,
     ):
         """ Train the model using the given iterator """
 
@@ -145,4 +146,8 @@ class BertWordPieceTokenizer(BaseTokenizer):
             show_progress=show_progress,
             continuing_subword_prefix=wordpieces_prefix,
         )
-        self._tokenizer.train_from_iterator(iterator, trainer=trainer)
+        self._tokenizer.train_from_iterator(
+            iterator,
+            trainer=trainer,
+            length=length,
+        )

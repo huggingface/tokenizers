@@ -110,6 +110,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         min_frequency: int = 2,
         show_progress: bool = True,
         special_tokens: List[Union[str, AddedToken]] = [],
+        length: Optional[int] = None,
     ):
         """ Train the model using the given iterator """
 
@@ -120,4 +121,8 @@ class ByteLevelBPETokenizer(BaseTokenizer):
             special_tokens=special_tokens,
             initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
         )
-        self._tokenizer.train_from_iterator(iterator, trainer=trainer)
+        self._tokenizer.train_from_iterator(
+            iterator,
+            trainer=trainer,
+            length=length,
+        )
