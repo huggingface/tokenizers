@@ -194,9 +194,6 @@ mod tests {
         let res = decoder
             .decode(vec!["▁Hey".into(), "▁friend!".into()])
             .unwrap();
-        assert_eq!(
-            res,
-            vec!["H", "e", "y", " ", "f", "r", "i", "e", "n", "d", "!"]
-        )
+        assert_eq!(res, vec!["Hey", " friend!"])
     }
 }
