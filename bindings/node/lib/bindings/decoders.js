@@ -6,4 +6,5 @@ module.exports = {
   metaspaceDecoder: native.decoders_Metaspace,
   bpeDecoder: native.decoders_BPEDecoder,
   ctcDecoder: native.decoders_CTC,
+  sequenceDecoder: native.decoders_Sequence,
 };
