@@ -10,6 +10,7 @@ use tk::decoders::bpe::BPEDecoder;
 use tk::decoders::byte_level::ByteLevel;
 use tk::decoders::ctc::CTC;
 use tk::decoders::metaspace::Metaspace;
+use tk::decoders::sequence::Sequence;
 use tk::decoders::wordpiece::WordPiece;
 use tk::decoders::DecoderWrapper;
 use tk::Decoder;
@@ -45,6 +46,9 @@ impl PyDecoder {
                 DecoderWrapper::ByteLevel(_) => Py::new(py, (PyByteLevelDec {}, base))?.into_py(py),
                 DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base))?.into_py(py),
                 DecoderWrapper::CTC(_) => Py::new(py, (PyCTCDecoder {}, base))?.into_py(py),
+                DecoderWrapper::Sequence(_) => {
+                    Py::new(py, (PySequenceDecoder {}, base))?.into_py(py)
+                }
             },
         })
     }
@@ -322,6 +326,36 @@ impl PyCTCDecoder {
             PyCTCDecoder {},
             CTC::new(pad_token, word_delimiter_token, cleanup).into(),
         )
+    }
+}
+
+/// Sequence Decoder
+///
+/// Args:
+///     decoders (:obj:`List[Decoder]`)
+///         The decoders that need to be chained
+#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name=Sequence)]
+#[text_signature = "(self, decoders)"]
+pub struct PySequenceDecoder {}
+#[pymethods]
+impl PySequenceDecoder {
+    #[new]
+    #[args(decoders)]
+    fn new(decoders_py: &PyList) -> PyResult<(Self, PyDecoder)> {
+        let mut decoders: Vec<DecoderWrapper> = Vec::with_capacity(decoders_py.len());
+        for decoder_py in decoders_py.iter() {
+            let decoder: PyRef<PyDecoder> = decoder_py.extract()?;
+            let decoder = match &decoder.decoder {
+                PyDecoderWrapper::Wrapped(inner) => inner,
+                PyDecoderWrapper::Custom(_) => unimplemented!(),
+            };
+            decoders.push(decoder.read().unwrap().clone());
+        }
+        Ok((PySequenceDecoder {}, Sequence::new(decoders).into()))
+    }
+
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
+        PyTuple::new(py, &[PyList::empty(py)])
     }
 }
 
