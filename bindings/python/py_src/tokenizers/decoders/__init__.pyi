@@ -126,30 +126,6 @@ class Metaspace(Decoder):
         """
         pass
 
-class Sequence(Decoder):
-    """
-    Sequence Decoder
-
-    Args:
-        decoders (:obj:`List[Decoder]`)
-            The decoders that need to be chained
-    """
-
-    def __init__(self, decoders):
-        pass
-    def decode(self, tokens):
-        """
-        Decode the given list of tokens to a final string
-
-        Args:
-            tokens (:obj:`List[str]`):
-                The list of tokens to decode
-
-        Returns:
-            :obj:`str`: The decoded string
-        """
-        pass
-
 class WordPiece(Decoder):
     """
     WordPiece Decoder
