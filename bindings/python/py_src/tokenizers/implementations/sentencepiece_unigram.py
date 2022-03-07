@@ -49,6 +49,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         vocab_size: int = 8000,
         show_progress: bool = True,
         special_tokens: List[Union[str, AddedToken]] = [],
+        initial_alphabet: List[str] = [],
         unk_token: Optional[str] = None,
     ):
         """
@@ -63,6 +64,11 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
                 Whether to show progress bars while training.
             special_tokens (:obj:`List[Union[str, AddedToken]]`):
                 A list of special tokens the model should know of.
+            initial_alphabet (:obj:`List[str]`, `optional`):
+                A list of characters to include in the initial alphabet, even
+                if not seen in the training dataset.
+                If the strings contain more than one character, only the first one
+                is kept.
             unk_token (:obj:`str`, `optional`):
                 The unknown token to be used by the model.
         """
@@ -71,6 +77,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
             vocab_size=vocab_size,
             special_tokens=special_tokens,
             show_progress=show_progress,
+            initial_alphabet=initial_alphabet,
             unk_token=unk_token,
         )
 
@@ -84,6 +91,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         vocab_size: int = 8000,
         show_progress: bool = True,
         special_tokens: List[Union[str, AddedToken]] = [],
+        initial_alphabet: List[str] = [],
         unk_token: Optional[str] = None,
     ):
         """
@@ -98,6 +106,11 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
                 Whether to show progress bars while training.
             special_tokens (:obj:`List[Union[str, AddedToken]]`):
                 A list of special tokens the model should know of.
+            initial_alphabet (:obj:`List[str]`, `optional`):
+                A list of characters to include in the initial alphabet, even
+                if not seen in the training dataset.
+                If the strings contain more than one character, only the first one
+                is kept.
             unk_token (:obj:`str`, `optional`):
                 The unknown token to be used by the model.
         """
@@ -106,6 +119,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
             vocab_size=vocab_size,
             special_tokens=special_tokens,
             show_progress=show_progress,
+            initial_alphabet=initial_alphabet,
             unk_token=unk_token,
         )
 
