@@ -101,6 +101,9 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
                 A list of special tokens the model should know of.
             unk_token (:obj:`str`, `optional`):
                 The unknown token to be used by the model.
+            length (:obj:`int`, `optional`):
+                The total number of sequences in the iterator. This is used to
+                provide meaningful progress tracking
         """
 
         trainer = trainers.UnigramTrainer(
