@@ -48,7 +48,8 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         files: Union[str, List[str]],
         vocab_size: int = 8000,
         show_progress: bool = True,
-        special_tokens: List[Union[str, AddedToken]] = [],
+        special_tokens: Optional[List[Union[str, AddedToken]]] = None,
+        initial_alphabet: Optional[List[str]] = None,
         unk_token: Optional[str] = None,
     ):
         """
@@ -61,16 +62,28 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
                 The size of the final vocabulary, including all tokens and alphabet.
             show_progress (:obj:`bool`):
                 Whether to show progress bars while training.
-            special_tokens (:obj:`List[Union[str, AddedToken]]`):
+            special_tokens (:obj:`List[Union[str, AddedToken]]`, `optional`):
                 A list of special tokens the model should know of.
+            initial_alphabet (:obj:`List[str]`, `optional`):
+                A list of characters to include in the initial alphabet, even
+                if not seen in the training dataset.
+                If the strings contain more than one character, only the first one
+                is kept.
             unk_token (:obj:`str`, `optional`):
                 The unknown token to be used by the model.
         """
+
+        if special_tokens is None:
+            special_tokens = []
+
+        if initial_alphabet is None:
+            initial_alphabet = []
 
         trainer = trainers.UnigramTrainer(
             vocab_size=vocab_size,
             special_tokens=special_tokens,
             show_progress=show_progress,
+            initial_alphabet=initial_alphabet,
             unk_token=unk_token,
         )
 
@@ -83,7 +96,8 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         iterator: Union[Iterator[str], Iterator[Iterator[str]]],
         vocab_size: int = 8000,
         show_progress: bool = True,
-        special_tokens: List[Union[str, AddedToken]] = [],
+        special_tokens: Optional[List[Union[str, AddedToken]]] = None,
+        initial_alphabet: Optional[List[str]] = None,
         unk_token: Optional[str] = None,
         length: Optional[int] = None,
     ):
@@ -97,8 +111,13 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
                 The size of the final vocabulary, including all tokens and alphabet.
             show_progress (:obj:`bool`):
                 Whether to show progress bars while training.
-            special_tokens (:obj:`List[Union[str, AddedToken]]`):
+            special_tokens (:obj:`List[Union[str, AddedToken]]`, `optional`):
                 A list of special tokens the model should know of.
+            initial_alphabet (:obj:`List[str]`, `optional`):
+                A list of characters to include in the initial alphabet, even
+                if not seen in the training dataset.
+                If the strings contain more than one character, only the first one
+                is kept.
             unk_token (:obj:`str`, `optional`):
                 The unknown token to be used by the model.
             length (:obj:`int`, `optional`):
@@ -106,10 +125,17 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
                 provide meaningful progress tracking
         """
 
+        if special_tokens is None:
+            special_tokens = []
+
+        if initial_alphabet is None:
+            initial_alphabet = []
+
         trainer = trainers.UnigramTrainer(
             vocab_size=vocab_size,
             special_tokens=special_tokens,
             show_progress=show_progress,
+            initial_alphabet=initial_alphabet,
             unk_token=unk_token,
         )
 
