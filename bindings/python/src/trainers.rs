@@ -50,7 +50,7 @@ impl PyTrainer {
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.trainer).map_err(|e| {
             exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle PreBpeTrainer: {}",
+                "Error while attempting to pickle PyTrainer: {}",
                 e
             ))
         })?;
@@ -62,7 +62,7 @@ impl PyTrainer {
             Ok(s) => {
                 let unpickled = serde_json::from_slice(s.as_bytes()).map_err(|e| {
                     exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle PreTokenizer: {}",
+                        "Error while attempting to unpickle PyTrainer: {}",
                         e
                     ))
                 })?;
