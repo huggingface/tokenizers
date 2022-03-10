@@ -7,19 +7,6 @@ class Trainer:
     Trainer will return an instance of this class when instantiated.
     """
 
-    def __init__(
-        self,
-        vocab_size=30000,
-        min_frequency=0,
-        show_progress=True,
-        special_tokens=[],
-        limit_alphabet=None,
-        initial_alphabet=[],
-        continuing_subword_prefix=None,
-        end_of_word_suffix=None,
-    ):
-        pass
-
 class BpeTrainer(Trainer):
     """
     Trainer capable of training a BPE model
