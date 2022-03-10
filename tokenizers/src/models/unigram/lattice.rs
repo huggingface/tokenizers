@@ -328,7 +328,7 @@ impl<'a> Lattice<'a> {
         self.sentence
     }
 
-    pub fn populate_marginal(&self, freq: f64, expected: &mut Vec<f64>) -> f64 {
+    pub fn populate_marginal(&self, freq: f64, expected: &mut [f64]) -> f64 {
         let len = self.len();
         let n_nodes = self.nodes.len();
         let mut alpha = vec![0.0; n_nodes];

@@ -1,5 +1,6 @@
 import os
 import pytest
+import copy
 import pickle
 
 from tokenizers import (
@@ -61,9 +62,12 @@ class TestBpeTrainer:
         assert isinstance(
             pickle.loads(pickle.dumps(trainers.BpeTrainer(min_frequency=12))), trainers.BpeTrainer
         )
-        assert pickle.loads(
-            pickle.dumps(trainers.BpeTrainer(min_frequency=12))
-        ) == trainers.BpeTrainer(min_frequency=12)
+
+        assert isinstance(copy.deepcopy(trainers.BpeTrainer(min_frequency=12)), trainers.BpeTrainer)
+        # Make sure everything is correct
+        assert pickle.dumps(
+            pickle.loads(pickle.dumps(trainers.BpeTrainer(min_frequency=12)))
+        ) == pickle.dumps(trainers.BpeTrainer(min_frequency=12))
 
 
 class TestWordPieceTrainer:
@@ -109,6 +113,11 @@ class TestWordPieceTrainer:
         trainer.end_of_word_suffix = None
         assert trainer.continuing_subword_prefix == None
 
+    def test_can_pickle(self):
+        assert isinstance(
+            pickle.loads(pickle.dumps(trainers.WordPieceTrainer())), trainers.WordPieceTrainer
+        )
+
 
 class TestWordLevelTrainer:
     def test_can_modify(self):
@@ -133,6 +142,11 @@ class TestWordLevelTrainer:
         assert trainer.show_progress == True
         trainer.special_tokens = []
         assert trainer.special_tokens == []
+
+    def test_can_pickle(self):
+        assert isinstance(
+            pickle.loads(pickle.dumps(trainers.WordLevelTrainer())), trainers.WordLevelTrainer
+        )
 
 
 class TestUnigram:
@@ -164,6 +178,11 @@ class TestUnigram:
 
         trainer = trainers.BpeTrainer(special_tokens=["<unk>"], show_progress=False)
         bpe_tokenizer.train([train_files["small"]], trainer=trainer)
+
+    def test_can_pickle(self):
+        assert isinstance(
+            pickle.loads(pickle.dumps(trainers.UnigramTrainer())), trainers.UnigramTrainer
+        )
 
     def test_train_with_special_tokens(self):
         filename = "tests/data/dummy-unigram-special_tokens-train.txt"

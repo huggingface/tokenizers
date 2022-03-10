@@ -3,7 +3,7 @@ use std::{convert::From, io, iter, mem};
 
 mod model;
 mod serialization;
-mod trainer;
+pub mod trainer;
 mod word;
 
 type Pair = (u32, u32);
