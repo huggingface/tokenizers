@@ -14,7 +14,7 @@ from tokenizers import (
 from ..utils import data_dir, train_files
 
 
-class TestBPETrainer:
+class TestBpeTrainer:
     def test_can_modify(self):
         trainer = trainers.BpeTrainer(
             vocab_size=12345,
@@ -56,6 +56,14 @@ class TestBPETrainer:
         assert trainer.continuing_subword_prefix == None
         trainer.end_of_word_suffix = None
         assert trainer.continuing_subword_prefix == None
+
+    def test_can_pickle(self):
+        assert isinstance(
+            pickle.loads(pickle.dumps(trainers.BpeTrainer(min_frequency=12))), trainers.BpeTrainer
+        )
+        assert pickle.loads(
+            pickle.dumps(trainers.BpeTrainer(min_frequency=12))
+        ) == trainers.BpeTrainer(min_frequency=12)
 
 
 class TestWordPieceTrainer:
