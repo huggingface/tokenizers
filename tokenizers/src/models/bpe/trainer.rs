@@ -4,6 +4,7 @@ use super::{Pair, WithFirstLastIterator, Word, BPE};
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::progress::{ProgressBar, ProgressStyle};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
@@ -163,7 +164,7 @@ impl BpeTrainerBuilder {
 /// let special_tokens = trainer.train(&mut model).unwrap();
 /// ```
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BpeTrainer {
     /// The minimum frequency a pair must have to produce a merge operation
     pub min_frequency: u32,
