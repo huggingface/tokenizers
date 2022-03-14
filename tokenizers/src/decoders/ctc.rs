@@ -50,7 +50,7 @@ impl Decoder for CTC {
                 let mut replaced = token.replace(&self.pad_token, "");
                 if self.cleanup {
                     replaced =
-                        wordpiece::cleanup(replaced).replace(&self.word_delimiter_token, " ");
+                        wordpiece::cleanup(&replaced).replace(&self.word_delimiter_token, " ");
                 }
                 if replaced.is_empty() {
                     None

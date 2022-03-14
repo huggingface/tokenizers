@@ -28,7 +28,7 @@ impl Default for WordPiece {
         }
     }
 }
-pub fn cleanup(dirty_input: String) -> String {
+pub fn cleanup(dirty_input: &str) -> String {
     dirty_input
         .replace(" .", ".")
         .replace(" ?", "?")
@@ -55,7 +55,7 @@ impl Decoder for WordPiece {
                     *token = format!(" {}", token);
                 }
                 if self.cleanup {
-                    *token = cleanup(token.clone());
+                    *token = cleanup(token);
                 }
                 Ok(token.to_string())
             })

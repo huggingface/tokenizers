@@ -342,7 +342,7 @@ impl Decoder for CustomDecoder {
             let decoded = self
                 .inner
                 .call_method(py, "decode", (tokens,), None)?
-                .extract::<_>(py)?;
+                .extract(py)?;
             Ok(decoded)
         })
     }
