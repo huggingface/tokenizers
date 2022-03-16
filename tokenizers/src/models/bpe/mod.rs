@@ -1,5 +1,5 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
-use std::{convert::From, io, iter, mem};
+use std::{iter, mem};
 
 mod model;
 mod serialization;
@@ -9,63 +9,30 @@ mod word;
 type Pair = (u32, u32);
 
 /// Errors that can be encountered while using or constructing a `BPE` model.
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
     /// An error encountered while reading files mainly.
-    Io(std::io::Error),
+    #[error("IoError: {0}")]
+    Io(#[from] #[source] std::io::Error),
     /// An error forwarded from Serde, while parsing JSON
-    JsonError(serde_json::Error),
+    #[error("JsonError: {0}")]
+    JsonError(#[from] #[source] serde_json::Error),
     /// When the vocab.json file is in the wrong format
+    #[error("Bad vocabulary json file")]
     BadVocabulary,
     /// When the merges.txt file is in the wrong format. This error holds the line
     /// number of the line that caused the error.
+    #[error("Merges text file invalid at line {0}")]
     BadMerges(usize),
     /// If a token found in merges, is not in the vocab
+    #[error("Token `{0}` out of vocabulary")]
     MergeTokenOutOfVocabulary(String),
     /// If the provided unk token is out of vocabulary
+    #[error("Unk token `{0}` not found in the vocabulary")]
     UnkTokenOutOfVocabulary(String),
     /// Dropout not between 0 and 1.
+    #[error("Dropout should be between 0 and 1")]
     InvalidDropout,
-}
-
-impl From<io::Error> for Error {
-    fn from(error: io::Error) -> Self {
-        Self::Io(error)
-    }
-}
-
-impl From<serde_json::Error> for Error {
-    fn from(error: serde_json::Error) -> Self {
-        Self::JsonError(error)
-    }
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Self::Io(e) => write!(f, "IoError: {}", e),
-            Self::JsonError(e) => write!(f, "JsonError: {}", e),
-            Self::BadVocabulary => write!(f, "Bad vocabulary json file"),
-            Self::BadMerges(line) => write!(f, "Merges text file invalid at line {}", line),
-            Self::MergeTokenOutOfVocabulary(token) => {
-                write!(f, "Token `{}` out of vocabulary", token)
-            }
-            Self::UnkTokenOutOfVocabulary(token) => {
-                write!(f, "Unk token `{}` not found in the vocabulary", token)
-            }
-            Self::InvalidDropout => write!(f, "Dropout should be between 0 and 1"),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Io(e) => Some(e),
-            Self::JsonError(e) => Some(e),
-            _ => None,
-        }
-    }
 }
 
 /// Provides access to the `FirstLastIterator` to any Iterator

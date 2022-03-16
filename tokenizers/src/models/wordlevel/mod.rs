@@ -2,7 +2,6 @@ use super::OrderedVocabIter;
 use crate::tokenizer::{Model, Result, Token};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -15,23 +14,12 @@ pub use trainer::*;
 
 type Vocab = HashMap<String, u32>;
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
+    #[error("WordLevel error: Missing [UNK] token from the vocabulary")]
     MissingUnkToken,
+    #[error("Bad vocabulary json file")]
     BadVocabulary,
-}
-impl std::error::Error for Error {}
-
-impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::MissingUnkToken => write!(
-                fmt,
-                "WordLevel error: Missing [UNK] token from the vocabulary"
-            ),
-            Self::BadVocabulary => write!(fmt, "Bad vocabulary json file"),
-        }
-    }
 }
 
 struct Config {

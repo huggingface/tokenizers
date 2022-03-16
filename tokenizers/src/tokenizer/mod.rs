@@ -11,7 +11,6 @@
 
 use std::{
     collections::HashMap,
-    fmt,
     fs::{read_to_string, File},
     io::prelude::*,
     io::BufReader,
@@ -240,16 +239,9 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
+#[error("{0}")]
 pub struct BuilderError(String);
-
-impl std::error::Error for BuilderError {}
-
-impl fmt::Display for BuilderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 /// Builder for Tokenizer structs.
 ///

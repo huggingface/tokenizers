@@ -59,6 +59,7 @@ cached-path = { version = "0.5", optional = true }
 aho-corasick = "0.7"
 paste = "1.0.6"
 macro_rules_attribute = "0.0.2"
+thiserror = "1.0.30"
 
 [features]
 default = ["progressbar", "http"]
