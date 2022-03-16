@@ -132,7 +132,7 @@ impl UnigramTrainer {
             }
             inserted.insert(token.to_string());
             pieces.push((token.to_string(), if score.is_nan() { 0.0 } else { *score }));
-            if pieces.len() == self.vocab_size as usize {
+            if pieces.len() == self.vocab_size as usize - self.special_tokens.len() {
                 break;
             }
         }
