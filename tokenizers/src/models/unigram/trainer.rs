@@ -126,19 +126,7 @@ impl UnigramTrainer {
                 min_score_penalty += min_score_penalty_delta;
             }
         }
-        for (token, score) in model.iter() {
-            if inserted.contains::<str>(token) {
-                continue;
-            }
-            inserted.insert(token.to_string());
-            pieces.push((token.to_string(), if score.is_nan() { 0.0 } else { *score }));
-            if pieces.len() == self.vocab_size as usize - self.special_tokens.len() {
-                break;
-            }
-        }
-        pieces.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
 
-        // Insert the necessary tokens
         let (unk_id, need_add_unk) = if let Some(ref unk) = self.unk_token {
             let unk_id = self.special_tokens.iter().enumerate().find_map(|(i, t)| {
                 if t.content == *unk {
@@ -154,6 +142,24 @@ impl UnigramTrainer {
         } else {
             (None, false)
         };
+
+        for (token, score) in model.iter() {
+            if inserted.contains::<str>(token) {
+                continue;
+            }
+            inserted.insert(token.to_string());
+            pieces.push((token.to_string(), if score.is_nan() { 0.0 } else { *score }));
+
+            let vocab_size_without_special_tokens = 
+                if need_add_unk { self.vocab_size as usize - self.special_tokens.len() - 1 } 
+                else { self.vocab_size as usize - self.special_tokens.len() };
+            if pieces.len() == vocab_size_without_special_tokens {
+                break;
+            }
+        }
+        pieces.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+
+        // Insert the necessary tokens
         let mut special_tokens = self
             .special_tokens
             .iter()
