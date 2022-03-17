@@ -43,29 +43,15 @@ impl Default for TruncationParams {
     }
 }
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum TruncationError {
     /// We are supposed to truncate the pair sequence, but it has not been provided.
+    #[error("Truncation error: Second sequence not provided")]
     SecondSequenceNotProvided,
     /// We cannot truncate the target sequence enough to respect the provided max length.
+    #[error("Truncation error: Sequence to truncate too short to respect the provided max_length")]
     SequenceTooShort,
 }
-
-impl std::fmt::Display for TruncationError {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use TruncationError::*;
-        match self {
-            SecondSequenceNotProvided => {
-                write!(fmt, "Truncation error: Second sequence not provided")
-            }
-            SequenceTooShort => write!(
-                fmt,
-                "Truncation error: Sequence to truncate too short to respect the provided max_length"
-            ),
-        }
-    }
-}
-impl std::error::Error for TruncationError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum TruncationStrategy {

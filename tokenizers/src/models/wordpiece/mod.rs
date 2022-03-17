@@ -6,7 +6,6 @@ use crate::tokenizer::{Model, Result, Token};
 use std::{
     borrow::Cow,
     collections::HashMap,
-    fmt,
     fs::File,
     io::prelude::*,
     io::{BufRead, BufReader},
@@ -17,21 +16,10 @@ mod serialization;
 mod trainer;
 pub use trainer::*;
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
+    #[error("WordPiece error: Missing [UNK] token from the vocabulary")]
     MissingUnkToken,
-}
-impl std::error::Error for Error {}
-
-impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::MissingUnkToken => write!(
-                fmt,
-                "WordPiece error: Missing [UNK] token from the vocabulary"
-            ),
-        }
-    }
 }
 
 type Vocab = HashMap<String, u32>;

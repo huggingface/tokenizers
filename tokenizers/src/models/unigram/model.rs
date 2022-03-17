@@ -65,30 +65,15 @@ impl std::fmt::Debug for Unigram {
 
 static K_UNK_PENALTY: f64 = 10.0;
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum UnigramError {
+    #[error("The vocabulary is empty but at least <unk> is needed")]
     EmptyVocabulary,
+    #[error("The `unk_id` is larger than vocabulary size")]
     UnkIdNotInVocabulary,
+    #[error("Encountered an unknown token but `unk_id` is missing")]
     MissingUnkId,
 }
-
-impl std::fmt::Display for UnigramError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Self::EmptyVocabulary => {
-                write!(f, "The vocabulary is empty but at least <unk> is needed")
-            }
-            Self::UnkIdNotInVocabulary => {
-                write!(f, "The `unk_id` is larger than vocabulary size")
-            }
-            Self::MissingUnkId => {
-                write!(f, "Encountered an unknown token but `unk_id` is missing")
-            }
-        }
-    }
-}
-
-impl std::error::Error for UnigramError {}
 
 impl Default for Unigram {
     fn default() -> Self {
