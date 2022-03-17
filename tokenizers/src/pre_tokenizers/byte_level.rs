@@ -557,7 +557,6 @@ mod tests {
             r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false}"#,
         )
         .unwrap();
-        // true
         assert!(byte_level.use_regex);
 
         // Loading works, new future BC test.
@@ -565,14 +564,12 @@ mod tests {
             r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "use_regex": true}"#,
         )
         .unwrap();
-        // true
         assert!(byte_level.use_regex);
 
         let byte_level: ByteLevel = serde_json::from_str(
             r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "use_regex": false}"#,
         )
         .unwrap();
-        // false
         assert!(!byte_level.use_regex);
     }
 }
