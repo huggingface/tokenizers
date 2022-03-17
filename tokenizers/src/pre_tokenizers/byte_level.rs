@@ -55,7 +55,7 @@ pub struct ByteLevel {
     pub trim_offsets: bool,
 
     /// Whether to use the standard GPT2 regex for whitespace splitting
-    /// Set it to False if you want to use you're own splitting.
+    /// Set it to False if you want to use your own splitting.
     #[serde(default = "default_true")]
     pub use_regex: bool,
 }
