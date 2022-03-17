@@ -14,11 +14,11 @@ pub struct Decoder {
 }
 
 impl tk::Decoder for Decoder {
-    fn decode(&self, tokens: Vec<String>) -> tk::Result<String> {
+    fn decode_chain(&self, tokens: Vec<String>) -> tk::Result<Vec<String>> {
         self.decoder
             .as_ref()
             .ok_or("Uninitialized Decoder")?
-            .decode(tokens)
+            .decode_chain(tokens)
     }
 }
 
@@ -41,7 +41,13 @@ declare_types! {
                 .decode(tokens)
                 .map_err(|e| Error(format!("{}", e)))?;
 
-            Ok(cx.string(output).upcast())
+            let decoded = JsArray::new(&mut cx, output.len() as u32);
+            for (i, token) in output.into_iter().enumerate() {
+                let js_token = cx.string(token);
+                decoded.set(&mut cx, i as u32, js_token)?;
+            }
+
+            Ok(decoded.upcast())
         }
     }
 }
