@@ -156,7 +156,14 @@ class TestWordLevelTrainer:
 class TestUnigram:
     def test_train(self, train_files):
         tokenizer = SentencePieceUnigramTokenizer()
-        tokenizer.train(train_files["small"], show_progress=False)
+        tokenizer.train(
+            train_files["small"], 
+            show_progress=False,
+            special_tokens=["[PAD]", "[SEP]", "[CLS]"],
+            vocab_size=100
+        )
+        
+        assert tokenizer.get_vocab_size() == 100
 
         filename = "tests/data/unigram_trained.json"
         tokenizer.save(filename)
