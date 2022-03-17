@@ -26,7 +26,7 @@ pub enum DecoderWrapper {
 }
 
 impl Decoder for DecoderWrapper {
-    fn decode(&self, tokens: Vec<String>) -> Result<String> {
+    fn decode(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         match self {
             Self::BPE(bpe) => bpe.decode(tokens),
             Self::ByteLevel(bl) => bl.decode(tokens),

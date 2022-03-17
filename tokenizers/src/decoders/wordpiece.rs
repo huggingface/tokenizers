@@ -28,7 +28,7 @@ impl Default for WordPiece {
         }
     }
 }
-pub fn cleanup(dirty_input: String) -> String {
+pub fn cleanup(dirty_input: &str) -> String {
     dirty_input
         .replace(" .", ".")
         .replace(" ?", "?")
@@ -44,12 +44,21 @@ pub fn cleanup(dirty_input: String) -> String {
 }
 
 impl Decoder for WordPiece {
-    fn decode(&self, tokens: Vec<String>) -> Result<String> {
-        let mut output = tokens.join(" ").replace(&format!(" {}", self.prefix), "");
-        if self.cleanup {
-            output = cleanup(output);
-        }
-
-        Ok(output)
+    fn decode(&self, mut tokens: Vec<String>) -> Result<Vec<String>> {
+        tokens
+            .iter_mut()
+            .enumerate()
+            .map(|(i, token)| {
+                if token.starts_with(&self.prefix) {
+                    *token = token.replacen(&self.prefix, "", 1);
+                } else if i != 0 {
+                    *token = format!(" {}", token);
+                }
+                if self.cleanup {
+                    *token = cleanup(token);
+                }
+                Ok(token.to_string())
+            })
+            .collect::<Result<_>>()
     }
 }
