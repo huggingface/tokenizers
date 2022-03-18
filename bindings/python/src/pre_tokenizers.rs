@@ -229,7 +229,7 @@ macro_rules! setter {
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=ByteLevel)]
-#[text_signature = "(self, add_prefix_space=True)"]
+#[text_signature = "(self, add_prefix_space=True, use_regex=True)"]
 pub struct PyByteLevel {}
 #[pymethods]
 impl PyByteLevel {
@@ -243,13 +243,28 @@ impl PyByteLevel {
         setter!(self_, ByteLevel, add_prefix_space, add_prefix_space);
     }
 
+    #[getter]
+    fn get_use_regex(self_: PyRef<Self>) -> bool {
+        getter!(self_, ByteLevel, use_regex)
+    }
+
+    #[setter]
+    fn set_use_regex(self_: PyRef<Self>, use_regex: bool) {
+        setter!(self_, ByteLevel, use_regex, use_regex);
+    }
+
     #[new]
-    #[args(add_prefix_space = "true", _kwargs = "**")]
-    fn new(add_prefix_space: bool, _kwargs: Option<&PyDict>) -> (Self, PyPreTokenizer) {
+    #[args(add_prefix_space = "true", use_regex = "true", _kwargs = "**")]
+    fn new(
+        add_prefix_space: bool,
+        use_regex: bool,
+        _kwargs: Option<&PyDict>,
+    ) -> (Self, PyPreTokenizer) {
         (
             PyByteLevel {},
             ByteLevel::default()
                 .add_prefix_space(add_prefix_space)
+                .use_regex(use_regex)
                 .into(),
         )
     }

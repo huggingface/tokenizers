@@ -125,11 +125,14 @@ declare_types! {
     }
 }
 
-/// byte_level(addPrefixSpace: bool = true)
+/// byte_level(addPrefixSpace: bool = true, useRegex: bool = true)
 fn byte_level(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let mut byte_level = tk::pre_tokenizers::byte_level::ByteLevel::default();
     if let Some(add_prefix_space) = cx.extract_opt::<bool>(0)? {
         byte_level = byte_level.add_prefix_space(add_prefix_space);
+    }
+    if let Some(use_regex) = cx.extract_opt::<bool>(1)? {
+        byte_level = byte_level.use_regex(use_regex);
     }
 
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;

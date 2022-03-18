@@ -53,6 +53,15 @@ pub struct ByteLevel {
     pub add_prefix_space: bool,
     /// Whether the post processing step should trim offsets to avoid including whitespaces.
     pub trim_offsets: bool,
+
+    /// Whether to use the standard GPT2 regex for whitespace splitting
+    /// Set it to False if you want to use your own splitting.
+    #[serde(default = "default_true")]
+    pub use_regex: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for ByteLevel {
@@ -60,15 +69,17 @@ impl Default for ByteLevel {
         Self {
             add_prefix_space: true,
             trim_offsets: true,
+            use_regex: true,
         }
     }
 }
 
 impl ByteLevel {
-    pub fn new(add_prefix_space: bool, trim_offsets: bool) -> Self {
+    pub fn new(add_prefix_space: bool, trim_offsets: bool, use_regex: bool) -> Self {
         Self {
             add_prefix_space,
             trim_offsets,
+            use_regex,
         }
     }
 
@@ -87,6 +98,12 @@ impl ByteLevel {
         self.trim_offsets = v;
         self
     }
+
+    #[must_use]
+    pub fn use_regex(mut self, v: bool) -> Self {
+        self.use_regex = v;
+        self
+    }
 }
 
 /// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
@@ -99,7 +116,11 @@ impl PreTokenizer for ByteLevel {
             if self.add_prefix_space && !normalized.get().starts_with(' ') {
                 normalized.prepend(" ");
             }
-            normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
+            if self.use_regex {
+                normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
+            } else {
+                Ok(vec![normalized])
+            }
         })?;
         pretokenized.normalize(|normalized| {
             let s = normalized.get();
@@ -244,6 +265,21 @@ mod tests {
                 ("Ġgoing", (32, 38)),
                 ("?", (38, 39))
             ]
+        );
+    }
+
+    #[test]
+    fn pre_tokenization_no_regex() {
+        let bytelevel = ByteLevel::default().use_regex(false);
+        let mut pretokenized: PreTokenizedString = "Hello my friend, how is your day going?".into();
+        bytelevel.pre_tokenize(&mut pretokenized).unwrap();
+        assert_eq!(
+            pretokenized
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
+            vec![("ĠHelloĠmyĠfriend,ĠhowĠisĠyourĠdayĠgoing?", (0, 39))]
         );
     }
 
@@ -512,5 +548,28 @@ mod tests {
                 .unwrap(),
             vec!["Hello there dear friend! [PA D]"]
         );
+    }
+
+    #[test]
+    fn deserialization() {
+        // Before use_regex
+        let byte_level: ByteLevel = serde_json::from_str(
+            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false}"#,
+        )
+        .unwrap();
+        assert!(byte_level.use_regex);
+
+        // Loading works, new future BC test.
+        let byte_level: ByteLevel = serde_json::from_str(
+            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "use_regex": true}"#,
+        )
+        .unwrap();
+        assert!(byte_level.use_regex);
+
+        let byte_level: ByteLevel = serde_json::from_str(
+            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "use_regex": false}"#,
+        )
+        .unwrap();
+        assert!(!byte_level.use_regex);
     }
 }
