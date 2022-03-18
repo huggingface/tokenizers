@@ -237,27 +237,27 @@ class TestUnigram:
             "t ",
             "[SEP]",
         ]
-        
+
         tokenizer = Tokenizer(models.Unigram())
         trainer = trainers.UnigramTrainer(
-            show_progress=False, 
-            special_tokens=["[PAD]", "[SEP]", "[CLS]"], 
+            show_progress=False,
+            special_tokens=["[PAD]", "[SEP]", "[CLS]"],
             unk_token="[UNK]",
-            vocab_size=100
+            vocab_size=100,
         )
         tokenizer.train([filename], trainer=trainer)
-        
+
         assert tokenizer.get_vocab_size() == 100
-        
+
         tokenizer = Tokenizer(models.Unigram())
         trainer = trainers.UnigramTrainer(
-            show_progress=False, 
-            special_tokens=["[PAD]", "[SEP]", "[CLS]", "[UNK]"], 
+            show_progress=False,
+            special_tokens=["[PAD]", "[SEP]", "[CLS]", "[UNK]"],
             unk_token="[UNK]",
-            vocab_size=100
+            vocab_size=100,
         )
         tokenizer.train([filename], trainer=trainer)
-        
+
         assert tokenizer.get_vocab_size() == 100
 
     def test_cannot_train_different_model(self):
