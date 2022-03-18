@@ -33,7 +33,17 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
     where
         S: Serializer,
     {
-        let iter = (0u32..(self.vocab_r.len() as u32)).map(|i| (&self.vocab_r[&i], i));
+        // There could be holes so max + 1 is more correct than vocab_r.len()
+        let max = self.vocab_r.iter().map(|(key, _)| key).max().unwrap_or(&0) + 1;
+        let iter = (0..max).filter_map(|i| {
+            if let Some(token) = self.vocab_r.get(&i){
+                Some((token, i))
+            }else{
+                warn!("The OrderedVocab you are attempting to save contains a hole for index {}, your vocabulary could be corrupted !", i);
+                println!("The OrderedVocab you are attempting to save contains a hole for index {}, your vocabulary could be corrupted !", i);
+                None
+            }
+        });
         serializer.collect_map(iter)
     }
 }
@@ -193,5 +203,16 @@ mod tests {
 
         let result = trainer.train(&mut model);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn incomplete_ordered_vocab() {
+        let vocab_r: HashMap<u32, String> =
+            HashMap::from([(0, "Hi".to_string()), (2, "There".to_string())]);
+
+        let ordered = OrderedVocabIter::new(&vocab_r);
+
+        let serialized = serde_json::to_string(&ordered).unwrap();
+        assert_eq!(serialized, "{\"Hi\":0,\"There\":2}");
     }
 }
