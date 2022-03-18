@@ -143,6 +143,11 @@ impl UnigramTrainer {
             (None, false)
         };
 
+        let vocab_size_without_special_tokens = if need_add_unk {
+            self.vocab_size as usize - self.special_tokens.len() - 1
+        } else {
+            self.vocab_size as usize - self.special_tokens.len()
+        };
         for (token, score) in model.iter() {
             if inserted.contains::<str>(token) {
                 continue;
@@ -150,11 +155,6 @@ impl UnigramTrainer {
             inserted.insert(token.to_string());
             pieces.push((token.to_string(), if score.is_nan() { 0.0 } else { *score }));
 
-            let vocab_size_without_special_tokens = if need_add_unk {
-                self.vocab_size as usize - self.special_tokens.len() - 1
-            } else {
-                self.vocab_size as usize - self.special_tokens.len()
-            };
             if pieces.len() == vocab_size_without_special_tokens {
                 break;
             }
