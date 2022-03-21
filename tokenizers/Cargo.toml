@@ -49,7 +49,7 @@ unicode-normalization-alignments = "0.1"
 unicode_categories = "0.1"
 unicode-segmentation = "1.6"
 indicatif = {version = "0.15", optional = true}
-itertools = "0.9"
+itertools = "0.10.3"
 log = "0.4"
 esaxx-rs = "0.1"
 derive_builder = "0.9"
