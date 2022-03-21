@@ -4,7 +4,6 @@ use crate::error::ToPyResult;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3::{PyMappingProtocol, PyObjectProtocol};
 use tk::normalizer::{char_to_bytes, NormalizedString, Range, SplitDelimiterBehavior};
 use tk::pattern::Pattern;
 
@@ -353,10 +352,7 @@ impl PyNormalizedString {
     fn replace(&mut self, pattern: PyPattern, content: &str) -> PyResult<()> {
         ToPyResult(self.normalized.replace(pattern, content)).into()
     }
-}
 
-#[pyproto]
-impl PyObjectProtocol<'p> for PyNormalizedString {
     fn __repr__(&self) -> String {
         format!(
             r#"NormalizedString(original="{}", normalized="{}")"#,
@@ -365,14 +361,11 @@ impl PyObjectProtocol<'p> for PyNormalizedString {
         )
     }
 
-    fn __str__(&'p self) -> &'p str {
+    fn __str__(&self) -> &str {
         self.normalized.get()
     }
-}
 
-#[pyproto]
-impl PyMappingProtocol<'p> for PyNormalizedString {
-    fn __getitem__(&self, range: PyRange<'p>) -> PyResult<Option<PyNormalizedString>> {
+    fn __getitem__(&self, range: PyRange<'_>) -> PyResult<Option<PyNormalizedString>> {
         slice(&self.normalized, &range)
     }
 }

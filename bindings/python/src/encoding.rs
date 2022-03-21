@@ -1,7 +1,6 @@
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3::{PyObjectProtocol, PySequenceProtocol};
 use tk::tokenizer::{Offsets, PaddingDirection};
 use tk::utils::truncation::TruncationDirection;
 use tokenizers as tk;
@@ -18,24 +17,6 @@ pub struct PyEncoding {
 impl From<tk::tokenizer::Encoding> for PyEncoding {
     fn from(v: tk::tokenizer::Encoding) -> Self {
         Self { encoding: v }
-    }
-}
-
-#[pyproto]
-impl PyObjectProtocol for PyEncoding {
-    fn __repr__(&self) -> PyResult<String> {
-        Ok(format!(
-            "Encoding(num_tokens={}, attributes=[ids, type_ids, tokens, offsets, \
-             attention_mask, special_tokens_mask, overflowing])",
-            self.encoding.get_ids().len()
-        ))
-    }
-}
-
-#[pyproto]
-impl PySequenceProtocol for PyEncoding {
-    fn __len__(&self) -> PyResult<usize> {
-        Ok(self.encoding.len())
     }
 }
 
@@ -71,6 +52,18 @@ impl PyEncoding {
             }
             Err(e) => Err(e),
         }
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "Encoding(num_tokens={}, attributes=[ids, type_ids, tokens, offsets, \
+             attention_mask, special_tokens_mask, overflowing])",
+            self.encoding.get_ids().len()
+        ))
+    }
+
+    fn __len__(&self) -> PyResult<usize> {
+        Ok(self.encoding.len())
     }
 
     /// Merge the list of encodings into one final :class:`~tokenizers.Encoding`

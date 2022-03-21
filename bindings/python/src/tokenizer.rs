@@ -6,7 +6,6 @@ use pyo3::class::basic::CompareOp;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3::PyObjectProtocol;
 use tk::models::bpe::BPE;
 use tk::tokenizer::{
     Model, PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
@@ -201,10 +200,8 @@ impl PyAddedToken {
     fn get_normalized(&self) -> bool {
         self.get_token().normalized
     }
-}
-#[pyproto]
-impl PyObjectProtocol for PyAddedToken {
-    fn __str__(&'p self) -> PyResult<&'p str> {
+
+    fn __str__(&self) -> PyResult<&str> {
         Ok(&self.content)
     }
 
