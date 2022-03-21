@@ -2,7 +2,7 @@
 //! This is the CLI binary for the Tokenizers project
 //!
 
-use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
+use clap::{Arg, ArgMatches, Command};
 use std::io::{self, BufRead, Write};
 use tokenizers::models::bpe::BPE;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
@@ -55,33 +55,33 @@ fn shell(matches: &ArgMatches) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let matches = App::new("tokenizers")
+    let matches = Command::new("tokenizers")
         .version("0.0.1")
         .author("Anthony M. <anthony@huggingface.co>")
         .about("Generate custom Tokenizers or use existing ones")
-        .setting(AppSettings::SubcommandRequiredElseHelp)
         .subcommand(
-            SubCommand::with_name("shell")
+            Command::new("shell")
                 .about("Interactively test a tokenizer")
                 .arg(
-                    Arg::with_name("vocab")
+                    Arg::new("vocab")
                         .long("vocab")
                         .value_name("VOCAB_FILE")
                         .help("Path to the vocab.json file")
                         .required(true),
                 )
                 .arg(
-                    Arg::with_name("merges")
+                    Arg::new("merges")
                         .long("merges")
                         .value_name("MERGES_FILE")
                         .help("Path to the merges.txt file")
                         .required(true),
-                ),
+                )
+                .arg_required_else_help(true),
         )
         .get_matches();
 
     match matches.subcommand() {
-        ("shell", matches) => shell(matches.unwrap()),
-        (subcommand, _) => panic!("Unknown subcommand {}", subcommand),
+        Some(("shell", matches)) => shell(matches),
+        _ => panic!("Unknown subcommand")
     }
 }
