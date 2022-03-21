@@ -56,7 +56,9 @@ use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
 ///         Yesterday"``.
 ///
 #[pyclass(dict, module = "tokenizers", name = "AddedToken")]
-#[pyo3(text_signature = "(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True)")]
+#[pyo3(
+    text_signature = "(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True)"
+)]
 pub struct PyAddedToken {
     pub content: String,
     pub is_special_token: bool,
@@ -665,7 +667,9 @@ impl PyTokenizer {
     ///     direction (:obj:`str`, defaults to :obj:`right`):
     ///         Truncate direction
     #[args(kwargs = "**")]
-    #[pyo3(text_signature = "(self, max_length, stride=0, strategy='longest_first', direction='right')")]
+    #[pyo3(
+        text_signature = "(self, max_length, stride=0, strategy='longest_first', direction='right')"
+    )]
     fn enable_truncation(&mut self, max_length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut params = TruncationParams {
             max_length,
@@ -765,7 +769,9 @@ impl PyTokenizer {
     ///         If specified, the length at which to pad. If not specified we pad using the size of
     ///         the longest sequence in a batch.
     #[args(kwargs = "**")]
-    #[pyo3(text_signature = "(self, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]', length=None, pad_to_multiple_of=None)")]
+    #[pyo3(
+        text_signature = "(self, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]', length=None, pad_to_multiple_of=None)"
+    )]
     fn enable_padding(&mut self, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut params = PaddingParams::default();
 
@@ -892,7 +898,9 @@ impl PyTokenizer {
     ///     :class:`~tokenizers.Encoding`: The encoded result
     ///
     #[args(pair = "None", is_pretokenized = "false", add_special_tokens = "true")]
-    #[pyo3(text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True)")]
+    #[pyo3(
+        text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True)"
+    )]
     fn encode(
         &self,
         sequence: &PyAny,

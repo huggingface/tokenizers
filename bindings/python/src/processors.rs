@@ -20,7 +20,12 @@ use tokenizers as tk;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of
 /// a PostProcessor will return an instance of this class when instantiated.
-#[pyclass(dict, module = "tokenizers.processors", name = "PostProcessor")]
+#[pyclass(
+    dict,
+    module = "tokenizers.processors",
+    name = "PostProcessor",
+    subclass
+)]
 #[derive(Clone, Deserialize, Serialize)]
 pub struct PyPostProcessor {
     #[serde(flatten)]

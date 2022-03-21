@@ -21,7 +21,7 @@ use super::error::ToPyResult;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of
 /// a Decoder will return an instance of this class when instantiated.
-#[pyclass(dict, module = "tokenizers.decoders", name = "Decoder")]
+#[pyclass(dict, module = "tokenizers.decoders", name = "Decoder", subclass)]
 #[derive(Clone, Deserialize, Serialize)]
 pub struct PyDecoder {
     #[serde(flatten)]

@@ -24,7 +24,7 @@ use super::error::{deprecation_warning, ToPyResult};
 /// will contain and manage the learned vocabulary.
 ///
 /// This class cannot be constructed directly. Please use one of the concrete models.
-#[pyclass(module = "tokenizers.models", name = "Model")]
+#[pyclass(module = "tokenizers.models", name = "Model", subclass)]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PyModel {
     #[serde(flatten)]
@@ -249,7 +249,9 @@ impl PyModel {
 ///     fuse_unk (:obj:`bool`, `optional`):
 ///         Whether to fuse any subsequent unknown tokens into a single one
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "BPE")]
-#[pyo3(text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None)")]
+#[pyo3(
+    text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None)"
+)]
 pub struct PyBPE {}
 
 impl PyBPE {

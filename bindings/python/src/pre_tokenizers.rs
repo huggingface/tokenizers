@@ -28,7 +28,12 @@ use super::utils::*;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// PreTokenizer will return an instance of this class when instantiated.
-#[pyclass(dict, module = "tokenizers.pre_tokenizers", name = "PreTokenizer")]
+#[pyclass(
+    dict,
+    module = "tokenizers.pre_tokenizers",
+    name = "PreTokenizer",
+    subclass
+)]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PyPreTokenizer {
     #[serde(flatten)]
@@ -231,7 +236,7 @@ macro_rules! setter {
 ///     use_regex (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Set this to :obj:`False` to prevent this `pre_tokenizer` from using
 ///         the GPT2 specific regexp for spliting on whitespace.
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=ByteLevel)]
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "ByteLevel")]
 #[pyo3(text_signature = "(self, add_prefix_space=True, use_regex=True)")]
 pub struct PyByteLevel {}
 #[pymethods]

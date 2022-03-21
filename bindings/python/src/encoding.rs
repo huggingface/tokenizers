@@ -393,7 +393,9 @@ impl PyEncoding {
     ///     pad_token (:obj:`str`, defaults to `[PAD]`):
     ///         The pad token to use
     #[args(kwargs = "**")]
-    #[pyo3(text_signature = "(self, length, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]')")]
+    #[pyo3(
+        text_signature = "(self, length, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]')"
+    )]
     fn pad(&mut self, length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut pad_id = 0;
         let mut pad_type_id = 0;
