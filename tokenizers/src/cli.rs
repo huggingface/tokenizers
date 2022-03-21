@@ -82,6 +82,6 @@ fn main() -> Result<()> {
 
     match matches.subcommand() {
         Some(("shell", matches)) => shell(matches),
-        _ => panic!("Unknown subcommand")
+        _ => panic!("Unknown subcommand"),
     }
 }
