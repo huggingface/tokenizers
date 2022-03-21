@@ -1743,6 +1743,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spm_precompiled",
+ "thiserror",
  "unicode-normalization-alignments",
  "unicode-segmentation",
  "unicode_categories",
