@@ -628,7 +628,7 @@ mod test {
         let py_nfc = py_norm.get_as_subtype().unwrap();
         let gil = Python::acquire_gil();
         assert_eq!(
-            "tokenizers.normalizers.NFC",
+            "NFC",
             py_nfc.as_ref(gil.python()).get_type().name().unwrap()
         );
     }

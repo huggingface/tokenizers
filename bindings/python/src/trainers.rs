@@ -868,7 +868,7 @@ mod tests {
         let py_bpe = py_trainer.get_as_subtype().unwrap();
         let gil = Python::acquire_gil();
         assert_eq!(
-            "tokenizers.trainers.BpeTrainer",
+            "BpeTrainer",
             py_bpe.as_ref(gil.python()).get_type().name().unwrap()
         );
     }

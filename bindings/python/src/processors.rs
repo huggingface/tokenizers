@@ -433,7 +433,7 @@ mod test {
         let py_bert = py_proc.get_as_subtype().unwrap();
         let gil = Python::acquire_gil();
         assert_eq!(
-            "tokenizers.processors.BertProcessing",
+            "BertProcessing",
             py_bert.as_ref(gil.python()).get_type().name().unwrap()
         );
     }

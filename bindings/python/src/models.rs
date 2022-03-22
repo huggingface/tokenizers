@@ -811,7 +811,7 @@ mod test {
         let py_bpe = py_model.get_as_subtype().unwrap();
         let gil = Python::acquire_gil();
         assert_eq!(
-            "tokenizers.models.BPE",
+            "BPE",
             py_bpe.as_ref(gil.python()).get_type().name().unwrap()
         );
     }

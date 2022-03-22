@@ -420,7 +420,7 @@ mod test {
         let py_meta = py_dec.get_as_subtype().unwrap();
         let gil = Python::acquire_gil();
         assert_eq!(
-            "tokenizers.decoders.Metaspace",
+            "Metaspace",
             py_meta.as_ref(gil.python()).get_type().name().unwrap()
         );
     }
