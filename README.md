@@ -33,6 +33,7 @@ We provide bindings to the following languages (more to come!):
   - [Rust](https://github.com/huggingface/tokenizers/tree/master/tokenizers) (Original implementation)
   - [Python](https://github.com/huggingface/tokenizers/tree/master/bindings/python)
   - [Node.js](https://github.com/huggingface/tokenizers/tree/master/bindings/node)
+  - [Ruby](https://github.com/ankane/tokenizers-ruby) (Contributed by @ankane, external repo)
  
 ## Quick example using Python:
 
