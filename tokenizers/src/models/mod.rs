@@ -34,8 +34,8 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
         S: Serializer,
     {
         // There could be holes so max + 1 is more correct than vocab_r.len()
-        let max = self.vocab_r.iter().map(|(key, _)| key).max().unwrap_or(&0) + 1;
-        let iter = (0..max).filter_map(|i| {
+        if let Some(max) = self.vocab_r.iter().map(|(key, _)| key).max() {
+            let iter = (0..*max + 1).filter_map(|i| {
             if let Some(token) = self.vocab_r.get(&i){
                 Some((token, i))
             }else{
@@ -44,7 +44,10 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
                 None
             }
         });
-        serializer.collect_map(iter)
+            serializer.collect_map(iter)
+        } else {
+            serializer.collect_map(std::iter::empty::<(&str, u32)>())
+        }
     }
 }
 
