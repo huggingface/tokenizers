@@ -148,7 +148,7 @@ class TestCustomNormalizer:
 
         assert isinstance(bad, Normalizer)
         assert isinstance(good, Normalizer)
-        with pytest.raises(Exception, match="TypeError: normalize()"):
+        with pytest.raises(Exception, match="TypeError:.*normalize()"):
             bad.normalize_str("Hey there!")
         assert good.normalize_str("Hey there!") == "Hey you!"
         with pytest.raises(

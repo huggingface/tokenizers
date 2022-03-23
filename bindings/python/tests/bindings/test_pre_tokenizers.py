@@ -213,7 +213,7 @@ class TestCustomPreTokenizer:
 
         assert isinstance(bad, PreTokenizer)
         assert isinstance(good, PreTokenizer)
-        with pytest.raises(Exception, match="TypeError: pre_tokenize()"):
+        with pytest.raises(Exception, match="TypeError:.*pre_tokenize()"):
             bad.pre_tokenize_str("Hey there!")
         assert good.pre_tokenize_str("Hey there!") == [
             ("Hey there!", (0, 10)),
