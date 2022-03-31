@@ -20,7 +20,7 @@ jobs:
         node-version: [10.x, 12.x, 13.x, 14.x, 15.x]
         exclude:
           # Exclude node 15 for windows
-          - os: windows-latest
+          - os: windows-2019
             node-version: 15.x
     runs-on: ${{ matrix.os }}
     steps:
