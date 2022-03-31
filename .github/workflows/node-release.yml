@@ -7,8 +7,8 @@ env:
 
 on:
   push:
-    # tags:
-    #   - node-v*
+    tags:
+      - node-v*
 
 jobs:
   rust_publish:
@@ -79,38 +79,38 @@ jobs:
           pip install awscli
           aws s3 sync --exact-timestamps --exclude "*" --include "*.tar.gz" --acl public-read ./bin-package "s3://tokenizers-releases/node/$(node -p -e 'require("./package.json").version')"
 
-          # npm_publish:
-          #   name: Build and publish JS lib
-          #   needs: rust_publish
-          #   runs-on: ubuntu-latest
-          #   steps:
-          #     - name: Checkout repository
-          #       uses: actions/checkout@v1
+  npm_publish:
+    name: Build and publish JS lib
+    needs: rust_publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
 
-          #     - name: Install Node 12.x
-          #       uses: actions/setup-node@v1
-          #       with:
-          #         registry-url: https://registry.npmjs.org
-          #         node-version: 12.x
+      - name: Install Node 12.x
+        uses: actions/setup-node@v1
+        with:
+          registry-url: https://registry.npmjs.org
+          node-version: 12.x
 
-          #     - name: Get NPM cache directory
-          #       id: npm-cache
-          #       run: |
-          #         echo "::set-output name=dir::$(npm config get cache)"
-          #     - name: Cache NPM cache
-          #       uses: actions/cache@v1
-          #       with:
-          #         path: ${{ steps.npm-cache.outputs.dir }}
-          #         key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          #         restore-keys: |
-          #           ${{ runner.os }}-node-
+      - name: Get NPM cache directory
+        id: npm-cache
+        run: |
+          echo "::set-output name=dir::$(npm config get cache)"
+      - name: Cache NPM cache
+        uses: actions/cache@v1
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
-          #     - name: Install npm dependencies
-          #       working-directory: ./bindings/node
-          #       run: npm ci --ignore-scripts
+      - name: Install npm dependencies
+        working-directory: ./bindings/node
+        run: npm ci --ignore-scripts
 
-          #     - name: Build and publish on NPM
-          #       working-directory: ./bindings/node
-          #       run: node build.js --npm-publish
-          #       env:
-          #         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Build and publish on NPM
+        working-directory: ./bindings/node
+        run: node build.js --npm-publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
