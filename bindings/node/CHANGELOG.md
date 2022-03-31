@@ -1,3 +1,15 @@
+## [0.12.0] 
+
+Bump minor version because of a breaking change.
+Using `0.12` to match other bindings.
+
+- [#938] **Breaking change**. Decoder trait is modified to be composable. This is only breaking if you are using decoders on their own. tokenizers should be error free.
+- [#939] Making the regex in `ByteLevel` pre_tokenizer optional (necessary for BigScience)
+
+- [#952] Fixed the vocabulary size of UnigramTrainer output (to respect added tokens)
+- [#954] Fixed not being able to save vocabularies with holes in vocab (ConvBert). Yell warnings instead, but stop panicking.
+- [#961] Added link for Ruby port of `tokenizers`
+
 # [0.8.0](https://github.com/huggingface/tokenizers/compare/node-v0.7.0...node-v0.8.0) (2021-09-02)
 
 ### BREACKING CHANGES
@@ -142,3 +154,12 @@ The files must now be provided first when calling `tokenizer.train(files, traine
 - Fix default special tokens in `BertWordPieceTokenizer` ([10e2d28](https://github.com/huggingface/tokenizers/commit/10e2d286caf517f0977c04cf8e1924aed90403c9))
 - Fix return type of `getSpecialTokensMask` on `Encoding` ([9770be5](https://github.com/huggingface/tokenizers/commit/9770be566175dc9c44dd7dcaa00a57d0e4ca632b))
 - Actually add special tokens in tokenizers implementations ([acef252](https://github.com/huggingface/tokenizers/commit/acef252dacc43adc414175cfc325668ad1488753))
+
+
+[#938]: https://github.com/huggingface/tokenizers/pull/938
+[#939]: https://github.com/huggingface/tokenizers/pull/939
+[#952]: https://github.com/huggingface/tokenizers/pull/952
+[#954]: https://github.com/huggingface/tokenizers/pull/954
+[#962]: https://github.com/huggingface/tokenizers/pull/962
+[#961]: https://github.com/huggingface/tokenizers/pull/961
+[#960]: https://github.com/huggingface/tokenizers/pull/960

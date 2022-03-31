@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] 
+
+Bump minor version because of a breaking change.
+
+- [#938] **Breaking change**. Decoder trait is modified to be composable. This is only breaking if you are using decoders on their own. tokenizers should be error free.
+- [#939] Making the regex in `ByteLevel` pre_tokenizer optional (necessary for BigScience)
+
+- [#952] Fixed the vocabulary size of UnigramTrainer output (to respect added tokens)
+- [#954] Fixed not being able to save vocabularies with holes in vocab (ConvBert). Yell warnings instead, but stop panicking.
+- [#961] Added link for Ruby port of `tokenizers`
+- [#960] Feature gate for `cli` and its `clap` dependency
+
 ## [0.11.3]
 
 - [#919] Fixing single_word AddedToken. (regression from 0.11.2)
@@ -140,6 +152,13 @@ advised, but that's not the question)
 split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
+
+[#938]: https://github.com/huggingface/tokenizers/pull/938
+[#939]: https://github.com/huggingface/tokenizers/pull/939
+[#952]: https://github.com/huggingface/tokenizers/pull/952
+[#954]: https://github.com/huggingface/tokenizers/pull/954
+[#961]: https://github.com/huggingface/tokenizers/pull/961
+[#960]: https://github.com/huggingface/tokenizers/pull/960
 [#919]: https://github.com/huggingface/tokenizers/pull/919
 [#916]: https://github.com/huggingface/tokenizers/pull/916
 [#884]: https://github.com/huggingface/tokenizers/pull/884
