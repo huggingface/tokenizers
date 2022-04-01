@@ -42,23 +42,16 @@ impl Default for CTC {
 }
 
 impl Decoder for CTC {
-    fn decode(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        Ok(tokens
+    fn decode(&self, tokens: Vec<String>) -> Result<String> {
+        let mut output = tokens
             .into_iter()
             .dedup()
-            .filter_map(|token| {
-                let mut replaced = token.replace(&self.pad_token, "");
-                if self.cleanup {
-                    replaced =
-                        wordpiece::cleanup(&replaced).replace(&self.word_delimiter_token, " ");
-                }
-                if replaced.is_empty() {
-                    None
-                } else {
-                    Some(replaced)
-                }
-            })
-            .collect())
+            .join("")
+            .replace(&self.pad_token, "");
+        if self.cleanup {
+            output = wordpiece::cleanup(output).replace(&self.word_delimiter_token, " ");
+        }
+        Ok(output)
     }
 }
 
@@ -74,7 +67,7 @@ mod tests {
             .collect();
         assert_eq!(
             ctc_decoder.decode(id_to_string_result).unwrap(),
-            vec!["h", "e", "l", "l", "o"]
+            "hello".to_string()
         );
     }
     #[test]
@@ -86,7 +79,7 @@ mod tests {
             .collect();
         assert_eq!(
             ctc_decoder.decode(id_to_string_result).unwrap(),
-            vec!["h", "e", "l", "l", "o", " ", "w", "o", "r", "l", "d"]
+            "hello world".to_string()
         );
     }
     #[test]
@@ -95,11 +88,7 @@ mod tests {
         let id_to_string_result = "<pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> A | | <pad> M <pad> <pad> <pad> <pad> A <pad> <pad> N <pad> <pad> <pad> | | | <pad> <pad> <pad> <pad> S <pad> <pad> <pad> A I <pad> D D | | T T <pad> O <pad> | | T H E E | | | <pad> U U <pad> N N <pad> I <pad> <pad> V <pad> <pad> <pad> E R R <pad> <pad> <pad> S E E | | <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> S S <pad> <pad> <pad> <pad> I <pad> R R <pad> <pad> | | | <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> I <pad> <pad> <pad> | <pad> <pad> <pad> E X <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> I <pad> S <pad> <pad> T <pad> <pad> | | <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad>".split(' ').map(|s| s.to_string()).collect();
         assert_eq!(
             ctc_decoder.decode(id_to_string_result).unwrap(),
-            vec![
-                "A", " ", "M", "A", "N", " ", "S", "A", "I", "D", " ", "T", "O", " ", "T", "H",
-                "E", " ", "U", "N", "I", "V", "E", "R", "S", "E", " ", "S", "I", "R", " ", "I",
-                " ", "E", "X", "I", "S", "T", " "
-            ]
+            "A MAN SAID TO THE UNIVERSE SIR I EXIST ".to_string()
         );
     }
     #[test]
@@ -108,13 +97,7 @@ mod tests {
         let id_to_string_result = "<pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> H <pad> I <pad> S S | | <pad> <pad> <pad> I N <pad> <pad> S <pad> T T <pad> <pad> A N C C T <pad> | | | | | <pad> <pad> <pad> <pad> P <pad> <pad> <pad> <pad> A <pad> <pad> N N N <pad> <pad> I <pad> C <pad> <pad> | | <pad> W <pad> <pad> A S <pad> | | <pad> <pad> <pad> F <pad> <pad> O L <pad> <pad> L L O O W E E D | | <pad> B <pad> <pad> <pad> Y <pad> | | | A | | <pad> S S S <pad> M M <pad> <pad> <pad> A L L <pad> <pad> <pad> <pad> L <pad> | | | <pad> <pad> <pad> <pad> S H H <pad> <pad> <pad> <pad> A R R <pad> <pad> P <pad> <pad> | <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> B <pad> <pad> L L <pad> <pad> <pad> <pad> <pad> O W W <pad> <pad> | | | <pad> <pad> <pad> <pad> <pad> <pad> <pad> H <pad> <pad> <pad> <pad> <pad> <pad> <pad> I G H H | | <pad> <pad> O N <pad> | | H <pad> I S S | | <pad> <pad> C H H <pad> <pad> <pad> E <pad> S S <pad> T T <pad> <pad> | | | <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad>".split(' ').map(|s| s.to_string()).collect();
         assert_eq!(
             ctc_decoder.decode(id_to_string_result).unwrap(),
-            vec![
-                "H", "I", "S", " ", "I", "N", "S", "T", "A", "N", "C", "T", " ", "P", "A", "N",
-                "I", "C", " ", "W", "A", "S", " ", "F", "O", "L", "L", "O", "W", "E", "D", " ",
-                "B", "Y", " ", "A", " ", "S", "M", "A", "L", "L", " ", "S", "H", "A", "R", "P",
-                " ", "B", "L", "O", "W", " ", "H", "I", "G", "H", " ", "O", "N", " ", "H", "I",
-                "S", " ", "C", "H", "E", "S", "T", " "
-            ]
+            "HIS INSTANCT PANIC WAS FOLLOWED BY A SMALL SHARP BLOW HIGH ON HIS CHEST ".to_string()
         );
     }
 }

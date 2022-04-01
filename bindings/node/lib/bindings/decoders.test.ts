@@ -12,7 +12,7 @@ describe("wordPieceDecoder", () => {
   it("can decode arrays of strings", () => {
     expect(
       wordPieceDecoder().decode(["Hel", "##lo", "there", "my", "fr", "##iend"])
-    ).toEqual(["Hel", "lo", " there", " my", " fr", "iend"]);
+    ).toEqual("Hello there my friend");
   });
 });
 
@@ -39,6 +39,6 @@ describe("ctcDecoder", () => {
   it("encodes correctly", () => {
     expect(
       ctcDecoder().decode(["<pad>", "h", "h", "e", "e", "l", "l", "<pad>", "l", "l", "o"])
-    ).toEqual(["h", "e", "l", "l", "o"]);
+    ).toEqual("hello");
   });
 });

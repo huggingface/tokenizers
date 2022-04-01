@@ -14,7 +14,7 @@ class TestByteLevel:
 
     def test_decoding(self):
         decoder = ByteLevel()
-        assert decoder.decode(["My", "Ġname", "Ġis", "ĠJohn"]) == ["My name is John"]
+        assert decoder.decode(["My", "Ġname", "Ġis", "ĠJohn"]) == "My name is John"
 
     def test_manual_reload(self):
         byte_level = ByteLevel()
@@ -34,25 +34,11 @@ class TestWordPiece:
 
     def test_decoding(self):
         decoder = WordPiece()
-        assert decoder.decode(["My", "na", "##me", "is", "Jo", "##hn"]) == [
-            "My",
-            " na",
-            "me",
-            " is",
-            " Jo",
-            "hn",
-        ]
-        assert decoder.decode(["I", "'m", "Jo", "##hn"]) == ["I", "'m", " Jo", "hn"]
+        assert decoder.decode(["My", "na", "##me", "is", "Jo", "##hn"]) == "My name is John"
+        assert decoder.decode(["I", "'m", "Jo", "##hn"]) == "I'm John"
         decoder = WordPiece(prefix="__", cleanup=False)
-        assert decoder.decode(["My", "na", "__me", "is", "Jo", "__hn"]) == [
-            "My",
-            " na",
-            "me",
-            " is",
-            " Jo",
-            "hn",
-        ]
-        assert decoder.decode(["I", "'m", "Jo", "__hn"]) == ["I", " 'm", " Jo", "hn"]
+        assert decoder.decode(["My", "na", "__me", "is", "Jo", "__hn"]) == "My name is John"
+        assert decoder.decode(["I", "'m", "Jo", "__hn"]) == "I 'm John"
 
     def test_can_modify(self):
         decoder = WordPiece(prefix="$$", cleanup=False)
@@ -80,9 +66,9 @@ class TestMetaspace:
 
     def test_decoding(self):
         decoder = Metaspace()
-        assert decoder.decode(["▁My", "▁name", "▁is", "▁John"]) == ["My", " name", " is", " John"]
+        assert decoder.decode(["▁My", "▁name", "▁is", "▁John"]) == "My name is John"
         decoder = Metaspace(replacement="-", add_prefix_space=False)
-        assert decoder.decode(["-My", "-name", "-is", "-John"]) == [" My", " name", " is", " John"]
+        assert decoder.decode(["-My", "-name", "-is", "-John"]) == " My name is John"
 
     def test_can_modify(self):
         decoder = Metaspace(replacement="*", add_prefix_space=False)
@@ -107,23 +93,12 @@ class TestBPEDecoder:
 
     def test_decoding(self):
         decoder = BPEDecoder()
-        assert decoder.decode(["My</w>", "na", "me</w>", "is</w>", "Jo", "hn</w>"]) == [
-            "My ",
-            "na",
-            "me ",
-            "is ",
-            "Jo",
-            "hn",
-        ]
+        assert (
+            decoder.decode(["My</w>", "na", "me</w>", "is</w>", "Jo", "hn</w>"])
+            == "My name is John"
+        )
         decoder = BPEDecoder(suffix="_")
-        assert decoder.decode(["My_", "na", "me_", "is_", "Jo", "hn_"]) == [
-            "My ",
-            "na",
-            "me ",
-            "is ",
-            "Jo",
-            "hn",
-        ]
+        assert decoder.decode(["My_", "na", "me_", "is_", "Jo", "hn_"]) == "My name is John"
 
     def test_can_modify(self):
         decoder = BPEDecoder(suffix="123")
@@ -145,13 +120,19 @@ class TestCTCDecoder:
 
     def test_decoding(self):
         decoder = CTC()
-        assert decoder.decode(
-            ["<pad>", "<pad>", "h", "e", "e", "l", "l", "<pad>", "l", "o", "o", "o", "<pad>"]
-        ) == ["h", "e", "l", "l", "o"]
+        assert (
+            decoder.decode(
+                ["<pad>", "<pad>", "h", "e", "e", "l", "l", "<pad>", "l", "o", "o", "o", "<pad>"]
+            )
+            == "hello"
+        )
         decoder = CTC(pad_token="[PAD]")
-        assert decoder.decode(
-            ["[PAD]", "[PAD]", "h", "e", "e", "l", "l", "[PAD]", "l", "o", "o", "o", "[PAD]"]
-        ) == ["h", "e", "l", "l", "o"]
+        assert (
+            decoder.decode(
+                ["[PAD]", "[PAD]", "h", "e", "e", "l", "l", "[PAD]", "l", "o", "o", "o", "[PAD]"]
+            )
+            == "hello"
+        )
 
     def test_can_modify(self):
         decoder = CTC(pad_token="[PAD]")

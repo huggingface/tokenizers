@@ -119,9 +119,9 @@ impl dyn PostProcessor {
     }
 }
 
-/// A `Decoder` changes the raw tokens into its more readable form.
+/// A `Decoder` has the responsibility to merge the given `Vec<String>` in a `String`.
 pub trait Decoder {
-    fn decode(&self, tokens: Vec<String>) -> Result<Vec<String>>;
+    fn decode(&self, tokens: Vec<String>) -> Result<String>;
 }
 
 /// A `Trainer` has the responsibility to train a model. We feed it with lines/sentences
@@ -769,8 +769,7 @@ where
             .collect::<Vec<_>>();
 
         if let Some(decoder) = &self.decoder {
-            let tokens = decoder.decode(tokens)?;
-            Ok(tokens.join(""))
+            decoder.decode(tokens)
         } else {
             Ok(tokens.join(" "))
         }
