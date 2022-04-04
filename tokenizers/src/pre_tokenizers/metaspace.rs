@@ -77,27 +77,23 @@ impl PreTokenizer for Metaspace {
 }
 
 impl Decoder for Metaspace {
-    fn decode(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode(&self, tokens: Vec<String>) -> Result<String> {
         Ok(tokens
             .iter()
+            .flat_map(|t| t.chars())
             .enumerate()
-            .map(|(i, token)| {
-                token
-                    .chars()
-                    .flat_map(|c| {
-                        if c == self.replacement {
-                            if i == 0 && self.add_prefix_space {
-                                None
-                            } else {
-                                Some(' ')
-                            }
-                        } else {
-                            Some(c)
-                        }
-                    })
-                    .collect::<String>()
+            .filter_map(|(i, c)| {
+                if c == self.replacement {
+                    if i == 0 && self.add_prefix_space {
+                        None
+                    } else {
+                        Some(' ')
+                    }
+                } else {
+                    Some(c)
+                }
             })
-            .collect())
+            .collect::<String>())
     }
 }
 
@@ -194,6 +190,6 @@ mod tests {
         let res = decoder
             .decode(vec!["▁Hey".into(), "▁friend!".into()])
             .unwrap();
-        assert_eq!(res, vec!["Hey", " friend!"])
+        assert_eq!(&res, "Hey friend!")
     }
 }

@@ -51,7 +51,7 @@ impl PyDecoder {
 }
 
 impl Decoder for PyDecoder {
-    fn decode(&self, tokens: Vec<String>) -> tk::Result<Vec<String>> {
+    fn decode(&self, tokens: Vec<String>) -> tk::Result<String> {
         self.decoder.decode(tokens)
     }
 }
@@ -98,7 +98,7 @@ impl PyDecoder {
     /// Returns:
     ///     :obj:`str`: The decoded string
     #[text_signature = "(self, tokens)"]
-    fn decode(&self, tokens: Vec<String>) -> PyResult<Vec<String>> {
+    fn decode(&self, tokens: Vec<String>) -> PyResult<String> {
         ToPyResult(self.decoder.decode(tokens)).into()
     }
 }
@@ -337,12 +337,12 @@ impl CustomDecoder {
 }
 
 impl Decoder for CustomDecoder {
-    fn decode(&self, tokens: Vec<String>) -> tk::Result<Vec<String>> {
+    fn decode(&self, tokens: Vec<String>) -> tk::Result<String> {
         Python::with_gil(|py| {
             let decoded = self
                 .inner
                 .call_method(py, "decode", (tokens,), None)?
-                .extract(py)?;
+                .extract::<String>(py)?;
             Ok(decoded)
         })
     }
@@ -396,7 +396,7 @@ where
 }
 
 impl Decoder for PyDecoderWrapper {
-    fn decode(&self, tokens: Vec<String>) -> tk::Result<Vec<String>> {
+    fn decode(&self, tokens: Vec<String>) -> tk::Result<String> {
         match self {
             PyDecoderWrapper::Wrapped(inner) => inner.read().unwrap().decode(tokens),
             PyDecoderWrapper::Custom(inner) => inner.read().unwrap().decode(tokens),

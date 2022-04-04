@@ -145,11 +145,8 @@ impl PreTokenizer for ByteLevel {
 
 /// As a `Decoder`, `ByteLevel` is in charge of converting any byte-level characters to their
 /// unicode counterpart, before merging everything back into a single String.
-/// This decoder will consume the tokens and merge them in one step to alleviate
-/// the fact that single token decoded might be a byte not representable as
-/// as String.
 impl Decoder for ByteLevel {
-    fn decode(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode(&self, tokens: Vec<String>) -> Result<String> {
         let toks = tokens
             .into_iter()
             .flat_map(|t| {
@@ -162,8 +159,8 @@ impl Decoder for ByteLevel {
                     })
                     .unwrap_or_else(|| t.as_bytes().to_vec())
             })
-            .collect::<Vec<u8>>();
-        Ok(vec![String::from_utf8_lossy(&toks).to_string()])
+            .collect::<Vec<_>>();
+        Ok(String::from_utf8_lossy(&toks).into_owned())
     }
 }
 
@@ -287,6 +284,7 @@ mod tests {
     fn decoding() {
         let bytelevel = ByteLevel::default().add_prefix_space(false);
         assert_eq!(
+            "Hello my friend, how is your day going?",
             bytelevel
                 .decode(
                     vec![
@@ -297,8 +295,7 @@ mod tests {
                     .map(|s| s.into())
                     .collect::<Vec<String>>()
                 )
-                .unwrap(),
-            vec!["Hello my friend, how is your day going?"]
+                .unwrap()
         );
     }
 
@@ -350,7 +347,7 @@ mod tests {
                 .iter()
                 .flat_map(|(s, _, _)| s.split("").map(|t| t.into()))
                 .collect::<Vec<_>>();
-            assert_eq!(sample, bytelevel.decode(separated_tokens).unwrap().join(""));
+            assert_eq!(sample, bytelevel.decode(separated_tokens).unwrap());
         }
     }
 
@@ -546,7 +543,7 @@ mod tests {
                     "[PA D]".into()
                 ])
                 .unwrap(),
-            vec!["Hello there dear friend! [PA D]"]
+            "Hello there dear friend! [PA D]"
         );
     }
 
