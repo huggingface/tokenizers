@@ -1,5 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
+use crate::decoders::byte_level::CharKind::{NONE, SYMBOL};
+use crate::normalizer::Range;
+use crate::NormalizedString;
 use onig::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -106,18 +109,186 @@ impl ByteLevel {
     }
 }
 
+#[derive(PartialEq)]
+/// Character kind used by the optimized gpt-2 regex logic
+enum CharKind {
+    LETTER,
+    NUMBER,
+    SYMBOL,
+    WHITESPACE,
+    NONE(bool),
+}
+
+impl CharKind {
+    fn matches(&self, c: &char) -> bool {
+        match self {
+            CharKind::LETTER => c.is_alphabetic(),
+            CharKind::NUMBER => c.is_numeric(),
+            SYMBOL => !c.is_numeric() && !c.is_alphabetic() && !c.is_whitespace(),
+            CharKind::WHITESPACE => c.is_whitespace(),
+            NONE(_) => true,
+        }
+    }
+}
+
+impl From<&char> for CharKind {
+    fn from(c: &char) -> Self {
+        if c.is_numeric() {
+            CharKind::NUMBER
+        } else if c.is_alphabetic() {
+            CharKind::LETTER
+        } else if c.is_whitespace() {
+            CharKind::WHITESPACE
+        } else {
+            CharKind::SYMBOL
+        }
+    }
+}
+
+/// This is an optimized implementation of the GPT-2 REGEX logic
+/// Specifically, this pattern:
+///   r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
+/// The pattern is fairly simple and tokenizes in the following manner:
+///  - Is the current token an apostrophe followed by specific characters
+///  - Maybe a space followed by letters
+///  - Maybe a space followed by numbers
+///  - Maybe a space followed by more whitespace
+///  - Maybe a space followed by anything other than numbers, letters, and whitespace
+pub fn gpt2_regex_optimized(input: &NormalizedString) -> Result<Vec<NormalizedString>> {
+    let mut offset_start = 0usize;
+    let mut offset_end = 0usize;
+    let mut prev_char_kind: CharKind = CharKind::NONE(false);
+    let mut char_queue = VecDeque::with_capacity(4);
+    let mut chars = input.chars();
+    let mut offsets = Vec::with_capacity(chars.size_hint().1.unwrap_or(input.len()) / 4usize);
+    while let Some(c) = char_queue.pop_front().or_else(|| chars.next()) {
+        if c == '\'' {
+            match prev_char_kind {
+                SYMBOL => {
+                    offset_end += 1;
+                }
+                NONE(space) => {
+                    if space {
+                        offset_end += 1;
+                        prev_char_kind = SYMBOL;
+                    } else {
+                        offset_end += 1;
+                        if let Some(next_c) = chars.next() {
+                            if next_c == 's' || next_c == 't' || next_c == 'm' || next_c == 'd' {
+                                offset_end += 1;
+                            } else if next_c == 'r' || next_c == 'v' || next_c == 'l' {
+                                if let Some(next_next_c) = chars.next() {
+                                    if next_next_c == 'e' || next_next_c == 'l' {
+                                        offset_end += 2;
+                                    } else {
+                                        char_queue.push_back(next_c);
+                                        char_queue.push_back(next_next_c);
+                                    }
+                                } else {
+                                    char_queue.push_back(next_c);
+                                }
+                            } else {
+                                char_queue.push_back(next_c);
+                            }
+                        }
+                        offsets.push((offset_start, offset_end));
+                        offset_start = offset_end;
+                        prev_char_kind = CharKind::NONE(false);
+                    }
+                }
+                _ => {
+                    char_queue.push_back(c);
+                    offsets.push((offset_start, offset_end));
+                    offset_start = offset_end;
+                    prev_char_kind = CharKind::NONE(false);
+                }
+            }
+        } else if prev_char_kind.matches(&c) {
+            match prev_char_kind {
+                CharKind::WHITESPACE => {
+                    if c != ' ' {
+                        offset_end += 1;
+                    } else {
+                        if let Some(next_c) = chars.next() {
+                            if next_c.is_whitespace() {
+                                offset_end += 1;
+                                char_queue.push_back(next_c);
+                            } else {
+                                offsets.push((offset_start, offset_end));
+                                offset_start = offset_end;
+                                offset_end += 1;
+                                char_queue.push_back(next_c);
+                                prev_char_kind = NONE(true);
+                            }
+                        } else {
+                            offset_end += 1;
+                            offsets.push((offset_start, offset_end));
+                            offset_start = offset_end;
+                        }
+                    }
+                }
+                CharKind::NONE(prefix_space) => {
+                    if !prefix_space && c == ' ' {
+                        prev_char_kind = CharKind::NONE(true);
+                        offset_end += 1;
+                    } else if c == ' ' {
+                        if let Some(next_c) = chars.next() {
+                            if next_c.is_whitespace() {
+                                prev_char_kind = CharKind::WHITESPACE;
+                                offset_end += 1;
+                                char_queue.push_back(next_c);
+                            } else {
+                                char_queue.push_back(next_c);
+                                offsets.push((offset_start, offset_end));
+                                offset_start = offset_end;
+                                offset_end += 1;
+                                prev_char_kind = CharKind::NONE(true);
+                            }
+                        } else {
+                            offset_end += 1;
+                            offsets.push((offset_start, offset_end));
+                            offset_start = offset_end;
+                        }
+                    } else {
+                        prev_char_kind = CharKind::from(&c);
+                        offset_end += 1;
+                    }
+                }
+                _ => {
+                    offset_end += 1;
+                }
+            }
+        } else {
+            char_queue.push_back(c);
+            offsets.push((offset_start, offset_end));
+            offset_start = offset_end;
+            prev_char_kind = CharKind::NONE(false);
+        }
+    }
+    if offset_end > offset_start {
+        offsets.push((offset_start, offset_end));
+    }
+    Ok(offsets
+        .iter()
+        .map(|offset| {
+            input
+                .slice(Range::Normalized(offset.0..offset.1))
+                .expect("NormalizedString bad split")
+        })
+        .collect())
+}
+
 /// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
 /// their byte-level counterpart. It also splits the input according to the configured regex.
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        let re_ref: &Regex = &RE;
         pretokenized.split(|_, mut normalized| {
             if self.add_prefix_space && !normalized.get().starts_with(' ') {
                 normalized.prepend(" ");
             }
             if self.use_regex {
-                normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
+                gpt2_regex_optimized(&normalized)
             } else {
                 Ok(vec![normalized])
             }
@@ -240,7 +411,7 @@ mod tests {
         Decoder, Encoding, OffsetReferential, OffsetType, PostProcessor, PreTokenizedString,
         PreTokenizer,
     };
-    use std::iter::FromIterator;
+    use std::iter::{zip, FromIterator};
 
     #[test]
     fn pre_tokenization() {
@@ -571,5 +742,32 @@ mod tests {
         )
         .unwrap();
         assert!(!byte_level.use_regex);
+    }
+
+    #[test]
+    fn gpt2_optimized() {
+        let re_ref: &Regex = &RE;
+        let strings = vec![
+            NormalizedString::from(" 'lk 'll it'll 1'll can'tk *('ll#$%^& out ''ll we'lk  This is a    big complicated \n  \n ajs   \n\t\n   hh\nt $%^8 t^ 8oi I'll figure 'lk it out '' we'lk  12#$567UJSDKGhbllasdkjn;;; ; ;"),
+            NormalizedString::from(" "),
+            NormalizedString::from("  "),
+            NormalizedString::from(" \n "),
+            NormalizedString::from(""),
+            NormalizedString::from("justasingleword"),
+            NormalizedString::from(" justasingleword"),
+            NormalizedString::from("#$%^&*"),
+            NormalizedString::from(" #$%^&*"),
+            NormalizedString::from("-23456789"),
+            NormalizedString::from(" -23456789"),
+            NormalizedString::from("23456789"),
+            NormalizedString::from(" 23456789")
+            ];
+        for s in strings {
+            let spl = gpt2_regex_optimized(&s).unwrap();
+            let ol_spl = s.split(re_ref, SplitDelimiterBehavior::Isolated).unwrap();
+            for (new, old) in zip(spl, ol_spl) {
+                assert_eq!(new.get(), old.get());
+            }
+        }
     }
 }

@@ -1,6 +1,7 @@
 use crate::pattern::Pattern;
 use crate::{Offsets, Result};
 use std::ops::{Bound, RangeBounds};
+use std::str::Chars;
 use unicode_normalization_alignments::UnicodeNormalization;
 
 use serde::{Deserialize, Serialize};
@@ -702,6 +703,10 @@ impl NormalizedString {
                 }
             })
             .collect())
+    }
+
+    pub fn chars(&self) -> Chars {
+        self.normalized.chars()
     }
 
     /// Remove any leading space(s) of the normalized string
