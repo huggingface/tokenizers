@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{
     Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,
-    SplitDelimiterBehavior,
 };
 use crate::utils::macro_rules_attribute;
 
@@ -165,21 +164,21 @@ fn gpt2_regex_optimized(input: &NormalizedString) -> Result<Vec<NormalizedString
         if c == '\'' {
             match prev_char_kind {
                 SYMBOL => {
-                    offset_end += 1;
+                    offset_end += c.len_utf8();
                 }
                 NONE(space) => {
                     if space {
-                        offset_end += 1;
+                        offset_end += c.len_utf8();
                         prev_char_kind = SYMBOL;
                     } else {
-                        offset_end += 1;
+                        offset_end += c.len_utf8();
                         if let Some(next_c) = chars.next() {
                             if next_c == 's' || next_c == 't' || next_c == 'm' || next_c == 'd' {
-                                offset_end += 1;
+                                offset_end += next_c.len_utf8();
                             } else if next_c == 'r' || next_c == 'v' || next_c == 'l' {
                                 if let Some(next_next_c) = chars.next() {
                                     if next_next_c == 'e' || next_next_c == 'l' {
-                                        offset_end += 2;
+                                        offset_end += next_c.len_utf8() + next_next_c.len_utf8();
                                     } else {
                                         char_queue.push_back(next_c);
                                         char_queue.push_back(next_next_c);
@@ -207,21 +206,21 @@ fn gpt2_regex_optimized(input: &NormalizedString) -> Result<Vec<NormalizedString
             match prev_char_kind {
                 CharKind::WHITESPACE => {
                     if c != ' ' {
-                        offset_end += 1;
+                        offset_end += c.len_utf8();
                     } else {
                         if let Some(next_c) = chars.next() {
                             if next_c.is_whitespace() {
-                                offset_end += 1;
+                                offset_end += c.len_utf8();
                                 char_queue.push_back(next_c);
                             } else {
                                 offsets.push((offset_start, offset_end));
                                 offset_start = offset_end;
-                                offset_end += 1;
+                                offset_end += c.len_utf8();
                                 char_queue.push_back(next_c);
                                 prev_char_kind = NONE(true);
                             }
                         } else {
-                            offset_end += 1;
+                            offset_end += c.len_utf8();
                             offsets.push((offset_start, offset_end));
                             offset_start = offset_end;
                         }
@@ -230,32 +229,32 @@ fn gpt2_regex_optimized(input: &NormalizedString) -> Result<Vec<NormalizedString
                 CharKind::NONE(prefix_space) => {
                     if !prefix_space && c == ' ' {
                         prev_char_kind = CharKind::NONE(true);
-                        offset_end += 1;
+                        offset_end += c.len_utf8();
                     } else if c == ' ' {
                         if let Some(next_c) = chars.next() {
                             if next_c.is_whitespace() {
                                 prev_char_kind = CharKind::WHITESPACE;
-                                offset_end += 1;
+                                offset_end += c.len_utf8();
                                 char_queue.push_back(next_c);
                             } else {
                                 char_queue.push_back(next_c);
                                 offsets.push((offset_start, offset_end));
                                 offset_start = offset_end;
-                                offset_end += 1;
+                                offset_end += c.len_utf8();
                                 prev_char_kind = CharKind::NONE(true);
                             }
                         } else {
-                            offset_end += 1;
+                            offset_end += c.len_utf8();
                             offsets.push((offset_start, offset_end));
                             offset_start = offset_end;
                         }
                     } else {
                         prev_char_kind = CharKind::from(&c);
-                        offset_end += 1;
+                        offset_end += c.len_utf8();
                     }
                 }
                 _ => {
-                    offset_end += 1;
+                    offset_end += c.len_utf8();
                 }
             }
         } else {
@@ -411,6 +410,7 @@ mod tests {
         Decoder, Encoding, OffsetReferential, OffsetType, PostProcessor, PreTokenizedString,
         PreTokenizer,
     };
+    use crate::SplitDelimiterBehavior;
     use std::iter::{zip, FromIterator};
 
     #[test]
@@ -763,8 +763,8 @@ mod tests {
             NormalizedString::from(" 23456789")
             ];
         for s in strings {
-            let spl = gpt2_regex_optimized(&s).unwrap();
             let ol_spl = s.split(re_ref, SplitDelimiterBehavior::Isolated).unwrap();
+            let spl = gpt2_regex_optimized(&s).unwrap();
             for (new, old) in zip(spl, ol_spl) {
                 assert_eq!(new.get(), old.get());
             }

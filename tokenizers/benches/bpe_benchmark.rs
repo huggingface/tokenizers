@@ -13,10 +13,10 @@ use tokenizers::models::TrainerWrapper;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::tokenizer::{AddedToken, EncodeInput};
-use tokenizers::{NormalizedString, SplitDelimiterBehavior, Tokenizer};
+use tokenizers::Tokenizer;
 
 use common::{iter_bench_encode, iter_bench_encode_batch, iter_bench_train};
-use std::time::Duration;
+use std::ops::Deref;
 
 static BATCH_SIZE: usize = 1_000;
 

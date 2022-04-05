@@ -69,6 +69,6 @@ http = ["reqwest", "cached-path"]
 cli = ["clap"]
 
 [dev-dependencies]
-criterion = { version = "0.3", features = ["html_reports"]}
+criterion = "0.3"
 tempfile = "3.1"
 assert_approx_eq = "1.1"
