@@ -154,7 +154,7 @@ impl From<&char> for CharKind {
 ///  - Maybe a space followed by numbers
 ///  - Maybe a space followed by more whitespace
 ///  - Maybe a space followed by anything other than numbers, letters, and whitespace
-pub fn gpt2_regex_optimized(input: &NormalizedString) -> Result<Vec<NormalizedString>> {
+fn gpt2_regex_optimized(input: &NormalizedString) -> Result<Vec<NormalizedString>> {
     let mut offset_start = 0usize;
     let mut offset_end = 0usize;
     let mut prev_char_kind: CharKind = CharKind::NONE(false);
