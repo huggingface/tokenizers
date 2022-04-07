@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::decoders::byte_level::CharKind::{NONE, SYMBOL};
 use crate::normalizer::Range;
-use crate::NormalizedString;
+use crate::{NormalizedString, SplitDelimiterBehavior};
 use onig::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -153,128 +153,171 @@ impl From<&char> for CharKind {
 ///  - Maybe a space followed by numbers
 ///  - Maybe a space followed by more whitespace
 ///  - Maybe a space followed by anything other than numbers, letters, and whitespace
-fn gpt2_regex_optimized(input: &NormalizedString) -> Result<Vec<NormalizedString>> {
-    let mut offset_start = 0usize;
-    let mut offset_end = 0usize;
-    let mut prev_char_kind: CharKind = CharKind::NONE(false);
-    let mut char_queue = VecDeque::with_capacity(4);
-    let mut chars = input.chars();
-    let mut offsets = Vec::with_capacity(chars.size_hint().1.unwrap_or(input.len()) / 4usize);
-    while let Some(c) = char_queue.pop_front().or_else(|| chars.next()) {
-        if c == '\'' {
-            match prev_char_kind {
-                SYMBOL => {
-                    offset_end += c.len_utf8();
-                }
-                NONE(space) => {
-                    if space {
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[macro_rules_attribute(impl_serde_type!)]
+#[non_exhaustive]
+pub struct OptimizedByteRegex {
+    /// Whether to add a leading space to the first word. This allows to treat the leading word
+    /// just as any other word.
+    pub add_prefix_space: bool,
+}
+
+impl Default for OptimizedByteRegex {
+    fn default() -> Self {
+        Self {
+            add_prefix_space: true,
+        }
+    }
+}
+
+impl OptimizedByteRegex {
+    fn gpt2_regex_optimized(input: &NormalizedString) -> Result<Vec<NormalizedString>> {
+        let mut offset_start = 0usize;
+        let mut offset_end = 0usize;
+        let mut prev_char_kind: CharKind = CharKind::NONE(false);
+        let mut char_queue = VecDeque::with_capacity(4);
+        let mut chars = input.chars();
+        let mut offsets = Vec::with_capacity(chars.size_hint().1.unwrap_or(input.len()) / 4usize);
+        while let Some(c) = char_queue.pop_front().or_else(|| chars.next()) {
+            if c == '\'' {
+                match prev_char_kind {
+                    SYMBOL => {
                         offset_end += c.len_utf8();
-                        prev_char_kind = SYMBOL;
-                    } else {
-                        offset_end += c.len_utf8();
-                        if let Some(next_c) = chars.next() {
-                            if next_c == 's' || next_c == 't' || next_c == 'm' || next_c == 'd' {
-                                offset_end += next_c.len_utf8();
-                            } else if next_c == 'r' || next_c == 'v' || next_c == 'l' {
-                                if let Some(next_next_c) = chars.next() {
-                                    if next_next_c == 'e' || next_next_c == 'l' {
-                                        offset_end += next_c.len_utf8() + next_next_c.len_utf8();
+                    }
+                    NONE(space) => {
+                        if space {
+                            offset_end += c.len_utf8();
+                            prev_char_kind = SYMBOL;
+                        } else {
+                            offset_end += c.len_utf8();
+                            if let Some(next_c) = chars.next() {
+                                if next_c == 's' || next_c == 't' || next_c == 'm' || next_c == 'd'
+                                {
+                                    offset_end += next_c.len_utf8();
+                                } else if next_c == 'r' || next_c == 'v' || next_c == 'l' {
+                                    if let Some(next_next_c) = chars.next() {
+                                        if next_next_c == 'e' || next_next_c == 'l' {
+                                            offset_end +=
+                                                next_c.len_utf8() + next_next_c.len_utf8();
+                                        } else {
+                                            char_queue.push_back(next_c);
+                                            char_queue.push_back(next_next_c);
+                                        }
                                     } else {
                                         char_queue.push_back(next_c);
-                                        char_queue.push_back(next_next_c);
                                     }
                                 } else {
                                     char_queue.push_back(next_c);
                                 }
-                            } else {
-                                char_queue.push_back(next_c);
                             }
+                            offsets.push((offset_start, offset_end));
+                            offset_start = offset_end;
+                            prev_char_kind = CharKind::NONE(false);
                         }
+                    }
+                    _ => {
+                        char_queue.push_back(c);
                         offsets.push((offset_start, offset_end));
                         offset_start = offset_end;
                         prev_char_kind = CharKind::NONE(false);
                     }
                 }
-                _ => {
-                    char_queue.push_back(c);
-                    offsets.push((offset_start, offset_end));
-                    offset_start = offset_end;
-                    prev_char_kind = CharKind::NONE(false);
-                }
-            }
-        } else if prev_char_kind.matches(&c) {
-            match prev_char_kind {
-                CharKind::WHITESPACE => {
-                    if c != ' ' {
-                        offset_end += c.len_utf8();
-                    } else {
-                        if let Some(next_c) = chars.next() {
-                            if next_c.is_whitespace() {
-                                offset_end += c.len_utf8();
-                                char_queue.push_back(next_c);
+            } else if prev_char_kind.matches(&c) {
+                match prev_char_kind {
+                    CharKind::WHITESPACE => {
+                        if c != ' ' {
+                            offset_end += c.len_utf8();
+                        } else {
+                            if let Some(next_c) = chars.next() {
+                                if next_c.is_whitespace() {
+                                    offset_end += c.len_utf8();
+                                    char_queue.push_back(next_c);
+                                } else {
+                                    offsets.push((offset_start, offset_end));
+                                    offset_start = offset_end;
+                                    offset_end += c.len_utf8();
+                                    char_queue.push_back(next_c);
+                                    prev_char_kind = NONE(true);
+                                }
                             } else {
+                                offset_end += c.len_utf8();
                                 offsets.push((offset_start, offset_end));
                                 offset_start = offset_end;
-                                offset_end += c.len_utf8();
-                                char_queue.push_back(next_c);
-                                prev_char_kind = NONE(true);
                             }
-                        } else {
-                            offset_end += c.len_utf8();
-                            offsets.push((offset_start, offset_end));
-                            offset_start = offset_end;
                         }
                     }
-                }
-                CharKind::NONE(prefix_space) => {
-                    if !prefix_space && c == ' ' {
-                        prev_char_kind = CharKind::NONE(true);
-                        offset_end += c.len_utf8();
-                    } else if c == ' ' {
-                        if let Some(next_c) = chars.next() {
-                            if next_c.is_whitespace() {
-                                prev_char_kind = CharKind::WHITESPACE;
-                                offset_end += c.len_utf8();
-                                char_queue.push_back(next_c);
+                    CharKind::NONE(prefix_space) => {
+                        if !prefix_space && c == ' ' {
+                            prev_char_kind = CharKind::NONE(true);
+                            offset_end += c.len_utf8();
+                        } else if c == ' ' {
+                            if let Some(next_c) = chars.next() {
+                                if next_c.is_whitespace() {
+                                    prev_char_kind = CharKind::WHITESPACE;
+                                    offset_end += c.len_utf8();
+                                    char_queue.push_back(next_c);
+                                } else {
+                                    char_queue.push_back(next_c);
+                                    offsets.push((offset_start, offset_end));
+                                    offset_start = offset_end;
+                                    offset_end += c.len_utf8();
+                                    prev_char_kind = CharKind::NONE(true);
+                                }
                             } else {
-                                char_queue.push_back(next_c);
+                                offset_end += c.len_utf8();
                                 offsets.push((offset_start, offset_end));
                                 offset_start = offset_end;
-                                offset_end += c.len_utf8();
-                                prev_char_kind = CharKind::NONE(true);
                             }
                         } else {
+                            prev_char_kind = CharKind::from(&c);
                             offset_end += c.len_utf8();
-                            offsets.push((offset_start, offset_end));
-                            offset_start = offset_end;
                         }
-                    } else {
-                        prev_char_kind = CharKind::from(&c);
+                    }
+                    _ => {
                         offset_end += c.len_utf8();
                     }
                 }
-                _ => {
-                    offset_end += c.len_utf8();
-                }
+            } else {
+                char_queue.push_back(c);
+                offsets.push((offset_start, offset_end));
+                offset_start = offset_end;
+                prev_char_kind = CharKind::NONE(false);
             }
-        } else {
-            char_queue.push_back(c);
-            offsets.push((offset_start, offset_end));
-            offset_start = offset_end;
-            prev_char_kind = CharKind::NONE(false);
         }
+        if offset_end > offset_start {
+            offsets.push((offset_start, offset_end));
+        }
+        Ok(offsets
+            .iter()
+            .map(|offset| {
+                input
+                    .slice(Range::Normalized(offset.0..offset.1))
+                    .expect("NormalizedString bad split")
+            })
+            .collect())
     }
-    if offset_end > offset_start {
-        offsets.push((offset_start, offset_end));
+
+    pub fn new(add_prefix_space: bool) -> Self {
+        Self { add_prefix_space }
     }
-    Ok(offsets
-        .iter()
-        .map(|offset| {
-            input
-                .slice(Range::Normalized(offset.0..offset.1))
-                .expect("NormalizedString bad split")
-        })
-        .collect())
+
+    #[must_use]
+    pub fn add_prefix_space(mut self, v: bool) -> Self {
+        self.add_prefix_space = v;
+        self
+    }
+}
+
+impl PreTokenizer for OptimizedByteRegex {
+    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        pretokenized.split(|_, mut normalized| {
+            if self.add_prefix_space && !normalized.get().starts_with(' ') {
+                normalized.prepend(" ");
+            }
+            OptimizedByteRegex::gpt2_regex_optimized(&normalized)
+        })?;
+        Ok(())
+    }
 }
 
 /// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
@@ -282,12 +325,13 @@ fn gpt2_regex_optimized(input: &NormalizedString) -> Result<Vec<NormalizedString
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        let re_ref: &Regex = &RE;
         pretokenized.split(|_, mut normalized| {
             if self.add_prefix_space && !normalized.get().starts_with(' ') {
                 normalized.prepend(" ");
             }
             if self.use_regex {
-                gpt2_regex_optimized(&normalized)
+                normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
             } else {
                 Ok(vec![normalized])
             }
@@ -410,7 +454,6 @@ mod tests {
         Decoder, Encoding, OffsetReferential, OffsetType, PostProcessor, PreTokenizedString,
         PreTokenizer,
     };
-    use crate::SplitDelimiterBehavior;
     use std::iter::{zip, FromIterator};
 
     #[test]
@@ -764,7 +807,7 @@ mod tests {
             ];
         for s in strings {
             let ol_spl = s.split(re_ref, SplitDelimiterBehavior::Isolated).unwrap();
-            let spl = gpt2_regex_optimized(&s).unwrap();
+            let spl = OptimizedByteRegex::gpt2_regex_optimized(&s).unwrap();
             for (new, old) in zip(spl, ol_spl) {
                 assert_eq!(new.get(), old.get());
             }
