@@ -227,23 +227,21 @@ impl OptimizedByteRegex {
                     CharKind::WHITESPACE => {
                         if c != ' ' {
                             offset_end += c.len_utf8();
-                        } else {
-                            if let Some(next_c) = chars.next() {
-                                if next_c.is_whitespace() {
-                                    offset_end += c.len_utf8();
-                                    char_queue.push_back(next_c);
-                                } else {
-                                    offsets.push((offset_start, offset_end));
-                                    offset_start = offset_end;
-                                    offset_end += c.len_utf8();
-                                    char_queue.push_back(next_c);
-                                    prev_char_kind = NONE(true);
-                                }
-                            } else {
+                        } else if let Some(next_c) = chars.next() {
+                            if next_c.is_whitespace() {
                                 offset_end += c.len_utf8();
+                                char_queue.push_back(next_c);
+                            } else {
                                 offsets.push((offset_start, offset_end));
                                 offset_start = offset_end;
+                                offset_end += c.len_utf8();
+                                char_queue.push_back(next_c);
+                                prev_char_kind = NONE(true);
                             }
+                        } else {
+                            offset_end += c.len_utf8();
+                            offsets.push((offset_start, offset_end));
+                            offset_start = offset_end;
                         }
                     }
                     CharKind::NONE(prefix_space) => {
