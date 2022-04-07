@@ -10,7 +10,7 @@ Simple checklist on how to make releases for `tokenizers`.
   - `cd tokenizers && cargo bench` (needs to be run on latest release tag to measure difference if it's your first time)
 - Run all `transformers` tests. (`transformers` is a big user of `tokenizers` we need
   to make sure we don't break it, testing is one way to make sure nothing unforeseen
-  has been done.
+  has been done.)
   - Run all fast tests at the VERY least (not just the tokenization tests).
 - **If any breaking change has been done**, make sure the version can safely be increased for transformers users (`tokenizers` version need to make sure users don't upgrade before `transformers` has). [link](https://github.com/huggingface/transformers/blob/main/setup.py#L154)
   For instance `tokenizers>=0.10,<0.11` so we can safely upgrade to `0.11` without impacting
