@@ -31,7 +31,7 @@ Simple checklist on how to make releases for `tokenizers`.
     - Mark it as pre-release
     - Use new version name with a new tag (create on publish) `vX.X.X`.
     - Copy paste the new part of the `CHANGELOG.md`
-- !! Click on `Publish release`. This will start the whole process of building a uploading
+- ⚠️  Click on `Publish release`. This will start the whole process of building a uploading
   the new version on `crates.io`, there's no going back after this
 - Go to the [Actions](https://github.com/huggingface/tokenizers/actions) tab and check everything works smoothly.
 - If anything fails, you need to fix the CI/CD to make it work again. Since your package was not uploaded to the repository properly, you can try again.
