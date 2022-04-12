@@ -11,7 +11,15 @@ Simple checklist on how to make releases for `tokenizers`.
 - Run all `transformers` tests. (`transformers` is a big user of `tokenizers` we need
   to make sure we don't break it, testing is one way to make sure nothing unforeseen
   has been done.)
-  - Run all fast tests at the VERY least (not just the tokenization tests).
+  - Run all fast tests at the VERY least (not just the tokenization tests). (`RUN_PIPELINE_TESTS=1 CUDA_VISIBLE_DEVICES=-1 pytest -sv tests/`)
+  - When all *fast*  tests work, then we can also (it's recommended) run the whole `transformers`
+  test suite. 
+    - Rebase this [PR](https://github.com/huggingface/transformers/pull/16708).
+        This will create new docker images ready to run the tests suites with `tokenizers` from the main branch.
+    - Wait for actions to finish
+    - Rebase this [PR](https://github.com/huggingface/transformers/pull/16712)
+        This will run the actual full test suite.
+    - Check the results.
 - **If any breaking change has been done**, make sure the version can safely be increased for transformers users (`tokenizers` version need to make sure users don't upgrade before `transformers` has). [link](https://github.com/huggingface/transformers/blob/main/setup.py#L154)
   For instance `tokenizers>=0.10,<0.11` so we can safely upgrade to `0.11` without impacting
   current users
