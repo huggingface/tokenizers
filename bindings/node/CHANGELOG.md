@@ -1,13 +1,13 @@
 ## [0.12.1] 
 
-- [#938] **Breaking change**. Reverted (https://github.com/huggingface/transformers/issues/16520)
+- [#938] **Reverted breaking change**. https://github.com/huggingface/transformers/issues/16520
 
-## [0.12.0] 
+## [0.12.0] YANKED
 
 Bump minor version because of a breaking change.
 Using `0.12` to match other bindings.
 
-- [#938] ~~**Breaking change**. Decoder trait is modified to be composable. This is only breaking if you are using decoders on their own. tokenizers should be error free.~~
+- [#938] [REVERTED IN 0.12.1] **Breaking change**. Decoder trait is modified to be composable. This is only breaking if you are using decoders on their own. tokenizers should be error free.
 - [#939] Making the regex in `ByteLevel` pre_tokenizer optional (necessary for BigScience)
 
 - [#952] Fixed the vocabulary size of UnigramTrainer output (to respect added tokens)
