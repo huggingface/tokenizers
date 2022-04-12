@@ -4,11 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] 
+
+- [#938] **Breaking change**. Reverted (https://github.com/huggingface/transformers/issues/16520)
+
 ## [0.12.0] 
 
 Bump minor version because of a breaking change.
 
-- [#938] **Breaking change**. Decoder trait is modified to be composable. This is only breaking if you are using decoders on their own. tokenizers should be error free.
+- [#938] ~~**Breaking change**. Decoder trait is modified to be composable. This is only breaking if you are using decoders on their own. tokenizers should be error free.~~
 - [#939] Making the regex in `ByteLevel` pre_tokenizer optional (necessary for BigScience)
 
 - [#952] Fixed the vocabulary size of UnigramTrainer output (to respect added tokens)
