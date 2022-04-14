@@ -228,6 +228,9 @@ macro_rules! setter {
 ///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
+///     use_regex (:obj:`bool`, `optional`, defaults to :obj:`True`):
+///         Set this to :obj:`False` to prevent this `pre_tokenizer` from using
+///         the GPT2 specific regexp for spliting on whitespace.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name=ByteLevel)]
 #[text_signature = "(self, add_prefix_space=True, use_regex=True)"]
 pub struct PyByteLevel {}
