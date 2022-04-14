@@ -100,6 +100,9 @@ class ByteLevel(PreTokenizer):
         add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
             Whether to add a space to the first word if there isn't already one. This
             lets us treat `hello` exactly like `say hello`.
+        use_regex (:obj:`bool`, `optional`, defaults to :obj:`True`):
+            Set this to :obj:`False` to prevent this `pre_tokenizer` from using
+            the GPT2 specific regexp for spliting on whitespace.
     """
 
     def __init__(self, add_prefix_space=True, use_regex=True):
