@@ -10,10 +10,12 @@ on:
 
 jobs:
   build:
-    uses: huggingface/doc-builder/.github/workflows/build_main_documentation.yml@main
+    uses: huggingface/doc-builder/.github/workflows/build_pr_documentation.yml@gh_w_tokenizers
     with:
       commit_sha: ${{ github.sha }}
       package: tokenizers
       path_to_docs: tokenizers/docs/source-doc-builder/
+      package_path: tokenizers/bindings/python/
+      install_rust: true
     secrets:
       token: ${{ secrets.HUGGINGFACE_PUSH }}
