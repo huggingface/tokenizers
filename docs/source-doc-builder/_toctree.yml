@@ -1,0 +1,40 @@
+- sections: 
+  - local: index
+    title: 🤗 Tokenizers
+  - local: quicktour
+    title: Quicktour
+  - local: installation
+    title: Installation
+  - local: pipeline
+    title: The tokenization pipeline
+  - local: components
+    title: Components
+  - local: training_from_memory
+    title: Training from memory
+  title: Getting started
+- sections:
+  - local: api/input-sequences
+    title: Input Sequences
+  - local: api/encode-inputs
+    title: Encode Inputs
+  - local: api/tokenizer
+    title: Tokenizer
+  - local: api/encoding
+    title: Encoding
+  - local: api/added-tokens
+    title: Added Tokens
+  - local: api/models
+    title: Models
+  - local: api/normalizers
+    title: Normalizers
+  - local: api/pre-tokenizers
+    title: Pre-tokenizers
+  - local: api/post-processors
+    title: Post-processors
+  - local: api/trainers
+    title: Trainers
+  - local: api/decoders
+    title: Decoders
+  - local: api/visualizer
+    title: Visualizer
+  title: API
