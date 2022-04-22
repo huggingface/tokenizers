@@ -8,7 +8,7 @@ extras["dev"] = extras["testing"]
 
 setup(
     name="tokenizers",
-    version="0.12.1",
+    version="0.12.1.dev0",
     description="Fast and Customizable Tokenizers",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
