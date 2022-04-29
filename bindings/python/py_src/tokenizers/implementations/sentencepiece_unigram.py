@@ -147,16 +147,29 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
 
     @staticmethod
     def from_spm(filename: str):
+        # Because sentencepiece_model_pb2 requires protobuf,
+        # check whether protobuf is installed beforehand.
         try:
-            import sys
-
-            sys.path.append(".")
-
-            import sentencepiece_model_pb2 as model
-        except Exception:
+            import google.protobuf
+        except ModuleNotFoundError as e:
             raise Exception(
-                "You don't seem to have the required protobuf file, in order to use this function you need to run `pip install protobuf` and `wget https://raw.githubusercontent.com/google/sentencepiece/master/python/src/sentencepiece/sentencepiece_model_pb2.py` for us to be able to read the intrinsics of your spm_file. `pip install sentencepiece` is not required."
+                "You need to run `pip install protobuf for us to be able to read the intrinsics of your spm_file."
             )
+
+        try:
+            import sentencepiece.sentencepiece_model_pb2 as model
+        except ModuleNotFoundError as e:
+            if 'sentencepiece' in str(e):
+                # If sentencepiece is not installed, you need the required protobuf file
+                # in the current directory.
+                try:
+                    import sys
+                    sys.path.append(".")
+                    import sentencepiece_model_pb2 as model
+                except Exception:
+                    raise Exception(
+                        "You don't seem to have the required protobuf file, in order to use this function you need to run `wget https://raw.githubusercontent.com/google/sentencepiece/master/python/src/sentencepiece/sentencepiece_model_pb2.py` for us to be able to read the intrinsics of your spm_file. Otherwise you need to `pip install sentencepiece`."
+                    )
 
         m = model.ModelProto()
         m.ParseFromString(open(filename, "rb").read())
