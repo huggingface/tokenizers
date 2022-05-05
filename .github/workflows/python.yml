@@ -63,6 +63,13 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
 
+      - name: Install Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+          architecture: "x64"
+
+
       - name: Cache Cargo Registry
         uses: actions/cache@v1
         with:
@@ -87,12 +94,6 @@ jobs:
         with:
           command: clippy
           args: --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
-
-      - name: Install Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: 3.9
-          architecture: "x64"
 
       - name: Install
         working-directory: ./bindings/python

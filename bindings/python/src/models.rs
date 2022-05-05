@@ -24,7 +24,7 @@ use super::error::{deprecation_warning, ToPyResult};
 /// will contain and manage the learned vocabulary.
 ///
 /// This class cannot be constructed directly. Please use one of the concrete models.
-#[pyclass(module = "tokenizers.models", name=Model)]
+#[pyclass(module = "tokenizers.models", name = "Model", subclass)]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PyModel {
     #[serde(flatten)]
@@ -132,7 +132,7 @@ impl PyModel {
     ///
     /// Returns:
     ///     A :obj:`List` of :class:`~tokenizers.Token`: The generated tokens
-    #[text_signature = "(self, sequence)"]
+    #[pyo3(text_signature = "(self, sequence)")]
     fn tokenize(&self, sequence: &str) -> PyResult<Vec<PyToken>> {
         Ok(ToPyResult(self.model.read().unwrap().tokenize(sequence))
             .into_py()?
@@ -149,7 +149,7 @@ impl PyModel {
     ///
     /// Returns:
     ///     :obj:`int`: The ID associated to the token
-    #[text_signature = "(self, tokens)"]
+    #[pyo3(text_signature = "(self, tokens)")]
     fn token_to_id(&self, token: &str) -> Option<u32> {
         self.model.read().unwrap().token_to_id(token)
     }
@@ -162,7 +162,7 @@ impl PyModel {
     ///
     /// Returns:
     ///     :obj:`str`: The token associated to the ID
-    #[text_signature = "(self, id)"]
+    #[pyo3(text_signature = "(self, id)")]
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.model.read().unwrap().id_to_token(id)
     }
@@ -182,7 +182,7 @@ impl PyModel {
     ///
     /// Returns:
     ///     :obj:`List[str]`: The list of saved files
-    #[text_signature = "(self, folder, prefix)"]
+    #[pyo3(text_signature = "(self, folder, prefix)")]
     fn save<'a>(
         &self,
         folder: &str,
@@ -248,8 +248,10 @@ impl PyModel {
 ///
 ///     fuse_unk (:obj:`bool`, `optional`):
 ///         Whether to fuse any subsequent unknown tokens into a single one
-#[pyclass(extends=PyModel, module = "tokenizers.models", name=BPE)]
-#[text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None)"]
+#[pyclass(extends=PyModel, module = "tokenizers.models", name = "BPE")]
+#[pyo3(
+    text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None)"
+)]
 pub struct PyBPE {}
 
 impl PyBPE {
@@ -437,7 +439,7 @@ impl PyBPE {
     ///     A :obj:`Tuple` with the vocab and the merges:
     ///         The vocabulary and merges loaded into memory
     #[staticmethod]
-    #[text_signature = "(self, vocab, merges)"]
+    #[pyo3(text_signature = "(self, vocab, merges)")]
     fn read_file(vocab: &str, merges: &str) -> PyResult<(Vocab, Merges)> {
         BPE::read_file(vocab, merges).map_err(|e| {
             exceptions::PyException::new_err(format!(
@@ -469,7 +471,7 @@ impl PyBPE {
     ///     :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
     #[classmethod]
     #[args(kwargs = "**")]
-    #[text_signature = "(cls, vocab, merge, **kwargs)"]
+    #[pyo3(text_signature = "(cls, vocab, merge, **kwargs)")]
     fn from_file(
         _cls: &PyType,
         py: Python,
@@ -502,8 +504,8 @@ impl PyBPE {
 ///
 ///     max_input_chars_per_word (:obj:`int`, `optional`):
 ///         The maximum number of characters to authorize in a single word.
-#[pyclass(extends=PyModel, module = "tokenizers.models", name=WordPiece)]
-#[text_signature = "(self, vocab, unk_token, max_input_chars_per_word)"]
+#[pyclass(extends=PyModel, module = "tokenizers.models", name = "WordPiece")]
+#[pyo3(text_signature = "(self, vocab, unk_token, max_input_chars_per_word)")]
 pub struct PyWordPiece {}
 
 impl PyWordPiece {
@@ -613,7 +615,7 @@ impl PyWordPiece {
     /// Returns:
     ///     :obj:`Dict[str, int]`: The vocabulary as a :obj:`dict`
     #[staticmethod]
-    #[text_signature = "(vocab)"]
+    #[pyo3(text_signature = "(vocab)")]
     fn read_file(vocab: &str) -> PyResult<Vocab> {
         WordPiece::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordPiece file: {}", e))
@@ -639,7 +641,7 @@ impl PyWordPiece {
     ///     :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
     #[classmethod]
     #[args(kwargs = "**")]
-    #[text_signature = "(vocab, **kwargs)"]
+    #[pyo3(text_signature = "(vocab, **kwargs)")]
     fn from_file(
         _cls: &PyType,
         py: Python,
@@ -663,8 +665,8 @@ impl PyWordPiece {
 ///
 ///     unk_token (:obj:`str`, `optional`):
 ///         The unknown token to be used by the model.
-#[pyclass(extends=PyModel, module = "tokenizers.models", name=WordLevel)]
-#[text_signature = "(self, vocab, unk_token)"]
+#[pyclass(extends=PyModel, module = "tokenizers.models", name = "WordLevel")]
+#[pyo3(text_signature = "(self, vocab, unk_token)")]
 pub struct PyWordLevel {}
 
 #[pymethods]
@@ -725,7 +727,7 @@ impl PyWordLevel {
     /// Returns:
     ///     :obj:`Dict[str, int]`: The vocabulary as a :obj:`dict`
     #[staticmethod]
-    #[text_signature = "(vocab)"]
+    #[pyo3(text_signature = "(vocab)")]
     fn read_file(vocab: &str) -> PyResult<Vocab> {
         WordLevel::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordLevel file: {}", e))
@@ -751,7 +753,7 @@ impl PyWordLevel {
     ///     :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
     #[classmethod]
     #[args(unk_token = "None")]
-    #[text_signature = "(vocab, unk_token)"]
+    #[pyo3(text_signature = "(vocab, unk_token)")]
     fn from_file(
         _cls: &PyType,
         py: Python,
@@ -773,8 +775,8 @@ impl PyWordLevel {
 /// Args:
 ///     vocab (:obj:`List[Tuple[str, float]]`, `optional`):
 ///         A list of vocabulary items and their relative score [("am", -0.2442),...]
-#[pyclass(extends=PyModel, module = "tokenizers.models", name=Unigram)]
-#[text_signature = "(self, vocab)"]
+#[pyclass(extends=PyModel, module = "tokenizers.models", name = "Unigram")]
+#[pyo3(text_signature = "(self, vocab)")]
 pub struct PyUnigram {}
 
 #[pymethods]
@@ -809,8 +811,8 @@ mod test {
         let py_bpe = py_model.get_as_subtype().unwrap();
         let gil = Python::acquire_gil();
         assert_eq!(
-            "tokenizers.models.BPE",
-            py_bpe.as_ref(gil.python()).get_type().name()
+            "BPE",
+            py_bpe.as_ref(gil.python()).get_type().name().unwrap()
         );
     }
 

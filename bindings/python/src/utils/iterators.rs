@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::{AsPyPointer, PyNativeType};
+use pyo3::AsPyPointer;
 use std::collections::VecDeque;
 
 /// An simple iterator that can be instantiated with a specified length.
