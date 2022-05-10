@@ -38,6 +38,10 @@ harness = false
 name = "layout_benchmark"
 harness = false
 
+[[bench]]
+name = "unigram_benchmark"
+harness = false
+
 [dependencies]
 lazy_static = "1.4"
 rand = "0.8"
