@@ -88,6 +88,10 @@ pub trait Model {
     fn get_trainer(&self) -> <Self as Model>::Trainer;
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("{0}")]
+pub struct PostProcessorError(String);
+
 /// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
 /// It adds any special tokens that a language model would require.
 pub trait PostProcessor {
@@ -100,13 +104,13 @@ pub trait PostProcessor {
         pair_encoding: Option<Encoding>,
         add_special_tokens: bool,
     ) -> Result<Encoding>;
-    /// Process both encodings and returns a new merged one
+    /// Process method that is used when a processor is part of `processors::sequence::Sequence`
     fn process_chain(
         &self,
-        encodings: Vec<Encoding>,
-        add_special_tokens: bool,
+        _encodings: Vec<Encoding>,
+        _add_special_tokens: bool,
     ) -> Result<Vec<Encoding>> {
-        Ok(vec![])
+        Err(Box::new(PostProcessorError("`process_chain` is not implemented".to_string())))
     }
 }
 impl dyn PostProcessor {
