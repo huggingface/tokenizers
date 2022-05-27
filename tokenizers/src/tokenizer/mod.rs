@@ -100,6 +100,14 @@ pub trait PostProcessor {
         pair_encoding: Option<Encoding>,
         add_special_tokens: bool,
     ) -> Result<Encoding>;
+    /// Process both encodings and returns a new merged one
+    fn process_chain(
+        &self,
+        encodings: Vec<Encoding>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<Encoding>> {
+        Ok(vec![])
+    }
 }
 impl dyn PostProcessor {
     pub fn default_process(

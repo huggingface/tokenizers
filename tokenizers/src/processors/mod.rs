@@ -1,5 +1,6 @@
 pub mod bert;
 pub mod roberta;
+pub mod sequence;
 pub mod template;
 
 // Re-export these as processors
@@ -10,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
+use crate::processors::sequence::Sequence;
 use crate::processors::template::TemplateProcessing;
 use crate::{Encoding, PostProcessor, Result};
 
@@ -21,6 +23,7 @@ pub enum PostProcessorWrapper {
     Bert(BertProcessing),
     ByteLevel(ByteLevel),
     Template(TemplateProcessing),
+    Sequence(Sequence),
 }
 
 impl PostProcessor for PostProcessorWrapper {
@@ -30,6 +33,7 @@ impl PostProcessor for PostProcessorWrapper {
             Self::ByteLevel(bl) => bl.added_tokens(is_pair),
             Self::Roberta(roberta) => roberta.added_tokens(is_pair),
             Self::Template(template) => template.added_tokens(is_pair),
+            Self::Sequence(sequence) => sequence.added_tokens(is_pair),
         }
     }
 
@@ -46,6 +50,23 @@ impl PostProcessor for PostProcessorWrapper {
             Self::Template(template) => {
                 template.process(encoding, pair_encoding, add_special_tokens)
             }
+            Self::Sequence(sequence) => {
+                sequence.process(encoding, pair_encoding, add_special_tokens)
+            }
+        }
+    }
+
+    fn process_chain(
+        &self,
+        encodings: Vec<Encoding>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<Encoding>> {
+        match self {
+            Self::Bert(bert) => bert.process_chain(encodings, add_special_tokens),
+            Self::ByteLevel(bl) => bl.process_chain(encodings, add_special_tokens),
+            Self::Roberta(roberta) => roberta.process_chain(encodings, add_special_tokens),
+            Self::Template(template) => template.process_chain(encodings, add_special_tokens),
+            Self::Sequence(sequence) => sequence.process_chain(encodings, add_special_tokens),
         }
     }
 }

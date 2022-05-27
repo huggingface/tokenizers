@@ -194,6 +194,17 @@ impl PostProcessor for ByteLevel {
 
         <dyn PostProcessor>::default_process(encoding, pair_encoding, add_special_tokens)
     }
+
+    fn process_chain(
+        &self,
+        encodings: Vec<Encoding>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<Encoding>> {
+        encodings
+            .into_iter()
+            .map(|encoding| self.process(encoding, None, add_special_tokens))
+            .collect::<Result<_>>()
+    }
 }
 
 pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
