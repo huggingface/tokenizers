@@ -109,9 +109,7 @@ pub trait PostProcessor {
         &self,
         _encodings: Vec<Encoding>,
         _add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>> {
-        Err(Box::new(PostProcessorError("`process_chain` is not implemented".to_string())))
-    }
+    ) -> Result<Vec<Encoding>>;
 }
 impl dyn PostProcessor {
     pub fn default_process(

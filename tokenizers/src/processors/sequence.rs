@@ -37,9 +37,21 @@ impl PostProcessor for Sequence {
         for processor in &self.processors {
             encodings = processor.process_chain(encodings, add_special_tokens)?;
         }
-
         let encoding_merged = Encoding::merge(encodings, false);
 
         Ok(encoding_merged)
+    }
+
+    fn process_chain(
+        &self,
+        mut encodings: Vec<Encoding>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<Encoding>> {
+        for processor in &self.processors {
+            encodings = processor.process_chain(encodings, add_special_tokens)?;
+        }
+        let encoding_merged = Encoding::merge(encodings, false);
+
+        Ok(vec![encoding_merged])
     }
 }

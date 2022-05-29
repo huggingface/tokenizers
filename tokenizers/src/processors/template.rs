@@ -58,7 +58,6 @@
 use crate::{Encoding, PostProcessor, Result};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
 use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::result::Result as StdResult;
@@ -622,6 +621,14 @@ impl TemplateProcessing {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum TemplateProcessorError {
+    #[error("encodings vector length must be either 1 or 2")]
+    InvalidEncodingsVecLength,
+    #[error("could not pop encodings vector")]
+    EncodingsVecPop,
+}
+
 impl PostProcessor for TemplateProcessing {
     fn added_tokens(&self, is_pair: bool) -> usize {
         if is_pair {
@@ -651,21 +658,38 @@ impl PostProcessor for TemplateProcessing {
 
     fn process_chain(
         &self,
-        encodings: Vec<Encoding>,
+        mut encodings: Vec<Encoding>,
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>> {
-        let is_pair = encodings.len() == 2;
-        if is_pair {
-            let mut encodings_queue = VecDeque::from(encodings);
-            let encoding = encodings_queue.pop_front().unwrap();
-            let paur_encoding = encodings_queue.pop_front();
-            let result = self.process(encoding, paur_encoding, add_special_tokens)?;
-            Ok(vec![result])
-        } else {
-            encodings
-                .into_iter()
-                .map(|encoding| self.process(encoding, None, add_special_tokens))
-                .collect::<Result<_>>()
+        let encodings_len = encodings.len();
+        match encodings_len {
+            1 => {
+                let encoding = encodings
+                    .pop()
+                    .ok_or(TemplateProcessorError::EncodingsVecPop)?;
+                let encoding =
+                    self.apply_template(&self.single.0, encoding, None, add_special_tokens)?;
+
+                Ok(vec![encoding])
+            }
+            2 => {
+                let encoding_pair = encodings
+                    .pop()
+                    .ok_or(TemplateProcessorError::EncodingsVecPop)?;
+                let encoding = encodings
+                    .pop()
+                    .ok_or(TemplateProcessorError::EncodingsVecPop)?;
+
+                let encoding = self.apply_template(
+                    &self.single.0,
+                    encoding,
+                    Some(encoding_pair),
+                    add_special_tokens,
+                )?;
+
+                Ok(vec![encoding])
+            }
+            _ => Err(Box::new(TemplateProcessorError::InvalidEncodingsVecLength)),
         }
     }
 }

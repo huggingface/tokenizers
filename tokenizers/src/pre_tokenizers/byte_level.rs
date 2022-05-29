@@ -197,13 +197,20 @@ impl PostProcessor for ByteLevel {
 
     fn process_chain(
         &self,
-        encodings: Vec<Encoding>,
+        mut encodings: Vec<Encoding>,
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>> {
-        encodings
-            .into_iter()
-            .map(|encoding| self.process(encoding, None, add_special_tokens))
-            .collect::<Result<_>>()
+        for encoding in encodings.iter_mut() {
+            if add_special_tokens {
+                process_offsets(encoding, self.add_prefix_space);
+                encoding
+                    .get_overflowing_mut()
+                    .iter_mut()
+                    .for_each(|encoding| process_offsets(encoding, self.add_prefix_space));
+            }
+        }
+
+        Ok(encodings)
     }
 }
 
