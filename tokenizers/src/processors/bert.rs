@@ -198,7 +198,8 @@ impl PostProcessor for BertProcessing {
                 // For compatibility with `TemplateProcessing`, the sequence_ranges shouldn't contain
                 // the special tokens.
                 let sequence_ranges = HashMap::from_iter(vec![(0, 1..ids.len() - 1)]);
-                let new_encoding = Encoding::new(
+
+                Encoding::new(
                     ids,
                     type_ids,
                     tokens,
@@ -241,9 +242,7 @@ impl PostProcessor for BertProcessing {
                         })
                         .collect(),
                     sequence_ranges,
-                );
-
-                new_encoding
+                )
             })
             .collect::<Vec<_>>();
 
