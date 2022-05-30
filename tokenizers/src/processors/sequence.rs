@@ -15,6 +15,12 @@ impl Sequence {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum SequenceProcessorError {
+    #[error("could not pop encodings vector")]
+    EncodingsVecPop,
+}
+
 impl PostProcessor for Sequence {
     fn added_tokens(&self, is_pair: bool) -> usize {
         self.processors
@@ -37,9 +43,19 @@ impl PostProcessor for Sequence {
         for processor in &self.processors {
             encodings = processor.process_chain(encodings, add_special_tokens)?;
         }
-        let encoding_merged = Encoding::merge(encodings, false);
 
-        Ok(encoding_merged)
+        match encodings.len() {
+            1 => Ok(encodings
+                .pop()
+                .ok_or(SequenceProcessorError::EncodingsVecPop)?),
+            _ => {
+                // merge encodings
+                for (i, encoding) in encodings.iter_mut().enumerate() {
+                    encoding.set_sequence_id(i);
+                }
+                Ok(Encoding::merge(encodings, false))
+            }
+        }
     }
 
     fn process_chain(
@@ -53,5 +69,70 @@ impl PostProcessor for Sequence {
         let encoding_merged = Encoding::merge(encodings, false);
 
         Ok(vec![encoding_merged])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::processors::{ByteLevel, PostProcessorWrapper};
+    use crate::tokenizer::{Encoding, PostProcessor};
+    use std::collections::HashMap;
+
+    #[test]
+    fn process_chain() {
+        let start = Encoding::new(
+            vec![0; 5],
+            vec![],
+            vec![
+                "Ġ".into(),
+                "ĠĠĠĠHelloĠĠ".into(),
+                "ĠĠHello".into(),
+                "HelloĠĠ".into(),
+                "ĠĠĠĠ".into(),
+            ],
+            vec![],
+            vec![(0, 1), (0, 11), (11, 18), (18, 25), (25, 29)],
+            vec![],
+            vec![],
+            vec![],
+            HashMap::new(),
+        );
+
+        let bytelevel = ByteLevel::default().trim_offsets(true);
+
+        let sequence = Sequence::new(vec![PostProcessorWrapper::ByteLevel(bytelevel)]);
+        let expected = Encoding::new(
+            vec![0; 5],
+            vec![],
+            vec![
+                "Ġ".into(),
+                "ĠĠĠĠHelloĠĠ".into(),
+                "ĠĠHello".into(),
+                "HelloĠĠ".into(),
+                "ĠĠĠĠ".into(),
+            ],
+            vec![],
+            vec![(0, 0), (4, 9), (13, 18), (18, 23), (29, 29)],
+            vec![],
+            vec![],
+            vec![],
+            HashMap::new(),
+        );
+        let pair_expected = bytelevel
+            .process(start.clone(), Some(start.clone()), false)
+            .unwrap();
+
+        assert_eq!(
+            expected,
+            sequence.process(start.clone(), None, false).unwrap()
+        );
+
+        assert_eq!(
+            pair_expected,
+            sequence
+                .process(start.clone(), Some(start.clone()), false)
+                .unwrap()
+        );
     }
 }
