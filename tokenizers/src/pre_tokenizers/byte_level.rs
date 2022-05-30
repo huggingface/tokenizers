@@ -198,10 +198,10 @@ impl PostProcessor for ByteLevel {
     fn process_chain(
         &self,
         mut encodings: Vec<Encoding>,
-        add_special_tokens: bool,
+        _add_special_tokens: bool,
     ) -> Result<Vec<Encoding>> {
         for encoding in encodings.iter_mut() {
-            if add_special_tokens {
+            if self.trim_offsets {
                 process_offsets(encoding, self.add_prefix_space);
                 encoding
                     .get_overflowing_mut()
@@ -544,6 +544,41 @@ mod tests {
             bytelevel
                 .process(start.clone(), Some(start), false)
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn processer_chain() {
+        let start = Encoding::new(
+            vec![0; 5],
+            vec![],
+            vec![
+                "Ġ".into(),
+                "ĠĠĠĠHelloĠĠ".into(),
+                "ĠĠHello".into(),
+                "HelloĠĠ".into(),
+                "ĠĠĠĠ".into(),
+            ],
+            vec![],
+            vec![(0, 1), (0, 11), (11, 18), (18, 25), (25, 29)],
+            vec![],
+            vec![],
+            vec![],
+            HashMap::new(),
+        );
+
+        let bytelevel = ByteLevel::default().trim_offsets(true);
+        let expected = bytelevel.process(start.clone(), None, false).unwrap();
+
+        assert_eq!(
+            vec![expected.clone()],
+            bytelevel.process_chain(vec![start.clone()], false).unwrap()
+        );
+
+        // test encodings vector with lenght 2
+        assert_eq!(
+            vec![expected.clone(), expected.clone()],
+            bytelevel.process_chain(vec![start.clone(), start.clone()], false).unwrap()
         );
     }
 
