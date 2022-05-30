@@ -664,6 +664,7 @@ impl PostProcessor for TemplateProcessing {
         let encodings_len = encodings.len();
         match encodings_len {
             1 => {
+                // single case
                 let encoding = encodings
                     .pop()
                     .ok_or(TemplateProcessorError::EncodingsVecPop)?;
@@ -673,6 +674,7 @@ impl PostProcessor for TemplateProcessing {
                 Ok(vec![encoding])
             }
             2 => {
+                // pair case
                 let encoding_pair = encodings
                     .pop()
                     .ok_or(TemplateProcessorError::EncodingsVecPop)?;
@@ -681,7 +683,7 @@ impl PostProcessor for TemplateProcessing {
                     .ok_or(TemplateProcessorError::EncodingsVecPop)?;
 
                 let encoding = self.apply_template(
-                    &self.single.0,
+                    &self.pair.0,
                     encoding,
                     Some(encoding_pair),
                     add_special_tokens,
@@ -952,6 +954,44 @@ mod tests {
                 vec![],
                 HashMap::from_iter(vec![(0, 1..3), (1, 4..5)]),
             )
+        );
+        assert_eq!(pair_encoding.token_to_sequence(2), Some(0));
+        assert_eq!(pair_encoding.token_to_sequence(3), None);
+        assert_eq!(pair_encoding.token_to_sequence(4), Some(1));
+        assert_eq!(pair_encoding.token_to_sequence(5), None);
+    }
+
+    #[test]
+    fn template_processing_chain() {
+        let processor = tests::get_bert_template();
+        assert_eq!(processor.added_tokens(false), 2);
+        assert_eq!(processor.added_tokens(true), 3);
+
+        use crate::Token;
+        let encoding = Encoding::from_tokens(
+            vec![
+                Token::new(12, "Hello".into(), (0, 5)),
+                Token::new(14, "there".into(), (6, 11)),
+            ],
+            0,
+        );
+        let single_encoding = processor.process(encoding.clone(), None, true).unwrap();
+        assert_eq!(
+            vec![single_encoding.clone()],
+            processor
+                .process_chain(vec![encoding.clone()], true)
+                .unwrap()
+        );
+        assert_eq!(single_encoding.token_to_sequence(2), Some(0));
+        assert_eq!(single_encoding.token_to_sequence(3), None);
+
+        let pair = Encoding::from_tokens(vec![Token::new(15, "pair".into(), (0, 4))], 0);
+        let pair_encoding = processor
+            .process(encoding.clone(), Some(pair.clone()), true)
+            .unwrap();
+        assert_eq!(
+            vec![pair_encoding.clone()],
+            processor.process_chain(vec![encoding, pair], true).unwrap()
         );
         assert_eq!(pair_encoding.token_to_sequence(2), Some(0));
         assert_eq!(pair_encoding.token_to_sequence(3), None);
