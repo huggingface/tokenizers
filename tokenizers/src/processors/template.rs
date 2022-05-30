@@ -976,8 +976,16 @@ mod tests {
             0,
         );
         let single_encoding = processor.process(encoding.clone(), None, true).unwrap();
+        let pair = Encoding::from_tokens(vec![Token::new(15, "pair".into(), (0, 4))], 0);
+        let pair_encoding = processor
+            .process(encoding.clone(), Some(pair.clone()), true)
+            .unwrap();
+
+        let expected = vec![single_encoding.clone()];
+        let pair_expected = vec![pair_encoding.clone()];
+
         assert_eq!(
-            vec![single_encoding.clone()],
+            expected,
             processor
                 .process_chain(vec![encoding.clone()], true)
                 .unwrap()
@@ -985,12 +993,8 @@ mod tests {
         assert_eq!(single_encoding.token_to_sequence(2), Some(0));
         assert_eq!(single_encoding.token_to_sequence(3), None);
 
-        let pair = Encoding::from_tokens(vec![Token::new(15, "pair".into(), (0, 4))], 0);
-        let pair_encoding = processor
-            .process(encoding.clone(), Some(pair.clone()), true)
-            .unwrap();
         assert_eq!(
-            vec![pair_encoding.clone()],
+            pair_expected,
             processor.process_chain(vec![encoding, pair], true).unwrap()
         );
         assert_eq!(pair_encoding.token_to_sequence(2), Some(0));

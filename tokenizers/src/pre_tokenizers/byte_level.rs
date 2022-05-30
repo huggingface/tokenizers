@@ -568,16 +568,17 @@ mod tests {
         );
 
         let bytelevel = ByteLevel::default().trim_offsets(true);
-        let expected = bytelevel.process(start.clone(), None, false).unwrap();
+        let expected_encoding = bytelevel.process(start.clone(), None, false).unwrap();
+        let expected = vec![expected_encoding.clone()];
+        let expected_pair = vec![expected_encoding.clone(), expected_encoding.clone()];
 
         assert_eq!(
-            vec![expected.clone()],
+            expected,
             bytelevel.process_chain(vec![start.clone()], false).unwrap()
         );
 
-        // test encodings vector with lenght 2
         assert_eq!(
-            vec![expected.clone(), expected.clone()],
+            expected_pair,
             bytelevel
                 .process_chain(vec![start.clone(), start.clone()], false)
                 .unwrap()
