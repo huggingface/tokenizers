@@ -107,8 +107,8 @@ pub trait PostProcessor {
     /// Process method that is used when a processor is part of `processors::sequence::Sequence`
     fn process_chain(
         &self,
-        _encodings: Vec<Encoding>,
-        _add_special_tokens: bool,
+        encodings: Vec<Encoding>,
+        add_special_tokens: bool,
     ) -> Result<Vec<Encoding>>;
 }
 impl dyn PostProcessor {

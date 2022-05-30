@@ -578,7 +578,9 @@ mod tests {
         // test encodings vector with lenght 2
         assert_eq!(
             vec![expected.clone(), expected.clone()],
-            bytelevel.process_chain(vec![start.clone(), start.clone()], false).unwrap()
+            bytelevel
+                .process_chain(vec![start.clone(), start.clone()], false)
+                .unwrap()
         );
     }
 
