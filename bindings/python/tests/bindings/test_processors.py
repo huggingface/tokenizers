@@ -179,3 +179,8 @@ class TestTemplateProcessing:
         tokenizer.post_processor = self.get_roberta()
         template = tokenizer.encode("my name is john", "pair")
         assert original.ids == template.ids
+
+class TestSequenceProcessing:
+    def test_sequence_processing(self):
+        # TODO
+        pass
