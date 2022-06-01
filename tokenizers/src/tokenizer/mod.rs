@@ -103,7 +103,16 @@ pub trait PostProcessor {
         encoding: Encoding,
         pair_encoding: Option<Encoding>,
         add_special_tokens: bool,
-    ) -> Result<Encoding>;
+    ) -> Result<Encoding> {
+        let mut encodings = vec![encoding];
+        if let Some(encoding) = pair_encoding {
+            encodings.push(encoding);
+        }
+
+        let encodings = self.process_chain(encodings, add_special_tokens)?;
+
+        <dyn PostProcessor>::merge_encodings(encodings)
+    }
     /// Process method that is used when a processor is part of `processors::sequence::Sequence`
     fn process_chain(
         &self,
@@ -111,6 +120,7 @@ pub trait PostProcessor {
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>>;
 }
+
 impl dyn PostProcessor {
     pub fn default_process(
         mut encoding: Encoding,
@@ -124,6 +134,21 @@ impl dyn PostProcessor {
                 pair.set_sequence_id(1);
                 encoding.merge_with(pair, false);
                 Ok(encoding)
+            }
+        }
+    }
+
+    pub fn merge_encodings(mut encodings: Vec<Encoding>) -> Result<Encoding> {
+        match encodings.len() {
+            1 => Ok(encodings
+                .pop()
+                .ok_or(PostProcessorError("some err".to_string()))?),
+            _ => {
+                // merge encodings
+                for (i, encoding) in encodings.iter_mut().enumerate() {
+                    encoding.set_sequence_id(i);
+                }
+                Ok(Encoding::merge(encodings, false))
             }
         }
     }

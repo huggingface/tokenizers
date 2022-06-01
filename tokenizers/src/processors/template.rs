@@ -638,24 +638,6 @@ impl PostProcessor for TemplateProcessing {
         }
     }
 
-    fn process(
-        &self,
-        encoding: Encoding,
-        pair: Option<Encoding>,
-        add_special_tokens: bool,
-    ) -> Result<Encoding> {
-        self.apply_template(
-            if pair.is_some() {
-                &self.pair.0
-            } else {
-                &self.single.0
-            },
-            encoding,
-            pair,
-            add_special_tokens,
-        )
-    }
-
     fn process_chain(
         &self,
         mut encodings: Vec<Encoding>,

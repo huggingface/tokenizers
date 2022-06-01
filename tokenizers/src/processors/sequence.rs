@@ -44,18 +44,7 @@ impl PostProcessor for Sequence {
             encodings = processor.process_chain(encodings, add_special_tokens)?;
         }
 
-        match encodings.len() {
-            1 => Ok(encodings
-                .pop()
-                .ok_or(SequenceProcessorError::EncodingsVecPop)?),
-            _ => {
-                // merge encodings
-                for (i, encoding) in encodings.iter_mut().enumerate() {
-                    encoding.set_sequence_id(i);
-                }
-                Ok(Encoding::merge(encodings, false))
-            }
-        }
+        <dyn PostProcessor>::merge_encodings(encodings)
     }
 
     fn process_chain(
