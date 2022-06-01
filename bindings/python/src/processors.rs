@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use tk::processors::bert::BertProcessing;
 use tk::processors::byte_level::ByteLevel;
 use tk::processors::roberta::RobertaProcessing;
+use tk::processors::sequence::Sequence;
 use tk::processors::template::{SpecialToken, Template};
 use tk::processors::PostProcessorWrapper;
 use tk::{Encoding, PostProcessor};
@@ -50,6 +51,7 @@ impl PyPostProcessor {
             PostProcessorWrapper::Template(_) => {
                 Py::new(py, (PyTemplateProcessing {}, base))?.into_py(py)
             }
+            PostProcessorWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_py(py),
         })
     }
 }
@@ -67,6 +69,14 @@ impl PostProcessor for PyPostProcessor {
     ) -> tk::Result<Encoding> {
         self.processor
             .process(encoding, pair_encoding, add_special_tokens)
+    }
+
+    fn process_chain(
+        &self,
+        encodings: Vec<Encoding>,
+        add_special_tokens: bool,
+    ) -> tk::Result<Vec<Encoding>> {
+        self.processor.process_chain(encodings, add_special_tokens)
     }
 }
 
@@ -249,6 +259,37 @@ impl PyByteLevel {
             PyByteLevel {},
             PyPostProcessor::new(Arc::new(byte_level.into())),
         )
+    }
+}
+
+/// Sequence Processor
+///
+/// Args:
+///     processors (:obj:`List[PostProcessor]`)
+///         The processors that need to be chained
+#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "Sequence")]
+#[pyo3(text_signature = "(self, processors)")]
+pub struct PySequence {}
+#[pymethods]
+impl PySequence {
+    #[new]
+    #[args(processors)]
+    fn new(processors_py: &PyList) -> (Self, PyPostProcessor) {
+        let mut processors: Vec<PostProcessorWrapper> = Vec::with_capacity(processors_py.len());
+        for n in processors_py.iter() {
+            let processor: PyRef<PyPostProcessor> = n.extract().unwrap();
+            let processor = processor.processor.as_ref();
+            processors.push(processor.clone());
+        }
+        let sequence_processor = Sequence::new(processors);
+        (
+            PySequence {},
+            PyPostProcessor::new(Arc::new(PostProcessorWrapper::Sequence(sequence_processor))),
+        )
+    }
+
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
+        PyTuple::new(py, &[PyList::empty(py)])
     }
 }
 
