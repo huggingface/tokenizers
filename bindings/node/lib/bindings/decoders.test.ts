@@ -1,4 +1,10 @@
-import { bpeDecoder, ctcDecoder, metaspaceDecoder, wordPieceDecoder } from "./decoders";
+import {
+  bpeDecoder,
+  ctcDecoder,
+  metaspaceDecoder,
+  sequenceDecoder,
+  wordPieceDecoder,
+} from "./decoders";
 
 describe("wordPieceDecoder", () => {
   it("accepts `undefined` as first parameter", () => {
@@ -40,5 +46,27 @@ describe("ctcDecoder", () => {
     expect(
       ctcDecoder().decode(["<pad>", "h", "h", "e", "e", "l", "l", "<pad>", "l", "l", "o"])
     ).toEqual("hello");
+  });
+});
+
+describe("sequenceDecoder", () => {
+  it("accepts `empty list` as parameter", () => {
+    expect(sequenceDecoder([])).toBeDefined();
+  });
+  it("encodes correctly", () => {
+    expect(
+      sequenceDecoder([ctcDecoder(), metaspaceDecoder()]).decode([
+        "▁",
+        "▁",
+        "H",
+        "H",
+        "i",
+        "i",
+        "▁",
+        "y",
+        "o",
+        "u",
+      ])
+    ).toEqual("Hi you");
   });
 });
