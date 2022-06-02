@@ -49,3 +49,9 @@ export function ctcDecoder(
   word_delimiter_token?: string,
   cleanup?: boolean
 ): Decoder;
+
+/**
+ * Instantiate a new Sequence Decoder
+ * @param [decoders] The decoders to chain
+ */
+export function sequenceDecoder(decoders: Decoder[]): Decoder;

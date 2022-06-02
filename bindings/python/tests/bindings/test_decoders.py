@@ -2,7 +2,7 @@ import pytest
 import pickle
 import json
 
-from tokenizers.decoders import Decoder, ByteLevel, WordPiece, Metaspace, BPEDecoder, CTC
+from tokenizers.decoders import Decoder, ByteLevel, WordPiece, Metaspace, BPEDecoder, CTC, Sequence
 
 
 class TestByteLevel:
@@ -150,3 +150,19 @@ class TestCTCDecoder:
 
         decoder.cleanup = False
         assert decoder.cleanup == False
+
+
+class TestSequenceDecoder:
+    def test_instantiate(self):
+        assert Sequence([]) is not None
+        assert Sequence([CTC()]) is not None
+        assert isinstance(Sequence([]), Decoder)
+        assert isinstance(Sequence([]), Sequence)
+        serialized = pickle.dumps(Sequence([]))
+        assert isinstance(pickle.loads(serialized), Sequence)
+
+    def test_decoding(self):
+        decoder = Sequence([CTC(), Metaspace()])
+        initial = ["▁", "▁", "H", "H", "i", "i", "▁", "y", "o", "u"]
+        expected = "Hi you"
+        assert decoder.decode(initial) == expected

@@ -14,11 +14,11 @@ pub struct Decoder {
 }
 
 impl tk::Decoder for Decoder {
-    fn decode(&self, tokens: Vec<String>) -> tk::Result<String> {
+    fn decode_chain(&self, tokens: Vec<String>) -> tk::Result<Vec<String>> {
         self.decoder
             .as_ref()
             .ok_or("Uninitialized Decoder")?
-            .decode(tokens)
+            .decode_chain(tokens)
     }
 }
 
@@ -42,6 +42,7 @@ declare_types! {
                 .map_err(|e| Error(format!("{}", e)))?;
 
             Ok(cx.string(output).upcast())
+
         }
     }
 }
@@ -115,6 +116,33 @@ fn ctc_decoder(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     Ok(decoder)
 }
 
+/// sequence()
+fn sequence(mut cx: FunctionContext) -> JsResult<JsDecoder> {
+    let decoders = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
+    let mut sequence = Vec::with_capacity(decoders.len());
+
+    decoders.into_iter().try_for_each(|decoder| {
+        match decoder.downcast::<JsDecoder>().or_throw(&mut cx) {
+            Ok(decoder) => {
+                let guard = cx.lock();
+                if let Some(decoder_arc) = &decoder.borrow(&guard).decoder {
+                    let decoder: DecoderWrapper = (**decoder_arc).clone();
+                    sequence.push(decoder);
+                }
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    })?;
+
+    let mut pretok = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    pretok.borrow_mut(&guard).decoder = Some(Arc::new(tk::DecoderWrapper::Sequence(
+        tk::decoders::sequence::Sequence::new(sequence),
+    )));
+    Ok(pretok)
+}
+
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_ByteLevel", prefix), byte_level)?;
@@ -122,5 +150,6 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_Metaspace", prefix), metaspace)?;
     m.export_function(&format!("{}_BPEDecoder", prefix), bpe_decoder)?;
     m.export_function(&format!("{}_CTC", prefix), ctc_decoder)?;
+    m.export_function(&format!("{}_Sequence", prefix), sequence)?;
     Ok(())
 }

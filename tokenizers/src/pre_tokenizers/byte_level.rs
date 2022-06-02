@@ -145,8 +145,11 @@ impl PreTokenizer for ByteLevel {
 
 /// As a `Decoder`, `ByteLevel` is in charge of converting any byte-level characters to their
 /// unicode counterpart, before merging everything back into a single String.
+/// This decoder will consume the tokens and merge them in one step to alleviate
+/// the fact that single token decoded might be a byte not representable as
+/// as String.
 impl Decoder for ByteLevel {
-    fn decode(&self, tokens: Vec<String>) -> Result<String> {
+    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         let toks = tokens
             .into_iter()
             .flat_map(|t| {
@@ -159,8 +162,8 @@ impl Decoder for ByteLevel {
                     })
                     .unwrap_or_else(|| t.as_bytes().to_vec())
             })
-            .collect::<Vec<_>>();
-        Ok(String::from_utf8_lossy(&toks).into_owned())
+            .collect::<Vec<u8>>();
+        Ok(vec![String::from_utf8_lossy(&toks).to_string()])
     }
 }
 
@@ -277,9 +280,8 @@ mod tests {
     fn decoding() {
         let bytelevel = ByteLevel::default().add_prefix_space(false);
         assert_eq!(
-            "Hello my friend, how is your day going?",
             bytelevel
-                .decode(
+                .decode_chain(
                     vec![
                         "Hello", "Ġmy", "Ġfriend", ",", "Ġhow", "Ġis", "Ġyour", "Ġday", "Ġgoing",
                         "?"
@@ -288,7 +290,8 @@ mod tests {
                     .map(|s| s.into())
                     .collect::<Vec<String>>()
                 )
-                .unwrap()
+                .unwrap(),
+            vec!["Hello my friend, how is your day going?"]
         );
     }
 
@@ -340,7 +343,10 @@ mod tests {
                 .iter()
                 .flat_map(|(s, _, _)| s.split("").map(|t| t.into()))
                 .collect::<Vec<_>>();
-            assert_eq!(sample, bytelevel.decode(separated_tokens).unwrap());
+            assert_eq!(
+                sample,
+                bytelevel.decode_chain(separated_tokens).unwrap().join("")
+            );
         }
     }
 
@@ -565,7 +571,7 @@ mod tests {
         let byte_level = ByteLevel::default();
         assert_eq!(
             byte_level
-                .decode(vec![
+                .decode_chain(vec![
                     "Hello".into(),
                     "Ġthere".into(),
                     "Ġdear".into(),
@@ -574,7 +580,7 @@ mod tests {
                     "[PA D]".into()
                 ])
                 .unwrap(),
-            "Hello there dear friend! [PA D]"
+            vec!["Hello there dear friend! [PA D]"]
         );
     }
 
