@@ -1,4 +1,4 @@
-use onig::Regex;
+use crate::utils::SysRegex as Regex;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{

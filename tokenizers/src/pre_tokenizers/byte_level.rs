@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use onig::Regex;
+use crate::utils::SysRegex as Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{
