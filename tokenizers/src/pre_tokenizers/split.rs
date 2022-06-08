@@ -1,4 +1,4 @@
-use crate::utils::SysRegex as Regex;
+use crate::utils::SysRegex;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
@@ -29,7 +29,7 @@ impl From<&str> for SplitPattern {
 pub struct Split {
     pattern: SplitPattern,
     #[serde(skip)]
-    regex: Regex,
+    regex: SysRegex,
     behavior: SplitDelimiterBehavior,
     invert: bool,
 }
@@ -80,8 +80,8 @@ impl Split {
     ) -> Result<Self> {
         let pattern: SplitPattern = pattern.into();
         let regex = match &pattern {
-            SplitPattern::String(s) => Regex::new(&regex::escape(s))?,
-            SplitPattern::Regex(r) => Regex::new(r)?,
+            SplitPattern::String(s) => SysRegex::new(&regex::escape(s))?,
+            SplitPattern::Regex(r) => SysRegex::new(r)?,
         };
 
         Ok(Self {

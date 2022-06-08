@@ -19,6 +19,10 @@
 
 ## About
 
+
+This is an example project showing off a very basic use case for `wasm` tokenizers
+usage.
+
 [**📚 Read this template tutorial! 📚**][template-docs]
 
 This template is designed for compiling Rust libraries into WebAssembly and
