@@ -12,11 +12,12 @@ use tokenizers::normalizers::unicode::{NFC, NFKC};
 use tokenizers::normalizers::NormalizerWrapper;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::pre_tokenizers::delimiter::CharDelimiterSplit;
+use tokenizers::pre_tokenizers::split::{Split, SplitPattern};
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::pre_tokenizers::PreTokenizerWrapper;
 use tokenizers::processors::bert::BertProcessing;
 use tokenizers::processors::PostProcessorWrapper;
-use tokenizers::{Tokenizer, TokenizerImpl};
+use tokenizers::{SplitDelimiterBehavior, Tokenizer, TokenizerImpl};
 
 #[test]
 fn bpe_serde() {
@@ -47,6 +48,7 @@ fn normalizers() {
     // Test unit struct
     let nfc = NFC;
     let nfc_ser = serde_json::to_string(&nfc).unwrap();
+    assert_eq!(nfc_ser, r#"{"type":"NFC"}"#);
     // empty struct can deserialize from self
     serde_json::from_str::<NFC>(&nfc_ser).unwrap();
     let err: Result<NFKC, _> = serde_json::from_str(&nfc_ser);
@@ -63,6 +65,10 @@ fn normalizers() {
     // Test non-empty roundtrip
     let bert = BertNormalizer::default();
     let bert_ser = serde_json::to_string(&bert).unwrap();
+    assert_eq!(
+        bert_ser,
+        r#"{"type":"BertNormalizer","clean_text":true,"handle_chinese_chars":true,"strip_accents":null,"lowercase":true}"#
+    );
     // make sure we can deserialize to self
     serde_json::from_str::<BertNormalizer>(&bert_ser).unwrap();
     // wrapper can deserialize from inner serialization
@@ -80,6 +86,10 @@ fn normalizers() {
 fn processors() {
     let bert = BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 0));
     let bert_ser = serde_json::to_string(&bert).unwrap();
+    assert_eq!(
+        bert_ser,
+        r#"{"type":"BertProcessing","sep":["SEP",0],"cls":["CLS",0]}"#
+    );
     serde_json::from_str::<BertProcessing>(&bert_ser).unwrap();
     let bert_wrapped: PostProcessorWrapper = serde_json::from_str(&bert_ser).unwrap();
     match &bert_wrapped {
@@ -95,6 +105,7 @@ fn pretoks() {
     // Test unit struct
     let bert = BertPreTokenizer;
     let bert_ser = serde_json::to_string(&bert).unwrap();
+    assert_eq!(bert_ser, r#"{"type":"BertPreTokenizer"}"#);
     // empty struct can deserialize from self
     serde_json::from_str::<BertPreTokenizer>(&bert_ser).unwrap();
     let err: Result<Whitespace, _> = serde_json::from_str(&bert_ser);
@@ -114,6 +125,7 @@ fn pretoks() {
     // Test non-empty roundtrip
     let ch = CharDelimiterSplit::new(' ');
     let ch_ser = serde_json::to_string(&ch).unwrap();
+    assert_eq!(ch_ser, r#"{"type":"CharDelimiterSplit","delimiter":" "}"#);
     // make sure we can deserialize to self
     serde_json::from_str::<CharDelimiterSplit>(&ch_ser).unwrap();
     // wrapper can deserialize from inner serialization
@@ -128,18 +140,41 @@ fn pretoks() {
 
     let wsp = Whitespace::default();
     let wsp_ser = serde_json::to_string(&wsp).unwrap();
+    assert_eq!(wsp_ser, r#"{"type":"Whitespace"}"#);
     serde_json::from_str::<Whitespace>(&wsp_ser).unwrap();
     let err: Result<BertPreTokenizer, _> = serde_json::from_str(&wsp_ser);
     assert!(
         err.is_err(),
         "BertPreTokenizer shouldn't be deserializable from Whitespace"
     );
+
+    let pattern: SplitPattern = "[SEP]".into();
+    let pretok = Split::new(pattern, SplitDelimiterBehavior::Isolated, false).unwrap();
+    let pretok_str = serde_json::to_string(&pretok).unwrap();
+    assert_eq!(
+        pretok_str,
+        r#"{"type":"Split","pattern":{"String":"[SEP]"},"behavior":"Isolated","invert":false}"#
+    );
+    assert_eq!(serde_json::from_str::<Split>(&pretok_str).unwrap(), pretok);
+
+    let pattern = SplitPattern::Regex("[SEP]".to_string());
+    let pretok = Split::new(pattern, SplitDelimiterBehavior::Isolated, false).unwrap();
+    let pretok_str = serde_json::to_string(&pretok).unwrap();
+    assert_eq!(
+        pretok_str,
+        r#"{"type":"Split","pattern":{"Regex":"[SEP]"},"behavior":"Isolated","invert":false}"#
+    );
+    assert_eq!(serde_json::from_str::<Split>(&pretok_str).unwrap(), pretok);
 }
 
 #[test]
 fn decoders() {
     let byte_level = ByteLevel::default();
     let byte_level_ser = serde_json::to_string(&byte_level).unwrap();
+    assert_eq!(
+        byte_level_ser,
+        r#"{"type":"ByteLevel","add_prefix_space":true,"trim_offsets":true,"use_regex":true}"#
+    );
     serde_json::from_str::<ByteLevel>(&byte_level_ser).unwrap();
     let byte_level_wrapper: DecoderWrapper = serde_json::from_str(&byte_level_ser).unwrap();
     match &byte_level_wrapper {

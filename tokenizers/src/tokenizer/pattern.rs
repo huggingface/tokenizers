@@ -1,3 +1,4 @@
+use crate::utils::SysRegex;
 use crate::{Offsets, Result};
 use regex::Regex;
 
@@ -59,7 +60,7 @@ impl Pattern for &Regex {
     }
 }
 
-impl Pattern for &onig::Regex {
+impl Pattern for &SysRegex {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         if inside.is_empty() {
             return Ok(vec![((0, 0), false)]);
@@ -205,8 +206,8 @@ mod tests {
     }
 
     #[test]
-    fn onig_regex() {
-        let is_whitespace = onig::Regex::new(r"\s+").unwrap();
+    fn sys_regex() {
+        let is_whitespace = SysRegex::new(r"\s+").unwrap();
         do_test!("a   b", &is_whitespace => vec![((0, 1), false), ((1, 4), true), ((4, 5), false)]);
         do_test!("   a   b   ", &is_whitespace =>
             vec![((0, 3), true), ((3, 4), false), ((4, 7), true), ((7, 8), false), ((8, 11), true)]
