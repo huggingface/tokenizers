@@ -561,6 +561,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
+    #[cfg(not(target_family = "wasm"))]
     #[staticmethod]
     #[args(revision = "String::from(\"main\")", auth_token = "None")]
     #[pyo3(text_signature = "(identifier, revision=\"main\", auth_token=None)")]

@@ -1,6 +1,7 @@
-use onig::Regex;
 use pyo3::exceptions;
 use pyo3::prelude::*;
+
+use tk::utils::SysRegex as Regex;
 
 /// Instantiate a new Regex with the given pattern
 #[pyclass(module = "tokenizers", name = "Regex")]
