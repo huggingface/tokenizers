@@ -16,8 +16,7 @@ impl PyRegex {
     #[new]
     fn new(s: &str) -> PyResult<Self> {
         Ok(Self {
-            inner: Regex::new(s)
-                .map_err(|e| exceptions::PyException::new_err(e.description().to_owned()))?,
+            inner: Regex::new(s).map_err(|e| exceptions::PyException::new_err(e.to_string()))?,
             pattern: s.to_owned(),
         })
     }
