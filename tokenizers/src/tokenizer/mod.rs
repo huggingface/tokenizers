@@ -437,6 +437,10 @@ impl Tokenizer {
         let tokenizer = serde_json::from_str(&content)?;
         Ok(tokenizer)
     }
+    pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<Self> {
+        let tokenizer = serde_json::from_slice(bytes.as_ref())?;
+        Ok(tokenizer)
+    }
     #[cfg(feature = "http")]
     pub fn from_pretrained<S: AsRef<str>>(
         identifier: S,
@@ -1164,6 +1168,21 @@ where
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
         let content = read_to_string(file)?;
         let tokenizer = serde_json::from_str(&content)?;
+        Ok(tokenizer)
+    }
+}
+
+impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
+where
+    M: DeserializeOwned + Model,
+    N: DeserializeOwned + Normalizer,
+    PT: DeserializeOwned + PreTokenizer,
+    PP: DeserializeOwned + PostProcessor,
+    D: DeserializeOwned + Decoder,
+{
+    /// Instantiate a new Tokenizer from bytes
+    pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<Self> {
+        let tokenizer = serde_json::from_slice(bytes.as_ref())?;
         Ok(tokenizer)
     }
 }
