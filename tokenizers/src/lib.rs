@@ -14,7 +14,7 @@
 //!
 //! 1. The `Normalizer`: in charge of normalizing the text. Common examples of normalization are
 //!    the [unicode normalization standards](https://unicode.org/reports/tr15/#Norm_Forms), such as `NFD` or `NFKC`.
-//!    More details about how to use the `Normalizers` are available on the 
+//!    More details about how to use the `Normalizers` are available on the
 //!    [Hugging Face blog](https://huggingface.co/docs/tokenizers/components#normalizers)
 //! 2. The `PreTokenizer`: in charge of creating initial words splits in the text. The most common way of
 //!    splitting text is simply on whitespace.

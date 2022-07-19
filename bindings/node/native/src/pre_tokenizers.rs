@@ -31,7 +31,7 @@ impl FromJsValue for JsSplitDelimiterBehavior {
     }
 }
 
-impl<'s> From<JsSplitDelimiterBehavior> for SplitDelimiterBehavior {
+impl From<JsSplitDelimiterBehavior> for SplitDelimiterBehavior {
     fn from(v: JsSplitDelimiterBehavior) -> Self {
         v.0
     }
