@@ -136,7 +136,7 @@ fn log_sum_exp(x: f64, y: f64, init_mode: bool) -> f64 {
 
 impl<'a> Lattice<'a> {
     pub fn from(sentence: &'a str, bos_id: usize, eos_id: usize) -> Self {
-        let len = sentence.bytes().count();
+        let len = sentence.len();
         let k_reserved_node_size = 16;
         // We are adding 2 tokens, bos and eos
         let mut nodes: Vec<NodeRef> = Vec::with_capacity(k_reserved_node_size);
