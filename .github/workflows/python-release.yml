@@ -72,17 +72,59 @@ jobs:
   #         aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
 
 
-  create_wheels_others_64bit:
-    name: Create wheels for other OSes
-    env:
-      MACOSX_DEPLOYMENT_TARGET: 10.11
-    runs-on: ${{ matrix.os }}
+  # create_wheels_others_64bit:
+  #   name: Create wheels for other OSes
+  #   env:
+  #     MACOSX_DEPLOYMENT_TARGET: 10.11
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     matrix:
+  #       os: [windows-latest, macos-10.15, macos-arm64]
+  #       python: ["3.7", "3.8", "3.9", "3.10"]
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v2
+
+  #     - name: Install Rust
+  #       uses: actions-rs/toolchain@v1
+  #       with:
+  #         toolchain: stable
+  #         override: true
+
+  #     - name: Install Python
+  #       uses: actions/setup-python@v4
+  #       with:
+  #         python-version: ${{ matrix.python }}
+  #         architecture: x64
+
+  #     - name: Install dependencies
+  #       run: |
+  #         # On old versions of python there is an old version of setuptools already installed
+  #         pip install setuptools wheel setuptools-rust==0.11.3 --ignore-installed --force-reinstall
+
+  #     - name: Build wheel
+  #       working-directory: ./bindings/python
+  #       run: python setup.py bdist_wheel
+
+  #     - name: Rename wheels
+  #       shell: bash
+  #       working-directory: ./bindings/python/dist
+  #       run: for file in *.whl ; do mv $file ${file//macosx_10_1[0-9]/macosx_10_11} ; done
+
+  #     - name: Upload wheels
+  #       shell: bash
+  #       run: |
+  #         pip install awscli
+  #         aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
+
+  # requires Homebrew, all three python versions
+  # and awscli to be installed on the runner
+  create_wheels_m1:
+    name: Create wheels for Mac M1
+    runs-on: macos-arm64
     strategy:
       matrix:
-        os: [macos-arm64]
-        # os: [windows-latest, macos-10.15, macos-arm64]
-        python: ["3.7", "3.8", "3.9"]
-        # python: ["3.7", "3.8", "3.9", "3.10"]
+        python: ["3.8", "3.9", "3.10"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -93,20 +135,14 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Install Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python }}
-          architecture: x64
-
       - name: Install dependencies
         run: |
           # On old versions of python there is an old version of setuptools already installed
-          pip install setuptools wheel setuptools-rust==0.11.3 --ignore-installed --force-reinstall
+          /opt/homebrew/opt/python@${{ matrix.python }}/bin/pip3 install setuptools wheel setuptools-rust==0.11.3 --ignore-installed --force-reinstall
 
       - name: Build wheel
         working-directory: ./bindings/python
-        run: python setup.py bdist_wheel
+        run: /opt/homebrew/opt/python@${{ matrix.python }}/bin/python3 setup.py bdist_wheel
 
       - name: Rename wheels
         shell: bash
@@ -116,8 +152,7 @@ jobs:
       - name: Upload wheels
         shell: bash
         run: |
-          pip install awscli
-          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
+          /opt/homebrew/bin/aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
 
           # upload_package:
           #   name: Upload package to PyPi
