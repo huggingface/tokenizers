@@ -2,7 +2,7 @@
 // Unicode scripts : https://gist.github.com/Narsil/07556f26dc84a6baeff4d499e68d3cd2
 // Rust adaptation : https://gist.github.com/Narsil/1df9fbbf5296a8d4d62de55dcb2fe700
 
-#[derive(PartialEq, Debug, Clone, Copy)]
+#[derive(PartialEq, Debug, Clone, Copy, Eq)]
 pub enum Script {
     Any,
     Adlam,

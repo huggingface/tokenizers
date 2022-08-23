@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct CharDelimiterSplit {
