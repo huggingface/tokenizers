@@ -59,14 +59,13 @@ impl PostProcessor for PyPostProcessor {
         self.processor.added_tokens(is_pair)
     }
 
-    fn process(
+    fn process_encodings(
         &self,
-        encoding: Encoding,
-        pair_encoding: Option<Encoding>,
+        encodings: Vec<Encoding>,
         add_special_tokens: bool,
-    ) -> tk::Result<Encoding> {
+    ) -> tk::Result<Vec<Encoding>> {
         self.processor
-            .process(encoding, pair_encoding, add_special_tokens)
+            .process_encodings(encodings, add_special_tokens)
     }
 }
 

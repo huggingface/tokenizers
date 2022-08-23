@@ -1,5 +1,5 @@
 use crate::processors::byte_level::process_offsets;
-use crate::tokenizer::{Encoding, PostProcessor, Result};
+use crate::tokenizer::{Encoding, PostProcessor, ProcessorError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::iter::FromIterator;
@@ -55,20 +55,13 @@ impl PostProcessor for RobertaProcessing {
         }
     }
 
-    fn process(
+    fn process_encodings(
         &self,
-        mut encoding: Encoding,
-        mut pair_encoding: Option<Encoding>,
+        mut encodings: Vec<Encoding>,
         add_special_tokens: bool,
-    ) -> Result<Encoding> {
+    ) -> Result<Vec<Encoding>> {
         if self.trim_offsets {
-            process_offsets(&mut encoding, self.add_prefix_space);
-            encoding
-                .get_overflowing_mut()
-                .iter_mut()
-                .for_each(|encoding| process_offsets(encoding, self.add_prefix_space));
-
-            if let Some(encoding) = pair_encoding.as_mut() {
+            for encoding in encodings.iter_mut() {
                 process_offsets(encoding, self.add_prefix_space);
                 encoding
                     .get_overflowing_mut()
@@ -78,12 +71,27 @@ impl PostProcessor for RobertaProcessing {
         }
 
         if !add_special_tokens {
-            return <dyn PostProcessor>::default_process(
-                encoding,
-                pair_encoding,
-                add_special_tokens,
-            );
+            return Ok(encodings);
         }
+
+        let (mut encoding, pair_encoding): (Encoding, Option<Encoding>) = match encodings.len() {
+            1 => (
+                encodings
+                    .pop()
+                    .ok_or(ProcessorError::InvalidEncodingsVecLength)?,
+                None,
+            ),
+            2 => {
+                let pair = encodings
+                    .pop()
+                    .ok_or(ProcessorError::InvalidEncodingsVecLength)?;
+                let encoding = encodings
+                    .pop()
+                    .ok_or(ProcessorError::InvalidEncodingsVecLength)?;
+                (encoding, Some(pair))
+            }
+            _ => return Err(Box::new(ProcessorError::InvalidEncodingsVecLength)),
+        };
 
         let ids = [&[self.cls.1], encoding.get_ids(), &[self.sep.1]].concat();
         let type_ids = [&[0], encoding.get_type_ids(), &[0]].concat();
@@ -213,7 +221,7 @@ impl PostProcessor for RobertaProcessing {
             new_encoding.merge_with(new_pair_encoding, false);
         }
 
-        Ok(new_encoding)
+        Ok(vec![new_encoding])
     }
 }
 
