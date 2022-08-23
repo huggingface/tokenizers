@@ -33,6 +33,17 @@ impl tk::PostProcessor for Processor {
             .ok_or("Uninitialized PostProcessor")?
             .process(encoding, pair_encoding, add_special_tokens)
     }
+
+    fn process_chain(
+        &self,
+        encodings: Vec<Encoding>,
+        add_special_tokens: bool,
+    ) -> tk::Result<Vec<Encoding>> {
+        self.processor
+            .as_ref()
+            .ok_or("Uninitialized PostProcessor")?
+            .process_chain(encodings, add_special_tokens)
+    }
 }
 
 declare_types! {
