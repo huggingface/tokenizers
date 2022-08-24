@@ -146,7 +146,7 @@ pub trait Trainer {
         F: Fn(&str) -> Result<Vec<String>> + Sync;
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub id: u32,
     pub value: String,

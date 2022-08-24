@@ -94,7 +94,7 @@ impl WordLevelBuilder {
     }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Eq)]
 pub struct WordLevel {
     vocab: HashMap<String, u32>,
     vocab_r: HashMap<u32, String>,

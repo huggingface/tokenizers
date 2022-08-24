@@ -42,7 +42,7 @@ lazy_static! {
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
 /// of all the required processing steps to transform a UTF-8 string as needed before and after the
 /// BPE model does its job.

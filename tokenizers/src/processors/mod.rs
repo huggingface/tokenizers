@@ -13,7 +13,7 @@ use crate::processors::roberta::RobertaProcessing;
 use crate::processors::template::TemplateProcessing;
 use crate::{Encoding, PostProcessor, Result};
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Eq)]
 #[serde(untagged)]
 pub enum PostProcessorWrapper {
     // Roberta must be before Bert for deserialization (serde does not validate tags)

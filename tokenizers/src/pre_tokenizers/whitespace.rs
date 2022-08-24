@@ -5,7 +5,7 @@ use crate::tokenizer::{
 };
 use crate::utils::macro_rules_attribute;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Whitespace;
 
@@ -28,7 +28,7 @@ impl PreTokenizer for Whitespace {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct WhitespaceSplit;
 

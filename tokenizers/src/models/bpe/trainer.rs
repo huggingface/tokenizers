@@ -164,7 +164,7 @@ impl BpeTrainerBuilder {
 /// let special_tokens = trainer.train(&mut model).unwrap();
 /// ```
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub struct BpeTrainer {
     /// The minimum frequency a pair must have to produce a merge operation
     pub min_frequency: u32,

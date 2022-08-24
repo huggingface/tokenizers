@@ -6,7 +6,7 @@ use crate::tokenizer::{
 };
 
 /// Represents the different patterns that `Split` can use
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum SplitPattern {
     String(String),
     Regex(String),

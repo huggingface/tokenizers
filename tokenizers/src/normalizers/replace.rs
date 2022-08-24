@@ -3,7 +3,7 @@ use crate::utils::SysRegex;
 use serde::{Deserialize, Serialize};
 
 /// Represents the different patterns that `Replace` can use
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum ReplacePattern {
     String(String),
     Regex(String),

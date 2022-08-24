@@ -19,7 +19,7 @@ macro_rules! apply_signed {
 }
 
 /// The possible offsets referential
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OffsetReferential {
     Original,
     Normalized,
@@ -27,7 +27,7 @@ pub enum OffsetReferential {
 
 /// Represents a Range usable by the NormalizedString to index its content.
 /// A Range can use indices relative to either the `Original` or the `Normalized` string
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Range<T: RangeBounds<usize> + Clone> {
     Original(T),
     Normalized(T),
@@ -91,7 +91,7 @@ where
 ///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
 ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
 ///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,
@@ -108,7 +108,7 @@ pub enum SplitDelimiterBehavior {
 /// It is possible to retrieve a part of the original string, by indexing it with
 /// offsets from the normalized one, and the other way around too. It is also
 /// possible to convert offsets from one referential to the other one easily.
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct NormalizedString {
     /// The original version of the string, before any modification
     original: String,

@@ -119,7 +119,7 @@ impl WordPieceBuilder {
 /// A
 /// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 /// model.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct WordPiece {
     vocab: Vocab,
     vocab_r: VocabR,

@@ -2,7 +2,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Eq)]
 /// Replaces all the whitespaces by the provided meta character and then
 /// splits on this character
 #[serde(tag = "type")]

@@ -63,7 +63,7 @@ use std::convert::{TryFrom, TryInto};
 use std::result::Result as StdResult;
 
 /// Represents both sequences received as input of the PostProcessor
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum Sequence {
     /// This is the first sequence, the one that is always specified
     A,
@@ -91,7 +91,7 @@ pub enum Sequence {
 ///
 /// [`SpecialToken`]: struct.SpecialToken.html
 ///
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum Piece {
     Sequence { id: Sequence, type_id: u32 },
     SpecialToken { id: String, type_id: u32 },
@@ -188,7 +188,7 @@ impl TryFrom<&str> for Piece {
 ///     vec!["A".into(), "complex".into(), "special".into(), "token".into(), ":".into()]
 /// ).unwrap();
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub struct SpecialToken {
     /// A unique id used to identify this SpecialToken in the template
     id: String,
@@ -249,7 +249,7 @@ impl SpecialToken {
 ///
 /// [`Piece`]: enum.Piece.html
 ///
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 #[serde(transparent)]
 pub struct Template(Vec<Piece>);
 
@@ -289,7 +289,7 @@ impl TryFrom<&str> for Template {
 /// from a HashMap or a Vec<[`SpecialToken`]>.
 ///
 /// [`SpecialToken`]: struct.SpecialToken.html
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Eq)]
 #[serde(transparent)]
 pub struct Tokens(
     #[serde(serialize_with = "crate::utils::ordered_map")] pub HashMap<String, SpecialToken>,
@@ -332,7 +332,7 @@ impl From<HashMap<String, SpecialToken>> for Tokens {
 ///     .unwrap();
 /// ```
 ///
-#[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq)]
 #[serde(tag = "type", from = "TemplateProcessingDeserializer")]
 #[builder(build_fn(validate = "Self::validate"))]
 pub struct TemplateProcessing {

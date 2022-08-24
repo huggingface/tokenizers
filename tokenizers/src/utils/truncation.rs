@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::mem;
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
 pub enum TruncationDirection {
     Left,
     Right,
@@ -53,7 +53,7 @@ pub enum TruncationError {
     SequenceTooShort,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
 pub enum TruncationStrategy {
     LongestFirst,
     OnlyFirst,

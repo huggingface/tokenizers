@@ -4,7 +4,7 @@ use crate::{
 use std::collections::HashMap;
 
 /// Various possible types of offsets
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OffsetType {
     Byte,
     Char,
@@ -15,7 +15,7 @@ pub enum OffsetType {
 /// This Split contains the underlying `NormalizedString` as well as its offsets
 /// in the original string. These offsets are in the `original` referential.
 /// It also contains any `Token` associated to the current split
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Split {
     /// The underlying `NormalizedString`. Each SubString is represented by a `NormalizedString`
     /// and in the end we might be carrying a lot of SubString representing various parts of the
@@ -49,7 +49,7 @@ impl From<(NormalizedString, Option<Vec<Token>>)> for Split {
 /// Once everything has been normalized and tokenized, the `PreTokenizedString` is able
 /// to build an `Encoding` with all the relevant offsets and word ids, relative to the
 /// original string.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreTokenizedString {
     original: String,
     splits: Vec<Split>,
