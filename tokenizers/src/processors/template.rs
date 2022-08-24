@@ -55,7 +55,7 @@
 //!
 //! [`TemplateProcessing`]: struct.TemplateProcessing.html
 //!
-use crate::{tokenizer::ProcessorError, Encoding, PostProcessor, Result};
+use crate::{Encoding, PostProcessor, Result};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -630,31 +630,13 @@ impl PostProcessor for TemplateProcessing {
         }
     }
 
-    fn process_encodings(
+    fn process(
         &self,
-        mut encodings: Vec<Encoding>,
+        encoding: Encoding,
+        pair: Option<Encoding>,
         add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>> {
-        let (encoding, pair): (Encoding, Option<Encoding>) = match encodings.len() {
-            1 => (
-                encodings
-                    .pop()
-                    .ok_or(ProcessorError::InvalidEncodingsVecLength)?,
-                None,
-            ),
-            2 => {
-                let pair = encodings
-                    .pop()
-                    .ok_or(ProcessorError::InvalidEncodingsVecLength)?;
-                let encoding = encodings
-                    .pop()
-                    .ok_or(ProcessorError::InvalidEncodingsVecLength)?;
-                (encoding, Some(pair))
-            }
-            _ => return Err(Box::new(ProcessorError::InvalidEncodingsVecLength)),
-        };
-
-        let encoding = self.apply_template(
+    ) -> Result<Encoding> {
+        self.apply_template(
             if pair.is_some() {
                 &self.pair.0
             } else {
@@ -663,8 +645,7 @@ impl PostProcessor for TemplateProcessing {
             encoding,
             pair,
             add_special_tokens,
-        )?;
-        Ok(vec![encoding])
+        )
     }
 }
 

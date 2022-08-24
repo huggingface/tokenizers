@@ -22,15 +22,16 @@ impl tk::PostProcessor for Processor {
             .added_tokens(is_pair)
     }
 
-    fn process_encodings(
+    fn process(
         &self,
-        encodings: Vec<Encoding>,
+        encoding: Encoding,
+        pair_encoding: Option<Encoding>,
         add_special_tokens: bool,
-    ) -> tk::Result<Vec<Encoding>> {
+    ) -> tk::Result<Encoding> {
         self.processor
             .as_ref()
             .ok_or("Uninitialized PostProcessor")?
-            .process_encodings(encodings, add_special_tokens)
+            .process(encoding, pair_encoding, add_special_tokens)
     }
 }
 

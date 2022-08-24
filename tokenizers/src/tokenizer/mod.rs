@@ -99,48 +99,24 @@ pub trait PostProcessor {
         encoding: Encoding,
         pair_encoding: Option<Encoding>,
         add_special_tokens: bool,
-    ) -> Result<Encoding> {
-        let encodings = if let Some(pair_encoding) = pair_encoding {
-            vec![encoding, pair_encoding]
-        } else {
-            vec![encoding]
-        };
-
-        let encodings = self.process_encodings(encodings, add_special_tokens)?;
-
-        Ok(Encoding::merge(encodings, false))
-    }
-
-    /// Process any amount of encodings and returns a series of encoding (might merge them)
-    fn process_encodings(
-        &self,
-        encodings: Vec<Encoding>,
-        add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>>;
+    ) -> Result<Encoding>;
 }
 impl dyn PostProcessor {
     pub fn default_process(
-        encodings: Vec<Encoding>,
+        mut encoding: Encoding,
+        pair_encoding: Option<Encoding>,
         _add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>> {
-        match encodings.len() {
-            1 => Ok(encodings),
-            _ => {
-                let mut final_encoding = Encoding::default();
-                for (i, mut encoding) in encodings.into_iter().enumerate() {
-                    encoding.set_sequence_id(i);
-                    final_encoding.merge_with(encoding, false);
-                }
-                Ok(vec![final_encoding])
+    ) -> Result<Encoding> {
+        match pair_encoding {
+            None => Ok(encoding),
+            Some(mut pair) => {
+                encoding.set_sequence_id(0);
+                pair.set_sequence_id(1);
+                encoding.merge_with(pair, false);
+                Ok(encoding)
             }
         }
     }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum ProcessorError {
-    #[error("encodings vector length must be either 1 or 2")]
-    InvalidEncodingsVecLength,
 }
 
 /// A `Decoder` changes the raw tokens into its more readable form.
@@ -919,17 +895,7 @@ where
         let final_encoding = if let Some(processor) = &self.post_processor {
             processor.process(encoding, pair_encoding, add_special_tokens)?
         } else {
-            let encodings = if let Some(pair_encoding) = pair_encoding {
-                vec![encoding, pair_encoding]
-            } else {
-                vec![encoding]
-            };
-            let mut encodings =
-                <dyn PostProcessor>::default_process(encodings, add_special_tokens)?;
-            if encodings.len() != 1 {
-                panic!("We haven't reduced the encodings like we should have");
-            }
-            encodings.pop().unwrap()
+            <dyn PostProcessor>::default_process(encoding, pair_encoding, add_special_tokens)?
         };
 
         // 3. Then we pad if needed
