@@ -129,6 +129,33 @@ fn template_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     Ok(js_processor)
 }
 
+/// sequence(processors: List[Processor])
+fn sequence(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
+    let processors = cx.argument::<JsArray>(0)?.to_vec(&mut cx)?;
+    let mut sequence = Vec::with_capacity(processors.len());
+
+    processors.into_iter().try_for_each(|processor| {
+        match processor.downcast::<JsProcessor>().or_throw(&mut cx) {
+            Ok(processor) => {
+                let guard = cx.lock();
+                if let Some(processor_arc) = &processor.borrow(&guard).processor {
+                    let processor: ProcessorWrapper = (**processor_arc).clone();
+                    sequence.push(processor);
+                }
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    })?;
+
+    let mut pretok = JsProcessor::new::<_, JsProcessor, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    pretok.borrow_mut(&guard).processor = Some(Arc::new(tk::ProcessorWrapper::Sequence(
+        tk::processors::sequence::Sequence::new(sequence),
+    )));
+    Ok(pretok)
+}
+
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_BertProcessing", prefix), bert_processing)?;
@@ -138,5 +165,6 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
         &format!("{}_TemplateProcessing", prefix),
         template_processing,
     )?;
+    m.export_function(&format!("{}_Sequence", prefix), sequence)?;
     Ok(())
 }

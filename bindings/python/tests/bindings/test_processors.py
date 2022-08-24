@@ -13,6 +13,7 @@ from tokenizers.processors import (
     RobertaProcessing,
     ByteLevel,
     TemplateProcessing,
+    Sequence,
 )
 
 
@@ -179,3 +180,49 @@ class TestTemplateProcessing:
         tokenizer.post_processor = self.get_roberta()
         template = tokenizer.encode("my name is john", "pair")
         assert original.ids == template.ids
+
+
+class TestSequenceProcessing:
+    def test_sequence_processing(self):
+        assert Sequence([]) is not None
+        assert Sequence([ByteLevel()]) is not None
+        assert isinstance(Sequence([]), PostProcessor)
+        assert isinstance(Sequence([]), Sequence)
+        serialized = pickle.dumps(Sequence([]))
+        assert isinstance(pickle.loads(serialized), Sequence)
+
+    def test_post_process(self):
+        byte_level = ByteLevel(trim_offsets=True)
+        template = TemplateProcessing(
+            single=["[CLS]", "$0", "[SEP]"],
+            pair=["[CLS]:0", "$A", "[SEP]:0", "$B:1", "[SEP]:1"],
+            special_tokens=[("[CLS]", 1), ("[SEP]", 0)],
+        )
+
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_special_tokens(["[SEP]", "[CLS]"])
+        tokenizer.add_tokens(["my", "name", "is", "Ġjohn", "pair"])
+        tokenizer.post_processor = template
+
+        # Before the sequence
+        original = tokenizer.encode("my name is Ġjohn")
+        assert original.ids == [1, 2, 3, 4, 5, 0]
+        assert original.type_ids == [0, 0, 0, 0, 0, 0]
+        assert original.offsets == [(0, 0), (0, 2), (3, 7), (8, 10), (11, 16), (0, 0)]
+        pair = tokenizer.encode("my name is Ġjohn", "pair")
+        # assert pair.ids == [1, 2, 3, 4, 5, 0, 6, 0]
+        assert pair.type_ids == [0, 0, 0, 0, 0, 0, 1, 1]
+        assert pair.offsets == [(0, 0), (0, 2), (3, 7), (8, 10), (11, 16), (0, 0), (0, 4), (0, 0)]
+
+        processor = Sequence([byte_level, template])
+        tokenizer.post_processor = processor
+
+        original = tokenizer.encode("my name is Ġjohn")
+        assert original.ids == [1, 2, 3, 4, 5, 0]
+        assert original.type_ids == [0, 0, 0, 0, 0, 0]
+        # Offsets ARE trimmed
+        assert original.offsets == [(0, 0), (0, 2), (3, 7), (8, 10), (12, 16), (0, 0)]
+        pair = tokenizer.encode("my name is Ġjohn", "pair")
+        # assert pair.ids == [1, 2, 3, 4, 5, 0, 6, 0]
+        assert pair.type_ids == [0, 0, 0, 0, 0, 0, 1, 1]
+        assert pair.offsets == [(0, 0), (0, 2), (3, 7), (8, 10), (12, 16), (0, 0), (0, 4), (0, 0)]

@@ -54,3 +54,11 @@ export function templateProcessing(
   pair?: string,
   specialTokens?: [string, number][]
 ): PostProcessor;
+
+/**
+ * Instantiate a new SequenceProcessing.
+ *
+ * @param PostProcessor[] The list of Processors to use
+ * @since 0.13.0
+ */
+export function sequenceProcessing(processors: PostProcessor[]): PostProcessor;
