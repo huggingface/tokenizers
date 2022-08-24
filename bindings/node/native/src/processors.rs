@@ -135,11 +135,11 @@ fn sequence(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     let mut sequence = Vec::with_capacity(processors.len());
 
     processors.into_iter().try_for_each(|processor| {
-        match processor.downcast::<JsProcessor>().or_throw(&mut cx) {
+        match processor.downcast::<JsPostProcessor>().or_throw(&mut cx) {
             Ok(processor) => {
                 let guard = cx.lock();
                 if let Some(processor_arc) = &processor.borrow(&guard).processor {
-                    let processor: ProcessorWrapper = (**processor_arc).clone();
+                    let processor: PostProcessorWrapper = (**processor_arc).clone();
                     sequence.push(processor);
                 }
                 Ok(())
@@ -148,9 +148,9 @@ fn sequence(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
         }
     })?;
 
-    let mut pretok = JsProcessor::new::<_, JsProcessor, _>(&mut cx, vec![])?;
+    let mut pretok = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    pretok.borrow_mut(&guard).processor = Some(Arc::new(tk::ProcessorWrapper::Sequence(
+    pretok.borrow_mut(&guard).processor = Some(Arc::new(PostProcessorWrapper::Sequence(
         tk::processors::sequence::Sequence::new(sequence),
     )));
     Ok(pretok)
