@@ -483,7 +483,7 @@ impl TemplateProcessing {
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>> {
         let final_encodings: Vec<Encoding> = template
-            .into_iter()
+            .iter()
             .flat_map(|piece| {
                 match piece {
                     Piece::Sequence { id, type_id } => {

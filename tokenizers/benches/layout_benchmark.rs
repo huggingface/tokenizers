@@ -1,8 +1,6 @@
 #[macro_use]
 extern crate criterion;
 
-mod common;
-
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -10,7 +8,6 @@ use std::time::{Duration, Instant};
 
 use criterion::black_box;
 use criterion::Criterion;
-use tokenizers::normalizers::NormalizerWrapper;
 use tokenizers::processors::template::TemplateProcessing;
 use tokenizers::{EncodeInput, Encoding, PostProcessor, Tokenizer};
 
