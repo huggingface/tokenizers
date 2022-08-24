@@ -84,11 +84,6 @@ describe("templateProcessing", () => {
 });
 
 describe("sequenceProcessing", () => {
-  it("instantiates correctly without any parameter", () => {
-    const processor = sequenceProcessing();
-    expect(processor.constructor.name).toEqual("Processor");
-  });
-
   it("accepts `PostProcessor[]` as first parameter", () => {
     const template = templateProcessing("[CLS] $A [SEP]", "[CLS] $A [SEP] $B:1 [SEP]:1", [
       ["[CLS]", 1],
