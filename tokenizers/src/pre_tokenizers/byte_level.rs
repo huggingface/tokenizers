@@ -174,20 +174,13 @@ impl PostProcessor for ByteLevel {
         0
     }
 
-    fn process(
+    fn process_encodings(
         &self,
-        mut encoding: Encoding,
-        mut pair_encoding: Option<Encoding>,
+        mut encodings: Vec<Encoding>,
         add_special_tokens: bool,
-    ) -> Result<Encoding> {
+    ) -> Result<Vec<Encoding>> {
         if self.trim_offsets {
-            process_offsets(&mut encoding, self.add_prefix_space);
-            encoding
-                .get_overflowing_mut()
-                .iter_mut()
-                .for_each(|encoding| process_offsets(encoding, self.add_prefix_space));
-
-            if let Some(encoding) = pair_encoding.as_mut() {
+            for encoding in encodings.iter_mut() {
                 process_offsets(encoding, self.add_prefix_space);
                 encoding
                     .get_overflowing_mut()
@@ -195,8 +188,7 @@ impl PostProcessor for ByteLevel {
                     .for_each(|encoding| process_offsets(encoding, self.add_prefix_space));
             }
         }
-
-        <dyn PostProcessor>::default_process(encoding, pair_encoding, add_special_tokens)
+        <dyn PostProcessor>::default_process(encodings, add_special_tokens)
     }
 }
 
