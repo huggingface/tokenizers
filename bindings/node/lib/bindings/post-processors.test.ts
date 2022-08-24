@@ -89,10 +89,6 @@ describe("sequenceProcessing", () => {
     expect(processor.constructor.name).toEqual("Processor");
   });
 
-  it("accepts `undefined` as first parameter", () => {
-    expect(sequenceProcessing(undefined)).toBeDefined();
-  });
-
   it("accepts `PostProcessor[]` as first parameter", () => {
     const template = templateProcessing("[CLS] $A [SEP]", "[CLS] $A [SEP] $B:1 [SEP]:1", [
       ["[CLS]", 1],
