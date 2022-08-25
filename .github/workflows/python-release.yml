@@ -117,10 +117,42 @@ jobs:
           pip install awscli
           aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
 
+  create_wheels_macos_arm64:
+    name: Create wheels for MacOS M1
+    runs-on: macos-arm64
+    strategy:
+      matrix:
+        python: ["3.9.13", "3.10.6"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install Python
+        shell: bash
+        run: |
+          echo $HOME
+          export PYENV_ROOT="$HOME/.pyenv"
+          command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
+          eval "$(pyenv init -)"
+          pyenv shell ${{ matrix.python }}
+          which pyenv
+          which python
+          pip install -U setuptools wheel setuptools-rust awscli
+          cd ./bindings/python
+          python setup.py bdist_wheel
+          cd ../../
+          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
+
   upload_package:
     name: Upload package to PyPi
     runs-on: ubuntu-latest
-    needs: [create_wheels_manylinux, create_wheels_windows_32bit, create_wheels_others_64bit]
+    needs: [create_wheels_manylinux, create_wheels_windows_32bit, create_wheels_others_64bit, create_wheels_macos_arm64]
 
     steps:
       - uses: actions/checkout@v1
