@@ -1,5 +1,6 @@
 pub mod bert;
 pub mod roberta;
+pub mod sequence;
 pub mod template;
 
 // Re-export these as processors
@@ -10,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
+use crate::processors::sequence::Sequence;
 use crate::processors::template::TemplateProcessing;
 use crate::{Encoding, PostProcessor, Result};
 
@@ -21,6 +23,7 @@ pub enum PostProcessorWrapper {
     Bert(BertProcessing),
     ByteLevel(ByteLevel),
     Template(TemplateProcessing),
+    Sequence(Sequence),
 }
 
 impl PostProcessor for PostProcessorWrapper {
@@ -30,6 +33,7 @@ impl PostProcessor for PostProcessorWrapper {
             Self::ByteLevel(bl) => bl.added_tokens(is_pair),
             Self::Roberta(roberta) => roberta.added_tokens(is_pair),
             Self::Template(template) => template.added_tokens(is_pair),
+            Self::Sequence(bl) => bl.added_tokens(is_pair),
         }
     }
 
@@ -43,6 +47,7 @@ impl PostProcessor for PostProcessorWrapper {
             Self::ByteLevel(bl) => bl.process_encodings(encodings, add_special_tokens),
             Self::Roberta(roberta) => roberta.process_encodings(encodings, add_special_tokens),
             Self::Template(template) => template.process_encodings(encodings, add_special_tokens),
+            Self::Sequence(bl) => bl.process_encodings(encodings, add_special_tokens),
         }
     }
 }
@@ -51,6 +56,7 @@ impl_enum_from!(BertProcessing, PostProcessorWrapper, Bert);
 impl_enum_from!(ByteLevel, PostProcessorWrapper, ByteLevel);
 impl_enum_from!(RobertaProcessing, PostProcessorWrapper, Roberta);
 impl_enum_from!(TemplateProcessing, PostProcessorWrapper, Template);
+impl_enum_from!(Sequence, PostProcessorWrapper, Sequence);
 
 #[cfg(test)]
 mod tests {

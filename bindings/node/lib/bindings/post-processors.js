@@ -5,4 +5,5 @@ module.exports = {
   byteLevelProcessing: native.processors_ByteLevel,
   robertaProcessing: native.processors_RobertaProcessing,
   templateProcessing: native.processors_TemplateProcessing,
+  sequenceProcessing: native.processors_Sequence,
 };
