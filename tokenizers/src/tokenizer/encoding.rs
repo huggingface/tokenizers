@@ -152,6 +152,10 @@ impl Encoding {
         &self.type_ids
     }
 
+    pub fn set_type_ids(&mut self, type_ids: Vec<u32>) {
+        self.type_ids = type_ids;
+    }
+
     pub fn get_offsets(&self) -> &[Offsets] {
         &self.offsets
     }
@@ -383,6 +387,12 @@ impl Encoding {
     pub fn merge<I: IntoIterator<Item = Encoding>>(encodings: I, growing_offsets: bool) -> Self {
         let mut encoding = Encoding::default();
 
+        // TODO this is suboptimal as we're doing this iteratively instead of preallocating
+        // all the encodings sizes all at once and only copying into this preallocated vector
+        // https://github.com/huggingface/tokenizers/pull/1049
+
+        // In order to fix, we just need to preallocate all vectors, then copy everything
+        // into it (and deal with overlowings correctly)
         for sub in encodings {
             encoding.merge_with(sub, growing_offsets);
         }

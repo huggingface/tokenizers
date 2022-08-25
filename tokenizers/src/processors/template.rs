@@ -55,14 +55,14 @@
 //!
 //! [`TemplateProcessing`]: struct.TemplateProcessing.html
 //!
-use crate::{tokenizer::ProcessorError, Encoding, PostProcessor, Result};
+use crate::{Encoding, PostProcessor, Result};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::result::Result as StdResult;
 
-/// Represents both sequences received as input of the PostProcessor
+/// Represents any sequences received as input of the PostProcessor
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum Sequence {
     /// This is the first sequence, the one that is always specified
@@ -479,145 +479,102 @@ impl TemplateProcessing {
     fn apply_template(
         &self,
         template: &[Piece],
-        mut encoding: Encoding,
-        mut pair: Option<Encoding>,
+        mut encodings: Vec<Encoding>,
         add_special_tokens: bool,
-    ) -> Result<Encoding> {
-        // Compute the new size
-        let mut new_len = 0;
-        for piece in template {
-            new_len += match piece {
-                Piece::Sequence {
-                    id: Sequence::A, ..
-                } => encoding.len(),
-                Piece::Sequence {
-                    id: Sequence::B, ..
-                } => pair
-                    .as_ref()
-                    .ok_or("Template expected a pair sequence, but none provided")?
-                    .len(),
-                Piece::SpecialToken { id, .. } => {
-                    if add_special_tokens {
-                        self.special_tokens
-                            .0
-                            .get(id)
-                            .ok_or_else(|| format!("Missing SpecialToken with id {}", id))?
-                            .ids
-                            .len()
-                    } else {
-                        0
+    ) -> Result<Vec<Encoding>> {
+        let final_encodings: Vec<Encoding> = template
+            .iter()
+            .flat_map(|piece| {
+                match piece {
+                    Piece::Sequence { id, type_id } => {
+                        let i = if *id == Sequence::A { 0 } else { 1 };
+                        let encoding = &mut encodings[i];
+                        encoding.set_type_ids(vec![*type_id; encoding.len()]);
+                        encoding.set_sequence_id(i);
+                        Some(encoding.clone())
+                    }
+                    Piece::SpecialToken { id, type_id } => {
+                        if add_special_tokens {
+                            let tok = &self.special_tokens.0[id]; // We already checked existance above
+                            let len = tok.ids.len();
+
+                            let encoding = Encoding::new(
+                                tok.ids.clone(),
+                                std::iter::repeat(*type_id).take(len).collect(),
+                                tok.tokens.clone(),
+                                // words
+                                std::iter::repeat(None).take(len).collect(),
+                                // offsets
+                                std::iter::repeat((0, 0)).take(len).collect(),
+                                // special_tokens_mask
+                                std::iter::repeat(1).take(len).collect(),
+                                // attention_mask
+                                std::iter::repeat(1).take(len).collect(),
+                                // overflowing
+                                vec![],
+                                // sequence_range
+                                HashMap::new(),
+                            );
+                            Some(encoding)
+                        } else {
+                            None
+                        }
                     }
                 }
-            };
-        }
-
-        // Then build the new Encoding
-        let mut ids = Vec::with_capacity(new_len);
-        let mut type_ids = Vec::with_capacity(new_len);
-        let mut tokens = Vec::with_capacity(new_len);
-        let mut words = Vec::with_capacity(new_len);
-        let mut offsets = Vec::with_capacity(new_len);
-        let mut special_tokens_mask = Vec::with_capacity(new_len);
-        let mut attention_mask = Vec::with_capacity(new_len);
-        let mut sequence_ranges = HashMap::new();
-
-        let pair_overflowing = pair.as_mut().map_or(vec![], |e| e.take_overflowing());
-        let mut overflowing = encoding
-            .take_overflowing()
-            .into_iter()
-            .flat_map(|encoding| {
-                // 1. The pair itself
-                let mut overflowings = vec![self.apply_template(
-                    template,
-                    encoding.clone(),
-                    pair.clone(),
-                    add_special_tokens,
-                )];
-
-                // 2. Its overflowings
-                for other_o in &pair_overflowing {
-                    overflowings.push(self.apply_template(
-                        template,
-                        encoding.clone(),
-                        Some(other_o.clone()),
-                        add_special_tokens,
-                    ));
-                }
-
-                overflowings
             })
-            .collect::<Result<Vec<_>>>()?;
-        // We also need to combine the first sequence with all other overflowings
-        overflowing.extend(
-            pair_overflowing
-                .into_iter()
-                .map(|pair| {
-                    self.apply_template(template, encoding.clone(), Some(pair), add_special_tokens)
-                })
-                .collect::<Result<Vec<_>>>()?,
-        );
+            .collect();
 
-        for piece in template {
-            match piece {
-                Piece::Sequence {
-                    id: Sequence::A,
-                    type_id,
-                } => {
-                    let seq_start = ids.len();
-                    let seq_end = seq_start + encoding.len();
-                    sequence_ranges.insert(0, seq_start..seq_end);
-                    ids.extend(encoding.get_ids());
-                    type_ids.extend(std::iter::repeat(type_id).take(encoding.len()));
-                    tokens.extend(encoding.get_tokens().iter().map(|s| s.to_owned()));
-                    words.extend(encoding.get_word_ids());
-                    offsets.extend(encoding.get_offsets());
-                    special_tokens_mask.extend(encoding.get_special_tokens_mask());
-                    attention_mask.extend(encoding.get_attention_mask());
-                }
-                Piece::Sequence {
-                    id: Sequence::B,
-                    type_id,
-                } => {
-                    let pair = pair.as_ref().expect("Missing pair sequence, checked above");
-                    let seq_start = ids.len();
-                    let seq_end = seq_start + pair.len();
-                    sequence_ranges.insert(1, seq_start..seq_end);
-                    ids.extend(pair.get_ids());
-                    type_ids.extend(std::iter::repeat(type_id).take(pair.len()));
-                    tokens.extend(pair.get_tokens().iter().map(|s| s.to_owned()));
-                    words.extend(pair.get_word_ids());
-                    offsets.extend(pair.get_offsets());
-                    special_tokens_mask.extend(pair.get_special_tokens_mask());
-                    attention_mask.extend(pair.get_attention_mask());
-                }
-                Piece::SpecialToken { id, type_id } => {
-                    if add_special_tokens {
-                        let tok = &self.special_tokens.0[id]; // We already checked existance above
-                        let len = tok.ids.len();
+        //let mut pair = if encodings.len() > 1 {
+        //    Some(encodings.pop().unwrap())
+        //} else {
+        //    None
+        //};
+        //let mut encoding = encodings.pop().unwrap();
 
-                        ids.extend(&tok.ids);
-                        type_ids.extend(std::iter::repeat(type_id).take(len));
-                        tokens.extend(tok.tokens.clone());
-                        words.extend(std::iter::repeat(None).take(len));
-                        offsets.extend(std::iter::repeat((0, 0)).take(len));
-                        special_tokens_mask.extend(std::iter::repeat(1).take(len));
-                        attention_mask.extend(std::iter::repeat(1).take(len));
-                    }
-                }
-            }
-        }
+        //let pair_overflowing = pair.as_mut().map_or(vec![], |e| e.take_overflowing());
+        //let mut overflowing: Vec<Encoding> = encoding
+        //    .take_overflowing()
+        //    .iter()
+        //    .map(|encoding| -> Result<Vec<Encoding>> {
+        //        // 1. The pair itself
+        //        let mut overflowings = self.apply_template(
+        //            template,
+        //            if encodings.len() > 1 {
+        //                vec![encoding.clone(), encodings[1].clone()]
+        //            } else {
+        //                vec![encoding.clone()]
+        //            },
+        //            add_special_tokens,
+        //        )?;
 
-        Ok(Encoding::new(
-            ids,
-            type_ids,
-            tokens,
-            words,
-            offsets,
-            special_tokens_mask,
-            attention_mask,
-            overflowing,
-            sequence_ranges,
-        ))
+        //        // 2. Its overflowings
+        //        for other_o in &pair_overflowing {
+        //            overflowings.extend(self.apply_template(
+        //                template,
+        //                vec![encoding.clone(), other_o.clone()],
+        //                add_special_tokens,
+        //            )?);
+        //        }
+
+        //        Ok(overflowings)
+        //    })
+        //    .collect::<Result<Vec<Vec<Encoding>>>>()?
+        //    .into_iter()
+        //    .flatten()
+        //    .collect();
+        //// We also need to combine the first sequence with all other overflowings
+        //overflowing.extend(
+        //    pair_overflowing
+        //        .into_iter()
+        //        .map(|pair| {
+        //            self.apply_template(template, vec![encoding.clone(), pair], add_special_tokens)
+        //        })
+        //        .collect::<Result<Vec<_>>>()?
+        //        .into_iter()
+        //        .flatten(),
+        //);
+
+        Ok(final_encodings)
     }
 }
 
@@ -632,39 +589,34 @@ impl PostProcessor for TemplateProcessing {
 
     fn process_encodings(
         &self,
-        mut encodings: Vec<Encoding>,
+        encodings: Vec<Encoding>,
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>> {
-        let (encoding, pair): (Encoding, Option<Encoding>) = match encodings.len() {
-            1 => (
-                encodings
-                    .pop()
-                    .ok_or(ProcessorError::InvalidEncodingsVecLength)?,
-                None,
-            ),
-            2 => {
-                let pair = encodings
-                    .pop()
-                    .ok_or(ProcessorError::InvalidEncodingsVecLength)?;
-                let encoding = encodings
-                    .pop()
-                    .ok_or(ProcessorError::InvalidEncodingsVecLength)?;
-                (encoding, Some(pair))
-            }
-            _ => return Err(Box::new(ProcessorError::InvalidEncodingsVecLength)),
+        // let (encoding, pair): (Encoding, Option<Encoding>) = match encodings.len() {
+        //     1 => (
+        //         encodings
+        //             .pop()
+        //             .ok_or(ProcessorError::InvalidEncodingsVecLength)?,
+        //         None,
+        //     ),
+        //     2 => {
+        //         let pair = encodings
+        //             .pop()
+        //             .ok_or(ProcessorError::InvalidEncodingsVecLength)?;
+        //         let encoding = encodings
+        //             .pop()
+        //             .ok_or(ProcessorError::InvalidEncodingsVecLength)?;
+        //         (encoding, Some(pair))
+        //     }
+        //     _ => return Err(Box::new(ProcessorError::InvalidEncodingsVecLength)),
+        // };
+        let template = match encodings.len() {
+            2 => &self.pair.0,
+            1 => &self.single.0,
+            _ => todo!(),
         };
-
-        let encoding = self.apply_template(
-            if pair.is_some() {
-                &self.pair.0
-            } else {
-                &self.single.0
-            },
-            encoding,
-            pair,
-            add_special_tokens,
-        )?;
-        Ok(vec![encoding])
+        let encodings = self.apply_template(template, encodings, add_special_tokens)?;
+        Ok(encodings)
     }
 }
 
@@ -884,7 +836,6 @@ mod tests {
         );
         let pair = Encoding::from_tokens(vec![Token::new(15, "pair".into(), (0, 4))], 0);
         let single_encoding = processor.process(encoding.clone(), None, true).unwrap();
-        let pair_encoding = processor.process(encoding, Some(pair), true).unwrap();
         assert_eq!(
             single_encoding,
             Encoding::new(
@@ -906,6 +857,7 @@ mod tests {
         );
         assert_eq!(single_encoding.token_to_sequence(2), Some(0));
         assert_eq!(single_encoding.token_to_sequence(3), None);
+        let pair_encoding = processor.process(encoding, Some(pair), true).unwrap();
         assert_eq!(
             pair_encoding,
             Encoding::new(
