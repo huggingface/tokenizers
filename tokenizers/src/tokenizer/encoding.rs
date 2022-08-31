@@ -176,6 +176,10 @@ impl Encoding {
         &self.overflowing
     }
 
+    pub fn set_overflowing(&mut self, overflowing: Vec<Encoding>) {
+        self.overflowing = overflowing;
+    }
+
     pub fn get_overflowing_mut(&mut self) -> &mut Vec<Encoding> {
         &mut self.overflowing
     }
@@ -405,8 +409,6 @@ impl Encoding {
         // Handle merging the overflowing parts too: Combine them all
         // In most of the cases, we expect `pair.overflowing.len() == 0`
         let mut overflowings = vec![];
-        println!("Overflowing self {:?}", self.overflowing);
-        println!("Overflowing pair {:?}", pair.overflowing);
 
         // 1. All our overflowings with all the others
         for self_o in &self.overflowing {
