@@ -405,6 +405,8 @@ impl Encoding {
         // Handle merging the overflowing parts too: Combine them all
         // In most of the cases, we expect `pair.overflowing.len() == 0`
         let mut overflowings = vec![];
+        println!("Overflowing self {:?}", self.overflowing);
+        println!("Overflowing pair {:?}", pair.overflowing);
 
         // 1. All our overflowings with all the others
         for self_o in &self.overflowing {
