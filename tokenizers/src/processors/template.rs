@@ -886,6 +886,182 @@ mod tests {
     }
 
     #[test]
+    fn template_processing_overflowing() {
+        let processor = tests::get_bert_template();
+        assert_eq!(processor.added_tokens(false), 2);
+        assert_eq!(processor.added_tokens(true), 3);
+
+        use crate::Token;
+        let mut encoding = Encoding::from_tokens(
+            vec![
+                Token::new(12, "Hello".into(), (0, 5)),
+                Token::new(14, "there".into(), (6, 11)),
+            ],
+            0,
+        );
+        let overflowing = Encoding::from_tokens(vec![Token::new(13, "you".into(), (12, 15))], 0);
+        encoding.set_overflowing(vec![overflowing]);
+
+        let mut pair = Encoding::from_tokens(
+            vec![
+                Token::new(15, "pair".into(), (0, 4)),
+                Token::new(16, "with".into(), (5, 9)),
+            ],
+            0,
+        );
+        let pair_overflowing =
+            Encoding::from_tokens(vec![Token::new(17, "info".into(), (10, 14))], 0);
+        pair.set_overflowing(vec![pair_overflowing]);
+
+        let single_encoding = processor.process(encoding.clone(), None, true).unwrap();
+        assert_eq!(
+            single_encoding,
+            Encoding::new(
+                vec![1, 12, 14, 0],
+                vec![0, 0, 0, 0],
+                vec![
+                    "[CLS]".into(),
+                    "Hello".into(),
+                    "there".into(),
+                    "[SEP]".into()
+                ],
+                vec![None, None, None, None],
+                vec![(0, 0), (0, 5), (6, 11), (0, 0)],
+                vec![1, 0, 0, 1],
+                vec![1, 1, 1, 1],
+                vec![Encoding::new(
+                    vec![1, 13, 0],
+                    vec![0, 0, 0],
+                    vec!["[CLS]".into(), "you".into(), "[SEP]".into()],
+                    vec![None, None, None],
+                    vec![(0, 0), (12, 15), (0, 0)],
+                    vec![1, 0, 1],
+                    vec![1, 1, 1],
+                    vec![],
+                    HashMap::from_iter(vec![(0, 1..2)]),
+                )],
+                HashMap::from_iter(vec![(0, 1..3)]),
+            )
+        );
+        assert_eq!(single_encoding.token_to_sequence(2), Some(0));
+        assert_eq!(single_encoding.token_to_sequence(3), None);
+        let pair_encoding = processor.process(encoding, Some(pair), true).unwrap();
+        println!("{pair_encoding:#?}");
+        assert_eq!(
+            pair_encoding,
+            Encoding::new(
+                vec![1, 12, 14, 0, 15, 16, 0],
+                vec![0, 0, 0, 0, 1, 1, 1],
+                vec![
+                    "[CLS]".into(),
+                    "Hello".into(),
+                    "there".into(),
+                    "[SEP]".into(),
+                    "pair".into(),
+                    "with".into(),
+                    "[SEP]".into()
+                ],
+                vec![None, None, None, None, None, None, None],
+                vec![(0, 0), (0, 5), (6, 11), (0, 0), (0, 4), (5, 9), (0, 0)],
+                vec![1, 0, 0, 1, 0, 0, 1],
+                vec![1, 1, 1, 1, 1, 1, 1],
+                vec![
+                    Encoding::new(
+                        vec![1, 13, 0, 15, 16, 0],
+                        vec![0, 0, 0, 1, 1, 1],
+                        vec![
+                            "[CLS]".into(),
+                            "you".into(),
+                            "[SEP]".into(),
+                            "pair".into(),
+                            "with".into(),
+                            "[SEP]".into()
+                        ],
+                        vec![None, None, None, None, None, None],
+                        vec![(0, 0), (12, 15), (0, 0), (0, 4), (5, 9), (0, 0)],
+                        vec![1, 0, 1, 0, 0, 1],
+                        vec![1, 1, 1, 1, 1, 1],
+                        vec![Encoding::new(
+                            vec![1, 13, 0, 17, 0],
+                            vec![0, 0, 0, 0, 1],
+                            vec![
+                                "[CLS]".into(),
+                                "you".into(),
+                                "[SEP]".into(),
+                                "info".into(),
+                                "[SEP]".into()
+                            ],
+                            vec![None, None, None, None, None,],
+                            vec![(0, 0), (12, 15), (0, 0), (10, 14), (0, 0)],
+                            vec![1, 0, 1, 0, 1],
+                            vec![1, 1, 1, 1, 1],
+                            vec![],
+                            HashMap::from_iter(vec![(0, 1..2), (1, 3..4)]),
+                        ),],
+                        HashMap::from_iter(vec![(1, 3..5), (0, 1..2)]),
+                    ),
+                    Encoding::new(
+                        vec![1, 13, 0, 17, 0],
+                        vec![0, 0, 0, 0, 1],
+                        vec![
+                            "[CLS]".into(),
+                            "you".into(),
+                            "[SEP]".into(),
+                            "info".into(),
+                            "[SEP]".into()
+                        ],
+                        vec![None, None, None, None, None,],
+                        vec![(0, 0), (12, 15), (0, 0), (10, 14), (0, 0)],
+                        vec![1, 0, 1, 0, 1],
+                        vec![1, 1, 1, 1, 1],
+                        vec![],
+                        HashMap::from_iter(vec![(0, 1..2), (1, 3..4)]),
+                    ),
+                    Encoding::new(
+                        vec![1, 12, 14, 0, 17, 0],
+                        vec![0, 0, 0, 0, 0, 1],
+                        vec![
+                            "[CLS]".into(),
+                            "Hello".into(),
+                            "there".into(),
+                            "[SEP]".into(),
+                            "info".into(),
+                            "[SEP]".into()
+                        ],
+                        vec![None, None, None, None, None, None],
+                        vec![(0, 0), (0, 5), (6, 11), (0, 0), (10, 14), (0, 0)],
+                        vec![1, 0, 0, 1, 0, 1],
+                        vec![1, 1, 1, 1, 1, 1],
+                        vec![Encoding::new(
+                            vec![1, 13, 0, 17, 0],
+                            vec![0, 0, 0, 0, 1],
+                            vec![
+                                "[CLS]".into(),
+                                "you".into(),
+                                "[SEP]".into(),
+                                "info".into(),
+                                "[SEP]".into()
+                            ],
+                            vec![None, None, None, None, None,],
+                            vec![(0, 0), (12, 15), (0, 0), (10, 14), (0, 0)],
+                            vec![1, 0, 1, 0, 1],
+                            vec![1, 1, 1, 1, 1],
+                            vec![],
+                            HashMap::from_iter(vec![(0, 1..2), (1, 3..4)]),
+                        ),],
+                        HashMap::from_iter(vec![(0, 1..3), (1, 4..5)]),
+                    )
+                ],
+                HashMap::from_iter(vec![(0, 1..3), (1, 4..6)]),
+            )
+        );
+        assert_eq!(pair_encoding.token_to_sequence(2), Some(0));
+        assert_eq!(pair_encoding.token_to_sequence(3), None);
+        assert_eq!(pair_encoding.token_to_sequence(4), Some(1));
+        assert_eq!(pair_encoding.token_to_sequence(5), Some(1));
+        assert_eq!(pair_encoding.token_to_sequence(6), None);
+    }
+    #[test]
     fn pair_must_use_both_sequences() {
         let processor = TemplateProcessing::builder()
             .try_single("$0")

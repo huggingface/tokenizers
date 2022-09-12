@@ -1,3 +1,8 @@
+## [0.13.0] 
+
+- [#1008] `Decoder` is now a composable trait, but without being backward incompatible
+- [#1047, #1051, #1052] `Processor` is now a composable trait, but without being backward incompatible
+
 ## [0.12.1] 
 
 - [#938] **Reverted breaking change**. https://github.com/huggingface/transformers/issues/16520
@@ -160,6 +165,13 @@ The files must now be provided first when calling `tokenizer.train(files, traine
 - Actually add special tokens in tokenizers implementations ([acef252](https://github.com/huggingface/tokenizers/commit/acef252dacc43adc414175cfc325668ad1488753))
 
 
+[#956]: https://github.com/huggingface/tokenizers/pull/956
+[#1008]: https://github.com/huggingface/tokenizers/pull/1008
+[#1009]: https://github.com/huggingface/tokenizers/pull/1009
+[#1047]: https://github.com/huggingface/tokenizers/pull/1047
+[#1055]: https://github.com/huggingface/tokenizers/pull/1055
+[#1051]: https://github.com/huggingface/tokenizers/pull/1051
+[#1052]: https://github.com/huggingface/tokenizers/pull/1052
 [#938]: https://github.com/huggingface/tokenizers/pull/938
 [#939]: https://github.com/huggingface/tokenizers/pull/939
 [#952]: https://github.com/huggingface/tokenizers/pull/952

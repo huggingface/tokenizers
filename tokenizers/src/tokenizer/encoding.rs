@@ -176,6 +176,10 @@ impl Encoding {
         &self.overflowing
     }
 
+    pub fn set_overflowing(&mut self, overflowing: Vec<Encoding>) {
+        self.overflowing = overflowing;
+    }
+
     pub fn get_overflowing_mut(&mut self) -> &mut Vec<Encoding> {
         &mut self.overflowing
     }

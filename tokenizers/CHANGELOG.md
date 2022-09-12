@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] 
+
+- [#1009] `unstable_wasm` feature to support building on Wasm (it's unstable !)
+- [#1008] `Decoder` is now a composable trait, but without being backward incompatible
+- [#1047, #1051, #1052] `Processor` is now a composable trait, but without being backward incompatible
+
+Both trait changes warrant a "major" number since, despite best efforts to not break backward
+  compatibility, the code is different enough that we cannot be exactly sure.
+
 ## [0.12.1] 
 
 - [#938] **Reverted breaking change**. https://github.com/huggingface/transformers/issues/16520
@@ -157,6 +166,13 @@ split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
 
+[#956]: https://github.com/huggingface/tokenizers/pull/956
+[#1008]: https://github.com/huggingface/tokenizers/pull/1008
+[#1009]: https://github.com/huggingface/tokenizers/pull/1009
+[#1047]: https://github.com/huggingface/tokenizers/pull/1047
+[#1055]: https://github.com/huggingface/tokenizers/pull/1055
+[#1051]: https://github.com/huggingface/tokenizers/pull/1051
+[#1052]: https://github.com/huggingface/tokenizers/pull/1052
 [#938]: https://github.com/huggingface/tokenizers/pull/938
 [#939]: https://github.com/huggingface/tokenizers/pull/939
 [#952]: https://github.com/huggingface/tokenizers/pull/952

@@ -47,7 +47,7 @@ mod tests {
     fn process_chain() {
         let start = Encoding::new(
             vec![0; 5],
-            vec![],
+            vec![0; 5],
             vec![
                 "Ġ".into(),
                 "ĠĠĠĠHelloĠĠ".into(),
@@ -67,7 +67,7 @@ mod tests {
         let sequence = Sequence::new(vec![PostProcessorWrapper::ByteLevel(bytelevel)]);
         let expected = Encoding::new(
             vec![0; 5],
-            vec![],
+            vec![0; 5],
             vec![
                 "Ġ".into(),
                 "ĠĠĠĠHelloĠĠ".into(),
@@ -94,7 +94,7 @@ mod tests {
 
         let pair_expected = Encoding::new(
             vec![0; 10],
-            vec![],
+            vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
             vec![
                 "Ġ".into(),
                 "ĠĠĠĠHelloĠĠ".into(),

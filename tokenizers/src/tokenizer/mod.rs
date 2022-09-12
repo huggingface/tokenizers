@@ -100,14 +100,21 @@ pub trait PostProcessor {
         pair_encoding: Option<Encoding>,
         add_special_tokens: bool,
     ) -> Result<Encoding> {
-        let encodings = if let Some(pair_encoding) = pair_encoding {
+        let mut encodings = if let Some(pair_encoding) = pair_encoding {
             vec![encoding, pair_encoding]
         } else {
             vec![encoding]
         };
+        encodings.iter_mut().enumerate().for_each(|(i, encoding)| {
+            encoding.set_sequence_id(i);
+            encoding
+                .get_overflowing_mut()
+                .iter_mut()
+                .for_each(|encoding| encoding.set_sequence_id(i));
+            encoding.set_type_ids(vec![i as u32; encoding.len()]);
+        });
 
         let encodings = self.process_encodings(encodings, add_special_tokens)?;
-
         Ok(Encoding::merge(encodings, false))
     }
 
