@@ -49,10 +49,12 @@ impl Decoder for WordPiece {
             .iter_mut()
             .enumerate()
             .map(|(i, token)| {
-                if token.starts_with(&self.prefix) {
-                    *token = token.replacen(&self.prefix, "", 1);
-                } else if i != 0 {
-                    *token = format!(" {}", token);
+                if i != 0 {
+                    if token.starts_with(&self.prefix) {
+                        *token = token.replacen(&self.prefix, "", 1);
+                    } else {
+                        *token = format!(" {}", token);
+                    }
                 }
                 if self.cleanup {
                     *token = cleanup(token);
@@ -60,5 +62,29 @@ impl Decoder for WordPiece {
                 Ok(token.to_string())
             })
             .collect::<Result<_>>()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wordpiece_decoder() {
+        let decoder = WordPiece::new("##".to_string(), false);
+
+        assert_eq!(
+            decoder
+                .decode(vec![
+                    "##uelo".to_string(),
+                    "Ara".to_string(),
+                    "##új".to_string(),
+                    "##o".to_string(),
+                    "No".to_string(),
+                    "##guera".to_string()
+                ])
+                .unwrap(),
+            "##uelo Araújo Noguera"
+        );
     }
 }
