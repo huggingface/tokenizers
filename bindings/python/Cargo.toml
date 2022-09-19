@@ -30,3 +30,4 @@ pyo3 = { version = "0.16.2" }
 
 [features]
 default = ["pyo3/extension-module", "pyo3/auto-initialize"]
+static = ["pyo3/extension-module",]
