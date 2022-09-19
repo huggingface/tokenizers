@@ -9,7 +9,7 @@ for PYBIN in /opt/python/cp{37,38,39,310}*/bin; do
     export PYTHON_SYS_EXECUTABLE="$PYBIN/python"
 
     "${PYBIN}/pip" install -U setuptools-rust setuptools wheel
-    "${PYBIN}/pip" wheel ./dist/ -w ./dist/ --no-deps
+    "${PYBIN}/pip" wheel . -w ./dist/ --no-deps
     rm -rf build/*
 done
 
