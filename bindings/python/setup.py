@@ -17,11 +17,7 @@ setup(
     author_email="anthony@huggingface.co",
     url="https://github.com/huggingface/tokenizers",
     license="Apache License 2.0",
-    rust_extensions=[
-        RustExtension(
-            "tokenizers.tokenizers", binding=Binding.PyO3, debug=False, features=["default"]
-        )
-    ],
+    rust_extensions=[RustExtension("tokenizers.tokenizers", binding=Binding.PyO3, debug=False)],
     extras_require=extras,
     classifiers=[
         "Development Status :: 5 - Production/Stable",
