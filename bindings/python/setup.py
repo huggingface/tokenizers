@@ -7,7 +7,12 @@ extras["testing"] = ["pytest", "requests", "numpy", "datasets"]
 extras["docs"] = ["sphinx", "sphinx_rtd_theme", "setuptools_rust"]
 extras["dev"] = extras["testing"]
 
-features = ["static"] if os.getenv("STATIC_EMBEDDING", None) == "1" else ["default"]
+if os.getenv("STATIC_EMBEDDING", None) == "1":
+    features = ["static"]
+    args = ["--no-default-features"]
+else:
+    features = ["default"]
+    args = None
 
 setup(
     name="tokenizers",
@@ -21,7 +26,9 @@ setup(
     url="https://github.com/huggingface/tokenizers",
     license="Apache License 2.0",
     rust_extensions=[
-        RustExtension("tokenizers.tokenizers", binding=Binding.PyO3, debug=False, features=features)
+        RustExtension(
+            "tokenizers.tokenizers", binding=Binding.PyO3, debug=False, features=features, args=args
+        )
     ],
     extras_require=extras,
     classifiers=[
