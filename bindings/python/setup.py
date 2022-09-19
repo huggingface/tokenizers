@@ -7,7 +7,7 @@ extras["testing"] = ["pytest", "requests", "numpy", "datasets"]
 extras["docs"] = ["sphinx", "sphinx_rtd_theme", "setuptools_rust"]
 extras["dev"] = extras["testing"]
 
-features = [] if os.getenv("STATIC_EMBEDDING", None) == 1 else ["default"]
+features = [] if os.getenv("STATIC_EMBEDDING", None) == "1" else ["default"]
 
 setup(
     name="tokenizers",
