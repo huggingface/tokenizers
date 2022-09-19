@@ -1,13 +1,13 @@
 from setuptools import setup
 from setuptools_rust import Binding, RustExtension
-import sys
+import os
 
 extras = {}
 extras["testing"] = ["pytest", "requests", "numpy", "datasets"]
 extras["docs"] = ["sphinx", "sphinx_rtd_theme", "setuptools_rust"]
 extras["dev"] = extras["testing"]
 
-features = [] if "--static-embedding" in sys.argv else ["default"]
+features = [] if os.getenv("STATIC_EMBEDDING", None) == 1 else ["default"]
 
 setup(
     name="tokenizers",

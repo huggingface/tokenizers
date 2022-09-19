@@ -7,10 +7,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
 for PYBIN in /opt/python/{cp37-cp37m,cp38-cp38,cp39-cp39,cp310-cp310}/bin; do
     export PYTHON_SYS_EXECUTABLE="$PYBIN/python"
 
-    "${PYBIN}/pip" install -U setuptools-rust==0.11.3
+    "${PYBIN}/pip" install -U setuptools-rust
     # --static-embedding allows the use of a static python interpreter embedding
     # which is necessary for quay manylinux builds.
-    "${PYBIN}/python" setup.py bdist_wheel --static-embedding
+    "STATIC_EMBEDDING=1" "${PYBIN}/python" setup.py bdist_wheel
     rm -rf build/*
 done
 
