@@ -5,6 +5,7 @@ curl https://sh.rustup.rs -sSf | sh -s -- -y
 export PATH="$HOME/.cargo/bin:$PATH"
 
 for PYBIN in /opt/python/cp{37,38,39,310}*/bin; do
+    mkdir ./dist/
     export PYTHON_SYS_EXECUTABLE="$PYBIN/python"
 
     "${PYBIN}/pip" install -U setuptools-rust setuptools wheel
