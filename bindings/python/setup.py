@@ -8,7 +8,7 @@ extras["dev"] = extras["testing"]
 
 setup(
     name="tokenizers",
-    version="0.13.0.dev0",
+    version="0.13.0",
     description="Fast and Customizable Tokenizers",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
@@ -17,7 +17,11 @@ setup(
     author_email="anthony@huggingface.co",
     url="https://github.com/huggingface/tokenizers",
     license="Apache License 2.0",
-    rust_extensions=[RustExtension("tokenizers.tokenizers", binding=Binding.PyO3, debug=False)],
+    rust_extensions=[
+        RustExtension(
+            "tokenizers.tokenizers", binding=Binding.PyO3, debug=False, features=["default"]
+        )
+    ],
     extras_require=extras,
     classifiers=[
         "Development Status :: 5 - Production/Stable",
