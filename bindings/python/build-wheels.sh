@@ -1,14 +1,18 @@
 #!/bin/bash
 set -ex
 
-curl https://sh.rustup.rs -sSf | sh -s -- -y
+if ! command -v cargo &> /dev/null
+then
+    curl https://sh.rustup.rs -sSf | sh -s -- -y
+fi
+
 export PATH="$HOME/.cargo/bin:$PATH"
 
 for PYBIN in /opt/python/cp{37,38,39,310}*/bin; do
     export PYTHON_SYS_EXECUTABLE="$PYBIN/python"
 
     "${PYBIN}/pip" install -U setuptools-rust setuptools wheel
-    "${PYBIN}/pip" setup.py bdist_wheel
+    "${PYBIN}/python" setup.py bdist_wheel
     rm -rf build/*
 done
 
