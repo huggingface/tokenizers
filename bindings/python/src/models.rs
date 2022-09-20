@@ -32,10 +32,8 @@ pub struct PyModel {
 }
 
 impl PyModel {
-    pub(crate) fn get_as_subtype(&self) -> PyResult<PyObject> {
+    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
         Ok(match *self.model.as_ref().read().unwrap() {
             ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?.into_py(py),
             ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base))?.into_py(py),
@@ -185,12 +183,14 @@ impl PyModel {
     #[pyo3(text_signature = "(self, folder, prefix)")]
     fn save<'a>(
         &self,
+        py: Python<'_>,
         folder: &str,
         mut prefix: Option<&'a str>,
         name: Option<&'a str>,
     ) -> PyResult<Vec<String>> {
         if name.is_some() {
             deprecation_warning(
+                py,
                 "0.10.0",
                 "Parameter `name` of Model.save has been renamed `prefix`",
             )?;
@@ -215,8 +215,8 @@ impl PyModel {
     ///
     /// Returns:
     ///     :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
-    fn get_trainer(&self) -> PyResult<PyObject> {
-        PyTrainer::from(self.model.read().unwrap().get_trainer()).get_as_subtype()
+    fn get_trainer(&self, py: Python<'_>) -> PyResult<PyObject> {
+        PyTrainer::from(self.model.read().unwrap().get_trainer()).get_as_subtype(py)
     }
 }
 
@@ -387,6 +387,7 @@ impl PyBPE {
     #[new]
     #[args(kwargs = "**")]
     fn new(
+        py: Python<'_>,
         vocab: Option<PyVocab>,
         merges: Option<PyMerges>,
         kwargs: Option<&PyDict>,
@@ -405,6 +406,7 @@ impl PyBPE {
                 }
                 (PyVocab::Filename(vocab_filename), PyMerges::Filename(merges_filename)) => {
                     deprecation_warning(
+                    py,
                     "0.9.0",
                     "BPE.__init__ will not create from files anymore, try `BPE.from_file` instead",
                 )?;
@@ -485,6 +487,7 @@ impl PyBPE {
         Py::new(
             py,
             PyBPE::new(
+                py,
                 Some(PyVocab::Vocab(vocab)),
                 Some(PyMerges::Merges(merges)),
                 kwargs,
@@ -580,7 +583,11 @@ impl PyWordPiece {
 
     #[new]
     #[args(kwargs = "**")]
-    fn new(vocab: Option<PyVocab>, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
+    fn new(
+        py: Python<'_>,
+        vocab: Option<PyVocab>,
+        kwargs: Option<&PyDict>,
+    ) -> PyResult<(Self, PyModel)> {
         let mut builder = WordPiece::builder();
 
         if let Some(vocab) = vocab {
@@ -590,6 +597,7 @@ impl PyWordPiece {
                 }
                 PyVocab::Filename(vocab_filename) => {
                     deprecation_warning(
+                        py,
                         "0.9.0",
                         "WordPiece.__init__ will not create from files anymore, try `WordPiece.from_file` instead",
                     )?;
@@ -651,7 +659,10 @@ impl PyWordPiece {
         let vocab = WordPiece::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordPiece file: {}", e))
         })?;
-        Py::new(py, PyWordPiece::new(Some(PyVocab::Vocab(vocab)), kwargs)?)
+        Py::new(
+            py,
+            PyWordPiece::new(py, Some(PyVocab::Vocab(vocab)), kwargs)?,
+        )
     }
 }
 
@@ -683,7 +694,11 @@ impl PyWordLevel {
 
     #[new]
     #[args(unk_token = "None")]
-    fn new(vocab: Option<PyVocab>, unk_token: Option<String>) -> PyResult<(Self, PyModel)> {
+    fn new(
+        py: Python<'_>,
+        vocab: Option<PyVocab>,
+        unk_token: Option<String>,
+    ) -> PyResult<(Self, PyModel)> {
         let mut builder = WordLevel::builder();
 
         if let Some(vocab) = vocab {
@@ -693,6 +708,7 @@ impl PyWordLevel {
                 }
                 PyVocab::Filename(vocab_filename) => {
                     deprecation_warning(
+                        py,
                         "0.9.0",
                         "WordLevel.__init__ will not create from files anymore, \
                             try `WordLevel.from_file` instead",
@@ -765,7 +781,7 @@ impl PyWordLevel {
         })?;
         Py::new(
             py,
-            PyWordLevel::new(Some(PyVocab::Vocab(vocab)), unk_token)?,
+            PyWordLevel::new(py, Some(PyVocab::Vocab(vocab)), unk_token)?,
         )
     }
 }
@@ -798,6 +814,17 @@ impl PyUnigram {
     }
 }
 
+/// Models Module
+#[pymodule]
+pub fn models(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PyModel>()?;
+    m.add_class::<PyBPE>()?;
+    m.add_class::<PyWordPiece>()?;
+    m.add_class::<PyWordLevel>()?;
+    m.add_class::<PyUnigram>()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use crate::models::PyModel;
@@ -807,13 +834,11 @@ mod test {
 
     #[test]
     fn get_subtype() {
-        let py_model = PyModel::from(BPE::default());
-        let py_bpe = py_model.get_as_subtype().unwrap();
-        let gil = Python::acquire_gil();
-        assert_eq!(
-            "BPE",
-            py_bpe.as_ref(gil.python()).get_type().name().unwrap()
-        );
+        Python::with_gil(|py| {
+            let py_model = PyModel::from(BPE::default());
+            let py_bpe = py_model.get_as_subtype(py).unwrap();
+            assert_eq!("BPE", py_bpe.as_ref(py).get_type().name().unwrap());
+        })
     }
 
     #[test]

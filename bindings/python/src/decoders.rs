@@ -34,10 +34,8 @@ impl PyDecoder {
         PyDecoder { decoder }
     }
 
-    pub(crate) fn get_as_subtype(&self) -> PyResult<PyObject> {
+    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
         Ok(match &self.decoder {
             PyDecoderWrapper::Custom(_) => Py::new(py, base)?.into_py(py),
             PyDecoderWrapper::Wrapped(inner) => match &*inner.as_ref().read().unwrap() {
@@ -448,6 +446,19 @@ impl Decoder for PyDecoderWrapper {
     }
 }
 
+/// Decoders Module
+#[pymodule]
+pub fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PyDecoder>()?;
+    m.add_class::<PyByteLevelDec>()?;
+    m.add_class::<PyWordPieceDec>()?;
+    m.add_class::<PyMetaspaceDec>()?;
+    m.add_class::<PyBPEDecoder>()?;
+    m.add_class::<PyCTCDecoder>()?;
+    m.add_class::<PySequenceDecoder>()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use std::sync::{Arc, RwLock};
@@ -460,13 +471,11 @@ mod test {
 
     #[test]
     fn get_subtype() {
-        let py_dec = PyDecoder::new(Metaspace::default().into());
-        let py_meta = py_dec.get_as_subtype().unwrap();
-        let gil = Python::acquire_gil();
-        assert_eq!(
-            "Metaspace",
-            py_meta.as_ref(gil.python()).get_type().name().unwrap()
-        );
+        Python::with_gil(|py| {
+            let py_dec = PyDecoder::new(Metaspace::default().into());
+            let py_meta = py_dec.get_as_subtype(py).unwrap();
+            assert_eq!("Metaspace", py_meta.as_ref(py).get_type().name().unwrap());
+        })
     }
 
     #[test]

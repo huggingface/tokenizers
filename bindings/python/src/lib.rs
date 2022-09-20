@@ -43,93 +43,9 @@ extern "C" fn child_after_fork() {
     }
 }
 
-/// Trainers Module
-#[pymodule]
-fn trainers(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<trainers::PyTrainer>()?;
-    m.add_class::<trainers::PyBpeTrainer>()?;
-    m.add_class::<trainers::PyWordPieceTrainer>()?;
-    m.add_class::<trainers::PyWordLevelTrainer>()?;
-    m.add_class::<trainers::PyUnigramTrainer>()?;
-    Ok(())
-}
-
-/// Models Module
-#[pymodule]
-fn models(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<models::PyModel>()?;
-    m.add_class::<models::PyBPE>()?;
-    m.add_class::<models::PyWordPiece>()?;
-    m.add_class::<models::PyWordLevel>()?;
-    m.add_class::<models::PyUnigram>()?;
-    Ok(())
-}
-
-/// PreTokenizers Module
-#[pymodule]
-fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<pre_tokenizers::PyPreTokenizer>()?;
-    m.add_class::<pre_tokenizers::PyByteLevel>()?;
-    m.add_class::<pre_tokenizers::PyWhitespace>()?;
-    m.add_class::<pre_tokenizers::PyWhitespaceSplit>()?;
-    m.add_class::<pre_tokenizers::PySplit>()?;
-    m.add_class::<pre_tokenizers::PyBertPreTokenizer>()?;
-    m.add_class::<pre_tokenizers::PyMetaspace>()?;
-    m.add_class::<pre_tokenizers::PyCharDelimiterSplit>()?;
-    m.add_class::<pre_tokenizers::PyPunctuation>()?;
-    m.add_class::<pre_tokenizers::PySequence>()?;
-    m.add_class::<pre_tokenizers::PyDigits>()?;
-    m.add_class::<pre_tokenizers::PyUnicodeScripts>()?;
-    Ok(())
-}
-
-/// Decoders Module
-#[pymodule]
-fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<decoders::PyDecoder>()?;
-    m.add_class::<decoders::PyByteLevelDec>()?;
-    m.add_class::<decoders::PyWordPieceDec>()?;
-    m.add_class::<decoders::PyMetaspaceDec>()?;
-    m.add_class::<decoders::PyBPEDecoder>()?;
-    m.add_class::<decoders::PyCTCDecoder>()?;
-    m.add_class::<decoders::PySequenceDecoder>()?;
-    Ok(())
-}
-
-/// Processors Module
-#[pymodule]
-fn processors(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<processors::PyPostProcessor>()?;
-    m.add_class::<processors::PyBertProcessing>()?;
-    m.add_class::<processors::PyRobertaProcessing>()?;
-    m.add_class::<processors::PyByteLevel>()?;
-    m.add_class::<processors::PyTemplateProcessing>()?;
-    m.add_class::<processors::PySequence>()?;
-    Ok(())
-}
-
-/// Normalizers Module
-#[pymodule]
-fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<normalizers::PyNormalizer>()?;
-    m.add_class::<normalizers::PyBertNormalizer>()?;
-    m.add_class::<normalizers::PyNFD>()?;
-    m.add_class::<normalizers::PyNFKD>()?;
-    m.add_class::<normalizers::PyNFC>()?;
-    m.add_class::<normalizers::PyNFKC>()?;
-    m.add_class::<normalizers::PySequence>()?;
-    m.add_class::<normalizers::PyLowercase>()?;
-    m.add_class::<normalizers::PyStrip>()?;
-    m.add_class::<normalizers::PyStripAccents>()?;
-    m.add_class::<normalizers::PyNmt>()?;
-    m.add_class::<normalizers::PyPrecompiled>()?;
-    m.add_class::<normalizers::PyReplace>()?;
-    Ok(())
-}
-
 /// Tokenizers Module
 #[pymodule]
-fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
+pub fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     let _ = env_logger::try_init_from_env("TOKENIZERS_LOG");
 
     // Register the fork callback
@@ -148,11 +64,11 @@ fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<utils::PyRegex>()?;
     m.add_class::<utils::PyNormalizedString>()?;
     m.add_class::<utils::PyPreTokenizedString>()?;
-    m.add_wrapped(wrap_pymodule!(models))?;
-    m.add_wrapped(wrap_pymodule!(pre_tokenizers))?;
-    m.add_wrapped(wrap_pymodule!(decoders))?;
-    m.add_wrapped(wrap_pymodule!(processors))?;
-    m.add_wrapped(wrap_pymodule!(normalizers))?;
-    m.add_wrapped(wrap_pymodule!(trainers))?;
+    m.add_wrapped(wrap_pymodule!(models::models))?;
+    m.add_wrapped(wrap_pymodule!(pre_tokenizers::pre_tokenizers))?;
+    m.add_wrapped(wrap_pymodule!(decoders::decoders))?;
+    m.add_wrapped(wrap_pymodule!(processors::processors))?;
+    m.add_wrapped(wrap_pymodule!(normalizers::normalizers))?;
+    m.add_wrapped(wrap_pymodule!(trainers::trainers))?;
     Ok(())
 }
