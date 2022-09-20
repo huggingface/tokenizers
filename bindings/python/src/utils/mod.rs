@@ -21,7 +21,7 @@ pub struct PyChar(pub char);
 
 impl FromPyObject<'_> for PyChar {
     fn extract(obj: &PyAny) -> PyResult<Self> {
-        let s = PyString::try_from(obj)?.to_str()?;
+        let s = <PyString as PyTryFrom<'_>>::try_from(obj)?.to_str()?;
         let mut iter = s.chars();
         if let (Some(ch), None) = (iter.next(), iter.next()) {
             Ok(Self(ch))
