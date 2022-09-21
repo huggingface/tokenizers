@@ -20,14 +20,8 @@ for whl in ./dist/*.whl; do
     auditwheel repair "$whl" -w dist/
 done
 
-# Install packages and test
-for PYBIN in /opt/python/cp{37,38,39,310}*/bin; do
-    "${PYBIN}/pip" install tokenizers -f ./dist/
-done
-
 # Keep only manylinux wheels
 rm ./dist/*-linux_*
-cp ./dist/*.whl dist/
 
 
 # Upload wheels
