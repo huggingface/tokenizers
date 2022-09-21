@@ -1,23 +1,28 @@
 #!/bin/bash
 set -ex
 
-curl https://sh.rustup.rs -sSf | sh -s -- -y
+if ! command -v cargo &> /dev/null
+then
+    curl https://sh.rustup.rs -sSf | sh -s -- -y
+fi
+
 export PATH="$HOME/.cargo/bin:$PATH"
 
-for PYBIN in /opt/python/{cp37-cp37m,cp38-cp38,cp39-cp39,cp310-cp310}/bin; do
+for PYBIN in /opt/python/cp{37,38,39,310}*/bin; do
     export PYTHON_SYS_EXECUTABLE="$PYBIN/python"
 
-    "${PYBIN}/pip" install -U setuptools-rust==0.11.3
+    "${PYBIN}/pip" install -U setuptools-rust setuptools wheel
     "${PYBIN}/python" setup.py bdist_wheel
     rm -rf build/*
 done
 
-for whl in dist/*.whl; do
+for whl in ./dist/*.whl; do
     auditwheel repair "$whl" -w dist/
 done
 
 # Keep only manylinux wheels
-rm dist/*-linux_*
+rm ./dist/*-linux_*
+
 
 # Upload wheels
 /opt/python/cp37-cp37m/bin/pip install -U awscli
