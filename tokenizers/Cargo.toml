@@ -2,7 +2,7 @@
 authors = ["Anthony MOI <m.anthony.moi@gmail.com>"]
 edition = "2018"
 name = "tokenizers"
-version = "0.13.0"
+version = "0.13.1"
 homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
 documentation = "https://docs.rs/tokenizers/"
