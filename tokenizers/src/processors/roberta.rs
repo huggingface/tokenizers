@@ -146,7 +146,7 @@ impl PostProcessor for RobertaProcessing {
                     )
                 } else {
                     let pair_ids = [&[self.sep.1], encoding.get_ids(), &[self.sep.1]].concat();
-                    let pair_type_ids = vec![1; encoding.get_ids().len() + 2];
+                    let pair_type_ids = vec![0; encoding.get_ids().len() + 2];
                     let pair_tokens = [
                         &[self.sep.0.clone()],
                         encoding.get_tokens(),
@@ -280,7 +280,7 @@ mod tests {
             pair_encoding,
             Encoding::new(
                 vec![0, 12, 14, 2, 2, 15, 2],
-                vec![0, 0, 0, 0, 1, 1, 1],
+                vec![0, 0, 0, 0, 0, 0, 0],
                 vec![
                     "<s>".into(),
                     "Hello".into(),
@@ -310,7 +310,7 @@ mod tests {
             pair_encoding,
             Encoding::new(
                 vec![12, 14, 15],
-                vec![0, 0, 1],
+                vec![0, 0, 0],
                 vec!["Hello".into(), "there".into(), "pair".into(),],
                 vec![None, None, None],
                 vec![(0, 5), (6, 11), (0, 4)],
