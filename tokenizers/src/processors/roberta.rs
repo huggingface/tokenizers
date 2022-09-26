@@ -70,6 +70,11 @@ impl PostProcessor for RobertaProcessing {
             }
         }
 
+        // Roberta is weird, and every encoding is type_id=0.
+        encodings
+            .iter_mut()
+            .for_each(|encoding| encoding.set_type_ids(vec![0; encoding.len()]));
+
         if !add_special_tokens {
             return Ok(encodings);
         }
@@ -110,7 +115,7 @@ impl PostProcessor for RobertaProcessing {
                             .map(|encoding| {
                                 let ids =
                                     [&[self.cls.1], encoding.get_ids(), &[self.sep.1]].concat();
-                                let type_ids = [&[0], encoding.get_type_ids(), &[0]].concat();
+                                let type_ids = vec![0; encoding.get_ids().len() + 2];
                                 let tokens = [
                                     &[self.cls.0.clone()],
                                     encoding.get_tokens(),
@@ -176,7 +181,7 @@ impl PostProcessor for RobertaProcessing {
                             .map(|encoding| {
                                 let pair_ids =
                                     [&[self.sep.1], encoding.get_ids(), &[self.sep.1]].concat();
-                                let pair_type_ids = vec![1; encoding.get_ids().len() + 2];
+                                let pair_type_ids = vec![0; encoding.get_ids().len() + 2];
                                 let pair_tokens = [
                                     &[self.sep.0.clone()],
                                     encoding.get_tokens(),
