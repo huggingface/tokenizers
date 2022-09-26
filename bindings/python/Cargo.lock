@@ -1706,7 +1706,7 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokenizers"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "aho-corasick",
  "cached-path",
@@ -1739,7 +1739,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers-python"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "env_logger",
  "itertools 0.9.0",

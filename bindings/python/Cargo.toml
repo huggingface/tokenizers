@@ -14,7 +14,7 @@ serde = { version = "1.0", features = [ "rc", "derive" ]}
 serde_json = "1.0"
 libc = "0.2"
 env_logger = "0.7.1"
-pyo3 = { version = "0.16.2", features = ["extension-module"] }
+pyo3 = { version = "0.16.2" }
 numpy = "0.16.2"
 ndarray = "0.13"
 onig = { version = "6.0", default-features = false }
@@ -28,5 +28,6 @@ path = "../../tokenizers"
 tempfile = "3.1"
 
 [features]
+default = ["pyo3/extension-module"]
 test = ["pyo3/auto-initialize"]
 
