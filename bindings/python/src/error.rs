@@ -1,6 +1,6 @@
 use pyo3::exceptions;
 use pyo3::prelude::*;
-use pyo3::type_object::PyTypeObject;
+use pyo3::type_object::PyTypeInfo;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use tokenizers::tokenizer::Result;
 
@@ -11,7 +11,7 @@ impl PyError {
     pub fn from(s: &str) -> Self {
         PyError(String::from(s))
     }
-    pub fn into_pyerr<T: PyTypeObject>(self) -> PyErr {
+    pub fn into_pyerr<T: PyTypeInfo>(self) -> PyErr {
         PyErr::new::<T, _>(format!("{}", self))
     }
 }
@@ -34,10 +34,8 @@ impl<T> ToPyResult<T> {
     }
 }
 
-pub(crate) fn deprecation_warning(version: &str, message: &str) -> PyResult<()> {
-    let gil = pyo3::Python::acquire_gil();
-    let python = gil.python();
-    let deprecation_warning = python.import("builtins")?.getattr("DeprecationWarning")?;
+pub(crate) fn deprecation_warning(py: Python<'_>, version: &str, message: &str) -> PyResult<()> {
+    let deprecation_warning = py.import("builtins")?.getattr("DeprecationWarning")?;
     let full_message = format!("Deprecated in {}: {}", version, message);
-    pyo3::PyErr::warn(python, deprecation_warning, &full_message, 0)
+    pyo3::PyErr::warn(py, deprecation_warning, &full_message, 0)
 }

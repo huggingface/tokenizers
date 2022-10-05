@@ -146,8 +146,9 @@ impl PyEncoding {
     /// Returns:
     ///     A :obj:`List` of :obj:`Optional[int]`: A list of optional word index.
     #[getter]
-    fn get_words(&self) -> PyResult<Vec<Option<u32>>> {
+    fn get_words(&self, py: Python<'_>) -> PyResult<Vec<Option<u32>>> {
         deprecation_warning(
+            py,
             "0.9.4",
             "Encoding.words is deprecated, please use Encoding.word_ids instead.",
         )?;

@@ -967,6 +967,7 @@ impl PyTokenizer {
     #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
     fn encode_batch(
         &self,
+        py: Python<'_>,
         input: Vec<&PyAny>,
         is_pretokenized: bool,
         add_special_tokens: bool,
@@ -982,8 +983,7 @@ impl PyTokenizer {
                 Ok(input)
             })
             .collect::<PyResult<Vec<tk::EncodeInput>>>()?;
-        let gil = Python::acquire_gil();
-        gil.python().allow_threads(|| {
+        py.allow_threads(|| {
             ToPyResult(
                 self.tokenizer
                     .encode_batch_char_offsets(input, add_special_tokens)
@@ -1027,11 +1027,11 @@ impl PyTokenizer {
     #[pyo3(text_signature = "(self, sequences, skip_special_tokens=True)")]
     fn decode_batch(
         &self,
+        py: Python<'_>,
         sequences: Vec<Vec<u32>>,
         skip_special_tokens: bool,
     ) -> PyResult<Vec<String>> {
-        let gil = Python::acquire_gil();
-        gil.python().allow_threads(|| {
+        py.allow_threads(|| {
             ToPyResult(self.tokenizer.decode_batch(sequences, skip_special_tokens)).into()
         })
     }
@@ -1268,8 +1268,8 @@ impl PyTokenizer {
 
     /// The :class:`~tokenizers.models.Model` in use by the Tokenizer
     #[getter]
-    fn get_model(&self) -> PyResult<PyObject> {
-        self.tokenizer.get_model().get_as_subtype()
+    fn get_model(&self, py: Python<'_>) -> PyResult<PyObject> {
+        self.tokenizer.get_model().get_as_subtype(py)
     }
 
     /// Set the :class:`~tokenizers.models.Model`
@@ -1280,11 +1280,11 @@ impl PyTokenizer {
 
     /// The `optional` :class:`~tokenizers.normalizers.Normalizer` in use by the Tokenizer
     #[getter]
-    fn get_normalizer(&self) -> PyResult<PyObject> {
+    fn get_normalizer(&self, py: Python<'_>) -> PyResult<PyObject> {
         if let Some(n) = self.tokenizer.get_normalizer() {
-            n.get_as_subtype()
+            n.get_as_subtype(py)
         } else {
-            Ok(Python::acquire_gil().python().None())
+            Ok(py.None())
         }
     }
 
@@ -1296,11 +1296,11 @@ impl PyTokenizer {
 
     /// The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
     #[getter]
-    fn get_pre_tokenizer(&self) -> PyResult<PyObject> {
+    fn get_pre_tokenizer(&self, py: Python<'_>) -> PyResult<PyObject> {
         if let Some(pt) = self.tokenizer.get_pre_tokenizer() {
-            pt.get_as_subtype()
+            pt.get_as_subtype(py)
         } else {
-            Ok(Python::acquire_gil().python().None())
+            Ok(py.None())
         }
     }
 
@@ -1312,11 +1312,11 @@ impl PyTokenizer {
 
     /// The `optional` :class:`~tokenizers.processors.PostProcessor` in use by the Tokenizer
     #[getter]
-    fn get_post_processor(&self) -> PyResult<PyObject> {
+    fn get_post_processor(&self, py: Python<'_>) -> PyResult<PyObject> {
         if let Some(n) = self.tokenizer.get_post_processor() {
-            n.get_as_subtype()
+            n.get_as_subtype(py)
         } else {
-            Ok(Python::acquire_gil().python().None())
+            Ok(py.None())
         }
     }
 
@@ -1328,11 +1328,11 @@ impl PyTokenizer {
 
     /// The `optional` :class:`~tokenizers.decoders.Decoder` in use by the Tokenizer
     #[getter]
-    fn get_decoder(&self) -> PyResult<PyObject> {
+    fn get_decoder(&self, py: Python<'_>) -> PyResult<PyObject> {
         if let Some(dec) = self.tokenizer.get_decoder() {
-            dec.get_as_subtype()
+            dec.get_as_subtype(py)
         } else {
-            Ok(Python::acquire_gil().python().None())
+            Ok(py.None())
         }
     }
 

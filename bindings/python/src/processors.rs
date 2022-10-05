@@ -38,10 +38,8 @@ impl PyPostProcessor {
         PyPostProcessor { processor }
     }
 
-    pub(crate) fn get_as_subtype(&self) -> PyResult<PyObject> {
+    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
         Ok(match self.processor.as_ref() {
             PostProcessorWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?.into_py(py),
             PostProcessorWrapper::Bert(_) => Py::new(py, (PyBertProcessing {}, base))?.into_py(py),
@@ -447,6 +445,18 @@ impl PySequence {
     }
 }
 
+/// Processors Module
+#[pymodule]
+pub fn processors(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PyPostProcessor>()?;
+    m.add_class::<PyBertProcessing>()?;
+    m.add_class::<PyRobertaProcessing>()?;
+    m.add_class::<PyByteLevel>()?;
+    m.add_class::<PyTemplateProcessing>()?;
+    m.add_class::<PySequence>()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
@@ -459,15 +469,16 @@ mod test {
 
     #[test]
     fn get_subtype() {
-        let py_proc = PyPostProcessor::new(Arc::new(
-            BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 1)).into(),
-        ));
-        let py_bert = py_proc.get_as_subtype().unwrap();
-        let gil = Python::acquire_gil();
-        assert_eq!(
-            "BertProcessing",
-            py_bert.as_ref(gil.python()).get_type().name().unwrap()
-        );
+        Python::with_gil(|py| {
+            let py_proc = PyPostProcessor::new(Arc::new(
+                BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 1)).into(),
+            ));
+            let py_bert = py_proc.get_as_subtype(py).unwrap();
+            assert_eq!(
+                "BertProcessing",
+                py_bert.as_ref(py).get_type().name().unwrap()
+            );
+        })
     }
 
     #[test]

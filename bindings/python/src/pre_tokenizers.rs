@@ -46,10 +46,8 @@ impl PyPreTokenizer {
         PyPreTokenizer { pretok }
     }
 
-    pub(crate) fn get_as_subtype(&self) -> PyResult<PyObject> {
+    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
         Ok(match &self.pretok {
             PyPreTokenizerTypeWrapper::Sequence(_) => {
                 Py::new(py, (PySequence {}, base))?.into_py(py)
@@ -692,6 +690,24 @@ impl PreTokenizer for PyPreTokenizerWrapper {
     }
 }
 
+/// PreTokenizers Module
+#[pymodule]
+pub fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PyPreTokenizer>()?;
+    m.add_class::<PyByteLevel>()?;
+    m.add_class::<PyWhitespace>()?;
+    m.add_class::<PyWhitespaceSplit>()?;
+    m.add_class::<PySplit>()?;
+    m.add_class::<PyBertPreTokenizer>()?;
+    m.add_class::<PyMetaspace>()?;
+    m.add_class::<PyCharDelimiterSplit>()?;
+    m.add_class::<PyPunctuation>()?;
+    m.add_class::<PySequence>()?;
+    m.add_class::<PyDigits>()?;
+    m.add_class::<PyUnicodeScripts>()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use pyo3::prelude::*;
@@ -705,13 +721,11 @@ mod test {
 
     #[test]
     fn get_subtype() {
-        let py_norm = PyPreTokenizer::new(Whitespace::default().into());
-        let py_wsp = py_norm.get_as_subtype().unwrap();
-        let gil = Python::acquire_gil();
-        assert_eq!(
-            "Whitespace",
-            py_wsp.as_ref(gil.python()).get_type().name().unwrap()
-        );
+        Python::with_gil(|py| {
+            let py_norm = PyPreTokenizer::new(Whitespace::default().into());
+            let py_wsp = py_norm.get_as_subtype(py).unwrap();
+            assert_eq!("Whitespace", py_wsp.as_ref(py).get_type().name().unwrap());
+        })
     }
 
     #[test]

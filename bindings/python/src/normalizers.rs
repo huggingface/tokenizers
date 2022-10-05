@@ -53,10 +53,8 @@ impl PyNormalizer {
     pub(crate) fn new(normalizer: PyNormalizerTypeWrapper) -> Self {
         PyNormalizer { normalizer }
     }
-    pub(crate) fn get_as_subtype(&self) -> PyResult<PyObject> {
+    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
         Ok(match self.normalizer {
             PyNormalizerTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_py(py),
             PyNormalizerTypeWrapper::Single(ref inner) => match &*inner.as_ref().read().unwrap() {
@@ -613,6 +611,25 @@ impl Normalizer for PyNormalizerWrapper {
     }
 }
 
+/// Normalizers Module
+#[pymodule]
+pub fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PyNormalizer>()?;
+    m.add_class::<PyBertNormalizer>()?;
+    m.add_class::<PyNFD>()?;
+    m.add_class::<PyNFKD>()?;
+    m.add_class::<PyNFC>()?;
+    m.add_class::<PyNFKC>()?;
+    m.add_class::<PySequence>()?;
+    m.add_class::<PyLowercase>()?;
+    m.add_class::<PyStrip>()?;
+    m.add_class::<PyStripAccents>()?;
+    m.add_class::<PyNmt>()?;
+    m.add_class::<PyPrecompiled>()?;
+    m.add_class::<PyReplace>()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use pyo3::prelude::*;
@@ -624,13 +641,11 @@ mod test {
 
     #[test]
     fn get_subtype() {
-        let py_norm = PyNormalizer::new(NFC.into());
-        let py_nfc = py_norm.get_as_subtype().unwrap();
-        let gil = Python::acquire_gil();
-        assert_eq!(
-            "NFC",
-            py_nfc.as_ref(gil.python()).get_type().name().unwrap()
-        );
+        Python::with_gil(|py| {
+            let py_norm = PyNormalizer::new(NFC.into());
+            let py_nfc = py_norm.get_as_subtype(py).unwrap();
+            assert_eq!("NFC", py_nfc.as_ref(py).get_type().name().unwrap());
+        })
     }
 
     #[test]
