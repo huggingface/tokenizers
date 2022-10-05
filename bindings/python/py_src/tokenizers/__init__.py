@@ -92,12 +92,10 @@ from .tokenizers import (
     processors,
     trainers,
 )
-
-
-from .implementations import (  # isort:skip
+from .implementations import (
     BertWordPieceTokenizer,
     ByteLevelBPETokenizer,
     CharBPETokenizer,
     SentencePieceBPETokenizer,
     SentencePieceUnigramTokenizer,
-)  # isort: skip
+)
