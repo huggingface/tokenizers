@@ -108,7 +108,7 @@ jobs:
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
-          pip install black==20.8b1 click==8.0.4
+          pip install black==22.3 click==8.0.4
           make check-style
 
       - name: Run tests
