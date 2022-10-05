@@ -709,13 +709,7 @@ class Tokenizer:
         """
         pass
     def enable_padding(
-        self,
-        direction="right",
-        pad_id=0,
-        pad_type_id=0,
-        pad_token="[PAD]",
-        length=None,
-        pad_to_multiple_of=None,
+        self, direction="right", pad_id=0, pad_type_id=0, pad_token="[PAD]", length=None, pad_to_multiple_of=None
     ):
         """
         Enable the padding
