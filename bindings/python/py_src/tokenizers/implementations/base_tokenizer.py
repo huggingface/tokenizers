@@ -1,11 +1,12 @@
-from tokenizers import Tokenizer, Encoding, AddedToken, InputSequence, EncodeInput
+from typing import Dict, List, Optional, Tuple, Union
+
+from tokenizers import AddedToken, EncodeInput, Encoding, InputSequence, Tokenizer
+from tokenizers.decoders import Decoder
 from tokenizers.models import Model
 from tokenizers.normalizers import Normalizer
 from tokenizers.pre_tokenizers import PreTokenizer
 from tokenizers.processors import PostProcessor
-from tokenizers.decoders import Decoder
 
-from typing import List, Union, Tuple, Optional, Dict
 
 Offsets = Tuple[int, int]
 
@@ -96,7 +97,7 @@ class BaseTokenizer:
         )
 
     def no_padding(self):
-        """ Disable padding """
+        """Disable padding"""
         return self._tokenizer.no_padding()
 
     @property
@@ -109,9 +110,7 @@ class BaseTokenizer:
         """
         return self._tokenizer.padding
 
-    def enable_truncation(
-        self, max_length: int, stride: Optional[int] = 0, strategy: Optional[str] = "longest_first"
-    ):
+    def enable_truncation(self, max_length: int, stride: Optional[int] = 0, strategy: Optional[str] = "longest_first"):
         """Change the truncation options
 
         Args:
@@ -128,7 +127,7 @@ class BaseTokenizer:
         return self._tokenizer.enable_truncation(max_length, stride=stride, strategy=strategy)
 
     def no_truncation(self):
-        """ Disable truncation """
+        """Disable truncation"""
         return self._tokenizer.no_truncation()
 
     @property
@@ -270,9 +269,7 @@ class BaseTokenizer:
 
         return self._tokenizer.decode(ids, skip_special_tokens=skip_special_tokens)
 
-    def decode_batch(
-        self, sequences: List[List[int]], skip_special_tokens: Optional[bool] = True
-    ) -> str:
+    def decode_batch(self, sequences: List[List[int]], skip_special_tokens: Optional[bool] = True) -> str:
         """Decode the list of sequences to a list of string sequences
 
         Args:

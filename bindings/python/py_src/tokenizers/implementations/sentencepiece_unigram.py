@@ -1,10 +1,11 @@
-from tokenizers import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers, normalizers, Regex
-import os
-from tokenizers.models import Unigram
 import json
-from .base_tokenizer import BaseTokenizer
+import os
+from typing import Iterator, List, Optional, Union
 
-from typing import Optional, List, Union, Iterator
+from tokenizers import AddedToken, Regex, Tokenizer, decoders, normalizers, pre_tokenizers, trainers
+from tokenizers.models import Unigram
+
+from .base_tokenizer import BaseTokenizer
 
 
 class SentencePieceUnigramTokenizer(BaseTokenizer):
@@ -28,12 +29,8 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         tokenizer.normalizer = normalizers.Sequence(
             [normalizers.Nmt(), normalizers.NFKC(), normalizers.Replace(Regex(" {2,}"), " ")]
         )
-        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(
-            replacement=replacement, add_prefix_space=add_prefix_space
-        )
-        tokenizer.decoder = decoders.Metaspace(
-            replacement=replacement, add_prefix_space=add_prefix_space
-        )
+        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
+        tokenizer.decoder = decoders.Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
 
         parameters = {
             "model": "SentencePieceUnigram",
@@ -181,12 +178,8 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
                 normalizers.Replace(Regex(" {2,}"), " "),
             ]
         )
-        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(
-            replacement=replacement, add_prefix_space=add_prefix_space
-        )
-        tokenizer.decoder = decoders.Metaspace(
-            replacement=replacement, add_prefix_space=add_prefix_space
-        )
+        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
+        tokenizer.decoder = decoders.Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
 
         parameters = {
             "model": "SentencePieceUnigram",

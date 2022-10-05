@@ -1,8 +1,10 @@
-from ..utils import data_dir, doc_wiki_tokenizer
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
-from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
+from tokenizers.trainers import BpeTrainer
+
+from ..utils import data_dir, doc_wiki_tokenizer
+
 
 disable_printing = True
 original_print = print
@@ -181,9 +183,9 @@ class TestQuicktour:
 
 
 if __name__ == "__main__":
+    import os
     from urllib import request
     from zipfile import ZipFile
-    import os
 
     disable_printing = False
     if not os.path.isdir("data/wikitext-103-raw"):

@@ -4,6 +4,7 @@ from os.path import join
 
 from tokenizers import ByteLevelBPETokenizer
 
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--files",
@@ -20,9 +21,7 @@ parser.add_argument(
     type=str,
     help="Path to the output directory, where the files will be saved",
 )
-parser.add_argument(
-    "--name", default="bpe-bytelevel", type=str, help="The name of the output vocab files"
-)
+parser.add_argument("--name", default="bpe-bytelevel", type=str, help="The name of the output vocab files")
 args = parser.parse_args()
 
 files = glob.glob(args.files)

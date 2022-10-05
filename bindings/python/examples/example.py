@@ -1,18 +1,19 @@
-import time
 import argparse
+import logging
+import time
+
 from tqdm import tqdm
 
-import logging
 
 logging.getLogger("transformers").disabled = True
 logging.getLogger("transformers.tokenization_utils").disabled = True
 
-from tokenizers import Tokenizer, pre_tokenizers, decoders
+from tokenizers import Tokenizer, decoders, pre_tokenizers
 from tokenizers.models import BPE, WordPiece
-from tokenizers.processors import BertProcessing
 from tokenizers.normalizers import BertNormalizer
+from tokenizers.processors import BertProcessing
+from transformers import BertTokenizer, GPT2Tokenizer
 
-from transformers import GPT2Tokenizer, BertTokenizer
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--type", default="gpt2", type=str, help="The type of tokenizer (bert|gpt2)")

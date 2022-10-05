@@ -1,8 +1,9 @@
-import pytest
-import pickle
 import json
+import pickle
 
-from tokenizers.decoders import Decoder, ByteLevel, WordPiece, Metaspace, BPEDecoder, CTC, Sequence
+import pytest
+
+from tokenizers.decoders import CTC, BPEDecoder, ByteLevel, Decoder, Metaspace, Sequence, WordPiece
 
 
 class TestByteLevel:
@@ -93,10 +94,7 @@ class TestBPEDecoder:
 
     def test_decoding(self):
         decoder = BPEDecoder()
-        assert (
-            decoder.decode(["My</w>", "na", "me</w>", "is</w>", "Jo", "hn</w>"])
-            == "My name is John"
-        )
+        assert decoder.decode(["My</w>", "na", "me</w>", "is</w>", "Jo", "hn</w>"]) == "My name is John"
         decoder = BPEDecoder(suffix="_")
         assert decoder.decode(["My_", "na", "me_", "is_", "Jo", "hn_"]) == "My name is John"
 
@@ -121,16 +119,12 @@ class TestCTCDecoder:
     def test_decoding(self):
         decoder = CTC()
         assert (
-            decoder.decode(
-                ["<pad>", "<pad>", "h", "e", "e", "l", "l", "<pad>", "l", "o", "o", "o", "<pad>"]
-            )
+            decoder.decode(["<pad>", "<pad>", "h", "e", "e", "l", "l", "<pad>", "l", "o", "o", "o", "<pad>"])
             == "hello"
         )
         decoder = CTC(pad_token="[PAD]")
         assert (
-            decoder.decode(
-                ["[PAD]", "[PAD]", "h", "e", "e", "l", "l", "[PAD]", "l", "o", "o", "o", "[PAD]"]
-            )
+            decoder.decode(["[PAD]", "[PAD]", "h", "e", "e", "l", "l", "[PAD]", "l", "o", "o", "o", "[PAD]"])
             == "hello"
         )
 

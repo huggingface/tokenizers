@@ -1,9 +1,10 @@
-from tokenizers import Tokenizer, AddedToken, pre_tokenizers, decoders, trainers
+from typing import Dict, Iterator, List, Optional, Tuple, Union
+
+from tokenizers import AddedToken, Tokenizer, decoders, pre_tokenizers, trainers
 from tokenizers.models import BPE
 from tokenizers.normalizers import NFKC
-from .base_tokenizer import BaseTokenizer
 
-from typing import Optional, List, Union, Dict, Tuple, Iterator
+from .base_tokenizer import BaseTokenizer
 
 
 class SentencePieceBPETokenizer(BaseTokenizer):
@@ -23,9 +24,7 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         fuse_unk: Optional[bool] = False,
     ):
         if vocab is not None and merges is not None:
-            tokenizer = Tokenizer(
-                BPE(vocab, merges, dropout=dropout, unk_token=unk_token, fuse_unk=fuse_unk)
-            )
+            tokenizer = Tokenizer(BPE(vocab, merges, dropout=dropout, unk_token=unk_token, fuse_unk=fuse_unk))
         else:
             tokenizer = Tokenizer(BPE())
 
@@ -33,12 +32,8 @@ class SentencePieceBPETokenizer(BaseTokenizer):
             tokenizer.add_special_tokens([str(unk_token)])
 
         tokenizer.normalizer = NFKC()
-        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(
-            replacement=replacement, add_prefix_space=add_prefix_space
-        )
-        tokenizer.decoder = decoders.Metaspace(
-            replacement=replacement, add_prefix_space=add_prefix_space
-        )
+        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
+        tokenizer.decoder = decoders.Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
 
         parameters = {
             "model": "SentencePieceBPE",
@@ -65,7 +60,7 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         initial_alphabet: List[str] = [],
         show_progress: bool = True,
     ):
-        """ Train the model using the given files """
+        """Train the model using the given files"""
 
         trainer = trainers.BpeTrainer(
             vocab_size=vocab_size,
@@ -90,7 +85,7 @@ class SentencePieceBPETokenizer(BaseTokenizer):
         show_progress: bool = True,
         length: Optional[int] = None,
     ):
-        """ Train the model using the given iterator """
+        """Train the model using the given iterator"""
 
         trainer = trainers.BpeTrainer(
             vocab_size=vocab_size,

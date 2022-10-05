@@ -1,20 +1,21 @@
-import pytest
-import pickle
 import json
+import pickle
+
+import pytest
 
 from tokenizers.pre_tokenizers import (
-    PreTokenizer,
-    ByteLevel,
-    Whitespace,
-    WhitespaceSplit,
     BertPreTokenizer,
-    Metaspace,
+    ByteLevel,
     CharDelimiterSplit,
+    Digits,
+    Metaspace,
+    PreTokenizer,
     Punctuation,
     Sequence,
-    Digits,
-    UnicodeScripts,
     Split,
+    UnicodeScripts,
+    Whitespace,
+    WhitespaceSplit,
 )
 
 
