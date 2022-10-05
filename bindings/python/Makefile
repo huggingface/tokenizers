@@ -21,7 +21,7 @@ TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 test: $(TESTS_RESOURCES)
 	pip install pytest requests setuptools_rust numpy pyarrow datasets
 	python -m pytest -s -v tests
-	cargo test --no-default-features --features test
+	cargo test --no-default-features
 
 $(DATA_DIR)/big.txt :
 	$(dir_guard)
