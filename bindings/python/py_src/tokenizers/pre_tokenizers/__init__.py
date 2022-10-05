@@ -1,7 +1,6 @@
 # Generated content DO NOT EDIT
 from .. import pre_tokenizers
 
-
 PreTokenizer = pre_tokenizers.PreTokenizer
 BertPreTokenizer = pre_tokenizers.BertPreTokenizer
 ByteLevel = pre_tokenizers.ByteLevel

@@ -9,13 +9,11 @@ check_dirs := examples py_src/tokenizers tests
 style:
 	python stub.py
 	black --line-length 119 --target-version py35 $(check_dirs)
-	isort $(check_dirs)
 
 # Check the source code is formatted correctly
 check-style:
 	python stub.py --check
 	black --check --line-length 119 --target-version py35 examples py_src/tokenizers tests
-	isort --check-only $(check_dirs)
 
 TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 
