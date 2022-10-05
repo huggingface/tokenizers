@@ -3,7 +3,7 @@ name: Node
 on:
   push:
     branches:
-      - master
+      - main
     paths-ignore:
       - bindings/python/**
   pull_request:
