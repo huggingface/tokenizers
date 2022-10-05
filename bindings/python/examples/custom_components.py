@@ -1,12 +1,11 @@
-import jieba
-
 from typing import List
 
-from tokenizers import Tokenizer, Regex, NormalizedString, PreTokenizedString
-from tokenizers.models import BPE
-from tokenizers.pre_tokenizers import PreTokenizer
-from tokenizers.normalizers import Normalizer
+import jieba
+from tokenizers import NormalizedString, PreTokenizedString, Regex, Tokenizer
 from tokenizers.decoders import Decoder
+from tokenizers.models import BPE
+from tokenizers.normalizers import Normalizer
+from tokenizers.pre_tokenizers import PreTokenizer
 
 
 class JiebaPreTokenizer:
@@ -21,9 +20,7 @@ class JiebaPreTokenizer:
         # We can also easily do it in one line:
         # return [normalized_string[w[1] : w[2]] for w in jieba.tokenize(str(normalized_string))]
 
-    def odd_number_split(
-        self, i: int, normalized_string: NormalizedString
-    ) -> List[NormalizedString]:
+    def odd_number_split(self, i: int, normalized_string: NormalizedString) -> List[NormalizedString]:
         # Just an odd example...
         splits = []
         last = 0

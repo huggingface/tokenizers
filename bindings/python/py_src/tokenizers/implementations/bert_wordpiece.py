@@ -1,15 +1,16 @@
-from tokenizers import Tokenizer, AddedToken, decoders, trainers
+from typing import Dict, Iterator, List, Optional, Union
+
+from tokenizers import AddedToken, Tokenizer, decoders, trainers
 from tokenizers.models import WordPiece
 from tokenizers.normalizers import BertNormalizer
 from tokenizers.pre_tokenizers import BertPreTokenizer
 from tokenizers.processors import BertProcessing
-from .base_tokenizer import BaseTokenizer
 
-from typing import Optional, List, Union, Dict, Iterator
+from .base_tokenizer import BaseTokenizer
 
 
 class BertWordPieceTokenizer(BaseTokenizer):
-    """ Bert WordPiece Tokenizer """
+    """Bert WordPiece Tokenizer"""
 
     def __init__(
         self,
@@ -59,9 +60,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
             if cls_token_id is None:
                 raise TypeError("cls_token not found in the vocabulary")
 
-            tokenizer.post_processor = BertProcessing(
-                (str(sep_token), sep_token_id), (str(cls_token), cls_token_id)
-            )
+            tokenizer.post_processor = BertProcessing((str(sep_token), sep_token_id), (str(cls_token), cls_token_id))
         tokenizer.decoder = decoders.WordPiece(prefix=wordpieces_prefix)
 
         parameters = {
@@ -102,7 +101,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
         show_progress: bool = True,
         wordpieces_prefix: str = "##",
     ):
-        """ Train the model using the given files """
+        """Train the model using the given files"""
 
         trainer = trainers.WordPieceTrainer(
             vocab_size=vocab_size,
@@ -135,7 +134,7 @@ class BertWordPieceTokenizer(BaseTokenizer):
         wordpieces_prefix: str = "##",
         length: Optional[int] = None,
     ):
-        """ Train the model using the given iterator """
+        """Train the model using the given iterator"""
 
         trainer = trainers.WordPieceTrainer(
             vocab_size=vocab_size,

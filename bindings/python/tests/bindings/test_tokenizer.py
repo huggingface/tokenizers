@@ -1,19 +1,16 @@
-import numpy as np
 import pickle
-import pytest
-from ..utils import (
-    data_dir,
-    roberta_files,
-    bert_files,
-    multiprocessing_with_parallelism,
-)
 
-from tokenizers import AddedToken, Tokenizer, Encoding
-from tokenizers.models import Model, BPE, WordPiece
-from tokenizers.pre_tokenizers import ByteLevel
-from tokenizers.processors import RobertaProcessing, BertProcessing
-from tokenizers.normalizers import Lowercase
+import numpy as np
+import pytest
+
+from tokenizers import AddedToken, Encoding, Tokenizer
 from tokenizers.implementations import BertWordPieceTokenizer
+from tokenizers.models import BPE, Model, WordPiece
+from tokenizers.normalizers import Lowercase
+from tokenizers.pre_tokenizers import ByteLevel
+from tokenizers.processors import BertProcessing, RobertaProcessing
+
+from ..utils import bert_files, data_dir, multiprocessing_with_parallelism, roberta_files
 
 
 class TestAddedToken:
@@ -22,8 +19,7 @@ class TestAddedToken:
         assert type(added_token) == AddedToken
         assert str(added_token) == "<mask>"
         assert (
-            repr(added_token)
-            == 'AddedToken("<mask>", rstrip=False, lstrip=False, single_word=False, normalized=True)'
+            repr(added_token) == 'AddedToken("<mask>", rstrip=False, lstrip=False, single_word=False, normalized=True)'
         )
         assert added_token.rstrip == False
         assert added_token.lstrip == False

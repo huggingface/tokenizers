@@ -1,17 +1,19 @@
-import os
-import pytest
 import copy
+import os
 import pickle
 
+import pytest
+
 from tokenizers import (
-    SentencePieceUnigramTokenizer,
     AddedToken,
-    models,
-    pre_tokenizers,
-    normalizers,
+    SentencePieceUnigramTokenizer,
     Tokenizer,
+    models,
+    normalizers,
+    pre_tokenizers,
     trainers,
 )
+
 from ..utils import data_dir, train_files
 
 
@@ -63,15 +65,13 @@ class TestBpeTrainer:
             trainers.BpeTrainer(min_frequency=12).__getstate__()
             == b"""{"BpeTrainer":{"min_frequency":12,"vocab_size":30000,"show_progress":true,"special_tokens":[],"limit_alphabet":null,"initial_alphabet":[],"continuing_subword_prefix":null,"end_of_word_suffix":null,"words":{}}}"""
         )
-        assert isinstance(
-            pickle.loads(pickle.dumps(trainers.BpeTrainer(min_frequency=12))), trainers.BpeTrainer
-        )
+        assert isinstance(pickle.loads(pickle.dumps(trainers.BpeTrainer(min_frequency=12))), trainers.BpeTrainer)
 
         assert isinstance(copy.deepcopy(trainers.BpeTrainer(min_frequency=12)), trainers.BpeTrainer)
         # Make sure everything is correct
-        assert pickle.dumps(
-            pickle.loads(pickle.dumps(trainers.BpeTrainer(min_frequency=12)))
-        ) == pickle.dumps(trainers.BpeTrainer(min_frequency=12))
+        assert pickle.dumps(pickle.loads(pickle.dumps(trainers.BpeTrainer(min_frequency=12)))) == pickle.dumps(
+            trainers.BpeTrainer(min_frequency=12)
+        )
 
 
 class TestWordPieceTrainer:
@@ -118,9 +118,7 @@ class TestWordPieceTrainer:
         assert trainer.continuing_subword_prefix == None
 
     def test_can_pickle(self):
-        assert isinstance(
-            pickle.loads(pickle.dumps(trainers.WordPieceTrainer())), trainers.WordPieceTrainer
-        )
+        assert isinstance(pickle.loads(pickle.dumps(trainers.WordPieceTrainer())), trainers.WordPieceTrainer)
 
 
 class TestWordLevelTrainer:
@@ -148,9 +146,7 @@ class TestWordLevelTrainer:
         assert trainer.special_tokens == []
 
     def test_can_pickle(self):
-        assert isinstance(
-            pickle.loads(pickle.dumps(trainers.WordLevelTrainer())), trainers.WordLevelTrainer
-        )
+        assert isinstance(pickle.loads(pickle.dumps(trainers.WordLevelTrainer())), trainers.WordLevelTrainer)
 
 
 class TestUnigram:
@@ -184,9 +180,7 @@ class TestUnigram:
         bpe_tokenizer.train([train_files["small"]], trainer=trainer)
 
     def test_can_pickle(self):
-        assert isinstance(
-            pickle.loads(pickle.dumps(trainers.UnigramTrainer())), trainers.UnigramTrainer
-        )
+        assert isinstance(pickle.loads(pickle.dumps(trainers.UnigramTrainer())), trainers.UnigramTrainer)
 
     def test_train_with_special_tokens(self):
         filename = "tests/data/dummy-unigram-special_tokens-train.txt"

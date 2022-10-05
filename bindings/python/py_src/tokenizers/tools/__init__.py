@@ -1,1 +1,1 @@
-from .visualizer import EncodingVisualizer, Annotation
+from .visualizer import Annotation, EncodingVisualizer

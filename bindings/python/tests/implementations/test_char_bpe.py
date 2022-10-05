@@ -1,7 +1,8 @@
 import pytest
 
-from ..utils import data_dir, openai_files, multiprocessing_with_parallelism
 from tokenizers import CharBPETokenizer
+
+from ..utils import data_dir, multiprocessing_with_parallelism, openai_files
 
 
 class TestCharBPETokenizer:
@@ -33,9 +34,7 @@ class TestCharBPETokenizer:
         assert output.type_ids == [0, 0, 0, 0, 0, 0, 0, 1]
 
     def test_lowercase(self, openai_files):
-        tokenizer = CharBPETokenizer.from_file(
-            openai_files["vocab"], openai_files["merges"], lowercase=True
-        )
+        tokenizer = CharBPETokenizer.from_file(openai_files["vocab"], openai_files["merges"], lowercase=True)
         output = tokenizer.encode("My name is John", "pair", add_special_tokens=False)
         assert output.ids == [547, 1362, 544, 2476, 2688]
         assert output.tokens == ["my</w>", "name</w>", "is</w>", "john</w>", "pair</w>"]
@@ -43,9 +42,7 @@ class TestCharBPETokenizer:
         assert output.type_ids == [0, 0, 0, 0, 1]
 
     def test_decoding(self, openai_files):
-        tokenizer = CharBPETokenizer.from_file(
-            openai_files["vocab"], openai_files["merges"], lowercase=True
-        )
+        tokenizer = CharBPETokenizer.from_file(openai_files["vocab"], openai_files["merges"], lowercase=True)
         decoded = tokenizer.decode(tokenizer.encode("my name is john").ids)
         assert decoded == "my name is john"
 

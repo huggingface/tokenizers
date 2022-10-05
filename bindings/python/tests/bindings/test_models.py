@@ -1,9 +1,10 @@
-import pytest
 import pickle
 
-from ..utils import data_dir, roberta_files, bert_files
+import pytest
 
-from tokenizers.models import Model, BPE, WordPiece, WordLevel
+from tokenizers.models import BPE, Model, WordLevel, WordPiece
+
+from ..utils import bert_files, data_dir, roberta_files
 
 
 class TestBPE:

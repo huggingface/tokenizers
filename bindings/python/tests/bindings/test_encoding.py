@@ -1,7 +1,8 @@
 import pytest
-from ..utils import data_dir, bert_files
 
 from tokenizers import BertWordPieceTokenizer
+
+from ..utils import bert_files, data_dir
 
 
 class TestEncoding:

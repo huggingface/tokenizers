@@ -1,5 +1,7 @@
 import datasets
-from tokenizers import normalizers, pre_tokenizers, Tokenizer, models, trainers
+
+from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, trainers
+
 
 # Build a tokenizer
 bpe_tokenizer = Tokenizer(models.BPE())

@@ -63,9 +63,7 @@ class BertNormalizer(Normalizer):
             Whether to lowercase.
     """
 
-    def __init__(
-        self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True
-    ):
+    def __init__(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True):
         pass
     def normalize(self, normalized):
         """

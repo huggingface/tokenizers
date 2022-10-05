@@ -1,15 +1,17 @@
-from ..utils import data_dir, train_files
-import os
-import pytest
-import datasets
 import gzip
+import os
+
+import datasets
+import pytest
+
+from ..utils import data_dir, train_files
 
 
 class TestTrainFromIterators:
     @staticmethod
     def get_tokenizer_trainer():
         # START init_tokenizer_trainer
-        from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, decoders, trainers
+        from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers, trainers
 
         tokenizer = Tokenizer(models.Unigram())
         tokenizer.normalizer = normalizers.NFKC()
@@ -31,9 +33,7 @@ class TestTrainFromIterators:
         # START load_dataset
         import datasets
 
-        dataset = datasets.load_dataset(
-            "wikitext", "wikitext-103-raw-v1", split="train+test+validation"
-        )
+        dataset = datasets.load_dataset("wikitext", "wikitext-103-raw-v1", split="train+test+validation")
         # END load_dataset
 
     @pytest.fixture(scope="class")

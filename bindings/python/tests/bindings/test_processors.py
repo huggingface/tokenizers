@@ -1,20 +1,21 @@
-import pytest
-import pickle
 import json
+import pickle
 
-from ..utils import data_dir, roberta_files
+import pytest
 
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import ByteLevel as ByteLevelPreTokenizer
 from tokenizers.processors import (
-    PostProcessor,
     BertProcessing,
-    RobertaProcessing,
     ByteLevel,
-    TemplateProcessing,
+    PostProcessor,
+    RobertaProcessing,
     Sequence,
+    TemplateProcessing,
 )
+
+from ..utils import data_dir, roberta_files
 
 
 class TestBertProcessing:

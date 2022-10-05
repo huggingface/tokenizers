@@ -1,11 +1,11 @@
-import os
 import itertools
+import os
 import re
-from typing import List, Optional, Tuple, Dict, Callable, Any, NamedTuple
 from string import Template
-from typing import List
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
-from tokenizers import Tokenizer, Encoding
+from tokenizers import Encoding, Tokenizer
+
 
 dirname = os.path.dirname(__file__)
 css_filename = os.path.join(dirname, "visualizer-styles.css")
@@ -91,7 +91,7 @@ class EncodingVisualizer:
     ):
         if default_to_notebook:
             try:
-                from IPython.core.display import display, HTML
+                from IPython.core.display import HTML, display
             except ImportError as e:
                 raise Exception(
                     """We couldn't import IPython utils for html display.
@@ -135,7 +135,7 @@ class EncodingVisualizer:
             final_default_to_notebook = default_to_notebook
         if final_default_to_notebook:
             try:
-                from IPython.core.display import display, HTML
+                from IPython.core.display import HTML, display
             except ImportError as e:
                 raise Exception(
                     """We couldn't import IPython utils for html display.
@@ -174,9 +174,7 @@ class EncodingVisualizer:
         h = 10
         colors = {}
 
-        for label in sorted(
-            labels
-        ):  # sort so we always get the same colors for a given set of labels
+        for label in sorted(labels):  # sort so we always get the same colors for a given set of labels
             colors[label] = f"hsl({h},{s}%,{l}%"
             h += h_step
         return colors
@@ -234,10 +232,7 @@ class EncodingVisualizer:
             else:
                 # Like above, but a different color so we can see the tokens alternate
                 css_classes.append("even-token")
-            if (
-                EncodingVisualizer.unk_token_regex.search(encoding.tokens[first.token_ix])
-                is not None
-            ):
+            if EncodingVisualizer.unk_token_regex.search(encoding.tokens[first.token_ix]) is not None:
                 # This is a special token that is in the text. probably UNK
                 css_classes.append("special-token")
                 # TODO is this the right name for the data attribute ?
@@ -289,9 +284,7 @@ class EncodingVisualizer:
                     anno = annotations[cur_anno_ix]
                     label = anno.label
                     color = label_colors_dict[label]
-                    spans.append(
-                        f'<span class="annotation" style="color:{color}" data-label="{label}">'
-                    )
+                    spans.append(f'<span class="annotation" style="color:{color}" data-label="{label}">')
             prev_anno_ix = cur_anno_ix
 
             if cs.partition_key() == current_consecutive_chars[0].partition_key():
@@ -342,9 +335,7 @@ class EncodingVisualizer:
         return annotation_map
 
     @staticmethod
-    def __make_char_states(
-        text: str, encoding: Encoding, annotations: AnnotationList
-    ) -> List[CharState]:
+    def __make_char_states(text: str, encoding: Encoding, annotations: AnnotationList) -> List[CharState]:
         """
         For each character in the original text, we emit a tuple representing it's "state":
 

@@ -1,6 +1,6 @@
 import os
-import pytest
 
+import pytest
 
 from tokenizers import SentencePieceBPETokenizer, SentencePieceUnigramTokenizer
 
@@ -35,9 +35,7 @@ class TestSentencePieceUnigram:
         p.write("A first sentence\nAnother sentence\nAnd a last one")
 
         tokenizer = SentencePieceUnigramTokenizer()
-        tokenizer.train(
-            files=str(p), show_progress=False, special_tokens=["<unk>"], unk_token="<unk>"
-        )
+        tokenizer.train(files=str(p), show_progress=False, special_tokens=["<unk>"], unk_token="<unk>")
         output = tokenizer.encode("A sentence 🤗")
         assert output.ids[-1] == 0
         assert output.tokens == ["▁A", "▁", "s", "en", "t", "en", "c", "e", "▁", "🤗"]

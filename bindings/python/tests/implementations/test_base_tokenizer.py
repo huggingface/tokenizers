@@ -1,7 +1,7 @@
 import pytest
 
+from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers, processors
 from tokenizers.implementations import BaseTokenizer
-from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, processors, decoders
 
 
 class TestBaseTokenizer:

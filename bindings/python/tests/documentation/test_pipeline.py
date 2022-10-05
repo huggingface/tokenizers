@@ -1,5 +1,6 @@
-from ..utils import data_dir, doc_wiki_tokenizer, doc_pipeline_bert_tokenizer
 from tokenizers import Tokenizer
+
+from ..utils import data_dir, doc_pipeline_bert_tokenizer, doc_wiki_tokenizer
 
 
 disable_printing = True
@@ -112,7 +113,7 @@ class TestPipeline:
         # END bert_setup_tokenizer
         # START bert_setup_normalizer
         from tokenizers import normalizers
-        from tokenizers.normalizers import Lowercase, NFD, StripAccents
+        from tokenizers.normalizers import NFD, Lowercase, StripAccents
 
         bert_tokenizer.normalizer = normalizers.Sequence([NFD(), Lowercase(), StripAccents()])
         # END bert_setup_normalizer
@@ -136,9 +137,7 @@ class TestPipeline:
         # START bert_train_tokenizer
         from tokenizers.trainers import WordPieceTrainer
 
-        trainer = WordPieceTrainer(
-            vocab_size=30522, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"]
-        )
+        trainer = WordPieceTrainer(vocab_size=30522, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
         files = [f"data/wikitext-103-raw/wiki.{split}.raw" for split in ["test", "train", "valid"]]
         bert_tokenizer.train(files, trainer)
 
@@ -171,9 +170,9 @@ class TestPipeline:
 
 
 if __name__ == "__main__":
+    import os
     from urllib import request
     from zipfile import ZipFile
-    import os
 
     disable_printing = False
     if not os.path.isdir("data/wikitext-103-raw"):

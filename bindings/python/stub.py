@@ -1,8 +1,10 @@
+import argparse
 import inspect
 import os
-import argparse
-import black
 from pathlib import Path
+
+import black
+
 
 INDENT = " " * 4
 GENERATED_COMMENT = "# Generated content DO NOT EDIT\n"
@@ -122,8 +124,8 @@ def py_file(module, origin):
 
 def do_black(content, is_pyi):
     mode = black.Mode(
-        target_versions={black.TargetVersion.PY36},
-        line_length=100,
+        target_versions={black.TargetVersion.PY35},
+        line_length=119,
         is_pyi=is_pyi,
         string_normalization=True,
         experimental_string_processing=False,
@@ -135,9 +137,7 @@ def do_black(content, is_pyi):
 
 
 def write(module, directory, origin, check=False):
-    submodules = [
-        (name, member) for name, member in inspect.getmembers(module) if inspect.ismodule(member)
-    ]
+    submodules = [(name, member) for name, member in inspect.getmembers(module) if inspect.ismodule(member)]
 
     filename = os.path.join(directory, "__init__.pyi")
     pyi_content = pyi_file(module)
@@ -146,9 +146,7 @@ def write(module, directory, origin, check=False):
     if check:
         with open(filename, "r") as f:
             data = f.read()
-            assert (
-                data == pyi_content
-            ), f"The content of {filename} seems outdated, please run `python stub.py`"
+            assert data == pyi_content, f"The content of {filename} seems outdated, please run `python stub.py`"
     else:
         with open(filename, "w") as f:
             f.write(pyi_content)
@@ -171,9 +169,7 @@ def write(module, directory, origin, check=False):
         if check:
             with open(filename, "r") as f:
                 data = f.read()
-                assert (
-                    data == py_content
-                ), f"The content of {filename} seems outdated, please run `python stub.py`"
+                assert data == py_content, f"The content of {filename} seems outdated, please run `python stub.py`"
         else:
             with open(filename, "w") as f:
                 f.write(py_content)

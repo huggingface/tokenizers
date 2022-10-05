@@ -1,16 +1,10 @@
-from tokenizers import (
-    Tokenizer,
-    AddedToken,
-    pre_tokenizers,
-    decoders,
-    trainers,
-    processors,
-)
-from tokenizers.models import BPE
-from tokenizers.normalizers import unicode_normalizer_from_str, Lowercase, Sequence
-from .base_tokenizer import BaseTokenizer
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 
-from typing import Optional, List, Union, Dict, Tuple, Iterator
+from tokenizers import AddedToken, Tokenizer, decoders, pre_tokenizers, processors, trainers
+from tokenizers.models import BPE
+from tokenizers.normalizers import Lowercase, Sequence, unicode_normalizer_from_str
+
+from .base_tokenizer import BaseTokenizer
 
 
 class ByteLevelBPETokenizer(BaseTokenizer):
@@ -90,7 +84,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         show_progress: bool = True,
         special_tokens: List[Union[str, AddedToken]] = [],
     ):
-        """ Train the model using the given files """
+        """Train the model using the given files"""
 
         trainer = trainers.BpeTrainer(
             vocab_size=vocab_size,
@@ -112,7 +106,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         special_tokens: List[Union[str, AddedToken]] = [],
         length: Optional[int] = None,
     ):
-        """ Train the model using the given iterator """
+        """Train the model using the given iterator"""
 
         trainer = trainers.BpeTrainer(
             vocab_size=vocab_size,

@@ -1,10 +1,13 @@
-from tokenizers import Tokenizer
+import json
 import os
 import unittest
-from .utils import data_dir, albert_base
-import json
-from huggingface_hub import HfApi, hf_hub_url, cached_download
+
 import tqdm
+
+from huggingface_hub import HfApi, cached_download, hf_hub_url
+from tokenizers import Tokenizer
+
+from .utils import albert_base, data_dir
 
 
 class TestSerialization:
