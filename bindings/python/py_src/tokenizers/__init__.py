@@ -77,13 +77,6 @@ class SplitDelimiterBehavior(Enum):
     CONTIGUOUS = "contiguous"
 
 
-from .implementations import (
-    BertWordPieceTokenizer,
-    ByteLevelBPETokenizer,
-    CharBPETokenizer,
-    SentencePieceBPETokenizer,
-    SentencePieceUnigramTokenizer,
-)
 from .tokenizers import (
     AddedToken,
     Encoding,
@@ -99,3 +92,12 @@ from .tokenizers import (
     processors,
     trainers,
 )
+
+
+from .implementations import (  # isort:skip
+    BertWordPieceTokenizer,
+    ByteLevelBPETokenizer,
+    CharBPETokenizer,
+    SentencePieceBPETokenizer,
+    SentencePieceUnigramTokenizer,
+)  # isort: skip
