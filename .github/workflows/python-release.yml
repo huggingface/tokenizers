@@ -16,8 +16,8 @@ jobs:
 
   create_wheels_manylinux:
     runs-on: ubuntu-latest
-    name: Create wheels for manylinux2010
-    container: quay.io/pypa/manylinux2010_x86_64
+    name: Create wheels for manylinux2014
+    container: quay.io/pypa/manylinux2014_x86_64
     steps:
       # v1 is required when using manylinux2010
       - uses: actions/checkout@v1
