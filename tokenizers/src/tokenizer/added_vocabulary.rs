@@ -38,6 +38,15 @@ impl AddedToken {
             ..Default::default()
         }
     }
+
+    pub fn from2<S: Into<String>>(content: S, special: bool, normalized: bool) -> Self {
+        Self {
+            content: content.into(),
+            normalized,
+            special,
+            ..Default::default()
+        }
+    }
     /// Specify whether this token should only match on whole single words, and never
     /// part of a word.
     #[must_use]
@@ -819,6 +828,60 @@ mod tests {
                 // \u{2000} is mongolian vowel separator: https://jkorpela.fi/chars/spaces.html
                 ("<mask>\u{2000}", Some(vec![0])),
             ]
+        );
+    }
+
+    #[test]
+    fn with_replace_normalizer() {
+        use crate::models::unigram::Unigram;
+        use crate::models::unigram::UnigramTrainerBuilder;
+        use crate::normalizers::replace::ReplacePattern;
+        use crate::normalizers::Replace;
+        use crate::normalizers::Sequence;
+        use crate::pre_tokenizers::metaspace::Metaspace;
+        use crate::processors::byte_level::ByteLevel;
+        use crate::TokenizerBuilder;
+
+        let mut tokenizer = TokenizerBuilder::new()
+            .with_model(Unigram::default())
+            .with_normalizer(Some(Sequence::new(vec![
+                Replace::new(ReplacePattern::Regex(r"[^‌0-9a-zA-Z]".into()), ' ')
+                    .unwrap()
+                    .into(),
+                Replace::new(ReplacePattern::Regex(r"[0-9]+".into()), "[NUM]")
+                    .unwrap()
+                    .into(),
+            ])))
+            .with_pre_tokenizer(Some(Metaspace::new('▁', true)))
+            .with_post_processor(Some(ByteLevel::default()))
+            .with_decoder(Some(ByteLevel::default()))
+            .build()
+            .unwrap();
+
+        let mut trainer = UnigramTrainerBuilder::default()
+            .show_progress(false)
+            .unk_token(Some("[UNK]".into()))
+            .build()
+            .unwrap();
+
+        tokenizer
+            .train(
+                &mut trainer,
+                vec![
+                    "Brown fox jumped over the 23 lazy dog dog dog dog",
+                    "Brown fox jumped over the 23 lazy dog dog dog dog",
+                    "24, 535, 532 4234,3 24,234 23,4 23,4 23",
+                ]
+                .iter(),
+            )
+            .expect("Error training the tokenizer");
+
+        tokenizer.save("tok.json", true).unwrap();
+
+        assert_eq!(tokenizer.encode("25", false).unwrap().get_ids(), vec![1]);
+        assert_eq!(
+            tokenizer.encode("25,24", false).unwrap().get_ids(),
+            vec![1, 1]
         );
     }
 }

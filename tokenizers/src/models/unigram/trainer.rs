@@ -198,14 +198,16 @@ impl UnigramTrainer {
         let c_sentence_boundary = '\0';
         let k_sentence_boundary = '\0'.to_string();
         for (string, n) in sentences {
-            flat_string.push_str(string);
-            // XXX
-            // Comment suggests we add sentence boundary, but it seems to be missing from actual
-            // code in spm.
-            flat_string.push_str(&k_sentence_boundary);
-            for c in string.chars() {
-                if c != c_sentence_boundary {
-                    *all_chars.entry(c).or_insert(0) += n;
+            for _ in 0..*n {
+                flat_string.push_str(string);
+                // XXX
+                // Comment suggests we add sentence boundary, but it seems to be missing from actual
+                // code in spm.
+                flat_string.push_str(&k_sentence_boundary);
+                for c in string.chars() {
+                    if c != c_sentence_boundary {
+                        *all_chars.entry(c).or_insert(0) += n;
+                    }
                 }
             }
         }
@@ -222,12 +224,13 @@ impl UnigramTrainer {
         sall_chars.sort_by_key(|&a| Reverse(a));
         let mut substr_index: Vec<_> = suffix
             .iter()
-            .filter_map(|(string, freq)| {
+            .filter_map(|(mut string, freq)| {
                 if string.len() <= 1 {
                     return None;
                 }
-                if string.contains(&c_sentence_boundary) {
-                    return None;
+                let index = string.iter().position(|r| r == &c_sentence_boundary);
+                if let Some(index) = index {
+                    string = &string[..index];
                 }
                 if !self.is_valid_sentencepiece(string) {
                     return None;
@@ -725,7 +728,8 @@ mod tests {
             .unwrap();
 
         let mut pieces = unigram.iter();
-        assert_eq!(pieces.next().unwrap().0, "e".to_string());
+        println!("Pieces {:?}", unigram.iter().collect::<Vec<_>>());
+        assert_eq!(pieces.next().unwrap().0, "The".to_string());
     }
 
     #[test]
