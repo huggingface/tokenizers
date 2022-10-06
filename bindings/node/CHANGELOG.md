@@ -1,3 +1,7 @@
+## [0.13.1] 
+
+- [#1072] Fixing Roberta type ids.
+
 ## [0.13.0] 
 
 - [#1008] `Decoder` is now a composable trait, but without being backward incompatible
@@ -165,6 +169,7 @@ The files must now be provided first when calling `tokenizer.train(files, traine
 - Actually add special tokens in tokenizers implementations ([acef252](https://github.com/huggingface/tokenizers/commit/acef252dacc43adc414175cfc325668ad1488753))
 
 
+[#1072]: https://github.com/huggingface/tokenizers/pull/1072
 [#956]: https://github.com/huggingface/tokenizers/pull/956
 [#1008]: https://github.com/huggingface/tokenizers/pull/1008
 [#1009]: https://github.com/huggingface/tokenizers/pull/1009

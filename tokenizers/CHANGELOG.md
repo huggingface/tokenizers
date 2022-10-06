@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] 
+
+- [#1072] Fixing Roberta type ids.
+
 ## [0.13.0] 
 
 - [#1009] `unstable_wasm` feature to support building on Wasm (it's unstable !)
@@ -166,6 +170,7 @@ split up in multiple bytes
 - [#174]: The `LongestFirst` truncation strategy had a bug
 
 
+[#1072]: https://github.com/huggingface/tokenizers/pull/1072
 [#956]: https://github.com/huggingface/tokenizers/pull/956
 [#1008]: https://github.com/huggingface/tokenizers/pull/1008
 [#1009]: https://github.com/huggingface/tokenizers/pull/1009
