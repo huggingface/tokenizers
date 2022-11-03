@@ -795,7 +795,7 @@ where
     }
 
     /// Decode the given ids, back to a String
-    pub fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool, spaces_between_special_tokens:bool) -> Result<String> {
+    pub fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool, spaces_between_special_tokens: bool) -> Result<String> {
         let tokens = ids
             .into_iter()
             .filter_map(|id| {
@@ -1010,7 +1010,7 @@ where
         &self,
         sentences: Vec<Vec<u32>>,
         skip_special_tokens: bool,
-        spaces_between_special_tokens:bool,
+        spaces_between_special_tokens: bool,
     ) -> Result<Vec<String>>
     where
         M: Send + Sync,

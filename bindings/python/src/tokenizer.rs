@@ -1011,7 +1011,7 @@ impl PyTokenizer {
     ///     :obj:`str`: The decoded string
     #[args(skip_special_tokens = true, spaces_between_special_tokens = true)]
     #[pyo3(text_signature = "(self, ids, skip_special_tokens=True, spaces_between_special_tokens=True)")]
-    fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool, spaces_between_special_tokens:bool) -> PyResult<String> {
+    fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool, spaces_between_special_tokens: bool) -> PyResult<String> {
         ToPyResult(self.tokenizer.decode(ids, skip_special_tokens, spaces_between_special_tokens)).into()
     }
 
@@ -1036,7 +1036,7 @@ impl PyTokenizer {
         py: Python<'_>,
         sequences: Vec<Vec<u32>>,
         skip_special_tokens: bool,
-        spaces_between_special_tokens:bool
+        spaces_between_special_tokens: bool
     ) -> PyResult<Vec<String>> {
         py.allow_threads(|| {
             ToPyResult(self.tokenizer.decode_batch(sequences, skip_special_tokens, spaces_between_special_tokens)).into()
