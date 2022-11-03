@@ -349,7 +349,7 @@ fn pipeline() -> tokenizers::Result<()> {
     let decoded = tokenizer.decode(
         vec![1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2],
         true,
-        true
+        true,
     )?;
     println!("{}", decoded);
     // "Hello , y ' all ! How are you ?"
