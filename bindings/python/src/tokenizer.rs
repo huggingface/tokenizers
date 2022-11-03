@@ -1036,7 +1036,7 @@ impl PyTokenizer {
         py: Python<'_>,
         sequences: Vec<Vec<u32>>,
         skip_special_tokens: bool,
-        spaces_between_special_tokens: bool
+        spaces_between_special_tokens: bool,
     ) -> PyResult<Vec<String>> {
         py.allow_threads(|| {
             ToPyResult(self.tokenizer.decode_batch(sequences, skip_special_tokens, spaces_between_special_tokens)).into()
