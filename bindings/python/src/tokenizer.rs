@@ -1004,6 +1004,9 @@ impl PyTokenizer {
     ///     skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether the special tokens should be removed from the decoded string
     ///
+    ///     spaces_between_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///          Whether an extratr space (" ") should be prepended to special tokens
+    ///
     /// Returns:
     ///     :obj:`str`: The decoded string
     #[args(skip_special_tokens = true, spaces_between_special_tokens = true)]
@@ -1020,6 +1023,9 @@ impl PyTokenizer {
     ///
     ///     skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether the special tokens should be removed from the decoded strings
+    ///
+    ///     spaces_between_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether an extratr space (" ") should be prepended to special tokens
     ///
     /// Returns:
     ///     :obj:`List[str]`: A list of decoded strings
