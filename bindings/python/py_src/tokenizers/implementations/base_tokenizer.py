@@ -251,7 +251,12 @@ class BaseTokenizer:
 
         return self._tokenizer.encode_batch(inputs, is_pretokenized, add_special_tokens)
 
-    def decode(self, ids: List[int], skip_special_tokens: Optional[bool] = True, spaces_between_special_tokens: Optional[bool] = True) -> str:
+    def decode(
+        self,
+        ids: List[int],
+        skip_special_tokens: Optional[bool] = True,
+        spaces_between_special_tokens: Optional[bool] = True,
+    ) -> str:
         """Decode the given list of ids to a string sequence
 
         Args:
@@ -270,9 +275,16 @@ class BaseTokenizer:
         if ids is None:
             raise ValueError("None input is not valid. Should be a list of integers.")
 
-        return self._tokenizer.decode(ids, skip_special_tokens=skip_special_tokens,spaces_between_special_token=spaces_between_special_tokens)
+        return self._tokenizer.decode(
+            ids, skip_special_tokens=skip_special_tokens, spaces_between_special_token=spaces_between_special_tokens
+        )
 
-    def decode_batch(self, sequences: List[List[int]], skip_special_tokens: Optional[bool] = True, spaces_between_special_tokens: Optional[bool] = True) -> str:
+    def decode_batch(
+        self,
+        sequences: List[List[int]],
+        skip_special_tokens: Optional[bool] = True,
+        spaces_between_special_tokens: Optional[bool] = True,
+    ) -> str:
         """Decode the list of sequences to a list of string sequences
 
         Args:
@@ -291,7 +303,11 @@ class BaseTokenizer:
         if sequences is None:
             raise ValueError("None input is not valid. Should be list of list of integers.")
 
-        return self._tokenizer.decode_batch(sequences, skip_special_tokens=skip_special_tokens, spaces_between_special_token=spaces_between_special_tokens)
+        return self._tokenizer.decode_batch(
+            sequences,
+            skip_special_tokens=skip_special_tokens,
+            spaces_between_special_token=spaces_between_special_tokens,
+        )
 
     def token_to_id(self, token: str) -> Optional[int]:
         """Convert the given token to its corresponding id
