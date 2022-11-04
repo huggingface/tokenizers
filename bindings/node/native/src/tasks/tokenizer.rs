@@ -86,8 +86,8 @@ impl Task for EncodeTask<'static> {
 }
 
 pub enum DecodeTask {
-    Single(Tokenizer, Vec<u32>, bool),
-    Batch(Tokenizer, Vec<Vec<u32>>, bool),
+    Single(Tokenizer, Vec<u32>, bool, bool),
+    Batch(Tokenizer, Vec<Vec<u32>>, bool, bool),
 }
 
 pub enum DecodeOutput {
@@ -109,7 +109,7 @@ impl Task for DecodeTask {
                 .decode(ids.to_vec(), *skip_special_tokens, *spaces_between_special_tokens)
                 .map_err(|e| format!("{}", e))
                 .map(DecodeOutput::Single),
-            DecodeTask::Batch(worker, ids, skip_special_tokens) => worker
+            DecodeTask::Batch(worker, ids, skip_special_tokens, spaces_between_special_tokens) => worker
                 .tokenizer
                 .read()
                 .unwrap()
