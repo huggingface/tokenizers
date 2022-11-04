@@ -1010,9 +1010,20 @@ impl PyTokenizer {
     /// Returns:
     ///     :obj:`str`: The decoded string
     #[args(skip_special_tokens = true, spaces_between_special_tokens = true)]
-    #[pyo3(text_signature = "(self, ids, skip_special_tokens=True, spaces_between_special_tokens=True)")]
-    fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool, spaces_between_special_tokens: bool) -> PyResult<String> {
-        ToPyResult(self.tokenizer.decode(ids, skip_special_tokens, spaces_between_special_tokens)).into()
+    #[pyo3(
+        text_signature = "(self, ids, skip_special_tokens=True, spaces_between_special_tokens=True)"
+    )]
+    fn decode(
+        &self,
+        ids: Vec<u32>,
+        skip_special_tokens: bool,
+        spaces_between_special_tokens: bool,
+    ) -> PyResult<String> {
+        ToPyResult(
+            self.tokenizer
+                .decode(ids, skip_special_tokens, spaces_between_special_tokens),
+        )
+        .into()
     }
 
     /// Decode a batch of ids back to their corresponding string
@@ -1029,8 +1040,10 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`List[str]`: A list of decoded strings
-    #[args(skip_special_tokens = true, spaces_between_special_tokens=true)]
-    #[pyo3(text_signature = "(self, sequences, skip_special_tokens=True, spaces_between_special_tokens=True)")]
+    #[args(skip_special_tokens = true, spaces_between_special_tokens = true)]
+    #[pyo3(
+        text_signature = "(self, sequences, skip_special_tokens=True, spaces_between_special_tokens=True)"
+    )]
     fn decode_batch(
         &self,
         py: Python<'_>,
@@ -1039,7 +1052,12 @@ impl PyTokenizer {
         spaces_between_special_tokens: bool,
     ) -> PyResult<Vec<String>> {
         py.allow_threads(|| {
-            ToPyResult(self.tokenizer.decode_batch(sequences, skip_special_tokens, spaces_between_special_tokens)).into()
+            ToPyResult(self.tokenizer.decode_batch(
+                sequences,
+                skip_special_tokens,
+                spaces_between_special_tokens,
+            ))
+            .into()
         })
     }
 
