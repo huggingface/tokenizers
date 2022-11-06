@@ -355,7 +355,7 @@ impl PySplit {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, &[" ", "removed"])
+        PyTuple::new(py, [" ", "removed"])
     }
 }
 
@@ -387,7 +387,7 @@ impl PyCharDelimiterSplit {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, &[" "])
+        PyTuple::new(py, [" "])
     }
 }
 
@@ -450,7 +450,7 @@ impl PySequence {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, &[PyList::empty(py)])
+        PyTuple::new(py, [PyList::empty(py)])
     }
 }
 
