@@ -99,7 +99,7 @@ impl BertNormalizer {
         let mut new_chars: Vec<(char, isize)> = vec![];
         normalized.for_each(|c| {
             if is_chinese_char(c) {
-                new_chars.extend(&[(' ', 0), (c, 1), (' ', 1)]);
+                new_chars.extend([(' ', 0), (c, 1), (' ', 1)]);
             } else {
                 new_chars.push((c, 0));
             }
