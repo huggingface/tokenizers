@@ -227,7 +227,7 @@ fn sequence(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
         match pretokenizer.downcast::<JsPreTokenizer>().or_throw(&mut cx) {
             Ok(pretokenizer) => {
                 let guard = cx.lock();
-                let pretok = (*pretokenizer.borrow(&guard)).pretok.clone();
+                let pretok = pretokenizer.borrow(&guard).pretok.clone();
                 if let Some(pretokenizer) = pretok {
                     match pretokenizer {
                         JsPreTokenizerWrapper::Sequence(seq) => sequence.extend(seq),
