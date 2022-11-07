@@ -546,7 +546,7 @@ impl NormalizedString {
         let mut new_chars: Vec<(char, isize)> = vec![];
         self.for_each(|c| {
             c.to_lowercase().enumerate().for_each(|(index, c)| {
-                new_chars.push((c, if index > 0 { 1 } else { 0 }));
+                new_chars.push((c, isize::from(index > 0)));
             })
         });
         self.transform(new_chars.into_iter(), 0);
@@ -558,7 +558,7 @@ impl NormalizedString {
         let mut new_chars: Vec<(char, isize)> = vec![];
         self.for_each(|c| {
             c.to_uppercase().enumerate().for_each(|(index, c)| {
-                new_chars.push((c, if index > 0 { 1 } else { 0 }));
+                new_chars.push((c, isize::from(index > 0)));
             })
         });
         self.transform(new_chars.into_iter(), 0);

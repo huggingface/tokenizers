@@ -135,7 +135,7 @@ impl PreTokenizer for ByteLevel {
                     bytes
                         .iter()
                         .enumerate()
-                        .map(|(i, b)| (BYTES_CHAR[b], if i > 0 { 1 } else { 0 })),
+                        .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
                 );
             }
             normalized.transform(transformations.into_iter(), 0);
