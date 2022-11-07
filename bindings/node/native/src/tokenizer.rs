@@ -583,12 +583,13 @@ declare_types! {
                 (false, 1)
             };
             let callback = cx.argument::<JsFunction>(callback_index)?;
+            let spaces_between_special_tokens = =  cx.extract::<bool>(1)?:
 
             let this = cx.this();
             let guard = cx.lock();
 
             let task = DecodeTask::Single(
-                this.borrow(&guard).clone(), ids, skip_special_tokens
+                this.borrow(&guard).clone(), ids, skip_special_tokens, spaces_between_special_tokens
             );
             task.schedule(callback);
 
@@ -605,12 +606,13 @@ declare_types! {
                 (false, 1)
             };
             let callback = cx.argument::<JsFunction>(callback_index)?;
+            let spaces_between_special_tokens = =  cx.extract::<bool>(1)?:
 
             let this = cx.this();
             let guard = cx.lock();
 
             let task = DecodeTask::Batch(
-                this.borrow(&guard).clone(), sentences, skip_special_tokens
+                this.borrow(&guard).clone(), sentences, skip_special_tokens, spaces_between_special_tokens
             );
             task.schedule(callback);
 
