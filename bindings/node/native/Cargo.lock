@@ -995,7 +995,7 @@ dependencies = [
 
 [[package]]
 name = "node"
-version = "0.8.0"
+version = "0.13.2"
 dependencies = [
  "neon",
  "neon-build",
@@ -1668,7 +1668,7 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokenizers"
-version = "0.12.1"
+version = "0.13.2"
 dependencies = [
  "aho-corasick",
  "cached-path",

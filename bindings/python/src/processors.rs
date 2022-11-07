@@ -167,7 +167,7 @@ impl PyBertProcessing {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, &[("", 0), ("", 0)])
+        PyTuple::new(py, [("", 0), ("", 0)])
     }
 }
 
@@ -218,7 +218,7 @@ impl PyRobertaProcessing {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, &[("", 0), ("", 0)])
+        PyTuple::new(py, [("", 0), ("", 0)])
     }
 }
 
@@ -441,7 +441,7 @@ impl PySequence {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, &[PyList::empty(py)])
+        PyTuple::new(py, [PyList::empty(py)])
     }
 }
 

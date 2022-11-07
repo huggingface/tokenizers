@@ -167,10 +167,10 @@ impl AddedVocabulary {
     pub fn new() -> Self {
         let trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
-            .build::<_, &&[u8]>(&[]);
+            .build::<_, &&[u8]>([]);
         let normalized_trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
-            .build::<_, &&[u8]>(&[]);
+            .build::<_, &&[u8]>([]);
         Self {
             added_tokens_map: HashMap::new(),
             added_tokens_map_r: HashMap::new(),

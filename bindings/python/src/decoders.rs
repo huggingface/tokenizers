@@ -353,7 +353,7 @@ impl PySequenceDecoder {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, &[PyList::empty(py)])
+        PyTuple::new(py, [PyList::empty(py)])
     }
 }
 

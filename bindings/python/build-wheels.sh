@@ -7,8 +7,10 @@ then
 fi
 
 export PATH="$HOME/.cargo/bin:$PATH"
+# https://users.rust-lang.org/t/cargo-uses-too-much-memory-being-run-in-qemu/76531
+echo -e "[net]\ngit-fetch-with-cli = true" > "$HOME/.cargo/config"
 
-for PYBIN in /opt/python/cp{37,38,39,310}*/bin; do
+for PYBIN in /opt/python/cp{37,38,39,310,311}*/bin; do
     export PYTHON_SYS_EXECUTABLE="$PYBIN/python"
 
     "${PYBIN}/pip" install -U setuptools-rust setuptools wheel
