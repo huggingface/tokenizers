@@ -81,6 +81,12 @@ jobs:
           command: test
           args: --verbose --manifest-path ./tokenizers/Cargo.toml --doc
 
+      - name: Run Audit
+        uses: actions-rs/cargo@v1
+        with:
+          command: audit
+          args: -D warnings -f ./tokenizers/Cargo.lock
+
       # Verify that Readme.md is up to date.
       - name: Make sure, Readme generated from lib.rs matches actual Readme
         if: matrix.os == 'ubuntu-latest'

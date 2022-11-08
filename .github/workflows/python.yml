@@ -95,6 +95,12 @@ jobs:
           command: clippy
           args: --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
 
+      - name: Run Audit
+        uses: actions-rs/cargo@v1
+        with:
+          command: audit
+          args: -D warnings -f ./bindings/python/Cargo.lock
+
       - name: Install
         working-directory: ./bindings/python
         run: |
