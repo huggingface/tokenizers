@@ -815,9 +815,13 @@ mod tests {
             .unwrap()
             .build();
 
-        let err_a = Err("Missing SpecialToken(s) with id(s) `[SEP], [CLS]`".into());
-        let err_b = Err("Missing SpecialToken(s) with id(s) `[CLS], [SEP]`".into());
-        assert!(processor == err_a || processor == err_b);
+        assert!(processor.is_err());
+        let err_string = format!("{:?}", processor);
+        let err_a = "Err(ValidationError(\"Missing SpecialToken(s) with id(s) `[SEP], [CLS]`\"))"
+            .to_string();
+        let err_b = "Err(ValidationError(\"Missing SpecialToken(s) with id(s) `[CLS], [SEP]`\"))"
+            .to_string();
+        assert!(err_string == err_a || err_string == err_b);
     }
 
     #[test]
@@ -1069,9 +1073,11 @@ mod tests {
             .try_pair("$0 $1")
             .unwrap()
             .build();
+        assert!(processor.is_err());
+        let error = format!("{processor:?}");
         assert_eq!(
-            processor,
-            Err("Template for `pair` must use both sequences".into())
+            error,
+            "Err(ValidationError(\"Template for `pair` must use both sequences\"))".to_string()
         );
     }
 }
