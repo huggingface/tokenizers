@@ -19,7 +19,12 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    Shell { vocab: String, merges: String },
+    Shell {
+        /// Path to the vocab.json file
+        vocab: String,
+        /// Path to the merges.txt file
+        merges: String,
+    },
 }
 
 fn shell(vocab: &str, merges: &str) -> Result<()> {
