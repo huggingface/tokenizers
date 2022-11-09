@@ -99,7 +99,9 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: audit
-          args: -D warnings -f ./bindings/python/Cargo.lock
+          # ignoring specific CVE which probably isn't affecting this crate
+          # https://github.com/chronotope/chrono/issues/602
+          args: -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2020-0071
 
       - name: Install
         working-directory: ./bindings/python

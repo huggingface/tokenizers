@@ -85,7 +85,9 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: audit
-          args: -D warnings -f ./tokenizers/Cargo.lock
+          # ignoring specific CVE which probably isn't affecting this crate
+          # https://github.com/chronotope/chrono/issues/602
+          args: -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2020-0071
 
       # Verify that Readme.md is up to date.
       - name: Make sure, Readme generated from lib.rs matches actual Readme
