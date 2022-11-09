@@ -2,21 +2,32 @@
 //! This is the CLI binary for the Tokenizers project
 //!
 
-use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
+use clap::{Parser, Subcommand};
 use std::io::{self, BufRead, Write};
 use tokenizers::models::bpe::BPE;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::tokenizer::{AddedToken, Result};
 use tokenizers::Tokenizer;
 
-fn shell(matches: &ArgMatches) -> Result<()> {
-    let vocab = matches
-        .value_of("vocab")
-        .expect("Must give a vocab.json file");
-    let merges = matches
-        .value_of("merges")
-        .expect("Must give a merges.txt file");
+/// Generate custom Tokenizers or use existing ones
+#[derive(Parser, Debug)]
+#[command(author, version)]
+struct Args {
+    #[command(subcommand)]
+    command: Command,
+}
 
+#[derive(Subcommand, Debug)]
+enum Command {
+    Shell {
+        /// Path to the vocab.json file
+        vocab: String,
+        /// Path to the merges.txt file
+        merges: String,
+    },
+}
+
+fn shell(vocab: &str, merges: &str) -> Result<()> {
     let bpe = BPE::from_file(vocab, merges).build()?;
     let mut tokenizer = Tokenizer::new(bpe);
     tokenizer
@@ -55,33 +66,8 @@ fn shell(matches: &ArgMatches) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let matches = App::new("tokenizers")
-        .version("0.0.1")
-        .author("Anthony M. <anthony@huggingface.co>")
-        .about("Generate custom Tokenizers or use existing ones")
-        .setting(AppSettings::SubcommandRequiredElseHelp)
-        .subcommand(
-            SubCommand::with_name("shell")
-                .about("Interactively test a tokenizer")
-                .arg(
-                    Arg::with_name("vocab")
-                        .long("vocab")
-                        .value_name("VOCAB_FILE")
-                        .help("Path to the vocab.json file")
-                        .required(true),
-                )
-                .arg(
-                    Arg::with_name("merges")
-                        .long("merges")
-                        .value_name("MERGES_FILE")
-                        .help("Path to the merges.txt file")
-                        .required(true),
-                ),
-        )
-        .get_matches();
-
-    match matches.subcommand() {
-        ("shell", matches) => shell(matches.unwrap()),
-        (subcommand, _) => panic!("Unknown subcommand {}", subcommand),
+    let args = Args::parse();
+    match args.command {
+        Command::Shell { vocab, merges } => shell(&vocab, &merges),
     }
 }

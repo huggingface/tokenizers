@@ -95,6 +95,14 @@ jobs:
           command: clippy
           args: --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
 
+      - name: Run Audit
+        uses: actions-rs/cargo@v1
+        with:
+          command: audit
+          # ignoring specific CVE which probably isn't affecting this crate
+          # https://github.com/chronotope/chrono/issues/602
+          args: -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2020-0071
+
       - name: Install
         working-directory: ./bindings/python
         run: |
