@@ -126,6 +126,10 @@ impl Encoding {
         &self.tokens[..]
     }
 
+    pub fn into_tokens(self) -> Vec<String> {
+        self.tokens
+    }
+
     pub fn get_word_ids(&self) -> &[Option<u32>] {
         &self.words
     }
