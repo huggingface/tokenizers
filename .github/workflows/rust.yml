@@ -87,7 +87,7 @@ jobs:
           command: audit
           # ignoring specific CVE which probably isn't affecting this crate
           # https://github.com/chronotope/chrono/issues/602
-          args: -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2020-0071
+          args: -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2020-0071 --ignore RUSTSEC-2021-0145
 
       # Verify that Readme.md is up to date.
       - name: Make sure, Readme generated from lib.rs matches actual Readme
