@@ -295,7 +295,7 @@ class BaseTokenizer:
                 Whether to remove all the special tokens from the output strings
 
             spaces_between_special_tokens: (`optional`) boolean:
-                Whether an extratr space (" ") should be prepended to special tokens
+                Whether an extra space (" ") should be prepended to special tokens
 
         Returns:
             A list of decoded strings
