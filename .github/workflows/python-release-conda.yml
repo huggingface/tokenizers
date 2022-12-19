@@ -131,5 +131,4 @@ jobs:
         shell: bash -l {0}
         run: |
           source $HOME/miniconda/bin/activate
-          conda-build .github/conda
-          # anaconda upload `conda-build .github/conda --output` --force
+          anaconda upload `conda-build .github/conda --output` --force
