@@ -2,8 +2,8 @@ name: Python Release - Conda
 
 on:
   push:
-    tags:
-      - python-v*
+    # tags:
+    #   - python-v*
 
 env:
   ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
@@ -85,6 +85,7 @@ jobs:
           export FILENAME=Miniconda3-py${{ matrix.python }}_4.10.3-Linux-x86_64.sh
           wget https://repo.anaconda.com/miniconda/$FILENAME
           sha256sum $FILENAME | awk '$1=="${{ matrix.checksum}}"{print"good to go"}'
+          yum remove -y openssl-devel
           bash $FILENAME -b -p $HOME/miniconda
           source $HOME/miniconda/bin/activate
 
@@ -129,4 +130,5 @@ jobs:
         shell: bash -l {0}
         run: |
           source $HOME/miniconda/bin/activate
-          anaconda upload `conda-build .github/conda --output` --force
+          conda-build .github/conda
+          # anaconda upload `conda-build .github/conda --output` --force
