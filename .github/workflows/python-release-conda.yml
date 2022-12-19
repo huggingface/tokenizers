@@ -9,56 +9,54 @@ env:
   ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
 
 jobs:
-  # build_and_package:
-  #   runs-on: ${{ matrix.os }}
-  #   strategy:
-  #     matrix:
-  #       os: [windows-latest, macos-latest]
-  #       python: ["3.7", "3.8", "3.9", "3.10"]
-  #       # 3.11 Not yet available on Conda.
-  #       # python: ["3.7", "3.8", "3.9", "3.10", "3.11"]
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v2
+  build_and_package:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+        python: ["3.7", "3.8", "3.9", "3.10", "3.11"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
 
-  #     - name: Install miniconda
-  #       uses: conda-incubator/setup-miniconda@v2
-  #       with:
-  #         auto-update-conda: true
-  #         python-version: ${{ matrix.python }}
+      - name: Install miniconda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          python-version: ${{ matrix.python }}
 
-  #     - name: Conda info
-  #       shell: bash -l {0}
-  #       run: conda info
+      - name: Conda info
+        shell: bash -l {0}
+        run: conda info
 
-  #     - name: Install Rust
-  #       uses: actions-rs/toolchain@v1
-  #       with:
-  #         toolchain: stable
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
 
-  #     - name: Setup conda env
-  #       shell: bash -l {0}
-  #       run: |
-  #         conda install setuptools-rust
-  #         conda install -c defaults anaconda-client conda-build
+      - name: Setup conda env
+        shell: bash -l {0}
+        run: |
+          conda install setuptools-rust
+          conda install -c defaults anaconda-client conda-build
 
-  #     - name: Extract version
-  #       shell: bash -l {0}
-  #       working-directory: ./bindings/python
-  #       run: echo "TOKENIZERS_VERSION=`python setup.py --version`" >> $GITHUB_ENV
+      - name: Extract version
+        shell: bash -l {0}
+        working-directory: ./bindings/python
+        run: echo "TOKENIZERS_VERSION=`python setup.py --version`" >> $GITHUB_ENV
 
-  #     - name: Build conda packages
-  #       shell: bash -l {0}
-  #       run: |
-  #         conda info
-  #         conda list
-  #         conda-build .github/conda --python=${{ matrix.python }}
+      - name: Build conda packages
+        shell: bash -l {0}
+        run: |
+          conda info
+          conda list
+          conda-build .github/conda --python=${{ matrix.python }}
 
-  #     - name: Upload to Anaconda
-  #       shell: bash -l {0}
-  #       run: |
-  #         anaconda upload `conda-build .github/conda --output` --force
-  #         
+      - name: Upload to Anaconda
+        shell: bash -l {0}
+        run: |
+          anaconda upload `conda-build .github/conda --output` --force
+          
   build_and_package_linux:
     runs-on: ubuntu-18.04
     container: quay.io/pypa/manylinux2014_x86_64
@@ -66,13 +64,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # python: [37, 38, 39]
-        python: [39]
+        python: [37, 38, 39]
         include:
-          # - python: 37
-          #   checksum: a1a7285dea0edc430b2bc7951d89bb30a2a1b32026d2a7b02aacaaa95cf69c7c 
-          # - python: 38
-          #   checksum: 935d72deb16e42739d69644977290395561b7a6db059b316958d97939e9bdf3d 
+          - python: 37
+            checksum: a1a7285dea0edc430b2bc7951d89bb30a2a1b32026d2a7b02aacaaa95cf69c7c 
+          - python: 38
+            checksum: 935d72deb16e42739d69644977290395561b7a6db059b316958d97939e9bdf3d 
           - python: 39
             checksum: 1ea2f885b4dbc3098662845560bc64271eb17085387a70c2ba3f29fff6f8d52f 
 
