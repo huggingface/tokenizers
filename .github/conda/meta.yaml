@@ -13,6 +13,8 @@ requirements:
     - python x.x
     - setuptools
     - setuptools-rust
+    - pkg-config
+    - openssl
 
   run:
     - python x.x
