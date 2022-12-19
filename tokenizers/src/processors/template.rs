@@ -487,7 +487,7 @@ impl TemplateProcessing {
             .flat_map(|piece| {
                 match piece {
                     Piece::Sequence { id, type_id } => {
-                        let i = if *id == Sequence::A { 0 } else { 1 };
+                        let i = usize::from(*id != Sequence::A);
                         let encoding = &mut encodings[i];
                         encoding.set_type_ids(vec![*type_id; encoding.len()]);
                         encoding.set_sequence_id(i);
