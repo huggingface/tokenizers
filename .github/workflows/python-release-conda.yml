@@ -14,9 +14,8 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macos-latest]
+        # Conda does not support 3.11 yet.
         python: ["3.7", "3.8", "3.9", "3.10"]
-        # 3.11 Not yet available on Conda.
-        # python: ["3.7", "3.8", "3.9", "3.10", "3.11"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -85,6 +84,7 @@ jobs:
           export FILENAME=Miniconda3-py${{ matrix.python }}_4.10.3-Linux-x86_64.sh
           wget https://repo.anaconda.com/miniconda/$FILENAME
           sha256sum $FILENAME | awk '$1=="${{ matrix.checksum}}"{print"good to go"}'
+          yum remove -y openssl-devel
           bash $FILENAME -b -p $HOME/miniconda
           source $HOME/miniconda/bin/activate
 
