@@ -412,3 +412,22 @@ class TestTokenizer:
         tokenizer = Tokenizer.from_pretrained("anthony/tokenizers-test", revision="gpt-2")
         output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
         assert output.tokens == ["Hey", "Ġthere", "Ġdear", "Ġfriend", "!"]
+
+    def test_spaces_between_special_tokens(self):
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
+        tokenizer.enable_truncation(2)
+        tokenizer.enable_padding(length=4)
+
+        encoding = tokenizer.encode("my name is john")
+        print(encoding)
+        print(tokenizer.decode(encoding.ids,  spaces_between_special_tokens = True))
+        pair_encoding = tokenizer.encode("pair")
+
+        # Can post process a single encoding
+        output = tokenizer.post_process(encoding)
+        assert output.tokens == ["my", "name", "[PAD]", "[PAD]"]
+
+        # Can post process a pair of encodings
+        output = tokenizer.post_process(encoding, pair_encoding)
+        assert output.tokens == ["my", "pair", "[PAD]", "[PAD]"]

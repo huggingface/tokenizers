@@ -574,7 +574,7 @@ declare_types! {
         }
 
         method decode(mut cx) {
-            // decode(ids: number[], skipSpecialTokens: bool, callback)
+            // decode(ids: number[], skipSpecialTokens: bool, spaces_between_special_tokens: bool, callback)
 
             let ids = cx.extract_vec::<u32>(0)?;
             let (skip_special_tokens, callback_index) = if let Ok(skip_special_tokens) =  cx.extract::<bool>(1){
@@ -583,7 +583,7 @@ declare_types! {
                 (false, 1)
             };
             let callback = cx.argument::<JsFunction>(callback_index)?;
-            let spaces_between_special_tokens = cx.extract::<bool>(1)?:
+            let spaces_between_special_tokens = cx.extract::<bool>(2)?:
 
             let this = cx.this();
             let guard = cx.lock();
@@ -597,7 +597,7 @@ declare_types! {
         }
 
         method decodeBatch(mut cx) {
-            // decodeBatch(sequences: number[][], skipSpecialTokens: bool, callback)
+            // decodeBatch(sequences: number[][], skipSpecialTokens: bool, spaces_between_special_tokens: bool, callback)
 
             let sentences = cx.extract_vec::<Vec<u32>>(0)?;
             let (skip_special_tokens, callback_index) = if let Ok(skip_special_tokens) =  cx.extract::<bool>(1){
@@ -606,7 +606,7 @@ declare_types! {
                 (false, 1)
             };
             let callback = cx.argument::<JsFunction>(callback_index)?;
-            let spaces_between_special_tokens = cx.extract::<bool>(1)?:
+            let spaces_between_special_tokens = cx.extract::<bool>(2)?:
 
             let this = cx.this();
             let guard = cx.lock();
