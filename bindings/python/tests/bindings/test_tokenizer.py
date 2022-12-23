@@ -421,7 +421,7 @@ class TestTokenizer:
 
         encoding = tokenizer.encode("my name is john")
         print(encoding)
-        print(tokenizer.decode(encoding.ids,  spaces_between_special_tokens = True))
+        print(tokenizer.decode(encoding.ids, spaces_between_special_tokens=True))
         pair_encoding = tokenizer.encode("pair")
 
         # Can post process a single encoding
