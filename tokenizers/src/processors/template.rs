@@ -350,6 +350,18 @@ pub struct TemplateProcessing {
     special_tokens: Tokens,
 }
 
+impl From<&str> for TemplateProcessingBuilderError {
+    fn from(e: &str) -> Self {
+        e.to_string().into()
+    }
+}
+
+impl PartialEq for TemplateProcessingBuilderError {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
 /// We use this custom deserializer to provided the values for `added_single`
 /// and `added_pair` during deserialization, while not having to serialize them
 #[doc(hidden)]
@@ -1072,6 +1084,20 @@ mod tests {
         assert_eq!(
             processor,
             Err("Template for `pair` must use both sequences".into())
+        );
+    }
+
+    #[test]
+    fn expect_wrong_error_message() {
+        let processor = TemplateProcessing::builder()
+            .try_single("$0")
+            .unwrap()
+            .try_pair("$0 $1")
+            .unwrap()
+            .build();
+        assert_ne!(
+            processor,
+            Err("Expect the left side error message to be different from the right side!".into())
         );
     }
 }

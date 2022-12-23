@@ -120,7 +120,7 @@ fn template_processing(mut cx: FunctionContext) -> JsResult<JsPostProcessor> {
     if let Some(pair) = pair {
         builder.try_pair(pair).map_err(Error)?;
     }
-    let processor = builder.build().map_err(Error)?;
+    let processor = builder.build().map_err(|e| Error(e.to_string()))?;
 
     let mut js_processor = JsPostProcessor::new::<_, JsPostProcessor, _>(&mut cx, vec![])?;
     let guard = cx.lock();
