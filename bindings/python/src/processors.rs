@@ -405,7 +405,9 @@ impl PyTemplateProcessing {
         if let Some(sp) = special_tokens {
             builder.special_tokens(sp);
         }
-        let processor = builder.build().map_err(exceptions::PyValueError::new_err)?;
+        let processor = builder
+            .build()
+            .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
 
         Ok((
             PyTemplateProcessing {},
