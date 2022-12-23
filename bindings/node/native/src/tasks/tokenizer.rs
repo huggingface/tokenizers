@@ -102,20 +102,32 @@ impl Task for DecodeTask {
 
     fn perform(&self) -> Result<Self::Output, Self::Error> {
         match self {
-            DecodeTask::Single(worker, ids, skip_special_tokens, spaces_between_special_tokens) => worker
-                .tokenizer
-                .read()
-                .unwrap()
-                .decode(ids.to_vec(), *skip_special_tokens, *spaces_between_special_tokens)
-                .map_err(|e| format!("{}", e))
-                .map(DecodeOutput::Single),
-            DecodeTask::Batch(worker, ids, skip_special_tokens, spaces_between_special_tokens) => worker
-                .tokenizer
-                .read()
-                .unwrap()
-                .decode_batch(ids.to_vec(), *skip_special_tokens, *spaces_between_special_tokens)
-                .map_err(|e| format!("{}", e))
-                .map(DecodeOutput::Batch),
+            DecodeTask::Single(worker, ids, skip_special_tokens, spaces_between_special_tokens) => {
+                worker
+                    .tokenizer
+                    .read()
+                    .unwrap()
+                    .decode(
+                        ids.to_vec(),
+                        *skip_special_tokens,
+                        *spaces_between_special_tokens,
+                    )
+                    .map_err(|e| format!("{}", e))
+                    .map(DecodeOutput::Single)
+            }
+            DecodeTask::Batch(worker, ids, skip_special_tokens, spaces_between_special_tokens) => {
+                worker
+                    .tokenizer
+                    .read()
+                    .unwrap()
+                    .decode_batch(
+                        ids.to_vec(),
+                        *skip_special_tokens,
+                        *spaces_between_special_tokens,
+                    )
+                    .map_err(|e| format!("{}", e))
+                    .map(DecodeOutput::Batch)
+            }
         }
     }
 
