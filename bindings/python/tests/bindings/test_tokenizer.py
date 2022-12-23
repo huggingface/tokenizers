@@ -418,7 +418,13 @@ class TestTokenizer:
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.enable_truncation(2)
         tokenizer.enable_padding(length=4)
+        tokenizer.add_tokens(['<'])
 
+        """
+            >>> tokenizer.decode(tokenizer('a<=5').input_ids, spaces_between_special_tokens = False)
+            >>> 'a<=5</s>'
+        """
+        # tokenizer.decode(tokenizer('a<=5').input_ids)
         encoding = tokenizer.encode("my name is john")
         print(encoding)
         print(tokenizer.decode(encoding.ids, spaces_between_special_tokens=True))

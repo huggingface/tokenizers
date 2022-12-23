@@ -203,11 +203,13 @@ export class Tokenizer {
    *
    * @param ids A list of ids to be decoded
    * @param skipSpecialTokens Whether to remove all the special tokens from the output string
+   * @param spacesBetweenSpecialTokens Whether an extra space (" ") should be prepended to special tokens
    * @param __callback Callback called with decoded string
    */
   decode(
     ids: number[],
     skipSpecialTokens: boolean,
+    spacesBetweenSpecialTokens: boolean | false,
     __callback: (err: Error, encodings: string) => void
   ): void;
 
@@ -216,11 +218,13 @@ export class Tokenizer {
    *
    * @param sequences A list of sequence of ids to be decoded
    * @param skipSpecialTokens Whether to remove all the special tokens from the output strings
+   * @param spacesBetweenSpecialTokens Whether an extra space (" ") should be prepended to special tokens
    * @param __callback Callback called with decoded strings
    */
   decodeBatch(
     sequences: number[][],
     skipSpecialTokens: boolean,
+    spacesBetweenSpecialTokens: boolean,
     __callback: (err: Error, encodings: string[]) => void
   ): void[];
 
