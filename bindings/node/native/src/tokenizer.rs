@@ -583,7 +583,7 @@ declare_types! {
                 (false, 1)
             };
             let callback = cx.argument::<JsFunction>(callback_index)?;
-            let spaces_between_special_tokens = cx.extract::<bool>(2)?:
+            let spaces_between_special_tokens = cx.extract::<bool>(2)?;
 
             let this = cx.this();
             let guard = cx.lock();
@@ -606,7 +606,7 @@ declare_types! {
                 (false, 1)
             };
             let callback = cx.argument::<JsFunction>(callback_index)?;
-            let spaces_between_special_tokens = cx.extract::<bool>(2)?:
+            let spaces_between_special_tokens = cx.extract::<bool>(2)?;
 
             let this = cx.this();
             let guard = cx.lock();
