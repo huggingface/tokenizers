@@ -807,18 +807,18 @@ where
                 self.added_vocabulary
                     .id_to_token(id, &self.model)
                     .filter(|token| {
-                        !skip_special_tokens
-                            || !self.added_vocabulary.is_special_token(token)
-                            || !spaces_between_special_tokens
+                        !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
                     })
             })
             .collect::<Vec<_>>();
 
         if let Some(decoder) = &self.decoder {
             decoder.decode(tokens)
-        } else {
+        } else if spaces_between_special_tokens {
             Ok(tokens.join(" "))
-        }
+        } else {
+            Ok(tokens.join(""))
+        } //TODO  !spaces_between_special_tokens should go here
     }
 }
 

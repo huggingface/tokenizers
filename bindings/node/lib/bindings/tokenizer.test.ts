@@ -304,12 +304,12 @@ describe("Tokenizer", () => {
     });
 
     it("returns `undefined`", () => {
-      expect(tokenizer.decode([0, 1, 2, 3], true, () => {})).toBeUndefined();
+      expect(tokenizer.decode([0, 1, 2, 3], true, true, () => {})).toBeUndefined();
     });
 
     it("has its callback called with the decoded string", async () => {
       const decode = promisify(tokenizer.decode.bind(tokenizer));
-      await expect(decode([0, 1, 2, 3], true)).resolves.toEqual("my name is john");
+      await expect(decode([0, 1, 2, 3], true, true)).resolves.toEqual("my name is john");
     });
   });
 
@@ -323,12 +323,12 @@ describe("Tokenizer", () => {
     });
 
     it("returns `undefined`", () => {
-      expect(tokenizer.decodeBatch([[0, 1, 2, 3], [4]], true, () => {})).toBeUndefined();
+      expect(tokenizer.decodeBatch([[0, 1, 2, 3], [4]], true, false, () => {})).toBeUndefined();
     });
 
     it("has its callback called with the decoded string", async () => {
       const decodeBatch = promisify(tokenizer.decodeBatch.bind(tokenizer));
-      await expect(decodeBatch([[0, 1, 2, 3], [4]], true)).resolves.toEqual([
+      await expect(decodeBatch([[0, 1, 2, 3], [4]], true, false)).resolves.toEqual([
         "my name is john",
         "pair",
       ]);
