@@ -5,7 +5,7 @@
 .env
 target
 .idea
-Cargo.lock
+**/Cargo.lock
 
 /data
 tokenizers/data
