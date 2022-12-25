@@ -501,7 +501,7 @@ impl UnigramTrainer {
         let expected_loops = (((desired_vocab_size as f64).ln() - (pieces.len() as f64).ln())
             / self.shrinking_factor.ln()) as usize
             + 1;
-        let expected_updates = expected_loops as usize * self.n_sub_iterations as usize;
+        let expected_updates = expected_loops * self.n_sub_iterations as usize;
         self.update_progress(&progress, expected_updates, "EM training");
         let required_chars = self.required_chars(&sentences);
         let mut new_model = Unigram::from(pieces.clone(), Some(0))?;

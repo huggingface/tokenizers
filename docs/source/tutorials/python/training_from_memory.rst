@@ -1,7 +1,7 @@
 Training from memory
 ----------------------------------------------------------------------------------------------------
 
-In the `Quicktour <quicktour.html>`__, we saw how to build and train a tokenizer using text files,
+In the `Quicktour <quicktour>`__, we saw how to build and train a tokenizer using text files,
 but we can actually use any Python Iterator. In this section we'll see a few different ways of
 training our tokenizer.
 
@@ -18,7 +18,7 @@ This tokenizer is based on the :class:`~tokenizers.models.Unigram` model. It tak
 normalizing the input using the NFKC Unicode normalization method, and uses a
 :class:`~tokenizers.pre_tokenizers.ByteLevel` pre-tokenizer with the corresponding decoder.
 
-For more information on the components used here, you can check `here <components.html>`__
+For more information on the components used here, you can check `here <components>`__
 
 The most basic way
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

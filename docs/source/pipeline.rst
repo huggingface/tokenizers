@@ -261,7 +261,7 @@ how to customize this part. Currently, the 🤗 Tokenizers library supports:
 - :entity:`models.WordLevel`
 - :entity:`models.WordPiece`
 
-For more details about each model and its behavior, you can check `here <components.html#models>`__
+For more details about each model and its behavior, you can check `here <components#models>`__
 
 
 .. _post-processing:

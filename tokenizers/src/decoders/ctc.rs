@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 pub struct CTC {
     /// The pad token used by CTC to delimit a new token.
     pub pad_token: String,
-    /// The word delimiter token. It will be replaced by a <space>
+    /// The word delimiter token. It will be replaced by a `<space>`.
     pub word_delimiter_token: String,
     /// Whether to cleanup some tokenization artifacts.
     /// Mainly spaces before punctuation, and some abbreviated english forms.
