@@ -497,7 +497,7 @@ remove all special tokens, then join those tokens with spaces:
 
 If you used a model that added special characters to represent subtokens of a given "word" (like
 the :obj:`"##"` in WordPiece) you will need to customize the `decoder` to treat them properly. If we
-take our previous :entity:`bert_tokenizer` for instance the default decoing will give:
+take our previous :entity:`bert_tokenizer` for instance the default decoding will give:
 
 .. only:: python
 
