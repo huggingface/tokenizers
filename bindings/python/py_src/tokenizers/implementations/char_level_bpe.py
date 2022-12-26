@@ -45,7 +45,7 @@ class CharBPETokenizer(BaseTokenizer):
                 )
             )
         else:
-            tokenizer = Tokenizer(BPE(unk_token=str(unk_token),))
+            tokenizer = Tokenizer(BPE(unk_token=str(unk_token), dropout=dropout, end_of_word_suffix=suffx))
 
         if tokenizer.token_to_id(str(unk_token)) is not None:
             tokenizer.add_special_tokens([str(unk_token)])
