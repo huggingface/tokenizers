@@ -1,3 +1,4 @@
+#[cfg(any(feature = "onig", feature = "unstable-wasm"))]
 use crate::utils::SysRegex;
 use crate::{Offsets, Result};
 use regex::Regex;
@@ -60,6 +61,7 @@ impl Pattern for &Regex {
     }
 }
 
+#[cfg(any(feature = "onig", feature = "unstable-wasm"))]
 impl Pattern for &SysRegex {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         if inside.is_empty() {
@@ -205,6 +207,7 @@ mod tests {
         do_test!("aaa", &is_whitespace => vec![((0, 3), false)]);
     }
 
+    #[cfg(any(features = "onig", features = "unstable-wasm"))]
     #[test]
     fn sys_regex() {
         let is_whitespace = SysRegex::new(r"\s+").unwrap();

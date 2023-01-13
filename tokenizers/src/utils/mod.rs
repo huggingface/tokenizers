@@ -6,9 +6,9 @@ pub(crate) mod from_pretrained;
 mod fancy;
 #[cfg(feature = "unstable_wasm")]
 pub use fancy::SysRegex;
-#[cfg(not(feature = "unstable_wasm"))]
+#[cfg(all(feature = "onig", not(feature = "unstable_wasm")))]
 mod onig;
-#[cfg(not(feature = "unstable_wasm"))]
+#[cfg(all(feature = "onig", not(feature = "unstable_wasm")))]
 pub use crate::utils::onig::SysRegex;
 
 pub mod iter;

@@ -1,4 +1,7 @@
+#[cfg(any(feature = "onig", feature = "unstable-wasm"))]
 use crate::utils::SysRegex;
+#[cfg(not(any(feature = "onig", feature = "unstable-wasm")))]
+use regex::Regex as SysRegex;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
