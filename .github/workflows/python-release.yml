@@ -154,7 +154,8 @@ jobs:
   upload_package:
     name: Upload package to PyPi
     runs-on: ubuntu-latest
-    needs: [create_wheels_manylinux, create_wheels_windows_32bit, create_wheels_others_64bit, create_wheels_macos_arm64]
+      # needs: [create_wheels_manylinux, create_wheels_windows_32bit, create_wheels_others_64bit, create_wheels_macos_arm64]
+    needs: [create_wheels_others_64bit, create_wheels_macos_arm64]
 
     steps:
       - uses: actions/checkout@v1
