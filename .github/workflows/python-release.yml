@@ -80,7 +80,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macos-10.15]
-        python: ["3.7", "3.8", "3.9", "3.10"]
+        python: ["3.7", "3.8", "3.9", "3.10", "3.11"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -92,7 +92,7 @@ jobs:
           override: true
 
       - name: Install Python
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python }}
           architecture: x64
@@ -122,7 +122,7 @@ jobs:
     runs-on: macos-arm64
     strategy:
       matrix:
-        python: ["3.9.13", "3.10.6"]
+        python: ["3.9.13", "3.10.6", "3.11.1"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
