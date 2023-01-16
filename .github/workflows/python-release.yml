@@ -150,33 +150,34 @@ jobs:
           cd ../../
           aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
 
-  # upload_package:
-  #   name: Upload package to PyPi
-  #   runs-on: ubuntu-latest
-  #   needs: [create_wheels_manylinux, create_wheels_windows_32bit, create_wheels_others_64bit, create_wheels_macos_arm64]
+  upload_package:
+    name: Upload package to PyPi
+    runs-on: ubuntu-latest
+      # needs: [create_wheels_manylinux, create_wheels_windows_32bit, create_wheels_others_64bit, create_wheels_macos_arm64]
+    needs: [create_wheels_macos_arm64]
 
-  #   steps:
-  #     - uses: actions/checkout@v1
+    steps:
+      - uses: actions/checkout@v1
 
-  #     - name: Install Python
-  #       uses: actions/setup-python@v1
+      - name: Install Python
+        uses: actions/setup-python@v1
 
-  #     - name: Retrieve all wheels
-  #       shell: bash
-  #       run: |
-  #         pip install awscli
-  #         aws s3 sync "s3://tokenizers-releases/python/$DIST_DIR" ./bindings/python/dist
+      - name: Retrieve all wheels
+        shell: bash
+        run: |
+          pip install awscli
+          aws s3 sync "s3://tokenizers-releases/python/$DIST_DIR" ./bindings/python/dist
 
-  #     - name: Install dependencies
-  #       run: |
-  #         pip install setuptools wheel setuptools-rust
+      - name: Install dependencies
+        run: |
+          pip install setuptools wheel setuptools-rust
 
-  #     - name: Create source distribution
-  #       working-directory: ./bindings/python
-  #       run: sh build-sdist.sh
+      - name: Create source distribution
+        working-directory: ./bindings/python
+        run: sh build-sdist.sh
 
-  #     - name: Upload to PyPi
-  #       working-directory: ./bindings/python
-  #       run: |
-  #         pip install twine
-  #         twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
+      - name: Upload to PyPi
+        working-directory: ./bindings/python
+        run: |
+          pip install twine
+          twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
