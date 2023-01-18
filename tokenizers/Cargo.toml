@@ -57,7 +57,7 @@ itertools = "0.9"
 log = "0.4"
 derive_builder = "0.12"
 spm_precompiled = "0.1"
-dirs = "3.0"
+dirs = { version = "3.0", optional = true }
 reqwest = { version = "0.11", optional = true }
 cached-path = { version = "0.6", optional = true }
 aho-corasick = "0.7"
@@ -72,7 +72,7 @@ esaxx-rs = { version = "0.1", default-features = false, features=[]}
 default = ["progressbar", "http", "cli", "onig", "esaxx_fast"]
 esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif"]
-http = ["reqwest", "cached-path"]
+http = ["reqwest", "cached-path", "dirs"]
 cli = ["clap"]
 unstable_wasm = ["fancy-regex", "getrandom/js"]
 
