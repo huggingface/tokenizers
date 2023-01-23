@@ -102,8 +102,31 @@ pub fn from_pretrained<S: AsRef<str>>(
     identifier: S,
     params: Option<FromPretrainedParameters>,
 ) -> Result<PathBuf> {
+    let identifier: &str = identifier.as_ref();
+
+    let is_valid_char =
+        |x: char| x.is_alphanumeric() || x == '-' || x == '_' || x == '.' || x == '/';
+
+    let valid = identifier.chars().all(is_valid_char);
+    if !valid {
+        return Err(format!(
+            "Model \"{}\" contains invalid characters, expected only alphanumeric or '/', '-', '_', '.'",
+            identifier
+        )
+        .into());
+    }
     let params = params.unwrap_or_default();
     let cache_dir = ensure_cache_dir()?;
+
+    let revision = &params.revision;
+    let valid_revision = revision.chars().all(is_valid_char);
+    if !valid_revision {
+        return Err(format!(
+            "Revision \"{}\" contains invalid characters, expected only alphanumeric or '/', '-', '_', '.'",
+            revision
+        )
+        .into());
+    }
 
     // Build a custom HTTP Client using our user-agent and custom headers
     let mut headers = header::HeaderMap::new();
@@ -124,14 +147,13 @@ pub fn from_pretrained<S: AsRef<str>>(
 
     let url_to_download = format!(
         "https://huggingface.co/{}/resolve/{}/tokenizer.json",
-        identifier.as_ref(),
-        params.revision,
+        identifier, revision,
     );
 
     match cache.cached_path(&url_to_download) {
         Err(_) => Err(format!(
             "Model \"{}\" on the Hub doesn't have a tokenizer",
-            identifier.as_ref()
+            identifier
         )
         .into()),
         Ok(path) => Ok(path),
