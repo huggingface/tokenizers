@@ -104,13 +104,20 @@ pub fn from_pretrained<S: AsRef<str>>(
 ) -> Result<PathBuf> {
     let identifier: &str = identifier.as_ref();
 
-    let is_valid_char =
-        |x: char| x.is_alphanumeric() || x == '-' || x == '_' || x == '.' || x == '/';
+    let valid_chars = ['-', '_', '.', '/'];
+    let is_valid_char = |x: char| x.is_alphanumeric() || valid_chars.contains(&x);
 
     let valid = identifier.chars().all(is_valid_char);
+    let valid_chars_stringified = valid_chars
+        .iter()
+        .fold(vec![], |mut buf, x| {
+            buf.push(format!("'{}'", x.to_string()));
+            buf
+        })
+        .join(", "); // "'/', '-', '_', '.'"
     if !valid {
         return Err(format!(
-            "Model \"{}\" contains invalid characters, expected only alphanumeric or '/', '-', '_', '.'",
+            "Model \"{}\" contains invalid characters, expected only alphanumeric or {valid_chars_stringified}",
             identifier
         )
         .into());
@@ -122,7 +129,7 @@ pub fn from_pretrained<S: AsRef<str>>(
     let valid_revision = revision.chars().all(is_valid_char);
     if !valid_revision {
         return Err(format!(
-            "Revision \"{}\" contains invalid characters, expected only alphanumeric or '/', '-', '_', '.'",
+            "Revision \"{}\" contains invalid characters, expected only alphanumeric or {valid_chars_stringified}",
             revision
         )
         .into());
