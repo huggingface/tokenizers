@@ -111,7 +111,7 @@ pub fn from_pretrained<S: AsRef<str>>(
     let valid_chars_stringified = valid_chars
         .iter()
         .fold(vec![], |mut buf, x| {
-            buf.push(format!("'{}'", x.to_string()));
+            buf.push(format!("'{}'", x));
             buf
         })
         .join(", "); // "'/', '-', '_', '.'"
