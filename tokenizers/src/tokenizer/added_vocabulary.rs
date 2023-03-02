@@ -322,11 +322,7 @@ impl AddedVocabulary {
     /// This method returns a list "splits", each of them being a pair of Offsets
     /// and an optional ID if it is an AddedToken.
     /// The list of splits cover the entire input string.
-    fn find_matches<'a>(
-        &self,
-        sentence: &str,
-        split_re: &'a MatchingSet,
-    ) -> Vec<(Option<u32>, Offsets)> {
+    fn find_matches(&self, sentence: &str, split_re: &MatchingSet) -> Vec<(Option<u32>, Offsets)> {
         if sentence.is_empty() {
             return vec![(None, (0, 0))];
         }
