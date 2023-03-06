@@ -276,7 +276,7 @@ class BaseTokenizer:
             raise ValueError("None input is not valid. Should be a list of integers.")
 
         return self._tokenizer.decode(
-            ids, skip_special_tokens=skip_special_tokens, spaces_between_special_token=spaces_between_special_tokens
+            ids, skip_special_tokens=skip_special_tokens, spaces_between_special_tokens=spaces_between_special_tokens
         )
 
     def decode_batch(
@@ -306,7 +306,7 @@ class BaseTokenizer:
         return self._tokenizer.decode_batch(
             sequences,
             skip_special_tokens=skip_special_tokens,
-            spaces_between_special_token=spaces_between_special_tokens,
+            spaces_between_special_tokens=spaces_between_special_tokens,
         )
 
     def token_to_id(self, token: str) -> Optional[int]:
