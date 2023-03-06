@@ -323,7 +323,9 @@ describe("Tokenizer", () => {
     });
 
     it("returns `undefined`", () => {
-      expect(tokenizer.decodeBatch([[0, 1, 2, 3], [4]], true, false, () => {})).toBeUndefined();
+      expect(
+        tokenizer.decodeBatch([[0, 1, 2, 3], [4]], true, false, () => {})
+      ).toBeUndefined();
     });
 
     it("has its callback called with the decoded string", async () => {
