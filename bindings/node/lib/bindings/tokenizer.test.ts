@@ -330,7 +330,7 @@ describe("Tokenizer", () => {
 
     it("has its callback called with the decoded string", async () => {
       const decodeBatch = promisify(tokenizer.decodeBatch.bind(tokenizer));
-      await expect(decodeBatch([[0, 1, 2, 3], [4]], true, false)).resolves.toEqual([
+      await expect(decodeBatch([[0, 1, 2, 3], [4]], true, true)).resolves.toEqual([
         "my name is john",
         "pair",
       ]);
