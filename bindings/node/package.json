@@ -15,11 +15,11 @@
     "author": "Anthony MOI <m.anthony.moi@gmail.com>",
     "license": "Apache-2.0",
     "dependencies": {
-        "@types/node": "^13.13.52",
         "node-pre-gyp": "^0.14.0"
     },
     "devDependencies": {
         "@types/jest": "^26.0.24",
+        "@types/node": "^13.13.52",
         "@typescript-eslint/eslint-plugin": "^3.10.1",
         "@typescript-eslint/parser": "^3.10.1",
         "eslint": "^7.32.0",

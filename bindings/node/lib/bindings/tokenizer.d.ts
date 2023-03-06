@@ -209,7 +209,7 @@ export class Tokenizer {
   decode(
     ids: number[],
     skipSpecialTokens: boolean,
-    spacesBetweenSpecialTokens: boolean | false,
+    spacesBetweenSpecialTokens: boolean | true,
     __callback: (err: Error, encodings: string) => void
   ): void;
 

@@ -324,7 +324,7 @@ describe("Tokenizer", () => {
 
     it("returns `undefined`", () => {
       expect(
-        tokenizer.decodeBatch([[0, 1, 2, 3], [4]], true, false, () => {})
+        tokenizer.decodeBatch([[0, 1, 2, 3], [4]], true, true, () => {})
       ).toBeUndefined();
     });
 
