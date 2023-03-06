@@ -65,7 +65,7 @@ class TestFullDeserialization(unittest.TestCase):
         #             all_models.append((model_id, filename))
 
         all_models = [("HueyNemud/das22-10-camembert_pretrained", "tokenizer.json")]
-        for (model_id, filename) in tqdm.tqdm(all_models):
+        for model_id, filename in tqdm.tqdm(all_models):
             tokenizer_file = cached_download(hf_hub_url(model_id, filename=filename))
 
             is_ok = check(tokenizer_file)

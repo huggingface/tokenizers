@@ -26,7 +26,6 @@ class BertWordPieceTokenizer(BaseTokenizer):
         lowercase: bool = True,
         wordpieces_prefix: str = "##",
     ):
-
         if vocab is not None:
             tokenizer = Tokenizer(WordPiece(vocab, unk_token=str(unk_token)))
         else:
