@@ -803,7 +803,8 @@ where
     ) -> Result<String> {
         let tokens = ids
             .into_iter()
-            .filter_map(|id| { // TODO if I want to modify it should be here
+            .filter_map(|id| {
+                // TODO if I want to modify it should be here
                 self.added_vocabulary
                     .id_to_token(id, &self.model)
                     .filter(|token| {

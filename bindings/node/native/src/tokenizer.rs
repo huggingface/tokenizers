@@ -587,7 +587,7 @@ declare_types! {
                 (Err(_), _) => {
                     (true, true, 1) // TODO @Narsil handle this
                 }
-            }; 
+            };
 
             let callback = cx.argument::<JsFunction>(callback_index)?;
 
@@ -616,8 +616,8 @@ declare_types! {
                 (Err(_), _) => {
                     (true, true, 1) // TODO @Narsil handle this
                 }
-            }; 
-            
+            };
+
             let callback = cx.argument::<JsFunction>(callback_index)?;
 
             let this = cx.this();
