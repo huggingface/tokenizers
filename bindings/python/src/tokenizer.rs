@@ -1005,7 +1005,7 @@ impl PyTokenizer {
     ///         Whether the special tokens should be removed from the decoded string
     ///
     ///     spaces_between_special_tokens (:obj:`bool`, defaults to :obj:`True`):
-    ///          Whether an extra space (" ") should be prepended to special tokens
+    ///         Whether an extra space (" ") should be prepended to special tokens
     ///
     /// Returns:
     ///     :obj:`str`: The decoded string
