@@ -51,7 +51,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-18.04, macos-latest]
+        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
@@ -94,6 +94,14 @@ jobs:
         with:
           command: clippy
           args: --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Run Audit
+        uses: actions-rs/cargo@v1
+        with:
+          command: audit
+          # ignoring specific CVE which probably isn't affecting this crate
+          # https://github.com/chronotope/chrono/issues/602
+          args: -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2020-0071 --ignore RUSTSEC-2021-0145
 
       - name: Install
         working-directory: ./bindings/python

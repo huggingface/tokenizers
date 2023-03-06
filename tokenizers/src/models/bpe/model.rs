@@ -491,7 +491,7 @@ impl Model for BPE {
             .map(|(pair, (rank, _))| (pair, rank))
             .collect();
         merges.sort_unstable_by_key(|k| *k.1);
-        merges_file.write_all(b"#version: 0.2 - Trained by `huggingface/tokenizers`\n")?;
+        merges_file.write_all(b"#version: 0.2\n")?;
         merges_file.write_all(
             &merges
                 .into_iter()

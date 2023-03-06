@@ -507,7 +507,7 @@ impl NormalizedString {
             let transformations = s
                 .chars()
                 .enumerate()
-                .map(|(i, c)| (c, if i == 0 { 0 } else { 1 }))
+                .map(|(i, c)| (c, isize::from(i != 0)))
                 .chain(std::iter::once((next, 1)));
 
             self.transform_range(Range::Normalized(0..next.len_utf8()), transformations, 0);
@@ -853,16 +853,8 @@ pub fn get_range_of<T: RangeBounds<usize>>(s: &str, range: T) -> Option<&str> {
     } else if start >= len || end > len || start >= end {
         None
     } else {
-        let start_b = s
-            .char_indices()
-            .map(|(i, _)| i)
-            .nth(start as usize)
-            .unwrap_or(0);
-        let end_b = s
-            .char_indices()
-            .map(|(i, _)| i)
-            .nth(end as usize)
-            .unwrap_or(s.len());
+        let start_b = s.char_indices().map(|(i, _)| i).nth(start).unwrap_or(0);
+        let end_b = s.char_indices().map(|(i, _)| i).nth(end).unwrap_or(s.len());
         Some(&s[start_b..end_b])
     }
 }
