@@ -574,16 +574,22 @@ declare_types! {
         }
 
         method decode(mut cx) {
-            // decode(ids: number[], skipSpecialTokens: bool, spaces_between_special_tokens: bool, callback)
+            // decode(ids: number[], skipSpecialTokens: bool, spaceBetweenSpecialTokens: bool, callback)
 
             let ids = cx.extract_vec::<u32>(0)?;
-            let (skip_special_tokens, callback_index) = if let Ok(skip_special_tokens) =  cx.extract::<bool>(1){
-                (skip_special_tokens, 2)
-            }else{
-                (false, 1)
-            };
+            let (skip_special_tokens, spaces_between_special_tokens, callback_index) = match (cx.extract::<bool>(1), cx.extract::<bool>(2)){
+                (Ok(skip_special_tokens), Ok(spaces_between_special_tokens)) => {
+                    (skip_special_tokens, spaces_between_special_tokens, 3)
+                }
+                (Ok(skip_special_tokens), Err(_)) => {
+                    (skip_special_tokens, true, 2)
+                }
+                (Err(_), _) => {
+                    (true, true, 1) // TODO @Narsil handle this
+                }
+            }; 
+
             let callback = cx.argument::<JsFunction>(callback_index)?;
-            let spaces_between_special_tokens = cx.extract::<bool>(2)?;
 
             let this = cx.this();
             let guard = cx.lock();
@@ -597,16 +603,22 @@ declare_types! {
         }
 
         method decodeBatch(mut cx) {
-            // decodeBatch(sequences: number[][], skipSpecialTokens: bool, spaces_between_special_tokens: bool, callback)
+            // decodeBatch(sequences: number[][], skipSpecialTokens: bool, spaceBetweenSpecialTokens: bool, callback)
 
             let sentences = cx.extract_vec::<Vec<u32>>(0)?;
-            let (skip_special_tokens, callback_index) = if let Ok(skip_special_tokens) =  cx.extract::<bool>(1){
-                (skip_special_tokens, 2)
-            }else{
-                (false, 1)
-            };
+            let (skip_special_tokens, spaces_between_special_tokens, callback_index) = match (cx.extract::<bool>(1), cx.extract::<bool>(2)){
+                (Ok(skip_special_tokens), Ok(spaces_between_special_tokens)) => {
+                    (skip_special_tokens, spaces_between_special_tokens, 3)
+                }
+                (Ok(skip_special_tokens), Err(_)) => {
+                    (skip_special_tokens, true, 2)
+                }
+                (Err(_), _) => {
+                    (true, true, 1) // TODO @Narsil handle this
+                }
+            }; 
+            
             let callback = cx.argument::<JsFunction>(callback_index)?;
-            let spaces_between_special_tokens = cx.extract::<bool>(2)?;
 
             let this = cx.this();
             let guard = cx.lock();
