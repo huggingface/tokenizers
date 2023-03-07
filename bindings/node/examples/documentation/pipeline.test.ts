@@ -83,7 +83,7 @@ describe("pipelineExample", () => {
         console.log(output.getIds());
         // [1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2]
 
-        let decoded = await decode([1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2], true, true);
+        let decoded = await decode([1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2], true, false, true);
         // "Hello , y ' all ! How are you ?"
         // END test_decoding
         expect(decoded).toEqual("Hello , y ' all ! How are you ?");
@@ -145,14 +145,14 @@ describe("pipelineExample", () => {
         console.log(output.getTokens());
         // ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
 
-        var decoded = await decode(output.getIds(), true, true);
+        var decoded = await decode(output.getIds(), true, false, true);
         // "welcome to the tok ##eni ##zer ##s library ."
         // END bert_test_decoding
         expect(decoded).toEqual("welcome to the tok ##eni ##zer ##s library .");
         // START bert_proper_decoding
         let { wordPieceDecoder } = require("tokenizers/bindings/decoders");
         bertTokenizer.setDecoder(wordPieceDecoder());
-        var decoded = await decode(output.getIds(), true, true);
+        var decoded = await decode(output.getIds(), true, false, true);
         // "welcome to the tokenizers library."
         // END bert_proper_decoding
         expect(decoded).toEqual("welcome to the tokenizers library.");

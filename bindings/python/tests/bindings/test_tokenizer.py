@@ -421,13 +421,13 @@ class TestTokenizer:
         tokenizer.add_tokens(["<"])
 
         """
-            >>> tokenizer.decode(tokenizer('a<=5').input_ids, spaces_between_special_tokens = False)
+            >>> tokenizer.decode(tokenizer('a<=5').input_ids, spaces_between_added_tokens = False)
             >>> 'a<=5</s>'
         """
         # tokenizer.decode(tokenizer('a<=5').input_ids)
         encoding = tokenizer.encode("my name is john")
         print(encoding)
-        print(tokenizer.decode(encoding.ids, spaces_between_special_tokens=True))
+        print(tokenizer.decode(encoding.ids, spaces_between_added_tokens=True))
         pair_encoding = tokenizer.encode("pair")
 
         # Can post process a single encoding
@@ -447,13 +447,13 @@ class TestTokenizer:
         tokenizer.add_tokens(["<"])
 
         """
-            >>> tokenizer.decode(tokenizer('a<=5').input_ids, spaces_between_special_tokens = False)
+            >>> tokenizer.decode(tokenizer('a<=5').input_ids, spaces_between_added_tokens = False)
             >>> 'a<=5</s>'
         """
         # tokenizer.decode(tokenizer('a<=5').input_ids)
         encoding = tokenizer.encode("my name is john")
         print(encoding)
-        print(tokenizer.decode(encoding.ids, spaces_between_special_tokens=True))
+        print(tokenizer.decode(encoding.ids, spaces_between_added_tokens=True))
         pair_encoding = tokenizer.encode("pair")
 
         # Can post process a single encoding

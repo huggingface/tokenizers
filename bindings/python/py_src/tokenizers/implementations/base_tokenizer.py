@@ -255,8 +255,8 @@ class BaseTokenizer:
         self,
         ids: List[int],
         skip_special_tokens: Optional[bool] = True,
-        clean_up_tokenization_spaces: Optional[bool] = True,
-        spaces_between_special_tokens: Optional[bool] = True,
+        clean_up_tokenization_spaces: Optional[bool] = False,
+        spaces_between_added_tokens: Optional[bool] = True,
     ) -> str:
         """Decode the given list of ids to a string sequence
 
@@ -270,7 +270,7 @@ class BaseTokenizer:
             clean_up_tokenization_spaces: (`optional`) boolean:
                 Whether or not to clean up the tokenization spaces.
 
-            spaces_between_special_tokens: (`optional`) boolean:
+            spaces_between_added_tokens: (`optional`) boolean:
                 Whether an extra space (" ") should be prepended to special tokens
 
         Returns:
@@ -283,15 +283,15 @@ class BaseTokenizer:
             ids,
             skip_special_tokens=skip_special_tokens,
             clean_up_tokenization_spaces=clean_up_tokenization_spaces,
-            spaces_between_special_tokens=spaces_between_special_tokens,
+            spaces_between_added_tokens=spaces_between_added_tokens,
         )
 
     def decode_batch(
         self,
         sequences: List[List[int]],
         skip_special_tokens: Optional[bool] = True,
-        clean_up_tokenization_spaces: Optional[bool] = True,
-        spaces_between_special_tokens: Optional[bool] = True,
+        clean_up_tokenization_spaces: Optional[bool] = False,
+        spaces_between_added_tokens: Optional[bool] = True,
     ) -> str:
         """Decode the list of sequences to a list of string sequences
 
@@ -305,7 +305,7 @@ class BaseTokenizer:
             clean_up_tokenization_spaces: (`optional`) boolean:
                 Whether or not to clean up the tokenization spaces.
 
-            spaces_between_special_tokens: (`optional`) boolean:
+            spaces_between_added_tokens: (`optional`) boolean:
                 Whether an extra space (" ") should be prepended to special tokens
 
         Returns:
@@ -318,7 +318,7 @@ class BaseTokenizer:
             sequences,
             skip_special_tokens=skip_special_tokens,
             clean_up_tokenization_spaces=clean_up_tokenization_spaces,
-            spaces_between_special_tokens=spaces_between_special_tokens,
+            spaces_between_added_tokens=spaces_between_added_tokens,
         )
 
     def token_to_id(self, token: str) -> Optional[int]:

@@ -462,7 +462,7 @@ fn pipeline_bert() -> tokenizers::Result<()> {
 }
 
 #[test]
-fn spaces_between_special_tokens() -> tokenizers::Result<()> {
+fn spaces_between_added_tokens() -> tokenizers::Result<()> {
     let mut bert_tokenizer = Tokenizer::from_file("data/bert-wiki.json")?;
     bert_tokenizer.add_special_tokens(&[
         AddedToken::from("[ABC]", false),

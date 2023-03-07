@@ -816,8 +816,10 @@ where
         ids: Vec<u32>,
         skip_special_tokens: bool,
         clean_up_tokenization_spaces: bool,
-        spaces_between_special_tokens: bool,
+        spaces_between_added_tokens: bool,
     ) -> Result<String> {
+        // split on added_tokens
+
         let mut sub_texts: Vec<String> = Vec::new();
         let mut current_sub_text = String::new();
 
@@ -844,15 +846,20 @@ where
         if !current_sub_text.is_empty() {
             sub_texts.push(current_sub_text);
         }
+        let sub_texts_concatenated = if spaces_between_added_tokens {
+            sub_texts.join(" ")
+        } else {
+            sub_texts.join("")
+        };
+
+        let tokens = sub_texts_concatenated
+            .split(" ")
+            .map(|s| s.to_string())
+            .collect();
 
         if let Some(decoder) = &self.decoder {
-            decoder.decode(sub_texts)
+            decoder.decode(tokens)
         } else {
-            let sub_texts_concatenated = if spaces_between_special_tokens {
-                sub_texts.join(" ")
-            } else {
-                sub_texts.join("")
-            };
             Ok(if clean_up_tokenization_spaces {
                 self.clean_up_tokenization(sub_texts_concatenated)
             } else {
@@ -1058,7 +1065,7 @@ where
         sentences: Vec<Vec<u32>>,
         skip_special_tokens: bool,
         clean_up_tokenization_spaces: bool,
-        spaces_between_special_tokens: bool,
+        spaces_between_added_tokens: bool,
     ) -> Result<Vec<String>>
     where
         M: Send + Sync,
@@ -1070,7 +1077,7 @@ where
                     sentence,
                     skip_special_tokens,
                     clean_up_tokenization_spaces,
-                    spaces_between_special_tokens,
+                    spaces_between_added_tokens,
                 )
             })
             .collect()
