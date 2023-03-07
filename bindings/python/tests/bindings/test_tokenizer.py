@@ -437,10 +437,9 @@ class TestTokenizer:
         # Can post process a pair of encodings
         output = tokenizer.post_process(encoding, pair_encoding)
         assert output.tokens == ["my", "pair", "[PAD]", "[PAD]"]
-    
-    
+
     def test_cleanup_tokenization_spaces(self):
-        #TODO
+        # TODO
         tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
         tokenizer.enable_truncation(2)
