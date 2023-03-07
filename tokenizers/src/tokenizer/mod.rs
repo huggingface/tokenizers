@@ -821,8 +821,8 @@ where
         let mut sub_texts: Vec<String> = Vec::new();
         let mut current_sub_text = String::new();
 
-        for id in ids {
-            if let Some(token) = self.added_vocabulary.id_to_token(id, &self.model) {
+        for id in &ids {
+            if let Some(token) = self.added_vocabulary.id_to_token(*id, &self.model) {
                 let is_special_token = self.added_vocabulary.is_special_token(&token);
                 if !skip_special_tokens || !is_special_token {
                     let added_tokens_encoder = self.added_vocabulary.get_added_tokens_encoder();
@@ -841,7 +841,6 @@ where
                 }
             }
         }
-
         if !current_sub_text.is_empty() {
             sub_texts.push(current_sub_text);
         }
@@ -855,9 +854,9 @@ where
                 sub_texts.join("")
             };
             Ok(if clean_up_tokenization_spaces {
-                sub_texts_concatenated
-            } else {
                 self.clean_up_tokenization(sub_texts_concatenated)
+            } else {
+                sub_texts_concatenated
             })
         }
     }

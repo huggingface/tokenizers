@@ -54,7 +54,7 @@ fn load_tokenizer() {
     assert_eq!(encodings.get_ids(), ids);
     assert_eq!(encodings.get_tokens(), tokens);
 
-    let decoded = tokenizer.decode(ids, false, true, true).unwrap();
+    let decoded = tokenizer.decode(ids, false, false, true).unwrap();
     assert_eq!(decoded, example);
 }
 
@@ -437,7 +437,7 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     println!("{:?}", output.get_tokens());
     // ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
 
-    let decoded = bert_tokenizer.decode(output.get_ids().to_vec(), true, true, true)?;
+    let decoded = bert_tokenizer.decode(output.get_ids().to_vec(), true, false, true)?;
     println!("{}", decoded);
     // "welcome to the tok ##eni ##zer ##s library ."
     // END bert_test_decoding
@@ -453,7 +453,7 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 
     bert_tokenizer.with_decoder(WordPieceDecoder::default());
-    let decoded = bert_tokenizer.decode(output.get_ids().to_vec(), true, true, true)?;
+    let decoded = bert_tokenizer.decode(output.get_ids().to_vec(), true, false, true)?;
     // "welcome to the tokenizers library."
     // END bert_proper_decoding
     assert_eq!(decoded, "welcome to the tokenizers library.");
@@ -486,7 +486,7 @@ fn spaces_between_special_tokens() -> tokenizers::Result<()> {
         false,
     )?;
     let decoded_wo_spaces =
-        bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, true, false)?;
+        bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, false, false)?;
     println!("{}", decoded_wo_spaces);
     assert_eq!(
         decoded_wo_spaces,
@@ -521,7 +521,7 @@ fn cleanup_tokenization_space_tokens() -> tokenizers::Result<()> {
         false,
     )?;
     let decoded_wo_spaces =
-        bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, true, false)?;
+        bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, false, false)?;
     println!("{}", decoded_wo_spaces);
     assert_eq!(
         decoded_wo_spaces,
