@@ -822,28 +822,22 @@ where
         let mut current_sub_text = String::new();
 
         for id in ids {
-            if let Some(token) =
-                self.added_vocabulary
-                    .id_to_token(id, &self.model)
-                    .filter(|token| {
-                        !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
-                    })
-            {
-                if self
-                    .added_vocabulary
-                    .get_added_tokens_encoder()
-                    .contains(&token)
-                {
-                    if !current_sub_text.is_empty() {
-                        sub_texts.push(current_sub_text.clone());
-                        current_sub_text.clear();
+            if let Some(token) = self.added_vocabulary.id_to_token(id, &self.model) {
+                let is_special_token = self.added_vocabulary.is_special_token(&token);
+                if !skip_special_tokens || !is_special_token {
+                    let added_tokens_encoder = self.added_vocabulary.get_added_tokens_encoder();
+                    if added_tokens_encoder.contains(&token) {
+                        if !current_sub_text.is_empty() {
+                            sub_texts.push(current_sub_text.clone());
+                            current_sub_text.clear();
+                        }
+                        sub_texts.push(token.to_string());
+                    } else {
+                        if !current_sub_text.is_empty() {
+                            current_sub_text.push(' ');
+                        }
+                        current_sub_text.push_str(&token);
                     }
-                    sub_texts.push(token.to_string());
-                } else {
-                    if !current_sub_text.is_empty() {
-                        current_sub_text.push(' ');
-                    }
-                    current_sub_text.push_str(&token);
                 }
             }
         }
