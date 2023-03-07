@@ -24,7 +24,7 @@ class JiebaPreTokenizer:
         # Just an odd example...
         splits = []
         last = 0
-        for (i, char) in enumerate(str(normalized_string)):
+        for i, char in enumerate(str(normalized_string)):
             if char.isnumeric() and int(char) % 2 == 1:
                 splits.append(normalized_string[last:i])
                 last = i

@@ -215,6 +215,7 @@ impl PyModel {
     ///
     /// Returns:
     ///     :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
+    #[pyo3(text_signature = "(self)")]
     fn get_trainer(&self, py: Python<'_>) -> PyResult<PyObject> {
         PyTrainer::from(self.model.read().unwrap().get_trainer()).get_as_subtype(py)
     }
