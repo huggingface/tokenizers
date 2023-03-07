@@ -628,7 +628,7 @@ where
 
     /// Cleanup tokenzation spaces when needed.
     fn clean_up_tokenization(&self, out_string: String) -> String {
-        let mut cleaned_string = out_string.to_owned();
+        let mut cleaned_string = out_string;
         cleaned_string = cleaned_string.replace(" .", ".");
         cleaned_string = cleaned_string.replace(" ?", "?");
         cleaned_string = cleaned_string.replace(" !", "!");
