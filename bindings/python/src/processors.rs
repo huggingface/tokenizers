@@ -123,7 +123,7 @@ impl PyPostProcessor {
     ///
     /// Return:
     ///     :class:`~tokenizers.Encoding`: The final encoding
-    #[args(pair = "None", add_special_tokens = "true")]
+    #[pyo3(signature = (encoding, pair = None, add_special_tokens = true))]
     #[pyo3(text_signature = "(self, encoding, pair=None, add_special_tokens=True)")]
     fn process(
         &self,
@@ -201,7 +201,7 @@ pub struct PyRobertaProcessing {}
 #[pymethods]
 impl PyRobertaProcessing {
     #[new]
-    #[args(trim_offsets = true, add_prefix_space = true)]
+    #[pyo3(signature = (sep, cls, trim_offsets = true, add_prefix_space = true))]
     fn new(
         sep: (String, u32),
         cls: (String, u32),
@@ -236,7 +236,7 @@ pub struct PyByteLevel {}
 #[pymethods]
 impl PyByteLevel {
     #[new]
-    #[args(trim_offsets = "None", _kwargs = "**")]
+    #[pyo3(signature = (trim_offsets = None, **_kwargs))]
     fn new(trim_offsets: Option<bool>, _kwargs: Option<&PyDict>) -> (Self, PyPostProcessor) {
         let mut byte_level = ByteLevel::default();
 
@@ -388,7 +388,7 @@ pub struct PyTemplateProcessing {}
 #[pymethods]
 impl PyTemplateProcessing {
     #[new]
-    #[args(single = "None", pair = "None", special_tokens = "None")]
+    #[pyo3(signature = (single = None, pair = None, special_tokens = None))]
     fn new(
         single: Option<PyTemplate>,
         pair: Option<PyTemplate>,
@@ -427,7 +427,7 @@ pub struct PySequence {}
 #[pymethods]
 impl PySequence {
     #[new]
-    #[args(processors)]
+    #[pyo3(signature = (processors_py))]
     fn new(processors_py: &PyList) -> (Self, PyPostProcessor) {
         let mut processors: Vec<PostProcessorWrapper> = Vec::with_capacity(processors_py.len());
         for n in processors_py.iter() {

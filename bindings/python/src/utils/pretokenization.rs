@@ -223,7 +223,7 @@ impl PyPreTokenizedString {
     ///
     /// Returns:
     ///     An Encoding
-    #[args(type_id = "0", word_idx = "None")]
+    #[pyo3(signature = (type_id = 0, word_idx = None))]
     #[pyo3(text_signature = "(self, type_id=0, word_idx=None)")]
     fn to_encoding(&self, type_id: u32, word_idx: Option<u32>) -> PyResult<PyEncoding> {
         to_encoding(&self.pretok, type_id, word_idx)
@@ -245,10 +245,10 @@ impl PyPreTokenizedString {
     ///
     /// Returns
     ///     A list of splits
-    #[args(
-        offset_referential = "PyOffsetReferential(OffsetReferential::Original)",
-        offset_type = "PyOffsetType(OffsetType::Char)"
-    )]
+    #[pyo3(signature = (
+        offset_referential = PyOffsetReferential(OffsetReferential::Original),
+        offset_type = PyOffsetType(OffsetType::Char)
+    ))]
     #[pyo3(text_signature = "(self, offset_referential=\"original\", offset_type=\"char\")")]
     fn get_splits(
         &self,
@@ -307,17 +307,17 @@ impl PyPreTokenizedStringRefMut {
             .ok_or_else(PyPreTokenizedStringRefMut::destroyed_error)?
     }
 
-    #[args(type_id = "0", word_idx = "None")]
+    #[pyo3(signature = (type_id = 0, word_idx = None))]
     fn to_encoding(&self, type_id: u32, word_idx: Option<u32>) -> PyResult<PyEncoding> {
         self.inner
             .map(|pretok| to_encoding(pretok, type_id, word_idx))
             .ok_or_else(PyPreTokenizedStringRefMut::destroyed_error)?
     }
 
-    #[args(
-        offset_referential = "PyOffsetReferential(OffsetReferential::Original)",
-        offset_type = "PyOffsetType(OffsetType::Char)"
-    )]
+    #[pyo3(signature = (
+        offset_referential = PyOffsetReferential(OffsetReferential::Original),
+        offset_type = PyOffsetType(OffsetType::Char)
+    ))]
     fn get_splits(
         &self,
         offset_referential: PyOffsetReferential,
