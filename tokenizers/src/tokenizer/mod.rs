@@ -853,7 +853,7 @@ where
         };
 
         let tokens = sub_texts_concatenated
-            .split(" ")
+            .split(' ')
             .map(|s| s.to_string())
             .collect();
 
