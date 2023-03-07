@@ -578,16 +578,19 @@ declare_types! {
 
             let ids = cx.extract_vec::<u32>(0)?;
             let (skip_special_tokens, clean_up_tokenization_spaces, spaces_between_special_tokens, callback_index) = match (cx.extract::<bool>(1), cx.extract::<bool>(2), cx.extract::<bool>(3)){
-                (Ok(skip_special_tokens), Ok(clean_up_tokenization_spaces)) , Ok(spaces_between_special_tokens) => {
+                (Ok(skip_special_tokens), Ok(clean_up_tokenization_spaces) , Ok(spaces_between_special_tokens)) => {
                     (skip_special_tokens, clean_up_tokenization_spaces, spaces_between_special_tokens, 4)
                 }
-                (Ok(skip_special_tokens), Ok(clean_up_tokenization_spaces)) , Err(_) => {
+                (Ok(skip_special_tokens), Ok(clean_up_tokenization_spaces) , Err(_)) => {
                     (skip_special_tokens, clean_up_tokenization_spaces, true, 3)
                 }
                 (Ok(skip_special_tokens), Err(_), Err(_)) => {
                     (skip_special_tokens, true, true, 2)
                 }
-                (Err(_), _) => {
+                (Ok(skip_special_tokens), Err(_), Ok(clean_up_tokenization_spaces)) => {
+                    (skip_special_tokens, true, clean_up_tokenization_spaces, 2) // TODO @Narsil handle this
+                }
+                (Err(_), _, _) => {
                     (true, true, true, 1) // TODO @Narsil handle this
                 }
             };
@@ -610,16 +613,19 @@ declare_types! {
 
             let sentences = cx.extract_vec::<Vec<u32>>(0)?;
             let (skip_special_tokens, clean_up_tokenization_spaces, spaces_between_special_tokens, callback_index) = match (cx.extract::<bool>(1), cx.extract::<bool>(2), cx.extract::<bool>(3)){
-                (Ok(skip_special_tokens), Ok(clean_up_tokenization_spaces)) , Ok(spaces_between_special_tokens) => {
+                (Ok(skip_special_tokens), Ok(clean_up_tokenization_spaces) , Ok(spaces_between_special_tokens)) => {
                     (skip_special_tokens, clean_up_tokenization_spaces, spaces_between_special_tokens, 4)
                 }
-                (Ok(skip_special_tokens), Ok(clean_up_tokenization_spaces)) , Err(_) => {
+                (Ok(skip_special_tokens), Ok(clean_up_tokenization_spaces) , Err(_)) => {
                     (skip_special_tokens, clean_up_tokenization_spaces, true, 3)
                 }
                 (Ok(skip_special_tokens), Err(_), Err(_)) => {
                     (skip_special_tokens, true, true, 2)
                 }
-                (Err(_), _) => {
+                (Ok(skip_special_tokens), Err(_), Ok(clean_up_tokenization_spaces)) => {
+                    (skip_special_tokens, true, clean_up_tokenization_spaces, 2) // TODO @Narsil handle this
+                }
+                (Err(_), _, _) => {
                     (true, true, true, 1) // TODO @Narsil handle this
                 }
             };
