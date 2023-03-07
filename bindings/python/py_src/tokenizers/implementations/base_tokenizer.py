@@ -255,6 +255,7 @@ class BaseTokenizer:
         self,
         ids: List[int],
         skip_special_tokens: Optional[bool] = True,
+        clean_up_tokenization_spaces: Optional[bool] = True,
         spaces_between_special_tokens: Optional[bool] = True,
     ) -> str:
         """Decode the given list of ids to a string sequence
@@ -266,6 +267,9 @@ class BaseTokenizer:
             skip_special_tokens: (`optional`) boolean:
                 Whether to remove all the special tokens from the output string
 
+            clean_up_tokenization_spaces: (`optional`) boolean:
+                Whether or not to clean up the tokenization spaces.
+
             spaces_between_special_tokens: (`optional`) boolean:
                 Whether an extra space (" ") should be prepended to special tokens
 
@@ -276,13 +280,14 @@ class BaseTokenizer:
             raise ValueError("None input is not valid. Should be a list of integers.")
 
         return self._tokenizer.decode(
-            ids, skip_special_tokens=skip_special_tokens, spaces_between_special_tokens=spaces_between_special_tokens
+            ids, skip_special_tokens=skip_special_tokens, clean_up_tokenization_spaces=clean_up_tokenization_spaces,  spaces_between_special_tokens=spaces_between_special_tokens
         )
 
     def decode_batch(
         self,
         sequences: List[List[int]],
         skip_special_tokens: Optional[bool] = True,
+        clean_up_tokenization_spaces: Optional[bool] = True,
         spaces_between_special_tokens: Optional[bool] = True,
     ) -> str:
         """Decode the list of sequences to a list of string sequences
@@ -293,7 +298,10 @@ class BaseTokenizer:
 
             skip_special_tokens: (`optional`) boolean:
                 Whether to remove all the special tokens from the output strings
-
+                
+            clean_up_tokenization_spaces: (`optional`) boolean:
+                Whether or not to clean up the tokenization spaces.
+                
             spaces_between_special_tokens: (`optional`) boolean:
                 Whether an extra space (" ") should be prepended to special tokens
 
@@ -306,6 +314,7 @@ class BaseTokenizer:
         return self._tokenizer.decode_batch(
             sequences,
             skip_special_tokens=skip_special_tokens,
+            clean_up_tokenization_spaces=clean_up_tokenization_spaces,
             spaces_between_special_tokens=spaces_between_special_tokens,
         )
 

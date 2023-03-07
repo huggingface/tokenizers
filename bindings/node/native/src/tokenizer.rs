@@ -574,18 +574,21 @@ declare_types! {
         }
 
         method decode(mut cx) {
-            // decode(ids: number[], skipSpecialTokens: bool, spaceBetweenSpecialTokens: bool, callback)
+            // decode(ids: number[], skipSpecialTokens: bool, cleanUpTokenizationSpaces: bool, spaceBetweenSpecialTokens: bool, callback)
 
             let ids = cx.extract_vec::<u32>(0)?;
-            let (skip_special_tokens, spaces_between_special_tokens, callback_index) = match (cx.extract::<bool>(1), cx.extract::<bool>(2)){
-                (Ok(skip_special_tokens), Ok(spaces_between_special_tokens)) => {
-                    (skip_special_tokens, spaces_between_special_tokens, 3)
+            let (skip_special_tokens, clean_up_tokenization_spaces, spaces_between_special_tokens, callback_index) = match (cx.extract::<bool>(1), cx.extract::<bool>(2), cx.extract::<bool>(3)){
+                (Ok(skip_special_tokens), Ok(clean_up_tokenization_spaces)) , Ok(spaces_between_special_tokens) => {
+                    (skip_special_tokens, clean_up_tokenization_spaces, spaces_between_special_tokens, 4)
                 }
-                (Ok(skip_special_tokens), Err(_)) => {
-                    (skip_special_tokens, true, 2)
+                (Ok(skip_special_tokens), Ok(clean_up_tokenization_spaces)) , Err(_) => {
+                    (skip_special_tokens, clean_up_tokenization_spaces, true, 3)
+                }
+                (Ok(skip_special_tokens), Err(_), Err(_)) => {
+                    (skip_special_tokens, true, true, 2)
                 }
                 (Err(_), _) => {
-                    (true, true, 1) // TODO @Narsil handle this
+                    (true, true, true, 1) // TODO @Narsil handle this
                 }
             };
 
@@ -595,7 +598,7 @@ declare_types! {
             let guard = cx.lock();
 
             let task = DecodeTask::Single(
-                this.borrow(&guard).clone(), ids, skip_special_tokens, spaces_between_special_tokens
+                this.borrow(&guard).clone(), ids, skip_special_tokens, clean_up_tokenization_spaces, spaces_between_special_tokens
             );
             task.schedule(callback);
 
@@ -603,18 +606,21 @@ declare_types! {
         }
 
         method decodeBatch(mut cx) {
-            // decodeBatch(sequences: number[][], skipSpecialTokens: bool, spaceBetweenSpecialTokens: bool, callback)
+            // decodeBatch(sequences: number[][], skipSpecialTokens: bool, cleanUpTokenizationSpaces: bool, spaceBetweenSpecialTokens: bool, callback)
 
             let sentences = cx.extract_vec::<Vec<u32>>(0)?;
-            let (skip_special_tokens, spaces_between_special_tokens, callback_index) = match (cx.extract::<bool>(1), cx.extract::<bool>(2)){
-                (Ok(skip_special_tokens), Ok(spaces_between_special_tokens)) => {
-                    (skip_special_tokens, spaces_between_special_tokens, 3)
+            let (skip_special_tokens, clean_up_tokenization_spaces, spaces_between_special_tokens, callback_index) = match (cx.extract::<bool>(1), cx.extract::<bool>(2), cx.extract::<bool>(3)){
+                (Ok(skip_special_tokens), Ok(clean_up_tokenization_spaces)) , Ok(spaces_between_special_tokens) => {
+                    (skip_special_tokens, clean_up_tokenization_spaces, spaces_between_special_tokens, 4)
                 }
-                (Ok(skip_special_tokens), Err(_)) => {
-                    (skip_special_tokens, true, 2)
+                (Ok(skip_special_tokens), Ok(clean_up_tokenization_spaces)) , Err(_) => {
+                    (skip_special_tokens, clean_up_tokenization_spaces, true, 3)
+                }
+                (Ok(skip_special_tokens), Err(_), Err(_)) => {
+                    (skip_special_tokens, true, true, 2)
                 }
                 (Err(_), _) => {
-                    (true, true, 1) // TODO @Narsil handle this
+                    (true, true, true, 1) // TODO @Narsil handle this
                 }
             };
 
@@ -624,7 +630,7 @@ declare_types! {
             let guard = cx.lock();
 
             let task = DecodeTask::Batch(
-                this.borrow(&guard).clone(), sentences, skip_special_tokens, spaces_between_special_tokens
+                this.borrow(&guard).clone(), sentences, skip_special_tokens, clean_up_tokenization_spaces, spaces_between_special_tokens
             );
             task.schedule(callback);
 

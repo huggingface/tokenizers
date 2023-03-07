@@ -437,3 +437,30 @@ class TestTokenizer:
         # Can post process a pair of encodings
         output = tokenizer.post_process(encoding, pair_encoding)
         assert output.tokens == ["my", "pair", "[PAD]", "[PAD]"]
+    
+    
+    def test_cleanup_tokenization_spaces(self):
+        #TODO
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
+        tokenizer.enable_truncation(2)
+        tokenizer.enable_padding(length=4)
+        tokenizer.add_tokens(["<"])
+
+        """
+            >>> tokenizer.decode(tokenizer('a<=5').input_ids, spaces_between_special_tokens = False)
+            >>> 'a<=5</s>'
+        """
+        # tokenizer.decode(tokenizer('a<=5').input_ids)
+        encoding = tokenizer.encode("my name is john")
+        print(encoding)
+        print(tokenizer.decode(encoding.ids, spaces_between_special_tokens=True))
+        pair_encoding = tokenizer.encode("pair")
+
+        # Can post process a single encoding
+        output = tokenizer.post_process(encoding)
+        assert output.tokens == ["my", "name", "[PAD]", "[PAD]"]
+
+        # Can post process a pair of encodings
+        output = tokenizer.post_process(encoding, pair_encoding)
+        assert output.tokens == ["my", "pair", "[PAD]", "[PAD]"]
