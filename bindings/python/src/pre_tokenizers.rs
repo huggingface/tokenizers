@@ -260,7 +260,7 @@ impl PyByteLevel {
     }
 
     #[new]
-    #[args(add_prefix_space = "true", use_regex = "true", _kwargs = "**")]
+    #[pyo3(signature = (add_prefix_space = true, use_regex = true, **_kwargs))]
     fn new(
         add_prefix_space: bool,
         use_regex: bool,
@@ -340,7 +340,7 @@ pub struct PySplit {}
 #[pymethods]
 impl PySplit {
     #[new]
-    #[args(invert = false)]
+    #[pyo3(signature = (pattern, behavior, invert = false))]
     fn new(
         pattern: PyPattern,
         behavior: PySplitDelimiterBehavior,
@@ -419,7 +419,7 @@ pub struct PyPunctuation {}
 #[pymethods]
 impl PyPunctuation {
     #[new]
-    #[args(behavior = "PySplitDelimiterBehavior(SplitDelimiterBehavior::Isolated)")]
+    #[pyo3( signature = (behavior = PySplitDelimiterBehavior(SplitDelimiterBehavior::Isolated)))]
     fn new(behavior: PySplitDelimiterBehavior) -> (Self, PyPreTokenizer) {
         (PyPunctuation {}, Punctuation::new(behavior.into()).into())
     }
@@ -493,7 +493,7 @@ impl PyMetaspace {
     }
 
     #[new]
-    #[args(replacement = "PyChar('▁')", add_prefix_space = "true", _kwargs = "**")]
+    #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true, **_kwargs))]
     fn new(
         replacement: PyChar,
         add_prefix_space: bool,
@@ -533,7 +533,7 @@ impl PyDigits {
     }
 
     #[new]
-    #[args(individual_digits = false)]
+    #[pyo3(signature = (individual_digits = false))]
     fn new(individual_digits: bool) -> (Self, PyPreTokenizer) {
         (PyDigits {}, Digits::new(individual_digits).into())
     }

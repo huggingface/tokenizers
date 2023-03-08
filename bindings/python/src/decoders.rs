@@ -149,7 +149,8 @@ pub struct PyByteLevelDec {}
 #[pymethods]
 impl PyByteLevelDec {
     #[new]
-    fn new() -> (Self, PyDecoder) {
+    #[pyo3(signature = (**_kwargs))]
+    fn new(_kwargs: Option<&PyDict>) -> (Self, PyDecoder) {
         (PyByteLevelDec {}, ByteLevel::default().into())
     }
 }
@@ -189,7 +190,7 @@ impl PyWordPieceDec {
     }
 
     #[new]
-    #[args(prefix = "String::from(\"##\")", cleanup = "true")]
+    #[pyo3(signature = (prefix = String::from("##"), cleanup = true))]
     fn new(prefix: String, cleanup: bool) -> (Self, PyDecoder) {
         (PyWordPieceDec {}, WordPiece::new(prefix, cleanup).into())
     }
@@ -231,7 +232,7 @@ impl PyMetaspaceDec {
     }
 
     #[new]
-    #[args(replacement = "PyChar('▁')", add_prefix_space = "true")]
+    #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true))]
     fn new(replacement: PyChar, add_prefix_space: bool) -> (Self, PyDecoder) {
         (
             PyMetaspaceDec {},
@@ -262,7 +263,7 @@ impl PyBPEDecoder {
     }
 
     #[new]
-    #[args(suffix = "String::from(\"</w>\")")]
+    #[pyo3(signature = (suffix = String::from("</w>")))]
     fn new(suffix: String) -> (Self, PyDecoder) {
         (PyBPEDecoder {}, BPEDecoder::new(suffix).into())
     }
@@ -314,11 +315,11 @@ impl PyCTCDecoder {
     }
 
     #[new]
-    #[args(
-        pad_token = "String::from(\"<pad>\")",
-        word_delimiter_token = "String::from(\"|\")",
-        cleanup = "true"
-    )]
+    #[pyo3(signature = (
+        pad_token = String::from("<pad>"),
+        word_delimiter_token = String::from("|"),
+        cleanup = true
+    ))]
     fn new(pad_token: String, word_delimiter_token: String, cleanup: bool) -> (Self, PyDecoder) {
         (
             PyCTCDecoder {},
@@ -338,7 +339,7 @@ pub struct PySequenceDecoder {}
 #[pymethods]
 impl PySequenceDecoder {
     #[new]
-    #[args(decoders)]
+    #[pyo3(signature = (decoders_py))]
     fn new(decoders_py: &PyList) -> PyResult<(Self, PyDecoder)> {
         let mut decoders: Vec<DecoderWrapper> = Vec::with_capacity(decoders_py.len());
         for decoder_py in decoders_py.iter() {
