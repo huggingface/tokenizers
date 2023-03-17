@@ -132,6 +132,7 @@ struct BpeOptions {
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
     fuse_unk: Option<bool>,
+    byte_fallback: Option<bool>,
 }
 impl BpeOptions {
     fn apply_to_bpe_builder(self, mut builder: BpeBuilder) -> BpeBuilder {
@@ -152,6 +153,9 @@ impl BpeOptions {
         }
         if let Some(fuse_unk) = self.fuse_unk {
             builder = builder.fuse_unk(fuse_unk);
+        }
+        if let Some(byte_fallback) = self.byte_fallback {
+            builder = builder.byte_fallback(byte_fallback);
         }
 
         builder

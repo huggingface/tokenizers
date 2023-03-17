@@ -1,0 +1,21 @@
+from tokenizers import Tokenizer
+
+model_id = "bert-base-chinese"
+in_sentence = """我最喜欢在下雨天听歌，让人感觉到很放松"""
+
+another_tokenizer = Tokenizer.from_pretrained(model_id)
+output = another_tokenizer.encode(in_sentence)
+print(output.tokens)
+
+new_tokens = ['听歌', '下雨天']
+num_added_toks = another_tokenizer.add_tokens(new_tokens)
+
+after_tokenized_output = another_tokenizer.encode(in_sentence)
+print(after_tokenized_output.tokens)
+"""
+['[CLS]', '我', '最', '喜', '欢', '在', '下', '雨', '天', '听', '歌', '，', '让', '人', '感', '觉', '到', '很', '放', '松', '[SEP]']
+We have added 2 tokens
+['[CLS]', '我', '最', '喜', '欢', '在', ' 下  雨  天 ', ' 听  歌 ', '，', '让', '人', '感', '觉', '到', '很', '放', '松', '[SEP]']
+"""
+
+

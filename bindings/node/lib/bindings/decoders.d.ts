@@ -4,7 +4,7 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface Decoder {
-    decode(tokens: string[]): string;
+  decode(tokens: string[]): string;
 }
 
 /**
@@ -53,9 +53,9 @@ export function bpeDecoder(suffix?: string): Decoder;
  * Mainly spaces before punctuation, and some abbreviated english forms.
  */
 export function ctcDecoder(
-    pad_token?: string,
-    word_delimiter_token?: string,
-    cleanup?: boolean
+  pad_token?: string,
+  word_delimiter_token?: string,
+  cleanup?: boolean
 ): Decoder;
 
 /**

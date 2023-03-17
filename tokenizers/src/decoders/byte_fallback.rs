@@ -36,7 +36,7 @@ impl Decoder for ByteFallback {
             } else {
                 if !previous_byte_tokens.is_empty() {
                     if let Ok(string) = String::from_utf8(previous_byte_tokens.clone()) {
-                        new_tokens.push(string.into());
+                        new_tokens.push(string);
                     } else {
                         for _ in 0..previous_byte_tokens.len() {
                             new_tokens.push("�".into());
@@ -49,7 +49,7 @@ impl Decoder for ByteFallback {
         }
         if !previous_byte_tokens.is_empty() {
             if let Ok(string) = String::from_utf8(previous_byte_tokens.clone()) {
-                new_tokens.push(string.into());
+                new_tokens.push(string);
             } else {
                 for _ in 0..previous_byte_tokens.len() {
                     new_tokens.push("�".into());
