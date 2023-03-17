@@ -389,6 +389,16 @@ impl PyBPE {
         setter!(self_, BPE, fuse_unk, fuse_unk);
     }
 
+    #[getter]
+    fn get_byte_fallback(self_: PyRef<Self>) -> bool {
+        getter!(self_, BPE, byte_fallback)
+    }
+
+    #[setter]
+    fn set_byte_fallback(self_: PyRef<Self>, byte_fallback: bool) {
+        setter!(self_, BPE, byte_fallback, byte_fallback);
+    }
+
     #[new]
     #[pyo3(signature = (vocab=None, merges=None, **kwargs))]
     fn new(
