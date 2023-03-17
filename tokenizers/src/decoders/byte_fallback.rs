@@ -3,8 +3,9 @@ use crate::tokenizer::{Decoder, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Clone, Debug, Serialize, Default)]
-/// Allows decoding Original BPE by joining all the tokens and then replacing
-/// the suffix used to identify end-of-words by whitespaces
+/// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
+/// to pure bytes, and attempts to make them into a string. If the tokens
+/// cannot be decoded you will get � instead for each inconvertable byte token
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub struct ByteFallback {}
