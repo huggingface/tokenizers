@@ -106,6 +106,9 @@ class BPE(Model):
 
         fuse_unk (:obj:`bool`, `optional`):
             Whether to fuse any subsequent unknown tokens into a single one
+
+        byte_fallback (:obj:`bool`, `optional`):
+            Whether to use spm byte-fallback trick (defaults to False)
     """
 
     def __init__(
@@ -118,6 +121,7 @@ class BPE(Model):
         continuing_subword_prefix=None,
         end_of_word_suffix=None,
         fuse_unk=None,
+        byte_fallback=False,
     ):
         pass
     @staticmethod
