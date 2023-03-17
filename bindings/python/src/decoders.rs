@@ -7,6 +7,7 @@ use pyo3::types::*;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::decoders::bpe::BPEDecoder;
+use tk::decoders::byte_fallback::ByteFallback;
 use tk::decoders::byte_level::ByteLevel;
 use tk::decoders::ctc::CTC;
 use tk::decoders::metaspace::Metaspace;
@@ -41,6 +42,9 @@ impl PyDecoder {
             PyDecoderWrapper::Wrapped(inner) => match &*inner.as_ref().read().unwrap() {
                 DecoderWrapper::Metaspace(_) => Py::new(py, (PyMetaspaceDec {}, base))?.into_py(py),
                 DecoderWrapper::WordPiece(_) => Py::new(py, (PyWordPieceDec {}, base))?.into_py(py),
+                DecoderWrapper::ByteFallback(_) => {
+                    Py::new(py, (PyByteFallbackDec {}, base))?.into_py(py)
+                }
                 DecoderWrapper::ByteLevel(_) => Py::new(py, (PyByteLevelDec {}, base))?.into_py(py),
                 DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base))?.into_py(py),
                 DecoderWrapper::CTC(_) => Py::new(py, (PyCTCDecoder {}, base))?.into_py(py),
@@ -193,6 +197,23 @@ impl PyWordPieceDec {
     #[pyo3(signature = (prefix = String::from("##"), cleanup = true))]
     fn new(prefix: String, cleanup: bool) -> (Self, PyDecoder) {
         (PyWordPieceDec {}, WordPiece::new(prefix, cleanup).into())
+    }
+}
+
+/// ByteFallback Decoder
+/// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
+/// to pure bytes, and attempts to make them into a string. If the tokens
+/// cannot be decoded you will get � instead for each inconvertable byte token
+///
+#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "ByteFallback")]
+#[pyo3(text_signature = "(self)")]
+pub struct PyByteFallbackDec {}
+#[pymethods]
+impl PyByteFallbackDec {
+    #[new]
+    #[pyo3(signature = ())]
+    fn new() -> (Self, PyDecoder) {
+        (PyByteFallbackDec {}, ByteFallback::new().into())
     }
 }
 
@@ -453,6 +474,7 @@ pub fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyDecoder>()?;
     m.add_class::<PyByteLevelDec>()?;
     m.add_class::<PyWordPieceDec>()?;
+    m.add_class::<PyByteFallbackDec>()?;
     m.add_class::<PyMetaspaceDec>()?;
     m.add_class::<PyBPEDecoder>()?;
     m.add_class::<PyCTCDecoder>()?;

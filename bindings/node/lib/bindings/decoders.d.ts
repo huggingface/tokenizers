@@ -4,7 +4,7 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface Decoder {
-  decode(tokens: string[]): string;
+    decode(tokens: string[]): string;
 }
 
 /**
@@ -19,6 +19,14 @@ export function byteLevelDecoder(): Decoder;
  * Mainly spaces before punctuation, and some abbreviated english forms.
  */
 export function wordPieceDecoder(prefix?: string, cleanup?: boolean): Decoder;
+
+/**
+ * Instantiate a new ByteFallback Decoder
+ * ByteFallback is a simple trick which converts tokens looking like `<0x61>`
+ * to pure bytes, and attempts to make them into a string. If the tokens
+ * cannot be decoded you will get � instead for each inconvertable byte token
+ */
+export function byteFallbackDecoder(): Decoder;
 
 /**
  * Instantiate a new Metaspace
@@ -45,9 +53,9 @@ export function bpeDecoder(suffix?: string): Decoder;
  * Mainly spaces before punctuation, and some abbreviated english forms.
  */
 export function ctcDecoder(
-  pad_token?: string,
-  word_delimiter_token?: string,
-  cleanup?: boolean
+    pad_token?: string,
+    word_delimiter_token?: string,
+    cleanup?: boolean
 ): Decoder;
 
 /**

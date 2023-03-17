@@ -45,6 +45,27 @@ class BPEDecoder(Decoder):
         """
         pass
 
+class ByteFallback(Decoder):
+    """
+    ByteFallback Decoder
+
+    """
+
+    def __init__(self):
+        pass
+    def decode(self, tokens):
+        """
+        Decode the given list of tokens to a final string
+
+        Args:
+            tokens (:obj:`List[str]`):
+                The list of tokens to decode
+
+        Returns:
+            :obj:`str`: The decoded string
+        """
+        pass
+
 class ByteLevel(Decoder):
     """
     ByteLevel Decoder

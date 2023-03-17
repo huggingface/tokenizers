@@ -1,4 +1,5 @@
 pub mod bpe;
+pub mod byte_fallback;
 pub mod ctc;
 pub mod sequence;
 pub mod wordpiece;
@@ -10,6 +11,7 @@ pub use super::pre_tokenizers::metaspace;
 use serde::{Deserialize, Serialize};
 
 use crate::decoders::bpe::BPEDecoder;
+use crate::decoders::byte_fallback::ByteFallback;
 use crate::decoders::ctc::CTC;
 use crate::decoders::sequence::Sequence;
 use crate::decoders::wordpiece::WordPiece;
@@ -24,6 +26,7 @@ pub enum DecoderWrapper {
     ByteLevel(ByteLevel),
     WordPiece(WordPiece),
     Metaspace(Metaspace),
+    ByteFallback(ByteFallback),
     CTC(CTC),
     Sequence(Sequence),
 }
@@ -37,6 +40,7 @@ impl Decoder for DecoderWrapper {
             Self::WordPiece(wp) => wp.decode_chain(tokens),
             Self::CTC(ctc) => ctc.decode_chain(tokens),
             Self::Sequence(seq) => seq.decode_chain(tokens),
+            Self::ByteFallback(bf) => bf.decode_chain(tokens),
         }
     }
 }
@@ -47,3 +51,4 @@ impl_enum_from!(Metaspace, DecoderWrapper, Metaspace);
 impl_enum_from!(WordPiece, DecoderWrapper, WordPiece);
 impl_enum_from!(CTC, DecoderWrapper, CTC);
 impl_enum_from!(Sequence, DecoderWrapper, Sequence);
+impl_enum_from!(ByteFallback, DecoderWrapper, ByteFallback);
