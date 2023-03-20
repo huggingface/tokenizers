@@ -78,7 +78,6 @@ impl PreTokenizer for Metaspace {
 
 impl Decoder for Metaspace {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        println!("Metaspace {:?}", tokens);
         Ok(tokens
             .iter()
             .enumerate()
@@ -86,7 +85,6 @@ impl Decoder for Metaspace {
                 token
                     .chars()
                     .flat_map(|c| {
-                        println!("C {c:?} - {:?}", self.replacement);
                         if c == self.replacement {
                             if i == 0 && self.add_prefix_space {
                                 None
