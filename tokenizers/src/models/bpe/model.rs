@@ -394,6 +394,7 @@ impl BPE {
                         .bytes()
                         .map(|b| -> Option<&u32> {
                             let code = format!("<{:#02X}>", b);
+
                             self.vocab.get(&code)
                         })
                         .collect();

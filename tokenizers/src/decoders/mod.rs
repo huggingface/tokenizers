@@ -26,9 +26,13 @@ pub enum DecoderWrapper {
     ByteLevel(ByteLevel),
     WordPiece(WordPiece),
     Metaspace(Metaspace),
-    ByteFallback(ByteFallback),
     CTC(CTC),
     Sequence(Sequence),
+    // XXX: This is an untagged enum, which unfortunately means order
+    // is **CRITICAL**. We absolutely need to make sure order is correct.
+    // Since byte fallback is parameter free, is **has** to be last, and will
+    // unfortunately match pretty much everything.
+    ByteFallback(ByteFallback),
 }
 
 impl Decoder for DecoderWrapper {
@@ -47,8 +51,21 @@ impl Decoder for DecoderWrapper {
 
 impl_enum_from!(BPEDecoder, DecoderWrapper, BPE);
 impl_enum_from!(ByteLevel, DecoderWrapper, ByteLevel);
+impl_enum_from!(ByteFallback, DecoderWrapper, ByteFallback);
 impl_enum_from!(Metaspace, DecoderWrapper, Metaspace);
 impl_enum_from!(WordPiece, DecoderWrapper, WordPiece);
 impl_enum_from!(CTC, DecoderWrapper, CTC);
 impl_enum_from!(Sequence, DecoderWrapper, Sequence);
-impl_enum_from!(ByteFallback, DecoderWrapper, ByteFallback);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decoder_serialization() {
+        let json = r#"{"type":"Sequence","decoders":[{"type":"ByteFallback"},{"type":"Metaspace","replacement":"▁","add_prefix_space":true}]}"#;
+        let decoder: DecoderWrapper = serde_json::from_str(json).unwrap();
+        let serialized = serde_json::to_string(&decoder).unwrap();
+        assert_eq!(serialized, json);
+    }
+}
