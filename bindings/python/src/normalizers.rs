@@ -267,12 +267,12 @@ impl PyBertNormalizer {
     }
 
     #[new]
-    #[args(
-        clean_text = "true",
-        handle_chinese_chars = "true",
-        strip_accents = "None",
-        lowercase = "true"
-    )]
+    #[pyo3(signature = (
+        clean_text = true,
+        handle_chinese_chars = true,
+        strip_accents = None,
+        lowercase = true
+    ))]
     fn new(
         clean_text: bool,
         handle_chinese_chars: bool,
@@ -407,7 +407,7 @@ impl PyStrip {
     }
 
     #[new]
-    #[args(left = "true", right = "true")]
+    #[pyo3(signature = (left = true, right = true))]
     fn new(left: bool, right: bool) -> (Self, PyNormalizer) {
         (PyStrip {}, Strip::new(left, right).into())
     }

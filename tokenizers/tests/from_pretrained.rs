@@ -36,3 +36,21 @@ fn test_from_pretrained_revision() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_from_pretrained_invalid_model() {
+    let tokenizer = Tokenizer::from_pretrained("docs?", None);
+    assert!(tokenizer.is_err());
+}
+
+#[test]
+fn test_from_pretrained_invalid_revision() {
+    let tokenizer = Tokenizer::from_pretrained(
+        "bert-base-cased",
+        Some(FromPretrainedParameters {
+            revision: "gpt?".to_string(),
+            ..Default::default()
+        }),
+    );
+    assert!(tokenizer.is_err());
+}

@@ -215,6 +215,7 @@ impl PyModel {
     ///
     /// Returns:
     ///     :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
+    #[pyo3(text_signature = "(self)")]
     fn get_trainer(&self, py: Python<'_>) -> PyResult<PyObject> {
         PyTrainer::from(self.model.read().unwrap().get_trainer()).get_as_subtype(py)
     }
@@ -385,7 +386,7 @@ impl PyBPE {
     }
 
     #[new]
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (vocab=None, merges=None, **kwargs))]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
@@ -472,7 +473,7 @@ impl PyBPE {
     /// Returns:
     ///     :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
     #[classmethod]
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (vocab, merges, **kwargs))]
     #[pyo3(text_signature = "(cls, vocab, merge, **kwargs)")]
     fn from_file(
         _cls: &PyType,
@@ -582,7 +583,7 @@ impl PyWordPiece {
     }
 
     #[new]
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (vocab=None, **kwargs))]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
@@ -648,7 +649,7 @@ impl PyWordPiece {
     /// Returns:
     ///     :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
     #[classmethod]
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (vocab, **kwargs))]
     #[pyo3(text_signature = "(vocab, **kwargs)")]
     fn from_file(
         _cls: &PyType,
@@ -693,7 +694,7 @@ impl PyWordLevel {
     }
 
     #[new]
-    #[args(unk_token = "None")]
+    #[pyo3(signature = (vocab=None, unk_token = None))]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
@@ -768,7 +769,7 @@ impl PyWordLevel {
     /// Returns:
     ///     :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
     #[classmethod]
-    #[args(unk_token = "None")]
+    #[pyo3(signature = (vocab, unk_token = None))]
     #[pyo3(text_signature = "(vocab, unk_token)")]
     fn from_file(
         _cls: &PyType,
