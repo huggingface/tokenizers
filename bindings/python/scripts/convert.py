@@ -328,6 +328,17 @@ class T5Converter(SpmConverter):
         )
 
 
+class LlamaConverter(SpmConverter):
+    def normalizer(self, proto):
+        return Sequence([])
+
+    def post_processor(self, tokenizer):
+        return TemplateProcessing(
+            single=["<s>", "$0"],
+            special_tokens=[("<s>", self.original_tokenizer.bos_token_id)],
+        )
+
+
 CONVERTERS = {
     "AlbertTokenizer": AlbertConverter,
     "CamembertTokenizer": CamembertConverter,
