@@ -133,9 +133,12 @@ class Metaspace(Decoder):
         add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
             Whether to add a space to the first word if there isn't already one. This
             lets us treat `hello` exactly like `say hello`.
+
+        split (:obj:`bool`, `optional`, defaults to :obj:`True`):
+            Whether to to split on whitespaces.
     """
 
-    def __init__(self, replacement="▁", add_prefix_space=True):
+    def __init__(self, replacement="▁", add_prefix_space=True, split=True):
         pass
     def decode(self, tokens):
         """
