@@ -95,6 +95,7 @@ class TestMetaspace:
         with pytest.raises(ValueError, match="expected a string of length 1"):
             Metaspace(replacement="")
         assert Metaspace(add_prefix_space=True) is not None
+        assert Metaspace(split=False) is not None
         assert isinstance(Metaspace(), PreTokenizer)
         assert isinstance(Metaspace(), Metaspace)
         assert isinstance(pickle.loads(pickle.dumps(Metaspace())), Metaspace)
@@ -104,12 +105,15 @@ class TestMetaspace:
 
         assert pretok.replacement == "$"
         assert pretok.add_prefix_space == False
+        assert pretok.split == True
 
         # Modify these
         pretok.replacement = "%"
         assert pretok.replacement == "%"
         pretok.add_prefix_space = True
         assert pretok.add_prefix_space == True
+        pretok.split = False
+        assert pretok.split == False
 
 
 class TestCharDelimiterSplit:

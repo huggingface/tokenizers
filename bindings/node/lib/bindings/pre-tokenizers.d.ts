@@ -4,7 +4,7 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface PreTokenizer {
-  preTokenizeString(s: string): [string, [number, number]][];
+    preTokenizeString(s: string): [string, [number, number]][];
 }
 
 /**
@@ -52,9 +52,9 @@ export function whitespaceSplitPreTokenizer(): PreTokenizer;
  * @param [invert=false] Whether to invert the pattern.
  */
 export function splitPreTokenizer(
-  pattern?: string,
-  behavior?: string,
-  invert?: boolean
+    pattern?: string,
+    behavior?: string,
+    invert?: boolean
 ): PreTokenizer;
 
 /**
@@ -73,10 +73,12 @@ export function bertPreTokenizer(): PreTokenizer;
  * By default we use the `▁` (U+2581) meta symbol (Same as in SentencePiece).
  * @param [addPrefixSpace] Whether to add a space to the first word if there isn't already one.
  * This lets us treat `hello` exactly like `say hello`.
+ * @param [split] Whether to split on the whitespaces.
  */
 export function metaspacePreTokenizer(
-  replacement?: string,
-  addPrefixSpace?: boolean
+    replacement?: string,
+    addPrefixSpace?: boolean,
+    split?: boolean
 ): PreTokenizer;
 
 /**

@@ -81,7 +81,7 @@ mod tests {
             pre_tokenizer,
             PreTokenizerWrapper::Sequence(Sequence::new(vec![
                 PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit {}),
-                PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true))
+                PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true, true))
             ]))
         );
 
@@ -92,7 +92,7 @@ mod tests {
 
         assert_eq!(
             pre_tokenizer,
-            PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true))
+            PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true, true))
         );
 
         let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(r#"{"type":"Sequence","pretokenizers":[{"type":"WhitespaceSplit"},{"type":"Metaspace","replacement":"▁","add_prefix_space":true}]}"#).unwrap();
@@ -101,7 +101,7 @@ mod tests {
             pre_tokenizer,
             PreTokenizerWrapper::Sequence(Sequence::new(vec![
                 PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit {}),
-                PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true))
+                PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true, true))
             ]))
         );
     }

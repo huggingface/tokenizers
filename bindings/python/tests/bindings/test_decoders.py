@@ -86,6 +86,7 @@ class TestMetaspace:
     def test_decoding(self):
         decoder = Metaspace()
         assert decoder.decode(["▁My", "▁name", "▁is", "▁John"]) == "My name is John"
+        assert decoder.decode(["▁▁My", "▁name▁", "▁is", "▁John"]) == " My name  is John"
         decoder = Metaspace(replacement="-", add_prefix_space=False)
         assert decoder.decode(["-My", "-name", "-is", "-John"]) == " My name is John"
 

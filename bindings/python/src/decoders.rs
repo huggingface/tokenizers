@@ -227,8 +227,11 @@ impl PyByteFallbackDec {
 ///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
+///
+///     split (:obj:`bool`, `optional`, defaults to :obj:`True`):
+///         Whether to to split on whitespaces.
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "Metaspace")]
-#[pyo3(text_signature = "(self, replacement = \"▁\", add_prefix_space = True)")]
+#[pyo3(text_signature = "(self, replacement = \"▁\", add_prefix_space = True, split = True)")]
 pub struct PyMetaspaceDec {}
 #[pymethods]
 impl PyMetaspaceDec {
@@ -253,11 +256,11 @@ impl PyMetaspaceDec {
     }
 
     #[new]
-    #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true))]
-    fn new(replacement: PyChar, add_prefix_space: bool) -> (Self, PyDecoder) {
+    #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true, split = true))]
+    fn new(replacement: PyChar, add_prefix_space: bool, split: bool) -> (Self, PyDecoder) {
         (
             PyMetaspaceDec {},
-            Metaspace::new(replacement.0, add_prefix_space).into(),
+            Metaspace::new(replacement.0, add_prefix_space, split).into(),
         )
     }
 }

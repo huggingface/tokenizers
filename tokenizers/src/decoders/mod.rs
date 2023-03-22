@@ -63,9 +63,15 @@ mod tests {
 
     #[test]
     fn decoder_serialization() {
-        let json = r#"{"type":"Sequence","decoders":[{"type":"ByteFallback"},{"type":"Metaspace","replacement":"▁","add_prefix_space":true}]}"#;
+        let json = r#"{"type":"Sequence","decoders":[{"type":"ByteFallback"},{"type":"Metaspace","replacement":"▁","add_prefix_space":true,"split":true}]}"#;
         let decoder: DecoderWrapper = serde_json::from_str(json).unwrap();
         let serialized = serde_json::to_string(&decoder).unwrap();
         assert_eq!(serialized, json);
+
+        // Check we can parse old versions correctly
+        let json = r#"{"type":"Sequence","decoders":[{"type":"ByteFallback"},{"type":"Metaspace","replacement":"▁","add_prefix_space":true}]}"#;
+        let decoder2: DecoderWrapper = serde_json::from_str(json).unwrap();
+        let serialized2 = serde_json::to_string(&decoder2).unwrap();
+        assert_eq!(serialized, serialized2);
     }
 }

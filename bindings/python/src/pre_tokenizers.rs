@@ -467,8 +467,11 @@ impl PySequence {
 ///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
+///
+///     split (:obj:`bool`, `optional`, defaults to :obj:`True`):
+///         Whether to to split on whitespaces.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Metaspace")]
-#[pyo3(text_signature = "(self, replacement=\"_\", add_prefix_space=True)")]
+#[pyo3(text_signature = "(self, replacement=\"_\", add_prefix_space=True, split=True)")]
 pub struct PyMetaspace {}
 #[pymethods]
 impl PyMetaspace {
@@ -492,16 +495,27 @@ impl PyMetaspace {
         setter!(self_, Metaspace, add_prefix_space, add_prefix_space);
     }
 
+    #[getter]
+    fn get_split(self_: PyRef<Self>) -> bool {
+        getter!(self_, Metaspace, split)
+    }
+
+    #[setter]
+    fn set_split(self_: PyRef<Self>, split: bool) {
+        setter!(self_, Metaspace, split, split);
+    }
+
     #[new]
-    #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true, **_kwargs))]
+    #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true, split = true, **_kwargs))]
     fn new(
         replacement: PyChar,
         add_prefix_space: bool,
+        split: bool,
         _kwargs: Option<&PyDict>,
     ) -> (Self, PyPreTokenizer) {
         (
             PyMetaspace {},
-            Metaspace::new(replacement.0, add_prefix_space).into(),
+            Metaspace::new(replacement.0, add_prefix_space, split).into(),
         )
     }
 }

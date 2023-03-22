@@ -176,15 +176,17 @@ fn bert_pre_tokenizer(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     Ok(pretok)
 }
 
-/// metaspace(replacement: string = '_', addPrefixSpace: bool = true)
+/// metaspace(replacement: string = '_', addPrefixSpace: bool = true, split: bool = true)
 fn metaspace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let replacement = cx.extract_opt::<char>(0)?.unwrap_or('▁');
     let add_prefix_space = cx.extract_opt::<bool>(1)?.unwrap_or(true);
+    let split = cx.extract_opt::<bool>(2)?.unwrap_or(true);
 
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    pretok.borrow_mut(&guard).pretok =
-        Some(tk::pre_tokenizers::metaspace::Metaspace::new(replacement, add_prefix_space).into());
+    pretok.borrow_mut(&guard).pretok = Some(
+        tk::pre_tokenizers::metaspace::Metaspace::new(replacement, add_prefix_space, split).into(),
+    );
     Ok(pretok)
 }
 

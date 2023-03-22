@@ -82,15 +82,16 @@ fn byte_fallback(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     Ok(decoder)
 }
 
-/// metaspace(replacement: String = "_", add_prefix_space: bool = true)
+/// metaspace(replacement: String = "_", add_prefix_space: bool = true, split = true)
 fn metaspace(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     let replacement = cx.extract_opt::<char>(0)?.unwrap_or('▁');
     let add_prefix_space = cx.extract_opt::<bool>(1)?.unwrap_or(true);
+    let split = cx.extract_opt::<bool>(2)?.unwrap_or(true);
 
     let mut decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
     let guard = cx.lock();
     decoder.borrow_mut(&guard).decoder = Some(Arc::new(
-        tk::decoders::metaspace::Metaspace::new(replacement, add_prefix_space).into(),
+        tk::decoders::metaspace::Metaspace::new(replacement, add_prefix_space, split).into(),
     ));
     Ok(decoder)
 }
