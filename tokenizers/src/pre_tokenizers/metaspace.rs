@@ -65,28 +65,31 @@ impl Default for Metaspace {
 
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, mut normalized| {
-            normalized.replace(' ', &self.str_rep)?;
-            if self.add_prefix_space && !normalized.get().starts_with(self.replacement) {
+        pretokenized.split(|id, mut normalized| {
+            // if self.add_prefix_space && !normalized.get().starts_with(self.replacement) {
+            if self.add_prefix_space && id == 0 {
                 normalized.prepend(&self.str_rep);
             }
+            // }
+            normalized.replace(' ', &self.str_rep)?;
 
-            normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
+            normalized.split('\0', SplitDelimiterBehavior::MergedWithNext)
         })
     }
 }
 
 impl Decoder for Metaspace {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        Ok(tokens
+        let result = Ok(tokens
             .iter()
             .enumerate()
             .map(|(i, token)| {
                 token
                     .chars()
-                    .flat_map(|c| {
+                    .enumerate()
+                    .flat_map(|(j, c)| {
                         if c == self.replacement {
-                            if i == 0 && self.add_prefix_space {
+                            if i == 0 && j == 0 && self.add_prefix_space {
                                 None
                             } else {
                                 Some(' ')
@@ -97,7 +100,8 @@ impl Decoder for Metaspace {
                     })
                     .collect::<String>()
             })
-            .collect())
+            .collect());
+        result
     }
 }
 
