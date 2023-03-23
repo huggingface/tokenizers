@@ -432,7 +432,7 @@ impl PyPrepend {
     }
 
     #[new]
-    #[pyo3(signature = (prepend))]
+    #[pyo3(signature = (prepend="▁".to_string()))]
     fn new(prepend: String) -> (Self, PyNormalizer) {
         (PyPrepend {}, Prepend::new(prepend).into())
     }
