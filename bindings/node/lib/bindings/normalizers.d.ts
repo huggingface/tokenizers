@@ -79,6 +79,12 @@ export function lowercaseNormalizer(): Normalizer;
 export function stripNormalizer(left?: boolean, right?: boolean): Normalizer;
 
 /**
+ *  Returns a new Prepend Normalizer
+ * @param [prepend] The string to prepend
+ */
+export function prependNormalizer(prepend: string): Normalizer;
+
+/**
  *  Returns a new StripAccents Normalizer
  */
 export function stripAccentsNormalizer(): Normalizer;

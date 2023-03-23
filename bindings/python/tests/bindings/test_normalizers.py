@@ -4,7 +4,7 @@ import pytest
 
 from tokenizers import NormalizedString, Tokenizer
 from tokenizers.models import BPE
-from tokenizers.normalizers import BertNormalizer, Lowercase, Normalizer, Sequence, Strip
+from tokenizers.normalizers import BertNormalizer, Lowercase, Normalizer, Sequence, Strip, Prepend
 
 
 class TestBertNormalizer:
@@ -117,6 +117,28 @@ class TestStrip:
         assert normalizer.left == False
         normalizer.right = False
         assert normalizer.right == False
+
+
+class TestPrepend:
+    def test_instantiate(self):
+        assert isinstance(Prepend("▁"), Normalizer)
+        assert isinstance(Prepend("▁"), Prepend)
+        assert isinstance(pickle.loads(pickle.dumps(Prepend("▁"))), Prepend)
+
+    def test_prepend(self):
+        normalizer = Prepend(prepend="▁")
+
+        output = normalizer.normalize_str("hello")
+        assert output == "▁hello"
+
+    def test_can_modify(self):
+        normalizer = Prepend("▁")
+
+        assert normalizer.prepend == "▁"
+
+        # Modify these
+        normalizer.prepend = "-"
+        assert normalizer.prepend == "-"
 
 
 class TestCustomNormalizer:

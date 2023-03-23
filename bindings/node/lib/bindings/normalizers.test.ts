@@ -1,4 +1,8 @@
-import { stripAccentsNormalizer, stripNormalizer } from "./normalizers";
+import {
+  prependNormalizer,
+  stripAccentsNormalizer,
+  stripNormalizer,
+} from "./normalizers";
 
 describe("stripNormalizer", () => {
   it("instantiates with no parameters", () => {
@@ -22,6 +26,12 @@ describe("stripNormalizer", () => {
   it("instantiates with two parameters", () => {
     const normalizer = stripNormalizer(false, true);
     expect(normalizer.constructor.name).toEqual("Normalizer");
+  });
+
+  it("prepend instantiates with one parameter", () => {
+    const normalizer = prependNormalizer("_");
+    expect(normalizer.constructor.name).toEqual("Normalizer");
+    expect(normalizer.normalizeString("Hello")).toEqual("_Hello");
   });
 
   it("can normalize strings", () => {
