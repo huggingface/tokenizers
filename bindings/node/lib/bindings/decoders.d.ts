@@ -36,6 +36,18 @@ export function wordPieceDecoder(prefix?: string, cleanup?: boolean): Decoder;
 export function byteFallbackDecoder(): Decoder;
 
 /**
+ * Instantiate a new Fuse Decoder which fuses all tokens into one string
+ */
+export function fuseDecoder(): Decoder;
+
+/**
+ * Instantiate a new Strip Decoder
+ * @param [left] The number of chars to remove from the left of each token
+ * @param [right] The number of chars to remove from the right of each token
+ */
+export function stripDecoder(left: number, right: number): Decoder;
+
+/**
  * Instantiate a new Metaspace
  *
  * @param [replacement='▁'] The replacement character.

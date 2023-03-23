@@ -67,6 +67,7 @@ thiserror = "1.0.30"
 fancy-regex = { version = "0.10", optional = true}
 getrandom = { version = "0.2.6" }
 esaxx-rs = { version = "0.1", default-features = false, features=[]}
+monostate = "0.1.5"
 
 [features]
 default = ["progressbar", "http", "cli", "onig", "esaxx_fast"]
