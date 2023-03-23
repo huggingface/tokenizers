@@ -70,7 +70,6 @@ describe("stripDecoder", () => {
 
   it("can decode arrays of strings", () => {
     expect(stripDecoder(1, 0).decode(["Hel", "lo"])).toEqual("elo");
->>>>>>> 07ed74f (Adding 2 new decoders:)
   });
 });
 
