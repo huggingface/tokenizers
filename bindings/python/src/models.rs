@@ -249,9 +249,12 @@ impl PyModel {
 ///
 ///     fuse_unk (:obj:`bool`, `optional`):
 ///         Whether to fuse any subsequent unknown tokens into a single one
+///
+///     byte_fallback (:obj:`bool`, `optional`):
+///         Whether to use spm byte-fallback trick (defaults to False)
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "BPE")]
 #[pyo3(
-    text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None)"
+    text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False)"
 )]
 pub struct PyBPE {}
 
@@ -277,6 +280,7 @@ impl PyBPE {
                     }
                     "end_of_word_suffix" => builder = builder.end_of_word_suffix(value.extract()?),
                     "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
+                    "byte_fallback" => builder = builder.byte_fallback(value.extract()?),
                     _ => println!("Ignored unknown kwarg option {}", key),
                 };
             }
@@ -383,6 +387,16 @@ impl PyBPE {
     #[setter]
     fn set_fuse_unk(self_: PyRef<Self>, fuse_unk: bool) {
         setter!(self_, BPE, fuse_unk, fuse_unk);
+    }
+
+    #[getter]
+    fn get_byte_fallback(self_: PyRef<Self>) -> bool {
+        getter!(self_, BPE, byte_fallback)
+    }
+
+    #[setter]
+    fn set_byte_fallback(self_: PyRef<Self>, byte_fallback: bool) {
+        setter!(self_, BPE, byte_fallback, byte_fallback);
     }
 
     #[new]

@@ -3,7 +3,7 @@ import pickle
 
 import pytest
 
-from tokenizers.decoders import CTC, BPEDecoder, ByteLevel, Decoder, Metaspace, Sequence, WordPiece
+from tokenizers.decoders import CTC, BPEDecoder, ByteLevel, Decoder, Metaspace, Sequence, WordPiece, ByteFallback
 
 
 class TestByteLevel:
@@ -52,6 +52,24 @@ class TestWordPiece:
         assert decoder.prefix == "__"
         decoder.cleanup = True
         assert decoder.cleanup == True
+
+
+class TestByteFallback:
+    def test_instantiate(self):
+        assert ByteFallback() is not None
+        assert isinstance(ByteFallback(), Decoder)
+        assert isinstance(ByteFallback(), ByteFallback)
+        assert isinstance(pickle.loads(pickle.dumps(ByteFallback())), ByteFallback)
+
+    def test_decoding(self):
+        decoder = ByteFallback()
+        assert decoder.decode(["My", " na", "me"]) == "My name"
+        assert decoder.decode(["<0x61>"]) == "a"
+        assert decoder.decode(["<0xE5>"]) == "�"
+        assert decoder.decode(["<0xE5>", "<0x8f>"]) == "��"
+        assert decoder.decode(["<0xE5>", "<0x8f>", "<0xab>"]) == "叫"
+        assert decoder.decode(["<0xE5>", "<0x8f>", "a"]) == "��a"
+        assert decoder.decode(["<0xE5>", "<0x8f>", "<0xab>", "a"]) == "叫a"
 
 
 class TestMetaspace:

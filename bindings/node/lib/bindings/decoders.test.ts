@@ -1,5 +1,6 @@
 import {
   bpeDecoder,
+  byteFallbackDecoder,
   ctcDecoder,
   metaspaceDecoder,
   sequenceDecoder,
@@ -19,6 +20,27 @@ describe("wordPieceDecoder", () => {
     expect(
       wordPieceDecoder().decode(["Hel", "##lo", "there", "my", "fr", "##iend"])
     ).toEqual("Hello there my friend");
+  });
+});
+
+describe("byteFallbackDecoder", () => {
+  it("accepts `undefined` as first parameter", () => {
+    expect(byteFallbackDecoder()).toBeDefined();
+  });
+
+  it("can decode arrays of strings", () => {
+    expect(byteFallbackDecoder().decode(["Hel", "lo"])).toEqual("Hello");
+    expect(byteFallbackDecoder().decode(["<0x61>"])).toEqual("a");
+    expect(byteFallbackDecoder().decode(["<0x61>"])).toEqual("a");
+    expect(byteFallbackDecoder().decode(["My", " na", "me"])).toEqual("My name");
+    expect(byteFallbackDecoder().decode(["<0x61>"])).toEqual("a");
+    expect(byteFallbackDecoder().decode(["<0xE5>"])).toEqual("�");
+    expect(byteFallbackDecoder().decode(["<0xE5>", "<0x8f>"])).toEqual("��");
+    expect(byteFallbackDecoder().decode(["<0xE5>", "<0x8f>", "<0xab>"])).toEqual("叫");
+    expect(byteFallbackDecoder().decode(["<0xE5>", "<0x8f>", "a"])).toEqual("��a");
+    expect(byteFallbackDecoder().decode(["<0xE5>", "<0x8f>", "<0xab>", "a"])).toEqual(
+      "叫a"
+    );
   });
 });
 
