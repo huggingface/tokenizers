@@ -150,6 +150,29 @@ class Metaspace(Decoder):
         """
         pass
 
+class Replace(Decoder):
+    """
+    Replace Decoder
+
+    This decoder is to be used in tandem with the :class:`~tokenizers.pre_tokenizers.Replace`
+    :class:`~tokenizers.pre_tokenizers.PreTokenizer`.
+    """
+
+    def __init__(self, pattern, content):
+        pass
+    def decode(self, tokens):
+        """
+        Decode the given list of tokens to a final string
+
+        Args:
+            tokens (:obj:`List[str]`):
+                The list of tokens to decode
+
+        Returns:
+            :obj:`str`: The decoded string
+        """
+        pass
+
 class Sequence(Decoder):
     """
     Sequence Decoder

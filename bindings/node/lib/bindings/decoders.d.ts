@@ -13,6 +13,13 @@ interface Decoder {
 export function byteLevelDecoder(): Decoder;
 
 /**
+ * Instantiate a new Replace Decoder
+ * @param [pattern] The pattern to replace
+ * @param [content] The replacement.
+ */
+export function replaceDecoder(pattern: string, content: string): Decoder;
+
+/**
  * Instantiate a new WordPiece Decoder
  * @param [prefix='##'] The prefix to use for subwords that are not a beginning-of-word
  * @param [cleanup=true] Whether to cleanup some tokenization artifacts.

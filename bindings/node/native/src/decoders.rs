@@ -57,6 +57,20 @@ fn byte_level(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     Ok(decoder)
 }
 
+/// replace()
+fn replace(mut cx: FunctionContext) -> JsResult<JsDecoder> {
+    let pattern: String = cx.extract::<String>(0)?;
+    let content: String = cx.extract::<String>(1)?;
+    let mut decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    decoder.borrow_mut(&guard).decoder = Some(Arc::new(
+        tk::normalizers::replace::Replace::new(pattern, content)
+            .map_err(|e| Error(e.to_string()))?
+            .into(),
+    ));
+    Ok(decoder)
+}
+
 /// wordpiece(prefix: String = "##", cleanup: bool)
 fn wordpiece(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     let prefix = cx
@@ -156,6 +170,7 @@ fn sequence(mut cx: FunctionContext) -> JsResult<JsDecoder> {
 /// Register everything here
 pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_ByteLevel", prefix), byte_level)?;
+    m.export_function(&format!("{}_Replace", prefix), replace)?;
     m.export_function(&format!("{}_WordPiece", prefix), wordpiece)?;
     m.export_function(&format!("{}_ByteFallback", prefix), byte_fallback)?;
     m.export_function(&format!("{}_Metaspace", prefix), metaspace)?;
