@@ -4,31 +4,31 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface Normalizer {
-  normalizeString(s: string): string;
+    normalizeString(s: string): string;
 }
 
 export interface BertNormalizerOptions {
-  /**
-   * Whether to clean the text, by removing any control characters
-   * and replacing all whitespaces by the classic one.
-   * @default true
-   */
-  cleanText?: boolean;
-  /**
-   * Whether to handle chinese chars by putting spaces around them.
-   * @default true
-   */
-  handleChineseChars?: boolean;
-  /**
-   * Whether to lowercase.
-   * @default true
-   */
-  lowercase?: boolean;
-  /**
-   * Whether to strip all accents.
-   * @default undefined
-   */
-  stripAccents?: boolean;
+    /**
+     * Whether to clean the text, by removing any control characters
+     * and replacing all whitespaces by the classic one.
+     * @default true
+     */
+    cleanText?: boolean;
+    /**
+     * Whether to handle chinese chars by putting spaces around them.
+     * @default true
+     */
+    handleChineseChars?: boolean;
+    /**
+     * Whether to lowercase.
+     * @default true
+     */
+    lowercase?: boolean;
+    /**
+     * Whether to strip all accents.
+     * @default undefined
+     */
+    stripAccents?: boolean;
 }
 
 /**
@@ -77,6 +77,12 @@ export function lowercaseNormalizer(): Normalizer;
  * @param [right=true] Whether or not to strip on the right (defaults to `true`)
  */
 export function stripNormalizer(left?: boolean, right?: boolean): Normalizer;
+
+/**
+ *  Returns a new Prepend Normalizer
+ * @param [prepend] The string to prepend
+ */
+export function prependNormalizer(prepend: string): Normalizer;
 
 /**
  *  Returns a new StripAccents Normalizer
