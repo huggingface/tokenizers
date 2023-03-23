@@ -261,7 +261,7 @@ impl PyFuseDec {
 /// Strip normalizer
 /// Strips n left characters of each token, or n right characters of each token
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "Strip")]
-#[pyo3(text_signature = "(self, left, right)")]
+#[pyo3(text_signature = "(self, left=0, right=0)")]
 pub struct PyStrip {}
 #[pymethods]
 impl PyStrip {
@@ -286,7 +286,7 @@ impl PyStrip {
     }
 
     #[new]
-    #[pyo3(signature = (left, right))]
+    #[pyo3(signature = (left=0, right=0))]
     fn new(left: usize, right: usize) -> (Self, PyDecoder) {
         (PyStrip {}, Strip::new(left, right).into())
     }

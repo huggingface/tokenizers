@@ -113,7 +113,7 @@ class TestStrip:
         assert Strip(left=0, right=0) is not None
         assert isinstance(Strip(left=0, right=0), Decoder)
         assert isinstance(Strip(left=0, right=0), Strip)
-        # assert isinstance(pickle.loads(pickle.dumps(Strip(left=0, right=0))), Strip)
+        assert isinstance(pickle.loads(pickle.dumps(Strip(left=0, right=0))), Strip)
 
     def test_decoding(self):
         decoder = Strip(left=1, right=0)
@@ -160,7 +160,10 @@ class TestBPEDecoder:
 
     def test_decoding(self):
         decoder = BPEDecoder()
-        assert decoder.decode(["My</w>", "na", "me</w>", "is</w>", "Jo", "hn</w>"]) == "My name is John"
+        assert (
+            decoder.decode(["My</w>", "na", "me</w>", "is</w>", "Jo", "hn</w>"])
+            == "My name is John"
+        )
         decoder = BPEDecoder(suffix="_")
         assert decoder.decode(["My_", "na", "me_", "is_", "Jo", "hn_"]) == "My name is John"
 
@@ -185,12 +188,16 @@ class TestCTCDecoder:
     def test_decoding(self):
         decoder = CTC()
         assert (
-            decoder.decode(["<pad>", "<pad>", "h", "e", "e", "l", "l", "<pad>", "l", "o", "o", "o", "<pad>"])
+            decoder.decode(
+                ["<pad>", "<pad>", "h", "e", "e", "l", "l", "<pad>", "l", "o", "o", "o", "<pad>"]
+            )
             == "hello"
         )
         decoder = CTC(pad_token="[PAD]")
         assert (
-            decoder.decode(["[PAD]", "[PAD]", "h", "e", "e", "l", "l", "[PAD]", "l", "o", "o", "o", "[PAD]"])
+            decoder.decode(
+                ["[PAD]", "[PAD]", "h", "e", "e", "l", "l", "[PAD]", "l", "o", "o", "o", "[PAD]"]
+            )
             == "hello"
         )
 
