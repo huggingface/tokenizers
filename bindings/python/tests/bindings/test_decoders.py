@@ -13,6 +13,8 @@ from tokenizers.decoders import (
     WordPiece,
     ByteFallback,
     Replace,
+    Strip,
+    Fuse,
 )
 
 
@@ -92,6 +94,30 @@ class TestByteFallback:
         assert decoder.decode(["<0xE5>", "<0x8f>", "<0xab>"]) == "叫"
         assert decoder.decode(["<0xE5>", "<0x8f>", "a"]) == "��a"
         assert decoder.decode(["<0xE5>", "<0x8f>", "<0xab>", "a"]) == "叫a"
+
+
+class TestFuse:
+    def test_instantiate(self):
+        assert Fuse() is not None
+        assert isinstance(Fuse(), Decoder)
+        assert isinstance(Fuse(), Fuse)
+        assert isinstance(pickle.loads(pickle.dumps(Fuse())), Fuse)
+
+    def test_decoding(self):
+        decoder = Fuse()
+        assert decoder.decode(["My", " na", "me"]) == "My name"
+
+
+class TestStrip:
+    def test_instantiate(self):
+        assert Strip(left=0, right=0) is not None
+        assert isinstance(Strip(left=0, right=0), Decoder)
+        assert isinstance(Strip(left=0, right=0), Strip)
+        assert isinstance(pickle.loads(pickle.dumps(Strip(left=0, right=0))), Strip)
+
+    def test_decoding(self):
+        decoder = Strip(left=1, right=0)
+        assert decoder.decode(["My", " na", "me"]) == "ynae"
 
 
 class TestMetaspace:

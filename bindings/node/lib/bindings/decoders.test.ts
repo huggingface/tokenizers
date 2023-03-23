@@ -2,9 +2,11 @@ import {
   bpeDecoder,
   byteFallbackDecoder,
   ctcDecoder,
+  fuseDecoder,
   metaspaceDecoder,
   replaceDecoder,
   sequenceDecoder,
+  stripDecoder,
   wordPieceDecoder,
 } from "./decoders";
 
@@ -48,6 +50,26 @@ describe("byteFallbackDecoder", () => {
 describe("replaceDecoder", () => {
   it("can decode arrays of strings", () => {
     expect(replaceDecoder("_", " ").decode(["Hello", "_Hello"])).toEqual("Hello Hello");
+  });
+});
+
+describe("fuseDecoder", () => {
+  it("accepts `undefined` as first parameter", () => {
+    expect(fuseDecoder()).toBeDefined();
+  });
+
+  it("can decode arrays of strings", () => {
+    expect(fuseDecoder().decode(["Hel", "lo"])).toEqual("Hello");
+  });
+});
+
+describe("stripDecoder", () => {
+  it("accepts `undefined` as first parameter", () => {
+    expect(stripDecoder(0, 0)).toBeDefined();
+  });
+
+  it("can decode arrays of strings", () => {
+    expect(stripDecoder(1, 0).decode(["Hel", "lo"])).toEqual("elo");
   });
 });
 
