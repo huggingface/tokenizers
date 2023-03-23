@@ -393,7 +393,7 @@ impl BPE {
                     let tokens: Option<Vec<_>> = s
                         .bytes()
                         .map(|b| -> Option<&u32> {
-                            let code = format!("<{:#02X}>", b);
+                            let code = format!("<{:#04X}>", b);
 
                             self.vocab.get(&code)
                         })
@@ -844,5 +844,22 @@ mod tests {
 
         let tokens = bpe.tokenize("a").unwrap();
         assert_eq!(tokens, vec![Token::new(1u32, "<0x61>".into(), (0, 1)),]);
+    }
+
+    #[test]
+    fn test_bpe_byte_fallback_newline() {
+        // 0x0A == '\n' in bytes
+        let vocab: Vocab = [("<unk>".into(), 0), ("<0x0A>".into(), 1)]
+            .iter()
+            .cloned()
+            .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![])
+            .unk_token("<unk>".to_string())
+            .byte_fallback(true)
+            .build()
+            .unwrap();
+        let tokens = bpe.tokenize("\n").unwrap();
+        assert_eq!(tokens, vec![Token::new(1u32, "<0x0A>".into(), (0, 1)),]);
     }
 }
