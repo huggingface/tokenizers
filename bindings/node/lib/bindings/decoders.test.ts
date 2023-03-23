@@ -3,6 +3,7 @@ import {
   byteFallbackDecoder,
   ctcDecoder,
   metaspaceDecoder,
+  replaceDecoder,
   sequenceDecoder,
   wordPieceDecoder,
 } from "./decoders";
@@ -41,6 +42,12 @@ describe("byteFallbackDecoder", () => {
     expect(byteFallbackDecoder().decode(["<0xE5>", "<0x8f>", "<0xab>", "a"])).toEqual(
       "叫a"
     );
+  });
+});
+
+describe("replaceDecoder", () => {
+  it("can decode arrays of strings", () => {
+    expect(replaceDecoder("_", " ").decode(["Hello", "_Hello"])).toEqual("Hello Hello");
   });
 });
 

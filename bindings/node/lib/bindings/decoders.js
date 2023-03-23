@@ -2,6 +2,7 @@ const native = require("./native");
 
 module.exports = {
   byteLevelDecoder: native.decoders_ByteLevel,
+  replaceDecoder: native.decoders_Replace,
   wordPieceDecoder: native.decoders_WordPiece,
   byteFallbackDecoder: native.decoders_ByteFallback,
   metaspaceDecoder: native.decoders_Metaspace,

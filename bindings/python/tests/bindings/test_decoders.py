@@ -3,7 +3,17 @@ import pickle
 
 import pytest
 
-from tokenizers.decoders import CTC, BPEDecoder, ByteLevel, Decoder, Metaspace, Sequence, WordPiece, ByteFallback
+from tokenizers.decoders import (
+    CTC,
+    BPEDecoder,
+    ByteLevel,
+    Decoder,
+    Metaspace,
+    Sequence,
+    WordPiece,
+    ByteFallback,
+    Replace,
+)
 
 
 class TestByteLevel:
@@ -22,6 +32,18 @@ class TestByteLevel:
         state = json.loads(byte_level.__getstate__())
         reloaded = ByteLevel(**state)
         assert isinstance(reloaded, ByteLevel)
+
+
+class TestReplace:
+    def test_instantiate(self):
+        assert Replace("_", " ") is not None
+        assert isinstance(Replace("_", " "), Decoder)
+        assert isinstance(Replace("_", " "), Replace)
+        # assert isinstance(pickle.loads(pickle.dumps(Replace("_", " "))), Replace)
+
+    def test_decoding(self):
+        decoder = Replace("_", " ")
+        assert decoder.decode(["My", "_name", "_is", "_John"]) == "My name is John"
 
 
 class TestWordPiece:

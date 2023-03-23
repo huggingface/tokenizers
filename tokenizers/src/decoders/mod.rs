@@ -15,6 +15,7 @@ use crate::decoders::byte_fallback::ByteFallback;
 use crate::decoders::ctc::CTC;
 use crate::decoders::sequence::Sequence;
 use crate::decoders::wordpiece::WordPiece;
+use crate::normalizers::replace::Replace;
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::{Decoder, Result};
@@ -28,6 +29,7 @@ pub enum DecoderWrapper {
     Metaspace(Metaspace),
     CTC(CTC),
     Sequence(Sequence),
+    Replace(Replace),
     // XXX: This is an untagged enum, which unfortunately means order
     // is **CRITICAL**. We absolutely need to make sure order is correct.
     // Since byte fallback is parameter free, is **has** to be last, and will
@@ -44,6 +46,7 @@ impl Decoder for DecoderWrapper {
             Self::WordPiece(wp) => wp.decode_chain(tokens),
             Self::CTC(ctc) => ctc.decode_chain(tokens),
             Self::Sequence(seq) => seq.decode_chain(tokens),
+            Self::Replace(seq) => seq.decode_chain(tokens),
             Self::ByteFallback(bf) => bf.decode_chain(tokens),
         }
     }
@@ -56,6 +59,7 @@ impl_enum_from!(Metaspace, DecoderWrapper, Metaspace);
 impl_enum_from!(WordPiece, DecoderWrapper, WordPiece);
 impl_enum_from!(CTC, DecoderWrapper, CTC);
 impl_enum_from!(Sequence, DecoderWrapper, Sequence);
+impl_enum_from!(Replace, DecoderWrapper, Replace);
 
 #[cfg(test)]
 mod tests {

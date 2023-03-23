@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use crate::utils::PyChar;
+use crate::utils::PyPattern;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -14,6 +15,7 @@ use tk::decoders::metaspace::Metaspace;
 use tk::decoders::sequence::Sequence;
 use tk::decoders::wordpiece::WordPiece;
 use tk::decoders::DecoderWrapper;
+use tk::normalizers::replace::Replace;
 use tk::Decoder;
 use tokenizers as tk;
 
@@ -46,6 +48,7 @@ impl PyDecoder {
                     Py::new(py, (PyByteFallbackDec {}, base))?.into_py(py)
                 }
                 DecoderWrapper::ByteLevel(_) => Py::new(py, (PyByteLevelDec {}, base))?.into_py(py),
+                DecoderWrapper::Replace(_) => Py::new(py, (PyReplaceDec {}, base))?.into_py(py),
                 DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base))?.into_py(py),
                 DecoderWrapper::CTC(_) => Py::new(py, (PyCTCDecoder {}, base))?.into_py(py),
                 DecoderWrapper::Sequence(_) => {
@@ -156,6 +159,24 @@ impl PyByteLevelDec {
     #[pyo3(signature = (**_kwargs))]
     fn new(_kwargs: Option<&PyDict>) -> (Self, PyDecoder) {
         (PyByteLevelDec {}, ByteLevel::default().into())
+    }
+}
+
+/// Replace Decoder
+///
+/// This decoder is to be used in tandem with the :class:`~tokenizers.pre_tokenizers.Replace`
+/// :class:`~tokenizers.pre_tokenizers.PreTokenizer`.
+#[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "Replace")]
+#[pyo3(text_signature = "(self, pattern, content)")]
+pub struct PyReplaceDec {}
+#[pymethods]
+impl PyReplaceDec {
+    #[new]
+    fn new(pattern: PyPattern, content: String) -> PyResult<(Self, PyDecoder)> {
+        Ok((
+            PyReplaceDec {},
+            ToPyResult(Replace::new(pattern, content)).into_py()?.into(),
+        ))
     }
 }
 
@@ -473,6 +494,7 @@ impl Decoder for PyDecoderWrapper {
 pub fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyDecoder>()?;
     m.add_class::<PyByteLevelDec>()?;
+    m.add_class::<PyReplaceDec>()?;
     m.add_class::<PyWordPieceDec>()?;
     m.add_class::<PyByteFallbackDec>()?;
     m.add_class::<PyMetaspaceDec>()?;
