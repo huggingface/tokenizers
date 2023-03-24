@@ -23,7 +23,13 @@ impl Decoder for Strip {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         Ok(tokens
             .into_iter()
-            .map(|token| token[self.left..token.len() - self.right].to_string())
+            .map(|token| {
+                token
+                    .chars()
+                    .skip(self.left)
+                    .take(token.len() - self.left - self.right)
+                    .collect()
+            })
             .collect())
     }
 }
