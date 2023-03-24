@@ -9,13 +9,18 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub struct Strip {
-    pub left: usize,
-    pub right: usize,
+    pub content: char,
+    pub start: usize,
+    pub stop: usize,
 }
 
 impl Strip {
-    pub fn new(left: usize, right: usize) -> Self {
-        Self { left, right }
+    pub fn new(content: char, start: usize, stop: usize) -> Self {
+        Self {
+            content,
+            start,
+            stop,
+        }
     }
 }
 
@@ -24,11 +29,31 @@ impl Decoder for Strip {
         Ok(tokens
             .into_iter()
             .map(|token| {
-                token
-                    .chars()
-                    .skip(self.left)
-                    .take(token.len() - self.left - self.right)
-                    .collect()
+                let chars: Vec<char> = token.chars().collect();
+
+                let mut start_cut = 0;
+                for (i, &c) in chars.iter().enumerate().take(self.start) {
+                    if c == self.content {
+                        start_cut = i + 1;
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+
+                let mut stop_cut = chars.len();
+                for i in 0..self.stop {
+                    let index = chars.len() - i - 1;
+                    if chars[index] == self.content {
+                        stop_cut = index;
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+
+                let new_token: String = chars[start_cut..stop_cut].iter().collect();
+                new_token
             })
             .collect())
     }
@@ -40,16 +65,16 @@ mod tests {
 
     #[test]
     fn decode() {
-        let decoder = Strip::new(1, 0);
+        let decoder = Strip::new('H', 1, 0);
         let res = decoder
-            .decode_chain(vec!["Hey".into(), " friend!".into()])
+            .decode_chain(vec!["Hey".into(), " friend!".into(), "HHH".into()])
             .unwrap();
-        assert_eq!(res, vec!["ey", "friend!"]);
+        assert_eq!(res, vec!["ey", " friend!", "HH"]);
 
-        let decoder = Strip::new(0, 1);
+        let decoder = Strip::new('y', 0, 1);
         let res = decoder
             .decode_chain(vec!["Hey".into(), " friend!".into()])
             .unwrap();
-        assert_eq!(res, vec!["He", " friend"]);
+        assert_eq!(res, vec!["He", " friend!"]);
     }
 }

@@ -226,7 +226,7 @@ class Strip(Decoder):
     Strips n left characters of each token, or n right characters of each token
     """
 
-    def __init__(self, left=0, right=0):
+    def __init__(self, content, left=0, right=0):
         pass
     def decode(self, tokens):
         """

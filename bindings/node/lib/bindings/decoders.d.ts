@@ -42,10 +42,11 @@ export function fuseDecoder(): Decoder;
 
 /**
  * Instantiate a new Strip Decoder
+ * @param [content] The character to strip
  * @param [left] The number of chars to remove from the left of each token
  * @param [right] The number of chars to remove from the right of each token
  */
-export function stripDecoder(left: number, right: number): Decoder;
+export function stripDecoder(content: string, left: number, right: number): Decoder;
 
 /**
  * Instantiate a new Metaspace

@@ -261,34 +261,44 @@ impl PyFuseDec {
 /// Strip normalizer
 /// Strips n left characters of each token, or n right characters of each token
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "Strip")]
-#[pyo3(text_signature = "(self, left=0, right=0)")]
+#[pyo3(text_signature = "(self, content, left=0, right=0)")]
 pub struct PyStrip {}
 #[pymethods]
 impl PyStrip {
     #[getter]
-    fn get_left(self_: PyRef<Self>) -> usize {
-        getter!(self_, Strip, left)
+    fn get_start(self_: PyRef<Self>) -> usize {
+        getter!(self_, Strip, start)
     }
 
     #[setter]
-    fn set_left(self_: PyRef<Self>, left: usize) {
-        setter!(self_, Strip, left, left)
+    fn set_start(self_: PyRef<Self>, start: usize) {
+        setter!(self_, Strip, start, start)
     }
 
     #[getter]
-    fn get_right(self_: PyRef<Self>) -> usize {
-        getter!(self_, Strip, right)
+    fn get_stop(self_: PyRef<Self>) -> usize {
+        getter!(self_, Strip, stop)
     }
 
     #[setter]
-    fn set_right(self_: PyRef<Self>, right: usize) {
-        setter!(self_, Strip, right, right)
+    fn set_stop(self_: PyRef<Self>, stop: usize) {
+        setter!(self_, Strip, stop, stop)
+    }
+
+    #[getter]
+    fn get_content(self_: PyRef<Self>) -> char {
+        getter!(self_, Strip, content)
+    }
+
+    #[setter]
+    fn set_content(self_: PyRef<Self>, content: char) {
+        setter!(self_, Strip, content, content)
     }
 
     #[new]
-    #[pyo3(signature = (left=0, right=0))]
-    fn new(left: usize, right: usize) -> (Self, PyDecoder) {
-        (PyStrip {}, Strip::new(left, right).into())
+    #[pyo3(signature = (content=' ', left=0, right=0))]
+    fn new(content: char, left: usize, right: usize) -> (Self, PyDecoder) {
+        (PyStrip {}, Strip::new(content, left, right).into())
     }
 }
 

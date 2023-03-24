@@ -65,11 +65,13 @@ describe("fuseDecoder", () => {
 
 describe("stripDecoder", () => {
   it("accepts `undefined` as first parameter", () => {
-    expect(stripDecoder(0, 0)).toBeDefined();
+    expect(stripDecoder("_", 0, 0)).toBeDefined();
   });
 
   it("can decode arrays of strings", () => {
-    expect(stripDecoder(1, 0).decode(["Hel", "lo"])).toEqual("elo");
+    expect(stripDecoder("_", 1, 0).decode(["_Hel", "lo", "__there"])).toEqual(
+      "Hello_there"
+    );
   });
 });
 
