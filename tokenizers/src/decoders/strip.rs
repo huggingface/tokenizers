@@ -32,8 +32,8 @@ impl Decoder for Strip {
                 let chars: Vec<char> = token.chars().collect();
 
                 let mut start_cut = 0;
-                for i in 0..self.start {
-                    if chars[i] == self.content {
+                for (i, &c) in chars.iter().enumerate().take(self.start) {
+                    if c == self.content {
                         start_cut = i + 1;
                         continue;
                     } else {
@@ -52,7 +52,7 @@ impl Decoder for Strip {
                     }
                 }
 
-                let new_token: String = chars[start_cut..stop_cut].into_iter().collect();
+                let new_token: String = chars[start_cut..stop_cut].iter().collect();
                 new_token
             })
             .collect())
