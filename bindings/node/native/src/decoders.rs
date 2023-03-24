@@ -104,14 +104,15 @@ fn fuse(mut cx: FunctionContext) -> JsResult<JsDecoder> {
     Ok(decoder)
 }
 
-/// strip()
+/// strip(content: char, left: usize, right: usize)
 fn strip(mut cx: FunctionContext) -> JsResult<JsDecoder> {
-    let left: usize = cx.extract(0)?;
-    let right: usize = cx.extract(1)?;
+    let content: char = cx.extract(0)?;
+    let left: usize = cx.extract(1)?;
+    let right: usize = cx.extract(2)?;
     let mut decoder = JsDecoder::new::<_, JsDecoder, _>(&mut cx, vec![])?;
     let guard = cx.lock();
     decoder.borrow_mut(&guard).decoder = Some(Arc::new(
-        tk::decoders::strip::Strip::new(left, right).into(),
+        tk::decoders::strip::Strip::new(content, left, right).into(),
     ));
     Ok(decoder)
 }

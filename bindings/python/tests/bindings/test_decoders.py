@@ -111,13 +111,13 @@ class TestFuse:
 class TestStrip:
     def test_instantiate(self):
         assert Strip(left=0, right=0) is not None
-        assert isinstance(Strip(left=0, right=0), Decoder)
-        assert isinstance(Strip(left=0, right=0), Strip)
-        assert isinstance(pickle.loads(pickle.dumps(Strip(left=0, right=0))), Strip)
+        assert isinstance(Strip(content="_", left=0, right=0), Decoder)
+        assert isinstance(Strip(content="_", left=0, right=0), Strip)
+        assert isinstance(pickle.loads(pickle.dumps(Strip(content="_", left=0, right=0))), Strip)
 
     def test_decoding(self):
-        decoder = Strip(left=1, right=0)
-        assert decoder.decode(["My", " na", "me"]) == "ynae"
+        decoder = Strip(content="_", left=1, right=0)
+        assert decoder.decode(["_My", " na", "me", " _-", "__-"]) == "My name _-_-"
 
 
 class TestMetaspace:
