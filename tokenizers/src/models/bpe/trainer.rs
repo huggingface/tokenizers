@@ -426,6 +426,18 @@ impl BpeTrainer {
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
 
+        let word_counts: HashMap<_, _> = word_counts
+            .iter()
+            .flat_map(|(k, v)| {
+                if k.len() > 1000 {
+                    println!("Skipping word too long {:?}", k.len());
+                    None
+                } else {
+                    Some((k.clone(), *v))
+                }
+            })
+            .collect();
+
         let progress = self.setup_progress();
 
         //
@@ -436,14 +448,14 @@ impl BpeTrainer {
         //
         // 2. Compute the initial alphabet
         //
-        self.compute_alphabet(word_counts, &mut word_to_id, &mut id_to_word);
+        self.compute_alphabet(&word_counts, &mut word_to_id, &mut id_to_word);
 
         //
         // 3. Tokenize words
         //
         self.update_progress(&progress, word_counts.len(), "Tokenize words");
         let (words, counts) =
-            self.tokenize_words(word_counts, &mut word_to_id, &mut id_to_word, &progress);
+            self.tokenize_words(&word_counts, &mut word_to_id, &mut id_to_word, &progress);
         self.finalize_progress(&progress, words.len());
 
         //
