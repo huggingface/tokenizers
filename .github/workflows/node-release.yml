@@ -59,6 +59,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
+      - name: Install Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: 2.x
+
       - name: Install npm dependencies
         working-directory: ./bindings/node
         run: npm ci --ignore-scripts
