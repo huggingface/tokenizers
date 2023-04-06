@@ -6,7 +6,9 @@ env:
   AWS_DEFAULT_REGION: us-east-1
 
 on:
-  pull-request:
+  push:
+    tags:
+      - node-v*
 
 jobs:
   rust_publish:
