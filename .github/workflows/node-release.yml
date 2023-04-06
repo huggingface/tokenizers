@@ -112,8 +112,8 @@ jobs:
         working-directory: ./bindings/node
         run: npm ci --ignore-scripts
 
-      # - name: Build and publish on NPM
-      #   working-directory: ./bindings/node
-      #   run: node build.js --npm-publish
-      #   env:
-      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Build and publish on NPM
+        working-directory: ./bindings/node
+        run: node build.js --npm-publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
