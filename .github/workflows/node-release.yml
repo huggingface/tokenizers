@@ -6,9 +6,7 @@ env:
   AWS_DEFAULT_REGION: us-east-1
 
 on:
-  push:
-    tags:
-      - node-v*
+  pull-request:
 
 jobs:
   rust_publish:
@@ -58,6 +56,11 @@ jobs:
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
+
+      - name: Install Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: 2.x
 
       - name: Install npm dependencies
         working-directory: ./bindings/node
@@ -109,8 +112,8 @@ jobs:
         working-directory: ./bindings/node
         run: npm ci --ignore-scripts
 
-      - name: Build and publish on NPM
-        working-directory: ./bindings/node
-        run: node build.js --npm-publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # - name: Build and publish on NPM
+      #   working-directory: ./bindings/node
+      #   run: node build.js --npm-publish
+      #   env:
+      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
