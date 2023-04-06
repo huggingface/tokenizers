@@ -1,9 +1,9 @@
 name: Python Release - Conda
 
 on:
-  pull_request:
-    paths-ignore:
-      - bindings/node/**
+  push:
+    tags:
+      - python-v*
 
 env:
   ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
@@ -57,7 +57,7 @@ jobs:
         shell: bash -l {0}
         run: |
           anaconda upload `conda-build .github/conda --output` --force
-
+          
   build_and_package_linux:
     runs-on: ubuntu-latest
     container: quay.io/pypa/manylinux2014_x86_64
@@ -68,11 +68,11 @@ jobs:
         python: [37, 38, 39]
         include:
           - python: 37
-            checksum: a1a7285dea0edc430b2bc7951d89bb30a2a1b32026d2a7b02aacaaa95cf69c7c
+            checksum: a1a7285dea0edc430b2bc7951d89bb30a2a1b32026d2a7b02aacaaa95cf69c7c 
           - python: 38
-            checksum: 935d72deb16e42739d69644977290395561b7a6db059b316958d97939e9bdf3d
+            checksum: 935d72deb16e42739d69644977290395561b7a6db059b316958d97939e9bdf3d 
           - python: 39
-            checksum: 1ea2f885b4dbc3098662845560bc64271eb17085387a70c2ba3f29fff6f8d52f
+            checksum: 1ea2f885b4dbc3098662845560bc64271eb17085387a70c2ba3f29fff6f8d52f 
 
     steps:
       - name: Checkout repository
