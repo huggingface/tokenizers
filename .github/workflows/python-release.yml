@@ -65,11 +65,11 @@ jobs:
         working-directory: ./bindings/python
         run: python setup.py bdist_wheel
 
-      - name: Upload wheels
-        shell: bash
-        run: |
-          pip install awscli
-          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
+      # - name: Upload wheels
+      #   shell: bash
+      #   run: |
+      #     pip install awscli
+      #     aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
 
 
   create_wheels_others_64bit:
@@ -111,11 +111,11 @@ jobs:
         working-directory: ./bindings/python/dist
         run: for file in *.whl ; do mv $file ${file//macosx_10_1[0-9]/macosx_10_11} ; done
 
-      - name: Upload wheels
-        shell: bash
-        run: |
-          pip install awscli
-          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
+      # - name: Upload wheels
+      #   shell: bash
+      #   run: |
+      #     pip install awscli
+      #     aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
 
   create_wheels_macos_arm64:
     name: Create wheels for MacOS M1
