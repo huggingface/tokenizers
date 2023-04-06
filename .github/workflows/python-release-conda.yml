@@ -59,7 +59,7 @@ jobs:
           anaconda upload `conda-build .github/conda --output` --force
           
   build_and_package_linux:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     container: quay.io/pypa/manylinux2014_x86_64
 
     strategy:
