@@ -15,6 +15,7 @@ impl Serialize for Unigram {
         model.serialize_field("type", "Unigram")?;
         model.serialize_field("unk_id", &self.unk_id)?;
         model.serialize_field("vocab", &self.vocab)?;
+        model.serialize_field("byte_fallback", &self.byte_fallback)?;
 
         model.end()
     }
@@ -25,7 +26,7 @@ impl<'de> Deserialize<'de> for Unigram {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_struct("Unigram", &["type", "vocab", "unk_id"], UnigramVisitor)
+        deserializer.deserialize_struct("Unigram", &["type", "vocab", "unk_id", "byte_fallback"], UnigramVisitor)
     }
 }
 
@@ -43,11 +44,13 @@ impl<'de> Visitor<'de> for UnigramVisitor {
     {
         let mut vocab: Option<Vec<(String, f64)>> = None;
         let mut unk_id: Option<usize> = None;
+        let mut byte_fallback: Option<bool> = None
         while let Some(key) = map.next_key::<String>()? {
             match key.as_ref() {
                 "unk_id" => {
                     unk_id = map.next_value()?;
                 }
+                "byte_fallback" => byte_fallback = map.next_value()?,
                 "vocab" => vocab = Some(map.next_value()?),
                 "type" => match map.next_value()? {
                     "Unigram" => {}

@@ -191,6 +191,7 @@ fn bpe_init(mut cx: FunctionContext) -> JsResult<JsModel> {
 ///   unkToken?: string,
 ///   continuingSubwordPrefix?: string,
 ///   endOfWordSuffix?: string
+///   byteFallback?: bool
 /// }, callback)
 fn bpe_from_file(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let (options, callback) = match cx.extract_opt::<BpeOptions>(2) {
@@ -369,18 +370,26 @@ fn wordlevel_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
 #[serde(rename_all = "camelCase")]
 struct UnigramOptions {
     unk_id: Option<usize>,
+    byte_fallback: Option<bool>,
+}
+impl UnigramOptions{
+    fn apply_to_unigram_builder(self, mut builder: UnigramBuilder)-> UnigramBuilder9
+        if let Some(byte_fallback) = self.byte_fallback {
+            builder = builder.byte_fallback(byte_fallback);
+        }
 }
 
 /// unigram_init(vocab: [string, number][], options?: {
 ///   unkId?: number
+///   byte_fallback?: bool
 /// })
 fn unigram_init(mut cx: FunctionContext) -> JsResult<JsModel> {
     let vocab = cx.extract::<Vec<(String, f64)>>(0)?;
     let options = cx.extract_opt::<UnigramOptions>(1)?.unwrap_or_default();
+    let mut builder = tk::models::unigram::Unigram::builder().files(vocab);
+    builder = options.apply_to_unigram_builder(builder);
 
-    let unigram = tk::models::unigram::Unigram::from(vocab, options.unk_id)
-        .map_err(|e| Error(e.to_string()))?;
-
+    let model = builder.build().map_err(|e| Error(e.to_string()))?;
     let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
     let guard = cx.lock();
     js_model.borrow_mut(&guard).model = Some(Arc::new(RwLock::new(unigram.into())));
