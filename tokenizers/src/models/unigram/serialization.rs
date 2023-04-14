@@ -26,7 +26,11 @@ impl<'de> Deserialize<'de> for Unigram {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_struct("Unigram", &["type", "vocab", "unk_id", "byte_fallback"], UnigramVisitor)
+        deserializer.deserialize_struct(
+            "Unigram",
+            &["type", "vocab", "unk_id", "byte_fallback"],
+            UnigramVisitor,
+        )
     }
 }
 
@@ -44,7 +48,7 @@ impl<'de> Visitor<'de> for UnigramVisitor {
     {
         let mut vocab: Option<Vec<(String, f64)>> = None;
         let mut unk_id: Option<usize> = None;
-        let mut byte_fallback: Option<bool> = None
+        let mut byte_fallback: Option<bool> = None;
         while let Some(key) = map.next_key::<String>()? {
             match key.as_ref() {
                 "unk_id" => {

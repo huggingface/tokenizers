@@ -80,7 +80,7 @@ pub enum UnigramError {
 impl Default for Unigram {
     fn default() -> Self {
         let vocab = vec![("<unk>".to_string(), 0.0)];
-        Self::from(vocab, Some(0), Some(false), ).unwrap()
+        Self::from(vocab, Some(0), Some(false)).unwrap()
     }
 }
 
@@ -91,7 +91,11 @@ impl Unigram {
     /// unk_id, is the index within the vocabulary.
     /// For now `Unigram` *requires* at least `unk` because we might find a never seen char.
     /// Further versions might allow that part to be hidden.
-    pub fn from(vocab: Vec<(String, f64)>, unk_id: Option<usize>, byte_fallback: Option<bool>) -> Result<Self> {
+    pub fn from(
+        vocab: Vec<(String, f64)>,
+        unk_id: Option<usize>,
+        byte_fallback: Option<bool>,
+    ) -> Result<Self> {
         let n = vocab.len();
         let mut token_to_ids: TokenMap = HashMap::new();
         let mut builder = TrieBuilder::default();
@@ -142,7 +146,6 @@ impl Unigram {
         self.fuse_unk = fuse_unk;
         self.cache = self.cache.fresh();
     }
-
 
     #[cfg(test)]
     pub(super) fn set_optimized(&mut self, is_optimized: bool) {
@@ -632,5 +635,4 @@ mod tests {
         let tokens = unigram.tokenize("\n").unwrap();
         assert_eq!(tokens, vec![Token::new(1u32, "<0x0A>".into(), (0, 1)),]);
     }
-
 }
