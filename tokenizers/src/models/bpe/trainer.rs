@@ -507,10 +507,12 @@ impl BpeTrainer {
             // if this code were to be merged, integrate a way in the python bindings to communicate this variable
             // default should be 0/None to maintain previous behavior. 16 is the spm default.
             let max_merge_length = 16;
+            // sentencepiece operates on char counts not byte length
+            let char_len = new_token.chars().count()
 
             if max_merge_length == 0 {
                 // if max_merge_length is default(==0) skip this part
-            } else if new_token.len() > max_merge_length {
+            } else if char_len > max_merge_length {
                 // if potential merge length > max_merge_length, skip the merge.
                 continue; 
             }
