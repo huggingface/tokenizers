@@ -502,6 +502,18 @@ impl BpeTrainer {
                 }
             }
             let new_token = format!("{}{}", part_a, part_b);
+        
+            // implement sentencepiece-like merge.
+            // if this code were to be merged, integrate a way in the python bindings to communicate this variable
+            // default should be 0/None to maintain previous behavior. 16 is the spm default.
+            let max_merge_length = 16;
+
+            if max_merge_length == 0 {
+                // if max_merge_length is default(==0) skip this part
+            } else if new_token.len() > max_merge_length {
+                // if potential merge length > max_merge_length, skip the merge.
+                continue; 
+            }
 
             // Insert new token if it does not already exist
             let new_token_id = word_to_id
