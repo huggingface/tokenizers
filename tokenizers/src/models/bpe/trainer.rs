@@ -505,14 +505,18 @@ impl BpeTrainer {
             // implement sentencepiece-like merge.
             // if this code were to be merged, integrate a way in the python bindings to communicate this variable
             // default should be 0/None to maintain previous behavior. 16 is the spm default.
-            let max_merge_length = 16;
-            let char_len = new_token.chars().count();
+            let max_merge_length: Option<u16> = Some(16);
 
-            if max_merge_length == 0 {
-                // if max_merge_length is default(==0) skip this part
-                } else if char_len > max_merge_length {
-                    // if potential merge length > max_merge_length, skip the merge.
-                    continue; 
+            match max_merge_length {
+                None | Some(0) => {
+                // in case 0 was manually entered, treat as None
+                }
+                Some(length) => {
+                    if new_token.chars().count() >
+                    (length as usize) {
+                        continue;
+                    }
+                }
             }
 
             // Insert new token if it does not already exist
