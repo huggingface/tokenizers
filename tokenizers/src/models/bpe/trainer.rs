@@ -505,19 +505,6 @@ impl BpeTrainer {
             // implement sentencepiece-like merge.
             // if this code were to be merged, integrate a way in the python bindings to communicate this variable
             // default should be 0/None to maintain previous behavior. 16 is the spm default.
-            let max_merge_length: Option<u16> = Some(16);
-
-            match max_merge_length {
-                None | Some(0) => {
-                // in case 0 was manually entered, treat as None
-                }
-                Some(length) => {
-                    if new_token.chars().count() >
-                    (length as usize) {
-                        continue;
-                    }
-                }
-            }
 
             // Insert new token if it does not already exist
             let new_token_id = word_to_id
@@ -530,6 +517,9 @@ impl BpeTrainer {
             }
             merges.push((top.pair, new_token_id));
 
+            let max_length: Option<usize> = Some(16);
+            let max_length = max_length.unwrap_or(usize::MAX);
+
             // Merge the new pair in every words
             let changes = top
                 .pos
@@ -540,7 +530,7 @@ impl BpeTrainer {
                     // can be there only once (HashSet). So this is safe.
                     unsafe {
                         let word: &mut Word = &mut (*w);
-                        word.merge(top.pair.0, top.pair.1, new_token_id)
+                        word.merge(top.pair.0, top.pair.1, new_token_id, max_length)
                             .into_iter()
                             .map(|c| (c, *i))
                             .collect::<Vec<_>>()
