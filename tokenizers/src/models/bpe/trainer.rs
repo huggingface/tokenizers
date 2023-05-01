@@ -44,6 +44,7 @@ struct Config {
     initial_alphabet: HashSet<char>,
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
+    max_length: Option<usize>,
 }
 
 /// A `BpeTrainerBuilder` can be used to create a `BpeTrainer` with a custom
@@ -64,6 +65,7 @@ impl Default for BpeTrainerBuilder {
                 initial_alphabet: HashSet::new(),
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
+                max_length: None,
             },
         }
     }
@@ -128,6 +130,11 @@ impl BpeTrainerBuilder {
     #[must_use]
     pub fn end_of_word_suffix(mut self, suffix: String) -> Self {
         self.config.end_of_word_suffix = Some(suffix);
+        self
+    }
+
+    pub fn max_length(mut self, max_length: usize) -> Self {
+        self.config.max_length = Some(max_length);
         self
     }
 
@@ -518,7 +525,7 @@ impl BpeTrainer {
             merges.push((top.pair, new_token_id));
 
             let max_length: Option<usize> = Some(16);
-            let max_length = max_length.unwrap_or(usize::MAX);
+            let max_length: usize = max_length.unwrap_or(usize::MAX);
 
             // Merge the new pair in every words
             let changes = top
