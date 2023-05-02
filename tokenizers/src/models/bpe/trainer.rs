@@ -44,7 +44,7 @@ struct Config {
     initial_alphabet: HashSet<char>,
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
-    max_merge_length: Option<usize>,
+    max_token_length: Option<usize>,
 }
 
 /// A `BpeTrainerBuilder` can be used to create a `BpeTrainer` with a custom
@@ -65,7 +65,7 @@ impl Default for BpeTrainerBuilder {
                 initial_alphabet: HashSet::new(),
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
-                max_merge_length: None,
+                max_token_length: None,
             },
         }
     }
@@ -133,8 +133,8 @@ impl BpeTrainerBuilder {
         self
     }
 
-    pub fn max_merge_length(mut self, max_merge_length: usize) -> Self {
-        self.config.max_merge_length = Some(max_merge_length);
+    pub fn max_token_length(mut self, max_token_length: usize) -> Self {
+        self.config.max_token_length = Some(max_token_length);
         self
     }
 
@@ -524,8 +524,8 @@ impl BpeTrainer {
             }
             merges.push((top.pair, new_token_id));
 
-            let max_merge_length: Option<usize> = Some(16);
-            let max_merge_length: usize = max_merge_length.unwrap_or(usize::MAX);
+            let max_token_length: Option<usize> = Some(16);
+            let max_token_length: usize = max_token_length.unwrap_or(usize::MAX);
 
             // Merge the new pair in every words
             let changes = top
@@ -537,7 +537,7 @@ impl BpeTrainer {
                     // can be there only once (HashSet). So this is safe.
                     unsafe {
                         let word: &mut Word = &mut (*w);
-                        word.merge(top.pair.0, top.pair.1, new_token_id, max_merge_length)
+                        word.merge(top.pair.0, top.pair.1, new_token_id, max_token_length)
                             .into_iter()
                             .map(|c| (c, *i))
                             .collect::<Vec<_>>()
