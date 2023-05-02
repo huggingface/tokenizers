@@ -149,6 +149,7 @@ impl BpeTrainerBuilder {
             initial_alphabet: self.config.initial_alphabet,
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             end_of_word_suffix: self.config.end_of_word_suffix,
+            max_token_length: self.config.max_token_length,
             words: HashMap::new(),
         }
     }
@@ -190,6 +191,8 @@ pub struct BpeTrainer {
     pub continuing_subword_prefix: Option<String>,
     /// An optional suffix to caracterize and end-of-word subword
     pub end_of_word_suffix: Option<String>,
+    /// An optional parameter to limit the max length of any single token
+    pub max_token_length: Option<usize>,
 
     words: HashMap<String, u32>,
 }
@@ -524,6 +527,7 @@ impl BpeTrainer {
             }
             merges.push((top.pair, new_token_id));
 
+            // TODO: After bindings are finished and max_token_length properly exposed, delete this line.
             let max_token_length: Option<usize> = Some(16);
             let max_token_length: usize = max_token_length.unwrap_or(usize::MAX);
 
