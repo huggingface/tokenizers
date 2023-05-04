@@ -132,7 +132,8 @@ impl BpeTrainerBuilder {
         self.config.end_of_word_suffix = Some(suffix);
         self
     }
-
+    /// Set max_token_length
+    #[must_use]
     pub fn max_token_length(mut self, max_token_length: usize) -> Self {
         self.config.max_token_length = Some(max_token_length);
         self
@@ -733,5 +734,42 @@ mod tests {
         .cloned()
         .collect();
         assert_eq!(model.merges, expected_merges);
+    }
+    #[test]
+    fn bpe_test_max_token_length_16() {
+        let max_token_length = 16;
+        let long_word_counts: HashMap<String, u32> = [
+            ("singlelongtokenwithoutcasechange", 2),
+            ("singleLongTokenWithCamelCaseChange", 2),
+            ("Longsingletokenwithpunctu@t!onwithin", 2),
+            ("Anotherlongsingletokenwithnumberw1th1n", 2),
+            ("짧은한글문자열짧은한", 2),             // korean 10 char
+            ("긴한글문자열긴한글문자열긴한글문", 2), // korean 16 char
+            ("短字符串短字符串短字", 2),             //simplified chinese 10 char
+            ("长字符串长字符串长字符串长字符串", 2), // simp. chinese 16 char
+            ("短い文字列短い文字列", 2),             // japanese 10 char
+            ("長い文字列長い文字列長い文字列長", 2), // japanese 16 char
+            ("so", 2),
+            ("GPT-2", 2),
+        ]
+        .iter()
+        .map(|(key, value)| (key.to_string(), *value))
+        .collect();
+        let trainer = BpeTrainer::builder()
+            .max_token_length(max_token_length)
+            .show_progress(false)
+            .min_frequency(0)
+            .build();
+        let mut model = BPE::default();
+        trainer.do_train(&long_word_counts, &mut model).unwrap();
+        let vocab = model.get_vocab();
+        for token in vocab.keys() {
+            assert!(
+                token.chars().count() <= max_token_length,
+                "token too long : {} , chars().count() = {}",
+                token,
+                token.chars().count()
+            )
+        }
     }
 }
