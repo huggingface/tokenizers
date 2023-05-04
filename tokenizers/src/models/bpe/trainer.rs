@@ -65,7 +65,7 @@ impl Default for BpeTrainerBuilder {
                 initial_alphabet: HashSet::new(),
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
-                max_token_length: None,
+                max_token_length: Some(16), // TODO: After bindings are finished, change this to None (sane default)
             },
         }
     }
@@ -435,6 +435,7 @@ impl BpeTrainer {
     ) -> Result<Vec<AddedToken>> {
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
+        let max_token_length: usize = self.max_token_length.unwrap_or(usize::MAX);
 
         let progress = self.setup_progress();
 
@@ -526,10 +527,6 @@ impl BpeTrainer {
                 word_to_id.insert(new_token.clone(), new_token_id);
             }
             merges.push((top.pair, new_token_id));
-
-            // TODO: After bindings are finished and max_token_length properly exposed, delete this line.
-            let max_token_length: Option<usize> = Some(16);
-            let max_token_length: usize = max_token_length.unwrap_or(usize::MAX);
 
             // Merge the new pair in every words
             let changes = top
