@@ -737,6 +737,10 @@ mod tests {
     }
     #[test]
     fn bpe_test_max_token_length_16() {
+        /* bpe_test_max_token_length series of tests test the max_token_length flag of bpetrainer
+        // this is the more robust version that only tests max length of learned tokens
+        // (pre) tokenizer settings or vocab can be easily modified when necessary
+         */
         let max_token_length = 16;
         let long_word_counts: HashMap<String, u32> = [
             ("singlelongtokenwithoutcasechange", 2),
@@ -774,9 +778,9 @@ mod tests {
     }
     #[test]
     fn bpe_test_max_token_length_direct_assert() {
-        /* more stable version of bpe_test_max_token_length test
+        /* more direct version of bpe_test_max_token_length test
         // directly compares tokens with known expected values.
-        // maybe unstable depending on specific settings
+        // maybe unstable depending on specific settings or changes.
          */
         let max_token_length = 16;
         let long_word_counts: HashMap<String, u32> = [
