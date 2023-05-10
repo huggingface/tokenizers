@@ -68,7 +68,7 @@ fn test_train_unigram_from_file() {
 #[cfg(not(debug_assertions))]
 #[test]
 fn test_sample() {
-    let mut lattice = Lattice::from("ABC", 0, 1, 2);
+    let mut lattice = Lattice::from("ABC", 0, 2);
     lattice.insert(0, 1, 1.0, 3); // A
     lattice.insert(1, 1, 1.2, 4); // B
     lattice.insert(2, 1, 1.5, 5); // C
