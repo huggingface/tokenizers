@@ -1,0 +1,32 @@
+{
+  "name": "tokenizers-android-arm-eabi",
+  "version": "1.0.0",
+  "os": [
+    "android"
+  ],
+  "cpu": [
+    "arm"
+  ],
+  "main": "tokenizers.android-arm-eabi.node",
+  "files": [
+    "tokenizers.android-arm-eabi.node"
+  ],
+  "description": "Template project for writing node package with napi-rs",
+  "keywords": [
+    "napi-rs",
+    "NAPI",
+    "N-API",
+    "Rust",
+    "node-addon",
+    "node-addon-api"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">= 10"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "repository": "tokenizers"
+}

@@ -1,5 +1,4 @@
 name: Node
-
 on:
   push:
     branches:
@@ -33,46 +32,35 @@ jobs:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install Node 12.x
-        uses: actions/setup-node@v1
+      - name: Install Node
+        uses: actions/setup-node@v3
         with:
-          node-version: 12.x
-
-      - name: Get NPM cache directory
-        id: npm-cache
-        run: |
-          echo "::set-output name=dir::$(npm config get cache)"
-      - name: Cache NPM cache
-        uses: actions/cache@v1
-        with:
-          path: ${{ steps.npm-cache.outputs.dir }}
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      - name: Install npm dependencies
+          node-version: latest
+          cache: yarn
+          cache-dependency-path: ./bindings/node/
+      - name: Install dependencies
         working-directory: ./bindings/node
-        run: npm ci --ignore-scripts
+        run: yarn install
 
       - name: Build all
         working-directory: ./bindings/node
-        run: node build.js --all
+        run: yarn build
 
       - name: Lint Rust formatting
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --manifest-path ./bindings/node/native/Cargo.toml -- --check
+          args: --manifest-path ./bindings/node/Cargo.toml -- --check
 
       - name: Lint Rust with Clippy
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --manifest-path ./bindings/node/native/Cargo.toml --all-targets --all-features -- -D warnings
+          args: --manifest-path ./bindings/node/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Lint TS
         working-directory: ./bindings/node
-        run: npm run lint-check
+        run: yarn lint
 
       - name: Run JS tests
         working-directory: ./bindings/node

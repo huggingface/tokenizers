@@ -1,0 +1,35 @@
+{
+  "name": "tokenizers-linux-arm64-musl",
+  "version": "1.0.0",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "main": "tokenizers.linux-arm64-musl.node",
+  "files": [
+    "tokenizers.linux-arm64-musl.node"
+  ],
+  "description": "Template project for writing node package with napi-rs",
+  "keywords": [
+    "napi-rs",
+    "NAPI",
+    "N-API",
+    "Rust",
+    "node-addon",
+    "node-addon-api"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">= 10"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "repository": "tokenizers",
+  "libc": [
+    "musl"
+  ]
+}
