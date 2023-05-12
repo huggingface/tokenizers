@@ -23,3 +23,5 @@ pip-wheel-metadata
 
 .vscode
 *.code-workspace
+.yarn/
+*.node
