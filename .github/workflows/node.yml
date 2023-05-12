@@ -41,7 +41,7 @@ jobs:
       - name: Get NPM cache directory
         id: npm-cache
         run: |
-          echo "::set-output name=dir::$(npm config get cache)"
+          echo "dir=$(npm config get cache)" >> $GITHUB_OUTPUT
       - name: Cache NPM cache
         uses: actions/cache@v1
         with:
