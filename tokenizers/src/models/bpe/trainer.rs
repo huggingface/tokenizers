@@ -65,7 +65,7 @@ impl Default for BpeTrainerBuilder {
                 initial_alphabet: HashSet::new(),
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
-                max_token_length: Some(16), // TODO: After bindings are finished, change this to None (sane default)
+                max_token_length: None,
             },
         }
     }
