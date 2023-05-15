@@ -134,8 +134,8 @@ impl BpeTrainerBuilder {
     }
     /// Set max_token_length
     #[must_use]
-    pub fn max_token_length(mut self, max_token_length: usize) -> Self {
-        self.config.max_token_length = Some(max_token_length);
+    pub fn max_token_length(mut self, max_token_length: Option<usize>) -> Self {
+        self.config.max_token_length = max_token_length;
         self
     }
 
@@ -741,6 +741,7 @@ mod tests {
         // this is the more robust version that only tests max length of learned tokens
         // (pre) tokenizer settings or vocab can be easily modified when necessary
          */
+
         let max_token_length = 16;
         let long_word_counts: HashMap<String, u32> = [
             ("singlelongtokenwithoutcasechange", 2),
@@ -760,7 +761,7 @@ mod tests {
         .map(|(key, value)| (key.to_string(), *value))
         .collect();
         let trainer = BpeTrainer::builder()
-            .max_token_length(max_token_length)
+            .max_token_length(Some(max_token_length))
             .show_progress(false)
             .min_frequency(0)
             .build();
@@ -782,26 +783,25 @@ mod tests {
         // directly compares tokens with known expected values.
         // maybe unstable depending on specific settings or changes.
          */
-        let max_token_length = 16;
         let long_word_counts: HashMap<String, u32> = [
-            ("singlelongtokenwithoutcasechange", 2),
-            ("singleLongTokenWithCamelCaseChange", 2),
-            ("Longsingletokenwithpunctu@t!onwithin", 2),
-            ("Anotherlongsingletokenwithnumberw1th1n", 2),
-            ("짧은한글문자열짧은한", 2),             // korean 10 char
-            ("긴한글문자열긴한글문자열긴한글문", 2), // korean 16 char
-            ("短字符串短字符串短字", 2),             //simplified chinese 10 char
-            ("长字符串长字符串长字符串长字符串", 2), // simp. chinese 16 char
-            ("短い文字列短い文字列", 2),             // japanese 10 char
-            ("長い文字列長い文字列長い文字列長", 2), // japanese 16 char
+            ("sin", 2),
+            ("Sin", 2),
+            ("Lon", 2),
+            ("Ano", 2),
+            ("짧은한", 2),
+            ("긴한글", 2),
+            ("短字符", 2),
+            ("长字符", 2),
+            ("短い文", 2),
+            ("長い文", 2),
             ("so", 2),
-            ("GPT-2", 2),
+            ("GP", 2),
         ]
         .iter()
         .map(|(key, value)| (key.to_string(), *value))
         .collect();
         let trainer = BpeTrainer::builder()
-            .max_token_length(max_token_length)
+            .max_token_length(Some(2))
             .show_progress(false)
             .min_frequency(0)
             .build();
@@ -809,153 +809,36 @@ mod tests {
         trainer.do_train(&long_word_counts, &mut model).unwrap();
         let trained_vocab: HashMap<String, u32> = model.get_vocab();
         let expected_vocab: HashMap<String, u32> = [
-            ("Case", 123),
-            ("ber", 99),
-            ("single", 66),
-            ("i", 18),
-            ("串", 31),
-            ("短字符串", 80),
-            ("nu", 107),
-            ("短", 35),
-            ("Change", 93),
-            ("CaseChange", 140),
-            ("C", 6),
-            ("긴", 40),
-            ("ken", 57),
-            ("singletokenwith", 83),
-            ("한글문자열", 118),
-            ("字符", 49),
-            ("G", 7),
-            ("字", 33),
-            ("T", 10),
-            ("o", 23),
-            ("-", 1),
-            ("w1th", 116),
-            ("列", 32),
-            ("se", 79),
-            ("token", 67),
-            ("-2", 88),
-            ("短字", 117),
-            ("A", 5),
-            ("p", 24),
-            ("l", 20),
-            ("k", 19),
-            ("長い文字列長", 121),
-            ("oken", 60),
-            ("长字符串长字符串", 71),
-            ("短い文字列", 81),
-            ("u", 28),
-            ("GPT-2", 133),
-            ("nwith", 108),
-            ("Anoth", 132),
-            ("ith", 51),
-            ("짧", 45),
-            ("긴한글문자열", 85),
-            ("短字符串短字符串", 126),
-            ("字符串", 50),
-            ("!o", 87),
-            ("nctu@t", 137),
-            ("mber", 105),
-            ("2", 3),
-            ("so", 113),
-            ("hang", 77),
-            ("With", 97),
-            ("글", 39),
-            ("い", 30),
-            ("r", 25),
-            ("짧은한글문자열짧은한", 143),
-            ("文", 34),
-            ("nct", 109),
-            ("c", 14),
-            ("い文字列", 54),
-            ("Long", 74),
-            ("b", 13),
-            ("@t", 91),
-            ("sing", 61),
-            ("长字符串", 63),
-            ("T-2", 96),
-            ("e", 15),
-            ("1n", 89),
-            ("tcasechange", 139),
-            ("en", 55),
-            ("짧은", 82),
-            ("い文", 52),
-            ("le", 58),
-            ("짧은한", 128),
-            ("長", 37),
-            ("열", 42),
-            ("tokenwithou", 122),
-            ("은", 43),
-            ("字列", 53),
-            ("문", 41),
-            ("h", 17),
-            ("長い文字列長い文字列", 84),
-            ("numberw1th1n", 146),
-            ("ing", 56),
-            ("Token", 95),
-            ("TokenWith", 134),
-            ("case", 102),
-            ("singlelong", 120),
-            ("change", 101),
-            ("長い文字列", 68),
-            ("An", 92),
-            ("s", 26),
-            ("in", 104),
-            ("ong", 59),
-            ("erlong", 125),
-            ("短字符串短字符串短字", 142),
-            ("글문", 64),
-            ("numberw1th", 136),
-            ("oth", 111),
-            ("长", 38),
-            ("n", 22),
-            ("긴한글문", 69),
-            ("with", 62),
-            ("pu", 112),
-            ("w", 29),
-            ("자", 44),
-            ("mberw1th", 135),
-            ("L", 8),
-            ("long", 78),
-            ("GP", 94),
-            ("!onwith", 131),
-            ("한글문", 65),
-            ("1th", 90),
-            ("ng", 47),
-            ("u@t", 115),
-            ("tcase", 114),
-            ("ct", 100),
-            ("th", 48),
-            ("Camel", 124),
-            ("g", 16),
-            ("긴한글문자열긴한글문", 130),
-            ("Anotherlong", 145),
-            ("CamelCaseChange", 141),
-            ("짧은한글문자열", 129),
-            ("!onwithin", 144),
-            ("tokenwith", 72),
-            ("@", 4),
-            ("符", 36),
-            ("el", 103),
-            ("한", 46),
-            ("hange", 86),
-            ("자열", 70),
-            ("短い文字列短い文字列", 127),
-            ("ou", 110),
-            ("1", 2),
-            ("a", 12),
-            ("m", 21),
-            ("ase", 98),
-            ("W", 11),
-            ("er", 76),
-            ("mel", 106),
-            ("singleLong", 119),
-            ("!", 0),
-            ("ang", 75),
-            ("punctu@t", 138),
-            ("Ca", 73),
-            ("P", 9),
-            ("t", 27),
+            ("短", 12),
+            ("n", 6),
+            ("i", 5),
+            ("s", 8),
+            ("字符", 23),
+            ("長", 14),
+            ("긴", 17),
+            ("い文", 22),
+            ("L", 2),
+            ("in", 21),
+            ("o", 7),
+            ("은한", 29),
+            ("S", 4),
+            ("P", 3),
+            ("so", 27),
+            ("符", 13),
+            ("文", 11),
+            ("字", 10),
+            ("짧", 19),
+            ("GP", 25),
+            ("글", 16),
+            ("G", 1),
+            ("An", 24),
+            ("长", 15),
+            ("A", 0),
+            ("Lo", 26),
+            ("긴한", 28),
+            ("い", 9),
+            ("한", 20),
+            ("은", 18),
         ]
         .iter()
         .cloned()
