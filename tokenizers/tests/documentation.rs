@@ -54,7 +54,7 @@ fn load_tokenizer() {
     assert_eq!(encodings.get_ids(), ids);
     assert_eq!(encodings.get_tokens(), tokens);
 
-    let decoded = tokenizer.decode(ids, false).unwrap();
+    let decoded = tokenizer.decode(&ids, false).unwrap();
     assert_eq!(decoded, example);
 }
 
@@ -347,7 +347,7 @@ fn pipeline() -> tokenizers::Result<()> {
     // [1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2]
 
     let decoded = tokenizer.decode(
-        vec![1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2],
+        &vec![1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2],
         true,
     )?;
     println!("{}", decoded);
@@ -435,7 +435,7 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     println!("{:?}", output.get_tokens());
     // ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
 
-    let decoded = bert_tokenizer.decode(output.get_ids().to_vec(), true)?;
+    let decoded = bert_tokenizer.decode(output.get_ids(), true)?;
     println!("{}", decoded);
     // "welcome to the tok ##eni ##zer ##s library ."
     // END bert_test_decoding
@@ -451,7 +451,7 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 
     bert_tokenizer.with_decoder(WordPieceDecoder::default());
-    let decoded = bert_tokenizer.decode(output.get_ids().to_vec(), true)?;
+    let decoded = bert_tokenizer.decode(output.get_ids(), true)?;
     // "welcome to the tokenizers library."
     // END bert_proper_decoding
     assert_eq!(decoded, "welcome to the tokenizers library.");
