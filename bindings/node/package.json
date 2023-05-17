@@ -1,6 +1,6 @@
 {
   "name": "tokenizers",
-  "version": "0.13.4-rc1",
+  "version": "0.13.4-rc2",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/huggingface/tokenizers.git"
@@ -12,10 +12,7 @@
   "author": "Anthony MOI <m.anthony.moi@gmail.com>",
   "license": "Apache-2.0",
   "description": "Provides an implementation of today's most used tokenizers, with a focus on performances and versatility.",
-  "files": [
-    "index.d.ts",
-    "index.js"
-  ],
+  "files": ["index.d.ts", "index.js"],
   "napi": {
     "name": "tokenizers",
     "triples": {
@@ -79,23 +76,13 @@
     "typescript": "^5.0.0"
   },
   "lint-staged": {
-    "*.@(js|ts|tsx)": [
-      "eslint -c .eslintrc.yml --fix"
-    ],
-    "*.@(js|ts|tsx|yml|yaml|md|json)": [
-      "prettier --write"
-    ],
-    "*.toml": [
-      "taplo format"
-    ]
+    "*.@(js|ts|tsx)": ["eslint -c .eslintrc.yml --fix"],
+    "*.@(js|ts|tsx|yml|yaml|md|json)": ["prettier --write"],
+    "*.toml": ["taplo format"]
   },
   "ava": {
-    "require": [
-      "@swc-node/register"
-    ],
-    "extensions": [
-      "ts"
-    ],
+    "require": ["@swc-node/register"],
+    "extensions": ["ts"],
     "timeout": "2m",
     "workerThreads": false,
     "environmentVariables": {
