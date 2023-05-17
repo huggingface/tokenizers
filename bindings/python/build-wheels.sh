@@ -9,6 +9,13 @@ fi
 export PATH="$HOME/.cargo/bin:$PATH"
 # https://users.rust-lang.org/t/cargo-uses-too-much-memory-being-run-in-qemu/76531
 echo -e "[net]\ngit-fetch-with-cli = true" > "$HOME/.cargo/config"
+# This will allow more recent version of openssl ciphers to be in the crate
+# Linking the regular ssl library is *removed* by `auditwheel`.
+# And force linking the super old manylinux2014 one:
+# https://github.com/huggingface/tokenizers/issues/1252
+# This will at least make sure a somewhat recent version is included
+# Even if it gives less control to users on which ssl version is used.
+cargo add openssl-sys --features vendored
 
 for PYBIN in /opt/python/cp{37,38,39,310,311}*/bin; do
     export PYTHON_SYS_EXECUTABLE="$PYBIN/python"
