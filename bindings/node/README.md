@@ -43,15 +43,15 @@ import { Tokenizer } from "tokenizers";
 const tokenizer = await Tokenizer.fromPretrained("gpt2");
 const wpEncoded = await tokenizer.encode("Who is John?");
 
-console.log(wpEncoded.length);
-console.log(wpEncoded.tokens);
-console.log(wpEncoded.ids);
-console.log(wpEncoded.attentionMask);
-console.log(wpEncoded.offsets);
-console.log(wpEncoded.overflowing);
-console.log(wpEncoded.specialTokensMask);
-console.log(wpEncoded.typeIds);
-console.log(wpEncoded.wordIndexes);
+console.log(wpEncoded.getLength());
+console.log(wpEncoded.getTokens());
+console.log(wpEncoded.getIds());
+console.log(wpEncoded.getAttentionMask());
+console.log(wpEncoded.getOffsets());
+console.log(wpEncoded.getOverflowing());
+console.log(wpEncoded.getSpecialTokensMask());
+console.log(wpEncoded.getTypeIds());
+console.log(wpEncoded.getWordIds());
 ```
 
 ## License

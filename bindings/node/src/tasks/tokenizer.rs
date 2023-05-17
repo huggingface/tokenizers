@@ -54,7 +54,7 @@ impl Task for DecodeTask {
       .tokenizer
       .read()
       .unwrap()
-      .decode(self.ids.to_vec(), self.skip_special_tokens)
+      .decode(&self.ids, self.skip_special_tokens)
       .map_err(|e| Error::from_reason(format!("{}", e)))
   }
 
@@ -111,12 +111,13 @@ impl Task for DecodeBatchTask {
   type JsValue = Vec<String>;
 
   fn compute(&mut self) -> Result<Self::Output> {
+    let ids: Vec<_> = self.ids.iter().map(|s| s.as_slice()).collect();
     self
       .tokenizer
       .tokenizer
       .read()
       .unwrap()
-      .decode_batch(self.ids.to_vec(), self.skip_special_tokens)
+      .decode_batch(&ids, self.skip_special_tokens)
       .map_err(|e| Error::from_reason(format!("{}", e)))
   }
 

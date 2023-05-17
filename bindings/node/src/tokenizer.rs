@@ -363,13 +363,19 @@ impl Tokenizer {
     file: String,
     parameters: Option<JsFromPretrainedParameters>,
   ) -> Result<Self> {
+    let start = std::time::Instant::now();
+    println!("Started in rust {:?}", start.elapsed());
     let p: tk::FromPretrainedParameters = parameters.unwrap_or_default().into();
+    println!("params {:?}", start.elapsed());
 
     let tokenizer = tk::tokenizer::TokenizerImpl::from_pretrained(file, Some(p))
       .map_err(|e| Error::from_reason(format!("Error loading from file{}", e)))?;
-    Ok(Self {
+    println!("tok {:?}", start.elapsed());
+    let res = Ok(Self {
       tokenizer: Arc::new(RwLock::new(tokenizer)),
-    })
+    });
+    println!("res {:?}", start.elapsed());
+    res
   }
 
   #[napi]

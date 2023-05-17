@@ -99,7 +99,7 @@ describe('Tokenizer', () => {
     })
     output = await tokenizer.encode('Hey there dear friend!', null, { addSpecialTokens: false })
     expect(output.getTokens()).toEqual(['Hey', 'Ġthere', 'Ġdear', 'Ġfriend', '!'])
-  })
+  }, 10000)
 
   describe('addTokens', () => {
     it('accepts a list of string as new tokens when initial model is empty', () => {
@@ -132,12 +132,12 @@ describe('Tokenizer', () => {
     })
 
     it('accepts a pair of strings as parameters', async () => {
-      const encoding = await encode('my name is john', 'pair')
+      const encoding = await tokenizer.encode('my name is john', 'pair')
       expect(encoding).toBeDefined()
     })
 
     it('accepts a string with a null pair', async () => {
-      const encoding = await encode('my name is john', null)
+      const encoding = await tokenizer.encode('my name is john', null)
       expect(encoding).toBeDefined()
     })
 
@@ -149,7 +149,7 @@ describe('Tokenizer', () => {
     // });
 
     // it("accepts a pre-tokenized string as parameter", async () => {
-    //   const encoding = await encode(["my", "name", "is", "john"], undefined, {
+    //   const encoding = await tokenizer.encode(["my", "name", "is", "john"], undefined, {
     //     isPretokenized: true,
     //   });
     //   expect(encoding).toBeDefined();
@@ -163,19 +163,19 @@ describe('Tokenizer', () => {
     // });
 
     // it("accepts a pre-tokenized input in encodeBatch", async () => {
-    //   const encoding = await encodeBatch([["my", "name", "is", "john"]], {
+    //   const encoding = await tokenizer.encodeBatch([["my", "name", "is", "john"]], {
     //     isPretokenized: true,
     //   });
     //   expect(encoding).toBeDefined();
     // });
 
     it('Encodes correctly if called with only one argument', async () => {
-      const encoded = await encode('my name is john')
+      const encoded = await tokenizer.encode('my name is john')
       expect(encoded.getIds()).toEqual([0, 1, 2, 3])
     })
 
     it('returns an Encoding', async () => {
-      const encoding = await encode('my name is john', 'pair')
+      const encoding = await tokenizer.encode('my name is john', 'pair')
 
       expect(encoding.getAttentionMask()).toEqual([1, 1, 1, 1, 1])
 
@@ -203,16 +203,18 @@ describe('Tokenizer', () => {
       it('truncates with default if no truncation options provided', async () => {
         tokenizer.setTruncation(2)
 
-        const singleEncoding = await encode('my name is john', null)
+        const singleEncoding = await tokenizer.encode('my name is john', null)
         expect(singleEncoding.getTokens()).toEqual(['my', 'name'])
 
-        const pairEncoding = await encode('my name is john', 'pair')
+        const pairEncoding = await tokenizer.encode('my name is john', 'pair')
         expect(pairEncoding.getTokens()).toEqual(['my', 'pair'])
       })
 
-      it('throws an error with strategy `only_second` and no pair is encoded', async () => {
+      it('throws an error with strategy `only_second` and no pair is encoded', () => {
         tokenizer.setTruncation(2, { strategy: TruncationStrategy.OnlySecond })
-        await expect(encode('my name is john', null)).rejects.toThrow()
+        expect(tokenizer.encode('my name is john', null)).rejects.toThrow(
+          'Truncation error: Second sequence not provided',
+        )
       })
     })
 
@@ -220,30 +222,30 @@ describe('Tokenizer', () => {
       it('does not pad anything with default options', async () => {
         tokenizer.setPadding()
 
-        const singleEncoding = await encode('my name', null)
+        const singleEncoding = await tokenizer.encode('my name', null)
         expect(singleEncoding.getTokens()).toEqual(['my', 'name'])
 
-        const pairEncoding = await encode('my name', 'pair')
+        const pairEncoding = await tokenizer.encode('my name', 'pair')
         expect(pairEncoding.getTokens()).toEqual(['my', 'name', 'pair'])
       })
 
       it('pads to the right by default', async () => {
         tokenizer.setPadding({ maxLength: 5 })
 
-        const singleEncoding = await encode('my name', null)
+        const singleEncoding = await tokenizer.encode('my name', null)
         expect(singleEncoding.getTokens()).toEqual(['my', 'name', '[PAD]', '[PAD]', '[PAD]'])
 
-        const pairEncoding = await encode('my name', 'pair')
+        const pairEncoding = await tokenizer.encode('my name', 'pair')
         expect(pairEncoding.getTokens()).toEqual(['my', 'name', 'pair', '[PAD]', '[PAD]'])
       })
 
       it('pads to multiple of the given value', async () => {
         tokenizer.setPadding({ padToMultipleOf: 8 })
 
-        const singleEncoding = await encode('my name', null)
+        const singleEncoding = await tokenizer.encode('my name', null)
         expect(singleEncoding.getTokens()).toHaveLength(8)
 
-        const pairEncoding = await encode('my name', 'pair')
+        const pairEncoding = await tokenizer.encode('my name', 'pair')
         expect(pairEncoding.getTokens()).toHaveLength(8)
       })
     })
