@@ -11,7 +11,7 @@
   "files": [
     "tokenizers.linux-arm64-gnu.node"
   ],
-  "description": "Template project for writing node package with napi-rs",
+  "description": "Tokenizers platform specific bindings",
   "keywords": [
     "napi-rs",
     "NAPI",

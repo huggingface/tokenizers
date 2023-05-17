@@ -11,7 +11,7 @@
   "files": [
     "tokenizers.win32-ia32-msvc.node"
   ],
-  "description": "Template project for writing node package with napi-rs",
+  "description": "Tokenizers platform specific bindings",
   "keywords": [
     "napi-rs",
     "NAPI",
