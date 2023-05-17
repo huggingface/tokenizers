@@ -1,6 +1,6 @@
 {
   "name": "tokenizers-linux-arm64-gnu",
-  "version": "1.0.0",
+  "version": "0.13.4-rc1",
   "os": [
     "linux"
   ],

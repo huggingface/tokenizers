@@ -1,6 +1,6 @@
 {
   "name": "tokenizers-freebsd-x64",
-  "version": "1.0.0",
+  "version": "0.13.4-rc1",
   "os": [
     "freebsd"
   ],
