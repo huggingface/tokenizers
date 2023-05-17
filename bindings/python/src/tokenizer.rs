@@ -1028,12 +1028,11 @@ impl PyTokenizer {
     fn decode_batch(
         &self,
         py: Python<'_>,
-        sequences: Vec<Vec<u32>>,
+        sequences: &[&[u32]],
         skip_special_tokens: bool,
     ) -> PyResult<Vec<String>> {
         py.allow_threads(|| {
-            let slices = sequences.iter().map(|v| &v[..]).collect::<Vec<&[u32]>>();
-            ToPyResult(self.tokenizer.decode_batch(&slices, skip_special_tokens)).into()
+            ToPyResult(self.tokenizer.decode_batch(slices, skip_special_tokens)).into()
         })
     }
 
