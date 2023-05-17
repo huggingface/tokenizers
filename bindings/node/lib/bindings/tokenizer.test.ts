@@ -210,9 +210,9 @@ describe('Tokenizer', () => {
         expect(pairEncoding.getTokens()).toEqual(['my', 'pair'])
       })
 
-      it('throws an error with strategy `only_second` and no pair is encoded', () => {
+      it('throws an error with strategy `only_second` and no pair is encoded', async () => {
         tokenizer.setTruncation(2, { strategy: TruncationStrategy.OnlySecond })
-        expect(tokenizer.encode('my name is john', null)).rejects.toThrow(
+        await expect(tokenizer.encode('my name is john', null)).rejects.toThrow(
           'Truncation error: Second sequence not provided',
         )
       })
