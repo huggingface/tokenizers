@@ -110,19 +110,4 @@
     "arrowParens": "always"
   },
   "packageManager": "yarn@3.5.1",
-  "optionalDependencies": {
-    "tokenizers-win32-x64-msvc": "0.13.4-rc1",
-    "tokenizers-darwin-x64": "0.13.4-rc1",
-    "tokenizers-linux-x64-gnu": "0.13.4-rc1",
-    "tokenizers-linux-x64-musl": "0.13.4-rc1",
-    "tokenizers-linux-arm64-gnu": "0.13.4-rc1",
-    "tokenizers-win32-ia32-msvc": "0.13.4-rc1",
-    "tokenizers-linux-arm-gnueabihf": "0.13.4-rc1",
-    "tokenizers-darwin-arm64": "0.13.4-rc1",
-    "tokenizers-android-arm64": "0.13.4-rc1",
-    "tokenizers-freebsd-x64": "0.13.4-rc1",
-    "tokenizers-linux-arm64-musl": "0.13.4-rc1",
-    "tokenizers-win32-arm64-msvc": "0.13.4-rc1",
-    "tokenizers-android-arm-eabi": "0.13.4-rc1"
-  }
 }
