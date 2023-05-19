@@ -196,7 +196,7 @@ where
     ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>>;
 }
 
-impl<'data, T> MaybeParallelSlice<'_, T> for [T]
+impl<T> MaybeParallelSlice<'_, T> for [T]
 where
     T: Sync,
 {
