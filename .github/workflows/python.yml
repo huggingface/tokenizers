@@ -19,7 +19,7 @@ jobs:
         python: ["3.7", "3.8", "3.9", "3.10"]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
