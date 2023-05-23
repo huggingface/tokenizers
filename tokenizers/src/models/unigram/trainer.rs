@@ -204,6 +204,9 @@ impl UnigramTrainer {
         let c_sentence_boundary = '\0';
         let k_sentence_boundary = '\0'.to_string();
         for (string, n) in sentences {
+            if string.is_empty() {
+                continue;
+            }
             flat_string.push_str(string);
             // XXX
             // Comment suggests we add sentence boundary, but it seems to be missing from actual
@@ -215,6 +218,7 @@ impl UnigramTrainer {
                 }
             }
         }
+        flat_string.shrink_to_fit();
         #[cfg(feature = "esaxx_fast")]
         let suffix = esaxx_rs::suffix(&flat_string).unwrap();
         #[cfg(not(feature = "esaxx_fast"))]
