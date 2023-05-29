@@ -1131,7 +1131,7 @@ where
                 let pre_tokenized = self.do_pre_tokenize(normalized)?;
                 Ok(pre_tokenized
                     .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                    .into_iter()
+                    .into_maybe_par_iter()
                     .map(|(s, _, _)| s.to_owned())
                     .collect())
             },
