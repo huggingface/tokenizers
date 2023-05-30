@@ -38,6 +38,10 @@ harness = false
 name = "layout_benchmark"
 harness = false
 
+[[bench]]
+name = "unigram_benchmark"
+harness = false
+
 [dependencies]
 lazy_static = "1.4"
 rand = "0.8"
@@ -81,3 +85,6 @@ unstable_wasm = ["fancy-regex", "getrandom/js"]
 criterion = "0.4"
 tempfile = "3.1"
 assert_approx_eq = "1.1"
+
+[profile.release]
+lto = "fat"

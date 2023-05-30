@@ -795,12 +795,12 @@ where
     }
 
     /// Decode the given ids, back to a String
-    pub fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> Result<String> {
+    pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
         let tokens = ids
-            .into_iter()
+            .iter()
             .filter_map(|id| {
                 self.added_vocabulary
-                    .id_to_token(id, &self.model)
+                    .id_to_token(*id, &self.model)
                     .filter(|token| {
                         !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
                     })
@@ -1008,7 +1008,7 @@ where
     /// Decode all sentences in parallel
     pub fn decode_batch(
         &self,
-        sentences: Vec<Vec<u32>>,
+        sentences: &[&[u32]],
         skip_special_tokens: bool,
     ) -> Result<Vec<String>>
     where

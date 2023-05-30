@@ -44,6 +44,7 @@ struct Config {
     initial_alphabet: HashSet<char>,
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
+    max_token_length: Option<usize>,
 }
 
 /// A `BpeTrainerBuilder` can be used to create a `BpeTrainer` with a custom
@@ -64,6 +65,7 @@ impl Default for BpeTrainerBuilder {
                 initial_alphabet: HashSet::new(),
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
+                max_token_length: None,
             },
         }
     }
@@ -130,6 +132,12 @@ impl BpeTrainerBuilder {
         self.config.end_of_word_suffix = Some(suffix);
         self
     }
+    /// Set max_token_length
+    #[must_use]
+    pub fn max_token_length(mut self, max_token_length: Option<usize>) -> Self {
+        self.config.max_token_length = max_token_length;
+        self
+    }
 
     /// Constructs the final BpeTrainer
     pub fn build(self) -> BpeTrainer {
@@ -142,6 +150,7 @@ impl BpeTrainerBuilder {
             initial_alphabet: self.config.initial_alphabet,
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             end_of_word_suffix: self.config.end_of_word_suffix,
+            max_token_length: self.config.max_token_length,
             words: HashMap::new(),
         }
     }
@@ -183,6 +192,8 @@ pub struct BpeTrainer {
     pub continuing_subword_prefix: Option<String>,
     /// An optional suffix to caracterize and end-of-word subword
     pub end_of_word_suffix: Option<String>,
+    /// An optional parameter to limit the max length of any single token
+    pub max_token_length: Option<usize>,
 
     words: HashMap<String, u32>,
 }
@@ -425,6 +436,7 @@ impl BpeTrainer {
     ) -> Result<Vec<AddedToken>> {
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
+        let max_token_length: usize = self.max_token_length.unwrap_or(usize::MAX);
 
         let progress = self.setup_progress();
 
@@ -502,6 +514,9 @@ impl BpeTrainer {
                 }
             }
             let new_token = format!("{}{}", part_a, part_b);
+            // implement sentencepiece-like merge.
+            // if this code were to be merged, integrate a way in the python bindings to communicate this variable
+            // default should be 0/None to maintain previous behavior. 16 is the spm default.
 
             // Insert new token if it does not already exist
             let new_token_id = word_to_id
@@ -524,7 +539,7 @@ impl BpeTrainer {
                     // can be there only once (HashSet). So this is safe.
                     unsafe {
                         let word: &mut Word = &mut (*w);
-                        word.merge(top.pair.0, top.pair.1, new_token_id)
+                        word.merge(top.pair.0, top.pair.1, new_token_id, max_token_length)
                             .into_iter()
                             .map(|c| (c, *i))
                             .collect::<Vec<_>>()
@@ -719,5 +734,116 @@ mod tests {
         .cloned()
         .collect();
         assert_eq!(model.merges, expected_merges);
+    }
+    #[test]
+    fn bpe_test_max_token_length_16() {
+        /* bpe_test_max_token_length series of tests test the max_token_length flag of bpetrainer
+        // this is the more robust version that only tests max length of learned tokens
+        // (pre) tokenizer settings or vocab can be easily modified when necessary
+         */
+
+        let max_token_length = 16;
+        let long_word_counts: HashMap<String, u32> = [
+            ("singlelongtokenwithoutcasechange", 2),
+            ("singleLongTokenWithCamelCaseChange", 2),
+            ("Longsingletokenwithpunctu@t!onwithin", 2),
+            ("Anotherlongsingletokenwithnumberw1th1n", 2),
+            ("짧은한글문자열짧은한", 2),             // korean 10 char
+            ("긴한글문자열긴한글문자열긴한글문", 2), // korean 16 char
+            ("短字符串短字符串短字", 2),             //simplified chinese 10 char
+            ("长字符串长字符串长字符串长字符串", 2), // simp. chinese 16 char
+            ("短い文字列短い文字列", 2),             // japanese 10 char
+            ("長い文字列長い文字列長い文字列長", 2), // japanese 16 char
+            ("so", 2),
+            ("GPT-2", 2),
+        ]
+        .iter()
+        .map(|(key, value)| (key.to_string(), *value))
+        .collect();
+        let trainer = BpeTrainer::builder()
+            .max_token_length(Some(max_token_length))
+            .show_progress(false)
+            .min_frequency(0)
+            .build();
+        let mut model = BPE::default();
+        trainer.do_train(&long_word_counts, &mut model).unwrap();
+        let vocab = model.get_vocab();
+        for token in vocab.keys() {
+            assert!(
+                token.chars().count() <= max_token_length,
+                "token too long : {} , chars().count() = {}",
+                token,
+                token.chars().count()
+            )
+        }
+    }
+    #[test]
+    fn bpe_test_max_token_length_direct_assert() {
+        /* more direct version of bpe_test_max_token_length test
+        // directly compares tokens with known expected values.
+        // maybe unstable depending on specific settings or changes.
+         */
+        let long_word_counts: HashMap<String, u32> = [
+            ("sin", 2),
+            ("Sin", 2),
+            ("Lon", 2),
+            ("Ano", 2),
+            ("짧은한", 2),
+            ("긴한글", 2),
+            ("短字符", 2),
+            ("长字符", 2),
+            ("短い文", 2),
+            ("長い文", 2),
+            ("so", 2),
+            ("GP", 2),
+        ]
+        .iter()
+        .map(|(key, value)| (key.to_string(), *value))
+        .collect();
+        let trainer = BpeTrainer::builder()
+            .max_token_length(Some(2))
+            .show_progress(false)
+            .min_frequency(0)
+            .build();
+        let mut model = BPE::default();
+        trainer.do_train(&long_word_counts, &mut model).unwrap();
+        let trained_vocab: HashMap<String, u32> = model.get_vocab();
+        let expected_vocab: HashMap<String, u32> = [
+            ("短", 12),
+            ("n", 6),
+            ("i", 5),
+            ("s", 8),
+            ("字符", 23),
+            ("長", 14),
+            ("긴", 17),
+            ("い文", 22),
+            ("L", 2),
+            ("in", 21),
+            ("o", 7),
+            ("은한", 29),
+            ("S", 4),
+            ("P", 3),
+            ("so", 27),
+            ("符", 13),
+            ("文", 11),
+            ("字", 10),
+            ("짧", 19),
+            ("GP", 25),
+            ("글", 16),
+            ("G", 1),
+            ("An", 24),
+            ("长", 15),
+            ("A", 0),
+            ("Lo", 26),
+            ("긴한", 28),
+            ("い", 9),
+            ("한", 20),
+            ("은", 18),
+        ]
+        .iter()
+        .cloned()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+        assert_eq!(trained_vocab, expected_vocab)
     }
 }
