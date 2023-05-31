@@ -494,7 +494,7 @@ class NormalizedString:
 
         Args:
             pattern: Pattern:
-                A pattern used to split the string. Usually a string or a Regex
+                A pattern used to split the string. Usually a string or a regex built with tokenizers.Regex
 
             behavior: SplitDelimiterBehavior:
                 The behavior to use when splitting.
