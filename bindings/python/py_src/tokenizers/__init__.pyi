@@ -472,7 +472,7 @@ class NormalizedString:
 
         Args:
             pattern: Pattern:
-                A pattern used to match the string. Usually a string or a a regex built with `tokenizers.Regex`
+                A pattern used to match the string. Usually a string or a a regex built with tokenizers.Regex
 
             content: str:
                 The content to be used as replacement
