@@ -177,7 +177,7 @@ impl UnigramTrainer {
             special_tokens.insert(0, (self.unk_token.clone().unwrap(), 0.0));
         }
 
-        Unigram::from(special_tokens.into_iter().chain(pieces).collect(), unk_id)
+        Unigram::from(special_tokens.into_iter().chain(pieces).collect(), unk_id, Some(model.byte_fallback))
     }
 
     fn required_chars(&self, word_counts: &[Sentence]) -> HashSet<String> {
@@ -526,6 +526,7 @@ impl UnigramTrainer {
         &self,
         sentences: Vec<Sentence>,
         model: &mut Unigram,
+        byte_fallback: Option<bool>
     ) -> Result<Vec<AddedToken>> {
         let progress = self.setup_progress();
         //
@@ -563,7 +564,7 @@ impl UnigramTrainer {
         if required_chars.len() as u32 > self.vocab_size {
             return Err(Box::new(UnigramTrainerError::VocabularyTooSmall));
         }
-        let mut new_model = Unigram::from(pieces.clone(), Some(0))?;
+        let mut new_model = Unigram::from(pieces.clone(), Some(0), byte_fallback)?;
         loop {
             // Sub-EM iteration.
             for _iter in 0..self.n_sub_iterations {
@@ -572,7 +573,7 @@ impl UnigramTrainer {
 
                 // Executes M step.
                 pieces = self.run_m_step(&pieces, &expected);
-                new_model = Unigram::from(pieces.clone(), Some(0))?;
+                new_model = Unigram::from(pieces.clone(), Some(0), byte_fallback)?;
 
                 // Useful comment for checking compatibility with spm
                 debug!(
@@ -596,7 +597,7 @@ impl UnigramTrainer {
 
             // Prunes pieces.
             pieces = self.prune_sentence_pieces(&new_model, &pieces, &sentences);
-            new_model = Unigram::from(pieces.clone(), Some(0))?;
+            new_model = Unigram::from(pieces.clone(), Some(0), byte_fallback)?;
         }
         self.finalize_progress(&progress, expected_updates);
 
@@ -613,7 +614,7 @@ impl Trainer for UnigramTrainer {
     /// Train a Unigram model
     fn train(&self, model: &mut Unigram) -> Result<Vec<AddedToken>> {
         let sentences: Vec<_> = self.words.iter().map(|(s, i)| (s.to_owned(), *i)).collect();
-        self.do_train(sentences, model)
+        self.do_train(sentences, model, Some(false))
     }
 
     /// Whether we should show progress
@@ -742,7 +743,7 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram, Some(false))
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -764,7 +765,7 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram, Some(false))
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -780,7 +781,7 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram, Some(false))
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -800,7 +801,7 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram, Some(false))
             .unwrap();
 
         let mut pieces = unigram.iter();

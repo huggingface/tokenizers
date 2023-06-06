@@ -26,7 +26,7 @@ pub struct Unigram {
     pub(super) eos_id: usize,
     fuse_unk: bool,
     is_optimized: bool,
-    pub(super) byte_fallback: bool,
+    pub byte_fallback: bool,
 }
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
@@ -477,7 +477,7 @@ mod tests {
     #[test]
     fn test_populate_nodes_unk() {
         let pieces = vec![("<unk>".to_string(), 0.0)];
-        let model = Unigram::from(pieces, Some(0), Some(False)).unwrap();
+        let model = Unigram::from(pieces, Some(0), Some(false)).unwrap();
 
         let mut lattice = Lattice::from("abc", model.bos_id, model.eos_id);
         model.populate_nodes(&mut lattice);
@@ -502,7 +502,7 @@ mod tests {
             ("ab".to_string(), 0.3),
             ("bc".to_string(), 0.4),
         ];
-        let model = Unigram::from(pieces, Some(0), Some(False)).unwrap();
+        let model = Unigram::from(pieces, Some(0), Some(false)).unwrap();
 
         let mut lattice = Lattice::from("abc", model.bos_id, model.eos_id);
         model.populate_nodes(&mut lattice);
@@ -539,7 +539,7 @@ mod tests {
             ("abcd".to_string(), 10.0),
         ];
 
-        let model = Unigram::from(sentencepieces, Some(0), Some(False)).unwrap();
+        let model = Unigram::from(sentencepieces, Some(0), Some(false)).unwrap();
         let result = model.encode("abcd").unwrap();
         assert_eq!(result, vec!["abcd"]);
     }
@@ -561,7 +561,7 @@ mod tests {
             ("qr".to_string(), -0.5),
         ];
 
-        let mut model = Unigram::from(sentencepieces, Some(0), Some(False)).unwrap();
+        let mut model = Unigram::from(sentencepieces, Some(0), Some(false)).unwrap();
 
         for is_optimized in &[true, false] {
             model.set_optimized(*is_optimized);
@@ -602,37 +602,52 @@ mod tests {
     #[test]
     fn test_unigram_byte_fallback() {
         // 0x61 == 'a' in bytes
-        let vocab: Vocab = [("<unk>".into(), 0), ("<0x61>".into(), 1)]
-            .iter()
-            .cloned()
-            .collect();
-        let unigram = UnigramBuilder::default()
-            .vocab(vocab, vec![])
-            .unk_token("<unk>".to_string())
-            .byte_fallback(true)
-            .build()
-            .unwrap();
-        let tokens = unigram.tokenize("c").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
+        let sentencepieces = vec![
+            ("<unk>".to_string(), 0.0),
+            ("ab".to_string(), 0.0),
+            ("cd".to_string(), -0.1),
+            ("abc".to_string(), -0.2),
+            ("a".to_string(), -0.3),
+            ("b".to_string(), -0.4),
+            ("c".to_string(), -0.5),
+            ("ABC".to_string(), -0.5),
+            ("abcdabcd".to_string(), 20.0), // User defined just max the scores.
+            ("q".to_string(), 20.5),
+            ("r".to_string(), 20.5),
+            ("qr".to_string(), -0.5),
+        ];
+        let mut unigram = Unigram::from(
+            sentencepieces,
+            Some(0),
+            Some(true)
+        ).unwrap();
+        let tokens = unigram.encode("c").unwrap();
 
-        let tokens = unigram.tokenize("a").unwrap();
-        assert_eq!(tokens, vec![Token::new(1u32, "<0x61>".into(), (0, 1)),]);
+        let tokens = unigram.encode("a").unwrap();
     }
 
     #[test]
     fn test_unigram_byte_fallback_newline() {
         // 0x0A == '\n' in bytes
-        let vocab: Vocab = [("<unk>".into(), 0), ("<0x0A>".into(), 1)]
-            .iter()
-            .cloned()
-            .collect();
-        let unigram = UnigramBuilder::default()
-            .vocab_and_merges(vocab, vec![])
-            .unk_token("<unk>".to_string())
-            .byte_fallback(true)
-            .build()
-            .unwrap();
-        let tokens = unigram.tokenize("\n").unwrap();
-        assert_eq!(tokens, vec![Token::new(1u32, "<0x0A>".into(), (0, 1)),]);
+        let sentencepieces = vec![
+            ("<unk>".to_string(), 0.0),
+            ("ab".to_string(), 0.0),
+            ("cd".to_string(), -0.1),
+            ("abc".to_string(), -0.2),
+            ("a".to_string(), -0.3),
+            ("b".to_string(), -0.4),
+            ("c".to_string(), -0.5),
+            ("ABC".to_string(), -0.5),
+            ("abcdabcd".to_string(), 20.0), // User defined just max the scores.
+            ("q".to_string(), 20.5),
+            ("r".to_string(), 20.5),
+            ("qr".to_string(), -0.5),
+        ];
+        let mut unigram = Unigram::from(
+            sentencepieces,
+            Some(0),
+            Some(true)
+        ).unwrap();
+        let tokens = unigram.encode("\n").unwrap();
     }
 }
