@@ -177,7 +177,11 @@ impl UnigramTrainer {
             special_tokens.insert(0, (self.unk_token.clone().unwrap(), 0.0));
         }
 
-        Unigram::from(special_tokens.into_iter().chain(pieces).collect(), unk_id, Some(model.byte_fallback))
+        Unigram::from(
+            special_tokens.into_iter().chain(pieces).collect(),
+            unk_id,
+            Some(model.byte_fallback),
+        )
     }
 
     fn required_chars(&self, word_counts: &[Sentence]) -> HashSet<String> {
@@ -526,7 +530,7 @@ impl UnigramTrainer {
         &self,
         sentences: Vec<Sentence>,
         model: &mut Unigram,
-        byte_fallback: Option<bool>
+        byte_fallback: Option<bool>,
     ) -> Result<Vec<AddedToken>> {
         let progress = self.setup_progress();
         //
@@ -743,7 +747,11 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram, Some(false))
+            .do_train(
+                vec![("The".into(), 12), ("are".into(), 11)],
+                &mut unigram,
+                Some(false),
+            )
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -765,7 +773,11 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram, Some(false))
+            .do_train(
+                vec![("The".into(), 12), ("are".into(), 11)],
+                &mut unigram,
+                Some(false),
+            )
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -781,7 +793,11 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram, Some(false))
+            .do_train(
+                vec![("The".into(), 12), ("are".into(), 11)],
+                &mut unigram,
+                Some(false),
+            )
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -801,7 +817,11 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram, Some(false))
+            .do_train(
+                vec![("The".into(), 12), ("are".into(), 11)],
+                &mut unigram,
+                Some(false),
+            )
             .unwrap();
 
         let mut pieces = unigram.iter();

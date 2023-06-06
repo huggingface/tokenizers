@@ -616,11 +616,7 @@ mod tests {
             ("r".to_string(), 20.5),
             ("qr".to_string(), -0.5),
         ];
-        let mut unigram = Unigram::from(
-            sentencepieces,
-            Some(0),
-            Some(true)
-        ).unwrap();
+        let mut unigram = Unigram::from(sentencepieces, Some(0), Some(true)).unwrap();
         let tokens = unigram.encode("c").unwrap();
 
         let tokens = unigram.encode("a").unwrap();
@@ -643,11 +639,7 @@ mod tests {
             ("r".to_string(), 20.5),
             ("qr".to_string(), -0.5),
         ];
-        let mut unigram = Unigram::from(
-            sentencepieces,
-            Some(0),
-            Some(true)
-        ).unwrap();
+        let mut unigram = Unigram::from(sentencepieces, Some(0), Some(true)).unwrap();
         let tokens = unigram.encode("\n").unwrap();
     }
 }
