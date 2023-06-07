@@ -244,13 +244,9 @@ impl AddedVocabulary {
         // Then we delegate to `add_tokens`, that will take care of refreshing added tokens too.
         let mut ignored = 0;
         for token in tokens {
-            if token.content.is_empty() {
+            if token.content.is_empty() ||  self.token_to_id(&token.content, model).is_some() {
                 ignored += 1;
                 continue;
-            }
-
-            if let Some(_id) = self.token_to_id(&token.content, model) {
-                ignored += 1;
             } else {
                 let new_id = (model.get_vocab_size() + self.added_tokens_map.len()) as u32;
                 self.added_tokens_map.insert(token.content.clone(), new_id);
@@ -261,8 +257,6 @@ impl AddedVocabulary {
                 // Update the current revert operation
                 self.added_tokens_map_r.insert(new_id, token.clone());
             };
-
-
         }
 
         self.refresh_added_tokens(model, normalizer);
