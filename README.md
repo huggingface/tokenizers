@@ -70,6 +70,6 @@ print(output.tokens)
 # ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?"]
 ```
 
-Check the [python documentation](https://huggingface.co/docs/tokenizers/python/latest) or the
+Check the [python documentation](https://huggingface.co/docs/tokenizers/python/latest/index.html) or the
 [python quicktour](https://huggingface.co/docs/tokenizers/python/latest/quicktour.html) to learn
 more!
