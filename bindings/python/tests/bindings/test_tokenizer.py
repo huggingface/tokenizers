@@ -417,12 +417,12 @@ class TestTokenizer:
         # TODO
         tokenizer = Tokenizer.from_pretrained("t5-base")
         tokenizer.add_tokens(["<"])
-        text = 'a<=5</s>'
-        print(tokenizer.decode(tokenizer.encode('a<=5').ids, clean_up_tokenization_spaces = True))
+        text = "a<=5</s>"
+        print(tokenizer.decode(tokenizer.encode(text).ids, clean_up_tokenization_spaces=True))
 
     def test_cleanup_tokenization_spaces(self):
         # TODO
         tokenizer = Tokenizer.from_pretrained("t5-base")
         tokenizer.add_tokens(["<"])
-        text = 'a<=5</s>'
-        print(tokenizer.decode(tokenizer.encode(test).ids, clean_up_tokenization_spaces = True))
+        text = "a<=5</s>"
+        print(tokenizer.decode(tokenizer.encode(text).ids, clean_up_tokenization_spaces=True))

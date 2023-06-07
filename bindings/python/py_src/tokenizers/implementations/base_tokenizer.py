@@ -41,7 +41,7 @@ class BaseTokenizer:
             The vocabulary
         """
         return self._tokenizer.get_vocab(with_added_tokens=with_added_tokens)
-    
+
     def get_added_tokens(self):
         """
         Get the underlying added tokens.
