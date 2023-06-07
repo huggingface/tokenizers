@@ -249,9 +249,8 @@ impl AddedVocabulary {
                 continue;
             }
 
-            let id = if let Some(id) = self.token_to_id(&token.content, model) {
+            if let Some(_id) = self.token_to_id(&token.content, model) {
                 ignored += 1;
-                id
             } else {
                 let new_id = (model.get_vocab_size() + self.added_tokens_map.len()) as u32;
                 self.added_tokens_map.insert(token.content.clone(), new_id);
@@ -259,15 +258,11 @@ impl AddedVocabulary {
                 if !self.special_tokens_set.contains(&token.content) {
                     self.added_tokens.push(token.clone());
                 }
-
-                new_id
+                // Update the current revert operation
+                self.added_tokens_map_r.insert(new_id, token.clone());
             };
 
-            // Update the current revert operation
-            self.added_tokens_map_r
-                .entry(id)
-                .and_modify(|t| *t = token.clone())
-                .or_insert_with(|| token.clone());
+
         }
 
         self.refresh_added_tokens(model, normalizer);
