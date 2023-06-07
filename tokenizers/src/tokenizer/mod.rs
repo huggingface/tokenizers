@@ -659,6 +659,11 @@ where
         final_vocab
     }
 
+    /// Get the added tokens 
+    pub fn get_added_tokens(&self) -> Vec<String>{
+        self.added_vocabulary.get_added_tokens()
+    }
+
     /// Get the size of the vocabulary
     pub fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
         self.model.get_vocab_size()
@@ -827,8 +832,7 @@ where
             if let Some(token) = self.added_vocabulary.id_to_token(*id, &self.model) {
                 let is_special_token = self.added_vocabulary.is_special_token(&token);
                 if !skip_special_tokens || !is_special_token {
-                    let added_tokens_encoder = self.added_vocabulary.get_added_tokens_encoder();
-                    if added_tokens_encoder.contains(&token) {
+                    if self.added_vocabulary.get_added_tokens().contains(&token) {
                         if !current_sub_text.is_empty() {
                             sub_texts.push(current_sub_text.clone());
                             current_sub_text.clear();
