@@ -821,7 +821,7 @@ where
         ids: Vec<u32>,
         skip_special_tokens: bool,
         clean_up_tokenization_spaces: bool,
-        spaces_between_added_tokens: bool,
+        spaces_between_special_tokens: bool,
     ) -> Result<String> {
         // split on added_tokens
 
@@ -850,7 +850,7 @@ where
         if !current_sub_text.is_empty() {
             sub_texts.push(current_sub_text);
         }
-        let sub_texts_concatenated = if spaces_between_added_tokens {
+        let sub_texts_concatenated = if spaces_between_special_tokens {
             sub_texts.join(" ")
         } else {
             sub_texts.join("")
@@ -1069,7 +1069,7 @@ where
         sentences: Vec<Vec<u32>>,
         skip_special_tokens: bool,
         clean_up_tokenization_spaces: bool,
-        spaces_between_added_tokens: bool,
+        spaces_between_special_tokens: bool,
     ) -> Result<Vec<String>>
     where
         M: Send + Sync,
@@ -1081,7 +1081,7 @@ where
                     sentence,
                     skip_special_tokens,
                     clean_up_tokenization_spaces,
-                    spaces_between_added_tokens,
+                    spaces_between_special_tokens,
                 )
             })
             .collect()

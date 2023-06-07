@@ -107,7 +107,7 @@ impl Task for DecodeTask {
                 ids,
                 skip_special_tokens,
                 clean_up_tokenization_spaces,
-                spaces_between_added_tokens,
+                spaces_between_special_tokens,
             ) => worker
                 .tokenizer
                 .read()
@@ -116,7 +116,7 @@ impl Task for DecodeTask {
                     ids.to_vec(),
                     *skip_special_tokens,
                     *clean_up_tokenization_spaces,
-                    *spaces_between_added_tokens,
+                    *spaces_between_special_tokens,
                 )
                 .map_err(|e| format!("{}", e))
                 .map(DecodeOutput::Single),
@@ -125,7 +125,7 @@ impl Task for DecodeTask {
                 ids,
                 skip_special_tokens,
                 clean_up_tokenization_spaces,
-                spaces_between_added_tokens,
+                spaces_between_special_tokens,
             ) => worker
                 .tokenizer
                 .read()
@@ -134,7 +134,7 @@ impl Task for DecodeTask {
                     ids.to_vec(),
                     *skip_special_tokens,
                     *clean_up_tokenization_spaces,
-                    *spaces_between_added_tokens,
+                    *spaces_between_special_tokens,
                 )
                 .map_err(|e| format!("{}", e))
                 .map(DecodeOutput::Batch),
