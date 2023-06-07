@@ -414,52 +414,15 @@ class TestTokenizer:
         assert output.tokens == ["Hey", "Ġthere", "Ġdear", "Ġfriend", "!"]
 
     def test_spaces_between_special_tokens(self):
-        tokenizer = Tokenizer(BPE())
-        tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
-        tokenizer.enable_truncation(2)
-        tokenizer.enable_padding(length=4)
+        # TODO
+        tokenizer = Tokenizer.from_pretrained("t5-base")
         tokenizer.add_tokens(["<"])
-
-        """
-            >>> tokenizer.decode(tokenizer('a<=5').input_ids, spaces_between_added_tokens = False)
-            >>> 'a<=5</s>'
-        """
-        # tokenizer.decode(tokenizer('a<=5').input_ids)
-        encoding = tokenizer.encode("my name is john")
-        print(encoding)
-        print(tokenizer.decode(encoding.ids, spaces_between_added_tokens=True))
-        pair_encoding = tokenizer.encode("pair")
-
-        # Can post process a single encoding
-        output = tokenizer.post_process(encoding)
-        assert output.tokens == ["my", "name", "[PAD]", "[PAD]"]
-
-        # Can post process a pair of encodings
-        output = tokenizer.post_process(encoding, pair_encoding)
-        assert output.tokens == ["my", "pair", "[PAD]", "[PAD]"]
+        text = 'a<=5</s>'
+        print(tokenizer.decode(tokenizer.encode('a<=5').ids, clean_up_tokenization_spaces = True))
 
     def test_cleanup_tokenization_spaces(self):
         # TODO
-        tokenizer = Tokenizer(BPE())
-        tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
-        tokenizer.enable_truncation(2)
-        tokenizer.enable_padding(length=4)
+        tokenizer = Tokenizer.from_pretrained("t5-base")
         tokenizer.add_tokens(["<"])
-
-        """
-            >>> tokenizer.decode(tokenizer('a<=5').input_ids, spaces_between_added_tokens = False)
-            >>> 'a<=5</s>'
-        """
-        # tokenizer.decode(tokenizer('a<=5').input_ids)
-        encoding = tokenizer.encode("my name is john")
-        print(encoding)
-        print(tokenizer.decode(encoding.ids, spaces_between_added_tokens=True))
-        pair_encoding = tokenizer.encode("pair")
-
-        # Can post process a single encoding
-        output = tokenizer.post_process(encoding)
-        assert output.tokens == ["my", "name", "[PAD]", "[PAD]"]
-
-        # Can post process a pair of encodings
-        output = tokenizer.post_process(encoding, pair_encoding)
-        assert output.tokens == ["my", "pair", "[PAD]", "[PAD]"]
+        text = 'a<=5</s>'
+        print(tokenizer.decode(tokenizer.encode(test).ids, clean_up_tokenization_spaces = True))

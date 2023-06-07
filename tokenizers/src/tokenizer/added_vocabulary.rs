@@ -192,9 +192,17 @@ impl AddedVocabulary {
         &self.added_tokens_map
     }
 
-    // Get only the added tokens
+    /// Get only the added tokens
     pub fn get_added_tokens_encoder(&self) -> Vec<String> {
         self.added_tokens
+            .iter()
+            .map(|token| token.content.clone())
+            .collect()
+    }
+
+    /// Get only the special tokens
+    pub fn get_special_tokens(&self) -> Vec<String> {
+        self.special_tokens
             .iter()
             .map(|token| token.content.clone())
             .collect()
