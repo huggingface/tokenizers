@@ -635,6 +635,15 @@ impl PyTokenizer {
         self.tokenizer.get_vocab(with_added_tokens)
     }
 
+    /// Get the underlying added tokens
+    ///
+    /// Returns:
+    ///     :obj:`Dict[str, int]`: The added tokens in the format of strings
+    #[pyo3(text_signature = "(self)")]
+    fn get_added_tokens(&self) -> Vec<String> {
+        self.tokenizer.get_added_tokens()
+    }
+
     /// Get the size of the underlying vocabulary
     ///
     /// Args:
