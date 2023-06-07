@@ -193,20 +193,13 @@ impl AddedVocabulary {
     }
 
     /// Get only the added tokens
-    pub fn get_added_tokens_encoder(&self) -> Vec<String> {
+    pub fn get_added_tokens(&self) -> Vec<String> {
         self.added_tokens
             .iter()
             .map(|token| token.content.clone())
             .collect()
     }
 
-    /// Get only the special tokens
-    pub fn get_special_tokens(&self) -> Vec<String> {
-        self.special_tokens
-            .iter()
-            .map(|token| token.content.clone())
-            .collect()
-    }
     /// Get the id matching one of our token if it exists
     pub fn token_to_id(&self, token: &str, model: &impl Model) -> Option<u32> {
         self.added_tokens_map
