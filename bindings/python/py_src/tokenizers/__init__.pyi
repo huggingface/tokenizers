@@ -919,6 +919,14 @@ class Tokenizer:
             :obj:`Dict[str, int]`: The vocabulary
         """
         pass
+    def get_added_tokens(self):
+        """
+        Get the underlying added tokens.
+
+        Returns:
+            :obj:`List[str]`: The string representation of the added tokens
+        """
+        pass
     def get_vocab_size(self, with_added_tokens=True):
         """
         Get the size of the underlying vocabulary
