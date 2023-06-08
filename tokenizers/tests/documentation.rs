@@ -471,16 +471,21 @@ fn spaces_between_special_tokens() -> tokenizers::Result<()> {
     ]);
     let input_ids = bert_tokenizer.encode("[ABC][DEF][ABC]GHI IHG[DEF]", false)?;
     let decoded_wo_spaces =
-        bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, true, false)?;
+        bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, false, false)?;
     println!("{}", decoded_wo_spaces);
     assert_eq!(decoded_wo_spaces, "[ABC][DEF][ABC]GHI IHG[DEF]");
 
-    let decoded_w_spaces = bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, true, true)?;
+    let decoded_w_spaces = bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, false, true)?;
     println!("{}", decoded_w_spaces);
     // "[ABC] [DEF] [ABC] GHI IHG [DEF]"
     assert_ne!(decoded_wo_spaces, decoded_w_spaces);
     assert_eq!(decoded_w_spaces, "[ABC] [DEF] [ABC] GHI IHG [DEF]");
+    Ok(())
+}
 
+#[test]
+fn cleanup_tokenization_space_tokens() -> tokenizers::Result<()> {
+    let mut bert_tokenizer = Tokenizer::from_file("data/bert-wiki.json")?;
     let input_ids = bert_tokenizer.encode(
         "Welcome to the 🤗 Tokenizers library.[UNK]Let's have fun.",
         false,
@@ -492,40 +497,13 @@ fn spaces_between_special_tokens() -> tokenizers::Result<()> {
         decoded_wo_spaces,
         "welcome to the tok ##eni ##zer ##s library . let ' s have fun ."
     );
-
-    Ok(())
-}
-
-#[test]
-fn cleanup_tokenization_space_tokens() -> tokenizers::Result<()> {
-    let mut bert_tokenizer = Tokenizer::from_file("data/bert-wiki.json")?;
-    bert_tokenizer.add_special_tokens(&[
-        AddedToken::from("[ABC]", false),
-        AddedToken::from("[DEF]", false),
-        AddedToken::from("GHI IHG", false),
-    ]);
-    let input_ids = bert_tokenizer.encode("[ABC][DEF][ABC]GHI IHG[DEF]", false)?;
+    
     let decoded_wo_spaces =
-        bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, true, false)?;
-    println!("{}", decoded_wo_spaces);
-    assert_eq!(decoded_wo_spaces, "[ABC][DEF][ABC]GHI IHG[DEF]");
-
-    let decoded_w_spaces = bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, true, true)?;
-    println!("{}", decoded_w_spaces);
-    // "[ABC] [DEF] [ABC] GHI IHG [DEF]"
-    assert_ne!(decoded_wo_spaces, decoded_w_spaces);
-    assert_eq!(decoded_w_spaces, "[ABC] [DEF] [ABC] GHI IHG [DEF]");
-
-    let input_ids = bert_tokenizer.encode(
-        "Welcome to the 🤗 Tokenizers library.[UNK]Let's have fun.",
-        false,
-    )?;
-    let decoded_wo_spaces =
-        bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, false, false)?;
+    bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, true, false)?;
     println!("{}", decoded_wo_spaces);
     assert_eq!(
         decoded_wo_spaces,
-        "welcome to the tok ##eni ##zer ##s library . let ' s have fun ."
+        "welcome to the tok ##eni ##zer ##s library. let's have fun."
     );
 
     Ok(())
