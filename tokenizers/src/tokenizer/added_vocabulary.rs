@@ -244,7 +244,7 @@ impl AddedVocabulary {
         // Then we delegate to `add_tokens`, that will take care of refreshing added tokens too.
         let mut ignored = 0;
         for token in tokens {
-            if token.content.is_empty() ||  self.token_to_id(&token.content, model).is_some() {
+            if token.content.is_empty() || self.token_to_id(&token.content, model).is_some() {
                 ignored += 1;
                 continue;
             } else {
