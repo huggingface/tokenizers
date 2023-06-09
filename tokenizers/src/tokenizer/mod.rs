@@ -1051,13 +1051,7 @@ where
     {
         sentences
             .into_maybe_par_iter()
-            .map(|sentence| {
-                self.decode(
-                    sentence,
-                    skip_special_tokens,
-                    spaces_between_added_tokens,
-                )
-            })
+            .map(|sentence| self.decode(sentence, skip_special_tokens, spaces_between_added_tokens))
             .collect()
     }
 
