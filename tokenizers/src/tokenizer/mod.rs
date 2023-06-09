@@ -826,15 +826,15 @@ where
 
         let mut tokens_to_decode: Vec<String> = Vec::new();
         let last_idx = ids.len();
+        let push_spaces = !&self.decoder.is_some();
+
         for (index, id) in ids.into_iter().enumerate() {
             if let Some(token) = self.added_vocabulary.id_to_token(id, &self.model) {
                 if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
                     continue;
-                } else if self.added_vocabulary.get_added_tokens().contains(&token)
-                    && spaces_between_added_tokens
-                    && index < last_idx - 1
+                } else if (self.added_vocabulary.get_added_tokens().contains(&token)
+                    && spaces_between_added_tokens|| push_spaces) && index < last_idx - 1
                 {
-                    // if last don't push the space
                     tokens_to_decode.extend([token, " ".to_string()]);
                 } else {
                     tokens_to_decode.push(token);
