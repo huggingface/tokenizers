@@ -671,7 +671,7 @@ class Tokenizer:
         """
         pass
     def decode(
-        self, ids, skip_special_tokens=True, clean_up_tokenization_spaces=False, spaces_between_special_tokens=True
+        self, ids, skip_special_tokens=True, clean_up_tokenization_spaces=False, spaces_between_added_tokens=True
     ):
         """
         Decode the given list of ids back to a string
@@ -688,7 +688,7 @@ class Tokenizer:
             clean_up_tokenization_spaces (:obj:`bool`, defaults to :obj:`False`):
                 Whether or not to clean up the tokenization spaces.
 
-            spaces_between_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+            spaces_between_added_tokens (:obj:`bool`, defaults to :obj:`True`):
                 Whether an extra space (" ") should be prepended to special tokens
 
         Returns:
@@ -696,7 +696,7 @@ class Tokenizer:
         """
         pass
     def decode_batch(
-        self, sequences, skip_special_tokens=True, clean_up_tokenization_spaces=False, spaces_between_special_tokens=True
+        self, sequences, skip_special_tokens=True, clean_up_tokenization_spaces=False, spaces_between_added_tokens=True
     ):
         """
         Decode a batch of ids back to their corresponding string
@@ -711,7 +711,7 @@ class Tokenizer:
             clean_up_tokenization_spaces (:obj:`bool`, defaults to :obj:`False`):
                 Whether or not to clean up the tokenization spaces.
 
-            spaces_between_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+            spaces_between_added_tokens (:obj:`bool`, defaults to :obj:`True`):
                 Whether an extra space (" ") should be prepended to special tokens
 
         Returns:

@@ -413,13 +413,13 @@ class TestTokenizer:
         output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
         assert output.tokens == ["Hey", "Ġthere", "Ġdear", "Ġfriend", "!"]
 
-    def test_spaces_between_special_tokens(self):
+    def test_spaces_between_added_tokens(self):
         # TODO
         tokenizer = Tokenizer.from_pretrained("t5-base")
         tokenizer.add_tokens(["<"])
         text = "a<=5</s>"
-        print(tokenizer.decode(tokenizer.encode(text).ids, spaces_between_special_tokens=False))
-        print(tokenizer.decode(tokenizer.encode(text).ids, spaces_between_special_tokens=False))
+        print(tokenizer.decode(tokenizer.encode(text).ids, spaces_between_added_tokens=False))
+        print(tokenizer.decode(tokenizer.encode(text).ids, spaces_between_added_tokens=False))
         
 
     def test_cleanup_tokenization_spaces(self):
