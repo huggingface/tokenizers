@@ -250,12 +250,10 @@ impl AddedVocabulary {
             } else {
                 let new_id = (model.get_vocab_size() + self.added_tokens_map.len()) as u32;
                 self.added_tokens_map.insert(token.content.clone(), new_id);
-
+                self.added_tokens_map_r.insert(new_id, token.clone());
                 if !self.special_tokens_set.contains(&token.content) {
                     self.added_tokens.push(token.clone());
                 }
-                // Update the current revert operation
-                self.added_tokens_map_r.insert(new_id, token.clone());
             };
         }
 
