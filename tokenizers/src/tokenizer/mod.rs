@@ -659,8 +659,8 @@ where
         final_vocab
     }
 
-    /// Get the added tokens 
-    pub fn get_added_tokens(&self) -> Vec<String>{
+    /// Get the added tokens
+    pub fn get_added_tokens(&self) -> Vec<String> {
         self.added_vocabulary.get_added_tokens()
     }
 
@@ -821,57 +821,37 @@ where
         ids: Vec<u32>,
         skip_special_tokens: bool,
         clean_up_tokenization_spaces: bool,
-        spaces_between_special_tokens: bool,
+        spaces_between_added_tokens: bool,
     ) -> Result<String> {
         // split on added_tokens
 
-        let mut sub_texts: Vec<String> = Vec::new();
-        let mut current_sub_text = String::new();
-
+        let mut tokens_to_decode: Vec<String> = Vec::new();
         for id in &ids {
             if let Some(token) = self.added_vocabulary.id_to_token(*id, &self.model) {
-                let is_special_token = self.added_vocabulary.is_special_token(&token);
-                if !skip_special_tokens || !is_special_token {
-                    if self.added_vocabulary.get_added_tokens().contains(&token) {
-                        if !current_sub_text.is_empty() {
-                            sub_texts.push(current_sub_text.clone());
-                            current_sub_text.clear();
-                        }
-                        sub_texts.push(token.to_string());
-                    } else {
-                        if !current_sub_text.is_empty() {
-                            current_sub_text.push(' ');
-                        }
-                        current_sub_text.push_str(&token);
-                    }
+                if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
+                    continue;
+                } else if self.added_vocabulary.get_added_tokens().contains(&token)
+                    && spaces_between_added_tokens
+                {
+                    tokens_to_decode.extend(vec![" ".to_string(), token, " ".to_string()]);
+                } else {
+                    tokens_to_decode.push(token);
                 }
             }
         }
-        if !current_sub_text.is_empty() {
-            sub_texts.push(current_sub_text);
-        }
-        let sub_texts_concatenated = if spaces_between_special_tokens {
-            sub_texts.join(" ")
-        } else {
-            sub_texts.join("")
-        };
-
-        let tokens = sub_texts_concatenated
-            .split(' ')
-            .map(|s| s.to_string())
-            .collect();
-
         if let Some(decoder) = &self.decoder {
-            decoder.decode(tokens)
+            decoder.decode(tokens_to_decode)
         } else {
+            let concatenated_string: String = tokens_to_decode.join("");
             Ok(if clean_up_tokenization_spaces {
-                self.clean_up_tokenization(sub_texts_concatenated)
+                self.clean_up_tokenization(concatenated_string)
             } else {
-                sub_texts_concatenated
+                concatenated_string
             })
         }
     }
 }
+
 
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
@@ -1069,7 +1049,7 @@ where
         sentences: Vec<Vec<u32>>,
         skip_special_tokens: bool,
         clean_up_tokenization_spaces: bool,
-        spaces_between_special_tokens: bool,
+        spaces_between_added_tokens: bool,
     ) -> Result<Vec<String>>
     where
         M: Send + Sync,
@@ -1081,7 +1061,7 @@ where
                     sentence,
                     skip_special_tokens,
                     clean_up_tokenization_spaces,
-                    spaces_between_special_tokens,
+                    spaces_between_added_tokens,
                 )
             })
             .collect()
