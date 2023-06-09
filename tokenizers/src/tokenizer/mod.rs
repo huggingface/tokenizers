@@ -820,19 +820,19 @@ where
         &self,
         ids: Vec<u32>,
         skip_special_tokens: bool,
-        clean_up_tokenization_spaces: bool,
         spaces_between_added_tokens: bool,
     ) -> Result<String> {
         // split on added_tokens
 
         let mut tokens_to_decode: Vec<String> = Vec::new();
-        for id in &ids {
-            if let Some(token) = self.added_vocabulary.id_to_token(*id, &self.model) {
+        let last_idx = ids.len();
+        for (index, id) in ids.into_iter().enumerate() {
+            if let Some(token) = self.added_vocabulary.id_to_token(id, &self.model) {
                 if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
                     continue;
-                }
-                else if self.added_vocabulary.get_added_tokens().contains(&token)
+                } else if self.added_vocabulary.get_added_tokens().contains(&token)
                     && spaces_between_added_tokens
+                    && index < last_idx - 1
                 {
                     // if last don't push the space
                     tokens_to_decode.extend([token, " ".to_string()]);
@@ -844,16 +844,10 @@ where
         if let Some(decoder) = &self.decoder {
             decoder.decode(tokens_to_decode)
         } else {
-            let concatenated_string: String = tokens_to_decode.join("");
-            Ok(if clean_up_tokenization_spaces {
-                self.clean_up_tokenization(concatenated_string)
-            } else {
-                concatenated_string
-            })
+            Ok(tokens_to_decode.join(""))
         }
     }
 }
-
 
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
@@ -1050,7 +1044,6 @@ where
         &self,
         sentences: Vec<Vec<u32>>,
         skip_special_tokens: bool,
-        clean_up_tokenization_spaces: bool,
         spaces_between_added_tokens: bool,
     ) -> Result<Vec<String>>
     where
@@ -1062,7 +1055,6 @@ where
                 self.decode(
                     sentence,
                     skip_special_tokens,
-                    clean_up_tokenization_spaces,
                     spaces_between_added_tokens,
                 )
             })
