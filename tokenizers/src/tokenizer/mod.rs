@@ -830,10 +830,12 @@ where
             if let Some(token) = self.added_vocabulary.id_to_token(*id, &self.model) {
                 if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
                     continue;
-                } else if self.added_vocabulary.get_added_tokens().contains(&token)
+                }
+                else if self.added_vocabulary.get_added_tokens().contains(&token)
                     && spaces_between_added_tokens
                 {
-                    tokens_to_decode.extend(vec![" ".to_string(), token, " ".to_string()]);
+                    // if last don't push the space
+                    tokens_to_decode.extend([token, " ".to_string()]);
                 } else {
                     tokens_to_decode.push(token);
                 }
