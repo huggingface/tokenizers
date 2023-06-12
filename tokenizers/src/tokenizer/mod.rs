@@ -626,22 +626,6 @@ where
         self.padding.as_mut()
     }
 
-    /// Cleanup tokenzation spaces when needed.
-    fn clean_up_tokenization(&self, out_string: String) -> String {
-        let mut cleaned_string = out_string;
-        cleaned_string = cleaned_string.replace(" .", ".");
-        cleaned_string = cleaned_string.replace(" ?", "?");
-        cleaned_string = cleaned_string.replace(" !", "!");
-        cleaned_string = cleaned_string.replace(" ,", ",");
-        cleaned_string = cleaned_string.replace(" ' ", "'");
-        cleaned_string = cleaned_string.replace(" n't", "n't");
-        cleaned_string = cleaned_string.replace(" 'm", "'m");
-        cleaned_string = cleaned_string.replace(" 's", "'s");
-        cleaned_string = cleaned_string.replace(" 've", "'ve");
-        cleaned_string = cleaned_string.replace(" 're", "'re");
-        cleaned_string
-    }
-
     /// Get the vocabulary
     pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
         let mut final_vocab = self.model.get_vocab();
@@ -818,7 +802,7 @@ where
     /// Decode the given ids, back to a String
     pub fn decode(
         &self,
-        ids: Vec<u32>,
+        ids: &[u32],
         skip_special_tokens: bool,
         spaces_between_added_tokens: bool,
     ) -> Result<String> {
@@ -828,12 +812,14 @@ where
         let last_idx = ids.len();
         let push_spaces = !&self.decoder.is_some();
 
-        for (index, id) in ids.into_iter().enumerate() {
-            if let Some(token) = self.added_vocabulary.id_to_token(id, &self.model) {
+        for (index, id) in ids.iter().enumerate() {
+            if let Some(token) = self.added_vocabulary.id_to_token(*id, &self.model) {
                 if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
                     continue;
                 } else if (self.added_vocabulary.get_added_tokens().contains(&token)
-                    && spaces_between_added_tokens|| push_spaces) && index < last_idx - 1
+                    && spaces_between_added_tokens
+                    || push_spaces)
+                    && index < last_idx - 1
                 {
                     tokens_to_decode.extend([token, " ".to_string()]);
                 } else {
