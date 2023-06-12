@@ -192,7 +192,6 @@ impl AddedVocabulary {
         &self.added_tokens_map
     }
 
-
     /// Get the id matching one of our token if it exists
     pub fn token_to_id(&self, token: &str, model: &impl Model) -> Option<u32> {
         self.added_tokens_map

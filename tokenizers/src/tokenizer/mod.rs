@@ -808,17 +808,16 @@ where
             if let Some(mut token) = self.added_vocabulary.id_to_token(*id, &self.model) {
                 if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
                     continue;
-                } 
-                if self.added_vocabulary.get_vocab().contains_key(&token){
-                    let idx = tokens_to_decode.len() ;
+                }
+                if self.added_vocabulary.get_vocab().contains_key(&token) {
+                    let idx = tokens_to_decode.len();
                     if spaces_between_added_tokens && !join_on_spaces {
                         token += " "
                     }
-                    if join_on_spaces && idx >= 1 && !spaces_between_added_tokens{
-                        tokens_to_decode[idx-1] += &token;
+                    if join_on_spaces && idx >= 1 && !spaces_between_added_tokens {
+                        tokens_to_decode[idx - 1] += &token;
                         continue;
                     }
-
                 }
                 tokens_to_decode.push(token);
             }
