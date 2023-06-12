@@ -420,16 +420,3 @@ class TestTokenizer:
         text = "a<=5</s>"
         print(tokenizer.decode(tokenizer.encode(text).ids, spaces_between_added_tokens=False))
         print(tokenizer.decode(tokenizer.encode(text).ids, spaces_between_added_tokens=False))
-
-    def test_cleanup_tokenization_spaces(self):
-        # TODO
-        tokenizer = Tokenizer.from_pretrained("t5-base")
-        tokenizer.add_special_tokens(["<"])
-        text = "a<=5</s>"
-        print(tokenizer.decode(tokenizer.encode(text).ids, clean_up_tokenization_spaces=True))
-        print(tokenizer.decode(tokenizer.encode(text).ids, clean_up_tokenization_spaces=False))
-
-    def test_can_get_added_vocab(self):
-        tokenizer = Tokenizer.from_pretrained("t5-base")
-        tokenizer.add_tokens(["<"])
-        print(tokenizer.get_added_tokens())
