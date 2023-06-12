@@ -19,3 +19,4 @@ jobs:
       install_rust: true
     secrets:
       token: ${{ secrets.HUGGINGFACE_PUSH }}
+      hf_token: ${{ secrets.HF_DOC_BUILD_PUSH }}

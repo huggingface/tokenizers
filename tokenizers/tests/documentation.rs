@@ -55,6 +55,7 @@ fn load_tokenizer() {
     assert_eq!(encodings.get_tokens(), tokens);
 
     let decoded = tokenizer.decode(ids, false, false).unwrap();
+
     assert_eq!(decoded, example);
 }
 
@@ -347,7 +348,7 @@ fn pipeline() -> tokenizers::Result<()> {
     // [1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2]
 
     let decoded = tokenizer.decode(
-        vec![1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2],
+        &[1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2],
         true,
         true,
     )?;
@@ -437,6 +438,7 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     // ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
 
     let decoded = bert_tokenizer.decode(output.get_ids().to_vec(), true, false)?;
+
     println!("{}", decoded);
     // "welcome to the tok ##eni ##zer ##s library ."
     // END bert_test_decoding

@@ -1,3 +1,5 @@
+use crate::tokenizer::pattern::Pattern;
+use crate::tokenizer::Decoder;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::SysRegex;
 use serde::{Deserialize, Serialize};
@@ -83,6 +85,26 @@ impl Normalizer for Replace {
     }
 }
 
+impl Decoder for Replace {
+    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+        tokens
+            .into_iter()
+            .map(|token| -> Result<String> {
+                let mut new_token = "".to_string();
+
+                for ((start, stop), is_match) in (&self.regex).find_matches(&token)? {
+                    if is_match {
+                        new_token.push_str(&self.content);
+                    } else {
+                        new_token.push_str(&token[start..stop]);
+                    }
+                }
+                Ok(new_token)
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,5 +145,15 @@ mod tests {
         let replace_s = r#"{"type":"Replace","pattern":{"Regex":"\\s+"},"content":" "}"#;
         assert_eq!(serde_json::to_string(&replace).unwrap(), replace_s);
         assert_eq!(serde_json::from_str::<Replace>(replace_s).unwrap(), replace);
+    }
+
+    #[test]
+    fn test_replace_decode() {
+        let original = vec!["hello".to_string(), "_hello".to_string()];
+        let replace = Replace::new("_", " ").unwrap();
+        assert_eq!(
+            replace.decode_chain(original).unwrap(),
+            vec!["hello", " hello"]
+        );
     }
 }

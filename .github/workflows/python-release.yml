@@ -20,7 +20,7 @@ jobs:
     container: quay.io/pypa/manylinux2014_x86_64
     steps:
       # v1 is required when using manylinux2010
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
 
       - name: Install dependencies
         run: yum install -y openssl-devel

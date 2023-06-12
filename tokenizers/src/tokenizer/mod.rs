@@ -1042,7 +1042,7 @@ where
     /// Decode all sentences in parallel
     pub fn decode_batch(
         &self,
-        sentences: Vec<Vec<u32>>,
+        sentences: &[&[u32]],
         skip_special_tokens: bool,
         spaces_between_added_tokens: bool,
     ) -> Result<Vec<String>>

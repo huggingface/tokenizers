@@ -54,6 +54,7 @@ class TestBPE:
         assert model.continuing_subword_prefix == "__prefix__"
         assert model.end_of_word_suffix == "__suffix__"
         assert model.fuse_unk == False
+        assert model.byte_fallback == False
 
         # Modify these
         model.dropout = 0.1
@@ -66,6 +67,8 @@ class TestBPE:
         assert model.end_of_word_suffix == "suff"
         model.fuse_unk = True
         assert model.fuse_unk == True
+        model.byte_fallback = True
+        assert model.byte_fallback == True
 
 
 class TestWordPiece:

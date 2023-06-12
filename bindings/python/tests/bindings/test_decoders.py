@@ -3,7 +3,19 @@ import pickle
 
 import pytest
 
-from tokenizers.decoders import CTC, BPEDecoder, ByteLevel, Decoder, Metaspace, Sequence, WordPiece
+from tokenizers.decoders import (
+    CTC,
+    BPEDecoder,
+    ByteLevel,
+    Decoder,
+    Metaspace,
+    Sequence,
+    WordPiece,
+    ByteFallback,
+    Replace,
+    Strip,
+    Fuse,
+)
 
 
 class TestByteLevel:
@@ -22,6 +34,18 @@ class TestByteLevel:
         state = json.loads(byte_level.__getstate__())
         reloaded = ByteLevel(**state)
         assert isinstance(reloaded, ByteLevel)
+
+
+class TestReplace:
+    def test_instantiate(self):
+        assert Replace("_", " ") is not None
+        assert isinstance(Replace("_", " "), Decoder)
+        assert isinstance(Replace("_", " "), Replace)
+        # assert isinstance(pickle.loads(pickle.dumps(Replace("_", " "))), Replace)
+
+    def test_decoding(self):
+        decoder = Replace("_", " ")
+        assert decoder.decode(["My", "_name", "_is", "_John"]) == "My name is John"
 
 
 class TestWordPiece:
@@ -52,6 +76,48 @@ class TestWordPiece:
         assert decoder.prefix == "__"
         decoder.cleanup = True
         assert decoder.cleanup == True
+
+
+class TestByteFallback:
+    def test_instantiate(self):
+        assert ByteFallback() is not None
+        assert isinstance(ByteFallback(), Decoder)
+        assert isinstance(ByteFallback(), ByteFallback)
+        assert isinstance(pickle.loads(pickle.dumps(ByteFallback())), ByteFallback)
+
+    def test_decoding(self):
+        decoder = ByteFallback()
+        assert decoder.decode(["My", " na", "me"]) == "My name"
+        assert decoder.decode(["<0x61>"]) == "a"
+        assert decoder.decode(["<0xE5>"]) == "�"
+        assert decoder.decode(["<0xE5>", "<0x8f>"]) == "��"
+        assert decoder.decode(["<0xE5>", "<0x8f>", "<0xab>"]) == "叫"
+        assert decoder.decode(["<0xE5>", "<0x8f>", "a"]) == "��a"
+        assert decoder.decode(["<0xE5>", "<0x8f>", "<0xab>", "a"]) == "叫a"
+
+
+class TestFuse:
+    def test_instantiate(self):
+        assert Fuse() is not None
+        assert isinstance(Fuse(), Decoder)
+        assert isinstance(Fuse(), Fuse)
+        assert isinstance(pickle.loads(pickle.dumps(Fuse())), Fuse)
+
+    def test_decoding(self):
+        decoder = Fuse()
+        assert decoder.decode(["My", " na", "me"]) == "My name"
+
+
+class TestStrip:
+    def test_instantiate(self):
+        assert Strip(left=0, right=0) is not None
+        assert isinstance(Strip(content="_", left=0, right=0), Decoder)
+        assert isinstance(Strip(content="_", left=0, right=0), Strip)
+        assert isinstance(pickle.loads(pickle.dumps(Strip(content="_", left=0, right=0))), Strip)
+
+    def test_decoding(self):
+        decoder = Strip(content="_", left=1, right=0)
+        assert decoder.decode(["_My", " na", "me", " _-", "__-"]) == "My name _-_-"
 
 
 class TestMetaspace:

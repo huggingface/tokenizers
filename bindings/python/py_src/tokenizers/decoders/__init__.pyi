@@ -45,6 +45,30 @@ class BPEDecoder(Decoder):
         """
         pass
 
+class ByteFallback(Decoder):
+    """
+    ByteFallback Decoder
+    ByteFallback is a simple trick which converts tokens looking like `<0x61>`
+    to pure bytes, and attempts to make them into a string. If the tokens
+    cannot be decoded you will get � instead for each inconvertable byte token
+
+    """
+
+    def __init__(self):
+        pass
+    def decode(self, tokens):
+        """
+        Decode the given list of tokens to a final string
+
+        Args:
+            tokens (:obj:`List[str]`):
+                The list of tokens to decode
+
+        Returns:
+            :obj:`str`: The decoded string
+        """
+        pass
+
 class ByteLevel(Decoder):
     """
     ByteLevel Decoder
@@ -97,6 +121,29 @@ class CTC(Decoder):
         """
         pass
 
+class Fuse(Decoder):
+    """
+    Fuse Decoder
+    Fuse simply fuses every token into a single string.
+    This is the last step of decoding, this decoder exists only if
+    there is need to add other decoders *after* the fusion
+    """
+
+    def __init__(self):
+        pass
+    def decode(self, tokens):
+        """
+        Decode the given list of tokens to a final string
+
+        Args:
+            tokens (:obj:`List[str]`):
+                The list of tokens to decode
+
+        Returns:
+            :obj:`str`: The decoded string
+        """
+        pass
+
 class Metaspace(Decoder):
     """
     Metaspace Decoder
@@ -126,6 +173,29 @@ class Metaspace(Decoder):
         """
         pass
 
+class Replace(Decoder):
+    """
+    Replace Decoder
+
+    This decoder is to be used in tandem with the :class:`~tokenizers.pre_tokenizers.Replace`
+    :class:`~tokenizers.pre_tokenizers.PreTokenizer`.
+    """
+
+    def __init__(self, pattern, content):
+        pass
+    def decode(self, tokens):
+        """
+        Decode the given list of tokens to a final string
+
+        Args:
+            tokens (:obj:`List[str]`):
+                The list of tokens to decode
+
+        Returns:
+            :obj:`str`: The decoded string
+        """
+        pass
+
 class Sequence(Decoder):
     """
     Sequence Decoder
@@ -136,6 +206,27 @@ class Sequence(Decoder):
     """
 
     def __init__(self, decoders):
+        pass
+    def decode(self, tokens):
+        """
+        Decode the given list of tokens to a final string
+
+        Args:
+            tokens (:obj:`List[str]`):
+                The list of tokens to decode
+
+        Returns:
+            :obj:`str`: The decoded string
+        """
+        pass
+
+class Strip(Decoder):
+    """
+    Strip normalizer
+    Strips n left characters of each token, or n right characters of each token
+    """
+
+    def __init__(self, content, left=0, right=0):
         pass
     def decode(self, tokens):
         """

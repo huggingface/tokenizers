@@ -27,6 +27,7 @@ struct Config {
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
     fuse_unk: bool,
+    byte_fallback: bool,
 }
 
 /// A `BpeBuilder` can be used to create a `BPE` model with a custom configuration.
@@ -47,6 +48,7 @@ impl Default for BpeBuilder {
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
                 fuse_unk: false,
+                byte_fallback: false,
             },
         }
     }
@@ -115,6 +117,13 @@ impl BpeBuilder {
         self
     }
 
+    /// Set the `fuse_unk` option.
+    #[must_use]
+    pub fn byte_fallback(mut self, byte_fallback: bool) -> Self {
+        self.config.byte_fallback = byte_fallback;
+        self
+    }
+
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
     pub fn build(mut self) -> Result<BPE> {
         // Validate dropout.
@@ -180,6 +189,7 @@ impl BpeBuilder {
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             end_of_word_suffix: self.config.end_of_word_suffix,
             fuse_unk: self.config.fuse_unk,
+            byte_fallback: self.config.byte_fallback,
         })
     }
 }
@@ -206,6 +216,9 @@ pub struct BPE {
     pub end_of_word_suffix: Option<String>,
     /// Do multiple unk tokens get fused
     pub fuse_unk: bool,
+    /// Byte fallback from sentence pieces, instead of UNK, uses `"<0x00>"`
+    /// for each byte in the unk token
+    pub byte_fallback: bool,
 }
 
 impl std::fmt::Debug for BPE {
@@ -216,6 +229,7 @@ impl std::fmt::Debug for BPE {
             .field("continuing_subword_prefix", &self.continuing_subword_prefix)
             .field("end_of_word_suffix", &self.end_of_word_suffix)
             .field("fuse_unk", &self.fuse_unk)
+            .field("byte_fallback", &self.byte_fallback)
             .field("vocab", &self.vocab.len())
             .field("merges", &self.merges.len())
             .finish()
@@ -243,6 +257,7 @@ impl Clone for BPE {
             continuing_subword_prefix: self.continuing_subword_prefix.clone(),
             end_of_word_suffix: self.end_of_word_suffix.clone(),
             fuse_unk: self.fuse_unk,
+            byte_fallback: self.byte_fallback,
         }
     }
 }
@@ -373,30 +388,47 @@ impl BPE {
                     unk = None;
                 }
                 word.add(*id, byte_len);
-            } else if let Some(unk_token) = &self.unk_token {
-                unk = match (unk, self.fuse_unk) {
-                    (Some((unk_id, unk_len)), true) => {
-                        // Fuse unk
-                        Some((unk_id, unk_len + byte_len))
+            } else {
+                if self.byte_fallback {
+                    let tokens: Option<Vec<_>> = s
+                        .bytes()
+                        .map(|b| -> Option<&u32> {
+                            let code = format!("<{:#04X}>", b);
+
+                            self.vocab.get(&code)
+                        })
+                        .collect();
+                    if let Some(tokens) = tokens {
+                        for t in tokens {
+                            word.add(*t, 1);
+                        }
+                        continue;
                     }
-                    (Some((unk_id, unk_len)), false) => {
-                        // Do not fuse unk, add the previous one
-                        word.add(unk_id, unk_len);
-                        Some((
+                }
+                if let Some(unk_token) = &self.unk_token {
+                    unk = match (unk, self.fuse_unk) {
+                        (Some((unk_id, unk_len)), true) => {
+                            // Fuse unk
+                            Some((unk_id, unk_len + byte_len))
+                        }
+                        (Some((unk_id, unk_len)), false) => {
+                            // Do not fuse unk, add the previous one
+                            word.add(unk_id, unk_len);
+                            Some((
+                                *self.vocab.get(unk_token).ok_or_else(|| {
+                                    Error::UnkTokenOutOfVocabulary(unk_token.to_owned())
+                                })?,
+                                byte_len,
+                            ))
+                        }
+                        _ => Some((
                             *self.vocab.get(unk_token).ok_or_else(|| {
                                 Error::UnkTokenOutOfVocabulary(unk_token.to_owned())
                             })?,
                             byte_len,
-                        ))
-                    }
-                    _ => Some((
-                        *self
-                            .vocab
-                            .get(unk_token)
-                            .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk_token.to_owned()))?,
-                        byte_len,
-                    )),
-                };
+                        )),
+                    };
+                }
             }
         }
         if let Some((unk_id, unk_len)) = unk {
@@ -792,5 +824,42 @@ mod tests {
                 _ => unreachable!(),
             },
         }
+    }
+
+    #[test]
+    fn test_bpe_byte_fallback() {
+        // 0x61 == 'a' in bytes
+        let vocab: Vocab = [("<unk>".into(), 0), ("<0x61>".into(), 1)]
+            .iter()
+            .cloned()
+            .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![])
+            .unk_token("<unk>".to_string())
+            .byte_fallback(true)
+            .build()
+            .unwrap();
+        let tokens = bpe.tokenize("c").unwrap();
+        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
+
+        let tokens = bpe.tokenize("a").unwrap();
+        assert_eq!(tokens, vec![Token::new(1u32, "<0x61>".into(), (0, 1)),]);
+    }
+
+    #[test]
+    fn test_bpe_byte_fallback_newline() {
+        // 0x0A == '\n' in bytes
+        let vocab: Vocab = [("<unk>".into(), 0), ("<0x0A>".into(), 1)]
+            .iter()
+            .cloned()
+            .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![])
+            .unk_token("<unk>".to_string())
+            .byte_fallback(true)
+            .build()
+            .unwrap();
+        let tokens = bpe.tokenize("\n").unwrap();
+        assert_eq!(tokens, vec![Token::new(1u32, "<0x0A>".into(), (0, 1)),]);
     }
 }

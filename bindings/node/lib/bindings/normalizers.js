@@ -9,6 +9,7 @@ module.exports = {
   sequenceNormalizer: native.normalizers_Sequence,
   lowercaseNormalizer: native.normalizers_Lowercase,
   stripNormalizer: native.normalizers_Strip,
+  prependNormalizer: native.normalizers_Prepend,
   stripAccentsNormalizer: native.normalizers_StripAccents,
   nmtNormalizer: native.normalizers_Nmt,
   precompiledNormalizer: native.normalizers_Precompiled,

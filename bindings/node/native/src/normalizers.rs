@@ -175,6 +175,18 @@ fn strip(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
 
     Ok(normalizer)
 }
+
+/// prepend(prepend: string)
+fn prepend(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
+    let prepend: String = cx.extract::<String>(0)?;
+
+    let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
+    let guard = cx.lock();
+    normalizer.borrow_mut(&guard).normalizer =
+        Some(tk::normalizers::prepend::Prepend::new(prepend).into());
+
+    Ok(normalizer)
+}
 /// strip_accents()
 fn strip_accents(mut cx: FunctionContext) -> JsResult<JsNormalizer> {
     let mut normalizer = JsNormalizer::new::<_, JsNormalizer, _>(&mut cx, vec![])?;
@@ -267,6 +279,7 @@ pub fn register(m: &mut ModuleContext, prefix: &str) -> NeonResult<()> {
     m.export_function(&format!("{}_Sequence", prefix), sequence)?;
     m.export_function(&format!("{}_Lowercase", prefix), lowercase)?;
     m.export_function(&format!("{}_Strip", prefix), strip)?;
+    m.export_function(&format!("{}_Prepend", prefix), prepend)?;
     m.export_function(&format!("{}_StripAccents", prefix), strip_accents)?;
     m.export_function(&format!("{}_Nmt", prefix), nmt)?;
     m.export_function(&format!("{}_Precompiled", prefix), precompiled)?;

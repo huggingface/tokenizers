@@ -162,6 +162,12 @@ macro_rules! setter {
 ///
 ///     end_of_word_suffix (:obj:`str`, `optional`):
 ///         A suffix to be used for every subword that is a end-of-word.
+///
+///     max_token_length (:obj:`int`, `optional`):
+///         Prevents creating tokens longer than the specified size.
+///         This can help with reducing polluting your vocabulary with
+///         highly repetitive tokens like `======` for wikipedia
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "BpeTrainer")]
 pub struct PyBpeTrainer {}
 #[pymethods]
@@ -244,6 +250,16 @@ impl PyBpeTrainer {
     }
 
     #[getter]
+    fn get_max_token_length(self_: PyRef<Self>) -> Option<usize> {
+        getter!(self_, BpeTrainer, max_token_length)
+    }
+
+    #[setter]
+    fn set_max_token_length(self_: PyRef<Self>, limit: Option<usize>) {
+        setter!(self_, BpeTrainer, max_token_length, limit);
+    }
+
+    #[getter]
     fn get_initial_alphabet(self_: PyRef<Self>) -> Vec<String> {
         getter!(
             self_,
@@ -283,7 +299,7 @@ impl PyBpeTrainer {
     }
 
     #[new]
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (**kwargs))]
     pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::bpe::BpeTrainer::builder();
         if let Some(kwargs) = kwargs {
@@ -295,7 +311,7 @@ impl PyBpeTrainer {
                     "show_progress" => builder = builder.show_progress(val.extract()?),
                     "special_tokens" => {
                         builder = builder.special_tokens(
-                            val.cast_as::<PyList>()?
+                            val.downcast::<PyList>()?
                                 .into_iter()
                                 .map(|token| {
                                     if let Ok(content) = token.extract::<String>() {
@@ -315,6 +331,7 @@ impl PyBpeTrainer {
                         );
                     }
                     "limit_alphabet" => builder = builder.limit_alphabet(val.extract()?),
+                    "max_token_length" => builder = builder.max_token_length(val.extract()?),
                     "initial_alphabet" => {
                         let alphabet: Vec<String> = val.extract()?;
                         builder = builder.initial_alphabet(
@@ -489,7 +506,7 @@ impl PyWordPieceTrainer {
     }
 
     #[new]
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (** kwargs))]
     pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::wordpiece::WordPieceTrainer::builder();
         if let Some(kwargs) = kwargs {
@@ -501,7 +518,7 @@ impl PyWordPieceTrainer {
                     "show_progress" => builder = builder.show_progress(val.extract()?),
                     "special_tokens" => {
                         builder = builder.special_tokens(
-                            val.cast_as::<PyList>()?
+                            val.downcast::<PyList>()?
                                 .into_iter()
                                 .map(|token| {
                                     if let Ok(content) = token.extract::<String>() {
@@ -629,7 +646,7 @@ impl PyWordLevelTrainer {
     }
 
     #[new]
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (**kwargs))]
     pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::wordlevel::WordLevelTrainer::builder();
 
@@ -648,7 +665,7 @@ impl PyWordLevelTrainer {
                     }
                     "special_tokens" => {
                         builder.special_tokens(
-                            val.cast_as::<PyList>()?
+                            val.downcast::<PyList>()?
                                 .into_iter()
                                 .map(|token| {
                                     if let Ok(content) = token.extract::<String>() {
@@ -797,7 +814,7 @@ impl PyUnigramTrainer {
     }
 
     #[new]
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (**kwargs))]
     pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::unigram::UnigramTrainer::builder();
         if let Some(kwargs) = kwargs {
@@ -821,7 +838,7 @@ impl PyUnigramTrainer {
                         )
                     }
                     "special_tokens" => builder.special_tokens(
-                        val.cast_as::<PyList>()?
+                        val.downcast::<PyList>()?
                             .into_iter()
                             .map(|token| {
                                 if let Ok(content) = token.extract::<String>() {

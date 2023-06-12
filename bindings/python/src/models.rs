@@ -215,6 +215,7 @@ impl PyModel {
     ///
     /// Returns:
     ///     :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
+    #[pyo3(text_signature = "(self)")]
     fn get_trainer(&self, py: Python<'_>) -> PyResult<PyObject> {
         PyTrainer::from(self.model.read().unwrap().get_trainer()).get_as_subtype(py)
     }
@@ -248,9 +249,12 @@ impl PyModel {
 ///
 ///     fuse_unk (:obj:`bool`, `optional`):
 ///         Whether to fuse any subsequent unknown tokens into a single one
+///
+///     byte_fallback (:obj:`bool`, `optional`):
+///         Whether to use spm byte-fallback trick (defaults to False)
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "BPE")]
 #[pyo3(
-    text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None)"
+    text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False)"
 )]
 pub struct PyBPE {}
 
@@ -276,6 +280,7 @@ impl PyBPE {
                     }
                     "end_of_word_suffix" => builder = builder.end_of_word_suffix(value.extract()?),
                     "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
+                    "byte_fallback" => builder = builder.byte_fallback(value.extract()?),
                     _ => println!("Ignored unknown kwarg option {}", key),
                 };
             }
@@ -384,8 +389,18 @@ impl PyBPE {
         setter!(self_, BPE, fuse_unk, fuse_unk);
     }
 
+    #[getter]
+    fn get_byte_fallback(self_: PyRef<Self>) -> bool {
+        getter!(self_, BPE, byte_fallback)
+    }
+
+    #[setter]
+    fn set_byte_fallback(self_: PyRef<Self>, byte_fallback: bool) {
+        setter!(self_, BPE, byte_fallback, byte_fallback);
+    }
+
     #[new]
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (vocab=None, merges=None, **kwargs))]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
@@ -472,7 +487,7 @@ impl PyBPE {
     /// Returns:
     ///     :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
     #[classmethod]
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (vocab, merges, **kwargs))]
     #[pyo3(text_signature = "(cls, vocab, merge, **kwargs)")]
     fn from_file(
         _cls: &PyType,
@@ -582,7 +597,7 @@ impl PyWordPiece {
     }
 
     #[new]
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (vocab=None, **kwargs))]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
@@ -648,7 +663,7 @@ impl PyWordPiece {
     /// Returns:
     ///     :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
     #[classmethod]
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (vocab, **kwargs))]
     #[pyo3(text_signature = "(vocab, **kwargs)")]
     fn from_file(
         _cls: &PyType,
@@ -693,7 +708,7 @@ impl PyWordLevel {
     }
 
     #[new]
-    #[args(unk_token = "None")]
+    #[pyo3(signature = (vocab=None, unk_token = None))]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
@@ -768,7 +783,7 @@ impl PyWordLevel {
     /// Returns:
     ///     :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
     #[classmethod]
-    #[args(unk_token = "None")]
+    #[pyo3(signature = (vocab, unk_token = None))]
     #[pyo3(text_signature = "(vocab, unk_token)")]
     fn from_file(
         _cls: &PyType,
