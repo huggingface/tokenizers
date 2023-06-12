@@ -643,11 +643,6 @@ where
         final_vocab
     }
 
-    /// Get the added tokens
-    pub fn get_added_tokens(&self) -> Vec<String> {
-        self.added_vocabulary.get_added_tokens()
-    }
-
     /// Get the size of the vocabulary
     pub fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
         self.model.get_vocab_size()
@@ -809,28 +804,22 @@ where
         // split on added_tokens
 
         let mut tokens_to_decode: Vec<String> = Vec::new();
-        let last_idx = ids.len();
-        let push_spaces = !&self.decoder.is_some();
 
-        for (index, id) in ids.iter().enumerate() {
-            if let Some(token) = self.added_vocabulary.id_to_token(*id, &self.model) {
+        for id in ids.iter() {
+            if let Some(mut token) = self.added_vocabulary.id_to_token(*id, &self.model) {
                 if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
                     continue;
-                } else if (self.added_vocabulary.get_added_tokens().contains(&token)
-                    && spaces_between_added_tokens
-                    || push_spaces)
-                    && index < last_idx - 1
+                } else if self.added_vocabulary.get_vocab().contains_key(&token) && spaces_between_added_tokens
                 {
-                    tokens_to_decode.extend([token, " ".to_string()]);
-                } else {
-                    tokens_to_decode.push(token);
+                    token += " "
                 }
+                tokens_to_decode.push(token);
             }
         }
         if let Some(decoder) = &self.decoder {
             decoder.decode(tokens_to_decode)
         } else {
-            Ok(tokens_to_decode.join(""))
+            Ok(tokens_to_decode.join(" "))
         }
     }
 }
