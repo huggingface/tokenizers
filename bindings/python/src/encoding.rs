@@ -78,7 +78,7 @@ impl PyEncoding {
     /// Returns:
     ///     :class:`~tokenizers.Encoding`: The resulting Encoding
     #[staticmethod]
-    #[args(growing_offsets = true)]
+    #[pyo3(signature = (encodings, growing_offsets = true))]
     #[pyo3(text_signature = "(encodings, growing_offsets=True)")]
     fn merge(encodings: Vec<PyRef<PyEncoding>>, growing_offsets: bool) -> PyEncoding {
         tk::tokenizer::Encoding::merge(
@@ -263,7 +263,7 @@ impl PyEncoding {
     ///
     /// Returns:
     ///     :obj:`Tuple[int, int]`: The range of tokens: :obj:`(first, last + 1)`
-    #[args(sequence_index = 0)]
+    #[pyo3(signature = (word_index, sequence_index = 0))]
     #[pyo3(text_signature = "(self, word_index, sequence_index=0)")]
     fn word_to_tokens(&self, word_index: u32, sequence_index: usize) -> Option<(usize, usize)> {
         self.encoding.word_to_tokens(word_index, sequence_index)
@@ -279,7 +279,7 @@ impl PyEncoding {
     ///
     /// Returns:
     ///     :obj:`Tuple[int, int]`: The range of characters (span) :obj:`(first, last + 1)`
-    #[args(sequence_index = 0)]
+    #[pyo3(signature = (word_index, sequence_index = 0))]
     #[pyo3(text_signature = "(self, word_index, sequence_index=0)")]
     fn word_to_chars(&self, word_index: u32, sequence_index: usize) -> Option<Offsets> {
         self.encoding.word_to_chars(word_index, sequence_index)
@@ -347,7 +347,7 @@ impl PyEncoding {
     ///
     /// Returns:
     ///     :obj:`int`: The index of the token that contains this char in the encoded sequence
-    #[args(sequence_index = 0)]
+    #[pyo3(signature = (char_pos, sequence_index = 0))]
     #[pyo3(text_signature = "(self, char_pos, sequence_index=0)")]
     fn char_to_token(&self, char_pos: usize, sequence_index: usize) -> Option<usize> {
         self.encoding.char_to_token(char_pos, sequence_index)
@@ -363,7 +363,7 @@ impl PyEncoding {
     ///
     /// Returns:
     ///     :obj:`int`: The index of the word that contains this char in the input sequence
-    #[args(sequence_index = 0)]
+    #[pyo3(signature = (char_pos, sequence_index = 0))]
     #[pyo3(text_signature = "(self, char_pos, sequence_index=0)")]
     fn char_to_word(&self, char_pos: usize, sequence_index: usize) -> Option<u32> {
         self.encoding.char_to_word(char_pos, sequence_index)
@@ -386,7 +386,7 @@ impl PyEncoding {
     ///
     ///     pad_token (:obj:`str`, defaults to `[PAD]`):
     ///         The pad token to use
-    #[args(kwargs = "**")]
+    #[pyo3(signature = (length, **kwargs))]
     #[pyo3(
         text_signature = "(self, length, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]')"
     )]
@@ -439,8 +439,7 @@ impl PyEncoding {
     ///
     ///     direction (:obj:`str`, defaults to :obj:`right`):
     ///         Truncate direction
-    #[args(stride = "0")]
-    #[args(direction = "\"right\"")]
+    #[pyo3(signature = (max_length, stride = 0, direction = "right"))]
     #[pyo3(text_signature = "(self, max_length, stride=0, direction='right')")]
     fn truncate(&mut self, max_length: usize, stride: usize, direction: &str) -> PyResult<()> {
         let tdir = match direction {

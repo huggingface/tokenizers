@@ -29,12 +29,12 @@ static mut REGISTERED_FORK_CALLBACK: bool = false;
 extern "C" fn child_after_fork() {
     use tk::parallelism::*;
     if has_parallelism_been_used() && !is_parallelism_configured() {
-        println!(
+        eprintln!(
             "huggingface/tokenizers: The current process just got forked, after parallelism has \
             already been used. Disabling parallelism to avoid deadlocks..."
         );
-        println!("To disable this warning, you can either:");
-        println!(
+        eprintln!("To disable this warning, you can either:");
+        eprintln!(
             "\t- Avoid using `tokenizers` before the fork if possible\n\
             \t- Explicitly set the environment variable {}=(true | false)",
             ENV_VARIABLE

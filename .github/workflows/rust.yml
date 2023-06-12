@@ -16,7 +16,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
 
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
 
       - name: Install Rust Stable
         uses: actions-rs/toolchain@v1

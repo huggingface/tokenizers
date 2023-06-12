@@ -13,12 +13,40 @@ interface Decoder {
 export function byteLevelDecoder(): Decoder;
 
 /**
+ * Instantiate a new Replace Decoder
+ * @param [pattern] The pattern to replace
+ * @param [content] The replacement.
+ */
+export function replaceDecoder(pattern: string, content: string): Decoder;
+
+/**
  * Instantiate a new WordPiece Decoder
  * @param [prefix='##'] The prefix to use for subwords that are not a beginning-of-word
  * @param [cleanup=true] Whether to cleanup some tokenization artifacts.
  * Mainly spaces before punctuation, and some abbreviated english forms.
  */
 export function wordPieceDecoder(prefix?: string, cleanup?: boolean): Decoder;
+
+/**
+ * Instantiate a new ByteFallback Decoder
+ * ByteFallback is a simple trick which converts tokens looking like `<0x61>`
+ * to pure bytes, and attempts to make them into a string. If the tokens
+ * cannot be decoded you will get � instead for each inconvertable byte token
+ */
+export function byteFallbackDecoder(): Decoder;
+
+/**
+ * Instantiate a new Fuse Decoder which fuses all tokens into one string
+ */
+export function fuseDecoder(): Decoder;
+
+/**
+ * Instantiate a new Strip Decoder
+ * @param [content] The character to strip
+ * @param [left] The number of chars to remove from the left of each token
+ * @param [right] The number of chars to remove from the right of each token
+ */
+export function stripDecoder(content: string, left: number, right: number): Decoder;
 
 /**
  * Instantiate a new Metaspace

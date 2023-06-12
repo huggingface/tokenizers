@@ -9,6 +9,17 @@ class Model:
     This class cannot be constructed directly. Please use one of the concrete models.
     """
 
+    def get_trainer(self):
+        """
+        Get the associated :class:`~tokenizers.trainers.Trainer`
+
+        Retrieve the :class:`~tokenizers.trainers.Trainer` associated to this
+        :class:`~tokenizers.models.Model`.
+
+        Returns:
+            :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
+        """
+        pass
     def id_to_token(self, id):
         """
         Get the token associated to an ID
@@ -95,6 +106,9 @@ class BPE(Model):
 
         fuse_unk (:obj:`bool`, `optional`):
             Whether to fuse any subsequent unknown tokens into a single one
+
+        byte_fallback (:obj:`bool`, `optional`):
+            Whether to use spm byte-fallback trick (defaults to False)
     """
 
     def __init__(
@@ -107,6 +121,7 @@ class BPE(Model):
         continuing_subword_prefix=None,
         end_of_word_suffix=None,
         fuse_unk=None,
+        byte_fallback=False,
     ):
         pass
     @staticmethod
@@ -132,6 +147,17 @@ class BPE(Model):
 
         Returns:
             :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
+        """
+        pass
+    def get_trainer(self):
+        """
+        Get the associated :class:`~tokenizers.trainers.Trainer`
+
+        Retrieve the :class:`~tokenizers.trainers.Trainer` associated to this
+        :class:`~tokenizers.models.Model`.
+
+        Returns:
+            :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
         """
         pass
     def id_to_token(self, id):
@@ -221,6 +247,17 @@ class Unigram(Model):
     """
 
     def __init__(self, vocab):
+        pass
+    def get_trainer(self):
+        """
+        Get the associated :class:`~tokenizers.trainers.Trainer`
+
+        Retrieve the :class:`~tokenizers.trainers.Trainer` associated to this
+        :class:`~tokenizers.models.Model`.
+
+        Returns:
+            :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
+        """
         pass
     def id_to_token(self, id):
         """
@@ -314,6 +351,17 @@ class WordLevel(Model):
 
         Returns:
             :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
+        """
+        pass
+    def get_trainer(self):
+        """
+        Get the associated :class:`~tokenizers.trainers.Trainer`
+
+        Retrieve the :class:`~tokenizers.trainers.Trainer` associated to this
+        :class:`~tokenizers.models.Model`.
+
+        Returns:
+            :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
         """
         pass
     def id_to_token(self, id):
@@ -426,6 +474,17 @@ class WordPiece(Model):
 
         Returns:
             :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
+        """
+        pass
+    def get_trainer(self):
+        """
+        Get the associated :class:`~tokenizers.trainers.Trainer`
+
+        Retrieve the :class:`~tokenizers.trainers.Trainer` associated to this
+        :class:`~tokenizers.models.Model`.
+
+        Returns:
+            :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
         """
         pass
     def id_to_token(self, id):
