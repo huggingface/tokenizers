@@ -411,7 +411,7 @@ class Split(PreTokenizer):
 
     Args:
         pattern (:obj:`str` or :class:`~tokenizers.Regex`):
-            A pattern used to split the string. Usually a string or a a regex built with `tokenizers.Regex`
+            A pattern used to split the string. Usually a string or a Regex
 
         behavior (:class:`~tokenizers.SplitDelimiterBehavior`):
             The behavior to use when splitting.

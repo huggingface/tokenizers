@@ -603,7 +603,7 @@ declare_types! {
         }
 
         method decodeBatch(mut cx) {
-            // decodeBatch(sequences: number[][], skipSpecialTokens: bool, cleanUpTokenizationSpaces: bool, spaceBetweenSpecialTokens: bool, callback)
+            // decodeBatch(sequences: number[][], skipSpecialTokens: bool, spaceBetweenSpecialTokens: bool, callback)
 
             let sentences = cx.extract_vec::<Vec<u32>>(0)?;
             let (skip_special_tokens, spaces_between_added_tokens, callback_index) = match (cx.extract::<bool>(1), cx.extract::<bool>(2)){

@@ -12,7 +12,6 @@ bpe_tokenizer.normalizer = normalizers.Lowercase()
 dataset = datasets.load_dataset("wikitext", "wikitext-103-raw-v1", split="train")
 
 
-
 # Build an iterator over this dataset
 def batch_iterator():
     batch_size = 1000

@@ -1003,24 +1003,27 @@ impl PyTokenizer {
     ///
     ///     skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether the special tokens should be removed from the decoded string
-    ///    
-    ///     clean_up_tokenization_spaces (:obj:`bool`, defaults to :obj:`False`):
-    ///         Whether or not to clean up the tokenization spaces.
     ///
     ///     spaces_between_added_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether an extra space (" ") should be prepended to special tokens
     ///
     /// Returns:
     ///     :obj:`str`: The decoded string
-    #[args(skip_special_tokens = true,spaces_between_added_tokens = true)]
-    #[pyo3(text_signature = "(self, ids, skip_special_tokens=True, spaces_between_added_tokens=True)")]
+    #[args(ids, skip_special_tokens = true, spaces_between_added_tokens = true)]
+    #[pyo3(
+        text_signature = "(self, ids, skip_special_tokens=True, spaces_between_added_tokens=True)"
+    )]
     fn decode(
         &self,
         ids: Vec<u32>,
         skip_special_tokens: bool,
         spaces_between_added_tokens: bool,
     ) -> PyResult<String> {
-        ToPyResult(self.tokenizer.decode(ids,skip_special_tokens,spaces_between_added_tokens)).into()
+        ToPyResult(
+            self.tokenizer
+                .decode(ids, skip_special_tokens, spaces_between_added_tokens),
+        )
+        .into()
     }
 
     /// Decode a batch of ids back to their corresponding string
@@ -1032,17 +1035,16 @@ impl PyTokenizer {
     ///     skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether the special tokens should be removed from the decoded strings
     ///    
-    ///     clean_up_tokenization_spaces (:obj:`bool`, defaults to :obj:`False`):
-    ///         Whether or not to clean up the tokenization spaces.
-    ///
     ///     spaces_between_added_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether an extra space (" ") should be prepended to special tokens
     ///
     /// Returns:
     ///     :obj:`List[str]`: A list of decoded strings
 
-    #[args(skip_special_tokens = true, spaces_between_added_tokens = true)]
-    #[pyo3(text_signature = "(self, sequences, skip_special_tokens=True, spaces_between_added_tokens=True)")]
+    #[args(ids, skip_special_tokens = true, spaces_between_added_tokens = true)]
+    #[pyo3(
+        text_signature = "(self, sequences, skip_special_tokens=True, spaces_between_added_tokens=True)"
+    )]
     fn decode_batch(
         &self,
         py: Python<'_>,
