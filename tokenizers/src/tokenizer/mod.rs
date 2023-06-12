@@ -802,16 +802,23 @@ where
         spaces_between_added_tokens: bool,
     ) -> Result<String> {
         // split on added_tokens
-
+        let join_on_spaces = !self.decoder.is_some();
         let mut tokens_to_decode: Vec<String> = Vec::new();
-
         for id in ids.iter() {
             if let Some(mut token) = self.added_vocabulary.id_to_token(*id, &self.model) {
                 if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
                     continue;
-                } else if self.added_vocabulary.get_vocab().contains_key(&token) && spaces_between_added_tokens
-                {
-                    token += " "
+                } 
+                if self.added_vocabulary.get_vocab().contains_key(&token){
+                    let idx = tokens_to_decode.len() ;
+                    if spaces_between_added_tokens && !join_on_spaces {
+                        token += " "
+                    }
+                    if join_on_spaces && idx >= 1 && !spaces_between_added_tokens{
+                        tokens_to_decode[idx-1] += &token;
+                        continue;
+                    }
+
                 }
                 tokens_to_decode.push(token);
             }
