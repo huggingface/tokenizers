@@ -192,13 +192,6 @@ impl AddedVocabulary {
         &self.added_tokens_map
     }
 
-    /// Get only the added tokens
-    pub fn get_added_tokens(&self) -> Vec<String> {
-        self.added_tokens
-            .iter()
-            .map(|token| token.content.clone())
-            .collect()
-    }
 
     /// Get the id matching one of our token if it exists
     pub fn token_to_id(&self, token: &str, model: &impl Model) -> Option<u32> {
