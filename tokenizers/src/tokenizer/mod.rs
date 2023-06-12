@@ -802,7 +802,7 @@ where
         spaces_between_added_tokens: bool,
     ) -> Result<String> {
         // split on added_tokens
-        let join_on_spaces = !self.decoder.is_some();
+        let join_on_spaces = self.decoder.is_none();
         let mut tokens_to_decode: Vec<String> = Vec::new();
         for id in ids.iter() {
             if let Some(mut token) = self.added_vocabulary.id_to_token(*id, &self.model) {
