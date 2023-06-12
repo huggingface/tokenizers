@@ -54,7 +54,7 @@ fn load_tokenizer() {
     assert_eq!(encodings.get_ids(), ids);
     assert_eq!(encodings.get_tokens(), tokens);
 
-    let decoded = tokenizer.decode(ids, false, false).unwrap();
+    let decoded = tokenizer.decode(&ids, false, false).unwrap();
 
     assert_eq!(decoded, example);
 }
@@ -437,7 +437,7 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     println!("{:?}", output.get_tokens());
     // ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
 
-    let decoded = bert_tokenizer.decode(output.get_ids().to_vec(), true, false)?;
+    let decoded = bert_tokenizer.decode(output.get_ids(), true, false)?;
 
     println!("{}", decoded);
     // "welcome to the tok ##eni ##zer ##s library ."
@@ -454,7 +454,7 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 
     bert_tokenizer.with_decoder(WordPieceDecoder::default());
-    let decoded = bert_tokenizer.decode(output.get_ids().to_vec(), true, false)?;
+    let decoded = bert_tokenizer.decode(output.get_ids(), true, false)?;
     // "welcome to the tokenizers library."
     // END bert_proper_decoding
     assert_eq!(decoded, "welcome to the tokenizers library.");
@@ -471,11 +471,11 @@ fn spaces_between_added_tokens() -> tokenizers::Result<()> {
         AddedToken::from("GHI IHG", false),
     ]);
     let input_ids = bert_tokenizer.encode("[ABC][DEF][ABC]GHI IHG[DEF]", false)?;
-    let decoded_wo_spaces = bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, false)?;
+    let decoded_wo_spaces = bert_tokenizer.decode(input_ids.get_ids(), true, false)?;
     println!("{}", decoded_wo_spaces);
     assert_eq!(decoded_wo_spaces, "[ABC][DEF][ABC]GHI IHG[DEF]");
 
-    let decoded_w_spaces = bert_tokenizer.decode(input_ids.get_ids().to_vec(), true, true)?;
+    let decoded_w_spaces = bert_tokenizer.decode(input_ids.get_ids(), true, true)?;
     println!("{}", decoded_w_spaces);
     // "[ABC] [DEF] [ABC] GHI IHG [DEF]"
     assert_ne!(decoded_wo_spaces, decoded_w_spaces);

@@ -59,9 +59,7 @@ fn shell(vocab: &str, merges: &str) -> Result<()> {
         println!("Offsets:\t{:?}", encoded.get_offsets());
         println!(
             "Decoded:\t{}",
-            tokenizer
-                .decode(encoded.get_ids().to_vec(), true, true)
-                .unwrap()
+            tokenizer.decode(encoded.get_ids(), true, true).unwrap()
         );
         println!("Tokenized in {:?}", elapsed);
     }
