@@ -472,11 +472,11 @@ fn spaces_between_added_tokens() -> tokenizers::Result<()> {
     ]);
     let input_ids = bert_tokenizer.encode("[ABC][DEF][ABC]GHI IHG[DEF]", false)?;
     let decoded_wo_spaces = bert_tokenizer.decode(input_ids.get_ids(), true, false)?;
-    println!("{}", decoded_wo_spaces);
+    println!("decoded_wo_spaces : `{}`", decoded_wo_spaces);
     assert_eq!(decoded_wo_spaces, "[ABC][DEF][ABC]GHI IHG[DEF]");
 
     let decoded_w_spaces = bert_tokenizer.decode(input_ids.get_ids(), true, true)?;
-    println!("{}", decoded_w_spaces);
+    println!("decoded_w_spaces : `{}`", decoded_w_spaces);
     // "[ABC] [DEF] [ABC] GHI IHG [DEF]"
     assert_ne!(decoded_wo_spaces, decoded_w_spaces);
     assert_eq!(decoded_w_spaces, "[ABC] [DEF] [ABC] GHI IHG [DEF]");
