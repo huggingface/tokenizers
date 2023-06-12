@@ -1011,8 +1011,17 @@ impl PyTokenizer {
     ///     :obj:`str`: The decoded string
     #[pyo3(signature = (ids, skip_special_tokens = true, spaces_between_added_tokens = true))]
     #[pyo3(text_signature = "(self, ids, skip_special_tokens=True)")]
-    fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool, spaces_between_added_tokens: bool) -> PyResult<String> {
-        ToPyResult(self.tokenizer.decode(&ids, skip_special_tokens, spaces_between_added_tokens)).into()
+    fn decode(
+        &self,
+        ids: Vec<u32>,
+        skip_special_tokens: bool,
+        spaces_between_added_tokens: bool,
+    ) -> PyResult<String> {
+        ToPyResult(
+            self.tokenizer
+                .decode(&ids, skip_special_tokens, spaces_between_added_tokens),
+        )
+        .into()
     }
 
     /// Decode a batch of ids back to their corresponding string
@@ -1040,7 +1049,12 @@ impl PyTokenizer {
     ) -> PyResult<Vec<String>> {
         py.allow_threads(|| {
             let slices = sequences.iter().map(|v| &v[..]).collect::<Vec<&[u32]>>();
-            ToPyResult(self.tokenizer.decode_batch(&slices, skip_special_tokens, spaces_between_added_tokens)).into()
+            ToPyResult(self.tokenizer.decode_batch(
+                &slices,
+                skip_special_tokens,
+                spaces_between_added_tokens,
+            ))
+            .into()
         })
     }
 
