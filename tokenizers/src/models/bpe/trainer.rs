@@ -748,11 +748,11 @@ mod tests {
             ("singleLongTokenWithCamelCaseChange", 2),
             ("Longsingletokenwithpunctu@t!onwithin", 2),
             ("Anotherlongsingletokenwithnumberw1th1n", 2),
-            ("짧은한글문자열짧은한", 2), // korean 10 char
+            ("짧은한글문자열짧은한", 2),             // korean 10 char
             ("긴한글문자열긴한글문자열긴한글문", 2), // korean 16 char
-            ("短字符串短字符串短字", 2), //simplified chinese 10 char
+            ("短字符串短字符串短字", 2),             //simplified chinese 10 char
             ("长字符串长字符串长字符串长字符串", 2), // simp. chinese 16 char
-            ("短い文字列短い文字列", 2), // japanese 10 char
+            ("短い文字列短い文字列", 2),             // japanese 10 char
             ("長い文字列長い文字列長い文字列長", 2), // japanese 16 char
             ("so", 2),
             ("GPT-2", 2),

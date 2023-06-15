@@ -471,6 +471,7 @@ fn spaces_between_added_tokens() -> tokenizers::Result<()> {
         AddedToken::from("GHI IHG", false),
     ]);
     let input_ids = bert_tokenizer.encode("[ABC][DEF][ABC]GHI IHG[DEF]", false)?;
+    assert_eq!(input_ids.get_ids(), [30522, 30523, 30522, 30524, 30523]);
     let decoded_wo_spaces = bert_tokenizer.decode(input_ids.get_ids(), true, false)?;
     println!("decoded_wo_spaces : `{}`", decoded_wo_spaces);
     assert_eq!(decoded_wo_spaces, "[ABC][DEF][ABC]GHI IHG[DEF]");
@@ -480,5 +481,18 @@ fn spaces_between_added_tokens() -> tokenizers::Result<()> {
     // "[ABC] [DEF] [ABC] GHI IHG [DEF]"
     assert_ne!(decoded_wo_spaces, decoded_w_spaces);
     assert_eq!(decoded_w_spaces, "[ABC] [DEF] [ABC] GHI IHG [DEF]");
+
+
+
+    let mut tokenizer = Tokenizer::from_pretrained("t5-base", None)?;
+    tokenizer.add_tokens(&[AddedToken::from("<=", true)]);
+    let input_ids = tokenizer.encode("Let us test a<=6", false)?;
+    let decoded_wo_spaces = tokenizer.decode(input_ids.get_ids(), false, false)?;
+    println!("decoded_wo_spaces : `{}`", decoded_wo_spaces);
+    assert_eq!(decoded_wo_spaces, "Let us test a<=6");
+
+    let decoded_wo_spaces = tokenizer.decode(input_ids.get_ids(), false, true)?;
+    println!("decoded_w_spaces : `{}`", decoded_wo_spaces);
+    assert_eq!(decoded_wo_spaces, "a<= 6");
     Ok(())
 }
