@@ -802,22 +802,32 @@ where
         spaces_between_added_tokens: bool,
     ) -> Result<String> {
         // split on added_tokens
-        let join_on_spaces = self.decoder.is_none();
+        let has_decoder = !self.decoder.is_none();
+        println!("Model has a decoder {:?}", has_decoder);
         let mut tokens_to_decode: Vec<String> = Vec::new();
-        for id in ids.iter() {
+        for (idx, id) in ids.iter().enumerate() {
+            let is_last = idx == ids.len()-1;
+
             if let Some(mut token) = self.added_vocabulary.id_to_token(*id, &self.model) {
+                let is_added_token = self.added_vocabulary.get_vocab().contains_key(&token);
                 if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
                     continue;
                 }
-                if self.added_vocabulary.get_vocab().contains_key(&token) {
-                    let idx = tokens_to_decode.len();
-                    if spaces_between_added_tokens && !join_on_spaces {
-                        token += " "
-                    }
-                    if join_on_spaces && idx >= 1 && !spaces_between_added_tokens {
-                        tokens_to_decode[idx - 1] += &token;
+                if !is_last && (skip_special_tokens|| !spaces_between_added_tokens){
+                    let next_token = self.added_vocabulary.id_to_token(ids[idx+1], &self.model).unwrap();
+                    if self.added_vocabulary.is_special_token(&next_token){
+                        if !has_decoder && !is_added_token {
+                            token += " "
+                        }
+                        tokens_to_decode.push(token);
                         continue;
                     }
+                }
+                if is_added_token && spaces_between_added_tokens && !is_last{
+                    token += " "
+                }
+                if !is_added_token && !has_decoder && !is_last{
+                    token += " "
                 }
                 tokens_to_decode.push(token);
             }
@@ -825,7 +835,7 @@ where
         if let Some(decoder) = &self.decoder {
             decoder.decode(tokens_to_decode)
         } else {
-            Ok(tokens_to_decode.join(" "))
+            Ok(tokens_to_decode.join(""))
         }
     }
 }

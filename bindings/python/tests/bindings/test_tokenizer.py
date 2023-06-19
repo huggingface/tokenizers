@@ -419,4 +419,4 @@ class TestTokenizer:
         tokenizer.add_tokens(["<"])
         text = "a<=5</s>"
         print(tokenizer.decode(tokenizer.encode(text).ids, spaces_between_added_tokens=False))
-        print(tokenizer.decode(tokenizer.encode(text).ids, spaces_between_added_tokens=False))
+        print(tokenizer.decode(tokenizer.encode(text).ids, spaces_between_added_tokens=True))
