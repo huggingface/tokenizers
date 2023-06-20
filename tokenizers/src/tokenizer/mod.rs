@@ -812,14 +812,12 @@ where
                 if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
                     continue;
                 }
-                let is_added_token = self.added_vocabulary.get_vocab().contains_key(&token)
+                let is_added_token = self.added_vocabulary.get_vocab().contains_key(&token);
                 if spaces_between_added_tokens {
                     token = token + if idx == 0 { "" } else { " " }
                 }
-                if !has_decoder && !spaces_between_added_tokens {
-                    if !is_added_token {
-                        token = token + if idx == 0 || previous_is_added_token { "" } else { " " }
-                    }
+                if !has_decoder && !spaces_between_added_tokens && !is_added_token {
+                        token = token + if idx == 0 || previous_is_added_token { "" } else { " " };
                 }
                 previous_is_added_token = is_added_token;
                 tokens_to_decode.insert(0, token);
