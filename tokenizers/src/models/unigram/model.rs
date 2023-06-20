@@ -409,6 +409,7 @@ impl Model for Unigram {
     fn get_vocab_size(&self) -> usize {
         self.vocab.len()
     }
+
     fn tokenize(&self, sentence: &str) -> Result<Vec<Token>> {
         let str_tokens = self.encode(sentence)?;
         let mut offset = 0;
@@ -416,26 +417,8 @@ impl Model for Unigram {
         for string in str_tokens {
             let id: u32 = match self.token_to_ids.get(&string) {
                 Some(id) => *id,
-                None => {
-                    if self.byte_fallback {
-                        let mut ids = Vec::new();
-                        for byte in string.as_bytes() {
-                            let code = format!("<{:#04X}>", byte);
-                            if let Some(id) = self.token_to_ids.get(&code) {
-                                ids.push(*id);
-                            }
-                        }
-                        if ids.is_empty() {
-                            self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
-                        } else {
-                            *ids.first().unwrap()
-                        }
-                    } else {
-                        self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
-                    }
-                }
+                None => self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32,
             };
-
             let len = string.len();
             let offsets = (offset, offset + len);
             offset += len;
@@ -445,7 +428,17 @@ impl Model for Unigram {
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.token_to_ids.get(token).copied()
+        if self.byte_fallback && !self.token_to_ids.contains_key(token) {
+            let byte_codes = token.bytes().map(|b| format!("<{:#04X}>", b));
+            for code in byte_codes {
+                if let Some(id) = self.token_to_ids.get(&code) {
+                    return Some(*id);
+                }
+            }
+            None
+        } else {
+            self.token_to_ids.get(token).copied()
+        }
     }
 
     fn id_to_token(&self, id: u32) -> Option<String> {
@@ -600,46 +593,21 @@ mod tests {
     }
 
     #[test]
-    fn test_unigram_byte_fallback() {
+    fn test_unigram_bytefallback() {
         // 0x61 == 'a' in bytes
         let sentencepieces = vec![
             ("<unk>".to_string(), 0.0),
-            ("ab".to_string(), 0.0),
-            ("cd".to_string(), -0.1),
-            ("abc".to_string(), -0.2),
-            ("a".to_string(), -0.3),
-            ("b".to_string(), -0.4),
-            ("c".to_string(), -0.5),
-            ("ABC".to_string(), -0.5),
-            ("abcdabcd".to_string(), 20.0), // User defined just max the scores.
-            ("q".to_string(), 20.5),
-            ("r".to_string(), 20.5),
-            ("qr".to_string(), -0.5),
+            ("<0x09>".to_string(), 0.0),
         ];
-        let mut unigram = Unigram::from(sentencepieces, Some(0), Some(true)).unwrap();
-        let tokens = unigram.encode("c").unwrap();
+        let unigram = Unigram::from(sentencepieces.clone(), Some(0), Some(true)).unwrap();
+        let tokens = unigram.token_to_id("\t").unwrap();
+        assert_eq!(tokens, 1);
 
-        let tokens = unigram.encode("a").unwrap();
-    }
+        let unigram = Unigram::from(sentencepieces.clone(), Some(0), Some(false)).unwrap();
+        let tokens = unigram.token_to_id("\t");
+        assert_eq!(tokens, None);
 
-    #[test]
-    fn test_unigram_byte_fallback_newline() {
-        // 0x0A == '\n' in bytes
-        let sentencepieces = vec![
-            ("<unk>".to_string(), 0.0),
-            ("ab".to_string(), 0.0),
-            ("cd".to_string(), -0.1),
-            ("abc".to_string(), -0.2),
-            ("a".to_string(), -0.3),
-            ("b".to_string(), -0.4),
-            ("c".to_string(), -0.5),
-            ("ABC".to_string(), -0.5),
-            ("abcdabcd".to_string(), 20.0), // User defined just max the scores.
-            ("q".to_string(), 20.5),
-            ("r".to_string(), 20.5),
-            ("qr".to_string(), -0.5),
-        ];
-        let mut unigram = Unigram::from(sentencepieces, Some(0), Some(true)).unwrap();
-        let tokens = unigram.encode("\n").unwrap();
+        let tokens = unigram.token_to_id("<0x09>").unwrap();
+        assert_eq!(tokens, 1);
     }
 }
