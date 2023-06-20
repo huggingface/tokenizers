@@ -73,7 +73,7 @@ Training the tokenizer
 
 In this tour, we will build and train a Byte-Pair Encoding (BPE) tokenizer. For more information
 about the different type of tokenizers, check out this `guide
-<https://huggingface.co/transformers/tokenizer_summary.html>`__ in the 🤗 Transformers
+<https://huggingface.co/docs/transformers/main/en/tokenizer_summary#summary-of-the-tokenizers>`__ in the 🤗 Transformers
 documentation. Here, training the tokenizer means it will learn merge rules by:
 
 - Start with all the characters present in the training corpus as tokens.

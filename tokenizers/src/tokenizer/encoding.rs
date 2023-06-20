@@ -316,7 +316,7 @@ impl Encoding {
             return;
         }
 
-        assert!(stride < max_len);
+        assert!(stride < max_len, "`stride` must be strictly less than `max_len={}` (note that `max_len` may be shorter than the max length of the original model, as it subtracts the number of special characters", max_len);
 
         // When truncating, we lose the `sequence_ranges` information.
         self.sequence_ranges.clear();
