@@ -802,32 +802,58 @@ where
         skip_special_tokens: bool,
         spaces_between_added_tokens: bool,
     ) -> Result<String> {
-        // split on added_tokens
-        let has_decoder = !self.decoder.is_none();
-        let mut tokens_to_decode: Vec<String> = Vec::new();
-        let mut idx = 0;
-        let mut previous_is_added_token: bool = false;
-        for id in ids.iter().rev() {
+        let mut tokens = Vec::with_capacity(ids.len());
+        let mut last = None;
+
+        let has_decoder = self.decoder.is_some();
+        for id in ids {
             if let Some(mut token) = self.added_vocabulary.id_to_token(*id, &self.model) {
-                if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
+                if skip_special_tokens &&  self.added_vocabulary.is_special_token(&token) {
                     continue;
                 }
-                let is_added_token = self.added_vocabulary.get_vocab().contains_key(&token);
-                if spaces_between_added_tokens {
-                    token = token + if idx == 0 { "" } else { " " }
+                let is_added =self.added_vocabulary.is_added_token(&token);
+                match (has_decoder, spaces_between_added_tokens, last, is_added) {
+                    // No decoder
+                    (false, false, Some((_, true)), _) => {
+                        // We have either is an added from the pair
+                        // without decoder
+                        // skip this "join".
+                    }
+                    (false, false, Some((_, _)), true) => {
+                        // We have either is an added from the pair
+                        // Same case a the first
+                        // without decoder
+                        // skip this "join".
+                    }
+                    (false, _, Some((last_id, _)), _) => {
+                        // We have 2 consecutive non added tokens
+                        // without decoder
+                        // DO this "join".
+                        let last_token: &mut String = &mut tokens[last_id];
+                        last_token.push_str(" ");
+                    }
+                    // With a decode
+                    (true, true, Some((last_id, true)), true) => {
+                        // 2 consecutive added
+                        let last_token: &mut String = &mut tokens[last_id];
+                        last_token.push_str(" ");
+                    }
+                    (true, true, Some(_), true) => {
+                        // An added with something before
+                        token = format!(" {token}");
+                    }
+                    _ => {}
                 }
-                if !has_decoder && !spaces_between_added_tokens && !is_added_token {
-                        token = token + if idx == 0 || previous_is_added_token { "" } else { " " };
-                }
-                previous_is_added_token = is_added_token;
-                tokens_to_decode.insert(0, token);
-                idx = idx + 1;
+
+                last = Some((tokens.len(), is_added));
+                tokens.push(token);
             }
         }
+
         if let Some(decoder) = &self.decoder {
-            decoder.decode(tokens_to_decode)
+            decoder.decode(tokens)
         } else {
-            Ok(tokens_to_decode.join(""))
+            Ok(tokens.join(""))
         }
     }
 }

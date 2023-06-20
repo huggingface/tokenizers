@@ -191,6 +191,10 @@ impl AddedVocabulary {
     pub fn get_vocab(&self) -> &HashMap<String, u32> {
         &self.added_tokens_map
     }
+    /// Check if a token is a not a special token but still an added token
+    pub fn is_added_token(&self, token: &str) -> bool {
+        self.added_tokens_map.contains_key(token)
+    }
 
     /// Get the id matching one of our token if it exists
     pub fn token_to_id(&self, token: &str, model: &impl Model) -> Option<u32> {
