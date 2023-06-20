@@ -795,6 +795,7 @@ where
     }
 
     /// Decode the given ids, back to a String
+    /// "A" + " [cls] " + "B'
     pub fn decode(
         &self,
         ids: &[u32],
@@ -803,33 +804,25 @@ where
     ) -> Result<String> {
         // split on added_tokens
         let has_decoder = !self.decoder.is_none();
-        println!("Model has a decoder {:?}", has_decoder);
         let mut tokens_to_decode: Vec<String> = Vec::new();
-        for (idx, id) in ids.iter().enumerate() {
-            let is_last = idx == ids.len()-1;
-
+        let mut idx = 0;
+        for id in ids.iter().rev() {
             if let Some(mut token) = self.added_vocabulary.id_to_token(*id, &self.model) {
-                let is_added_token = self.added_vocabulary.get_vocab().contains_key(&token);
                 if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
                     continue;
                 }
-                if !is_last && (skip_special_tokens|| !spaces_between_added_tokens){
-                    let next_token = self.added_vocabulary.id_to_token(ids[idx+1], &self.model).unwrap();
-                    if self.added_vocabulary.is_special_token(&next_token){
-                        if !has_decoder && !is_added_token {
-                            token += " "
-                        }
-                        tokens_to_decode.push(token);
-                        continue;
+                if spaces_between_added_tokens{
+                    token = token + if idx==0  { "" } else { " " }
+                }
+                if !has_decoder && !spaces_between_added_tokens{
+                    if !self.added_vocabulary.get_vocab().contains_key(&token){
+                        let next_is_added = idx > 0 && self.added_vocabulary.get_vocab().contains_key(&tokens_to_decode[0]);
+                        token = token + if idx==0 || next_is_added { "" } else { " " }
                     }
+                    
                 }
-                if is_added_token && spaces_between_added_tokens && !is_last{
-                    token += " "
-                }
-                if !is_added_token && !has_decoder && !is_last{
-                    token += " "
-                }
-                tokens_to_decode.push(token);
+                tokens_to_decode.insert(0, token);
+                idx = idx + 1;
             }
         }
         if let Some(decoder) = &self.decoder {

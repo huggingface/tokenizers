@@ -487,8 +487,11 @@ fn spaces_between_added_tokens() -> tokenizers::Result<()> {
     let input_ids = bert_tokenizer.encode("What if the last is special, the previous is added[ABC]<=", false)?;
     let decoded_wo_spaces = bert_tokenizer.decode(input_ids.get_ids(), true, false)?;
     println!("decoded_wo_spaces : `{}`", decoded_wo_spaces);
-    assert_eq!(decoded_wo_spaces, "what if the last is special , the previous is added [ABC]");
-
+    assert_eq!(decoded_wo_spaces, "what if the last is special , the previous is added[ABC]");
+    
+    let decoded_w_spaces = bert_tokenizer.decode(input_ids.get_ids(), true, true)?;
+    println!("decoded_wo_spaces : `{}`", decoded_w_spaces);
+    assert_eq!(decoded_w_spaces, "what if the last is special , the previous is added [ABC]");
 
     let input_ids = bert_tokenizer.encode("Let us test a<=6", false)?;
     let decoded_wo_spaces = bert_tokenizer.decode(input_ids.get_ids(), false, false)?;
@@ -500,3 +503,11 @@ fn spaces_between_added_tokens() -> tokenizers::Result<()> {
     assert_eq!(decoded_wo_spaces, "let us test a <= 6");
     Ok(())
 }
+// "hello sir[added][special][added]"
+// "hello sir[added][special][special]"
+// "hello sir[added][special]how"
+// "hello sir[added] [special]how"
+// "hello sir [added] [special]how"
+// "hello sir [added] [special] how"
+
+
