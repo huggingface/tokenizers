@@ -811,15 +811,18 @@ where
                 if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
                     continue;
                 }
-                if spaces_between_added_tokens{
-                    token = token + if idx==0  { "" } else { " " }
+                if spaces_between_added_tokens {
+                    token = token + if idx == 0 { "" } else { " " }
                 }
-                if !has_decoder && !spaces_between_added_tokens{
-                    if !self.added_vocabulary.get_vocab().contains_key(&token){
-                        let next_is_added = idx > 0 && self.added_vocabulary.get_vocab().contains_key(&tokens_to_decode[0]);
-                        token = token + if idx==0 || next_is_added { "" } else { " " }
+                if !has_decoder && !spaces_between_added_tokens {
+                    if !self.added_vocabulary.get_vocab().contains_key(&token) {
+                        let next_is_added = idx > 0
+                            && self
+                                .added_vocabulary
+                                .get_vocab()
+                                .contains_key(&tokens_to_decode[0]);
+                        token = token + if idx == 0 || next_is_added { "" } else { " " }
                     }
-                    
                 }
                 tokens_to_decode.insert(0, token);
                 idx = idx + 1;
