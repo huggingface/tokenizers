@@ -272,19 +272,42 @@ impl Unigram {
                 let token: String = String::from_utf8(tok_bytes).unwrap();
                 let mut target_node = &mut best_path_ends_at[key_pos];
                 let length = key_pos - starts_at;
-                let id = self.token_to_ids.get(&token).unwrap();
-                let score = self.vocab.get(*id as usize).unwrap().1;
-                let candidate_best_path_score = score + best_path_score_till_here;
-                if target_node.starts_at.is_none()
-                    || candidate_best_path_score > target_node.best_path_score
-                {
-                    target_node.best_path_score = candidate_best_path_score;
-                    target_node.starts_at = Some(starts_at);
-                    target_node.id = *id as usize;
+                // processor.encode_as_pieces("\t") in sentencepiece
+                let ids = if self.byte_fallback && !self.token_to_ids.contains_key(&token) {
+                    token
+                        .bytes()
+                        .map(|b| {
+                            let code = format!("<{:#04X}>", b);
+                            println!("byte : {:?}", b);
+                            
+                            let token = self.token_to_id(&code);
+                            if token.is_some(){
+                                token
+                            }else{
+                                token
+                            }
+                        })
+                        .collect::<Vec<u32>>()
+                } else {
+                    vec![self.token_to_id(&token).unwrap()]
+                };
+
+                for id in &ids{
+                    let score = self.vocab.get(*id as usize).unwrap().1;
+                    let candidate_best_path_score = score + best_path_score_till_here;
+                    if target_node.starts_at.is_none()
+                        || candidate_best_path_score > target_node.best_path_score
+                    {
+                        target_node.best_path_score = candidate_best_path_score;
+                        target_node.starts_at = Some(starts_at);
+                        target_node.id = *id as usize;
+                    }
+                    if !has_single_node && length == mblen {
+                        has_single_node = true;
+                    }
                 }
-                if !has_single_node && length == mblen {
-                    has_single_node = true;
-                }
+
+
             }
             if !has_single_node {
                 let mut target_node = &mut best_path_ends_at[starts_at + mblen];
@@ -428,17 +451,7 @@ impl Model for Unigram {
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
-        if self.byte_fallback && !self.token_to_ids.contains_key(token) {
-            let byte_codes = token.bytes().map(|b| format!("<{:#04X}>", b));
-            for code in byte_codes {
-                if let Some(id) = self.token_to_ids.get(&code) {
-                    return Some(*id);
-                }
-            }
-            None
-        } else {
-            self.token_to_ids.get(token).copied()
-        }
+        self.token_to_ids.get(token).copied()
     }
 
     fn id_to_token(&self, id: u32) -> Option<String> {
@@ -594,10 +607,16 @@ mod tests {
 
     #[test]
     fn test_unigram_bytefallback() {
-        // 0x61 == 'a' in bytes
+        // In [97]: processor.encode_as_pieces("⅐⅛⅑ ")
+        // Out[97]: ['▁', '<0xE2>', '<0x85>', '<0x90>', '⅛', '<0xE2>', '<0x85>', '<0x91>', '▁']
         let sentencepieces = vec![
             ("<unk>".to_string(), 0.0),
-            ("<0x09>".to_string(), 0.0),
+            ("<0xE2>".to_string(), 0.0),
+            ("<0x85>".to_string(), 0.0),
+            ("<0xE2>".to_string(), 0.0),
+            ("<0x90>".to_string(), 0.0),
+            ("<0x91>".to_string(), 0.0),
+            ("<⅛>".to_string(), 0.0),
         ];
         let unigram = Unigram::from(sentencepieces.clone(), Some(0), Some(true)).unwrap();
         let tokens = unigram.token_to_id("\t").unwrap();
