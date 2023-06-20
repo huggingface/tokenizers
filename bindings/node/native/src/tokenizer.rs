@@ -585,7 +585,7 @@ declare_types! {
                     (skip_special_tokens, true, 2)
                 }
                 (Err(_), _, _) => {
-                    (true, false,  1) // TODO @Narsil handle this
+                    (true, true,  1) // TODO @Narsil handle this
                 }
             };
 
@@ -608,13 +608,13 @@ declare_types! {
             let sentences = cx.extract_vec::<Vec<u32>>(0)?;
             let (skip_special_tokens, spaces_between_added_tokens, callback_index) = match (cx.extract::<bool>(1), cx.extract::<bool>(2)){
                 (Ok(skip_special_tokens), Ok(spaces_between_added_tokens)) => {
-                    (skip_special_tokens, false, 3)
+                    (skip_special_tokens, true, 3)
                 }
                 (Ok(skip_special_tokens), Err(_)) => {
-                    (skip_special_tokens, false, 2)
+                    (skip_special_tokens, true, 2)
                 }
                 (Err(_), _,) => {
-                    (false, false,  1) // TODO @Narsil handle this
+                    (false, true,  1) // TODO @Narsil handle this
                 }
             };
 
