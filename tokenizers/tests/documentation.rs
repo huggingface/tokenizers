@@ -511,9 +511,3 @@ fn spaces_between_added_tokens() -> tokenizers::Result<()> {
     assert_eq!(decoded_wo_spaces, "let us test a <= 6");
     Ok(())
 }
-// "hello sir[added][special][added]"
-// "hello sir[added][special][special]"
-// "hello sir[added][special]how"
-// "hello sir[added] [special]how"
-// "hello sir [added] [special]how"
-// "hello sir [added] [special] how"
