@@ -806,24 +806,22 @@ where
         let has_decoder = !self.decoder.is_none();
         let mut tokens_to_decode: Vec<String> = Vec::new();
         let mut idx = 0;
+        let mut previous_is_added_token: bool = false;
         for id in ids.iter().rev() {
             if let Some(mut token) = self.added_vocabulary.id_to_token(*id, &self.model) {
                 if self.added_vocabulary.is_special_token(&token) && skip_special_tokens {
                     continue;
                 }
+                let is_added_token = self.added_vocabulary.get_vocab().contains_key(&token)
                 if spaces_between_added_tokens {
                     token = token + if idx == 0 { "" } else { " " }
                 }
                 if !has_decoder && !spaces_between_added_tokens {
-                    if !self.added_vocabulary.get_vocab().contains_key(&token) {
-                        let next_is_added = idx > 0
-                            && self
-                                .added_vocabulary
-                                .get_vocab()
-                                .contains_key(&tokens_to_decode[0]);
-                        token = token + if idx == 0 || next_is_added { "" } else { " " }
+                    if !is_added_token {
+                        token = token + if idx == 0 || previous_is_added_token { "" } else { " " }
                     }
                 }
+                previous_is_added_token = is_added_token;
                 tokens_to_decode.insert(0, token);
                 idx = idx + 1;
             }
