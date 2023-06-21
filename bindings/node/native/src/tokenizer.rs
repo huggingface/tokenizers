@@ -579,7 +579,7 @@ declare_types! {
             let ids = cx.extract_vec::<u32>(0)?;
             let (skip_special_tokens, spaces_between_added_tokens, callback_index) = match (cx.extract::<bool>(1), cx.extract::<bool>(2)){
                 (Ok(skip_special_tokens), Ok(spaces_between_added_tokens)) => {
-                    (skip_special_tokens, true, 3)
+                    (skip_special_tokens, spaces_between_added_tokens, 3)
                 }
                 (Ok(skip_special_tokens), Err(_)) => {
                     (skip_special_tokens, true, 2)
@@ -608,7 +608,7 @@ declare_types! {
             let sentences = cx.extract_vec::<Vec<u32>>(0)?;
             let (skip_special_tokens, spaces_between_added_tokens, callback_index) = match (cx.extract::<bool>(1), cx.extract::<bool>(2)){
                 (Ok(skip_special_tokens), Ok(spaces_between_added_tokens)) => {
-                    (skip_special_tokens, true, 3)
+                    (skip_special_tokens, spaces_between_added_tokens, 3)
                 }
                 (Ok(skip_special_tokens), Err(_)) => {
                     (skip_special_tokens, true, 2)
