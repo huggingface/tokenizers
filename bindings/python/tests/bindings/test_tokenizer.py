@@ -414,29 +414,26 @@ class TestTokenizer:
         assert output.tokens == ["Hey", "Ġthere", "Ġdear", "Ġfriend", "!"]
 
     def test_unigram_byte_fallback(self):
-        vocab =[
+        vocab = [
             ("<unk>", 0.0),
             ("A", -0.01),
             ("sen", -0.02),
             ("te", -0.03),
             ("n", -0.04),
             ("ce", -0.05),
-            ("<0x09>", -0.06),
-            
             ("<0xF0>", -0.06),
             ("<0x9F>", -0.06),
             ("<0xA4>", -0.06),
             ("<0x97>", -0.06),
-
             (" ", -0.4),
         ]
-        tokenizer = tokenizer = Tokenizer(Unigram(vocab, 0,byte_fallback = False))
+        tokenizer = tokenizer = Tokenizer(Unigram(vocab, 0, byte_fallback=False))
 
         output = tokenizer.encode("A sentence 🤗")
         assert output.ids[-1] == 0
-        assert output.tokens == ['A', ' ', 'sen', 'te', 'n', 'ce', ' ', '🤗']
-        
-        tokenizer = Tokenizer(Unigram(vocab, 0, byte_fallback = True))
+        assert output.tokens == ["A", " ", "sen", "te", "n", "ce", " ", "🤗"]
+
+        tokenizer = Tokenizer(Unigram(vocab, 0, byte_fallback=True))
 
         output = tokenizer.encode("A sentence 🤗")
-        assert output.tokens == ['A', ' ', 'sen', 'te', 'n', 'ce', ' ', '<0xF0>', '<0x9F>', '<0xA4>', '<0x97>']
+        assert output.tokens == ["A", " ", "sen", "te", "n", "ce", " ", "<0xF0>", "<0x9F>", "<0xA4>", "<0x97>"]
