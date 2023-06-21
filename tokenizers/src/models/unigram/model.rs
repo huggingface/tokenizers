@@ -433,22 +433,26 @@ impl Model for Unigram {
         let mut offset = 0;
         let mut tokens = Vec::with_capacity(str_tokens.len());
         for string in str_tokens {
-            let ids = if self.token_to_ids.contains_key(&string) {
-                vec![*self.token_to_ids.get(&string).unwrap()]
-            } else if self.byte_fallback {
-                string
-                    .bytes()
-                    .map(|b| self.token_to_id(&byte_to_piece(b)).unwrap())
-                    .collect()
-            } else {
-                vec![self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32]
-            };
-            let len = string.len() - ids.len() + 1;
-            for id in ids {
-                let offsets = (offset, offset + len);
-                tokens.push(Token::new(id, self.id_to_token(id).unwrap(), offsets));
+            if !self.token_to_ids.contains_key(&string) && self.byte_fallback {
+                for byte in string.bytes(){
+                    let id: u32 = match self.token_to_ids.get(&byte_to_piece(byte)) {
+                        Some(id) => *id,
+                        None => self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32,
+                    };
+                    let offsets = (offset, offset + 1);
+                    tokens.push(Token::new(id, byte_to_piece(byte), offsets));
+                }
             }
-            offset += len;
+            else{
+                let id: u32 = match self.token_to_ids.get(&string) {
+                    Some(id) => *id,
+                    None => self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32,
+                };
+                let len = string.len();
+                let offsets = (offset, offset + len);
+                offset += len;
+                tokens.push(Token::new(id, string, offsets));
+            } 
         }
         Ok(tokens)
     }
