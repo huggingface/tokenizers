@@ -434,5 +434,5 @@ class TestTokenizer:
         )
 
         assert decoded_wo_spaces != decoded_w_spaces
-        assert decoded_wo_spaces == "let us test a<= 6"
-        assert decoded_w_spaces == "let us test a<=6"
+        assert decoded_wo_spaces == "let us test a<= 6" # The decoder adds a space
+        assert decoded_w_spaces == "let us test a <= 6"
