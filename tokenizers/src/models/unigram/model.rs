@@ -714,7 +714,6 @@ mod tests {
             ]
         );
 
-        // test without fused unk
         unigram.set_fuse_unk(false);
         let tokens = unigram.tokenize("Hello⅐how are⅑").unwrap();
         assert_eq!(
