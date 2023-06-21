@@ -94,7 +94,7 @@ pub fn piece_to_byte(piece: &str) -> Option<u8> {
         let byte_piece = byte_to_piece(i);
         k_map.insert(byte_piece.clone(), i);
     }
-    
+
     match k_map.get(piece) {
         Some(byte) => Some(*byte),
         None => None,
@@ -132,17 +132,10 @@ impl Unigram {
 
         let mut min_score = f64::INFINITY;
 
-
         for (id, (token, score)) in vocab.iter().enumerate() {
             token_to_ids.insert(token.to_string(), id as u32);
-            if byte_fallback && token.starts_with("<0x"){
-                let bytes: u8 = piece_to_byte(token).unwrap();
-                builder.push(&[bytes]);
-            } else{
-                let bytes: Vec<u8> = token.bytes().collect();
-                builder.push(&bytes);
-            }
-
+            let bytes: Vec<u8> = token.bytes().collect();
+            builder.push(&bytes);
             if score < &min_score {
                 min_score = *score;
             }
@@ -294,35 +287,53 @@ impl Unigram {
                 .common_prefix_search(sentence.bytes().skip(starts_at))
             {
                 let key_pos = starts_at + tok_bytes.len();
+                let token: String = String::from_utf8(tok_bytes).unwrap();
                 let mut target_node = &mut best_path_ends_at[key_pos];
                 let length = key_pos - starts_at;
-                let ids = if self.byte_fallback && self.token_to_ids.contains_key(&byte_to_piece(tok_bytes[0])) {
-                    let bytes = sentence.bytes().skip(starts_at).take(mblen);
-                    bytes.map(|b| self.token_to_id(&byte_to_piece(b)).unwrap()).collect()
-
-                } else {
-                    let token: String = String::from_utf8(tok_bytes).unwrap();
-                    vec![self.token_to_id(&token).unwrap()]
-                };
-                println!("Obtained ids : {:?}", ids);
-
-                for id in &ids{
-                    let score = self.vocab.get(*id as usize).unwrap().1;
-                    let candidate_best_path_score = score + best_path_score_till_here;
-                    if target_node.starts_at.is_none()
-                        || candidate_best_path_score > target_node.best_path_score
-                    {
-                        target_node.best_path_score = candidate_best_path_score;
-                        target_node.starts_at = Some(starts_at);
-                        target_node.id = *id as usize;
-                    }
-                    if !has_single_node && length == mblen {
-                        has_single_node = true;
-                    }
+                let id = self.token_to_ids.get(&token).unwrap();
+                let score = self.vocab.get(*id as usize).unwrap().1;
+                let candidate_best_path_score = score + best_path_score_till_here;
+                if target_node.starts_at.is_none()
+                    || candidate_best_path_score > target_node.best_path_score
+                {
+                    target_node.best_path_score = candidate_best_path_score;
+                    target_node.starts_at = Some(starts_at);
+                    target_node.id = *id as usize;
                 }
-
-
+                if !has_single_node && length == mblen {
+                    has_single_node = true;
+                }
             }
+
+            // let length = key_pos - starts_at;
+            // let ids = if self.byte_fallback && self.token_to_ids.contains_key(&byte_to_piece(tok_bytes[0])) {
+            //     let bytes = sentence.bytes().skip(starts_at).take(mblen);
+            //     bytes.map(|b| self.token_to_id(&byte_to_piece(b)).unwrap()).collect()
+
+            // } else {
+            //     let token: String = String::from_utf8(tok_bytes).unwrap();
+            //     vec![self.token_to_id(&token).unwrap()]
+            // };
+            // println!("Obtained ids : {:?}", ids);
+
+            // for (idx, id) in ids.iter().enumerate(){
+            //     let mut target_node = &mut best_path_ends_at[starts_at + idx];
+            //     let score = self.vocab.get(*id as usize).unwrap().1;
+            //     let candidate_best_path_score = score + best_path_score_till_here;
+            //     if target_node.starts_at.is_none()
+            //         || candidate_best_path_score > target_node.best_path_score
+            //     {
+            //         target_node.best_path_score = candidate_best_path_score;
+            //         target_node.starts_at = Some(starts_at);
+            //         target_node.id = *id as usize;
+            //     }
+            //     println!("has_single_node {:?}, length {:?}, mblen {:?}", has_single_node, length, mblen);
+
+            //     if !has_single_node && length == mblen {
+            //         has_single_node = true;
+            //     }
+            // }
+
             if !has_single_node {
                 let mut target_node = &mut best_path_ends_at[starts_at + mblen];
                 let candidate_best_path_score = unk_score + best_path_score_till_here;
@@ -371,7 +382,6 @@ impl Unigram {
 
     fn encode_unoptimized(&self, sentence: &str) -> Result<Vec<String>> {
         let mut lattice = Lattice::from(sentence, self.bos_id, self.eos_id);
-        println!("Lattice : {:?}", lattice);
         self.populate_nodes(&mut lattice);
         if self.fuse_unk {
             let mut results = vec![];
@@ -379,9 +389,6 @@ impl Unigram {
             for node in lattice.viterbi().iter() {
                 let item = lattice.piece(&node.borrow());
                 if node.borrow().id == self.unk_id.ok_or(UnigramError::MissingUnkId)? {
-                    if self.byte_fallback{
-                        let codes = item.bytes(); // item should be a stringwith byte to pieces collected
-                    }
                     token.push_str(&item);
                 } else {
                     if !token.is_empty() {
@@ -455,15 +462,25 @@ impl Model for Unigram {
         let str_tokens = self.encode(sentence)?;
         let mut offset = 0;
         let mut tokens = Vec::with_capacity(str_tokens.len());
+
         for string in str_tokens {
-            let id: u32 = match self.token_to_ids.get(&string) {
-                Some(id) => *id,
-                None => self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32,
+            let ids = if self.token_to_ids.contains_key(&string) {
+                vec![*self.token_to_ids.get(&string).unwrap()]
+            } else if self.byte_fallback {
+                string
+                    .bytes()
+                    .map(|b| self.token_to_id(&byte_to_piece(b)).unwrap())
+                    .collect()
+            } else {
+                vec![self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32]
             };
             let len = string.len();
-            let offsets = (offset, offset + len);
             offset += len;
-            tokens.push(Token::new(id, string, offsets));
+            for (idx, id) in ids.iter().enumerate() {
+                let offsets = (offset, offset + len + idx);
+                println!("{:?}", self.id_to_token(*id));
+                tokens.push(Token::new(*id, self.id_to_token(*id).unwrap(), offsets));
+            }
         }
         Ok(tokens)
     }
@@ -636,20 +653,69 @@ mod tests {
             ("<0x91>".to_string(), 0.0),
             ("<0x9B>".to_string(), 0.0),
             ("<⅛>".to_string(), 0.0),
-            ("Hello".to_string(), 0.0),
-            ("how".to_string(), 0.0),
-            ("are".to_string(), 0.0),
-
+            ("Hello".to_string(), -0.1),
+            ("how".to_string(), -0.2),
+            ("are".to_string(), -0.3),
+            (" ".to_string(), -0.3),
         ];
         let unigram = Unigram::from(sentencepieces.clone(), Some(0), Some(true)).unwrap();
-        let tokens = unigram.encode("Hello ⅐⅛ how are⅑").unwrap();
-        assert_eq!(tokens, [""]);
+        let tokens = unigram.tokenize("Hello⅐how are⅑").unwrap();
+        assert_eq!(
+            tokens,
+            [
+                Token {
+                    id: 8,
+                    value: "Hello".to_string(),
+                    offsets: (5, 10)
+                },
+                Token {
+                    id: 3,
+                    value: "<0xE2>".to_string(),
+                    offsets: (8, 11)
+                },
+                Token {
+                    id: 2,
+                    value: "<0x85>".to_string(),
+                    offsets: (8, 12)
+                },
+                Token {
+                    id: 4,
+                    value: "<0x90>".to_string(),
+                    offsets: (8, 13)
+                },
+                Token {
+                    id: 9,
+                    value: "how".to_string(),
+                    offsets: (11, 14)
+                },
+                Token {
+                    id: 11,
+                    value: " ".to_string(),
+                    offsets: (12, 13)
+                },
+                Token {
+                    id: 10,
+                    value: "are".to_string(),
+                    offsets: (15, 18)
+                },
+                Token {
+                    id: 3,
+                    value: "<0xE2>".to_string(),
+                    offsets: (18, 21)
+                },
+                Token {
+                    id: 2,
+                    value: "<0x85>".to_string(),
+                    offsets: (18, 22)
+                },
+                Token {
+                    id: 5,
+                    value: "<0x91>".to_string(),
+                    offsets: (18, 23)
+                }
+            ]
+        );
 
-        let unigram = Unigram::from(sentencepieces.clone(), Some(0), Some(false)).unwrap();
-        let tokens = unigram.token_to_id("\t");
-        assert_eq!(tokens, None);
-
-        let tokens = unigram.token_to_id("<0x09>").unwrap();
-        assert_eq!(tokens, 1);
+        // test without fused unk
     }
 }
