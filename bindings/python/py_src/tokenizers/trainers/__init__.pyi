@@ -38,6 +38,12 @@ class BpeTrainer(Trainer):
 
         end_of_word_suffix (:obj:`str`, `optional`):
             A suffix to be used for every subword that is a end-of-word.
+
+        max_token_length (:obj:`int`, `optional`):
+            Prevents creating tokens longer than the specified size.
+            This can help with reducing polluting your vocabulary with
+            highly repetitive tokens like `======` for wikipedia
+
     """
 
 class UnigramTrainer(Trainer):
