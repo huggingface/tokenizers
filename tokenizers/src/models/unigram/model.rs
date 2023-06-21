@@ -443,8 +443,7 @@ impl Model for Unigram {
             else if self.byte_fallback {
                 for byte in string.bytes(){
                     let string = byte_to_piece(byte);
-                    let id: u32 = self.token_to_ids[&string];
-                    tokens.push(Token::new(id, string, (offset, offset + 1)));
+                    tokens.push(Token::new(self.token_to_ids[&string], string, (offset, offset + 1)));
                 }
             }
             else {
