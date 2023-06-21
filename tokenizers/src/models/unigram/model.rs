@@ -433,26 +433,23 @@ impl Model for Unigram {
         let mut offset = 0;
         let mut tokens = Vec::with_capacity(str_tokens.len());
         for string in str_tokens {
-            if !self.token_to_ids.contains_key(&string) && self.byte_fallback {
-                for byte in string.bytes(){
-                    let id: u32 = match self.token_to_ids.get(&byte_to_piece(byte)) {
-                        Some(id) => *id,
-                        None => self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32,
-                    };
-                    let offsets = (offset, offset + 1);
-                    tokens.push(Token::new(id, byte_to_piece(byte), offsets));
-                }
-            }
-            else{
-                let id: u32 = match self.token_to_ids.get(&string) {
-                    Some(id) => *id,
-                    None => self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32,
-                };
+            let id: Option<&u32> = self.token_to_ids.get(&string);
+            if let Some(&id) = id{
                 let len = string.len();
                 let offsets = (offset, offset + len);
                 offset += len;
                 tokens.push(Token::new(id, string, offsets));
             } 
+            else if self.byte_fallback {
+                for byte in string.bytes(){
+                    let string = byte_to_piece(byte);
+                    let id: u32 = self.token_to_ids[&string];
+                    tokens.push(Token::new(id, string, (offset, offset + 1)));
+                }
+            }
+            else {
+                return Err(Box::new(UnigramError::UnkIdNotInVocabulary));
+            }
         }
         Ok(tokens)
     }
