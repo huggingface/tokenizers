@@ -102,34 +102,32 @@ impl Task for DecodeTask {
 
     fn perform(&self) -> Result<Self::Output, Self::Error> {
         match self {
-            DecodeTask::Single(
-                worker,
-                ids,
-                skip_special_tokens,
-                spaces_between_added_tokens,
-            ) => worker
-                .tokenizer
-                .read()
-                .unwrap()
-                .decode(ids.as_slice(), *skip_special_tokens, *spaces_between_added_tokens)
-                .map_err(|e| format!("{}", e))
-                .map(DecodeOutput::Single),
-            DecodeTask::Batch(
-                worker,
-                ids,
-                skip_special_tokens,
-                spaces_between_added_tokens,
-            ) => worker
-                .tokenizer
-                .read()
-                .unwrap()
-                .decode_batch(
-                    &ids.iter().map(|v| v.as_slice()).collect::<Vec<&[u32]>>(),
-                    *skip_special_tokens,
-                    *spaces_between_added_tokens,
-                )
-                .map_err(|e| format!("{}", e))
-                .map(DecodeOutput::Batch),
+            DecodeTask::Single(worker, ids, skip_special_tokens, spaces_between_added_tokens) => {
+                worker
+                    .tokenizer
+                    .read()
+                    .unwrap()
+                    .decode(
+                        ids.as_slice(),
+                        *skip_special_tokens,
+                        *spaces_between_added_tokens,
+                    )
+                    .map_err(|e| format!("{}", e))
+                    .map(DecodeOutput::Single)
+            }
+            DecodeTask::Batch(worker, ids, skip_special_tokens, spaces_between_added_tokens) => {
+                worker
+                    .tokenizer
+                    .read()
+                    .unwrap()
+                    .decode_batch(
+                        &ids.iter().map(|v| v.as_slice()).collect::<Vec<&[u32]>>(),
+                        *skip_special_tokens,
+                        *spaces_between_added_tokens,
+                    )
+                    .map_err(|e| format!("{}", e))
+                    .map(DecodeOutput::Batch)
+            }
         }
     }
 
