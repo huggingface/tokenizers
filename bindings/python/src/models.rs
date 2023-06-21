@@ -813,15 +813,21 @@ pub struct PyUnigram {}
 #[pymethods]
 impl PyUnigram {
     #[new]
-    fn new(vocab: Option<Vec<(String, f64)>>, unk_id: Option<usize>) -> PyResult<(Self, PyModel)> {
-        match (vocab, unk_id) {
-            (Some(vocab), unk_id) => {
+    fn new(vocab: Option<Vec<(String, f64)>>, unk_id: Option<usize>, byte_fallback: Option<bool>) -> PyResult<(Self, PyModel)> {
+        match (vocab, unk_id, byte_fallback) {
+            (Some(vocab), unk_id, byte_fallback) => {
                 let model = Unigram::from(vocab, unk_id, byte_fallback).map_err(|e| {
                     exceptions::PyException::new_err(format!("Error while loading Unigram: {}", e))
                 })?;
                 Ok((PyUnigram {}, model.into()))
-            }
-            (None, None) => Ok((PyUnigram {}, Unigram::default().into())),
+            }            
+            (Some(vocab), unk_id, None) => {
+                let model = Unigram::from(vocab, unk_id, Some(false)).map_err(|e| {
+                    exceptions::PyException::new_err(format!("Error while loading Unigram: {}", e))
+                })?;
+                Ok((PyUnigram {}, model.into()))
+            },
+            (None, None, Some(byte_fallback)) => Ok((PyUnigram {}, Unigram::default().into())),
             _ => Err(exceptions::PyValueError::new_err(
                 "`vocab` and `unk_id` must be both specified",
             )),
