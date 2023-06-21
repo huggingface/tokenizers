@@ -683,9 +683,6 @@ class Tokenizer:
             skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
                 Whether the special tokens should be removed from the decoded string
 
-            spaces_between_added_tokens (:obj:`bool`, defaults to :obj:`True`):
-                Whether an extra space (" ") should be prepended to special tokens
-
         Returns:
             :obj:`str`: The decoded string
         """
@@ -700,9 +697,6 @@ class Tokenizer:
 
             skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
                 Whether the special tokens should be removed from the decoded strings
-
-            spaces_between_added_tokens (:obj:`bool`, defaults to :obj:`True`):
-                Whether an extra space (" ") should be prepended to special tokens
 
         Returns:
             :obj:`List[str]`: A list of decoded strings
