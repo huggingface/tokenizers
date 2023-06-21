@@ -670,7 +670,7 @@ class Tokenizer:
             :obj:`int`: The number of tokens that were created in the vocabulary
         """
         pass
-    def decode(self, ids, skip_special_tokens=True):
+    def decode(self, ids, skip_special_tokens=True, spaces_between_added_tokens = True):
         """
         Decode the given list of ids back to a string
 
@@ -690,7 +690,7 @@ class Tokenizer:
             :obj:`str`: The decoded string
         """
         pass
-    def decode_batch(self, sequences, skip_special_tokens=True):
+    def decode_batch(self, sequences, skip_special_tokens=True, spaces_between_added_tokens = True):
         """
         Decode a batch of ids back to their corresponding string
 
