@@ -808,10 +808,10 @@ where
         let has_decoder = self.decoder.is_some();
         for id in ids {
             if let Some(mut token) = self.added_vocabulary.id_to_token(*id, &self.model) {
-                if skip_special_tokens &&  self.added_vocabulary.is_special_token(&token) {
+                if skip_special_tokens && self.added_vocabulary.is_special_token(&token) {
                     continue;
                 }
-                let is_added =self.added_vocabulary.is_added_token(&token);
+                let is_added = self.added_vocabulary.is_added_token(&token);
                 match (has_decoder, spaces_between_added_tokens, last, is_added) {
                     // No decoder
                     (false, false, Some((_, true)), _) => {
