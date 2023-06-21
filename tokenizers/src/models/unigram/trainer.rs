@@ -1,4 +1,4 @@
-use crate::models::unigram::{lattice::Lattice, model::Unigram};
+use crate::models::unigram::{lattice::Lattice, model::Unigram, model::byte_to_piece};
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
@@ -69,6 +69,8 @@ pub struct UnigramTrainer {
     seed_size: usize,
     #[builder(default = "HashMap::new()")]
     words: HashMap<String, u32>,
+    #[builder(default = "false")]
+    pub byte_fallback: bool,
 }
 
 impl Default for UnigramTrainer {
@@ -543,6 +545,9 @@ impl UnigramTrainer {
         // We use a UNK token when training, whatever the `self.unk_token`
         pieces.push(("<UNK>".into(), f64::NAN));
         pieces.extend(self.make_seed_sentence_pieces(&sentences, &progress));
+        if self.byte_fallback{
+            pieces.extend((0..=255).map(|i| (byte_to_piece(i), 0.0)));
+        }
         self.finalize_progress(&progress, sentences.len());
 
         // Useful to check compatibility with spm.
