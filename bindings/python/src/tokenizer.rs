@@ -1010,7 +1010,9 @@ impl PyTokenizer {
     /// Returns:
     ///     :obj:`str`: The decoded string
     #[pyo3(signature = (ids, skip_special_tokens = true, spaces_between_added_tokens = true))]
-    #[pyo3(text_signature = "(self, ids, skip_special_tokens=True, spaces_between_added_tokens=True)")]
+    #[pyo3(
+        text_signature = "(self, ids, skip_special_tokens=True, spaces_between_added_tokens=True)"
+    )]
     fn decode(
         &self,
         ids: Vec<u32>,
@@ -1039,7 +1041,9 @@ impl PyTokenizer {
     /// Returns:
     ///     :obj:`List[str]`: A list of decoded strings
     #[pyo3(signature = (sequences, skip_special_tokens = true, spaces_between_added_tokens = true))]
-    #[pyo3(text_signature = "(self, sequences, skip_special_tokens=True, spaces_between_added_tokens=True)")]
+    #[pyo3(
+        text_signature = "(self, sequences, skip_special_tokens=True, spaces_between_added_tokens=True)"
+    )]
     fn decode_batch(
         &self,
         py: Python<'_>,
