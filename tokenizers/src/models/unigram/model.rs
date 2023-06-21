@@ -231,7 +231,7 @@ impl Unigram {
     ///     ("abc".to_string(), 5.0),
     ///     ("abcd".to_string(), 10.0),
     /// ];
-    /// let model = Unigram::from(pieces, Some(0)).unwrap();
+    /// let model = Unigram::from(pieces, Some(0), Some(false)).unwrap();
     /// let result = model.encode("abcdacdxx").unwrap();
     /// assert_eq!(result, vec!["abcd", "a", "cd", "xx"]);
     /// ```
