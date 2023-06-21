@@ -474,13 +474,12 @@ impl Model for Unigram {
             } else {
                 vec![self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32]
             };
-            let len = string.len();
-            offset += len;
-            for (idx, id) in ids.iter().enumerate() {
-                let offsets = (offset, offset + len + idx);
-                println!("{:?}", self.id_to_token(*id));
-                tokens.push(Token::new(*id, self.id_to_token(*id).unwrap(), offsets));
+            let len = string.len() - ids.len() + 1;
+            for  id in ids{
+                let offsets = (offset, offset + len );
+                tokens.push(Token::new(id, self.id_to_token(id).unwrap(), offsets));
             }
+            offset += len;
         }
         Ok(tokens)
     }
@@ -652,7 +651,6 @@ mod tests {
             ("<0x90>".to_string(), 0.0),
             ("<0x91>".to_string(), 0.0),
             ("<0x9B>".to_string(), 0.0),
-            ("<⅛>".to_string(), 0.0),
             ("Hello".to_string(), -0.1),
             ("how".to_string(), -0.2),
             ("are".to_string(), -0.3),
@@ -666,52 +664,52 @@ mod tests {
                 Token {
                     id: 8,
                     value: "Hello".to_string(),
-                    offsets: (5, 10)
+                    offsets: (0, 5)
                 },
                 Token {
                     id: 3,
                     value: "<0xE2>".to_string(),
-                    offsets: (8, 11)
+                    offsets: (5, 6)
                 },
                 Token {
                     id: 2,
                     value: "<0x85>".to_string(),
-                    offsets: (8, 12)
+                    offsets: (5, 6)
                 },
                 Token {
                     id: 4,
                     value: "<0x90>".to_string(),
-                    offsets: (8, 13)
+                    offsets: (5, 6)
                 },
                 Token {
                     id: 9,
                     value: "how".to_string(),
-                    offsets: (11, 14)
+                    offsets: (6, 9)
                 },
                 Token {
                     id: 11,
                     value: " ".to_string(),
-                    offsets: (12, 13)
+                    offsets: (9, 10)
                 },
                 Token {
                     id: 10,
                     value: "are".to_string(),
-                    offsets: (15, 18)
+                    offsets: (10, 13)
                 },
                 Token {
                     id: 3,
                     value: "<0xE2>".to_string(),
-                    offsets: (18, 21)
+                    offsets: (13, 14)
                 },
                 Token {
                     id: 2,
                     value: "<0x85>".to_string(),
-                    offsets: (18, 22)
+                    offsets: (13, 14)
                 },
                 Token {
                     id: 5,
                     value: "<0x91>".to_string(),
-                    offsets: (18, 23)
+                    offsets: (13, 14)
                 }
             ]
         );
