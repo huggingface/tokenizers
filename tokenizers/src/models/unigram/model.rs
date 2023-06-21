@@ -95,11 +95,7 @@ pub fn piece_to_byte(piece: &str) -> Option<u8> {
         let byte_piece = byte_to_piece(i);
         k_map.insert(byte_piece.clone(), i);
     }
-
-    match k_map.get(piece) {
-        Some(byte) => Some(*byte),
-        None => None,
-    }
+    k_map.get(piece).copied()
 }
 
 impl Unigram {
@@ -439,7 +435,11 @@ impl Model for Unigram {
                     if self.byte_fallback {
                         for byte in string.bytes() {
                             let byte_string = byte_to_piece(byte);
-                            tokens.push(Token::new(self.token_to_ids[&byte_string], byte_string, (offset, offset + 1)));
+                            tokens.push(Token::new(
+                                self.token_to_ids[&byte_string],
+                                byte_string,
+                                (offset, offset + 1),
+                            ));
                         }
                         offset += 1;
                         continue;
@@ -628,7 +628,7 @@ mod tests {
             ("are".to_string(), -0.3),
             (" ".to_string(), -0.4),
         ];
-        let mut unigram = Unigram::from(sentencepieces.clone(), Some(0), Some(true)).unwrap();
+        let mut unigram = Unigram::from(sentencepieces, Some(0), Some(true)).unwrap();
         let tokens = unigram.tokenize("Hello⅐how are⅑").unwrap();
         assert_eq!(
             tokens,

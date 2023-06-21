@@ -746,10 +746,7 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .do_train(
-                vec![("The".into(), 12), ("are".into(), 11)],
-                &mut unigram,
-            )
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -771,10 +768,7 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .do_train(
-                vec![("The".into(), 12), ("are".into(), 11)],
-                &mut unigram,
-            )
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -790,10 +784,7 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .do_train(
-                vec![("The".into(), 12), ("are".into(), 11)],
-                &mut unigram,
-            )
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -813,10 +804,7 @@ mod tests {
 
         let mut unigram = Unigram::default();
         trainer
-            .do_train(
-                vec![("The".into(), 12), ("are".into(), 11)],
-                &mut unigram,
-            )
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
             .unwrap();
 
         let mut pieces = unigram.iter();

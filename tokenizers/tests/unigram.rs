@@ -61,9 +61,7 @@ fn test_train_unigram_from_file() {
         .iter()
         .map(|(s, i)| (s.to_owned(), *i))
         .collect();
-    trainer
-        .do_train(sentences, &mut model, Some(false))
-        .unwrap();
+    trainer.do_train(sentences, &mut model).unwrap();
     assert_eq!(model.get_vocab_size(), 719);
 }
 
