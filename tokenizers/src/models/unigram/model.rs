@@ -447,7 +447,7 @@ impl Model for Unigram {
                 }
             }
             else {
-                return Err(Box::new(UnigramError::UnkIdNotInVocabulary));
+                return Err(Box::new(UnigramError::MissingUnkId));
             }
         }
         Ok(tokens)
