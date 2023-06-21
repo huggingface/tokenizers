@@ -433,22 +433,25 @@ impl Model for Unigram {
         let mut offset = 0;
         let mut tokens = Vec::with_capacity(str_tokens.len());
         for string in str_tokens {
-            let id: Option<&u32> = self.token_to_ids.get(&string);
-            if let Some(&id) = id{
-                let len = string.len();
-                let offsets = (offset, offset + len);
-                offset += len;
-                tokens.push(Token::new(id, string, offsets));
-            } 
-            else if self.byte_fallback {
-                for byte in string.bytes(){
-                    let string = byte_to_piece(byte);
-                    tokens.push(Token::new(self.token_to_ids[&string], string, (offset, offset + 1)));
+            let id: u32 = match self.token_to_ids.get(&string) {
+                Some(&id) => id,
+                None => {
+                    if self.byte_fallback {
+                        for byte in string.bytes() {
+                            let byte_string = byte_to_piece(byte);
+                            tokens.push(Token::new(self.token_to_ids[&byte_string], byte_string, (offset, offset + 1)));
+                            offset += 1;
+                        }
+                        continue;
+                    } else {
+                        self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
+                    }
                 }
-            }
-            else {
-                return Err(Box::new(UnigramError::MissingUnkId));
-            }
+            };
+            let len = string.len();
+            let offsets = (offset, offset + len);
+            offset += len;
+            tokens.push(Token::new(id, string, offsets));
         }
         Ok(tokens)
     }
