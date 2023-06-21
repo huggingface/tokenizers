@@ -85,11 +85,11 @@ impl Default for Unigram {
     }
 }
 
-fn byte_to_piece(c: u8) -> String {
+pub fn byte_to_piece(c: u8) -> String {
     format!("<0x{:02X}>", c)
 }
 
-fn piece_to_byte(piece: &str) -> Option<u8> {
+pub fn piece_to_byte(piece: &str) -> Option<u8> {
     let mut k_map: HashMap<String, u8> = HashMap::new();
     for i in 0..=255 {
         let byte_piece = byte_to_piece(i);
