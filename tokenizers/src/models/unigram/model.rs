@@ -24,6 +24,7 @@ pub struct Unigram {
     pub(super) unk_id: Option<usize>,
     pub(super) bos_id: usize,
     pub(super) eos_id: usize,
+
     fuse_unk: bool,
     is_optimized: bool,
     pub byte_fallback: bool,
@@ -84,11 +85,11 @@ impl Default for Unigram {
     }
 }
 
-pub fn byte_to_piece(c: u8) -> String {
+fn byte_to_piece(c: u8) -> String {
     format!("<0x{:02X}>", c)
 }
 
-pub fn piece_to_byte(piece: &str) -> Option<u8> {
+fn piece_to_byte(piece: &str) -> Option<u8> {
     let mut k_map: HashMap<String, u8> = HashMap::new();
     for i in 0..=255 {
         let byte_piece = byte_to_piece(i);
@@ -131,7 +132,6 @@ impl Unigram {
         let eos_id = n + 2;
 
         let mut min_score = f64::INFINITY;
-
         for (id, (token, score)) in vocab.iter().enumerate() {
             token_to_ids.insert(token.to_string(), id as u32);
             let bytes: Vec<u8> = token.bytes().collect();
@@ -304,36 +304,6 @@ impl Unigram {
                     has_single_node = true;
                 }
             }
-
-            // let length = key_pos - starts_at;
-            // let ids = if self.byte_fallback && self.token_to_ids.contains_key(&byte_to_piece(tok_bytes[0])) {
-            //     let bytes = sentence.bytes().skip(starts_at).take(mblen);
-            //     bytes.map(|b| self.token_to_id(&byte_to_piece(b)).unwrap()).collect()
-
-            // } else {
-            //     let token: String = String::from_utf8(tok_bytes).unwrap();
-            //     vec![self.token_to_id(&token).unwrap()]
-            // };
-            // println!("Obtained ids : {:?}", ids);
-
-            // for (idx, id) in ids.iter().enumerate(){
-            //     let mut target_node = &mut best_path_ends_at[starts_at + idx];
-            //     let score = self.vocab.get(*id as usize).unwrap().1;
-            //     let candidate_best_path_score = score + best_path_score_till_here;
-            //     if target_node.starts_at.is_none()
-            //         || candidate_best_path_score > target_node.best_path_score
-            //     {
-            //         target_node.best_path_score = candidate_best_path_score;
-            //         target_node.starts_at = Some(starts_at);
-            //         target_node.id = *id as usize;
-            //     }
-            //     println!("has_single_node {:?}, length {:?}, mblen {:?}", has_single_node, length, mblen);
-
-            //     if !has_single_node && length == mblen {
-            //         has_single_node = true;
-            //     }
-            // }
-
             if !has_single_node {
                 let mut target_node = &mut best_path_ends_at[starts_at + mblen];
                 let candidate_best_path_score = unk_score + best_path_score_till_here;
@@ -462,7 +432,6 @@ impl Model for Unigram {
         let str_tokens = self.encode(sentence)?;
         let mut offset = 0;
         let mut tokens = Vec::with_capacity(str_tokens.len());
-
         for string in str_tokens {
             let ids = if self.token_to_ids.contains_key(&string) {
                 vec![*self.token_to_ids.get(&string).unwrap()]
