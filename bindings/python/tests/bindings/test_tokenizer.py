@@ -419,16 +419,20 @@ class TestTokenizer:
         text = "let us test a<=6"
         decoded_w_spaces = tokenizer.decode(tokenizer.encode(text).ids, spaces_between_added_tokens=True)
         decoded_wo_spaces = tokenizer.decode(tokenizer.encode(text).ids, spaces_between_added_tokens=False)
-        
+
         assert decoded_wo_spaces != decoded_w_spaces
         assert decoded_wo_spaces == "let us test a<= 6"
-        assert decoded_w_spaces == "let us test a<=6" 
-    
+        assert decoded_w_spaces == "let us test a<=6"
+
         tokenizer = Tokenizer.from_pretrained("t5-base")
         tokenizer.add_tokens(["<="], True)
-        decoded_w_spaces = tokenizer.decode(tokenizer.encode(text).ids, spaces_between_added_tokens=True, skip_special_tokens = False)
-        decoded_wo_spaces = tokenizer.decode(tokenizer.encode(text).ids, spaces_between_added_tokens=False, skip_special_tokens = False)
-        
+        decoded_w_spaces = tokenizer.decode(
+            tokenizer.encode(text).ids, spaces_between_added_tokens=True, skip_special_tokens=False
+        )
+        decoded_wo_spaces = tokenizer.decode(
+            tokenizer.encode(text).ids, spaces_between_added_tokens=False, skip_special_tokens=False
+        )
+
         assert decoded_wo_spaces != decoded_w_spaces
         assert decoded_wo_spaces == "let us test a<= 6"
-        assert decoded_w_spaces == "let us test a<=6" 
+        assert decoded_w_spaces == "let us test a<=6"
