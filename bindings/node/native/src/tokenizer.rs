@@ -584,8 +584,8 @@ declare_types! {
                 (Ok(skip_special_tokens), Err(_)) => {
                     (skip_special_tokens, true, 2)
                 }
-                (Err(_), _, _) => {
-                    (true, true,  1) // TODO @Narsil handle this
+                (Err(_), _,) => {
+                    (false, true,  1)
                 }
             };
 
@@ -614,7 +614,7 @@ declare_types! {
                     (skip_special_tokens, true, 2)
                 }
                 (Err(_), _,) => {
-                    (false, true,  1) // TODO @Narsil handle this
+                    (false, true,  1)
                 }
             };
 

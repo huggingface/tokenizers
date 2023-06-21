@@ -111,7 +111,7 @@ impl Task for DecodeTask {
                 .tokenizer
                 .read()
                 .unwrap()
-                .decode(ids.as_slice(), *skip_special_tokens)
+                .decode(ids.as_slice(), *skip_special_tokens, *spaces_between_added_tokens)
                 .map_err(|e| format!("{}", e))
                 .map(DecodeOutput::Single),
             DecodeTask::Batch(
