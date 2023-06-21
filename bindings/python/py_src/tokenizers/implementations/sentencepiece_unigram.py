@@ -162,6 +162,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         vocab = [(piece.piece, piece.score) for piece in m.pieces]
         unk_id = m.trainer_spec.unk_id
         model_type = m.trainer_spec.model_type
+        byte_fallback = m.trainer_spec.byte_fallback
         if model_type != 1:
             raise Exception(
                 "You're trying to run a `Unigram` model but you're file was trained with a different algorithm"
@@ -170,7 +171,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         replacement = "▁"
         add_prefix_space = True
 
-        tokenizer = Tokenizer(Unigram(vocab, unk_id))
+        tokenizer = Tokenizer(Unigram(vocab, unk_id, byte_fallback))
 
         tokenizer.normalizer = normalizers.Sequence(
             [
