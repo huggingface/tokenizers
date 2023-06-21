@@ -475,8 +475,8 @@ impl Model for Unigram {
                 vec![self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32]
             };
             let len = string.len() - ids.len() + 1;
-            for  id in ids{
-                let offsets = (offset, offset + len );
+            for id in ids {
+                let offsets = (offset, offset + len);
                 tokens.push(Token::new(id, self.id_to_token(id).unwrap(), offsets));
             }
             offset += len;
@@ -647,7 +647,7 @@ mod tests {
             ("<unk>".to_string(), 0.0),
             ("<0xE2>".to_string(), -0.01),
             ("<0x85>".to_string(), -0.02),
-            ("<0xE2>".to_string(),-0.03),
+            ("<0xE2>".to_string(), -0.03),
             ("<0x90>".to_string(), -0.04),
             ("<0x91>".to_string(), -0.05),
             ("<0x9B>".to_string(), -0.06),
@@ -656,14 +656,121 @@ mod tests {
             ("are".to_string(), -0.3),
             (" ".to_string(), -0.4),
         ];
-        let unigram = Unigram::from(sentencepieces.clone(), Some(0), Some(true)).unwrap();
+        let mut unigram = Unigram::from(sentencepieces.clone(), Some(0), Some(true)).unwrap();
         let tokens = unigram.tokenize("Hello⅐how are⅑").unwrap();
         assert_eq!(
             tokens,
-            [Token { id: 7, value: "Hello".to_string(), offsets: (0, 5) }, Token { id: 3, value: "<0xE2>".to_string(), offsets: (5, 6) }, Token { id: 2, value: "<0x85>".to_string(), offsets: (5, 6) }, Token { id: 4, value: "<0x90>".to_string(), offsets: (5, 6) }, Token { id: 8, value: "how".to_string(), offsets: (6, 9) }, Token { id: 10, value: " ".to_string(), offsets: (9, 10) }, Token { id: 9, value: "are".to_string(), offsets: (10, 13) }, Token { id: 3, value: "<0xE2>".to_string(), offsets: (13, 14) }, Token { id: 2, value: "<0x85>".to_string(), offsets: (13, 14) }, Token { id: 5, value: "<0x91>".to_string(), offsets: (13, 14) }]
+            [
+                Token {
+                    id: 7,
+                    value: "Hello".to_string(),
+                    offsets: (0, 5)
+                },
+                Token {
+                    id: 3,
+                    value: "<0xE2>".to_string(),
+                    offsets: (5, 6)
+                },
+                Token {
+                    id: 2,
+                    value: "<0x85>".to_string(),
+                    offsets: (5, 6)
+                },
+                Token {
+                    id: 4,
+                    value: "<0x90>".to_string(),
+                    offsets: (5, 6)
+                },
+                Token {
+                    id: 8,
+                    value: "how".to_string(),
+                    offsets: (6, 9)
+                },
+                Token {
+                    id: 10,
+                    value: " ".to_string(),
+                    offsets: (9, 10)
+                },
+                Token {
+                    id: 9,
+                    value: "are".to_string(),
+                    offsets: (10, 13)
+                },
+                Token {
+                    id: 3,
+                    value: "<0xE2>".to_string(),
+                    offsets: (13, 14)
+                },
+                Token {
+                    id: 2,
+                    value: "<0x85>".to_string(),
+                    offsets: (13, 14)
+                },
+                Token {
+                    id: 5,
+                    value: "<0x91>".to_string(),
+                    offsets: (13, 14)
+                }
+            ]
         );
 
         // test without fused unk
+        unigram.set_fuse_unk(false);
+        let tokens = unigram.tokenize("Hello⅐how are⅑").unwrap();
+        assert_eq!(
+            tokens,
+            [
+                Token {
+                    id: 7,
+                    value: "Hello".to_string(),
+                    offsets: (0, 5)
+                },
+                Token {
+                    id: 3,
+                    value: "<0xE2>".to_string(),
+                    offsets: (5, 6)
+                },
+                Token {
+                    id: 2,
+                    value: "<0x85>".to_string(),
+                    offsets: (5, 6)
+                },
+                Token {
+                    id: 4,
+                    value: "<0x90>".to_string(),
+                    offsets: (5, 6)
+                },
+                Token {
+                    id: 8,
+                    value: "how".to_string(),
+                    offsets: (6, 9)
+                },
+                Token {
+                    id: 10,
+                    value: " ".to_string(),
+                    offsets: (9, 10)
+                },
+                Token {
+                    id: 9,
+                    value: "are".to_string(),
+                    offsets: (10, 13)
+                },
+                Token {
+                    id: 3,
+                    value: "<0xE2>".to_string(),
+                    offsets: (13, 14)
+                },
+                Token {
+                    id: 2,
+                    value: "<0x85>".to_string(),
+                    offsets: (13, 14)
+                },
+                Token {
+                    id: 5,
+                    value: "<0x91>".to_string(),
+                    offsets: (13, 14)
+                }
+            ]
+        );
     }
 }
-
