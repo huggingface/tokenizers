@@ -795,7 +795,6 @@ where
     }
 
     /// Decode the given ids, back to a String
-    /// "A" + " [cls] " + "B'
     pub fn decode(
         &self,
         ids: &[u32],
