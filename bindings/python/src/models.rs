@@ -820,9 +820,13 @@ impl PyUnigram {
     ) -> PyResult<(Self, PyModel)> {
         match (vocab, unk_id, byte_fallback) {
             (Some(vocab), unk_id, byte_fallback) => {
-                let model = Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false)).map_err(|e| {
-                    exceptions::PyException::new_err(format!("Error while loading Unigram: {}", e))
-                })?;
+                let model =
+                    Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false)).map_err(|e| {
+                        exceptions::PyException::new_err(format!(
+                            "Error while loading Unigram: {}",
+                            e
+                        ))
+                    })?;
                 Ok((PyUnigram {}, model.into()))
             }
             (None, None, _) => Ok((PyUnigram {}, Unigram::default().into())),
