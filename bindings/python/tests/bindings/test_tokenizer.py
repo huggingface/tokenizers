@@ -430,10 +430,11 @@ class TestTokenizer:
         tokenizer = tokenizer = Tokenizer(Unigram(vocab, 0, byte_fallback=False))
 
         output = tokenizer.encode("A sentence 🤗")
-        assert output.ids[-1] == 0
+        assert output.ids == [1, 10, 2, 3, 4, 5, 10, 0]
         assert output.tokens == ["A", " ", "sen", "te", "n", "ce", " ", "🤗"]
 
         tokenizer = Tokenizer(Unigram(vocab, 0, byte_fallback=True))
 
         output = tokenizer.encode("A sentence 🤗")
+        assert output.ids == [1, 10, 2, 3, 4, 5, 10, 6, 7, 8, 9]
         assert output.tokens == ["A", " ", "sen", "te", "n", "ce", " ", "<0xF0>", "<0x9F>", "<0xA4>", "<0x97>"]
