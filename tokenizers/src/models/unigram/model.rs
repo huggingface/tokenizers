@@ -420,6 +420,8 @@ impl Model for Unigram {
         let mut offset = 0;
         let mut tokens = Vec::with_capacity(str_tokens.len());
         for string in str_tokens {
+            let len = string.len();
+            let offsets = (offset, offset + len);
             let id: u32 = match self.token_to_ids.get(&string) {
                 Some(id) => *id,
                 None => {
@@ -428,19 +430,18 @@ impl Model for Unigram {
                             let byte_string = byte_to_piece(byte);
                             let id = match self.token_to_ids.get(&byte_string){
                                 Some(id) => *id,
-                                None => UnigramError::ByteNotInVocab as u32
+                                None => {
+                                   continue;                      
+                                }
                             };
-                            tokens.push(Token::new(id,byte_string,(offset, offset + 1)));
+                            tokens.push(Token::new(id,byte_string,(offset, offset + len)));
                         }
-                        offset += 1;
+                        offset += len;
                         continue;
-                    } else {
-                        self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
                     }
+                    self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
                 }
             };
-            let len = string.len();
-            let offsets = (offset, offset + len);
             offset += len;
             tokens.push(Token::new(id, string, offsets));
         }
