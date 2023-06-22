@@ -370,7 +370,7 @@ fn wordlevel_empty(mut cx: FunctionContext) -> JsResult<JsModel> {
 #[serde(rename_all = "camelCase")]
 struct UnigramOptions {
     unk_id: Option<usize>,
-    byte_fallback: Option<bool>
+    byte_fallback: Option<bool>,
 }
 /// unigram_init(vocab: [string, number][], options?: {
 ///   unkId?: number
