@@ -373,14 +373,12 @@ struct UnigramOptions {
 }
 /// unigram_init(vocab: [string, number][], options?: {
 ///   unkId?: number
-///   byte_fallback: bool
 /// })
 fn unigram_init(mut cx: FunctionContext) -> JsResult<JsModel> {
     let vocab = cx.extract::<Vec<(String, f64)>>(0)?;
     let options = cx.extract_opt::<UnigramOptions>(1)?.unwrap_or_default();
-    let byte_fallback = cx.extract::<bool>(2)?;
 
-    let unigram = tk::models::unigram::Unigram::from(vocab, options.unk_id, byte_fallback)
+    let unigram = tk::models::unigram::Unigram::from(vocab, options.unk_id, options.byte_fallback)
         .map_err(|e| Error(e.to_string()))?;
 
     let mut js_model = JsModel::new::<_, JsModel, _>(&mut cx, vec![])?;
