@@ -804,7 +804,7 @@ impl PyWordLevel {
 /// An implementation of the Unigram algorithm
 ///
 /// Args:
-///     vocab (:obj:`List[Tuple[str, float]]`, `optional`, `bool`):
+///     vocab (:obj:`List[Tuple[str, float]]`, `optional`, `optional`):
 ///         A list of vocabulary items and their relative score [("am", -0.2442),...]
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "Unigram")]
 #[pyo3(text_signature = "(self, vocab, unk_id, byte_fallback)")]
@@ -820,7 +820,7 @@ impl PyUnigram {
     ) -> PyResult<(Self, PyModel)> {
         match (vocab, unk_id, byte_fallback) {
             (Some(vocab), unk_id, byte_fallback) => {
-                let model = Unigram::from(vocab, unk_id, byte_fallback).map_err(|e| {
+                let model = Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false)).map_err(|e| {
                     exceptions::PyException::new_err(format!("Error while loading Unigram: {}", e))
                 })?;
                 Ok((PyUnigram {}, model.into()))
