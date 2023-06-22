@@ -180,7 +180,7 @@ impl UnigramTrainer {
         Unigram::from(
             special_tokens.into_iter().chain(pieces).collect(),
             unk_id,
-            Some(model.byte_fallback),
+            model.byte_fallback,
         )
     }
 
@@ -567,7 +567,7 @@ impl UnigramTrainer {
         if required_chars.len() as u32 > self.vocab_size {
             return Err(Box::new(UnigramTrainerError::VocabularyTooSmall));
         }
-        let mut new_model = Unigram::from(pieces.clone(), Some(0), Some(false))?;
+        let mut new_model = Unigram::from(pieces.clone(), Some(0), false)?;
         loop {
             // Sub-EM iteration.
             for _iter in 0..self.n_sub_iterations {
@@ -576,7 +576,7 @@ impl UnigramTrainer {
 
                 // Executes M step.
                 pieces = self.run_m_step(&pieces, &expected);
-                new_model = Unigram::from(pieces.clone(), Some(0), Some(false))?;
+                new_model = Unigram::from(pieces.clone(), Some(0), false)?;
 
                 // Useful comment for checking compatibility with spm
                 debug!(
@@ -600,7 +600,7 @@ impl UnigramTrainer {
 
             // Prunes pieces.
             pieces = self.prune_sentence_pieces(&new_model, &pieces, &sentences);
-            new_model = Unigram::from(pieces.clone(), Some(0), Some(false))?;
+            new_model = Unigram::from(pieces.clone(), Some(0), false)?;
         }
         self.finalize_progress(&progress, expected_updates);
 

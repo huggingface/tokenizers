@@ -804,10 +804,10 @@ impl PyWordLevel {
 /// An implementation of the Unigram algorithm
 ///
 /// Args:
-///     vocab (:obj:`List[Tuple[str, float]]`, `optional`):
+///     vocab (:obj:`List[Tuple[str, float]]`, `optional`, `bool`):
 ///         A list of vocabulary items and their relative score [("am", -0.2442),...]
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "Unigram")]
-#[pyo3(text_signature = "(self, vocab)")]
+#[pyo3(text_signature = "(self, vocab, unk_id, byte_fallback)")]
 pub struct PyUnigram {}
 
 #[pymethods]

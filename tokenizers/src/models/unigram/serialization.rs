@@ -48,7 +48,7 @@ impl<'de> Visitor<'de> for UnigramVisitor {
     {
         let mut vocab: Option<Vec<(String, f64)>> = None;
         let mut unk_id: Option<usize> = None;
-        let mut byte_fallback: Option<bool> = None;
+        let mut byte_fallback: bool = false;
         while let Some(key) = map.next_key::<String>()? {
             match key.as_ref() {
                 "unk_id" => {
@@ -83,7 +83,7 @@ mod test {
     #[test]
     fn test_serialization() {
         let vocab = vec![("<unk>".to_string(), 0.0), ("a".to_string(), -0.5)];
-        let model = Unigram::from(vocab, Some(0), Some(false)).unwrap();
+        let model = Unigram::from(vocab, Some(0), false).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
         let reconstructed = serde_json::from_str(&data).unwrap();
@@ -94,7 +94,7 @@ mod test {
     #[test]
     fn test_serialization_unk_id_not_zero() {
         let vocab = vec![("a".to_string(), -0.5), ("<unk>".to_string(), 0.0)];
-        let model = Unigram::from(vocab, Some(1), Some(false)).unwrap();
+        let model = Unigram::from(vocab, Some(1), false).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
         let reconstructed = serde_json::from_str(&data).unwrap();
@@ -105,7 +105,7 @@ mod test {
     #[test]
     fn test_serialization_no_unk_id() {
         let vocab = vec![("a".to_string(), -0.5)];
-        let model = Unigram::from(vocab, None, None).unwrap();
+        let model = Unigram::from(vocab, None, false).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
         let reconstructed = serde_json::from_str(&data).unwrap();
