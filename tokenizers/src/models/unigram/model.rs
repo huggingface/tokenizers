@@ -91,15 +91,6 @@ fn byte_to_piece(c: u8) -> String {
     format!("<0x{:02X}>", c)
 }
 
-fn piece_to_byte(piece: &str) -> Option<u8> {
-    let mut k_map: HashMap<String, u8> = HashMap::new();
-    for i in 0..=255 {
-        let byte_piece = byte_to_piece(i);
-        k_map.insert(byte_piece.clone(), i);
-    }
-    k_map.get(piece).copied()
-}
-
 impl Unigram {
     /// Create a `Unigram` model from a given vocabulary.
     /// Vocabulary are the various tokens and their associated score which is a sort of a logprob of
