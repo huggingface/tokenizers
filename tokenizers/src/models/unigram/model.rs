@@ -76,20 +76,22 @@ pub enum UnigramError {
     UnkIdNotInVocabulary,
     #[error("Encountered an unknown token but `unk_id` is missing")]
     MissingUnkId,
+    #[error("Byte not in vocab. `byte_fallback` is set to `true`, but not all bytes are in the vocab. Make sure indexes form 0 to 255 are reserved for byte fallback")]
+    ByteNotInVocab,
 }
 
 impl Default for Unigram {
     fn default() -> Self {
         let vocab = vec![("<unk>".to_string(), 0.0)];
-        Self::from(vocab, Some(0), Some(false)).unwrap()
+        Self::from(vocab, Some(0), false).unwrap()
     }
 }
 
-pub fn byte_to_piece(c: u8) -> String {
+fn byte_to_piece(c: u8) -> String {
     format!("<0x{:02X}>", c)
 }
 
-pub fn piece_to_byte(piece: &str) -> Option<u8> {
+fn piece_to_byte(piece: &str) -> Option<u8> {
     let mut k_map: HashMap<String, u8> = HashMap::new();
     for i in 0..=255 {
         let byte_piece = byte_to_piece(i);
@@ -108,7 +110,7 @@ impl Unigram {
     pub fn from(
         vocab: Vec<(String, f64)>,
         unk_id: Option<usize>,
-        byte_fallback: Option<bool>,
+        byte_fallback: bool,
     ) -> Result<Self> {
         let n = vocab.len();
         let mut token_to_ids: TokenMap = HashMap::new();
@@ -122,8 +124,6 @@ impl Unigram {
                 return Err(Box::new(UnigramError::UnkIdNotInVocabulary));
             }
         }
-
-        let byte_fallback = byte_fallback.unwrap_or(false); // set default byte_fallback to false if byte_fallback is None
         let bos_id = n + 1;
         let eos_id = n + 2;
 
@@ -227,7 +227,7 @@ impl Unigram {
     ///     ("abc".to_string(), 5.0),
     ///     ("abcd".to_string(), 10.0),
     /// ];
-    /// let model = Unigram::from(pieces, Some(0), Some(false)).unwrap();
+    /// let model = Unigram::from(pieces, Some(0), false).unwrap();
     /// let result = model.encode("abcdacdxx").unwrap();
     /// assert_eq!(result, vec!["abcd", "a", "cd", "xx"]);
     /// ```
@@ -435,11 +435,11 @@ impl Model for Unigram {
                     if self.byte_fallback {
                         for byte in string.bytes() {
                             let byte_string = byte_to_piece(byte);
-                            tokens.push(Token::new(
-                                self.token_to_ids[&byte_string],
-                                byte_string,
-                                (offset, offset + 1),
-                            ));
+                            let id = match self.token_to_ids.get(&byte_string){
+                                Some(id) => *id,
+                                None => UnigramError::ByteNotInVocab as u32
+                            };
+                            tokens.push(Token::new(id,byte_string,(offset, offset + 1)));
                         }
                         offset += 1;
                         continue;
@@ -489,7 +489,7 @@ mod tests {
     #[test]
     fn test_populate_nodes_unk() {
         let pieces = vec![("<unk>".to_string(), 0.0)];
-        let model = Unigram::from(pieces, Some(0), Some(false)).unwrap();
+        let model = Unigram::from(pieces, Some(0), false).unwrap();
 
         let mut lattice = Lattice::from("abc", model.bos_id, model.eos_id);
         model.populate_nodes(&mut lattice);
@@ -514,7 +514,7 @@ mod tests {
             ("ab".to_string(), 0.3),
             ("bc".to_string(), 0.4),
         ];
-        let model = Unigram::from(pieces, Some(0), Some(false)).unwrap();
+        let model = Unigram::from(pieces, Some(0), false).unwrap();
 
         let mut lattice = Lattice::from("abc", model.bos_id, model.eos_id);
         model.populate_nodes(&mut lattice);
@@ -551,7 +551,7 @@ mod tests {
             ("abcd".to_string(), 10.0),
         ];
 
-        let model = Unigram::from(sentencepieces, Some(0), Some(false)).unwrap();
+        let model = Unigram::from(sentencepieces, Some(0), false).unwrap();
         let result = model.encode("abcd").unwrap();
         assert_eq!(result, vec!["abcd"]);
     }
@@ -573,7 +573,7 @@ mod tests {
             ("qr".to_string(), -0.5),
         ];
 
-        let mut model = Unigram::from(sentencepieces, Some(0), Some(false)).unwrap();
+        let mut model = Unigram::from(sentencepieces, Some(0), false).unwrap();
 
         for is_optimized in &[true, false] {
             model.set_optimized(*is_optimized);
@@ -628,7 +628,7 @@ mod tests {
             ("are".to_string(), -0.3),
             (" ".to_string(), -0.4),
         ];
-        let mut unigram = Unigram::from(sentencepieces, Some(0), Some(true)).unwrap();
+        let mut unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
         let tokens = unigram.tokenize("Hello⅐how are⅑").unwrap();
         assert_eq!(
             tokens,
