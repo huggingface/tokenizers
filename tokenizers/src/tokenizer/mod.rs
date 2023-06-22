@@ -830,13 +830,13 @@ where
                         // without decoder
                         // DO this "join".
                         let last_token: &mut String = &mut tokens[last_id];
-                        last_token.push_str(" ");
+                        last_token.push(' ');
                     }
                     // With a decode
                     (true, true, Some((last_id, true)), true) => {
                         // 2 consecutive added
                         let last_token: &mut String = &mut tokens[last_id];
-                        last_token.push_str(" ");
+                        last_token.push(' ');
                     }
                     (true, true, Some(_), true) => {
                         // An added with something before
