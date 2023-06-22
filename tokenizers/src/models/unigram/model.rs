@@ -426,18 +426,21 @@ impl Model for Unigram {
                 Some(id) => *id,
                 None => {
                     if self.byte_fallback {
-                        for byte in string.bytes() {
-                            let byte_string = byte_to_piece(byte);
-                            let id = match self.token_to_ids.get(&byte_string) {
-                                Some(id) => *id,
-                                None => {
-                                    continue;
-                                }
-                            };
-                            tokens.push(Token::new(id, byte_string, (offset, offset + len)));
+                        let byte_tokens: Option<Vec<_>> = string
+                            .bytes()
+                            .map(|byte| -> Option<Token> {
+                                let byte_string = byte_to_piece(byte);
+                                let id = self.token_to_ids.get(&byte_string);
+                                id.map(|id| Token::new(*id, byte_string, (offset, offset + len)))
+                            })
+                            .collect();
+                        if let Some(byte_tokens) = byte_tokens {
+                            for token in byte_tokens {
+                                tokens.push(token);
+                            }
+                            offset += len;
+                            continue;
                         }
-                        offset += len;
-                        continue;
                     }
                     self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
                 }
@@ -699,6 +702,41 @@ mod tests {
             tokens,
             [
                 Token {
+                    id: 0,
+                    value: "u".to_string(),
+                    offsets: (0, 1)
+                },
+                Token {
+                    id: 0,
+                    value: "n".to_string(),
+                    offsets: (1, 2)
+                },
+                Token {
+                    id: 0,
+                    value: "f".to_string(),
+                    offsets: (2, 3)
+                },
+                Token {
+                    id: 0,
+                    value: "u".to_string(),
+                    offsets: (3, 4)
+                },
+                Token {
+                    id: 0,
+                    value: "s".to_string(),
+                    offsets: (4, 5)
+                },
+                Token {
+                    id: 0,
+                    value: "e".to_string(),
+                    offsets: (5, 6)
+                },
+                Token {
+                    id: 0,
+                    value: "d".to_string(),
+                    offsets: (6, 7)
+                },
+                Token {
                     id: 10,
                     value: " ".to_string(),
                     offsets: (7, 8)
@@ -732,6 +770,24 @@ mod tests {
                     id: 5,
                     value: "<0x91>".to_string(),
                     offsets: (11, 14)
+                }
+            ]
+        );
+        // If one of the bytefallback token is unk, id should be unk
+        unigram.set_fuse_unk(true);
+        let tokens = unigram.tokenize(" unknown‰").unwrap();
+        assert_eq!(
+            tokens,
+            [
+                Token {
+                    id: 10,
+                    value: " ".to_string(),
+                    offsets: (0, 1)
+                },
+                Token {
+                    id: 0,
+                    value: "unknown‰".to_string(),
+                    offsets: (1, 11)
                 }
             ]
         );
