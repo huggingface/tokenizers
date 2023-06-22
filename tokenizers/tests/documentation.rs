@@ -516,11 +516,11 @@ fn spaces_between_added_tokens() -> tokenizers::Result<()> {
     let input_ids = t5_tokenizer.encode("Let us test a<=6", false)?;
     let decoded_wo_spaces = t5_tokenizer.decode(input_ids.get_ids(), false, false)?;
     println!("decoded_wo_spaces : `{}`", decoded_wo_spaces);
-    assert_eq!(decoded_wo_spaces, "let us test a<=6");
+    assert_eq!(decoded_wo_spaces, "Let us test a<= 6");
 
     let decoded_wo_spaces = t5_tokenizer.decode(input_ids.get_ids(), false, true)?;
     println!("decoded_w_spaces : `{}`", decoded_wo_spaces);
-    assert_eq!(decoded_wo_spaces, "let us test a <= 6");
+    assert_eq!(decoded_wo_spaces, "Let us test a <= 6");
 
     Ok(())
 }
