@@ -76,8 +76,6 @@ pub enum UnigramError {
     UnkIdNotInVocabulary,
     #[error("Encountered an unknown token but `unk_id` is missing")]
     MissingUnkId,
-    #[error("Byte not in vocab. `byte_fallback` is set to `true`, but not all bytes are in the vocab. Make sure indexes form 0 to 255 are reserved for byte fallback")]
-    ByteNotInVocab,
 }
 
 impl Default for Unigram {
