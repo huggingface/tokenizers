@@ -124,6 +124,7 @@ describe("Unigram", () => {
       ],
       {
         unkId: 0,
+        byte_fallback: false,
       }
     );
     expect(unigram.constructor.name).toEqual("Model");

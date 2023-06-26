@@ -16,7 +16,9 @@
     "license": "Apache-2.0",
     "dependencies": {
         "@types/node": "^13.13.52",
-        "node-pre-gyp": "^0.14.0"
+        "native": "^0.3.3",
+        "node-pre-gyp": "^0.14.0",
+        "package.json": "^2.0.1"
     },
     "devDependencies": {
         "@types/jest": "^26.0.24",

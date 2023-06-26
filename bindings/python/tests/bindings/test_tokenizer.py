@@ -5,7 +5,7 @@ import pytest
 
 from tokenizers import AddedToken, Encoding, Tokenizer
 from tokenizers.implementations import BertWordPieceTokenizer
-from tokenizers.models import BPE, Model, WordPiece
+from tokenizers.models import BPE, Model, WordPiece, Unigram
 from tokenizers.normalizers import Lowercase
 from tokenizers.pre_tokenizers import ByteLevel
 from tokenizers.processors import BertProcessing, RobertaProcessing
@@ -412,3 +412,29 @@ class TestTokenizer:
         tokenizer = Tokenizer.from_pretrained("anthony/tokenizers-test", revision="gpt-2")
         output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
         assert output.tokens == ["Hey", "Ġthere", "Ġdear", "Ġfriend", "!"]
+
+    def test_unigram_byte_fallback(self):
+        vocab = [
+            ("<unk>", 0.0),
+            ("A", -0.01),
+            ("sen", -0.02),
+            ("te", -0.03),
+            ("n", -0.04),
+            ("ce", -0.05),
+            ("<0xF0>", -0.06),
+            ("<0x9F>", -0.06),
+            ("<0xA4>", -0.06),
+            ("<0x97>", -0.06),
+            (" ", -0.4),
+        ]
+        tokenizer = tokenizer = Tokenizer(Unigram(vocab, 0, byte_fallback=False))
+
+        output = tokenizer.encode("A sentence 🤗")
+        assert output.ids == [1, 10, 2, 3, 4, 5, 10, 0]
+        assert output.tokens == ["A", " ", "sen", "te", "n", "ce", " ", "🤗"]
+
+        tokenizer = Tokenizer(Unigram(vocab, 0, byte_fallback=True))
+
+        output = tokenizer.encode("A sentence 🤗")
+        assert output.ids == [1, 10, 2, 3, 4, 5, 10, 6, 7, 8, 9]
+        assert output.tokens == ["A", " ", "sen", "te", "n", "ce", " ", "<0xF0>", "<0x9F>", "<0xA4>", "<0x97>"]

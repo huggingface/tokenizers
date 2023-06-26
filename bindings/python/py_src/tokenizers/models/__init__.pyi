@@ -242,11 +242,11 @@ class Unigram(Model):
     An implementation of the Unigram algorithm
 
     Args:
-        vocab (:obj:`List[Tuple[str, float]]`, `optional`):
+        vocab (:obj:`List[Tuple[str, float]]`, `optional`, `optional`):
             A list of vocabulary items and their relative score [("am", -0.2442),...]
     """
 
-    def __init__(self, vocab):
+    def __init__(self, vocab, unk_id, byte_fallback):
         pass
     def get_trainer(self):
         """

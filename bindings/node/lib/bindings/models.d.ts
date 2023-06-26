@@ -170,6 +170,11 @@ export interface UnigramOptions {
    * @default undefined
    */
   unkId?: number;
+  /**
+   * Whether or not bytefallback support should be enabled.
+   * @default false
+   */
+  byte_fallback?: boolean;
 }
 
 export namespace Unigram {

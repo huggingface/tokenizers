@@ -15,6 +15,7 @@ impl Serialize for Unigram {
         model.serialize_field("type", "Unigram")?;
         model.serialize_field("unk_id", &self.unk_id)?;
         model.serialize_field("vocab", &self.vocab)?;
+        model.serialize_field("byte_fallback", &self.byte_fallback())?;
 
         model.end()
     }
@@ -25,7 +26,11 @@ impl<'de> Deserialize<'de> for Unigram {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_struct("Unigram", &["type", "vocab", "unk_id"], UnigramVisitor)
+        deserializer.deserialize_struct(
+            "Unigram",
+            &["type", "vocab", "unk_id", "byte_fallback"],
+            UnigramVisitor,
+        )
     }
 }
 
@@ -43,11 +48,13 @@ impl<'de> Visitor<'de> for UnigramVisitor {
     {
         let mut vocab: Option<Vec<(String, f64)>> = None;
         let mut unk_id: Option<usize> = None;
+        let mut byte_fallback: bool = false;
         while let Some(key) = map.next_key::<String>()? {
             match key.as_ref() {
                 "unk_id" => {
                     unk_id = map.next_value()?;
                 }
+                "byte_fallback" => byte_fallback = map.next_value()?,
                 "vocab" => vocab = Some(map.next_value()?),
                 "type" => match map.next_value()? {
                     "Unigram" => {}
@@ -61,10 +68,10 @@ impl<'de> Visitor<'de> for UnigramVisitor {
                 _ => (),
             }
         }
-        match (vocab, unk_id) {
-            (Some(vocab), unk_id) => Ok(Unigram::from(vocab, unk_id)
+        match (vocab, unk_id, byte_fallback) {
+            (Some(vocab), unk_id, byte_fallback) => Ok(Unigram::from(vocab, unk_id, byte_fallback)
                 .map_err(|err| Error::custom(format!("Unable to load vocab {:?}", err)))?),
-            (None, _) => Err(Error::custom("Missing vocab")),
+            (None, _, _) => Err(Error::custom("Missing vocab")),
         }
     }
 }
@@ -76,7 +83,7 @@ mod test {
     #[test]
     fn test_serialization() {
         let vocab = vec![("<unk>".to_string(), 0.0), ("a".to_string(), -0.5)];
-        let model = Unigram::from(vocab, Some(0)).unwrap();
+        let model = Unigram::from(vocab, Some(0), false).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
         let reconstructed = serde_json::from_str(&data).unwrap();
@@ -87,7 +94,7 @@ mod test {
     #[test]
     fn test_serialization_unk_id_not_zero() {
         let vocab = vec![("a".to_string(), -0.5), ("<unk>".to_string(), 0.0)];
-        let model = Unigram::from(vocab, Some(1)).unwrap();
+        let model = Unigram::from(vocab, Some(1), false).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
         let reconstructed = serde_json::from_str(&data).unwrap();
@@ -98,7 +105,7 @@ mod test {
     #[test]
     fn test_serialization_no_unk_id() {
         let vocab = vec![("a".to_string(), -0.5)];
-        let model = Unigram::from(vocab, None).unwrap();
+        let model = Unigram::from(vocab, None, false).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
         let reconstructed = serde_json::from_str(&data).unwrap();

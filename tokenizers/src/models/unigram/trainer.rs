@@ -177,7 +177,11 @@ impl UnigramTrainer {
             special_tokens.insert(0, (self.unk_token.clone().unwrap(), 0.0));
         }
 
-        Unigram::from(special_tokens.into_iter().chain(pieces).collect(), unk_id)
+        Unigram::from(
+            special_tokens.into_iter().chain(pieces).collect(),
+            unk_id,
+            model.byte_fallback(),
+        )
     }
 
     fn required_chars(&self, word_counts: &[Sentence]) -> HashSet<String> {
@@ -563,7 +567,7 @@ impl UnigramTrainer {
         if required_chars.len() as u32 > self.vocab_size {
             return Err(Box::new(UnigramTrainerError::VocabularyTooSmall));
         }
-        let mut new_model = Unigram::from(pieces.clone(), Some(0))?;
+        let mut new_model = Unigram::from(pieces.clone(), Some(0), false)?;
         loop {
             // Sub-EM iteration.
             for _iter in 0..self.n_sub_iterations {
@@ -572,7 +576,7 @@ impl UnigramTrainer {
 
                 // Executes M step.
                 pieces = self.run_m_step(&pieces, &expected);
-                new_model = Unigram::from(pieces.clone(), Some(0))?;
+                new_model = Unigram::from(pieces.clone(), Some(0), false)?;
 
                 // Useful comment for checking compatibility with spm
                 debug!(
@@ -596,7 +600,7 @@ impl UnigramTrainer {
 
             // Prunes pieces.
             pieces = self.prune_sentence_pieces(&new_model, &pieces, &sentences);
-            new_model = Unigram::from(pieces.clone(), Some(0))?;
+            new_model = Unigram::from(pieces.clone(), Some(0), false)?;
         }
         self.finalize_progress(&progress, expected_updates);
 
