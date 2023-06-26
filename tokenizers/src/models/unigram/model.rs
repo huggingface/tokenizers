@@ -608,32 +608,28 @@ mod tests {
         // Out[97]: ['▁', '<0xE2>', '<0x85>', '<0x90>', '⅛', '<0xE2>', '<0x85>', '<0x91>', '▁']
         let sentencepieces = vec![
             ("<unk>".to_string(), 0.0),
-            ("<0xE2>".to_string(), -0.01),
-            ("<0x85>".to_string(), -0.02),
-            ("<0x91>".to_string(), -0.05),
+            ("<0xC3>".to_string(), -0.01),
+            ("<0xA9>".to_string(), -0.03),
         ];
         let unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
-        let tokens: Vec<Token> = unigram.tokenize("⅑").unwrap();
-        let expected_tokens = [
-            Token {
-                id: 1,
-                value: "<0xE2>".to_string(),
-                offsets: (0, 3),
-            },
-            Token {
-                id: 2,
-                value: "<0x85>".to_string(),
-                offsets: (0, 3),
-            },
-            Token {
-                id: 3,
-                value: "<0x91>".to_string(),
-                offsets: (0, 3),
-            },
-        ];
-        assert_eq!(tokens, expected_tokens);
+        let tokens: Vec<Token> = unigram.tokenize("é").unwrap();
+        assert_eq!(
+            tokens,
+            [
+                Token {
+                    id: 1,
+                    value: "<0xC3>".to_string(),
+                    offsets: (0, 2)
+                },
+                Token {
+                    id: 2,
+                    value: "<0xA9>".to_string(),
+                    offsets: (0, 2)
+                }
+            ]
+        );
 
-        let tokens = unigram.tokenize("?⅑").unwrap();
+        let tokens = unigram.tokenize("?é").unwrap();
         assert_eq!(tokens[0].id, 0);
     }
 }
