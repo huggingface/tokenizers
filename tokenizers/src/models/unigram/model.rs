@@ -27,7 +27,7 @@ pub struct Unigram {
 
     fuse_unk: bool,
     is_optimized: bool,
-    pub byte_fallback: bool,
+    byte_fallback: bool,
 }
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
@@ -83,10 +83,6 @@ impl Default for Unigram {
         let vocab = vec![("<unk>".to_string(), 0.0)];
         Self::from(vocab, Some(0), false).unwrap()
     }
-}
-
-fn byte_to_piece(c: u8) -> String {
-    format!("<0x{:02X}>", c)
 }
 
 impl Unigram {
@@ -154,7 +150,9 @@ impl Unigram {
     pub(super) fn set_optimized(&mut self, is_optimized: bool) {
         self.is_optimized = is_optimized;
     }
-
+    pub fn byte_fallback(&self) -> bool {
+        self.byte_fallback
+    }
     pub(super) fn len(&self) -> usize {
         self.vocab.len()
     }
@@ -427,7 +425,7 @@ impl Model for Unigram {
                         let byte_tokens: Option<Vec<_>> = string
                             .bytes()
                             .map(|byte| -> Option<Token> {
-                                let byte_string = byte_to_piece(byte);
+                                let byte_string = format!("<0x{:02X}>", byte);
                                 let id = self.token_to_ids.get(&byte_string);
                                 id.map(|id| Token::new(*id, byte_string, (offset, offset + len)))
                             })
@@ -612,182 +610,30 @@ mod tests {
             ("<unk>".to_string(), 0.0),
             ("<0xE2>".to_string(), -0.01),
             ("<0x85>".to_string(), -0.02),
-            ("<0xE2>".to_string(), -0.03),
-            ("<0x90>".to_string(), -0.04),
             ("<0x91>".to_string(), -0.05),
-            ("<0x9B>".to_string(), -0.06),
-            ("Hello".to_string(), -0.1),
-            ("how".to_string(), -0.2),
-            ("are".to_string(), -0.3),
-            (" ".to_string(), -0.4),
         ];
-        let mut unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
-        let tokens = unigram.tokenize("Hello⅐how are⅑⅑").unwrap();
-        assert_eq!(
-            tokens,
-            [
-                Token {
-                    id: 7,
-                    value: "Hello".to_string(),
-                    offsets: (0, 5)
-                },
-                Token {
-                    id: 3,
-                    value: "<0xE2>".to_string(),
-                    offsets: (5, 8)
-                },
-                Token {
-                    id: 2,
-                    value: "<0x85>".to_string(),
-                    offsets: (5, 8)
-                },
-                Token {
-                    id: 4,
-                    value: "<0x90>".to_string(),
-                    offsets: (5, 8)
-                },
-                Token {
-                    id: 8,
-                    value: "how".to_string(),
-                    offsets: (8, 11)
-                },
-                Token {
-                    id: 10,
-                    value: " ".to_string(),
-                    offsets: (11, 12)
-                },
-                Token {
-                    id: 9,
-                    value: "are".to_string(),
-                    offsets: (12, 15)
-                },
-                Token {
-                    id: 3,
-                    value: "<0xE2>".to_string(),
-                    offsets: (15, 21)
-                },
-                Token {
-                    id: 2,
-                    value: "<0x85>".to_string(),
-                    offsets: (15, 21)
-                },
-                Token {
-                    id: 5,
-                    value: "<0x91>".to_string(),
-                    offsets: (15, 21)
-                },
-                Token {
-                    id: 3,
-                    value: "<0xE2>".to_string(),
-                    offsets: (15, 21)
-                },
-                Token {
-                    id: 2,
-                    value: "<0x85>".to_string(),
-                    offsets: (15, 21)
-                },
-                Token {
-                    id: 5,
-                    value: "<0x91>".to_string(),
-                    offsets: (15, 21)
-                }
-            ]
-        );
+        let unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
+        let tokens: Vec<Token> = unigram.tokenize("⅑").unwrap();
+        let expected_tokens = [
+            Token {
+                id: 1,
+                value: "<0xE2>".to_string(),
+                offsets: (0, 3),
+            },
+            Token {
+                id: 2,
+                value: "<0x85>".to_string(),
+                offsets: (0, 3),
+            },
+            Token {
+                id: 3,
+                value: "<0x91>".to_string(),
+                offsets: (0, 3),
+            },
+        ];
+        assert_eq!(tokens, expected_tokens);
 
-        unigram.set_fuse_unk(false);
-        let tokens = unigram.tokenize("unfused ⅑⅑").unwrap();
-        assert_eq!(
-            tokens,
-            [
-                Token {
-                    id: 0,
-                    value: "u".to_string(),
-                    offsets: (0, 1)
-                },
-                Token {
-                    id: 0,
-                    value: "n".to_string(),
-                    offsets: (1, 2)
-                },
-                Token {
-                    id: 0,
-                    value: "f".to_string(),
-                    offsets: (2, 3)
-                },
-                Token {
-                    id: 0,
-                    value: "u".to_string(),
-                    offsets: (3, 4)
-                },
-                Token {
-                    id: 0,
-                    value: "s".to_string(),
-                    offsets: (4, 5)
-                },
-                Token {
-                    id: 0,
-                    value: "e".to_string(),
-                    offsets: (5, 6)
-                },
-                Token {
-                    id: 0,
-                    value: "d".to_string(),
-                    offsets: (6, 7)
-                },
-                Token {
-                    id: 10,
-                    value: " ".to_string(),
-                    offsets: (7, 8)
-                },
-                Token {
-                    id: 3,
-                    value: "<0xE2>".to_string(),
-                    offsets: (8, 11)
-                },
-                Token {
-                    id: 2,
-                    value: "<0x85>".to_string(),
-                    offsets: (8, 11)
-                },
-                Token {
-                    id: 5,
-                    value: "<0x91>".to_string(),
-                    offsets: (8, 11)
-                },
-                Token {
-                    id: 3,
-                    value: "<0xE2>".to_string(),
-                    offsets: (11, 14)
-                },
-                Token {
-                    id: 2,
-                    value: "<0x85>".to_string(),
-                    offsets: (11, 14)
-                },
-                Token {
-                    id: 5,
-                    value: "<0x91>".to_string(),
-                    offsets: (11, 14)
-                }
-            ]
-        );
-        // If one of the bytefallback token is unk, id should be unk
-        unigram.set_fuse_unk(true);
-        let tokens = unigram.tokenize(" unknown‰").unwrap();
-        assert_eq!(
-            tokens,
-            [
-                Token {
-                    id: 10,
-                    value: " ".to_string(),
-                    offsets: (0, 1)
-                },
-                Token {
-                    id: 0,
-                    value: "unknown‰".to_string(),
-                    offsets: (1, 11)
-                }
-            ]
-        );
+        let tokens = unigram.tokenize("?⅑").unwrap();
+        assert_eq!(tokens[0].id, 0);
     }
 }

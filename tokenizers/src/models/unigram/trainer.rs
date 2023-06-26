@@ -180,7 +180,7 @@ impl UnigramTrainer {
         Unigram::from(
             special_tokens.into_iter().chain(pieces).collect(),
             unk_id,
-            model.byte_fallback,
+            model.byte_fallback(),
         )
     }
 
