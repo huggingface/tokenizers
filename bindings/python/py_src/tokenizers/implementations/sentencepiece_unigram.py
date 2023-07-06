@@ -16,7 +16,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
 
     def __init__(
         self,
-        vocab: Optional[str] = None,
+        vocab: Optional[List[Tuple[str, float]]] = None,
         replacement: str = "▁",
         add_prefix_space: bool = True,
     ):
