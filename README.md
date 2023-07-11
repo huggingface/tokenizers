@@ -5,7 +5,7 @@
 <p>
 <p align="center">
     <img alt="Build" src="https://github.com/huggingface/tokenizers/workflows/Rust/badge.svg">
-    <a href="https://github.com/huggingface/tokenizers/blob/master/LICENSE">
+    <a href="https://github.com/huggingface/tokenizers/blob/main/LICENSE">
         <img alt="GitHub" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue&cachedrop">
     </a>
     <a href="https://pepy.tech/project/tokenizers">
@@ -30,9 +30,9 @@ versatility.
 ## Bindings
 
 We provide bindings to the following languages (more to come!):
-  - [Rust](https://github.com/huggingface/tokenizers/tree/master/tokenizers) (Original implementation)
-  - [Python](https://github.com/huggingface/tokenizers/tree/master/bindings/python)
-  - [Node.js](https://github.com/huggingface/tokenizers/tree/master/bindings/node)
+  - [Rust](https://github.com/huggingface/tokenizers/tree/main/tokenizers) (Original implementation)
+  - [Python](https://github.com/huggingface/tokenizers/tree/main/bindings/python)
+  - [Node.js](https://github.com/huggingface/tokenizers/tree/main/bindings/node)
   - [Ruby](https://github.com/ankane/tokenizers-ruby) (Contributed by @ankane, external repo)
  
 ## Quick example using Python:
