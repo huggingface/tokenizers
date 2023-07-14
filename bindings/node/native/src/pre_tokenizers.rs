@@ -155,8 +155,7 @@ fn byte_level_alphabet(mut cx: FunctionContext) -> JsResult<JsValue> {
 fn whitespace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    pretok.borrow_mut(&guard).pretok =
-        Some(tk::pre_tokenizers::whitespace::Whitespace {}.into());
+    pretok.borrow_mut(&guard).pretok = Some(tk::pre_tokenizers::whitespace::Whitespace {}.into());
     Ok(pretok)
 }
 
