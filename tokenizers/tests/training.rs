@@ -45,7 +45,7 @@ fn bpe_continuing_subword_prefix_error() {
             .build()
             .unwrap(),
     )
-    .with_pre_tokenizer(Some(PreTokenizerWrapper::Whitespace(Whitespace::default())))
+    .with_pre_tokenizer(Some(PreTokenizerWrapper::Whitespace(Whitespace{})))
     .build()
     .unwrap();
     let mut trainer = tokenizer.get_model().get_trainer();
