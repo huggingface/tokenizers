@@ -301,7 +301,7 @@ pub struct PyWhitespace {}
 impl PyWhitespace {
     #[new]
     fn new() -> (Self, PyPreTokenizer) {
-        (PyWhitespace {}, Whitespace{}.into())
+        (PyWhitespace {}, Whitespace {}.into())
     }
 }
 
