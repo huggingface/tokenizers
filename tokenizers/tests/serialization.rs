@@ -138,7 +138,7 @@ fn pretoks() {
     let ser_wrapped = serde_json::to_string(&ch_wrapped).unwrap();
     assert_eq!(ser_wrapped, ch_ser);
 
-    let wsp = Whitespace{};
+    let wsp = Whitespace {};
     let wsp_ser = serde_json::to_string(&wsp).unwrap();
     assert_eq!(wsp_ser, r#"{"type":"Whitespace"}"#);
     serde_json::from_str::<Whitespace>(&wsp_ser).unwrap();

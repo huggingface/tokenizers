@@ -64,7 +64,7 @@ mod tests {
             ),
             ("\n", vec![]),
         ];
-        let pretok = Whitespace{};
+        let pretok = Whitespace {};
         for (s, res) in tests {
             let mut pretokenized = PreTokenizedString::from(s);
             pretok.pre_tokenize(&mut pretokenized).unwrap();

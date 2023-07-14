@@ -74,7 +74,7 @@ fn bench_train(c: &mut Criterion) {
         .build()
         .into();
     let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
-    tokenizer.with_pre_tokenizer(Whitespace{});
+    tokenizer.with_pre_tokenizer(Whitespace {});
     c.bench_function("BPE Train vocabulary (small)", |b| {
         b.iter_custom(|iters| {
             iter_bench_train(
@@ -87,7 +87,7 @@ fn bench_train(c: &mut Criterion) {
     });
 
     let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
-    tokenizer.with_pre_tokenizer(Whitespace{});
+    tokenizer.with_pre_tokenizer(Whitespace {});
     c.bench_function("BPE Train vocabulary (big)", |b| {
         b.iter_custom(|iters| {
             iter_bench_train(

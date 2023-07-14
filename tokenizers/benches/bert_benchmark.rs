@@ -81,7 +81,7 @@ fn bench_train(c: &mut Criterion) {
         DecoderWrapper,
     >;
     let mut tokenizer = Tok::new(WordPiece::default());
-    tokenizer.with_pre_tokenizer(Whitespace{});
+    tokenizer.with_pre_tokenizer(Whitespace {});
     c.bench_function("WordPiece Train vocabulary (small)", |b| {
         b.iter_custom(|iters| {
             iter_bench_train(
@@ -94,7 +94,7 @@ fn bench_train(c: &mut Criterion) {
     });
 
     let mut tokenizer = Tok::new(WordPiece::default());
-    tokenizer.with_pre_tokenizer(Whitespace{});
+    tokenizer.with_pre_tokenizer(Whitespace {});
     c.bench_function("WordPiece Train vocabulary (big)", |b| {
         b.iter_custom(|iters| {
             iter_bench_train(

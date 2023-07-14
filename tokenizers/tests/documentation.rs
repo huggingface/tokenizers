@@ -93,7 +93,7 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
     // START quicktour_init_pretok
     use tokenizers::pre_tokenizers::whitespace::Whitespace;
 
-    tokenizer.with_pre_tokenizer(Whitespace{});
+    tokenizer.with_pre_tokenizer(Whitespace {});
     // END quicktour_init_pretok
 
     // START quicktour_train
@@ -267,7 +267,7 @@ fn pipeline() -> tokenizers::Result<()> {
     use tokenizers::pre_tokenizers::whitespace::Whitespace;
     use tokenizers::{OffsetReferential, OffsetType, PreTokenizedString, PreTokenizer};
 
-    let pre_tokenizer = Whitespace{};
+    let pre_tokenizer = Whitespace {};
     let mut pre_tokenized = PreTokenizedString::from("Hello! How are you? I'm fine, thank you.");
 
     pre_tokenizer.pre_tokenize(&mut pre_tokenized)?;
@@ -304,7 +304,7 @@ fn pipeline() -> tokenizers::Result<()> {
     // START pipeline_combine_pre_tokenizer
     use tokenizers::pre_tokenizers::{digits::Digits, sequence::Sequence};
 
-    let pre_tokenizer = Sequence::new(vec![Whitespace{}.into(), Digits::new(true).into()]);
+    let pre_tokenizer = Sequence::new(vec![Whitespace {}.into(), Digits::new(true).into()]);
     let mut pre_tokenized = PreTokenizedString::from("Call 911!");
 
     pre_tokenizer.pre_tokenize(&mut pre_tokenized)?;
@@ -384,7 +384,7 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
     // START bert_setup_pre_tokenizer
     use tokenizers::pre_tokenizers::whitespace::Whitespace;
 
-    bert_tokenizer.with_pre_tokenizer(Whitespace{});
+    bert_tokenizer.with_pre_tokenizer(Whitespace {});
     // END bert_setup_pre_tokenizer
     // START bert_setup_processor
     use tokenizers::processors::template::TemplateProcessing;
