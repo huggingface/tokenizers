@@ -722,7 +722,7 @@ mod test {
     #[test]
     fn get_subtype() {
         Python::with_gil(|py| {
-            let py_norm = PyPreTokenizer::new(Whitespace::default().into());
+            let py_norm = PyPreTokenizer::new(Whitespace {}.into());
             let py_wsp = py_norm.get_as_subtype(py).unwrap();
             assert_eq!("Whitespace", py_wsp.as_ref(py).get_type().name().unwrap());
         })
@@ -730,9 +730,9 @@ mod test {
 
     #[test]
     fn serialize() {
-        let py_wrapped: PyPreTokenizerWrapper = Whitespace::default().into();
+        let py_wrapped: PyPreTokenizerWrapper = Whitespace {}.into();
         let py_ser = serde_json::to_string(&py_wrapped).unwrap();
-        let rs_wrapped = PreTokenizerWrapper::Whitespace(Whitespace::default());
+        let rs_wrapped = PreTokenizerWrapper::Whitespace(Whitespace {});
         let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
         assert_eq!(py_ser, rs_ser);
         let py_pretok: PyPreTokenizer = serde_json::from_str(&rs_ser).unwrap();
@@ -745,10 +745,10 @@ mod test {
         }
 
         let py_seq: PyPreTokenizerWrapper =
-            Sequence::new(vec![Whitespace::default().into(), WhitespaceSplit.into()]).into();
+            Sequence::new(vec![Whitespace {}.into(), WhitespaceSplit.into()]).into();
         let py_wrapper_ser = serde_json::to_string(&py_seq).unwrap();
         let rs_wrapped = PreTokenizerWrapper::Sequence(Sequence::new(vec![
-            Whitespace::default().into(),
+            Whitespace {}.into(),
             WhitespaceSplit.into(),
         ]));
         let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
@@ -759,7 +759,7 @@ mod test {
         assert_eq!(py_wrapper_ser, py_ser);
 
         let obj = Python::with_gil(|py| {
-            let py_wsp = PyPreTokenizer::new(Whitespace::default().into());
+            let py_wsp = PyPreTokenizer::new(Whitespace {}.into());
             let obj: PyObject = Py::new(py, py_wsp).unwrap().into_py(py);
             obj
         });
