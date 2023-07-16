@@ -271,7 +271,7 @@ impl Unigram {
             {
                 let key_pos = starts_at + tok_bytes.len();
                 let token: String = String::from_utf8(tok_bytes).unwrap();
-                let mut target_node = &mut best_path_ends_at[key_pos];
+                let target_node = &mut best_path_ends_at[key_pos];
                 let length = key_pos - starts_at;
                 let id = self.token_to_ids.get(&token).unwrap();
                 let score = self.vocab.get(*id as usize).unwrap().1;
@@ -288,7 +288,7 @@ impl Unigram {
                 }
             }
             if !has_single_node {
-                let mut target_node = &mut best_path_ends_at[starts_at + mblen];
+                let target_node = &mut best_path_ends_at[starts_at + mblen];
                 let candidate_best_path_score = unk_score + best_path_score_till_here;
                 if target_node.starts_at.is_none()
                     || candidate_best_path_score > target_node.best_path_score

@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn basic() {
-        let pretok = UnicodeScripts::default();
+        let pretok = UnicodeScripts {};
         let mut pretokenized = PreTokenizedString::from("どこで生れ。Yes");
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn spaces_are_included_in_every_script() {
-        let pretok = UnicodeScripts::default();
+        let pretok = UnicodeScripts {};
         let mut pretokenized = PreTokenizedString::from("Apples are りんご 林檎");
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(

@@ -197,7 +197,7 @@ impl PostProcessor for ByteLevel {
 }
 
 pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
-    encoding.process_tokens_with_offsets_mut(|(i, (token, mut offsets))| {
+    encoding.process_tokens_with_offsets_mut(|(i, (token, offsets))| {
         let mut leading_spaces = token
             .chars()
             .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())

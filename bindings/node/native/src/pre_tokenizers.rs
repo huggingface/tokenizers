@@ -155,8 +155,7 @@ fn byte_level_alphabet(mut cx: FunctionContext) -> JsResult<JsValue> {
 fn whitespace(mut cx: FunctionContext) -> JsResult<JsPreTokenizer> {
     let mut pretok = JsPreTokenizer::new::<_, JsPreTokenizer, _>(&mut cx, vec![])?;
     let guard = cx.lock();
-    pretok.borrow_mut(&guard).pretok =
-        Some(tk::pre_tokenizers::whitespace::Whitespace::default().into());
+    pretok.borrow_mut(&guard).pretok = Some(tk::pre_tokenizers::whitespace::Whitespace {}.into());
     Ok(pretok)
 }
 
@@ -303,10 +302,10 @@ mod test {
 
     #[test]
     fn serialize() {
-        let js_wrapped: JsPreTokenizerWrapper = Whitespace::default().into();
+        let js_wrapped: JsPreTokenizerWrapper = Whitespace {}.into();
         let js_ser = serde_json::to_string(&js_wrapped).unwrap();
 
-        let rs_wrapped = PreTokenizerWrapper::Whitespace(Whitespace::default());
+        let rs_wrapped = PreTokenizerWrapper::Whitespace(Whitespace {});
         let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
         assert_eq!(js_ser, rs_ser);
 
@@ -320,11 +319,11 @@ mod test {
         }
 
         let js_seq: JsPreTokenizerWrapper =
-            Sequence::new(vec![WhitespaceSplit.into(), Whitespace::default().into()]).into();
+            Sequence::new(vec![WhitespaceSplit.into(), Whitespace {}.into()]).into();
         let js_wrapper_ser = serde_json::to_string(&js_seq).unwrap();
         let rs_wrapped = PreTokenizerWrapper::Sequence(Sequence::new(vec![
             WhitespaceSplit.into(),
-            Whitespace::default().into(),
+            Whitespace {}.into(),
         ]));
         let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
         assert_eq!(js_wrapper_ser, rs_ser);
@@ -335,7 +334,7 @@ mod test {
         let js_ser = serde_json::to_string(&js_seq).unwrap();
         assert_eq!(js_wrapper_ser, js_ser);
 
-        let rs_seq = Sequence::new(vec![WhitespaceSplit.into(), Whitespace::default().into()]);
+        let rs_seq = Sequence::new(vec![WhitespaceSplit.into(), Whitespace {}.into()]);
         let rs_ser = serde_json::to_string(&rs_seq).unwrap();
         assert_eq!(js_wrapper_ser, rs_ser);
     }
