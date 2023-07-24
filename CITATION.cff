@@ -1,0 +1,31 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: HuggingFace's Tokenizers
+message: >-
+  Fast State-of-the-Art Tokenizers optimized for Research
+  and Production.
+type: software
+authors:
+  - given-names: Anthony
+    family-names: Moi
+    email: m.anthony.moi@gmail.com
+    affiliation: HuggingFace
+  - given-names: Nicolas
+    family-names: Patry
+    affiliation: HuggingFace
+repository-code: 'https://github.com/huggingface/tokenizers'
+url: 'https://github.com/huggingface/tokenizers'
+repository: 'https://huggingface.co'
+abstract: >-
+  Fast State-of-the-Art Tokenizers optimized for Research
+  and Production.
+keywords:
+  - Rust
+  - Tokenizer
+  - NLP
+license: Apache-2.0
+commit: 37372b6
+version: 0.13.3
+date-released: '2023-04-05'
