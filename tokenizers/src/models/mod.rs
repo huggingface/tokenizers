@@ -34,20 +34,26 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
         S: Serializer,
     {
         // There could be holes so max + 1 is more correct than vocab_r.len()
-        if let Some(max) = self.vocab_r.iter().map(|(key, _)| key).max() {
+        let mut holes = vec![];
+        let result = if let Some(max) = self.vocab_r.iter().map(|(key, _)| key).max() {
             let iter = (0..*max + 1).filter_map(|i| {
             if let Some(token) = self.vocab_r.get(&i){
                 Some((token, i))
             }else{
-                warn!("The OrderedVocab you are attempting to save contains a hole for index {}, your vocabulary could be corrupted !", i);
-                println!("The OrderedVocab you are attempting to save contains a hole for index {}, your vocabulary could be corrupted !", i);
+                holes.push(i);
                 None
             }
-        });
+            });
             serializer.collect_map(iter)
         } else {
             serializer.collect_map(std::iter::empty::<(&str, u32)>())
+        };
+
+        if !holes.is_empty(){
+            warn!("The OrderedVocab you are attempting to save contains holes for indices {:?}, your vocabulary could be corrupted !", holes);
+            println!("The OrderedVocab you are attempting to save contains holes for indices {:?}, your vocabulary could be corrupted !", holes);
         }
+        result
     }
 }
 
