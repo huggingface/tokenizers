@@ -126,7 +126,6 @@ impl<'de> Visitor<'de> for BPEVisitor {
                 _ => {}
             }
         }
-        println!("Vocab {vocab} merges {merges}")
         if let (Some(vocab), Some(merges)) = (vocab, merges) {
             let merges =
                 convert_merges_to_hashmap(merges.into_iter(), &vocab).map_err(Error::custom)?;
