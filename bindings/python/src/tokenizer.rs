@@ -712,8 +712,9 @@ impl PyTokenizer {
             }
         }
 
-        self.tokenizer.with_truncation(Some(params));
-
+        if let Err(error_message) = self.tokenizer.with_truncation(Some(params)) {
+            return Err(PyError(error_message.to_string()).into_pyerr::<exceptions::PyValueError>());
+        }
         Ok(())
     }
 
