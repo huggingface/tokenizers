@@ -37,19 +37,19 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
         let mut holes = vec![];
         let result = if let Some(max) = self.vocab_r.iter().map(|(key, _)| key).max() {
             let iter = (0..*max + 1).filter_map(|i| {
-            if let Some(token) = self.vocab_r.get(&i){
-                Some((token, i))
-            }else{
-                holes.push(i);
-                None
-            }
+                if let Some(token) = self.vocab_r.get(&i) {
+                    Some((token, i))
+                } else {
+                    holes.push(i);
+                    None
+                }
             });
             serializer.collect_map(iter)
         } else {
             serializer.collect_map(std::iter::empty::<(&str, u32)>())
         };
 
-        if !holes.is_empty(){
+        if !holes.is_empty() {
             warn!("The OrderedVocab you are attempting to save contains holes for indices {:?}, your vocabulary could be corrupted !", holes);
             println!("The OrderedVocab you are attempting to save contains holes for indices {:?}, your vocabulary could be corrupted !", holes);
         }
