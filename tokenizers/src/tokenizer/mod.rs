@@ -497,6 +497,10 @@ impl DerefMut for Tokenizer {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("{0}")]
+pub struct TruncationParamError(String);
+
 /// A `Tokenizer` is capable of encoding/decoding any text.
 #[derive(Clone, Debug)]
 pub struct TokenizerImpl<M, N, PT, PP, D> {
@@ -595,9 +599,21 @@ where
     }
 
     /// Set the truncation parameters
-    pub fn with_truncation(&mut self, trunc: Option<TruncationParams>) -> &mut Self {
+    ///
+    /// Fails if `stride` is too high relative to `max_length` and `post_processor.added_tokens()`
+    pub fn with_truncation(&mut self, trunc: Option<TruncationParams>) -> Result<&mut Self> {
+        if let Some(trunc_params) = &trunc {
+            let n_added_tokens = self.get_n_added_tokens(false);
+            let effective_max_length = trunc_params.max_length - n_added_tokens;
+            if effective_max_length <= trunc_params.stride {
+                return Err(Box::new(TruncationParamError(format!(
+                    "tokenizer stride set to {}, which is greater than or equal to its effective max length of {} (= {} original max length - {} added special tokens), ",
+                    trunc_params.stride, effective_max_length, trunc_params.max_length, n_added_tokens
+                ))));
+            }
+        }
         self.truncation = trunc;
-        self
+        Ok(self)
     }
 
     /// Get the currently set truncation parameters
