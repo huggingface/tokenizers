@@ -902,11 +902,7 @@ where
         // 1. First we truncate if needed
         let (encoding, pair_encoding) = {
             if let Some(trunc) = &self.truncation {
-                let n_added_tokens = if let Some(processor) = &self.post_processor {
-                    processor.added_tokens(pair_encoding.is_some())
-                } else {
-                    0
-                };
+                let n_added_tokens = self.get_n_added_tokens(pair_encoding.is_some());
 
                 if add_special_tokens && n_added_tokens > 0 {
                     let params = TruncationParams {
@@ -949,6 +945,14 @@ where
         };
 
         Ok(final_encoding)
+    }
+
+    fn get_n_added_tokens(&self, is_pair: bool) -> usize {
+        if let Some(processor) = &self.post_processor {
+            processor.added_tokens(is_pair)
+        } else {
+            0
+        }
     }
 }
 
