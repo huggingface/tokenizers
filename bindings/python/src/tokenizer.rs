@@ -721,7 +721,7 @@ impl PyTokenizer {
     /// Disable truncation
     #[pyo3(text_signature = "(self)")]
     fn no_truncation(&mut self) {
-        self.tokenizer.with_truncation(None);
+        let _ = self.tokenizer.with_truncation(None);
     }
 
     /// Get the currently set truncation parameters
