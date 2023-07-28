@@ -712,15 +712,16 @@ impl PyTokenizer {
             }
         }
 
-        self.tokenizer.with_truncation(Some(params));
-
+        if let Err(error_message) = self.tokenizer.with_truncation(Some(params)) {
+            return Err(PyError(error_message.to_string()).into_pyerr::<exceptions::PyValueError>());
+        }
         Ok(())
     }
 
     /// Disable truncation
     #[pyo3(text_signature = "(self)")]
     fn no_truncation(&mut self) {
-        self.tokenizer.with_truncation(None);
+        let _ = self.tokenizer.with_truncation(None);
     }
 
     /// Get the currently set truncation parameters
