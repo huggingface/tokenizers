@@ -173,12 +173,17 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
 
         tokenizer = Tokenizer(Unigram(vocab, unk_id, byte_fallback))
 
-        tokenizer.normalizer = normalizers.Sequence(
-            [
-                normalizers.Precompiled(precompiled_charsmap),
-                normalizers.Replace(Regex(" {2,}"), " "),
-            ]
-        )
+        if precompiled_charsmap:
+            tokenizer.normalizer = normalizers.Sequence(
+                [
+                    normalizers.Precompiled(precompiled_charsmap),
+                    normalizers.Replace(Regex(" {2,}"), " "),
+                ]
+            )
+        else:
+            tokenizer.normalizer = normalizers.Sequence(
+                [normalizers.Replace(Regex(" {2,}"), " ")]
+            )
         tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
         tokenizer.decoder = decoders.Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
 
