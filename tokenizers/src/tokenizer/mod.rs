@@ -916,9 +916,10 @@ where
         add_special_tokens: bool,
     ) -> Result<Encoding> {
         // 1. First we truncate if needed
+        let is_pair = pair_encoding.is_some();
         let (encoding, pair_encoding) = {
             if let Some(trunc) = &self.truncation {
-                let n_added_tokens = self.get_n_added_tokens(pair_encoding.is_some());
+                let n_added_tokens = self.get_n_added_tokens(is_pair);
 
                 if add_special_tokens && n_added_tokens > 0 {
                     let params = TruncationParams {
@@ -933,6 +934,7 @@ where
                 (encoding, pair_encoding)
             }
         };
+        let original_length = encoding.len();
 
         // 2. Then We post process
         let final_encoding = if let Some(processor) = &self.post_processor {
@@ -950,6 +952,13 @@ where
             }
             encodings.pop().unwrap()
         };
+        assert_eq!(
+            final_encoding.len() - self.get_n_added_tokens(is_pair),
+            original_length,
+            "Processor should add {} tokens but instead added {}!",
+            self.get_n_added_tokens(is_pair),
+            final_encoding.len() - original_length
+        );
 
         // 3. Then we pad if needed
         let [final_encoding] = if let Some(params) = &self.padding {
