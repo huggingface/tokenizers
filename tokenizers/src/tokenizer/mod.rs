@@ -934,7 +934,11 @@ where
                 (encoding, pair_encoding)
             }
         };
-        let original_length = encoding.len();
+        let original_length = if let Some(second_encoding) = &pair_encoding {
+            encoding.len() + second_encoding.len()
+        } else {
+            encoding.len()
+        };
 
         // 2. Then We post process
         let final_encoding = if let Some(processor) = &self.post_processor {
