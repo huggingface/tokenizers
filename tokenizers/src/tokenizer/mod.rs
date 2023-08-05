@@ -956,13 +956,15 @@ where
             }
             encodings.pop().unwrap()
         };
-        assert_eq!(
-            final_encoding.len() - self.get_n_added_tokens(is_pair),
-            original_length,
-            "Processor should add {} tokens but instead added {}!",
-            self.get_n_added_tokens(is_pair),
-            final_encoding.len() - original_length
-        );
+        if add_special_tokens {
+            assert_eq!(
+                final_encoding.len() - self.get_n_added_tokens(is_pair),
+                original_length,
+                "Processor should add {} tokens but instead added {}!",
+                self.get_n_added_tokens(is_pair),
+                final_encoding.len() - original_length
+            )
+        };
 
         // 3. Then we pad if needed
         let [final_encoding] = if let Some(params) = &self.padding {
