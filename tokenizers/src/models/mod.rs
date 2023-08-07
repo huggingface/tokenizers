@@ -140,7 +140,7 @@ impl Model for ModelWrapper {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum TrainerWrapper {
     BpeTrainer(BpeTrainer),
     WordPieceTrainer(WordPieceTrainer),
