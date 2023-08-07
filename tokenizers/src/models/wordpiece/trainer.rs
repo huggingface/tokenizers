@@ -88,7 +88,7 @@ impl WordPieceTrainerBuilder {
 }
 
 /// Trains a `WordPiece` model.
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Default, Clone, Deserialize, Serialize)]
 pub struct WordPieceTrainer {
     bpe_trainer: BpeTrainer,
 }
