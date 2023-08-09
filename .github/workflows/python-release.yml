@@ -79,7 +79,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest, macos-10.15]
+        os: [windows-latest, macos-latest]
         python: ["3.7", "3.8", "3.9", "3.10", "3.11"]
     steps:
       - name: Checkout repository
@@ -109,7 +109,7 @@ jobs:
       - name: Rename wheels
         shell: bash
         working-directory: ./bindings/python/dist
-        run: for file in *.whl ; do mv $file ${file//macosx_10_1[0-9]/macosx_10_11} ; done
+        run: for file in *.whl ; do mv $file ${file//macosx_10_1[0-9]/macosx_10_11} || true; done
 
       - name: Upload wheels
         shell: bash
@@ -122,10 +122,10 @@ jobs:
     runs-on: macos-arm64
     strategy:
       matrix:
-        python: ["3.8.16", "3.9.13", "3.10.6", "3.11.1"]
+        python: [ "3.9.13", "3.10.6", "3.11.1"]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
@@ -155,7 +155,7 @@ jobs:
     needs: [create_wheels_manylinux, create_wheels_windows_32bit, create_wheels_others_64bit, create_wheels_macos_arm64]
 
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
 
       - name: Install Python
         uses: actions/setup-python@v1
