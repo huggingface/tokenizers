@@ -701,7 +701,7 @@ declare_types! {
             let params_obj = neon_serde::to_value(&mut cx, &TruncationParams(options.clone()))?;
             let mut this = cx.this();
             let guard = cx.lock();
-            this.borrow_mut(&guard)
+            let _ = this.borrow_mut(&guard)
                 .tokenizer.write().unwrap()
                 .with_truncation(Some(options));
 
