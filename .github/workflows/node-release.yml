@@ -8,7 +8,7 @@ env:
 on:
   push:
     tags:
-      - node-v*
+      - v*
 
 jobs:
   rust_publish:
