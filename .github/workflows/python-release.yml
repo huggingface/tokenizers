@@ -3,7 +3,7 @@ name: Python Release
 on:
   push:
     tags:
-      - python-v*
+      - v*
 
 env:
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
