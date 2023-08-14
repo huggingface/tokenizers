@@ -605,7 +605,7 @@ where
         if let Some(trunc_params) = &trunc {
             let n_added_tokens = self.get_n_added_tokens(false);
             let effective_max_length = trunc_params.max_length - n_added_tokens;
-            if effective_max_length <= trunc_params.stride {
+            if effective_max_length < trunc_params.stride {
                 return Err(Box::new(TruncationParamError(format!(
                     "tokenizer stride set to {}, which is greater than or equal to its effective max length of {} (= {} original max length - {} added special tokens), ",
                     trunc_params.stride, effective_max_length, trunc_params.max_length, n_added_tokens
