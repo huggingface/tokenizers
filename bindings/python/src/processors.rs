@@ -154,11 +154,11 @@ impl PyPostProcessor {
 ///     cls (:obj:`Tuple[str, int]`):
 ///         A tuple with the string representation of the CLS token, and its id
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "BertProcessing")]
-#[pyo3(text_signature = "(self, sep, cls)")]
 pub struct PyBertProcessing {}
 #[pymethods]
 impl PyBertProcessing {
     #[new]
+    #[pyo3(text_signature = "(self, sep, cls)")]
     fn new(sep: (String, u32), cls: (String, u32)) -> (Self, PyPostProcessor) {
         (
             PyBertProcessing {},
@@ -196,12 +196,11 @@ impl PyBertProcessing {
 ///         Whether the add_prefix_space option was enabled during pre-tokenization. This
 ///         is relevant because it defines the way the offsets are trimmed out.
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "RobertaProcessing")]
-#[pyo3(text_signature = "(self, sep, cls, trim_offsets=True, add_prefix_space=True)")]
 pub struct PyRobertaProcessing {}
 #[pymethods]
 impl PyRobertaProcessing {
     #[new]
-    #[pyo3(signature = (sep, cls, trim_offsets = true, add_prefix_space = true))]
+    #[pyo3(signature = (sep, cls, trim_offsets = true, add_prefix_space = true), text_signature = "(self, sep, cls, trim_offsets=True, add_prefix_space=True)")]
     fn new(
         sep: (String, u32),
         cls: (String, u32),
@@ -231,12 +230,11 @@ impl PyRobertaProcessing {
 ///     trim_offsets (:obj:`bool`):
 ///         Whether to trim the whitespaces from the produced offsets.
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "ByteLevel")]
-#[pyo3(text_signature = "(self, trim_offsets=True)")]
 pub struct PyByteLevel {}
 #[pymethods]
 impl PyByteLevel {
     #[new]
-    #[pyo3(signature = (trim_offsets = None, **_kwargs))]
+    #[pyo3(signature = (trim_offsets = None, **_kwargs), text_signature = "(self, trim_offsets=True)")]
     fn new(trim_offsets: Option<bool>, _kwargs: Option<&PyDict>) -> (Self, PyPostProcessor) {
         let mut byte_level = ByteLevel::default();
 
@@ -383,12 +381,11 @@ impl FromPyObject<'_> for PyTemplate {
 ///          The given dict expects the provided :obj:`ids` and :obj:`tokens` lists to have
 ///          the same length.
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "TemplateProcessing")]
-#[pyo3(text_signature = "(self, single, pair, special_tokens)")]
 pub struct PyTemplateProcessing {}
 #[pymethods]
 impl PyTemplateProcessing {
     #[new]
-    #[pyo3(signature = (single = None, pair = None, special_tokens = None))]
+    #[pyo3(signature = (single = None, pair = None, special_tokens = None), text_signature = "(self, single, pair, special_tokens)")]
     fn new(
         single: Option<PyTemplate>,
         pair: Option<PyTemplate>,
@@ -422,12 +419,11 @@ impl PyTemplateProcessing {
 ///     processors (:obj:`List[PostProcessor]`)
 ///         The processors that need to be chained
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "Sequence")]
-#[pyo3(text_signature = "(self, processors)")]
 pub struct PySequence {}
 #[pymethods]
 impl PySequence {
     #[new]
-    #[pyo3(signature = (processors_py))]
+    #[pyo3(signature = (processors_py), text_signature = "(self, processors)")]
     fn new(processors_py: &PyList) -> (Self, PyPostProcessor) {
         let mut processors: Vec<PostProcessorWrapper> = Vec::with_capacity(processors_py.len());
         for n in processors_py.iter() {

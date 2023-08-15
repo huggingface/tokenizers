@@ -155,12 +155,11 @@ macro_rules! setter {
 /// This decoder is to be used in tandem with the :class:`~tokenizers.pre_tokenizers.ByteLevel`
 /// :class:`~tokenizers.pre_tokenizers.PreTokenizer`.
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "ByteLevel")]
-#[pyo3(text_signature = "(self)")]
 pub struct PyByteLevelDec {}
 #[pymethods]
 impl PyByteLevelDec {
     #[new]
-    #[pyo3(signature = (**_kwargs))]
+    #[pyo3(signature = (**_kwargs), text_signature = "(self)")]
     fn new(_kwargs: Option<&PyDict>) -> (Self, PyDecoder) {
         (PyByteLevelDec {}, ByteLevel::default().into())
     }
@@ -171,11 +170,11 @@ impl PyByteLevelDec {
 /// This decoder is to be used in tandem with the :class:`~tokenizers.pre_tokenizers.Replace`
 /// :class:`~tokenizers.pre_tokenizers.PreTokenizer`.
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "Replace")]
-#[pyo3(text_signature = "(self, pattern, content)")]
 pub struct PyReplaceDec {}
 #[pymethods]
 impl PyReplaceDec {
     #[new]
+    #[pyo3(text_signature = "(self, pattern, content)")]
     fn new(pattern: PyPattern, content: String) -> PyResult<(Self, PyDecoder)> {
         Ok((
             PyReplaceDec {},
@@ -194,7 +193,6 @@ impl PyReplaceDec {
 ///         Whether to cleanup some tokenization artifacts. Mainly spaces before punctuation,
 ///         and some abbreviated english forms.
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "WordPiece")]
-#[pyo3(text_signature = "(self, prefix=\"##\", cleanup=True)")]
 pub struct PyWordPieceDec {}
 #[pymethods]
 impl PyWordPieceDec {
@@ -219,7 +217,7 @@ impl PyWordPieceDec {
     }
 
     #[new]
-    #[pyo3(signature = (prefix = String::from("##"), cleanup = true))]
+    #[pyo3(signature = (prefix = String::from("##"), cleanup = true), text_signature = "(self, prefix=\"##\", cleanup=True)")]
     fn new(prefix: String, cleanup: bool) -> (Self, PyDecoder) {
         (PyWordPieceDec {}, WordPiece::new(prefix, cleanup).into())
     }
@@ -231,12 +229,11 @@ impl PyWordPieceDec {
 /// cannot be decoded you will get � instead for each inconvertable byte token
 ///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "ByteFallback")]
-#[pyo3(text_signature = "(self)")]
 pub struct PyByteFallbackDec {}
 #[pymethods]
 impl PyByteFallbackDec {
     #[new]
-    #[pyo3(signature = ())]
+    #[pyo3(signature = (), text_signature = "(self)")]
     fn new() -> (Self, PyDecoder) {
         (PyByteFallbackDec {}, ByteFallback::new().into())
     }
@@ -247,12 +244,11 @@ impl PyByteFallbackDec {
 /// This is the last step of decoding, this decoder exists only if
 /// there is need to add other decoders *after* the fusion
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "Fuse")]
-#[pyo3(text_signature = "(self)")]
 pub struct PyFuseDec {}
 #[pymethods]
 impl PyFuseDec {
     #[new]
-    #[pyo3(signature = ())]
+    #[pyo3(signature = (), text_signature = "(self)")]
     fn new() -> (Self, PyDecoder) {
         (PyFuseDec {}, Fuse::new().into())
     }
@@ -261,7 +257,6 @@ impl PyFuseDec {
 /// Strip normalizer
 /// Strips n left characters of each token, or n right characters of each token
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "Strip")]
-#[pyo3(text_signature = "(self, content, left=0, right=0)")]
 pub struct PyStrip {}
 #[pymethods]
 impl PyStrip {
@@ -296,7 +291,7 @@ impl PyStrip {
     }
 
     #[new]
-    #[pyo3(signature = (content=' ', left=0, right=0))]
+    #[pyo3(signature = (content=' ', left=0, right=0), text_signature = "(self, content, left=0, right=0)")]
     fn new(content: char, left: usize, right: usize) -> (Self, PyDecoder) {
         (PyStrip {}, Strip::new(content, left, right).into())
     }
@@ -313,7 +308,6 @@ impl PyStrip {
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "Metaspace")]
-#[pyo3(text_signature = "(self, replacement = \"▁\", add_prefix_space = True)")]
 pub struct PyMetaspaceDec {}
 #[pymethods]
 impl PyMetaspaceDec {
@@ -338,7 +332,7 @@ impl PyMetaspaceDec {
     }
 
     #[new]
-    #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true))]
+    #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true), text_signature = "(self, replacement = \"▁\", add_prefix_space = True)")]
     fn new(replacement: PyChar, add_prefix_space: bool) -> (Self, PyDecoder) {
         (
             PyMetaspaceDec {},
@@ -354,7 +348,6 @@ impl PyMetaspaceDec {
 ///         The suffix that was used to caracterize an end-of-word. This suffix will
 ///         be replaced by whitespaces during the decoding
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "BPEDecoder")]
-#[pyo3(text_signature = "(self, suffix=\"</w>\")")]
 pub struct PyBPEDecoder {}
 #[pymethods]
 impl PyBPEDecoder {
@@ -369,7 +362,7 @@ impl PyBPEDecoder {
     }
 
     #[new]
-    #[pyo3(signature = (suffix = String::from("</w>")))]
+    #[pyo3(signature = (suffix = String::from("</w>")), text_signature = "(self, suffix=\"</w>\")")]
     fn new(suffix: String) -> (Self, PyDecoder) {
         (PyBPEDecoder {}, BPEDecoder::new(suffix).into())
     }
@@ -386,7 +379,6 @@ impl PyBPEDecoder {
 ///         Whether to cleanup some tokenization artifacts.
 ///         Mainly spaces before punctuation, and some abbreviated english forms.
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "CTC")]
-#[pyo3(text_signature = "(self, pad_token=\"<pad>\", word_delimiter_token=\"|\", cleanup=True)")]
 pub struct PyCTCDecoder {}
 #[pymethods]
 impl PyCTCDecoder {
@@ -425,7 +417,8 @@ impl PyCTCDecoder {
         pad_token = String::from("<pad>"),
         word_delimiter_token = String::from("|"),
         cleanup = true
-    ))]
+    ),
+        text_signature = "(self, pad_token=\"<pad>\", word_delimiter_token=\"|\", cleanup=True)")]
     fn new(pad_token: String, word_delimiter_token: String, cleanup: bool) -> (Self, PyDecoder) {
         (
             PyCTCDecoder {},
@@ -440,12 +433,11 @@ impl PyCTCDecoder {
 ///     decoders (:obj:`List[Decoder]`)
 ///         The decoders that need to be chained
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name="Sequence")]
-#[pyo3(text_signature = "(self, decoders)")]
 pub struct PySequenceDecoder {}
 #[pymethods]
 impl PySequenceDecoder {
     #[new]
-    #[pyo3(signature = (decoders_py))]
+    #[pyo3(signature = (decoders_py), text_signature = "(self, decoders)")]
     fn new(decoders_py: &PyList) -> PyResult<(Self, PyDecoder)> {
         let mut decoders: Vec<DecoderWrapper> = Vec::with_capacity(decoders_py.len());
         for decoder_py in decoders_py.iter() {

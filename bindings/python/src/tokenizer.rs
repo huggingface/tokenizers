@@ -56,9 +56,6 @@ use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
 ///         Yesterday"``.
 ///
 #[pyclass(dict, module = "tokenizers", name = "AddedToken")]
-#[pyo3(
-    text_signature = "(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True)"
-)]
 pub struct PyAddedToken {
     pub content: String,
     pub is_special_token: bool,
@@ -128,7 +125,7 @@ impl From<tk::AddedToken> for PyAddedToken {
 #[pymethods]
 impl PyAddedToken {
     #[new]
-    #[pyo3(signature = (content=None, **kwargs))]
+    #[pyo3(signature = (content=None, **kwargs), text_signature = "(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True)")]
     fn __new__(content: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<Self> {
         let mut token = PyAddedToken::from(content.unwrap_or(""), None);
 
@@ -441,7 +438,6 @@ type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProc
 ///         The core algorithm that this :obj:`Tokenizer` should be using.
 ///
 #[pyclass(dict, module = "tokenizers", name = "Tokenizer")]
-#[pyo3(text_signature = "(self, model)")]
 #[derive(Clone)]
 pub struct PyTokenizer {
     tokenizer: Tokenizer,
@@ -460,6 +456,7 @@ impl PyTokenizer {
 #[pymethods]
 impl PyTokenizer {
     #[new]
+    #[pyo3(text_signature = "(self, model)")]
     fn __new__(model: PyRef<PyModel>) -> Self {
         PyTokenizer::from_model(model.clone())
     }
