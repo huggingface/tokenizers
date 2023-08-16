@@ -217,9 +217,6 @@ macro_rules! setter {
 ///     lowercase (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to lowercase.
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "BertNormalizer")]
-#[pyo3(
-    text_signature = "(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True)"
-)]
 pub struct PyBertNormalizer {}
 #[pymethods]
 impl PyBertNormalizer {
@@ -274,7 +271,8 @@ impl PyBertNormalizer {
         handle_chinese_chars = true,
         strip_accents = None,
         lowercase = true
-    ))]
+    ),
+        text_signature = "(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True)")]
     fn new(
         clean_text: bool,
         handle_chinese_chars: bool,
@@ -289,11 +287,11 @@ impl PyBertNormalizer {
 
 /// NFD Unicode Normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "NFD")]
-#[pyo3(text_signature = "(self)")]
 pub struct PyNFD {}
 #[pymethods]
 impl PyNFD {
     #[new]
+    #[pyo3(text_signature = "(self)")]
     fn new() -> (Self, PyNormalizer) {
         (PyNFD {}, PyNormalizer::new(NFD.into()))
     }
@@ -301,11 +299,11 @@ impl PyNFD {
 
 /// NFKD Unicode Normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "NFKD")]
-#[pyo3(text_signature = "(self)")]
 pub struct PyNFKD {}
 #[pymethods]
 impl PyNFKD {
     #[new]
+    #[pyo3(text_signature = "(self)")]
     fn new() -> (Self, PyNormalizer) {
         (PyNFKD {}, NFKD.into())
     }
@@ -313,11 +311,11 @@ impl PyNFKD {
 
 /// NFC Unicode Normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "NFC")]
-#[pyo3(text_signature = "(self)")]
 pub struct PyNFC {}
 #[pymethods]
 impl PyNFC {
     #[new]
+    #[pyo3(text_signature = "(self)")]
     fn new() -> (Self, PyNormalizer) {
         (PyNFC {}, NFC.into())
     }
@@ -325,11 +323,11 @@ impl PyNFC {
 
 /// NFKC Unicode Normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "NFKC")]
-#[pyo3(text_signature = "(self)")]
 pub struct PyNFKC {}
 #[pymethods]
 impl PyNFKC {
     #[new]
+    #[pyo3(text_signature = "(self)")]
     fn new() -> (Self, PyNormalizer) {
         (PyNFKC {}, NFKC.into())
     }
@@ -346,6 +344,7 @@ pub struct PySequence {}
 #[pymethods]
 impl PySequence {
     #[new]
+    #[pyo3(text_signature = None)]
     fn new(normalizers: &PyList) -> PyResult<(Self, PyNormalizer)> {
         let mut sequence = Vec::with_capacity(normalizers.len());
         for n in normalizers.iter() {
@@ -372,11 +371,11 @@ impl PySequence {
 
 /// Lowercase Normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Lowercase")]
-#[pyo3(text_signature = "(self)")]
 pub struct PyLowercase {}
 #[pymethods]
 impl PyLowercase {
     #[new]
+    #[pyo3(text_signature = "(self)")]
     fn new() -> (Self, PyNormalizer) {
         (PyLowercase {}, Lowercase.into())
     }
@@ -384,7 +383,6 @@ impl PyLowercase {
 
 /// Strip normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Strip")]
-#[pyo3(text_signature = "(self, left=True, right=True)")]
 pub struct PyStrip {}
 #[pymethods]
 impl PyStrip {
@@ -409,7 +407,7 @@ impl PyStrip {
     }
 
     #[new]
-    #[pyo3(signature = (left = true, right = true))]
+    #[pyo3(signature = (left = true, right = true), text_signature = "(self, left=True, right=True)")]
     fn new(left: bool, right: bool) -> (Self, PyNormalizer) {
         (PyStrip {}, Strip::new(left, right).into())
     }
@@ -417,7 +415,6 @@ impl PyStrip {
 
 /// Prepend normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Prepend")]
-#[pyo3(text_signature = "(self, prepend)")]
 pub struct PyPrepend {}
 #[pymethods]
 impl PyPrepend {
@@ -432,7 +429,7 @@ impl PyPrepend {
     }
 
     #[new]
-    #[pyo3(signature = (prepend="▁".to_string()))]
+    #[pyo3(signature = (prepend="▁".to_string()), text_signature = "(self, prepend)")]
     fn new(prepend: String) -> (Self, PyNormalizer) {
         (PyPrepend {}, Prepend::new(prepend).into())
     }
@@ -440,11 +437,11 @@ impl PyPrepend {
 
 /// StripAccents normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "StripAccents")]
-#[pyo3(text_signature = "(self)")]
 pub struct PyStripAccents {}
 #[pymethods]
 impl PyStripAccents {
     #[new]
+    #[pyo3(text_signature = "(self)")]
     fn new() -> (Self, PyNormalizer) {
         (PyStripAccents {}, StripAccents.into())
     }
@@ -452,11 +449,11 @@ impl PyStripAccents {
 
 /// Nmt normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Nmt")]
-#[pyo3(text_signature = "(self)")]
 pub struct PyNmt {}
 #[pymethods]
 impl PyNmt {
     #[new]
+    #[pyo3(text_signature = "(self)")]
     fn new() -> (Self, PyNormalizer) {
         (PyNmt {}, Nmt.into())
     }
@@ -465,11 +462,11 @@ impl PyNmt {
 /// Precompiled normalizer
 /// Don't use manually it is used for compatiblity for SentencePiece.
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Precompiled")]
-#[pyo3(text_signature = "(self, precompiled_charsmap)")]
 pub struct PyPrecompiled {}
 #[pymethods]
 impl PyPrecompiled {
     #[new]
+    #[pyo3(text_signature = "(self, precompiled_charsmap)")]
     fn new(py_precompiled_charsmap: &PyBytes) -> PyResult<(Self, PyNormalizer)> {
         let precompiled_charsmap: &[u8] = FromPyObject::extract(py_precompiled_charsmap)?;
         Ok((
@@ -488,11 +485,11 @@ impl PyPrecompiled {
 
 /// Replace normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Replace")]
-#[pyo3(text_signature = "(self, pattern, content)")]
 pub struct PyReplace {}
 #[pymethods]
 impl PyReplace {
     #[new]
+    #[pyo3(text_signature = "(self, pattern, content)")]
     fn new(pattern: PyPattern, content: String) -> PyResult<(Self, PyNormalizer)> {
         Ok((
             PyReplace {},

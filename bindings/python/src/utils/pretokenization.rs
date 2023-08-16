@@ -148,7 +148,6 @@ fn to_encoding(
 ///     sequence: str:
 ///         The string sequence used to initialize this PreTokenizedString
 #[pyclass(module = "tokenizers", name = "PreTokenizedString")]
-#[pyo3(text_signature = "(self, sequence)")]
 pub struct PyPreTokenizedString {
     pub(crate) pretok: tk::PreTokenizedString,
 }
@@ -168,6 +167,7 @@ impl From<PyPreTokenizedString> for PreTokenizedString {
 #[pymethods]
 impl PyPreTokenizedString {
     #[new]
+    #[pyo3(text_signature = "(self, sequence)")]
     fn new(s: &str) -> Self {
         PreTokenizedString::from(s).into()
     }

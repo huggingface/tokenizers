@@ -89,6 +89,7 @@ where
 #[pymethods]
 impl PyModel {
     #[new]
+    #[pyo3(text_signature = None)]
     fn __new__() -> Self {
         // Instantiate a default empty model. This doesn't really make sense, but we need
         // to be able to instantiate an empty model for pickle capabilities.
@@ -253,9 +254,6 @@ impl PyModel {
 ///     byte_fallback (:obj:`bool`, `optional`):
 ///         Whether to use spm byte-fallback trick (defaults to False)
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "BPE")]
-#[pyo3(
-    text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False)"
-)]
 pub struct PyBPE {}
 
 impl PyBPE {
@@ -400,7 +398,9 @@ impl PyBPE {
     }
 
     #[new]
-    #[pyo3(signature = (vocab=None, merges=None, **kwargs))]
+    #[pyo3(
+        signature = (vocab=None, merges=None, **kwargs),
+        text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False)")]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
@@ -523,7 +523,6 @@ impl PyBPE {
 ///     max_input_chars_per_word (:obj:`int`, `optional`):
 ///         The maximum number of characters to authorize in a single word.
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "WordPiece")]
-#[pyo3(text_signature = "(self, vocab, unk_token, max_input_chars_per_word)")]
 pub struct PyWordPiece {}
 
 impl PyWordPiece {
@@ -597,7 +596,7 @@ impl PyWordPiece {
     }
 
     #[new]
-    #[pyo3(signature = (vocab=None, **kwargs))]
+    #[pyo3(signature = (vocab=None, **kwargs), text_signature = "(self, vocab, unk_token, max_input_chars_per_word)")]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
@@ -692,7 +691,6 @@ impl PyWordPiece {
 ///     unk_token (:obj:`str`, `optional`):
 ///         The unknown token to be used by the model.
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "WordLevel")]
-#[pyo3(text_signature = "(self, vocab, unk_token)")]
 pub struct PyWordLevel {}
 
 #[pymethods]
@@ -708,7 +706,7 @@ impl PyWordLevel {
     }
 
     #[new]
-    #[pyo3(signature = (vocab=None, unk_token = None))]
+    #[pyo3(signature = (vocab=None, unk_token = None), text_signature = "(self, vocab, unk_token)")]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
@@ -807,12 +805,12 @@ impl PyWordLevel {
 ///     vocab (:obj:`List[Tuple[str, float]]`, `optional`, `optional`):
 ///         A list of vocabulary items and their relative score [("am", -0.2442),...]
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "Unigram")]
-#[pyo3(text_signature = "(self, vocab, unk_id, byte_fallback)")]
 pub struct PyUnigram {}
 
 #[pymethods]
 impl PyUnigram {
     #[new]
+    #[pyo3(text_signature = "(self, vocab, unk_id, byte_fallback)")]
     fn new(
         vocab: Option<Vec<(String, f64)>>,
         unk_id: Option<usize>,

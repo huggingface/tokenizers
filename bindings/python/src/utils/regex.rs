@@ -4,7 +4,6 @@ use pyo3::prelude::*;
 
 /// Instantiate a new Regex with the given pattern
 #[pyclass(module = "tokenizers", name = "Regex")]
-#[pyo3(text_signature = "(self, pattern)")]
 pub struct PyRegex {
     pub inner: Regex,
     pub pattern: String,
@@ -13,6 +12,7 @@ pub struct PyRegex {
 #[pymethods]
 impl PyRegex {
     #[new]
+    #[pyo3(text_signature = "(self, pattern)")]
     fn new(s: &str) -> PyResult<Self> {
         Ok(Self {
             inner: Regex::new(s)

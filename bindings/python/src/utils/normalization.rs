@@ -200,6 +200,7 @@ pub struct PyNormalizedString {
 #[pymethods]
 impl PyNormalizedString {
     #[new]
+    #[pyo3(text_signature = None)]
     fn new(s: &str) -> Self {
         NormalizedString::from(s).into()
     }

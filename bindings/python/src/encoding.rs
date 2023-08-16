@@ -23,6 +23,7 @@ impl From<tk::tokenizer::Encoding> for PyEncoding {
 #[pymethods]
 impl PyEncoding {
     #[new]
+    #[pyo3(text_signature = None)]
     fn new() -> Self {
         Self {
             encoding: tk::tokenizer::Encoding::default(),
