@@ -1,5 +1,4 @@
 name: Python Release
-
 on:
   push:
     tags:
@@ -13,13 +12,21 @@ env:
   DIST_DIR: ${{ github.sha }}
 
 jobs:
+  lock_exists:
+    runs-on: ubuntu-latest
+    name: Cargo.lock
+    steps:
+      - uses: actions/checkout@v3
+      - name: Cargo.lock lock exists 
+        run: cat Cargo.lock
+        working-directory: ./bindings/python
 
   create_wheels_manylinux:
     runs-on: ubuntu-latest
+    needs: [lock_exists]
     name: Create wheels for manylinux2014
     container: quay.io/pypa/manylinux2014_x86_64
     steps:
-      # v1 is required when using manylinux2010
       - uses: actions/checkout@v3
 
       - name: Install dependencies
@@ -29,29 +36,40 @@ jobs:
         working-directory: ./bindings/python
         run: sh build-wheels.sh
 
-  create_wheels_windows_32bit:
-    name: Create wheels for windows 32-bit
+  create_wheels_windows:
+    name: Windows 
     runs-on: windows-latest
+    needs: [lock_exists]
     strategy:
       matrix:
         python: ["3.7", "3.8", "3.9", "3.10", "3.11"]
+        bits: ["32", "64"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      - name: Install Rust
+      - name: Install Rust 32bits
+        if: ${{ matrix.os == '32' }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable-i686-pc-windows-msvc
+          override: true
+
+      - name: Install Rust 64bits
+        if: ${{ matrix.os == '32' }}
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable-i686-pc-windows-msvc
           override: true
 
       - name: Override toolchain
+        if: ${{ matrix.os == '32' }}
         shell: bash
         working-directory: ./bindings/python
         run: echo "stable-i686-pc-windows-msvc" > rust-toolchain
 
       - name: Install Python
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python }}
           architecture: x86
@@ -59,7 +77,7 @@ jobs:
       - name: Install dependencies
         run: |
           # On old versions of python there is an old version of setuptools already installed
-          pip install setuptools wheel setuptools-rust==0.11.3 --ignore-installed --force-reinstall
+          pip install setuptools wheel setuptools-rust --ignore-installed --force-reinstall
 
       - name: Build wheel
         working-directory: ./bindings/python
@@ -71,16 +89,67 @@ jobs:
           pip install awscli
           aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
 
-
-  create_wheels_others_64bit:
-    name: Other OSes
-    env:
-      MACOSX_DEPLOYMENT_TARGET: 10.11
+  create_wheels_macos_conda:
+    name: MacOS - Conda
     runs-on: ${{ matrix.os }}
+    needs: [lock_exists]
     strategy:
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [macos-latest]
+        # 3.11 not available on Conda yet.
+        python: ["3.7", "3.8", "3.9", "3.10"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install miniconda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          python-version: ${{ matrix.python }}
+
+      - name: Conda info
+        shell: bash -l {0}
+        run: conda info
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Setup conda env
+        shell: bash -l {0}
+        run: |
+          conda install setuptools-rust
+          conda install -c defaults anaconda-client conda-build
+
+      - name: Extract version
+        shell: bash -l {0}
+        working-directory: ./bindings/python
+        run: echo "TOKENIZERS_VERSION=`python setup.py --version`" >> $GITHUB_ENV
+
+      - name: Build conda packages
+        shell: bash -l {0}
+        working-directory: ./bindings/python
+        run: |
+          MACOSX_DEPLOYMENT_TARGET=10.11 python setup.py bdist_wheel
+
+      - name: Upload wheels
+        shell: bash
+        run: |
+          pip install awscli
+          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
+
+  create_wheels_macos:
+    name: MacOS
+    runs-on: ${{ matrix.os.os }}
+    needs: [lock_exists]
+    strategy:
+      matrix:
         python: ["3.7", "3.8", "3.9", "3.10", "3.11"]
+          # os: [{os: "macos-11", target: "11.0"}, {os: "macos-12"}, {os: "macos-13"}, {os: "macos-13", target: "14.0"}]
+        os: [{os: "macos-11", target: "11.0"}, {os: "macos-12"}, {os: "macos-13"}]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -95,21 +164,20 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python }}
-          architecture: x64
 
       - name: Install dependencies
         run: |
           # On old versions of python there is an old version of setuptools already installed
-          pip install setuptools wheel setuptools-rust==0.11.3 --ignore-installed --force-reinstall
+          pip install setuptools wheel setuptools-rust --ignore-installed --force-reinstall
+
+      - name: Override target
+        if: ${{ matrix.os.target }}
+        working-directory: ./bindings/python
+        run: echo "MACOSX_DEPLOYMENT_TARGET=${{ matrix.os.target }}" >> $GITHUB_ENV
 
       - name: Build wheel
         working-directory: ./bindings/python
-        run: python setup.py bdist_wheel
-
-      - name: Rename wheels
-        shell: bash
-        working-directory: ./bindings/python/dist
-        run: for file in *.whl ; do mv $file ${file//macosx_10_1[0-9]/macosx_10_11} || true; done
+        run: echo $MACOX_DEPLOYMENT_TARGET && python setup.py bdist_wheel
 
       - name: Upload wheels
         shell: bash
@@ -117,54 +185,15 @@ jobs:
           pip install awscli
           aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
 
-  create_wheels_macos_13:
-    name: MacOS 13
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-13]
-        python: ["3.7", "3.8", "3.9", "3.10", "3.11"]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - name: Install Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python }}
-          architecture: x64
-
-      - name: Install dependencies
-        run: |
-          # On old versions of python there is an old version of setuptools already installed
-          pip install setuptools wheel setuptools-rust==0.11.3 --ignore-installed --force-reinstall
-      - name: Build wheel
-        working-directory: ./bindings/python
-        run: python setup.py bdist_wheel
-
-      - name: Rename wheels
-        shell: bash
-        working-directory: ./bindings/python/dist
-        run: for file in *.whl ; do mv $file ${file//macosx_10_1[0-9]/macosx_10_11} || true; done
-
-      - name: Upload wheels
-        shell: bash
-        run: |
-          pip install awscli
-          aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
 
   create_wheels_macos_arm64:
-    name: Create wheels for MacOS M1
+    name: MacOS M1
     runs-on: macos-arm64
+    needs: [lock_exists]
     strategy:
       matrix:
-        python: [ "3.9.13", "3.10.6", "3.11.1"]
+        python: ["3.9.13", "3.10.6", "3.11.0"]
+        # target: ["12.0", "13.0", "14.0"]
         target: ["12.0", "13.0"]
     steps:
       - name: Checkout repository
@@ -192,16 +221,19 @@ jobs:
           cd ../../
           aws s3 sync --exact-timestamps ./bindings/python/dist "s3://tokenizers-releases/python/$DIST_DIR"
 
-  upload_package:
+  Upload_package:
     name: Upload package to PyPi
     runs-on: ubuntu-latest
-    needs: [create_wheels_manylinux, create_wheels_windows_32bit, create_wheels_others_64bit, create_wheels_macos_arm64, create_wheels_macos_13]
+    needs: [create_wheels_manylinux, create_wheels_windows, create_wheels_macos, create_wheels_macos_arm64, create_wheels_macos_conda]
 
     steps:
       - uses: actions/checkout@v3
 
       - name: Install Python
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+          architecture: x64
 
       - name: Retrieve all wheels
         shell: bash
