@@ -7,9 +7,12 @@ extras["testing"] = ["pytest", "requests", "numpy", "datasets", "black==22.3"]
 extras["docs"] = ["sphinx", "sphinx_rtd_theme", "setuptools_rust"]
 extras["dev"] = extras["testing"]
 
+with open("py_src/tokenizers/__init__.py", "r") as f:
+    version = f.readline().split("=")[-1].strip().strip('"')
+
 setup(
     name="tokenizers",
-    version="0.13.4.rc2",
+    version=version,
     description="Fast and Customizable Tokenizers",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
