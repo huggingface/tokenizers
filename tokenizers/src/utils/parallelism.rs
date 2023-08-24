@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn test_maybe_parallel_slice() {
-        let v = vec![1, 2, 3, 4, 5];
+        let v = [1, 2, 3, 4, 5];
 
         let chunks: Vec<_> = v.maybe_par_chunks(2).collect();
         assert_eq!(chunks, vec![&[1, 2][..], &[3, 4], &[5]]);

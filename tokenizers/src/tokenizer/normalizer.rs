@@ -549,7 +549,7 @@ impl NormalizedString {
                 new_chars.push((c, isize::from(index > 0)));
             })
         });
-        self.transform(new_chars.into_iter(), 0);
+        self.transform(new_chars, 0);
         self
     }
 
@@ -561,7 +561,7 @@ impl NormalizedString {
                 new_chars.push((c, isize::from(index > 0)));
             })
         });
-        self.transform(new_chars.into_iter(), 0);
+        self.transform(new_chars, 0);
         self
     }
 
@@ -1128,8 +1128,7 @@ mod tests {
                 ('l', 0),
                 ('o', 0),
                 (' ', 1),
-            ]
-            .into_iter(),
+            ],
             0,
         );
 

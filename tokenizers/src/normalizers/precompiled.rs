@@ -62,7 +62,7 @@ impl Normalizer for Precompiled {
             }
         });
         if modified {
-            normalized.transform(transformations.into_iter(), 0);
+            normalized.transform(transformations, 0);
         }
         Ok(())
     }
@@ -82,7 +82,7 @@ mod tests {
         replace(&mut transformations, "\x1e", "");
         transformations.push(('g', 0));
 
-        n.transform(transformations.into_iter(), 0);
+        n.transform(transformations, 0);
 
         assert_eq!(n.get(), "TMg");
     }
