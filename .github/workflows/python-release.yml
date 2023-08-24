@@ -133,11 +133,13 @@ jobs:
           #     path: dist
   build-sdist:
     name: build sdist
+    needs: [lock_exists]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: PyO3/maturin-action@v1
         with:
+          working-directory: ./bindings/python
           command: sdist
           args: --out dist
           rust-toolchain: stable
