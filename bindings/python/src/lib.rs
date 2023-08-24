@@ -70,5 +70,6 @@ pub fn tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pymodule!(processors::processors))?;
     m.add_wrapped(wrap_pymodule!(normalizers::normalizers))?;
     m.add_wrapped(wrap_pymodule!(trainers::trainers))?;
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
