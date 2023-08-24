@@ -516,17 +516,3 @@ pub struct JsFromPretrainedParameters {
   pub revision: Option<String>,
   pub auth_token: Option<String>,
 }
-
-impl From<JsFromPretrainedParameters> for tk::FromPretrainedParameters {
-  fn from(value: JsFromPretrainedParameters) -> Self {
-    let user_agent = [("bindings", "Node.js"), ("version", crate::VERSION)]
-      .iter()
-      .map(|(k, v)| (k.to_string(), v.to_string()))
-      .collect();
-    Self {
-      revision: value.revision.unwrap_or("main".to_string()),
-      auth_token: value.auth_token,
-      user_agent,
-    }
-  }
-}
