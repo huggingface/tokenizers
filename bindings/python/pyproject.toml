@@ -26,10 +26,12 @@ dynamic = [
     'license',
     'readme',
 ]
+dependencies = ["huggingface_hub>=0.16.4<0.17"]
 
 [project.urls]
 Homepage = 'https://github.com/huggingface/tokenizers'
 Source = 'https://github.com/huggingface/tokenizers'
+
 
 [project.optional-dependencies]
 testing = ["pytest", "requests", "numpy", "datasets", "black==22.3"]

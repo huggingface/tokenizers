@@ -74,7 +74,7 @@ esaxx-rs = { version = "0.1", default-features = false, features=[]}
 monostate = "0.1.5"
 
 [features]
-default = ["progressbar", "http", "cli", "onig", "esaxx_fast"]
+default = ["progressbar", "cli", "onig", "esaxx_fast"]
 esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif"]
 http = ["reqwest", "cached-path", "dirs"]
