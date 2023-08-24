@@ -22,7 +22,7 @@ itertools = "0.9"
 
 [dependencies.tokenizers]
 version = "0.13.4-dev.0"
-path = "./tokenizers-lib"
+path = "../../tokenizers"
 
 [dev-dependencies]
 tempfile = "3.1"
