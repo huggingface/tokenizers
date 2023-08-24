@@ -37,7 +37,6 @@ jobs:
         with:
           node-version: latest
           cache: yarn
-          cache-dependency-path: ./bindings/node/
       - name: Install dependencies
         working-directory: ./bindings/node
         run: yarn install
