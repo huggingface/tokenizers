@@ -4,9 +4,9 @@ var globRequire = require;
 describe("pipelineExample", () => {
     // This is a hack to let us require using path similar to what the user has to use
     function require(mod: string) {
-        if (mod.startsWith("tokenizers/")) {
-            let path = mod.slice("tokenizers/".length);
-            return globRequire("../../lib/" + path);
+        if (mod.startsWith("tokenizers")) {
+            // let path = mod.slice("tokenizers".length);
+            return globRequire("../../");
         } else {
             return globRequire(mod);
         }
@@ -17,12 +17,12 @@ describe("pipelineExample", () => {
 
     it("shows pipeline parts", async () => {
         // START reload_tokenizer
-        let { Tokenizer } = require("tokenizers/bindings/tokenizer");
+        let { Tokenizer } = require("tokenizers");
 
         let tokenizer = Tokenizer.fromFile("data/tokenizer-wiki.json");
         // END reload_tokenizer
         // START setup_normalizer
-        let { sequenceNormalizer, nfdNormalizer, stripAccentsNormalizer } = require("tokenizers/bindings/normalizers");
+        let { sequenceNormalizer, nfdNormalizer, stripAccentsNormalizer } = require("tokenizers");
 
         let normalizer = sequenceNormalizer([nfdNormalizer(), stripAccentsNormalizer()]);
         // END setup_normalizer
@@ -35,7 +35,7 @@ describe("pipelineExample", () => {
         tokenizer.setNormalizer(normalizer)
         // END replace_normalizer
         // START setup_pre_tokenizer
-        let { whitespacePreTokenizer } = require("tokenizers/bindings/pre-tokenizers");
+        let { whitespacePreTokenizer } = require("tokenizers");
 
         var preTokenizer = whitespacePreTokenizer();
         var preTokenized = preTokenizer.preTokenizeString("Hello! How are you? I'm fine, thank you.");
@@ -57,7 +57,7 @@ describe("pipelineExample", () => {
             [".", [39, 40]]
         ]);
         // START combine_pre_tokenizer
-        let { sequencePreTokenizer, digitsPreTokenizer } = require("tokenizers/bindings/pre-tokenizers");
+        let { sequencePreTokenizer, digitsPreTokenizer } = require("tokenizers");
 
         var preTokenizer = sequencePreTokenizer([whitespacePreTokenizer(), digitsPreTokenizer(true)]);
         var preTokenized = preTokenizer.preTokenizeString("Call 911!");
@@ -66,7 +66,7 @@ describe("pipelineExample", () => {
         tokenizer.setPreTokenizer(preTokenizer)
         // END replace_pre_tokenizer
         // START setup_processor
-        let { templateProcessing } = require("tokenizers/bindings/post-processors");
+        let { templateProcessing } = require("tokenizers");
 
         tokenizer.setPostProcessor(templateProcessing(
             "[CLS] $A [SEP]",
@@ -75,15 +75,11 @@ describe("pipelineExample", () => {
         ));
         // END setup_processor
         // START test_decoding
-        let { promisify } = require('util');
-        let encode = promisify(tokenizer.encode.bind(tokenizer));
-        let decode = promisify(tokenizer.decode.bind(tokenizer));
-
-        let output = await encode("Hello, y'all! How are you 😁 ?");
+        let output = await tokenizer.encode("Hello, y'all! How are you 😁 ?");
         console.log(output.getIds());
         // [1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2]
 
-        let decoded = await decode([1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2], true);
+        let decoded = await tokenizer.decode([1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2], true);
         // "Hello , y ' all ! How are you ?"
         // END test_decoding
         expect(decoded).toEqual("Hello , y ' all ! How are you ?");
@@ -91,26 +87,26 @@ describe("pipelineExample", () => {
 
     it.skip("trains the tokenizer", async () => {
         // START bert_setup_tokenizer
-        let { Tokenizer } = require("tokenizers/bindings/tokenizer");
-        let { WordPiece } = require("tokenizers/bindings/models");
+        let { Tokenizer } = require("tokenizers");
+        let { WordPiece } = require("tokenizers");
 
         let bertTokenizer = new Tokenizer(WordPiece.init({}, { unkToken: "[UNK]" }));
         // END bert_setup_tokenizer
         // START bert_setup_normalizer
         let { sequenceNormalizer, lowercaseNormalizer, nfdNormalizer, stripAccentsNormalizer }
-            = require("tokenizers/bindings/normalizers");
+            = require("tokenizers");
 
         bertTokenizer.setNormalizer(sequenceNormalizer([
             nfdNormalizer(), lowercaseNormalizer(), stripAccentsNormalizer()
         ]))
         // END bert_setup_normalizer
         // START bert_setup_pre_tokenizer
-        let { whitespacePreTokenizer } = require("tokenizers/bindings/pre-tokenizers");
+        let { whitespacePreTokenizer } = require("tokenizers");
 
         bertTokenizer.setPreTokenizer(whitespacePreTokenizer());
         // END bert_setup_pre_tokenizer
         // START bert_setup_processor
-        let { templateProcessing } = require("tokenizers/bindings/post-processors");
+        let { templateProcessing } = require("tokenizers");
 
         bertTokenizer.setPostProcessor(templateProcessing(
             "[CLS] $A [SEP]",
@@ -119,7 +115,7 @@ describe("pipelineExample", () => {
         ));
         // END bert_setup_processor
         // START bert_train_tokenizer
-        let { wordPieceTrainer } = require("tokenizers/bindings/trainers");
+        let { wordPieceTrainer } = require("tokenizers");
 
         let trainer = wordPieceTrainer({
             vocabSize: 30522,
@@ -133,26 +129,23 @@ describe("pipelineExample", () => {
     });
 
     it("shows a full bert example", async () => {
-        let { Tokenizer } = require("tokenizers/bindings/tokenizer");
+        let { Tokenizer } = require("tokenizers");
         let bertTokenizer = await Tokenizer.fromFile("data/bert-wiki.json")
 
         // START bert_test_decoding
-        let { promisify } = require("util");
-        let encode = promisify(bertTokenizer.encode.bind(bertTokenizer));
-        let decode = promisify(bertTokenizer.decode.bind(bertTokenizer));
 
-        let output = await encode("Welcome to the 🤗 Tokenizers library.");
+        let output = await bertTokenizer.encode("Welcome to the 🤗 Tokenizers library.");
         console.log(output.getTokens());
         // ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
 
-        var decoded = await decode(output.getIds(), true);
+        var decoded = await bertTokenizer.decode(output.getIds(), true);
         // "welcome to the tok ##eni ##zer ##s library ."
         // END bert_test_decoding
         expect(decoded).toEqual("welcome to the tok ##eni ##zer ##s library .");
         // START bert_proper_decoding
-        let { wordPieceDecoder } = require("tokenizers/bindings/decoders");
+        let { wordPieceDecoder } = require("tokenizers");
         bertTokenizer.setDecoder(wordPieceDecoder());
-        var decoded = await decode(output.getIds(), true);
+        var decoded = await bertTokenizer.decode(output.getIds(), true);
         // "welcome to the tokenizers library."
         // END bert_proper_decoding
         expect(decoded).toEqual("welcome to the tokenizers library.");
