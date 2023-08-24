@@ -40,7 +40,7 @@ npm install tokenizers@latest
 ```ts
 import { Tokenizer } from "tokenizers";
 
-const tokenizer = await Tokenizer.fromPretrained("gpt2");
+const tokenizer = await Tokenizer.fromFile("tokenizer.json");
 const wpEncoded = await tokenizer.encode("Who is John?");
 
 console.log(wpEncoded.getLength());

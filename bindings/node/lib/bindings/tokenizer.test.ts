@@ -51,7 +51,7 @@ describe('Tokenizer', () => {
 
     expect(typeof Tokenizer.fromFile).toBe('function')
     expect(typeof Tokenizer.fromString).toBe('function')
-    expect(typeof Tokenizer.fromPretrained).toBe('function')
+    // expect(typeof Tokenizer.fromPretrained).toBe('function')
 
     expect(typeof tokenizer.addSpecialTokens).toBe('function')
     expect(typeof tokenizer.addTokens).toBe('function')
@@ -82,24 +82,24 @@ describe('Tokenizer', () => {
     expect(typeof tokenizer.train).toBe('function')
   })
 
-  it('can be instantiated from the hub', async () => {
-    let tokenizer: Tokenizer
-    let output: Encoding
+  // it('can be instantiated from the hub', async () => {
+  //   let tokenizer: Tokenizer
+  //   let output: Encoding
 
-    tokenizer = Tokenizer.fromPretrained('bert-base-cased')
-    output = await tokenizer.encode('Hey there dear friend!', null, { addSpecialTokens: false })
-    expect(output.getTokens()).toEqual(['Hey', 'there', 'dear', 'friend', '!'])
+  //   tokenizer = Tokenizer.fromPretrained('bert-base-cased')
+  //   output = await tokenizer.encode('Hey there dear friend!', null, { addSpecialTokens: false })
+  //   expect(output.getTokens()).toEqual(['Hey', 'there', 'dear', 'friend', '!'])
 
-    tokenizer = Tokenizer.fromPretrained('anthony/tokenizers-test')
-    output = await tokenizer.encode('Hey there dear friend!', null, { addSpecialTokens: false })
-    expect(output.getTokens()).toEqual(['hey', 'there', 'dear', 'friend', '!'])
+  //   tokenizer = Tokenizer.fromPretrained('anthony/tokenizers-test')
+  //   output = await tokenizer.encode('Hey there dear friend!', null, { addSpecialTokens: false })
+  //   expect(output.getTokens()).toEqual(['hey', 'there', 'dear', 'friend', '!'])
 
-    tokenizer = Tokenizer.fromPretrained('anthony/tokenizers-test', {
-      revision: 'gpt-2',
-    })
-    output = await tokenizer.encode('Hey there dear friend!', null, { addSpecialTokens: false })
-    expect(output.getTokens()).toEqual(['Hey', 'Ġthere', 'Ġdear', 'Ġfriend', '!'])
-  }, 10000)
+  //   tokenizer = Tokenizer.fromPretrained('anthony/tokenizers-test', {
+  //     revision: 'gpt-2',
+  //   })
+  //   output = await tokenizer.encode('Hey there dear friend!', null, { addSpecialTokens: false })
+  //   expect(output.getTokens()).toEqual(['Hey', 'Ġthere', 'Ġdear', 'Ġfriend', '!'])
+  // }, 10000)
 
   describe('addTokens', () => {
     it('accepts a list of string as new tokens when initial model is empty', () => {
