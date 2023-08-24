@@ -104,10 +104,6 @@ jobs:
             3.9
             3.10
             3.11
-            pypy3.7
-            pypy3.8
-            pypy3.9
-            pypy3.10
           architecture: ${{ matrix.python-architecture || 'x64' }}
 
       - run: pip install -U twine
