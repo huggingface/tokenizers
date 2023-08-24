@@ -34,10 +34,8 @@ jobs:
 
       - name: Install Node
         uses: actions/setup-node@v3
-        working-directory: ./bindings/node
         with:
           node-version: latest
-          cache: yarn
       - name: Install dependencies
         working-directory: ./bindings/node
         run: yarn install
