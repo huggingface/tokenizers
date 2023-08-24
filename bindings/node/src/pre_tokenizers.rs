@@ -129,7 +129,7 @@ pub fn byte_level_alphabet() -> Vec<String> {
 pub fn whitespace_pre_tokenizer() -> PreTokenizer {
   PreTokenizer {
     pretok: Some(Arc::new(RwLock::new(
-      tk::pre_tokenizers::whitespace::Whitespace::default().into(),
+      tk::pre_tokenizers::whitespace::Whitespace.into(),
     ))),
   }
 }

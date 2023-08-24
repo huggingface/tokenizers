@@ -358,20 +358,6 @@ impl Tokenizer {
     })
   }
 
-  #[napi(factory)]
-  pub fn from_pretrained(
-    file: String,
-    parameters: Option<JsFromPretrainedParameters>,
-  ) -> Result<Self> {
-    let p: tk::FromPretrainedParameters = parameters.unwrap_or_default().into();
-
-    let tokenizer = tk::tokenizer::TokenizerImpl::from_pretrained(file, Some(p))
-      .map_err(|e| Error::from_reason(format!("Error loading from file{}", e)))?;
-    Ok(Self {
-      tokenizer: Arc::new(RwLock::new(tokenizer)),
-    })
-  }
-
   #[napi]
   pub fn add_special_tokens(&mut self, tokens: Vec<String>) {
     let tokens: Vec<_> = tokens
