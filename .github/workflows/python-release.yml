@@ -42,17 +42,17 @@ jobs:
           - os: windows
             ls: dir
             target: x86_64
-            python-architecture: x86_64
+            python-architecture: x64
             interpreter: 3.7 3.8 3.9 3.10 3.11
           - os: windows
             ls: dir
             target: i686
             python-architecture: x86
             interpreter: 3.7 3.8 3.9 3.10 3.11
-              # - os: windows
-              #   ls: dir
-              #   target: aarch64
-              #   interpreter: 3.11
+          - os: windows
+            ls: dir
+            target: aarch64
+            interpreter: "" # 3.11
           - os: macos
             target: aarch64
             interpreter: 3.7 3.8 3.9 3.10 3.11 3.12 pypy3.8 pypy3.9 pypy3.10
