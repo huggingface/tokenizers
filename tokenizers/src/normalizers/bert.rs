@@ -104,7 +104,7 @@ impl BertNormalizer {
                 new_chars.push((c, 0));
             }
         });
-        normalized.transform(new_chars.into_iter(), 0);
+        normalized.transform(new_chars, 0);
     }
 
     fn do_strip_accents(&self, normalized: &mut NormalizedString) {

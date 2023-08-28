@@ -14,8 +14,9 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macos-latest]
-        # Conda does not support 3.11 yet.
-        python: ["3.7", "3.8", "3.9", "3.10"]
+        # 3.11 not available on Conda yet.
+        python: ["3.8", "3.9", "3.10", "3.11"]
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -44,7 +45,7 @@ jobs:
       - name: Extract version
         shell: bash -l {0}
         working-directory: ./bindings/python
-        run: echo "TOKENIZERS_VERSION=`python setup.py --version`" >> $GITHUB_ENV
+        run: echo "TOKENIZERS_VERSION=`grep -m 1 version Cargo.toml | grep -e '".*"' -o | tr -d '"' | sed s/-/./ `" >> $GITHUB_ENV
 
       - name: Build conda packages
         shell: bash -l {0}
@@ -65,14 +66,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: [37, 38, 39]
+        python: [38, 39, 310, 311]
         include:
-          - python: 37
-            checksum: a1a7285dea0edc430b2bc7951d89bb30a2a1b32026d2a7b02aacaaa95cf69c7c 
           - python: 38
-            checksum: 935d72deb16e42739d69644977290395561b7a6db059b316958d97939e9bdf3d 
+            checksum: e2a4438671e0e42c5bba14cb51de6ce9763938184d6ca2967340bbe972bbe7e6
           - python: 39
-            checksum: 1ea2f885b4dbc3098662845560bc64271eb17085387a70c2ba3f29fff6f8d52f 
+            checksum: 9829d95f639bd0053b2ed06d1204e60644617bf37dd5cc57523732e0e8d64516
+          - python: 310
+            checksum: ea5e6e8a3d5a0247b9df85382d27220fac8e59b5778fd313c5913879cd9baafc
+          - python: 311
+            checksum: 634d76df5e489c44ade4085552b97bebc786d49245ed1a830022b0b406de5817
 
     steps:
       - name: Checkout repository
@@ -81,10 +84,9 @@ jobs:
       - name: Install miniconda
         run: |
           yum install -y wget openssl-devel
-          export FILENAME=Miniconda3-py${{ matrix.python }}_4.10.3-Linux-x86_64.sh
+          export FILENAME=Miniconda3-py${{ matrix.python }}_23.5.2-0-Linux-x86_64.sh
           wget https://repo.anaconda.com/miniconda/$FILENAME
           sha256sum $FILENAME | awk '$1=="${{ matrix.checksum}}"{print"good to go"}'
-          yum remove -y openssl-devel
           bash $FILENAME -b -p $HOME/miniconda
           source $HOME/miniconda/bin/activate
 
@@ -115,7 +117,7 @@ jobs:
         working-directory: ./bindings/python
         run: |
           source $HOME/miniconda/bin/activate
-          echo "TOKENIZERS_VERSION=`python setup.py --version`" >> $GITHUB_ENV
+          echo "TOKENIZERS_VERSION=`grep -m 1 version Cargo.toml | grep -e '".*"' -o | tr -d '"' | sed s/-/./ `" >> $GITHUB_ENV
 
       - name: Build conda packages
         shell: bash -l {0}

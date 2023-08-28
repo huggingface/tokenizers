@@ -15,6 +15,7 @@ requirements:
     - setuptools-rust
     - pkg-config
     - openssl
+    - maturin
 
   run:
     - python x.x

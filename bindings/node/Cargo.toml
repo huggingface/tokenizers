@@ -1,0 +1,22 @@
+[package]
+authors = ["Nicolas Patry <nicolas@huggingface.co>"]
+edition = "2021"
+name    = "node"
+version = "0.14.0-dev.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi        = "2"
+napi-derive = "2"
+serde       = { version = "1.0.163", features = ["derive"] }
+tokenizers  = { path = "../../tokenizers/" }
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true

@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use numpy::{npyffi, PyArray1};
 use pyo3::class::basic::CompareOp;
 use pyo3::exceptions;
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3::AsPyPointer;
@@ -566,17 +567,23 @@ impl PyTokenizer {
         revision: String,
         auth_token: Option<String>,
     ) -> PyResult<Self> {
-        let params = tk::FromPretrainedParameters {
-            revision,
-            auth_token,
-            user_agent: [("bindings", "Python"), ("version", crate::VERSION)]
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect(),
-        };
+        let path = Python::with_gil(|py| -> PyResult<String> {
+            let huggingface_hub = PyModule::import(py, intern!(py, "huggingface_hub"))?;
+            let hf_hub_download = huggingface_hub.getattr(intern!(py, "hf_hub_download"))?;
+            let kwargs = [
+                (intern!(py, "repo_id"), identifier),
+                (intern!(py, "filename"), "tokenizer.json"),
+                (intern!(py, "revision"), &revision),
+            ]
+            .into_py_dict(py);
+            if let Some(auth_token) = auth_token {
+                kwargs.set_item(intern!(py, "token"), auth_token)?;
+            }
+            let path: String = hf_hub_download.call((), Some(kwargs))?.extract()?;
+            Ok(path)
+        })?;
 
-        let tokenizer: PyResult<_> =
-            ToPyResult(Tokenizer::from_pretrained(identifier, Some(params))).into();
+        let tokenizer: PyResult<_> = ToPyResult(Tokenizer::from_file(path)).into();
         Ok(Self::new(tokenizer?))
     }
 

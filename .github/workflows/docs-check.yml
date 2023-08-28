@@ -28,7 +28,7 @@ jobs:
 
       - name: Build tokenizers
         working-directory: ./bindings/python
-        run: python setup.py install
+        run: pip install -e .
 
       - name: Build documentation
         working-directory: ./docs

@@ -8,24 +8,25 @@ env:
 on:
   push:
     tags:
-      - v*
+      - node-v*
 
 jobs:
-  rust_publish:
+  build:
     env:
       MACOSX_DEPLOYMENT_TARGET: 10.11
     strategy:
       matrix:
-        os: [windows-2019, macos-latest, ubuntu-latest]
-        node-version: [10.x, 12.x, 13.x, 14.x, 15.x]
-        exclude:
-          # Exclude node 15 for windows
-          - os: windows-2019
-            node-version: 15.x
-    runs-on: ${{ matrix.os }}
+        settings:
+          - host: macos-latest
+            target: x86_64-apple-darwin
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.settings.host }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v1
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
@@ -43,79 +44,65 @@ jobs:
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Install Node ${{ matrix.node-version }}
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v3
         with:
-          node-version: ${{ matrix.node-version }}
-
-      - name: Get NPM cache directory
-        id: npm-cache
-        run: |
-          echo "::set-output name=dir::$(npm config get cache)"
-      - name: Cache NPM cache
-        uses: actions/cache@v1
-        with:
-          path: ${{ steps.npm-cache.outputs.dir }}
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      - name: Install Python
-        uses: actions/setup-python@v1
-        with:
-          python-version: 2.x
+          node-version: latest
+          cache: yarn
+          cache-dependency-path: ./bindings/node/
 
       - name: Install npm dependencies
         working-directory: ./bindings/node
-        run: npm ci --ignore-scripts
+        run: yarn install
 
       - name: Build and package rust
         working-directory: ./bindings/node
-        run: node build.js --package-rust
+        run: |
+          yarn build &&
+          strip -x *.node
 
       - name: Install Python
         uses: actions/setup-python@v1
         with:
           python-version: 3.x
-
-      - name: Upload tarball
-        working-directory: ./bindings/node
-        shell: bash
-        run: |
-          pip install awscli
-          aws s3 sync --exact-timestamps --exclude "*" --include "*.tar.gz" --acl public-read ./bin-package "s3://tokenizers-releases/node/$(node -p -e 'require("./package.json").version')"
-
-  npm_publish:
-    name: Build and publish JS lib
-    needs: rust_publish
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: ${{ env.APP_NAME }}bindings/node/*.node
+          if-no-files-found: error
+  publish:
+    name: Publish
     runs-on: ubuntu-latest
+    needs:
+      - build
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v1
-
-      - name: Install Node 12.x
-        uses: actions/setup-node@v1
+      - uses: actions/checkout@v3
+      - name: Setup node
+        uses: actions/setup-node@v3
         with:
-          registry-url: https://registry.npmjs.org
-          node-version: 12.x
-
-      - name: Get NPM cache directory
-        id: npm-cache
+          node-version: latest
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: ./bindings/node/
+      - name: Install dependencies
+        working-directory: ./bindings/node
+        run: yarn install
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: ./bindings/node/artifacts
+      - name: Move artifacts
+        working-directory: ./bindings/node
+        run: yarn artifacts
+      - name: List packages
+        working-directory: ./bindings/node
+        run: ls -R ./npm
+        shell: bash
+      - name: Publish
+        working-directory: ./bindings/node
         run: |
-          echo "::set-output name=dir::$(npm config get cache)"
-      - name: Cache NPM cache
-        uses: actions/cache@v1
-        with:
-          path: ${{ steps.npm-cache.outputs.dir }}
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      - name: Install npm dependencies
-        working-directory: ./bindings/node
-        run: npm ci --ignore-scripts
-
-      - name: Build and publish on NPM
-        working-directory: ./bindings/node
-        run: node build.js --npm-publish
+          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
+          npm publish --access public --tag next
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
