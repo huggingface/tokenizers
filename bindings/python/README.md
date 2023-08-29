@@ -64,8 +64,7 @@ python -m venv .env
 source .env/bin/activate
 
 # Install `tokenizers` in the current virtual env
-pip install setuptools_rust
-python setup.py install
+pip install -e .
 ```
 
 ### Load a pretrained tokenizer from the Hub

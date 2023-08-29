@@ -52,19 +52,12 @@ cd tokenizers/bindings/python
 ```
 
 At this point you should have your [virtual environment]() already
-activated. In order to compile 🤗 Tokenizers, you need to install the
-Python package `setuptools_rust`:
+activated. In order to compile 🤗 Tokenizers, you need to:
 
 ```bash
-pip install setuptools_rust
+pip install -e .
 ```
 
-Then you can have 🤗 Tokenizers compiled and installed in your virtual
-environment with the following command:
-
-```bash
-python setup.py install
-```
 </python>
 <rust>
 ## Crates.io
@@ -74,7 +67,7 @@ python setup.py install
 You just need to add it to your `Cargo.toml`:
 
 ```bash
-tokenizers = "0.10"
+cargo add tokenizers
 ```
 </rust>
 <node>

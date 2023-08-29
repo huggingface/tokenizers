@@ -37,11 +37,6 @@ Then we go into the python bindings folder::
     cd tokenizers/bindings/python
 
 At this point you should have your `virtual environment`_ already activated. In order to
-compile 🤗 Tokenizers, you need to install the Python package :obj:`setuptools_rust`::
+compile 🤗 Tokenizers, you need to::
 
-    pip install setuptools_rust
-
-Then you can have 🤗 Tokenizers compiled and installed in your virtual environment with
-the following command::
-
-    python setup.py install
+    pip install -e .
