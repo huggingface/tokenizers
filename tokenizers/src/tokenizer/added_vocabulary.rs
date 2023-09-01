@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 /// like:
 ///   - Whether they should only match single words
 ///   - Whether to include any whitespace on its left or right
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AddedToken {
     /// The content of the added token
     pub content: String,
@@ -91,17 +91,6 @@ impl std::hash::Hash for AddedToken {
         self.content.hash(state);
     }
 }
-impl std::cmp::PartialEq for AddedToken {
-    fn eq(&self, other: &Self) -> bool {
-        self.content == other.content
-            && self.special == other.special
-            && self.lstrip == other.lstrip
-            && self.rstrip == other.rstrip
-            && self.normalized == other.normalized
-            && self.single_word == other.single_word
-    }
-}
-impl std::cmp::Eq for AddedToken {}
 
 type MatchingSet = (AhoCorasick, Vec<u32>);
 
