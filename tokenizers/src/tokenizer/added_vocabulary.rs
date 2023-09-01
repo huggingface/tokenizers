@@ -607,7 +607,7 @@ mod tests {
         assert_eq!(vocab.add_tokens(&[added_token.clone()], &model, normalizer),1);
         assert_eq!(vocab.len(), 3);
 
-        assert_eq!(vocab.get_vocab_r()[&1], added_token);
+        assert_eq!(vocab.get_vocab_r()[&0], added_token);
     }
 
     #[test]
@@ -652,8 +652,8 @@ mod tests {
             (3,AddedToken::from("added_token_2", true)),
             (0,AddedToken::from("test", true)),
         ]));
-
-        assert!(!vocab.added_tokens_map.contains_key("test"));
+        assert!(vocab.added_tokens_map.contains_key("test"));
+        assert!(vocab.added_tokens_map_r.contains_key(&0));
     }
 
     #[test]
