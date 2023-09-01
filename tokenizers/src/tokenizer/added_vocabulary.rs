@@ -264,7 +264,7 @@ impl AddedVocabulary {
             let id = if let Some(id) = self.token_to_id(&token.content, model) {
                 id
             } else {
-                let new_id = (model.get_vocab_size() + self.added_tokens_map.len()) as u32;
+                let new_id = (model.get_vocab_size() + cmp::max(self.added_tokens_map_r.keys(),0)) as u32;
                 new_id
             };
 
