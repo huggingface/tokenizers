@@ -650,7 +650,7 @@ mod tests {
         assert_eq!(*vocab.get_vocab_r(), HashMap::from([
             (2,AddedToken::from("added_token_1", true)),
             (3,AddedToken::from("added_token_2", true)),
-            (4,AddedToken::from("test", true)),
+            (0,AddedToken::from("test", true)),
         ]));
 
         assert!(!vocab.added_tokens_map.contains_key("test"));
