@@ -28,9 +28,10 @@ class AddedToken:
         normalized (:obj:`bool`, defaults to :obj:`True` with :meth:`~tokenizers.Tokenizer.add_tokens` and :obj:`False` with :meth:`~tokenizers.Tokenizer.add_special_tokens`):
             Defines whether this token should match against the normalized version of the input
             text. For example, with the added token ``"yesterday"``, and a normalizer in charge of
-            lowercasing the text, the token could be extract from the input ``"I saw a lion
-            Yesterday"``.
-
+            lowercasing the text, the token could be extracted from the input ``"I saw a lion
+            Yesterday"``. 
+        special (:obj:`bool`, defaults to :obj:`False` with :meth:`~tokenizers.Tokenizer.add_tokens` and :obj:`False` with :meth:`~tokenizers.Tokenizer.add_special_tokens`):
+            Defines whether this token should be skipped when decoding.
     """
 
     def __init__(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True):
@@ -63,6 +64,12 @@ class AddedToken:
     def single_word(self):
         """
         Get the value of the :obj:`single_word` option
+        """
+    pass
+    @property
+    def special(self):
+        """
+        Get the value of the :obj:`special` option
         """
         pass
 
