@@ -119,7 +119,7 @@ impl From<tk::AddedToken> for PyAddedToken {
             lstrip: Some(token.lstrip),
             rstrip: Some(token.rstrip),
             normalized: Some(token.normalized),
-            special: Some(token.special),
+            special: token.special,
         }
     }
 }
@@ -127,7 +127,7 @@ impl From<tk::AddedToken> for PyAddedToken {
 #[pymethods]
 impl PyAddedToken {
     #[new]
-    #[pyo3(signature = (content=None, **kwargs), text_signature = "(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True)")]
+    #[pyo3(signature = (content=None, **kwargs), text_signature = "(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False)")]
     fn __new__(content: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<Self> {
         let mut token = PyAddedToken::from(content.unwrap_or(""), None);
 
@@ -139,7 +139,7 @@ impl PyAddedToken {
                     "lstrip" => token.lstrip = Some(value.extract()?),
                     "rstrip" => token.rstrip = Some(value.extract()?),
                     "normalized" => token.normalized = Some(value.extract()?),
-                    "special" => token.special = Some(value.extract()?),
+                    "special" => token.special = value.extract()?,
                     _ => println!("Ignored unknown kwarg option {}", key),
                 }
             }
@@ -163,7 +163,7 @@ impl PyAddedToken {
                         "lstrip" => self.lstrip = Some(value.extract()?),
                         "rstrip" => self.rstrip = Some(value.extract()?),
                         "normalized" => self.normalized = Some(value.extract()?),
-                        "special" => self.special = Some(value.extract()?),
+                        "special" => self.special = value.extract()?,
                         _ => {}
                     }
                 }
