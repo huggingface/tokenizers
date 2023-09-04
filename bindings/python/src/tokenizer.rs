@@ -216,6 +216,12 @@ impl PyAddedToken {
         self.get_token().special
     }
 
+    /// Set the value of the :obj:`special` option
+    #[setter]
+    fn set_special(&mut self, special: bool) {
+        self.special = special;
+    }
+
     fn __str__(&self) -> PyResult<&str> {
         Ok(&self.content)
     }

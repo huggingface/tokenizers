@@ -678,6 +678,10 @@ mod tests {
         let mut token: AddedToken = AddedToken::from("Hey", false);
         token.content = "hey".to_string();
         assert_eq!(token.content, "hey"); // Token was already there
+
+        token.special = true;
+        assert_eq!(token.special, true); // Token was already there
+
     }
 
     #[test]
