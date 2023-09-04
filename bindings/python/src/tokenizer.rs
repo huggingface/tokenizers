@@ -183,8 +183,8 @@ impl PyAddedToken {
 
     /// Set the content of this :obj:`AddedToken`
     #[setter]
-    fn set_content(&self, content: String){
-        self.get_token().content = content
+    fn set_content(&mut self, content: String) {
+        self.content = content.into();
     }
 
     /// Get the value of the :obj:`rstrip` option
