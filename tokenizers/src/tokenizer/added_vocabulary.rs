@@ -261,7 +261,7 @@ impl AddedVocabulary {
                     .values()
                     .cloned()
                     .max()
-                    .map_or(model.get_vocab_size() as u32, |max| max.clone() + 1)
+                    .map_or(model.get_vocab_size() as u32, |max| max + 1)
             };
             // Make sure we modify the previous entry
             self.added_tokens_map
