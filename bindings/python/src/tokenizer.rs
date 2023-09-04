@@ -55,6 +55,8 @@ use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
 ///         text. For example, with the added token ``"yesterday"``, and a normalizer in charge of
 ///         lowercasing the text, the token could be extract from the input ``"I saw a lion
 ///         Yesterday"``.
+///     special (:obj:`bool`, defaults to :obj:`False` with :meth:`~tokenizers.Tokenizer.add_tokens` and :obj:`False` with :meth:`~tokenizers.Tokenizer.add_special_tokens`):
+///         Defines whether this token should be skipped when decoding.
 ///
 #[pyclass(dict, module = "tokenizers", name = "AddedToken")]
 pub struct PyAddedToken {
@@ -177,6 +179,12 @@ impl PyAddedToken {
     #[getter]
     fn get_content(&self) -> &str {
         &self.content
+    }
+
+    /// Set the content of this :obj:`AddedToken`
+    #[setter]
+    fn set_content(&self, content: String){
+        self.get_token().content = content
     }
 
     /// Get the value of the :obj:`rstrip` option

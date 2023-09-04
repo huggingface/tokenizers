@@ -16,6 +16,7 @@ from ..utils import bert_files, data_dir, multiprocessing_with_parallelism, robe
 class TestAddedToken:
     def test_instantiate_with_content_only(self):
         added_token = AddedToken("<mask>")
+        added_token.content = "<MASK>"
         assert type(added_token) == AddedToken
         assert str(added_token) == "<mask>"
         assert (
