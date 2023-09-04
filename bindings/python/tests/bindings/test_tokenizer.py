@@ -20,7 +20,7 @@ class TestAddedToken:
         assert added_token.content == "<MASK>"
         assert type(added_token) == AddedToken
         added_token.content = added_token.content.lower()
-        
+
         assert added_token.special == False
         added_token.special = True
         assert added_token.special == True
