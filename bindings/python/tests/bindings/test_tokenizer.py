@@ -19,7 +19,7 @@ class TestAddedToken:
         assert type(added_token) == AddedToken
         assert str(added_token) == "<mask>"
         assert (
-            repr(added_token) == 'AddedToken("<mask>", rstrip=False, lstrip=False, single_word=False, normalized=True)'
+            repr(added_token) == 'AddedToken("<mask>", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False)'
         )
         assert added_token.rstrip == False
         assert added_token.lstrip == False
