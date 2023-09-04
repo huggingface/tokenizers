@@ -660,8 +660,8 @@ where
     }
 
     /// Get the added vocabulary only
-    
-    /// Get the added tokens decoder 
+
+    /// Get the added tokens decoder
     pub fn get_added_tokens_decoder(&self) -> &HashMap<u32, AddedToken> {
         self.added_vocabulary.get_vocab_r()
     }

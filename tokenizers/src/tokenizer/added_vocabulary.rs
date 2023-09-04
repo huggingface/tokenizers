@@ -675,10 +675,9 @@ mod tests {
         assert_eq!(vocab.get_vocab()["another_two"], 4); // Token idx not changed
 
         // Just checking that we can set the content of the string in rust
-        let mut token:AddedToken = AddedToken::from("Hey", false);
+        let mut token: AddedToken = AddedToken::from("Hey", false);
         token.content = "hey".to_string();
         assert_eq!(token.content, "hey"); // Token was already there
-
     }
 
     #[test]
