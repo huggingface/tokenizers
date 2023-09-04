@@ -20,10 +20,11 @@ class TestAddedToken:
         assert added_token.content == "<MASK>"
         assert type(added_token) == AddedToken
         added_token.content = added_token.content.lower()
-        
+
         assert str(added_token) == "<mask>"
         assert (
-            repr(added_token) == 'AddedToken("<mask>", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False)'
+            repr(added_token)
+            == 'AddedToken("<mask>", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False)'
         )
         assert added_token.rstrip == False
         assert added_token.lstrip == False
