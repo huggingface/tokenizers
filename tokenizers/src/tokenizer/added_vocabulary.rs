@@ -257,11 +257,16 @@ impl AddedVocabulary {
             let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
                 new_id
             } else {
-                self.added_tokens_map
-                    .values()
-                    .cloned()
-                    .max()
-                    .map_or(model.get_vocab_size() as u32, |max| max + 1)
+                self.added_tokens_map.values().cloned().max().map_or(
+                    model.get_vocab_size() as u32,
+                    |max| {
+                        if max >= (model.get_vocab_size() as u32) || model.get_vocab_size() == 0 {
+                            max + 1
+                        } else {
+                            model.get_vocab_size() as u32
+                        }
+                    },
+                )
             };
             // Make sure we modify the previous entry
             self.added_tokens_map
@@ -681,7 +686,6 @@ mod tests {
 
         token.special = true;
         assert_eq!(token.special, true); // Token was already there
-
     }
 
     #[test]
