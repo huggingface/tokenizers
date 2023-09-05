@@ -373,10 +373,16 @@ class TestTokenizer:
         # Can retrieve vocab without added tokens
         vocab = tokenizer.get_vocab(with_added_tokens=False)
         assert vocab == {}
-        
+
         # Can retrieve added token decoder
         vocab = tokenizer.get_added_tokens_decoder()
-        assert vocab == {0: AddedToken("my", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False),1: AddedToken("name", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False),2: AddedToken("is", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False),3: AddedToken("john", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False),4: AddedToken("pair", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False)}
+        assert vocab == {
+            0: AddedToken("my", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False),
+            1: AddedToken("name", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False),
+            2: AddedToken("is", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False),
+            3: AddedToken("john", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False),
+            4: AddedToken("pair", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False),
+        }
 
     def test_get_vocab_size(self):
         tokenizer = Tokenizer(BPE())
