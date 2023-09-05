@@ -668,12 +668,11 @@ where
     pub fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
         // TODO ArthurZ THIS IS WRONG! We need to measure the length of the `set` because
         // now some tokens can be both in the added_tokens_encoder and in the vocab
-        self.model.get_vocab_size()
-            + if with_added_tokens {
-                self.added_vocabulary.len()
-            } else {
-                0
-            }
+        if with_added_tokens {
+            self.get_vocab(with_added_tokens).len()
+        } else {
+            self.model.get_vocab_size()
+        }
     }
 
     /// Converts a token in the corresponding id.
