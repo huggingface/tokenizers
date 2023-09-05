@@ -24,7 +24,7 @@ class TestAddedToken:
         assert added_token.special == False
         added_token.special = True
         assert added_token.special == True
-
+        added_token.special = False
         assert str(added_token) == "<mask>"
         assert (
             repr(added_token)

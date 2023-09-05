@@ -669,7 +669,7 @@ where
         // TODO ArthurZ THIS IS WRONG! We need to measure the length of the `set` because
         // now some tokens can be both in the added_tokens_encoder and in the vocab
         if with_added_tokens {
-            self.get_vocab(with_added_tokens).len()
+            self.get_vocab(true).len()
         } else {
             self.model.get_vocab_size()
         }

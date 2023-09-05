@@ -89,6 +89,7 @@ from .tokenizers import (
     pre_tokenizers,
     processors,
     trainers,
+    __version__,
 )
 from .implementations import (
     BertWordPieceTokenizer,

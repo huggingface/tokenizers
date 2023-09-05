@@ -75,7 +75,7 @@ impl PyAddedToken {
             single_word: None,
             lstrip: None,
             rstrip: None,
-            normalized: None,
+            normalized: Some(!special.unwrap_or(true)),
         }
     }
 

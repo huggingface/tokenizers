@@ -609,7 +609,7 @@ mod tests {
         );
         assert_eq!(vocab.len(), 3);
 
-        assert_eq!(vocab.get_vocab_r()[&0], added_token);
+        assert_eq!(vocab.get_added_tokens_decoder()[&0], added_token);
     }
 
     #[test]
@@ -650,7 +650,7 @@ mod tests {
         assert_eq!(vocab.len(), 3); // New token was added
         assert!(vocab.is_special_token("test"));
         assert_eq!(
-            *vocab.get_vocab_r(),
+            *vocab.get_added_tokens_decoder(),
             HashMap::from([
                 (0, AddedToken::from("test", true)),
                 (2, AddedToken::from("added_token_1", true)),

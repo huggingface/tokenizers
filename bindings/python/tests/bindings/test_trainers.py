@@ -34,8 +34,8 @@ class TestBpeTrainer:
         assert trainer.min_frequency == 12
         assert trainer.show_progress == False
         assert trainer.special_tokens == [
-            AddedToken("1"),
-            AddedToken("2"),
+            AddedToken("1", special = True),
+            AddedToken("2", special = True),
         ]
         assert trainer.limit_alphabet == 13
         assert sorted(trainer.initial_alphabet) == ["a", "b", "c"]
@@ -91,8 +91,8 @@ class TestWordPieceTrainer:
         assert trainer.min_frequency == 12
         assert trainer.show_progress == False
         assert trainer.special_tokens == [
-            AddedToken("1"),
-            AddedToken("2"),
+            AddedToken("1", special = True),
+            AddedToken("2", special = True),
         ]
         assert trainer.limit_alphabet == 13
         assert sorted(trainer.initial_alphabet) == ["a", "b", "c"]
@@ -131,8 +131,8 @@ class TestWordLevelTrainer:
         assert trainer.min_frequency == 12
         assert trainer.show_progress == False
         assert trainer.special_tokens == [
-            AddedToken("1"),
-            AddedToken("2"),
+            AddedToken("1", special = True),
+            AddedToken("2", special = True),
         ]
 
         # Modify these
@@ -272,8 +272,8 @@ class TestUnigram:
         assert trainer.vocab_size == 12345
         assert trainer.show_progress == False
         assert trainer.special_tokens == [
-            AddedToken("1", normalized=False),
-            AddedToken("2", lstrip=True, normalized=False),
+            AddedToken("1", normalized=False, special = True),
+            AddedToken("2", lstrip=True, normalized=False, special = True),
         ]
         assert sorted(trainer.initial_alphabet) == ["a", "b", "c"]
 
