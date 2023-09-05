@@ -180,8 +180,8 @@ impl AddedVocabulary {
             split_normalized_trie: (normalized_trie, vec![]),
         }
     }
-
     /// Size of the additional vocabulary
+    #[allow(dead_code)] // Suppress the "method is never used" warning
     pub fn len(&self) -> usize {
         self.added_tokens_map.len()
     }
@@ -585,7 +585,9 @@ mod tests {
             ),
             1
         );
-        assert_eq!(vocab.len(), 1);
+
+        let vocab_len: usize = vocab.len();
+        assert_eq!(vocab_len, 1);
 
         // Does not add multiple time the same token
         assert_eq!(
@@ -685,7 +687,7 @@ mod tests {
         assert_eq!(token.content, "hey"); // Token was already there
 
         token.special = true;
-        assert_eq!(token.special, true); // Token was already there
+        assert!(token.special); // Token was already there
     }
 
     #[test]
@@ -820,6 +822,8 @@ mod tests {
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
+
+        assert_eq!(vocab.len(), 0);
 
         vocab.add_tokens(
             &[AddedToken::from("<mask>", false).single_word(true)],
