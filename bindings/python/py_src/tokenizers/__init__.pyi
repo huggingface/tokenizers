@@ -899,6 +899,14 @@ class Tokenizer:
             :class:`~tokenizers.Tokenizer`: The new tokenizer
         """
         pass
+    def get_added_tokens_decoder(self):
+        """
+        Get the underlying vocabulary
+
+        Returns:
+            :obj:`Dict[int, AddedToken]`: The vocabulary
+        """
+        pass
     def get_vocab(self, with_added_tokens=True):
         """
         Get the underlying vocabulary
