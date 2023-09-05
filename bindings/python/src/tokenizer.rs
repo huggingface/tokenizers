@@ -662,6 +662,17 @@ impl PyTokenizer {
         self.tokenizer.get_vocab(with_added_tokens)
     }
 
+    /// Get the underlying vocabulary
+    /// 
+    /// Returns:
+    ///     :obj:`Dict[int, AddedToken]`: The vocabulary
+    #[pyo3(signature = ())]
+    #[pyo3(text_signature = "(self)")]
+    fn get_added_tokens_decoder(&self) -> HashMap<u32, PyAddedToken> {
+        self.tokenizer.get_added_tokens_decoder().into_iter().map(|(key, value)| (key, value.into())).collect()
+    }
+
+
     /// Get the size of the underlying vocabulary
     ///
     /// Args:

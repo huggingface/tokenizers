@@ -192,7 +192,7 @@ impl AddedVocabulary {
     }
 
     /// Get the additional vocabulary with the AddedTokens
-    pub fn get_vocab_r(&self) -> &HashMap<u32, AddedToken> {
+    pub fn get_added_tokens_decoder(&self) -> &HashMap<u32, AddedToken> {
         &self.added_tokens_map_r
     }
 
@@ -260,7 +260,7 @@ impl AddedVocabulary {
                 self.added_tokens_map.values().cloned().max().map_or(
                     model.get_vocab_size() as u32,
                     |max| {
-                        if max >= (model.get_vocab_size() as u32) || model.get_vocab_size() == 0 {
+                        if (max >= model.get_vocab_size() as u32) || model.get_vocab_size() == 0 {
                             max + 1
                         } else {
                             model.get_vocab_size() as u32
