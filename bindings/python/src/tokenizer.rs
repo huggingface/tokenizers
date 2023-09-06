@@ -25,6 +25,7 @@ use super::pre_tokenizers::PyPreTokenizer;
 use super::trainers::PyTrainer;
 use crate::processors::PyPostProcessor;
 use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
+use std::collections::BTreeMap;
 
 /// Represents a token that can be be added to a :class:`~tokenizers.Tokenizer`.
 /// It can have special options that defines the way it should behave.
@@ -668,12 +669,14 @@ impl PyTokenizer {
     ///     :obj:`Dict[int, AddedToken]`: The vocabulary
     #[pyo3(signature = ())]
     #[pyo3(text_signature = "(self)")]
-    fn get_added_tokens_decoder(&self) -> HashMap<u32, PyAddedToken> {
-        self.tokenizer
-            .get_added_tokens_decoder()
-            .into_iter()
-            .map(|(key, value)| (key, value.into()))
-            .collect()
+    fn get_added_tokens_decoder(&self) -> BTreeMap<u32, PyAddedToken> {
+        let mut sorted_map = BTreeMap::new();
+
+        for (key, value) in self.tokenizer.get_added_tokens_decoder() {
+            sorted_map.insert(key, value.into());
+        }
+
+        sorted_map
     }
 
     /// Get the size of the underlying vocabulary
