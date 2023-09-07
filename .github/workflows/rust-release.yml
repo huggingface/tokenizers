@@ -28,6 +28,5 @@ jobs:
 
       - name: Publish package rust
         working-directory: ./tokenizers
-        if: ${{ !contains(github.ref, 'rc') }}
         run: cargo publish --token ${CRATES_TOKEN}
 
