@@ -531,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "node"
-version = "0.14.0-rc.1"
+version = "0.14.0"
 dependencies = [
  "napi",
  "napi-build",
@@ -839,7 +839,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers"
-version = "0.14.0-rc.1"
+version = "0.14.0"
 dependencies = [
  "aho-corasick 0.7.20",
  "clap",
