@@ -659,14 +659,20 @@ where
         final_vocab
     }
 
+    /// Get the added tokens decoder
+    pub fn get_added_tokens_decoder(&self) -> HashMap<u32, AddedToken> {
+        self.added_vocabulary.get_added_tokens_decoder().clone()
+    }
+
     /// Get the size of the vocabulary
     pub fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
-        self.model.get_vocab_size()
-            + if with_added_tokens {
-                self.added_vocabulary.len()
-            } else {
-                0
-            }
+        // TODO ArthurZ THIS IS WRONG! We need to measure the length of the `set` because
+        // now some tokens can be both in the added_tokens_encoder and in the vocab
+        if with_added_tokens {
+            self.get_vocab(true).len()
+        } else {
+            self.model.get_vocab_size()
+        }
     }
 
     /// Converts a token in the corresponding id.

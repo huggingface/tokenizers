@@ -226,7 +226,7 @@ impl PyBpeTrainer {
                     if let Ok(content) = token.extract::<String>() {
                         Ok(tk::tokenizer::AddedToken::from(content, true))
                     } else if let Ok(mut token) = token.extract::<PyRefMut<PyAddedToken>>() {
-                        token.is_special_token = true;
+                        token.special = true;
                         Ok(token.get_token())
                     } else {
                         Err(exceptions::PyTypeError::new_err(
@@ -319,7 +319,7 @@ impl PyBpeTrainer {
                                     } else if let Ok(mut token) =
                                         token.extract::<PyRefMut<PyAddedToken>>()
                                     {
-                                        token.is_special_token = true;
+                                        token.special = true;
                                         Ok(token.get_token())
                                     } else {
                                         Err(exceptions::PyTypeError::new_err(
@@ -440,7 +440,7 @@ impl PyWordPieceTrainer {
                     if let Ok(content) = token.extract::<String>() {
                         Ok(tk::tokenizer::AddedToken::from(content, true))
                     } else if let Ok(mut token) = token.extract::<PyRefMut<PyAddedToken>>() {
-                        token.is_special_token = true;
+                        token.special = true;
                         Ok(token.get_token())
                     } else {
                         Err(exceptions::PyTypeError::new_err(
@@ -526,7 +526,7 @@ impl PyWordPieceTrainer {
                                     } else if let Ok(mut token) =
                                         token.extract::<PyRefMut<PyAddedToken>>()
                                     {
-                                        token.is_special_token = true;
+                                        token.special = true;
                                         Ok(token.get_token())
                                     } else {
                                         Err(exceptions::PyTypeError::new_err(
@@ -632,7 +632,7 @@ impl PyWordLevelTrainer {
                     if let Ok(content) = token.extract::<String>() {
                         Ok(tk::tokenizer::AddedToken::from(content, true))
                     } else if let Ok(mut token) = token.extract::<PyRefMut<PyAddedToken>>() {
-                        token.is_special_token = true;
+                        token.special = true;
                         Ok(token.get_token())
                     } else {
                         Err(exceptions::PyTypeError::new_err(
@@ -673,7 +673,7 @@ impl PyWordLevelTrainer {
                                     } else if let Ok(mut token) =
                                         token.extract::<PyRefMut<PyAddedToken>>()
                                     {
-                                        token.is_special_token = true;
+                                        token.special = true;
                                         Ok(token.get_token())
                                     } else {
                                         Err(exceptions::PyTypeError::new_err(
@@ -778,7 +778,7 @@ impl PyUnigramTrainer {
                     if let Ok(content) = token.extract::<String>() {
                         Ok(tk::tokenizer::AddedToken::from(content, true))
                     } else if let Ok(mut token) = token.extract::<PyRefMut<PyAddedToken>>() {
-                        token.is_special_token = true;
+                        token.special = true;
                         Ok(token.get_token())
                     } else {
                         Err(exceptions::PyTypeError::new_err(
@@ -846,7 +846,7 @@ impl PyUnigramTrainer {
                                 } else if let Ok(mut token) =
                                     token.extract::<PyRefMut<PyAddedToken>>()
                                 {
-                                    token.is_special_token = true;
+                                    token.special = true;
                                     Ok(token.get_token())
                                 } else {
                                     Err(exceptions::PyTypeError::new_err(

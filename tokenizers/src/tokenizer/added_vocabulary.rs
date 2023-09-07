@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 /// like:
 ///   - Whether they should only match single words
 ///   - Whether to include any whitespace on its left or right
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AddedToken {
     /// The content of the added token
     pub content: String,
@@ -66,6 +66,12 @@ impl AddedToken {
         self.normalized = normalized;
         self
     }
+    /// Specify whether this token is special, meaning if it should be skipped when decoding
+    #[must_use]
+    pub fn special(mut self, special: bool) -> Self {
+        self.special = special;
+        self
+    }
 }
 impl Default for AddedToken {
     fn default() -> Self {
@@ -79,19 +85,12 @@ impl Default for AddedToken {
         }
     }
 }
-// We only want to hash on the content. AddedToken cannot be added multiple times with different
-// options
+// AddedTokens can be updated if value changed
 impl std::hash::Hash for AddedToken {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.content.hash(state);
     }
 }
-impl std::cmp::PartialEq for AddedToken {
-    fn eq(&self, other: &Self) -> bool {
-        self.content == other.content
-    }
-}
-impl std::cmp::Eq for AddedToken {}
 
 type MatchingSet = (AhoCorasick, Vec<u32>);
 
@@ -181,8 +180,8 @@ impl AddedVocabulary {
             split_normalized_trie: (normalized_trie, vec![]),
         }
     }
-
     /// Size of the additional vocabulary
+    #[allow(dead_code)] // Suppress the "method is never used" warning
     pub fn len(&self) -> usize {
         self.added_tokens_map.len()
     }
@@ -190,6 +189,11 @@ impl AddedVocabulary {
     /// Get the additional vocabulary
     pub fn get_vocab(&self) -> &HashMap<String, u32> {
         &self.added_tokens_map
+    }
+
+    /// Get the additional vocabulary with the AddedTokens
+    pub fn get_added_tokens_decoder(&self) -> &HashMap<u32, AddedToken> {
+        &self.added_tokens_map_r
     }
 
     /// Get the id matching one of our token if it exists
@@ -244,30 +248,42 @@ impl AddedVocabulary {
         // Then we delegate to `add_tokens`, that will take care of refreshing added tokens too.
         let mut ignored = 0;
         for token in tokens {
-            if token.content.is_empty() {
+            if token.content.is_empty() || self.added_tokens_map_r.values().any(|val| val == token)
+            {
                 ignored += 1;
                 continue;
             }
-
-            let id = if let Some(id) = self.token_to_id(&token.content, model) {
-                ignored += 1;
-                id
-            } else {
-                let new_id = (model.get_vocab_size() + self.added_tokens_map.len()) as u32;
-                self.added_tokens_map.insert(token.content.clone(), new_id);
-
-                if !self.special_tokens_set.contains(&token.content) {
-                    self.added_tokens.push(token.clone());
-                }
-
+            // If a token is already part of the vocabulary, we mark it as added
+            let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
                 new_id
+            } else {
+                self.added_tokens_map.values().cloned().max().map_or(
+                    model.get_vocab_size() as u32,
+                    |max| {
+                        if (max >= model.get_vocab_size() as u32) || model.get_vocab_size() == 0 {
+                            max + 1
+                        } else {
+                            model.get_vocab_size() as u32
+                        }
+                    },
+                )
             };
-
+            // Make sure we modify the previous entry
+            self.added_tokens_map
+                .entry(token.content.clone())
+                .and_modify(|old_id| *old_id = new_id)
+                .or_insert_with(|| new_id);
             // Update the current revert operation
             self.added_tokens_map_r
-                .entry(id)
+                .entry(new_id)
                 .and_modify(|t| *t = token.clone())
                 .or_insert_with(|| token.clone());
+            // Make sure to remove previous entry (if the token gets a new id)
+
+            // Finally add the token to the classic set if special
+            if !self.special_tokens_set.contains(&token.content) {
+                self.added_tokens.push(token.clone());
+            }
         }
 
         self.refresh_added_tokens(model, normalizer);
@@ -569,7 +585,9 @@ mod tests {
             ),
             1
         );
-        assert_eq!(vocab.len(), 1);
+
+        let vocab_len: usize = vocab.len();
+        assert_eq!(vocab_len, 1);
 
         // Does not add multiple time the same token
         assert_eq!(
@@ -585,12 +603,15 @@ mod tests {
         );
         assert_eq!(vocab.len(), 2);
 
-        // Does not add tokens already covered by the model
+        // Also adds tokens already covered by the model
+        let added_token = AddedToken::from("test", false);
         assert_eq!(
-            vocab.add_tokens(&[AddedToken::from("test", false)], &model, normalizer),
-            0
+            vocab.add_tokens(&[added_token.clone()], &model, normalizer),
+            1
         );
-        assert_eq!(vocab.len(), 2);
+        assert_eq!(vocab.len(), 3);
+
+        assert_eq!(vocab.get_added_tokens_decoder()[&0], added_token);
     }
 
     #[test]
@@ -626,11 +647,47 @@ mod tests {
         // Can add tokens already covered by the model
         assert_eq!(
             vocab.add_special_tokens(&[AddedToken::from("test", true)], &model, normalizer),
-            0
+            1
         );
-        assert_eq!(vocab.len(), 2); // Did not add a new token, since it exist in the original model
+        assert_eq!(vocab.len(), 3); // New token was added
         assert!(vocab.is_special_token("test"));
-        assert!(!vocab.added_tokens_map.contains_key("test"));
+        assert_eq!(
+            *vocab.get_added_tokens_decoder(),
+            HashMap::from([
+                (0, AddedToken::from("test", true)),
+                (2, AddedToken::from("added_token_1", true)),
+                (3, AddedToken::from("added_token_2", true)),
+            ])
+        );
+        assert!(vocab.added_tokens_map.contains_key("test"));
+        assert!(vocab.added_tokens_map_r.contains_key(&0));
+
+        vocab.add_tokens(
+            &[
+                AddedToken::from("tost", true),
+                AddedToken::from("another_two", false),
+            ],
+            &model,
+            normalizer,
+        );
+        assert_eq!(vocab.len(), 5); // New token was added
+        assert_eq!(vocab.get_vocab()["another_two"], 4); // New token was added, but the index is not the length of the vocab
+
+        // Let's add an already added token again
+        assert_eq!(
+            vocab.add_special_tokens(&[AddedToken::from("another_two", true)], &model, normalizer),
+            1
+        );
+        assert_eq!(vocab.len(), 5); // Token was already there
+        assert_eq!(vocab.get_vocab()["another_two"], 4); // Token idx not changed
+
+        // Just checking that we can set the content of the string in rust
+        let mut token: AddedToken = AddedToken::from("Hey", false);
+        token.content = "hey".to_string();
+        assert_eq!(token.content, "hey"); // Token was already there
+
+        token.special = true;
+        assert!(token.special); // Token was already there
     }
 
     #[test]
@@ -765,6 +822,8 @@ mod tests {
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
+
+        assert_eq!(vocab.len(), 0);
 
         vocab.add_tokens(
             &[AddedToken::from("<mask>", false).single_word(true)],

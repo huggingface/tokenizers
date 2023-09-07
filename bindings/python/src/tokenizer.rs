@@ -25,6 +25,7 @@ use super::pre_tokenizers::PyPreTokenizer;
 use super::trainers::PyTrainer;
 use crate::processors::PyPostProcessor;
 use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
+use std::collections::BTreeMap;
 
 /// Represents a token that can be be added to a :class:`~tokenizers.Tokenizer`.
 /// It can have special options that defines the way it should behave.
@@ -55,21 +56,23 @@ use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
 ///         text. For example, with the added token ``"yesterday"``, and a normalizer in charge of
 ///         lowercasing the text, the token could be extract from the input ``"I saw a lion
 ///         Yesterday"``.
+///     special (:obj:`bool`, defaults to :obj:`False` with :meth:`~tokenizers.Tokenizer.add_tokens` and :obj:`False` with :meth:`~tokenizers.Tokenizer.add_special_tokens`):
+///         Defines whether this token should be skipped when decoding.
 ///
 #[pyclass(dict, module = "tokenizers", name = "AddedToken")]
 pub struct PyAddedToken {
     pub content: String,
-    pub is_special_token: bool,
+    pub special: bool,
     pub single_word: Option<bool>,
     pub lstrip: Option<bool>,
     pub rstrip: Option<bool>,
     pub normalized: Option<bool>,
 }
 impl PyAddedToken {
-    pub fn from<S: Into<String>>(content: S, is_special_token: Option<bool>) -> Self {
+    pub fn from<S: Into<String>>(content: S, special: Option<bool>) -> Self {
         Self {
             content: content.into(),
-            is_special_token: is_special_token.unwrap_or(false),
+            special: special.unwrap_or(false),
             single_word: None,
             lstrip: None,
             rstrip: None,
@@ -78,7 +81,7 @@ impl PyAddedToken {
     }
 
     pub fn get_token(&self) -> tk::tokenizer::AddedToken {
-        let mut token = tk::AddedToken::from(&self.content, self.is_special_token);
+        let mut token = tk::AddedToken::from(&self.content, self.special);
 
         if let Some(sw) = self.single_word {
             token = token.single_word(sw);
@@ -105,6 +108,7 @@ impl PyAddedToken {
         dict.set_item("lstrip", token.lstrip)?;
         dict.set_item("rstrip", token.rstrip)?;
         dict.set_item("normalized", token.normalized)?;
+        dict.set_item("special", token.special)?;
 
         Ok(dict)
     }
@@ -118,7 +122,7 @@ impl From<tk::AddedToken> for PyAddedToken {
             lstrip: Some(token.lstrip),
             rstrip: Some(token.rstrip),
             normalized: Some(token.normalized),
-            is_special_token: !token.normalized,
+            special: token.special,
         }
     }
 }
@@ -126,7 +130,7 @@ impl From<tk::AddedToken> for PyAddedToken {
 #[pymethods]
 impl PyAddedToken {
     #[new]
-    #[pyo3(signature = (content=None, **kwargs), text_signature = "(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True)")]
+    #[pyo3(signature = (content=None, **kwargs), text_signature = "(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False)")]
     fn __new__(content: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<Self> {
         let mut token = PyAddedToken::from(content.unwrap_or(""), None);
 
@@ -138,6 +142,7 @@ impl PyAddedToken {
                     "lstrip" => token.lstrip = Some(value.extract()?),
                     "rstrip" => token.rstrip = Some(value.extract()?),
                     "normalized" => token.normalized = Some(value.extract()?),
+                    "special" => token.special = value.extract()?,
                     _ => println!("Ignored unknown kwarg option {}", key),
                 }
             }
@@ -161,6 +166,7 @@ impl PyAddedToken {
                         "lstrip" => self.lstrip = Some(value.extract()?),
                         "rstrip" => self.rstrip = Some(value.extract()?),
                         "normalized" => self.normalized = Some(value.extract()?),
+                        "special" => self.special = value.extract()?,
                         _ => {}
                     }
                 }
@@ -174,6 +180,12 @@ impl PyAddedToken {
     #[getter]
     fn get_content(&self) -> &str {
         &self.content
+    }
+
+    /// Set the content of this :obj:`AddedToken`
+    #[setter]
+    fn set_content(&mut self, content: String) {
+        self.content = content;
     }
 
     /// Get the value of the :obj:`rstrip` option
@@ -199,6 +211,17 @@ impl PyAddedToken {
     fn get_normalized(&self) -> bool {
         self.get_token().normalized
     }
+    /// Get the value of the :obj:`special` option
+    #[getter]
+    fn get_special(&self) -> bool {
+        self.get_token().special
+    }
+
+    /// Set the value of the :obj:`special` option
+    #[setter]
+    fn set_special(&mut self, special: bool) {
+        self.special = special;
+    }
 
     fn __str__(&self) -> PyResult<&str> {
         Ok(&self.content)
@@ -212,12 +235,13 @@ impl PyAddedToken {
 
         let token = self.get_token();
         Ok(format!(
-            "AddedToken(\"{}\", rstrip={}, lstrip={}, single_word={}, normalized={})",
+            "AddedToken(\"{}\", rstrip={}, lstrip={}, single_word={}, normalized={}, special={})",
             self.content,
             bool_to_python(token.rstrip),
             bool_to_python(token.lstrip),
             bool_to_python(token.single_word),
-            bool_to_python(token.normalized)
+            bool_to_python(token.normalized),
+            bool_to_python(token.special)
         ))
     }
 
@@ -637,6 +661,22 @@ impl PyTokenizer {
     #[pyo3(text_signature = "(self, with_added_tokens=True)")]
     fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
         self.tokenizer.get_vocab(with_added_tokens)
+    }
+
+    /// Get the underlying vocabulary
+    ///
+    /// Returns:
+    ///     :obj:`Dict[int, AddedToken]`: The vocabulary
+    #[pyo3(signature = ())]
+    #[pyo3(text_signature = "(self)")]
+    fn get_added_tokens_decoder(&self) -> BTreeMap<u32, PyAddedToken> {
+        let mut sorted_map = BTreeMap::new();
+
+        for (key, value) in self.tokenizer.get_added_tokens_decoder() {
+            sorted_map.insert(key, value.into());
+        }
+
+        sorted_map
     }
 
     /// Get the size of the underlying vocabulary
@@ -1090,7 +1130,7 @@ impl PyTokenizer {
                 if let Ok(content) = token.extract::<String>() {
                     Ok(PyAddedToken::from(content, Some(false)).get_token())
                 } else if let Ok(mut token) = token.extract::<PyRefMut<PyAddedToken>>() {
-                    token.is_special_token = false;
+                    token.special = false;
                     Ok(token.get_token())
                 } else {
                     Err(exceptions::PyTypeError::new_err(
@@ -1127,7 +1167,7 @@ impl PyTokenizer {
                 if let Ok(content) = token.extract::<String>() {
                     Ok(tk::tokenizer::AddedToken::from(content, true))
                 } else if let Ok(mut token) = token.extract::<PyRefMut<PyAddedToken>>() {
-                    token.is_special_token = true;
+                    token.special = true;
                     Ok(token.get_token())
                 } else {
                     Err(exceptions::PyTypeError::new_err(

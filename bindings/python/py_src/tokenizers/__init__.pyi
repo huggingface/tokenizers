@@ -30,10 +30,12 @@ class AddedToken:
             text. For example, with the added token ``"yesterday"``, and a normalizer in charge of
             lowercasing the text, the token could be extract from the input ``"I saw a lion
             Yesterday"``.
+        special (:obj:`bool`, defaults to :obj:`False` with :meth:`~tokenizers.Tokenizer.add_tokens` and :obj:`False` with :meth:`~tokenizers.Tokenizer.add_special_tokens`):
+            Defines whether this token should be skipped when decoding.
 
     """
 
-    def __init__(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True):
+    def __init__(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False):
         pass
     @property
     def content(self):
@@ -63,6 +65,12 @@ class AddedToken:
     def single_word(self):
         """
         Get the value of the :obj:`single_word` option
+        """
+        pass
+    @property
+    def special(self):
+        """
+        Get the value of the :obj:`special` option
         """
         pass
 
@@ -889,6 +897,14 @@ class Tokenizer:
 
         Returns:
             :class:`~tokenizers.Tokenizer`: The new tokenizer
+        """
+        pass
+    def get_added_tokens_decoder(self):
+        """
+        Get the underlying vocabulary
+
+        Returns:
+            :obj:`Dict[int, AddedToken]`: The vocabulary
         """
         pass
     def get_vocab(self, with_added_tokens=True):
