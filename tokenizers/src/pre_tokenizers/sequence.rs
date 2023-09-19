@@ -6,19 +6,27 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Sequence {
-    pretokenizers: Vec<PreTokenizerWrapper>,
+    pre_tokenizers: Vec<PreTokenizerWrapper>,
 }
 
 impl Sequence {
     pub fn new(pretokenizers: Vec<PreTokenizerWrapper>) -> Self {
-        Self { pretokenizers }
+        Self { pre_tokenizers: pretokenizers }
+    }
+
+    pub fn get_pre_tokenizers(&self) -> &[PreTokenizerWrapper] {
+        &self.pre_tokenizers
+    }
+
+    pub fn get_pre_tokenizers_mut(&mut self) -> &mut [PreTokenizerWrapper] {
+        &mut self.pre_tokenizers
     }
 }
 
 impl PreTokenizer for Sequence {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        for pretokenizer in &self.pretokenizers {
-            pretokenizer.pre_tokenize(pretokenized)?;
+        for pre_tokenizer in &self.pre_tokenizers {
+            pre_tokenizer.pre_tokenize(pretokenized)?;
         }
         Ok(())
     }
