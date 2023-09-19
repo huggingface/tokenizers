@@ -10,8 +10,8 @@ pub struct Sequence {
 }
 
 impl Sequence {
-    pub fn new(pretokenizers: Vec<PreTokenizerWrapper>) -> Self {
-        Self { pre_tokenizers: pretokenizers }
+    pub fn new(pre_tokenizers: Vec<PreTokenizerWrapper>) -> Self {
+        Self { pre_tokenizers }
     }
 
     pub fn get_pre_tokenizers(&self) -> &[PreTokenizerWrapper] {
