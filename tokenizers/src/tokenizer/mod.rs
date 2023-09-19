@@ -401,7 +401,7 @@ where
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Tokenizer(
-    TokenizerImpl<
+    pub TokenizerImpl<
         ModelWrapper,
         NormalizerWrapper,
         PreTokenizerWrapper,
