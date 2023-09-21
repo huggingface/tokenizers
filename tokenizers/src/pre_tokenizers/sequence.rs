@@ -13,6 +13,14 @@ impl Sequence {
     pub fn new(pretokenizers: Vec<PreTokenizerWrapper>) -> Self {
         Self { pretokenizers }
     }
+
+    pub fn get_pre_tokenizers(&self) -> &[PreTokenizerWrapper] {
+        &self.pretokenizers
+    }
+
+    pub fn get_pre_tokenizers_mut(&mut self) -> &mut [PreTokenizerWrapper] {
+        &mut self.pretokenizers
+    }
 }
 
 impl PreTokenizer for Sequence {
