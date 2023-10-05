@@ -70,11 +70,11 @@ jobs:
           architecture: "x64"
 
 
-          # - name: Cache Cargo Registry
-          #   uses: actions/cache@v1
-          #   with:
-          #     path: ~/.cargo/registry
-          #     key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache Cargo Registry
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
           # - name: Cache Cargo Build Target
           #   uses: actions/cache@v1
