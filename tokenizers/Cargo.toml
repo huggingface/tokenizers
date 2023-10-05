@@ -68,7 +68,7 @@ macro_rules_attribute = "0.2.0"
 thiserror = "1.0.49"
 fancy-regex = { version = "0.11", optional = true}
 getrandom = { version = "0.2.10" }
-esaxx-rs = { version = "0.1", default-features = false, features=[]}
+esaxx-rs = { git = "https://github.com/Narsil/esaxx-rs", default-features = false, features=[]}
 monostate = "0.1.9"
 
 [features]
