@@ -101,6 +101,9 @@ jobs:
           command: audit
           args: -D warnings -f ./bindings/python/Cargo.lock
 
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+
       - name: Install
         working-directory: ./bindings/python
         run: |
