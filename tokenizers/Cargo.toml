@@ -56,7 +56,7 @@ clap = { version = "4.0", features=["derive"], optional = true }
 unicode-normalization-alignments = "0.1"
 unicode_categories = "0.1"
 unicode-segmentation = "1.10"
-indicatif = {version = "0.15", optional = true}
+indicatif = {version = "0.17", optional = true}
 itertools = "0.9"
 log = "0.4"
 derive_builder = "0.12"

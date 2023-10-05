@@ -23,8 +23,6 @@ itertools = "0.9"
 [dependencies.tokenizers]
 version = "0.14.1-dev.0"
 path = "../../tokenizers"
-default-features = false
-features = ["onig"]
 
 [dev-dependencies]
 tempfile = "3.1"
