@@ -23,6 +23,9 @@ itertools = "0.11"
 [dependencies.tokenizers]
 version = "0.14.1-dev.0"
 path = "../../tokenizers"
+default-features = false
+# features = ["progressbar", "onig", "esaxx_fast"]
+features = ["progressbar", "onig"]
 
 [dev-dependencies]
 tempfile = "3.8"
