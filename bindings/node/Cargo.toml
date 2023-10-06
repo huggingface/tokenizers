@@ -2,7 +2,7 @@
 authors = ["Nicolas Patry <nicolas@huggingface.co>"]
 edition = "2021"
 name    = "node"
-version = "0.14.1-dev.0"
+version = "0.14.2-dev.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

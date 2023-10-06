@@ -175,7 +175,7 @@ export class Encoding {
   getSequenceIds(): Array<number | undefined | null>
   tokenToSequence(token: number): number | null
 }
-export class Model { }
+export class Model {}
 export type Bpe = BPE
 export class BPE {
   static empty(): Model
@@ -204,7 +204,7 @@ export class Normalizer {
 export class PreTokenizer {
   preTokenizeString(sequence: string): [string, [number, number]][]
 }
-export class Processor { }
+export class Processor {}
 export class AddedToken {
   constructor(token: string, isSpecial: boolean, options?: AddedTokenOptions | undefined | null)
   getContent(): string
@@ -229,7 +229,6 @@ export class Tokenizer {
   decodeBatch(ids: Array<Array<number>>, skipSpecialTokens: boolean): Promise<string[]>
   static fromString(s: string): Tokenizer
   static fromFile(file: string): Tokenizer
-  // static fromPretrained(file: string, parameters?: JsFromPretrainedParameters | undefined | null): Tokenizer
   addSpecialTokens(tokens: Array<string>): void
   setTruncation(maxLength: number, options?: TruncationOptions | undefined | null): void
   disableTruncation(): void
@@ -251,4 +250,4 @@ export class Tokenizer {
     addSpecialTokens?: boolean | undefined | null,
   ): Encoding
 }
-export class Trainer { }
+export class Trainer {}

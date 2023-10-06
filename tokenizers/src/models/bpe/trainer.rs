@@ -533,15 +533,16 @@ impl BpeTrainer {
             let changes = top
                 .pos
                 .maybe_par_iter()
-                .flat_map(|i| {
-                    let w = &words[*i] as *const _ as *mut _;
+                .flat_map(|&i| {
+                    let word = &words[i] as *const _ as *mut Word;
                     // We can merge each of these words in parallel here because each position
                     // can be there only once (HashSet). So this is safe.
                     unsafe {
-                        let word: &mut Word = &mut (*w);
-                        word.merge(top.pair.0, top.pair.1, new_token_id, max_token_length)
+                        // let word: &mut Word = &mut (*word);
+                        (*word)
+                            .merge(top.pair.0, top.pair.1, new_token_id, max_token_length)
                             .into_iter()
-                            .map(|c| (c, *i))
+                            .map(|c| (c, i))
                             .collect::<Vec<_>>()
                     }
                 })
