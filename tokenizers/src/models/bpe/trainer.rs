@@ -21,17 +21,17 @@ impl PartialEq for Merge {
 }
 impl PartialOrd for Merge {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.count != other.count {
-            Some(self.count.cmp(&other.count))
-        } else {
-            // Here we want ascending order
-            Some(other.pair.cmp(&self.pair))
-        }
+        Some(self.cmp(other))
     }
 }
 impl Ord for Merge {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap()
+        if self.count != other.count {
+            self.count.cmp(&other.count)
+        } else {
+            // Here we want ascending order
+            other.pair.cmp(&self.pair)
+        }
     }
 }
 

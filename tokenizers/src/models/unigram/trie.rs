@@ -25,7 +25,7 @@ impl<Label: Eq + Hash + Copy> Trie<Label> {
     pub fn push(&mut self, element: &[Label]) {
         let mut node = &mut self.root;
         for label in element.iter() {
-            node = node.children.entry(*label).or_insert_with(Node::default);
+            node = node.children.entry(*label).or_default();
         }
         node.is_leaf = true;
     }
