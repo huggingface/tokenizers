@@ -47,7 +47,7 @@ impl Metaspace {
             replacement,
             str_rep: replacement.to_string(),
             add_prefix_space,
-            legacy: false,
+            legacy: true,
         }
     }
 
