@@ -489,6 +489,16 @@ impl PyMetaspace {
         setter!(self_, Metaspace, add_prefix_space, add_prefix_space);
     }
 
+    #[getter]
+    fn get_use_legacy(self_: PyRef<Self>) -> bool {
+        getter!(self_, Metaspace, legacy)
+    }
+
+    #[setter]
+    fn set_use_legacy(self_: PyRef<Self>, legacy: bool) {
+        setter!(self_, Metaspace, legacy, legacy);
+    }
+
     #[new]
     #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true, **_kwargs), text_signature = "(self, replacement=\"_\", add_prefix_space=True)")]
     fn new(

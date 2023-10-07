@@ -9,6 +9,7 @@ use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitD
 pub struct Metaspace {
     replacement: char,
     pub add_prefix_space: bool,
+    pub legacy:bool,
     #[serde(skip)]
     str_rep: String,
 }
@@ -29,6 +30,7 @@ impl<'de> Deserialize<'de> for Metaspace {
             _type: Type,
             replacement: char,
             pub add_prefix_space: bool,
+            pub legacy: bool,
             #[serde(skip, rename = "str_rep")]
             _str_rep: String,
         }
@@ -44,6 +46,7 @@ impl Metaspace {
             replacement,
             str_rep: replacement.to_string(),
             add_prefix_space,
+            legacy: false,
         }
     }
 
@@ -69,9 +72,12 @@ impl PreTokenizer for Metaspace {
 
         pretokenized.split(|_, mut normalized| {
             normalized.replace(' ', &self.str_rep)?;
-            if self.add_prefix_space && first_split {
-                normalized.prepend(&self.str_rep);
-                first_split = false; // Set the flag to false after the first split
+            if self.add_prefix_space{
+                if  self.legacy{normalized.prepend(&self.str_rep);}
+                else if self.add_prefix_space && first_split{
+                    normalized.prepend(&self.str_rep);
+                    first_split = false; // Set the flag to false after the first split
+                }
             }
             normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
         })
