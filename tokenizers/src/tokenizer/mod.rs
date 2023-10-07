@@ -658,6 +658,10 @@ where
 
         final_vocab
     }
+    /// Get the added tokens encoder
+    pub fn get_added_tokens_encoder(&self) -> HashMap<String, u32> {
+        self.added_vocabulary.get_vocab().clone()
+    }
 
     /// Get the added tokens decoder
     pub fn get_added_tokens_decoder(&self) -> HashMap<u32, AddedToken> {
@@ -693,6 +697,7 @@ where
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
         let encode = |is_pre_tokenized, subseq_idx, subseq| -> Result<Encoding> {
+            // FIXME FIXME FIXME all of our SPM issues most probably come from here. The addition of the space after special tokens
             let normalized = self
                 .added_vocabulary
                 .extract_and_normalize(self.normalizer.as_ref(), subseq);

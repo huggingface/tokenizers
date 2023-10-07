@@ -65,12 +65,14 @@ impl Default for Metaspace {
 
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        let mut first_split = true;
+
         pretokenized.split(|_, mut normalized| {
             normalized.replace(' ', &self.str_rep)?;
-            if self.add_prefix_space && !normalized.get().starts_with(self.replacement) {
+            if self.add_prefix_space && first_split {
                 normalized.prepend(&self.str_rep);
+                first_split = false; // Set the flag to false after the first split
             }
-
             normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
         })
     }
