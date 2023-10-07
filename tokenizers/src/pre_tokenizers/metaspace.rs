@@ -30,6 +30,7 @@ impl<'de> Deserialize<'de> for Metaspace {
             _type: Type,
             replacement: char,
             pub add_prefix_space: bool,
+            // TODO Make sure legacy does not have to be here for forward compatibility!
             pub legacy: bool,
             #[serde(skip, rename = "str_rep")]
             _str_rep: String,
