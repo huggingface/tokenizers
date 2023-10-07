@@ -20,17 +20,17 @@ impl PartialOrd for Merge {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         // By manually implementing this, we make the containing BinaryHeap a
         // min-heap ordered first on the rank, and the pos otherwise
-        if self.rank != other.rank {
-            Some(other.rank.cmp(&self.rank))
-        } else {
-            Some(other.pos.cmp(&self.pos))
-        }
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for Merge {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap()
+        if self.rank != other.rank {
+            other.rank.cmp(&self.rank)
+        } else {
+            other.pos.cmp(&self.pos)
+        }
     }
 }
 

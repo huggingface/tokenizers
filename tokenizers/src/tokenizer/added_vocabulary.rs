@@ -166,10 +166,12 @@ impl AddedVocabulary {
     pub fn new() -> Self {
         let trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
-            .build::<_, &&[u8]>([]);
+            .build::<_, &&[u8]>([])
+            .expect("The trie should build correctly");
         let normalized_trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
-            .build::<_, &&[u8]>([]);
+            .build::<_, &&[u8]>([])
+            .expect("The normalized trie should build correctly");
         Self {
             added_tokens_map: HashMap::new(),
             added_tokens_map_r: HashMap::new(),
@@ -314,7 +316,8 @@ impl AddedVocabulary {
         let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
         let trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
-            .build(tokens.iter().map(|token| &token.content));
+            .build(tokens.iter().map(|token| &token.content))
+            .expect("Failed to build tried when refreshing tokens");
         self.split_trie = (trie, ids);
 
         let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
@@ -330,7 +333,8 @@ impl AddedVocabulary {
             .collect();
         let normalized_trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
-            .build(patterns.iter().map(|content| content.get()));
+            .build(patterns.iter().map(|content| content.get()))
+            .expect("Failed to build tried when refreshing tokens (normalized)");
         self.split_normalized_trie = (normalized_trie, nids);
     }
 
