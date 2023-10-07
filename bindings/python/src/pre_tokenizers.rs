@@ -490,12 +490,12 @@ impl PyMetaspace {
     }
 
     #[getter]
-    fn get_use_legacy(self_: PyRef<Self>) -> bool {
+    fn get_legacy(self_: PyRef<Self>) -> bool {
         getter!(self_, Metaspace, legacy)
     }
 
     #[setter]
-    fn set_use_legacy(self_: PyRef<Self>, legacy: bool) {
+    fn set_legacy(self_: PyRef<Self>, legacy: bool) {
         setter!(self_, Metaspace, legacy, legacy);
     }
 
