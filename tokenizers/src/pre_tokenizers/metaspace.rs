@@ -9,10 +9,16 @@ use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitD
 pub struct Metaspace {
     replacement: char,
     pub add_prefix_space: bool,
-    pub legacy:bool,
+    #[serde(skip_serializing_if = "skip_legacy_serialization")]
+    pub legacy: bool,
     #[serde(skip)]
     str_rep: String,
 }
+
+fn skip_legacy_serialization(legacy: &bool) -> bool {
+    *legacy // Skip serialization if legacy is true
+}
+
 
 impl<'de> Deserialize<'de> for Metaspace {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
