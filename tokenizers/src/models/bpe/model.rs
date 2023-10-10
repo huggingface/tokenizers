@@ -117,7 +117,7 @@ impl BpeBuilder {
         self
     }
 
-    /// Set the `fuse_unk` option.
+    /// Set the `byte_fallback` option.
     #[must_use]
     pub fn byte_fallback(mut self, byte_fallback: bool) -> Self {
         self.config.byte_fallback = byte_fallback;
