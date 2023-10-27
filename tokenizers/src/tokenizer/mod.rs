@@ -677,7 +677,7 @@ where
 
     /// Converts a token in the corresponding id.
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.added_vocabulary.token_to_id(token, &self.model)
+        self.added_vocabulary.token_to_id_model(token, &self.model)
     }
 
     /// Converts an id to the corresponding token.

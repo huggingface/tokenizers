@@ -199,7 +199,7 @@ impl AddedVocabulary {
     }
 
     /// Get the id matching one of our token if it exists
-    pub fn token_to_id(&self, token: &str, model: &impl Model) -> Option<u32> {
+    pub fn token_to_id_model(&self, token: &str, model: &impl Model) -> Option<u32> {
         self.added_tokens_map
             .get(token)
             .copied()
@@ -256,7 +256,7 @@ impl AddedVocabulary {
                 continue;
             }
             // If a token is already part of the vocabulary, we mark it as added
-            let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
+            let new_id = if let Some(new_id) = self.token_to_id_model(&token.content, model) {
                 new_id
             } else {
                 self.added_tokens_map.values().cloned().max().map_or(
@@ -307,7 +307,7 @@ impl AddedVocabulary {
             .map(|token| {
                 (
                     token,
-                    self.token_to_id(&token.content, model)
+                    self.token_to_id_model(&token.content, model)
                         .expect("Missing additional token"),
                 )
             })
