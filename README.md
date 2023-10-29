@@ -34,6 +34,7 @@ We provide bindings to the following languages (more to come!):
   - [Python](https://github.com/huggingface/tokenizers/tree/main/bindings/python)
   - [Node.js](https://github.com/huggingface/tokenizers/tree/main/bindings/node)
   - [Ruby](https://github.com/ankane/tokenizers-ruby) (Contributed by @ankane, external repo)
+  - [C++](https://github.com/mlc-ai/tokenizers-cpp) (Contributed by @mlc-ai, external repo)
  
 ## Quick example using Python:
 
