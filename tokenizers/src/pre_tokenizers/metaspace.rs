@@ -1,6 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use regex::Regex;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Eq)]
 /// Replaces all the whitespaces by the provided meta character and then
@@ -85,10 +86,10 @@ impl PreTokenizer for Metaspace {
 
         pretokenized.split(|_, mut normalized| {
             normalized.replace(' ', &self.str_rep)?;
-            if self.add_prefix_space {
+            if self.add_prefix_space && !normalized.get().starts_with(self.replacement){
                 if self.legacy {
                     normalized.prepend(&self.str_rep);
-                } else if self.add_prefix_space && first_split {
+                } else if first_split {
                     normalized.prepend(&self.str_rep);
                     first_split = false; // Set the flag to false after the first split
                 }
@@ -210,6 +211,39 @@ mod tests {
         );
     }
 
+    #[test]
+    fn non_legacy_meta_space(){
+        let mut pretok = Metaspace::new('▁', true);
+        pretok.legacy = false;
+        let mut pretokenized = PreTokenizedString::from("Hey my friend <s>how▁are you");
+        let re_ref = Regex::new(r"(<s>)").unwrap();
+        pretokenized.split(|_, sequence| sequence.split(&re_ref, SplitDelimiterBehavior::Isolated)).expect("AddedVocabulary bad split");
+        println!("{:?}",pretokenized);
+
+        pretok.pre_tokenize(&mut pretokenized).unwrap();
+        assert_eq!(
+            pretokenized
+                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
+            vec![
+                ("▁Hey", (0, 6)), ("▁my", (6, 11)), ("▁friend", (11, 20)), ("▁", (20, 23)), ("<s>", (23, 26)), ("how", (26, 29)), ("▁are", (29, 35)), ("▁you", (35, 41))
+            ]
+        );
+        pretok.legacy = true;
+        pretok.pre_tokenize(&mut pretokenized).unwrap();
+        assert_eq!(
+            pretokenized
+                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
+            vec![
+                ("▁Hey", (0, 6)), ("▁my", (6, 11)), ("▁friend", (11, 20)), ("▁", (20, 23)), ("▁<s>", (23, 26)), ("▁how", (26, 29)), ("▁are", (29, 35)), ("▁you", (35, 41))
+            ]
+        );
+    }
     #[test]
     fn decode() {
         let decoder = Metaspace::new('▁', true);

@@ -697,7 +697,6 @@ where
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
         let encode = |is_pre_tokenized, subseq_idx, subseq| -> Result<Encoding> {
-            // FIXME FIXME FIXME all of our SPM issues most probably come from here. The addition of the space after special tokens
             let normalized = self
                 .added_vocabulary
                 .extract_and_normalize(self.normalizer.as_ref(), subseq);
