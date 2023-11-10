@@ -19,7 +19,6 @@ fn skip_legacy_serialization(legacy: &bool) -> bool {
     *legacy // Skip serialization if legacy is true
 }
 
-
 impl<'de> Deserialize<'de> for Metaspace {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -79,9 +78,10 @@ impl PreTokenizer for Metaspace {
 
         pretokenized.split(|_, mut normalized| {
             normalized.replace(' ', &self.str_rep)?;
-            if self.add_prefix_space{
-                if  self.legacy{normalized.prepend(&self.str_rep);}
-                else if self.add_prefix_space && first_split{
+            if self.add_prefix_space {
+                if self.legacy {
+                    normalized.prepend(&self.str_rep);
+                } else if self.add_prefix_space && first_split {
                     normalized.prepend(&self.str_rep);
                     first_split = false; // Set the flag to false after the first split
                 }
