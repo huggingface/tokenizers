@@ -110,6 +110,9 @@ class TestMetaspace:
         assert pretok.replacement == "%"
         pretok.add_prefix_space = True
         assert pretok.add_prefix_space == True
+        pretok.legacy = False
+        assert pretok.legacy == False
+
 
 
 class TestCharDelimiterSplit:
