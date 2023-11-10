@@ -220,7 +220,7 @@ mod tests {
         let re_ref = Regex::new(r"(<s>)").unwrap();
         pretokenized
             .split(|_, sequence| sequence.split(&re_ref, SplitDelimiterBehavior::Isolated))
-            .expect("AddedVocabulary bad split");
+            .expect("Bad split");
         println!("{:?}", pretokenized);
 
         pretok.pre_tokenize(&mut pretokenized).unwrap();
