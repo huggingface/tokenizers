@@ -47,7 +47,9 @@ impl<'de> Deserialize<'de> for Metaspace {
         }
 
         let helper = MetaspaceHelper::deserialize(deserializer)?;
-        Ok(Self::new(helper.replacement, helper.add_prefix_space))
+        let mut instance = Self::new(helper.replacement, helper.add_prefix_space);
+        instance.legacy = helper.legacy;
+        Ok(instance)
     }
 }
 
