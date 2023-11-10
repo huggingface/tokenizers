@@ -85,7 +85,7 @@ impl PreTokenizer for Metaspace {
 
         pretokenized.split(|_, mut normalized| {
             normalized.replace(' ', &self.str_rep)?;
-            if self.add_prefix_space && !normalized.get().starts_with(self.replacement){
+            if self.add_prefix_space && !normalized.get().starts_with(self.replacement) {
                 if self.legacy {
                     normalized.prepend(&self.str_rep);
                 } else if first_split {
@@ -213,13 +213,15 @@ mod tests {
     }
 
     #[test]
-    fn non_legacy_meta_space(){
+    fn non_legacy_meta_space() {
         let mut pretok = Metaspace::new('▁', true);
         pretok.legacy = false;
         let mut pretokenized = PreTokenizedString::from("Hey my friend <s>how▁are you");
         let re_ref = Regex::new(r"(<s>)").unwrap();
-        pretokenized.split(|_, sequence| sequence.split(&re_ref, SplitDelimiterBehavior::Isolated)).expect("AddedVocabulary bad split");
-        println!("{:?}",pretokenized);
+        pretokenized
+            .split(|_, sequence| sequence.split(&re_ref, SplitDelimiterBehavior::Isolated))
+            .expect("AddedVocabulary bad split");
+        println!("{:?}", pretokenized);
 
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
@@ -229,7 +231,14 @@ mod tests {
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
             vec![
-                ("▁Hey", (0, 6)), ("▁my", (6, 11)), ("▁friend", (11, 20)), ("▁", (20, 23)), ("<s>", (23, 26)), ("how", (26, 29)), ("▁are", (29, 35)), ("▁you", (35, 41))
+                ("▁Hey", (0, 6)),
+                ("▁my", (6, 11)),
+                ("▁friend", (11, 20)),
+                ("▁", (20, 23)),
+                ("<s>", (23, 26)),
+                ("how", (26, 29)),
+                ("▁are", (29, 35)),
+                ("▁you", (35, 41))
             ]
         );
         pretok.legacy = true;
@@ -241,7 +250,14 @@ mod tests {
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
             vec![
-                ("▁Hey", (0, 6)), ("▁my", (6, 11)), ("▁friend", (11, 20)), ("▁", (20, 23)), ("▁<s>", (23, 29)), ("▁how", (29, 35)), ("▁are", (35, 41)), ("▁you", (41, 47))
+                ("▁Hey", (0, 6)),
+                ("▁my", (6, 11)),
+                ("▁friend", (11, 20)),
+                ("▁", (20, 23)),
+                ("▁<s>", (23, 29)),
+                ("▁how", (29, 35)),
+                ("▁are", (35, 41)),
+                ("▁you", (41, 47))
             ]
         );
     }
