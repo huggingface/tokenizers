@@ -1,7 +1,6 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
-use regex::Regex;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Eq)]
 /// Replaces all the whitespaces by the provided meta character and then
@@ -240,7 +239,7 @@ mod tests {
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
             vec![
-                ("▁Hey", (0, 6)), ("▁my", (6, 11)), ("▁friend", (11, 20)), ("▁", (20, 23)), ("▁<s>", (23, 26)), ("▁how", (26, 29)), ("▁are", (29, 35)), ("▁you", (35, 41))
+                ("▁Hey", (0, 6)), ("▁my", (6, 11)), ("▁friend", (11, 20)), ("▁", (20, 23)), ("▁<s>", (23, 29)), ("▁how", (29, 35)), ("▁are", (35, 41)), ("▁you", (41, 47))
             ]
         );
     }
