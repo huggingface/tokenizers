@@ -104,6 +104,19 @@ mod tests {
                 PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true))
             ]))
         );
+
+
+        let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(
+            r#"{"type":"Metaspace","replacement":"▁","add_prefix_space":true, "legacy":true}"#,
+        )
+        .unwrap();
+
+        let mut expected_pre_tokenizer = Metaspace::new('▁', true);
+        expected_pre_tokenizer.legacy = false;
+        assert_eq!(
+            pre_tokenizer,
+            PreTokenizerWrapper::Metaspace(expected_pre_tokenizer)
+        );
     }
 
     #[test]
