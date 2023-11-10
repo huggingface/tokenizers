@@ -19,6 +19,10 @@ fn skip_legacy_serialization(legacy: &bool) -> bool {
     *legacy // Skip serialization if legacy is true
 }
 
+fn default_legacy_value() -> bool {
+    true
+}
+
 impl<'de> Deserialize<'de> for Metaspace {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -36,6 +40,7 @@ impl<'de> Deserialize<'de> for Metaspace {
             replacement: char,
             pub add_prefix_space: bool,
             // TODO Make sure legacy does not have to be here for forward compatibility!
+            #[serde(default = "default_legacy_value")]
             pub legacy: bool,
             #[serde(skip, rename = "str_rep")]
             _str_rep: String,

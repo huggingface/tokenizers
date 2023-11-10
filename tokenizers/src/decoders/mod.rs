@@ -78,7 +78,6 @@ mod tests {
         let serialized = serde_json::to_string(&decoder).unwrap();
         assert_eq!(serialized, json);
     }
-
     #[test]
     fn decoder_serialization_other_no_arg() {
         let json = r#"{"type":"Sequence","decoders":[{"type":"Fuse"},{"type":"Metaspace","replacement":"▁","add_prefix_space":true}]}"#;

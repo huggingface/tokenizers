@@ -107,7 +107,7 @@ mod tests {
 
 
         let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(
-            r#"{"type":"Metaspace","replacement":"▁","add_prefix_space":true, "legacy":true}"#,
+            r#"{"type":"Metaspace","replacement":"▁","add_prefix_space":true, "legacy":false}"#,
         )
         .unwrap();
 
