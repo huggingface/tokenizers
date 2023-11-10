@@ -125,6 +125,8 @@ impl Decoder for Metaspace {
 
 #[cfg(test)]
 mod tests {
+    use regex::Regex;
+
     use super::*;
     use crate::{OffsetReferential, OffsetType};
 
