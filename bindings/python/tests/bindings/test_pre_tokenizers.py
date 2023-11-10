@@ -114,7 +114,6 @@ class TestMetaspace:
         assert pretok.legacy == False
 
 
-
 class TestCharDelimiterSplit:
     def test_instantiate(self):
         assert CharDelimiterSplit("-") is not None
