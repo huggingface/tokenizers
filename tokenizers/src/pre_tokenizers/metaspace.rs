@@ -110,7 +110,7 @@ impl Metaspace {
         self.replacement = replacement;
         self.str_rep = replacement.to_string();
     }
-    pub fn set_prepend_scheme(&mut self, scheme: impl Into<PrependScheme>){
+    pub fn set_prepend_scheme(&mut self, scheme: impl Into<PrependScheme>) {
         self.prepend_scheme = scheme.into();
     }
 }
@@ -302,7 +302,7 @@ mod tests {
                 ("▁you", (35, 41))
             ]
         );
-        pretok.set_prepend_scheme("never");
+        pretok.set_prepend_scheme("always");
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
             pretokenized
@@ -319,6 +319,51 @@ mod tests {
                 ("▁how", (29, 35)),
                 ("▁are", (35, 41)),
                 ("▁you", (41, 47))
+            ]
+        );
+
+        pretok.set_prepend_scheme("first");
+        let mut pretokenized = PreTokenizedString::from(" Hey <s>how"); // test with prefix
+        pretokenized
+            .split(|_, sequence| sequence.split(&re_ref, SplitDelimiterBehavior::Isolated))
+            .expect("Bad split");
+        pretok.pre_tokenize(&mut pretokenized).unwrap();
+        assert_eq!(
+            pretokenized
+                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
+            vec![
+                ("▁Hey", (0, 6)),
+                ("▁", (6, 9)),
+                ("<s>", (9, 12)),
+                ("how", (12, 15))
+            ]
+        );
+
+        let mut pretokenized = PreTokenizedString::from(" Hey <s>how <s>are <s> you"); // test with many splits
+        pretokenized
+            .split(|_, sequence| sequence.split(&re_ref, SplitDelimiterBehavior::Isolated))
+            .expect("Bad split");
+        pretok.pre_tokenize(&mut pretokenized).unwrap();
+        assert_eq!(
+            pretokenized
+                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
+            vec![
+                ("▁Hey", (0, 6)),
+                ("▁", (6, 9)),
+                ("<s>", (9, 12)),
+                ("how", (12, 15)),
+                ("▁", (15, 18)),
+                ("<s>", (18, 21)),
+                ("are", (21, 24)),
+                ("▁", (24, 27)),
+                ("<s>", (27, 30)),
+                ("▁you", (30, 36))
             ]
         );
     }
