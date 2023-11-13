@@ -110,10 +110,13 @@ mod tests {
         )
         .unwrap();
 
-        let mut expected_pre_tokenizer = Metaspace::new('▁', true);
         assert_eq!(
             pre_tokenizer,
-            PreTokenizerWrapper::Metaspace(expected_pre_tokenizer)
+            PreTokenizerWrapper::Metaspace(Metaspace::new_with_prepend_scheme(
+                '▁',
+                true,
+                metaspace::PrependScheme::First
+            ))
         );
 
         let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(
