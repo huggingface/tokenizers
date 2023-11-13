@@ -1,6 +1,35 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{de::Error, Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+
+/// Enum representing options for the metaspace prepending scheme.
+#[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrependScheme {
+    /// Specifies that the scheme should be prepended only once, on the first split.
+    First,
+    /// Specifies that the space should not be prepended.
+    Never,
+    /// Specifies that the scheme should always be prepended.
+    Always,
+}
+
+impl From<&str> for PrependScheme {
+    fn from(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "first" => PrependScheme::First,
+            "never" => PrependScheme::Never,
+            "always" => PrependScheme::Always,
+            _ => panic!("Invalid value for PrependScheme: {}", s),
+        }
+    }
+}
+
+impl From<String> for PrependScheme {
+    fn from(s: String) -> Self {
+        PrependScheme::from(s.as_str())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Eq)]
 /// Replaces all the whitespaces by the provided meta character and then
@@ -9,18 +38,9 @@ use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitD
 pub struct Metaspace {
     replacement: char,
     pub add_prefix_space: bool,
-    #[serde(skip_serializing_if = "skip_legacy_serialization")]
-    pub legacy: bool,
+    pub prepend_scheme: PrependScheme,
     #[serde(skip)]
     str_rep: String,
-}
-
-fn skip_legacy_serialization(legacy: &bool) -> bool {
-    *legacy // Skip serialization if legacy is true
-}
-
-fn default_legacy_value() -> bool {
-    true
 }
 
 impl<'de> Deserialize<'de> for Metaspace {
@@ -33,21 +53,28 @@ impl<'de> Deserialize<'de> for Metaspace {
             Metaspace,
         }
 
+        fn default_prepend_scheme_value() -> PrependScheme {
+            PrependScheme::Always
+        }
+
         #[derive(Deserialize)]
         pub struct MetaspaceHelper {
             #[serde(rename = "type")]
             _type: Type,
             replacement: char,
             pub add_prefix_space: bool,
-            #[serde(default = "default_legacy_value")]
-            pub legacy: bool,
+            #[serde(default = "default_prepend_scheme_value")]
+            pub prepend_scheme: PrependScheme,
             #[serde(skip, rename = "str_rep")]
             _str_rep: String,
         }
 
         let helper = MetaspaceHelper::deserialize(deserializer)?;
-        let mut instance = Self::new(helper.replacement, helper.add_prefix_space);
-        instance.legacy = helper.legacy;
+        let instance = Self::new_with_prepend_scheme(
+            helper.replacement,
+            helper.add_prefix_space,
+            helper.prepend_scheme,
+        );
         Ok(instance)
     }
 }
@@ -58,7 +85,20 @@ impl Metaspace {
             replacement,
             str_rep: replacement.to_string(),
             add_prefix_space,
-            legacy: true,
+            prepend_scheme: PrependScheme::Always, // always prepend for legacy purpose
+        }
+    }
+
+    pub fn new_with_prepend_scheme(
+        replacement: char,
+        add_prefix_space: bool,
+        prepend_scheme: PrependScheme,
+    ) -> Self {
+        Self {
+            replacement,
+            str_rep: replacement.to_string(),
+            add_prefix_space,
+            prepend_scheme: prepend_scheme,
         }
     }
 
@@ -69,6 +109,9 @@ impl Metaspace {
     pub fn set_replacement(&mut self, replacement: char) {
         self.replacement = replacement;
         self.str_rep = replacement.to_string();
+    }
+    pub fn set_prepend_scheme(&mut self, scheme: impl Into<PrependScheme>){
+        self.prepend_scheme = scheme.into();
     }
 }
 
@@ -85,13 +128,16 @@ impl PreTokenizer for Metaspace {
         pretokenized.split(|_, mut normalized| {
             normalized.replace(' ', &self.str_rep)?;
             if self.add_prefix_space && !normalized.get().starts_with(self.replacement) {
-                if self.legacy {
+                if self.prepend_scheme == PrependScheme::Always {
                     normalized.prepend(&self.str_rep);
-                } else if first_split {
+                } else if self.prepend_scheme == PrependScheme::First && first_split {
                     normalized.prepend(&self.str_rep);
-                    first_split = false; // Set the flag to false after the first split
+                    first_split = false;
                 }
+            } else {
+                first_split = false;
             }
+
             normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
         })
     }
@@ -214,13 +260,29 @@ mod tests {
     #[test]
     fn non_legacy_meta_space() {
         let mut pretok = Metaspace::new('▁', true);
-        pretok.legacy = false;
+        pretok.set_prepend_scheme("always".to_string());
+        assert_eq!(
+            pretok,
+            Metaspace::new_with_prepend_scheme('▁', true, PrependScheme::Always)
+        );
+
+        pretok.set_prepend_scheme("never".to_string());
+        assert_eq!(
+            pretok,
+            Metaspace::new_with_prepend_scheme('▁', true, PrependScheme::Never)
+        );
+
+        pretok.set_prepend_scheme("first".to_string());
+        assert_eq!(
+            pretok,
+            Metaspace::new_with_prepend_scheme('▁', true, PrependScheme::First)
+        );
+
         let mut pretokenized = PreTokenizedString::from("Hey my friend <s>how▁are you");
         let re_ref = Regex::new(r"(<s>)").unwrap();
         pretokenized
             .split(|_, sequence| sequence.split(&re_ref, SplitDelimiterBehavior::Isolated))
             .expect("Bad split");
-        println!("{:?}", pretokenized);
 
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
@@ -240,7 +302,7 @@ mod tests {
                 ("▁you", (35, 41))
             ]
         );
-        pretok.legacy = true;
+        pretok.set_prepend_scheme("never");
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
             pretokenized
