@@ -504,7 +504,7 @@ impl PyMetaspace {
     #[setter]
     fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: &str) -> PyResult<()> {
         // Assuming Metaspace has a method to set the prepend_scheme from a string
-        let scheme = match prepend_scheme.to_lowercase().as_str() {
+        let scheme = match prepend_scheme.as_str() {
             "first" => PrependScheme::First,
             "never" => PrependScheme::Never,
             "always" => PrependScheme::Always,
