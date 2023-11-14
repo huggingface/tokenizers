@@ -518,7 +518,7 @@ impl PyMetaspace {
 
     #[setter]
     fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: String) -> PyResult<()> {
-        let scheme = _from_string(prepend_scheme)?;
+        let scheme = from_string(prepend_scheme)?;
         setter!(self_, Metaspace, @set_prepend_scheme, scheme);
         Ok(())
     }
@@ -536,7 +536,7 @@ impl PyMetaspace {
 
         // If a prepend scheme is provided, set it
         if let Some(prepend_scheme) = prepend_scheme {
-            match _from_string(prepend_scheme) {
+            match from_string(prepend_scheme) {
                 Ok(prepend_scheme_enum) => new_instance.set_prepend_scheme(prepend_scheme_enum),
                 Err(err) => return Err(err),
             }
