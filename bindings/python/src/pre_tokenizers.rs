@@ -536,14 +536,10 @@ impl PyMetaspace {
 
         // If a prepend scheme is provided, set it
         if let Some(prepend_scheme) = prepend_scheme {
-            match _from_string(prepend_scheme) {
-                Ok(prepend_scheme_enum) => {
-                    new_instance.set_prepend_scheme(prepend_scheme_enum);
-                }
-                Err(err) => {
-                    // Handle the error, you can return it or exit the function
-                    return Err(err.into());
-                }
+            if let Ok(prepend_scheme_enum) = _from_string(prepend_scheme) {
+                new_instance.set_prepend_scheme(prepend_scheme_enum);
+            } else {
+                return Err(err);
             }
         }
         Ok((PyMetaspace {}, new_instance.into()))
