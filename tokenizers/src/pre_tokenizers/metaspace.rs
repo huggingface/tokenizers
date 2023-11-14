@@ -1,4 +1,4 @@
-use serde::{de::Error, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 
@@ -30,6 +30,17 @@ impl From<String> for PrependScheme {
         PrependScheme::from(s.as_str())
     }
 }
+
+impl PrependScheme {
+    pub fn to_string(&self) -> String {
+        match self {
+            PrependScheme::First => "first".to_string(),
+            PrependScheme::Never => "never".to_string(),
+            PrependScheme::Always => "always".to_string(),
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq, Serialize, Eq)]
 /// Replaces all the whitespaces by the provided meta character and then

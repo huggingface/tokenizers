@@ -11,7 +11,7 @@ use tk::pre_tokenizers::bert::BertPreTokenizer;
 use tk::pre_tokenizers::byte_level::ByteLevel;
 use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk::pre_tokenizers::digits::Digits;
-use tk::pre_tokenizers::metaspace::Metaspace;
+use tk::pre_tokenizers::metaspace::{Metaspace};
 use tk::pre_tokenizers::punctuation::Punctuation;
 use tk::pre_tokenizers::split::Split;
 use tk::pre_tokenizers::unicode_scripts::UnicodeScripts;
@@ -490,13 +490,13 @@ impl PyMetaspace {
     }
 
     #[getter]
-    fn get_legacy(self_: PyRef<Self>) -> bool {
-        getter!(self_, Metaspace, legacy)
+    fn get_prepend_scheme(self_: PyRef<Self>) -> String {
+        getter!(self_, Metaspace, prepend_scheme.to_string())
     }
 
     #[setter]
-    fn set_legacy(self_: PyRef<Self>, legacy: bool) {
-        setter!(self_, Metaspace, legacy, legacy);
+    fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: String) {
+        setter!(self_, Metaspace, @set_prepend_scheme, prepend_scheme);
     }
 
     #[new]
@@ -506,10 +506,21 @@ impl PyMetaspace {
         add_prefix_space: bool,
         _kwargs: Option<&PyDict>,
     ) -> (Self, PyPreTokenizer) {
-        (
-            PyMetaspace {},
-            Metaspace::new(replacement.0, add_prefix_space).into(),
-        )
+        // Create a new Metaspace instance
+        let mut new_instance: Metaspace = Metaspace::new(replacement.0, add_prefix_space);
+
+        // Extract values from _kwargs if present
+        let prepend_scheme: Option<String> = _kwargs.and_then(|kwargs| {
+            kwargs.get_item("prepend_scheme").and_then(|prepend_scheme| prepend_scheme.extract().ok())
+        });
+        // Perform an action if prepend_scheme is present
+        if let Some(prepend_scheme_value) = prepend_scheme {
+            // Do something with prepend_scheme_value
+            new_instance.set_prepend_scheme(prepend_scheme_value);
+        }
+
+        // Return the new Metaspace instance and PyPreTokenizer
+        (PyMetaspace {}, new_instance.into())
     }
 }
 
