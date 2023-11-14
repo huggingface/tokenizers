@@ -494,9 +494,9 @@ impl PyMetaspace {
         // Assuming Metaspace has a method to get the prepend_scheme as a string
         let scheme: PrependScheme = getter!(self_, Metaspace, get_prepend_scheme());
         match scheme {
-            PrependScheme::First => "first",
-            PrependScheme::Never => "never",
-            PrependScheme::Always => "always",
+            PrependScheme::First => "First",
+            PrependScheme::Never => "Never",
+            PrependScheme::Always => "Always",
         }
         .to_string()
     }
@@ -536,9 +536,9 @@ impl PyMetaspace {
         // If a prepend scheme is provided, set it
         if let Some(prepend_scheme) = prepend_scheme {
             let prepend_scheme_enum = match prepend_scheme.as_str() {
-                "first" => PrependScheme::First,
-                "never" => PrependScheme::Never,
-                "always" => PrependScheme::Always,
+                "First" => PrependScheme::First,
+                "Never" => PrependScheme::Never,
+                "Always" => PrependScheme::Always,
                 _ => {
                     return Err(exceptions::PyValueError::new_err(format!(
                         "{} {}",
