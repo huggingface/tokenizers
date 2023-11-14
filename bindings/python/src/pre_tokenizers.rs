@@ -494,30 +494,30 @@ impl PyMetaspace {
         // Assuming Metaspace has a method to get the prepend_scheme as a string
         let scheme: PrependScheme = getter!(self_, Metaspace, get_prepend_scheme());
         match scheme {
-            PrependScheme::First => "First",
-            PrependScheme::Never => "Never",
-            PrependScheme::Always => "Always",
+            PrependScheme::First => "first",
+            PrependScheme::Never => "never",
+            PrependScheme::Always => "always",
         }
         .to_string()
     }
-    const UNKNOWN_VARIANT_ERROR_MESSAGE: &str =
-        "is an unknown variant, should be one of ['First', 'Never', 'Always']";
+
+    from_string(string: String) -> Result<PrependScheme>{
+        let scheme = match prepend_scheme {
+            "first" => PrependScheme::First,
+            "never" => PrependScheme::Never,
+            "always" => PrependScheme::Always,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(format!(
+                    "{} is an unknown variant, should be one of ['first', 'never', 'always']",
+                )));
+            }
+        };
+    }
 
     #[setter]
     fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: &str) -> PyResult<()> {
         // Assuming Metaspace has a method to set the prepend_scheme from a string
-        let scheme = match prepend_scheme {
-            "First" => PrependScheme::First,
-            "Never" => PrependScheme::Never,
-            "Always" => PrependScheme::Always,
-            _ => {
-                return Err(exceptions::PyValueError::new_err(format!(
-                    "{} {}",
-                    prepend_scheme,
-                    Self::UNKNOWN_VARIANT_ERROR_MESSAGE,
-                )));
-            }
-        };
+
         setter!(self_, Metaspace, @set_prepend_scheme, scheme);
         Ok(())
     }
