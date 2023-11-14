@@ -452,6 +452,21 @@ impl PySequence {
     }
 }
 
+fn _from_string(string: String) -> Result<PrependScheme, PyErr>{
+    let scheme = match string.as_str() {
+        "first" => PrependScheme::First,
+        "never" => PrependScheme::Never,
+        "always" => PrependScheme::Always,
+        _ => {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "{} is an unknown variant, should be one of ['first', 'never', 'always']",
+                string
+            )));
+        }
+    };
+    Ok(scheme)
+}
+
 /// Metaspace pre-tokenizer
 ///
 /// This pre-tokenizer replaces any whitespace by the provided replacement character.
@@ -501,23 +516,9 @@ impl PyMetaspace {
         .to_string()
     }
 
-    from_string(string: String) -> Result<PrependScheme>{
-        let scheme = match prepend_scheme {
-            "first" => PrependScheme::First,
-            "never" => PrependScheme::Never,
-            "always" => PrependScheme::Always,
-            _ => {
-                return Err(exceptions::PyValueError::new_err(format!(
-                    "{} is an unknown variant, should be one of ['first', 'never', 'always']",
-                )));
-            }
-        };
-    }
-
     #[setter]
-    fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: &str) -> PyResult<()> {
-        // Assuming Metaspace has a method to set the prepend_scheme from a string
-
+    fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: String) -> PyResult<()> {
+        let scheme = _from_string(prepend_scheme)?;
         setter!(self_, Metaspace, @set_prepend_scheme, scheme);
         Ok(())
     }
@@ -535,19 +536,15 @@ impl PyMetaspace {
 
         // If a prepend scheme is provided, set it
         if let Some(prepend_scheme) = prepend_scheme {
-            let prepend_scheme_enum = match prepend_scheme.as_str() {
-                "First" => PrependScheme::First,
-                "Never" => PrependScheme::Never,
-                "Always" => PrependScheme::Always,
-                _ => {
-                    return Err(exceptions::PyValueError::new_err(format!(
-                        "{} {}",
-                        prepend_scheme,
-                        Self::UNKNOWN_VARIANT_ERROR_MESSAGE,
-                    )));
+            match _from_string(prepend_scheme) {
+                Ok(prepend_scheme_enum) => {
+                    new_instance.set_prepend_scheme(prepend_scheme_enum);
                 }
-            };
-            new_instance.set_prepend_scheme(prepend_scheme_enum);
+                Err(err) => {
+                    // Handle the error, you can return it or exit the function
+                    return Err(err.into());
+                }
+            }
         }
         Ok((PyMetaspace {}, new_instance.into()))
     }
