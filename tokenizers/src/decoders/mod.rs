@@ -73,15 +73,14 @@ mod tests {
 
     #[test]
     fn decoder_serialization() {
-        let json = r#"{"type":"Sequence","decoders":[{"type":"ByteFallback"},{"type":"Metaspace","replacement":"▁","add_prefix_space":true}]}"#;
+        let json = r#"{"type":"Sequence","decoders":[{"type":"ByteFallback"},{"type":"Metaspace","replacement":"▁","add_prefix_space":true,"prepend_scheme":"always"}]}"#;
         let decoder: DecoderWrapper = serde_json::from_str(json).unwrap();
         let serialized = serde_json::to_string(&decoder).unwrap();
         assert_eq!(serialized, json);
     }
-
     #[test]
     fn decoder_serialization_other_no_arg() {
-        let json = r#"{"type":"Sequence","decoders":[{"type":"Fuse"},{"type":"Metaspace","replacement":"▁","add_prefix_space":true}]}"#;
+        let json = r#"{"type":"Sequence","decoders":[{"type":"Fuse"},{"type":"Metaspace","replacement":"▁","add_prefix_space":true,"prepend_scheme":"always"}]}"#;
         let decoder: DecoderWrapper = serde_json::from_str(json).unwrap();
         let serialized = serde_json::to_string(&decoder).unwrap();
         assert_eq!(serialized, json);
@@ -89,7 +88,7 @@ mod tests {
 
     #[test]
     fn decoder_serialization_no_decode() {
-        let json = r#"{"type":"Sequence","decoders":[{},{"type":"Metaspace","replacement":"▁","add_prefix_space":true}]}"#;
+        let json = r#"{"type":"Sequence","decoders":[{},{"type":"Metaspace","replacement":"▁","add_prefix_space":true,"prepend_scheme":"always"}]}"#;
         assert!(serde_json::from_str::<DecoderWrapper>(json).is_err());
     }
 }

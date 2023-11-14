@@ -104,6 +104,34 @@ mod tests {
                 PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true))
             ]))
         );
+
+        let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(
+            r#"{"type":"Metaspace","replacement":"▁","add_prefix_space":true, "prepend_scheme":"first"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            pre_tokenizer,
+            PreTokenizerWrapper::Metaspace(Metaspace::new_with_prepend_scheme(
+                '▁',
+                true,
+                metaspace::PrependScheme::First
+            ))
+        );
+
+        let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(
+            r#"{"type":"Metaspace","replacement":"▁","add_prefix_space":true, "prepend_scheme":"always"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            pre_tokenizer,
+            PreTokenizerWrapper::Metaspace(Metaspace::new_with_prepend_scheme(
+                '▁',
+                true,
+                metaspace::PrependScheme::Always
+            ))
+        );
     }
 
     #[test]
