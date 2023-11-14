@@ -245,6 +245,11 @@ mod tests {
 
     #[test]
     fn non_legacy_meta_space() {
+        assert_eq!(
+            Metaspace::new('▁', true),
+            Metaspace::new_with_prepend_scheme('▁', true, PrependScheme::Always)
+        );
+
         let mut pretok = Metaspace::new('▁', true);
         pretok.set_prepend_scheme(PrependScheme::Always);
         assert_eq!(
