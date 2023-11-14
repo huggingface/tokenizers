@@ -1,6 +1,6 @@
-use serde::{Deserialize, Deserializer, Serialize};
-
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use serde::{Deserialize, Deserializer, Serialize};
+use std::fmt;
 
 /// Enum representing options for the metaspace prepending scheme.
 #[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize)]
@@ -31,16 +31,15 @@ impl From<String> for PrependScheme {
     }
 }
 
-impl PrependScheme {
-    pub fn to_string(&self) -> String {
+impl fmt::Display for PrependScheme {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PrependScheme::First => "first".to_string(),
-            PrependScheme::Never => "never".to_string(),
-            PrependScheme::Always => "always".to_string(),
+            PrependScheme::First => write!(f, "first"),
+            PrependScheme::Never => write!(f, "never"),
+            PrependScheme::Always => write!(f, "always"),
         }
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Serialize, Eq)]
 /// Replaces all the whitespaces by the provided meta character and then
@@ -109,7 +108,7 @@ impl Metaspace {
             replacement,
             str_rep: replacement.to_string(),
             add_prefix_space,
-            prepend_scheme: prepend_scheme,
+            prepend_scheme,
         }
     }
 
@@ -189,7 +188,7 @@ mod tests {
     #[test]
     fn serialization() {
         let metaspace = Metaspace::new('_', true);
-        let metaspace_s = r#"{"type":"Metaspace","replacement":"_","add_prefix_space":true}"#;
+        let metaspace_s = r#"{"type":"Metaspace","replacement":"_","add_prefix_space":true,"prepend_scheme":"always"}"#;
         assert_eq!(serde_json::to_string(&metaspace).unwrap(), metaspace_s);
         assert_eq!(
             serde_json::from_str::<Metaspace>(metaspace_s).unwrap(),
@@ -198,8 +197,7 @@ mod tests {
 
         // Also check it can deserialize previous versions
         let metaspace = Metaspace::new('_', true);
-        let metaspace_s =
-            r#"{"type":"Metaspace","str_rep":"_","replacement":"_","add_prefix_space":true}"#;
+        let metaspace_s = r#"{"type":"Metaspace","str_rep":"_","replacement":"_","add_prefix_space":true,"prepend_scheme":"always"}"#;
         assert_eq!(
             serde_json::from_str::<Metaspace>(metaspace_s).unwrap(),
             metaspace
