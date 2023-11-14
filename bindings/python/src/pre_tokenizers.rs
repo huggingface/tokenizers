@@ -452,7 +452,7 @@ impl PySequence {
     }
 }
 
-fn _from_string(string: String) -> Result<PrependScheme, PyErr> {
+fn from_string(string: String) -> Result<PrependScheme, PyErr> {
     let scheme = match string.as_str() {
         "first" => PrependScheme::First,
         "never" => PrependScheme::Never,
