@@ -494,9 +494,9 @@ impl PyMetaspace {
         // Assuming Metaspace has a method to get the prepend_scheme as a string
         let scheme: PrependScheme = getter!(self_, Metaspace, get_prepend_scheme());
         match scheme {
-            PrependScheme::First => "First",
-            PrependScheme::Never => "Never",
-            PrependScheme::Always => "Always",
+            PrependScheme::First => "first",
+            PrependScheme::Never => "never",
+            PrependScheme::Always => "always",
         }
         .to_string()
     }
