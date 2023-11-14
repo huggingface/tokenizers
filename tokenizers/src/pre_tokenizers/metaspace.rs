@@ -3,7 +3,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
 
 /// Enum representing options for the metaspace prepending scheme.
-#[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize, FromPyObject)]
 #[serde(rename_all = "snake_case")]
 pub enum PrependScheme {
     /// Specifies that the scheme should be prepended only once, on the first split.
@@ -12,33 +12,6 @@ pub enum PrependScheme {
     Never,
     /// Specifies that the scheme should always be prepended.
     Always,
-}
-
-impl From<&str> for PrependScheme {
-    fn from(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "first" => PrependScheme::First,
-            "never" => PrependScheme::Never,
-            "always" => PrependScheme::Always,
-            _ => panic!("Invalid value for PrependScheme: {}", s),
-        }
-    }
-}
-
-impl From<String> for PrependScheme {
-    fn from(s: String) -> Self {
-        PrependScheme::from(s.as_str())
-    }
-}
-
-impl fmt::Display for PrependScheme {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PrependScheme::First => write!(f, "first"),
-            PrependScheme::Never => write!(f, "never"),
-            PrependScheme::Always => write!(f, "always"),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Eq)]
@@ -120,8 +93,8 @@ impl Metaspace {
         self.replacement = replacement;
         self.str_rep = replacement.to_string();
     }
-    pub fn set_prepend_scheme(&mut self, scheme: impl Into<PrependScheme>) {
-        self.prepend_scheme = scheme.into();
+    pub fn set_prepend_scheme(&mut self, scheme: PrependScheme) {
+        self.prepend_scheme = scheme;
     }
 }
 
