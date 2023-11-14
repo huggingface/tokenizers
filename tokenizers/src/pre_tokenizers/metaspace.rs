@@ -92,8 +92,8 @@ impl Metaspace {
         self.str_rep = replacement.to_string();
     }
 
-    pub fn get_prepend_scheme(&self) -> &PrependScheme {
-        &self.prepend_scheme
+    pub fn get_prepend_scheme(&self) -> PrependScheme {
+        self.prepend_scheme
     }
 
     pub fn set_prepend_scheme(&mut self, scheme: PrependScheme) {
