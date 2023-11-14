@@ -126,7 +126,11 @@ mod tests {
 
         assert_eq!(
             pre_tokenizer,
-            PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true))
+            PreTokenizerWrapper::Metaspace(Metaspace::new_with_prepend_scheme(
+                '▁',
+                true,
+                metaspace::PrependScheme::Always
+            ))
         );
     }
 
