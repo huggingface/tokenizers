@@ -523,24 +523,19 @@ impl PyMetaspace {
     }
 
     #[new]
-    #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true, **_kwargs), text_signature = "(self, replacement=\"_\", add_prefix_space=True)")]
+    #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true, prepend_scheme=None, **_kwargs), text_signature = "(self, replacement=\"_\", add_prefix_space=True)")]
     fn new(
         replacement: PyChar,
         add_prefix_space: bool,
+        prepend_scheme: Option<String>,
         _kwargs: Option<&PyDict>,
     ) -> PyResult<(Self, PyPreTokenizer)> {
         // Create a new Metaspace instance
         let mut new_instance: Metaspace = Metaspace::new(replacement.0, add_prefix_space);
 
-        if let Some(prepend_scheme) = _kwargs.and_then(|kwargs| {
-            kwargs
-                .get_item("prepend_scheme")
-                .and_then(|prepend_scheme| prepend_scheme.extract::<String>().ok())
-        }) {
-            // Unwrap the Option<String> before calling to_lowercase
-            let prepend_scheme_value: String = prepend_scheme.to_lowercase();
-
-            let prepend_scheme_enum = match prepend_scheme_value.as_str() {
+        // If a prepend scheme is provided, set it
+        if let Some(prepend_scheme) = prepend_scheme {
+            let prepend_scheme_enum = match prepend_scheme.as_str() {
                 "first" => PrependScheme::First,
                 "never" => PrependScheme::Never,
                 "always" => PrependScheme::Always,
@@ -552,11 +547,8 @@ impl PyMetaspace {
                     )));
                 }
             };
-
-            // Set the prepend_scheme in the new instance
             new_instance.set_prepend_scheme(prepend_scheme_enum);
         }
-
         Ok((PyMetaspace {}, new_instance.into()))
     }
 }
