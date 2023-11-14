@@ -497,7 +497,8 @@ impl PyMetaspace {
             PrependScheme::First => "First",
             PrependScheme::Never => "Never",
             PrependScheme::Always => "Always",
-        }.to_string()
+        }
+        .to_string()
     }
 
     #[setter]
@@ -524,7 +525,7 @@ impl PyMetaspace {
         replacement: PyChar,
         add_prefix_space: bool,
         _kwargs: Option<&PyDict>,
-    ) -> PyResult<(Self, PyPreTokenizer)>  {
+    ) -> PyResult<(Self, PyPreTokenizer)> {
         // Create a new Metaspace instance
         let mut new_instance: Metaspace = Metaspace::new(replacement.0, add_prefix_space);
 
@@ -534,7 +535,7 @@ impl PyMetaspace {
                 .and_then(|prepend_scheme| prepend_scheme.extract::<String>().ok())
         }) {
             // Unwrap the Option<String> before calling to_lowercase
-            let prepend_scheme_value:String = prepend_scheme.to_lowercase();
+            let prepend_scheme_value: String = prepend_scheme.to_lowercase();
 
             let prepend_scheme_enum = match prepend_scheme_value.as_str() {
                 "first" => PrependScheme::First,

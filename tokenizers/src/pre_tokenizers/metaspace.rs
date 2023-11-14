@@ -100,7 +100,6 @@ impl Metaspace {
     pub fn set_prepend_scheme(&mut self, scheme: PrependScheme) {
         self.prepend_scheme = scheme;
     }
-
 }
 
 impl Default for Metaspace {
