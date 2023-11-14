@@ -2,7 +2,7 @@ use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitD
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Enum representing options for the metaspace prepending scheme.
-#[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum PrependScheme {
     /// Specifies that the scheme should be prepended only once, on the first split.
@@ -63,12 +63,11 @@ impl<'de> Deserialize<'de> for Metaspace {
 
 impl Metaspace {
     pub fn new(replacement: char, add_prefix_space: bool) -> Self {
-        Self {
+        Self::new_with_prepend_scheme(
             replacement,
-            str_rep: replacement.to_string(),
             add_prefix_space,
-            prepend_scheme: PrependScheme::Always, // always prepend for legacy purpose
-        }
+            PrependScheme::Always, // always prepend for legacy purpose
+        )
     }
 
     pub fn new_with_prepend_scheme(
@@ -93,8 +92,8 @@ impl Metaspace {
         self.str_rep = replacement.to_string();
     }
 
-    pub fn get_prepend_scheme(&self) -> PrependScheme {
-        self.prepend_scheme.clone()
+    pub fn get_prepend_scheme(&self) -> &PrependScheme {
+        &self.prepend_scheme
     }
 
     pub fn set_prepend_scheme(&mut self, scheme: PrependScheme) {

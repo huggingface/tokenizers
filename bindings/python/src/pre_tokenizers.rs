@@ -510,7 +510,7 @@ impl PyMetaspace {
             "always" => PrependScheme::Always,
             _ => {
                 return Err(exceptions::PyValueError::new_err(format!(
-                    "Unknown variant: {}",
+                    "Unknown variant: {}, should be one of First, Never, Always",
                     prepend_scheme
                 )))
             }
