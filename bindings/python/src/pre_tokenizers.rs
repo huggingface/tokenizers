@@ -11,7 +11,7 @@ use tk::pre_tokenizers::bert::BertPreTokenizer;
 use tk::pre_tokenizers::byte_level::ByteLevel;
 use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk::pre_tokenizers::digits::Digits;
-use tk::pre_tokenizers::metaspace::Metaspace;
+use tk::pre_tokenizers::metaspace::{Metaspace, PrependScheme};
 use tk::pre_tokenizers::punctuation::Punctuation;
 use tk::pre_tokenizers::split::Split;
 use tk::pre_tokenizers::unicode_scripts::UnicodeScripts;
@@ -491,12 +491,31 @@ impl PyMetaspace {
 
     #[getter]
     fn get_prepend_scheme(self_: PyRef<Self>) -> String {
-        getter!(self_, Metaspace, prepend_scheme.to_string())
+        // Assuming Metaspace has a method to get the prepend_scheme as a string
+        let scheme: PrependScheme = getter!(self_, Metaspace, get_prepend_scheme());
+        match scheme {
+            PrependScheme::First => "First",
+            PrependScheme::Never => "Never",
+            PrependScheme::Always => "Always",
+        }.to_string()
     }
 
     #[setter]
-    fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: String) {
-        setter!(self_, Metaspace, @set_prepend_scheme, prepend_scheme);
+    fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: &str) -> PyResult<()> {
+        // Assuming Metaspace has a method to set the prepend_scheme from a string
+        let scheme = match prepend_scheme.to_lowercase().as_str() {
+            "first" => PrependScheme::First,
+            "never" => PrependScheme::Never,
+            "always" => PrependScheme::Always,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(format!(
+                    "Unknown variant: {}",
+                    prepend_scheme
+                )))
+            }
+        };
+        setter!(self_, Metaspace, @set_prepend_scheme, scheme);
+        Ok(())
     }
 
     #[new]
@@ -505,24 +524,35 @@ impl PyMetaspace {
         replacement: PyChar,
         add_prefix_space: bool,
         _kwargs: Option<&PyDict>,
-    ) -> (Self, PyPreTokenizer) {
+    ) -> PyResult<(Self, PyPreTokenizer)>  {
         // Create a new Metaspace instance
         let mut new_instance: Metaspace = Metaspace::new(replacement.0, add_prefix_space);
 
-        // Extract values from _kwargs if present
-        let prepend_scheme: Option<String> = _kwargs.and_then(|kwargs| {
+        if let Some(prepend_scheme) = _kwargs.and_then(|kwargs| {
             kwargs
                 .get_item("prepend_scheme")
-                .and_then(|prepend_scheme| prepend_scheme.extract().ok())
-        });
-        // Perform an action if prepend_scheme is present
-        if let Some(prepend_scheme_value) = prepend_scheme {
-            // Do something with prepend_scheme_value
-            new_instance.set_prepend_scheme(prepend_scheme_value);
+                .and_then(|prepend_scheme| prepend_scheme.extract::<String>().ok())
+        }) {
+            // Unwrap the Option<String> before calling to_lowercase
+            let prepend_scheme_value:String = prepend_scheme.to_lowercase();
+
+            let prepend_scheme_enum = match prepend_scheme_value.as_str() {
+                "first" => PrependScheme::First,
+                "never" => PrependScheme::Never,
+                "always" => PrependScheme::Always,
+                _ => {
+                    return Err(exceptions::PyValueError::new_err(format!(
+                        "Unknown variant: {}",
+                        prepend_scheme_value
+                    )))
+                }
+            };
+
+            // Set the prepend_scheme in the new instance
+            new_instance.set_prepend_scheme(prepend_scheme_enum);
         }
 
-        // Return the new Metaspace instance and PyPreTokenizer
-        (PyMetaspace {}, new_instance.into())
+        Ok((PyMetaspace {}, new_instance.into()))
     }
 }
 

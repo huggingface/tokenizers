@@ -1,9 +1,8 @@
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use serde::{Deserialize, Deserializer, Serialize};
-use std::fmt;
 
 /// Enum representing options for the metaspace prepending scheme.
-#[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize, FromPyObject)]
+#[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrependScheme {
     /// Specifies that the scheme should be prepended only once, on the first split.
@@ -93,9 +92,15 @@ impl Metaspace {
         self.replacement = replacement;
         self.str_rep = replacement.to_string();
     }
+
+    pub fn get_prepend_scheme(&self) -> PrependScheme {
+        self.prepend_scheme.clone()
+    }
+
     pub fn set_prepend_scheme(&mut self, scheme: PrependScheme) {
         self.prepend_scheme = scheme;
     }
+
 }
 
 impl Default for Metaspace {
