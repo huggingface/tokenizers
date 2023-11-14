@@ -246,19 +246,19 @@ mod tests {
     #[test]
     fn non_legacy_meta_space() {
         let mut pretok = Metaspace::new('▁', true);
-        pretok.set_prepend_scheme("always".to_string());
+        pretok.set_prepend_scheme(PrependScheme::Always);
         assert_eq!(
             pretok,
             Metaspace::new_with_prepend_scheme('▁', true, PrependScheme::Always)
         );
 
-        pretok.set_prepend_scheme("never".to_string());
+        pretok.set_prepend_scheme(PrependScheme::Never);
         assert_eq!(
             pretok,
             Metaspace::new_with_prepend_scheme('▁', true, PrependScheme::Never)
         );
 
-        pretok.set_prepend_scheme("first".to_string());
+        pretok.set_prepend_scheme(PrependScheme::First);
         assert_eq!(
             pretok,
             Metaspace::new_with_prepend_scheme('▁', true, PrependScheme::First)
@@ -288,7 +288,7 @@ mod tests {
                 ("▁you", (35, 41))
             ]
         );
-        pretok.set_prepend_scheme("always");
+        pretok.set_prepend_scheme(PrependScheme::Always);
         pretok.pre_tokenize(&mut pretokenized).unwrap();
         assert_eq!(
             pretokenized
@@ -308,7 +308,7 @@ mod tests {
             ]
         );
 
-        pretok.set_prepend_scheme("first");
+        pretok.set_prepend_scheme(PrependScheme::First);
         let mut pretokenized = PreTokenizedString::from(" Hey <s>how"); // test with prefix
         pretokenized
             .split(|_, sequence| sequence.split(&re_ref, SplitDelimiterBehavior::Isolated))
