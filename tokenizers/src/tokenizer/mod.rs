@@ -659,6 +659,11 @@ where
         final_vocab
     }
 
+    /// Get the added tokens encoder
+    pub fn get_added_tokens_encoder(&self) -> HashMap<String, u32> {
+        self.added_vocabulary.get_vocab().clone()
+    }
+
     /// Get the added tokens decoder
     pub fn get_added_tokens_decoder(&self) -> HashMap<u32, AddedToken> {
         self.added_vocabulary.get_added_tokens_decoder().clone()

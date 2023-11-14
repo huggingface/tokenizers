@@ -50,6 +50,14 @@ class BaseTokenizer:
         """
         return self._tokenizer.get_added_tokens_decoder()
 
+    def get_added_tokens_encoder(self) -> Dict[int, AddedToken]:
+        """Returns the added vocabulary
+
+        Returns:
+            The added vocabulary mapping ints to AddedTokens
+        """
+        return self._tokenizer.get_added_tokens_encoder()
+
     def get_vocab_size(self, with_added_tokens: bool = True) -> int:
         """Return the size of vocabulary, with or without added tokens.
 

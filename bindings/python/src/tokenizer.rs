@@ -663,7 +663,7 @@ impl PyTokenizer {
         self.tokenizer.get_vocab(with_added_tokens)
     }
 
-    /// Get the underlying vocabulary
+    /// Get the underlying reverse added vocabulary
     ///
     /// Returns:
     ///     :obj:`Dict[int, AddedToken]`: The vocabulary
@@ -674,6 +674,22 @@ impl PyTokenizer {
 
         for (key, value) in self.tokenizer.get_added_tokens_decoder() {
             sorted_map.insert(key, value.into());
+        }
+
+        sorted_map
+    }
+
+    /// Get the underlying added vocabulary
+    ///
+    /// Returns:
+    ///     :obj:`Dict[str, int]`: The vocabulary
+    #[pyo3(signature = ())]
+    #[pyo3(text_signature = "(self)")]
+    fn get_added_tokens_encoder(&self) -> BTreeMap<String, u32> {
+        let mut sorted_map = BTreeMap::new();
+
+        for (key, value) in self.tokenizer.get_added_tokens_encoder() {
+            sorted_map.insert(key, value);
         }
 
         sorted_map

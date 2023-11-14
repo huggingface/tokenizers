@@ -384,6 +384,16 @@ class TestTokenizer:
             4: AddedToken("pair", rstrip=False, lstrip=False, single_word=False, normalized=True, special=False),
         }
 
+        # Can retrieve added token encoder
+        vocab = tokenizer.get_added_tokens_encoder()
+        assert vocab == {
+            "my": 0,
+            "name": 1,
+            "is": 2,
+            "john": 3,
+            "pair": 4,
+        }
+
     def test_get_vocab_size(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
