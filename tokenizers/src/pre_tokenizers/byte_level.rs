@@ -13,7 +13,10 @@ fn bytes_char() -> HashMap<u8, char> {
     let mut bs: Vec<u8> = vec![];
     bs.extend(b'!'..=b'~');
     bs.extend(b'\xA1'..=b'\xAC');
-    bs.extend(b'\xAE'..=b'\xFF');
+    bs.extend(b'\xAE'..=b'\xB1');
+    bs.extend(b'\xB4'..=b'\xB8');
+    bs.extend(b'\xBA'..=b'\xBB');
+    bs.extend(b'\xBF'..=b'\xFF');
 
     let mut cs: Vec<u32> = bs.iter().map(|i| *i as u32).collect();
     let mut n = 0;
