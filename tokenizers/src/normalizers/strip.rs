@@ -6,6 +6,7 @@ use unicode_normalization_alignments::char::is_combining_mark;
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[non_exhaustive]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Strip {
     pub strip_left: bool,
     pub strip_right: bool,
@@ -45,6 +46,7 @@ impl Normalizer for Strip {
 // non ascii languages.
 #[derive(Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct StripAccents;
 
 impl Normalizer for StripAccents {

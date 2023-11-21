@@ -22,6 +22,16 @@ impl SysRegex {
     }
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for SysRegex {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(SysRegex {
+            regex: Regex::new(<&str>::arbitrary(u)?)
+                .map_err(|_| arbitrary::Error::IncorrectFormat)?,
+        })
+    }
+}
+
 impl Pattern for &Regex {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         if inside.is_empty() {

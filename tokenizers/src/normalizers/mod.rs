@@ -37,6 +37,30 @@ pub enum NormalizerWrapper {
     Prepend(Prepend),
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for NormalizerWrapper {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(match u8::arbitrary(u)? {
+            0 => NormalizerWrapper::BertNormalizer(BertNormalizer::arbitrary(u)?),
+            1 => NormalizerWrapper::StripNormalizer(Strip::arbitrary(u)?),
+            2 => NormalizerWrapper::StripAccents(StripAccents::arbitrary(u)?),
+            3 => NormalizerWrapper::NFC(NFC::arbitrary(u)?),
+            4 => NormalizerWrapper::NFD(NFD::arbitrary(u)?),
+            5 => NormalizerWrapper::NFKC(NFKC::arbitrary(u)?),
+            6 => NormalizerWrapper::NFKD(NFKD::arbitrary(u)?),
+            7 => NormalizerWrapper::Sequence(Sequence::arbitrary(u)?),
+            8 => NormalizerWrapper::Lowercase(Lowercase::arbitrary(u)?),
+            9 => NormalizerWrapper::Nmt(Nmt::arbitrary(u)?),
+            10 => NormalizerWrapper::Precompiled(
+                Precompiled::from(<&[u8]>::arbitrary(u)?)
+                    .map_err(|_| arbitrary::Error::IncorrectFormat)?,
+            ),
+            11 => NormalizerWrapper::Replace(Replace::arbitrary(u)?),
+            _ => NormalizerWrapper::Prepend(Prepend::arbitrary(u)?),
+        })
+    }
+}
+
 impl Normalizer for NormalizerWrapper {
     fn normalize(&self, normalized: &mut NormalizedString) -> crate::Result<()> {
         match self {

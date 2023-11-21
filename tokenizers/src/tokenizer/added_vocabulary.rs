@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 ///   - Whether they should only match single words
 ///   - Whether to include any whitespace on its left or right
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct AddedToken {
     /// The content of the added token
     pub content: String,

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// Represents the different patterns that `Replace` can use
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum ReplacePattern {
     String(String),
     Regex(String),
@@ -44,6 +45,7 @@ impl std::convert::TryFrom<ReplaceDeserializer> for Replace {
 /// and replace every occurrence with `content`.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", try_from = "ReplaceDeserializer")]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Replace {
     pattern: ReplacePattern,
     content: String,

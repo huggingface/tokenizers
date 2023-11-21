@@ -6,6 +6,7 @@ use crate::utils::macro_rules_attribute;
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
 #[serde(tag = "type")]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Allows concatenating multiple other Normalizer as a Sequence.
 /// All the normalizers run in sequence in the given order against the same NormalizedString.
 pub struct Sequence {
@@ -38,6 +39,7 @@ impl Normalizer for Sequence {
 /// Lowercases the input
 #[derive(Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Lowercase;
 impl Normalizer for Lowercase {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
