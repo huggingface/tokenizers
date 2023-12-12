@@ -663,7 +663,7 @@ impl NormalizedString {
                 }
             });
 
-        // Copy the part remaining part of the input
+        // Copy the remaining part of the input
         new_normalized.push_str(&self.normalized[last_end..]);
         new_alignments.extend(&self.alignments[last_end..]);
 
