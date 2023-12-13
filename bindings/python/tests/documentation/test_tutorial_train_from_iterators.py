@@ -71,8 +71,8 @@ class TestTrainFromIterators:
         # START def_batch_iterator
         def batch_iterator(batch_size=1000):
             # Only keep the text column to avoid decoding the rest of the columns unnecessarily
-            dataset = dataset.select_columns("text")
-            for batch in dataset.iter(batch_size):
+            tok_dataset = dataset.select_columns("text")
+            for batch in tok_dataset.iter(batch_size):
                 yield batch["text"]
 
         # END def_batch_iterator
