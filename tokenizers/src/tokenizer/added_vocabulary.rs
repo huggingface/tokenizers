@@ -436,6 +436,18 @@ impl AddedVocabulary {
             .split(|_, sequence| Ok(self.split_with_indices(sequence, &self.split_trie)))
             .expect("AddedVocabulary bad split");
 
+        // <s> normalized = False
+        // "I read a book   <s>Hey" -> "I read a book", "   <s>", "Hey"
+
+        // </s> normalized = True -> "▁</s>"
+        // "I read a book</s>Hey" -> "I read a book</s>Hey"
+
+        // Day normalized = True -> "Day"
+        // "I read a book monday" -> "I read a book monday"
+
+        // [DAY] normalized = False -> "Day"
+        // "I read a [DAY] monday" -> "I read a " "[DAY]", "book monday"
+        //                                         320055
         // 2. Then extract the normalized tokens from the normalized pieces of the string
         pretokenized
             .split(|_, mut sequence| {
@@ -443,6 +455,14 @@ impl AddedVocabulary {
                 Ok(self.split_with_indices(sequence, &self.split_normalized_trie))
             })
             .expect("AddedVocabulary bad split");
+
+        // ["I read a book", "   <s>", "Hey"] -> ["▁I read a book", "▁   <s>", "▁Hey"]
+        // ["▁I read a book", "▁   <s>", "▁Hey"] -> [.., "▁   ", "<s>", "▁Hey"]
+
+        // </s> normalized = True -> "▁</s>"
+        // "I read a book</s>Hey" -> ["▁I read a book", "<","/","s",">", "Hey"]
+
+        // "I read a " "[DAY]", "book monday" -> "i read a " "[day]", "book monday"
 
         pretokenized
     }
