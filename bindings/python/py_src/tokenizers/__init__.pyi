@@ -678,6 +678,10 @@ class Tokenizer:
             :obj:`int`: The number of tokens that were created in the vocabulary
         """
         pass
+
+    def set_encode_special_tokens(value:bool):
+        pass
+    
     def decode(self, ids, skip_special_tokens=True):
         """
         Decode the given list of ids back to a string

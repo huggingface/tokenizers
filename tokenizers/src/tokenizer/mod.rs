@@ -292,7 +292,6 @@ pub struct TokenizerBuilder<M, N, PT, PP, D> {
 
     truncation: Option<TruncationParams>,
     padding: Option<PaddingParams>,
-    encode_special_tokens: Option<bool>, // Whether or not special tokens should be splitted when encoding.
 }
 
 impl<M, N, PT, PP, D> Default for TokenizerBuilder<M, N, PT, PP, D>
@@ -327,7 +326,6 @@ where
             added_vocabulary: AddedVocabulary::new(),
             truncation: None,
             padding: None,
-            encode_special_tokens:None,
         }
     }
 
@@ -691,6 +689,12 @@ where
     pub fn set_encode_special_tokens(&mut self, value:bool){
         self.added_vocabulary.set_encode_special_tokens(value);
     }
+
+    /// Get added token value 
+    pub fn get_encode_special_tokens(&mut self) -> &bool {
+        self.added_vocabulary.get_encode_special_tokens()
+    }
+
     /// Encode a single sequence
     fn encode_single_sequence(
         &self,

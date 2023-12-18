@@ -183,7 +183,7 @@ impl AddedVocabulary {
             special_tokens_set: HashSet::new(),
             split_trie: (trie, vec![]),
             split_normalized_trie: (normalized_trie, vec![]),
-            encode_special_tokens: true,
+            encode_special_tokens: false,
         }
     }
     /// Size of the additional vocabulary
