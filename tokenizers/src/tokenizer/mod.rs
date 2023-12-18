@@ -292,6 +292,7 @@ pub struct TokenizerBuilder<M, N, PT, PP, D> {
 
     truncation: Option<TruncationParams>,
     padding: Option<PaddingParams>,
+    encode_special_tokens: Option<bool>, // Whether or not special tokens should be splitted when encoding.
 }
 
 impl<M, N, PT, PP, D> Default for TokenizerBuilder<M, N, PT, PP, D>
@@ -326,6 +327,7 @@ where
             added_vocabulary: AddedVocabulary::new(),
             truncation: None,
             padding: None,
+            encode_special_tokens:None,
         }
     }
 

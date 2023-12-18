@@ -160,6 +160,9 @@ pub(super) struct AddedVocabulary {
     split_trie: MatchingSet,
     /// A RegexSet containing all the normalized patterns used to split on AddedTokens
     split_normalized_trie: MatchingSet,
+
+    /// Whether or not special tokens should be splitted when encoding. This is equivalent to ignoring them
+    encode_special_tokens: bool,
 }
 
 impl AddedVocabulary {
@@ -180,6 +183,7 @@ impl AddedVocabulary {
             special_tokens_set: HashSet::new(),
             split_trie: (trie, vec![]),
             split_normalized_trie: (normalized_trie, vec![]),
+            encode_special_tokens: false,
         }
     }
     /// Size of the additional vocabulary
@@ -212,6 +216,15 @@ impl AddedVocabulary {
             .get(&id)
             .map(|t| t.content.clone())
             .or_else(|| model.id_to_token(id))
+    }
+
+    //
+    pub fn set_encode_special_tokens(&mut self, value: bool) {
+        self.encode_special_tokens = value;
+    }
+
+    pub fn get_encode_special_tokens(&self) -> &bool {
+        &self.encode_special_tokens
     }
 
     /// Check if a token is a special token
@@ -356,6 +369,11 @@ impl AddedVocabulary {
             let aho_id = mat.pattern();
             let id = split_re.1[aho_id];
             let added_token = &self.added_tokens_map_r.get(&id).unwrap();
+
+            if self.encode_special_tokens && added_token.special {
+                continue;
+            }
+
             if added_token.single_word {
                 let start_space = start == 0 || !ends_with_word(&sentence[..start]);
                 let stop_space = stop == sentence.len() || !starts_with_word(&sentence[stop..]);
