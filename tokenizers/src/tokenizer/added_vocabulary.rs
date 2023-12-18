@@ -183,7 +183,7 @@ impl AddedVocabulary {
             special_tokens_set: HashSet::new(),
             split_trie: (trie, vec![]),
             split_normalized_trie: (normalized_trie, vec![]),
-            encode_special_tokens: false,
+            encode_special_tokens: true,
         }
     }
     /// Size of the additional vocabulary
@@ -370,7 +370,7 @@ impl AddedVocabulary {
             let id = split_re.1[aho_id];
             let added_token = &self.added_tokens_map_r.get(&id).unwrap();
 
-            if self.encode_special_tokens && added_token.special {
+            if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content) {
                 continue;
             }
 
