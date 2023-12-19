@@ -672,8 +672,6 @@ impl NormalizedString {
         Ok(())
     }
 
-
-
     /// Clear the normalized part of the string
     pub fn clear(&mut self) -> usize {
         let len = self.len();
