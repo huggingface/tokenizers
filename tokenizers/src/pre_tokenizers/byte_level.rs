@@ -10,7 +10,6 @@ use crate::tokenizer::{
 use crate::utils::macro_rules_attribute;
 
 /// Converts bytes to unicode characters.
-///
 /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L9
 fn bytes_char() -> HashMap<u8, char> {
     let mut bs: Vec<u8> = vec![];
@@ -37,7 +36,6 @@ fn bytes_char() -> HashMap<u8, char> {
 
 lazy_static! {
     /// Regex that matches exactly one token.
-    /// 
     /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L98
     static ref RE: SysRegex = SysRegex::new(
         r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
