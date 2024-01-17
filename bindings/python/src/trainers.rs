@@ -183,12 +183,12 @@ impl PyBpeTrainer {
     }
 
     #[getter]
-    fn get_min_frequency(self_: PyRef<Self>) -> u32 {
+    fn get_min_frequency(self_: PyRef<Self>) -> u64 {
         getter!(self_, BpeTrainer, min_frequency)
     }
 
     #[setter]
-    fn set_min_frequency(self_: PyRef<Self>, freq: u32) {
+    fn set_min_frequency(self_: PyRef<Self>, freq: u64) {
         setter!(self_, BpeTrainer, min_frequency, freq);
     }
 
@@ -397,12 +397,12 @@ impl PyWordPieceTrainer {
     }
 
     #[getter]
-    fn get_min_frequency(self_: PyRef<Self>) -> u32 {
+    fn get_min_frequency(self_: PyRef<Self>) -> u64 {
         getter!(self_, WordPieceTrainer, min_frequency())
     }
 
     #[setter]
-    fn set_min_frequency(self_: PyRef<Self>, freq: u32) {
+    fn set_min_frequency(self_: PyRef<Self>, freq: u64) {
         setter!(self_, WordPieceTrainer, @set_min_frequency, freq);
     }
 
@@ -589,12 +589,12 @@ impl PyWordLevelTrainer {
     }
 
     #[getter]
-    fn get_min_frequency(self_: PyRef<Self>) -> u32 {
+    fn get_min_frequency(self_: PyRef<Self>) -> u64 {
         getter!(self_, WordLevelTrainer, min_frequency)
     }
 
     #[setter]
-    fn set_min_frequency(self_: PyRef<Self>, freq: u32) {
+    fn set_min_frequency(self_: PyRef<Self>, freq: u64) {
         setter!(self_, WordLevelTrainer, min_frequency, freq);
     }
 
