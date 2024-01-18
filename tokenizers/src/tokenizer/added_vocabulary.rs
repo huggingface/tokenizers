@@ -370,7 +370,8 @@ impl AddedVocabulary {
             let id = split_re.1[aho_id];
             let added_token = &self.added_tokens_map_r.get(&id).unwrap();
 
-            if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content) {
+            if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content)
+            {
                 continue;
             }
 
@@ -915,6 +916,68 @@ mod tests {
                 // Non overlapping
                 // \u{2000} is mongolian vowel separator: https://jkorpela.fi/chars/spaces.html
                 ("<mask>\u{2000}", Some(vec![0])),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_encode_special_tokens() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer = Lowercase;
+
+        vocab.add_tokens(
+            &[
+                AddedToken::from("<mask>", true)
+                    .lstrip(true)
+                    .rstrip(true)
+                    .single_word(true),
+                AddedToken::from("ask>", false),
+                AddedToken::from("<pad>", true),
+            ],
+            &model,
+            Some(&normalizer),
+        );
+        vocab.set_encode_special_tokens(true);
+
+        let result = vocab.extract_and_normalize(
+            Some(&normalizer),
+            "Hi <mask> there\t<mask>\t<mask>\u{2000} <pad> <mask><pad><pad>",
+        );
+
+        assert_eq!(
+            simplify_output(&result),
+            vec![
+                ("hi <m", None),
+                ("ask>", Some(vec![1])),
+                (" there\t<m", None),
+                ("ask>", Some(vec![1])),
+                ("\t<m", None),
+                ("ask>", Some(vec![1])),
+                ("\u{2000} <pad> <m", None),
+                ("ask>", Some(vec![1])),
+                ("<pad><pad>", None)
+            ]
+        );
+
+        vocab.set_encode_special_tokens(false);
+
+        let result = vocab.extract_and_normalize(
+            Some(&normalizer),
+            "Hi <mask> there\t<mask>\t<mask>\u{2000} <pad> <mask><pad><pad>",
+        );
+        assert_eq!(
+            simplify_output(&result),
+            vec![
+                ("hi", None),
+                (" <mask> ", Some(vec![0])),
+                ("there", None),
+                ("\t<mask>\t", Some(vec![0])),
+                ("<mask>\u{2000} ", Some(vec![0])),
+                ("<pad>", Some(vec![2])),
+                (" <mask>", Some(vec![0])),
+                ("<pad>", Some(vec![2])),
+                ("<pad>", Some(vec![2]))
             ]
         );
     }
