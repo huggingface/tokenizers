@@ -684,13 +684,13 @@ where
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.added_vocabulary.id_to_token(id, &self.model)
     }
-    
+
     /// set the added bocab's splitting scheme
-    pub fn set_encode_special_tokens(&mut self, value:bool){
+    pub fn set_encode_special_tokens(&mut self, value: bool) {
         self.added_vocabulary.set_encode_special_tokens(value);
     }
 
-    /// Get added token value 
+    /// Get added token value
     pub fn get_encode_special_tokens(&mut self) -> &bool {
         self.added_vocabulary.get_encode_special_tokens()
     }

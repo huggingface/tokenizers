@@ -370,7 +370,8 @@ impl AddedVocabulary {
             let id = split_re.1[aho_id];
             let added_token = &self.added_tokens_map_r.get(&id).unwrap();
 
-            if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content) {
+            if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content)
+            {
                 continue;
             }
 
