@@ -1110,6 +1110,15 @@ impl PyTokenizer {
         self.tokenizer.id_to_token(id)
     }
 
+    /// Modifies the tokenizer in order to use or not the special tokens
+    /// during encoding.
+    ///
+    /// Args:
+    ///     value (:obj:`bool`):
+    ///         Whether to use the special tokens or not
+    ///
+    /// Returns:
+    ///     :obj:`Optional[str]`: An optional token, :obj:`None` if out of vocabulary
     #[pyo3(text_signature = "(self, value)")]
     fn set_encode_special_tokens(&mut self, value: bool) {
         self.tokenizer.set_encode_special_tokens(value);
