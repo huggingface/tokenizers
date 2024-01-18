@@ -1109,9 +1109,9 @@ impl PyTokenizer {
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.tokenizer.id_to_token(id)
     }
-    
+
     #[pyo3(text_signature = "(self, value)")]
-    fn set_encode_special_tokens(&mut self, value:bool){
+    fn set_encode_special_tokens(&mut self, value: bool) {
         self.tokenizer.set_encode_special_tokens(value);
     }
     /// Add the given tokens to the vocabulary
