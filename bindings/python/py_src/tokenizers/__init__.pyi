@@ -838,6 +838,18 @@ class Tokenizer:
 
         """
         pass
+    @property
+    def encode_special_tokens(self):
+        """
+        Modifies the tokenizer in order to use or not the special tokens
+        during encoding.
+
+        Args:
+            value (:obj:`bool`):
+                Whether to use the special tokens or not
+
+        """
+        pass
     @staticmethod
     def from_buffer(buffer):
         """

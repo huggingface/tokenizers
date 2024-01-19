@@ -266,15 +266,15 @@ impl FromPyObject<'_> for PySpecialToken {
             Ok(Self(v.into()))
         } else if let Ok(d) = ob.downcast::<PyDict>() {
             let id = d
-                .get_item("id")
+                .get_item("id")?
                 .ok_or_else(|| exceptions::PyValueError::new_err("`id` must be specified"))?
                 .extract::<String>()?;
             let ids = d
-                .get_item("ids")
+                .get_item("ids")?
                 .ok_or_else(|| exceptions::PyValueError::new_err("`ids` must be specified"))?
                 .extract::<Vec<u32>>()?;
             let tokens = d
-                .get_item("tokens")
+                .get_item("tokens")?
                 .ok_or_else(|| exceptions::PyValueError::new_err("`tokens` must be specified"))?
                 .extract::<Vec<String>>()?;
 

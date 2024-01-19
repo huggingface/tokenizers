@@ -685,6 +685,16 @@ where
         self.added_vocabulary.id_to_token(id, &self.model)
     }
 
+    /// set the added bocab's splitting scheme
+    pub fn set_encode_special_tokens(&mut self, value: bool) {
+        self.added_vocabulary.set_encode_special_tokens(value);
+    }
+
+    /// Get added token value
+    pub fn get_encode_special_tokens(&self) -> bool {
+        self.added_vocabulary.get_encode_special_tokens()
+    }
+
     /// Encode a single sequence
     fn encode_single_sequence(
         &self,

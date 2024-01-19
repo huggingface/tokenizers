@@ -160,6 +160,9 @@ pub(super) struct AddedVocabulary {
     split_trie: MatchingSet,
     /// A RegexSet containing all the normalized patterns used to split on AddedTokens
     split_normalized_trie: MatchingSet,
+
+    /// Whether or not special tokens should be splitted when encoding. This is equivalent to ignoring them
+    encode_special_tokens: bool,
 }
 
 impl AddedVocabulary {
@@ -180,6 +183,7 @@ impl AddedVocabulary {
             special_tokens_set: HashSet::new(),
             split_trie: (trie, vec![]),
             split_normalized_trie: (normalized_trie, vec![]),
+            encode_special_tokens: false,
         }
     }
     /// Size of the additional vocabulary
@@ -212,6 +216,15 @@ impl AddedVocabulary {
             .get(&id)
             .map(|t| t.content.clone())
             .or_else(|| model.id_to_token(id))
+    }
+
+    //
+    pub fn set_encode_special_tokens(&mut self, value: bool) {
+        self.encode_special_tokens = value;
+    }
+
+    pub fn get_encode_special_tokens(&self) -> bool {
+        self.encode_special_tokens
     }
 
     /// Check if a token is a special token
@@ -356,6 +369,12 @@ impl AddedVocabulary {
             let aho_id = mat.pattern();
             let id = split_re.1[aho_id];
             let added_token = &self.added_tokens_map_r.get(&id).unwrap();
+
+            if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content)
+            {
+                continue;
+            }
+
             if added_token.single_word {
                 let start_space = start == 0 || !ends_with_word(&sentence[..start]);
                 let stop_space = stop == sentence.len() || !starts_with_word(&sentence[stop..]);
@@ -436,6 +455,18 @@ impl AddedVocabulary {
             .split(|_, sequence| Ok(self.split_with_indices(sequence, &self.split_trie)))
             .expect("AddedVocabulary bad split");
 
+        // <s> normalized = False
+        // "I read a book   <s>Hey" -> "I read a book", "   <s>", "Hey"
+
+        // </s> normalized = True -> "▁</s>"
+        // "I read a book</s>Hey" -> "I read a book</s>Hey"
+
+        // Day normalized = True -> "Day"
+        // "I read a book monday" -> "I read a book monday"
+
+        // [DAY] normalized = False -> "Day"
+        // "I read a [DAY] monday" -> "I read a " "[DAY]", "book monday"
+        //                                         320055
         // 2. Then extract the normalized tokens from the normalized pieces of the string
         pretokenized
             .split(|_, mut sequence| {
@@ -443,6 +474,14 @@ impl AddedVocabulary {
                 Ok(self.split_with_indices(sequence, &self.split_normalized_trie))
             })
             .expect("AddedVocabulary bad split");
+
+        // ["I read a book", "   <s>", "Hey"] -> ["▁I read a book", "▁   <s>", "▁Hey"]
+        // ["▁I read a book", "▁   <s>", "▁Hey"] -> [.., "▁   ", "<s>", "▁Hey"]
+
+        // </s> normalized = True -> "▁</s>"
+        // "I read a book</s>Hey" -> ["▁I read a book", "<","/","s",">", "Hey"]
+
+        // "I read a " "[DAY]", "book monday" -> "i read a " "[day]", "book monday"
 
         pretokenized
     }
@@ -877,6 +916,68 @@ mod tests {
                 // Non overlapping
                 // \u{2000} is mongolian vowel separator: https://jkorpela.fi/chars/spaces.html
                 ("<mask>\u{2000}", Some(vec![0])),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_encode_special_tokens() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer = Lowercase;
+
+        vocab.add_tokens(
+            &[
+                AddedToken::from("<mask>", true)
+                    .lstrip(true)
+                    .rstrip(true)
+                    .single_word(true),
+                AddedToken::from("ask>", false),
+                AddedToken::from("<pad>", true),
+            ],
+            &model,
+            Some(&normalizer),
+        );
+        vocab.set_encode_special_tokens(true);
+
+        let result = vocab.extract_and_normalize(
+            Some(&normalizer),
+            "Hi <mask> there\t<mask>\t<mask>\u{2000} <pad> <mask><pad><pad>",
+        );
+
+        assert_eq!(
+            simplify_output(&result),
+            vec![
+                ("hi <m", None),
+                ("ask>", Some(vec![1])),
+                (" there\t<m", None),
+                ("ask>", Some(vec![1])),
+                ("\t<m", None),
+                ("ask>", Some(vec![1])),
+                ("\u{2000} <pad> <m", None),
+                ("ask>", Some(vec![1])),
+                ("<pad><pad>", None)
+            ]
+        );
+
+        vocab.set_encode_special_tokens(false);
+
+        let result = vocab.extract_and_normalize(
+            Some(&normalizer),
+            "Hi <mask> there\t<mask>\t<mask>\u{2000} <pad> <mask><pad><pad>",
+        );
+        assert_eq!(
+            simplify_output(&result),
+            vec![
+                ("hi", None),
+                (" <mask> ", Some(vec![0])),
+                ("there", None),
+                ("\t<mask>\t", Some(vec![0])),
+                ("<mask>\u{2000} ", Some(vec![0])),
+                ("<pad>", Some(vec![2])),
+                (" <mask>", Some(vec![0])),
+                ("<pad>", Some(vec![2])),
+                ("<pad>", Some(vec![2]))
             ]
         );
     }
