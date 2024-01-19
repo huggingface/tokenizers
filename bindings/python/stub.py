@@ -121,6 +121,15 @@ def py_file(module, origin):
         string += f"{name} = {origin}.{name}\n"
     return string
 
+import subprocess
+from typing import List, Optional, Tuple
+
+def do_ruff(code):
+    command = ["ruff", "format", "-", "--config", "pyproject.toml", "--silent"]
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+    stdout, _ = process.communicate(input=code.encode())
+    return stdout.decode()
+
 
 def do_black(content, is_pyi):
     mode = black.Mode(
