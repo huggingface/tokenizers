@@ -1109,6 +1109,25 @@ impl PyTokenizer {
         self.tokenizer.id_to_token(id)
     }
 
+    /// Modifies the tokenizer in order to use or not the special tokens
+    /// during encoding.
+    ///
+    /// Args:
+    ///     value (:obj:`bool`):
+    ///         Whether to use the special tokens or not
+    ///
+    #[setter]
+    fn set_encode_special_tokens(&mut self, value: bool) {
+        self.tokenizer.set_encode_special_tokens(value);
+    }
+    /// Get the value of the `encode_special_tokens` attribute
+    ///
+    /// Returns:
+    ///     :obj:`bool`: the tokenizer's encode_special_tokens attribute
+    #[getter]
+    fn get_encode_special_tokens(&self) -> bool {
+        self.tokenizer.get_encode_special_tokens()
+    }
     /// Add the given tokens to the vocabulary
     ///
     /// The given tokens are added only if they don't already exist in the vocabulary.
