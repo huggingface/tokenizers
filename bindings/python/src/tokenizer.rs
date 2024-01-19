@@ -1126,7 +1126,7 @@ impl PyTokenizer {
     /// Returns:
     ///     :obj:`bool`: the tokenizer's encode_special_tokens attribute
     #[getter]
-    fn get_encode_special_tokens(&self) -> bool{
+    fn get_encode_special_tokens(&self) -> bool {
         self.tokenizer.get_encode_special_tokens()
     }
     /// Add the given tokens to the vocabulary
