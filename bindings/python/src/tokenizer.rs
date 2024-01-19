@@ -1117,11 +1117,17 @@ impl PyTokenizer {
     ///     value (:obj:`bool`):
     ///         Whether to use the special tokens or not
     ///
-    /// Returns:
-    ///     :obj:`Optional[str]`: An optional token, :obj:`None` if out of vocabulary
     #[pyo3(text_signature = "(self, value)")]
     fn set_encode_special_tokens(&mut self, value: bool) {
         self.tokenizer.set_encode_special_tokens(value);
+    }
+    /// Get the value of the `encode_special_tokens` attribute
+    ///
+    /// Returns:
+    ///     :obj:`bool`: the tokenizer's encode_special_tokens attribute
+    #[pyo3(text_signature = "(self)")]
+    fn get_encode_special_tokens(&self){
+        self.tokenizer.get_encode_special_tokens()
     }
     /// Add the given tokens to the vocabulary
     ///
