@@ -465,7 +465,9 @@ class TestTokenizer:
         output = tokenizer.encode("Hey there<end_of_text> dear<eot>friend!", add_special_tokens=False)
         assert output.tokens == ["▁Hey", "▁there", "<end_of_text>", "▁dear", "<eot>", "▁friend", "!"]
 
-        tokenizer.set_encode_special_tokens(True)
+        tokenizer.encode_special_tokens = True
+        assert tokenizer.encode_special_tokens == True
+
         output = tokenizer.encode("Hey there<end_of_text> dear<eot>friend!", add_special_tokens=False)
         assert output.tokens == [
             "▁Hey",
