@@ -691,7 +691,7 @@ where
     }
 
     /// Get added token value
-    pub fn get_encode_special_tokens(&mut self) -> &bool {
+    pub fn get_encode_special_tokens(& self) -> bool {
         self.added_vocabulary.get_encode_special_tokens()
     }
 

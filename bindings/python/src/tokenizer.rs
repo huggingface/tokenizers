@@ -1117,7 +1117,7 @@ impl PyTokenizer {
     ///     value (:obj:`bool`):
     ///         Whether to use the special tokens or not
     ///
-    #[pyo3(text_signature = "(self, value)")]
+    #[setter]
     fn set_encode_special_tokens(&mut self, value: bool) {
         self.tokenizer.set_encode_special_tokens(value);
     }
@@ -1125,8 +1125,8 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`bool`: the tokenizer's encode_special_tokens attribute
-    #[pyo3(text_signature = "(self)")]
-    fn get_encode_special_tokens(&self){
+    #[getter]
+    fn get_encode_special_tokens(&self) -> bool{
         self.tokenizer.get_encode_special_tokens()
     }
     /// Add the given tokens to the vocabulary

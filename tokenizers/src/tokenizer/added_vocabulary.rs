@@ -223,8 +223,8 @@ impl AddedVocabulary {
         self.encode_special_tokens = value;
     }
 
-    pub fn get_encode_special_tokens(&self) -> &bool {
-        &self.encode_special_tokens
+    pub fn get_encode_special_tokens(&self) -> bool {
+        self.encode_special_tokens
     }
 
     /// Check if a token is a special token
