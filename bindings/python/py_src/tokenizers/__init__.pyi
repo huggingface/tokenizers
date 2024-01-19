@@ -838,6 +838,18 @@ class Tokenizer:
 
         """
         pass
+    @property
+    def encode_special_tokens(self):
+        """
+        Modifies the tokenizer in order to use or not the special tokens
+        during encoding.
+
+        Args:
+            value (:obj:`bool`):
+                Whether to use the special tokens or not
+
+        """
+        pass
     @staticmethod
     def from_buffer(buffer):
         """
@@ -1032,19 +1044,6 @@ class Tokenizer:
 
             pretty (:obj:`bool`, defaults to :obj:`True`):
                 Whether the JSON file should be pretty formatted.
-        """
-        pass
-    def set_encode_special_tokens(self, value):
-        """
-        Modifies the tokenizer in order to use or not the special tokens
-        during encoding.
-
-        Args:
-            value (:obj:`bool`):
-                Whether to use the special tokens or not
-
-        Returns:
-            :obj:`Optional[str]`: An optional token, :obj:`None` if out of vocabulary
         """
         pass
     def to_str(self, pretty=False):
