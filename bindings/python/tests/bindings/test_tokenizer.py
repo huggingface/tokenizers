@@ -64,6 +64,7 @@ class TestAddedToken:
         assert added_token.single_word == False
         assert added_token.normalized == False
 
+
 class TestTokenizer:
     def test_has_expected_type_and_methods(self):
         tokenizer = Tokenizer(BPE())
@@ -458,16 +459,30 @@ class TestTokenizer:
         assert output.tokens == ["A", " ", "sen", "te", "n", "ce", " ", "<0xF0>", "<0x9F>", "<0xA4>", "<0x97>"]
 
     def test_encode_special_tokens(self):
-        tokenizer = Tokenizer.from_pretrained("t5-base")        
+        tokenizer = Tokenizer.from_pretrained("t5-base")
         tokenizer.add_tokens(["<eot>"])
         tokenizer.add_special_tokens(["<end_of_text>"])
         output = tokenizer.encode("Hey there<end_of_text> dear<eot>friend!", add_special_tokens=False)
-        assert output.tokens ==['▁Hey', '▁there', '<end_of_text>', '▁dear', '<eot>', '▁friend', '!']
-        
+        assert output.tokens == ["▁Hey", "▁there", "<end_of_text>", "▁dear", "<eot>", "▁friend", "!"]
+
         tokenizer.set_encode_special_tokens(True)
         output = tokenizer.encode("Hey there<end_of_text> dear<eot>friend!", add_special_tokens=False)
-        assert output.tokens == ['▁Hey', '▁there', '<', 'end', '_', 'of', '_', 'text', '>', '▁dear', '<eot>', '▁friend', '!']
-        
+        assert output.tokens == [
+            "▁Hey",
+            "▁there",
+            "<",
+            "end",
+            "_",
+            "of",
+            "_",
+            "text",
+            ">",
+            "▁dear",
+            "<eot>",
+            "▁friend",
+            "!",
+        ]
+
         tokenizer.add_tokens(["of_text>"])
         output = tokenizer.encode("Hey there<end_of_text> dear<eot>friend!", add_special_tokens=False)
-        assert output.tokens == ['▁Hey', '▁there', '<', 'end', '_', 'of_text>', '▁dear', '<eot>', '▁friend', '!']
+        assert output.tokens == ["▁Hey", "▁there", "<", "end", "_", "of_text>", "▁dear", "<eot>", "▁friend", "!"]
