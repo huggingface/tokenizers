@@ -384,6 +384,12 @@ where
         self
     }
 
+    /// Set the added vocabulary.
+    pub fn with_added_vocabulary(mut self, added_vocabulary: AddedVocabulary) -> Self {
+        self.added_vocabulary = added_vocabulary;
+        self
+    }
+
     /// Set the trunaction parameters.
     #[must_use]
     pub fn with_truncation(mut self, trunc: Option<TruncationParams>) -> Self {
@@ -596,6 +602,17 @@ where
     /// Get the model
     pub fn get_model(&self) -> &M {
         &self.model
+    }
+
+    /// Set the added vocabulary.
+    pub fn with_added_vocabulary(&mut self, added_vocabulary: AddedVocabulary) -> &mut Self {
+        self.added_vocabulary = added_vocabulary.into();
+        self
+    }
+
+    /// Get the added vocabulary
+    pub fn get_added_vocabulary(&self) -> &AddedVocabulary {
+        &self.added_vocabulary
     }
 
     /// Set the truncation parameters
