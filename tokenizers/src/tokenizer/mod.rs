@@ -606,7 +606,7 @@ where
 
     /// Set the added vocabulary.
     pub fn with_added_vocabulary(&mut self, added_vocabulary: AddedVocabulary) -> &mut Self {
-        self.added_vocabulary = added_vocabulary.into();
+        self.added_vocabulary = added_vocabulary;
         self
     }
 
