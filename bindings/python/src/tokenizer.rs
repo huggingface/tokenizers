@@ -668,7 +668,7 @@ impl PyTokenizer {
     /// Args:
     ///     added_tokens_decoder (:obj:`Dict[int, AddedToken]`):
     ///         Map from added token ID to :obj:`AddedToken`.
-    ///     encode_special_tokens (:obj:`bool`, defaults to :onj:`False`):
+    ///     encode_special_tokens (:obj:`bool`, defaults to :obj:`False`):
     ///         Whether or not special tokens should be split when encoding. This is equivalent to ignoring them.
     #[pyo3(signature = (added_tokens_decoder, encode_special_tokens = false))]
     #[pyo3(text_signature = "(self, added_tokens_decoder, encode_special_tokens=False)")]
