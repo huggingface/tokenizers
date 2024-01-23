@@ -25,6 +25,7 @@ use super::trainers::PyTrainer;
 use crate::processors::PyPostProcessor;
 use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
 use std::collections::BTreeMap;
+use tk::{AddedToken, AddedVocabulary};
 
 /// Represents a token that can be be added to a :class:`~tokenizers.Tokenizer`.
 /// It can have special options that defines the way it should behave.
@@ -660,6 +661,42 @@ impl PyTokenizer {
     #[pyo3(text_signature = "(self, with_added_tokens=True)")]
     fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
         self.tokenizer.get_vocab(with_added_tokens)
+    }
+
+    /// Sets the underlying added tokens vocabulary
+    ///
+    /// Args:
+    ///     added_tokens_decoder (:obj:`Dict[int, AddedToken]`):
+    ///         Map from added token ID to :obj:`AddedToken`.
+    ///     encode_special_tokens (:obj:`bool`, defaults to :onj:`False`):
+    ///         Whether or not special tokens should be split when encoding. This is equivalent to ignoring them.
+    #[pyo3(signature = (added_tokens_decoder, encode_special_tokens = false))]
+    #[pyo3(text_signature = "(self, added_tokens_decoder, encode_special_tokens=False)")]
+    fn set_added_tokens_decoder(
+        &mut self,
+        added_tokens_decoder: &PyDict,
+        encode_special_tokens: bool,
+    ) -> PyResult<()> {
+        added_tokens_decoder
+            .iter()
+            .map(|(key, value)| {
+                key.extract::<u32>().and_then(|key| {
+                    value
+                        .extract::<PyRefMut<PyAddedToken>>()
+                        .map(|value| (key, value.get_token()))
+                })
+            })
+            .collect::<Result<HashMap<u32, AddedToken>, PyErr>>()
+            .map(|added_tokens| {
+                self.tokenizer
+                    .with_added_vocabulary(AddedVocabulary::from_indexed_added_tokens(
+                        added_tokens,
+                        encode_special_tokens,
+                        self.tokenizer.get_model(),
+                        self.tokenizer.get_normalizer(),
+                    ))
+            })?;
+        Ok(())
     }
 
     /// Get the underlying vocabulary

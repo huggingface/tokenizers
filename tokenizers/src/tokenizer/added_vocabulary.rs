@@ -186,6 +186,56 @@ impl AddedVocabulary {
             encode_special_tokens: false,
         }
     }
+
+    /// Creates a new [AddedVocabulary] from a collection of [AddedToken]s that already have assigned IDs.
+    /// This constructor is useful for constructing an [AddedVocabulary] from a pre-existing [AddedVocabulary]
+    /// (e.g., from a serialized [AddedVocabulary]).
+    pub fn from_indexed_added_tokens<N: Normalizer>(
+        tokens: HashMap<u32, AddedToken>,
+        encode_special_tokens: bool,
+        model: &impl Model,
+        normalizer: Option<&N>,
+    ) -> Self {
+        let mut vocabulary = AddedVocabulary::new();
+        vocabulary.encode_special_tokens = encode_special_tokens;
+        
+        // Handle special tokens (if any).
+        for token in tokens.values() {
+            if token.special
+                && !token.content.is_empty()
+                && !vocabulary.special_tokens_set.contains(&token.content)
+            {
+                vocabulary.special_tokens.push(token.to_owned());
+                vocabulary.special_tokens_set.insert(token.content.clone());
+            }
+        }
+        
+        for (token_id, token) in tokens {
+            if token.content.is_empty() || vocabulary.added_tokens_map_r.values().any(|val| *val == token)
+            {
+                continue;
+            }
+
+            vocabulary.added_tokens_map
+                .entry(token.content.clone())
+                .and_modify(|old_id| *old_id = token_id)
+                .or_insert_with(|| token_id);
+
+            vocabulary.added_tokens_map_r
+                .entry(token_id)
+                .and_modify(|t| *t = token.clone())
+                .or_insert_with(|| token.clone());
+
+            if !vocabulary.special_tokens_set.contains(&token.content) {
+                vocabulary.added_tokens.push(token.clone());
+            }
+        }
+
+        vocabulary.refresh_added_tokens(model, normalizer);
+
+        vocabulary
+    }
+
     /// Size of the additional vocabulary
     #[allow(dead_code)] // Suppress the "method is never used" warning
     pub fn len(&self) -> usize {
