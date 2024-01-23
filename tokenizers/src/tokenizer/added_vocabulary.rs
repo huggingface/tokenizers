@@ -198,7 +198,7 @@ impl AddedVocabulary {
     ) -> Self {
         let mut vocabulary = AddedVocabulary::new();
         vocabulary.encode_special_tokens = encode_special_tokens;
-        
+
         // Handle special tokens (if any).
         for token in tokens.values() {
             if token.special
@@ -209,19 +209,25 @@ impl AddedVocabulary {
                 vocabulary.special_tokens_set.insert(token.content.clone());
             }
         }
-        
+
         for (token_id, token) in tokens {
-            if token.content.is_empty() || vocabulary.added_tokens_map_r.values().any(|val| *val == token)
+            if token.content.is_empty()
+                || vocabulary
+                    .added_tokens_map_r
+                    .values()
+                    .any(|val| *val == token)
             {
                 continue;
             }
 
-            vocabulary.added_tokens_map
+            vocabulary
+                .added_tokens_map
                 .entry(token.content.clone())
                 .and_modify(|old_id| *old_id = token_id)
                 .or_insert_with(|| token_id);
 
-            vocabulary.added_tokens_map_r
+            vocabulary
+                .added_tokens_map_r
                 .entry(token_id)
                 .and_modify(|t| *t = token.clone())
                 .or_insert_with(|| token.clone());
