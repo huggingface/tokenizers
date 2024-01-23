@@ -1046,6 +1046,17 @@ class Tokenizer:
                 Whether the JSON file should be pretty formatted.
         """
         pass
+    def set_added_tokens_decoder(self, added_tokens_decoder, encode_special_tokens=False):
+        """
+        Sets the underlying added tokens vocabulary
+
+        Args:
+            added_tokens_decoder (:obj:`Dict[int, AddedToken]`):
+                Map from added token ID to :obj:`AddedToken`.
+            encode_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+                Whether or not special tokens should be split when encoding. This is equivalent to ignoring them.
+        """
+        pass
     def to_str(self, pretty=False):
         """
         Gets a serialized string representing this :class:`~tokenizers.Tokenizer`.
