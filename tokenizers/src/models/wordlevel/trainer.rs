@@ -10,7 +10,7 @@ use std::collections::HashMap;
 pub struct WordLevelTrainer {
     /// The minimum frequency a word must have to be part of the vocabulary
     #[builder(default = "0")]
-    pub min_frequency: u32,
+    pub min_frequency: u64,
     /// The target vocabulary size
     #[builder(default = "30_000")]
     pub vocab_size: usize,
@@ -22,7 +22,7 @@ pub struct WordLevelTrainer {
     pub special_tokens: Vec<AddedToken>,
 
     #[builder(default, private)]
-    words: HashMap<String, u32>,
+    words: HashMap<String, u64>,
 }
 
 impl Default for WordLevelTrainer {
@@ -38,14 +38,14 @@ impl WordLevelTrainer {
 
     fn do_train(
         &self,
-        word_counts: &HashMap<String, u32>,
+        word_counts: &HashMap<String, u64>,
         model: &mut WordLevel,
     ) -> Result<Vec<AddedToken>> {
         let mut ordered_counts = word_counts.iter().collect::<Vec<_>>();
 
         //sort the word counts first by inverse counts and then by word, in order
         //to keep the sorting deterministic in case of equal counts
-        let cmp = |l: &(&String, &u32), r: &(&String, &u32)| -> Ordering {
+        let cmp = |l: &(&String, &u64), r: &(&String, &u64)| -> Ordering {
             let count_comp: Ordering = l.1.cmp(r.1);
             if count_comp != Ordering::Equal {
                 return count_comp.reverse();
@@ -100,7 +100,7 @@ impl Trainer for WordLevelTrainer {
         S: AsRef<str> + Send,
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
-        let words: Result<HashMap<String, u32>> = iterator
+        let words: Result<HashMap<String, u64>> = iterator
             .maybe_par_bridge()
             .map(|sequence| {
                 let words = process(sequence.as_ref())?;
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn test_train() {
-        let word_counts: HashMap<String, u32> = [
+        let word_counts: HashMap<String, u64> = [
             ("the".into(), 25),
             ("roses".into(), 22),
             ("are".into(), 24),

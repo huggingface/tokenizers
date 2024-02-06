@@ -26,7 +26,7 @@ impl WordPieceTrainerBuilder {
 
     /// Set the expected minimum frequency
     #[must_use]
-    pub fn min_frequency(mut self, frequency: u32) -> Self {
+    pub fn min_frequency(mut self, frequency: u64) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.min_frequency(frequency);
         self
     }
@@ -94,11 +94,11 @@ pub struct WordPieceTrainer {
 }
 
 impl WordPieceTrainer {
-    pub fn min_frequency(&self) -> u32 {
+    pub fn min_frequency(&self) -> u64 {
         self.bpe_trainer.min_frequency
     }
 
-    pub fn set_min_frequency(&mut self, freq: u32) {
+    pub fn set_min_frequency(&mut self, freq: u64) {
         self.bpe_trainer.min_frequency = freq;
     }
 
