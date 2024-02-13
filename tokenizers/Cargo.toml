@@ -20,12 +20,6 @@ name = "tokenizers"
 path = "src/lib.rs"
 bench = false
 
-[[bin]]
-name = "cli"
-path = "src/cli.rs"
-bench = false
-required-features = ["cli"]
-
 [[bench]]
 name = "bpe_benchmark"
 harness = false
@@ -52,14 +46,13 @@ rayon = "1.8"
 rayon-cond = "0.3"
 serde = { version = "1.0", features = [ "derive" ] }
 serde_json = "1.0"
-clap = { version = "4.4", features=["derive"], optional = true }
 unicode-normalization-alignments = "0.1"
 unicode_categories = "0.1"
 unicode-segmentation = "1.10"
 indicatif = {version = "0.17", optional = true}
 itertools = "0.12"
 log = "0.4"
-derive_builder = "0.12"
+derive_builder = "0.13"
 spm_precompiled = "0.1"
 hf-hub = { version = "0.3.2", optional = true }
 aho-corasick = "1.1"
@@ -72,11 +65,10 @@ esaxx-rs = { version = "0.1.10", default-features = false, features=[]}
 monostate = "0.1.9"
 
 [features]
-default = ["progressbar", "cli", "onig", "esaxx_fast"]
+default = ["progressbar", "onig", "esaxx_fast"]
 esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
-cli = ["clap"]
 unstable_wasm = ["fancy-regex", "getrandom/js"]
 
 [dev-dependencies]

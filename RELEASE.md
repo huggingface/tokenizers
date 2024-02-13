@@ -86,5 +86,5 @@ Simple checklist on how to make releases for `tokenizers`.
 If you want to make modifications to the CI/CD of the release GH actions, you need
 to : 
 - **Comment the part that uploads the artifacts** to `crates.io`, `PyPi` or `npm`.
-- Change the trigger mecanism so it can trigger every time you push to your branch.
+- Change the trigger mechanism so it can trigger every time you push to your branch.
 - Keep pushing your changes until the artifacts are properly created.
