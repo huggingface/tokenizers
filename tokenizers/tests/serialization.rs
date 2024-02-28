@@ -173,7 +173,7 @@ fn decoders() {
     let byte_level_ser = serde_json::to_string(&byte_level).unwrap();
     assert_eq!(
         byte_level_ser,
-        r#"{"type":"ByteLevel","add_prefix_space":true,"trim_offsets":true,"use_regex":true}"#
+        r#"{"type":"ByteLevel","add_prefix_space":true,"trim_offsets":true,"use_regex":true,"custom_regex":null}"#
     );
     serde_json::from_str::<ByteLevel>(&byte_level_ser).unwrap();
     let byte_level_wrapper: DecoderWrapper = serde_json::from_str(&byte_level_ser).unwrap();
