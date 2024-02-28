@@ -11,6 +11,9 @@
     <a href="https://pepy.tech/project/tokenizers">
         <img src="https://pepy.tech/badge/tokenizers/week" />
     </a>
+    <a href="https://doi.org/10.5281/zenodo.4784271">
+        <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.4784271.svg" alt="DOI">
+    </a>
 </p>
 
 Provides an implementation of today's most used tokenizers, with a focus on performance and
