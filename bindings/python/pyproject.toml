@@ -1,5 +1,6 @@
 [project]
 name = 'tokenizers'
+description = "an implementation of today's most used tokenizers, with a focus on performance and versatility"
 requires-python = '>=3.7'
 authors = [
     {name = 'Nicolas Patry', email = 'patry.nicolas@protonmail.com'},
