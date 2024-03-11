@@ -34,7 +34,7 @@ Source = 'https://github.com/huggingface/tokenizers'
 
 
 [project.optional-dependencies]
-testing = ["pytest", "requests", "numpy", "datasets", "black==22.3"]
+testing = ["pytest", "requests", "numpy", "datasets", "black==22.3", "ruff"]
 docs = ["sphinx", "sphinx_rtd_theme", "setuptools_rust"]
 dev = ["tokenizers[testing]"]
 
