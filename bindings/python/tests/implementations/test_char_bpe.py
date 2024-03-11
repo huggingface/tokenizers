@@ -1,8 +1,7 @@
-import pytest
 
 from tokenizers import CharBPETokenizer
 
-from ..utils import data_dir, multiprocessing_with_parallelism, openai_files
+from ..utils import multiprocessing_with_parallelism
 
 
 class TestCharBPETokenizer:

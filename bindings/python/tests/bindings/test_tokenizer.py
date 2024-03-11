@@ -5,12 +5,11 @@ import pytest
 
 from tokenizers import AddedToken, Encoding, Tokenizer
 from tokenizers.implementations import BertWordPieceTokenizer
-from tokenizers.models import BPE, Model, WordPiece, Unigram
-from tokenizers.normalizers import Lowercase
+from tokenizers.models import BPE, Model, Unigram
 from tokenizers.pre_tokenizers import ByteLevel
-from tokenizers.processors import BertProcessing, RobertaProcessing
+from tokenizers.processors import RobertaProcessing
 
-from ..utils import bert_files, data_dir, multiprocessing_with_parallelism, roberta_files
+from ..utils import multiprocessing_with_parallelism
 
 
 class TestAddedToken:

@@ -22,6 +22,7 @@ class Normalizer:
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -39,6 +40,7 @@ class Normalizer:
             :obj:`str`: A string after normalization
         """
         pass
+
 
 class BertNormalizer(Normalizer):
     """
@@ -63,8 +65,15 @@ class BertNormalizer(Normalizer):
             Whether to lowercase.
     """
 
-    def __init__(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True):
+    def __init__(
+        self,
+        clean_text=True,
+        handle_chinese_chars=True,
+        strip_accents=None,
+        lowercase=True,
+    ):
         pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -80,6 +89,7 @@ class BertNormalizer(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -97,6 +107,7 @@ class BertNormalizer(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
 
 class Lowercase(Normalizer):
     """
@@ -105,6 +116,7 @@ class Lowercase(Normalizer):
 
     def __init__(self):
         pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -120,6 +132,7 @@ class Lowercase(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -137,6 +150,7 @@ class Lowercase(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
 
 class NFC(Normalizer):
     """
@@ -145,6 +159,7 @@ class NFC(Normalizer):
 
     def __init__(self):
         pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -160,6 +175,7 @@ class NFC(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -177,6 +193,7 @@ class NFC(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
 
 class NFD(Normalizer):
     """
@@ -185,6 +202,7 @@ class NFD(Normalizer):
 
     def __init__(self):
         pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -200,6 +218,7 @@ class NFD(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -217,6 +236,7 @@ class NFD(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
 
 class NFKC(Normalizer):
     """
@@ -225,6 +245,7 @@ class NFKC(Normalizer):
 
     def __init__(self):
         pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -240,6 +261,7 @@ class NFKC(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -257,6 +279,7 @@ class NFKC(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
 
 class NFKD(Normalizer):
     """
@@ -265,6 +288,7 @@ class NFKD(Normalizer):
 
     def __init__(self):
         pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -280,6 +304,7 @@ class NFKD(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -297,6 +322,7 @@ class NFKD(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
 
 class Nmt(Normalizer):
     """
@@ -305,6 +331,7 @@ class Nmt(Normalizer):
 
     def __init__(self):
         pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -320,6 +347,7 @@ class Nmt(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -337,6 +365,7 @@ class Nmt(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
 
 class Precompiled(Normalizer):
     """
@@ -346,6 +375,7 @@ class Precompiled(Normalizer):
 
     def __init__(self, precompiled_charsmap):
         pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -361,6 +391,7 @@ class Precompiled(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -378,6 +409,7 @@ class Precompiled(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
 
 class Prepend(Normalizer):
     """
@@ -386,6 +418,7 @@ class Prepend(Normalizer):
 
     def __init__(self, prepend):
         pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -401,6 +434,7 @@ class Prepend(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -418,6 +452,7 @@ class Prepend(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
 
 class Replace(Normalizer):
     """
@@ -426,6 +461,7 @@ class Replace(Normalizer):
 
     def __init__(self, pattern, content):
         pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -441,6 +477,7 @@ class Replace(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -458,6 +495,7 @@ class Replace(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
 
 class Sequence(Normalizer):
     """
@@ -484,6 +522,7 @@ class Sequence(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -501,6 +540,7 @@ class Sequence(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
 
 class Strip(Normalizer):
     """
@@ -509,6 +549,7 @@ class Strip(Normalizer):
 
     def __init__(self, left=True, right=True):
         pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -524,6 +565,7 @@ class Strip(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string
@@ -542,6 +584,7 @@ class Strip(Normalizer):
         """
         pass
 
+
 class StripAccents(Normalizer):
     """
     StripAccents normalizer
@@ -549,6 +592,7 @@ class StripAccents(Normalizer):
 
     def __init__(self):
         pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -564,6 +608,7 @@ class StripAccents(Normalizer):
                 :class:`~tokenizers.normalizers.Normalizer`
         """
         pass
+
     def normalize_str(self, sequence):
         """
         Normalize the given string

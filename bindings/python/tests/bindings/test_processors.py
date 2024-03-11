@@ -15,7 +15,6 @@ from tokenizers.processors import (
     TemplateProcessing,
 )
 
-from ..utils import data_dir, roberta_files
 
 
 class TestBertProcessing:
@@ -146,18 +145,18 @@ class TestTemplateProcessing:
         assert isinstance(pickle.loads(pickle.dumps(bert)), TemplateProcessing)
 
         # It is absolutely legal to have tokens with spaces in the name:
-        processor = TemplateProcessing(
+        TemplateProcessing(
             single=["[ C L S ]", "Token with space"],
             special_tokens=[("[ C L S ]", 0), ("Token with space", 1)],
         )
         # Sequence identifiers must be well formed:
         with pytest.raises(Exception, match="Cannot build Piece"):
-            processor = TemplateProcessing(single="[CLS] $$ [SEP]")
+            TemplateProcessing(single="[CLS] $$ [SEP]")
         with pytest.raises(Exception, match="Cannot build Piece"):
-            processor = TemplateProcessing(single="[CLS] $A: [SEP]")
+            TemplateProcessing(single="[CLS] $A: [SEP]")
         # Special tokens must be provided when used in template:
         with pytest.raises(Exception, match="Missing SpecialToken\\(s\\) with id\\(s\\)"):
-            processor = TemplateProcessing(single=["[CLS]"])
+            TemplateProcessing(single=["[CLS]"])
 
     def test_bert_parity(self):
         tokenizer = Tokenizer(BPE())

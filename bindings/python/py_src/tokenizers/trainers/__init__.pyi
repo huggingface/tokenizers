@@ -7,6 +7,7 @@ class Trainer:
     Trainer will return an instance of this class when instantiated.
     """
 
+
 class BpeTrainer(Trainer):
     """
     Trainer capable of training a BPE model
@@ -45,6 +46,7 @@ class BpeTrainer(Trainer):
             highly repetitive tokens like `======` for wikipedia
 
     """
+
 
 class UnigramTrainer(Trainer):
     """
@@ -93,6 +95,7 @@ class UnigramTrainer(Trainer):
     ):
         pass
 
+
 class WordLevelTrainer(Trainer):
     """
     Trainer capable of training a WorldLevel model
@@ -110,6 +113,7 @@ class WordLevelTrainer(Trainer):
         special_tokens (:obj:`List[Union[str, AddedToken]]`):
             A list of special tokens the model should know of.
     """
+
 
 class WordPieceTrainer(Trainer):
     """

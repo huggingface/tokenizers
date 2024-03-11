@@ -1,8 +1,7 @@
-import pytest
 
 from tokenizers import BertWordPieceTokenizer
 
-from ..utils import bert_files, data_dir, multiprocessing_with_parallelism
+from ..utils import multiprocessing_with_parallelism
 
 
 class TestBertWordPieceTokenizer:

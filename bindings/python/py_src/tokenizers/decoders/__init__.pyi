@@ -20,6 +20,7 @@ class Decoder:
         """
         pass
 
+
 class BPEDecoder(Decoder):
     """
     BPEDecoder Decoder
@@ -32,6 +33,7 @@ class BPEDecoder(Decoder):
 
     def __init__(self, suffix="</w>"):
         pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -44,6 +46,7 @@ class BPEDecoder(Decoder):
             :obj:`str`: The decoded string
         """
         pass
+
 
 class ByteFallback(Decoder):
     """
@@ -56,6 +59,7 @@ class ByteFallback(Decoder):
 
     def __init__(self):
         pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -68,6 +72,7 @@ class ByteFallback(Decoder):
             :obj:`str`: The decoded string
         """
         pass
+
 
 class ByteLevel(Decoder):
     """
@@ -79,6 +84,7 @@ class ByteLevel(Decoder):
 
     def __init__(self):
         pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -91,6 +97,7 @@ class ByteLevel(Decoder):
             :obj:`str`: The decoded string
         """
         pass
+
 
 class CTC(Decoder):
     """
@@ -108,6 +115,7 @@ class CTC(Decoder):
 
     def __init__(self, pad_token="<pad>", word_delimiter_token="|", cleanup=True):
         pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -120,6 +128,7 @@ class CTC(Decoder):
             :obj:`str`: The decoded string
         """
         pass
+
 
 class Fuse(Decoder):
     """
@@ -131,6 +140,7 @@ class Fuse(Decoder):
 
     def __init__(self):
         pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -143,6 +153,7 @@ class Fuse(Decoder):
             :obj:`str`: The decoded string
         """
         pass
+
 
 class Metaspace(Decoder):
     """
@@ -160,6 +171,7 @@ class Metaspace(Decoder):
 
     def __init__(self, replacement="▁", add_prefix_space=True):
         pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -172,6 +184,7 @@ class Metaspace(Decoder):
             :obj:`str`: The decoded string
         """
         pass
+
 
 class Replace(Decoder):
     """
@@ -183,6 +196,7 @@ class Replace(Decoder):
 
     def __init__(self, pattern, content):
         pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -195,6 +209,7 @@ class Replace(Decoder):
             :obj:`str`: The decoded string
         """
         pass
+
 
 class Sequence(Decoder):
     """
@@ -207,6 +222,7 @@ class Sequence(Decoder):
 
     def __init__(self, decoders):
         pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -219,6 +235,7 @@ class Sequence(Decoder):
             :obj:`str`: The decoded string
         """
         pass
+
 
 class Strip(Decoder):
     """
@@ -228,6 +245,7 @@ class Strip(Decoder):
 
     def __init__(self, content, left=0, right=0):
         pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -240,6 +258,7 @@ class Strip(Decoder):
             :obj:`str`: The decoded string
         """
         pass
+
 
 class WordPiece(Decoder):
     """
@@ -256,6 +275,7 @@ class WordPiece(Decoder):
 
     def __init__(self, prefix="##", cleanup=True):
         pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string

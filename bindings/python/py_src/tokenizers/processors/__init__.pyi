@@ -19,6 +19,7 @@ class PostProcessor:
             :obj:`int`: The number of tokens to add
         """
         pass
+
     def process(self, encoding, pair=None, add_special_tokens=True):
         """
         Post-process the given encodings, generating the final one
@@ -37,6 +38,7 @@ class PostProcessor:
             :class:`~tokenizers.Encoding`: The final encoding
         """
         pass
+
 
 class BertProcessing(PostProcessor):
     """
@@ -56,6 +58,7 @@ class BertProcessing(PostProcessor):
 
     def __init__(self, sep, cls):
         pass
+
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -68,6 +71,7 @@ class BertProcessing(PostProcessor):
             :obj:`int`: The number of tokens to add
         """
         pass
+
     def process(self, encoding, pair=None, add_special_tokens=True):
         """
         Post-process the given encodings, generating the final one
@@ -86,6 +90,7 @@ class BertProcessing(PostProcessor):
             :class:`~tokenizers.Encoding`: The final encoding
         """
         pass
+
 
 class ByteLevel(PostProcessor):
     """
@@ -101,6 +106,7 @@ class ByteLevel(PostProcessor):
 
     def __init__(self, trim_offsets=True):
         pass
+
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -113,6 +119,7 @@ class ByteLevel(PostProcessor):
             :obj:`int`: The number of tokens to add
         """
         pass
+
     def process(self, encoding, pair=None, add_special_tokens=True):
         """
         Post-process the given encodings, generating the final one
@@ -131,6 +138,7 @@ class ByteLevel(PostProcessor):
             :class:`~tokenizers.Encoding`: The final encoding
         """
         pass
+
 
 class RobertaProcessing(PostProcessor):
     """
@@ -162,6 +170,7 @@ class RobertaProcessing(PostProcessor):
 
     def __init__(self, sep, cls, trim_offsets=True, add_prefix_space=True):
         pass
+
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -174,6 +183,7 @@ class RobertaProcessing(PostProcessor):
             :obj:`int`: The number of tokens to add
         """
         pass
+
     def process(self, encoding, pair=None, add_special_tokens=True):
         """
         Post-process the given encodings, generating the final one
@@ -192,6 +202,7 @@ class RobertaProcessing(PostProcessor):
             :class:`~tokenizers.Encoding`: The final encoding
         """
         pass
+
 
 class Sequence(PostProcessor):
     """
@@ -204,6 +215,7 @@ class Sequence(PostProcessor):
 
     def __init__(self, processors):
         pass
+
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -216,6 +228,7 @@ class Sequence(PostProcessor):
             :obj:`int`: The number of tokens to add
         """
         pass
+
     def process(self, encoding, pair=None, add_special_tokens=True):
         """
         Post-process the given encodings, generating the final one
@@ -234,6 +247,7 @@ class Sequence(PostProcessor):
             :class:`~tokenizers.Encoding`: The final encoding
         """
         pass
+
 
 class TemplateProcessing(PostProcessor):
     """
@@ -305,6 +319,7 @@ class TemplateProcessing(PostProcessor):
 
     def __init__(self, single, pair, special_tokens):
         pass
+
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -317,6 +332,7 @@ class TemplateProcessing(PostProcessor):
             :obj:`int`: The number of tokens to add
         """
         pass
+
     def process(self, encoding, pair=None, add_special_tokens=True):
         """
         Post-process the given encodings, generating the final one

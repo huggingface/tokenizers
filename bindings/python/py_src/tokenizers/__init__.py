@@ -1,5 +1,28 @@
 from enum import Enum
 from typing import List, Tuple, Union
+from .tokenizers import (
+    AddedToken,
+    Encoding,
+    NormalizedString,
+    PreTokenizedString,
+    Regex,
+    Token,
+    Tokenizer,
+    decoders,
+    models,
+    normalizers,
+    pre_tokenizers,
+    processors,
+    trainers,
+    __version__,
+)
+from .implementations import (
+    BertWordPieceTokenizer,
+    ByteLevelBPETokenizer,
+    CharBPETokenizer,
+    SentencePieceBPETokenizer,
+    SentencePieceUnigramTokenizer,
+)
 
 
 Offsets = Tuple[int, int]
@@ -75,26 +98,3 @@ class SplitDelimiterBehavior(Enum):
     CONTIGUOUS = "contiguous"
 
 
-from .tokenizers import (
-    AddedToken,
-    Encoding,
-    NormalizedString,
-    PreTokenizedString,
-    Regex,
-    Token,
-    Tokenizer,
-    decoders,
-    models,
-    normalizers,
-    pre_tokenizers,
-    processors,
-    trainers,
-    __version__,
-)
-from .implementations import (
-    BertWordPieceTokenizer,
-    ByteLevelBPETokenizer,
-    CharBPETokenizer,
-    SentencePieceBPETokenizer,
-    SentencePieceUnigramTokenizer,
-)

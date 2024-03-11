@@ -1,9 +1,5 @@
 from tokenizers import Tokenizer
-from tokenizers.models import BPE
-from tokenizers.pre_tokenizers import Whitespace
-from tokenizers.trainers import BpeTrainer
 
-from ..utils import data_dir, doc_wiki_tokenizer
 
 
 disable_printing = True

@@ -23,6 +23,7 @@ class PreTokenizer:
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         pass
+
     def pre_tokenize_str(self, sequence):
         """
         Pre tokenize the given string
@@ -43,6 +44,7 @@ class PreTokenizer:
         """
         pass
 
+
 class BertPreTokenizer(PreTokenizer):
     """
     BertPreTokenizer
@@ -53,6 +55,7 @@ class BertPreTokenizer(PreTokenizer):
 
     def __init__(self):
         pass
+
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -69,6 +72,7 @@ class BertPreTokenizer(PreTokenizer):
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         pass
+
     def pre_tokenize_str(self, sequence):
         """
         Pre tokenize the given string
@@ -88,6 +92,7 @@ class BertPreTokenizer(PreTokenizer):
                 A list of tuple with the pre-tokenized parts and their offsets
         """
         pass
+
 
 class ByteLevel(PreTokenizer):
     """
@@ -107,6 +112,7 @@ class ByteLevel(PreTokenizer):
 
     def __init__(self, add_prefix_space=True, use_regex=True):
         pass
+
     @staticmethod
     def alphabet():
         """
@@ -120,6 +126,7 @@ class ByteLevel(PreTokenizer):
             :obj:`List[str]`: A list of characters that compose the alphabet
         """
         pass
+
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -136,6 +143,7 @@ class ByteLevel(PreTokenizer):
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         pass
+
     def pre_tokenize_str(self, sequence):
         """
         Pre tokenize the given string
@@ -155,6 +163,7 @@ class ByteLevel(PreTokenizer):
                 A list of tuple with the pre-tokenized parts and their offsets
         """
         pass
+
 
 class CharDelimiterSplit(PreTokenizer):
     """
@@ -181,6 +190,7 @@ class CharDelimiterSplit(PreTokenizer):
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         pass
+
     def pre_tokenize_str(self, sequence):
         """
         Pre tokenize the given string
@@ -200,6 +210,7 @@ class CharDelimiterSplit(PreTokenizer):
                 A list of tuple with the pre-tokenized parts and their offsets
         """
         pass
+
 
 class Digits(PreTokenizer):
     """
@@ -218,6 +229,7 @@ class Digits(PreTokenizer):
 
     def __init__(self, individual_digits=False):
         pass
+
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -234,6 +246,7 @@ class Digits(PreTokenizer):
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         pass
+
     def pre_tokenize_str(self, sequence):
         """
         Pre tokenize the given string
@@ -253,6 +266,7 @@ class Digits(PreTokenizer):
                 A list of tuple with the pre-tokenized parts and their offsets
         """
         pass
+
 
 class Metaspace(PreTokenizer):
     """
@@ -273,6 +287,7 @@ class Metaspace(PreTokenizer):
 
     def __init__(self, replacement="_", add_prefix_space=True):
         pass
+
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -289,6 +304,7 @@ class Metaspace(PreTokenizer):
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         pass
+
     def pre_tokenize_str(self, sequence):
         """
         Pre tokenize the given string
@@ -308,6 +324,7 @@ class Metaspace(PreTokenizer):
                 A list of tuple with the pre-tokenized parts and their offsets
         """
         pass
+
 
 class Punctuation(PreTokenizer):
     """
@@ -322,6 +339,7 @@ class Punctuation(PreTokenizer):
 
     def __init__(self, behavior="isolated"):
         pass
+
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -338,6 +356,7 @@ class Punctuation(PreTokenizer):
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         pass
+
     def pre_tokenize_str(self, sequence):
         """
         Pre tokenize the given string
@@ -357,6 +376,7 @@ class Punctuation(PreTokenizer):
                 A list of tuple with the pre-tokenized parts and their offsets
         """
         pass
+
 
 class Sequence(PreTokenizer):
     """
@@ -365,6 +385,7 @@ class Sequence(PreTokenizer):
 
     def __init__(self, pretokenizers):
         pass
+
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -381,6 +402,7 @@ class Sequence(PreTokenizer):
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         pass
+
     def pre_tokenize_str(self, sequence):
         """
         Pre tokenize the given string
@@ -400,6 +422,7 @@ class Sequence(PreTokenizer):
                 A list of tuple with the pre-tokenized parts and their offsets
         """
         pass
+
 
 class Split(PreTokenizer):
     """
@@ -424,6 +447,7 @@ class Split(PreTokenizer):
 
     def __init__(self, pattern, behavior, invert=False):
         pass
+
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -440,6 +464,7 @@ class Split(PreTokenizer):
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         pass
+
     def pre_tokenize_str(self, sequence):
         """
         Pre tokenize the given string
@@ -459,6 +484,7 @@ class Split(PreTokenizer):
                 A list of tuple with the pre-tokenized parts and their offsets
         """
         pass
+
 
 class UnicodeScripts(PreTokenizer):
     """
@@ -470,6 +496,7 @@ class UnicodeScripts(PreTokenizer):
 
     def __init__(self):
         pass
+
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -486,6 +513,7 @@ class UnicodeScripts(PreTokenizer):
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         pass
+
     def pre_tokenize_str(self, sequence):
         """
         Pre tokenize the given string
@@ -505,6 +533,7 @@ class UnicodeScripts(PreTokenizer):
                 A list of tuple with the pre-tokenized parts and their offsets
         """
         pass
+
 
 class Whitespace(PreTokenizer):
     """
@@ -513,6 +542,7 @@ class Whitespace(PreTokenizer):
 
     def __init__(self):
         pass
+
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -529,6 +559,7 @@ class Whitespace(PreTokenizer):
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         pass
+
     def pre_tokenize_str(self, sequence):
         """
         Pre tokenize the given string
@@ -549,6 +580,7 @@ class Whitespace(PreTokenizer):
         """
         pass
 
+
 class WhitespaceSplit(PreTokenizer):
     """
     This pre-tokenizer simply splits on the whitespace. Works like `.split()`
@@ -556,6 +588,7 @@ class WhitespaceSplit(PreTokenizer):
 
     def __init__(self):
         pass
+
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -572,6 +605,7 @@ class WhitespaceSplit(PreTokenizer):
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         pass
+
     def pre_tokenize_str(self, sequence):
         """
         Pre tokenize the given string

@@ -4,15 +4,15 @@ import time
 
 from tqdm import tqdm
 
-
-logging.getLogger("transformers").disabled = True
-logging.getLogger("transformers.tokenization_utils").disabled = True
-
 from tokenizers import Tokenizer, decoders, pre_tokenizers
 from tokenizers.models import BPE, WordPiece
 from tokenizers.normalizers import BertNormalizer
 from tokenizers.processors import BertProcessing
 from transformers import BertTokenizer, GPT2Tokenizer
+
+logging.getLogger("transformers").disabled = True
+logging.getLogger("transformers.tokenization_utils").disabled = True
+
 
 
 parser = argparse.ArgumentParser()

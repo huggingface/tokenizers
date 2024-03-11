@@ -3,8 +3,6 @@ import inspect
 import os
 from pathlib import Path
 
-import black
-
 
 INDENT = " " * 4
 GENERATED_COMMENT = "# Generated content DO NOT EDIT\n"
@@ -124,7 +122,7 @@ def py_file(module, origin):
 import subprocess
 from typing import List, Optional, Tuple
 
-def do_ruff(code):
+def do_ruff(code, is_pyi: bool):
     command = ["ruff", "format", "-", "--config", "pyproject.toml", "--silent"]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
     stdout, _ = process.communicate(input=code.encode())
@@ -150,7 +148,7 @@ def write(module, directory, origin, check=False):
 
     filename = os.path.join(directory, "__init__.pyi")
     pyi_content = pyi_file(module)
-    pyi_content = do_black(pyi_content, is_pyi=True)
+    pyi_content = do_ruff(pyi_content, is_pyi=True)
     os.makedirs(directory, exist_ok=True)
     if check:
         with open(filename, "r") as f:
@@ -162,7 +160,7 @@ def write(module, directory, origin, check=False):
 
     filename = os.path.join(directory, "__init__.py")
     py_content = py_file(module, origin)
-    py_content = do_black(py_content, is_pyi=False)
+    py_content = do_ruff(py_content, is_pyi=False)
     os.makedirs(directory, exist_ok=True)
 
     is_auto = False

@@ -14,7 +14,6 @@ from tokenizers import (
     trainers,
 )
 
-from ..utils import data_dir, train_files
 
 
 class TestBpeTrainer:
