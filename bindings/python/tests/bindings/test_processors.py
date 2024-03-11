@@ -16,7 +16,6 @@ from tokenizers.processors import (
 )
 
 
-
 class TestBertProcessing:
     def test_instantiate(self):
         processor = BertProcessing(("[SEP]", 0), ("[CLS]", 1))

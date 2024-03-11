@@ -83,7 +83,7 @@ def pyi_file(obj, indent=""):
             body += f"{indent+INDENT}pass\n"
             body += "\n"
 
-        for (name, fn) in fns:
+        for name, fn in fns:
             body += pyi_file(fn, indent=indent)
 
         if not body:
@@ -119,28 +119,18 @@ def py_file(module, origin):
         string += f"{name} = {origin}.{name}\n"
     return string
 
+
 import subprocess
 from typing import List, Optional, Tuple
 
+
 def do_ruff(code, is_pyi: bool):
-    command = ["ruff", "format", "-", "--config", "pyproject.toml", "--silent"]
+    command = ["ruff", "format", "--config", "pyproject.toml", "--silent", "-"]
+    if is_pyi:
+        command.extend(["--stdin-filename", "test.pyi"])
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
-    stdout, _ = process.communicate(input=code.encode())
-    return stdout.decode()
-
-
-def do_black(content, is_pyi):
-    mode = black.Mode(
-        target_versions={black.TargetVersion.PY35},
-        line_length=119,
-        is_pyi=is_pyi,
-        string_normalization=True,
-        experimental_string_processing=False,
-    )
-    try:
-        return black.format_file_contents(content, fast=True, mode=mode)
-    except black.NothingChanged:
-        return content
+    stdout, _ = process.communicate(input=code.encode("utf-8"))
+    return stdout.decode("utf-8")
 
 
 def write(module, directory, origin, check=False):

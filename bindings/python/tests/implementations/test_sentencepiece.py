@@ -1,4 +1,3 @@
-
 import pytest
 
 from tokenizers import SentencePieceBPETokenizer, SentencePieceUnigramTokenizer

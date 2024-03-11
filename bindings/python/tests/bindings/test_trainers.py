@@ -15,7 +15,6 @@ from tokenizers import (
 )
 
 
-
 class TestBpeTrainer:
     def test_can_modify(self):
         trainer = trainers.BpeTrainer(

@@ -7,7 +7,6 @@ class Trainer:
     Trainer will return an instance of this class when instantiated.
     """
 
-
 class BpeTrainer(Trainer):
     """
     Trainer capable of training a BPE model
@@ -47,7 +46,6 @@ class BpeTrainer(Trainer):
 
     """
 
-
 class UnigramTrainer(Trainer):
     """
     Trainer capable of training a Unigram model
@@ -82,7 +80,6 @@ class UnigramTrainer(Trainer):
             The number of iterations of the EM algorithm to perform before
             pruning the vocabulary.
     """
-
     def __init__(
         self,
         vocab_size=8000,
@@ -94,7 +91,6 @@ class UnigramTrainer(Trainer):
         n_sub_iterations=2,
     ):
         pass
-
 
 class WordLevelTrainer(Trainer):
     """
@@ -113,7 +109,6 @@ class WordLevelTrainer(Trainer):
         special_tokens (:obj:`List[Union[str, AddedToken]]`):
             A list of special tokens the model should know of.
     """
-
 
 class WordPieceTrainer(Trainer):
     """
@@ -147,7 +142,6 @@ class WordPieceTrainer(Trainer):
         end_of_word_suffix (:obj:`str`, `optional`):
             A suffix to be used for every subword that is a end-of-word.
     """
-
     def __init__(
         self,
         vocab_size=30000,

@@ -80,9 +80,7 @@ class SpmConverter(Converter):
             tokenizer = Tokenizer(Unigram(vocab, unk_id))
         elif model_type == 2:
             vocab, merges = SentencePieceExtractor(self.original_tokenizer.vocab_file).extract()
-            tokenizer = Tokenizer(
-                BPE(vocab, merges, unk_token=proto.trainer_spec.unk_piece, fuse_unk=True)
-            )
+            tokenizer = Tokenizer(BPE(vocab, merges, unk_token=proto.trainer_spec.unk_piece, fuse_unk=True))
         else:
             raise Exception(
                 "You're trying to run a `Unigram` model but you're file was trained with a different algorithm"
@@ -105,12 +103,8 @@ class SpmConverter(Converter):
 
         replacement = "▁"
         add_prefix_space = True
-        tokenizer.pre_tokenizer = Metaspace(
-            replacement=replacement, add_prefix_space=add_prefix_space
-        )
-        tokenizer.decoder = decoders.Metaspace(
-            replacement=replacement, add_prefix_space=add_prefix_space
-        )
+        tokenizer.pre_tokenizer = Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
+        tokenizer.decoder = decoders.Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
         post_processor = self.post_processor(tokenizer)
         if post_processor:
             tokenizer.post_processor = post_processor
@@ -124,9 +118,7 @@ class SpmConverter(Converter):
 class AlbertConverter(SpmConverter):
     def vocab(self, proto):
         return [
-            (piece.piece, piece.score)
-            if check_number_comma(piece.piece)
-            else (piece.piece, piece.score - 100)
+            (piece.piece, piece.score) if check_number_comma(piece.piece) else (piece.piece, piece.score - 100)
             for piece in proto.pieces
         ]
 
@@ -261,9 +253,7 @@ class XLMRobertaConverter(SpmConverter):
 class XLNetConverter(SpmConverter):
     def vocab(self, proto):
         return [
-            (piece.piece, piece.score)
-            if check_number_comma(piece.piece)
-            else (piece.piece, piece.score - 100)
+            (piece.piece, piece.score) if check_number_comma(piece.piece) else (piece.piece, piece.score - 100)
             for piece in proto.pieces
         ]
 
@@ -420,9 +410,7 @@ def main():
     print(f"|{'-'*model_len}|{'-'*status_len}|{'-'*speedup_len}|")
     for pretrained in args.models:
         status, speedup = check(pretrained, args.filename)
-        print(
-            f"|{pretrained:<{model_len}}|{status:^{status_len}}|{speedup:^{speedup_len - 1}.2f}x|"
-        )
+        print(f"|{pretrained:<{model_len}}|{status:^{status_len}}|{speedup:^{speedup_len - 1}.2f}x|")
 
 
 if __name__ == "__main__":

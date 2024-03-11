@@ -6,7 +6,6 @@ class PostProcessor:
     This class is not supposed to be instantiated directly. Instead, any implementation of
     a PostProcessor will return an instance of this class when instantiated.
     """
-
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -39,7 +38,6 @@ class PostProcessor:
         """
         pass
 
-
 class BertProcessing(PostProcessor):
     """
     This post-processor takes care of adding the special tokens needed by
@@ -55,7 +53,6 @@ class BertProcessing(PostProcessor):
         cls (:obj:`Tuple[str, int]`):
             A tuple with the string representation of the CLS token, and its id
     """
-
     def __init__(self, sep, cls):
         pass
 
@@ -91,7 +88,6 @@ class BertProcessing(PostProcessor):
         """
         pass
 
-
 class ByteLevel(PostProcessor):
     """
     This post-processor takes care of trimming the offsets.
@@ -103,7 +99,6 @@ class ByteLevel(PostProcessor):
         trim_offsets (:obj:`bool`):
             Whether to trim the whitespaces from the produced offsets.
     """
-
     def __init__(self, trim_offsets=True):
         pass
 
@@ -139,7 +134,6 @@ class ByteLevel(PostProcessor):
         """
         pass
 
-
 class RobertaProcessing(PostProcessor):
     """
     This post-processor takes care of adding the special tokens needed by
@@ -167,7 +161,6 @@ class RobertaProcessing(PostProcessor):
             Whether the add_prefix_space option was enabled during pre-tokenization. This
             is relevant because it defines the way the offsets are trimmed out.
     """
-
     def __init__(self, sep, cls, trim_offsets=True, add_prefix_space=True):
         pass
 
@@ -203,7 +196,6 @@ class RobertaProcessing(PostProcessor):
         """
         pass
 
-
 class Sequence(PostProcessor):
     """
     Sequence Processor
@@ -212,7 +204,6 @@ class Sequence(PostProcessor):
         processors (:obj:`List[PostProcessor]`)
             The processors that need to be chained
     """
-
     def __init__(self, processors):
         pass
 
@@ -247,7 +238,6 @@ class Sequence(PostProcessor):
             :class:`~tokenizers.Encoding`: The final encoding
         """
         pass
-
 
 class TemplateProcessing(PostProcessor):
     """
@@ -316,7 +306,6 @@ class TemplateProcessing(PostProcessor):
              The given dict expects the provided :obj:`ids` and :obj:`tokens` lists to have
              the same length.
     """
-
     def __init__(self, single, pair, special_tokens):
         pass
 

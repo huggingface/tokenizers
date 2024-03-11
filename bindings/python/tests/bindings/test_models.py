@@ -5,7 +5,6 @@ import pytest
 from tokenizers.models import BPE, Model, WordLevel, WordPiece
 
 
-
 class TestBPE:
     def test_instantiate(self, roberta_files):
         assert isinstance(BPE(), Model)

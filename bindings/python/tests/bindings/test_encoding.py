@@ -3,7 +3,6 @@ import pytest
 from tokenizers import BertWordPieceTokenizer
 
 
-
 class TestEncoding:
     @pytest.fixture(scope="class")
     def encodings(self, bert_files):

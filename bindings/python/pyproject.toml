@@ -54,6 +54,8 @@ line-length = 119
 target-version = ['py35']
 
 [tool.ruff]
+line-length = 119
+target-version = "py311"
 lint.ignore = [
     # a == None in tests vs is None.
     "E711",

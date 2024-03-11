@@ -6,7 +6,6 @@ class PreTokenizer:
     This class is not supposed to be instantiated directly. Instead, any implementation of a
     PreTokenizer will return an instance of this class when instantiated.
     """
-
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -44,7 +43,6 @@ class PreTokenizer:
         """
         pass
 
-
 class BertPreTokenizer(PreTokenizer):
     """
     BertPreTokenizer
@@ -52,7 +50,6 @@ class BertPreTokenizer(PreTokenizer):
     This pre-tokenizer splits tokens on spaces, and also on punctuation.
     Each occurence of a punctuation character will be treated separately.
     """
-
     def __init__(self):
         pass
 
@@ -93,7 +90,6 @@ class BertPreTokenizer(PreTokenizer):
         """
         pass
 
-
 class ByteLevel(PreTokenizer):
     """
     ByteLevel PreTokenizer
@@ -109,7 +105,6 @@ class ByteLevel(PreTokenizer):
             Set this to :obj:`False` to prevent this `pre_tokenizer` from using
             the GPT2 specific regexp for spliting on whitespace.
     """
-
     def __init__(self, add_prefix_space=True, use_regex=True):
         pass
 
@@ -164,7 +159,6 @@ class ByteLevel(PreTokenizer):
         """
         pass
 
-
 class CharDelimiterSplit(PreTokenizer):
     """
     This pre-tokenizer simply splits on the provided char. Works like `.split(delimiter)`
@@ -173,7 +167,6 @@ class CharDelimiterSplit(PreTokenizer):
         delimiter: str:
             The delimiter char that will be used to split input
     """
-
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -211,7 +204,6 @@ class CharDelimiterSplit(PreTokenizer):
         """
         pass
 
-
 class Digits(PreTokenizer):
     """
     This pre-tokenizer simply splits using the digits in separate tokens
@@ -226,7 +218,6 @@ class Digits(PreTokenizer):
 
                 "Call 123 please" -> "Call ", "123", " please"
     """
-
     def __init__(self, individual_digits=False):
         pass
 
@@ -267,7 +258,6 @@ class Digits(PreTokenizer):
         """
         pass
 
-
 class Metaspace(PreTokenizer):
     """
     Metaspace pre-tokenizer
@@ -284,7 +274,6 @@ class Metaspace(PreTokenizer):
             Whether to add a space to the first word if there isn't already one. This
             lets us treat `hello` exactly like `say hello`.
     """
-
     def __init__(self, replacement="_", add_prefix_space=True):
         pass
 
@@ -325,7 +314,6 @@ class Metaspace(PreTokenizer):
         """
         pass
 
-
 class Punctuation(PreTokenizer):
     """
     This pre-tokenizer simply splits on punctuation as individual characters.
@@ -336,7 +324,6 @@ class Punctuation(PreTokenizer):
             Choices: "removed", "isolated" (default), "merged_with_previous", "merged_with_next",
             "contiguous"
     """
-
     def __init__(self, behavior="isolated"):
         pass
 
@@ -377,12 +364,10 @@ class Punctuation(PreTokenizer):
         """
         pass
 
-
 class Sequence(PreTokenizer):
     """
     This pre-tokenizer composes other pre_tokenizers and applies them in sequence
     """
-
     def __init__(self, pretokenizers):
         pass
 
@@ -423,7 +408,6 @@ class Sequence(PreTokenizer):
         """
         pass
 
-
 class Split(PreTokenizer):
     """
     Split PreTokenizer
@@ -444,7 +428,6 @@ class Split(PreTokenizer):
         invert (:obj:`bool`, `optional`, defaults to :obj:`False`):
             Whether to invert the pattern.
     """
-
     def __init__(self, pattern, behavior, invert=False):
         pass
 
@@ -485,7 +468,6 @@ class Split(PreTokenizer):
         """
         pass
 
-
 class UnicodeScripts(PreTokenizer):
     """
     This pre-tokenizer splits on characters that belong to different language family
@@ -493,7 +475,6 @@ class UnicodeScripts(PreTokenizer):
     Actually Hiragana and Katakana are fused with Han, and 0x30FC is Han too.
     This mimicks SentencePiece Unigram implementation.
     """
-
     def __init__(self):
         pass
 
@@ -533,13 +514,11 @@ class UnicodeScripts(PreTokenizer):
                 A list of tuple with the pre-tokenized parts and their offsets
         """
         pass
-
 
 class Whitespace(PreTokenizer):
     """
     This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`
     """
-
     def __init__(self):
         pass
 
@@ -580,12 +559,10 @@ class Whitespace(PreTokenizer):
         """
         pass
 
-
 class WhitespaceSplit(PreTokenizer):
     """
     This pre-tokenizer simply splits on the whitespace. Works like `.split()`
     """
-
     def __init__(self):
         pass
 

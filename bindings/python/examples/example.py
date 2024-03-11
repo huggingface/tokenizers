@@ -14,7 +14,6 @@ logging.getLogger("transformers").disabled = True
 logging.getLogger("transformers.tokenization_utils").disabled = True
 
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--type", default="gpt2", type=str, help="The type of tokenizer (bert|gpt2)")
 parser.add_argument("--file", default=None, type=str, help="The file to encode")
@@ -51,9 +50,7 @@ Although never is often better than *right* now.
 If the implementation is hard to explain, it's a bad idea.
 If the implementation is easy to explain, it may be a good idea.
 Namespaces are one honking great idea -- let's do more of those!
-""".split(
-        "\n"
-    )
+""".split("\n")
 
 if args.type == "gpt2":
     print("Running GPT-2 tokenizer")

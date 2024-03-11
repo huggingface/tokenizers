@@ -9,13 +9,13 @@ check_dirs := examples py_src/tokenizers tests
 style:
 	python stub.py
 	ruff check  $(check_dirs) --fix 
-	ruff format --line-length 119 --target-version py35 $(check_dirs)
+	ruff format $(check_dirs)
 
 # Check the source code is formatted correctly
 check-style:
 	python stub.py --check
 	ruff check examples py_src/tokenizers tests 
-	ruff format --check --line-length 119 --target-version py35 examples py_src/tokenizers tests 
+	ruff format --check examples py_src/tokenizers tests 
 
 TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 

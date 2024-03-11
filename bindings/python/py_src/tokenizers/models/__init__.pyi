@@ -8,7 +8,6 @@ class Model:
 
     This class cannot be constructed directly. Please use one of the concrete models.
     """
-
     def get_trainer(self):
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`
@@ -80,7 +79,6 @@ class Model:
         """
         pass
 
-
 class BPE(Model):
     """
     An implementation of the BPE (Byte-Pair Encoding) algorithm
@@ -115,7 +113,6 @@ class BPE(Model):
         byte_fallback (:obj:`bool`, `optional`):
             Whether to use spm byte-fallback trick (defaults to False)
     """
-
     def __init__(
         self,
         vocab=None,
@@ -249,7 +246,6 @@ class BPE(Model):
         """
         pass
 
-
 class Unigram(Model):
     """
     An implementation of the Unigram algorithm
@@ -258,7 +254,6 @@ class Unigram(Model):
         vocab (:obj:`List[Tuple[str, float]]`, `optional`, `optional`):
             A list of vocabulary items and their relative score [("am", -0.2442),...]
     """
-
     def __init__(self, vocab, unk_id, byte_fallback):
         pass
 
@@ -333,7 +328,6 @@ class Unigram(Model):
         """
         pass
 
-
 class WordLevel(Model):
     """
     An implementation of the WordLevel algorithm
@@ -347,7 +341,6 @@ class WordLevel(Model):
         unk_token (:obj:`str`, `optional`):
             The unknown token to be used by the model.
     """
-
     def __init__(self, vocab, unk_token):
         pass
 
@@ -463,7 +456,6 @@ class WordLevel(Model):
         """
         pass
 
-
 class WordPiece(Model):
     """
     An implementation of the WordPiece algorithm
@@ -478,7 +470,6 @@ class WordPiece(Model):
         max_input_chars_per_word (:obj:`int`, `optional`):
             The maximum number of characters to authorize in a single word.
     """
-
     def __init__(self, vocab, unk_token, max_input_chars_per_word):
         pass
 

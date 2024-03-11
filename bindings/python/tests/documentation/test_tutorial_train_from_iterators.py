@@ -6,7 +6,6 @@ import datasets
 import pytest
 
 
-
 class TestTrainFromIterators:
     @staticmethod
     def get_tokenizer_trainer():

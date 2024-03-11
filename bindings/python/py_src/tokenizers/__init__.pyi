@@ -34,16 +34,7 @@ class AddedToken:
             Defines whether this token should be skipped when decoding.
 
     """
-
-    def __init__(
-        self,
-        content,
-        single_word=False,
-        lstrip=False,
-        rstrip=False,
-        normalized=True,
-        special=False,
-    ):
+    def __init__(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False):
         pass
 
     @property
@@ -88,12 +79,10 @@ class AddedToken:
         """
         pass
 
-
 class Encoding:
     """
     The :class:`~tokenizers.Encoding` represents the output of a :class:`~tokenizers.Tokenizer`.
     """
-
     @property
     def attention_mask(self):
         """
@@ -206,9 +195,7 @@ class Encoding:
         """
         pass
 
-    def pad(
-        self, length, direction="right", pad_id=0, pad_type_id=0, pad_token="[PAD]"
-    ):
+    def pad(self, length, direction="right", pad_id=0, pad_type_id=0, pad_token="[PAD]"):
         """
         Pad the :class:`~tokenizers.Encoding` at the given length
 
@@ -430,7 +417,6 @@ class Encoding:
         """
         pass
 
-
 class NormalizedString:
     """
     NormalizedString
@@ -443,7 +429,6 @@ class NormalizedString:
         sequence: str:
             The string sequence used to initialize this NormalizedString
     """
-
     def append(self, s):
         """
         Append the given sequence to the string
@@ -581,7 +566,6 @@ class NormalizedString:
         """
         pass
 
-
 class PreTokenizedString:
     """
     PreTokenizedString
@@ -600,7 +584,6 @@ class PreTokenizedString:
         sequence: str:
             The string sequence used to initialize this PreTokenizedString
     """
-
     def __init__(self, sequence):
         pass
 
@@ -681,19 +664,15 @@ class PreTokenizedString:
         """
         pass
 
-
 class Regex:
     """
     Instantiate a new Regex with the given pattern
     """
-
     def __init__(self, pattern):
         pass
 
-
 class Token:
     pass
-
 
 class Tokenizer:
     """
@@ -705,7 +684,6 @@ class Tokenizer:
             The core algorithm that this :obj:`Tokenizer` should be using.
 
     """
-
     def __init__(self, model):
         pass
 
@@ -789,13 +767,7 @@ class Tokenizer:
         pass
 
     def enable_padding(
-        self,
-        direction="right",
-        pad_id=0,
-        pad_type_id=0,
-        pad_token="[PAD]",
-        length=None,
-        pad_to_multiple_of=None,
+        self, direction="right", pad_id=0, pad_type_id=0, pad_token="[PAD]", length=None, pad_to_multiple_of=None
     ):
         """
         Enable the padding
@@ -824,9 +796,7 @@ class Tokenizer:
         """
         pass
 
-    def enable_truncation(
-        self, max_length, stride=0, strategy="longest_first", direction="right"
-    ):
+    def enable_truncation(self, max_length, stride=0, strategy="longest_first", direction="right"):
         """
         Enable truncation
 
@@ -847,9 +817,7 @@ class Tokenizer:
         """
         pass
 
-    def encode(
-        self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True
-    ):
+    def encode(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True):
         """
         Encode the given sequence and pair. This method can process raw text sequences
         as well as already pre-tokenized sequences.

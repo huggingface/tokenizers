@@ -6,7 +6,6 @@ class Normalizer:
     This class is not supposed to be instantiated directly. Instead, any implementation of a
     Normalizer will return an instance of this class when instantiated.
     """
-
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -40,7 +39,6 @@ class Normalizer:
             :obj:`str`: A string after normalization
         """
         pass
-
 
 class BertNormalizer(Normalizer):
     """
@@ -64,14 +62,7 @@ class BertNormalizer(Normalizer):
         lowercase (:obj:`bool`, `optional`, defaults to :obj:`True`):
             Whether to lowercase.
     """
-
-    def __init__(
-        self,
-        clean_text=True,
-        handle_chinese_chars=True,
-        strip_accents=None,
-        lowercase=True,
-    ):
+    def __init__(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True):
         pass
 
     def normalize(self, normalized):
@@ -107,13 +98,11 @@ class BertNormalizer(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
-
 
 class Lowercase(Normalizer):
     """
     Lowercase Normalizer
     """
-
     def __init__(self):
         pass
 
@@ -150,13 +139,11 @@ class Lowercase(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
-
 
 class NFC(Normalizer):
     """
     NFC Unicode Normalizer
     """
-
     def __init__(self):
         pass
 
@@ -193,13 +180,11 @@ class NFC(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
-
 
 class NFD(Normalizer):
     """
     NFD Unicode Normalizer
     """
-
     def __init__(self):
         pass
 
@@ -236,13 +221,11 @@ class NFD(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
-
 
 class NFKC(Normalizer):
     """
     NFKC Unicode Normalizer
     """
-
     def __init__(self):
         pass
 
@@ -279,13 +262,11 @@ class NFKC(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
-
 
 class NFKD(Normalizer):
     """
     NFKD Unicode Normalizer
     """
-
     def __init__(self):
         pass
 
@@ -322,13 +303,11 @@ class NFKD(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
-
 
 class Nmt(Normalizer):
     """
     Nmt normalizer
     """
-
     def __init__(self):
         pass
 
@@ -365,14 +344,12 @@ class Nmt(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
-
 
 class Precompiled(Normalizer):
     """
     Precompiled normalizer
     Don't use manually it is used for compatiblity for SentencePiece.
     """
-
     def __init__(self, precompiled_charsmap):
         pass
 
@@ -410,12 +387,10 @@ class Precompiled(Normalizer):
         """
         pass
 
-
 class Prepend(Normalizer):
     """
     Prepend normalizer
     """
-
     def __init__(self, prepend):
         pass
 
@@ -453,12 +428,10 @@ class Prepend(Normalizer):
         """
         pass
 
-
 class Replace(Normalizer):
     """
     Replace normalizer
     """
-
     def __init__(self, pattern, content):
         pass
 
@@ -496,7 +469,6 @@ class Replace(Normalizer):
         """
         pass
 
-
 class Sequence(Normalizer):
     """
     Allows concatenating multiple other Normalizer as a Sequence.
@@ -506,7 +478,6 @@ class Sequence(Normalizer):
         normalizers (:obj:`List[Normalizer]`):
             A list of Normalizer to be run as a sequence
     """
-
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -541,12 +512,10 @@ class Sequence(Normalizer):
         """
         pass
 
-
 class Strip(Normalizer):
     """
     Strip normalizer
     """
-
     def __init__(self, left=True, right=True):
         pass
 
@@ -584,12 +553,10 @@ class Strip(Normalizer):
         """
         pass
 
-
 class StripAccents(Normalizer):
     """
     StripAccents normalizer
     """
-
     def __init__(self):
         pass
 

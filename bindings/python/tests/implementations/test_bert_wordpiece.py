@@ -1,4 +1,3 @@
-
 from tokenizers import BertWordPieceTokenizer
 
 from ..utils import multiprocessing_with_parallelism

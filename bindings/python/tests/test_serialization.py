@@ -8,7 +8,6 @@ from huggingface_hub import HfApi, cached_download, hf_hub_url
 from tokenizers import Tokenizer
 
 
-
 class TestSerialization:
     def test_full_serialization_albert(self, albert_base):
         # Check we can read this file.
@@ -74,7 +73,7 @@ class TestFullDeserialization(unittest.TestCase):
             except Exception as e:
                 print(f"{model_id} is not loadable: {e}")
                 not_loadable.append(model_id)
-            except: # noqa: E722
+            except:  # noqa: E722
                 print(f"{model_id} is not loadable: Rust error")
                 not_loadable.append(model_id)
 
