@@ -92,7 +92,7 @@ class EncodingVisualizer:
         if default_to_notebook:
             try:
                 from IPython.core.display import HTML, display
-            except ImportError:
+            except ImportError as e:
                 raise Exception(
                     """We couldn't import IPython utils for html display.
                         Are you running in a notebook?
@@ -136,7 +136,7 @@ class EncodingVisualizer:
         if final_default_to_notebook:
             try:
                 from IPython.core.display import HTML, display
-            except ImportError:
+            except ImportError as e:
                 raise Exception(
                     """We couldn't import IPython utils for html display.
                     Are you running in a notebook?"""
@@ -170,12 +170,12 @@ class EncodingVisualizer:
         if h_step < 20:
             h_step = 20
         s = 32
-        light = 64
+        l = 64
         h = 10
         colors = {}
 
         for label in sorted(labels):  # sort so we always get the same colors for a given set of labels
-            colors[label] = f"hsl({h},{s}%,{light}%"
+            colors[label] = f"hsl({h},{s}%,{l}%"
             h += h_step
         return colors
 
