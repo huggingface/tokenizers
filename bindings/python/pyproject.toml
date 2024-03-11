@@ -63,4 +63,6 @@ lint.ignore = [
     "F401",
     # Raw type equality is required in asserts
     "E721",
+    # Import order
+    "E402",
 ]
