@@ -2,8 +2,7 @@ import pickle
 
 import pytest
 
-from tokenizers import NormalizedString, Tokenizer
-from tokenizers.models import BPE
+from tokenizers import NormalizedString
 from tokenizers.normalizers import BertNormalizer, Lowercase, Normalizer, Sequence, Strip, Prepend
 
 

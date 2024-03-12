@@ -1,6 +1,6 @@
 import datasets
 
-from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, trainers
+from tokenizers import Tokenizer, models, normalizers, pre_tokenizers
 
 
 # Build a tokenizer

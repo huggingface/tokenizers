@@ -3,8 +3,6 @@ import inspect
 import os
 from pathlib import Path
 
-import black
-
 
 INDENT = " " * 4
 GENERATED_COMMENT = "# Generated content DO NOT EDIT\n"
@@ -85,7 +83,7 @@ def pyi_file(obj, indent=""):
             body += f"{indent+INDENT}pass\n"
             body += "\n"
 
-        for (name, fn) in fns:
+        for name, fn in fns:
             body += pyi_file(fn, indent=indent)
 
         if not body:
@@ -122,18 +120,17 @@ def py_file(module, origin):
     return string
 
 
-def do_black(content, is_pyi):
-    mode = black.Mode(
-        target_versions={black.TargetVersion.PY35},
-        line_length=119,
-        is_pyi=is_pyi,
-        string_normalization=True,
-        experimental_string_processing=False,
-    )
-    try:
-        return black.format_file_contents(content, fast=True, mode=mode)
-    except black.NothingChanged:
-        return content
+import subprocess
+from typing import List, Optional, Tuple
+
+
+def do_ruff(code, is_pyi: bool):
+    command = ["ruff", "format", "--config", "pyproject.toml", "--silent", "-"]
+    if is_pyi:
+        command.extend(["--stdin-filename", "test.pyi"])
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+    stdout, _ = process.communicate(input=code.encode("utf-8"))
+    return stdout.decode("utf-8")
 
 
 def write(module, directory, origin, check=False):
@@ -141,7 +138,7 @@ def write(module, directory, origin, check=False):
 
     filename = os.path.join(directory, "__init__.pyi")
     pyi_content = pyi_file(module)
-    pyi_content = do_black(pyi_content, is_pyi=True)
+    pyi_content = do_ruff(pyi_content, is_pyi=True)
     os.makedirs(directory, exist_ok=True)
     if check:
         with open(filename, "r") as f:
@@ -153,7 +150,7 @@ def write(module, directory, origin, check=False):
 
     filename = os.path.join(directory, "__init__.py")
     py_content = py_file(module, origin)
-    py_content = do_black(py_content, is_pyi=False)
+    py_content = do_ruff(py_content, is_pyi=False)
     os.makedirs(directory, exist_ok=True)
 
     is_auto = False

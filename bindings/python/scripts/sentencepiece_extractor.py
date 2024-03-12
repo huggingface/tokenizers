@@ -59,7 +59,6 @@ class YouTokenToMeExtractor:
 
     def extract(self) -> Tuple[Dict[str, int], List[Tuple]]:
         with open(self._model, "r") as model_f:
-
             # Retrieve information
             nb_pieces, nb_merges = map(int, model_f.readline().split())
             vocab, merges = {}, []
@@ -97,9 +96,7 @@ if __name__ == "__main__":
         choices=["sentencepiece", "youtokentome"],
         help="Indicate the format of the file.",
     )
-    parser.add_argument(
-        "--model", type=str, required=True, help="SentencePiece model to extract vocab from."
-    )
+    parser.add_argument("--model", type=str, required=True, help="SentencePiece model to extract vocab from.")
     parser.add_argument(
         "--vocab-output-path",
         type=str,
@@ -128,9 +125,7 @@ if __name__ == "__main__":
                 args.model = f.name
 
         # Allocate extractor
-        extractor = (
-            SentencePieceExtractor if args.provider == "sentencepiece" else YouTokenToMeExtractor
-        )
+        extractor = SentencePieceExtractor if args.provider == "sentencepiece" else YouTokenToMeExtractor
         extractor = extractor(args.model)
 
         logger.info(f"Using {type(extractor).__name__}")

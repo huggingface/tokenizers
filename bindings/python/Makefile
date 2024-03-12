@@ -8,12 +8,14 @@ check_dirs := examples py_src/tokenizers tests
 # Format source code automatically
 style:
 	python stub.py
-	black --line-length 119 --target-version py35 $(check_dirs)
+	ruff check  $(check_dirs) --fix 
+	ruff format $(check_dirs)t 
 
 # Check the source code is formatted correctly
 check-style:
 	python stub.py --check
-	black --check --line-length 119 --target-version py35 examples py_src/tokenizers tests
+	ruff check examples py_src/tokenizers tests 
+	ruff format --check examples py_src/tokenizers tests 
 
 TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 

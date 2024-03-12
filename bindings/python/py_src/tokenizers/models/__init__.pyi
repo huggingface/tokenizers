@@ -8,7 +8,6 @@ class Model:
 
     This class cannot be constructed directly. Please use one of the concrete models.
     """
-
     def get_trainer(self):
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`
@@ -20,6 +19,7 @@ class Model:
             :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
         """
         pass
+
     def id_to_token(self, id):
         """
         Get the token associated to an ID
@@ -32,6 +32,7 @@ class Model:
             :obj:`str`: The token associated to the ID
         """
         pass
+
     def save(self, folder, prefix):
         """
         Save the current model
@@ -51,6 +52,7 @@ class Model:
             :obj:`List[str]`: The list of saved files
         """
         pass
+
     def token_to_id(self, tokens):
         """
         Get the ID associated to a token
@@ -63,6 +65,7 @@ class Model:
             :obj:`int`: The ID associated to the token
         """
         pass
+
     def tokenize(self, sequence):
         """
         Tokenize a sequence
@@ -110,7 +113,6 @@ class BPE(Model):
         byte_fallback (:obj:`bool`, `optional`):
             Whether to use spm byte-fallback trick (defaults to False)
     """
-
     def __init__(
         self,
         vocab=None,
@@ -124,6 +126,7 @@ class BPE(Model):
         byte_fallback=False,
     ):
         pass
+
     @staticmethod
     def from_file(cls, vocab, merge, **kwargs):
         """
@@ -149,6 +152,7 @@ class BPE(Model):
             :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
         """
         pass
+
     def get_trainer(self):
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`
@@ -160,6 +164,7 @@ class BPE(Model):
             :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
         """
         pass
+
     def id_to_token(self, id):
         """
         Get the token associated to an ID
@@ -172,6 +177,7 @@ class BPE(Model):
             :obj:`str`: The token associated to the ID
         """
         pass
+
     @staticmethod
     def read_file(self, vocab, merges):
         """
@@ -193,6 +199,7 @@ class BPE(Model):
                 The vocabulary and merges loaded into memory
         """
         pass
+
     def save(self, folder, prefix):
         """
         Save the current model
@@ -212,6 +219,7 @@ class BPE(Model):
             :obj:`List[str]`: The list of saved files
         """
         pass
+
     def token_to_id(self, tokens):
         """
         Get the ID associated to a token
@@ -224,6 +232,7 @@ class BPE(Model):
             :obj:`int`: The ID associated to the token
         """
         pass
+
     def tokenize(self, sequence):
         """
         Tokenize a sequence
@@ -245,9 +254,9 @@ class Unigram(Model):
         vocab (:obj:`List[Tuple[str, float]]`, `optional`, `optional`):
             A list of vocabulary items and their relative score [("am", -0.2442),...]
     """
-
     def __init__(self, vocab, unk_id, byte_fallback):
         pass
+
     def get_trainer(self):
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`
@@ -259,6 +268,7 @@ class Unigram(Model):
             :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
         """
         pass
+
     def id_to_token(self, id):
         """
         Get the token associated to an ID
@@ -271,6 +281,7 @@ class Unigram(Model):
             :obj:`str`: The token associated to the ID
         """
         pass
+
     def save(self, folder, prefix):
         """
         Save the current model
@@ -290,6 +301,7 @@ class Unigram(Model):
             :obj:`List[str]`: The list of saved files
         """
         pass
+
     def token_to_id(self, tokens):
         """
         Get the ID associated to a token
@@ -302,6 +314,7 @@ class Unigram(Model):
             :obj:`int`: The ID associated to the token
         """
         pass
+
     def tokenize(self, sequence):
         """
         Tokenize a sequence
@@ -328,9 +341,9 @@ class WordLevel(Model):
         unk_token (:obj:`str`, `optional`):
             The unknown token to be used by the model.
     """
-
     def __init__(self, vocab, unk_token):
         pass
+
     @staticmethod
     def from_file(vocab, unk_token):
         """
@@ -353,6 +366,7 @@ class WordLevel(Model):
             :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
         """
         pass
+
     def get_trainer(self):
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`
@@ -364,6 +378,7 @@ class WordLevel(Model):
             :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
         """
         pass
+
     def id_to_token(self, id):
         """
         Get the token associated to an ID
@@ -376,6 +391,7 @@ class WordLevel(Model):
             :obj:`str`: The token associated to the ID
         """
         pass
+
     @staticmethod
     def read_file(vocab):
         """
@@ -393,6 +409,7 @@ class WordLevel(Model):
             :obj:`Dict[str, int]`: The vocabulary as a :obj:`dict`
         """
         pass
+
     def save(self, folder, prefix):
         """
         Save the current model
@@ -412,6 +429,7 @@ class WordLevel(Model):
             :obj:`List[str]`: The list of saved files
         """
         pass
+
     def token_to_id(self, tokens):
         """
         Get the ID associated to a token
@@ -424,6 +442,7 @@ class WordLevel(Model):
             :obj:`int`: The ID associated to the token
         """
         pass
+
     def tokenize(self, sequence):
         """
         Tokenize a sequence
@@ -451,9 +470,9 @@ class WordPiece(Model):
         max_input_chars_per_word (:obj:`int`, `optional`):
             The maximum number of characters to authorize in a single word.
     """
-
     def __init__(self, vocab, unk_token, max_input_chars_per_word):
         pass
+
     @staticmethod
     def from_file(vocab, **kwargs):
         """
@@ -476,6 +495,7 @@ class WordPiece(Model):
             :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
         """
         pass
+
     def get_trainer(self):
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`
@@ -487,6 +507,7 @@ class WordPiece(Model):
             :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
         """
         pass
+
     def id_to_token(self, id):
         """
         Get the token associated to an ID
@@ -499,6 +520,7 @@ class WordPiece(Model):
             :obj:`str`: The token associated to the ID
         """
         pass
+
     @staticmethod
     def read_file(vocab):
         """
@@ -517,6 +539,7 @@ class WordPiece(Model):
             :obj:`Dict[str, int]`: The vocabulary as a :obj:`dict`
         """
         pass
+
     def save(self, folder, prefix):
         """
         Save the current model
@@ -536,6 +559,7 @@ class WordPiece(Model):
             :obj:`List[str]`: The list of saved files
         """
         pass
+
     def token_to_id(self, tokens):
         """
         Get the ID associated to a token
@@ -548,6 +572,7 @@ class WordPiece(Model):
             :obj:`int`: The ID associated to the token
         """
         pass
+
     def tokenize(self, sequence):
         """
         Tokenize a sequence

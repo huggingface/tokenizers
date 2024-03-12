@@ -1,5 +1,3 @@
-import pytest
-
 from tokenizers import BertWordPieceTokenizer
 
 from ..utils import bert_files, data_dir, multiprocessing_with_parallelism

@@ -6,7 +6,6 @@ import tqdm
 
 from huggingface_hub import HfApi, cached_download, hf_hub_url
 from tokenizers import Tokenizer
-
 from .utils import albert_base, data_dir
 
 
@@ -15,7 +14,7 @@ class TestSerialization:
         # Check we can read this file.
         # This used to fail because of BufReader that would fail because the
         # file exceeds the buffer capacity
-        tokenizer = Tokenizer.from_file(albert_base)
+        Tokenizer.from_file(albert_base)
 
 
 def check(tokenizer_file) -> bool:
@@ -51,8 +50,6 @@ class TestFullDeserialization(unittest.TestCase):
         # Check we can read this file.
         # This used to fail because of BufReader that would fail because the
         # file exceeds the buffer capacity
-        api = HfApi()
-
         not_loadable = []
         invalid_pre_tokenizer = []
 
@@ -77,7 +74,7 @@ class TestFullDeserialization(unittest.TestCase):
             except Exception as e:
                 print(f"{model_id} is not loadable: {e}")
                 not_loadable.append(model_id)
-            except:
+            except:  # noqa: E722
                 print(f"{model_id} is not loadable: Rust error")
                 not_loadable.append(model_id)
 

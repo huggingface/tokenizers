@@ -34,7 +34,7 @@ Source = 'https://github.com/huggingface/tokenizers'
 
 
 [project.optional-dependencies]
-testing = ["pytest", "requests", "numpy", "datasets", "black==22.3"]
+testing = ["pytest", "requests", "numpy", "datasets", "black==22.3", "ruff"]
 docs = ["sphinx", "sphinx_rtd_theme", "setuptools_rust"]
 dev = ["tokenizers[testing]"]
 
@@ -52,3 +52,21 @@ features = ["pyo3/extension-module"]
 [tool.black]
 line-length = 119
 target-version = ['py35']
+
+[tool.ruff]
+line-length = 119
+target-version = "py311"
+lint.ignore = [
+    # a == None in tests vs is None.
+    "E711",
+    # a == False in tests vs is False.
+    "E712",
+    # try.. import except.. pattern without using the lib.
+    "F401",
+    # Raw type equality is required in asserts
+    "E721",
+    # Import order
+    "E402",
+    # Fixtures unused import
+    "F811",
+]

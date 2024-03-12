@@ -1,5 +1,3 @@
-import pytest
-
 from tokenizers import ByteLevelBPETokenizer
 
 from ..utils import data_dir, multiprocessing_with_parallelism, roberta_files

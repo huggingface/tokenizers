@@ -4,15 +4,14 @@ import time
 
 from tqdm import tqdm
 
-
-logging.getLogger("transformers").disabled = True
-logging.getLogger("transformers.tokenization_utils").disabled = True
-
 from tokenizers import Tokenizer, decoders, pre_tokenizers
 from tokenizers.models import BPE, WordPiece
 from tokenizers.normalizers import BertNormalizer
 from tokenizers.processors import BertProcessing
 from transformers import BertTokenizer, GPT2Tokenizer
+
+logging.getLogger("transformers").disabled = True
+logging.getLogger("transformers.tokenization_utils").disabled = True
 
 
 parser = argparse.ArgumentParser()
@@ -51,9 +50,7 @@ Although never is often better than *right* now.
 If the implementation is hard to explain, it's a bad idea.
 If the implementation is easy to explain, it may be a good idea.
 Namespaces are one honking great idea -- let's do more of those!
-""".split(
-        "\n"
-    )
+""".split("\n")
 
 if args.type == "gpt2":
     print("Running GPT-2 tokenizer")
