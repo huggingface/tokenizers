@@ -5,6 +5,8 @@ import os
 import datasets
 import pytest
 
+from ..utils import data_dir, train_files
+
 
 class TestTrainFromIterators:
     @staticmethod

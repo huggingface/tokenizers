@@ -67,4 +67,6 @@ lint.ignore = [
     "E721",
     # Import order
     "E402",
+    # Fixtures unused import
+    "F811",
 ]

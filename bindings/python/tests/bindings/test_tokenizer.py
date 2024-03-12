@@ -9,7 +9,7 @@ from tokenizers.models import BPE, Model, Unigram
 from tokenizers.pre_tokenizers import ByteLevel
 from tokenizers.processors import RobertaProcessing
 
-from ..utils import multiprocessing_with_parallelism
+from ..utils import bert_files, data_dir, multiprocessing_with_parallelism, roberta_files
 
 
 class TestAddedToken:

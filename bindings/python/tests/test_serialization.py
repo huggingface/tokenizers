@@ -6,6 +6,7 @@ import tqdm
 
 from huggingface_hub import HfApi, cached_download, hf_hub_url
 from tokenizers import Tokenizer
+from .utils import albert_base, data_dir
 
 
 class TestSerialization:

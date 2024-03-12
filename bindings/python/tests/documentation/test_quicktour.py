@@ -1,4 +1,5 @@
 from tokenizers import Tokenizer
+from ..utils import data_dir, doc_wiki_tokenizer
 
 
 disable_printing = True

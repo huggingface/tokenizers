@@ -2,6 +2,8 @@ import pytest
 
 from tokenizers import BertWordPieceTokenizer
 
+from ..utils import bert_files, data_dir
+
 
 class TestEncoding:
     @pytest.fixture(scope="class")

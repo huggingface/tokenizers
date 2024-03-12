@@ -15,6 +15,8 @@ from tokenizers.processors import (
     TemplateProcessing,
 )
 
+from ..utils import data_dir, roberta_files
+
 
 class TestBertProcessing:
     def test_instantiate(self):
