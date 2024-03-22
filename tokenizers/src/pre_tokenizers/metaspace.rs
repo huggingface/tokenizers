@@ -283,14 +283,9 @@ mod tests {
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
             vec![
-                ("▁Hey", (0, 6)),
-                ("▁my", (6, 11)),
-                ("▁friend", (11, 20)),
-                ("▁", (20, 23)),
+                ("▁Hey▁my▁friend▁", (0, 23)),
                 ("<s>", (23, 26)),
-                ("how", (26, 29)),
-                ("▁are", (29, 35)),
-                ("▁you", (35, 41))
+                ("how▁are▁you", (26, 41))
             ]
         );
         pretok.set_prepend_scheme(PrependScheme::Always);
@@ -325,12 +320,7 @@ mod tests {
                 .into_iter()
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
-            vec![
-                ("▁Hey", (0, 6)),
-                ("▁", (6, 9)),
-                ("<s>", (9, 12)),
-                ("how", (12, 15))
-            ]
+            vec![("▁Hey▁", (0, 9)), ("<s>", (9, 12)), ("how", (12, 15))]
         );
 
         let mut pretokenized = PreTokenizedString::from(" Hey <s>how <s>are <s> you"); // test with many splits
@@ -345,14 +335,11 @@ mod tests {
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
             vec![
-                ("▁Hey", (0, 6)),
-                ("▁", (6, 9)),
+                ("▁Hey▁", (0, 9)),
                 ("<s>", (9, 12)),
-                ("how", (12, 15)),
-                ("▁", (15, 18)),
+                ("how▁", (12, 18)),
                 ("<s>", (18, 21)),
-                ("are", (21, 24)),
-                ("▁", (24, 27)),
+                ("are▁", (21, 27)),
                 ("<s>", (27, 30)),
                 ("▁you", (30, 36))
             ]
