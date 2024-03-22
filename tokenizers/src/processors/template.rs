@@ -448,7 +448,7 @@ impl TemplateProcessingBuilder {
             }
         };
 
-        let empty = vec![];
+        let empty = [];
         let missing: HashSet<&str> = self
             .single
             .as_ref()
