@@ -1,4 +1,4 @@
-use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Enum representing options for the metaspace prepending scheme.
@@ -109,9 +109,7 @@ impl Default for Metaspace {
 
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        let mut first_split = true;
         pretokenized.split(|_, mut normalized| {
-            // println!("`{:?}`, `{}`",normalized, normalized.get_original());
             normalized.replace(' ', &self.str_rep)?;
             if self.add_prefix_space && self.prepend_scheme == PrependScheme::Always{
                 if !normalized.get().starts_with(self.replacement) {
@@ -123,23 +121,8 @@ impl PreTokenizer for Metaspace {
                 }
             }
             Ok([normalized])
-
-            // normalized.replace(' ', &self.str_rep)?;
-            // if self.add_prefix_space && !normalized.get().starts_with(self.replacement) {
-            //     if self.prepend_scheme == PrependScheme::Always {
-            //         normalized.prepend(&self.str_rep);
-            //     } else if self.prepend_scheme == PrependScheme::First && first_split {
-            //         normalized.prepend(&self.str_rep);
-            //         first_split = false;
-            //     }
-            // } else {
-            //     first_split = false;
-            // }
-            // if self.prepend_scheme == PrependScheme::First{
-            //     normalized.split(" ", SplitDelimiterBehavior::MergedWithNext)
-            // } else {
-            //     normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
-            // }
+            // Biggest question is whether or not we want to split the indivudal splits. 
+            // normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
         })
     }
 }
