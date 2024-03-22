@@ -112,10 +112,16 @@ impl PreTokenizer for Metaspace {
         let mut first_split = true;
         pretokenized.split(|_, mut normalized| {
             // println!("`{:?}`, `{}`",normalized, normalized.get_original());
-            // if normalized.offsets_original().0 == 0 {
-            //     println!("offset == 0, Prefix space should be added here and only here!");
-            // };
             normalized.replace(' ', &self.str_rep)?;
+            if self.add_prefix_space && self.prepend_scheme == PrependScheme::Always{
+                if !normalized.get().starts_with(self.replacement) {
+                    normalized.prepend(&self.str_rep);
+                }
+            } else if self.prepend_scheme == PrependScheme::First && normalized.offsets_original().0 == 0{
+                if !normalized.get().starts_with(self.replacement) {
+                    normalized.prepend(&self.str_rep);
+                }
+            }
             Ok([normalized])
 
             // normalized.replace(' ', &self.str_rep)?;
