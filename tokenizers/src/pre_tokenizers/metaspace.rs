@@ -110,21 +110,30 @@ impl Default for Metaspace {
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         let mut first_split = true;
-
         pretokenized.split(|_, mut normalized| {
+            // println!("`{:?}`, `{}`",normalized, normalized.get_original());
+            // if normalized.offsets_original().0 == 0 {
+            //     println!("offset == 0, Prefix space should be added here and only here!");
+            // };
             normalized.replace(' ', &self.str_rep)?;
-            if self.add_prefix_space && !normalized.get().starts_with(self.replacement) {
-                if self.prepend_scheme == PrependScheme::Always {
-                    normalized.prepend(&self.str_rep);
-                } else if self.prepend_scheme == PrependScheme::First && first_split {
-                    normalized.prepend(&self.str_rep);
-                    first_split = false;
-                }
-            } else {
-                first_split = false;
-            }
+            Ok([normalized])
 
-            normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
+            // normalized.replace(' ', &self.str_rep)?;
+            // if self.add_prefix_space && !normalized.get().starts_with(self.replacement) {
+            //     if self.prepend_scheme == PrependScheme::Always {
+            //         normalized.prepend(&self.str_rep);
+            //     } else if self.prepend_scheme == PrependScheme::First && first_split {
+            //         normalized.prepend(&self.str_rep);
+            //         first_split = false;
+            //     }
+            // } else {
+            //     first_split = false;
+            // }
+            // if self.prepend_scheme == PrependScheme::First{
+            //     normalized.split(" ", SplitDelimiterBehavior::MergedWithNext)
+            // } else {
+            //     normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
+            // }
         })
     }
 }
