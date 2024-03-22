@@ -1,4 +1,4 @@
-use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result};
+use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Enum representing options for the metaspace prepending scheme.
@@ -111,18 +111,21 @@ impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         pretokenized.split(|_, mut normalized| {
             normalized.replace(' ', &self.str_rep)?;
-            if self.add_prefix_space && self.prepend_scheme == PrependScheme::Always{
+            if self.add_prefix_space && self.prepend_scheme == PrependScheme::Always {
                 if !normalized.get().starts_with(self.replacement) {
                     normalized.prepend(&self.str_rep);
                 }
-            } else if self.prepend_scheme == PrependScheme::First && normalized.offsets_original().0 == 0{
-                if !normalized.get().starts_with(self.replacement) {
+                normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
+            } else if self.prepend_scheme == PrependScheme::First {
+                if normalized.offsets_original().0 == 0
+                    && !normalized.get().starts_with(self.replacement)
+                {
                     normalized.prepend(&self.str_rep);
                 }
+                Ok([normalized].to_vec())
+            } else {
+                Ok([normalized].to_vec())
             }
-            Ok([normalized])
-            // Biggest question is whether or not we want to split the indivudal splits. 
-            // normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
         })
     }
 }
