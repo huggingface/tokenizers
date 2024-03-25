@@ -115,12 +115,11 @@ impl PreTokenizer for Metaspace {
                 if !normalized.get().starts_with(self.replacement) {
                     normalized.prepend(&self.str_rep);
                 }
-            } else if self.prepend_scheme == PrependScheme::First {
-                if normalized.offsets_original().0 == 0
-                    && !normalized.get().starts_with(self.replacement)
-                {
-                    normalized.prepend(&self.str_rep);
-                }
+            } else if self.prepend_scheme == PrependScheme::First
+                && normalized.offsets_original().0 == 0
+                && !normalized.get().starts_with(self.replacement)
+            {
+                normalized.prepend(&self.str_rep);
             }
             normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
         })
