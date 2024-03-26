@@ -13,6 +13,14 @@ impl Sequence {
     pub fn new(decoders: Vec<DecoderWrapper>) -> Self {
         Self { decoders }
     }
+
+    pub fn get_decoders(&self) -> &[DecoderWrapper] {
+        &self.decoders
+    }
+
+    pub fn get_decoders_mut(&mut self) -> &mut [DecoderWrapper] {
+        &mut self.decoders
+    }
 }
 
 impl Decoder for Sequence {

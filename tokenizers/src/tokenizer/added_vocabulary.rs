@@ -139,7 +139,7 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
 /// exist as required.
 ///
 #[derive(Clone, Debug)]
-pub(super) struct AddedVocabulary {
+pub struct AddedVocabulary {
     /// Contains the mapping from String (token content) to ID. This map contains both special
     /// tokens and classic added tokens that were added to the this vocabulary.
     added_tokens_map: HashMap<String, u32>,
@@ -190,6 +190,11 @@ impl AddedVocabulary {
     #[allow(dead_code)] // Suppress the "method is never used" warning
     pub fn len(&self) -> usize {
         self.added_tokens_map.len()
+    }
+
+    /// Whether or not this vocabulary is empty
+    pub fn is_empty(&self) -> bool {
+        self.added_tokens_map.is_empty()
     }
 
     /// Get the additional vocabulary
@@ -484,6 +489,12 @@ impl AddedVocabulary {
         // "I read a " "[DAY]", "book monday" -> "i read a " "[day]", "book monday"
 
         pretokenized
+    }
+}
+
+impl Default for AddedVocabulary {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
