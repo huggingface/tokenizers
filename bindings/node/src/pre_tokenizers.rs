@@ -167,14 +167,17 @@ pub fn metaspace_pre_tokenizer(
     ));
   }
   let replacement = replacement.chars().next().unwrap();
-  let prepend_scheme: PrependScheme = match prepend_scheme.unwrap_or(String::from("always")).as_str(){
-    "always" => PrependScheme::Always,
-    "first" => PrependScheme::First,
-    "never" => PrependScheme::Never,
-    _ => {return Err(Error::from_reason(
-      "prepend_scheme is supposed to be either 'always', 'first' or 'never'",
-    ));}
-  };
+  let prepend_scheme: PrependScheme =
+    match prepend_scheme.unwrap_or(String::from("always")).as_str() {
+      "always" => PrependScheme::Always,
+      "first" => PrependScheme::First,
+      "never" => PrependScheme::Never,
+      _ => {
+        return Err(Error::from_reason(
+          "prepend_scheme is supposed to be either 'always', 'first' or 'never'",
+        ));
+      }
+    };
 
   Ok(PreTokenizer {
     pretok: Some(Arc::new(RwLock::new(

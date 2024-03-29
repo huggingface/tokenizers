@@ -102,14 +102,17 @@ pub fn metaspace_decoder(
     ));
   }
   let replacement = replacement.chars().next().unwrap();
-  let prepend_scheme: PrependScheme = match prepend_scheme.unwrap_or(String::from("always")).as_str(){
-    "always" => PrependScheme::Always,
-    "first" => PrependScheme::First,
-    "never" => PrependScheme::Never,
-    _ => {return Err(Error::from_reason(
-      "prepend_scheme is supposed to be either 'always', 'first' or 'never'",
-    ));}
-  };
+  let prepend_scheme: PrependScheme =
+    match prepend_scheme.unwrap_or(String::from("always")).as_str() {
+      "always" => PrependScheme::Always,
+      "first" => PrependScheme::First,
+      "never" => PrependScheme::Never,
+      _ => {
+        return Err(Error::from_reason(
+          "prepend_scheme is supposed to be either 'always', 'first' or 'never'",
+        ));
+      }
+    };
   Ok(Decoder {
     decoder: Some(Arc::new(RwLock::new(
       tk::decoders::metaspace::Metaspace::new(replacement, prepend_scheme, split).into(),
