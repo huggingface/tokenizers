@@ -11,7 +11,11 @@ export function ctcDecoder(
   cleanup?: boolean | undefined | null,
 ): Decoder
 export function fuseDecoder(): Decoder
-export function metaspaceDecoder(replacement?: string = '▁', addPrefixSpace?: bool = true): Decoder
+export function metaspaceDecoder(
+  replacement?: string = '▁',
+  prependScheme?: prepend_scheme = 'always',
+  split?: split = true,
+): Decoder
 export function replaceDecoder(pattern: string, content: string): Decoder
 export function sequenceDecoder(decoders: Array<Decoder>): Decoder
 export function stripDecoder(content: string, left: number, right: number): Decoder
@@ -89,7 +93,11 @@ export function byteLevelAlphabet(): Array<string>
 export function whitespacePreTokenizer(): PreTokenizer
 export function whitespaceSplitPreTokenizer(): PreTokenizer
 export function bertPreTokenizer(): PreTokenizer
-export function metaspacePreTokenizer(replacement?: string = '▁', addPrefixSpace?: bool = true): PreTokenizer
+export function metaspacePreTokenizer(
+  replacement?: string = '▁',
+  prependScheme?: prepend_scheme = 'always',
+  split?: split = true,
+): PreTokenizer
 export function splitPreTokenizer(pattern: string, behavior: string, invert?: boolean | undefined | null): PreTokenizer
 export function punctuationPreTokenizer(behavior?: string | undefined | null): PreTokenizer
 export function sequencePreTokenizer(preTokenizers: Array<PreTokenizer>): PreTokenizer

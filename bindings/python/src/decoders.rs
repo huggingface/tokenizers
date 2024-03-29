@@ -1,8 +1,8 @@
 use std::sync::{Arc, RwLock};
 
+use crate::pre_tokenizers::from_string;
 use crate::utils::PyChar;
 use crate::utils::PyPattern;
-use crate::pre_tokenizers::from_string;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -353,7 +353,11 @@ impl PyMetaspaceDec {
 
     #[new]
     #[pyo3(signature = (replacement = PyChar('▁'), prepend_scheme = String::from("always"), split = true), text_signature = "(self, replacement = \"▁\",  prepend_scheme = \"always\", split = True)")]
-    fn new(replacement: PyChar, prepend_scheme: String, split: bool) -> PyResult<(Self, PyDecoder)> {
+    fn new(
+        replacement: PyChar,
+        prepend_scheme: String,
+        split: bool,
+    ) -> PyResult<(Self, PyDecoder)> {
         let prepend_scheme = from_string(prepend_scheme)?;
         Ok((
             PyMetaspaceDec {},

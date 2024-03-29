@@ -71,8 +71,8 @@ impl_enum_from!(UnicodeScripts, PreTokenizerWrapper, UnicodeScripts);
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::metaspace::PrependScheme;
+    use super::*;
 
     #[test]
     fn test_deserialize() {

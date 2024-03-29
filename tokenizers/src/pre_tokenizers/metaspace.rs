@@ -1,5 +1,5 @@
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
-use serde::{Deserialize, Deserializer, Serialize, de};
+use serde::{de, Deserialize, Deserializer, Serialize};
 
 /// Enum representing options for the metaspace prepending scheme.
 #[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize, Copy)]
@@ -46,18 +46,19 @@ impl<'de> Deserialize<'de> for Metaspace {
             replacement: char,
 
             pub add_prefix_space: Option<bool>,
-            #[serde(default="default_prepend_scheme_value")]
+            #[serde(default = "default_prepend_scheme_value")]
             pub prepend_scheme: PrependScheme,
             pub split: Option<bool>,
             #[serde(rename = "str_rep")]
             _str_rep: Option<String>,
         }
 
-
         let mut helper = MetaspaceHelper::deserialize(deserializer)?;
-        if let Some(false) = helper.add_prefix_space{
-            if helper.prepend_scheme != PrependScheme::Never{
-                return Err(de::Error::custom("add_prefix_space does not match declared prepend_scheme"));
+        if let Some(false) = helper.add_prefix_space {
+            if helper.prepend_scheme != PrependScheme::Never {
+                return Err(de::Error::custom(
+                    "add_prefix_space does not match declared prepend_scheme",
+                ));
             }
             helper.prepend_scheme = PrependScheme::Never;
         }
@@ -72,14 +73,13 @@ impl<'de> Deserialize<'de> for Metaspace {
 
 impl Metaspace {
     pub fn new(replacement: char, prepend_scheme: PrependScheme, split: bool) -> Self {
-        Self{
+        Self {
             replacement,
-            str_rep : replacement.to_string(),
+            str_rep: replacement.to_string(),
             prepend_scheme,
-            split
+            split,
         }
     }
-
 
     pub fn get_replacement(&self) -> char {
         self.replacement
@@ -117,23 +117,24 @@ impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         pretokenized.split(|_, mut normalized| {
             normalized.replace(' ', &self.str_rep)?;
-            match self.prepend_scheme{
+            match self.prepend_scheme {
                 PrependScheme::Always => {
                     if !normalized.get().starts_with(self.replacement) {
                         normalized.prepend(&self.str_rep);
                     }
                 }
                 PrependScheme::First => {
-                    if !normalized.get().starts_with(self.replacement) && normalized.offsets_original().0 == 0{
+                    if !normalized.get().starts_with(self.replacement)
+                        && normalized.offsets_original().0 == 0
+                    {
                         normalized.prepend(&self.str_rep);
                     }
                 }
-                PrependScheme::Never => {
-                }
+                PrependScheme::Never => {}
             };
-            if self.split{
+            if self.split {
                 normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
-            }else{
+            } else {
                 Ok(vec![normalized])
             }
         })
@@ -175,7 +176,8 @@ mod tests {
     #[test]
     fn serialization() {
         let metaspace = Metaspace::new('_', PrependScheme::Always, true);
-        let metaspace_s = r#"{"type":"Metaspace","replacement":"_","prepend_scheme":"always","split":true}"#;
+        let metaspace_s =
+            r#"{"type":"Metaspace","replacement":"_","prepend_scheme":"always","split":true}"#;
         assert_eq!(serde_json::to_string(&metaspace).unwrap(), metaspace_s);
         assert_eq!(
             serde_json::from_str::<Metaspace>(metaspace_s).unwrap(),
@@ -184,9 +186,7 @@ mod tests {
 
         // Also check it can deserialize previous versions
         let metaspace_s = r#"{"type":"Metaspace","replacement":"_","add_prefix_space":false,"prepend_scheme":"always"}"#;
-        assert!(
-            serde_json::from_str::<Metaspace>(metaspace_s).is_err(),
-        );
+        assert!(serde_json::from_str::<Metaspace>(metaspace_s).is_err(),);
 
         let metaspace = Metaspace::new('_', PrependScheme::Always, true);
         let metaspace_s = r#"{"type":"Metaspace","str_rep":"_","replacement":"_","add_prefix_space":true,"prepend_scheme":"always"}"#;
@@ -262,22 +262,13 @@ mod tests {
     fn non_legacy_meta_space() {
         let mut pretok = Metaspace::new('▁', PrependScheme::Always, true);
         pretok.set_prepend_scheme(PrependScheme::Always);
-        assert_eq!(
-            pretok,
-            Metaspace::new('▁', PrependScheme::Always, true)
-        );
+        assert_eq!(pretok, Metaspace::new('▁', PrependScheme::Always, true));
 
         pretok.set_prepend_scheme(PrependScheme::Never);
-        assert_eq!(
-            pretok,
-            Metaspace::new('▁', PrependScheme::Never, true)
-        );
+        assert_eq!(pretok, Metaspace::new('▁', PrependScheme::Never, true));
 
         pretok.set_prepend_scheme(PrependScheme::First);
-        assert_eq!(
-            pretok,
-            Metaspace::new('▁', PrependScheme::First, true)
-        );
+        assert_eq!(pretok, Metaspace::new('▁', PrependScheme::First, true));
 
         let pretok = Metaspace::new('▁', PrependScheme::First, false);
         let mut pretokenized = PreTokenizedString::from("Hey my friend <s>how▁are you");
