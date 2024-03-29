@@ -72,6 +72,7 @@ impl_enum_from!(UnicodeScripts, PreTokenizerWrapper, UnicodeScripts);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::metaspace::PrependScheme;
 
     #[test]
     fn test_deserialize() {
@@ -81,7 +82,7 @@ mod tests {
             pre_tokenizer,
             PreTokenizerWrapper::Sequence(Sequence::new(vec![
                 PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit {}),
-                PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true))
+                PreTokenizerWrapper::Metaspace(Metaspace::new('▁', PrependScheme::Always, true))
             ]))
         );
 
@@ -92,7 +93,7 @@ mod tests {
 
         assert_eq!(
             pre_tokenizer,
-            PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true))
+            PreTokenizerWrapper::Metaspace(Metaspace::new('▁', PrependScheme::Always, true))
         );
 
         let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(r#"{"type":"Sequence","pretokenizers":[{"type":"WhitespaceSplit"},{"type":"Metaspace","replacement":"▁","add_prefix_space":true}]}"#).unwrap();
@@ -101,7 +102,7 @@ mod tests {
             pre_tokenizer,
             PreTokenizerWrapper::Sequence(Sequence::new(vec![
                 PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit {}),
-                PreTokenizerWrapper::Metaspace(Metaspace::new('▁', true))
+                PreTokenizerWrapper::Metaspace(Metaspace::new('▁', PrependScheme::Always, true))
             ]))
         );
 
@@ -112,10 +113,10 @@ mod tests {
 
         assert_eq!(
             pre_tokenizer,
-            PreTokenizerWrapper::Metaspace(Metaspace::new_with_prepend_scheme(
+            PreTokenizerWrapper::Metaspace(Metaspace::new(
                 '▁',
-                true,
-                metaspace::PrependScheme::First
+                metaspace::PrependScheme::First,
+                true
             ))
         );
 
@@ -126,10 +127,10 @@ mod tests {
 
         assert_eq!(
             pre_tokenizer,
-            PreTokenizerWrapper::Metaspace(Metaspace::new_with_prepend_scheme(
+            PreTokenizerWrapper::Metaspace(Metaspace::new(
                 '▁',
-                true,
-                metaspace::PrependScheme::Always
+                metaspace::PrependScheme::Always,
+                true
             ))
         );
     }

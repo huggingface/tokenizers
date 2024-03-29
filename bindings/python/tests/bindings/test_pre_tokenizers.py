@@ -112,6 +112,8 @@ class TestMetaspace:
         assert pretok.add_prefix_space == True
         pretok.prepend_scheme = "never"
         assert pretok.prepend_scheme == "never"
+        pretok.split = False
+        assert pretok.split == False
 
 
 class TestCharDelimiterSplit:

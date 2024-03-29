@@ -2,6 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::utils::PyChar;
 use crate::utils::PyPattern;
+use crate::pre_tokenizers::from_string;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -12,7 +13,7 @@ use tk::decoders::byte_fallback::ByteFallback;
 use tk::decoders::byte_level::ByteLevel;
 use tk::decoders::ctc::CTC;
 use tk::decoders::fuse::Fuse;
-use tk::decoders::metaspace::Metaspace;
+use tk::decoders::metaspace::{Metaspace, PrependScheme};
 use tk::decoders::sequence::Sequence;
 use tk::decoders::strip::Strip;
 use tk::decoders::wordpiece::WordPiece;
@@ -322,22 +323,42 @@ impl PyMetaspaceDec {
     }
 
     #[getter]
-    fn get_add_prefix_space(self_: PyRef<Self>) -> bool {
-        getter!(self_, Metaspace, add_prefix_space)
+    fn get_split(self_: PyRef<Self>) -> bool {
+        getter!(self_, Metaspace, get_split())
     }
 
     #[setter]
-    fn set_add_prefix_space(self_: PyRef<Self>, add_prefix_space: bool) {
-        setter!(self_, Metaspace, add_prefix_space, add_prefix_space);
+    fn set_split(self_: PyRef<Self>, split: bool) {
+        setter!(self_, Metaspace, @set_split, split);
+    }
+
+    #[getter]
+    fn get_prepend_scheme(self_: PyRef<Self>) -> String {
+        // Assuming Metaspace has a method to get the prepend_scheme as a string
+        let scheme: PrependScheme = getter!(self_, Metaspace, get_prepend_scheme());
+        match scheme {
+            PrependScheme::First => "first",
+            PrependScheme::Never => "never",
+            PrependScheme::Always => "always",
+        }
+        .to_string()
+    }
+
+    #[setter]
+    fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: String) -> PyResult<()> {
+        let scheme = from_string(prepend_scheme)?;
+        setter!(self_, Metaspace, @set_prepend_scheme, scheme);
+        Ok(())
     }
 
     #[new]
-    #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true), text_signature = "(self, replacement = \"▁\", add_prefix_space = True)")]
-    fn new(replacement: PyChar, add_prefix_space: bool) -> (Self, PyDecoder) {
-        (
+    #[pyo3(signature = (replacement = PyChar('▁'), prepend_scheme = String::from("always"), split = true), text_signature = "(self, replacement = \"▁\",  prepend_scheme = \"always\", split = True)")]
+    fn new(replacement: PyChar, prepend_scheme: String, split: bool) -> PyResult<(Self, PyDecoder)> {
+        let prepend_scheme = from_string(prepend_scheme)?;
+        Ok((
             PyMetaspaceDec {},
-            Metaspace::new(replacement.0, add_prefix_space).into(),
-        )
+            Metaspace::new(replacement.0, prepend_scheme, split).into(),
+        ))
     }
 }
 

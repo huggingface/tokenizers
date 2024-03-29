@@ -452,7 +452,7 @@ impl PySequence {
     }
 }
 
-fn from_string(string: String) -> Result<PrependScheme, PyErr> {
+pub(crate) fn from_string(string: String) -> Result<PrependScheme, PyErr> {
     let scheme = match string.as_str() {
         "first" => PrependScheme::First,
         "never" => PrependScheme::Never,
@@ -495,13 +495,13 @@ impl PyMetaspace {
     }
 
     #[getter]
-    fn get_add_prefix_space(self_: PyRef<Self>) -> bool {
-        getter!(self_, Metaspace, add_prefix_space)
+    fn get_split(self_: PyRef<Self>) -> bool {
+        getter!(self_, Metaspace, get_split())
     }
 
     #[setter]
-    fn set_add_prefix_space(self_: PyRef<Self>, add_prefix_space: bool) {
-        setter!(self_, Metaspace, add_prefix_space, add_prefix_space);
+    fn set_split(self_: PyRef<Self>, split: bool) {
+        setter!(self_, Metaspace, @set_split, split);
     }
 
     #[getter]
@@ -524,23 +524,15 @@ impl PyMetaspace {
     }
 
     #[new]
-    #[pyo3(signature = (replacement = PyChar('▁'), add_prefix_space = true, prepend_scheme=None, **_kwargs), text_signature = "(self, replacement=\"_\", add_prefix_space=True)")]
+    #[pyo3(signature = (replacement = PyChar('▁'), prepend_scheme=String::from("always"), split=true), text_signature = "(self, replacement=\"_\", prepend_scheme=\"always\", split=True)")]
     fn new(
         replacement: PyChar,
-        add_prefix_space: bool,
-        prepend_scheme: Option<String>,
-        _kwargs: Option<&PyDict>,
+        prepend_scheme: String,
+        split: bool,
     ) -> PyResult<(Self, PyPreTokenizer)> {
         // Create a new Metaspace instance
-        let mut new_instance: Metaspace = Metaspace::new(replacement.0, add_prefix_space);
-
-        // If a prepend scheme is provided, set it
-        if let Some(prepend_scheme) = prepend_scheme {
-            match from_string(prepend_scheme) {
-                Ok(prepend_scheme_enum) => new_instance.set_prepend_scheme(prepend_scheme_enum),
-                Err(err) => return Err(err),
-            }
-        }
+        let prepend_scheme = from_string(prepend_scheme)?;
+        let new_instance: Metaspace = Metaspace::new(replacement.0, prepend_scheme, split);
         Ok((PyMetaspace {}, new_instance.into()))
     }
 }
