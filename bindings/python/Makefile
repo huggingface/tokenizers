@@ -9,7 +9,7 @@ check_dirs := examples py_src/tokenizers tests
 style:
 	python stub.py
 	ruff check  $(check_dirs) --fix 
-	ruff format $(check_dirs)t 
+	ruff format $(check_dirs)
 
 # Check the source code is formatted correctly
 check-style:
