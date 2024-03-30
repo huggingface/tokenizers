@@ -490,6 +490,7 @@ class TestTokenizer:
 
     def test_splitting(self):
         tokenizer = Tokenizer.from_pretrained("hf-internal-testing/llama-new-metaspace")
+        tokenizer.pre_tokenizer.split = False
         tokenizer.add_tokens([AddedToken("<REPR_END>", rstrip=True, lstrip=True)], special_tokens=False)
         self.assertEqual(
             tokenizer.encode("<REPR_END>inform<s>. Hey.       .", add_special_tokens=False).tokens,
