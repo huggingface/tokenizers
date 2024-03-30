@@ -35,8 +35,7 @@ class TestByteLevel:
     def test_can_modify(self):
         pretok = ByteLevel(add_prefix_space=False)
 
-        assert pretok.prepend_scheme == "never"
-        assert pretok.split == True
+        assert pretok.add_prefix_space == False
 
         # Modify these
         pretok.add_prefix_space = True
@@ -95,7 +94,7 @@ class TestMetaspace:
         assert Metaspace(replacement="-") is not None
         with pytest.raises(ValueError, match="expected a string of length 1"):
             Metaspace(replacement="")
-        assert Metaspace(add_prefix_space=True) is not None
+        assert Metaspace(prepend_scheme="always") is not None
         assert isinstance(Metaspace(), PreTokenizer)
         assert isinstance(Metaspace(), Metaspace)
         assert isinstance(pickle.loads(pickle.dumps(Metaspace())), Metaspace)

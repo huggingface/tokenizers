@@ -492,20 +492,46 @@ class TestTokenizer:
         tokenizer = Tokenizer.from_pretrained("hf-internal-testing/llama-new-metaspace")
         tokenizer.pre_tokenizer.split = False
         tokenizer.add_tokens([AddedToken("<REPR_END>", rstrip=True, lstrip=True)])
-        self.assertEqual(
-            tokenizer.encode("<REPR_END>inform<s>. Hey.       .", add_special_tokens=False).tokens,
-            ["<REPR_END>", "in", "form", "<s>", ".", "▁Hey", ".", "▁▁▁▁▁▁", "▁."],
-        )
-        self.assertEqual(
-            tokenizer.encode("<REPR_END>inform<s>. Hey.       .", add_special_tokens=False).ids,
-            [32000, 262, 689, 1, 29889, 18637, 29889, 539, 869],
-        )
+        assert tokenizer.encode("<REPR_END>inform<s>. Hey.       .", add_special_tokens=False).tokens == [
+            "<REPR_END>",
+            "in",
+            "form",
+            "<s>",
+            ".",
+            "▁Hey",
+            ".",
+            "▁▁▁▁▁▁",
+            "▁.",
+        ]
 
-        self.assertEqual(
-            tokenizer.encode("inform<s>. Hey.       .").tokens,
-            ["<s>", "▁inform", "<s>", ".", "▁Hey", ".", "▁▁▁▁▁▁", "▁."],
-        )
-        self.assertEqual(
-            tokenizer.encode("inform<s>. Hey.       .", add_special_tokens=False).tokens,
-            ["▁inform", "<s>", ".", "▁Hey", ".", "▁▁▁▁▁▁", "▁."],
-        )
+        assert tokenizer.encode("<REPR_END>inform<s>. Hey.       .", add_special_tokens=False).ids == [
+            32000,
+            262,
+            689,
+            1,
+            29889,
+            18637,
+            29889,
+            539,
+            869,
+        ]
+
+        assert tokenizer.encode("inform<s>. Hey.       .").tokens == [
+            "<s>",
+            "▁inform",
+            "<s>",
+            ".",
+            "▁Hey",
+            ".",
+            "▁▁▁▁▁▁",
+            "▁.",
+        ]
+        assert tokenizer.encode("inform<s>. Hey.       .", add_special_tokens=False).tokens == [
+            "▁inform",
+            "<s>",
+            ".",
+            "▁Hey",
+            ".",
+            "▁▁▁▁▁▁",
+            "▁.",
+        ]
