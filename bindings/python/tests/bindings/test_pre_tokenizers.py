@@ -35,7 +35,8 @@ class TestByteLevel:
     def test_can_modify(self):
         pretok = ByteLevel(add_prefix_space=False)
 
-        assert pretok.add_prefix_space == False
+        assert pretok.prepend_scheme == "never"
+        assert pretok.split == True
 
         # Modify these
         pretok.add_prefix_space = True
@@ -100,20 +101,21 @@ class TestMetaspace:
         assert isinstance(pickle.loads(pickle.dumps(Metaspace())), Metaspace)
 
     def test_can_modify(self):
-        pretok = Metaspace(replacement="$", add_prefix_space=False)
+        pretok = Metaspace(replacement="$", prepend_scheme="never")
 
         assert pretok.replacement == "$"
-        assert pretok.add_prefix_space == False
+        assert pretok.prepend_scheme == "never"
+        assert pretok.split == True
 
         # Modify these
         pretok.replacement = "%"
         assert pretok.replacement == "%"
         pretok.add_prefix_space = True
         assert pretok.add_prefix_space == True
-        pretok.prepend_scheme = "never"
-        assert pretok.prepend_scheme == "never"
-        pretok.split = False
-        assert pretok.split == False
+        pretok.prepend_scheme = "first"
+        assert pretok.prepend_scheme == "first"
+        pretok.split = True
+        assert pretok.split == True
 
 
 class TestCharDelimiterSplit:
