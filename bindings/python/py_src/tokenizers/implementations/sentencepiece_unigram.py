@@ -29,8 +29,9 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         tokenizer.normalizer = normalizers.Sequence(
             [normalizers.Nmt(), normalizers.NFKC(), normalizers.Replace(Regex(" {2,}"), " ")]
         )
-        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
-        tokenizer.decoder = decoders.Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
+        prepend_scheme = "always" if add_prefix_space else "never"
+        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace(replacement=replacement, prepend_scheme=prepend_scheme)
+        tokenizer.decoder = decoders.Metaspace(replacement=replacement, prepend_scheme=prepend_scheme)
 
         parameters = {
             "model": "SentencePieceUnigram",

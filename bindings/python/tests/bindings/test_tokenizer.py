@@ -487,3 +487,51 @@ class TestTokenizer:
         tokenizer.add_tokens(["of_text>"])
         output = tokenizer.encode("Hey there<end_of_text> dear<eot>friend!", add_special_tokens=False)
         assert output.tokens == ["▁Hey", "▁there", "<", "end", "_", "of_text>", "▁dear", "<eot>", "▁friend", "!"]
+
+    def test_splitting(self):
+        tokenizer = Tokenizer.from_pretrained("hf-internal-testing/llama-new-metaspace")
+        tokenizer.pre_tokenizer.split = False
+        tokenizer.add_tokens([AddedToken("<REPR_END>", rstrip=True, lstrip=True)])
+        assert tokenizer.encode("<REPR_END>inform<s>. Hey.       .", add_special_tokens=False).tokens == [
+            "<REPR_END>",
+            "in",
+            "form",
+            "<s>",
+            ".",
+            "▁Hey",
+            ".",
+            "▁▁▁▁▁▁",
+            "▁.",
+        ]
+
+        assert tokenizer.encode("<REPR_END>inform<s>. Hey.       .", add_special_tokens=False).ids == [
+            32000,
+            262,
+            689,
+            1,
+            29889,
+            18637,
+            29889,
+            539,
+            869,
+        ]
+
+        assert tokenizer.encode("inform<s>. Hey.       .").tokens == [
+            "<s>",
+            "▁inform",
+            "<s>",
+            ".",
+            "▁Hey",
+            ".",
+            "▁▁▁▁▁▁",
+            "▁.",
+        ]
+        assert tokenizer.encode("inform<s>. Hey.       .", add_special_tokens=False).tokens == [
+            "▁inform",
+            "<s>",
+            ".",
+            "▁Hey",
+            ".",
+            "▁▁▁▁▁▁",
+            "▁.",
+        ]

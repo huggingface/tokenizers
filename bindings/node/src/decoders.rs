@@ -90,9 +90,11 @@ pub fn fuse_decoder() -> Decoder {
 #[napi]
 pub fn metaspace_decoder(
   #[napi(ts_arg_type = "string = '▁'")] replacement: Option<String>,
-  #[napi(ts_arg_type = "bool = true")] add_prefix_space: Option<bool>,
+  #[napi(ts_arg_type = "prepend_scheme = 'always'")] prepend_scheme: Option<String>,
+  #[napi(ts_arg_type = "split = true")] split: Option<bool>,
 ) -> Result<Decoder> {
-  let add_prefix_space = add_prefix_space.unwrap_or(true);
+  use tk::pre_tokenizers::metaspace::PrependScheme;
+  let split = split.unwrap_or(true);
   let replacement = replacement.unwrap_or("▁".to_string());
   if replacement.chars().count() != 1 {
     return Err(Error::from_reason(
@@ -100,9 +102,20 @@ pub fn metaspace_decoder(
     ));
   }
   let replacement = replacement.chars().next().unwrap();
+  let prepend_scheme: PrependScheme =
+    match prepend_scheme.unwrap_or(String::from("always")).as_str() {
+      "always" => PrependScheme::Always,
+      "first" => PrependScheme::First,
+      "never" => PrependScheme::Never,
+      _ => {
+        return Err(Error::from_reason(
+          "prepend_scheme is supposed to be either 'always', 'first' or 'never'",
+        ));
+      }
+    };
   Ok(Decoder {
     decoder: Some(Arc::new(RwLock::new(
-      tk::decoders::metaspace::Metaspace::new(replacement, add_prefix_space).into(),
+      tk::decoders::metaspace::Metaspace::new(replacement, prepend_scheme, split).into(),
     ))),
   })
 }

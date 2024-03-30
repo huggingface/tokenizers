@@ -126,7 +126,7 @@ class TestMetaspace:
         assert Metaspace(replacement="-") is not None
         with pytest.raises(ValueError, match="expected a string of length 1"):
             Metaspace(replacement="")
-        assert Metaspace(add_prefix_space=True) is not None
+        assert Metaspace(prepend_scheme="always") is not None
         assert isinstance(Metaspace(), Decoder)
         assert isinstance(Metaspace(), Metaspace)
         assert isinstance(pickle.loads(pickle.dumps(Metaspace())), Metaspace)
@@ -134,20 +134,20 @@ class TestMetaspace:
     def test_decoding(self):
         decoder = Metaspace()
         assert decoder.decode(["▁My", "▁name", "▁is", "▁John"]) == "My name is John"
-        decoder = Metaspace(replacement="-", add_prefix_space=False)
+        decoder = Metaspace(replacement="-", prepend_scheme="never")
         assert decoder.decode(["-My", "-name", "-is", "-John"]) == " My name is John"
 
     def test_can_modify(self):
-        decoder = Metaspace(replacement="*", add_prefix_space=False)
+        decoder = Metaspace(replacement="*", prepend_scheme="never")
 
         assert decoder.replacement == "*"
-        assert decoder.add_prefix_space == False
+        assert decoder.prepend_scheme == "never"
 
         # Modify these
         decoder.replacement = "&"
         assert decoder.replacement == "&"
-        decoder.add_prefix_space = True
-        assert decoder.add_prefix_space == True
+        decoder.prepend_scheme = "first"
+        assert decoder.prepend_scheme == "first"
 
 
 class TestBPEDecoder:
