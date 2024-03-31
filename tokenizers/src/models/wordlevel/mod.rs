@@ -66,14 +66,14 @@ impl WordLevelBuilder {
         self
     }
 
-    /// The the `UNK` token for the vocab.
+    /// The `UNK` token for the vocab.
     #[must_use]
     pub fn unk_token(mut self, unk_token: String) -> Self {
         self.config.unk_token = unk_token;
         self
     }
 
-    /// Contructs a `WordLevel` model that uses the `WordLevelBuilder`'s configuration.
+    /// Construct a `WordLevel` model that uses the `WordLevelBuilder`'s configuration.
     pub fn build(mut self) -> Result<WordLevel> {
         if let Some(vocab) = self.config.files {
             self.config.vocab = WordLevel::read_file(&vocab)?;
