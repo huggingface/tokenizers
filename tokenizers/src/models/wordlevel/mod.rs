@@ -54,8 +54,8 @@ impl WordLevelBuilder {
 
     /// Set the input files.
     #[must_use]
-    pub fn files(mut self, files: String) -> Self {
-        self.config.files = Some(files);
+    pub fn files(mut self, vocab_file: String) -> Self {
+        self.config.files = Some(vocab_file);
         self
     }
 
