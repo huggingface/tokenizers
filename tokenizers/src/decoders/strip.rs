@@ -3,9 +3,8 @@ use crate::tokenizer::{Decoder, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Clone, Debug, Serialize, Default)]
-/// Strip is a simple trick which converts tokens looking like `<0x61>`
-/// to pure bytes, and attempts to make them into a string. If the tokens
-/// cannot be decoded you will get � instead for each inconvertable byte token
+// Strip removes prefixes and suffixes (of length at most start/stop,
+// respectively) which consist solely of the given character.
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub struct Strip {
