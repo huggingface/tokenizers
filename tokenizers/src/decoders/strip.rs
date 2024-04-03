@@ -34,7 +34,6 @@ impl Decoder for Strip {
                 for (i, &c) in chars.iter().enumerate().take(self.start) {
                     if c == self.content {
                         start_cut = i + 1;
-                        continue;
                     } else {
                         break;
                     }
@@ -45,7 +44,6 @@ impl Decoder for Strip {
                     let index = chars.len() - i - 1;
                     if chars[index] == self.content {
                         stop_cut = index;
-                        continue;
                     } else {
                         break;
                     }
