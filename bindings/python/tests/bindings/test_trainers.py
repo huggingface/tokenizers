@@ -295,8 +295,8 @@ class TestUnigram:
         tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
             [pre_tokenizers.Whitespace(), pre_tokenizers.Digits(individual_digits=True)]
         )
-        tokenizer.train(files=["data/big.txt"], trainer=trainer)
+        tokenizer.train(files=["tests/data/big.txt"], trainer=trainer)
 
-        tokenizer.save("data/tokenizer.json")
+        tokenizer.save("tests/data/tokenizer.json")
 
-        tokenizer.from_file("data/tokenizer.json")
+        tokenizer.from_file("tests/data/tokenizer.json")
