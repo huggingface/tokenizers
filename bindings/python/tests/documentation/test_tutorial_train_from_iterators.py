@@ -41,7 +41,7 @@ class TestTrainFromIterators:
     def setup_gzip_files(self, train_files):
         with open(train_files["small"], "rt") as small:
             for n in range(3):
-                path = f"data/my-file.{n}.gz"
+                path = f"tests/data/my-file.{n}.gz"
                 with gzip.open(path, "wt") as f:
                     f.write(small.read())
 
@@ -88,11 +88,11 @@ class TestTrainFromIterators:
         # START single_gzip
         import gzip
 
-        with gzip.open("data/my-file.0.gz", "rt") as f:
+        with gzip.open("tests/data/my-file.0.gz", "rt") as f:
             tokenizer.train_from_iterator(f, trainer=trainer)
         # END single_gzip
         # START multi_gzip
-        files = ["data/my-file.0.gz", "data/my-file.1.gz", "data/my-file.2.gz"]
+        files = ["tests/data/my-file.0.gz", "tests/data/my-file.1.gz", "tests/data/my-file.2.gz"]
 
         def gzip_iterator():
             for path in files:
