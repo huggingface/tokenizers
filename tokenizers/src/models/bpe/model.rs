@@ -883,10 +883,17 @@ mod tests {
     #[test]
     fn test_use_tiktoken_bug() {
         // 0x0A == '\n' in bytes
-        let vocab: Vocab = [(".:.:".into(), 0), ("Ġbelirtilen".into(), 1), (".".into(), 2), (":".into(), 3), ("bel".into(), 4), ("irtilen".into(), 5)]
-            .iter()
-            .cloned()
-            .collect();
+        let vocab: Vocab = [
+            (".:.:".into(), 0),
+            ("Ġbelirtilen".into(), 1),
+            (".".into(), 2),
+            (":".into(), 3),
+            ("bel".into(), 4),
+            ("irtilen".into(), 5),
+        ]
+        .iter()
+        .cloned()
+        .collect();
         let bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, vec![])
             .unk_token("<unk>".to_string())
