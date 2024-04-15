@@ -89,9 +89,10 @@ where
             }
 
             match unsafe {
-                Bound::from_owned_ptr_or_opt(py, pyo3::ffi::PyIter_Next(
-                    self.iter.as_ref().unwrap().bind(py).as_ptr(),
-                ))
+                Bound::from_owned_ptr_or_opt(
+                    py,
+                    pyo3::ffi::PyIter_Next(self.iter.as_ref().unwrap().bind(py).as_ptr()),
+                )
             } {
                 Some(obj) => self.buffer.extend((self.converter)(obj)),
                 None => {

@@ -235,7 +235,10 @@ pub struct PyByteLevel {}
 impl PyByteLevel {
     #[new]
     #[pyo3(signature = (trim_offsets = None, **_kwargs), text_signature = "(self, trim_offsets=True)")]
-    fn new(trim_offsets: Option<bool>, _kwargs: Option<&Bound<'_, PyDict>>) -> (Self, PyPostProcessor) {
+    fn new(
+        trim_offsets: Option<bool>,
+        _kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> (Self, PyPostProcessor) {
         let mut byte_level = ByteLevel::default();
 
         if let Some(to) = trim_offsets {

@@ -260,7 +260,10 @@ impl PyModel {
 pub struct PyBPE {}
 
 impl PyBPE {
-    fn with_builder(mut builder: BpeBuilder, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyModel)> {
+    fn with_builder(
+        mut builder: BpeBuilder,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<(Self, PyModel)> {
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
                 let key: &str = key.extract()?;

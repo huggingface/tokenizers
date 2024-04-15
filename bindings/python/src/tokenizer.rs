@@ -712,7 +712,11 @@ impl PyTokenizer {
     #[pyo3(
         text_signature = "(self, max_length, stride=0, strategy='longest_first', direction='right')"
     )]
-    fn enable_truncation(&mut self, max_length: usize, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
+    fn enable_truncation(
+        &mut self,
+        max_length: usize,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<()> {
         let mut params = TruncationParams {
             max_length,
             ..Default::default()
@@ -887,7 +891,7 @@ impl PyTokenizer {
     ///     (:obj:`dict`, `optional`):
     ///         A dict with the current padding parameters if padding is enabled
     #[getter]
-    fn get_padding<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py,  PyDict>>> {
+    fn get_padding<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
         self.tokenizer.get_padding().map_or(Ok(None), |params| {
             let dict = PyDict::new_bound(py);
 

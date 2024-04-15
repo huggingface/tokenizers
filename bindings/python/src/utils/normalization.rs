@@ -155,7 +155,7 @@ fn map(normalized: &mut NormalizedString, func: &Bound<'_, PyAny>) -> PyResult<(
         Err(exceptions::PyTypeError::new_err(err))
     } else {
         normalized.map(|c| {
-            let c: String= func
+            let c: String = func
                 .call1((c.to_string(),))
                 .expect(err)
                 .extract()
