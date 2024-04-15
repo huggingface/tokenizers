@@ -113,7 +113,7 @@ class BPE(Model):
         byte_fallback (:obj:`bool`, `optional`):
             Whether to use spm byte-fallback trick (defaults to False)
 
-        use_tiktoken_bug (:obj:`bool`, `optional`):
+        check_word_in_vocab (:obj:`bool`, `optional`):
             Whether or not to match tokens with the vocab before using merges.
     """
     def __init__(
@@ -127,7 +127,7 @@ class BPE(Model):
         end_of_word_suffix=None,
         fuse_unk=None,
         byte_fallback=False,
-        use_tiktoken_bug=False,
+        check_word_in_vocab=False,
     ):
         pass
 

@@ -28,7 +28,7 @@ struct Config {
     end_of_word_suffix: Option<String>,
     fuse_unk: bool,
     byte_fallback: bool,
-    use_tiktoken_bug: bool,
+    ignore_merges: bool,
 }
 
 /// A `BpeBuilder` can be used to create a `BPE` model with a custom configuration.
@@ -50,7 +50,7 @@ impl Default for BpeBuilder {
                 end_of_word_suffix: None,
                 fuse_unk: false,
                 byte_fallback: false,
-                use_tiktoken_bug: false,
+                ignore_merges: false,
             },
         }
     }
@@ -125,10 +125,10 @@ impl BpeBuilder {
         self.config.byte_fallback = byte_fallback;
         self
     }
-    /// Set the `use_tiktoken_bug` option.
+    /// Set the `ignore_merges` option.
     #[must_use]
-    pub fn use_tiktoken_bug(mut self, use_tiktoken_bug: bool) -> Self {
-        self.config.use_tiktoken_bug = use_tiktoken_bug;
+    pub fn ignore_merges(mut self, ignore_merges: bool) -> Self {
+        self.config.ignore_merges = ignore_merges;
         self
     }
 
@@ -198,7 +198,7 @@ impl BpeBuilder {
             end_of_word_suffix: self.config.end_of_word_suffix,
             fuse_unk: self.config.fuse_unk,
             byte_fallback: self.config.byte_fallback,
-            use_tiktoken_bug: self.config.use_tiktoken_bug,
+            ignore_merges: self.config.ignore_merges,
         })
     }
 }
@@ -229,7 +229,7 @@ pub struct BPE {
     /// for each byte in the unk token
     pub byte_fallback: bool,
     /// Whether or not to direct output words if they are part of the vocab.
-    pub use_tiktoken_bug: bool,
+    pub ignore_merges: bool,
 }
 
 impl std::fmt::Debug for BPE {
@@ -243,7 +243,7 @@ impl std::fmt::Debug for BPE {
             .field("byte_fallback", &self.byte_fallback)
             .field("vocab", &self.vocab.len())
             .field("merges", &self.merges.len())
-            .field("use_tiktoken_bug", &self.use_tiktoken_bug)
+            .field("ignore_merges", &self.ignore_merges)
             .finish()
     }
 }
@@ -270,7 +270,7 @@ impl Clone for BPE {
             end_of_word_suffix: self.end_of_word_suffix.clone(),
             fuse_unk: self.fuse_unk,
             byte_fallback: self.byte_fallback,
-            use_tiktoken_bug: self.use_tiktoken_bug,
+            ignore_merges: self.ignore_merges,
         }
     }
 }
@@ -462,7 +462,7 @@ impl BPE {
     fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
         if let Some(ref hit) = self.cache.as_ref().and_then(|c| c.get(sequence)) {
             Ok(self.word_to_tokens(hit).collect())
-        } else if self.vocab.contains_key(sequence) && self.use_tiktoken_bug {
+        } else if self.vocab.contains_key(sequence) && self.ignore_merges {
             let id = self.vocab.get(sequence);
             let ret = Token::new(*id.unwrap(), sequence.to_string().clone(), (0, 0));
             Ok(vec![ret])
@@ -881,7 +881,7 @@ mod tests {
     }
 
     #[test]
-    fn test_use_tiktoken_bug() {
+    fn test_ignore_merges() {
         // 0x0A == '\n' in bytes
         let vocab: Vocab = [
             (".:.:".into(), 0),
@@ -925,7 +925,7 @@ mod tests {
                     ("irti".into(), "l".into()),
                 ],
             )
-            .use_tiktoken_bug(true)
+            .ignore_merges(true)
             .build()
             .unwrap();
         let tokens = bpe.tokenize(".:.:").unwrap();
@@ -934,7 +934,7 @@ mod tests {
         let tokens = bpe.tokenize("Ġbelirtilen").unwrap();
         assert_eq!(tokens, vec![Token::new(1u32, "Ġbelirtilen".into(), (0, 0))]);
 
-        bpe.use_tiktoken_bug = false;
+        bpe.ignore_merges = false;
 
         let tokens = bpe.tokenize(".:.:").unwrap();
         assert_eq!(
