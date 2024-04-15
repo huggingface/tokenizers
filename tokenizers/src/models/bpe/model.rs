@@ -28,6 +28,7 @@ struct Config {
     end_of_word_suffix: Option<String>,
     fuse_unk: bool,
     byte_fallback: bool,
+    check_word_in_vocab: bool
 }
 
 /// A `BpeBuilder` can be used to create a `BPE` model with a custom configuration.
@@ -49,6 +50,7 @@ impl Default for BpeBuilder {
                 end_of_word_suffix: None,
                 fuse_unk: false,
                 byte_fallback: false,
+                check_word_in_vocab: false,
             },
         }
     }
@@ -123,6 +125,12 @@ impl BpeBuilder {
         self.config.byte_fallback = byte_fallback;
         self
     }
+    /// Set the `byte_fallback` option.
+    #[must_use]
+    pub fn check_word_in_vocab(mut self, check_word_in_vocab: bool) -> Self {
+        self.config.check_word_in_vocab = check_word_in_vocab;
+        self
+    }
 
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
     pub fn build(mut self) -> Result<BPE> {
@@ -190,6 +198,7 @@ impl BpeBuilder {
             end_of_word_suffix: self.config.end_of_word_suffix,
             fuse_unk: self.config.fuse_unk,
             byte_fallback: self.config.byte_fallback,
+            check_word_in_vocab: self.config.check_word_in_vocab
         })
     }
 }
@@ -234,6 +243,7 @@ impl std::fmt::Debug for BPE {
             .field("byte_fallback", &self.byte_fallback)
             .field("vocab", &self.vocab.len())
             .field("merges", &self.merges.len())
+            .field("check_word_in_vocab", &self.check_word_in_vocab)
             .finish()
     }
 }
@@ -260,6 +270,7 @@ impl Clone for BPE {
             end_of_word_suffix: self.end_of_word_suffix.clone(),
             fuse_unk: self.fuse_unk,
             byte_fallback: self.byte_fallback,
+            check_word_in_vocab: self.check_word_in_vocab
         }
     }
 }
