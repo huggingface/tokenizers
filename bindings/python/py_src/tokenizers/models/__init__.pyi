@@ -113,7 +113,7 @@ class BPE(Model):
         byte_fallback (:obj:`bool`, `optional`):
             Whether to use spm byte-fallback trick (defaults to False)
 
-        check_word_in_vocab (:obj:`bool`, `optional`):
+        ignore_merges (:obj:`bool`, `optional`):
             Whether or not to match tokens with the vocab before using merges.
     """
     def __init__(
