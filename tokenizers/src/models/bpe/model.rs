@@ -370,8 +370,6 @@ impl BPE {
         let mut indices = w.char_indices().map(|(idx, _)| idx).peekable();
         let mut word = Word::with_capacity(w.len());
         let mut unk: Option<(u32, usize)> = None;
-        println!("inside merge_word {:?}", w);
-
         while let Some(i) = indices.next() {
             let end = indices.peek();
             let is_first = i == 0;
