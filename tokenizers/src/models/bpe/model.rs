@@ -125,7 +125,7 @@ impl BpeBuilder {
         self.config.byte_fallback = byte_fallback;
         self
     }
-    /// Set the `byte_fallback` option.
+    /// Set the `use_tiktoken_bug` option.
     #[must_use]
     pub fn use_tiktoken_bug(mut self, use_tiktoken_bug: bool) -> Self {
         self.config.use_tiktoken_bug = use_tiktoken_bug;
@@ -890,17 +890,45 @@ mod tests {
             (":".into(), 3),
             ("bel".into(), 4),
             ("irtilen".into(), 5),
+            ("Ġ".into(), 6),
+            (".:".into(), 7),
+            ("belirtilen".into(), 8),
+            (".:.".into(), 9),
+            ("be".into(), 10),
+            ("l".into(), 11),
+            ("ir".into(), 12),
+            ("ti".into(), 13),
+            ("en".into(), 14),
+            ("irtil".into(), 15),
+            ("irti".into(), 16),
+            ("i".into(), 17),
+            ("r".into(), 18),
+            ("t".into(), 19),
+            ("b".into(), 20),
+            ("e".into(), 21),
+            ("n".into(), 22),
         ]
         .iter()
         .cloned()
         .collect();
-        let bpe = BpeBuilder::default()
-            .vocab_and_merges(vocab, vec![])
-            .unk_token("<unk>".to_string())
-            .byte_fallback(true)
+        let mut bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![(".".into(), ":".into()),("b".into(), "e".into()), ("be".into(), "l".into()), ("i".into(), "r".into()),  ("t".into(), "i".into()), ("ir".into(), "ti".into()), ("e".into(), "n".into()), ("irti".into(), "l".into())])
+            .use_tiktoken_bug(true)
             .build()
             .unwrap();
-        let tokens = bpe.tokenize("\n").unwrap();
-        assert_eq!(tokens, vec![Token::new(1u32, "<0x0A>".into(), (0, 1)),]);
+        let tokens = bpe.tokenize(".:.:").unwrap();
+        assert_eq!(tokens, vec![Token::new(0u32, ".:.:".into(), (0, 0))]);
+
+        let tokens = bpe.tokenize("Ġbelirtilen").unwrap();
+        assert_eq!(tokens, vec![Token::new(1u32, "Ġbelirtilen".into(), (0, 0))]);
+
+        bpe.use_tiktoken_bug = false;
+        
+        let tokens = bpe.tokenize(".:.:").unwrap();
+        assert_eq!(tokens, vec![Token::new(7u32, ".:".into(), (0, 2)), Token::new(7u32, ".:".into(), (2, 4))]);
+
+        let tokens = bpe.tokenize("Ġbelirtilen").unwrap();
+        assert_eq!(tokens, vec![Token { id: 6, value: "Ġ".into(), offsets: (0, 2) }, Token { id: 4, value: "bel".into(), offsets: (2, 5) }, Token { id: 15, value: "irtil".into(), offsets: (5, 10) }, Token { id: 14, value: "en".into(), offsets: (10, 12) }])
+
     }
 }
