@@ -219,6 +219,8 @@ pub struct BPE {
     /// Byte fallback from sentence pieces, instead of UNK, uses `"<0x00>"`
     /// for each byte in the unk token
     pub byte_fallback: bool,
+    /// Whether or not to direct output words if they are part of the vocab.
+    pub check_word_in_vocab: bool,
 }
 
 impl std::fmt::Debug for BPE {
@@ -357,11 +359,13 @@ impl BPE {
         let mut indices = w.char_indices().map(|(idx, _)| idx).peekable();
         let mut word = Word::with_capacity(w.len());
         let mut unk: Option<(u32, usize)> = None;
+        println!("inside merge_word {:?}", w);
+
         while let Some(i) = indices.next() {
             let end = indices.peek();
             let is_first = i == 0;
             let is_last = end.is_none();
-
+            
             let mut s = if let Some(e) = end {
                 Cow::Borrowed(&w[i..*e])
             } else {
@@ -450,12 +454,19 @@ impl BPE {
         if let Some(ref hit) = self.cache.as_ref().and_then(|c| c.get(sequence)) {
             Ok(self.word_to_tokens(hit).collect())
         } else {
-            let word = self.merge_word(sequence)?;
-            let ret = self.word_to_tokens(&word).collect();
-            if let Some(ref cache) = self.cache {
-                cache.set(sequence.to_owned(), word);
+            if self.vocab.contains_key(sequence) && self.check_word_in_vocab{
+                let id = self.vocab.get(sequence);
+                let ret = Token::new(*id.unwrap(), sequence.to_string().clone(), (0,0));
+                Ok(vec![ret])
             }
-            Ok(ret)
+            else{
+                let word = self.merge_word(sequence)?;
+                let ret = self.word_to_tokens(&word).collect();
+                if let Some(ref cache) = self.cache {
+                    cache.set(sequence.to_owned(), word);
+                }
+                Ok(ret)
+            }
         }
     }
 }
