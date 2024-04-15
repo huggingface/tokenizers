@@ -321,14 +321,14 @@ macro_rules! setter {
 }
 
 #[derive(FromPyObject)]
-enum PyVocab<'a> {
+enum PyVocab {
     Vocab(Vocab),
-    Filename(&'a str),
+    Filename(String),
 }
 #[derive(FromPyObject)]
-enum PyMerges<'a> {
+enum PyMerges {
     Merges(Merges),
-    Filename(&'a str),
+    Filename(String),
 }
 
 #[pymethods]
@@ -870,7 +870,7 @@ mod test {
         Python::with_gil(|py| {
             let py_model = PyModel::from(BPE::default());
             let py_bpe = py_model.get_as_subtype(py).unwrap();
-            assert_eq!("BPE", py_bpe.as_ref(py).get_type().name().unwrap());
+            assert_eq!("BPE", py_bpe.as_ref(py).get_type().qualname().unwrap());
         })
     }
 

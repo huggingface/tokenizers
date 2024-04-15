@@ -468,10 +468,10 @@ impl PyPrecompiled {
     #[new]
     #[pyo3(text_signature = "(self, precompiled_charsmap)")]
     fn new(py_precompiled_charsmap: &PyBytes) -> PyResult<(Self, PyNormalizer)> {
-        let precompiled_charsmap: &[u8] = FromPyObject::extract(py_precompiled_charsmap)?;
+        let precompiled_charsmap: Vec<u8> = FromPyObject::extract(py_precompiled_charsmap)?;
         Ok((
             PyPrecompiled {},
-            Precompiled::from(precompiled_charsmap)
+            Precompiled::from(&precompiled_charsmap)
                 .map_err(|e| {
                     exceptions::PyException::new_err(format!(
                         "Error while attempting to build Precompiled normalizer: {}",
@@ -667,7 +667,7 @@ mod test {
         Python::with_gil(|py| {
             let py_norm = PyNormalizer::new(NFC.into());
             let py_nfc = py_norm.get_as_subtype(py).unwrap();
-            assert_eq!("NFC", py_nfc.as_ref(py).get_type().name().unwrap());
+            assert_eq!("NFC", py_nfc.as_ref(py).get_type().qualname().unwrap());
         })
     }
 

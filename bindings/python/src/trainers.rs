@@ -2,13 +2,13 @@ use std::sync::{Arc, RwLock};
 
 use crate::models::PyModel;
 use crate::tokenizer::PyAddedToken;
-use crate::utils::PyChar;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
 use tk::models::TrainerWrapper;
 use tk::Trainer;
+use std::collections::HashSet;
 use tokenizers as tk;
 
 /// Base class for all trainers
@@ -269,12 +269,12 @@ impl PyBpeTrainer {
     }
 
     #[setter]
-    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: Vec<PyChar>) {
+    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: HashSet<char>) {
         setter!(
             self_,
             BpeTrainer,
             initial_alphabet,
-            alphabet.into_iter().map(|c| c.0).collect()
+            alphabet
         );
     }
 
@@ -473,12 +473,12 @@ impl PyWordPieceTrainer {
     }
 
     #[setter]
-    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: Vec<PyChar>) {
+    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: HashSet<char>) {
         setter!(
             self_,
             WordPieceTrainer,
             @set_initial_alphabet,
-            alphabet.into_iter().map(|c| c.0).collect()
+            alphabet
         );
     }
 
@@ -801,12 +801,12 @@ impl PyUnigramTrainer {
     }
 
     #[setter]
-    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: Vec<PyChar>) {
+    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: HashSet<char>) {
         setter!(
             self_,
             UnigramTrainer,
             initial_alphabet,
-            alphabet.into_iter().map(|c| c.0).collect()
+            alphabet
         );
     }
 
@@ -893,7 +893,7 @@ mod tests {
         Python::with_gil(|py| {
             let py_trainer = PyTrainer::new(Arc::new(RwLock::new(BpeTrainer::default().into())));
             let py_bpe = py_trainer.get_as_subtype(py).unwrap();
-            assert_eq!("BpeTrainer", py_bpe.as_ref(py).get_type().name().unwrap());
+            assert_eq!("BpeTrainer", py_bpe.as_ref(py).get_type().qualname().unwrap());
         })
     }
 }

@@ -372,16 +372,16 @@ impl PyCharDelimiterSplit {
     }
 
     #[setter]
-    fn set_delimiter(self_: PyRef<Self>, delimiter: PyChar) {
-        setter!(self_, Delimiter, delimiter, delimiter.0);
+    fn set_delimiter(self_: PyRef<Self>, delimiter: char) {
+        setter!(self_, Delimiter, delimiter, delimiter);
     }
 
     #[new]
     #[pyo3(text_signature = None)]
-    pub fn new(delimiter: PyChar) -> PyResult<(Self, PyPreTokenizer)> {
+    pub fn new(delimiter: char) -> PyResult<(Self, PyPreTokenizer)> {
         Ok((
             PyCharDelimiterSplit {},
-            CharDelimiterSplit::new(delimiter.0).into(),
+            CharDelimiterSplit::new(delimiter).into(),
         ))
     }
 
@@ -490,8 +490,8 @@ impl PyMetaspace {
     }
 
     #[setter]
-    fn set_replacement(self_: PyRef<Self>, replacement: PyChar) {
-        setter!(self_, Metaspace, @set_replacement, replacement.0);
+    fn set_replacement(self_: PyRef<Self>, replacement: char) {
+        setter!(self_, Metaspace, @set_replacement, replacement);
     }
 
     #[getter]
@@ -524,15 +524,15 @@ impl PyMetaspace {
     }
 
     #[new]
-    #[pyo3(signature = (replacement = PyChar('▁'), prepend_scheme=String::from("always"), split=true), text_signature = "(self, replacement=\"_\", prepend_scheme=\"always\", split=True)")]
+    #[pyo3(signature = (replacement = '▁', prepend_scheme=String::from("always"), split=true), text_signature = "(self, replacement=\"_\", prepend_scheme=\"always\", split=True)")]
     fn new(
-        replacement: PyChar,
+        replacement: char,
         prepend_scheme: String,
         split: bool,
     ) -> PyResult<(Self, PyPreTokenizer)> {
         // Create a new Metaspace instance
         let prepend_scheme = from_string(prepend_scheme)?;
-        let new_instance: Metaspace = Metaspace::new(replacement.0, prepend_scheme, split);
+        let new_instance: Metaspace = Metaspace::new(replacement, prepend_scheme, split);
         Ok((PyMetaspace {}, new_instance.into()))
     }
 }
@@ -754,7 +754,7 @@ mod test {
         Python::with_gil(|py| {
             let py_norm = PyPreTokenizer::new(Whitespace {}.into());
             let py_wsp = py_norm.get_as_subtype(py).unwrap();
-            assert_eq!("Whitespace", py_wsp.as_ref(py).get_type().name().unwrap());
+            assert_eq!("Whitespace", py_wsp.as_ref(py).get_type().qualname().unwrap());
         })
     }
 

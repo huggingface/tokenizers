@@ -1,7 +1,6 @@
 use std::sync::{Arc, RwLock};
 
 use crate::pre_tokenizers::from_string;
-use crate::utils::PyChar;
 use crate::utils::PyPattern;
 use pyo3::exceptions;
 use pyo3::prelude::*;
@@ -318,8 +317,8 @@ impl PyMetaspaceDec {
     }
 
     #[setter]
-    fn set_replacement(self_: PyRef<Self>, replacement: PyChar) {
-        setter!(self_, Metaspace, @set_replacement, replacement.0);
+    fn set_replacement(self_: PyRef<Self>, replacement: char) {
+        setter!(self_, Metaspace, @set_replacement, replacement);
     }
 
     #[getter]
@@ -352,16 +351,16 @@ impl PyMetaspaceDec {
     }
 
     #[new]
-    #[pyo3(signature = (replacement = PyChar('▁'), prepend_scheme = String::from("always"), split = true), text_signature = "(self, replacement = \"▁\",  prepend_scheme = \"always\", split = True)")]
+    #[pyo3(signature = (replacement = '▁', prepend_scheme = String::from("always"), split = true), text_signature = "(self, replacement = \"▁\",  prepend_scheme = \"always\", split = True)")]
     fn new(
-        replacement: PyChar,
+        replacement: char,
         prepend_scheme: String,
         split: bool,
     ) -> PyResult<(Self, PyDecoder)> {
         let prepend_scheme = from_string(prepend_scheme)?;
         Ok((
             PyMetaspaceDec {},
-            Metaspace::new(replacement.0, prepend_scheme, split).into(),
+            Metaspace::new(replacement, prepend_scheme, split).into(),
         ))
     }
 }
@@ -602,7 +601,7 @@ mod test {
         Python::with_gil(|py| {
             let py_dec = PyDecoder::new(Metaspace::default().into());
             let py_meta = py_dec.get_as_subtype(py).unwrap();
-            assert_eq!("Metaspace", py_meta.as_ref(py).get_type().name().unwrap());
+            assert_eq!("Metaspace", py_meta.as_ref(py).get_type().qualname().unwrap());
         })
     }
 

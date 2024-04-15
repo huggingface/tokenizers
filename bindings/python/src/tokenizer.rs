@@ -377,12 +377,12 @@ impl<'s> FromPyObject<'s> for PreTokenizedInputSequence<'s> {
             return Ok(Self(seq.into()));
         }
         if let Ok(s) = ob.downcast::<PyList>() {
-            if let Ok(seq) = s.extract::<Vec<&str>>() {
+            if let Ok(seq) = s.extract::<Vec<String>>() {
                 return Ok(Self(seq.into()));
             }
         }
         if let Ok(s) = ob.downcast::<PyTuple>() {
-            if let Ok(seq) = s.extract::<Vec<&str>>() {
+            if let Ok(seq) = s.extract::<Vec<String>>() {
                 return Ok(Self(seq.into()));
             }
         }

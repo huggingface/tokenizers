@@ -9,15 +9,15 @@ use tk::pattern::Pattern;
 
 /// Represents a Pattern as used by `NormalizedString`
 #[derive(Clone, FromPyObject)]
-pub enum PyPattern<'p> {
+pub enum PyPattern {
     #[pyo3(annotation = "str")]
-    Str(&'p str),
+    Str(String),
     #[pyo3(annotation = "tokenizers.Regex")]
     Regex(Py<PyRegex>),
     // TODO: Add the compatibility for Fn(char) -> bool
 }
 
-impl Pattern for PyPattern<'_> {
+impl Pattern for PyPattern {
     fn find_matches(&self, inside: &str) -> tk::Result<Vec<(tk::Offsets, bool)>> {
         match self {
             PyPattern::Str(s) => {
@@ -35,8 +35,8 @@ impl Pattern for PyPattern<'_> {
     }
 }
 
-impl From<PyPattern<'_>> for tk::normalizers::replace::ReplacePattern {
-    fn from(pattern: PyPattern<'_>) -> Self {
+impl From<PyPattern> for tk::normalizers::replace::ReplacePattern {
+    fn from(pattern: PyPattern) -> Self {
         match pattern {
             PyPattern::Str(s) => Self::String(s.to_owned()),
             PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),
@@ -44,8 +44,8 @@ impl From<PyPattern<'_>> for tk::normalizers::replace::ReplacePattern {
     }
 }
 
-impl From<PyPattern<'_>> for tk::pre_tokenizers::split::SplitPattern {
-    fn from(pattern: PyPattern<'_>) -> Self {
+impl From<PyPattern> for tk::pre_tokenizers::split::SplitPattern {
+    fn from(pattern: PyPattern) -> Self {
         match pattern {
             PyPattern::Str(s) => Self::String(s.to_owned()),
             PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),

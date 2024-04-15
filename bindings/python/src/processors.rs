@@ -304,7 +304,7 @@ impl FromPyObject<'_> for PyTemplate {
             Ok(Self(
                 s.try_into().map_err(exceptions::PyValueError::new_err)?,
             ))
-        } else if let Ok(s) = ob.extract::<Vec<&str>>() {
+        } else if let Ok(s) = ob.extract::<Vec<String>>() {
             Ok(Self(
                 s.try_into().map_err(exceptions::PyValueError::new_err)?,
             ))
@@ -474,7 +474,7 @@ mod test {
             let py_bert = py_proc.get_as_subtype(py).unwrap();
             assert_eq!(
                 "BertProcessing",
-                py_bert.as_ref(py).get_type().name().unwrap()
+                py_bert.as_ref(py).get_type().qualname().unwrap()
             );
         })
     }
