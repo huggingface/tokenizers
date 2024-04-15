@@ -464,19 +464,17 @@ impl BPE {
     fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
         if let Some(ref hit) = self.cache.as_ref().and_then(|c| c.get(sequence)) {
             Ok(self.word_to_tokens(hit).collect())
+        } else if self.vocab.contains_key(sequence) && self.check_word_in_vocab {
+            let id = self.vocab.get(sequence);
+            let ret = Token::new(*id.unwrap(), sequence.to_string().clone(), (0, 0));
+            Ok(vec![ret])
         } else {
-            if self.vocab.contains_key(sequence) && self.check_word_in_vocab {
-                let id = self.vocab.get(sequence);
-                let ret = Token::new(*id.unwrap(), sequence.to_string().clone(), (0, 0));
-                Ok(vec![ret])
-            } else {
-                let word = self.merge_word(sequence)?;
-                let ret = self.word_to_tokens(&word).collect();
-                if let Some(ref cache) = self.cache {
-                    cache.set(sequence.to_owned(), word);
-                }
-                Ok(ret)
+            let word = self.merge_word(sequence)?;
+            let ret = self.word_to_tokens(&word).collect();
+            if let Some(ref cache) = self.cache {
+                cache.set(sequence.to_owned(), word);
             }
+            Ok(ret)
         }
     }
 }
