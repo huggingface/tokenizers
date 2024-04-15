@@ -253,7 +253,7 @@ impl PyModel {
 ///
 ///     byte_fallback (:obj:`bool`, `optional`):
 ///         Whether to use spm byte-fallback trick (defaults to False)
-/// 
+///
 ///     check_word_in_vocab (:obj:`bool`, `optional`):
 ///         Whether or not to match tokens with the vocab before using merges.
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "BPE")]
@@ -404,7 +404,7 @@ impl PyBPE {
     fn get_check_word_in_vocab(self_: PyRef<Self>) -> bool {
         getter!(self_, BPE, check_word_in_vocab)
     }
-    
+
     #[setter]
     fn set_check_word_in_vocab(self_: PyRef<Self>, check_word_in_vocab: bool) {
         setter!(self_, BPE, check_word_in_vocab, check_word_in_vocab);
