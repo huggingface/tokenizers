@@ -253,6 +253,9 @@ impl PyModel {
 ///
 ///     byte_fallback (:obj:`bool`, `optional`):
 ///         Whether to use spm byte-fallback trick (defaults to False)
+///
+///     ignore_merges (:obj:`bool`, `optional`):
+///         Whether or not to match tokens with the vocab before using merges.
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "BPE")]
 pub struct PyBPE {}
 
@@ -279,6 +282,7 @@ impl PyBPE {
                     "end_of_word_suffix" => builder = builder.end_of_word_suffix(value.extract()?),
                     "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
                     "byte_fallback" => builder = builder.byte_fallback(value.extract()?),
+                    "ignore_merges" => builder = builder.ignore_merges(value.extract()?),
                     _ => println!("Ignored unknown kwarg option {}", key),
                 };
             }
@@ -396,11 +400,19 @@ impl PyBPE {
     fn set_byte_fallback(self_: PyRef<Self>, byte_fallback: bool) {
         setter!(self_, BPE, byte_fallback, byte_fallback);
     }
+    #[getter]
+    fn get_ignore_merges(self_: PyRef<Self>) -> bool {
+        getter!(self_, BPE, ignore_merges)
+    }
 
+    #[setter]
+    fn set_ignore_merges(self_: PyRef<Self>, ignore_merges: bool) {
+        setter!(self_, BPE, ignore_merges, ignore_merges);
+    }
     #[new]
     #[pyo3(
         signature = (vocab=None, merges=None, **kwargs),
-        text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False)")]
+        text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False, ignore_merges=False)")]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
