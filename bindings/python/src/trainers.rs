@@ -8,7 +8,6 @@ use pyo3::types::*;
 use serde::{Deserialize, Serialize};
 use tk::models::TrainerWrapper;
 use tk::Trainer;
-use std::collections::HashSet;
 use tokenizers as tk;
 
 /// Base class for all trainers
@@ -52,7 +51,7 @@ impl PyTrainer {
                 e
             ))
         })?;
-        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -215,7 +214,7 @@ impl PyBpeTrainer {
     }
 
     #[setter]
-    fn set_special_tokens(self_: PyRef<Self>, special_tokens: &PyList) -> PyResult<()> {
+    fn set_special_tokens(self_: PyRef<Self>, special_tokens: &Bound<'_, PyList>) -> PyResult<()> {
         setter!(
             self_,
             BpeTrainer,
@@ -269,12 +268,12 @@ impl PyBpeTrainer {
     }
 
     #[setter]
-    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: HashSet<char>) {
+    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: Vec<char>) {
         setter!(
             self_,
             BpeTrainer,
             initial_alphabet,
-            alphabet
+            alphabet.into_iter().collect()
         );
     }
 
@@ -300,7 +299,7 @@ impl PyBpeTrainer {
 
     #[new]
     #[pyo3(signature = (**kwargs), text_signature = None)]
-    pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
+    pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::bpe::BpeTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -429,7 +428,7 @@ impl PyWordPieceTrainer {
     }
 
     #[setter]
-    fn set_special_tokens(self_: PyRef<Self>, special_tokens: &PyList) -> PyResult<()> {
+    fn set_special_tokens(self_: PyRef<Self>, special_tokens: &Bound<'_, PyList>) -> PyResult<()> {
         setter!(
             self_,
             WordPieceTrainer,
@@ -473,12 +472,12 @@ impl PyWordPieceTrainer {
     }
 
     #[setter]
-    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: HashSet<char>) {
+    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: Vec<char>) {
         setter!(
             self_,
             WordPieceTrainer,
             @set_initial_alphabet,
-            alphabet
+            alphabet.into_iter().collect()
         );
     }
 
@@ -507,7 +506,7 @@ impl PyWordPieceTrainer {
         signature = (** kwargs),
         text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet= [],continuing_subword_prefix=\"##\", end_of_word_suffix=None)"
     )]
-    pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
+    pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::wordpiece::WordPieceTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -621,7 +620,7 @@ impl PyWordLevelTrainer {
     }
 
     #[setter]
-    fn set_special_tokens(self_: PyRef<Self>, special_tokens: &PyList) -> PyResult<()> {
+    fn set_special_tokens(self_: PyRef<Self>, special_tokens: &Bound<'_, PyList>) -> PyResult<()> {
         setter!(
             self_,
             WordLevelTrainer,
@@ -647,7 +646,7 @@ impl PyWordLevelTrainer {
 
     #[new]
     #[pyo3(signature = (**kwargs), text_signature = None)]
-    pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
+    pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::wordlevel::WordLevelTrainer::builder();
 
         if let Some(kwargs) = kwargs {
@@ -767,7 +766,7 @@ impl PyUnigramTrainer {
     }
 
     #[setter]
-    fn set_special_tokens(self_: PyRef<Self>, special_tokens: &PyList) -> PyResult<()> {
+    fn set_special_tokens(self_: PyRef<Self>, special_tokens: &Bound<'_, PyList>) -> PyResult<()> {
         setter!(
             self_,
             UnigramTrainer,
@@ -801,12 +800,12 @@ impl PyUnigramTrainer {
     }
 
     #[setter]
-    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: HashSet<char>) {
+    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: Vec<char>) {
         setter!(
             self_,
             UnigramTrainer,
             initial_alphabet,
-            alphabet
+            alphabet.into_iter().collect()
         );
     }
 
@@ -815,7 +814,7 @@ impl PyUnigramTrainer {
         signature = (**kwargs),
         text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens=[], shrinking_factor=0.75, unk_token=None, max_piece_length=16, n_sub_iterations=2)"
     )]
-    pub fn new(kwargs: Option<&PyDict>) -> PyResult<(Self, PyTrainer)> {
+    pub fn new(kwargs: Option<Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::unigram::UnigramTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -874,7 +873,7 @@ impl PyUnigramTrainer {
 
 /// Trainers Module
 #[pymodule]
-pub fn trainers(_py: Python, m: &PyModule) -> PyResult<()> {
+pub fn trainers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTrainer>()?;
     m.add_class::<PyBpeTrainer>()?;
     m.add_class::<PyWordPieceTrainer>()?;
@@ -893,7 +892,7 @@ mod tests {
         Python::with_gil(|py| {
             let py_trainer = PyTrainer::new(Arc::new(RwLock::new(BpeTrainer::default().into())));
             let py_bpe = py_trainer.get_as_subtype(py).unwrap();
-            assert_eq!("BpeTrainer", py_bpe.as_ref(py).get_type().qualname().unwrap());
+            assert_eq!("BpeTrainer", py_bpe.bind(py).get_type().qualname().unwrap());
         })
     }
 }

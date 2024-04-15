@@ -78,7 +78,7 @@ impl PyPostProcessor {
                 e
             ))
         })?;
-        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -166,8 +166,8 @@ impl PyBertProcessing {
         )
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, [("", 0), ("", 0)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
+        PyTuple::new_bound(py, [("", 0), ("", 0)])
     }
 }
 
@@ -216,8 +216,8 @@ impl PyRobertaProcessing {
         )
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, [("", 0), ("", 0)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
+        PyTuple::new_bound(py, [("", 0), ("", 0)])
     }
 }
 
@@ -235,7 +235,7 @@ pub struct PyByteLevel {}
 impl PyByteLevel {
     #[new]
     #[pyo3(signature = (trim_offsets = None, **_kwargs), text_signature = "(self, trim_offsets=True)")]
-    fn new(trim_offsets: Option<bool>, _kwargs: Option<&PyDict>) -> (Self, PyPostProcessor) {
+    fn new(trim_offsets: Option<bool>, _kwargs: Option<&Bound<'_, PyDict>>) -> (Self, PyPostProcessor) {
         let mut byte_level = ByteLevel::default();
 
         if let Some(to) = trim_offsets {
@@ -424,7 +424,7 @@ pub struct PySequence {}
 impl PySequence {
     #[new]
     #[pyo3(signature = (processors_py), text_signature = "(self, processors)")]
-    fn new(processors_py: &PyList) -> (Self, PyPostProcessor) {
+    fn new(processors_py: &Bound<'_, PyList>) -> (Self, PyPostProcessor) {
         let mut processors: Vec<PostProcessorWrapper> = Vec::with_capacity(processors_py.len());
         for n in processors_py.iter() {
             let processor: PyRef<PyPostProcessor> = n.extract().unwrap();
@@ -438,14 +438,14 @@ impl PySequence {
         )
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, [PyList::empty(py)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
+        PyTuple::new_bound(py, [PyList::empty_bound(py)])
     }
 }
 
 /// Processors Module
 #[pymodule]
-pub fn processors(_py: Python, m: &PyModule) -> PyResult<()> {
+pub fn processors(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPostProcessor>()?;
     m.add_class::<PyBertProcessing>()?;
     m.add_class::<PyRobertaProcessing>()?;
@@ -474,7 +474,7 @@ mod test {
             let py_bert = py_proc.get_as_subtype(py).unwrap();
             assert_eq!(
                 "BertProcessing",
-                py_bert.as_ref(py).get_type().qualname().unwrap()
+                py_bert.bind(py).get_type().qualname().unwrap()
             );
         })
     }

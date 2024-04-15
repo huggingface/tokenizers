@@ -50,7 +50,7 @@ pub struct PyBufferedIterator<T, F> {
 
 impl<T, F, I> PyBufferedIterator<T, F>
 where
-    F: Fn(&PyAny) -> I,
+    F: Fn(Bound<'_, PyAny>) -> I,
     I: IntoIterator<Item = PyResult<T>>,
 {
     /// Create a new PyBufferedIterator using the provided Python object.
@@ -62,10 +62,10 @@ where
     ///
     /// The `buffer_size` represents the number of items that we buffer before we
     /// need to acquire the GIL again.
-    pub fn new(iter: &PyAny, converter: F, buffer_size: usize) -> PyResult<Self> {
+    pub fn new(iter: &Bound<'_, PyAny>, converter: F, buffer_size: usize) -> PyResult<Self> {
         let py = iter.py();
         let iter: Py<PyAny> = unsafe {
-            py.from_borrowed_ptr_or_err::<PyAny>(pyo3::ffi::PyObject_GetIter(iter.as_ptr()))?
+            Bound::from_borrowed_ptr_or_err(py, pyo3::ffi::PyObject_GetIter(iter.as_ptr()))?
                 .to_object(py)
         };
 
@@ -89,8 +89,8 @@ where
             }
 
             match unsafe {
-                py.from_owned_ptr_or_opt::<PyAny>(pyo3::ffi::PyIter_Next(
-                    self.iter.as_ref().unwrap().as_ref(py).as_ptr(),
+                Bound::from_owned_ptr_or_opt(py, pyo3::ffi::PyIter_Next(
+                    self.iter.as_ref().unwrap().bind(py).as_ptr(),
                 ))
             } {
                 Some(obj) => self.buffer.extend((self.converter)(obj)),
@@ -112,7 +112,7 @@ where
 
 impl<T, F, I> Iterator for PyBufferedIterator<T, F>
 where
-    F: Fn(&PyAny) -> I,
+    F: Fn(Bound<'_, PyAny>) -> I,
     I: IntoIterator<Item = PyResult<T>>,
 {
     type Item = PyResult<T>;

@@ -37,7 +37,7 @@ impl PyEncoding {
                 e
             ))
         })?;
-        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -391,10 +391,10 @@ impl PyEncoding {
     #[pyo3(
         text_signature = "(self, length, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]')"
     )]
-    fn pad(&mut self, length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn pad(&mut self, length: usize, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
         let mut pad_id = 0;
         let mut pad_type_id = 0;
-        let mut pad_token = "[PAD]";
+        let mut pad_token = "[PAD]".to_string();
         let mut direction = PaddingDirection::Right;
 
         if let Some(kwargs) = kwargs {
@@ -422,7 +422,7 @@ impl PyEncoding {
             }
         }
         self.encoding
-            .pad(length, pad_id, pad_type_id, pad_token, direction);
+            .pad(length, pad_id, pad_type_id, &pad_token, direction);
         Ok(())
     }
 

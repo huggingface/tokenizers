@@ -105,7 +105,7 @@ impl PyModel {
                 e
             ))
         })?;
-        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -260,7 +260,7 @@ impl PyModel {
 pub struct PyBPE {}
 
 impl PyBPE {
-    fn with_builder(mut builder: BpeBuilder, kwargs: Option<&PyDict>) -> PyResult<(Self, PyModel)> {
+    fn with_builder(mut builder: BpeBuilder, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyModel)> {
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
                 let key: &str = key.extract()?;
@@ -417,7 +417,7 @@ impl PyBPE {
         py: Python<'_>,
         vocab: Option<PyVocab>,
         merges: Option<PyMerges>,
-        kwargs: Option<&PyDict>,
+        kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<(Self, PyModel)> {
         if (vocab.is_some() && merges.is_none()) || (vocab.is_none() && merges.is_some()) {
             return Err(exceptions::PyValueError::new_err(
@@ -502,11 +502,11 @@ impl PyBPE {
     #[pyo3(signature = (vocab, merges, **kwargs))]
     #[pyo3(text_signature = "(cls, vocab, merge, **kwargs)")]
     fn from_file(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         py: Python,
         vocab: &str,
         merges: &str,
-        kwargs: Option<&PyDict>,
+        kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<Self>> {
         let (vocab, merges) = BPE::read_file(vocab, merges).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading BPE files: {}", e))
@@ -540,7 +540,7 @@ pub struct PyWordPiece {}
 impl PyWordPiece {
     fn with_builder(
         mut builder: WordPieceBuilder,
-        kwargs: Option<&PyDict>,
+        kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<(Self, PyModel)> {
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -612,7 +612,7 @@ impl PyWordPiece {
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
-        kwargs: Option<&PyDict>,
+        kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<(Self, PyModel)> {
         let mut builder = WordPiece::builder();
 
@@ -677,10 +677,10 @@ impl PyWordPiece {
     #[pyo3(signature = (vocab, **kwargs))]
     #[pyo3(text_signature = "(vocab, **kwargs)")]
     fn from_file(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         py: Python,
         vocab: &str,
-        kwargs: Option<&PyDict>,
+        kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<Self>> {
         let vocab = WordPiece::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordPiece file: {}", e))
@@ -796,7 +796,7 @@ impl PyWordLevel {
     #[pyo3(signature = (vocab, unk_token = None))]
     #[pyo3(text_signature = "(vocab, unk_token)")]
     fn from_file(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         py: Python,
         vocab: &str,
         unk_token: Option<String>,
@@ -849,7 +849,7 @@ impl PyUnigram {
 
 /// Models Module
 #[pymodule]
-pub fn models(_py: Python, m: &PyModule) -> PyResult<()> {
+pub fn models(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyModel>()?;
     m.add_class::<PyBPE>()?;
     m.add_class::<PyWordPiece>()?;
@@ -870,7 +870,7 @@ mod test {
         Python::with_gil(|py| {
             let py_model = PyModel::from(BPE::default());
             let py_bpe = py_model.get_as_subtype(py).unwrap();
-            assert_eq!("BPE", py_bpe.as_ref(py).get_type().qualname().unwrap());
+            assert_eq!("BPE", py_bpe.bind(py).get_type().qualname().unwrap());
         })
     }
 

@@ -84,7 +84,7 @@ impl PyDecoder {
                 e
             ))
         })?;
-        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -160,7 +160,7 @@ pub struct PyByteLevelDec {}
 impl PyByteLevelDec {
     #[new]
     #[pyo3(signature = (**_kwargs), text_signature = "(self)")]
-    fn new(_kwargs: Option<&PyDict>) -> (Self, PyDecoder) {
+    fn new(_kwargs: Option<&Bound<'_, PyDict>>) -> (Self, PyDecoder) {
         (PyByteLevelDec {}, ByteLevel::default().into())
     }
 }
@@ -462,7 +462,7 @@ pub struct PySequenceDecoder {}
 impl PySequenceDecoder {
     #[new]
     #[pyo3(signature = (decoders_py), text_signature = "(self, decoders)")]
-    fn new(decoders_py: &PyList) -> PyResult<(Self, PyDecoder)> {
+    fn new(decoders_py: &Bound<'_, PyList>) -> PyResult<(Self, PyDecoder)> {
         let mut decoders: Vec<DecoderWrapper> = Vec::with_capacity(decoders_py.len());
         for decoder_py in decoders_py.iter() {
             let decoder: PyRef<PyDecoder> = decoder_py.extract()?;
@@ -475,8 +475,8 @@ impl PySequenceDecoder {
         Ok((PySequenceDecoder {}, Sequence::new(decoders).into()))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, [PyList::empty(py)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
+        PyTuple::new_bound(py, [PyList::empty_bound(py)])
     }
 }
 
@@ -496,7 +496,7 @@ impl Decoder for CustomDecoder {
         Python::with_gil(|py| {
             let decoded = self
                 .inner
-                .call_method(py, "decode", (tokens,), None)?
+                .call_method_bound(py, "decode", (tokens,), None)?
                 .extract(py)?;
             Ok(decoded)
         })
@@ -506,7 +506,7 @@ impl Decoder for CustomDecoder {
         Python::with_gil(|py| {
             let decoded = self
                 .inner
-                .call_method(py, "decode_chain", (tokens,), None)?
+                .call_method_bound(py, "decode_chain", (tokens,), None)?
                 .extract(py)?;
             Ok(decoded)
         })
@@ -571,7 +571,7 @@ impl Decoder for PyDecoderWrapper {
 
 /// Decoders Module
 #[pymodule]
-pub fn decoders(_py: Python, m: &PyModule) -> PyResult<()> {
+pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDecoder>()?;
     m.add_class::<PyByteLevelDec>()?;
     m.add_class::<PyReplaceDec>()?;
@@ -601,7 +601,7 @@ mod test {
         Python::with_gil(|py| {
             let py_dec = PyDecoder::new(Metaspace::default().into());
             let py_meta = py_dec.get_as_subtype(py).unwrap();
-            assert_eq!("Metaspace", py_meta.as_ref(py).get_type().qualname().unwrap());
+            assert_eq!("Metaspace", py_meta.bind(py).get_type().qualname().unwrap());
         })
     }
 

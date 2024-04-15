@@ -118,7 +118,7 @@ impl PyPreTokenizer {
                 e
             ))
         })?;
-        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -263,7 +263,7 @@ impl PyByteLevel {
     fn new(
         add_prefix_space: bool,
         use_regex: bool,
-        _kwargs: Option<&PyDict>,
+        _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> (Self, PyPreTokenizer) {
         (
             PyByteLevel {},
@@ -352,8 +352,8 @@ impl PySplit {
         ))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, [" ", "removed"])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
+        PyTuple::new_bound(py, [" ", "removed"])
     }
 }
 
@@ -385,8 +385,8 @@ impl PyCharDelimiterSplit {
         ))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, [" "])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
+        PyTuple::new_bound(py, [" "])
     }
 }
 
@@ -430,7 +430,7 @@ pub struct PySequence {}
 impl PySequence {
     #[new]
     #[pyo3(text_signature = "(self, pretokenizers)")]
-    fn new(pre_tokenizers: &PyList) -> PyResult<(Self, PyPreTokenizer)> {
+    fn new(pre_tokenizers: &Bound<'_, PyList>) -> PyResult<(Self, PyPreTokenizer)> {
         let mut sequence = Vec::with_capacity(pre_tokenizers.len());
         for n in pre_tokenizers.iter() {
             let pretokenizer: PyRef<PyPreTokenizer> = n.extract()?;
@@ -447,8 +447,8 @@ impl PySequence {
         ))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, [PyList::empty(py)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
+        PyTuple::new_bound(py, [PyList::empty_bound(py)])
     }
 }
 
@@ -599,7 +599,7 @@ impl tk::tokenizer::PreTokenizer for CustomPreTokenizer {
     fn pre_tokenize(&self, sentence: &mut PreTokenizedString) -> tk::Result<()> {
         Python::with_gil(|py| {
             let pretok = PyPreTokenizedStringRefMut::new(sentence);
-            let py_pretok = self.inner.as_ref(py);
+            let py_pretok = self.inner.bind(py);
             py_pretok.call_method("pre_tokenize", (pretok.get(),), None)?;
             Ok(())
         })
@@ -722,7 +722,7 @@ impl PreTokenizer for PyPreTokenizerWrapper {
 
 /// PreTokenizers Module
 #[pymodule]
-pub fn pre_tokenizers(_py: Python, m: &PyModule) -> PyResult<()> {
+pub fn pre_tokenizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPreTokenizer>()?;
     m.add_class::<PyByteLevel>()?;
     m.add_class::<PyWhitespace>()?;
@@ -754,7 +754,7 @@ mod test {
         Python::with_gil(|py| {
             let py_norm = PyPreTokenizer::new(Whitespace {}.into());
             let py_wsp = py_norm.get_as_subtype(py).unwrap();
-            assert_eq!("Whitespace", py_wsp.as_ref(py).get_type().qualname().unwrap());
+            assert_eq!("Whitespace", py_wsp.bind(py).get_type().qualname().unwrap());
         })
     }
 
