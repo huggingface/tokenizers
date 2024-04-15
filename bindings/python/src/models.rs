@@ -282,7 +282,7 @@ impl PyBPE {
                     "end_of_word_suffix" => builder = builder.end_of_word_suffix(value.extract()?),
                     "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
                     "byte_fallback" => builder = builder.byte_fallback(value.extract()?),
-                    "ignore_merges" => builder = builder.byte_fallback(value.extract()?),
+                    "ignore_merges" => builder = builder.ignore_merges(value.extract()?),
                     _ => println!("Ignored unknown kwarg option {}", key),
                 };
             }
