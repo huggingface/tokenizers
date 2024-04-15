@@ -127,7 +127,7 @@ class BPE(Model):
         end_of_word_suffix=None,
         fuse_unk=None,
         byte_fallback=False,
-        check_word_in_vocab=False,
+        ignore_merges=False,
     ):
         pass
 
