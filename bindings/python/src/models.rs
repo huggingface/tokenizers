@@ -254,7 +254,7 @@ impl PyModel {
 ///     byte_fallback (:obj:`bool`, `optional`):
 ///         Whether to use spm byte-fallback trick (defaults to False)
 ///
-///     check_word_in_vocab (:obj:`bool`, `optional`):
+///     use_tiktoken_bug (:obj:`bool`, `optional`):
 ///         Whether or not to match tokens with the vocab before using merges.
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "BPE")]
 pub struct PyBPE {}
@@ -282,7 +282,7 @@ impl PyBPE {
                     "end_of_word_suffix" => builder = builder.end_of_word_suffix(value.extract()?),
                     "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
                     "byte_fallback" => builder = builder.byte_fallback(value.extract()?),
-                    "check_word_in_vocab" => builder = builder.byte_fallback(value.extract()?),
+                    "use_tiktoken_bug" => builder = builder.byte_fallback(value.extract()?),
                     _ => println!("Ignored unknown kwarg option {}", key),
                 };
             }
@@ -401,18 +401,18 @@ impl PyBPE {
         setter!(self_, BPE, byte_fallback, byte_fallback);
     }
     #[getter]
-    fn get_check_word_in_vocab(self_: PyRef<Self>) -> bool {
-        getter!(self_, BPE, check_word_in_vocab)
+    fn get_use_tiktoken_bug(self_: PyRef<Self>) -> bool {
+        getter!(self_, BPE, use_tiktoken_bug)
     }
 
     #[setter]
-    fn set_check_word_in_vocab(self_: PyRef<Self>, check_word_in_vocab: bool) {
-        setter!(self_, BPE, check_word_in_vocab, check_word_in_vocab);
+    fn set_use_tiktoken_bug(self_: PyRef<Self>, use_tiktoken_bug: bool) {
+        setter!(self_, BPE, use_tiktoken_bug, use_tiktoken_bug);
     }
     #[new]
     #[pyo3(
         signature = (vocab=None, merges=None, **kwargs),
-        text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False, check_word_in_vocab=False)")]
+        text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False, use_tiktoken_bug=False)")]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
