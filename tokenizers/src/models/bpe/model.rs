@@ -912,7 +912,19 @@ mod tests {
         .cloned()
         .collect();
         let mut bpe = BpeBuilder::default()
-            .vocab_and_merges(vocab, vec![(".".into(), ":".into()),("b".into(), "e".into()), ("be".into(), "l".into()), ("i".into(), "r".into()),  ("t".into(), "i".into()), ("ir".into(), "ti".into()), ("e".into(), "n".into()), ("irti".into(), "l".into())])
+            .vocab_and_merges(
+                vocab,
+                vec![
+                    (".".into(), ":".into()),
+                    ("b".into(), "e".into()),
+                    ("be".into(), "l".into()),
+                    ("i".into(), "r".into()),
+                    ("t".into(), "i".into()),
+                    ("ir".into(), "ti".into()),
+                    ("e".into(), "n".into()),
+                    ("irti".into(), "l".into()),
+                ],
+            )
             .use_tiktoken_bug(true)
             .build()
             .unwrap();
@@ -923,12 +935,41 @@ mod tests {
         assert_eq!(tokens, vec![Token::new(1u32, "Ġbelirtilen".into(), (0, 0))]);
 
         bpe.use_tiktoken_bug = false;
-        
+
         let tokens = bpe.tokenize(".:.:").unwrap();
-        assert_eq!(tokens, vec![Token::new(7u32, ".:".into(), (0, 2)), Token::new(7u32, ".:".into(), (2, 4))]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(7u32, ".:".into(), (0, 2)),
+                Token::new(7u32, ".:".into(), (2, 4))
+            ]
+        );
 
         let tokens = bpe.tokenize("Ġbelirtilen").unwrap();
-        assert_eq!(tokens, vec![Token { id: 6, value: "Ġ".into(), offsets: (0, 2) }, Token { id: 4, value: "bel".into(), offsets: (2, 5) }, Token { id: 15, value: "irtil".into(), offsets: (5, 10) }, Token { id: 14, value: "en".into(), offsets: (10, 12) }])
-
+        assert_eq!(
+            tokens,
+            vec![
+                Token {
+                    id: 6,
+                    value: "Ġ".into(),
+                    offsets: (0, 2)
+                },
+                Token {
+                    id: 4,
+                    value: "bel".into(),
+                    offsets: (2, 5)
+                },
+                Token {
+                    id: 15,
+                    value: "irtil".into(),
+                    offsets: (5, 10)
+                },
+                Token {
+                    id: 14,
+                    value: "en".into(),
+                    offsets: (10, 12)
+                }
+            ]
+        )
     }
 }
