@@ -28,7 +28,7 @@ struct Config {
     end_of_word_suffix: Option<String>,
     fuse_unk: bool,
     byte_fallback: bool,
-    check_word_in_vocab: bool
+    check_word_in_vocab: bool,
 }
 
 /// A `BpeBuilder` can be used to create a `BPE` model with a custom configuration.
@@ -198,7 +198,7 @@ impl BpeBuilder {
             end_of_word_suffix: self.config.end_of_word_suffix,
             fuse_unk: self.config.fuse_unk,
             byte_fallback: self.config.byte_fallback,
-            check_word_in_vocab: self.config.check_word_in_vocab
+            check_word_in_vocab: self.config.check_word_in_vocab,
         })
     }
 }
@@ -270,7 +270,7 @@ impl Clone for BPE {
             end_of_word_suffix: self.end_of_word_suffix.clone(),
             fuse_unk: self.fuse_unk,
             byte_fallback: self.byte_fallback,
-            check_word_in_vocab: self.check_word_in_vocab
+            check_word_in_vocab: self.check_word_in_vocab,
         }
     }
 }
@@ -376,7 +376,7 @@ impl BPE {
             let end = indices.peek();
             let is_first = i == 0;
             let is_last = end.is_none();
-            
+
             let mut s = if let Some(e) = end {
                 Cow::Borrowed(&w[i..*e])
             } else {
@@ -465,12 +465,11 @@ impl BPE {
         if let Some(ref hit) = self.cache.as_ref().and_then(|c| c.get(sequence)) {
             Ok(self.word_to_tokens(hit).collect())
         } else {
-            if self.vocab.contains_key(sequence) && self.check_word_in_vocab{
+            if self.vocab.contains_key(sequence) && self.check_word_in_vocab {
                 let id = self.vocab.get(sequence);
-                let ret = Token::new(*id.unwrap(), sequence.to_string().clone(), (0,0));
+                let ret = Token::new(*id.unwrap(), sequence.to_string().clone(), (0, 0));
                 Ok(vec![ret])
-            }
-            else{
+            } else {
                 let word = self.merge_word(sequence)?;
                 let ret = self.word_to_tokens(&word).collect();
                 if let Some(ref cache) = self.cache {
