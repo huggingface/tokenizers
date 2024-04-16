@@ -1,6 +1,6 @@
 [package]
 name = "tokenizers-python"
-version = "0.16.0-dev.0"
+version = "0.19.0-dev.0"
 authors = ["Anthony MOI <m.anthony.moi@gmail.com>"]
 edition = "2021"
 
@@ -21,7 +21,6 @@ onig = { version = "6.4", default-features = false }
 itertools = "0.12"
 
 [dependencies.tokenizers]
-version = "0.16.0-dev.0"
 path = "../../tokenizers"
 
 [dev-dependencies]
