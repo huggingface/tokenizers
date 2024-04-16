@@ -477,9 +477,12 @@ pub(crate) fn from_string(string: String) -> Result<PrependScheme, PyErr> {
 ///         The replacement character. Must be exactly one character. By default we
 ///         use the `▁` (U+2581) meta symbol (Same as in SentencePiece).
 ///
-///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
+///     prepend_scheme (:obj:`str`, `optional`, defaults to :obj:`"always"`):
 ///         Whether to add a space to the first word if there isn't already one. This
 ///         lets us treat `hello` exactly like `say hello`.
+///         Choices: "always", "never", "first". First means the space is only added on the first
+///         token (relevant when special tokens are used or other pre_tokenizer are used).
+///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Metaspace")]
 pub struct PyMetaspace {}
 #[pymethods]
