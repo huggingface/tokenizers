@@ -113,7 +113,7 @@ impl PyNormalizer {
                 e
             ))
         })?;
-        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -345,7 +345,7 @@ pub struct PySequence {}
 impl PySequence {
     #[new]
     #[pyo3(text_signature = None)]
-    fn new(normalizers: &PyList) -> PyResult<(Self, PyNormalizer)> {
+    fn new(normalizers: &Bound<'_, PyList>) -> PyResult<(Self, PyNormalizer)> {
         let mut sequence = Vec::with_capacity(normalizers.len());
         for n in normalizers.iter() {
             let normalizer: PyRef<PyNormalizer> = n.extract()?;
@@ -360,8 +360,8 @@ impl PySequence {
         ))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
-        PyTuple::new(py, [PyList::empty(py)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
+        PyTuple::new_bound(py, [PyList::empty_bound(py)])
     }
 
     fn __len__(&self) -> usize {
@@ -467,11 +467,11 @@ pub struct PyPrecompiled {}
 impl PyPrecompiled {
     #[new]
     #[pyo3(text_signature = "(self, precompiled_charsmap)")]
-    fn new(py_precompiled_charsmap: &PyBytes) -> PyResult<(Self, PyNormalizer)> {
-        let precompiled_charsmap: &[u8] = FromPyObject::extract(py_precompiled_charsmap)?;
+    fn new(precompiled_charsmap: Vec<u8>) -> PyResult<(Self, PyNormalizer)> {
+        // let precompiled_charsmap: Vec<u8> = FromPyObject::extract(py_precompiled_charsmap)?;
         Ok((
             PyPrecompiled {},
-            Precompiled::from(precompiled_charsmap)
+            Precompiled::from(&precompiled_charsmap)
                 .map_err(|e| {
                     exceptions::PyException::new_err(format!(
                         "Error while attempting to build Precompiled normalizer: {}",
@@ -512,7 +512,7 @@ impl tk::tokenizer::Normalizer for CustomNormalizer {
     fn normalize(&self, normalized: &mut NormalizedString) -> tk::Result<()> {
         Python::with_gil(|py| {
             let normalized = PyNormalizedStringRefMut::new(normalized);
-            let py_normalized = self.inner.as_ref(py);
+            let py_normalized = self.inner.bind(py);
             py_normalized.call_method("normalize", (normalized.get(),), None)?;
             Ok(())
         })
@@ -635,7 +635,7 @@ impl Normalizer for PyNormalizerWrapper {
 
 /// Normalizers Module
 #[pymodule]
-pub fn normalizers(_py: Python, m: &PyModule) -> PyResult<()> {
+pub fn normalizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyNormalizer>()?;
     m.add_class::<PyBertNormalizer>()?;
     m.add_class::<PyNFD>()?;
@@ -667,7 +667,7 @@ mod test {
         Python::with_gil(|py| {
             let py_norm = PyNormalizer::new(NFC.into());
             let py_nfc = py_norm.get_as_subtype(py).unwrap();
-            assert_eq!("NFC", py_nfc.as_ref(py).get_type().name().unwrap());
+            assert_eq!("NFC", py_nfc.bind(py).get_type().qualname().unwrap());
         })
     }
 

@@ -9,15 +9,15 @@ use tk::pattern::Pattern;
 
 /// Represents a Pattern as used by `NormalizedString`
 #[derive(Clone, FromPyObject)]
-pub enum PyPattern<'p> {
+pub enum PyPattern {
     #[pyo3(annotation = "str")]
-    Str(&'p str),
+    Str(String),
     #[pyo3(annotation = "tokenizers.Regex")]
     Regex(Py<PyRegex>),
     // TODO: Add the compatibility for Fn(char) -> bool
 }
 
-impl Pattern for PyPattern<'_> {
+impl Pattern for PyPattern {
     fn find_matches(&self, inside: &str) -> tk::Result<Vec<(tk::Offsets, bool)>> {
         match self {
             PyPattern::Str(s) => {
@@ -35,8 +35,8 @@ impl Pattern for PyPattern<'_> {
     }
 }
 
-impl From<PyPattern<'_>> for tk::normalizers::replace::ReplacePattern {
-    fn from(pattern: PyPattern<'_>) -> Self {
+impl From<PyPattern> for tk::normalizers::replace::ReplacePattern {
+    fn from(pattern: PyPattern) -> Self {
         match pattern {
             PyPattern::Str(s) => Self::String(s.to_owned()),
             PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),
@@ -44,8 +44,8 @@ impl From<PyPattern<'_>> for tk::normalizers::replace::ReplacePattern {
     }
 }
 
-impl From<PyPattern<'_>> for tk::pre_tokenizers::split::SplitPattern {
-    fn from(pattern: PyPattern<'_>) -> Self {
+impl From<PyPattern> for tk::pre_tokenizers::split::SplitPattern {
+    fn from(pattern: PyPattern) -> Self {
         match pattern {
             PyPattern::Str(s) => Self::String(s.to_owned()),
             PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),
@@ -117,7 +117,7 @@ impl From<PySplitDelimiterBehavior> for SplitDelimiterBehavior {
     }
 }
 
-fn filter(normalized: &mut NormalizedString, func: &PyAny) -> PyResult<()> {
+fn filter(normalized: &mut NormalizedString, func: &Bound<'_, PyAny>) -> PyResult<()> {
     let err = "`filter` expect a callable with the signature: `fn(char) -> bool`";
 
     if !func.is_callable() {
@@ -134,7 +134,7 @@ fn filter(normalized: &mut NormalizedString, func: &PyAny) -> PyResult<()> {
     }
 }
 
-fn for_each(normalized: &NormalizedString, func: &PyAny) -> PyResult<()> {
+fn for_each(normalized: &NormalizedString, func: &Bound<'_, PyAny>) -> PyResult<()> {
     let err = "`for_each` expect a callable with the signature: `fn(char)`";
 
     if !func.is_callable() {
@@ -148,14 +148,14 @@ fn for_each(normalized: &NormalizedString, func: &PyAny) -> PyResult<()> {
     }
 }
 
-fn map(normalized: &mut NormalizedString, func: &PyAny) -> PyResult<()> {
+fn map(normalized: &mut NormalizedString, func: &Bound<'_, PyAny>) -> PyResult<()> {
     let err = "`map` expect a callable with the signature: `fn(char) -> char`";
 
     if !func.is_callable() {
         Err(exceptions::PyTypeError::new_err(err))
     } else {
         normalized.map(|c| {
-            let c: &str = func
+            let c: String = func
                 .call1((c.to_string(),))
                 .expect(err)
                 .extract()
@@ -296,13 +296,13 @@ impl PyNormalizedString {
 
     /// Filter each character of the string using the given func
     #[pyo3(text_signature = "(self, func)")]
-    fn filter(&mut self, func: &PyAny) -> PyResult<()> {
+    fn filter(&mut self, func: &Bound<'_, PyAny>) -> PyResult<()> {
         filter(&mut self.normalized, func)
     }
 
     /// Calls the given function for each character of the string
     #[pyo3(text_signature = "(self, func)")]
-    fn for_each(&self, func: &PyAny) -> PyResult<()> {
+    fn for_each(&self, func: &Bound<'_, PyAny>) -> PyResult<()> {
         for_each(&self.normalized, func)
     }
 
@@ -311,7 +311,7 @@ impl PyNormalizedString {
     /// Replaces each character of the string using the returned value. Each
     /// returned value **must** be a str of length 1 (ie a character).
     #[pyo3(text_signature = "(self, func)")]
-    fn map(&mut self, func: &PyAny) -> PyResult<()> {
+    fn map(&mut self, func: &Bound<'_, PyAny>) -> PyResult<()> {
         map(&mut self.normalized, func)
     }
 
@@ -551,21 +551,21 @@ impl PyNormalizedStringRefMut {
             .ok_or_else(PyNormalizedStringRefMut::destroyed_error)?
     }
 
-    fn filter(&mut self, func: &PyAny) -> PyResult<()> {
+    fn filter(&mut self, func: &Bound<'_, PyAny>) -> PyResult<()> {
         self.inner
             .map_mut(|n| filter(n, func))
             .ok_or_else(PyNormalizedStringRefMut::destroyed_error)??;
         Ok(())
     }
 
-    fn for_each(&self, func: &PyAny) -> PyResult<()> {
+    fn for_each(&self, func: &Bound<'_, PyAny>) -> PyResult<()> {
         self.inner
             .map(|n| for_each(n, func))
             .ok_or_else(PyNormalizedStringRefMut::destroyed_error)??;
         Ok(())
     }
 
-    fn map(&mut self, func: &PyAny) -> PyResult<()> {
+    fn map(&mut self, func: &Bound<'_, PyAny>) -> PyResult<()> {
         self.inner
             .map_mut(|n| map(n, func))
             .ok_or_else(PyNormalizedStringRefMut::destroyed_error)??;

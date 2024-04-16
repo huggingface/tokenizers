@@ -12,7 +12,7 @@ use crate::error::ToPyResult;
 use crate::token::PyToken;
 use tk::{OffsetReferential, OffsetType, Offsets, PreTokenizedString, Token};
 
-fn split(pretok: &mut PreTokenizedString, func: &PyAny) -> PyResult<()> {
+fn split(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResult<()> {
     if !func.is_callable() {
         Err(exceptions::PyTypeError::new_err(
             "`split` expect a callable with the signature: \
@@ -30,7 +30,7 @@ fn split(pretok: &mut PreTokenizedString, func: &PyAny) -> PyResult<()> {
     }
 }
 
-fn normalize(pretok: &mut PreTokenizedString, func: &PyAny) -> PyResult<()> {
+fn normalize(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResult<()> {
     if !func.is_callable() {
         Err(exceptions::PyTypeError::new_err(
             "`normalize` expect a callable with the signature: \
@@ -46,7 +46,7 @@ fn normalize(pretok: &mut PreTokenizedString, func: &PyAny) -> PyResult<()> {
     }
 }
 
-fn tokenize(pretok: &mut PreTokenizedString, func: &PyAny) -> PyResult<()> {
+fn tokenize(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResult<()> {
     if !func.is_callable() {
         Err(exceptions::PyTypeError::new_err(
             "`tokenize` expect a callable with the signature: \
@@ -183,7 +183,7 @@ impl PyPreTokenizedString {
     ///         In order for the offsets to be tracked accurately, any returned `NormalizedString`
     ///         should come from calling either `.split` or `.slice` on the received one.
     #[pyo3(text_signature = "(self, func)")]
-    fn split(&mut self, func: &PyAny) -> PyResult<()> {
+    fn split(&mut self, func: &Bound<'_, PyAny>) -> PyResult<()> {
         split(&mut self.pretok, func)
     }
 
@@ -195,7 +195,7 @@ impl PyPreTokenizedString {
     ///         does not need to return anything, just calling the methods on the provided
     ///         NormalizedString allow its modification.
     #[pyo3(text_signature = "(self, func)")]
-    fn normalize(&mut self, func: &PyAny) -> PyResult<()> {
+    fn normalize(&mut self, func: &Bound<'_, PyAny>) -> PyResult<()> {
         normalize(&mut self.pretok, func)
     }
 
@@ -206,7 +206,7 @@ impl PyPreTokenizedString {
     ///         The function used to tokenize each underlying split. This function must return
     ///         a list of Token generated from the input str.
     #[pyo3(text_signature = "(self, func)")]
-    fn tokenize(&mut self, func: &PyAny) -> PyResult<()> {
+    fn tokenize(&mut self, func: &Bound<'_, PyAny>) -> PyResult<()> {
         tokenize(&mut self.pretok, func)
     }
 
@@ -289,19 +289,19 @@ impl PyPreTokenizedStringRefMut {
 
 #[pymethods]
 impl PyPreTokenizedStringRefMut {
-    fn split(&mut self, func: &PyAny) -> PyResult<()> {
+    fn split(&mut self, func: &Bound<'_, PyAny>) -> PyResult<()> {
         self.inner
             .map_mut(|pretok| split(pretok, func))
             .ok_or_else(PyPreTokenizedStringRefMut::destroyed_error)?
     }
 
-    fn normalize(&mut self, func: &PyAny) -> PyResult<()> {
+    fn normalize(&mut self, func: &Bound<'_, PyAny>) -> PyResult<()> {
         self.inner
             .map_mut(|pretok| normalize(pretok, func))
             .ok_or_else(PyPreTokenizedStringRefMut::destroyed_error)?
     }
 
-    fn tokenize(&mut self, func: &PyAny) -> PyResult<()> {
+    fn tokenize(&mut self, func: &Bound<'_, PyAny>) -> PyResult<()> {
         self.inner
             .map_mut(|pretok| tokenize(pretok, func))
             .ok_or_else(PyPreTokenizedStringRefMut::destroyed_error)?

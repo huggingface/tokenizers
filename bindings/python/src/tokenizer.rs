@@ -98,8 +98,8 @@ impl PyAddedToken {
         token
     }
 
-    pub fn as_pydict<'py>(&self, py: Python<'py>) -> PyResult<&'py PyDict> {
-        let dict = PyDict::new(py);
+    pub fn as_pydict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new_bound(py);
         let token = self.get_token();
 
         dict.set_item("content", token.content)?;
@@ -130,7 +130,7 @@ impl From<tk::AddedToken> for PyAddedToken {
 impl PyAddedToken {
     #[new]
     #[pyo3(signature = (content=None, **kwargs), text_signature = "(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False)")]
-    fn __new__(content: Option<&str>, kwargs: Option<&PyDict>) -> PyResult<Self> {
+    fn __new__(content: Option<&str>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let mut token = PyAddedToken::from(content.unwrap_or(""), None);
 
         if let Some(kwargs) = kwargs {
@@ -150,7 +150,7 @@ impl PyAddedToken {
         Ok(token)
     }
 
-    fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<&'py PyDict> {
+    fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         self.as_pydict(py)
     }
 
@@ -329,7 +329,7 @@ impl FromPyObject<'_> for PyArrayUnicode {
                     );
                     let py = ob.py();
                     let obj = PyObject::from_owned_ptr(py, unicode);
-                    let s = obj.downcast::<PyString>(py)?;
+                    let s = obj.downcast_bound::<PyString>(py)?;
                     Ok(s.to_string_lossy().trim_matches(char::from(0)).to_owned())
                 })
                 .collect::<PyResult<Vec<_>>>()?;
@@ -353,7 +353,7 @@ impl FromPyObject<'_> for PyArrayStr {
             .as_array()
             .iter()
             .map(|obj| {
-                let s = obj.downcast::<PyString>(ob.py())?;
+                let s = obj.downcast_bound::<PyString>(ob.py())?;
                 Ok(s.to_string_lossy().into_owned())
             })
             .collect::<PyResult<Vec<_>>>()?;
@@ -377,12 +377,12 @@ impl<'s> FromPyObject<'s> for PreTokenizedInputSequence<'s> {
             return Ok(Self(seq.into()));
         }
         if let Ok(s) = ob.downcast::<PyList>() {
-            if let Ok(seq) = s.extract::<Vec<&str>>() {
+            if let Ok(seq) = s.extract::<Vec<String>>() {
                 return Ok(Self(seq.into()));
             }
         }
         if let Ok(s) = ob.downcast::<PyTuple>() {
-            if let Ok(seq) = s.extract::<Vec<&str>>() {
+            if let Ok(seq) = s.extract::<Vec<String>>() {
                 return Ok(Self(seq.into()));
             }
         }
@@ -492,7 +492,7 @@ impl PyTokenizer {
                 e
             ))
         })?;
-        Ok(PyBytes::new(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -510,9 +510,9 @@ impl PyTokenizer {
         }
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> &'p PyTuple {
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
         let model = PyModel::from(BPE::default()).into_py(py);
-        PyTuple::new(py, vec![model])
+        PyTuple::new_bound(py, vec![model])
     }
 
     /// Instantiate a new :class:`~tokenizers.Tokenizer` from the given JSON string.
@@ -557,7 +557,7 @@ impl PyTokenizer {
     ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
     #[pyo3(text_signature = "(buffer)")]
-    fn from_buffer(buffer: &PyBytes) -> PyResult<Self> {
+    fn from_buffer(buffer: &Bound<'_, PyBytes>) -> PyResult<Self> {
         let tokenizer = serde_json::from_slice(buffer.as_bytes()).map_err(|e| {
             exceptions::PyValueError::new_err(format!(
                 "Cannot instantiate Tokenizer from buffer: {}",
@@ -591,18 +591,18 @@ impl PyTokenizer {
         auth_token: Option<String>,
     ) -> PyResult<Self> {
         let path = Python::with_gil(|py| -> PyResult<String> {
-            let huggingface_hub = PyModule::import(py, intern!(py, "huggingface_hub"))?;
+            let huggingface_hub = PyModule::import_bound(py, intern!(py, "huggingface_hub"))?;
             let hf_hub_download = huggingface_hub.getattr(intern!(py, "hf_hub_download"))?;
             let kwargs = [
                 (intern!(py, "repo_id"), identifier),
                 (intern!(py, "filename"), "tokenizer.json"),
                 (intern!(py, "revision"), &revision),
             ]
-            .into_py_dict(py);
+            .into_py_dict_bound(py);
             if let Some(auth_token) = auth_token {
                 kwargs.set_item(intern!(py, "token"), auth_token)?;
             }
-            let path: String = hf_hub_download.call((), Some(kwargs))?.extract()?;
+            let path: String = hf_hub_download.call((), Some(&kwargs))?.extract()?;
             Ok(path)
         })?;
 
@@ -712,7 +712,11 @@ impl PyTokenizer {
     #[pyo3(
         text_signature = "(self, max_length, stride=0, strategy='longest_first', direction='right')"
     )]
-    fn enable_truncation(&mut self, max_length: usize, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn enable_truncation(
+        &mut self,
+        max_length: usize,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<()> {
         let mut params = TruncationParams {
             max_length,
             ..Default::default()
@@ -777,9 +781,9 @@ impl PyTokenizer {
     ///     (:obj:`dict`, `optional`):
     ///         A dict with the current truncation parameters if truncation is enabled
     #[getter]
-    fn get_truncation<'py>(&self, py: Python<'py>) -> PyResult<Option<&'py PyDict>> {
+    fn get_truncation<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
         self.tokenizer.get_truncation().map_or(Ok(None), |params| {
-            let dict = PyDict::new(py);
+            let dict = PyDict::new_bound(py);
 
             dict.set_item("max_length", params.max_length)?;
             dict.set_item("stride", params.stride)?;
@@ -817,7 +821,7 @@ impl PyTokenizer {
     #[pyo3(
         text_signature = "(self, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]', length=None, pad_to_multiple_of=None)"
     )]
-    fn enable_padding(&mut self, kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn enable_padding(&mut self, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
         let mut params = PaddingParams::default();
 
         if let Some(kwargs) = kwargs {
@@ -887,9 +891,9 @@ impl PyTokenizer {
     ///     (:obj:`dict`, `optional`):
     ///         A dict with the current padding parameters if padding is enabled
     #[getter]
-    fn get_padding<'py>(&self, py: Python<'py>) -> PyResult<Option<&'py PyDict>> {
+    fn get_padding<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
         self.tokenizer.get_padding().map_or(Ok(None), |params| {
-            let dict = PyDict::new(py);
+            let dict = PyDict::new_bound(py);
 
             dict.set_item(
                 "length",
@@ -948,8 +952,8 @@ impl PyTokenizer {
     )]
     fn encode(
         &self,
-        sequence: &PyAny,
-        pair: Option<&PyAny>,
+        sequence: &Bound<'_, PyAny>,
+        pair: Option<&Bound<'_, PyAny>>,
         is_pretokenized: bool,
         add_special_tokens: bool,
     ) -> PyResult<PyEncoding> {
@@ -1141,7 +1145,7 @@ impl PyTokenizer {
     /// Returns:
     ///     :obj:`int`: The number of tokens that were created in the vocabulary
     #[pyo3(text_signature = "(self, tokens)")]
-    fn add_tokens(&mut self, tokens: &PyList) -> PyResult<usize> {
+    fn add_tokens(&mut self, tokens: &Bound<'_, PyList>) -> PyResult<usize> {
         let tokens = tokens
             .into_iter()
             .map(|token| {
@@ -1178,7 +1182,7 @@ impl PyTokenizer {
     /// Returns:
     ///     :obj:`int`: The number of tokens that were created in the vocabulary
     #[pyo3(text_signature = "(self, tokens)")]
-    fn add_special_tokens(&mut self, tokens: &PyList) -> PyResult<usize> {
+    fn add_special_tokens(&mut self, tokens: &Bound<'_, PyList>) -> PyResult<usize> {
         let tokens = tokens
             .into_iter()
             .map(|token| {
@@ -1251,7 +1255,7 @@ impl PyTokenizer {
     fn train_from_iterator(
         &mut self,
         py: Python,
-        iterator: &PyAny,
+        iterator: &Bound<'_, PyAny>,
         trainer: Option<&mut PyTrainer>,
         length: Option<usize>,
     ) -> PyResult<()> {
