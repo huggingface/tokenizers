@@ -102,9 +102,9 @@ class SpmConverter(Converter):
         tokenizer.normalizer = self.normalizer(self.proto)
 
         replacement = "▁"
-        add_prefix_space = True
-        tokenizer.pre_tokenizer = Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
-        tokenizer.decoder = decoders.Metaspace(replacement=replacement, add_prefix_space=add_prefix_space)
+        prepend_scheme = "always"
+        tokenizer.pre_tokenizer = Metaspace(replacement=replacement, prepend_scheme=prepend_scheme)
+        tokenizer.decoder = decoders.Metaspace(replacement=replacement, prepend_scheme=prepend_scheme)
         post_processor = self.post_processor(tokenizer)
         if post_processor:
             tokenizer.post_processor = post_processor

@@ -109,8 +109,6 @@ class TestMetaspace:
         # Modify these
         pretok.replacement = "%"
         assert pretok.replacement == "%"
-        pretok.add_prefix_space = True
-        assert pretok.add_prefix_space == True
         pretok.prepend_scheme = "first"
         assert pretok.prepend_scheme == "first"
         pretok.split = True
