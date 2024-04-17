@@ -35,7 +35,7 @@ class PreTokenizer:
 
         Args:
             sequence (:obj:`str`):
-                A string to pre-tokeize
+                A string to pre-tokenize
 
         Returns:
             :obj:`List[Tuple[str, Offsets]]`:
@@ -82,7 +82,7 @@ class BertPreTokenizer(PreTokenizer):
 
         Args:
             sequence (:obj:`str`):
-                A string to pre-tokeize
+                A string to pre-tokenize
 
         Returns:
             :obj:`List[Tuple[str, Offsets]]`:
@@ -151,7 +151,7 @@ class ByteLevel(PreTokenizer):
 
         Args:
             sequence (:obj:`str`):
-                A string to pre-tokeize
+                A string to pre-tokenize
 
         Returns:
             :obj:`List[Tuple[str, Offsets]]`:
@@ -196,7 +196,7 @@ class CharDelimiterSplit(PreTokenizer):
 
         Args:
             sequence (:obj:`str`):
-                A string to pre-tokeize
+                A string to pre-tokenize
 
         Returns:
             :obj:`List[Tuple[str, Offsets]]`:
@@ -250,7 +250,7 @@ class Digits(PreTokenizer):
 
         Args:
             sequence (:obj:`str`):
-                A string to pre-tokeize
+                A string to pre-tokenize
 
         Returns:
             :obj:`List[Tuple[str, Offsets]]`:
@@ -309,7 +309,7 @@ class Metaspace(PreTokenizer):
 
         Args:
             sequence (:obj:`str`):
-                A string to pre-tokeize
+                A string to pre-tokenize
 
         Returns:
             :obj:`List[Tuple[str, Offsets]]`:
@@ -359,7 +359,7 @@ class Punctuation(PreTokenizer):
 
         Args:
             sequence (:obj:`str`):
-                A string to pre-tokeize
+                A string to pre-tokenize
 
         Returns:
             :obj:`List[Tuple[str, Offsets]]`:
@@ -403,7 +403,7 @@ class Sequence(PreTokenizer):
 
         Args:
             sequence (:obj:`str`):
-                A string to pre-tokeize
+                A string to pre-tokenize
 
         Returns:
             :obj:`List[Tuple[str, Offsets]]`:
@@ -463,7 +463,7 @@ class Split(PreTokenizer):
 
         Args:
             sequence (:obj:`str`):
-                A string to pre-tokeize
+                A string to pre-tokenize
 
         Returns:
             :obj:`List[Tuple[str, Offsets]]`:
@@ -510,7 +510,7 @@ class UnicodeScripts(PreTokenizer):
 
         Args:
             sequence (:obj:`str`):
-                A string to pre-tokeize
+                A string to pre-tokenize
 
         Returns:
             :obj:`List[Tuple[str, Offsets]]`:
@@ -554,7 +554,7 @@ class Whitespace(PreTokenizer):
 
         Args:
             sequence (:obj:`str`):
-                A string to pre-tokeize
+                A string to pre-tokenize
 
         Returns:
             :obj:`List[Tuple[str, Offsets]]`:
@@ -598,7 +598,7 @@ class WhitespaceSplit(PreTokenizer):
 
         Args:
             sequence (:obj:`str`):
-                A string to pre-tokeize
+                A string to pre-tokenize
 
         Returns:
             :obj:`List[Tuple[str, Offsets]]`:
