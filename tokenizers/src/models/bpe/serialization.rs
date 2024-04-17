@@ -143,3 +143,45 @@ impl<'de> Visitor<'de> for BPEVisitor {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::models::bpe::Vocab;
+
+    #[test]
+    fn test_serialization() {
+        let vocab: Vocab = [("<unk>".into(), 0), ("a".into(), 1), ("b".into(), 2)]
+            .iter()
+            .cloned()
+            .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![])
+            .unk_token("<unk>".to_string())
+            .ignore_merges(true)
+            .build()
+            .unwrap();
+
+        let data = serde_json::to_string(&bpe).unwrap();
+        let reconstructed = serde_json::from_str(&data).unwrap();
+
+        assert_eq!(bpe, reconstructed);
+    }
+
+    #[test]
+    fn test_serialization_ignore_merges() {
+        let vocab: Vocab = [("<unk>".into(), 0), ("a".into(), 1), ("b".into(), 2)]
+            .iter()
+            .cloned()
+            .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![])
+            .unk_token("<unk>".to_string())
+            .ignore_merges(true)
+            .build()
+            .unwrap();
+
+        let bpe_string = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b":2},"merges":[]}"#;
+        assert_eq!(serde_json::from_str::<BPE>(bpe_string).unwrap(), bpe);
+    }
+}
