@@ -174,7 +174,7 @@ mod test {
             .iter()
             .cloned()
             .collect();
-        let bpe = BpeBuilder::default()
+        let mut bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, vec![])
             .unk_token("<unk>".to_string())
             .ignore_merges(true)
@@ -182,6 +182,10 @@ mod test {
             .unwrap();
 
         let bpe_string = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b":2},"merges":[]}"#;
+        assert_eq!(serde_json::from_str::<BPE>(bpe_string).unwrap(), bpe);
+
+        bpe.ignore_merges = false;
+        let bpe_string = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"vocab":{"<unk>":0,"a":1,"b":2},"merges":[]}"#;
         assert_eq!(serde_json::from_str::<BPE>(bpe_string).unwrap(), bpe);
     }
 }
