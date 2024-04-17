@@ -21,6 +21,7 @@ impl Serialize for BPE {
         model.serialize_field("end_of_word_suffix", &self.end_of_word_suffix)?;
         model.serialize_field("fuse_unk", &self.fuse_unk)?;
         model.serialize_field("byte_fallback", &self.byte_fallback)?;
+        model.serialize_field("ignore_merges", &self.ignore_merges)?;
 
         // Then the large ones
         let mut merges: Vec<(&Pair, &u32)> = self
@@ -57,6 +58,7 @@ impl<'de> Deserialize<'de> for BPE {
                 "end_of_word_suffix",
                 "fuse_unk",
                 "byte_fallback",
+                "ignore_merges",
                 "vocab",
                 "merges",
             ],
@@ -110,6 +112,11 @@ impl<'de> Visitor<'de> for BPEVisitor {
                 "byte_fallback" => {
                     if let Some(suffix) = map.next_value()? {
                         builder = builder.byte_fallback(suffix);
+                    }
+                }
+                "ignore_merges" => {
+                    if let Some(suffix) = map.next_value()? {
+                        builder = builder.ignore_merges(suffix);
                     }
                 }
                 "vocab" => vocab = Some(map.next_value()?),
