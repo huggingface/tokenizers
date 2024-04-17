@@ -164,7 +164,7 @@ impl PyPreTokenizer {
     ///
     /// Args:
     ///     sequence (:obj:`str`):
-    ///         A string to pre-tokeize
+    ///         A string to pre-tokenize
     ///
     /// Returns:
     ///     :obj:`List[Tuple[str, Offsets]]`:
