@@ -78,3 +78,4 @@ assert_approx_eq = "1.1"
 
 [profile.release]
 lto = "fat"
+

@@ -1,0 +1,24 @@
+# Root indicates that this is the top-level configuration
+root = true
+
+# Default settings for all files
+[*]
+# Use 4 spaces for indentation
+indent_style = space
+indent_size = 2
+# Ensure files end with a newline
+insert_final_newline = true
+# Use LF (Unix-style) for end-of-line characters
+end_of_line = lf
+# Set UTF-8 as the encoding
+charset = utf-8
+
+# Additional settings for Python files
+[*.py]
+# Set maximum line length for Python files
+max_line_length = 88
+
+# Additional settings for Rust files
+[*.rs]
+# Set maximum line length for Rust files
+max_line_length = 100

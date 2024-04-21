@@ -1,0 +1,5 @@
+# Sample rustfmt.toml configuration with stable options
+max_width = 100
+hard_tabs = false
+tab_spaces = 2
+newline_style = "Unix"
