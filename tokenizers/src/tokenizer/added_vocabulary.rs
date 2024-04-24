@@ -216,7 +216,10 @@ impl AddedVocabulary {
     }
 
     /// Get the token matching the given id if it exists
-    #[deprecated(since="0.19.0", note="please use `added_vocabulary.simple_id_to_token(id).or_else(|| model.id_to_token(id)` instead")]
+    #[deprecated(
+        since = "0.19.0",
+        note = "please use `added_vocabulary.simple_id_to_token(id).or_else(|| model.id_to_token(id)` instead"
+    )]
     pub fn id_to_token(&self, id: u32, model: &impl Model) -> Option<String> {
         self.added_tokens_map_r
             .get(&id)
@@ -225,9 +228,7 @@ impl AddedVocabulary {
     }
 
     pub fn simple_id_to_token(&self, id: u32) -> Option<String> {
-        self.added_tokens_map_r
-            .get(&id)
-            .map(|t| t.content.clone())
+        self.added_tokens_map_r.get(&id).map(|t| t.content.clone())
     }
 
     //
