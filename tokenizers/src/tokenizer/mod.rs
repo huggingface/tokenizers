@@ -860,7 +860,7 @@ where
                     chunks.join(" ")
                 };
                 result.push_str(&text_chunk);
-                if !result.is_empty(){
+                if !result.is_empty() {
                     result.push_str(" ");
                 }
                 result.push_str(&added_token);
