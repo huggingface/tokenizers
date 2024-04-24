@@ -851,10 +851,8 @@ where
         let mut chunks = Vec::with_capacity(ids.len());
         for id in ids {
             if let Some(added_token) = self.added_vocabulary.simple_id_to_token(*id) {
-                if skip_special_tokens {
-                    if self.added_vocabulary.is_special_token(&added_token) {
-                        continue;
-                    }
+                if skip_special_tokens && self.added_vocabulary.is_special_token(&added_token) {
+                    continue;
                 }
                 let text_chunk = if let Some(decoder) = &self.decoder {
                     decoder.decode(chunks.clone())?
@@ -864,11 +862,8 @@ where
                 result.push_str(&text_chunk);
                 result.push_str(&added_token);
                 chunks.clear();
-            } else {
-                if let Some(token) = self.model.id_to_token(*id) {
-                    chunks.push(token);
-                }
-                // Ignore unmapped ids.
+            } else if let Some(token) = self.model.id_to_token(*id) {
+                chunks.push(token);
             }
         }
         let text_chunk = if let Some(decoder) = &self.decoder {
