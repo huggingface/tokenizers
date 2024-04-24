@@ -861,7 +861,7 @@ where
                 };
                 result.push_str(&text_chunk);
                 if !result.is_empty() {
-                    result.push_str(" ");
+                    result.push(' ');
                 }
                 result.push_str(&added_token);
                 chunks.clear();
