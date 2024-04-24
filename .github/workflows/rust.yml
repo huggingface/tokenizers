@@ -36,6 +36,12 @@ jobs:
           command: install
           args: cargo-readme
 
+      - name: Install audit
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-audit
+
       - name: Build
         uses: actions-rs/cargo@v1
         with:
