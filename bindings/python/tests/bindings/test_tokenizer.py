@@ -535,3 +535,15 @@ class TestTokenizer:
             "▁▁▁▁▁▁",
             "▁.",
         ]
+
+    def test_decode_special(self):
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_tokens([AddedToken("my", special=True), AddedToken("name", special=False), "is", "john", "pair"])
+
+        # Can decode single sequences
+        output = tokenizer.decode([0, 1, 2, 3], skip_special_tokens=False)
+        assert output == "my name is john"
+
+        output = tokenizer.decode([0, 1, 2, 3], skip_special_tokens=True)
+        assert output == "name is john"
+        assert tokenizer.get_added_tokens_decoder()[0] == AddedToken("my", special=True)

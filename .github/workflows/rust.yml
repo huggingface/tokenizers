@@ -81,6 +81,9 @@ jobs:
           command: test
           args: --verbose --manifest-path ./tokenizers/Cargo.toml --doc
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
       - name: Run Audit
         uses: actions-rs/cargo@v1
         with:
