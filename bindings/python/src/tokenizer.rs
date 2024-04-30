@@ -1151,7 +1151,7 @@ impl PyTokenizer {
             .map(|token| {
                 if let Ok(content) = token.extract::<String>() {
                     Ok(PyAddedToken::from(content, Some(false)).get_token())
-                } else if let Ok(mut token) = token.extract::<PyRefMut<PyAddedToken>>() {
+                } else if let Ok(token) = token.extract::<PyRefMut<PyAddedToken>>() {
                     Ok(token.get_token())
                 } else {
                     Err(exceptions::PyTypeError::new_err(
