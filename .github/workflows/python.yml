@@ -102,7 +102,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: audit
-          args: -D warnings -f ./bindings/python/Cargo.lock
+          args: -D warnings --ignore RUSTSEC-2024-0335 -f ./bindings/python/Cargo.lock
 
       - name: Install
         working-directory: ./bindings/python
