@@ -546,4 +546,4 @@ class TestTokenizer:
 
         output = tokenizer.decode([0, 1, 2, 3], skip_special_tokens=True)
         assert output == "name is john"
-        assert tokenizer.get_added_tokens_decoder()[1] == AddedToken("my",special=False)
+        assert tokenizer.get_added_tokens_decoder()[0] == AddedToken("my",special=True)
