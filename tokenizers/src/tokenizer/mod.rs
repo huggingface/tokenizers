@@ -699,7 +699,9 @@ where
 
     /// Converts an id to the corresponding token.
     pub fn id_to_token(&self, id: u32) -> Option<String> {
-        self.added_vocabulary.id_to_token(id, &self.model)
+        self.added_vocabulary
+            .simple_id_to_token(id)
+            .or_else(|| self.model.id_to_token(id))
     }
 
     /// set the added bocab's splitting scheme
@@ -845,22 +847,35 @@ where
 
     /// Decode the given ids, back to a String
     pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
-        let tokens = ids
-            .iter()
-            .filter_map(|id| {
-                self.added_vocabulary
-                    .id_to_token(*id, &self.model)
-                    .filter(|token| {
-                        !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
-                    })
-            })
-            .collect::<Vec<_>>();
-
-        if let Some(decoder) = &self.decoder {
-            decoder.decode(tokens)
-        } else {
-            Ok(tokens.join(" "))
+        let mut result = String::with_capacity(ids.len());
+        let mut chunks = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(added_token) = self.added_vocabulary.simple_id_to_token(*id) {
+                if skip_special_tokens && self.added_vocabulary.is_special_token(&added_token) {
+                    continue;
+                }
+                let text_chunk = if let Some(decoder) = &self.decoder {
+                    decoder.decode(chunks.clone())?
+                } else {
+                    chunks.join(" ")
+                };
+                result.push_str(&text_chunk);
+                if !result.is_empty() && self.decoder.is_none() {
+                    result.push(' ');
+                }
+                result.push_str(&added_token);
+                chunks.clear();
+            } else if let Some(token) = self.model.id_to_token(*id) {
+                chunks.push(token);
+            }
         }
+        let text_chunk = if let Some(decoder) = &self.decoder {
+            decoder.decode(chunks.clone())?
+        } else {
+            chunks.join(" ")
+        };
+        result.push_str(&text_chunk);
+        Ok(result)
     }
 }
 
