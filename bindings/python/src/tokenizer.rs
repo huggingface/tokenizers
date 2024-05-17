@@ -263,11 +263,24 @@ impl PyAddedToken {
 struct TextInputSequence<'s>(tk::InputSequence<'s>);
 impl<'s> FromPyObject<'s> for TextInputSequence<'s> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        let err = exceptions::PyTypeError::new_err("TextInputSequence must be str");
         if let Ok(s) = ob.downcast::<PyString>() {
             Ok(Self(s.to_string_lossy().into()))
         } else {
-            Err(err)
+            let str_scalar_class = PyModule::import_bound(ob.py(), "pyarrow")
+                .map(Bound::into_gil_ref)?
+                .getattr("StringScalar")?;
+            if let Ok(true) = ob.is_instance(str_scalar_class) {
+                let buf = ob.call_method0("as_buffer")?;
+                let addr = buf.getattr("address")?.extract::<usize>()?;
+                let size = buf.getattr("size")?.extract::<usize>()?;
+
+                let parts = unsafe { std::slice::from_raw_parts(addr as *const u8, size) };
+                let x = String::from_utf8_lossy(&parts[..]);
+                Ok(Self(x.into()))
+            } else {
+                let err = exceptions::PyTypeError::new_err("TextInputSequence must be str");
+                Err(err)
+            }
         }
     }
 }

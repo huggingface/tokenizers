@@ -1,6 +1,7 @@
 import pickle
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 from tokenizers import AddedToken, Encoding, Tokenizer
@@ -200,6 +201,11 @@ class TestTokenizer:
         test_pair(np.array([("My name is John", "pair"), ("My name is Georges", "pair")]))
         test_pair(np.array([["My name is John", "pair"], ["My name is Georges", "pair"]]))
 
+        # Pyarrow
+        test_single(pa.array(["My name is John", "My name is Georges"]))
+        test_pair(pa.array([("My name is John", "pair"), ("My name is Georges", "pair")]))
+        test_pair(pa.array([["My name is John", "pair"], ["My name is Georges", "pair"]]))
+
         # PreTokenized inputs
 
         # Lists
@@ -257,6 +263,36 @@ class TestTokenizer:
         )
         test_pair(
             np.array(
+                (
+                    (("My", "name", "is", "John"), ("pair",)),
+                    (("My", "name", "is", "Georges"), ("pair",)),
+                ),
+                dtype=object,
+            ),
+            True,
+        )
+
+        # Pyarrow
+        test_single(
+            pa.array([["My", "name", "is", "John"], ["My", "name", "is", "Georges"]]),
+            True,
+        )
+        test_single(
+            pa.array((("My", "name", "is", "John"), ("My", "name", "is", "Georges"))),
+            True,
+        )
+        test_pair(
+            pa.array(
+                [
+                    [["My", "name", "is", "John"], ["pair"]],
+                    [["My", "name", "is", "Georges"], ["pair"]],
+                ],
+                dtype=object,
+            ),
+            True,
+        )
+        test_pair(
+            pa.array(
                 (
                     (("My", "name", "is", "John"), ("pair",)),
                     (("My", "name", "is", "Georges"), ("pair",)),
