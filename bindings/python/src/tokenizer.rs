@@ -264,10 +264,10 @@ impl PyAddedToken {
 struct PyArrowScalarStringInput<'s>(Cow<'s, str>);
 impl<'s> FromPyObject<'s> for PyArrowScalarStringInput<'s> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        let str_scalar_class = PyModule::import_bound(ob.py(), "pyarrow")
-            .map(Bound::into_gil_ref)?
-            .getattr("StringScalar")?;
-        if ob.is_instance(str_scalar_class)? {
+        let pyarrow = PyModule::import_bound(ob.py(), "pyarrow").map(Bound::into_gil_ref)?;
+        let str_scalar_class = pyarrow.getattr("StringScalar")?;
+        let large_str_scalar_class = pyarrow.getattr("LargeStringScalar")?;
+        if ob.is_exact_instance(str_scalar_class) || ob.is_exact_instance(large_str_scalar_class) {
             let buf = ob.call_method0("as_buffer")?;
             let addr = buf.getattr("address")?.extract::<usize>()?;
             let size = buf.getattr("size")?.extract::<usize>()?;
