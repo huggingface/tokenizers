@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
+use std::slice;
 
 use numpy::{npyffi, PyArray1};
 use pyo3::class::basic::CompareOp;
@@ -273,9 +274,9 @@ impl<'s> FromPyObject<'s> for PyArrowScalarStringInput<'s> {
             let size = buf.getattr("size")?.extract::<usize>()?;
 
             // SAFETY address is valid because it's from the StringScalar buffer
-            let parts = unsafe { std::slice::from_raw_parts(addr as *const u8, size) };
-            let x = String::from_utf8_lossy(&parts[..]);
-            Ok(Self(x.into()))
+            let buf_slice = unsafe { slice::from_raw_parts::<'s>(addr as *const u8, size) };
+            let x = String::from_utf8_lossy(&buf_slice[..]);
+            Ok(Self(x))
         } else {
             let err =
                 exceptions::PyTypeError::new_err("TextInputSequence must be pyarrow.StringScalar");
