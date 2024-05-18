@@ -39,7 +39,7 @@ harness = false
 [dependencies]
 lazy_static = "1.4"
 rand = "0.8"
-onig = { version = "6.4", default-features = false, optional = true }
+onig = { version = "6.4", default-features = false }
 regex = "1.10"
 regex-syntax = "0.8"
 rayon = "1.10"
@@ -65,11 +65,13 @@ esaxx-rs = { version = "0.1.10", default-features = false, features=[]}
 monostate = "0.1.12"
 
 [features]
-default = ["progressbar", "onig", "esaxx_fast"]
+default = ["progressbar", "esaxx_fast"]
 esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/js"]
+# Dummy placeholder for backwards compatibility
+onig = []
 
 [dev-dependencies]
 criterion = "0.5"
