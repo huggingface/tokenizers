@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
 
@@ -260,6 +261,7 @@ impl PyAddedToken {
     }
 }
 
+#[derive(Debug)]
 struct TextInputSequence<'s>(tk::InputSequence<'s>);
 impl<'s> FromPyObject<'s> for TextInputSequence<'s> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
@@ -357,6 +359,40 @@ impl From<PyArrayUnicode> for tk::InputSequence<'_> {
     }
 }
 
+struct PyArrowUnicode<'s>(Vec<Cow<'s, str>>);
+impl<'s> FromPyObject<'s> for PyArrowUnicode<'s> {
+    fn extract(ob: &'_ PyAny) -> PyResult<Self> {
+        let list = ob.extract::<Vec<&PyAny>>()?;
+        let mut pa_str_list = Vec::with_capacity(list.len());
+        for item in list.iter() {
+            let str_scalar_class = PyModule::import_bound(ob.py(), "pyarrow")
+                .map(Bound::into_gil_ref)?
+                .getattr("StringScalar")?;
+            if let Ok(true) = item.is_instance(str_scalar_class) {
+                let buf = item.call_method0("as_buffer")?;
+                let addr = buf.getattr("address")?.extract::<usize>()?;
+                let size = buf.getattr("size")?.extract::<usize>()?;
+
+                let parts = unsafe { std::slice::from_raw_parts(addr as *const u8, size) };
+                let cow_str = String::from_utf8_lossy(&parts[..]);
+                pa_str_list.push(cow_str);
+            } else {
+                let err = exceptions::PyTypeError::new_err(
+                    "TextInputSequence is not pyarrow.StringScalar",
+                );
+                return Err(err);
+            }
+        }
+
+        Ok(Self(pa_str_list))
+    }
+}
+impl<'s> From<PyArrowUnicode<'s>> for tk::InputSequence<'s> {
+    fn from(s: PyArrowUnicode<'s>) -> Self {
+        s.0.into()
+    }
+}
+
 struct PyArrayStr(Vec<String>);
 impl FromPyObject<'_> for PyArrayStr {
     fn extract(ob: &PyAny) -> PyResult<Self> {
@@ -384,6 +420,9 @@ struct PreTokenizedInputSequence<'s>(tk::InputSequence<'s>);
 impl<'s> FromPyObject<'s> for PreTokenizedInputSequence<'s> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         if let Ok(seq) = ob.extract::<PyArrayUnicode>() {
+            return Ok(Self(seq.into()));
+        }
+        if let Ok(seq) = ob.extract::<PyArrowUnicode>() {
             return Ok(Self(seq.into()));
         }
         if let Ok(seq) = ob.extract::<PyArrayStr>() {

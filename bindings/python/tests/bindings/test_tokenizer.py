@@ -287,7 +287,6 @@ class TestTokenizer:
                     [["My", "name", "is", "John"], ["pair"]],
                     [["My", "name", "is", "Georges"], ["pair"]],
                 ],
-                dtype=object,
             ),
             True,
         )
@@ -297,7 +296,6 @@ class TestTokenizer:
                     (("My", "name", "is", "John"), ("pair",)),
                     (("My", "name", "is", "Georges"), ("pair",)),
                 ),
-                dtype=object,
             ),
             True,
         )
