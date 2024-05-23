@@ -180,10 +180,10 @@ impl WordPiece {
     pub fn from_bpe(bpe: &BPE) -> Self {
         let mut wp = Self::builder().vocab(bpe.get_vocab()).build().unwrap();
         if let Some(unk) = bpe.get_unk_token() {
-            wp.unk_token = unk.to_owned();
+            unk.clone_into(&mut wp.unk_token);
         }
         if let Some(prefix) = bpe.get_continuing_subword_prefix() {
-            wp.continuing_subword_prefix = prefix.to_owned();
+            prefix.clone_into(&mut wp.continuing_subword_prefix);
         }
         wp
     }
