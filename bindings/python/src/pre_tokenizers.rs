@@ -34,7 +34,7 @@ use super::utils::*;
     name = "PreTokenizer",
     subclass
 )]
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct PyPreTokenizer {
     #[serde(flatten)]
     pub(crate) pretok: PyPreTokenizerTypeWrapper,
@@ -587,7 +587,7 @@ impl PyUnicodeScripts {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct CustomPreTokenizer {
     inner: PyObject,
 }
@@ -631,7 +631,7 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Debug)]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerWrapper {
     Custom(CustomPreTokenizer),
@@ -650,7 +650,7 @@ impl Serialize for PyPreTokenizerWrapper {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Debug)]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerTypeWrapper {
     Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),

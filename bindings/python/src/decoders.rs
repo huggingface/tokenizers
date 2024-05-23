@@ -28,7 +28,7 @@ use super::error::ToPyResult;
 /// This class is not supposed to be instantiated directly. Instead, any implementation of
 /// a Decoder will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.decoders", name = "Decoder", subclass)]
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct PyDecoder {
     #[serde(flatten)]
     pub(crate) decoder: PyDecoderWrapper,
@@ -478,7 +478,7 @@ impl PySequenceDecoder {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct CustomDecoder {
     inner: PyObject,
 }
@@ -531,7 +531,7 @@ impl<'de> Deserialize<'de> for CustomDecoder {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 #[serde(untagged)]
 pub(crate) enum PyDecoderWrapper {
     Custom(Arc<RwLock<CustomDecoder>>),
