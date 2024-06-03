@@ -23,7 +23,7 @@ use tokenizers as tk;
 
 use super::error::ToPyResult;
 use super::utils::*;
-
+use derive_more::Display;
 /// Base class for all pre-tokenizers
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
@@ -34,7 +34,8 @@ use super::utils::*;
     name = "PreTokenizer",
     subclass
 )]
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Display)]
+#[display(fmt="PreTokenizer(pretok={}","pretok")]
 pub struct PyPreTokenizer {
     #[serde(flatten)]
     pub(crate) pretok: PyPreTokenizerTypeWrapper,
@@ -484,6 +485,7 @@ pub(crate) fn from_string(string: String) -> Result<PrependScheme, PyErr> {
 ///         token (relevant when special tokens are used or other pre_tokenizer are used).
 ///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Metaspace")]
+#[derive(Display)]
 pub struct PyMetaspace {}
 #[pymethods]
 impl PyMetaspace {
@@ -650,10 +652,13 @@ impl Serialize for PyPreTokenizerWrapper {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Display)]
 #[serde(untagged)]
+#[display(fmt="PreTokenizer.{}")]
 pub(crate) enum PyPreTokenizerTypeWrapper {
+    #[display(fmt="A")]
     Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),
+    #[display(fmt="B")]
     Single(Arc<RwLock<PyPreTokenizerWrapper>>),
 }
 
