@@ -15,6 +15,7 @@ use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
 use tk::models::ModelWrapper;
 use tk::{Model, Token};
 use tokenizers as tk;
+use derive_more::Display;
 use super::error::{deprecation_warning, ToPyResult};
 
 /// Base class for all models
@@ -24,7 +25,8 @@ use super::error::{deprecation_warning, ToPyResult};
 ///
 /// This class cannot be constructed directly. Please use one of the concrete models.
 #[pyclass(module = "tokenizers.models", name = "Model", subclass)]
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Display)]
+#[display(fmt="{:?}",*self.model.as_ref().read().unwrap())]
 pub struct PyModel {
     #[serde(flatten)]
     pub model: Arc<RwLock<ModelWrapper>>,
