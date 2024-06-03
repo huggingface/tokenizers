@@ -2,6 +2,8 @@ use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY};
 use crate::utils::iter::ResultShunt;
+use derive_more::Display;
+use ellipse::Ellipse;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::{
@@ -11,7 +13,6 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
-use derive_more::Display;
 
 pub type Vocab = HashMap<String, u32>;
 type VocabR = HashMap<u32, String>;
@@ -203,9 +204,21 @@ impl BpeBuilder {
         })
     }
 }
+
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 #[derive(PartialEq, Display)]
-#[display(fmt = "{:?} {:?} {:?} {:p}", vocab, merges, byte_fallback, ignore_merges)]
+#[display(
+    fmt = "BPE(vocab={:?}, ...], merges={:?}, byte_fallback={:?}, ignore_merges={:?}",
+    "{
+        let mut vocab_vec: Vec<_> = vocab.into_iter().collect();
+        vocab_vec.sort_by_key(|&(_, v)| v);
+        vocab_vec.truncate(5);
+        vocab_vec
+    }",
+    byte_fallback,
+    byte_fallback,
+    ignore_merges
+)]
 pub struct BPE {
     /// The vocabulary assigns a number to each token.
     pub(crate) vocab: Vocab,

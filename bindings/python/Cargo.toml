@@ -20,6 +20,7 @@ ndarray = "0.15"
 onig = { version = "6.4", default-features = false }
 itertools = "0.12"
 derive_more = "0.99.17"
+ellipse = "0.2.0"
 
 [dependencies.tokenizers]
 path = "../../tokenizers"

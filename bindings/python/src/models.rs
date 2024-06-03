@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
+use super::error::{deprecation_warning, ToPyResult};
 use crate::token::PyToken;
 use crate::trainers::PyTrainer;
+use derive_more::Display;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -15,8 +17,6 @@ use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
 use tk::models::ModelWrapper;
 use tk::{Model, Token};
 use tokenizers as tk;
-use derive_more::Display;
-use super::error::{deprecation_warning, ToPyResult};
 
 /// Base class for all models
 ///
@@ -26,7 +26,7 @@ use super::error::{deprecation_warning, ToPyResult};
 /// This class cannot be constructed directly. Please use one of the concrete models.
 #[pyclass(module = "tokenizers.models", name = "Model", subclass)]
 #[derive(Clone, Serialize, Deserialize, Display)]
-#[display(fmt="{}","model.as_ref().read().unwrap()")]
+#[display(fmt = "{}", "model.as_ref().read().unwrap()")]
 pub struct PyModel {
     #[serde(flatten)]
     pub model: Arc<RwLock<ModelWrapper>>,
@@ -221,7 +221,7 @@ impl PyModel {
     fn get_trainer(&self, py: Python<'_>) -> PyResult<PyObject> {
         PyTrainer::from(self.model.read().unwrap().get_trainer()).get_as_subtype(py)
     }
-    fn __str__(&self) -> PyResult<String>   {
+    fn __str__(&self) -> PyResult<String> {
         Ok(format!("{}", self.model.read().unwrap()))
     }
 }

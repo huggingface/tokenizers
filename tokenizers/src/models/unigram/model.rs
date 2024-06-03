@@ -6,17 +6,24 @@ use super::{
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::Cache;
 
+use derive_more::Display;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
-use derive_more::Display;
 type TokenMap = HashMap<String, u32>;
 type Vocab = Vec<(String, f64)>;
 
 /// A `Unigram` model to encode sentences.
 #[derive(Display)]
-#[display(fmt = "{:?} {:?} {:?} {} {}", token_to_ids, vocab, unk_id, bos_id, eos_id)]
+#[display(
+    fmt = "{:?} {:?} {:?} {} {}",
+    token_to_ids,
+    vocab,
+    unk_id,
+    bos_id,
+    eos_id
+)]
 pub struct Unigram {
     token_to_ids: TokenMap,
     pub(crate) vocab: Vocab,
