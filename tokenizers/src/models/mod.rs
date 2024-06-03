@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize, Serializer};
+use derive_more::Display;
 
 use crate::models::bpe::{BpeTrainer, BPE};
 use crate::models::unigram::{Unigram, UnigramTrainer};
@@ -57,7 +58,7 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Display)]
 #[serde(untagged)]
 pub enum ModelWrapper {
     BPE(BPE),

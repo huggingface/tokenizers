@@ -11,6 +11,7 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
+use derive_more::Display;
 
 pub type Vocab = HashMap<String, u32>;
 type VocabR = HashMap<u32, String>;
@@ -202,9 +203,9 @@ impl BpeBuilder {
         })
     }
 }
-
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
-#[derive(PartialEq)]
+#[derive(PartialEq, Display)]
+#[display(fmt = "{:?} {:?} {:?} {:p}", vocab, merges, byte_fallback, ignore_merges)]
 pub struct BPE {
     /// The vocabulary assigns a number to each token.
     pub(crate) vocab: Vocab,

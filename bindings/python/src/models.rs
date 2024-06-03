@@ -15,7 +15,6 @@ use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
 use tk::models::ModelWrapper;
 use tk::{Model, Token};
 use tokenizers as tk;
-
 use super::error::{deprecation_warning, ToPyResult};
 
 /// Base class for all models
