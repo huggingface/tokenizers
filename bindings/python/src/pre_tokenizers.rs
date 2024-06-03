@@ -485,7 +485,6 @@ pub(crate) fn from_string(string: String) -> Result<PrependScheme, PyErr> {
 ///         token (relevant when special tokens are used or other pre_tokenizer are used).
 ///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Metaspace")]
-#[derive(Display)]
 pub struct PyMetaspace {}
 #[pymethods]
 impl PyMetaspace {
