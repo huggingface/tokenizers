@@ -17,9 +17,8 @@ type Vocab = Vec<(String, f64)>;
 /// A `Unigram` model to encode sentences.
 #[derive(Display)]
 #[display(
-    fmt = "{:?} {:?} {:?} {} {}",
-    token_to_ids,
-    vocab,
+    fmt = "Unigram(vocab={:?}, unk_id={:?}, bos_id={}, eos_id={})",
+    "vocab.iter().collect::<Vec<_>>().truncate(5)",
     unk_id,
     bos_id,
     eos_id
