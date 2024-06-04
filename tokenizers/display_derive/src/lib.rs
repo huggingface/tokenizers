@@ -2,7 +2,7 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
-use utils::truncate_with_ellipsis;
+
 #[proc_macro_derive(StructDisplay)]
 pub fn display_derive(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
@@ -23,12 +23,23 @@ pub fn display_derive(input: TokenStream) -> TokenStream {
                         impl std::fmt::Display for #name {
                             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                                 write!(f, "{}(", stringify!(#name))?;
+                                let mut first = true;
                                 #(
-                                    let value_str = self.#field_names2.to_string();
-                                    let truncated_value_str =  truncate_with_ellipsis(value_str, 10);
-                                    write!(f, "{}={}", stringify!(#field_names), truncated_value_str)?;
-                                    if stringify!(#field_names) != stringify!(#field_names2.clone().last().unwrap()) {
+                                    if!first {
                                         write!(f, ", ")?;
+                                    }
+                                    first = false;
+
+                                    let field_value = &self.#field_names2;
+                                    write!(f, "{}=", stringify!(#field_names))?;
+                                    {
+                                        let s = format!("{:?}", field_value);
+                                        let mut chars = s.chars();
+                                        let mut prefix = (&mut chars).take(10 - 1).collect::<String>();
+                                        if chars.next().is_some() {
+                                            prefix.push('…');
+                                        }
+                                        write!(f, "{}", prefix)?;
                                     }
                                 )*
                                 write!(f, ")")

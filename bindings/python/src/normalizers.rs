@@ -43,8 +43,8 @@ impl PyNormalizedStringMut<'_> {
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
-#[derive(Clone, Serialize, Deserialize, Display)]
-#[display(fmt = "{}", "normalizer")]
+#[derive(Clone, Serialize, Deserialize, Display, Debug)]
+#[display(fmt = "{}", normalizer)]
 pub struct PyNormalizer {
     #[serde(flatten)]
     pub(crate) normalizer: PyNormalizerTypeWrapper,
