@@ -21,7 +21,6 @@ use std::{
 use crate::utils::iter::ResultShunt;
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
-use derive_more::Display;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -538,27 +537,22 @@ where
             Some(n) => format!("{}", n),
             None => "None".to_string(),
         };
-        println!("Normalizer");
         let pre_tokenizer_str = match &self.pre_tokenizer {
             Some(pt) => format!("{}", pt),
-            None => "".to_string(),
+            None => "None".to_string(),
         };
-        println!("PreTok");
         let post_processor_str = match &self.post_processor {
             Some(pp) => format!("{}", pp),
             None => "None".to_string(),
         };
-        println!("decoder");
         let decoder_str = match &self.decoder {
             Some(d) => format!("{}", d),
             None => "None".to_string(),
         };
-        println!("truncation");
         let truncation_str = match &self.truncation {
             Some(t) => format!("{}", t),
             None => "None".to_string(),
         };
-        println!("padding");
         let padding_str = match &self.padding {
             Some(p) => format!("{}", p),
             None => "None".to_string(),
@@ -566,7 +560,7 @@ where
 
         write!(
             f,
-            "{} {} {} {} {} {} {} {}",
+            "Tokenizer(normalizer={},\npre_tokenizer={},\nmodel={},\npost_processor={},\ndecoder={},\nadded_vocab={},\ntruncation={},\npadding={}\n)",
             normalizer_str,
             pre_tokenizer_str,
             self.model.to_string(),

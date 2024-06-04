@@ -1414,6 +1414,10 @@ impl PyTokenizer {
     fn __str__(&self) -> PyResult<String>{
         Ok(format!("{}", self.tokenizer))
     }
+
+    fn __repr__(&self) -> PyResult<String>{
+        Ok(format!("{}", self.tokenizer))
+    }
 }
 
 #[cfg(test)]
