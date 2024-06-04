@@ -35,7 +35,7 @@ use derive_more::Display;
     subclass
 )]
 #[derive(Clone, Serialize, Deserialize, Display)]
-#[display(fmt="PreTokenizer(pretok={}","pretok")]
+#[display(fmt = "PreTokenizer(pretok={}", "pretok")]
 pub struct PyPreTokenizer {
     #[serde(flatten)]
     pub(crate) pretok: PyPreTokenizerTypeWrapper,
@@ -653,11 +653,11 @@ impl Serialize for PyPreTokenizerWrapper {
 
 #[derive(Clone, Deserialize, Display)]
 #[serde(untagged)]
-#[display(fmt="PreTokenizer.{}")]
+#[display(fmt = "PreTokenizer.{}")]
 pub(crate) enum PyPreTokenizerTypeWrapper {
-    #[display(fmt="A")]
+    #[display(fmt = "A")]
     Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),
-    #[display(fmt="B")]
+    #[display(fmt = "B")]
     Single(Arc<RwLock<PyPreTokenizerWrapper>>),
 }
 

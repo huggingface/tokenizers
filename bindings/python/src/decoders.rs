@@ -2,6 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::pre_tokenizers::from_string;
 use crate::utils::PyPattern;
+use derive_more::Display;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -28,7 +29,7 @@ use super::error::ToPyResult;
 /// This class is not supposed to be instantiated directly. Instead, any implementation of
 /// a Decoder will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.decoders", name = "Decoder", subclass)]
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, Display)]
 pub struct PyDecoder {
     #[serde(flatten)]
     pub(crate) decoder: PyDecoderWrapper,
@@ -478,7 +479,7 @@ impl PySequenceDecoder {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Display)]
 pub(crate) struct CustomDecoder {
     inner: PyObject,
 }
@@ -531,10 +532,12 @@ impl<'de> Deserialize<'de> for CustomDecoder {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, Display)]
 #[serde(untagged)]
 pub(crate) enum PyDecoderWrapper {
+    #[display(fmt = "{}", self)]
     Custom(Arc<RwLock<CustomDecoder>>),
+    #[display(fmt = "{}", self)]
     Wrapped(Arc<RwLock<DecoderWrapper>>),
 }
 

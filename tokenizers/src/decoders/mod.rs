@@ -10,8 +10,6 @@ pub mod wordpiece;
 pub use super::pre_tokenizers::byte_level;
 pub use super::pre_tokenizers::metaspace;
 
-use serde::{Deserialize, Serialize};
-
 use crate::decoders::bpe::BPEDecoder;
 use crate::decoders::byte_fallback::ByteFallback;
 use crate::decoders::ctc::CTC;
@@ -23,8 +21,10 @@ use crate::normalizers::replace::Replace;
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::{Decoder, Result};
+use derive_more::Display;
+use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Display)]
 #[serde(untagged)]
 pub enum DecoderWrapper {
     BPE(BPEDecoder),

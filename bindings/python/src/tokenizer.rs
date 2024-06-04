@@ -1,20 +1,6 @@
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
 
-use numpy::{npyffi, PyArray1};
-use pyo3::class::basic::CompareOp;
-use pyo3::exceptions;
-use pyo3::intern;
-use pyo3::prelude::*;
-use pyo3::types::*;
-use tk::models::bpe::BPE;
-use tk::tokenizer::{
-    Model, PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
-    TruncationDirection, TruncationParams, TruncationStrategy,
-};
-use tk::utils::iter::ResultShunt;
-use tokenizers as tk;
-
 use super::decoders::PyDecoder;
 use super::encoding::PyEncoding;
 use super::error::{PyError, ToPyResult};
@@ -24,7 +10,21 @@ use super::pre_tokenizers::PyPreTokenizer;
 use super::trainers::PyTrainer;
 use crate::processors::PyPostProcessor;
 use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
+use derive_more::Display;
+use numpy::{npyffi, PyArray1};
+use pyo3::class::basic::CompareOp;
+use pyo3::exceptions;
+use pyo3::intern;
+use pyo3::prelude::*;
+use pyo3::types::*;
 use std::collections::BTreeMap;
+use tk::models::bpe::BPE;
+use tk::tokenizer::{
+    Model, PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
+    TruncationDirection, TruncationParams, TruncationStrategy,
+};
+use tk::utils::iter::ResultShunt;
+use tokenizers as tk;
 
 /// Represents a token that can be be added to a :class:`~tokenizers.Tokenizer`.
 /// It can have special options that defines the way it should behave.
@@ -462,7 +462,7 @@ type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProc
 ///         The core algorithm that this :obj:`Tokenizer` should be using.
 ///
 #[pyclass(dict, module = "tokenizers", name = "Tokenizer")]
-#[derive(Clone)]
+#[derive(Clone, Display)]
 pub struct PyTokenizer {
     tokenizer: Tokenizer,
 }

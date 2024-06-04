@@ -1,10 +1,12 @@
 use crate::tokenizer::{Encoding, PostProcessor, Result};
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Display)]
 #[serde(tag = "type")]
+#[display(fmt = "BertProcessing(sep={:?}, cls={:?})", sep, cls)]
 pub struct BertProcessing {
     sep: (String, u32),
     cls: (String, u32),

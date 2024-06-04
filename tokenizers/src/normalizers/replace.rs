@@ -2,8 +2,8 @@ use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::Decoder;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::SysRegex;
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
-
 /// Represents the different patterns that `Replace` can use
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum ReplacePattern {
@@ -42,8 +42,14 @@ impl std::convert::TryFrom<ReplaceDeserializer> for Replace {
 
 /// This normalizer will take a `pattern` (for now only a String)
 /// and replace every occurrence with `content`.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Display)]
 #[serde(tag = "type", try_from = "ReplaceDeserializer")]
+#[display(
+    fmt = "Replace(pattern={:?}, content={}, regex={:?}",
+    pattern,
+    content,
+    regex
+)]
 pub struct Replace {
     pattern: ReplacePattern,
     content: String,

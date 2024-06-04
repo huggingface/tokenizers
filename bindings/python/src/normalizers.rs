@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-
+use derive_more::Display;
 use crate::error::ToPyResult;
 use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
 use serde::ser::SerializeStruct;
@@ -43,7 +43,8 @@ impl PyNormalizedStringMut<'_> {
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Display)]
+#[display(fmt = "{}", "normalizer")]
 pub struct PyNormalizer {
     #[serde(flatten)]
     pub(crate) normalizer: PyNormalizerTypeWrapper,
@@ -560,10 +561,12 @@ impl Serialize for PyNormalizerWrapper {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Display)]
 #[serde(untagged)]
 pub(crate) enum PyNormalizerTypeWrapper {
+    #[display(fmt="{}", "_0.iter().map(|arc| arc.as_ref().read().unwrap().to_string()).collect::<Vec<_>>()")]
     Sequence(Vec<Arc<RwLock<PyNormalizerWrapper>>>),
+    #[display(fmt = "{}", self)]
     Single(Arc<RwLock<PyNormalizerWrapper>>),
 }
 

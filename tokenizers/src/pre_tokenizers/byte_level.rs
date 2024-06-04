@@ -1,13 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::utils::SysRegex;
-use serde::{Deserialize, Serialize};
-
 use crate::tokenizer::{
     Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,
     SplitDelimiterBehavior,
 };
 use crate::utils::macro_rules_attribute;
+use crate::utils::SysRegex;
+use derive_more::Display;
+use serde::{Deserialize, Serialize};
 
 /// Converts bytes to unicode characters.
 /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L9
@@ -46,11 +46,17 @@ lazy_static! {
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
 /// of all the required processing steps to transform a UTF-8 string as needed before and after the
 /// BPE model does its job.
 #[macro_rules_attribute(impl_serde_type!)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Display)]
+#[display(
+    fmt = "ByteLevel(add_prefix_space={},trim_offset={:?}, use_regex={}",
+    add_prefix_space,
+    trim_offsets,
+    use_regex
+)]
 #[non_exhaustive]
 pub struct ByteLevel {
     /// Whether to add a leading space to the first word. This allows to treat the leading word

@@ -1,8 +1,8 @@
 use crate::tokenizer::{Decoder, Result};
 
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
-
-#[derive(Deserialize, Clone, Debug, Serialize)]
+#[derive(Deserialize, Clone, Debug, Serialize, Display)]
 /// Allows decoding Original BPE by joining all the tokens and then replacing
 /// the suffix used to identify end-of-words by whitespaces
 #[serde(tag = "type")]

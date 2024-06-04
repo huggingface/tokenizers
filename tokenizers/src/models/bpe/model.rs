@@ -2,7 +2,6 @@ use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY};
 use crate::utils::iter::ResultShunt;
-use derive_more::Display;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::{
@@ -260,25 +259,30 @@ impl std::fmt::Display for BPE {
             .map(|(k, v)| format!("'{}':{}", k, v))
             .collect::<Vec<_>>()
             .join(", ");
-    
+
         let mut merges_vec: Vec<_> = self.merges.iter().collect();
-            merges_vec.truncate(5);
-            merges_vec.sort_by_key(|&(_, v)| v);
-    
+        merges_vec.truncate(5);
+        merges_vec.sort_by_key(|&(_, v)| v);
+
         let merges_str: String = merges_vec
             .iter()
             .map(|((id1, id2), _)| {
                 (
-                    self.vocab_r.get(id1).cloned().unwrap_or_else(|| id1.to_string()),
-                    self.vocab_r.get(id2).cloned().unwrap_or_else(|| id2.to_string()),
+                    self.vocab_r
+                        .get(id1)
+                        .cloned()
+                        .unwrap_or_else(|| id1.to_string()),
+                    self.vocab_r
+                        .get(id2)
+                        .cloned()
+                        .unwrap_or_else(|| id2.to_string()),
                 )
             })
             .map(|(id1, id2)| format!("('{}', '{}')", id1, id2))
             .collect::<Vec<_>>()
             .join(", ");
-    
 
-            write!(
+        write!(
                 f,
                 "BPE(vocab={{{}, ...}}, merges=[{:?}, ...], dropout={:?}, unk_token={:?}, continuing_subword_prefix={:?}, end_of_word_suffix={:?}, fuse_unk={}, byte_fallback={}, ignore_merges={})",
                 vocab_str,

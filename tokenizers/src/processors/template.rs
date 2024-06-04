@@ -56,12 +56,12 @@
 //! [`TemplateProcessing`]: struct.TemplateProcessing.html
 //!
 use crate::{Encoding, PostProcessor, Result};
+use derive_more::Display;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::result::Result as StdResult;
-
 /// Represents any sequences received as input of the PostProcessor
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum Sequence {
@@ -332,8 +332,9 @@ impl From<HashMap<String, SpecialToken>> for Tokens {
 ///     .unwrap();
 /// ```
 ///
-#[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq, Display)]
 #[serde(tag = "type", from = "TemplateProcessingDeserializer")]
+#[display(fmt = "TemplateProcessing({:?})", self)]
 #[builder(build_fn(validate = "Self::validate"))]
 pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]

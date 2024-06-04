@@ -1,6 +1,6 @@
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
-use serde::{de, Deserialize, Deserializer, Serialize};
 use derive_more::Display;
+use serde::{de, Deserialize, Deserializer, Serialize};
 /// Enum representing options for the metaspace prepending scheme.
 #[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize, Copy)]
 #[serde(rename_all = "snake_case")]
@@ -17,7 +17,12 @@ pub enum PrependScheme {
 /// Replaces all the whitespaces by the provided meta character and then
 /// splits on this character
 #[serde(tag = "type")]
-#[display(fmt="Metaspace(replacement={}, prepend_scheme={:?}, split={})", replacement, prepend_scheme, split)]
+#[display(
+    fmt = "Metaspace(replacement={}, prepend_scheme={:?}, split={})",
+    replacement,
+    prepend_scheme,
+    split
+)]
 pub struct Metaspace {
     replacement: char,
     pub prepend_scheme: PrependScheme,

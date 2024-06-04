@@ -1,10 +1,18 @@
 use crate::processors::byte_level::process_offsets;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Display)]
+#[display(
+    fmt = "RobertaProcessing(sep={:?}, cls={:?}, trim_offsets={}, add_prefix_space={}",
+    sep,
+    cls,
+    trim_offsets,
+    add_prefix_space
+)]
 #[serde(tag = "type")]
 pub struct RobertaProcessing {
     sep: (String, u32),
