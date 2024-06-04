@@ -2,9 +2,11 @@ use crate::pre_tokenizers::PreTokenizerWrapper;
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
 use crate::utils::macro_rules_attribute;
 use serde::{Deserialize, Serialize};
+use derive_more::Display;
 
-#[derive(Clone, Debug, PartialEq)]
 #[macro_rules_attribute(impl_serde_type!)]
+#[derive(Clone, Debug, PartialEq, Display)]
+#[display(fmt="[{}]", "pretokenizers.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(\", \")")]
 pub struct Sequence {
     pretokenizers: Vec<PreTokenizerWrapper>,
 }

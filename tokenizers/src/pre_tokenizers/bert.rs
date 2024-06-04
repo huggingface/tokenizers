@@ -1,12 +1,13 @@
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
+use display_derive::StructDisplay;
 use unicode_categories::UnicodeCategories;
 
 fn is_bert_punc(x: char) -> bool {
     char::is_ascii_punctuation(&x) || x.is_punctuation()
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, StructDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct BertPreTokenizer;
 

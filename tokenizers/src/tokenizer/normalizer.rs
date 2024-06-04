@@ -2,7 +2,7 @@ use crate::pattern::Pattern;
 use crate::{Offsets, Result};
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
-
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 /// The possible offsets referential
@@ -78,7 +78,8 @@ where
 ///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
 ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
 ///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, Display)]
+#[display(fmt="{}")]
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,

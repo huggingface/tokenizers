@@ -596,7 +596,7 @@ impl PyUnicodeScripts {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Display)]
 pub(crate) struct CustomPreTokenizer {
     inner: PyObject,
 }
@@ -640,7 +640,8 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Display)]
+#[display(fmt="{}")]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerWrapper {
     Custom(CustomPreTokenizer),
@@ -665,7 +666,7 @@ impl Serialize for PyPreTokenizerWrapper {
 pub(crate) enum PyPreTokenizerTypeWrapper {
     #[display(fmt = "[{}]", "_0.iter().map(|d| d.as_ref().read().unwrap().to_string()).collect::<Vec<_>>().join(\", \")")]
     Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),
-    #[display(fmt = "_0.as_ref().read().unwrap()")]
+    #[display(fmt ="{}", "_0.as_ref().read().unwrap()")]
     Single(Arc<RwLock<PyPreTokenizerWrapper>>),
 }
 

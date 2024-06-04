@@ -21,7 +21,7 @@ use crate::{NormalizedString, Normalizer};
 /// Wrapper for known Normalizers.
 #[derive(Clone, Debug, Deserialize, Serialize, Display)]
 #[serde(untagged)]
-#[display(fmt="{}")]
+#[display(fmt="normalizers.{}")]
 pub enum NormalizerWrapper {
     BertNormalizer(BertNormalizer),
     StripNormalizer(Strip),
@@ -33,7 +33,7 @@ pub enum NormalizerWrapper {
     Sequence(Sequence),
     Lowercase(Lowercase),
     Nmt(Nmt),
-    #[display(fmt="Precompiled")]
+    #[display(fmt="Precompiled()")]
     Precompiled(Precompiled),
     Replace(Replace),
     Prepend(Prepend),

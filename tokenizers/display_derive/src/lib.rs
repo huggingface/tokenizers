@@ -52,7 +52,7 @@ pub fn display_derive(input: TokenStream) -> TokenStream {
                     quote! {
                         impl std::fmt::Display for #name {
                             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                                write!(f, "{}", stringify!(#name))
+                                write!(f, "{}()", stringify!(#name))
                             }
                         }
                     }
