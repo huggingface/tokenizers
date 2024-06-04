@@ -1410,6 +1410,10 @@ impl PyTokenizer {
     fn set_decoder(&mut self, decoder: PyRef<PyDecoder>) {
         self.tokenizer.with_decoder(decoder.clone());
     }
+
+    fn __str__(&self) -> PyResult<String>{
+        Ok(format!("{}", self.tokenizer))
+    }
 }
 
 #[cfg(test)]

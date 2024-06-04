@@ -23,16 +23,6 @@ use tk::Decoder;
 use tokenizers as tk;
 
 use super::error::ToPyResult;
-pub trait PythonStr{
-    fn __str__(&self) -> PyResult<String>;
-}
-
-impl <S:Serialize  + std::fmt::Display>PythonStr for S{
-    fn __str__(&self) -> PyResult<String>{
-        let s = format!("WOWOWO{}", self);
-        Ok(s.into())
-    }
-}
 
 /// Base class for all decoders
 ///
@@ -40,7 +30,7 @@ impl <S:Serialize  + std::fmt::Display>PythonStr for S{
 /// a Decoder will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.decoders", name = "Decoder", subclass)]
 #[derive(Clone, Deserialize, Serialize, Display)]
-#[display(fmt = "decoder.{}", decoder)]
+#[display(fmt = "{}", decoder)]
 pub struct PyDecoder {
     #[serde(flatten)]
     pub(crate) decoder: PyDecoderWrapper,
@@ -72,10 +62,6 @@ impl PyDecoder {
                 }
             },
         })
-    }
-
-    fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.decoder))
     }
 }
 
@@ -129,6 +115,10 @@ impl PyDecoder {
     #[pyo3(text_signature = "(self, tokens)")]
     fn decode(&self, tokens: Vec<String>) -> PyResult<String> {
         ToPyResult(self.decoder.decode(tokens)).into()
+    }
+
+    fn __str__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.decoder))
     }
 }
 
@@ -496,7 +486,7 @@ impl PySequenceDecoder {
 
 #[derive(Clone, Display)]
 pub(crate) struct CustomDecoder {
-    inner: PyObject,
+    pub inner: PyObject,
 }
 
 impl CustomDecoder {
@@ -550,9 +540,9 @@ impl<'de> Deserialize<'de> for CustomDecoder {
 #[derive(Clone, Deserialize, Serialize, Display)]
 #[serde(untagged)]
 pub(crate) enum PyDecoderWrapper {
-    #[display(fmt = "{}", self)]
+    #[display(fmt = "{}", "_0.as_ref().read().unwrap().inner")]
     Custom(Arc<RwLock<CustomDecoder>>),
-    #[display(fmt = "{}", self)]
+    #[display(fmt = "{}", "_0.as_ref().read().unwrap()")]
     Wrapped(Arc<RwLock<DecoderWrapper>>),
 }
 

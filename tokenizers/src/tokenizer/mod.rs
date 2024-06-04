@@ -508,9 +508,7 @@ impl DerefMut for Tokenizer {
 pub struct TruncationParamError(String);
 
 /// A `Tokenizer` is capable of encoding/decoding any text.
-#[derive(Clone, Debug, Display)]
-#[display(bound = "M: Model, N: Normalizer + std::fmt::Display, PT: PreTokenizer  + std::fmt::Display")]
-#[display(fmt = "{} {} {}", "normalizer.as_ref().unwrap()", "pre_tokenizer.as_ref().unwrap()", "model")]
+#[derive(Clone, Debug)]
 pub struct TokenizerImpl<M, N, PT, PP, D> {
     // Tokenizer parts
     normalizer: Option<N>,
@@ -527,6 +525,59 @@ pub struct TokenizerImpl<M, N, PT, PP, D> {
     padding: Option<PaddingParams>,
 }
 
+impl<M, N, PT, PP, D> std::fmt::Display for TokenizerImpl<M, N, PT, PP, D>
+where
+    M: std::fmt::Display,
+    N: std::fmt::Display,
+    PT: std::fmt::Display,
+    PP: std::fmt::Display,
+    D: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let normalizer_str = match &self.normalizer {
+            Some(n) => format!("{}", n),
+            None => "None".to_string(),
+        };
+        println!("Normalizer");
+        let pre_tokenizer_str = match &self.pre_tokenizer {
+            Some(pt) => format!("{}", pt),
+            None => "".to_string(),
+        };
+        println!("PreTok");
+        let post_processor_str = match &self.post_processor {
+            Some(pp) => format!("{}", pp),
+            None => "None".to_string(),
+        };
+        println!("decoder");
+        let decoder_str = match &self.decoder {
+            Some(d) => format!("{}", d),
+            None => "None".to_string(),
+        };
+        println!("truncation");
+        let truncation_str = match &self.truncation {
+            Some(t) => format!("{}", t),
+            None => "None".to_string(),
+        };
+        println!("padding");
+        let padding_str = match &self.padding {
+            Some(p) => format!("{}", p),
+            None => "None".to_string(),
+        };
+
+        write!(
+            f,
+            "{} {} {} {} {} {} {} {}",
+            normalizer_str,
+            pre_tokenizer_str,
+            self.model.to_string(),
+            post_processor_str,
+            decoder_str,
+            self.added_vocabulary.to_string(),
+            truncation_str,
+            padding_str
+        )
+    }
+}
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: Model,
