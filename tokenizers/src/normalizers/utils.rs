@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::normalizers::NormalizerWrapper;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
-
-#[derive(Clone, Deserialize, Debug, Serialize)]
+use display_derive::StructDisplay;
+#[derive(Clone, Deserialize, Debug, Serialize, StructDisplay)]
 #[serde(tag = "type")]
 /// Allows concatenating multiple other Normalizer as a Sequence.
 /// All the normalizers run in sequence in the given order against the same NormalizedString.
@@ -36,7 +36,7 @@ impl Normalizer for Sequence {
 }
 
 /// Lowercases the input
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, StructDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Lowercase;
 impl Normalizer for Lowercase {

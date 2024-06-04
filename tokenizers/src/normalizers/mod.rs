@@ -15,12 +15,13 @@ pub use crate::normalizers::unicode::{Nmt, NFC, NFD, NFKC, NFKD};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
 
 use serde::{Deserialize, Serialize};
-
+use derive_more::Display;
 use crate::{NormalizedString, Normalizer};
 
 /// Wrapper for known Normalizers.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Display)]
 #[serde(untagged)]
+#[display(fmt="{}")]
 pub enum NormalizerWrapper {
     BertNormalizer(BertNormalizer),
     StripNormalizer(Strip),
@@ -32,6 +33,7 @@ pub enum NormalizerWrapper {
     Sequence(Sequence),
     Lowercase(Lowercase),
     Nmt(Nmt),
+    #[display(fmt="Precompiled")]
     Precompiled(Precompiled),
     Replace(Replace),
     Prepend(Prepend),

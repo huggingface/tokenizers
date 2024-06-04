@@ -499,7 +499,7 @@ impl PyReplace {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Display)]
 pub(crate) struct CustomNormalizer {
     inner: PyObject,
 }
@@ -542,10 +542,12 @@ impl<'de> Deserialize<'de> for CustomNormalizer {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Display)]
 #[serde(untagged)]
 pub(crate) enum PyNormalizerWrapper {
+    #[display(fmt="{}", "_0.inner")]
     Custom(CustomNormalizer),
+    #[display(fmt="{}", "_0")]
     Wrapped(NormalizerWrapper),
 }
 
@@ -561,13 +563,30 @@ impl Serialize for PyNormalizerWrapper {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Display)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyNormalizerTypeWrapper {
-    #[display(fmt="{}", "_0.iter().map(|arc| arc.as_ref().read().unwrap().to_string()).collect::<Vec<_>>()")]
     Sequence(Vec<Arc<RwLock<PyNormalizerWrapper>>>),
-    #[display(fmt = "{}", self)]
     Single(Arc<RwLock<PyNormalizerWrapper>>),
+}
+
+// Implement the Display trait for PyNormalizerTypeWrapper
+impl std::fmt::Display for PyNormalizerTypeWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            PyNormalizerTypeWrapper::Sequence(decoders) => {
+                for decoder in decoders {
+                    let decoder = decoder.as_ref().read().unwrap();
+                    writeln!(f, "{}", decoder)?;
+                }
+                Ok(())
+            }
+            PyNormalizerTypeWrapper::Single(decoder) => {
+                let decoder = decoder.as_ref().read().unwrap();
+                write!(f, "{}", decoder)
+            }
+        }
+    }
 }
 
 impl Serialize for PyNormalizerTypeWrapper {

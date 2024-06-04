@@ -1,7 +1,8 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use display_derive::StructDisplay;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, StructDisplay)]
 #[serde(tag = "type")]
 pub struct Prepend {
     pub prepend: String,

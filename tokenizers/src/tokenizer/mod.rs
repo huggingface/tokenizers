@@ -22,6 +22,7 @@ use crate::utils::iter::ResultShunt;
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
 use derive_more::Display;
+use display_derive::StructDisplay;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -508,18 +509,7 @@ impl DerefMut for Tokenizer {
 pub struct TruncationParamError(String);
 
 /// A `Tokenizer` is capable of encoding/decoding any text.
-#[derive(Clone, Debug, Display)]
-#[display(
-    fmt = "Tokenizer(normalizer={}, pre_tokenizer={}, model={}, post_processor={}, decoder={}, added_vocabulary={:?}, truncation={:?}, padding={:?}",
-    normalizer,
-    pre_tokenizer,
-    model,
-    post_processor,
-    decoder,
-    added_vocabulary,
-    truncation,
-    padding
-)]
+#[derive(Clone, Debug, StructDisplay)]
 pub struct TokenizerImpl<M, N, PT, PP, D> {
     // Tokenizer parts
     normalizer: Option<N>,
