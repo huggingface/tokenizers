@@ -120,6 +120,10 @@ impl PyDecoder {
     fn __str__(&self) -> PyResult<String> {
         Ok(format!("{}", self.decoder))
     }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.decoder))
+    }
 }
 
 macro_rules! getter {

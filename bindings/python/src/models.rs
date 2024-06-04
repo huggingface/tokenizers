@@ -224,6 +224,9 @@ impl PyModel {
     fn __str__(&self) -> PyResult<String> {
         Ok(format!("{}", self.model.read().unwrap()))
     }
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.model.read().unwrap()))
+    }
 }
 
 /// An implementation of the BPE (Byte-Pair Encoding) algorithm

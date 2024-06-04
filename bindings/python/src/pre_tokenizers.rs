@@ -35,7 +35,7 @@ use derive_more::Display;
     subclass
 )]
 #[derive(Clone, Serialize, Deserialize, Display)]
-#[display(fmt = "PreTokenizer(pretok={}", "pretok")]
+#[display(fmt = "PreTokenizer(pretok={})", pretok)]
 pub struct PyPreTokenizer {
     #[serde(flatten)]
     pub(crate) pretok: PyPreTokenizerTypeWrapper,
@@ -181,6 +181,14 @@ impl PyPreTokenizer {
             .into_iter()
             .map(|(s, o, _)| (s.to_owned(), o))
             .collect())
+    }
+
+    fn __str__(&self) -> PyResult<String>{
+        Ok(format!("{}", self.pretok))
+    }
+
+    fn __repr__(&self) -> PyResult<String>{
+        Ok(format!("{}", self.pretok))
     }
 }
 
@@ -653,11 +661,11 @@ impl Serialize for PyPreTokenizerWrapper {
 
 #[derive(Clone, Deserialize, Display)]
 #[serde(untagged)]
-#[display(fmt = "PreTokenizer.{}")]
+// #[display(fmt = "")]
 pub(crate) enum PyPreTokenizerTypeWrapper {
-    #[display(fmt = "A")]
+    #[display(fmt = "[{}]", "_0.iter().map(|d| d.as_ref().read().unwrap().to_string()).collect::<Vec<_>>().join(\", \")")]
     Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),
-    #[display(fmt = "B")]
+    #[display(fmt = "_0.as_ref().read().unwrap()")]
     Single(Arc<RwLock<PyPreTokenizerWrapper>>),
 }
 

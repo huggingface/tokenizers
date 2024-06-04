@@ -172,6 +172,9 @@ impl PyNormalizer {
     fn __str__(&self) -> PyResult<String>{
         Ok(format!("{}", self.normalizer))
     }
+    fn __repr__(&self) -> PyResult<String>{
+        Ok(format!("{}", self.normalizer))
+    }
 }
 
 macro_rules! getter {
@@ -585,7 +588,7 @@ impl std::fmt::Display for PyNormalizerTypeWrapper {
                     writeln!(f, "{}", decoder)?;
                     
                 }
-            writeln!(f, "]")?; 
+            writeln!(f, "?????")?; 
             Ok(())
             }
             PyNormalizerTypeWrapper::Single(ref decoder) => {
