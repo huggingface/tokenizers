@@ -140,7 +140,7 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
 /// exist as required.
 ///
 #[derive(Clone, Debug, Display)]
-#[display(fmt="{:?}, encode_special_tokens={}", added_tokens_map, encode_special_tokens)]
+#[display(fmt="AddedVocabulary(added_tokens_map_r={:#?}, encode_special_tokens={})", "added_tokens_map_r", encode_special_tokens)]
 pub struct AddedVocabulary {
     /// Contains the mapping from String (token content) to ID. This map contains both special
     /// tokens and classic added tokens that were added to the this vocabulary.
