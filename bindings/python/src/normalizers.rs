@@ -90,6 +90,7 @@ impl PyNormalizer {
             },
         })
     }
+
 }
 
 impl Normalizer for PyNormalizer {
@@ -166,6 +167,10 @@ impl PyNormalizer {
         let mut normalized = NormalizedString::from(sequence);
         ToPyResult(self.normalizer.normalize(&mut normalized)).into_py()?;
         Ok(normalized.get().to_owned())
+    }
+
+    fn __str__(&self) -> PyResult<String>{
+        Ok(format!("{}", self.normalizer))
     }
 }
 
@@ -574,15 +579,17 @@ pub(crate) enum PyNormalizerTypeWrapper {
 impl std::fmt::Display for PyNormalizerTypeWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            PyNormalizerTypeWrapper::Sequence(decoders) => {
+            PyNormalizerTypeWrapper::Sequence(ref decoders) => {
                 for decoder in decoders {
-                    let decoder = decoder.as_ref().read().unwrap();
+                    let decoder = decoder.read().unwrap();
                     writeln!(f, "{}", decoder)?;
+                    
                 }
-                Ok(())
+            writeln!(f, "]")?; 
+            Ok(())
             }
-            PyNormalizerTypeWrapper::Single(decoder) => {
-                let decoder = decoder.as_ref().read().unwrap();
+            PyNormalizerTypeWrapper::Single(ref decoder) => {
+                let decoder = decoder.read().unwrap();
                 write!(f, "{}", decoder)
             }
         }

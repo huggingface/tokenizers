@@ -25,7 +25,7 @@ pub fn display_derive(input: TokenStream) -> TokenStream {
                                 write!(f, "{}(", stringify!(#name))?;
                                 let mut first = true;
                                 #(
-                                    if!first {
+                                    if !first {
                                         write!(f, ", ")?;
                                     }
                                     first = false;
@@ -33,9 +33,9 @@ pub fn display_derive(input: TokenStream) -> TokenStream {
                                     let field_value = &self.#field_names2;
                                     write!(f, "{}=", stringify!(#field_names))?;
                                     {
-                                        let s = format!("{:?}", field_value);
+                                        let s = format!("{}", field_value);
                                         let mut chars = s.chars();
-                                        let mut prefix = (&mut chars).take(10 - 1).collect::<String>();
+                                        let mut prefix = (&mut chars).take(100000 - 1).collect::<String>();
                                         if chars.next().is_some() {
                                             prefix.push('…');
                                         }
