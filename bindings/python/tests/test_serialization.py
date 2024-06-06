@@ -3,9 +3,9 @@ import os
 import unittest
 
 import tqdm
-
-from huggingface_hub import HfApi, cached_download, hf_hub_url
+from huggingface_hub import hf_hub_download
 from tokenizers import Tokenizer
+
 from .utils import albert_base, data_dir
 
 
@@ -63,7 +63,7 @@ class TestFullDeserialization(unittest.TestCase):
 
         all_models = [("HueyNemud/das22-10-camembert_pretrained", "tokenizer.json")]
         for model_id, filename in tqdm.tqdm(all_models):
-            tokenizer_file = cached_download(hf_hub_url(model_id, filename=filename))
+            tokenizer_file = hf_hub_download(model_id, filename=filename)
 
             is_ok = check(tokenizer_file)
             if not is_ok:
