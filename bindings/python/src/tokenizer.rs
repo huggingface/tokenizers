@@ -275,7 +275,7 @@ impl<'s> FromPyObject<'s> for PyArrowScalarStringInput<'s> {
 
             // SAFETY address is valid because it's from the StringScalar buffer
             let buf_slice = unsafe { slice::from_raw_parts::<'s>(addr as *const u8, size) };
-            let x = String::from_utf8_lossy(&buf_slice[..]);
+            let x = String::from_utf8_lossy(buf_slice);
             Ok(Self(x))
         } else {
             let err =
