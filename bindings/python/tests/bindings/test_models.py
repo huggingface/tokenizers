@@ -73,7 +73,6 @@ class TestBPE:
         model = BPE(dropout=0.0)
         assert model.dropout == 0.0
 
-
 class TestWordPiece:
     def test_instantiate(self, bert_files):
         assert isinstance(WordPiece(), Model)
