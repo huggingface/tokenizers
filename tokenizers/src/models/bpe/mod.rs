@@ -31,7 +31,7 @@ pub enum Error {
     #[error("Unk token `{0}` not found in the vocabulary")]
     UnkTokenOutOfVocabulary(String),
     /// Dropout not between 0 and 1.
-    #[error("Dropout should be between 0 and 1")]
+    #[error("Dropout should be between 0 and 1, inclusive")]
     InvalidDropout,
 }
 
