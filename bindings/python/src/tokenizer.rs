@@ -1,6 +1,9 @@
-use std::borrow::Cow;
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
+
+#[cfg(feature = "pyarrow")]
+use std::borrow::Cow;
+#[cfg(feature = "pyarrow")]
 use std::slice;
 
 use numpy::{npyffi, PyArray1};
@@ -262,7 +265,9 @@ impl PyAddedToken {
     }
 }
 
+#[cfg(feature = "pyarrow")]
 struct PyArrowScalarStringInput<'s>(Cow<'s, str>);
+#[cfg(feature = "pyarrow")]
 impl<'s> FromPyObject<'s> for PyArrowScalarStringInput<'s> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let pyarrow = PyModule::import_bound(ob.py(), "pyarrow").map(Bound::into_gil_ref)?;
@@ -284,6 +289,7 @@ impl<'s> FromPyObject<'s> for PyArrowScalarStringInput<'s> {
         }
     }
 }
+#[cfg(feature = "pyarrow")]
 impl<'s> From<PyArrowScalarStringInput<'s>> for tk::InputSequence<'s> {
     fn from(s: PyArrowScalarStringInput<'s>) -> Self {
         s.0.into()
@@ -295,9 +301,11 @@ impl<'s> FromPyObject<'s> for TextInputSequence<'s> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         if let Ok(s) = ob.downcast::<PyString>() {
             Ok(Self(s.to_string_lossy().into()))
-        } else if let Ok(s) = ob.extract::<PyArrowScalarStringInput>() {
-            Ok(Self(s.0.into()))
         } else {
+            #[cfg(feature = "pyarrow")]
+            if let Ok(s) = ob.extract::<PyArrowScalarStringInput>() {
+                return Ok(Self(s.0.into()));
+            }
             let err = exceptions::PyTypeError::new_err("TextInputSequence must be str");
             Err(err)
         }
@@ -376,7 +384,9 @@ impl From<PyArrayUnicode> for tk::InputSequence<'_> {
     }
 }
 
+#[cfg(feature = "pyarrow")]
 struct PyArrowArray<'s>(Vec<Cow<'s, str>>);
+#[cfg(feature = "pyarrow")]
 impl<'s> FromPyObject<'s> for PyArrowArray<'s> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let array = ob.extract::<Vec<&PyAny>>()?;
@@ -387,6 +397,7 @@ impl<'s> FromPyObject<'s> for PyArrowArray<'s> {
         Ok(Self(str_array))
     }
 }
+#[cfg(feature = "pyarrow")]
 impl<'s> From<PyArrowArray<'s>> for tk::InputSequence<'s> {
     fn from(s: PyArrowArray<'s>) -> Self {
         s.0.into()
@@ -422,6 +433,7 @@ impl<'s> FromPyObject<'s> for PreTokenizedInputSequence<'s> {
         if let Ok(seq) = ob.extract::<PyArrayUnicode>() {
             return Ok(Self(seq.into()));
         }
+        #[cfg(feature = "pyarrow")]
         if let Ok(seq) = ob.extract::<PyArrowArray>() {
             return Ok(Self(seq.into()));
         }

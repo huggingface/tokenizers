@@ -47,7 +47,7 @@ build-backend = "maturin"
 python-source = "py_src"
 module-name = "tokenizers.tokenizers"
 bindings = 'pyo3'
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "pyarrow"]
 
 [tool.black]
 line-length = 119

@@ -21,7 +21,7 @@ onig = { version = "6.4", default-features = false }
 itertools = "0.12"
 arrow = { git = "https://github.com/apache/arrow-rs", branch = "master", features = [
     "pyarrow",
-] }
+], optional = true }
 
 [dependencies.tokenizers]
 path = "../../tokenizers"
@@ -32,3 +32,4 @@ pyo3 = { version = "0.21", features = ["auto-initialize"] }
 
 [features]
 defaut = ["pyo3/extension-module"]
+pyarrow = ["arrow"]
