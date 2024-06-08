@@ -35,7 +35,7 @@ pub fn display_derive(input: TokenStream) -> TokenStream {
                                     {
                                         let s = format!("{}", field_value);
                                         let mut chars = s.chars();
-                                        let mut prefix = (&mut chars).take(100000 - 1).collect::<String>();
+                                        let mut prefix = (&mut chars).take(100 - 1).collect::<String>();
                                         if chars.next().is_some() {
                                             prefix.push('…');
                                         }
