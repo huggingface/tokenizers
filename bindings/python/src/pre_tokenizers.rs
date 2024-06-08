@@ -662,13 +662,12 @@ impl Serialize for PyPreTokenizerWrapper {
 
 #[derive(Clone, Deserialize, Display)]
 #[serde(untagged)]
-// #[display(fmt = "")]
 pub(crate) enum PyPreTokenizerTypeWrapper {
     #[display(fmt = "[{}]", "_0.iter()
     .map(|d| d.as_ref().read().unwrap().to_string())
     .fold(String::new(), |mut acc, s| {
         if !acc.is_empty() {
-            acc.push_str(", ");
+            acc.push_str(\", \");
         }
         acc.push_str(&s);
         acc
