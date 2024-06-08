@@ -45,7 +45,7 @@ impl std::convert::TryFrom<ReplaceDeserializer> for Replace {
 #[derive(Debug, Serialize, Deserialize, Display)]
 #[serde(tag = "type", try_from = "ReplaceDeserializer")]
 #[display(
-    fmt = "Replace(pattern={:?}, content={}, regex={:?}",
+    fmt = "Replace(pattern={:?}, content=\"{}\", regex={:?}",
     pattern,
     content,
     regex

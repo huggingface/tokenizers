@@ -19,6 +19,7 @@ pub fn display_derive(input: TokenStream) -> TokenStream {
                     // If the struct has named fields
                     let field_names = fields.named.iter().map(|f| &f.ident);
                     let field_names2 = field_names.clone();
+                    let field_types = fields.named.iter().map(|f| &f.ty);
                     quote! {
                         impl std::fmt::Display for #name {
                             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -32,7 +33,9 @@ pub fn display_derive(input: TokenStream) -> TokenStream {
 
                                     let field_value = &self.#field_names2;
                                     write!(f, "{}=", stringify!(#field_names))?;
-                                    {
+                                    if std::any::TypeId::of::<#field_types>() == std::any::TypeId::of::<String>(){
+                                        write!(f, "\"{}\"", field_value)?;
+                                    } else {
                                         let s = format!("{}", field_value);
                                         let mut chars = s.chars();
                                         let mut prefix = (&mut chars).take(100 - 1).collect::<String>();
