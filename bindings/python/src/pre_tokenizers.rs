@@ -664,7 +664,7 @@ impl Serialize for PyPreTokenizerWrapper {
 #[serde(untagged)]
 // #[display(fmt = "")]
 pub(crate) enum PyPreTokenizerTypeWrapper {
-    #[display(fmt = "[{}]", "_0_0.iter()
+    #[display(fmt = "[{}]", "_0.iter()
     .map(|d| d.as_ref().read().unwrap().to_string())
     .fold(String::new(), |mut acc, s| {
         if !acc.is_empty() {
