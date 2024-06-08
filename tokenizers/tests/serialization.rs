@@ -237,7 +237,7 @@ fn bpe_with_dropout_serde() {
     let de = serde_json::from_str(&ser).unwrap();
     assert_eq!(bpe, de);
 
-    // set dropout to 0.0 (which is analagous to None) and reserialize
+    // set dropout to 0.0 (which is analogous to None) and reserialize
     bpe.dropout = Some(0.0);
     let ser = serde_json::to_string(&bpe).unwrap();
     let de = serde_json::from_str(&ser).unwrap();
