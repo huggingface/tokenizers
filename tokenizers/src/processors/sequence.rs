@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[macro_rules_attribute(impl_serde_type!)]
 #[derive(Clone, Debug, PartialEq, Eq, Display)]
 #[display(
-    fmt = "processors.Sequence([{}])",
+    fmt = "Sequence([{}])",
     "processors.iter().fold(String::new(), |mut acc, p| {
     if !acc.is_empty() {
         acc.push_str(\", \");
