@@ -95,7 +95,13 @@ impl WordLevelBuilder {
 }
 
 #[derive(PartialEq, Clone, Eq, Display)]
-#[display(fmt = "vocab={:?}, unk_token={}", vocab, unk_token)]
+#[display(fmt = "vocab={{{}, ...}}, unk_token={}", "vocab.iter().take(5).fold(String::new(), |mut acc, (key, value)| {
+    if !acc.is_empty() {
+        acc.push_str(\", \");
+    }
+    acc.push_str(&format!(\"\'{}\': {}\", key, value));
+    acc
+})", unk_token)]
 pub struct WordLevel {
     vocab: HashMap<String, u32>,
     vocab_r: HashMap<u32, String>,

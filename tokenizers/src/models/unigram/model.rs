@@ -22,7 +22,7 @@ type Vocab = Vec<(String, f64)>;
     if !acc.is_empty() {
         acc.push_str(\", \");
     }
-    acc.push_str(&format!(\"{}: \'{}\'\", value, key));
+    acc.push_str(&format!(\"\'{}\': {}\", key, value));
     acc
 })",
     "unk_id.unwrap()",
