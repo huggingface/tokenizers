@@ -586,7 +586,6 @@ impl std::fmt::Display for PyNormalizerTypeWrapper {
                     let decoder = decoder.read().unwrap();
                     writeln!(f, "{}", decoder)?;
                 }
-                writeln!(f, "?????")?;
                 Ok(())
             }
             PyNormalizerTypeWrapper::Single(ref decoder) => {
