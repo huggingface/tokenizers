@@ -35,7 +35,6 @@ use derive_more::Display;
     subclass
 )]
 #[derive(Clone, Serialize, Deserialize, Display)]
-#[display(fmt = "PreTokenizer(pretok={})", pretok)]
 pub struct PyPreTokenizer {
     #[serde(flatten)]
     pub(crate) pretok: PyPreTokenizerTypeWrapper,

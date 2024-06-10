@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[macro_rules_attribute(impl_serde_type!)]
 #[derive(Clone, Debug, PartialEq, Display)]
 #[display(
-    fmt = "pre_tokenizers.Seqence([{}])",
+    fmt = "Seqence([{}])",
     "pretokenizers.iter().fold(String::new(), |mut acc, p| {
     if !acc.is_empty(){
        acc.push_str(\", \")

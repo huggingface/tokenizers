@@ -44,7 +44,6 @@ impl PyNormalizedStringMut<'_> {
 /// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
 #[derive(Clone, Serialize, Deserialize, Display, Debug)]
-#[display(fmt = "{}", normalizer)]
 pub struct PyNormalizer {
     #[serde(flatten)]
     pub(crate) normalizer: PyNormalizerTypeWrapper,
