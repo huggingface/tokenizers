@@ -4,7 +4,7 @@ use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 /// The various possible padding directions.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Display)]
 pub enum PaddingDirection {
     Left,
     Right,
@@ -20,8 +20,7 @@ impl std::convert::AsRef<str> for PaddingDirection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Display)]
-// #[display(fmt="Strategy: {:?}, Direction: {:?}, Pad to multiple of: {:?}, Pad ID: {}, Pad Type ID: {}, Pad Token: {}", strategy, direction, pad_to_multiple_of, pad_id, pad_type_id, pad_token)]
-#[display(fmt = "Strategy:")]
+#[display(fmt="strategy={}, direction={}, pad_to_multiple_of={}, pad_id={}, pad_type_id={}, pad_token={}", strategy, direction, "pad_to_multiple_of.unwrap()", pad_id, pad_type_id, pad_token)]
 pub struct PaddingParams {
     pub strategy: PaddingStrategy,
     pub direction: PaddingDirection,
@@ -45,7 +44,6 @@ impl Default for PaddingParams {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Display)]
-#[display(fmt={})]
 pub enum PaddingStrategy {
     BatchLongest,
     Fixed(usize),
