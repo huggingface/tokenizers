@@ -725,6 +725,16 @@ class Tokenizer:
         """
         pass
 
+    @property
+    def added_tokens_decoder(self):
+        """
+        Get the underlying vocabulary
+
+        Returns:
+            :obj:`Dict[int, AddedToken]`: The vocabulary
+        """
+        pass
+
     def decode(self, ids, skip_special_tokens=True):
         """
         Decode the given list of ids back to a string
@@ -967,15 +977,6 @@ class Tokenizer:
 
         Returns:
             :class:`~tokenizers.Tokenizer`: The new tokenizer
-        """
-        pass
-
-    def get_added_tokens_decoder(self):
-        """
-        Get the underlying vocabulary
-
-        Returns:
-            :obj:`Dict[int, AddedToken]`: The vocabulary
         """
         pass
 
