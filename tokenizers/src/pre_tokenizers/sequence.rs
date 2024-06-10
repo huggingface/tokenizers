@@ -7,8 +7,14 @@ use serde::{Deserialize, Serialize};
 #[macro_rules_attribute(impl_serde_type!)]
 #[derive(Clone, Debug, PartialEq, Display)]
 #[display(
-    fmt = "[{}]",
-    "pretokenizers.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(\", \")"
+    fmt = "pre_tokenizers.Seqence([{}])",
+    "pretokenizers.iter().fold(String::new(), |mut acc, p| {
+    if !acc.is_empty(){
+       acc.push_str(\", \")
+    }
+    acc.push_str(&p.to_string());
+    acc
+    })"
 )]
 pub struct Sequence {
     pretokenizers: Vec<PreTokenizerWrapper>,
