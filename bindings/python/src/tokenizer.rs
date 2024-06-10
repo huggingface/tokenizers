@@ -666,8 +666,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`Dict[int, AddedToken]`: The vocabulary
-    #[pyo3(signature = ())]
-    #[pyo3(text_signature = "(self)")]
+    #[getter]
     fn get_added_tokens_decoder(&self) -> BTreeMap<u32, PyAddedToken> {
         let mut sorted_map = BTreeMap::new();
 

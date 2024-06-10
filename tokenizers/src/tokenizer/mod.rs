@@ -560,7 +560,7 @@ where
 
         write!(
             f,
-            "Tokenizer(normalizer={}, pre_tokenizer={}, model={}, post_processor={}, decoder={}, added_vocab={}, truncation={}, padding={})",
+            "Tokenizer(normalizer={}, pre_tokenizer={}, model={}, post_processor={}, decoder={}, added_tokens_decoder={}, truncation={}, padding={})",
             normalizer_str,
             pre_tokenizer_str,
             self.model,
