@@ -64,7 +64,6 @@ getrandom = { version = "0.2.10" }
 esaxx-rs = { version = "0.1.10", default-features = false, features=[]}
 monostate = "0.1.12"
 derive_more = "0.99.17"
-ellipse = "0.2.0"
 display_derive = { path = "display_derive" }
 
 [features]

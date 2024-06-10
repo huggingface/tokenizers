@@ -1,21 +1,15 @@
 use crate::decoders::wordpiece;
 use crate::tokenizer::{Decoder, Result};
-use derive_more::Display;
+use display_derive::StructDisplay;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Display)]
+#[derive(Debug, Clone, Serialize, Deserialize, StructDisplay)]
 /// The CTC (Connectionist Temporal Classification) decoder takes care
 /// of sanitizing a list of inputs token.
 /// Due to some alignement problem the output of some models can come
 /// with duplicated token.
 #[serde(tag = "type")]
-#[display(
-    fmt = "CTC(pad_token={}, word_delimiter_token={}, cleanup={}",
-    pad_token,
-    word_delimiter_token,
-    cleanup
-)]
 #[non_exhaustive]
 pub struct CTC {
     /// The pad token used by CTC to delimit a new token.
