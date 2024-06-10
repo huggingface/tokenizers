@@ -641,7 +641,6 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
 }
 
 #[derive(Clone, Deserialize, Display)]
-#[display(fmt = "{}")]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerWrapper {
     Custom(CustomPreTokenizer),
