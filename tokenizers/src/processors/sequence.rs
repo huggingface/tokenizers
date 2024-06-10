@@ -6,8 +6,14 @@ use serde::{Deserialize, Serialize};
 #[macro_rules_attribute(impl_serde_type!)]
 #[derive(Clone, Debug, PartialEq, Eq, Display)]
 #[display(
-    fmt = "[{}]",
-    "processors.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(\", \")"
+    fmt = "processors.Sequence([{}])",
+    "processors.iter().fold(String::new(), |mut acc, p| {
+    if !acc.is_empty() {
+        acc.push_str(\", \");
+    }
+    acc.push_str(&p.to_string());
+    acc
+})"
 )]
 pub struct Sequence {
     processors: Vec<PostProcessorWrapper>,
