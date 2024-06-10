@@ -17,15 +17,15 @@ type Vocab = Vec<(String, f64)>;
 /// A `Unigram` model to encode sentences.
 #[derive(Display)]
 #[display(
-    fmt = "Unigram(vocab={}, unk_id={:?}, bos_id={}, eos_id={})",
+    fmt = "Unigram(vocab={{{}, ...}}, unk_id={}, bos_id={}, eos_id={})",
     "vocab.iter().take(5).fold(String::new(), |mut acc, (key, value)| {
     if !acc.is_empty() {
         acc.push_str(\", \");
     }
-    acc.push_str(&format!(\"{}: {}\", value, key));
+    acc.push_str(&format!(\"{}: \'{}\'\", value, key));
     acc
 })",
-    unk_id,
+    "unk_id.unwrap()",
     bos_id,
     eos_id
 )]
