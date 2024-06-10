@@ -25,7 +25,7 @@ use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Display)]
-#[display(fmt="decoders.{})]
+#[display(fmt="decoders.{}")]
 #[serde(untagged)]
 pub enum DecoderWrapper {
     BPE(BPEDecoder),
