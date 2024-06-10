@@ -96,7 +96,7 @@ impl WordLevelBuilder {
 
 #[derive(PartialEq, Clone, Eq, Display)]
 #[display(
-    fmt = "vocab={{{}, ...}}, unk_token={}",
+    fmt = "WordLevel(vocab={{{}, ...}}, unk_token={})",
     "vocab.iter().take(5).fold(String::new(), |mut acc, (key, value)| {
     if !acc.is_empty() {
         acc.push_str(\", \");

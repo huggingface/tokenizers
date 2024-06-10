@@ -121,7 +121,7 @@ impl WordPieceBuilder {
 /// model.
 #[derive(Clone, PartialEq, Eq, Display)]
 #[display(
-    fmt = "vocab={}, unk_token={}, continuing_subword_prefix={:?}",
+    fmt = "WordPiece(vocab={}, unk_token={}, continuing_subword_prefix={:?})",
     "vocab.iter().take(5).fold(String::new(), |mut acc, (key, value)| {
         if !acc.is_empty() {
             acc.push_str(\", \");
