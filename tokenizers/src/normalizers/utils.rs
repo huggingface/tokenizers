@@ -6,7 +6,7 @@ use crate::utils::macro_rules_attribute;
 use derive_more::Display;
 use display_derive::StructDisplay;
 #[derive(Clone, Deserialize, Debug, Serialize, Display)]
-#[display(fmt = "[{}]", "normalizers.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(\", \")")]
+#[display(fmt = "Sequence([{}])", "normalizers.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(\", \")")]
 #[serde(tag = "type")]
 /// Allows concatenating multiple other Normalizer as a Sequence.
 /// All the normalizers run in sequence in the given order against the same NormalizedString.
