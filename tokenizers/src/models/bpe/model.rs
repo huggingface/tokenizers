@@ -136,7 +136,7 @@ impl BpeBuilder {
     pub fn build(mut self) -> Result<BPE> {
         // Validate dropout.
         if let Some(p) = self.config.dropout {
-            if p < 0.0 || p > 1.0 {
+            if !(0.0..=1.0).contains(&p) {
                 return Err(Error::InvalidDropout.into());
             }
         }
