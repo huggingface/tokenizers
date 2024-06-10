@@ -5,7 +5,10 @@ use derive_more::Display;
 use serde::{Deserialize, Serialize};
 #[macro_rules_attribute(impl_serde_type!)]
 #[derive(Clone, Debug, PartialEq, Eq, Display)]
-#[display(fmt = "[{}]", "processors.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(\", \")")]
+#[display(
+    fmt = "[{}]",
+    "processors.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(\", \")"
+)]
 pub struct Sequence {
     processors: Vec<PostProcessorWrapper>,
 }

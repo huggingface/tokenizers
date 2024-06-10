@@ -1,11 +1,11 @@
 use std::sync::{Arc, RwLock};
 
+use crate::error::ToPyResult;
+use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
+use derive_more::Display;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use derive_more::Display;
-use crate::error::ToPyResult;
-use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
@@ -90,7 +90,6 @@ impl PyNormalizer {
             },
         })
     }
-
 }
 
 impl Normalizer for PyNormalizer {
@@ -169,10 +168,10 @@ impl PyNormalizer {
         Ok(normalized.get().to_owned())
     }
 
-    fn __str__(&self) -> PyResult<String>{
+    fn __str__(&self) -> PyResult<String> {
         Ok(format!("{}", self.normalizer))
     }
-    fn __repr__(&self) -> PyResult<String>{
+    fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.normalizer))
     }
 }
@@ -553,9 +552,9 @@ impl<'de> Deserialize<'de> for CustomNormalizer {
 #[derive(Debug, Clone, Deserialize, Display)]
 #[serde(untagged)]
 pub(crate) enum PyNormalizerWrapper {
-    #[display(fmt="{}", "_0.inner")]
+    #[display(fmt = "{}", "_0.inner")]
     Custom(CustomNormalizer),
-    #[display(fmt="{}", "_0")]
+    #[display(fmt = "{}", "_0")]
     Wrapped(NormalizerWrapper),
 }
 
@@ -586,10 +585,9 @@ impl std::fmt::Display for PyNormalizerTypeWrapper {
                 for decoder in decoders {
                     let decoder = decoder.read().unwrap();
                     writeln!(f, "{}", decoder)?;
-                    
                 }
-            writeln!(f, "?????")?; 
-            Ok(())
+                writeln!(f, "?????")?;
+                Ok(())
             }
             PyNormalizerTypeWrapper::Single(ref decoder) => {
                 let decoder = decoder.read().unwrap();

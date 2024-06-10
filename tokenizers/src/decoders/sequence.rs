@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 
 #[macro_rules_attribute(impl_serde_type!)]
 #[derive(Clone, Debug, Display)]
-#[display(fmt = "[{}]", "decoders.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(\", \")")]
+#[display(
+    fmt = "[{}]",
+    "decoders.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(\", \")"
+)]
 pub struct Sequence {
     decoders: Vec<DecoderWrapper>,
 }

@@ -21,7 +21,13 @@ impl std::convert::AsRef<str> for TruncationDirection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Display)]
-#[display(fmt="direction={:?}, max_length={}, strategy={:?}, stride={}", direction, max_length, strategy, stride)]
+#[display(
+    fmt = "direction={:?}, max_length={}, strategy={:?}, stride={}",
+    direction,
+    max_length,
+    strategy,
+    stride
+)]
 pub struct TruncationParams {
     #[serde(default)]
     pub direction: TruncationDirection,

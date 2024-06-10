@@ -1411,11 +1411,11 @@ impl PyTokenizer {
         self.tokenizer.with_decoder(decoder.clone());
     }
 
-    fn __str__(&self) -> PyResult<String>{
+    fn __str__(&self) -> PyResult<String> {
         Ok(format!("{}", self.tokenizer))
     }
 
-    fn __repr__(&self) -> PyResult<String>{
+    fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.tokenizer))
     }
 }

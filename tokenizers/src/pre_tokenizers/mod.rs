@@ -25,7 +25,7 @@ use crate::{PreTokenizedString, PreTokenizer};
 use derive_more::Display;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Display)]
-#[display(fmt="{}")]
+#[display(fmt = "{}")]
 #[serde(untagged)]
 pub enum PreTokenizerWrapper {
     BertPreTokenizer(BertPreTokenizer),

@@ -1,9 +1,9 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
+use display_derive::StructDisplay;
 use serde::{Deserialize, Serialize};
 use unicode_normalization_alignments::char::is_combining_mark;
-use display_derive::StructDisplay;
-#[derive(Copy, Clone, Debug, Deserialize, Serialize,StructDisplay)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, StructDisplay)]
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub struct Strip {

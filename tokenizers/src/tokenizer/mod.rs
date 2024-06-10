@@ -563,10 +563,10 @@ where
             "Tokenizer(normalizer={},\npre_tokenizer={},\nmodel={},\npost_processor={},\ndecoder={},\nadded_vocab={},\ntruncation={},\npadding={}\n)",
             normalizer_str,
             pre_tokenizer_str,
-            self.model.to_string(),
+            self.model,
             post_processor_str,
             decoder_str,
-            self.added_vocabulary.to_string(),
+            self.added_vocabulary,
             truncation_str,
             padding_str
         )

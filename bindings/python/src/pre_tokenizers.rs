@@ -183,11 +183,11 @@ impl PyPreTokenizer {
             .collect())
     }
 
-    fn __str__(&self) -> PyResult<String>{
+    fn __str__(&self) -> PyResult<String> {
         Ok(format!("{}", self.pretok))
     }
 
-    fn __repr__(&self) -> PyResult<String>{
+    fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.pretok))
     }
 }
@@ -641,7 +641,7 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
 }
 
 #[derive(Clone, Deserialize, Display)]
-#[display(fmt="{}")]
+#[display(fmt = "{}")]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerWrapper {
     Custom(CustomPreTokenizer),
@@ -663,7 +663,9 @@ impl Serialize for PyPreTokenizerWrapper {
 #[derive(Clone, Deserialize, Display)]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerTypeWrapper {
-    #[display(fmt = "[{}]", "_0.iter()
+    #[display(
+        fmt = "[{}]",
+        "_0.iter()
     .map(|d| d.as_ref().read().unwrap().to_string())
     .fold(String::new(), |mut acc, s| {
         if !acc.is_empty() {
@@ -671,9 +673,10 @@ pub(crate) enum PyPreTokenizerTypeWrapper {
         }
         acc.push_str(&s);
         acc
-    })")]
+    })"
+    )]
     Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),
-    #[display(fmt ="{}", "_0.as_ref().read().unwrap()")]
+    #[display(fmt = "{}", "_0.as_ref().read().unwrap()")]
     Single(Arc<RwLock<PyPreTokenizerWrapper>>),
 }
 

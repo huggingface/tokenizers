@@ -1,8 +1,8 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
-use derive_more::Display;
 /// Checks whether a character is whitespace
 fn is_whitespace(c: char) -> bool {
     // These are technically control characters but we count them as whitespace
@@ -48,7 +48,13 @@ fn is_chinese_char(c: char) -> bool {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Display)]
-#[display(fmt="BertNormalizer(clean_text={}, handle_chinese_chars={}, strip_accents={:?}, lower_case={})",clean_text, handle_chinese_chars, strip_accents, lowercase)]
+#[display(
+    fmt = "BertNormalizer(clean_text={}, handle_chinese_chars={}, strip_accents={:?}, lower_case={})",
+    clean_text,
+    handle_chinese_chars,
+    strip_accents,
+    lowercase
+)]
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub struct BertNormalizer {

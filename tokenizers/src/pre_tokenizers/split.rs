@@ -1,13 +1,13 @@
-use crate::utils::SysRegex;
-use serde::{Deserialize, Deserializer, Serialize};
-use derive_more::Display;
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
+use crate::utils::SysRegex;
+use derive_more::Display;
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Represents the different patterns that `Split` can use
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq,Display)]
-#[display(fmt="{}")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Display)]
+#[display(fmt = "{}")]
 pub enum SplitPattern {
     String(String),
     Regex(String),
@@ -25,9 +25,15 @@ impl From<&str> for SplitPattern {
     }
 }
 
-#[derive(Debug, Serialize,Display)]
+#[derive(Debug, Serialize, Display)]
 #[serde(tag = "type")]
-#[display(fmt="Split(patter={}, regex={:?}, behavior={}, invert={})", "pattern", regex, behavior, invert)]
+#[display(
+    fmt = "Split(patter={}, regex={:?}, behavior={}, invert={})",
+    "pattern",
+    regex,
+    behavior,
+    invert
+)]
 pub struct Split {
     pattern: SplitPattern,
     #[serde(skip)]
