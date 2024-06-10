@@ -20,7 +20,15 @@ impl std::convert::AsRef<str> for PaddingDirection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Display)]
-#[display(fmt="strategy={}, direction={}, pad_to_multiple_of={}, pad_id={}, pad_type_id={}, pad_token={}", strategy, direction, "pad_to_multiple_of.unwrap()", pad_id, pad_type_id, pad_token)]
+#[display(
+    fmt = "strategy={}, direction={}, pad_to_multiple_of={}, pad_id={}, pad_type_id={}, pad_token={}",
+    strategy,
+    direction,
+    "pad_to_multiple_of.unwrap()",
+    pad_id,
+    pad_type_id,
+    pad_token
+)]
 pub struct PaddingParams {
     pub strategy: PaddingStrategy,
     pub direction: PaddingDirection,

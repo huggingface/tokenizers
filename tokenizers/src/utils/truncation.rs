@@ -1,6 +1,6 @@
 use crate::tokenizer::{Encoding, Result};
-use display_derive::StructDisplay;
 use derive_more::Display;
+use display_derive::StructDisplay;
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::mem;
