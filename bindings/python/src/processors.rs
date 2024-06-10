@@ -143,6 +143,10 @@ impl PyPostProcessor {
     fn __str__(&self) -> PyResult<String> {
         Ok(format!("{}", &self))
     }
+
+    fn __repr__(&self) -> PyResult<String>{
+        Ok(format!("{}", &self))
+    }
 }
 
 /// This post-processor takes care of adding the special tokens needed by
