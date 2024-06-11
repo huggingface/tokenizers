@@ -1,124 +1,208 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{format_ident,quote};
 use syn::{parse_macro_input, Data, DeriveInput, Fields, Lit, Meta, MetaList, NestedMeta};
+mod vendored;
+use vendored::FmtAttribute;
 
 #[proc_macro_derive(Display)]
-pub fn display_derive(input: TokenStream) -> TokenStream {
+pub fn display_derive(input: TokenStream) -> syn::Result<TokenStream>  {
     // Parse the input tokens into a syntax tree
     let input = parse_macro_input!(input as DeriveInput);
 
-    // Get the name of the struct
-    let name = &input.ident;
+    let attr_name = "display";
+    let attrs = FmtAttributes::parse_attrs(&input.attrs, &attr_name)?
+        .map(Spanning::into_inner)
+        .unwrap_or_default();
+    let trait_ident = format_ident!("display");
+    let ident = &input.ident;
 
-    // Generate code to match the struct's fields
-    let expanded = match input.data {
-        Data::Struct(data) => {
-            match data.fields {
-                Fields::Named(fields) => {
-                    // If the struct has named fields
-                    let field_names = fields.named.iter().map(|f| &f.ident);
-                    let field_types = fields.named.iter().map(|f| &f.ty);
-                    quote! {
-                        impl std::fmt::Display for #name {
-                            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                                write!(f, "{}(", stringify!(#name))?;
-                                let mut first = true;
-                                #(
-                                    if !first {
-                                        write!(f, ", ")?;
-                                    }
-                                    first = false;
+    let ctx = (&attrs, ident, &trait_ident, &attr_name);
+    let body = match &input.data {
+        syn::Data::Struct(s) => expand_struct(s, ctx),
+        syn::Data::Enum(e) => expand_enum(e, ctx),
+        syn::Data::Union(u) => return Err(syn::Error::new(u, format!("Union is not supported"))), 
+    }?;
 
-                                    let field_value = &self.#field_names;
-                                    write!(f, "{}=", stringify!(#field_names))?;
-                                    if std::any::TypeId::of::<#field_types>() == std::any::TypeId::of::<String>(){
-                                        write!(f, "\"{}\"", field_value)?;
-                                    } else {
-                                        let s = format!("{}", field_value);
-                                        let mut chars = s.chars();
-                                        let mut prefix = (&mut chars).take(100 - 1).collect::<String>();
-                                        if chars.next().is_some() {
-                                            prefix.push('…');
-                                        }
-                                        write!(f, "{}", prefix)?;
-                                    }
-                                )*
-                                write!(f, ")")
-                            }
-                        }
-                    }
-                },
-                Fields::Unit => {
-                    // If the struct has no fields
-                    quote! {
-                        impl std::fmt::Display for #name {
-                            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                                write!(f, "{}()", stringify!(#name))
-                            }
-                        }
-                    }
-                },
-                Fields::Unnamed(_) => {
-                    quote! {
-                        compile_error!("Unnamed fields for struct are not supported.");
-                    }
-                },
-            }
-        },
-        Data::Enum(ref data_enum) => {
-            let variants = &data_enum.variants;
-            let display_impls = variants.iter().map(|variant| {
-                let ident = &variant.ident;
-                if let Some(attr) = variant.attrs.iter().find(|attr| attr.path.is_ident("display")) {
-                    if let Ok(Meta::List(meta_list)) = attr.parse_meta() {
-                        let format_args = meta_list.nested.iter().map(|nested_meta| {
-                            match nested_meta {
-                                NestedMeta::Meta(Meta::NameValue(nv)) if nv.path.is_ident("fmt") => {
-                                    if let syn::Lit::Str(s) = &nv.lit {
-                                        quote! { #s }
-                                    } else {
-                                        quote! { compile_error!("Invalid format argument"); }
-                                    }
-                                }
-                                _ => quote! { compile_error!("Invalid format argument"); },
-                            }
-                        }).collect::<Vec<_>>(); // Collect into a Vec
-                        quote! {
-                            impl std::fmt::Display for #name {
-                                fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                                    match self {
-                                        Self::#ident(#(#format_args),*) => write!(f, "{}", format_args!(#(#format_args),*)),
-                                        _ => unreachable!(),
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        quote! {
-                            compile_error!("Invalid display attribute format");
-                        }
-                    }
-                } else {
-                    quote! {
-                        impl std::fmt::Display for #name {
-                            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                                write!(f, "{}", stringify!(#ident))
-                            }
-                        }
-                    }
-                }
-            });
-            quote! {
-                #(#display_impls)*
-            }
-        },
-        Data::Union(_) => {
-            quote! {
-                compile_error!("Unions are not supported for Display derive");
-        
+    Ok(quote! {
+        impl std::fmt::Display for #ident{
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                #body
             }
         }
-    };
-    TokenStream::from(expanded)
+    })
 }
+
+/// Type alias for an expansion context:
+/// - [`ContainerAttributes`].
+/// - Struct/enum/union [`syn::Ident`].
+/// - Derived trait [`syn::Ident`].
+/// - Attribute name [`syn::Ident`].
+///
+/// [`syn::Ident`]: struct@syn::Ident
+type ExpansionCtx<'a> = (
+    &'a FmtAttribute,
+    &'a syn::Ident,
+    &'a syn::Ident,
+    &'a syn::Ident,
+);
+
+/// Expands a [`fmt::Display`]-like derive macro for the provided struct.
+fn expand_struct(
+    s: &syn::DataStruct,
+    (attrs, ident, trait_ident, _): ExpansionCtx<'_>,
+) -> syn::Result<(Vec<syn::WherePredicate>, TokenStream)> {
+    let s = Expansion {
+        attrs,
+        fields: &s.fields,
+        trait_ident,
+        ident,
+    };
+    let body = s.generate_body()?;
+
+    let vars = s.fields.iter().enumerate().map(|(i, f)| {
+        let var = f.ident.clone().unwrap_or_else(|| format_ident!("_{i}"));
+        let member = f
+            .ident
+            .clone()
+            .map_or_else(|| syn::Member::Unnamed(i.into()), syn::Member::Named);
+        quote! {
+            let #var = &self.#member;
+        }
+    });
+
+    let body = quote! {
+        #( #vars )*
+        #body
+    };
+
+    Ok(body)
+}
+
+/// Expands a [`fmt`]-like derive macro for the provided enum.
+fn expand_enum(
+    e: &syn::DataEnum,
+    (attrs, _, trait_ident, attr_name): ExpansionCtx<'_>,
+) -> syn::Result<(Vec<syn::WherePredicate>, TokenStream)> {
+    if attrs.fmt.is_some() {
+        todo!("https://github.com/JelteF/derive_more/issues/142");
+    }
+
+    let match_arms = e.variants.iter().try_fold(
+        TokenStream::new, |variant| {
+            let attrs = ContainerAttributes::parse_attrs(&variant.attrs, attr_name)?
+                .map(Spanning::into_inner)
+                .unwrap_or_default();
+            let ident = &variant.ident;
+
+            let v = Expansion {
+                attrs: &attrs,
+                fields: &variant.fields,
+                trait_ident,
+                ident,
+            };
+            let arm_body = v.generate_body()?;
+
+            let fields_idents =
+                variant.fields.iter().enumerate().map(|(i, f)| {
+                    f.ident.clone().unwrap_or_else(|| format_ident!("_{i}"))
+                });
+            let matcher = match variant.fields {
+                syn::Fields::Named(_) => {
+                    quote! { Self::#ident { #( #fields_idents ),* } }
+                }
+                syn::Fields::Unnamed(_) => {
+                    quote! { Self::#ident ( #( #fields_idents ),* ) }
+                }
+                syn::Fields::Unit => quote! { Self::#ident },
+            };
+
+            arms.extend([quote! { #matcher => { #arm_body }, }]);
+
+            Ok::<_, syn::Error>(arms)
+        },
+    )?;
+
+    let body = match_arms
+        .is_empty()
+        .then(|| quote! { match *self {} })
+        .unwrap_or_else(|| quote! { match self { #match_arms } });
+
+    Ok(body)
+}
+
+
+/// Helper struct to generate [`Display::fmt()`] implementation body and trait
+/// bounds for a struct or an enum variant.
+///
+/// [`Display::fmt()`]: fmt::Display::fmt()
+#[derive(Debug)]
+struct Expansion<'a> {
+    /// Derive macro [`ContainerAttributes`].
+    attrs: &'a ContainerAttributes,
+
+    /// Struct or enum [`syn::Ident`].
+    ///
+    /// [`syn::Ident`]: struct@syn::Ident
+    ident: &'a syn::Ident,
+
+    /// Struct or enum [`syn::Fields`].
+    fields: &'a syn::Fields,
+
+    /// [`fmt`] trait [`syn::Ident`].
+    ///
+    /// [`syn::Ident`]: struct@syn::Ident
+    trait_ident: &'a syn::Ident,
+}
+
+impl<'a> Expansion<'a> {
+    /// Generates [`Display::fmt()`] implementation for a struct or an enum variant.
+    ///
+    /// # Errors
+    ///
+    /// In case [`FmtAttribute`] is [`None`] and [`syn::Fields`] length is
+    /// greater than 1.
+    ///
+    /// [`Display::fmt()`]: fmt::Display::fmt()
+    /// [`FmtAttribute`]: super::FmtAttribute
+    fn generate_body(&self) -> syn::Result<TokenStream> {
+        match &self.attrs.fmt {
+            Some(fmt) => {
+                Ok(if let Some((expr, trait_ident)) = fmt.transparent_call() {
+                    quote! { core::fmt::#trait_ident::fmt(&(#expr), __derive_more_f) }
+                } else {
+                    quote! { core::write!(__derive_more_f, #fmt) }
+                })
+            }
+            None if self.fields.is_empty() => {
+                let ident_str = self.ident.to_string();
+
+                Ok(quote! {
+                    core::write!(__derive_more_f, #ident_str)
+                })
+            }
+            None if self.fields.len() == 1 => {
+                let field = self
+                    .fields
+                    .iter()
+                    .next()
+                    .unwrap_or_else(|| unreachable!("count() == 1"));
+                let ident = field.ident.clone().unwrap_or_else(|| format_ident!("_0"));
+                let trait_ident = self.trait_ident;
+
+                Ok(quote! {
+                    core::fmt::#trait_ident::fmt(#ident, __derive_more_f)
+                })
+            }
+            _ => Err(syn::Error::new(
+                self.fields.span(),
+                format!(
+                    "TODO ARTHUR! struct or enum variant with more than 1 field must have \
+                     `#[{}(\"...\", ...)]` attribute",
+                    trait_name_to_attribute_name(self.trait_ident),
+                ),
+            )),
+        }
+    }
+}
+
