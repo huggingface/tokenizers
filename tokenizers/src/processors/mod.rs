@@ -12,7 +12,7 @@ use crate::processors::roberta::RobertaProcessing;
 use crate::processors::sequence::Sequence;
 use crate::processors::template::TemplateProcessing;
 use crate::{Encoding, PostProcessor, Result};
-use derive_more::Display;
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Eq, Display)]

@@ -22,7 +22,7 @@ use crate::pre_tokenizers::split::Split;
 use crate::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use crate::{PreTokenizedString, PreTokenizer};
-use derive_more::Display;
+use display_derive::Display;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Display)]
 #[display(fmt="pre_tokenizers.{}")]

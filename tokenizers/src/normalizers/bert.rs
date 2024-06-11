@@ -1,6 +1,6 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 
-use derive_more::Display;
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 /// Checks whether a character is whitespace

@@ -1,6 +1,6 @@
 use crate::parallelism::*;
 use crate::tokenizer::{Encoding, Result};
-use derive_more::Display;
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
 
 /// The various possible padding directions.

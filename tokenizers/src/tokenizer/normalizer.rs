@@ -1,6 +1,6 @@
 use crate::pattern::Pattern;
 use crate::{Offsets, Result};
-use derive_more::Display;
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;

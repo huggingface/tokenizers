@@ -3,7 +3,7 @@
 
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
-use derive_more::Display;
+use display_derive::Display;
 use std::{
     borrow::Cow,
     collections::HashMap,

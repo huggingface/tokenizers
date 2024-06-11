@@ -56,7 +56,7 @@
 //! [`TemplateProcessing`]: struct.TemplateProcessing.html
 //!
 use crate::{Encoding, PostProcessor, Result};
-use derive_more::Display;
+use display_derive::Display;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
