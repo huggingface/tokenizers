@@ -1,7 +1,7 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use syn::{parse_macro_input, Data, DeriveInput, Fields, Lit, Meta, MetaList, NestedMeta};
 
 #[proc_macro_derive(Display)]
 pub fn display_derive(input: TokenStream) -> TokenStream {
@@ -70,20 +70,25 @@ pub fn display_derive(input: TokenStream) -> TokenStream {
             let variants = &data_enum.variants;
             let display_impls = variants.iter().map(|variant| {
                 let ident = &variant.ident;
-                if let Some((_, meta)) = variant.attrs.iter().find(|(path, _)| path.is_ident("display")) {
-                    if let Ok(Meta::List(MetaList { nested, .. })) = meta.parse_meta() {
-                        let format_args = nested.iter().map(|nested_meta| {
-                            if let NestedMeta::Lit(Lit::Str(s)) = nested_meta {
-                                quote! { #s }
-                            } else {
-                                quote! { compile_error!("Invalid format argument"); }
+                if let Some(attr) = variant.attrs.iter().find(|attr| attr.path.is_ident("display")) {
+                    if let Ok(Meta::List(meta_list)) = attr.parse_meta() {
+                        let format_args = meta_list.nested.iter().map(|nested_meta| {
+                            match nested_meta {
+                                NestedMeta::Meta(Meta::NameValue(nv)) if nv.path.is_ident("fmt") => {
+                                    if let syn::Lit::Str(s) = &nv.lit {
+                                        quote! { #s }
+                                    } else {
+                                        quote! { compile_error!("Invalid format argument"); }
+                                    }
+                                }
+                                _ => quote! { compile_error!("Invalid format argument"); },
                             }
-                        });
+                        }).collect::<Vec<_>>(); // Collect into a Vec
                         quote! {
                             impl std::fmt::Display for #name {
                                 fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                                     match self {
-                                        Self::#ident(#format_args) => write!(f, "{}", stringify!(#ident)),
+                                        Self::#ident(#(#format_args),*) => write!(f, "{}", format_args!(#(#format_args),*)),
                                         _ => unreachable!(),
                                     }
                                 }
@@ -113,7 +118,7 @@ pub fn display_derive(input: TokenStream) -> TokenStream {
                 compile_error!("Unions are not supported for Display derive");
         
             }
-        };
-    }
+        }
+    };
     TokenStream::from(expanded)
 }
