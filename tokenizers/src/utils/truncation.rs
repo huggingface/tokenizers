@@ -1,6 +1,5 @@
 use crate::tokenizer::{Encoding, Result};
-use derive_more::Display;
-use display_derive::StructDisplay;
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::mem;
@@ -21,7 +20,7 @@ impl std::convert::AsRef<str> for TruncationDirection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, StructDisplay)]
+#[derive(Debug, Clone, Serialize, Deserialize, Display)]
 pub struct TruncationParams {
     #[serde(default)]
     pub direction: TruncationDirection,

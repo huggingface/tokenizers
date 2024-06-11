@@ -2,8 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
 };
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use derive_more::Display;
-use display_derive::StructDisplay;
+use display_derive::Display;
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
@@ -13,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 /// like:
 ///   - Whether they should only match single words
 ///   - Whether to include any whitespace on its left or right
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, StructDisplay)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Display)]
 pub struct AddedToken {
     /// The content of the added token
     pub content: String,

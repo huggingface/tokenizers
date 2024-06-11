@@ -6,7 +6,7 @@ use crate::tokenizer::{
 };
 use crate::utils::macro_rules_attribute;
 use crate::utils::SysRegex;
-use display_derive::StructDisplay;
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
 
 /// Converts bytes to unicode characters.
@@ -50,7 +50,7 @@ lazy_static! {
 /// of all the required processing steps to transform a UTF-8 string as needed before and after the
 /// BPE model does its job.
 #[macro_rules_attribute(impl_serde_type!)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, StructDisplay)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Display)]
 #[non_exhaustive]
 pub struct ByteLevel {
     /// Whether to add a leading space to the first word. This allows to treat the leading word

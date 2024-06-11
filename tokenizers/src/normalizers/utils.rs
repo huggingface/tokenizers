@@ -3,8 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::normalizers::NormalizerWrapper;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
-use derive_more::Display;
-use display_derive::StructDisplay;
+use display_derive::Display;
 #[derive(Clone, Deserialize, Debug, Serialize, Display)]
 #[display(
     fmt = "Sequence([{}])",
@@ -47,7 +46,7 @@ impl Normalizer for Sequence {
 }
 
 /// Lowercases the input
-#[derive(Copy, Clone, Debug, StructDisplay)]
+#[derive(Copy, Clone, Debug, Display)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Lowercase;
 

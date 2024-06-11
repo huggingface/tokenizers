@@ -1,6 +1,6 @@
 use crate::tokenizer::{Decoder, Result};
-use derive_more::Display;
 use monostate::MustBe;
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize, Default, Display)]
 /// Fuse simply fuses all tokens into one big string.

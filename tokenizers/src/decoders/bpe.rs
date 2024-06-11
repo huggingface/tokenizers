@@ -1,6 +1,5 @@
 use crate::tokenizer::{Decoder, Result};
-
-use derive_more::Display;
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Clone, Debug, Serialize, Display)]
 /// Allows decoding Original BPE by joining all the tokens and then replacing

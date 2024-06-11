@@ -1,10 +1,10 @@
-use display_derive::StructDisplay;
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, StructDisplay)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Display)]
 #[non_exhaustive]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct CharDelimiterSplit {

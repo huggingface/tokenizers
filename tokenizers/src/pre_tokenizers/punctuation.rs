@@ -1,4 +1,4 @@
-use display_derive::StructDisplay;
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
@@ -9,7 +9,7 @@ fn is_punc(x: char) -> bool {
     char::is_ascii_punctuation(&x) || x.is_punctuation()
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, StructDisplay)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Display)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Punctuation {
     #[serde(default = "default_split")]

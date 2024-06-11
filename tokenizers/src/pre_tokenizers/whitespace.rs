@@ -1,4 +1,4 @@
-use display_derive::StructDisplay;
+use display_derive::Display;
 use regex::Regex;
 
 use crate::tokenizer::{
@@ -6,7 +6,7 @@ use crate::tokenizer::{
 };
 use crate::utils::macro_rules_attribute;
 
-#[derive(Clone, Debug, PartialEq, Eq, StructDisplay)]
+#[derive(Clone, Debug, PartialEq, Eq, Display)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Whitespace;
 
@@ -29,7 +29,7 @@ impl PreTokenizer for Whitespace {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, StructDisplay)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Display)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct WhitespaceSplit;
 

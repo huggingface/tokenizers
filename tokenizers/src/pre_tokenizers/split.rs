@@ -2,7 +2,7 @@ use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
 use crate::utils::SysRegex;
-use derive_more::Display;
+use display_derive::Display;
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Represents the different patterns that `Split` can use
