@@ -1,7 +1,7 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use syn::{parse_macro_input, Error, Data, DeriveInput, Fields};
 
 #[proc_macro_derive(StructDisplay)]
 pub fn display_derive(input: TokenStream) -> TokenStream {
@@ -60,10 +60,10 @@ pub fn display_derive(input: TokenStream) -> TokenStream {
                         }
                     }
                 },
-                _ => unimplemented!(),
+                _ => return Error::new_spanned(&name, "Failed to automatically derive the `Display` trait for this structure.").to_compile_error().into(),
             }
         },
-        _ => unimplemented!(),
+        _ => return Error::new_spanned(&name, "Failed to automatically derive the `Display` trait for this structure.").to_compile_error().into(),
     };
 
     // Convert into a token stream and return it
