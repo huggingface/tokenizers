@@ -1,12 +1,13 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::{format_ident,quote};
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Lit, Meta, MetaList, NestedMeta};
+use syn::{parse_macro_input, DeriveInput}; 
 mod vendored;
+mod parsing;
 use vendored::FmtAttribute;
 
 #[proc_macro_derive(Display)]
-pub fn display_derive(input: TokenStream) -> syn::Result<TokenStream>  {
+pub fn display_derive(input: TokenStream) -> TokenStream  {
     // Parse the input tokens into a syntax tree
     let input = parse_macro_input!(input as DeriveInput);
 
@@ -89,11 +90,25 @@ fn expand_enum(
     }
 
     let match_arms = e.variants.iter().try_fold(
-        TokenStream::new, |variant| {
-            let attrs = FmtAttribute::parse_attrs(&variant.attrs, attr_name)?
+        (Vec::new(), TokenStream::new()),
+        |mut arms, variant| {
+            let attrs = ContainerAttributes::parse_attrs(&variant.attrs, attr_name)?
                 .map(Spanning::into_inner)
                 .unwrap_or_default();
             let ident = &variant.ident;
+
+            if attrs.fmt.is_none()
+                && variant.fields.is_empty()
+                && attr_name != "display"
+            {
+                return Err(syn::Error::new(
+                    e.variants.span(),
+                    format!(
+                        "implicit formatting of unit enum variant is supported only for `Display` \
+                         macro, use `#[{attr_name}(\"...\")]` to explicitly specify the formatting",
+                    ),
+                ));
+            }
 
             let v = Expansion {
                 attrs: &attrs,
@@ -121,7 +136,7 @@ fn expand_enum(
 
             Ok::<_, syn::Error>(arms)
         },
-    )?;
+    )?;    
 
     let body = match_arms
         .is_empty()

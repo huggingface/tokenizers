@@ -194,9 +194,7 @@ pub(crate) fn format_string(input: &str) -> Option<FormatString<'_>> {
     let formats = iter::repeat(())
         .scan(&mut input, |input, _| {
             let (curr, format) =
-                alt(&mut [&mut maybe_format, &mut map(text, |(i, _)| (i, None))])(
-                    input,
-                )?;
+                alt(&mut [&mut maybe_format, &mut map(text, |(i, _)| (i, None))])(input)?;
             **input = curr;
             Some(format)
         })
@@ -600,9 +598,7 @@ fn lookahead(
 fn optional_result<'i, T: 'i>(
     mut parser: impl FnMut(&'i str) -> Option<(&'i str, T)>,
 ) -> impl FnMut(&'i str) -> (LeftToParse<'i>, Option<T>) {
-    move |input: &str| {
-        map_or_else(&mut parser, |i| (i, None), |(i, c)| (i, Some(c)))(input)
-    }
+    move |input: &str| map_or_else(&mut parser, |i| (i, None), |(i, c)| (i, Some(c)))(input)
 }
 
 /// Parses while `parser` is successful. Never fails.
@@ -682,9 +678,7 @@ fn char(c: char) -> impl FnMut(&str) -> Option<LeftToParse<'_>> {
 /// Checks whether first [`char`] suits `check`.
 ///
 /// [`char`]: fn@char
-fn check_char(
-    mut check: impl FnMut(char) -> bool,
-) -> impl FnMut(&str) -> Option<LeftToParse<'_>> {
+fn check_char(mut check: impl FnMut(char) -> bool) -> impl FnMut(&str) -> Option<LeftToParse<'_>> {
     move |input| {
         input
             .chars()
@@ -1159,9 +1153,7 @@ mod tests {
                         alternate: None,
                         zero_padding: None,
                         width: None,
-                        precision: Some(Precision::Count(Count::Parameter(
-                            Argument::Integer(0),
-                        ))),
+                        precision: Some(Precision::Count(Count::Parameter(Argument::Integer(0),))),
                         ty: Type::Display,
                     }),
                 }],
@@ -1178,9 +1170,9 @@ mod tests {
                         alternate: None,
                         zero_padding: None,
                         width: None,
-                        precision: Some(Precision::Count(Count::Parameter(
-                            Argument::Identifier("par"),
-                        ))),
+                        precision: Some(Precision::Count(Count::Parameter(Argument::Identifier(
+                            "par"
+                        ),))),
                         ty: Type::Display,
                     }),
                 }],
@@ -1197,9 +1189,9 @@ mod tests {
                         alternate: Some(Alternate),
                         zero_padding: None,
                         width: Some(Count::Parameter(Argument::Integer(2))),
-                        precision: Some(Precision::Count(Count::Parameter(
-                            Argument::Identifier("par"),
-                        ))),
+                        precision: Some(Precision::Count(Count::Parameter(Argument::Identifier(
+                            "par"
+                        ),))),
                         ty: Type::Display,
                     }),
                 }],
@@ -1250,9 +1242,9 @@ mod tests {
                         alternate: Some(Alternate),
                         zero_padding: None,
                         width: Some(Count::Parameter(Argument::Identifier("par"))),
-                        precision: Some(Precision::Count(Count::Parameter(
-                            Argument::Identifier("par"),
-                        ))),
+                        precision: Some(Precision::Count(Count::Parameter(Argument::Identifier(
+                            "par"
+                        ),))),
                         ty: Type::UpperDebug,
                     }),
                 }],

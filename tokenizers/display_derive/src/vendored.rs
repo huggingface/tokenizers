@@ -1,14 +1,13 @@
-use syn::LitStr;
-use proc_macro2::TokenStream;
 use crate::parsing;
+use proc_macro2::TokenStream;
 use quote::{format_ident, ToTokens};
 use syn::{
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
-    spanned::Spanned as _,
-    token,
+    token, 
     Expr,
 };
+
 /// Representation of a [`fmt`]-like attribute.
 ///
 /// ```rust,ignore
@@ -17,7 +16,7 @@ use syn::{
 ///
 /// [`fmt`]: std::fmt
 #[derive(Debug)]
-struct FmtAttribute {
+pub struct FmtAttribute {
     /// Interpolation [`syn::LitStr`].
     ///
     /// [`syn::LitStr`]: struct@syn::LitStr
@@ -42,7 +41,7 @@ impl Parse for FmtAttribute {
                 .peek(token::Comma)
                 .then(|| input.parse())
                 .transpose()?,
-            args: input.parse_terminated(FmtArgument::parse, token::Comma)?,
+            args: input.parse_terminated(FmtArgument::parse)?,
         })
     }
 }
@@ -70,8 +69,7 @@ impl FmtAttribute {
 
         // (1) There is exactly one formatting parameter.
         let lit = self.lit.value();
-        let param =
-            parsing::format(&lit).and_then(|(more, p)| more.is_empty().then_some(p))?;
+        let param = parsing::format(&lit).and_then(|(more, p)| more.is_empty().then_some(p))?;
 
         // (2) And the formatting parameter doesn't contain any modifiers.
         if param
@@ -164,4 +162,3 @@ impl ToTokens for FmtArgument {
         self.expr.to_tokens(tokens);
     }
 }
-
