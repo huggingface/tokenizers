@@ -15,7 +15,6 @@ use syn::{
 /// ```
 ///
 /// [`fmt`]: std::fmt
-#[derive(Debug)]
 pub struct FmtAttribute {
     /// Interpolation [`syn::LitStr`].
     ///
@@ -33,7 +32,6 @@ pub struct FmtAttribute {
 
 impl Parse for FmtAttribute {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        Self::check_legacy_fmt(input)?;
 
         Ok(Self {
             lit: input.parse()?,
@@ -46,7 +44,6 @@ impl Parse for FmtAttribute {
     }
 }
 
-impl attr::ParseMultiple for FmtAttribute {}
 
 impl ToTokens for FmtAttribute {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -122,7 +119,6 @@ impl FmtAttribute {
 /// in a [`FmtAttribute`].
 ///
 /// [1]: https://doc.rust-lang.org/stable/std/fmt/index.html#named-parameters
-#[derive(Debug)]
 struct FmtArgument {
     /// `identifier =` [`Ident`].
     ///

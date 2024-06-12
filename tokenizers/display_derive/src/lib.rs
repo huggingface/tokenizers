@@ -8,29 +8,30 @@ use vendored::FmtAttribute;
 
 #[proc_macro_derive(Display)]
 pub fn display_derive(input: TokenStream) -> TokenStream  {
-    // Parse the input tokens into a syntax tree
-    let input = parse_macro_input!(input as DeriveInput);
-    return ;
+    // Parse the parsed_input tokens into a syntax tree
+    let parsed_input = parse_macro_input!(input as DeriveInput);
     let attr_name = "display";
-    let attrs = FmtAttribute::parse_attrs(&input.attrs, &attr_name)?
-        .unwrap_or_default();
+    let attrs =  syn::parse::<FmtAttribute>(input).unwrap();
     let trait_ident = format_ident!("display");
-    let ident = &input.ident;
+    let ident = &parsed_input.ident;
 
-    let ctx = (&attrs, ident, &trait_ident, &attr_name);
-    let body = match &input.data {
+    let ctx = (&attrs, ident, &trait_ident, &trait_ident);
+    let body = match &parsed_input.data {
         syn::Data::Struct(s) => expand_struct(s, ctx),
         syn::Data::Enum(e) => expand_enum(e, ctx),
-        syn::Data::Union(u) => return Err(syn::Error::new(u, format!("Union is not supported"))), 
-    }?;
+        syn::Data::Union(u) => {
+            let error = syn::Error::new_spanned(u.union_token, "Unions are not supported");
+            return proc_macro::TokenStream::from(error.into_compile_error());
+        }
+    };
 
-    Ok(quote! {
+    quote! {
         impl std::fmt::Display for #ident{
             fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 #body
             }
         }
-    })
+    }.into()
 }
 
 /// Type alias for an expansion context:
