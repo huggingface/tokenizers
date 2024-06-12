@@ -34,7 +34,7 @@ pub fn display_derive(input: TokenStream) -> syn::Result<TokenStream>  {
 }
 
 /// Type alias for an expansion context:
-/// - [`ContainerAttributes`].
+/// - [`FmtAttribute`].
 /// - Struct/enum/union [`syn::Ident`].
 /// - Derived trait [`syn::Ident`].
 /// - Attribute name [`syn::Ident`].
@@ -90,7 +90,7 @@ fn expand_enum(
 
     let match_arms = e.variants.iter().try_fold(
         TokenStream::new, |variant| {
-            let attrs = ContainerAttributes::parse_attrs(&variant.attrs, attr_name)?
+            let attrs = FmtAttribute::parse_attrs(&variant.attrs, attr_name)?
                 .map(Spanning::into_inner)
                 .unwrap_or_default();
             let ident = &variant.ident;
@@ -138,8 +138,8 @@ fn expand_enum(
 /// [`Display::fmt()`]: fmt::Display::fmt()
 #[derive(Debug)]
 struct Expansion<'a> {
-    /// Derive macro [`ContainerAttributes`].
-    attrs: &'a ContainerAttributes,
+    /// Derive macro [`FmtAttribute`].
+    attrs: &'a FmtAttribute,
 
     /// Struct or enum [`syn::Ident`].
     ///
