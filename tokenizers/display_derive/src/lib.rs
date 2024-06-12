@@ -10,10 +10,9 @@ use vendored::FmtAttribute;
 pub fn display_derive(input: TokenStream) -> TokenStream  {
     // Parse the input tokens into a syntax tree
     let input = parse_macro_input!(input as DeriveInput);
-
+    return ;
     let attr_name = "display";
-    let attrs = FmtAttributes::parse_attrs(&input.attrs, &attr_name)?
-        .map(Spanning::into_inner)
+    let attrs = FmtAttribute::parse_attrs(&input.attrs, &attr_name)?
         .unwrap_or_default();
     let trait_ident = format_ident!("display");
     let ident = &input.ident;
@@ -92,8 +91,7 @@ fn expand_enum(
     let match_arms = e.variants.iter().try_fold(
         (Vec::new(), TokenStream::new()),
         |mut arms, variant| {
-            let attrs = ContainerAttributes::parse_attrs(&variant.attrs, attr_name)?
-                .map(Spanning::into_inner)
+            let attrs = FmtAttribute::parse_attrs(&variant.attrs, attr_name)?
                 .unwrap_or_default();
             let ident = &variant.ident;
 
@@ -214,7 +212,7 @@ impl<'a> Expansion<'a> {
                 format!(
                     "TODO ARTHUR! struct or enum variant with more than 1 field must have \
                      `#[{}(\"...\", ...)]` attribute",
-                    trait_name_to_attribute_name(self.trait_ident),
+                    self.trait_ident,
                 ),
             )),
         }
