@@ -4,7 +4,7 @@
 
 use std::iter;
 
-// use unicode_xid::UnicodeXID as XID;
+use unicode_xid::UnicodeXID as XID;
 
 /// Output of the [`format_string`] parser.
 #[derive(Clone, Debug, Eq, PartialEq)]
