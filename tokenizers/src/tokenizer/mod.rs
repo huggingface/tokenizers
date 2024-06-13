@@ -17,7 +17,8 @@ use std::{
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
 };
-
+extern crate rayon;
+use rayon::current_thread_index;
 use crate::utils::iter::ResultShunt;
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
@@ -838,7 +839,7 @@ where
             EncodeInput::Single(s1) => (s1, None),
             EncodeInput::Dual(s1, s2) => (s1, Some(s2)),
         };
-
+        println!("thread id: {:?}", current_thread_index());
         // Encode each sequence
         let encoding = self.encode_single_sequence(sequence, 0, OffsetType::Byte)?;
         let pair_encoding = pair
@@ -939,6 +940,7 @@ where
         word_idx: Option<u32>,
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
+        println!("do tokenizer {:?}", current_thread_index());
         let mut pretokenized: PreTokenizedString = pretokenized.into();
         pretokenized.tokenize(|normalized| self.model.tokenize(normalized.get()))?;
         pretokenized.into_encoding(word_idx, type_id, offsets_type)

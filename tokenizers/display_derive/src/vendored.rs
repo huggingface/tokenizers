@@ -93,9 +93,9 @@ impl FmtAttribute {
                 .map(|a| a.expr.clone()),
 
             // (4) Or the formatting parameter's name refers to some outer binding.
-            Some(parsing::Argument::Identifier(name)) if self.args.is_empty() => {
-                Some(format_ident!("{name}").into())
-            }
+            // Some(parsing::Argument::Identifier(name)) if self.args.is_empty() => {
+            //     Some(format_ident!("{trait_name}").into())
+            // }
 
             // (5) Or exactly one named argument is specified for the formatting parameter's name.
             Some(parsing::Argument::Identifier(name)) => (self.args.len() == 1)

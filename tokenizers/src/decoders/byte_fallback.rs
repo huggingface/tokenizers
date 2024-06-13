@@ -2,7 +2,7 @@ use crate::tokenizer::{Decoder, Result};
 use monostate::MustBe;
 use display_derive::Display;
 use serde::{Deserialize, Serialize};
-#[derive(Deserialize, Clone Debug, Serialize, Default, Display)]
+#[derive(Deserialize, Clone, Debug, Serialize, Default, Display)]
 /// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
 /// to pure bytes, and attempts to make them into a string. If the tokens
 /// cannot be decoded you will get � instead for each inconvertable byte token
