@@ -37,6 +37,8 @@ pub fn display_derive(input: TokenStream) -> TokenStream  {
     } else {
         fmt
     };
+
+    println!("body: {:?}", body.to_string());
     let expanded = quote! {
         impl std::fmt::Display for #ident {
             fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -89,32 +91,31 @@ fn generate_fmt_impl_for_struct(data_struct: &syn::DataStruct, ident: &syn::Iden
 fn generate_fmt_impl_for_enum(data_enum: &syn::DataEnum, ident: &syn::Ident) -> proc_macro2::TokenStream {
     let arms = data_enum.variants.iter().map(|variant| {
         let variant_name = &variant.ident;
-        let variant_fmt = match &variant.fields {
+        let formatted_output = match &variant.fields {
             syn::Fields::Unit => {
-                // If the variant has no fields, we just print its name
+                // Unit variant: just stringify the variant name
+                quote! { #ident::#variant_name => {write!(f, "{}", stringify!(#variant_name))?; }}
+            },
+            syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                // Tuple variant with one field
+                quote! { #ident::#variant_name(ref single) => {write!(f, "{}", single)?;} }
+            },
+            syn::Fields::Named(fields) if fields.named.len() == 1 => {
+                // Tuple variant with one named field
+                let field_name = fields.named[0].ident.as_ref().unwrap(); // Assuming it's named
+                quote! { #ident::#variant_name{..}=>{ write!(f, "{}({})", stringify!(self.#field_name)?);} }
+            },
+            _ => {
+                // Default case: stringify the variant name
                 quote! { write!(f, "{}", stringify!(#variant_name))?; }
             }
-            syn::Fields::Named(fields) => {
-                // If the variant has named fields, we print each field's name and value
-                let field_fmts = fields.named.iter().map(|field| {
-                    let field_name = field.ident.as_ref().unwrap();
-                    quote! {
-                        write!(f, "{}: {}", stringify!(#field_name), self.#field_name)?;
-                    }
-                });
-                quote! {
-                    write!(f, "{} {{ ", stringify!(#variant_name))?;
-                    #( #field_fmts )*
-                    write!(f, " }}")?;
-                }
-            }
-            syn::Fields::Unnamed(_) => quote! { write!(f, "__UNAMED__")} 
         };
-        quote! { #variant_name => {#variant_fmt} }
+       formatted_output
     });
     quote! {
-                match *self {
-                    #(#arms),*
-                }
-            }
+        match *self {
+            #(#arms)*
+        }
+        Ok(())
+    }
 }
