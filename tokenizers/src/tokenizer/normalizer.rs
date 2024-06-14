@@ -79,7 +79,6 @@ where
 ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
 ///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, Display)]
-#[display(fmt = "{}")]
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,

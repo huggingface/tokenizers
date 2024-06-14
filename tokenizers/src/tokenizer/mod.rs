@@ -18,10 +18,10 @@ use std::{
     path::{Path, PathBuf},
 };
 extern crate rayon;
-use rayon::current_thread_index;
 use crate::utils::iter::ResultShunt;
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
+use rayon::current_thread_index;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -551,17 +551,17 @@ where
             None => "None".to_string(),
         };
         let truncation_str = match &self.truncation {
-            Some(t) => format!("{}", t),
+            Some(t) => format!("{:?}", t),
             None => "None".to_string(),
         };
         let padding_str = match &self.padding {
-            Some(p) => format!("{}", p),
+            Some(p) => format!("{:?}", p),
             None => "None".to_string(),
         };
 
         write!(
             f,
-            "Tokenizer(normalizer={}, pre_tokenizer={}, model={}, post_processor={}, decoder={}, added_tokens_decoder={}, truncation={}, padding={})",
+            "Tokenizer(normalizer={}, pre_tokenizer={}, model={}, post_processor={}, decoder={}, added_tokens_decoder={:?}, truncation={}, padding={})",
             normalizer_str,
             pre_tokenizer_str,
             self.model,
@@ -1353,5 +1353,17 @@ where
         file.write_all(serialized.as_bytes())?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Tokenizer;
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn test_from_pretrained() {
+        let tok = Tokenizer::from_pretrained("Qwen/Qwen2-7B-Instruct".to_string(), None);
+        println!("ROCK!")
     }
 }
