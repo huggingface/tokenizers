@@ -1,11 +1,12 @@
+use std::{env::VarError, error::Error};
+
 use crate::parsing;
 use proc_macro2::TokenStream;
 use quote::{format_ident, ToTokens};
 use syn::{
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
-    token, 
-    Expr,
+    token, Expr,
 };
 
 /// Representation of a [`fmt`]-like attribute.
@@ -32,18 +33,18 @@ pub struct FmtAttribute {
 
 impl Parse for FmtAttribute {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-
-        Ok(Self {
+        let attribute = Self {
             lit: input.parse()?,
             comma: input
                 .peek(token::Comma)
                 .then(|| input.parse())
                 .transpose()?,
             args: input.parse_terminated(FmtArgument::parse)?,
-        })
+        };
+        println!("Parsing FMTAttribute, {}, ",attribute.lit.token().to_string());
+        Ok(attribute)
     }
 }
-
 
 impl ToTokens for FmtAttribute {
     fn to_tokens(&self, tokens: &mut TokenStream) {

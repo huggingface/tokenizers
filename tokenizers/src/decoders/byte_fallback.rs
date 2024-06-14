@@ -1,6 +1,6 @@
 use crate::tokenizer::{Decoder, Result};
-use monostate::MustBe;
 use display_derive::Display;
+use monostate::MustBe;
 use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Clone, Debug, Serialize, Default, Display)]
 /// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
