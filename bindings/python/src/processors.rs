@@ -144,7 +144,7 @@ impl PyPostProcessor {
         Ok(format!("{}", &self))
     }
 
-    fn __repr__(&self) -> PyResult<String>{
+    fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", &self))
     }
 }

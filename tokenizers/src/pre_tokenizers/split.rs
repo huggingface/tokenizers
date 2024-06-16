@@ -29,7 +29,7 @@ impl From<&str> for SplitPattern {
 #[serde(tag = "type")]
 #[display(
     fmt = "Split(patter={}, regex={:?}, behavior={}, invert={})",
-    "pattern",
+    pattern,
     regex,
     behavior,
     invert

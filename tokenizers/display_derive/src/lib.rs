@@ -1,31 +1,31 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
-use quote::{format_ident, quote, ToTokens};
-use syn::{parse_macro_input, DeriveInput, Lit, Meta, MetaNameValue};
-mod parsing;
-mod vendored;
-use vendored::FmtAttribute;
+use quote::quote;
+use syn::{parse_macro_input, DeriveInput};
+
+mod fmt_parsing;
+use fmt_parsing::FmtAttribute;
 
 #[proc_macro_derive(Display, attributes(display))]
 pub fn display_derive(input: TokenStream) -> TokenStream {
     // Parse the parsed_input tokens into a syntax tree
-    // let attrs = syn::parse::<FmtAttribute>(input.clone());
-    // // Handle the Result from the parsing step
-    // let attrs = match attrs {
-    //     Ok(attrs) => attrs,
-    //     Err(_) => return TokenStream::new(), // Handle error case appropriately
-    // };
     let parsed_input = parse_macro_input!(input as DeriveInput);
-    let mut fmt = quote! {};
-    for attr in parsed_input.attrs {
-        if attr.path.is_ident("display") {
-            fmt = quote! { write!(f, "display(fmt = '', ...)")};
-        }
-    }
+    // Find the `display` attribute
+    let display_attr = parsed_input
+        .attrs
+        .iter()
+        .find(|attr| attr.path.is_ident("display"));
 
+    let fmt = if let Some(attr) = display_attr {
+        match attr.parse_args::<FmtAttribute>() {
+            Ok(display_macro) => quote! { write!(f, #display_macro) },
+            Err(e) => return e.to_compile_error().into(),
+        }
+    } else {
+        quote! {}
+    };
     // 1. If the attrs are not None, then we defer to this.
     // Meaning we juste return quote!{ format!(#fmt, #attr)}
-    let trait_ident: syn::Ident = format_ident!("display");
     let ident = &parsed_input.ident;
 
     let body = if fmt.is_empty() {
@@ -42,7 +42,6 @@ pub fn display_derive(input: TokenStream) -> TokenStream {
         fmt
     };
 
-    println!("body: {:?}", body.to_string());
     let expanded = quote! {
         impl std::fmt::Display for #ident {
             fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -51,6 +50,7 @@ pub fn display_derive(input: TokenStream) -> TokenStream {
         }
     };
 
+    println!("Generated body: \n{}\n", expanded);
     TokenStream::from(expanded)
 }
 
