@@ -7,7 +7,6 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 /// Represents the different patterns that `Split` can use
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Display)]
-#[display(fmt = "{}")]
 pub enum SplitPattern {
     String(String),
     Regex(String),
