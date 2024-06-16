@@ -46,7 +46,8 @@ fn generate_fmt_impl_for_struct(
     attrs: &Option<FmtAttribute>,
 ) -> proc_macro2::TokenStream {
     let fields = &data_struct.fields;
-
+    // TODO I am stuck here for now hehe.
+    // Basically we need to produce the body that will be used.
     // Generate field formatting expressions
     let field_formats: Vec<_> = fields
         .iter()
@@ -85,13 +86,9 @@ fn generate_fmt_impl_for_struct(
 
     // Generate the final implementation of Display trait for the struct
     quote! {
-        impl std::fmt::Display for #ident {
-            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                write!(f, "{}(", stringify!(#ident))?;
-                #(#field_formats)*
-                write!(f, ")")
-            }
-        }
+        write!(f, "{}(", stringify!(#ident))?;
+        #field_formats
+        write!(f, ")")
     }
 }
 fn generate_fmt_impl_for_enum(
