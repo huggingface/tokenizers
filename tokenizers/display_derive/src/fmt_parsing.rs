@@ -4,7 +4,7 @@ use quote::ToTokens;
 use syn::{
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
-    token, Expr,
+    token, Attribute, Expr,
 };
 
 /// Representation of a [`fmt`]-like attribute.
@@ -18,7 +18,7 @@ pub struct FmtAttribute {
     /// Interpolation [`syn::LitStr`].
     ///
     /// [`syn::LitStr`]: struct@syn::LitStr
-    lit: syn::LitStr,
+    pub lit: syn::LitStr,
 
     /// Optional [`token::Comma`].
     ///
@@ -26,7 +26,7 @@ pub struct FmtAttribute {
     comma: Option<token::Comma>,
 
     /// Interpolation arguments.
-    args: Punctuated<FmtArgument, token::Comma>,
+    pub args: Punctuated<FmtArgument, token::Comma>,
 }
 
 impl Parse for FmtAttribute {
@@ -67,11 +67,11 @@ impl ToTokens for FmtAttribute {
 /// in a [`FmtAttribute`].
 /// This should be used in `[display(fmt="", alias=alias, expr)]`.
 /// [1]: https://doc.rust-lang.org/stable/std/fmt/index.html#named-parameters
-struct FmtArgument {
+pub struct FmtArgument {
     /// `identifier =` [`Ident`].
     ///
     /// [`Ident`]: struct@syn::Ident
-    alias: Option<(syn::Ident, token::Eq)>,
+    pub alias: Option<(syn::Ident, token::Eq)>,
 
     /// `expression` [`Expr`].
     expr: Expr,
@@ -105,4 +105,21 @@ impl ToTokens for FmtArgument {
         }
         self.expr.to_tokens(tokens)
     }
+}
+
+pub fn find_display_attribute(attrs: &[Attribute]) -> Option<FmtAttribute> {
+    let display_attr = attrs.iter().find(|attr| attr.path.is_ident("display"));
+
+    let attr: Option<FmtAttribute> = if let Some(attr) = display_attr {
+        match attr.parse_args::<FmtAttribute>() {
+            Ok(display_macro) => Some(display_macro),
+            Err(e) => {
+                e.to_compile_error();
+                None
+            }
+        }
+    } else {
+        None
+    };
+    attr
 }
