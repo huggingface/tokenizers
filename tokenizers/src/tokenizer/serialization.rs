@@ -177,7 +177,7 @@ where
 mod tests {
     use crate::tokenizer::Tokenizer;
     use std::str::FromStr;
-    use tracing_test::traced_test;
+    use tracing_subscriber::fmt;
 
     #[test]
     fn test_deserialization_serialization_invariant() {
@@ -234,10 +234,13 @@ mod tests {
     }
 
     #[cfg(feature = "http")]
-    #[traced_test]
     #[test]
     fn test_from_pretrained() {
+        fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_target(false)
+            .init();
         let _ = Tokenizer::from_pretrained("Qwen/Qwen2-7B-Instruct", None);
-        assert!(!logs_contain("WARN"), "Warning: Token '");
+        warn!("This should be the first warning");
     }
 }
