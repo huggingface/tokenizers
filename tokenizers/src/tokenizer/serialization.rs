@@ -155,17 +155,15 @@ where
         for token in &tokens {
             // Warn the user if the id is different than expected
             let received_id = tokenizer.token_to_id(&token.token.content);
-            if received_id != Some(token.id) {
-                warn!(
-                    "Warning: Token '{}' was expected to have ID '{}' but was given ID '{}'",
-                    token.token.content,
-                    token.id,
-                    if let Some(rid) = received_id {
+            if let Some(rid) = received_id {
+                if rid != token.id {
+                    warn!(
+                        "Warning: Token '{}' was expected to have ID '{}' but was given ID '{}'",
+                        token.token.content,
+                        token.id,
                         rid.to_string()
-                    } else {
-                        "None".to_string()
-                    }
-                );
+                    );
+                }
             }
         }
         let added_tokens: Vec<_> = tokens.into_iter().map(|token| token.token).collect();
@@ -179,6 +177,7 @@ where
 mod tests {
     use crate::tokenizer::Tokenizer;
     use std::str::FromStr;
+    use tracing_test::traced_test;
 
     #[test]
     fn test_deserialization_serialization_invariant() {
@@ -232,5 +231,13 @@ mod tests {
         let tok_str = serde_json::to_string_pretty(&tokenizer).unwrap();
         // It should be exactly the same as above
         assert_eq!(tok_str, tok_json);
+    }
+
+    #[cfg(feature = "http")]
+    #[traced_test]
+    #[test]
+    fn test_from_pretrained() {
+        let _ = Tokenizer::from_pretrained("Qwen/Qwen2-7B-Instruct", None);
+        assert!(!logs_contain("WARN"), "Warning: Token '");
     }
 }
