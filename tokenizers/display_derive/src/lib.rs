@@ -49,6 +49,8 @@ fn generate_fmt_impl_for_struct(
     // TODO I am stuck here for now hehe.
     // Basically we need to produce the body that will be used.
     // Generate field formatting expressions
+    // Will write more later on
+    let result_stream = quote! { write!(f, "{}", stringify!(#ident))};
     let field_formats: Vec<_> = fields
         .iter()
         .map(|f| {
@@ -66,7 +68,7 @@ fn generate_fmt_impl_for_struct(
                     } else {
                         // If no fmts, write just the field value
                         quote! {
-                            write!(f, "{}", self.#field_name)?;
+                            write!(f, "{}={}", stringify!(#field_name), self.#field_name)?;
                         }
                     }
                 } else {
@@ -76,9 +78,9 @@ fn generate_fmt_impl_for_struct(
                     }
                 }
             } else {
-                // If there is no attribute, print everything directly
+                // If there is no attribute, print the default
                 quote! {
-                    write!(f, "{}", self.#field_name)?;
+                    write!(f, "{}={}", stringify!(#field_name), self.#field_name)?;
                 }
             }
         })
