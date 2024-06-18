@@ -1294,3 +1294,19 @@ where
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+
+    use crate::AddedToken;
+    use crate::Tokenizer;
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn test_decoding_with_added_bpe() {
+        let mut tokenizer = Tokenizer::from_pretrained("gpt2", None).unwrap();
+        tokenizer.add_tokens(&[AddedToken::from("ĠåĹİ", false)]);
+        let decoded = tokenizer.decode(&[0, 1, 3512, 50257], false);
+        println!("Fully decoded text{:?}", decoded.unwrap());
+    }
+}
