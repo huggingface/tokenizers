@@ -1305,7 +1305,7 @@ mod test {
     #[test]
     fn test_decoding_with_added_bpe() {
         let mut tokenizer = Tokenizer::from_pretrained("gpt2", None).unwrap();
-        tokenizer.add_tokens(&[AddedToken::from("ĠåĹİ", false)]);
+        tokenizer.add_tokens(&[AddedToken::from("ĠåĹİ", false)]); // this is the byte-level for 嗎
         let decoded = tokenizer.decode(&[0, 1, 3512, 50257], false);
         println!("Fully decoded text{:?}", decoded.unwrap());
     }
