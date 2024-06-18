@@ -1304,9 +1304,24 @@ mod test {
     #[cfg(feature = "http")]
     #[test]
     fn test_decoding_with_added_bpe() {
-        let mut tokenizer = Tokenizer::from_pretrained("gpt2", None).unwrap();
+        let mut tokenizer = Tokenizer::from_pretrained("meta-llama/Meta-Llama-3-8B", None).unwrap();
         tokenizer.add_tokens(&[AddedToken::from("ĠåĹİ", false)]); // this is the byte-level for 嗎
-        let decoded = tokenizer.decode(&[0, 1, 3512, 50257], false);
+        let encoded = tokenizer
+            .encode("Hey! how is this token: 嗎", false)
+            .unwrap();
+        println!("Encoded tokens: {:?}", encoded.get_ids());
+        let decoded = tokenizer.decode(encoded.get_ids(), false);
         println!("Fully decoded text{:?}", decoded.unwrap());
+        tokenizer.add_tokens(&[AddedToken::from("嗎", false)]);
+        let encoded = tokenizer
+            .encode("Hey! how is this token: 嗎", false)
+            .unwrap();
+        println!("Encoded tokens: {:?}", encoded.get_ids());
+        let decoded = tokenizer.decode(encoded.get_ids(), false);
+        println!("Fully decoded text{:?}", decoded.unwrap());
+
+        tokenizer.add_tokens(&[AddedToken::from("Bác", false)]);
+        let encoded = tokenizer.encode("Hey Bác how are you?", false).unwrap();
+        println!("{}", tokenizer.decode(encoded.get_ids(), false).unwrap());
     }
 }
