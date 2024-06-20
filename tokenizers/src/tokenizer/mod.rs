@@ -882,7 +882,7 @@ where
     ) -> Result<Encoding> {
         let mut pretokenized: PreTokenizedString = pretokenized.into();
         pretokenized.tokenize(|normalized| self.model.tokenize(normalized.get()))?;
-        pretokenized.into_encoding(word_idx, type_id, offsets_type)
+        pretokenized.fast_into_encoding()
     }
 }
 
