@@ -169,7 +169,8 @@ impl PreTokenizer for ByteLevel {
                         .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
                 );
             }
-            normalized.transform(transformations, 0);
+            // normalized.transform(transformations, 0); // TODO here what whould happen if we ignore
+            // aligments?
             Ok(())
         })
     }
@@ -199,6 +200,7 @@ impl Decoder for ByteLevel {
     }
 }
 
+// TODO this is also somewhere we want to just skip if we are fast
 /// As a `PostProcessor`, `ByteLevel` is in charge of trimming the offsets if necessary.
 impl PostProcessor for ByteLevel {
     fn added_tokens(&self, _is_pair: bool) -> usize {
