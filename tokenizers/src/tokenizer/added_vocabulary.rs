@@ -425,6 +425,26 @@ impl AddedVocabulary {
         splits
     }
 
+    fn fast_split_with_indices(
+        &self,
+        sentence: NormalizedString,
+        split_re: &MatchingSet,
+    ) -> Vec<(NormalizedString, Option<Vec<Token>>)> {
+        self.find_matches(sentence.get(), split_re)
+            .into_iter()
+            .map(|(id, byte_offsets)| {
+                let slice = sentence
+                    .slice(Range::Normalized(byte_offsets.0..byte_offsets.1))
+                    .expect("AddedVocabulary bad split");
+                if let Some(id) = id {
+                    (slice, Some(vec![Token::new(id, String::new(), (0, 0))]))
+                } else {
+                    (slice, None)
+                }
+            })
+            .collect()
+    }
+
     /// Split the input sentence to extract anything we found from the `MatchingSet`, as well as
     /// the list of corresponding IDs
     /// The list of IDs have the exact same number of elements than the Iterator.
