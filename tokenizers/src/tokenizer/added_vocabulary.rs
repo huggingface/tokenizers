@@ -453,6 +453,7 @@ impl AddedVocabulary {
         splits
     }
 
+
     fn fast_split_with_indices(
         &self,
         sentence: NormalizedString,
