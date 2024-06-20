@@ -207,8 +207,8 @@ impl AddedVocabulary {
             special_tokens_set: HashSet::new(),
             split_trie: (trie.clone(), vec![]),
             split_normalized_trie: (normalized_trie.clone(), vec![]),
-            split_trie_vec: vec![(trie, vec![])],
-            split_normalized_trie_vec: vec![(normalized_trie, vec![])],
+            split_trie_vec: vec![(trie, vec![]); MAX_NUM_THREADS],
+            split_normalized_trie_vec: vec![(normalized_trie, vec![]); MAX_NUM_THREADS],
             encode_special_tokens: false,
         }
     }
