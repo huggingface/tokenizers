@@ -371,6 +371,7 @@ impl AddedVocabulary {
             .build(tokens.iter().map(|token| &token.content))
             .expect("Failed to build tried when refreshing tokens");
         self.split_trie = (trie, ids);
+        self.split_trie_vec = vec![self.split_trie.clone(); MAX_NUM_THREADS];
 
         let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
         let patterns: Vec<_> = ntokens
@@ -388,6 +389,7 @@ impl AddedVocabulary {
             .build(patterns.iter().map(|content| content.get()))
             .expect("Failed to build tried when refreshing tokens (normalized)");
         self.split_normalized_trie = (normalized_trie, nids);
+        self.split_normalized_trie_vec = vec![self.split_normalized_trie.clone(); MAX_NUM_THREADS];
     }
 
     /// Find any AddedToken in the given sentence, using the provided MatchingSet.
