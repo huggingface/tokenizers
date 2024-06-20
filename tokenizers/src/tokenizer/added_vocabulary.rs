@@ -92,6 +92,25 @@ impl std::hash::Hash for AddedToken {
     }
 }
 
+use std::num::NonZeroU64;
+use std::thread;
+
+pub struct FakeThreadId(NonZeroU64);
+
+fn hash_current_thread() -> usize {
+    // It's easier to use unsafe than to use nightly. Rust has this nice u64 thread id counter
+    // that works great for our use case of avoiding collisions in our array. Unfortunately,
+    // it's private. However, there are only so many ways you can layout a u64, so just transmute
+    // https://github.com/rust-lang/rust/issues/67939
+    const _: [u8; 8] = [0; std::mem::size_of::<thread::ThreadId>()];
+    const _: [u8; 8] = [0; std::mem::size_of::<FakeThreadId>()];
+    let x =
+        unsafe { std::mem::transmute::<thread::ThreadId, FakeThreadId>(thread::current().id()).0 };
+    u64::from(x) as usize
+}
+
+const MAX_NUM_THREADS: usize = 128;
+
 type MatchingSet = (AhoCorasick, Vec<u32>);
 
 lazy_static! {
@@ -156,10 +175,15 @@ pub struct AddedVocabulary {
     /// us remove them easily with an O(1) complexity.
     special_tokens_set: HashSet<String>,
 
-    /// A RegexSet containing all the non-normalized patterns used to split on AddedTokens
+    //// A RegexSet containing all the non-normalized patterns used to split on AddedTokens
     split_trie: MatchingSet,
     /// A RegexSet containing all the normalized patterns used to split on AddedTokens
     split_normalized_trie: MatchingSet,
+
+    // A RegexSet containing all the non-normalized patterns used to split on AddedTokens
+    split_trie_vec: Vec<MatchingSet>,
+    /// A RegexSet containing all the normalized patterns used to split on AddedTokens
+    split_normalized_trie_vec: Vec<MatchingSet>,
 
     /// Whether or not special tokens should be splitted when encoding. This is equivalent to ignoring them
     encode_special_tokens: bool,
@@ -181,8 +205,10 @@ impl AddedVocabulary {
             added_tokens: vec![],
             special_tokens: vec![],
             special_tokens_set: HashSet::new(),
-            split_trie: (trie, vec![]),
-            split_normalized_trie: (normalized_trie, vec![]),
+            split_trie: (trie.clone(), vec![]),
+            split_normalized_trie: (normalized_trie.clone(), vec![]),
+            split_trie_vec: vec![(trie, vec![])],
+            split_normalized_trie_vec: vec![(normalized_trie, vec![])],
             encode_special_tokens: false,
         }
     }
@@ -437,7 +463,7 @@ impl AddedVocabulary {
                     .slice(Range::Normalized(byte_offsets.0..byte_offsets.1))
                     .expect("AddedVocabulary bad split");
                 if let Some(id) = id {
-                    (slice, Some(vec![Token::new(id, String::new(), (0, 0))]))
+                    (slice, Some(vec![Token::new(id, String::new(), (0,))]))
                 } else {
                     (slice, None)
                 }
@@ -485,7 +511,12 @@ impl AddedVocabulary {
 
         // 1. We extract all the non-normalized tokens from the non-normalized string
         pretokenized
-            .split(|_, sequence| Ok(self.split_with_indices(sequence, &self.split_trie)))
+            .split(|_, sequence| {
+                Ok(self.split_with_indices(
+                    sequence,
+                    &self.split_trie_vec[hash_current_thread() % MAX_NUM_THREADS],
+                ))
+            })
             .expect("AddedVocabulary bad split");
 
         // <s> normalized = False
@@ -504,7 +535,7 @@ impl AddedVocabulary {
         pretokenized
             .split(|_, mut sequence| {
                 normalizer.map(|n| n.normalize(&mut sequence));
-                Ok(self.split_with_indices(sequence, &self.split_normalized_trie))
+                Ok(self.split_with_indices(sequence, &self.split_normalized_trie_vec))
             })
             .expect("AddedVocabulary bad split");
 
