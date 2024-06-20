@@ -514,7 +514,7 @@ impl AddedVocabulary {
         // 1. We extract all the non-normalized tokens from the non-normalized string
         pretokenized
             .split(|_, sequence| {
-                Ok(self.split_with_indices(
+                Ok(self.fast_split_with_indices(
                     sequence,
                     &self.split_trie_vec[hash_current_thread() % MAX_NUM_THREADS],
                 ))
