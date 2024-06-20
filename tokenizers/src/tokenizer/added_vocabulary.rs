@@ -465,7 +465,7 @@ impl AddedVocabulary {
                     .slice(Range::Normalized(byte_offsets.0..byte_offsets.1))
                     .expect("AddedVocabulary bad split");
                 if let Some(id) = id {
-                    (slice, Some(vec![Token::new(id, String::new(), (0,))]))
+                    (slice, Some(vec![Token::new(id, String::new(), (0, 0))]))
                 } else {
                     (slice, None)
                 }
@@ -537,7 +537,10 @@ impl AddedVocabulary {
         pretokenized
             .split(|_, mut sequence| {
                 normalizer.map(|n| n.normalize(&mut sequence));
-                Ok(self.split_with_indices(sequence, &self.split_normalized_trie_vec))
+                Ok(self.split_with_indices(
+                    sequence,
+                    &self.split_normalized_trie_vec[hash_current_thread() % MAX_NUM_THREADS],
+                ))
             })
             .expect("AddedVocabulary bad split");
 
