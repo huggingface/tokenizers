@@ -106,7 +106,7 @@ fn hash_current_thread() -> usize {
     const _: [u8; 8] = [0; std::mem::size_of::<FakeThreadId>()];
     let x =
         unsafe { std::mem::transmute::<thread::ThreadId, FakeThreadId>(thread::current().id()).0 };
-    u64::from(x) as usize
+    u64::from(x) as usize - 1
 }
 
 const MAX_NUM_THREADS: usize = 128;
