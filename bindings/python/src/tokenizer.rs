@@ -1,6 +1,11 @@
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "pyarrow")]
+use std::borrow::Cow;
+#[cfg(feature = "pyarrow")]
+use std::slice;
+
 use numpy::{npyffi, PyArray1};
 use pyo3::class::basic::CompareOp;
 use pyo3::exceptions;
@@ -260,13 +265,48 @@ impl PyAddedToken {
     }
 }
 
+#[cfg(feature = "pyarrow")]
+struct PyArrowScalarStringInput<'s>(Cow<'s, str>);
+#[cfg(feature = "pyarrow")]
+impl<'s> FromPyObject<'s> for PyArrowScalarStringInput<'s> {
+    fn extract(ob: &'s PyAny) -> PyResult<Self> {
+        let pyarrow = PyModule::import_bound(ob.py(), "pyarrow").map(Bound::into_gil_ref)?;
+        let str_scalar_class = pyarrow.getattr("StringScalar")?;
+        let large_str_scalar_class = pyarrow.getattr("LargeStringScalar")?;
+        if ob.is_exact_instance(str_scalar_class) || ob.is_exact_instance(large_str_scalar_class) {
+            let buf = ob.call_method0("as_buffer")?;
+            let addr = buf.getattr("address")?.extract::<usize>()?;
+            let size = buf.getattr("size")?.extract::<usize>()?;
+
+            // SAFETY address is valid because it's from the StringScalar buffer
+            let buf_slice = unsafe { slice::from_raw_parts::<'s>(addr as *const u8, size) };
+            let x = String::from_utf8_lossy(buf_slice);
+            Ok(Self(x))
+        } else {
+            let err =
+                exceptions::PyTypeError::new_err("TextInputSequence must be pyarrow.StringScalar");
+            Err(err)
+        }
+    }
+}
+#[cfg(feature = "pyarrow")]
+impl<'s> From<PyArrowScalarStringInput<'s>> for tk::InputSequence<'s> {
+    fn from(s: PyArrowScalarStringInput<'s>) -> Self {
+        s.0.into()
+    }
+}
+
 struct TextInputSequence<'s>(tk::InputSequence<'s>);
 impl<'s> FromPyObject<'s> for TextInputSequence<'s> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        let err = exceptions::PyTypeError::new_err("TextInputSequence must be str");
         if let Ok(s) = ob.downcast::<PyString>() {
             Ok(Self(s.to_string_lossy().into()))
         } else {
+            #[cfg(feature = "pyarrow")]
+            if let Ok(s) = ob.extract::<PyArrowScalarStringInput>() {
+                return Ok(Self(s.0.into()));
+            }
+            let err = exceptions::PyTypeError::new_err("TextInputSequence must be str");
             Err(err)
         }
     }
@@ -344,6 +384,26 @@ impl From<PyArrayUnicode> for tk::InputSequence<'_> {
     }
 }
 
+#[cfg(feature = "pyarrow")]
+struct PyArrowArray<'s>(Vec<Cow<'s, str>>);
+#[cfg(feature = "pyarrow")]
+impl<'s> FromPyObject<'s> for PyArrowArray<'s> {
+    fn extract(ob: &'s PyAny) -> PyResult<Self> {
+        let array = ob.extract::<Vec<&PyAny>>()?;
+        let str_array: Vec<Cow<'s, str>> = array
+            .iter()
+            .map(|item| item.extract::<PyArrowScalarStringInput>().map(|res| res.0))
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok(Self(str_array))
+    }
+}
+#[cfg(feature = "pyarrow")]
+impl<'s> From<PyArrowArray<'s>> for tk::InputSequence<'s> {
+    fn from(s: PyArrowArray<'s>) -> Self {
+        s.0.into()
+    }
+}
+
 struct PyArrayStr(Vec<String>);
 impl FromPyObject<'_> for PyArrayStr {
     fn extract(ob: &PyAny) -> PyResult<Self> {
@@ -371,6 +431,10 @@ struct PreTokenizedInputSequence<'s>(tk::InputSequence<'s>);
 impl<'s> FromPyObject<'s> for PreTokenizedInputSequence<'s> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         if let Ok(seq) = ob.extract::<PyArrayUnicode>() {
+            return Ok(Self(seq.into()));
+        }
+        #[cfg(feature = "pyarrow")]
+        if let Ok(seq) = ob.extract::<PyArrowArray>() {
             return Ok(Self(seq.into()));
         }
         if let Ok(seq) = ob.extract::<PyArrayStr>() {
