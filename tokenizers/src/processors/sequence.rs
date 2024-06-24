@@ -64,7 +64,7 @@ mod tests {
         );
 
         let bytelevel = ByteLevel::default().trim_offsets(true);
-        let sequence = Sequence::new(vec![PostProcessorWrapper::ByteLevel(bytelevel)]);
+        let sequence = Sequence::new(vec![PostProcessorWrapper::ByteLevel(bytelevel.clone())]);
         let expected = Encoding::new(
             vec![0; 5],
             vec![0; 5],
