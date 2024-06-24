@@ -1,10 +1,20 @@
 use crate::processors::PostProcessorWrapper;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
 use crate::utils::macro_rules_attribute;
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
+#[derive(Clone, Debug, PartialEq, Eq, Display)]
+#[display(
+    fmt = "Sequence([{}])",
+    "processors.iter().fold(String::new(), |mut acc, p| {
+    if !acc.is_empty() {
+        acc.push_str(\", \");
+    }
+    acc.push_str(&p.to_string());
+    acc
+})"
+)]
 pub struct Sequence {
     processors: Vec<PostProcessorWrapper>,
 }

@@ -2,6 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
 };
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
+use display_derive::Display;
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
@@ -11,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 /// like:
 ///   - Whether they should only match single words
 ///   - Whether to include any whitespace on its left or right
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Display)]
 pub struct AddedToken {
     /// The content of the added token
     pub content: String,
@@ -138,7 +139,8 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
 /// were to add new tokens after this training process, we couldn't make sure the merges pairs
 /// exist as required.
 ///
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Display)]
+#[display(fmt="AddedVocabulary(added_tokens_map_r={{{}, ...}}, encode_special_tokens={})", "&(0..=5).fold(String::new(), |mut acc, key| {if let Some(token) = added_tokens_map_r.get(&key){if !acc.is_empty(){acc.push_str(\", \");}acc.push_str(&format!(\"\n\t{}: {}\", key, &token.to_string()));}acc})", encode_special_tokens)]
 pub struct AddedVocabulary {
     /// Contains the mapping from String (token content) to ID. This map contains both special
     /// tokens and classic added tokens that were added to the this vocabulary.

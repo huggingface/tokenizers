@@ -23,7 +23,7 @@ use tokenizers as tk;
 
 use super::error::ToPyResult;
 use super::utils::*;
-
+use derive_more::Display;
 /// Base class for all pre-tokenizers
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
@@ -34,7 +34,7 @@ use super::utils::*;
     name = "PreTokenizer",
     subclass
 )]
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Display)]
 pub struct PyPreTokenizer {
     #[serde(flatten)]
     pub(crate) pretok: PyPreTokenizerTypeWrapper,
@@ -180,6 +180,14 @@ impl PyPreTokenizer {
             .into_iter()
             .map(|(s, o, _)| (s.to_owned(), o))
             .collect())
+    }
+
+    fn __str__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.pretok))
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.pretok))
     }
 }
 
@@ -587,7 +595,7 @@ impl PyUnicodeScripts {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Display)]
 pub(crate) struct CustomPreTokenizer {
     inner: PyObject,
 }
@@ -631,7 +639,7 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Display)]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerWrapper {
     Custom(CustomPreTokenizer),
@@ -650,10 +658,23 @@ impl Serialize for PyPreTokenizerWrapper {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Display)]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerTypeWrapper {
+    #[display(
+        fmt = "[{}]",
+        "_0.iter()
+    .map(|d| d.as_ref().read().unwrap().to_string())
+    .fold(String::new(), |mut acc, s| {
+        if !acc.is_empty() {
+            acc.push_str(\", \");
+        }
+        acc.push_str(&s);
+        acc
+    })"
+    )]
     Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),
+    #[display(fmt = "{}", "_0.as_ref().read().unwrap()")]
     Single(Arc<RwLock<PyPreTokenizerWrapper>>),
 }
 

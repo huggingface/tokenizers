@@ -1,9 +1,10 @@
 use crate::parallelism::*;
 use crate::tokenizer::{Encoding, Result};
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
 
 /// The various possible padding directions.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Display)]
 pub enum PaddingDirection {
     Left,
     Right,
@@ -18,7 +19,16 @@ impl std::convert::AsRef<str> for PaddingDirection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Display)]
+#[display(
+    fmt = "strategy={}, direction={}, pad_to_multiple_of={}, pad_id={}, pad_type_id={}, pad_token={}",
+    strategy,
+    direction,
+    "pad_to_multiple_of.unwrap()",
+    pad_id,
+    pad_type_id,
+    pad_token
+)]
 pub struct PaddingParams {
     pub strategy: PaddingStrategy,
     pub direction: PaddingDirection,
@@ -41,7 +51,7 @@ impl Default for PaddingParams {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Display)]
 pub enum PaddingStrategy {
     BatchLongest,
     Fixed(usize),

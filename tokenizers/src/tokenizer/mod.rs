@@ -17,13 +17,13 @@ use std::{
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
 };
-
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-
+extern crate rayon;
 use crate::utils::iter::ResultShunt;
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
+use rayon::current_thread_index;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 mod added_vocabulary;
 mod encoding;
@@ -525,6 +525,54 @@ pub struct TokenizerImpl<M, N, PT, PP, D> {
     padding: Option<PaddingParams>,
 }
 
+impl<M, N, PT, PP, D> std::fmt::Display for TokenizerImpl<M, N, PT, PP, D>
+where
+    M: std::fmt::Display,
+    N: std::fmt::Display,
+    PT: std::fmt::Display,
+    PP: std::fmt::Display,
+    D: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let normalizer_str = match &self.normalizer {
+            Some(n) => format!("{}", n),
+            None => "None".to_string(),
+        };
+        let pre_tokenizer_str = match &self.pre_tokenizer {
+            Some(pt) => format!("{}", pt),
+            None => "None".to_string(),
+        };
+        let post_processor_str = match &self.post_processor {
+            Some(pp) => format!("{}", pp),
+            None => "None".to_string(),
+        };
+        let decoder_str = match &self.decoder {
+            Some(d) => format!("{}", d),
+            None => "None".to_string(),
+        };
+        let truncation_str = match &self.truncation {
+            Some(t) => format!("{:?}", t),
+            None => "None".to_string(),
+        };
+        let padding_str = match &self.padding {
+            Some(p) => format!("{:?}", p),
+            None => "None".to_string(),
+        };
+
+        write!(
+            f,
+            "Tokenizer(normalizer={}, pre_tokenizer={}, model={}, post_processor={}, decoder={}, added_tokens_decoder={:?}, truncation={}, padding={})",
+            normalizer_str,
+            pre_tokenizer_str,
+            self.model,
+            post_processor_str,
+            decoder_str,
+            self.added_vocabulary,
+            truncation_str,
+            padding_str
+        )
+    }
+}
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: Model,
@@ -791,7 +839,7 @@ where
             EncodeInput::Single(s1) => (s1, None),
             EncodeInput::Dual(s1, s2) => (s1, Some(s2)),
         };
-
+        println!("thread id: {:?}", current_thread_index());
         // Encode each sequence
         let encoding = self.encode_single_sequence(sequence, 0, OffsetType::Byte)?;
         let pair_encoding = pair
@@ -892,6 +940,7 @@ where
         word_idx: Option<u32>,
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
+        println!("do tokenizer {:?}", current_thread_index());
         let mut pretokenized: PreTokenizedString = pretokenized.into();
         pretokenized.tokenize(|normalized| self.model.tokenize(normalized.get()))?;
         pretokenized.into_encoding(word_idx, type_id, offsets_type)
@@ -1304,5 +1353,17 @@ where
         file.write_all(serialized.as_bytes())?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Tokenizer;
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn test_from_pretrained() {
+        let tok = Tokenizer::from_pretrained("Qwen/Qwen2-7B-Instruct".to_string(), None);
+        println!("ROCK!")
     }
 }

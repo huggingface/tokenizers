@@ -3,8 +3,18 @@ use serde::{Deserialize, Serialize};
 use crate::normalizers::NormalizerWrapper;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
-
-#[derive(Clone, Deserialize, Debug, Serialize)]
+use display_derive::Display;
+#[derive(Clone, Deserialize, Debug, Serialize, Display)]
+#[display(
+    fmt = "Sequence([{}])",
+    "normalizers.iter().fold(String::new(), |mut acc, d| {
+    if !acc.is_empty() {
+        acc.push_str(\", \");
+    }
+    acc.push_str(&d.to_string());
+    acc
+})"
+)]
 #[serde(tag = "type")]
 /// Allows concatenating multiple other Normalizer as a Sequence.
 /// All the normalizers run in sequence in the given order against the same NormalizedString.
@@ -36,9 +46,10 @@ impl Normalizer for Sequence {
 }
 
 /// Lowercases the input
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Display)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Lowercase;
+
 impl Normalizer for Lowercase {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         normalized.lowercase();

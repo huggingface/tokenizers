@@ -23,7 +23,7 @@
 //! 4. The `PostProcessor`: in charge of post-processing the `Encoding` to add anything relevant
 //!    that, for example, a language model would need, such as special tokens.
 //!
-//! ## Loading a pretrained tokenizer from the Hub
+//! ## Loading a pretrained tokenizer from the Hub.
 //! ```
 //! use tokenizers::tokenizer::{Result, Tokenizer};
 //!
@@ -39,7 +39,7 @@
 //! }
 //! ```
 //!
-//! ## Deserialization and tokenization example
+//! ## Deserialization and tokenization example.
 //!
 //! ```no_run
 //! use tokenizers::tokenizer::{Result, Tokenizer, EncodeInput};

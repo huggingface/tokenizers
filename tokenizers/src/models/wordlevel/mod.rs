@@ -1,11 +1,11 @@
 use super::OrderedVocabIter;
 use crate::tokenizer::{Model, Result, Token};
+use display_derive::Display;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-
 mod serialization;
 mod trainer;
 
@@ -94,7 +94,18 @@ impl WordLevelBuilder {
     }
 }
 
-#[derive(PartialEq, Clone, Eq)]
+#[derive(PartialEq, Clone, Eq, Display)]
+#[display(
+    fmt = "WordLevel(vocab={{{}, ...}}, unk_token={})",
+    "vocab.iter().take(5).fold(String::new(), |mut acc, (key, value)| {
+    if !acc.is_empty() {
+        acc.push_str(\", \");
+    }
+    acc.push_str(&format!(\"\'{}\': {}\", key, value));
+    acc
+})",
+    unk_token
+)]
 pub struct WordLevel {
     vocab: HashMap<String, u32>,
     vocab_r: HashMap<u32, String>,

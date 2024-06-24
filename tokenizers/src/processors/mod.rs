@@ -6,16 +6,17 @@ pub mod template;
 // Re-export these as processors
 pub use super::pre_tokenizers::byte_level;
 
-use serde::{Deserialize, Serialize};
-
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
 use crate::processors::sequence::Sequence;
 use crate::processors::template::TemplateProcessing;
 use crate::{Encoding, PostProcessor, Result};
+use display_derive::Display;
+use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Eq, Display)]
+#[display(fmt="processors.{}")]
 #[serde(untagged)]
 pub enum PostProcessorWrapper {
     // Roberta must be before Bert for deserialization (serde does not validate tags)

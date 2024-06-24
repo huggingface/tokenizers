@@ -3,6 +3,7 @@
 
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
+use display_derive::Display;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -11,7 +12,6 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
-
 mod serialization;
 mod trainer;
 pub use trainer::*;
@@ -119,7 +119,19 @@ impl WordPieceBuilder {
 /// A
 /// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 /// model.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Display)]
+#[display(
+    fmt = "WordPiece(vocab={}, unk_token={}, continuing_subword_prefix={:?})",
+    "vocab.iter().take(5).fold(String::new(), |mut acc, (key, value)| {
+        if !acc.is_empty() {
+            acc.push_str(\", \");
+        }
+        acc.push_str(&format!(\"\'{}\': {}\", key, value));
+        acc
+    })",
+    unk_token,
+    continuing_subword_prefix
+)]
 pub struct WordPiece {
     vocab: Vocab,
     vocab_r: VocabR,

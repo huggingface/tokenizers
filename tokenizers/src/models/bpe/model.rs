@@ -248,6 +248,56 @@ impl std::fmt::Debug for BPE {
     }
 }
 
+impl std::fmt::Display for BPE {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut vocab_vec: Vec<_> = self.vocab.iter().collect();
+        vocab_vec.sort_by_key(|&(_, v)| v);
+        vocab_vec.truncate(5);
+
+        let vocab_str: String = vocab_vec
+            .iter()
+            .map(|(k, v)| format!("'{}':{}", k, v))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let mut merges_vec: Vec<_> = self.merges.iter().collect();
+        merges_vec.truncate(5);
+        merges_vec.sort_by_key(|&(_, v)| v);
+
+        let merges_str: String = merges_vec
+            .iter()
+            .map(|((id1, id2), _)| {
+                (
+                    self.vocab_r
+                        .get(id1)
+                        .cloned()
+                        .unwrap_or_else(|| id1.to_string()),
+                    self.vocab_r
+                        .get(id2)
+                        .cloned()
+                        .unwrap_or_else(|| id2.to_string()),
+                )
+            })
+            .map(|(id1, id2)| format!("('{}', '{}')", id1, id2))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        write!(
+                f,
+                "BPE(vocab={{{}, ...}}, merges=[{:?}, ...], dropout={:?}, unk_token={:?}, continuing_subword_prefix={:?}, end_of_word_suffix={:?}, fuse_unk={}, byte_fallback={}, ignore_merges={})",
+                vocab_str,
+                merges_str,
+                self.dropout,
+                self.unk_token,
+                self.continuing_subword_prefix,
+                self.end_of_word_suffix,
+                self.fuse_unk,
+                self.byte_fallback,
+                self.ignore_merges
+            )
+    }
+}
+
 impl Default for BPE {
     fn default() -> Self {
         Self::builder().build().unwrap()

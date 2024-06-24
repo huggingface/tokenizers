@@ -1,10 +1,21 @@
 use crate::pre_tokenizers::PreTokenizerWrapper;
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
 use crate::utils::macro_rules_attribute;
+use display_derive::Display;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq)]
 #[macro_rules_attribute(impl_serde_type!)]
+#[derive(Clone, Debug, PartialEq, Display)]
+#[display(
+    fmt = "Seqence([{}])",
+    "pretokenizers.iter().fold(String::new(), |mut acc, p| {
+    if !acc.is_empty(){
+       acc.push_str(\", \")
+    }
+    acc.push_str(&p.to_string());
+    acc
+    })"
+)]
 pub struct Sequence {
     pretokenizers: Vec<PreTokenizerWrapper>,
 }

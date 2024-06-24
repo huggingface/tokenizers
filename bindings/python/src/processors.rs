@@ -1,12 +1,12 @@
 use std::convert::TryInto;
 use std::sync::Arc;
 
+use crate::encoding::PyEncoding;
+use crate::error::ToPyResult;
+use derive_more::Display;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-
-use crate::encoding::PyEncoding;
-use crate::error::ToPyResult;
 use serde::{Deserialize, Serialize};
 use tk::processors::bert::BertProcessing;
 use tk::processors::byte_level::ByteLevel;
@@ -27,7 +27,7 @@ use tokenizers as tk;
     name = "PostProcessor",
     subclass
 )]
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, Display)]
 pub struct PyPostProcessor {
     #[serde(flatten)]
     pub processor: Arc<PostProcessorWrapper>,
@@ -138,6 +138,14 @@ impl PyPostProcessor {
         ))
         .into_py()?;
         Ok(final_encoding.into())
+    }
+
+    fn __str__(&self) -> PyResult<String> {
+        Ok(format!("{}", &self))
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", &self))
     }
 }
 

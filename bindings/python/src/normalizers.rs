@@ -1,11 +1,11 @@
 use std::sync::{Arc, RwLock};
 
+use crate::error::ToPyResult;
+use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
+use derive_more::Display;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-
-use crate::error::ToPyResult;
-use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
@@ -43,7 +43,7 @@ impl PyNormalizedStringMut<'_> {
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Display, Debug)]
 pub struct PyNormalizer {
     #[serde(flatten)]
     pub(crate) normalizer: PyNormalizerTypeWrapper,
@@ -165,6 +165,13 @@ impl PyNormalizer {
         let mut normalized = NormalizedString::from(sequence);
         ToPyResult(self.normalizer.normalize(&mut normalized)).into_py()?;
         Ok(normalized.get().to_owned())
+    }
+
+    fn __str__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.normalizer))
+    }
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.normalizer))
     }
 }
 
@@ -498,7 +505,7 @@ impl PyReplace {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Display)]
 pub(crate) struct CustomNormalizer {
     inner: PyObject,
 }
@@ -541,10 +548,12 @@ impl<'de> Deserialize<'de> for CustomNormalizer {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Display)]
 #[serde(untagged)]
 pub(crate) enum PyNormalizerWrapper {
+    #[display(fmt = "{}", "_0.inner")]
     Custom(CustomNormalizer),
+    #[display(fmt = "{}", "_0")]
     Wrapped(NormalizerWrapper),
 }
 
@@ -565,6 +574,25 @@ impl Serialize for PyNormalizerWrapper {
 pub(crate) enum PyNormalizerTypeWrapper {
     Sequence(Vec<Arc<RwLock<PyNormalizerWrapper>>>),
     Single(Arc<RwLock<PyNormalizerWrapper>>),
+}
+
+// Implement the Display trait for PyNormalizerTypeWrapper
+impl std::fmt::Display for PyNormalizerTypeWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            PyNormalizerTypeWrapper::Sequence(ref decoders) => {
+                for decoder in decoders {
+                    let decoder = decoder.read().unwrap();
+                    writeln!(f, "{}", decoder)?;
+                }
+                Ok(())
+            }
+            PyNormalizerTypeWrapper::Single(ref decoder) => {
+                let decoder = decoder.read().unwrap();
+                write!(f, "{}", decoder)
+            }
+        }
+    }
 }
 
 impl Serialize for PyNormalizerTypeWrapper {
