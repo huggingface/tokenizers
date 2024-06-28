@@ -216,10 +216,6 @@ impl AddedVocabulary {
     }
 
     /// Get the token matching the given id if it exists
-    #[deprecated(
-        since = "0.19.0",
-        note = "please use `added_vocabulary.simple_id_to_token(id).or_else(|| model.id_to_token(id)` instead"
-    )]
     pub fn id_to_token(&self, id: u32, model: &impl Model) -> Option<String> {
         self.added_tokens_map_r
             .get(&id)
@@ -227,6 +223,7 @@ impl AddedVocabulary {
             .or_else(|| model.id_to_token(id))
     }
 
+    //
     pub fn simple_id_to_token(&self, id: u32) -> Option<String> {
         self.added_tokens_map_r.get(&id).map(|t| t.content.clone())
     }
@@ -543,6 +540,7 @@ impl Serialize for AddedVocabulary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
     use crate::normalizers::utils::Lowercase;
     use crate::normalizers::NormalizerWrapper;
     use crate::{OffsetReferential, OffsetType, Result, Token, Trainer};
@@ -998,6 +996,34 @@ mod tests {
                 ("<pad>", Some(vec![2])),
                 ("<pad>", Some(vec![2]))
             ]
+        );
+    }
+    #[test]
+    fn byte_level_normalizer() {
+        // Is able to extract both normal and special tokens
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let from = NormalizerWrapper::from(ByteLevelNormalizer::new());
+        let normalizer: Option<&NormalizerWrapper> = Some(&from);
+
+        vocab.add_tokens(
+            &[AddedToken::from("my", false), AddedToken::from("今", false)],
+            &model,
+            normalizer,
+        );
+        let result = vocab.extract_and_normalize(normalizer, "my今");
+        assert_eq!(
+            result
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
+                .into_iter()
+                .map(|(s, _, tokens)| (
+                    s,
+                    tokens
+                        .as_ref()
+                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
+                ))
+                .collect::<Vec<_>>(),
+            vec![("my", Some(vec![0])), ("ä»Ĭ", Some(vec![1])),]
         );
     }
 }

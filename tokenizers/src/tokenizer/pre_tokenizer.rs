@@ -51,7 +51,7 @@ impl From<(NormalizedString, Option<Vec<Token>>)> for Split {
 /// original string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreTokenizedString {
-    original: String,
+    pub original: String,
     splits: Vec<Split>,
 }
 
