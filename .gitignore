@@ -23,3 +23,8 @@ pip-wheel-metadata
 
 .vscode
 *.code-workspace
+
+
+# Added by cargo
+
+/target
