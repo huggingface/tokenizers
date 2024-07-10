@@ -943,6 +943,7 @@ where
         pretokenized: P,
     ) -> Result<PreTokenizedString> {
         let mut pretokenized: PreTokenizedString = pretokenized.into();
+        println!("do pretokenized converted: {:?}", pretokenized);
         if let Some(ref pretok) = self.pre_tokenizer {
             pretok.pre_tokenize(&mut pretokenized)?;
         }

@@ -68,9 +68,14 @@ impl PreTokenizedString {
     /// same `original` string as the original one given to `split_fn`. This concretely
     /// means that for the offset tracking to work as expected, `split_fn` must produce
     /// "splits" of the original string.
-    pub fn split<F, U, R>(&mut self, mut split_fn: F) -> Result<()>
+    pub fn split<F, G, U, R>(
+        &mut self,
+        mut split_fn: F,
+        mut split_added_fn: Option<G>,
+    ) -> Result<()>
     where
         F: FnMut(usize, NormalizedString) -> Result<U>,
+        G: FnMut(usize, NormalizedString) -> Result<U>,
         U: IntoIterator<Item = R>,
         R: Into<Split>,
     {
@@ -78,7 +83,30 @@ impl PreTokenizedString {
         let mut new_splits = Vec::with_capacity(self.splits.len());
         for (i, original_split) in self.splits.drain(..).enumerate() {
             if original_split.tokens.is_some() {
-                new_splits.push(original_split);
+                // The pre_tokenizer never sees this
+                // because you don't apply the split_fn on that token.
+                // So when you call pre_tokenized.split(|_, normalized| { }) you cannot apply it on
+                // added tokens!
+                // But the normalizer can be applied on the added tokens.
+                // That is stupid.
+                // Let's apply the pre_tokenization on the entire string, before anything else.
+                // Then we create the splits with normalizer?
+                if let Some(ref mut split_added_fn) = split_added_fn {
+                    new_splits.extend(
+                        split_added_fn(i, original_split.normalized)?
+                            .into_iter()
+                            .filter_map(|split| {
+                                let split: Split = split.into();
+                                if split.normalized.is_empty() {
+                                    None
+                                } else {
+                                    Some(split)
+                                }
+                            }),
+                    );
+                } else {
+                    new_splits.push(original_split);
+                }
                 continue;
             }
 
@@ -95,8 +123,10 @@ impl PreTokenizedString {
                     }),
             );
         }
+
         self.splits = new_splits;
 
+        println!("self = : {:?}", self);
         Ok(())
     }
 
