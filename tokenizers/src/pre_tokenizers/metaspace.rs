@@ -130,22 +130,12 @@ impl PreTokenizer for Metaspace {
             }
             pretokenized.split(|_, mut normalized| {
                 normalized.replace(' ', &self.str_rep)?;
-                match self.prepend_scheme {
-                    PrependScheme::Always => {
-                        if !normalized.get().starts_with(self.replacement) {
-                            normalized.prepend(&self.str_rep);
-                        }
-                    }
-                    PrependScheme::Never => {}
-                    _ => {} // Handle other cases if needed
-                };
                 if self.split {
                     normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
                 } else {
                     Ok(vec![normalized])
                 }
             });
-
             Ok(())
         } else {
             pretokenized.split(|_, mut normalized| {
