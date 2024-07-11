@@ -166,7 +166,6 @@ impl PreTokenizedString {
                         if let Some(converter) = offset_converter {
                             offsets = converter.convert(offsets).unwrap_or(offsets);
                         }
-                        println!("into encode, {:?}, {:?}", normalized.clone(), token.value);
                         (
                             token.id,
                             token.value,
