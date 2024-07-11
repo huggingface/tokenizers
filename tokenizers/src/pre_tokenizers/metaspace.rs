@@ -1,4 +1,7 @@
-use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::{
+    tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior},
+    NormalizedString,
+};
 use serde::{de, Deserialize, Deserializer, Serialize};
 
 /// Enum representing options for the metaspace prepending scheme.
@@ -115,39 +118,36 @@ impl Default for Metaspace {
 
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        println!("pre_tokenize before call to split {:?}", pretokenized);
-        pretokenized.split_with_added(
-            |_, mut normalized| {
-                println!("pretokenized.split: {:?}", normalized);
+        if self.prepend_scheme == PrependScheme::First {
+            let normalized = pretokenized.splits[0].normalized.clone();
+            if !normalized.get().starts_with(self.replacement)
+                && normalized.offsets_original().0 == 0
+            {
+                pretokenized.splits.insert(
+                    0,
+                    NormalizedString::from(self.replacement.to_string()).into(),
+                );
+            }
+            Ok(())
+        } else {
+            pretokenized.split(|_, mut normalized| {
                 normalized.replace(' ', &self.str_rep)?;
                 match self.prepend_scheme {
                     PrependScheme::Always => {
                         if !normalized.get().starts_with(self.replacement) {
                             normalized.prepend(&self.str_rep);
-                            println!("prepending: {:?}", normalized);
-                        }
-                    }
-                    PrependScheme::First => {
-                        if !normalized.get().starts_with(self.replacement)
-                            && normalized.offsets_original().0 == 0
-                        {
-                            normalized.prepend(&self.str_rep);
-                            println!("prepending! {:?}", normalized);
                         }
                     }
                     PrependScheme::Never => {}
+                    _ => {} // Handle other cases if needed
                 };
                 if self.split {
-                    let res =
-                        normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext);
-                    println!("self.split true: {:?}", res);
-                    res
+                    normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
                 } else {
                     Ok(vec![normalized])
                 }
-            },
-            None,
-        )
+            })
+        }
     }
 }
 
