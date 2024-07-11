@@ -99,39 +99,6 @@ impl PreTokenizedString {
         self.splits = new_splits;
         Ok(())
     }
-
-    pub fn split_with_added<F, U, R>(
-        &mut self,
-        mut split_fn: F,
-        split_added_fn: Option<F>,
-    ) -> Result<()>
-    where
-        F: FnMut(usize, NormalizedString) -> Result<U> + Copy,
-        U: IntoIterator<Item = R>,
-        R: Into<Split>,
-    {
-        // new_splits is at least as big as self.splits
-        let mut new_splits = Vec::with_capacity(self.splits.len());
-        for (i, original_split) in self.splits.drain(..).enumerate() {
-            let splits = match split_added_fn {
-                Some(mut fn_ptr) => fn_ptr(i, original_split.normalized)?,
-                None => split_fn(i, original_split.normalized)?,
-            };
-            // Filter and extend the new_splits with non-empty splits
-            new_splits.extend(splits.into_iter().filter_map(|split| {
-                let split: Split = split.into();
-                if split.normalized.is_empty() {
-                    None
-                } else {
-                    Some(split)
-                }
-            }));
-        }
-        self.splits.insert(0, NormalizedString::from(" ").into());
-        println!("self = : {:?}", self);
-        Ok(())
-    }
-
     /// Normalized all the splits that do not have attached `Tokens`, using the provided
     /// `normalize` function.
     pub fn normalize<F>(&mut self, normalize: F) -> Result<()>
