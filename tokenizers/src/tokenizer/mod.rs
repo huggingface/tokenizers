@@ -849,7 +849,8 @@ where
             .iter()
             .filter_map(|id| {
                 self.added_vocabulary
-                    .id_to_token(*id, &self.model)
+                    .simple_id_to_token(*id)
+                    .or_else(|| self.model.id_to_token(*id))
                     .filter(|token| {
                         !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
                     })
