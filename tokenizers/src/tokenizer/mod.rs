@@ -699,7 +699,9 @@ where
 
     /// Converts an id to the corresponding token.
     pub fn id_to_token(&self, id: u32) -> Option<String> {
-        self.added_vocabulary.id_to_token(id, &self.model)
+        self.added_vocabulary
+            .simple_id_to_token(id)
+            .or_else(|| self.model.id_to_token(id))
     }
 
     /// set the added bocab's splitting scheme
