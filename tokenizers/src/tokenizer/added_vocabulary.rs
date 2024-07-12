@@ -322,7 +322,7 @@ impl AddedVocabulary {
                     .lock()
                     .unwrap()
                     .entry(id)
-                    .and_modify(|t| *t = new.clone());
+                    .and_modify(|t| t.content = new.content.clone());
                 self.refresh_added_tokens(model, normalizer);
             } else {
                 error!("Error: you tried to re-assign a token that does not exist in the added vocab. Make sure {:?} is first added to the vocab", old.content.clone())
@@ -336,17 +336,12 @@ impl AddedVocabulary {
     /// non-normalized string, and one matching against the normalized one.
     fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer: Option<&N>) {
         type TupleTokenId<'a> = (&'a AddedToken, u32);
-        let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
-            .added_tokens
-            .iter()
-            .map(|token| {
-                (
-                    token,
-                    self.token_to_id(&token.content, model)
-                        .expect("Missing additional token"),
-                )
-            })
-            .partition(|(token, _)| token.normalized);
+        let added_tokens_map_r = self.added_tokens_map_r.lock().unwrap().clone();
+        let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) =
+            added_tokens_map_r
+                .iter()
+                .map(|(id, token)| (token, *id))
+                .partition(|(token, _)| token.normalized);
 
         let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
         let trie = AhoCorasickBuilder::new()
@@ -363,6 +358,7 @@ impl AddedVocabulary {
                 if let Some(n) = normalizer {
                     n.normalize(&mut content).unwrap();
                 }
+                println!("{:?}", token);
                 content
             })
             .collect();
