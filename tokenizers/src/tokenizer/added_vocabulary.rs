@@ -5,7 +5,7 @@ use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, Mutex},
 };
 /// Represent a token added by the user on top of the existing Model vocabulary.
@@ -301,9 +301,9 @@ impl AddedVocabulary {
     }
 
     /// Get the token matching the given id if it exists
-    pub fn simple_id_to_token(&self, id: &u32) -> Option<String> {
+    pub fn simple_id_to_token(&self, id: u32) -> Option<String> {
         let added_tokens_map_r = self.added_tokens_map_r.lock().unwrap();
-        let token = added_tokens_map_r.get(id).map(|t| t.content.clone());
+        let token = added_tokens_map_r.get(&id).map(|t| t.content.clone());
         token
     }
 
