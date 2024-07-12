@@ -207,13 +207,6 @@ impl AddedVocabulary {
         id.or_else(|| model.token_to_id(token))
     }
 
-    /// Get the token matching the given id if it exists
-    #[deprecated(
-        since = "0.19.0",
-        note = "please use `added_vocabulary.simple_id_to_token(id).or_else(|| model.id_to_token(id)` instead"
-    )]
-    }
-
     //
     pub fn set_encode_special_tokens(&mut self, value: bool) {
         self.encode_special_tokens = value;
@@ -225,7 +218,12 @@ impl AddedVocabulary {
 
     /// Check if a token is a special token
     pub fn is_special_token(&self, token: &str) -> bool {
-        self.special_tokens_set.contains(token)
+        self.added_tokens_map_r
+            .lock()
+            .unwrap()
+            .get(self.added_tokens_map.lock().unwrap().get(token).unwrap())
+            .unwrap()
+            .special
     }
 
     /// Add some special tokens to the vocabulary
@@ -236,6 +234,7 @@ impl AddedVocabulary {
         normalizer: Option<&N>,
     ) -> usize {
         self.add_tokens(tokens, model, normalizer)
+    }
     /// Get the token matching the given id if it exists
     pub fn simple_id_to_token(&self, id: &u32) -> Option<String> {
         let added_tokens_map_r = self.added_tokens_map_r.lock().unwrap();
@@ -255,6 +254,8 @@ impl AddedVocabulary {
         for (old, new) in old_token_content.iter().zip(new_token_content.iter()) {
             if let Some(id) = self.token_to_id(old.content.as_str(), model) {
                 self.added_tokens_map_r
+                    .lock()
+                    .unwrap()
                     .entry(id)
                     .and_modify(|t| *t = new.clone());
                 self.refresh_added_tokens(model, normalizer);
@@ -262,18 +263,6 @@ impl AddedVocabulary {
                 error!("Error: you tried to re-assign a token that does not exist in the added vocab. Make sure {:?} is first added to the vocab", old.content.clone())
             }
         }
-    }
-
-    /// Add a token to the added vocabulary
-    pub fn add_token(&mut self, token: &AddedToken) {
-        let mut added_tokens_map = self.added_tokens_map.lock().unwrap();
-        let mut added_tokens_map_r = self.added_tokens_map_r.lock().unwrap();
-
-        let id = added_tokens_map.len() as u32;
-        added_tokens_map.insert(token.content.clone(), id);
-        added_tokens_map_r.insert(id, token.clone());
-
-        self.refresh_added_tokens();
     }
 
     /// Reconstruct our internal RegexSet when new tokens are added to the vocabulary.
