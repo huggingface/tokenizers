@@ -1250,7 +1250,7 @@ impl PyTokenizer {
     /// Returns:
     ///     :obj:`int`: The number of tokens that were created in the vocabulary
     #[pyo3(text_signature = "(self, old_tokens, new_tokens)")]
-    fn assing_tokens(
+    fn assign_tokens(
         &mut self,
         old_tokens: &Bound<'_, PyList>,
         new_tokens: &Bound<'_, PyList>,
