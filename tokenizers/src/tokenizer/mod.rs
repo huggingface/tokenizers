@@ -667,7 +667,7 @@ where
             if !added_vocab.is_empty() {
                 final_vocab.reserve(added_vocab.len());
                 for (token, id) in added_vocab {
-                    final_vocab.insert(token.clone(), *id);
+                    final_vocab.insert(token.clone(), id);
                 }
             }
         }
