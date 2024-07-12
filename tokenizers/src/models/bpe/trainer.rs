@@ -514,58 +514,58 @@ impl BpeTrainer {
             }
             merges.push((top.pair, new_token_id));
 
-            // Merge the new pair in every words
-            let changes = top
-                .pos
-                .maybe_par_iter()
-                .flat_map(|i| {
-                    let w = &words[*i] as *const _ as *mut _;
-                    // We can merge each of these words in parallel here because each position
-                    // can be there only once (HashSet). So this is safe.
-                    unsafe {
-                        let word: &mut Word = &mut (*w);
-                        word.merge(top.pair.0, top.pair.1, new_token_id)
-                            .into_iter()
-                            .map(|c| (c, *i))
-                            .collect::<Vec<_>>()
-                    }
-                })
-                .collect::<Vec<_>>();
+            // // Merge the new pair in every words
+            // let changes = top
+            //     .pos
+            //     .maybe_par_iter()
+            //     .flat_map(|i| {
+            //         let w = &words[*i] as *const _ as *mut _;
+            //         // We can merge each of these words in parallel here because each position
+            //         // can be there only once (HashSet). So this is safe.
+            //         unsafe {
+            //             let word: &mut Word = &mut (*w);
+            //             word.merge(top.pair.0, top.pair.1, new_token_id)
+            //                 .into_iter()
+            //                 .map(|c| (c, *i))
+            //                 .collect::<Vec<_>>()
+            //         }
+            //     })
+            //     .collect::<Vec<_>>();
 
-            // Introduce new formed pairs
-            for ((pair, change), iw) in changes {
-                let count = change * counts[iw] as i32;
-                pair_counts
-                    .entry(pair)
-                    .and_modify(|c| *c += count)
-                    .or_insert(count);
-                if change > 0 {
-                    where_to_update
-                        .entry(pair)
-                        .and_modify(|h| {
-                            h.insert(iw);
-                        })
-                        .or_insert_with(|| {
-                            let mut h = HashSet::new();
-                            h.insert(iw);
-                            h
-                        });
-                }
-            }
-            where_to_update.drain().for_each(|(pair, pos)| {
-                let count = pair_counts[&pair];
-                if count > 0 {
-                    queue.push(Merge {
-                        pair,
-                        count: count as u32,
-                        pos,
-                    });
-                }
-            });
+            // // Introduce new formed pairs
+            // for ((pair, change), iw) in changes {
+            //     let count = change * counts[iw] as i32;
+            //     pair_counts
+            //         .entry(pair)
+            //         .and_modify(|c| *c += count)
+            //         .or_insert(count);
+            //     if change > 0 {
+            //         where_to_update
+            //             .entry(pair)
+            //             .and_modify(|h| {
+            //                 h.insert(iw);
+            //             })
+            //             .or_insert_with(|| {
+            //                 let mut h = HashSet::new();
+            //                 h.insert(iw);
+            //                 h
+            //             });
+            //     }
+            // }
+            // where_to_update.drain().for_each(|(pair, pos)| {
+            //     let count = pair_counts[&pair];
+            //     if count > 0 {
+            //         queue.push(Merge {
+            //             pair,
+            //             count: count as u32,
+            //             pos,
+            //         });
+            //     }
+            // });
 
-            if let Some(p) = &progress {
-                p.inc(1);
-            }
+            // if let Some(p) = &progress {
+            //     p.inc(1);
+            // }
         }
         self.finalize_progress(&progress, merges.len());
 
