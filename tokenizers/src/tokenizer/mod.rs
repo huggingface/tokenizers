@@ -962,8 +962,8 @@ where
     }
 
     /// Assign a new token
-    pub fn assign_token(&mut self, old_tokens: &[AddedToken], new_tokens: &[AddedToken]) {
-        self.added_vocabulary.assign_token(
+    pub fn assign_tokens(&mut self, old_tokens: &[AddedToken], new_tokens: &[AddedToken]) {
+        self.added_vocabulary.assign_tokens(
             old_tokens,
             new_tokens,
             &self.model,
