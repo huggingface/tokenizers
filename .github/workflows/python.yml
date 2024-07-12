@@ -63,12 +63,6 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
 
-      - name: Install audit
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-audit
-
       - name: Install Python
         uses: actions/setup-python@v4
         with:
