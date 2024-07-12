@@ -1290,7 +1290,6 @@ impl PyTokenizer {
             processed_old_tokens.push(old_token);
             processed_new_tokens.push(new_token);
         }
-
         Ok(self
             .tokenizer
             .assign_tokens(&processed_old_tokens, &processed_new_tokens))

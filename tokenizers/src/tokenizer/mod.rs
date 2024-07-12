@@ -541,9 +541,7 @@ where
             model,
             post_processor: None,
             decoder: None,
-
             added_vocabulary: AddedVocabulary::new(),
-
             truncation: None,
             padding: None,
         }
