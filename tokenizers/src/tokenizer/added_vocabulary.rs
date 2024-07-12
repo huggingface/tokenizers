@@ -358,7 +358,6 @@ impl AddedVocabulary {
                 if let Some(n) = normalizer {
                     n.normalize(&mut content).unwrap();
                 }
-                println!("{:?}", token);
                 content
             })
             .collect();
