@@ -960,6 +960,16 @@ where
         self.added_vocabulary
             .add_tokens(tokens, &self.model, self.normalizer.as_ref())
     }
+
+    /// Assign a new token
+    pub fn assign_token(&mut self, old_tokens: &[AddedToken], new_tokens: &[AddedToken]) {
+        self.added_vocabulary.assign_token(
+            old_tokens,
+            new_tokens,
+            &self.model,
+            self.normalizer.as_ref(),
+        )
+    }
 }
 
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>

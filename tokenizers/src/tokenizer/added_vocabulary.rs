@@ -255,6 +255,27 @@ impl AddedVocabulary {
         self.add_tokens(tokens, model, normalizer)
     }
 
+    /// Re assigns a token's content to a new content. This helps users how want to
+    /// use reserved tokens (which usually are in the original vocab, and in the added vocab)
+    pub fn assign_token<N: Normalizer>(
+        &mut self,
+        old_token_content: &[AddedToken],
+        new_token_content: &[AddedToken],
+        model: &impl Model,
+        normalizer: Option<&N>,
+    ) {
+        for (old, new) in old_token_content.iter().zip(new_token_content.iter()) {
+            if let Some(id) = self.token_to_id(old.content.as_str(), model) {
+                self.added_tokens_map_r
+                    .entry(id)
+                    .and_modify(|t| *t = new.clone());
+                self.refresh_added_tokens(model, normalizer);
+            } else {
+                error!("Error: you tried to re-assign a token that does not exist in the added vocab. Make sure {:?} is first added to the vocab", old.content.clone())
+            }
+        }
+    }
+
     /// Add some tokens to the vocabulary
     pub fn add_tokens<N: Normalizer>(
         &mut self,
