@@ -725,6 +725,23 @@ class Tokenizer:
         """
         pass
 
+    def assing_tokens(self, old_tokens, new_tokens):
+        """
+        Add the given tokens to the vocabulary
+
+        The given tokens are added only if they don't already exist in the vocabulary.
+        Each token then gets a new attributed id.
+
+        Args:
+            tokens (A :obj:`List` of :class:`~tokenizers.AddedToken` or :obj:`str`):
+                The list of tokens we want to add to the vocabulary. Each token can be either a
+                string or an instance of :class:`~tokenizers.AddedToken` for more customization.
+
+        Returns:
+            :obj:`int`: The number of tokens that were created in the vocabulary
+        """
+        pass
+
     def decode(self, ids, skip_special_tokens=True):
         """
         Decode the given list of ids back to a string

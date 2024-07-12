@@ -257,7 +257,7 @@ impl AddedVocabulary {
 
     /// Re assigns a token's content to a new content. This helps users how want to
     /// use reserved tokens (which usually are in the original vocab, and in the added vocab)
-    pub fn assign_token<N: Normalizer>(
+    pub fn assign_tokens<N: Normalizer>(
         &mut self,
         old_token_content: &[AddedToken],
         new_token_content: &[AddedToken],
