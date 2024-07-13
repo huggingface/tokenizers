@@ -40,6 +40,10 @@ harness = false
 name = "bert_decode_benchmark"
 harness = false
 
+[[bench]]
+name = "important_tokenizer_benchmark"
+harness = false
+
 [dependencies]
 lazy_static = "1.4"
 rand = "0.8"
