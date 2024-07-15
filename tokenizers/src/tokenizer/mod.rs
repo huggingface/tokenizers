@@ -1294,3 +1294,61 @@ where
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+
+    use crate::AddedToken;
+    use crate::Tokenizer;
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn test_decoding_with_added_bpe() {
+        use crate::{
+            normalizers,
+            pre_tokenizers::split::{Split, SplitPattern},
+            NormalizerWrapper, PreTokenizerWrapper, SplitDelimiterBehavior,
+        };
+
+        let mut tokenizer = Tokenizer::from_pretrained("meta-llama/Meta-Llama-3-8B", None).unwrap();
+        tokenizer.normalizer = Some(NormalizerWrapper::from(normalizers::ByteLevel::new()));
+        tokenizer.pre_tokenizer = Some(PreTokenizerWrapper::Split(
+            Split::new(
+                SplitPattern::Regex(r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+".into()),
+                SplitDelimiterBehavior::Isolated,
+                false,
+            )
+            .unwrap(),
+        ));
+        tokenizer.add_tokens(&[AddedToken::from("嗎", false).normalized(false)]);
+        let encoded = tokenizer
+            .encode("Hey! how is this token: 嗎", false)
+            .unwrap();
+        assert_eq!(
+            encoded.get_ids(),
+            [19182, 0, 1268, 602, 82, 62428, 82, 4037, 25, 220, 128256]
+        );
+        assert_eq!(
+            encoded.get_tokens(),
+            ["Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "嗎"]
+        );
+
+        let decoded = tokenizer.decode(encoded.get_ids(), false);
+        assert_eq!(decoded.unwrap(), "Hey! how is this token: 嗎");
+
+        tokenizer.add_tokens(&[AddedToken::from("д", false).normalized(true)]);
+        let encoded = tokenizer
+            .encode("Hey! how is this token: д", false)
+            .unwrap();
+        assert_eq!(
+            encoded.get_ids(),
+            [19182, 0, 1268, 602, 82, 62428, 82, 4037, 25, 220, 128257]
+        );
+        assert_eq!(
+            encoded.get_tokens(),
+            ["Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "Ð´"]
+        );
+        let decoded = tokenizer.decode(encoded.get_ids(), false);
+        assert_eq!(decoded.unwrap(), "Hey! how is this token: д")
+    }
+}

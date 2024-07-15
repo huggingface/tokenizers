@@ -543,6 +543,7 @@ impl Serialize for AddedVocabulary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
     use crate::normalizers::utils::Lowercase;
     use crate::normalizers::NormalizerWrapper;
     use crate::{OffsetReferential, OffsetType, Result, Token, Trainer};
@@ -998,6 +999,34 @@ mod tests {
                 ("<pad>", Some(vec![2])),
                 ("<pad>", Some(vec![2]))
             ]
+        );
+    }
+    #[test]
+    fn byte_level_normalizer() {
+        // Is able to extract both normal and special tokens
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let from = NormalizerWrapper::from(ByteLevelNormalizer::new());
+        let normalizer: Option<&NormalizerWrapper> = Some(&from);
+
+        vocab.add_tokens(
+            &[AddedToken::from("my", false), AddedToken::from("今", false)],
+            &model,
+            normalizer,
+        );
+        let result = vocab.extract_and_normalize(normalizer, "my今");
+        assert_eq!(
+            result
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
+                .into_iter()
+                .map(|(s, _, tokens)| (
+                    s,
+                    tokens
+                        .as_ref()
+                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
+                ))
+                .collect::<Vec<_>>(),
+            vec![("my", Some(vec![0])), ("ä»Ĭ", Some(vec![1])),]
         );
     }
 }
