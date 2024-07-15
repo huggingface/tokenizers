@@ -493,6 +493,7 @@ class TestTokenizer:
         tokenizer.pre_tokenizer.split = False
         tokenizer.add_tokens([AddedToken("<REPR_END>", rstrip=True, lstrip=True)])
         assert tokenizer.encode("<REPR_END>inform<s>. Hey.       .", add_special_tokens=False).tokens == [
+            "▁",
             "<REPR_END>",
             "in",
             "form",
@@ -505,6 +506,7 @@ class TestTokenizer:
         ]
 
         assert tokenizer.encode("<REPR_END>inform<s>. Hey.       .", add_special_tokens=False).ids == [
+            29871,
             32000,
             262,
             689,
@@ -535,6 +537,13 @@ class TestTokenizer:
             "▁▁▁▁▁▁",
             "▁.",
         ]
+
+    def metaspace_pre_tokenizer(self):
+        tokenizer = Tokenizer.from_pretrained("t5-base")
+        tokenizer.pre_tokenizer.prepend_scheme = "firs"
+        tokenizer.add_tokens(["<bos>"])
+        encoding = tokenizer.encode("<bos>New").ids
+        assert encoding == [4, 32300, 123]
 
     def test_decode_special(self):
         tokenizer = Tokenizer(BPE())
