@@ -1,4 +1,4 @@
-use display_derive::Display;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 
 use crate::pre_tokenizers::unicode_scripts::scripts::{get_script, Script};
 use crate::tokenizer::{normalizer::Range, PreTokenizedString, PreTokenizer, Result};

@@ -1,7 +1,7 @@
 use crate::decoders::wordpiece;
 use crate::tokenizer::{Decoder, Result};
-use display_derive::Display;
 use itertools::Itertools;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Display)]

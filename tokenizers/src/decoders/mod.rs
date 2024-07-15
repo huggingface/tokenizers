@@ -21,7 +21,7 @@ use crate::normalizers::replace::Replace;
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::{Decoder, Result};
-use display_derive::Display;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Display)]

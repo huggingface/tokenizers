@@ -12,7 +12,7 @@ use crate::processors::roberta::RobertaProcessing;
 use crate::processors::sequence::Sequence;
 use crate::processors::template::TemplateProcessing;
 use crate::{Encoding, PostProcessor, Result};
-use display_derive::Display;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Eq, Display)]

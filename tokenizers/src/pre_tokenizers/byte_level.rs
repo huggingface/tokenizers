@@ -6,7 +6,7 @@ use crate::tokenizer::{
 };
 use crate::utils::macro_rules_attribute;
 use crate::utils::SysRegex;
-use display_derive::Display;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 use serde::{Deserialize, Serialize};
 
 /// Converts bytes to unicode characters.

@@ -1,6 +1,6 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
-use display_derive::Display;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 
 #[derive(Default, Copy, Clone, Debug, Display)]
 #[macro_rules_attribute(impl_serde_type!)]

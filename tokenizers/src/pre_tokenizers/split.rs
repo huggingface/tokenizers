@@ -2,7 +2,7 @@ use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
 use crate::utils::SysRegex;
-use display_derive::Display;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Represents the different patterns that `Split` can use

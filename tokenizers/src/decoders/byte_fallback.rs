@@ -1,6 +1,6 @@
 use crate::tokenizer::{Decoder, Result};
-use display_derive::Display;
 use monostate::MustBe;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Clone, Debug, Serialize, Default, Display)]
 /// ByteFallback is a simple trick which converts tokens looking like `<0x61>`

@@ -1,5 +1,5 @@
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
-use display_derive::Display;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 use serde::{de, Deserialize, Deserializer, Serialize};
 /// Enum representing options for the metaspace prepending scheme.
 #[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize, Copy, Display)]

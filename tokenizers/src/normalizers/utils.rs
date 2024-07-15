@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::normalizers::NormalizerWrapper;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
-use display_derive::Display;
 #[derive(Clone, Deserialize, Debug, Serialize, Display)]
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 #[display(
     fmt = "Sequence([{}])",
     "normalizers.iter().fold(String::new(), |mut acc, d| {

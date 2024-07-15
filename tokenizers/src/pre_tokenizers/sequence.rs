@@ -1,7 +1,7 @@
 use crate::pre_tokenizers::PreTokenizerWrapper;
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
 use crate::utils::macro_rules_attribute;
-use display_derive::Display;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 use serde::{Deserialize, Serialize};
 
 #[macro_rules_attribute(impl_serde_type!)]

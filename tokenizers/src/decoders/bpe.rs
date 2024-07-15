@@ -1,5 +1,5 @@
 use crate::tokenizer::{Decoder, Result};
-use display_derive::Display;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Clone, Debug, Serialize, Display)]
 /// Allows decoding Original BPE by joining all the tokens and then replacing

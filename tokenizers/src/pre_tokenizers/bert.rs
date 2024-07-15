@@ -1,6 +1,6 @@
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
-use display_derive::Display;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 use unicode_categories::UnicodeCategories;
 
 fn is_bert_punc(x: char) -> bool {

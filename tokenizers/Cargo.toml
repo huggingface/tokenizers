@@ -63,7 +63,7 @@ fancy-regex = { version = "0.13", optional = true}
 getrandom = { version = "0.2.10" }
 esaxx-rs = { version = "0.1.10", default-features = false, features=[]}
 monostate = "0.1.12"
-display_derive = { path = "display_derive" }
+pyo3_special_method_derive = "0.3.0"
 
 [features]
 default = ["progressbar", "onig", "esaxx_fast"]

@@ -1,5 +1,5 @@
 use crate::tokenizer::{Encoding, PostProcessor, Result};
-use display_derive::Display;
+use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::iter::FromIterator;
