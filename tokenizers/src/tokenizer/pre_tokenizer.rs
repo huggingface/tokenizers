@@ -20,7 +20,7 @@ pub struct Split {
     /// The underlying `NormalizedString`. Each SubString is represented by a `NormalizedString`
     /// and in the end we might be carrying a lot of SubString representing various parts of the
     /// original input string.
-    pub normalized: NormalizedString,
+    pub(crate) normalized: NormalizedString,
     /// Optional Tokens associated to this Split
     tokens: Option<Vec<Token>>,
 }
@@ -52,7 +52,7 @@ impl From<(NormalizedString, Option<Vec<Token>>)> for Split {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreTokenizedString {
     original: String,
-    pub splits: Vec<Split>,
+    pub(crate) splits: Vec<Split>,
 }
 
 impl PreTokenizedString {
@@ -95,7 +95,6 @@ impl PreTokenizedString {
                     }),
             );
         }
-
         self.splits = new_splits;
         Ok(())
     }
