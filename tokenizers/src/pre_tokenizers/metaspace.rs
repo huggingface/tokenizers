@@ -120,6 +120,7 @@ impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         let result = if self.prepend_scheme == PrependScheme::First {
             let first = &mut pretokenized.splits[0];
+            first.normalized.replace(' ', &self.str_rep)?;
             if !first.normalized.get().starts_with(self.replacement)
                 && first.normalized.offsets_original().0 == 0
             {

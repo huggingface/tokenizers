@@ -540,7 +540,7 @@ class TestTokenizer:
 
     def metaspace_pre_tokenizer(self):
         tokenizer = Tokenizer.from_pretrained("t5-base")
-        tokenizer.pre_tokenizer.prepend_scheme = "firs"
+        tokenizer.pre_tokenizer.prepend_scheme = "first"
         tokenizer.add_tokens(["<bos>"])
         encoding = tokenizer.encode("<bos>New").ids
         assert encoding == [4, 32300, 123]
