@@ -119,14 +119,18 @@ impl Default for Metaspace {
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         let result = if self.prepend_scheme == PrependScheme::First {
-            let normalized = pretokenized.splits[0].normalized.clone();
-            if !normalized.get().starts_with(self.replacement)
-                && normalized.offsets_original().0 == 0
+            let mut first = &mut pretokenized.splits[0];
+            if !first.normalized.get().starts_with(self.replacement)
+                && first.normalized.offsets_original().0 == 0
             {
-                pretokenized.splits.insert(
-                    0,
-                    NormalizedString::from(self.replacement.to_string()).into(),
-                );
+                if let Some(vec) = first.tokens.clone() {
+                    pretokenized.splits.insert(
+                        0,
+                        NormalizedString::from(self.replacement.to_string()).into(),
+                    );
+                } else {
+                    first.normalized.prepend(&self.str_rep);
+                }
             }
             let _ = pretokenized.split(|_, mut normalized| {
                 normalized.replace(' ', &self.str_rep)?;

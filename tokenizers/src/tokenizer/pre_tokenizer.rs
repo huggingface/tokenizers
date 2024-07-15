@@ -22,7 +22,7 @@ pub struct Split {
     /// original input string.
     pub(crate) normalized: NormalizedString,
     /// Optional Tokens associated to this Split
-    tokens: Option<Vec<Token>>,
+    pub(crate) tokens: Option<Vec<Token>>,
 }
 
 impl From<NormalizedString> for Split {
