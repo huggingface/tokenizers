@@ -118,7 +118,7 @@ impl Default for Metaspace {
 
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        if self.prepend_scheme == PrependScheme::First {
+        let result = if self.prepend_scheme == PrependScheme::First {
             let normalized = pretokenized.splits[0].normalized.clone();
             if !normalized.get().starts_with(self.replacement)
                 && normalized.offsets_original().0 == 0
@@ -128,7 +128,7 @@ impl PreTokenizer for Metaspace {
                     NormalizedString::from(self.replacement.to_string()).into(),
                 );
             }
-            pretokenized.split(|_, mut normalized| {
+            let _ = pretokenized.split(|_, mut normalized| {
                 normalized.replace(' ', &self.str_rep)?;
                 if self.split {
                     normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
@@ -155,7 +155,8 @@ impl PreTokenizer for Metaspace {
                     Ok(vec![normalized])
                 }
             })
-        }
+        };
+        result
     }
 }
 
