@@ -233,7 +233,7 @@ impl PyModel {
 ///
 /// Args:
 ///     vocab (:obj:`Dict[str, int]`, `optional`):
-///         A dictionnary of string keys and their ids :obj:`{"am": 0,...}`
+///         A dictionary of string keys and their ids :obj:`{"am": 0,...}`
 ///
 ///     merges (:obj:`List[Tuple[str, str]]`, `optional`):
 ///         A list of pairs of tokens (:obj:`Tuple[str, str]`) :obj:`[("a", "b"),...]`
@@ -537,7 +537,7 @@ impl PyBPE {
 ///
 /// Args:
 ///     vocab (:obj:`Dict[str, int]`, `optional`):
-///         A dictionnary of string keys and their ids :obj:`{"am": 0,...}`
+///         A dictionary of string keys and their ids :obj:`{"am": 0,...}`
 ///
 ///     unk_token (:obj:`str`, `optional`):
 ///         The unknown token to be used by the model.
@@ -708,7 +708,7 @@ impl PyWordPiece {
 ///
 /// Args:
 ///     vocab (:obj:`str`, `optional`):
-///         A dictionnary of string keys and their ids :obj:`{"am": 0,...}`
+///         A dictionary of string keys and their ids :obj:`{"am": 0,...}`
 ///
 ///     unk_token (:obj:`str`, `optional`):
 ///         The unknown token to be used by the model.

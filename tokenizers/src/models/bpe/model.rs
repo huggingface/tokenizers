@@ -136,7 +136,7 @@ impl BpeBuilder {
     pub fn build(mut self) -> Result<BPE> {
         // Validate dropout.
         if let Some(p) = self.config.dropout {
-            if p <= 0.0 || p > 1.0 {
+            if !(0.0..=1.0).contains(&p) {
                 return Err(Error::InvalidDropout.into());
             }
         }
@@ -214,7 +214,7 @@ pub struct BPE {
     pub(crate) merges: MergeMap,
     /// Contains the cache for optimizing the encoding step.
     cache: Option<Cache<String, Word>>,
-    /// Dropout probability for merges. 0 = no dropout is the default. At 1.0, tokenization will
+    /// Dropout probability for merges. 0.0 = no dropout is the default. At 1.0, tokenization will
     /// perform no merges, so the result will just be characters.
     pub dropout: Option<f32>,
     /// The unknown token to be used when we encounter an unknown char
@@ -543,7 +543,7 @@ impl Model for BPE {
             return Ok(vec![]);
         }
 
-        if self.dropout.is_none() {
+        if self.dropout.is_none() || self.dropout == Some(0.0) {
             self.tokenize_with_cache(sequence)
         } else {
             let word = self.merge_word(sequence)?;
@@ -735,6 +735,11 @@ mod tests {
         let tokens = bpe.tokenize("unrelated").unwrap();
         assert_eq!(tokens, vec![Token::new(15u32, "unrelated".into(), (0, 9))]);
 
+        // With dropout = 0.0 (equivalent to dropout == none)
+        bpe.dropout = Some(0.0);
+        let tokens = bpe.tokenize("unrelated").unwrap();
+        assert_eq!(tokens, vec![Token::new(15u32, "unrelated".into(), (0, 9))]);
+
         // Now set dropout to 1.0. Result should be no merges performed.
         bpe.dropout = Some(1.0);
         let tokens = bpe.tokenize("unrelated").unwrap();
@@ -787,6 +792,13 @@ mod tests {
         assert_eq!(bpe.vocab.get("b").unwrap(), &1u32);
         assert_eq!(bpe.vocab.get("c").unwrap(), &2u32);
         assert_eq!(bpe.vocab.get("ab").unwrap(), &3u32);
+    }
+
+    #[test]
+    // Ensure BPEBuilder with dropout = 0.0 doesn't error
+    fn test_bpe_with_dropout_0() {
+        let bpe = BPE::builder().dropout(0.0).build().unwrap();
+        assert_eq!(bpe.dropout, Some(0.0));
     }
 
     #[test]

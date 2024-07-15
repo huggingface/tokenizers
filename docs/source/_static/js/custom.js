@@ -22,7 +22,7 @@ const versionMapping = {
     }
 };
 
-// Dictionnary language name to Label
+// Dictionary language name to Label
 const languageName = {
     "rust": "Rust",
     "python": "Python",

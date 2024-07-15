@@ -282,8 +282,8 @@ impl BpeTrainer {
         for c in &self.initial_alphabet {
             alphabet
                 .entry(*c)
-                .and_modify(|cnt| *cnt = std::usize::MAX)
-                .or_insert(std::usize::MAX);
+                .and_modify(|cnt| *cnt = usize::MAX)
+                .or_insert(usize::MAX);
         }
 
         let mut kept = alphabet.iter().collect::<Vec<_>>();

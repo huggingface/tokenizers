@@ -69,6 +69,10 @@ class TestBPE:
         model.byte_fallback = True
         assert model.byte_fallback == True
 
+    def test_dropout_zero(self):
+        model = BPE(dropout=0.0)
+        assert model.dropout == 0.0
+
 
 class TestWordPiece:
     def test_instantiate(self, bert_files):
