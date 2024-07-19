@@ -1,8 +1,8 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 
-#[derive(Default, Copy, Clone, Debug, Display)]
+#[derive(Default, Copy, Clone, Debug, AutoDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct NFD;
 impl Normalizer for NFD {
@@ -12,7 +12,7 @@ impl Normalizer for NFD {
     }
 }
 
-#[derive(Default, Copy, Clone, Debug, Display)]
+#[derive(Default, Copy, Clone, Debug, AutoDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct NFKD;
 impl Normalizer for NFKD {
@@ -22,7 +22,7 @@ impl Normalizer for NFKD {
     }
 }
 
-#[derive(Default, Copy, Clone, Debug, Display)]
+#[derive(Default, Copy, Clone, Debug, AutoDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct NFC;
 impl Normalizer for NFC {
@@ -32,7 +32,7 @@ impl Normalizer for NFC {
     }
 }
 
-#[derive(Default, Copy, Clone, Debug, Display)]
+#[derive(Default, Copy, Clone, Debug, AutoDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct NFKC;
 impl Normalizer for NFKC {
@@ -73,7 +73,7 @@ fn do_nmt(normalized: &mut NormalizedString) {
         });
 }
 
-#[derive(Default, Copy, Clone, Debug, Display)]
+#[derive(Default, Copy, Clone, Debug, AutoDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Nmt;
 impl Normalizer for Nmt {

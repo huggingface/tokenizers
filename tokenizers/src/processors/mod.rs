@@ -12,11 +12,11 @@ use crate::processors::roberta::RobertaProcessing;
 use crate::processors::sequence::Sequence;
 use crate::processors::template::TemplateProcessing;
 use crate::{Encoding, PostProcessor, Result};
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Eq, Display)]
-#[display(fmt="processors.{}")]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Eq, AutoDisplay)]
+#[auto_display(fmt="processors.{}")]
 #[serde(untagged)]
 pub enum PostProcessorWrapper {
     // Roberta must be before Bert for deserialization (serde does not validate tags)

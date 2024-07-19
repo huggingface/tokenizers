@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::encoding::PyEncoding;
 use crate::error::ToPyResult;
-use derive_more::Display;
+use pyo3_special_method_derive::AutoDisplay;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -27,7 +27,7 @@ use tokenizers as tk;
     name = "PostProcessor",
     subclass
 )]
-#[derive(Clone, Deserialize, Serialize, Display)]
+#[derive(Clone, Deserialize, Serialize, AutoDisplay)]
 pub struct PyPostProcessor {
     #[serde(flatten)]
     pub processor: Arc<PostProcessorWrapper>,

@@ -15,13 +15,13 @@ pub use crate::normalizers::unicode::{Nmt, NFC, NFD, NFKC, NFKD};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
 
 use crate::{NormalizedString, Normalizer};
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
 
 /// Wrapper for known Normalizers.
-#[derive(Clone, Debug, Deserialize, Serialize, Display)]
+#[derive(Clone, Debug, Deserialize, Serialize, AutoDisplay)]
 #[serde(untagged)]
-#[display(fmt = "normalizers.{}")]
+#[auto_display(fmt = "normalizers.{}")]
 pub enum NormalizerWrapper {
     BertNormalizer(BertNormalizer),
     StripNormalizer(Strip),
@@ -33,7 +33,7 @@ pub enum NormalizerWrapper {
     Sequence(Sequence),
     Lowercase(Lowercase),
     Nmt(Nmt),
-    #[display(fmt = "Precompiled()")]
+    #[auto_display(fmt = "Precompiled()")]
     Precompiled(Precompiled),
     Replace(Replace),
     Prepend(Prepend),

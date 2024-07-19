@@ -1,10 +1,10 @@
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
 
-#[derive(Clone, Debug, PartialEq, Eq, Display)]
+#[derive(Clone, Debug, PartialEq, Eq, AutoDisplay)]
 /// Pre tokenizes the numbers into single tokens. If individual_digits is set
 /// to true, then all digits are splitted into individual tokens.
 #[non_exhaustive]

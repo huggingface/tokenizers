@@ -1,13 +1,13 @@
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use unicode_categories::UnicodeCategories;
 
 fn is_bert_punc(x: char) -> bool {
     char::is_ascii_punctuation(&x) || x.is_punctuation()
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Display)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, AutoDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct BertPreTokenizer;
 

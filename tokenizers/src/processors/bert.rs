@@ -1,12 +1,11 @@
 use crate::tokenizer::{Encoding, PostProcessor, Result};
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Display)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, AutoDisplay)]
 #[serde(tag = "type")]
-#[display(fmt = "BertProcessing(sep={:?}, cls={:?})", sep, cls)]
 pub struct BertProcessing {
     sep: (String, u32),
     cls: (String, u32),

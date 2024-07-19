@@ -1,14 +1,14 @@
 use crate::tokenizer::{Decoder, Result};
 use monostate::MustBe;
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
-#[derive(Clone, Debug, Serialize, Deserialize, Default, Display)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, AutoDisplay)]
 /// Fuse simply fuses all tokens into one big string.
 /// It's usually the last decoding step anyway, but this
 /// decoder exists incase some decoders need to happen after that
 /// step
 #[non_exhaustive]
-#[display(fmt = "Fuse")]
+#[auto_display(fmt = "Fuse")]
 pub struct Fuse {
     #[serde(rename = "type")]
     type_: MustBe!("Fuse"),

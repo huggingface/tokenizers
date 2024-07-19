@@ -1,6 +1,6 @@
 use crate::pattern::Pattern;
 use crate::{Offsets, Result};
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
@@ -78,7 +78,7 @@ where
 ///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
 ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
 ///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, AutoDisplay)]
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,

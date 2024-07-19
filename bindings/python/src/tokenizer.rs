@@ -10,7 +10,7 @@ use super::pre_tokenizers::PyPreTokenizer;
 use super::trainers::PyTrainer;
 use crate::processors::PyPostProcessor;
 use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
-use derive_more::Display;
+use pyo3_special_method_derive::AutoDisplay;
 use numpy::{npyffi, PyArray1};
 use pyo3::class::basic::CompareOp;
 use pyo3::exceptions;
@@ -462,7 +462,7 @@ type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProc
 ///         The core algorithm that this :obj:`Tokenizer` should be using.
 ///
 #[pyclass(dict, module = "tokenizers", name = "Tokenizer")]
-#[derive(Clone, Display)]
+#[derive(Clone, AutoDisplay)]
 pub struct PyTokenizer {
     tokenizer: Tokenizer,
 }

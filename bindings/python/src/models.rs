@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use super::error::{deprecation_warning, ToPyResult};
 use crate::token::PyToken;
 use crate::trainers::PyTrainer;
-use derive_more::Display;
+use pyo3_special_method_derive::AutoDisplay;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -25,8 +25,7 @@ use tokenizers as tk;
 ///
 /// This class cannot be constructed directly. Please use one of the concrete models.
 #[pyclass(module = "tokenizers.models", name = "Model", subclass)]
-#[derive(Clone, Serialize, Deserialize, Display)]
-#[display(fmt = "{}", "model.as_ref().read().unwrap()")]
+#[derive(Clone, Serialize, Deserialize, AutoDisplay)]
 pub struct PyModel {
     #[serde(flatten)]
     pub model: Arc<RwLock<ModelWrapper>>,

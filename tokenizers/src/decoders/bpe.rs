@@ -1,7 +1,7 @@
 use crate::tokenizer::{Decoder, Result};
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
-#[derive(Deserialize, Clone, Debug, Serialize, Display)]
+#[derive(Deserialize, Clone, Debug, Serialize, AutoDisplay)]
 /// Allows decoding Original BPE by joining all the tokens and then replacing
 /// the suffix used to identify end-of-words by whitespaces
 #[serde(tag = "type")]

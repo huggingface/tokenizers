@@ -1,6 +1,6 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 /// Checks whether a character is whitespace
@@ -47,14 +47,7 @@ fn is_chinese_char(c: char) -> bool {
     )
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, Display)]
-#[display(
-    fmt = "BertNormalizer(clean_text={}, handle_chinese_chars={}, strip_accents={:?}, lower_case={})",
-    clean_text,
-    handle_chinese_chars,
-    strip_accents,
-    lowercase
-)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, AutoDisplay)]
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub struct BertNormalizer {

@@ -57,7 +57,7 @@
 //!
 use crate::{Encoding, PostProcessor, Result};
 use itertools::Itertools;
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
@@ -332,9 +332,8 @@ impl From<HashMap<String, SpecialToken>> for Tokens {
 ///     .unwrap();
 /// ```
 ///
-#[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq, Display)]
+#[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq, AutoDisplay)]
 #[serde(tag = "type", from = "TemplateProcessingDeserializer")]
-#[display(fmt = "TemplateProcessing(single={:?}, pair={:?})", single, pair)]
 #[builder(build_fn(validate = "Self::validate"))]
 pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]

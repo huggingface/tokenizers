@@ -3,7 +3,7 @@
 
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -119,24 +119,14 @@ impl WordPieceBuilder {
 /// A
 /// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 /// model.
-#[derive(Clone, PartialEq, Eq, Display)]
-#[display(
-    fmt = "WordPiece(vocab={}, unk_token={}, continuing_subword_prefix={:?})",
-    "vocab.iter().take(5).fold(String::new(), |mut acc, (key, value)| {
-        if !acc.is_empty() {
-            acc.push_str(\", \");
-        }
-        acc.push_str(&format!(\"\'{}\': {}\", key, value));
-        acc
-    })",
-    unk_token,
-    continuing_subword_prefix
-)]
+#[derive(Clone, PartialEq, Eq, AutoDisplay)]
 pub struct WordPiece {
+    #[auto_display]
     vocab: Vocab,
     vocab_r: VocabR,
     pub unk_token: String,
     pub continuing_subword_prefix: String,
+    #[auto_display(skip)]
     pub max_input_chars_per_word: usize,
 }
 

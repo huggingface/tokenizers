@@ -8,7 +8,7 @@ pub mod wordpiece;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::models::bpe::{BpeTrainer, BPE};
@@ -58,7 +58,7 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Display)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, AutoDisplay)]
 #[serde(untagged)]
 pub enum ModelWrapper {
     BPE(BPE),

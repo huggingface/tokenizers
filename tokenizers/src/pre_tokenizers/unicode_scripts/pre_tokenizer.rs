@@ -1,10 +1,10 @@
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 
 use crate::pre_tokenizers::unicode_scripts::scripts::{get_script, Script};
 use crate::tokenizer::{normalizer::Range, PreTokenizedString, PreTokenizer, Result};
 use crate::utils::macro_rules_attribute;
 
-#[derive(Clone, Debug, PartialEq, Eq, Display)]
+#[derive(Clone, Debug, PartialEq, Eq, AutoDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct UnicodeScripts;
 

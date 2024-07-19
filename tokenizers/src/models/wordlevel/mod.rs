@@ -1,6 +1,6 @@
 use super::OrderedVocabIter;
 use crate::tokenizer::{Model, Result, Token};
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
@@ -94,19 +94,9 @@ impl WordLevelBuilder {
     }
 }
 
-#[derive(PartialEq, Clone, Eq, Display)]
-#[display(
-    fmt = "WordLevel(vocab={{{}, ...}}, unk_token={})",
-    "vocab.iter().take(5).fold(String::new(), |mut acc, (key, value)| {
-    if !acc.is_empty() {
-        acc.push_str(\", \");
-    }
-    acc.push_str(&format!(\"\'{}\': {}\", key, value));
-    acc
-})",
-    unk_token
-)]
+#[derive(PartialEq, Clone, Eq, AutoDisplay)]
 pub struct WordLevel {
+    #[auto_display]
     vocab: HashMap<String, u32>,
     vocab_r: HashMap<u32, String>,
     pub unk_token: String,

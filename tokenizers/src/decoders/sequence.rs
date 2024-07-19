@@ -1,11 +1,11 @@
 use crate::decoders::DecoderWrapper;
 use crate::tokenizer::{Decoder, Result};
 use crate::utils::macro_rules_attribute;
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
 
 #[macro_rules_attribute(impl_serde_type!)]
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug, AutoDisplay)]
 #[display(
     fmt = "Sequence([{}])",
     "decoders.iter().map(|d| d.to_string()).fold( String::new(), |mut acc, s|{

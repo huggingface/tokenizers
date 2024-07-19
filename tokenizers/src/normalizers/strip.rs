@@ -1,9 +1,9 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
 use unicode_normalization_alignments::char::is_combining_mark;
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, Display)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, AutoDisplay)]
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub struct Strip {
@@ -43,7 +43,7 @@ impl Normalizer for Strip {
 // This normalizer removes combining marks from a normalized string
 // It's different from unidecode as it does not attempt to modify
 // non ascii languages.
-#[derive(Copy, Clone, Debug, Display)]
+#[derive(Copy, Clone, Debug, AutoDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct StripAccents;
 

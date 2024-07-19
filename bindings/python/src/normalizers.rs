@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::error::ToPyResult;
 use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
-use derive_more::Display;
+use pyo3_special_method_derive::AutoDisplay;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -43,7 +43,7 @@ impl PyNormalizedStringMut<'_> {
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
-#[derive(Clone, Serialize, Deserialize, Display, Debug)]
+#[derive(Clone, Serialize, Deserialize, AutoDisplay, Debug)]
 pub struct PyNormalizer {
     #[serde(flatten)]
     pub(crate) normalizer: PyNormalizerTypeWrapper,
@@ -505,7 +505,7 @@ impl PyReplace {
     }
 }
 
-#[derive(Debug, Clone, Display)]
+#[derive(Debug, Clone, AutoDisplay)]
 pub(crate) struct CustomNormalizer {
     inner: PyObject,
 }
@@ -548,12 +548,10 @@ impl<'de> Deserialize<'de> for CustomNormalizer {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Display)]
+#[derive(Debug, Clone, Deserialize, AutoDisplay)]
 #[serde(untagged)]
 pub(crate) enum PyNormalizerWrapper {
-    #[display(fmt = "{}", "_0.inner")]
     Custom(CustomNormalizer),
-    #[display(fmt = "{}", "_0")]
     Wrapped(NormalizerWrapper),
 }
 

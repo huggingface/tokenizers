@@ -21,11 +21,11 @@ use crate::normalizers::replace::Replace;
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::{Decoder, Result};
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug, Display)]
-#[display(fmt="decoders.{}")]
+#[derive(Serialize, Deserialize, Clone, Debug, AutoDisplay)]
+#[auto_display(fmt="decoders.{}")]
 #[serde(untagged)]
 pub enum DecoderWrapper {
     BPE(BPEDecoder),

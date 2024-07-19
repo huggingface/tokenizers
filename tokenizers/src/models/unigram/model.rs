@@ -6,7 +6,7 @@ use super::{
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::Cache;
 
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::read_to_string;
@@ -15,20 +15,7 @@ type TokenMap = HashMap<String, u32>;
 type Vocab = Vec<(String, f64)>;
 
 /// A `Unigram` model to encode sentences.
-#[derive(Display)]
-#[display(
-    fmt = "Unigram(vocab={{{}, ...}}, unk_id={}, bos_id={}, eos_id={})",
-    "vocab.iter().take(5).fold(String::new(), |mut acc, (key, value)| {
-    if !acc.is_empty() {
-        acc.push_str(\", \");
-    }
-    acc.push_str(&format!(\"\'{}\': {}\", key, value));
-    acc
-})",
-    "unk_id.unwrap()",
-    bos_id,
-    eos_id
-)]
+#[derive(AutoDisplay)]
 pub struct Unigram {
     token_to_ids: TokenMap,
     pub(crate) vocab: Vocab,

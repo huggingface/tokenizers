@@ -1,21 +1,11 @@
 use crate::pre_tokenizers::PreTokenizerWrapper;
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
 use crate::utils::macro_rules_attribute;
-use pyo3_special_method_derive::{Dict, Dir, Getattr, Repr, Str};
+use pyo3_special_method_derive::AutoDisplay;
 use serde::{Deserialize, Serialize};
 
 #[macro_rules_attribute(impl_serde_type!)]
-#[derive(Clone, Debug, PartialEq, Display)]
-#[display(
-    fmt = "Seqence([{}])",
-    "pretokenizers.iter().fold(String::new(), |mut acc, p| {
-    if !acc.is_empty(){
-       acc.push_str(\", \")
-    }
-    acc.push_str(&p.to_string());
-    acc
-    })"
-)]
+#[derive(Clone, Debug, PartialEq, AutoDisplay)]
 pub struct Sequence {
     pretokenizers: Vec<PreTokenizerWrapper>,
 }
