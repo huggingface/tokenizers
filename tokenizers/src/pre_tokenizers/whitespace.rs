@@ -1,4 +1,4 @@
-use pyo3_special_method_derive::AutoDisplay
+use pyo3_special_method_derive::AutoDisplay;
 use regex::Regex;
 
 use crate::tokenizer::{

@@ -248,7 +248,7 @@ impl std::fmt::Debug for BPE {
     }
 }
 
-impl std::fmt::AutoDisplay for BPE {
+impl std::fmt::Display for BPE {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut vocab_vec: Vec<_> = self.vocab.iter().collect();
         vocab_vec.sort_by_key(|&(_, v)| v);

@@ -50,7 +50,7 @@ pub enum TruncationError {
     SequenceTooShort,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, AutoAutoDisplay)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, AutoDisplay)]
 pub enum TruncationStrategy {
     LongestFirst,
     OnlyFirst,
