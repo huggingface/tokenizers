@@ -6,16 +6,6 @@ use serde::{Deserialize, Serialize};
 
 #[macro_rules_attribute(impl_serde_type!)]
 #[derive(Clone, Debug, AutoDisplay)]
-#[display(
-    fmt = "Sequence([{}])",
-    "decoders.iter().map(|d| d.to_string()).fold( String::new(), |mut acc, s|{
-        if !acc.is_empty(){
-            acc.push_str(\", \");
-        }
-        acc.push_str(&s);
-        acc
-    })"
-)]
 pub struct Sequence {
     decoders: Vec<DecoderWrapper>,
 }
