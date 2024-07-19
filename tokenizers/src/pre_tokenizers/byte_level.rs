@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 /// Converts bytes to unicode characters.
 /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L9
-fn bytes_char() -> HashMap<u8, char> {
+pub(crate) fn bytes_char() -> HashMap<u8, char> {
     let mut bs: Vec<u8> = vec![];
     bs.extend(b'!'..=b'~');
     bs.extend(b'\xA1'..=b'\xAC');
