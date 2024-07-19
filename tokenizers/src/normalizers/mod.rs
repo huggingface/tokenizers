@@ -1,18 +1,20 @@
 pub mod bert;
+pub mod byte_level;
 pub mod precompiled;
 pub mod prepend;
 pub mod replace;
 pub mod strip;
 pub mod unicode;
 pub mod utils;
-
 pub use crate::normalizers::bert::BertNormalizer;
+pub use crate::normalizers::byte_level::ByteLevel;
 pub use crate::normalizers::precompiled::Precompiled;
 pub use crate::normalizers::prepend::Prepend;
 pub use crate::normalizers::replace::Replace;
 pub use crate::normalizers::strip::{Strip, StripAccents};
 pub use crate::normalizers::unicode::{Nmt, NFC, NFD, NFKC, NFKD};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
+use serde::{Deserialize, Serialize};
 
 use crate::{NormalizedString, Normalizer};
 use pyo3_special_method_derive::AutoDisplay;
@@ -37,6 +39,7 @@ pub enum NormalizerWrapper {
     Precompiled(Precompiled),
     Replace(Replace),
     Prepend(Prepend),
+    ByteLevel(ByteLevel),
 }
 
 impl Normalizer for NormalizerWrapper {
@@ -55,6 +58,7 @@ impl Normalizer for NormalizerWrapper {
             Self::Precompiled(lc) => lc.normalize(normalized),
             Self::Replace(lc) => lc.normalize(normalized),
             Self::Prepend(lc) => lc.normalize(normalized),
+            Self::ByteLevel(lc) => lc.normalize(normalized),
         }
     }
 }
@@ -72,3 +76,4 @@ impl_enum_from!(Nmt, NormalizerWrapper, Nmt);
 impl_enum_from!(Precompiled, NormalizerWrapper, Precompiled);
 impl_enum_from!(Replace, NormalizerWrapper, Replace);
 impl_enum_from!(Prepend, NormalizerWrapper, Prepend);
+impl_enum_from!(ByteLevel, NormalizerWrapper, ByteLevel);
