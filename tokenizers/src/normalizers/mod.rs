@@ -18,7 +18,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{NormalizedString, Normalizer};
 use pyo3_special_method_derive::AutoDisplay;
-use serde::{Deserialize, Serialize};
 
 /// Wrapper for known Normalizers.
 #[derive(Clone, Debug, Deserialize, Serialize, AutoDisplay)]

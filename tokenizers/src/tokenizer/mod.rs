@@ -1347,13 +1347,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::Tokenizer;
-
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_from_pretrained() {
-        let tok = Tokenizer::from_pretrained("Qwen/Qwen2-7B-Instruct".to_string(), None);
-        println!("ROCK!")
-
     use crate::AddedToken;
     use crate::Tokenizer;
 
