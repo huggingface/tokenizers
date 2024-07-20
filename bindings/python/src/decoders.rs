@@ -2,10 +2,12 @@ use std::sync::{Arc, RwLock};
 
 use crate::pre_tokenizers::from_string;
 use crate::utils::PyPattern;
-use pyo3_special_method_derive::AutoDisplay;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::PyDebug;
+use pyo3_special_method_derive_0_21::PyDisplay;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::decoders::bpe::BPEDecoder;
@@ -487,9 +489,21 @@ impl PySequenceDecoder {
     }
 }
 
-#[derive(Clone, AutoDisplay)]
+#[derive(Clone)]
 pub(crate) struct CustomDecoder {
     pub inner: PyObject,
+}
+
+impl PyDisplay for CustomDecoder {
+    fn fmt_display(&self) -> String {
+        "CustomDecoder()".to_string()
+    }
+}
+
+impl PyDebug for CustomDecoder {
+    fn fmt_debug(&self) -> String {
+        "CustomDecoder()".to_string()
+    }
 }
 
 impl CustomDecoder {

@@ -23,7 +23,7 @@ use tokenizers as tk;
 
 use super::error::ToPyResult;
 use super::utils::*;
-use pyo3_special_method_derive::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDisplay, Dict, Dir, Repr, Str};
 /// Base class for all pre-tokenizers
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
@@ -180,14 +180,6 @@ impl PyPreTokenizer {
             .into_iter()
             .map(|(s, o, _)| (s.to_owned(), o))
             .collect())
-    }
-
-    fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.pretok))
-    }
-
-    fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.pretok))
     }
 }
 

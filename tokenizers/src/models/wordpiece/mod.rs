@@ -3,7 +3,7 @@
 
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
-use pyo3_special_method_derive::AutoDisplay;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use std::{
     borrow::Cow,
     collections::HashMap,

@@ -2,7 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
 };
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use pyo3_special_method_derive::AutoDisplay;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};

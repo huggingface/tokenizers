@@ -1,6 +1,6 @@
 use crate::pattern::Pattern;
 use crate::{Offsets, Result};
-use pyo3_special_method_derive::AutoDisplay;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde::{Deserialize, Serialize};
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;

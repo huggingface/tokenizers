@@ -1,5 +1,5 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use pyo3_special_method_derive::AutoDisplay;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, AutoDisplay)]

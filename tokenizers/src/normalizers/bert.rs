@@ -1,6 +1,6 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 
-use pyo3_special_method_derive::AutoDisplay;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 /// Checks whether a character is whitespace

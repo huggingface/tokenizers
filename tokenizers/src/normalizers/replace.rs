@@ -2,7 +2,7 @@ use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::Decoder;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::SysRegex;
-use pyo3_special_method_derive::AutoDisplay;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde::{Deserialize, Serialize};
 /// Represents the different patterns that `Replace` can use
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]

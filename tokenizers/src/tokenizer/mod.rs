@@ -1348,7 +1348,6 @@ where
 mod tests {
     use super::Tokenizer;
     use crate::AddedToken;
-    use crate::Tokenizer;
 
     #[cfg(feature = "http")]
     #[test]

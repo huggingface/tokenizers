@@ -10,13 +10,13 @@ use super::pre_tokenizers::PyPreTokenizer;
 use super::trainers::PyTrainer;
 use crate::processors::PyPostProcessor;
 use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
-use pyo3_special_method_derive::AutoDisplay;
 use numpy::{npyffi, PyArray1};
 use pyo3::class::basic::CompareOp;
 use pyo3::exceptions;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use std::collections::BTreeMap;
 use tk::models::bpe::BPE;
 use tk::tokenizer::{
@@ -1408,14 +1408,6 @@ impl PyTokenizer {
     #[setter]
     fn set_decoder(&mut self, decoder: PyRef<PyDecoder>) {
         self.tokenizer.with_decoder(decoder.clone());
-    }
-
-    fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.tokenizer))
-    }
-
-    fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.tokenizer))
     }
 }
 
