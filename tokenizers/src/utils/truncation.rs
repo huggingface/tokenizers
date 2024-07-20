@@ -1,5 +1,5 @@
 use crate::tokenizer::{Encoding, Result};
-use pyo3_special_method_derive::AutoDisplay;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::mem;

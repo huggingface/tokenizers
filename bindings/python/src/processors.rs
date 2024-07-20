@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use crate::encoding::PyEncoding;
 use crate::error::ToPyResult;
-use pyo3_special_method_derive::AutoDisplay;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde::{Deserialize, Serialize};
 use tk::processors::bert::BertProcessing;
 use tk::processors::byte_level::ByteLevel;

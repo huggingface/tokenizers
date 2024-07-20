@@ -6,7 +6,7 @@ use super::{
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::Cache;
 
-use pyo3_special_method_derive::AutoDisplay;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::read_to_string;

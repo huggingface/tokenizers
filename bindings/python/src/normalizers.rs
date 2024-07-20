@@ -2,10 +2,10 @@ use std::sync::{Arc, RwLock};
 
 use crate::error::ToPyResult;
 use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
-use pyo3_special_method_derive::AutoDisplay;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{

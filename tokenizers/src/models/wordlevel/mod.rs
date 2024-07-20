@@ -1,6 +1,6 @@
 use super::OrderedVocabIter;
 use crate::tokenizer::{Model, Result, Token};
-use pyo3_special_method_derive::AutoDisplay;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;

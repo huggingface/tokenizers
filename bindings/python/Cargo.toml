@@ -19,15 +19,15 @@ ndarray = "0.15"
 onig = { version = "6.4", default-features = false }
 itertools = "0.12"
 derive_more = "0.99.17"
-pyo3 = { version = "0.22", features = ["multiple-pymethods"] }
-pyo3_special_method_derive =  "0.4"
+pyo3 = { version = "0.21", features = ["multiple-pymethods"] }
+pyo3_special_method_derive_0_21 =  "0.4"
 
 [dependencies.tokenizers]
 path = "../../tokenizers"
 
 [dev-dependencies]
 tempfile = "3.10"
-pyo3 = { version = "0.22", features = ["auto-initialize"] }
+pyo3 = { version = "0.21", features = ["auto-initialize"] }
 
 [features]
 defaut = ["pyo3/extension-module"]

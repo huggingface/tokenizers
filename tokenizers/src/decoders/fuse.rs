@@ -1,6 +1,6 @@
 use crate::tokenizer::{Decoder, Result};
 use monostate::MustBe;
-use pyo3_special_method_derive::AutoDisplay;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize, Default, AutoDisplay)]
 /// Fuse simply fuses all tokens into one big string.

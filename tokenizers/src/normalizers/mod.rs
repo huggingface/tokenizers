@@ -17,7 +17,7 @@ pub use crate::normalizers::utils::{Lowercase, Sequence};
 use serde::{Deserialize, Serialize};
 
 use crate::{NormalizedString, Normalizer};
-use pyo3_special_method_derive::AutoDisplay;
+use pyo3_special_method_derive_0_21::AutoDisplay;
 
 /// Wrapper for known Normalizers.
 #[derive(Clone, Debug, Deserialize, Serialize, AutoDisplay)]
