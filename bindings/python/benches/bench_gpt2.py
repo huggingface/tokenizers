@@ -37,8 +37,6 @@ def benchmark_batch(documents: list[str]) -> None:
     readable_size, unit = format_byte_size(num_bytes / (end - start) * 1e9)
     print(f"tiktoken \t{readable_size}  / s")
 
-    import transformers
-
     hf_enc = Tokenizer.from_pretrained("gpt2")
     hf_enc.encode("warmup")
 
@@ -47,6 +45,18 @@ def benchmark_batch(documents: list[str]) -> None:
     end = time.perf_counter_ns()
     readable_size, unit = format_byte_size(num_bytes / (end - start) * 1e9)
     print(f"huggingface \t{readable_size} / s")
+
+    start = time.perf_counter_ns()
+    results = map(hf_enc.encode, documents)
+    end = time.perf_counter_ns()
+    readable_size, unit = format_byte_size(num_bytes / (end - start) * 1e9)
+    print(f"hf      bis \t{readable_size} / s")
+
+    start = time.perf_counter_ns()
+    results = map(enc.encode, documents)
+    end = time.perf_counter_ns()
+    readable_size, unit = format_byte_size(num_bytes / (end - start) * 1e9)
+    print(f"tiktoken bis \t{readable_size} / s")
 
 
 import os
