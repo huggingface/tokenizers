@@ -16,7 +16,7 @@ use pyo3::exceptions;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{Str, Dict, Dir, Repr, AutoDisplay};
 use std::collections::BTreeMap;
 use tk::models::bpe::BPE;
 use tk::tokenizer::{
@@ -462,7 +462,7 @@ type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProc
 ///         The core algorithm that this :obj:`Tokenizer` should be using.
 ///
 #[pyclass(dict, module = "tokenizers", name = "Tokenizer")]
-#[derive(Clone, AutoDisplay)]
+#[derive(Clone, Str, Dict, Dir)]
 pub struct PyTokenizer {
     tokenizer: Tokenizer,
 }
@@ -666,7 +666,8 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`Dict[int, AddedToken]`: The vocabulary
-    #[getter]
+    #[pyo3(signature = ())]
+    #[pyo3(text_signature = "(self)")]
     fn get_added_tokens_decoder(&self) -> BTreeMap<u32, PyAddedToken> {
         let mut sorted_map = BTreeMap::new();
 

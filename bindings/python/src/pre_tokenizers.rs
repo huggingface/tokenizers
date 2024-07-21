@@ -34,10 +34,10 @@ use pyo3_special_method_derive_0_21::{AutoDisplay, Dict, Dir, Repr, Str};
     name = "PreTokenizer",
     subclass
 )]
-#[derive(Clone, Serialize, Deserialize, Str, Repr, Dir, Dict)]
+#[derive(Clone, Serialize, Deserialize, Str, Dir)]
 pub struct PyPreTokenizer {
     #[serde(flatten)]
-    pub(crate) pretok: PyPreTokenizerTypeWrapper,
+    pub pretok: PyPreTokenizerTypeWrapper,
 }
 
 impl PyPreTokenizer {
@@ -425,6 +425,8 @@ impl PyPunctuation {
 
 /// This pre-tokenizer composes other pre_tokenizers and applies them in sequence
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Sequence")]
+#[derive(AutoDisplay)]
+#[auto_display(fmt = "{self.inner}{}")]
 pub struct PySequence {}
 #[pymethods]
 impl PySequence {

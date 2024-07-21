@@ -5,7 +5,7 @@ use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDisplay, Str, Dir, Dict};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
@@ -43,7 +43,7 @@ impl PyNormalizedStringMut<'_> {
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
-#[derive(Clone, Serialize, Deserialize, AutoDisplay, Debug)]
+#[derive(Clone, Serialize, Deserialize, Str, Debug, Dir, Dict)]
 pub struct PyNormalizer {
     #[serde(flatten)]
     pub(crate) normalizer: PyNormalizerTypeWrapper,
@@ -168,13 +168,6 @@ impl PyNormalizer {
         let mut normalized = NormalizedString::from(sequence);
         ToPyResult(self.normalizer.normalize(&mut normalized)).into_py()?;
         Ok(normalized.get().to_owned())
-    }
-
-    fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.normalizer))
-    }
-    fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.normalizer))
     }
 }
 
@@ -484,6 +477,7 @@ impl PyNmt {
 /// Precompiled normalizer
 /// Don't use manually it is used for compatiblity for SentencePiece.
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Precompiled")]
+#[derive(Str)]
 pub struct PyPrecompiled {}
 #[pymethods]
 impl PyPrecompiled {
@@ -522,6 +516,7 @@ impl PyReplace {
 
 #[derive(Debug, Clone, AutoDisplay)]
 pub(crate) struct CustomNormalizer {
+    #[auto_display]
     inner: PyObject,
 }
 impl CustomNormalizer {

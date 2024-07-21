@@ -22,9 +22,9 @@ use crate::pre_tokenizers::split::Split;
 use crate::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use crate::{PreTokenizedString, PreTokenizer};
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, AutoDisplay)]
+#[derive(Deserialize, Serialize, Clone, PartialEq, AutoDisplay, AutoDebug)]
 #[auto_display(fmt="pre_tokenizers.{}")]
 #[serde(untagged)]
 pub enum PreTokenizerWrapper {

@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 #[macro_rules_attribute(impl_serde_type!)]
 #[derive(Clone, Debug, PartialEq, AutoDisplay)]
 pub struct Sequence {
-    pretokenizers: Vec<PreTokenizerWrapper>,
+    #[auto_display]
+    pub pretokenizers: Vec<PreTokenizerWrapper>,
 }
 
 impl Sequence {
