@@ -1,3 +1,4 @@
+#!/opt/homebrew/bin/python3.12
 import base64
 import functools
 import gzip
@@ -58,8 +59,8 @@ def test_on_xnli():
     dataset_xnli = load_dataset("facebook/xnli", "all_languages")
 
     # Varying the number of threads and length of input
-    num_threads_list = [1, 4, 8, 16, 32]  # Example thread counts
-    input_lengths = [10, 100, 1000, 10_000]  # Example input lengths
+    num_threads_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 32]  # Example thread counts
+    input_lengths = [10_000]  # Example input lengths
 
     documents = ["".join(item["premise"].values()) for item in dataset_xnli["train"]]
     for num_threads in num_threads_list:
