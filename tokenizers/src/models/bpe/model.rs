@@ -493,7 +493,7 @@ impl Model for BPE {
             return Ok(vec![]);
         }
 
-        if self.dropout.is_none() {
+        if self.dropout.is_none() && false {
             self.tokenize_with_cache(sequence)
         } else {
             let word = self.merge_word(sequence)?;
