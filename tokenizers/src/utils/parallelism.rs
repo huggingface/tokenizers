@@ -73,7 +73,7 @@ where
         if parallelism {
             USED_PARALLELISM.store(true, Ordering::SeqCst);
         }
-        CondIterator::new(self, parallelism)
+        CondIterator::new(self, true)
     }
 
     fn into_maybe_par_iter_cond(self, cond: bool) -> CondIterator<P, S> {

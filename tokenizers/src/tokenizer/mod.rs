@@ -9,6 +9,10 @@
 //!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
 //!   ...).
 
+use rayon::ThreadPoolBuilder;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use std::env;
 use std::{
     collections::HashMap,
     fs::{read_to_string, File},
@@ -17,9 +21,6 @@ use std::{
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
 };
-
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 
 use crate::utils::iter::ResultShunt;
 use crate::utils::parallelism::*;
@@ -1047,11 +1048,23 @@ where
     where
         E: Into<EncodeInput<'s>> + Send,
     {
-        let mut encodings = inputs
-            .into_maybe_par_iter()
-            .map(|input| self.encode_char_offsets(input, add_special_tokens))
-            .collect::<Result<Vec<Encoding>>>()?;
+        let num_threads = env::var("RAYON_NUM_THREADS")
+            .unwrap_or_else(|_| "4".to_string()) // Provide a default value of 12 if the variable is not set
+            .parse::<usize>()
+            .expect("RAYON_NUM_THREADS must be a valid integer");
 
+        // Create the thread pool with the specified number of threads
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build()
+            .unwrap();
+        let mut encodings = pool.install(|| {
+            let result = inputs
+                .into_maybe_par_iter()
+                .map(|input| self.encode_char_offsets(input, add_special_tokens))
+                .collect::<Result<Vec<Encoding>>>();
+            result
+        })?;
         if let Some(params) = &self.padding {
             // We do the padding here to make sure we handle the batch padding
             pad_encodings(&mut encodings, params)?;
