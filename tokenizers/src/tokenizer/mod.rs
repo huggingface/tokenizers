@@ -883,7 +883,7 @@ where
     ) -> Result<Encoding> {
         let mut pretokenized: PreTokenizedString = pretokenized.into();
         pretokenized.tokenize(|normalized| self.model.tokenize(normalized.get()))?;
-        pretokenized.fast_into_encoding()
+        pretokenized.into_encoding(word_idx, type_id, offsets_type)
     }
 }
 
@@ -1058,6 +1058,7 @@ where
             .num_threads(num_threads)
             .build()
             .unwrap();
+
         let mut encodings = pool.install(|| {
             let result = inputs
                 .into_maybe_par_iter()

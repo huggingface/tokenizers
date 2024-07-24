@@ -151,5 +151,3 @@ pub use utils::parallelism;
 // Re-export for from_pretrained
 #[cfg(feature = "http")]
 pub use utils::from_pretrained::FromPretrainedParameters;
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

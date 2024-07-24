@@ -186,25 +186,6 @@ impl PreTokenizedString {
         }
     }
 
-    pub fn fast_into_encoding(self) -> Result<Encoding> {
-        if self.splits.is_empty() {
-            Ok(Encoding::default())
-        } else if !self.splits.iter().all(|split| split.tokens.is_some()) {
-            Err("Split has not been tokenized.".into())
-        } else {
-            let tokens = self
-                .splits
-                .into_iter()
-                .flat_map(|split| {
-                    split.tokens.unwrap().into_iter().map(|token| {
-                        // Replace this with the actual fields you need for the Encoding type
-                        (token.id, String::new(), (0, 0), None, 0)
-                    })
-                })
-                .collect();
-            Ok(tokens)
-        }
-    }
     /// Returns a list of splits, each of them being a slice of the normalized
     /// string, the associated offsets either in original or normalized
     /// referential, as well as the potention tokens
