@@ -143,7 +143,7 @@ const MAX_NUM_THREADS: usize = 128;
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        let re_ref: &SysRegex = &RE_VEC[hash_current_thread() % MAX_NUM_THREADS]; // TODO use the thread thing here as well!
+        let re_ref: &SysRegex = &RE; // TODO use the thread thing here as well!
         pretokenized.split(|_, mut normalized| {
             if self.add_prefix_space && !normalized.get().starts_with(' ') {
                 normalized.prepend(" ");
@@ -169,8 +169,8 @@ impl PreTokenizer for ByteLevel {
                         .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
                 );
             }
-            // normalized.transform(transformations, 0); // TODO here what whould happen if we ignore
-            // aligments?
+            normalized.transform(transformations, 0); // TODO here what whould happen if we ignore
+                                                      // aligments?
             Ok(())
         })
     }
