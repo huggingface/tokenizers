@@ -38,7 +38,7 @@ def benchmark_batch(documents: list[str]) -> None:
     readable_size, unit = format_byte_size(num_bytes / (end - start) * 1e9)
     print(f"tiktoken \t{readable_size}  / s")
 
-    hf_enc = Tokenizer.from_pretrained("gpt2")
+    hf_enc = Tokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B-Instruct")
     hf_enc.encode("warmup")
 
     start = time.perf_counter_ns()
