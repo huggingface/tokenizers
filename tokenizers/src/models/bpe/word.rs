@@ -2,7 +2,7 @@ use super::Pair;
 use rand::{thread_rng, Rng};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
-
+type VocabR = HashMap<u32, String>;
 #[derive(Debug, Eq)]
 struct Merge {
     pos: usize,
@@ -158,7 +158,7 @@ impl Word {
         changes
     }
 
-    pub(super) fn merge_all(&mut self, merges: &HashMap<Pair, (u32, u32)>, dropout: Option<f32>) {
+    pub(super) fn merge_all(&mut self, merges: &HashMap<Pair, (u32, u32)>, dropout: Option<f32>, vocab: &VocabR) {
         let mut queue = BinaryHeap::with_capacity(self.symbols.len());
         let mut skip = Vec::with_capacity(queue.len());
 
@@ -205,7 +205,7 @@ impl Word {
                 {
                     continue;
                 }
-
+                println!("Merging {:?} with {:?}", vocab[&self.symbols[top.pos].c], vocab[&right.c]);
                 // Otherwise, let's merge
                 self.symbols[top.pos].merge_with(&right, top.new_id);
                 // Tag the right part as removed

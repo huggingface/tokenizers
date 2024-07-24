@@ -448,7 +448,7 @@ impl BPE {
             word.add(unk_id, unk_len);
         }
 
-        word.merge_all(&self.merges, self.dropout);
+        word.merge_all(&self.merges, self.dropout, &self.vocab_r);
 
         Ok(word)
     }
