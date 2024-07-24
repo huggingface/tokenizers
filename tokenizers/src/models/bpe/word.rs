@@ -159,13 +159,14 @@ impl Word {
     }
 
     pub(super) fn merge_all(&mut self, merges: &HashMap<Pair, (u32, u32)>, dropout: Option<f32>, vocab: &VocabR) {
+        // TODO everytime we merge, we allocate this, while we could allocate something bigger and re-use it.
         let mut queue = BinaryHeap::with_capacity(self.symbols.len());
+        // TODO 
         let mut skip = Vec::with_capacity(queue.len());
-
         queue.extend(
             self.symbols
                 .windows(2)
-                .enumerate()
+                .enumerate() // first time we enumerate all the symbols, not the last
                 .filter_map(|(index, window)| {
                     let pair = (window[0].c, window[1].c);
                     merges.get(&pair).map(|m| Merge {
@@ -196,16 +197,18 @@ impl Word {
 
                 let next_pos = self.symbols[top.pos].next as usize;
                 let right = self.symbols[next_pos];
-
+                let string = format!("pos: {:?}", top.pos);
                 // Make sure we are not processing an expired queue entry
                 let target_new_pair = (self.symbols[top.pos].c, right.c);
                 if !merges
                     .get(&target_new_pair)
                     .map_or(false, |(_, new_id)| *new_id == top.new_id)
                 {
+                    
+                    println!("{string} Merge abortted, {:?}, {:?} not in merges", vocab[&self.symbols[top.pos].c], vocab[&right.c]);
                     continue;
                 }
-                println!("Merging {:?} with {:?}", vocab[&self.symbols[top.pos].c], vocab[&right.c]);
+                println!("{string} Merging {:?} with {:?}", vocab[&self.symbols[top.pos].c], vocab[&right.c]);
                 // Otherwise, let's merge
                 self.symbols[top.pos].merge_with(&right, top.new_id);
                 // Tag the right part as removed
