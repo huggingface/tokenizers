@@ -29,7 +29,3 @@ pyo3 = { version = "0.21", features = ["auto-initialize"] }
 
 [features]
 defaut = ["pyo3/extension-module"]
-
-[profile.release]
-debug = true
-strip = false
