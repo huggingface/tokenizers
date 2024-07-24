@@ -88,4 +88,5 @@ tracing = "0.1"
 tracing-subscriber = "0.3.18"
 
 [profile.release]
-lto = "fat"
+debug = true
+strip = false
