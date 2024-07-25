@@ -335,7 +335,7 @@ impl From<HashMap<String, SpecialToken>> for Tokens {
 #[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq, AutoDisplay)]
 #[serde(tag = "type", from = "TemplateProcessingDeserializer")]
 #[builder(build_fn(validate = "Self::validate"))]
-#[format(fmt="TemplateProcessing: ")]
+#[format(fmt = "TemplateProcessing: {}")]
 pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
     pub single: Template,

@@ -24,8 +24,9 @@ use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use crate::{PreTokenizedString, PreTokenizer};
 use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 
-#[derive(Deserialize, Serialize, Clone, PartialEq, AutoDisplay)]
+#[derive(Deserialize, Serialize, Clone, PartialEq, AutoDisplay, Debug)]
 #[serde(untagged)]
+#[format(fmt = "pre_tokenizers.{}")]
 pub enum PreTokenizerWrapper {
     BertPreTokenizer(BertPreTokenizer),
     ByteLevel(ByteLevel),

@@ -5,7 +5,7 @@ use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde::{Deserialize, Serialize};
 
 #[macro_rules_attribute(impl_serde_type!)]
-#[derive(Clone, PartialEq, AutoDisplay)]
+#[derive(Clone, PartialEq, AutoDisplay, Debug)]
 pub struct Sequence {
     #[format]
     pub pretokenizers: Vec<PreTokenizerWrapper>,
