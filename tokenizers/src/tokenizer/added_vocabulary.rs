@@ -140,14 +140,13 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
 /// exist as required.
 ///
 #[derive(Clone, Debug, AutoDisplay)]
-#[auto_display(fmt="AddedVocabulary(added_tokens_map_r={{{}, ...}}, encode_special_tokens={})", "&(0..=5).fold(String::new(), |mut acc, key| {if let Some(token) = added_tokens_map_r.get(&key){if !acc.is_empty(){acc.push_str(\", \");}acc.push_str(&format!(\"\n\t{}: {}\", key, &token.to_string()));}acc})", encode_special_tokens)]
 pub struct AddedVocabulary {
     /// Contains the mapping from String (token content) to ID. This map contains both special
     /// tokens and classic added tokens that were added to the this vocabulary.
     added_tokens_map: HashMap<String, u32>,
     /// Contains the mapping from ID to AddedToken for all the added tokens, both special
     /// and classic.
-    #[auto_display]
+    #[format]
     added_tokens_map_r: HashMap<u32, AddedToken>,
 
     /// Contains only the classic AddedToken, in the specific order the user gave them.
@@ -157,7 +156,7 @@ pub struct AddedVocabulary {
 
     /// A Set, containing all the special token for easy access while decoding. This let's
     /// us remove them easily with an O(1) complexity.
-    #[auto_display]
+    #[format]
     special_tokens_set: HashSet<String>,
 
     /// A RegexSet containing all the non-normalized patterns used to split on AddedTokens
@@ -166,7 +165,7 @@ pub struct AddedVocabulary {
     split_normalized_trie: MatchingSet,
 
     /// Whether or not special tokens should be splitted when encoding. This is equivalent to ignoring them
-    #[auto_display]
+    #[format(fmt = "{}")]
     encode_special_tokens: bool,
 }
 

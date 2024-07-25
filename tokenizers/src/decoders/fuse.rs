@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// decoder exists incase some decoders need to happen after that
 /// step
 #[non_exhaustive]
-#[auto_display(fmt = "Fuse")]
+#[format(fmt = "Fuse")]
 pub struct Fuse {
     #[serde(rename = "type")]
     type_: MustBe!("Fuse"),

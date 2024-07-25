@@ -21,6 +21,7 @@ extern crate rayon;
 use crate::utils::iter::ResultShunt;
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
+use pyo3_special_method_derive_0_21::{AutoDisplay, PyDisplay};
 use rayon::current_thread_index;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -405,8 +406,9 @@ where
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Clone, AutoDisplay)]
 pub struct Tokenizer(
+    #[format(fmt = "tokenizer = {}")]
     TokenizerImpl<
         ModelWrapper,
         NormalizerWrapper,
@@ -525,46 +527,45 @@ pub struct TokenizerImpl<M, N, PT, PP, D> {
     padding: Option<PaddingParams>,
 }
 
-impl<M, N, PT, PP, D> std::fmt::Display for TokenizerImpl<M, N, PT, PP, D>
+impl<M, N, PT, PP, D> PyDisplay for TokenizerImpl<M, N, PT, PP, D>
 where
-    M: std::fmt::Display,
-    N: std::fmt::Display,
-    PT: std::fmt::Display,
-    PP: std::fmt::Display,
-    D: std::fmt::Display,
+    M: PyDisplay,
+    N: PyDisplay,
+    PT: PyDisplay,
+    PP: PyDisplay,
+    D: PyDisplay,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt_display(&self) -> std::string::String {
         let normalizer_str = match &self.normalizer {
-            Some(n) => format!("{}", n),
+            Some(n) => format!("{}", n.fmt_display()),
             None => "None".to_string(),
         };
         let pre_tokenizer_str = match &self.pre_tokenizer {
-            Some(pt) => format!("{}", pt),
+            Some(pt) => format!("{}", pt.fmt_display()),
             None => "None".to_string(),
         };
         let post_processor_str = match &self.post_processor {
-            Some(pp) => format!("{}", pp),
+            Some(pp) => format!("{}", pp.fmt_display()),
             None => "None".to_string(),
         };
         let decoder_str = match &self.decoder {
-            Some(d) => format!("{}", d),
+            Some(d) => format!("{}", d.fmt_display()),
             None => "None".to_string(),
         };
         let truncation_str = match &self.truncation {
-            Some(t) => format!("{:?}", t),
+            Some(t) => format!("{}", t.fmt_display()),
             None => "None".to_string(),
         };
         let padding_str = match &self.padding {
-            Some(p) => format!("{:?}", p),
+            Some(p) => format!("{}", p.fmt_display()),
             None => "None".to_string(),
         };
 
-        write!(
-            f,
+        format!(
             "Tokenizer(normalizer={}, pre_tokenizer={}, model={}, post_processor={}, decoder={}, added_tokens_decoder={:?}, truncation={}, padding={})",
             normalizer_str,
             pre_tokenizer_str,
-            self.model,
+            self.model.fmt_display(),
             post_processor_str,
             decoder_str,
             self.added_vocabulary,
@@ -1400,3 +1401,4 @@ mod tests {
         assert_eq!(decoded.unwrap(), "Hey! how is this token: д")
     }
 }
+

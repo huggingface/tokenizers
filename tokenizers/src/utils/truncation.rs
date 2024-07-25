@@ -24,7 +24,7 @@ impl std::convert::AsRef<str> for TruncationDirection {
 pub struct TruncationParams {
     #[serde(default)]
     pub direction: TruncationDirection,
-    #[auto_display(skip)]
+    #[format(skip)]
     pub max_length: usize,
     pub strategy: TruncationStrategy,
     pub stride: usize,

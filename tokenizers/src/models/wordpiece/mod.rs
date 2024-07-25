@@ -121,12 +121,12 @@ impl WordPieceBuilder {
 /// model.
 #[derive(Clone, PartialEq, Eq, AutoDisplay)]
 pub struct WordPiece {
-    #[auto_display]
+    #[format]
     vocab: Vocab,
     vocab_r: VocabR,
     pub unk_token: String,
     pub continuing_subword_prefix: String,
-    #[auto_display(skip)]
+    #[format(skip)]
     pub max_input_chars_per_word: usize,
 }
 

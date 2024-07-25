@@ -63,7 +63,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::result::Result as StdResult;
 /// Represents any sequences received as input of the PostProcessor
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, AutoDisplay)]
 pub enum Sequence {
     /// This is the first sequence, the one that is always specified
     A,
@@ -91,7 +91,7 @@ pub enum Sequence {
 ///
 /// [`SpecialToken`]: struct.SpecialToken.html
 ///
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, AutoDisplay)]
 pub enum Piece {
     Sequence { id: Sequence, type_id: u32 },
     SpecialToken { id: String, type_id: u32 },
@@ -249,7 +249,7 @@ impl SpecialToken {
 ///
 /// [`Piece`]: enum.Piece.html
 ///
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, AutoDisplay)]
 #[serde(transparent)]
 pub struct Template(Vec<Piece>);
 
@@ -335,15 +335,17 @@ impl From<HashMap<String, SpecialToken>> for Tokens {
 #[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq, AutoDisplay)]
 #[serde(tag = "type", from = "TemplateProcessingDeserializer")]
 #[builder(build_fn(validate = "Self::validate"))]
+#[format(fmt="TemplateProcessing: ")]
 pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
-    single: Template,
+    pub single: Template,
     #[builder(try_setter, default = "\"$A:0 $B:1\".try_into().unwrap()")]
-    pair: Template,
+    pub pair: Template,
     #[builder(setter(skip), default = "self.default_added(true)")]
     #[serde(skip)]
-    added_single: usize,
+    pub added_single: usize,
     #[builder(setter(skip), default = "self.default_added(false)")]
+    #[format]
     #[serde(skip)]
     added_pair: usize,
     #[builder(setter(into), default)]

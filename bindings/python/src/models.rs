@@ -9,6 +9,7 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::Str;
 use serde::{Deserialize, Serialize};
 use tk::models::bpe::{BpeBuilder, Merges, Vocab, BPE};
 use tk::models::unigram::Unigram;
@@ -25,9 +26,10 @@ use tokenizers as tk;
 ///
 /// This class cannot be constructed directly. Please use one of the concrete models.
 #[pyclass(module = "tokenizers.models", name = "Model", subclass)]
-#[derive(Clone, Serialize, Deserialize, AutoDisplay)]
+#[derive(Clone, Serialize, Deserialize, Str)]
 pub struct PyModel {
     #[serde(flatten)]
+    #[format(fmt="{}")]
     pub model: Arc<RwLock<ModelWrapper>>,
 }
 
@@ -219,12 +221,6 @@ impl PyModel {
     #[pyo3(text_signature = "(self)")]
     fn get_trainer(&self, py: Python<'_>) -> PyResult<PyObject> {
         PyTrainer::from(self.model.read().unwrap().get_trainer()).get_as_subtype(py)
-    }
-    fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.model.read().unwrap()))
-    }
-    fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.model.read().unwrap()))
     }
 }
 

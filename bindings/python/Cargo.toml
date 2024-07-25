@@ -20,7 +20,7 @@ onig = { version = "6.4", default-features = false }
 itertools = "0.12"
 derive_more = "0.99.17"
 pyo3 = { version = "0.21", features = ["multiple-pymethods"] }
-pyo3_special_method_derive_0_21 =  "0.4"
+pyo3_special_method_derive_0_21 = {path = "../../../pyo3-special-method-derive/pyo3_special_method_derive_0_21"} 
 
 [dependencies.tokenizers]
 path = "../../tokenizers"

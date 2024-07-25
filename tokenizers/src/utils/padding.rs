@@ -20,11 +20,9 @@ impl std::convert::AsRef<str> for PaddingDirection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, AutoDisplay)]
-#[auto_display(fmt = "")]
 pub struct PaddingParams {
     pub strategy: PaddingStrategy,
     pub direction: PaddingDirection,
-    #[auto_display(skip)] // usize not supported yet
     pub pad_to_multiple_of: Option<usize>,
     pub pad_id: u32,
     pub pad_type_id: u32,

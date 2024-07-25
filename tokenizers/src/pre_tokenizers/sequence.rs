@@ -5,9 +5,9 @@ use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde::{Deserialize, Serialize};
 
 #[macro_rules_attribute(impl_serde_type!)]
-#[derive(Clone, Debug, PartialEq, AutoDisplay)]
+#[derive(Clone, PartialEq, AutoDisplay)]
 pub struct Sequence {
-    #[auto_display]
+    #[format]
     pub pretokenizers: Vec<PreTokenizerWrapper>,
 }
 

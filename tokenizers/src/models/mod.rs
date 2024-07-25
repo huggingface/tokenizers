@@ -8,7 +8,7 @@ pub mod wordpiece;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDisplay, PyDisplay};
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::models::bpe::{BpeTrainer, BPE};

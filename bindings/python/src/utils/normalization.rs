@@ -6,7 +6,6 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use tk::normalizer::{char_to_bytes, NormalizedString, Range, SplitDelimiterBehavior};
 use tk::pattern::Pattern;
-
 /// Represents a Pattern as used by `NormalizedString`
 #[derive(Clone, FromPyObject)]
 pub enum PyPattern {

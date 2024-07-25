@@ -22,7 +22,7 @@ use pyo3_special_method_derive_0_21::AutoDisplay;
 /// Wrapper for known Normalizers.
 #[derive(Clone, Debug, Deserialize, Serialize, AutoDisplay)]
 #[serde(untagged)]
-#[auto_display(fmt = "normalizers.{}")]
+#[format(fmt = "normalizers.{}")]
 pub enum NormalizerWrapper {
     BertNormalizer(BertNormalizer),
     StripNormalizer(Strip),
@@ -34,7 +34,7 @@ pub enum NormalizerWrapper {
     Sequence(Sequence),
     Lowercase(Lowercase),
     Nmt(Nmt),
-    #[auto_display(fmt = "Precompiled()")]
+    #[format(skip)]
     Precompiled(Precompiled),
     Replace(Replace),
     Prepend(Prepend),

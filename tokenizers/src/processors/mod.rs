@@ -16,14 +16,17 @@ use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Eq, AutoDisplay)]
-#[auto_display(fmt="processors.{}")]
+#[format(fmt="")]
 #[serde(untagged)]
 pub enum PostProcessorWrapper {
     // Roberta must be before Bert for deserialization (serde does not validate tags)
     Roberta(RobertaProcessing),
     Bert(BertProcessing),
+    #[format(fmt="{}.{}")]
     ByteLevel(ByteLevel),
+    #[format(fmt="{}")]
     Template(TemplateProcessing),
+    #[format(fmt="{}")]
     Sequence(Sequence),
 }
 

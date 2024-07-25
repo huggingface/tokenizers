@@ -37,7 +37,8 @@ use pyo3_special_method_derive_0_21::{AutoDisplay, Dict, Dir, Repr, Str};
 #[derive(Clone, Serialize, Deserialize, Str, Dir)]
 pub struct PyPreTokenizer {
     #[serde(flatten)]
-    pub pretok: PyPreTokenizerTypeWrapper,
+    #[format(fmt = "{}")]
+    pretok: PyPreTokenizerTypeWrapper,
 }
 
 impl PyPreTokenizer {
@@ -426,7 +427,7 @@ impl PyPunctuation {
 /// This pre-tokenizer composes other pre_tokenizers and applies them in sequence
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Sequence")]
 #[derive(AutoDisplay)]
-#[auto_display(fmt = "{self.inner}{}")]
+#[format(fmt = "Sequence.{}")]
 pub struct PySequence {}
 #[pymethods]
 impl PySequence {
@@ -637,6 +638,7 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerWrapper {
     Custom(CustomPreTokenizer),
+    #[format(fmt = "wrapped:{}")]
     Wrapped(PreTokenizerWrapper),
 }
 
@@ -655,7 +657,9 @@ impl Serialize for PyPreTokenizerWrapper {
 #[derive(Clone, Deserialize, AutoDisplay)]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerTypeWrapper {
+    #[format(fmt = "{}")]
     Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),
+    #[format(fmt = "{}")]
     Single(Arc<RwLock<PyPreTokenizerWrapper>>),
 }
 

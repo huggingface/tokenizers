@@ -28,6 +28,7 @@ use tokenizers as tk;
     subclass
 )]
 #[derive(Clone, Deserialize, Serialize, AutoDisplay)]
+#[format(fmt="post processor: {}.{}")]
 pub struct PyPostProcessor {
     #[serde(flatten)]
     pub processor: Arc<PostProcessorWrapper>,

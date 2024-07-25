@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// to pure bytes, and attempts to make them into a string. If the tokens
 /// cannot be decoded you will get � instead for each inconvertable byte token
 #[non_exhaustive]
-#[auto_display(fmt = "ByteFallback")]
+#[format(fmt = "ByteFallback")]
 pub struct ByteFallback {
     #[serde(rename = "type")]
     type_: MustBe!("ByteFallback"),

@@ -25,7 +25,7 @@ use pyo3_special_method_derive_0_21::AutoDisplay;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, AutoDisplay)]
-#[auto_display(fmt="decoders.{}")]
+#[format(fmt="decoders.{}")]
 #[serde(untagged)]
 pub enum DecoderWrapper {
     BPE(BPEDecoder),

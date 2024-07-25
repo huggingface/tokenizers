@@ -478,7 +478,9 @@ impl PyNmt {
 /// Don't use manually it is used for compatiblity for SentencePiece.
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Precompiled")]
 #[derive(Str)]
+#[format("PreCompiled")]
 pub struct PyPrecompiled {}
+
 #[pymethods]
 impl PyPrecompiled {
     #[new]
@@ -516,7 +518,7 @@ impl PyReplace {
 
 #[derive(Debug, Clone, AutoDisplay)]
 pub(crate) struct CustomNormalizer {
-    #[auto_display]
+    #[format(fmt="Custom Normalizer")]
     inner: PyObject,
 }
 impl CustomNormalizer {

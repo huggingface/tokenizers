@@ -464,6 +464,7 @@ type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProc
 #[pyclass(dict, module = "tokenizers", name = "Tokenizer")]
 #[derive(Clone, Str, Dict, Dir)]
 pub struct PyTokenizer {
+    #[format(fmt="{}")]
     tokenizer: Tokenizer,
 }
 

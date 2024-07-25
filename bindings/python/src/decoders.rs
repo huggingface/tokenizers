@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3_special_method_derive_0_21::AutoDisplay;
 use pyo3_special_method_derive_0_21::PyDebug;
-use pyo3_special_method_derive_0_21::PyDisplay;
+use pyo3_special_method_derive_0_21::Str;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::decoders::bpe::BPEDecoder;
@@ -31,9 +31,11 @@ use super::error::ToPyResult;
 /// This class is not supposed to be instantiated directly. Instead, any implementation of
 /// a Decoder will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.decoders", name = "Decoder", subclass)]
-#[derive(Clone, Deserialize, Serialize, AutoDisplay)]
+#[derive(Clone, Deserialize, Serialize, Str)]
+#[format(fmt="")]
 pub struct PyDecoder {
     #[serde(flatten)]
+    #[format(fmt="{}")]
     pub(crate) decoder: PyDecoderWrapper,
 }
 
@@ -116,14 +118,6 @@ impl PyDecoder {
     #[pyo3(text_signature = "(self, tokens)")]
     fn decode(&self, tokens: Vec<String>) -> PyResult<String> {
         ToPyResult(self.decoder.decode(tokens)).into()
-    }
-
-    fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.decoder))
-    }
-
-    fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.decoder))
     }
 }
 
@@ -489,22 +483,12 @@ impl PySequenceDecoder {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, AutoDisplay)]
 pub(crate) struct CustomDecoder {
+    #[format(skip)]
     pub inner: PyObject,
 }
 
-impl PyDisplay for CustomDecoder {
-    fn fmt_display(&self) -> String {
-        "CustomDecoder()".to_string()
-    }
-}
-
-impl PyDebug for CustomDecoder {
-    fn fmt_debug(&self) -> String {
-        "CustomDecoder()".to_string()
-    }
-}
 
 impl CustomDecoder {
     pub(crate) fn new(inner: PyObject) -> Self {
