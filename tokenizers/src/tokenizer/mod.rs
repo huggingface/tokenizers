@@ -1297,17 +1297,13 @@ where
 
 #[cfg(test)]
 mod test {
-
-    use crate::AddedToken;
-    use crate::Tokenizer;
-
     #[cfg(feature = "http")]
     #[test]
     fn test_decoding_with_added_bpe() {
         use crate::{
             normalizers,
             pre_tokenizers::split::{Split, SplitPattern},
-            NormalizerWrapper, PreTokenizerWrapper, SplitDelimiterBehavior,
+            AddedToken, NormalizerWrapper, PreTokenizerWrapper, SplitDelimiterBehavior, Tokenizer,
         };
 
         let mut tokenizer = Tokenizer::from_pretrained("meta-llama/Meta-Llama-3-8B", None).unwrap();
