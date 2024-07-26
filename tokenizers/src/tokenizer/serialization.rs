@@ -177,7 +177,6 @@ where
 mod tests {
     use crate::tokenizer::Tokenizer;
     use std::str::FromStr;
-    use tracing_subscriber::fmt;
 
     #[test]
     fn test_deserialization_serialization_invariant() {
@@ -236,7 +235,7 @@ mod tests {
     #[cfg(feature = "http")]
     #[test]
     fn test_from_pretrained() {
-        fmt()
+        tracing_subscriber::fmt()
             .with_max_level(tracing::Level::DEBUG)
             .with_target(false)
             .init();

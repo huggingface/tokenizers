@@ -305,6 +305,7 @@ impl NormalizedString {
     ///   - `1` if this is a new char
     ///   - `-N` if the char is right before N removed chars
     ///   - `0` if the char is replacing the existing one
+    ///
     /// Since it is possible that the normalized string doesn't include some of the characters at
     /// the beginning of the original one, we need an `initial_offset` which represents the number
     /// of removed chars at the very beginning.
@@ -424,6 +425,7 @@ impl NormalizedString {
     ///   - `1` if this is a new char
     ///   - `-N` if the char is right before N removed chars
     ///   - `0` if the char is replacing the existing one
+    ///
     /// Since it is possible that the normalized string doesn't include some of the characters at
     /// the beginning of the original one, we need an `initial_offset` which represents the number
     /// of removed chars at the very beginning.
