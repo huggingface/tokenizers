@@ -11,6 +11,7 @@
 //! sequences. The final result looks like this:
 //! - Single sequence: `[CLS] Hello there [SEP]`
 //! - Pair sequences: `[CLS] My name is Anthony [SEP] What is my name? [SEP]`
+//!
 //! With the type ids as following:
 //! ```markdown
 //! [CLS]   ...   [SEP]   ...   [SEP]
@@ -75,8 +76,8 @@ pub enum Sequence {
 /// It can be either the input sequence or a [`SpecialToken`]:
 ///
 /// - The `Sequence` has an associated `type_id` which is used by default
-/// for any token inside this sequence. The `Sequence` corresponds to one
-/// of the input sequence given as input of the `PostProcessor`.
+///   for any token inside this sequence. The `Sequence` corresponds to one
+///   of the input sequence given as input of the `PostProcessor`.
 ///
 /// - The `SpecialToken` has an associated `id`. It corresponds to a [`SpecialToken`].
 ///
