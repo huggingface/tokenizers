@@ -128,9 +128,9 @@ fn main() -> Result<()> {
 ## Additional information
 
 - tokenizers is designed to leverage CPU parallelism when possible. The level of parallelism is determined
-by the total number of core/threads your CPU provides but this can be tuned by setting the `RAYON_RS_NUM_THREADS`
-environment variable. As an example setting `RAYON_RS_NUM_THREADS=4` will allocate a maximum of 4 threads.
-**_Please note this behavior may evolve in the future_**
+  by the total number of core/threads your CPU provides but this can be tuned by setting the `RAYON_RS_NUM_THREADS`
+  environment variable. As an example setting `RAYON_RS_NUM_THREADS=4` will allocate a maximum of 4 threads.
+  **_Please note this behavior may evolve in the future_**
 
 ## Features
 **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
