@@ -3,11 +3,11 @@
 //! A [`Tokenizer`](struct.Tokenizer.html) is composed of some of the following parts.
 //!   - [`Normalizer`](trait.Normalizer.html): Takes care of the text normalization (like unicode normalization).
 //!   - [`PreTokenizer`](trait.PreTokenizer.html): Takes care of the pre tokenization (ie. How to split tokens and pre-process
-//!   them.
+//!     them.
 //!   - [`Model`](trait.Model.html): A model encapsulates the tokenization algorithm (like BPE, Word base, character
-//!   based, ...).
+//!     based, ...).
 //!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
-//!   ...).
+//!     ...).
 
 use std::{
     collections::HashMap,
