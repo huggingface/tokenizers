@@ -44,8 +44,10 @@ impl PyNormalizedStringMut<'_> {
 /// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
 #[derive(Clone, Serialize, Deserialize, Str, Debug, Dir, Dict)]
+#[format(fmt="{}")]
 pub struct PyNormalizer {
     #[serde(flatten)]
+    #[format(fmt="{}")]
     pub(crate) normalizer: PyNormalizerTypeWrapper,
 }
 
@@ -562,8 +564,11 @@ impl<'de> Deserialize<'de> for CustomNormalizer {
 
 #[derive(Debug, Clone, Deserialize, AutoDisplay)]
 #[serde(untagged)]
+#[format(fmt="{}")]
 pub(crate) enum PyNormalizerWrapper {
+    #[format(fmt="{}")]
     Custom(CustomNormalizer),
+    #[format(fmt="{}")]
     Wrapped(NormalizerWrapper),
 }
 
@@ -579,30 +584,12 @@ impl Serialize for PyNormalizerWrapper {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, AutoDisplay)]
 #[serde(untagged)]
+#[format(fmt="{}")]
 pub(crate) enum PyNormalizerTypeWrapper {
     Sequence(Vec<Arc<RwLock<PyNormalizerWrapper>>>),
     Single(Arc<RwLock<PyNormalizerWrapper>>),
-}
-
-// Implement the Display trait for PyNormalizerTypeWrapper
-impl std::fmt::Display for PyNormalizerTypeWrapper {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            PyNormalizerTypeWrapper::Sequence(ref decoders) => {
-                for decoder in decoders {
-                    let decoder = decoder.read().unwrap();
-                    writeln!(f, "{}", decoder)?;
-                }
-                Ok(())
-            }
-            PyNormalizerTypeWrapper::Single(ref decoder) => {
-                let decoder = decoder.read().unwrap();
-                write!(f, "{}", decoder)
-            }
-        }
-    }
 }
 
 impl Serialize for PyNormalizerTypeWrapper {
