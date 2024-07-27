@@ -27,6 +27,7 @@ use tokenizers as tk;
 /// This class cannot be constructed directly. Please use one of the concrete models.
 #[pyclass(module = "tokenizers.models", name = "Model", subclass)]
 #[derive(Clone, Serialize, Deserialize, Str)]
+#[format(fmt = "{}")]
 pub struct PyModel {
     #[serde(flatten)]
     #[format(fmt="{}")]

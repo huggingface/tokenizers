@@ -165,7 +165,7 @@ pub struct AddedVocabulary {
     split_normalized_trie: MatchingSet,
 
     /// Whether or not special tokens should be splitted when encoding. This is equivalent to ignoring them
-    #[format(fmt = "{}")]
+    #[format]
     encode_special_tokens: bool,
 }
 

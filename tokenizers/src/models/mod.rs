@@ -60,6 +60,7 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Clone, AutoDisplay)]
 #[serde(untagged)]
+#[format(fmt = "{}")] // TODO by default this should define the finale render {}, {} {} . or {}{}{}
 pub enum ModelWrapper {
     BPE(BPE),
     // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility

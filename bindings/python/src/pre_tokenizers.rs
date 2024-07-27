@@ -35,7 +35,7 @@ use pyo3_special_method_derive_0_21::{AutoDisplay, Dict, Dir, Repr, Str};
     subclass
 )]
 #[derive(Clone, Serialize, Deserialize, Str, Dir)]
-#[format("")] // don't format the Py wrapper
+#[format(fmt = "{}")] // don't format the Py wrapper
 pub struct PyPreTokenizer {
     #[serde(flatten)]
     #[format(fmt = "{}")] // format only pretok, not pretok = 
@@ -637,9 +637,11 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
 
 #[derive(Clone, Deserialize, AutoDisplay)]
 #[serde(untagged)]
+#[format(fmt = "{}")]
 pub(crate) enum PyPreTokenizerWrapper {
+    #[format(fmt = "{}")]
     Custom(CustomPreTokenizer),
-    #[format(fmt = "wrapped:{}")]
+    #[format(fmt = "{}")]
     Wrapped(PreTokenizerWrapper),
 }
 
@@ -657,6 +659,7 @@ impl Serialize for PyPreTokenizerWrapper {
 
 #[derive(Clone, Deserialize, AutoDisplay)]
 #[serde(untagged)]
+#[format(fmt = "{}")]
 pub(crate) enum PyPreTokenizerTypeWrapper {
     #[format(fmt = "{}")]
     Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),

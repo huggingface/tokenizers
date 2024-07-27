@@ -32,7 +32,7 @@ use super::error::ToPyResult;
 /// a Decoder will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.decoders", name = "Decoder", subclass)]
 #[derive(Clone, Deserialize, Serialize, Str)]
-#[format(fmt="")]
+#[format(fmt="{}")]
 pub struct PyDecoder {
     #[serde(flatten)]
     #[format(fmt="{}")]
@@ -540,8 +540,11 @@ impl<'de> Deserialize<'de> for CustomDecoder {
 
 #[derive(Clone, Deserialize, Serialize, AutoDisplay)]
 #[serde(untagged)]
+#[format(fmt = "{}")]
 pub(crate) enum PyDecoderWrapper {
+    #[format(fmt = "{}")]
     Custom(Arc<RwLock<CustomDecoder>>),
+    #[format(fmt = "{}")]
     Wrapped(Arc<RwLock<DecoderWrapper>>),
 }
 

@@ -28,9 +28,10 @@ use tokenizers as tk;
     subclass
 )]
 #[derive(Clone, Deserialize, Serialize, AutoDisplay)]
-#[format(fmt="post processor: {}.{}")]
+#[format(fmt="{}")]
 pub struct PyPostProcessor {
     #[serde(flatten)]
+    #[format(fmt="{}")]
     pub processor: Arc<PostProcessorWrapper>,
 }
 

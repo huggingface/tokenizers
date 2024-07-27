@@ -561,13 +561,13 @@ where
         };
 
         format!(
-            "Tokenizer(normalizer={}, pre_tokenizer={}, model={}, post_processor={}, decoder={}, added_tokens_decoder={:?}, truncation={}, padding={})",
+            "Tokenizer(normalizer={}, pre_tokenizer={}, model={}, post_processor={}, decoder={}, added_tokens_decoder={}, truncation={}, padding={})",
             normalizer_str,
             pre_tokenizer_str,
             self.model.fmt_display(),
             post_processor_str,
             decoder_str,
-            self.added_vocabulary,
+            self.added_vocabulary.fmt_display(),
             truncation_str,
             padding_str
         )

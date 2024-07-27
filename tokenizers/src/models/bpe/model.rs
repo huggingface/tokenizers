@@ -208,7 +208,6 @@ impl BpeBuilder {
 #[derive(PartialEq, AutoDisplay)]
 pub struct BPE {
     /// The vocabulary assigns a number to each token.
-    #[format(skip)]
     pub(crate) vocab: Vocab,
     /// Reversed vocabulary, to rebuild sentences.
     pub(crate) vocab_r: VocabR,
