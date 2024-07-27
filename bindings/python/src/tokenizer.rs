@@ -16,7 +16,7 @@ use pyo3::exceptions;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3_special_method_derive_0_21::{Str, Dict, Dir, Repr, AutoDisplay};
+use pyo3_special_method_derive_0_21::{AutoDisplay, Dict, Dir, Repr, Str};
 use std::collections::BTreeMap;
 use tk::models::bpe::BPE;
 use tk::tokenizer::{
@@ -463,8 +463,9 @@ type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProc
 ///
 #[pyclass(dict, module = "tokenizers", name = "Tokenizer")]
 #[derive(Clone, Str, Dict, Dir)]
+#[format(fmt = "{}")]
 pub struct PyTokenizer {
-    #[format(fmt="{}")]
+    #[format(fmt = "{}")]
     tokenizer: Tokenizer,
 }
 

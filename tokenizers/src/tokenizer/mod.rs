@@ -408,7 +408,6 @@ where
 
 #[derive(Serialize, Deserialize, Clone, AutoDisplay)]
 pub struct Tokenizer(
-    #[format(fmt = "tokenizer = {}")]
     TokenizerImpl<
         ModelWrapper,
         NormalizerWrapper,

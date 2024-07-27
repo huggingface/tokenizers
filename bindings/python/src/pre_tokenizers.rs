@@ -35,9 +35,10 @@ use pyo3_special_method_derive_0_21::{AutoDisplay, Dict, Dir, Repr, Str};
     subclass
 )]
 #[derive(Clone, Serialize, Deserialize, Str, Dir)]
+#[format("")] // don't format the Py wrapper
 pub struct PyPreTokenizer {
     #[serde(flatten)]
-    #[format(fmt = "{}")]
+    #[format(fmt = "{}")] // format only pretok, not pretok = 
     pretok: PyPreTokenizerTypeWrapper,
 }
 
