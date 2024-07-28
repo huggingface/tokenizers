@@ -6,7 +6,7 @@ use crate::error::ToPyResult;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3_special_method_derive_0_21::{AutoDisplay, Str, Repr};
+use pyo3_special_method_derive_0_21::{Repr, Str};
 use serde::{Deserialize, Serialize};
 use tk::processors::bert::BertProcessing;
 use tk::processors::byte_level::ByteLevel;
