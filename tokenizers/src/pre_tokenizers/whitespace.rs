@@ -1,4 +1,4 @@
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use regex::Regex;
 
 use crate::tokenizer::{
@@ -6,7 +6,7 @@ use crate::tokenizer::{
 };
 use crate::utils::macro_rules_attribute;
 
-#[derive(Clone, Debug, PartialEq, Eq, AutoDisplay)]
+#[derive(Clone, AutoDebug, PartialEq, Eq, AutoDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Whitespace;
 
@@ -29,7 +29,7 @@ impl PreTokenizer for Whitespace {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, AutoDisplay)]
+#[derive(Copy, Clone, AutoDebug, PartialEq, Eq, AutoDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct WhitespaceSplit;
 

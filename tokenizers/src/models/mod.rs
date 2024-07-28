@@ -8,7 +8,7 @@ pub mod wordpiece;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use pyo3_special_method_derive_0_21::{AutoDisplay, PyDisplay};
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay, PyDisplay};
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::models::bpe::{BpeTrainer, BPE};
@@ -58,7 +58,7 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, AutoDisplay)]
+#[derive(Deserialize, Serialize, AutoDebug, PartialEq, Clone, AutoDisplay)]
 #[serde(untagged)]
 #[format(fmt = "{}")] // TODO by default this should define the finale render {}, {} {} . or {}{}{}
 pub enum ModelWrapper {

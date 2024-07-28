@@ -23,7 +23,7 @@ use tokenizers as tk;
 
 use super::error::ToPyResult;
 use super::utils::*;
-use pyo3_special_method_derive_0_21::{AutoDisplay, Dict, Dir, Repr, Str};
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay, Dict, Dir, Repr, Str};
 /// Base class for all pre-tokenizers
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
@@ -34,11 +34,11 @@ use pyo3_special_method_derive_0_21::{AutoDisplay, Dict, Dir, Repr, Str};
     name = "PreTokenizer",
     subclass
 )]
-#[derive(Clone, Serialize, Deserialize, Str, Dir)]
+#[derive(Clone, Serialize, Deserialize, Str, Repr, Dir, Dict)]
 #[format(fmt = "{}")] // don't format the Py wrapper
 pub struct PyPreTokenizer {
     #[serde(flatten)]
-    #[format(fmt = "{}")] // format only pretok, not pretok = 
+    #[format(fmt = "{}")] // format only pretok, not pretok =
     pretok: PyPreTokenizerTypeWrapper,
 }
 
@@ -591,7 +591,7 @@ impl PyUnicodeScripts {
     }
 }
 
-#[derive(Clone, AutoDisplay)]
+#[derive(Clone, AutoDisplay, AutoDebug)]
 pub(crate) struct CustomPreTokenizer {
     inner: PyObject,
 }
@@ -635,7 +635,7 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
     }
 }
 
-#[derive(Clone, Deserialize, AutoDisplay)]
+#[derive(Clone, Deserialize, AutoDisplay, AutoDebug)]
 #[serde(untagged)]
 #[format(fmt = "{}")]
 pub(crate) enum PyPreTokenizerWrapper {
@@ -657,7 +657,7 @@ impl Serialize for PyPreTokenizerWrapper {
     }
 }
 
-#[derive(Clone, Deserialize, AutoDisplay)]
+#[derive(Clone, Deserialize, AutoDisplay, AutoDebug)]
 #[serde(untagged)]
 #[format(fmt = "{}")]
 pub(crate) enum PyPreTokenizerTypeWrapper {

@@ -2,7 +2,7 @@ use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
 use crate::utils::SysRegex;
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Represents the different patterns that `Split` can use
@@ -24,7 +24,7 @@ impl From<&str> for SplitPattern {
     }
 }
 
-#[derive(Debug, Serialize, AutoDisplay)]
+#[derive(AutoDebug, Serialize, AutoDisplay)]
 #[serde(tag = "type")]
 pub struct Split {
     pattern: SplitPattern,

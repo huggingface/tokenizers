@@ -1,10 +1,10 @@
 use crate::tokenizer::{Encoding, Result};
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::mem;
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, Default, AutoDisplay)]
+#[derive(AutoDebug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, Default, AutoDisplay)]
 pub enum TruncationDirection {
     Left,
     #[default]
@@ -20,7 +20,7 @@ impl std::convert::AsRef<str> for TruncationDirection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, AutoDisplay)]
+#[derive(AutoDebug, Clone, Serialize, Deserialize, AutoDisplay)]
 pub struct TruncationParams {
     #[serde(default)]
     pub direction: TruncationDirection,
@@ -51,7 +51,7 @@ pub enum TruncationError {
     SequenceTooShort,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, AutoDisplay)]
+#[derive(AutoDebug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, AutoDisplay)]
 pub enum TruncationStrategy {
     LongestFirst,
     OnlyFirst,

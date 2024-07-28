@@ -462,7 +462,7 @@ type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProc
 ///         The core algorithm that this :obj:`Tokenizer` should be using.
 ///
 #[pyclass(dict, module = "tokenizers", name = "Tokenizer")]
-#[derive(Clone, Str, Dict, Dir)]
+#[derive(Clone, Str, Dict, Dir, Repr)]
 #[format(fmt = "{}")]
 pub struct PyTokenizer {
     #[format(fmt = "{}")]

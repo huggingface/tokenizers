@@ -1,6 +1,6 @@
 use super::OrderedVocabIter;
 use crate::tokenizer::{Model, Result, Token};
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDisplay,PyDebug};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
@@ -110,7 +110,11 @@ impl std::fmt::Debug for WordLevel {
             .finish()
     }
 }
-
+impl PyDebug for WordLevel {
+    fn fmt_debug(&self) -> std::string::String {
+        format!("{:?}", self)
+    }
+}
 impl WordLevel {
     pub fn builder() -> WordLevelBuilder {
         WordLevelBuilder::new()

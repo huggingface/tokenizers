@@ -5,7 +5,7 @@ use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3_special_method_derive_0_21::{AutoDisplay, Str, Dir, Dict};
+use pyo3_special_method_derive_0_21::{AutoDisplay,AutoDebug, Dict, Dir, Repr, Str};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
@@ -43,11 +43,11 @@ impl PyNormalizedStringMut<'_> {
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
-#[derive(Clone, Serialize, Deserialize, Str, Debug, Dir, Dict)]
-#[format(fmt="{}")]
+#[derive(Clone, Serialize, Deserialize, Str, Repr, Dir, Dict)]
+#[format(fmt = "{}")]
 pub struct PyNormalizer {
     #[serde(flatten)]
-    #[format(fmt="{}")]
+    #[format(fmt = "{}")]
     pub(crate) normalizer: PyNormalizerTypeWrapper,
 }
 
@@ -518,9 +518,9 @@ impl PyReplace {
     }
 }
 
-#[derive(Debug, Clone, AutoDisplay)]
+#[derive(AutoDebug, Clone, AutoDisplay)]
 pub(crate) struct CustomNormalizer {
-    #[format(fmt="Custom Normalizer")]
+    #[format(fmt = "Custom Normalizer")]
     inner: PyObject,
 }
 impl CustomNormalizer {
@@ -562,13 +562,13 @@ impl<'de> Deserialize<'de> for CustomNormalizer {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, AutoDisplay)]
+#[derive(AutoDebug, Clone, Deserialize, AutoDisplay)]
 #[serde(untagged)]
-#[format(fmt="{}")]
+#[format(fmt = "{}")]
 pub(crate) enum PyNormalizerWrapper {
-    #[format(fmt="{}")]
+    #[format(fmt = "{}")]
     Custom(CustomNormalizer),
-    #[format(fmt="{}")]
+    #[format(fmt = "{}")]
     Wrapped(NormalizerWrapper),
 }
 
@@ -584,9 +584,9 @@ impl Serialize for PyNormalizerWrapper {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, AutoDisplay)]
+#[derive(Clone, Deserialize, AutoDisplay, AutoDebug)]
 #[serde(untagged)]
-#[format(fmt="{}")]
+#[format(fmt = "{}")]
 pub(crate) enum PyNormalizerTypeWrapper {
     Sequence(Vec<Arc<RwLock<PyNormalizerWrapper>>>),
     Single(Arc<RwLock<PyNormalizerWrapper>>),

@@ -1,8 +1,8 @@
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{de, Deserialize, Deserializer, Serialize};
 /// Enum representing options for the metaspace prepending scheme.
-#[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize, Copy, AutoDisplay)]
+#[derive(AutoDebug, Clone, PartialEq, Serialize, Eq, Deserialize, Copy, AutoDisplay)]
 #[serde(rename_all = "snake_case")]
 pub enum PrependScheme {
     /// Specifies that the scheme should be prepended only once, on the first split.
@@ -13,11 +13,10 @@ pub enum PrependScheme {
     Always,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Eq, AutoDisplay)]
+#[derive(AutoDebug, Clone, PartialEq, Serialize, Eq, AutoDisplay)]
 /// Replaces all the whitespaces by the provided meta character and then
 /// splits on this character
 #[serde(tag = "type")]
-
 pub struct Metaspace {
     replacement: char,
     pub prepend_scheme: PrependScheme,

@@ -6,7 +6,7 @@ use super::{
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::Cache;
 
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDisplay, PyDebug};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::read_to_string;
@@ -66,7 +66,11 @@ impl std::fmt::Debug for Unigram {
             .finish()
     }
 }
-
+impl PyDebug for Unigram {
+    fn fmt_debug(&self) -> std::string::String {
+        format!("{:?}", self)
+    }
+}
 static K_UNK_PENALTY: f64 = 10.0;
 
 #[derive(thiserror::Error, Debug)]

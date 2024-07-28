@@ -12,10 +12,10 @@ use crate::processors::roberta::RobertaProcessing;
 use crate::processors::sequence::Sequence;
 use crate::processors::template::TemplateProcessing;
 use crate::{Encoding, PostProcessor, Result};
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Eq, AutoDisplay)]
+#[derive(Serialize, Deserialize, PartialEq, AutoDebug, Clone, Eq, AutoDisplay)]
 #[format(fmt="{}")]
 #[serde(untagged)]
 pub enum PostProcessorWrapper {

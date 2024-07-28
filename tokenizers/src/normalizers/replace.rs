@@ -2,7 +2,7 @@ use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::Decoder;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::SysRegex;
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 /// Represents the different patterns that `Replace` can use
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
@@ -42,7 +42,7 @@ impl std::convert::TryFrom<ReplaceDeserializer> for Replace {
 
 /// This normalizer will take a `pattern` (for now only a String)
 /// and replace every occurrence with `content`.
-#[derive(Debug, Serialize, Deserialize, AutoDisplay)]
+#[derive(AutoDebug, Serialize, Deserialize, AutoDisplay)]
 #[serde(tag = "type", try_from = "ReplaceDeserializer")]
 pub struct Replace {
     pattern: ReplacePattern,

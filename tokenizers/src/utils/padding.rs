@@ -1,10 +1,10 @@
 use crate::parallelism::*;
 use crate::tokenizer::{Encoding, Result};
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 
 /// The various possible padding directions.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, AutoDisplay)]
+#[derive(AutoDebug, Clone, Copy, Serialize, Deserialize, AutoDisplay)]
 pub enum PaddingDirection {
     Left,
     Right,
@@ -19,7 +19,7 @@ impl std::convert::AsRef<str> for PaddingDirection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, AutoDisplay)]
+#[derive(AutoDebug, Clone, Serialize, Deserialize, AutoDisplay)]
 pub struct PaddingParams {
     pub strategy: PaddingStrategy,
     pub direction: PaddingDirection,
@@ -42,7 +42,7 @@ impl Default for PaddingParams {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, AutoDisplay)]
+#[derive(AutoDebug, Clone, Serialize, Deserialize, AutoDisplay)]
 pub enum PaddingStrategy {
     BatchLongest,
     Fixed(usize),

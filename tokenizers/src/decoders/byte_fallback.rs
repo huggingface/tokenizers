@@ -1,8 +1,8 @@
 use crate::tokenizer::{Decoder, Result};
 use monostate::MustBe;
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
-#[derive(Deserialize, Clone, Debug, Serialize, Default, AutoDisplay)]
+#[derive(Deserialize, Clone, AutoDebug, Serialize, Default, AutoDisplay)]
 /// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
 /// to pure bytes, and attempts to make them into a string. If the tokens
 /// cannot be decoded you will get � instead for each inconvertable byte token

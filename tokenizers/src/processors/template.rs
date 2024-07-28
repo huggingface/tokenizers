@@ -57,7 +57,7 @@
 //!
 use crate::{Encoding, PostProcessor, Result};
 use itertools::Itertools;
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
@@ -249,7 +249,7 @@ impl SpecialToken {
 ///
 /// [`Piece`]: enum.Piece.html
 ///
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, AutoDisplay)]
+#[derive(AutoDebug, Clone, PartialEq, Serialize, Deserialize, Eq, AutoDisplay)]
 #[serde(transparent)]
 pub struct Template(Vec<Piece>);
 
@@ -332,7 +332,7 @@ impl From<HashMap<String, SpecialToken>> for Tokens {
 ///     .unwrap();
 /// ```
 ///
-#[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq, AutoDisplay)]
+#[derive(AutoDebug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq, AutoDisplay)]
 #[serde(tag = "type", from = "TemplateProcessingDeserializer")]
 #[builder(build_fn(validate = "Self::validate"))]
 #[format(fmt = "TemplateProcessing: {}")]

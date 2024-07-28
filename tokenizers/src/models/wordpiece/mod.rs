@@ -3,7 +3,7 @@
 
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDisplay,PyDebug};
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -140,7 +140,11 @@ impl std::fmt::Debug for WordPiece {
             .finish()
     }
 }
-
+impl PyDebug for WordPiece {
+    fn fmt_debug(&self) -> std::string::String {
+        format!("{:?}", self)
+    }
+}
 impl Default for WordPiece {
     fn default() -> Self {
         Self {

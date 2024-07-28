@@ -1,10 +1,10 @@
 use crate::decoders::wordpiece;
 use crate::tokenizer::{Decoder, Result};
 use itertools::Itertools;
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, AutoDisplay)]
+#[derive(AutoDebug, Clone, Serialize, Deserialize, AutoDisplay)]
 /// The CTC (Connectionist Temporal Classification) decoder takes care
 /// of sanitizing a list of inputs token.
 /// Due to some alignement problem the output of some models can come

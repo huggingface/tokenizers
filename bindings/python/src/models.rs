@@ -8,8 +8,7 @@ use crate::trainers::PyTrainer;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3_special_method_derive_0_21::AutoDisplay;
-use pyo3_special_method_derive_0_21::Str;
+use pyo3_special_method_derive_0_21::{Repr, Str};
 use serde::{Deserialize, Serialize};
 use tk::models::bpe::{BpeBuilder, Merges, Vocab, BPE};
 use tk::models::unigram::Unigram;
@@ -26,11 +25,11 @@ use tokenizers as tk;
 ///
 /// This class cannot be constructed directly. Please use one of the concrete models.
 #[pyclass(module = "tokenizers.models", name = "Model", subclass)]
-#[derive(Clone, Serialize, Deserialize, Str)]
+#[derive(Clone, Serialize, Deserialize, Str, Repr)]
 #[format(fmt = "{}")]
 pub struct PyModel {
     #[serde(flatten)]
-    #[format(fmt="{}")]
+    #[format(fmt = "{}")]
     pub model: Arc<RwLock<ModelWrapper>>,
 }
 

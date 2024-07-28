@@ -1,11 +1,11 @@
 use crate::processors::byte_level::process_offsets;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, AutoDisplay)]
+#[derive(Serialize, Deserialize, AutoDebug, Clone, PartialEq, Eq, AutoDisplay)]
 #[serde(tag = "type")]
 pub struct RobertaProcessing {
     sep: (String, u32),

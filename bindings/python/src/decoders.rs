@@ -5,9 +5,7 @@ use crate::utils::PyPattern;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3_special_method_derive_0_21::AutoDisplay;
-use pyo3_special_method_derive_0_21::PyDebug;
-use pyo3_special_method_derive_0_21::Str;
+use pyo3_special_method_derive_0_21::{AutoDisplay, Repr, Str, AutoDebug};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::decoders::bpe::BPEDecoder;
@@ -31,7 +29,7 @@ use super::error::ToPyResult;
 /// This class is not supposed to be instantiated directly. Instead, any implementation of
 /// a Decoder will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.decoders", name = "Decoder", subclass)]
-#[derive(Clone, Deserialize, Serialize, Str)]
+#[derive(Clone, Deserialize, Serialize, Str, Repr)]
 #[format(fmt="{}")]
 pub struct PyDecoder {
     #[serde(flatten)]
@@ -483,7 +481,7 @@ impl PySequenceDecoder {
     }
 }
 
-#[derive(Clone, AutoDisplay)]
+#[derive(Clone, AutoDisplay, AutoDebug)]
 pub(crate) struct CustomDecoder {
     #[format(skip)]
     pub inner: PyObject,
@@ -538,7 +536,7 @@ impl<'de> Deserialize<'de> for CustomDecoder {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize, AutoDisplay)]
+#[derive(Clone, Deserialize, Serialize, AutoDisplay, AutoDebug)]
 #[serde(untagged)]
 #[format(fmt = "{}")]
 pub(crate) enum PyDecoderWrapper {

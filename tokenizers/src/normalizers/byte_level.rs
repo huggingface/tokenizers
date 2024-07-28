@@ -2,8 +2,8 @@ use crate::processors::byte_level::bytes_char;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use pyo3_special_method_derive_0_21::AutoDisplay;
-#[derive(Clone, Debug, Deserialize, Serialize, AutoDisplay)]
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
+#[derive(Clone, AutoDebug, Deserialize, Serialize, AutoDisplay)]
 #[serde(tag = "type")]
 pub struct ByteLevel {}
 

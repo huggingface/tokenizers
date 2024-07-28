@@ -1,4 +1,4 @@
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
@@ -9,7 +9,7 @@ fn is_punc(x: char) -> bool {
     char::is_ascii_punctuation(&x) || x.is_punctuation()
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, AutoDisplay)]
+#[derive(Copy, Clone, AutoDebug, PartialEq, Eq, AutoDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Punctuation {
     #[serde(default = "default_split")]

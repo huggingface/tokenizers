@@ -1,10 +1,10 @@
 use crate::processors::PostProcessorWrapper;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
 use crate::utils::macro_rules_attribute;
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 #[macro_rules_attribute(impl_serde_type!)]
-#[derive(Clone, Debug, PartialEq, Eq, AutoDisplay)]
+#[derive(Clone, AutoDebug, PartialEq, Eq, AutoDisplay)]
 pub struct Sequence {
     processors: Vec<PostProcessorWrapper>,
 }

@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::normalizers::NormalizerWrapper;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
-use pyo3_special_method_derive_0_21::AutoDisplay;
-#[derive(Clone, Deserialize, Debug, Serialize, AutoDisplay)]
+use pyo3_special_method_derive_0_21::{AutoDebug,AutoDisplay};
+#[derive(Clone, Deserialize, AutoDebug, Serialize, AutoDisplay)]
 #[serde(tag = "type")]
 /// Allows concatenating multiple other Normalizer as a Sequence.
 /// All the normalizers run in sequence in the given order against the same NormalizedString.
@@ -36,7 +36,7 @@ impl Normalizer for Sequence {
 }
 
 /// Lowercases the input
-#[derive(Copy, Clone, Debug, AutoDisplay)]
+#[derive(Copy, Clone, AutoDebug, AutoDisplay)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Lowercase;
 

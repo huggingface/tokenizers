@@ -1,8 +1,8 @@
 use crate::tokenizer::{Decoder, Result};
 
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
-#[derive(Deserialize, Clone, Debug, Serialize, AutoDisplay)]
+#[derive(Deserialize, Clone, AutoDebug, Serialize, AutoDisplay)]
 /// The WordPiece decoder takes care of decoding a list of wordpiece tokens
 /// back into a readable string.
 #[serde(tag = "type")]

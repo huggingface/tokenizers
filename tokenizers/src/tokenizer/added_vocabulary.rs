@@ -2,7 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
 };
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 /// like:
 ///   - Whether they should only match single words
 ///   - Whether to include any whitespace on its left or right
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, AutoDisplay)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, AutoDisplay, AutoDebug)]
 pub struct AddedToken {
     /// The content of the added token
     pub content: String,
@@ -139,14 +139,14 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
 /// were to add new tokens after this training process, we couldn't make sure the merges pairs
 /// exist as required.
 ///
-#[derive(Clone, Debug, AutoDisplay)]
+#[derive(Clone, AutoDisplay, AutoDebug)]
 pub struct AddedVocabulary {
     /// Contains the mapping from String (token content) to ID. This map contains both special
     /// tokens and classic added tokens that were added to the this vocabulary.
     added_tokens_map: HashMap<String, u32>,
     /// Contains the mapping from ID to AddedToken for all the added tokens, both special
     /// and classic.
-    #[format]
+    #[format(fmt = "added_token_decoder={}")]
     added_tokens_map_r: HashMap<u32, AddedToken>,
 
     /// Contains only the classic AddedToken, in the specific order the user gave them.

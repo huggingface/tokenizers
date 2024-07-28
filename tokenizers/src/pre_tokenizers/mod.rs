@@ -24,7 +24,7 @@ use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use crate::{PreTokenizedString, PreTokenizer};
 use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 
-#[derive(Deserialize, Serialize, Clone, PartialEq, AutoDisplay, Debug)]
+#[derive(Deserialize, Serialize, Clone, PartialEq, AutoDebug, AutoDisplay)]
 #[serde(untagged)]
 #[format(fmt = "pre_tokenizers.{}")]
 pub enum PreTokenizerWrapper {
@@ -33,7 +33,7 @@ pub enum PreTokenizerWrapper {
     Delimiter(CharDelimiterSplit),
     Metaspace(Metaspace),
     Whitespace(Whitespace),
-    #[format(fmt="{}")]
+    #[format(fmt = "{}")]
     Sequence(Sequence),
     Split(Split),
     Punctuation(Punctuation),

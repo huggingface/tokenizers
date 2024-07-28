@@ -1,10 +1,10 @@
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, AutoDisplay)]
+#[derive(Copy, Clone, AutoDebug, PartialEq, Eq, AutoDisplay)]
 #[non_exhaustive]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct CharDelimiterSplit {

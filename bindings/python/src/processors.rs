@@ -6,7 +6,7 @@ use crate::error::ToPyResult;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDisplay, Str, Repr};
 use serde::{Deserialize, Serialize};
 use tk::processors::bert::BertProcessing;
 use tk::processors::byte_level::ByteLevel;
@@ -27,11 +27,11 @@ use tokenizers as tk;
     name = "PostProcessor",
     subclass
 )]
-#[derive(Clone, Deserialize, Serialize, AutoDisplay)]
-#[format(fmt="{}")]
+#[derive(Clone, Deserialize, Serialize, Str, Repr)]
+#[format(fmt = "{}")]
 pub struct PyPostProcessor {
     #[serde(flatten)]
-    #[format(fmt="{}")]
+    #[format(fmt = "{}")]
     pub processor: Arc<PostProcessorWrapper>,
 }
 
@@ -140,14 +140,6 @@ impl PyPostProcessor {
         ))
         .into_py()?;
         Ok(final_encoding.into())
-    }
-
-    fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", &self))
-    }
-
-    fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", &self))
     }
 }
 

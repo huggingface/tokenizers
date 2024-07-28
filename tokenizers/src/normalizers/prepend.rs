@@ -1,8 +1,8 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, Serialize, AutoDisplay)]
+#[derive(Clone, AutoDebug, Deserialize, Serialize, AutoDisplay)]
 #[serde(tag = "type")]
 pub struct Prepend {
     pub prepend: String,

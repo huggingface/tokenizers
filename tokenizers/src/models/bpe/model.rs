@@ -2,7 +2,7 @@ use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY};
 use crate::utils::iter::ResultShunt;
-use pyo3_special_method_derive_0_21::AutoDisplay;
+use pyo3_special_method_derive_0_21::{AutoDisplay, PyDebug};
 use serde_json::Value;
 use std::borrow::Cow;
 use std::{
@@ -248,7 +248,6 @@ impl std::fmt::Debug for BPE {
             .finish()
     }
 }
-
 // impl std::fmt::Display for BPE {
 //     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 //         let mut vocab_vec: Vec<_> = self.vocab.iter().collect();
@@ -299,6 +298,12 @@ impl std::fmt::Debug for BPE {
 //     }
 // }
 
+// That is the only annouying part, explicit implementation. We can have PyDebugOnly.
+impl PyDebug for BPE {
+    fn fmt_debug(&self) -> std::string::String {
+        format!("{:?}", self)
+    }
+}
 impl Default for BPE {
     fn default() -> Self {
         Self::builder().build().unwrap()
