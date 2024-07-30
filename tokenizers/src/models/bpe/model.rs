@@ -400,6 +400,7 @@ impl BPE {
                     word.add(unk_id, unk_len);
                     unk = None;
                 }
+                println!("Adding id to word symbols: {s}:{}", id);
                 word.add(*id, byte_len);
             } else {
                 if self.byte_fallback {

@@ -160,7 +160,8 @@ impl Word {
 
     pub(super) fn merge_all(&mut self, merges: &HashMap<Pair, (u32, u32)>, dropout: Option<f32>, vocab: &VocabR) {
         // TODO everytime we merge, we allocate this, while we could allocate something bigger and re-use it.
-        let mut queue = BinaryHeap::with_capacity(self.symbols.len());
+        let mut queue = BinaryHeap::with_capacity(3*self.symbols.len());
+        println!("Symbol lenght:{}", self.symbols.len());
         // TODO 
         let mut skip = Vec::with_capacity(queue.len());
         queue.extend(
@@ -186,36 +187,36 @@ impl Word {
             } else {
                 // Re-insert the skipped elements
                 queue.extend(skip.drain(..));
-                println!("Queue: {:?}\n", queue);
                 if self.symbols[top.pos].len == 0 {
                     continue;
                 }
                 // Do nothing if we are the last symbol
                 if self.symbols[top.pos].next == -1 {
+                    println!("pos {}: We are at the last pos", top.pos);
                     continue;
                 }
 
                 let next_pos = self.symbols[top.pos].next as usize;
                 let right = self.symbols[next_pos];
-                let string = format!("pos: {:?}", top.pos);
+                let string = format!("pos {:?}:", top.pos);
                 // Make sure we are not processing an expired queue entry
                 let target_new_pair = (self.symbols[top.pos].c, right.c);
                 match merges.get(&target_new_pair) {
                     Some((_, new_id)) if *new_id == top.new_id => {},
                     Some(_) => {
+                        println!("{string} Skipping because new_id == top.new-id");
                         // If the `new_id` does not match, skip the iteration
                         continue;
                     },
                     None => {
                         println!(
-                            "{} Merge aborted,  not in merges.`{}`",
-                            string,
+                            "{string} Merge aborted,  not in merges.`{}`",
                             format!("{} {}", vocab[&self.symbols[top.pos].c], vocab[&right.c])
                         );
                         continue;
                     },
                 }
-                println!("{string} Merging {:?} with {:?} to create `{}`", vocab[&self.symbols[top.pos].c], vocab[&right.c], format!("{} {}", vocab[&self.symbols[top.pos].c], vocab[&right.c]));
+                println!("{string} Merging ({}, {}) `{}` ({})", &self.symbols[top.pos].c, &right.c, format!("{} {}", vocab[&self.symbols[top.pos].c], vocab[&right.c]), top.new_id);
                 // Otherwise, let's merge
                 self.symbols[top.pos].merge_with(&right, top.new_id);
                 // Tag the right part as removed
