@@ -480,7 +480,7 @@ impl PyNmt {
 /// Don't use manually it is used for compatiblity for SentencePiece.
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Precompiled")]
 #[derive(Str)]
-#[format("PreCompiled")]
+#[format(fmt="PreCompiled")]
 pub struct PyPrecompiled {}
 
 #[pymethods]
