@@ -5,7 +5,7 @@ use crate::utils::SysRegex;
 use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 /// Represents the different patterns that `Replace` can use
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+#[derive(AutoDebug, AutoDisplay, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum ReplacePattern {
     String(String),
     Regex(String),
@@ -49,6 +49,7 @@ pub struct Replace {
     #[format]
     content: String,
     #[serde(skip)]
+    #[format(skip)]
     regex: SysRegex,
 }
 

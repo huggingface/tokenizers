@@ -17,7 +17,7 @@ pub use crate::normalizers::utils::{Lowercase, Sequence};
 use serde::{Deserialize, Serialize};
 
 use crate::{NormalizedString, Normalizer};
-use pyo3_special_method_derive_0_21::{AutoDebug,AutoDisplay};
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 
 /// Wrapper for known Normalizers.
 #[derive(Clone, Deserialize, Serialize, AutoDisplay, AutoDebug)]
@@ -34,7 +34,7 @@ pub enum NormalizerWrapper {
     Sequence(Sequence),
     Lowercase(Lowercase),
     Nmt(Nmt),
-    #[format(skip)]
+    #[format(fmt = "Precompiled")]
     Precompiled(Precompiled),
     Replace(Replace),
     Prepend(Prepend),

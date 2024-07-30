@@ -338,12 +338,14 @@ impl From<HashMap<String, SpecialToken>> for Tokens {
 #[format(fmt = "TemplateProcessing: {}")]
 pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
-    pub single: Template,
+    #[format]
+    single: Template,
     #[builder(try_setter, default = "\"$A:0 $B:1\".try_into().unwrap()")]
-    pub pair: Template,
+    #[format]
+    pair: Template,
     #[builder(setter(skip), default = "self.default_added(true)")]
     #[serde(skip)]
-    pub added_single: usize,
+    added_single: usize,
     #[builder(setter(skip), default = "self.default_added(false)")]
     #[format]
     #[serde(skip)]
