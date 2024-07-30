@@ -186,7 +186,7 @@ impl Word {
             } else {
                 // Re-insert the skipped elements
                 queue.extend(skip.drain(..));
-
+                println!("Queue: {:?}\n", queue);
                 if self.symbols[top.pos].len == 0 {
                     continue;
                 }
@@ -200,15 +200,22 @@ impl Word {
                 let string = format!("pos: {:?}", top.pos);
                 // Make sure we are not processing an expired queue entry
                 let target_new_pair = (self.symbols[top.pos].c, right.c);
-                if !merges
-                    .get(&target_new_pair)
-                    .map_or(false, |(_, new_id)| *new_id == top.new_id)
-                {
-                    
-                    println!("{string} Merge abortted, {:?}, {:?} not in merges", vocab[&self.symbols[top.pos].c], vocab[&right.c]);
-                    continue;
+                match merges.get(&target_new_pair) {
+                    Some((_, new_id)) if *new_id == top.new_id => {},
+                    Some(_) => {
+                        // If the `new_id` does not match, skip the iteration
+                        continue;
+                    },
+                    None => {
+                        println!(
+                            "{} Merge aborted,  not in merges.`{}`",
+                            string,
+                            format!("{} {}", vocab[&self.symbols[top.pos].c], vocab[&right.c])
+                        );
+                        continue;
+                    },
                 }
-                println!("{string} Merging {:?} with {:?}", vocab[&self.symbols[top.pos].c], vocab[&right.c]);
+                println!("{string} Merging {:?} with {:?} to create `{}`", vocab[&self.symbols[top.pos].c], vocab[&right.c], format!("{} {}", vocab[&self.symbols[top.pos].c], vocab[&right.c]));
                 // Otherwise, let's merge
                 self.symbols[top.pos].merge_with(&right, top.new_id);
                 // Tag the right part as removed
