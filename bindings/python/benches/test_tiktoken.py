@@ -28,7 +28,8 @@ def benchmark_batch(model: str, documents: list[str]) -> None:
     num_threads = int(os.environ["RAYON_NUM_THREADS"])
     num_bytes = sum(map(len, map(str.encode, documents)))
     readable_size, unit = format_byte_size(num_bytes)
-    print(f"num_threads: {num_threads}, data size: {readable_size}")
+    print(f"==============")
+    print(f"num_threads: {num_threads}, data size: {readable_size}, documents: {len(documents)}")
     filename = hf_hub_download(MODEL_ID, "original/tokenizer.model")
     mergeable_ranks = load_tiktoken_bpe(filename)
     pat_str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"
@@ -80,18 +81,20 @@ def benchmark_batch(model: str, documents: list[str]) -> None:
 def test(model: str, dataset: str, dataset_config: str, threads: List[int]):
     dataset_xnli = load_dataset(dataset, dataset_config)
 
-    input_lengths = [10, 10_000]  # Example input lengths
+    input_lengths = [(10, False), (10_000, False), (10_000, True)]  # Example input lengths
 
     for num_threads in threads:
         os.environ["RAYON_NUM_THREADS"] = str(num_threads)
         os.environ["TOKENIZER_PARALLELISM"] = str(num_threads)
         os.environ["RAYON_RS_NUM_THREADS"] = str(num_threads)
-        for length in input_lengths:
+        for length, fuse in input_lengths:
             documents = []
             for i, item in enumerate(dataset_xnli["train"]):
                 documents.append("".join(item["premise"].values()))
                 if i >= length:
                     break
+            if fuse:
+                documents=["".join(documents)]
             benchmark_batch(model, documents)
 
 
