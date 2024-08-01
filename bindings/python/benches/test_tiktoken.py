@@ -25,12 +25,12 @@ def format_byte_size(num_bytes: int) -> Tuple[str, str]:
     return f"{num_bytes_f:.2f} PB", "PB"
 
 
-def benchmark_batch(model: str, documents: list[str], num_threads: int) -> None:
+def benchmark_batch(model: str, documents: list[str], num_threads: int, document_length: float) -> None:
     os.environ["RAYON_NUM_THREADS"] = str(num_threads)
     num_bytes = sum(map(len, map(str.encode, documents)))
     readable_size, unit = format_byte_size(num_bytes)
     print(f"==============")
-    print(f"num_threads: {num_threads}, data size: {readable_size}, documents: {len(documents)}")
+    print(f"num_threads: {num_threads}, data size: {readable_size}, documents: {len(documents)} Avg Length: {document_length:.0f}")
     filename = hf_hub_download(MODEL_ID, "original/tokenizer.model")
     mergeable_ranks = load_tiktoken_bpe(filename)
     pat_str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"
@@ -82,24 +82,30 @@ def benchmark_batch(model: str, documents: list[str], num_threads: int) -> None:
 def test(model: str, dataset: str, dataset_config: str, threads: List[int]):
     dataset_xnli = load_dataset(dataset, dataset_config)
 
-    input_lengths = [(10, False), (10_000, False), (10_000, True)]  # Example input lengths
+    # input_lengths = [(10, False), (10_000, False), (10_000, True)]  # Example input lengths
+    input_lengths = [(10_000, False, True), (10_000, False, False)]
 
     for num_threads in threads:
-        for length, fuse in input_lengths:
+        for length, fuse, long in input_lengths:
             documents = []
             for i, item in enumerate(dataset_xnli["train"]):
                 if i >= length:
                     break
-                documents.append("".join(item["premise"].values()))
+                if long:
+                    documents.append("".join(item["premise"].values()))
+                else:
+                    documents.append(item["premise"]["en"])
             if fuse:
                 documents=["".join(documents)]
+
+            document_length = sum(len(d) for d in documents) / len(documents)
 
             # Rayon thread pool is global to a process, we need to launch
             # separate processes in order to accurately use the correct number of threads.
             # Otherwise, we're simply running tokenizers in whatever tests comes first.
             # tokenizers does NOT provide a method to change the number of threads during
             # runtime.
-            p = Process(target=benchmark_batch, args=(model, documents, num_threads))
+            p = Process(target=benchmark_batch, args=(model, documents, num_threads, document_length))
             p.start()
             p.join()
 
