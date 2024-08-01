@@ -1,3 +1,5 @@
+use crate::tokenizer::pattern::Pattern;
+use crate::Offsets;
 use fancy_regex::Regex;
 use std::error::Error;
 
@@ -29,5 +31,33 @@ impl<'r, 't> Iterator for Matches<'r, 't> {
             // stop if an error is encountered
             None | Some(Err(_)) => None,
         }
+    }
+}
+
+impl Pattern for &Regex {
+    fn find_matches(
+        &self,
+        inside: &str,
+    ) -> Result<Vec<(Offsets, bool)>, Box<dyn Error + Send + Sync + 'static>> {
+        if inside.is_empty() {
+            return Ok(vec![((0, 0), false)]);
+        }
+
+        let mut prev = 0;
+        let mut splits = Vec::with_capacity(inside.len());
+        for match_ in self.find_iter(inside) {
+            let match_ = match_?;
+            let start = match_.start();
+            let end = match_.end();
+            if prev != start {
+                splits.push(((prev, start), false));
+            }
+            splits.push(((start, end), true));
+            prev = end;
+        }
+        if prev != inside.len() {
+            splits.push(((prev, inside.len()), false))
+        }
+        Ok(splits)
     }
 }
