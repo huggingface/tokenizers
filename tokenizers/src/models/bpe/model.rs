@@ -213,7 +213,7 @@ pub struct BPE {
     /// Contains the mapping between Pairs and their (rank, new_id).
     pub(crate) merges: MergeMap,
     /// Contains the cache for optimizing the encoding step.
-    cache: Option<Cache<String, Word>>,
+    cache: Option<Cache<String, Vec<Token>>>,
     /// Dropout probability for merges. 0.0 = no dropout is the default. At 1.0, tokenization will
     /// perform no merges, so the result will just be characters.
     pub dropout: Option<f32>,
@@ -466,12 +466,14 @@ impl BPE {
             }
         }
         if let Some(ref hit) = self.cache.as_ref().and_then(|c| c.get(sequence)) {
-            return Ok(self.word_to_tokens(hit).collect());
+            // println!("Cache hit {sequence:?}");
+            return Ok(hit.clone());
         }
         let word = self.merge_word(sequence)?;
-        let ret = self.word_to_tokens(&word).collect();
+        let ret: Vec<_> = self.word_to_tokens(&word).collect();
         if let Some(ref cache) = self.cache {
-            cache.set(sequence.to_owned(), word);
+            // println!("Cache miss, saving.. {sequence:?}");
+            cache.set(sequence.to_owned(), ret.clone());
         }
         Ok(ret)
     }

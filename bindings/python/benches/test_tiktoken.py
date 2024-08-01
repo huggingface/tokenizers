@@ -4,6 +4,7 @@ import argparse
 from datasets import load_dataset
 from tiktoken.load import load_tiktoken_bpe
 import tiktoken
+import tokenizers
 from tokenizers import Tokenizer
 from huggingface_hub import hf_hub_download
 from typing import Tuple, List
@@ -60,7 +61,12 @@ def benchmark_batch(model: str, documents: list[str], num_threads: int, document
             mergeable_ranks=mergeable_ranks,
             special_tokens=special_tokens,
         )
-    enc.encode("warmup")
+    out = enc.encode("This is a test")
+
+    hf_enc = Tokenizer.from_pretrained(model)
+    out2 = hf_enc.encode("This is a test", add_special_tokens=False).ids
+
+    assert out == out2, "Invalid tokenization"
 
     start = time.perf_counter_ns()
     enc.encode_ordinary_batch(documents, num_threads=num_threads)
@@ -69,11 +75,8 @@ def benchmark_batch(model: str, documents: list[str], num_threads: int, document
     readable_size, unit = format_byte_size(num_bytes / (end - start) * 1e9)
     print(f"tiktoken \t{readable_size}  / s")
 
-    hf_enc = Tokenizer.from_pretrained(model)
-    hf_enc.encode("warmup")
-
     start = time.perf_counter_ns()
-    hf_enc.encode_batch(documents)
+    hf_enc.encode_batch(documents, add_special_tokens=False)
     end = time.perf_counter_ns()
     readable_size, unit = format_byte_size(num_bytes / (end - start) * 1e9)
     print(f"huggingface \t{readable_size} / s")
@@ -108,6 +111,7 @@ def test(model: str, dataset: str, dataset_config: str, threads: List[int]):
             p = Process(target=benchmark_batch, args=(model, documents, num_threads, document_length))
             p.start()
             p.join()
+            # benchmark_batch(model, documents, num_threads, document_length)
 
             # benchmark_batch(model, documents, num_threads)
 

@@ -5,6 +5,25 @@ use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
 
+use std::num::NonZeroU64;
+use std::thread;
+
+pub struct FakeThreadId(NonZeroU64);
+
+fn hash_current_thread() -> usize {
+    // It's easier to use unsafe than to use nightly. Rust has this nice u64 thread id counter
+    // that works great for our use case of avoiding collisions in our array. Unfortunately,
+    // it's private. However, there are only so many ways you can layout a u64, so just transmute
+    // https://github.com/rust-lang/rust/issues/67939
+    const _: [u8; 8] = [0; std::mem::size_of::<thread::ThreadId>()];
+    const _: [u8; 8] = [0; std::mem::size_of::<FakeThreadId>()];
+    let x =
+        unsafe { std::mem::transmute::<thread::ThreadId, FakeThreadId>(thread::current().id()).0 };
+    u64::from(x) as usize - 1
+}
+
+const MAX_NUM_THREADS: usize = 128;
+
 /// Represents the different patterns that `Split` can use
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum SplitPattern {
@@ -30,6 +49,8 @@ pub struct Split {
     pattern: SplitPattern,
     #[serde(skip)]
     regex: SysRegex,
+    #[serde(skip)]
+    regexes: Vec<SysRegex>,
     behavior: SplitDelimiterBehavior,
     invert: bool,
 }
@@ -79,14 +100,21 @@ impl Split {
         invert: bool,
     ) -> Result<Self> {
         let pattern: SplitPattern = pattern.into();
-        let regex = match &pattern {
-            SplitPattern::String(s) => SysRegex::new(&regex::escape(s))?,
-            SplitPattern::Regex(r) => SysRegex::new(r)?,
+        let create_regex = || -> Result<SysRegex> {
+            Ok(match &pattern {
+                SplitPattern::String(s) => SysRegex::new(&regex::escape(s))?,
+                SplitPattern::Regex(r) => SysRegex::new(r)?,
+            })
         };
+        let regex = create_regex()?;
+        let regexes: Vec<SysRegex> = (0..MAX_NUM_THREADS)
+            .map(|_| create_regex().unwrap())
+            .collect();
 
         Ok(Self {
             pattern,
             regex,
+            regexes,
             behavior,
             invert,
         })
@@ -98,7 +126,9 @@ impl PreTokenizer for Split {
         if self.invert {
             pretokenized.split(|_, normalized| normalized.split(Invert(&self.regex), self.behavior))
         } else {
-            pretokenized.split(|_, normalized| normalized.split(&self.regex, self.behavior))
+            let regex = &self.regexes[hash_current_thread() % MAX_NUM_THREADS];
+
+            pretokenized.split(|_, normalized| normalized.split(regex, self.behavior))
         }
     }
 }
