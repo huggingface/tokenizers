@@ -33,6 +33,7 @@ use super::error::ToPyResult;
 #[format(fmt = "{}")]
 pub struct PyDecoder {
     #[serde(flatten)]
+    #[format]
     pub(crate) decoder: PyDecoderWrapper,
 }
 

@@ -43,10 +43,11 @@ impl PyNormalizedStringMut<'_> {
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
-#[derive(Clone, Serialize, Deserialize, Str, Repr, Dir, Dict)]
+#[derive(Clone, Serialize, Deserialize, Str, Repr, Dir)]
 #[format(fmt = "{}")]
 pub struct PyNormalizer {
     #[serde(flatten)]
+    #[format]
     pub(crate) normalizer: PyNormalizerTypeWrapper,
 }
 
@@ -565,9 +566,7 @@ impl<'de> Deserialize<'de> for CustomNormalizer {
 #[serde(untagged)]
 #[format(fmt = "{}")]
 pub(crate) enum PyNormalizerWrapper {
-    #[format(fmt = "{}")]
     Custom(CustomNormalizer),
-    #[format(fmt = "{}")]
     Wrapped(NormalizerWrapper),
 }
 

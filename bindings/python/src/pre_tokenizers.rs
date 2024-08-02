@@ -38,6 +38,7 @@ use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay, Dict, Dir, Repr, S
 #[format(fmt = "{}")] // don't format the Py wrapper
 pub struct PyPreTokenizer {
     #[serde(flatten)]
+    #[format]
     pretok: PyPreTokenizerTypeWrapper,
 }
 
@@ -638,9 +639,7 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
 #[serde(untagged)]
 #[format(fmt = "{}")]
 pub(crate) enum PyPreTokenizerWrapper {
-    #[format(fmt = "{}")]
     Custom(CustomPreTokenizer),
-    #[format(fmt = "{}")]
     Wrapped(PreTokenizerWrapper),
 }
 
@@ -660,9 +659,7 @@ impl Serialize for PyPreTokenizerWrapper {
 #[serde(untagged)]
 #[format(fmt = "{}")]
 pub(crate) enum PyPreTokenizerTypeWrapper {
-    #[format(fmt = "{}")]
     Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),
-    #[format(fmt = "{}")]
     Single(Arc<RwLock<PyPreTokenizerWrapper>>),
 }
 
