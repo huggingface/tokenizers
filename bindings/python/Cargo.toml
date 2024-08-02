@@ -18,7 +18,6 @@ pyo3 = { version = "0.21" }
 numpy = "0.21"
 ndarray = "0.15"
 itertools = "0.12"
-serde_pyo3 = { git = "https://github.com/Narsil/serde_pyo3" }
 
 [dependencies.tokenizers]
 path = "../../tokenizers"

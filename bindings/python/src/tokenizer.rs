@@ -642,7 +642,8 @@ impl PyTokenizer {
 
     #[pyo3(signature = ())]
     fn repr(&self) -> PyResult<String> {
-        serde_pyo3::to_string(self).map_err(|e| exceptions::PyException::new_err(e.to_string()))
+        crate::utils::serde_pyo3::to_string(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
     }
 
     /// Return the number of special tokens that would be added for single/pair sentences.
@@ -1450,7 +1451,7 @@ mod test {
             Arc::new(RwLock::new(Lowercase.into())),
         ])));
 
-        let output = serde_pyo3::to_string(&tokenizer).unwrap();
+        let output = crate::utils::serde_pyo3::to_string(&tokenizer).unwrap();
         assert_eq!(output, "");
     }
 }
