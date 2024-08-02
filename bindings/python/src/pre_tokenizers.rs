@@ -35,8 +35,8 @@ use super::utils::*;
     subclass
 )]
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct PyPreTokenizer {
-    #[serde(flatten)]
     pub(crate) pretok: PyPreTokenizerTypeWrapper,
 }
 
