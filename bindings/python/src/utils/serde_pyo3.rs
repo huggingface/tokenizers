@@ -273,10 +273,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
         // self.serialize_map(Some(len))
         // name.serialize(&mut *self)?;
-        if name.ends_with("Helper") {
-            self.output += &name[..name.len() - "Helper".len()];
+        if let Some(stripped) = name.strip_suffix("Helper") {
+            self.output += stripped;
         } else {
-            self.output += name;
+            self.output += name
         }
         self.output += "(";
         Ok(self)
