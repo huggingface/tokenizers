@@ -65,9 +65,9 @@ impl PreTokenizedString {
     ///
     /// There are only one constraint that *MUST* be respected:
     /// > The produced `NormalizedString`, if combined back together, must have the
-    /// same `original` string as the original one given to `split_fn`. This concretely
-    /// means that for the offset tracking to work as expected, `split_fn` must produce
-    /// "splits" of the original string.
+    /// > same `original` string as the original one given to `split_fn`. This concretely
+    /// > means that for the offset tracking to work as expected, `split_fn` must produce
+    /// > "splits" of the original string.
     pub fn split<F, U, R>(&mut self, mut split_fn: F) -> Result<()>
     where
         F: FnMut(usize, NormalizedString) -> Result<U>,
