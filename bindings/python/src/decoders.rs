@@ -29,8 +29,8 @@ use super::error::ToPyResult;
 /// a Decoder will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.decoders", name = "Decoder", subclass)]
 #[derive(Clone, Deserialize, Serialize)]
-#[serde(transparent)]
 pub struct PyDecoder {
+    #[serde(flatten)]
     pub(crate) decoder: PyDecoderWrapper,
 }
 

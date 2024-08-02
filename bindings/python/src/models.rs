@@ -26,8 +26,8 @@ use super::error::{deprecation_warning, ToPyResult};
 /// This class cannot be constructed directly. Please use one of the concrete models.
 #[pyclass(module = "tokenizers.models", name = "Model", subclass)]
 #[derive(Clone, Serialize, Deserialize)]
-#[serde(transparent)]
 pub struct PyModel {
+    #[serde(flatten)]
     pub model: Arc<RwLock<ModelWrapper>>,
 }
 
