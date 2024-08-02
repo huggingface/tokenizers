@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::normalizers::NormalizerWrapper;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
-use pyo3_special_method_derive_0_21::{AutoDebug,AutoDisplay};
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 #[derive(Clone, Deserialize, AutoDebug, Serialize, AutoDisplay)]
 #[serde(tag = "type")]
 /// Allows concatenating multiple other Normalizer as a Sequence.

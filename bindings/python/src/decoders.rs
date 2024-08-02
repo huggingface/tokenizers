@@ -5,7 +5,7 @@ use crate::utils::PyPattern;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3_special_method_derive_0_21::{AutoDisplay, Repr, Str, AutoDebug};
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay, Repr, Str};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::decoders::bpe::BPEDecoder;
@@ -30,10 +30,10 @@ use super::error::ToPyResult;
 /// a Decoder will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.decoders", name = "Decoder", subclass)]
 #[derive(Clone, Deserialize, Serialize, Str, Repr)]
-#[format(fmt="{}")]
+#[format(fmt = "{}")]
 pub struct PyDecoder {
     #[serde(flatten)]
-    #[format(fmt="{}")]
+    #[format(fmt = "{}")]
     pub(crate) decoder: PyDecoderWrapper,
 }
 
@@ -486,7 +486,6 @@ pub(crate) struct CustomDecoder {
     #[format(skip)]
     pub inner: PyObject,
 }
-
 
 impl CustomDecoder {
     pub(crate) fn new(inner: PyObject) -> Self {

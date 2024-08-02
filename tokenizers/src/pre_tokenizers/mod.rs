@@ -33,7 +33,6 @@ pub enum PreTokenizerWrapper {
     Delimiter(CharDelimiterSplit),
     Metaspace(Metaspace),
     Whitespace(Whitespace),
-    #[format(fmt = "{}")]
     Sequence(Sequence),
     Split(Split),
     Punctuation(Punctuation),

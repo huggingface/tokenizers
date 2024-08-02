@@ -1,6 +1,6 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
-use pyo3_special_method_derive_0_21::{AutoDebug,AutoDisplay};
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay};
 use serde::{Deserialize, Serialize};
 use unicode_normalization_alignments::char::is_combining_mark;
 #[derive(Copy, Clone, AutoDebug, Deserialize, Serialize, AutoDisplay)]

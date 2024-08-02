@@ -5,7 +5,7 @@ use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3_special_method_derive_0_21::{AutoDisplay,AutoDebug, Dict, Dir, Repr, Str};
+use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay, Dict, Dir, Repr, Str};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
@@ -480,7 +480,7 @@ impl PyNmt {
 /// Don't use manually it is used for compatiblity for SentencePiece.
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Precompiled")]
 #[derive(Str)]
-#[format(fmt="PreCompiled")]
+#[format(fmt = "PreCompiled")]
 pub struct PyPrecompiled {}
 
 #[pymethods]
