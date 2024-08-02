@@ -31,7 +31,6 @@ use tokenizers as tk;
 #[format(fmt = "{}")]
 pub struct PyPostProcessor {
     #[serde(flatten)]
-    #[format(fmt = "{}")]
     pub processor: Arc<PostProcessorWrapper>,
 }
 

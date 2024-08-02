@@ -38,7 +38,6 @@ use pyo3_special_method_derive_0_21::{AutoDebug, AutoDisplay, Dict, Dir, Repr, S
 #[format(fmt = "{}")] // don't format the Py wrapper
 pub struct PyPreTokenizer {
     #[serde(flatten)]
-    #[format(fmt = "{}")] // format only pretok, not pretok =
     pretok: PyPreTokenizerTypeWrapper,
 }
 

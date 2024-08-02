@@ -33,7 +33,6 @@ use super::error::ToPyResult;
 #[format(fmt = "{}")]
 pub struct PyDecoder {
     #[serde(flatten)]
-    #[format(fmt = "{}")]
     pub(crate) decoder: PyDecoderWrapper,
 }
 
@@ -539,9 +538,7 @@ impl<'de> Deserialize<'de> for CustomDecoder {
 #[serde(untagged)]
 #[format(fmt = "{}")]
 pub(crate) enum PyDecoderWrapper {
-    #[format(fmt = "{}")]
     Custom(Arc<RwLock<CustomDecoder>>),
-    #[format(fmt = "{}")]
     Wrapped(Arc<RwLock<DecoderWrapper>>),
 }
 

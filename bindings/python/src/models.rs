@@ -29,7 +29,6 @@ use tokenizers as tk;
 #[format(fmt = "{}")]
 pub struct PyModel {
     #[serde(flatten)]
-    #[format(fmt = "{}")]
     pub model: Arc<RwLock<ModelWrapper>>,
 }
 

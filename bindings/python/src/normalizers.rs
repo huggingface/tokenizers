@@ -47,7 +47,6 @@ impl PyNormalizedStringMut<'_> {
 #[format(fmt = "{}")]
 pub struct PyNormalizer {
     #[serde(flatten)]
-    #[format(fmt = "{}")]
     pub(crate) normalizer: PyNormalizerTypeWrapper,
 }
 
