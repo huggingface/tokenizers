@@ -1048,6 +1048,36 @@ impl PyTokenizer {
         py.allow_threads(|| {
             ToPyResult(
                 self.tokenizer
+                    .encode_batch(input, add_special_tokens)
+                    .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
+            )
+            .into()
+        })
+    }
+
+    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true))]
+    #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
+    fn encode_batch_char_offsets(
+        &self,
+        py: Python<'_>,
+        input: Vec<&PyAny>,
+        is_pretokenized: bool,
+        add_special_tokens: bool,
+    ) -> PyResult<Vec<PyEncoding>> {
+        let input: Vec<tk::EncodeInput> = input
+            .into_iter()
+            .map(|o| {
+                let input: tk::EncodeInput = if is_pretokenized {
+                    o.extract::<PreTokenizedEncodeInput>()?.into()
+                } else {
+                    o.extract::<TextEncodeInput>()?.into()
+                };
+                Ok(input)
+            })
+            .collect::<PyResult<Vec<tk::EncodeInput>>>()?;
+        py.allow_threads(|| {
+            ToPyResult(
+                self.tokenizer
                     .encode_batch_char_offsets(input, add_special_tokens)
                     .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
             )
