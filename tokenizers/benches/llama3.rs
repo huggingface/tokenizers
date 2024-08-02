@@ -1,8 +1,6 @@
 #[macro_use]
 extern crate criterion;
 
-mod common;
-
 use criterion::{Criterion, Throughput};
 use tokenizers::Tokenizer;
 
