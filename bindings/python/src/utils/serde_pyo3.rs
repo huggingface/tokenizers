@@ -597,11 +597,13 @@ fn test_struct_tagged() {
     }
 
     let u = A { a: true, b: 1 };
-    let expected = r#"A(type="A", a=True, b=1)"#;
+    // let expected = r#"A(type="A", a=True, b=1)"#;
+    // No we skip all `type` manually inserted variants.
+    let expected = r#"A(a=True, b=1)"#;
     assert_eq!(to_string(&u).unwrap(), expected);
 
     let u = E::A(A { a: true, b: 1 });
-    let expected = r#"A(type="A", a=True, b=1)"#;
+    let expected = r#"A(a=True, b=1)"#;
     assert_eq!(to_string(&u).unwrap(), expected);
 }
 
@@ -626,6 +628,12 @@ fn test_flatten() {
         d: usize,
     }
 
+    #[derive(Serialize)]
+    #[serde(transparent)]
+    struct D {
+        e: A,
+    }
+
     let u = B {
         c: A { a: true, b: 1 },
         d: 2,
@@ -637,6 +645,15 @@ fn test_flatten() {
         c: A { a: true, b: 1 },
         d: 2,
     };
-    let expected = r#"C(a=True, b=1, d=2)"#;
+    // XXX This is unfortunate but true, flatten forces the serialization
+    // to use the serialize_map  without any means for the Serializer to know about this
+    // flattening attempt
+    let expected = r#"{"a":True, "b":1, "d":2}"#;
+    assert_eq!(to_string(&u).unwrap(), expected);
+
+    let u = D {
+        e: A { a: true, b: 1 },
+    };
+    let expected = r#"A(a=True, b=1)"#;
     assert_eq!(to_string(&u).unwrap(), expected);
 }
