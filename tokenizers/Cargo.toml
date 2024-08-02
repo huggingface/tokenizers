@@ -38,6 +38,7 @@ harness = false
 
 [[bench]]
 name = "llama3"
+required-features = ["http"]
 harness = false
 
 [dependencies]
