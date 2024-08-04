@@ -372,24 +372,17 @@ impl PySequence {
 
     fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
         match &self_.as_ref().normalizer {
-            PyNormalizerTypeWrapper::Sequence(inner) => {
-                if let Some(item) = inner.get(index) {
-                    PyNormalizer::new(PyNormalizerTypeWrapper::Single(Arc::clone(item)))
-                        .get_as_subtype(py)
-                } else {
-                    Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                        "Index not found",
-                    ))
-                }
-            }
-            PyNormalizerTypeWrapper::Single(inner) => match inner.read() {
-                Ok(read_guard) => Ok(PyNormalizer::new(read_guard.clone().into())
-                    .get_as_subtype(py)
-                    .unwrap()),
-                Err(_) => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                    "Failed to acquire read lock",
+            PyNormalizerTypeWrapper::Sequence(inner) => match inner.get(index) {
+                Some(item) => PyNormalizer::new(PyNormalizerTypeWrapper::Single(Arc::clone(item)))
+                    .get_as_subtype(py),
+                _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                    "Index not found",
                 )),
             },
+            PyNormalizerTypeWrapper::Single(inner) => {
+                PyNormalizer::new(PyNormalizerTypeWrapper::Single(Arc::clone(inner)))
+                    .get_as_subtype(py)
+            }
         }
     }
 }
