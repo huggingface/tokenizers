@@ -1,8 +1,6 @@
-use std::sync::{Arc, RwLock};
-
-use pyo3::exceptions;
-use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3::{exceptions, prelude::*};
+use std::sync::{Arc, RwLock};
 
 use crate::error::ToPyResult;
 use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
@@ -344,6 +342,7 @@ impl PyNFKC {
 ///         A list of Normalizer to be run as a sequence
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Sequence")]
 pub struct PySequence {}
+
 #[pymethods]
 impl PySequence {
     #[new]
@@ -369,6 +368,84 @@ impl PySequence {
 
     fn __len__(&self) -> usize {
         0
+    }
+    // fn _get_item<'p>(
+    //     self_: PyRef<'_, Self>,
+    //     py: Python<'p>,
+    //     index: usize,
+    // ) -> PyResult<Py<PyNormalizerWrapper>> {
+    //     let normalizer = &self_.as_ref().normalizer;
+
+    //     match normalizer {
+    //         PyNormalizerTypeWrapper::Sequence(inner) => {
+    //             if let Some(item) = inner.get(index) {
+    //                 // Clone the Arc to gain access
+    //                 let item_clone = Arc::clone(&item);
+
+    //                 // Attempt to acquire the write lock
+    //                 let mut write_guard = item_clone.write().map_err(|_| {
+    //                     PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+    //                         "Failed to acquire write lock",
+    //                     )
+    //                 })?;
+
+    //                 // Convert the PyNormalizerWrapper to a Python object
+    //                 let py_normalizer = PyNormalizerWrapper::clone(&*write_guard);
+    //                 Ok(py_normalizer.into()) // Assuming to_py is implemented
+    //             } else {
+    //                 Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+    //                     "Index out of bounds",
+    //                 ))
+    //             }
+    //         }
+    //         PyNormalizerTypeWrapper::Single(inner) => {
+    //             // Attempt to acquire the write lock
+    //             let mut write_guard = inner.write().map_err(|_| {
+    //                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+    //                     "Failed to acquire write lock",
+    //                 )
+    //             })?;
+
+    //             // Convert the PyNormalizerWrapper to a Python object
+    //             let py_normalizer = PyNormalizerWrapper::clone(&*write_guard);
+    //             Ok(py_normalizer.to_py(py)) // Assuming to_py is implemented
+    //         }
+    //     }
+    // }
+
+    fn __getitem__<'p>(
+        self_: PyRef<'_, Self>,
+        py: Python<'p>,
+        index: usize,
+    ) -> PyResult<Py<PyAny>> {
+        match &self_.as_ref().normalizer {
+            PyNormalizerTypeWrapper::Sequence(inner) => {
+                if let Some(item) = inner.get(index) {
+                    match Arc::clone(&item).read() {
+                        Ok(read_guard) => {
+                            let py_normalizer: PyNormalizerTypeWrapper = read_guard.clone().into();
+                            let pynorm = PyNormalizer::new(py_normalizer).get_as_subtype(py);
+                            Ok(pynorm.unwrap())
+                        }
+                        Err(_) => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                            "Failed to acquire read lock",
+                        )),
+                    }
+                } else {
+                    Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                        "Failed to acquire read lock",
+                    ))
+                }
+            }
+            PyNormalizerTypeWrapper::Single(inner) => match inner.read() {
+                Ok(read_guard) => Ok(PyNormalizer::new(read_guard.clone().into())
+                    .get_as_subtype(py)
+                    .unwrap()),
+                Err(_) => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                    "Failed to acquire read lock",
+                )),
+            },
+        }
     }
 }
 
