@@ -550,19 +550,18 @@ where
     }
 
     /// Set the normalizer
-    pub fn with_normalizer(&mut self, normalizer: impl Into<N>) -> &mut Self {
-        self.normalizer = Some(normalizer.into());
+    pub fn with_normalizer(&mut self, normalizer: Option<impl Into<N>>) -> &mut Self {
+        self.normalizer = normalizer.map(|norm| norm.into());
         self
     }
-
     /// Get the normalizer
     pub fn get_normalizer(&self) -> Option<&N> {
         self.normalizer.as_ref()
     }
 
     /// Set the pre tokenizer
-    pub fn with_pre_tokenizer(&mut self, pre_tokenizer: impl Into<PT>) -> &mut Self {
-        self.pre_tokenizer = Some(pre_tokenizer.into());
+    pub fn with_pre_tokenizer(&mut self, pre_tokenizer: Option<impl Into<PT>>) -> &mut Self {
+        self.pre_tokenizer = pre_tokenizer.map(|tok| tok.into());
         self
     }
 

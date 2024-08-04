@@ -8,6 +8,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use tk::models::bpe::BPE;
+use tk::normalizer;
 use tk::tokenizer::{
     Model, PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
     TruncationDirection, TruncationParams, TruncationStrategy,
@@ -1359,8 +1360,9 @@ impl PyTokenizer {
 
     /// Set the :class:`~tokenizers.normalizers.Normalizer`
     #[setter]
-    fn set_normalizer(&mut self, normalizer: PyRef<PyNormalizer>) {
-        self.tokenizer.with_normalizer(normalizer.clone());
+    fn set_normalizer(&mut self, normalizer: Option<PyRef<PyNormalizer>>) {
+        let normalizer_option = normalizer.map(|norm| norm.clone());
+        self.tokenizer.with_normalizer(normalizer_option);
     }
 
     /// The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
@@ -1375,8 +1377,9 @@ impl PyTokenizer {
 
     /// Set the :class:`~tokenizers.normalizers.Normalizer`
     #[setter]
-    fn set_pre_tokenizer(&mut self, pretok: PyRef<PyPreTokenizer>) {
-        self.tokenizer.with_pre_tokenizer(pretok.clone());
+    fn set_pre_tokenizer(&mut self, pretok: Option<PyRef<PyPreTokenizer>>) {
+        let pretok = pretok.map(|pre| pre.clone());
+        self.tokenizer.with_pre_tokenizer(pretok);
     }
 
     /// The `optional` :class:`~tokenizers.processors.PostProcessor` in use by the Tokenizer
