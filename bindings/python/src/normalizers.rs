@@ -374,16 +374,8 @@ impl PySequence {
         match &self_.as_ref().normalizer {
             PyNormalizerTypeWrapper::Sequence(inner) => {
                 if let Some(item) = inner.get(index) {
-                    match Arc::clone(item).read() {
-                        Ok(read_guard) => {
-                            let py_normalizer: PyNormalizerTypeWrapper = read_guard.clone().into();
-                            let pynorm = PyNormalizer::new(py_normalizer).get_as_subtype(py);
-                            Ok(pynorm.unwrap())
-                        }
-                        Err(_) => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                            "Index not found",
-                        )),
-                    }
+                    PyNormalizer::new(PyNormalizerTypeWrapper::Single(Arc::clone(item)))
+                        .get_as_subtype(py)
                 } else {
                     Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
                         "Index not found",
