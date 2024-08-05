@@ -22,7 +22,7 @@ pub enum Error {
     BadVocabulary,
     /// When the merges.txt file is in the wrong format. This error holds the line
     /// number of the line that caused the error.
-    #[error("Merges text file invalid at line {0}")]
+    #[error("Merges text file invalid at line {0}, there are probably spaces in the merges, whish is not supported")]
     BadMerges(usize),
     /// If a token found in merges, is not in the vocab
     #[error("Token `{0}` out of vocabulary")]
