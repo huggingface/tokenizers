@@ -324,8 +324,7 @@ impl PyWhitespaceSplit {
 ///
 /// Args:
 ///     pattern (:obj:`str` or :class:`~tokenizers.Regex`):
-///         A pattern used to split the string. Usually a string or a a regex built with `tokenizers.Regex`
-///
+///         A pattern used to split the string. Usually a string or a a regex built with `tokenizers.Regex`. If you want to use a regex pattern, it has to be wrapped around a `tokenizer.Regex`, otherwise we consider is as a string pattern.
 ///     behavior (:class:`~tokenizers.SplitDelimiterBehavior`):
 ///         The behavior to use when splitting.
 ///         Choices: "removed", "isolated", "merged_with_previous", "merged_with_next",
