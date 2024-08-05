@@ -122,14 +122,29 @@ impl<'de> Deserialize<'de> for ModelWrapper {
                                 }
                             }
                         }
-                        _ => todo!(),
+                        _ => {
+                            #[derive(Deserialize, Debug, PartialEq, Clone)]
+                            #[serde(untagged)]
+                            pub enum DummyModelWrapper {
+                                BPE(BPE),
+                                // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
+                                // with the versions not including the "type"), since WordLevel is a subset of WordPiece
+                                WordPiece(WordPiece),
+                                WordLevel(WordLevel),
+                                Unigram(Unigram),
+                            }
+
+                            match DummyModelWrapper::deserialize(MapAccessDeserializer::new(map))? {
+                                DummyModelWrapper::BPE(inner) => ModelWrapper::BPE(inner),
+                                _ => todo!(),
+                            };
+                        }
                     }
                 }
 
                 Err(V::Error::custom("invalid input"))
             }
         }
-
         deserializer.deserialize_any(ModelWrapperVisitor)
     }
 }
