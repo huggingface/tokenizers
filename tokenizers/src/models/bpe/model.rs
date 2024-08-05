@@ -282,21 +282,14 @@ pub(crate) fn convert_merges_to_hashmap<I: Iterator<Item = String>>(
     _vocab: &Vocab,
 ) -> Result<Merges> {
     let mut merges = vec![];
-
-    println!(" Parsing merges!");
     let lines = iter.filter(|l| !l.starts_with("#version"));
     for (rank, line) in lines.enumerate() {
         let parts = line.split(' ').collect::<Vec<_>>();
         if parts.len() != 2 {
-            println!("bad merges parts = {:?}", parts);
-
             return Err(Error::BadMerges(rank + 1).into());
         }
-
-        println!("parts = {:?}", parts);
         merges.push((parts[0].to_string(), parts[1].to_string()));
     }
-    println!(" Finished parsing");
     Ok(merges)
 }
 
