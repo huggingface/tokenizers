@@ -5,10 +5,14 @@ pub mod unigram;
 pub mod wordlevel;
 pub mod wordpiece;
 
+use serde::{
+    self,
+    de::{value::MapAccessDeserializer, Error, MapAccess, Visitor},
+    ser::SerializeStruct,
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-
-use serde::{Deserialize, Serialize, Serializer};
 
 use crate::models::bpe::{BpeTrainer, BPE};
 use crate::models::unigram::{Unigram, UnigramTrainer};
@@ -57,7 +61,8 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Debug, PartialEq, Clone)]
+#[serde(untagged)]
 pub enum ModelWrapper {
     BPE(BPE),
     // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
@@ -65,6 +70,68 @@ pub enum ModelWrapper {
     WordPiece(WordPiece),
     WordLevel(WordLevel),
     Unigram(Unigram),
+}
+
+impl<'de> Deserialize<'de> for ModelWrapper {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Define a Visitor struct that will handle both tagged and untagged deserialization
+        struct ModelWrapperVisitor;
+
+        impl<'de> Visitor<'de> for ModelWrapperVisitor {
+            type Value = ModelWrapper;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a valid ModelWrapper")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> std::result::Result<ModelWrapper, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                println!("Parsed stuff????");
+
+                // Look for a "type" tag
+                if let Some(key) = map.next_key::<String>()? {
+                    println!("Matched key: {:?}", key);
+                    match key.as_str() {
+                        "type" => {
+                            let tag: String = map.next_value()?;
+                            println!("Matched tag: {:?}", tag);
+
+                            match tag.as_str() {
+                                "BPE" => {
+                                    BPE::deserialize(MapAccessDeserializer::new(map))?;
+                                }
+                                "WordPiece" => {
+                                    WordPiece::deserialize(MapAccessDeserializer::new(map))?;
+                                }
+                                "WordLevel" => {
+                                    WordLevel::deserialize(MapAccessDeserializer::new(map))?;
+                                }
+                                "Unigram" => {
+                                    Unigram::deserialize(MapAccessDeserializer::new(map))?;
+                                }
+                                _ => {
+                                    return Err(V::Error::unknown_variant(
+                                        &tag,
+                                        &["BPE", "WordPiece", "WordLevel", "Unigram"],
+                                    ));
+                                }
+                            }
+                        }
+                        _ => todo!(),
+                    }
+                }
+
+                Err(V::Error::custom("invalid input"))
+            }
+        }
+
+        deserializer.deserialize_any(ModelWrapperVisitor)
+    }
 }
 
 impl_enum_from!(WordLevel, ModelWrapper, WordLevel);
