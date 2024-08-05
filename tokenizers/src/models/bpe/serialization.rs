@@ -122,11 +122,8 @@ impl<'de> Visitor<'de> for BPEVisitor {
                 "vocab" => vocab = Some(map.next_value()?),
                 "merges" => merges = Some(map.next_value()?),
                 "type" => match map.next_value()? {
-                    "BPE" => {
-                        println!("We found BPE");
-                    }
+                    "BPE" => {}
                     u => {
-                        println!("We found u {}", u);
                         return Err(serde::de::Error::invalid_value(
                             serde::de::Unexpected::Str(u),
                             &"BPE",
@@ -142,7 +139,7 @@ impl<'de> Visitor<'de> for BPEVisitor {
                     builder = builder.vocab_and_merges(vocab, merges);
                     builder
                         .build()
-                        .map_err(|_| V::Error::custom("Missing something"))
+                        .map_err(|_| V::Error::custom("Fail building"))
                 }
                 Err(e) => Err(V::Error::custom(format!("Failed to convert merges: {}", e))),
             }
