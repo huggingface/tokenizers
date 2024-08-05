@@ -122,24 +122,32 @@ impl<'de> Visitor<'de> for BPEVisitor {
                 "vocab" => vocab = Some(map.next_value()?),
                 "merges" => merges = Some(map.next_value()?),
                 "type" => match map.next_value()? {
-                    "BPE" => {}
+                    "BPE" => {
+                        println!("We found BPE");
+                    }
                     u => {
+                        println!("We found u {}", u);
                         return Err(serde::de::Error::invalid_value(
                             serde::de::Unexpected::Str(u),
                             &"BPE",
-                        ))
+                        ));
                     }
                 },
                 _ => {}
             }
         }
         if let (Some(vocab), Some(merges)) = (vocab, merges) {
-            let merges =
-                convert_merges_to_hashmap(merges.into_iter(), &vocab).map_err(Error::custom)?;
-            builder = builder.vocab_and_merges(vocab, merges);
-            Ok(builder.build().map_err(Error::custom)?)
+            match convert_merges_to_hashmap(merges.into_iter(), &vocab) {
+                Ok(merges) => {
+                    builder = builder.vocab_and_merges(vocab, merges);
+                    builder
+                        .build()
+                        .map_err(|_| V::Error::custom("Missing something"))
+                }
+                Err(e) => Err(V::Error::custom(format!("Failed to convert merges: {}", e))),
+            }
         } else {
-            Err(Error::custom("Missing vocab/merges"))
+            Err(V::Error::custom("Missing vocab/merges"))
         }
     }
 }

@@ -58,7 +58,6 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
 }
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
-#[serde(untagged)]
 pub enum ModelWrapper {
     BPE(BPE),
     // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
