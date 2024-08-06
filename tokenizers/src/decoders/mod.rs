@@ -97,7 +97,6 @@ mod tests {
         assert!(serde_json::from_str::<DecoderWrapper>(json).is_err());
     }
 
-
     #[test]
     fn decoder_deserialization_no_type() {
         let json = r#"{"replacement":"▁","add_prefix_space":true,"prepend_scheme":"always"}"#;
