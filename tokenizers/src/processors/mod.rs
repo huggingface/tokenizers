@@ -104,14 +104,25 @@ mod tests {
         let reconstructed = serde_json::from_str::<PostProcessorWrapper>(json);
         match reconstructed {
             Ok(processor) => assert!(matches!(processor, PostProcessorWrapper::Bert(_))),
-            Err(err) => panic!("{:?}",err)
+            Err(err) => panic!("{:?}", err),
         }
 
-        let json = r#"{"sep":["</s>",2], "cls":["<s>",0], "trim_offsets":true, "add_prefix_space":true}"#;
+        let json =
+            r#"{"sep":["</s>",2], "cls":["<s>",0], "trim_offsets":true, "add_prefix_space":true}"#;
         let reconstructed = serde_json::from_str::<PostProcessorWrapper>(json);
         match reconstructed {
             Ok(processor) => assert!(matches!(processor, PostProcessorWrapper::Roberta(_))),
-            Err(err) => panic!("{:?}",err)
+            Err(err) => panic!("{:?}", err),
+        }
+
+        let json = r#"{"type":"RobertaProcessing", "sep":["</s>",2] }"#;
+        let reconstructed = serde_json::from_str::<PostProcessorWrapper>(json);
+        match reconstructed {
+            Err(err) => assert_eq!(
+                err.to_string(),
+                "data did not match any variant of untagged enum PostProcessorWrapper"
+            ),
+            _ => panic!("Expected an error here"),
         }
     }
 }
