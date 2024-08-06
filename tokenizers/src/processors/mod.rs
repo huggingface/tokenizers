@@ -87,4 +87,10 @@ mod tests {
             PostProcessorWrapper::Bert(bert)
         );
     }
+
+    #[test]
+    fn post_processor_deserialization_no_type() {
+        let json = r#"{"sep":["[SEP]",102],"cls":["[CLS]",101]}}"#;
+        assert!(serde_json::from_str::<PostProcessorWrapper>(json).is_err());
+    }
 }

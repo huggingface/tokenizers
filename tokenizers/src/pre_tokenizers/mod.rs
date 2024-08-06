@@ -144,4 +144,10 @@ mod tests {
             PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit {})
         );
     }
+
+    #[test]
+    fn pre_tokenizer_deserialization_no_type() {
+        let json = r#"{"replacement":"▁","add_prefix_space":true, "prepend_scheme":"always"}}"#;
+        assert!(serde_json::from_str::<PreTokenizerWrapper>(json).is_err());
+    }
 }

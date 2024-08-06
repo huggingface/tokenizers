@@ -96,4 +96,11 @@ mod tests {
         let json = r#"{"type":"Sequence","decoders":[{},{"type":"Metaspace","replacement":"▁","prepend_scheme":"always"}]}"#;
         assert!(serde_json::from_str::<DecoderWrapper>(json).is_err());
     }
+
+
+    #[test]
+    fn decoder_deserialization_no_type() {
+        let json = r#"{"replacement":"▁","prepend_scheme":"always"}"#;
+        assert!(serde_json::from_str::<DecoderWrapper>(json).is_err());
+    }
 }
