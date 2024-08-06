@@ -181,6 +181,6 @@ mod tests {
                 "data did not match any variant of untagged enum PreTokenizerWrapper"
             ),
             _ => panic!("Expected an error here"),
-        } 
+        }
     }
 }
