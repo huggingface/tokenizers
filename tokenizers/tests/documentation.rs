@@ -93,7 +93,7 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
     // START quicktour_init_pretok
     use tokenizers::pre_tokenizers::whitespace::Whitespace;
 
-    tokenizer.with_pre_tokenizer(Whitespace {});
+    tokenizer.with_pre_tokenizer(Some(Whitespace {}));
     // END quicktour_init_pretok
 
     // START quicktour_train
@@ -261,7 +261,7 @@ fn pipeline() -> tokenizers::Result<()> {
     // END pipeline_test_normalizer
     assert_eq!(normalized.get(), "Hello how are u?");
     // START pipeline_replace_normalizer
-    tokenizer.with_normalizer(normalizer);
+    tokenizer.with_normalizer(Some(normalizer));
     // END pipeline_replace_normalizer
     // START pipeline_setup_pre_tokenizer
     use tokenizers::pre_tokenizers::whitespace::Whitespace;
@@ -325,7 +325,7 @@ fn pipeline() -> tokenizers::Result<()> {
         ]
     );
     // START pipeline_replace_pre_tokenizer
-    tokenizer.with_pre_tokenizer(pre_tokenizer);
+    tokenizer.with_pre_tokenizer(Some(pre_tokenizer));
     // END pipeline_replace_pre_tokenizer
     // START pipeline_setup_processor
     use tokenizers::processors::template::TemplateProcessing;
@@ -375,16 +375,16 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
     use tokenizers::normalizers::utils::Sequence as NormalizerSequence;
     use tokenizers::normalizers::{strip::StripAccents, unicode::NFD, utils::Lowercase};
 
-    bert_tokenizer.with_normalizer(NormalizerSequence::new(vec![
+    bert_tokenizer.with_normalizer(Some(NormalizerSequence::new(vec![
         NFD.into(),
         Lowercase.into(),
         StripAccents.into(),
-    ]));
+    ])));
     // END bert_setup_normalizer
     // START bert_setup_pre_tokenizer
     use tokenizers::pre_tokenizers::whitespace::Whitespace;
 
-    bert_tokenizer.with_pre_tokenizer(Whitespace {});
+    bert_tokenizer.with_pre_tokenizer(Some(Whitespace {}));
     // END bert_setup_pre_tokenizer
     // START bert_setup_processor
     use tokenizers::processors::template::TemplateProcessing;

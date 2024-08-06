@@ -8,7 +8,6 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use tk::models::bpe::BPE;
-use tk::normalizer;
 use tk::tokenizer::{
     Model, PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
     TruncationDirection, TruncationParams, TruncationStrategy,
