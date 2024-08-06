@@ -203,7 +203,7 @@ fn models() {
 fn tokenizer() {
     let wordpiece = WordPiece::default();
     let mut tokenizer = Tokenizer::new(wordpiece);
-    tokenizer.with_normalizer(NFC);
+    tokenizer.with_normalizer(Some(NFC));
     let ser = serde_json::to_string(&tokenizer).unwrap();
     let _: Tokenizer = serde_json::from_str(&ser).unwrap();
     let unwrapped_nfc_tok: TokenizerImpl<
