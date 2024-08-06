@@ -1,7 +1,7 @@
 use crate::processors::byte_level::bytes_char;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use std::collections::{HashMap, HashSet};
 use crate::utils::macro_rules_attribute;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
