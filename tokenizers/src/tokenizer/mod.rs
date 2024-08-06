@@ -583,7 +583,7 @@ where
 
     /// Set the decoder
     pub fn with_decoder(&mut self, decoder: Option<impl Into<D>>) -> &mut Self {
-        self.decoder = decoder.map(|dec|dec.into());
+        self.decoder = decoder.map(|dec| dec.into());
         self
     }
 
