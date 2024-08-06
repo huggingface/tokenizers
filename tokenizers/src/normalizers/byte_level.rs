@@ -1,6 +1,5 @@
 use crate::processors::byte_level::bytes_char;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use crate::utils::macro_rules_attribute;
 
