@@ -1377,7 +1377,8 @@ impl PyTokenizer {
     /// Set the :class:`~tokenizers.normalizers.Normalizer`
     #[setter]
     fn set_pre_tokenizer(&mut self, pretok: Option<PyRef<PyPreTokenizer>>) {
-        self.tokenizer.with_pre_tokenizer(pretok.map(|pre| pre.clone()));
+        self.tokenizer
+            .with_pre_tokenizer(pretok.map(|pre| pre.clone()));
     }
 
     /// The `optional` :class:`~tokenizers.processors.PostProcessor` in use by the Tokenizer
@@ -1393,7 +1394,8 @@ impl PyTokenizer {
     /// Set the :class:`~tokenizers.processors.PostProcessor`
     #[setter]
     fn set_post_processor(&mut self, processor: Option<PyRef<PyPostProcessor>>) {
-        self.tokenizer.with_post_processor(processor.map(|p| p.clone()));
+        self.tokenizer
+            .with_post_processor(processor.map(|p| p.clone()));
     }
 
     /// The `optional` :class:`~tokenizers.decoders.Decoder` in use by the Tokenizer
