@@ -36,11 +36,11 @@ fn create_bert_tokenizer(wp: WordPiece) -> BertTokenizer {
     let mut tokenizer = TokenizerImpl::new(wp);
     tokenizer.with_pre_tokenizer(Some(BertPreTokenizer));
     tokenizer.with_normalizer(Some(BertNormalizer::default()));
-    tokenizer.with_decoder(decoders::wordpiece::WordPiece::default());
-    tokenizer.with_post_processor(BertProcessing::new(
+    tokenizer.with_decoder(Some(decoders::wordpiece::WordPiece::default()));
+    tokenizer.with_post_processor(Some(BertProcessing::new(
         ("[SEP]".to_string(), sep_id),
         ("[CLS]".to_string(), cls_id),
-    ));
+    )));
     tokenizer
 }
 
