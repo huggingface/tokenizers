@@ -256,12 +256,12 @@ mod tests {
 
         // Legacy check, type is not necessary.
         let legacy = r#"{"dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b":2,"ab":3},"merges":["a b"]}"#;
-        let reconstructed = serde_json::from_str(&legacy).unwrap();
+        let reconstructed = serde_json::from_str(legacy).unwrap();
         assert_eq!(model, reconstructed);
 
         let invalid = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b":2,"ab":3},"merges":["a b c"]}"#;
         let reconstructed: std::result::Result<ModelWrapper, serde_json::Error> =
-            serde_json::from_str(&invalid);
+            serde_json::from_str(invalid);
         match reconstructed {
             Err(err) => assert_eq!(
                 err.to_string(),
