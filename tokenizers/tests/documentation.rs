@@ -157,15 +157,15 @@ fn quicktour() -> tokenizers::Result<()> {
         ("[CLS]", tokenizer.token_to_id("[CLS]").unwrap()),
         ("[SEP]", tokenizer.token_to_id("[SEP]").unwrap()),
     ];
-    tokenizer.with_post_processor(
-        Some(TemplateProcessing::builder()
+    tokenizer.with_post_processor(Some(
+        TemplateProcessing::builder()
             .try_single("[CLS] $A [SEP]")
             .unwrap()
             .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
             .unwrap()
             .special_tokens(special_tokens)
-            .build()?),
-    );
+            .build()?,
+    ));
     // END quicktour_init_template_processing
     // START quicktour_print_special_tokens
     let output = tokenizer.encode("Hello, y'all! How are you 😁 ?", true)?;
@@ -330,16 +330,16 @@ fn pipeline() -> tokenizers::Result<()> {
     // START pipeline_setup_processor
     use tokenizers::processors::template::TemplateProcessing;
 
-    tokenizer.with_post_processor(
-        Some(TemplateProcessing::builder()
+    tokenizer.with_post_processor(Some(
+        TemplateProcessing::builder()
             .try_single("[CLS] $A [SEP]")
             .unwrap()
             .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
             .unwrap()
             .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
             .build()
-            .unwrap()),
-    );
+            .unwrap(),
+    ));
     // END pipeline_setup_processor
     // START pipeline_test_decoding
     let output = tokenizer.encode("Hello, y'all! How are you 😁 ?", true)?;
@@ -389,16 +389,16 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
     // START bert_setup_processor
     use tokenizers::processors::template::TemplateProcessing;
 
-    bert_tokenizer.with_post_processor(
-        Some(TemplateProcessing::builder()
+    bert_tokenizer.with_post_processor(Some(
+        TemplateProcessing::builder()
             .try_single("[CLS] $A [SEP]")
             .unwrap()
             .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
             .unwrap()
             .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
             .build()
-            .unwrap()),
-    );
+            .unwrap(),
+    ));
     // END bert_setup_processor
     // START bert_train_tokenizer
     use tokenizers::models::{wordpiece::WordPieceTrainer, TrainerWrapper};

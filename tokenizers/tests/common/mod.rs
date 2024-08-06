@@ -23,7 +23,9 @@ pub fn get_byte_level_bpe() -> BPE {
 pub fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
     let mut tokenizer = Tokenizer::new(get_byte_level_bpe());
     tokenizer
-        .with_pre_tokenizer(Some(ByteLevel::default().add_prefix_space(add_prefix_space)))
+        .with_pre_tokenizer(Some(
+            ByteLevel::default().add_prefix_space(add_prefix_space),
+        ))
         .with_decoder(Some(ByteLevel::default()))
         .with_post_processor(Some(ByteLevel::default().trim_offsets(trim_offsets)));
 
