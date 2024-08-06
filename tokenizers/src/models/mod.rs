@@ -108,18 +108,18 @@ impl<'de> Deserialize<'de> for ModelWrapper {
 
         let helper = ModelHelper::deserialize(deserializer)?;
         Ok(match helper {
-            ModelHelper::Tagged(bpe) => match bpe.variant {
+            ModelHelper::Tagged(model) => match model.variant {
                 EnumType::BPE => ModelWrapper::BPE(
-                    serde_json::from_value(bpe.rest).map_err(serde::de::Error::custom)?,
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
                 EnumType::WordPiece => ModelWrapper::WordPiece(
-                    serde_json::from_value(bpe.rest).map_err(serde::de::Error::custom)?,
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
                 EnumType::WordLevel => ModelWrapper::WordLevel(
-                    serde_json::from_value(bpe.rest).map_err(serde::de::Error::custom)?,
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
                 EnumType::Unigram => ModelWrapper::Unigram(
-                    serde_json::from_value(bpe.rest).map_err(serde::de::Error::custom)?,
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
             },
             ModelHelper::Legacy(value) => {
