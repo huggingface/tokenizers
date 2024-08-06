@@ -159,7 +159,7 @@ mod tests {
 
         let json = r#"{"type":"Metaspace", "replacement":"▁" }"#;
         let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
-assert_eq!(reconstructed, PreTokenizerWrapper::Metaspace(Metaspace::default()));
+        assert_eq!(reconstructed.unwrap(), PreTokenizerWrapper::Metaspace(Metaspace::default()));
 
         let json = r#"{"type":"Metaspace", "add_prefix_space":true }"#;
         let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
