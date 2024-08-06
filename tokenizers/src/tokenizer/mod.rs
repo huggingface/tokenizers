@@ -571,8 +571,8 @@ where
     }
 
     /// Set the post processor
-    pub fn with_post_processor(&mut self, post_processor: impl Into<PP>) -> &mut Self {
-        self.post_processor = Some(post_processor.into());
+    pub fn with_post_processor(&mut self, post_processor: Option<impl Into<PP>>) -> &mut Self {
+        self.post_processor = post_processor.map(|post_proc| post_proc.into());
         self
     }
 
@@ -582,8 +582,8 @@ where
     }
 
     /// Set the decoder
-    pub fn with_decoder(&mut self, decoder: impl Into<D>) -> &mut Self {
-        self.decoder = Some(decoder.into());
+    pub fn with_decoder(&mut self, decoder: Option<impl Into<D>>) -> &mut Self {
+        self.decoder = decoder.map(|dec|dec.into());
         self
     }
 
