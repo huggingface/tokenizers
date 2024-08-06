@@ -2,10 +2,11 @@ use crate::processors::byte_level::bytes_char;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use crate::utils::macro_rules_attribute;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
-pub struct ByteLevel {}
+#[derive(Clone, Debug)]
+#[macro_rules_attribute(impl_serde_type!)]
+pub struct ByteLevel;
 
 lazy_static! {
     static ref BYTES_CHAR: HashMap<u8, char> = bytes_char();

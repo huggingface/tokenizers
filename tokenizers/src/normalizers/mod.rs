@@ -73,3 +73,36 @@ impl_enum_from!(Precompiled, NormalizerWrapper, Precompiled);
 impl_enum_from!(Replace, NormalizerWrapper, Replace);
 impl_enum_from!(Prepend, NormalizerWrapper, Prepend);
 impl_enum_from!(ByteLevel, NormalizerWrapper, ByteLevel);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+        fn post_processor_deserialization_no_type() {
+            let json = r#"{"strip_left":false, "strip_right":true}"#;
+            let reconstructed = serde_json::from_str::<NormalizerWrapper>(json);
+            assert!(matches!(
+                reconstructed.unwrap(),
+                NormalizerWrapper::StripNormalizer(_)
+            ));
+
+            let json =
+                r#"{"sep":["</s>",2], "cls":["<s>",0], "trim_offsets":true, "add_prefix_space":true}"#;
+            let reconstructed = serde_json::from_str::<NormalizerWrapper>(json).unwrap();
+            println!("{:?}", reconstructed);
+            assert!(matches!(
+                reconstructed,
+                NormalizerWrapper::Sequence(_)
+            ));
+
+            let json = r#"{"type":"RobertaProcessing", "sep":["</s>",2] }"#;
+            let reconstructed = serde_json::from_str::<NormalizerWrapper>(json);
+            match reconstructed {
+                Err(err) => assert_eq!(
+                    err.to_string(),
+                    "data did not match any variant of untagged enum NormalizerWrapper"
+                ),
+                _ => panic!("Expected an error here"),
+            }
+        }
+    }
