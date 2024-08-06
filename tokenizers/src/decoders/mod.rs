@@ -101,6 +101,13 @@ mod tests {
     #[test]
     fn decoder_deserialization_no_type() {
         let json = r#"{"replacement":"▁","add_prefix_space":true,"prepend_scheme":"always"}"#;
-        assert!(serde_json::from_str::<DecoderWrapper>(json).is_err());
+        let reconstructed = serde_json::from_str::<DecoderWrapper>(json);
+        match reconstructed {
+            Err(err) => assert_eq!(
+                err.to_string(),
+                "data did not match any variant of untagged enum DecoderWrapper"
+            ),
+            _ => panic!("Expected an error here"),
+        }
     }
 }
