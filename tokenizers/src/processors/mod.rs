@@ -102,18 +102,12 @@ mod tests {
 
         let json = r#"{"sep":["[SEP]",102],"cls":["[CLS]",101]}"#;
         let reconstructed = serde_json::from_str::<PostProcessorWrapper>(json);
-        match reconstructed {
-            Ok(processor) => assert!(matches!(processor, PostProcessorWrapper::Bert(_))),
-            Err(err) => panic!("{:?}", err),
-        }
+        assert!(matches!(reconstructed.unwrap(), PostProcessorWrapper::Bert(_)));
 
         let json =
             r#"{"sep":["</s>",2], "cls":["<s>",0], "trim_offsets":true, "add_prefix_space":true}"#;
         let reconstructed = serde_json::from_str::<PostProcessorWrapper>(json);
-        match reconstructed {
-            Ok(processor) => assert!(matches!(processor, PostProcessorWrapper::Roberta(_))),
-            Err(err) => panic!("{:?}", err),
-        }
+        assert!(matches!(reconstructed.unwrap(), PostProcessorWrapper::Roberta(_)));
 
         let json = r#"{"type":"RobertaProcessing", "sep":["</s>",2] }"#;
         let reconstructed = serde_json::from_str::<PostProcessorWrapper>(json);
