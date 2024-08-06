@@ -90,7 +90,7 @@ mod tests {
 
     #[test]
     fn post_processor_deserialization_no_type() {
-        let json = r#"{"sep":["[SEP]",102],"cls":["[CLS]",101]}}"#;
+        let json = r#"{"add_prefix_space": true, "trim_offsets": false, "use_regex": false}"#;
         let reconstructed = serde_json::from_str::<PostProcessorWrapper>(json);
         match reconstructed {
             Err(err) => assert_eq!(
@@ -98,6 +98,20 @@ mod tests {
                 "data did not match any variant of untagged enum PostProcessorWrapper"
             ),
             _ => panic!("Expected an error here"),
+        }
+
+        let json = r#"{"sep":["[SEP]",102],"cls":["[CLS]",101]}"#;
+        let reconstructed = serde_json::from_str::<PostProcessorWrapper>(json);
+        match reconstructed {
+            Ok(processor) => assert!(matches!(processor, PostProcessorWrapper::Bert(_))),
+            Err(err) => panic!("{:?}",err)
+        }
+
+        let json = r#"{"sep":["</s>",2], "cls":["<s>",0], "trim_offsets":true, "add_prefix_space":true}"#;
+        let reconstructed = serde_json::from_str::<PostProcessorWrapper>(json);
+        match reconstructed {
+            Ok(processor) => assert!(matches!(processor, PostProcessorWrapper::Roberta(_))),
+            Err(err) => panic!("{:?}",err)
         }
     }
 }
