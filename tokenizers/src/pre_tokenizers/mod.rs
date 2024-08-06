@@ -173,5 +173,14 @@ mod tests {
             ),
             _ => panic!("Expected an error here"),
         }
+        let json = r#"{"behavior":"default_split"}"#;
+        let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
+        match reconstructed {
+            Err(err) => assert_eq!(
+                err.to_string(),
+                "data did not match any variant of untagged enum PreTokenizerWrapper"
+            ),
+            _ => panic!("Expected an error here"),
+        } 
     }
 }
