@@ -208,7 +208,7 @@ impl Tokenizer {
       .tokenizer
       .write()
       .unwrap()
-      .with_pre_tokenizer((*pre_tokenizer).clone());
+      .with_pre_tokenizer(Some(*pre_tokenizer).clone());
   }
 
   #[napi]
@@ -240,7 +240,7 @@ impl Tokenizer {
       .tokenizer
       .write()
       .unwrap()
-      .with_normalizer((*normalizer).clone());
+      .with_normalizer(Some(*normalizer).clone());
   }
 
   #[napi]
