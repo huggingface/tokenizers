@@ -158,13 +158,13 @@ fn quicktour() -> tokenizers::Result<()> {
         ("[SEP]", tokenizer.token_to_id("[SEP]").unwrap()),
     ];
     tokenizer.with_post_processor(
-        TemplateProcessing::builder()
+        Some(TemplateProcessing::builder()
             .try_single("[CLS] $A [SEP]")
             .unwrap()
             .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
             .unwrap()
             .special_tokens(special_tokens)
-            .build()?,
+            .build()?),
     );
     // END quicktour_init_template_processing
     // START quicktour_print_special_tokens
@@ -331,14 +331,14 @@ fn pipeline() -> tokenizers::Result<()> {
     use tokenizers::processors::template::TemplateProcessing;
 
     tokenizer.with_post_processor(
-        TemplateProcessing::builder()
+        Some(TemplateProcessing::builder()
             .try_single("[CLS] $A [SEP]")
             .unwrap()
             .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
             .unwrap()
             .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
             .build()
-            .unwrap(),
+            .unwrap()),
     );
     // END pipeline_setup_processor
     // START pipeline_test_decoding
@@ -390,14 +390,14 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
     use tokenizers::processors::template::TemplateProcessing;
 
     bert_tokenizer.with_post_processor(
-        TemplateProcessing::builder()
+        Some(TemplateProcessing::builder()
             .try_single("[CLS] $A [SEP]")
             .unwrap()
             .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
             .unwrap()
             .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
             .build()
-            .unwrap(),
+            .unwrap()),
     );
     // END bert_setup_processor
     // START bert_train_tokenizer
@@ -450,7 +450,7 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     // START bert_proper_decoding
     use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 
-    bert_tokenizer.with_decoder(WordPieceDecoder::default());
+    bert_tokenizer.with_decoder(Some(WordPieceDecoder::default()));
     let decoded = bert_tokenizer.decode(output.get_ids(), true)?;
     // "welcome to the tokenizers library."
     // END bert_proper_decoding
