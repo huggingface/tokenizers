@@ -148,6 +148,13 @@ mod tests {
     #[test]
     fn pre_tokenizer_deserialization_no_type() {
         let json = r#"{"replacement":"▁","add_prefix_space":true, "prepend_scheme":"always"}}"#;
-        assert!(serde_json::from_str::<PreTokenizerWrapper>(json).is_err());
+        let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
+        match reconstructed {
+            Err(err) => assert_eq!(
+                err.to_string(),
+                "data did not match any variant of untagged enum PreTokenizerWrapper"
+            ),
+            _ => panic!("Expected an error here"),
+        }
     }
 }

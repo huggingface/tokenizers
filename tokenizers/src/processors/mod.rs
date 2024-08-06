@@ -91,6 +91,13 @@ mod tests {
     #[test]
     fn post_processor_deserialization_no_type() {
         let json = r#"{"sep":["[SEP]",102],"cls":["[CLS]",101]}}"#;
-        assert!(serde_json::from_str::<PostProcessorWrapper>(json).is_err());
+        let reconstructed = serde_json::from_str::<PostProcessorWrapper>(json);
+        match reconstructed {
+            Err(err) => assert_eq!(
+                err.to_string(),
+                "data did not match any variant of untagged enum PostProcessorWrapper"
+            ),
+            _ => panic!("Expected an error here"),
+        }
     }
 }
