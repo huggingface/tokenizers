@@ -94,6 +94,33 @@ mod tests {
     #[test]
     fn decoder_serialization_no_decode() {
         let json = r#"{"type":"Sequence","decoders":[{},{"type":"Metaspace","replacement":"▁","prepend_scheme":"always"}]}"#;
-        assert!(serde_json::from_str::<DecoderWrapper>(json).is_err());
+        let parse = serde_json::from_str::<DecoderWrapper>(json);
+        match parse {
+            Err(err) => assert_eq!(
+                format!("{err}"),
+                "data did not match any variant of untagged enum DecoderWrapper"
+            ),
+            _ => panic!("Expected error"),
+        }
+
+        let json = r#"{"replacement":"▁","prepend_scheme":"always"}"#;
+        let parse = serde_json::from_str::<DecoderWrapper>(json);
+        match parse {
+            Err(err) => assert_eq!(
+                format!("{err}"),
+                "data did not match any variant of untagged enum DecoderWrapper"
+            ),
+            _ => panic!("Expected error"),
+        }
+
+        let json = r#"{"type":"Sequence","prepend_scheme":"always"}"#;
+        let parse = serde_json::from_str::<DecoderWrapper>(json);
+        match parse {
+            Err(err) => assert_eq!(
+                format!("{err}"),
+                "data did not match any variant of untagged enum DecoderWrapper"
+            ),
+            _ => panic!("Expected error"),
+        }
     }
 }
