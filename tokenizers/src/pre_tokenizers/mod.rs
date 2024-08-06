@@ -144,4 +144,43 @@ mod tests {
             PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit {})
         );
     }
+
+    #[test]
+    fn pre_tokenizer_deserialization_no_type() {
+        let json = r#"{"replacement":"▁","add_prefix_space":true, "prepend_scheme":"always"}}"#;
+        let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
+        match reconstructed {
+            Err(err) => assert_eq!(
+                err.to_string(),
+                "data did not match any variant of untagged enum PreTokenizerWrapper"
+            ),
+            _ => panic!("Expected an error here"),
+        }
+
+        let json = r#"{"type":"Metaspace", "replacement":"▁" }"#;
+        let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
+        assert_eq!(
+            reconstructed.unwrap(),
+            PreTokenizerWrapper::Metaspace(Metaspace::default())
+        );
+
+        let json = r#"{"type":"Metaspace", "add_prefix_space":true }"#;
+        let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
+        match reconstructed {
+            Err(err) => assert_eq!(
+                err.to_string(),
+                "data did not match any variant of untagged enum PreTokenizerWrapper"
+            ),
+            _ => panic!("Expected an error here"),
+        }
+        let json = r#"{"behavior":"default_split"}"#;
+        let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
+        match reconstructed {
+            Err(err) => assert_eq!(
+                err.to_string(),
+                "data did not match any variant of untagged enum PreTokenizerWrapper"
+            ),
+            _ => panic!("Expected an error here"),
+        }
+    }
 }
