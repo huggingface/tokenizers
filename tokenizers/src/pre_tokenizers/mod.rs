@@ -156,5 +156,22 @@ mod tests {
             ),
             _ => panic!("Expected an error here"),
         }
+
+        let json = r#"{"type":"Metaspace", "replacement":"▁" }"#;
+        let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
+        match reconstructed {
+            Ok(processor) => assert!(matches!(processor, PreTokenizerWrapper::Metaspace(_))),
+            Err(err) => panic!("{:?}", err),
+        }
+
+        let json = r#"{"type":"Metaspace", "add_prefix_space":true }"#;
+        let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
+        match reconstructed {
+            Err(err) => assert_eq!(
+                err.to_string(),
+                "data did not match any variant of untagged enum PreTokenizerWrapper"
+            ),
+            _ => panic!("Expected an error here"),
+        }
     }
 }
