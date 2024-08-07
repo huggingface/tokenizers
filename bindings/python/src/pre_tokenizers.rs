@@ -181,6 +181,16 @@ impl PyPreTokenizer {
             .map(|(s, o, _)| (s.to_owned(), o))
             .collect())
     }
+
+    fn __repr__(&self) -> PyResult<String> {
+        crate::utils::serde_pyo3::repr(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+    }
+
+    fn __str__(&self) -> PyResult<String> {
+        crate::utils::serde_pyo3::to_string(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+    }
 }
 
 macro_rules! getter {
