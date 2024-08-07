@@ -169,6 +169,11 @@ class TestSequence:
             ("?", (29, 30)),
         ]
 
+    def test_items(self):
+        pre_tokenizers = Sequence([Metaspace("a", "never", split = True), Punctuation()])
+        assert pre_tokenizers[1].__class__ == Punctuation
+        pre_tokenizers[0].split = False
+        assert not pre_tokenizers[0].split
 
 class TestDigits:
     def test_instantiate(self):

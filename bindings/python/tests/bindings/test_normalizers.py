@@ -67,6 +67,11 @@ class TestSequence:
         output = normalizer.normalize_str("  HELLO  ")
         assert output == "hello"
 
+    def test_items(self):
+        pre_tokenizers = Sequence([BertNormalizer(True, True), Strip()])
+        assert pre_tokenizers[1].__class__ == Strip
+        pre_tokenizers[0].lower_case = False
+        assert not pre_tokenizers[0].lower_case
 
 class TestLowercase:
     def test_instantiate(self):

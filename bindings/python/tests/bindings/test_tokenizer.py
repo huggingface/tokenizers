@@ -6,7 +6,8 @@ import pytest
 from tokenizers import AddedToken, Encoding, Tokenizer
 from tokenizers.implementations import BertWordPieceTokenizer
 from tokenizers.models import BPE, Model, Unigram
-from tokenizers.pre_tokenizers import ByteLevel
+from tokenizers.pre_tokenizers import ByteLevel, Metaspace
+from tokenizers.normalizers import Strip
 from tokenizers.processors import RobertaProcessing
 
 from ..utils import bert_files, data_dir, multiprocessing_with_parallelism, roberta_files
@@ -549,3 +550,13 @@ class TestTokenizer:
         output = tokenizer.decode([0, 1, 2, 3], skip_special_tokens=True)
         assert output == "name is john"
         assert tokenizer.get_added_tokens_decoder()[0] == AddedToken("my", special=True)
+
+    def test_setting_to_none(self):
+        tokenizer = Tokenizer(BPE())
+        tokenizer.normalizer = Strip()
+        tokenizer.normalizer = None
+        assert tokenizer.normalizer == None
+
+        tokenizer.pre_tokenizer = Metaspace()
+        tokenizer.pre_tokenizer = None
+        assert tokenizer.pre_tokenizer == None
