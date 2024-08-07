@@ -77,7 +77,6 @@ class TestSequence:
             print(normalizers[3])
 
 
-
 class TestLowercase:
     def test_instantiate(self):
         assert isinstance(Lowercase(), Normalizer)

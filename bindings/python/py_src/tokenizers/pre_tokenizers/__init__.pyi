@@ -421,11 +421,8 @@ class Split(PreTokenizer):
 
     Args:
         pattern (:obj:`str` or :class:`~tokenizers.Regex`):
-            A pattern used to split the string. Usually a string or a a regex built with `tokenizers.Regex`.
-            If you want to use a regex pattern, it has to be wrapped around a `tokenizer.Regex`,
-            otherwise we consider is as a string pattern. For example `pattern="|"`
-            means you want to split on `|` (imagine a csv file for example), while
-            `patter=tokenizer.Regex("1|2")` means you split on either '1' or '2'.
+            A pattern used to split the string. Usually a string or a a regex built with `tokenizers.Regex`
+
         behavior (:class:`~tokenizers.SplitDelimiterBehavior`):
             The behavior to use when splitting.
             Choices: "removed", "isolated", "merged_with_previous", "merged_with_next",

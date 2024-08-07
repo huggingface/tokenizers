@@ -519,6 +519,9 @@ class Sequence(Normalizer):
         normalizers (:obj:`List[Normalizer]`):
             A list of Normalizer to be run as a sequence
     """
+    def __init__(self):
+        pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
