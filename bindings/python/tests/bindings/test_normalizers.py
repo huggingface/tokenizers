@@ -68,11 +68,11 @@ class TestSequence:
         assert output == "hello"
 
     def test_items(self):
-        normalizers = Sequence([BertNormalizer(True, True), Strip()])
-        assert normalizers[1].__class__ == Strip
-        normalizers[0].lower_case = False
-        assert not normalizers[0].lower_case
-        with self.assertRaises(IndexError):
+        normalizers = Sequence([BertNormalizer(True, True), Prepend()])
+        assert normalizers[1].__class__ == Prepend
+        normalizers[0].lowercase = False
+        assert not normalizers[0].lowercase
+        with pytest.raises(IndexError):
             print(normalizers[2])
 
 
