@@ -68,10 +68,12 @@ class TestSequence:
         assert output == "hello"
 
     def test_items(self):
-        pre_tokenizers = Sequence([BertNormalizer(True, True), Strip()])
-        assert pre_tokenizers[1].__class__ == Strip
-        pre_tokenizers[0].lower_case = False
-        assert not pre_tokenizers[0].lower_case
+        normalizers = Sequence([BertNormalizer(True, True), Strip()])
+        assert normalizers[1].__class__ == Strip
+        normalizers[0].lower_case = False
+        assert not normalizers[0].lower_case
+        with self.assertRaises(IndexError):
+            print(normalizers[2])
 
 
 class TestLowercase:
