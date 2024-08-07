@@ -29,8 +29,8 @@ use super::error::ToPyResult;
 /// a Decoder will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.decoders", name = "Decoder", subclass)]
 #[derive(Clone, Deserialize, Serialize)]
+#[serde(transparent)]
 pub struct PyDecoder {
-    #[serde(flatten)]
     pub(crate) decoder: PyDecoderWrapper,
 }
 
@@ -113,6 +113,16 @@ impl PyDecoder {
     #[pyo3(text_signature = "(self, tokens)")]
     fn decode(&self, tokens: Vec<String>) -> PyResult<String> {
         ToPyResult(self.decoder.decode(tokens)).into()
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        crate::utils::serde_pyo3::repr(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+    }
+
+    fn __str__(&self) -> PyResult<String> {
+        crate::utils::serde_pyo3::to_string(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
     }
 }
 

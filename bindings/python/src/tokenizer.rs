@@ -1,3 +1,4 @@
+use serde::Serialize;
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
 
@@ -462,7 +463,8 @@ type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProc
 ///         The core algorithm that this :obj:`Tokenizer` should be using.
 ///
 #[pyclass(dict, module = "tokenizers", name = "Tokenizer")]
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
+#[serde(transparent)]
 pub struct PyTokenizer {
     tokenizer: Tokenizer,
 }
@@ -636,6 +638,16 @@ impl PyTokenizer {
     #[pyo3(text_signature = "(self, path, pretty=True)")]
     fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
         ToPyResult(self.tokenizer.save(path, pretty)).into()
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        crate::utils::serde_pyo3::repr(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+    }
+
+    fn __str__(&self) -> PyResult<String> {
+        crate::utils::serde_pyo3::to_string(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
     }
 
     /// Return the number of special tokens that would be added for single/pair sentences.
@@ -1438,5 +1450,17 @@ mod test {
         tokenizer.save(&tmp, false).unwrap();
 
         Tokenizer::from_file(&tmp).unwrap();
+    }
+
+    #[test]
+    fn serde_pyo3() {
+        let mut tokenizer = Tokenizer::new(PyModel::from(BPE::default()));
+        tokenizer.with_normalizer(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(vec![
+            Arc::new(RwLock::new(NFKC.into())),
+            Arc::new(RwLock::new(Lowercase.into())),
+        ])));
+
+        let output = crate::utils::serde_pyo3::to_string(&tokenizer).unwrap();
+        assert_eq!(output, "Tokenizer(version=\"1.0\", truncation=None, padding=None, added_tokens=[], normalizer=Sequence(normalizers=[NFKC(), Lowercase()]), pre_tokenizer=None, post_processor=None, decoder=None, model=BPE(dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=False, byte_fallback=False, ignore_merges=False, vocab={}, merges=[]))");
     }
 }
