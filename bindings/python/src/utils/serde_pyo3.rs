@@ -33,7 +33,7 @@ where
         max_depth,
         max_elements,
         num_elements: vec![0; max_depth],
-        max_string
+        max_string,
     };
     value.serialize(&mut serializer)?;
     Ok(serializer.output)
@@ -51,7 +51,7 @@ where
         max_depth,
         max_elements: 100,
         num_elements: vec![0; max_depth],
-        max_string
+        max_string,
     };
     value.serialize(&mut serializer)?;
     Ok(serializer.output)
@@ -149,10 +149,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     // contains a '"' character.
     fn serialize_str(self, v: &str) -> Result<()> {
         self.output += "\"";
-        if v.len() > self.max_string{
+        if v.len() > self.max_string {
             self.output += &v[..self.max_string];
             self.output += "...";
-        }else{
+        } else {
             self.output += v;
         }
         self.output += "\"";
@@ -261,7 +261,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     // support sequences for which the length is known up front.
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
         self.output += "[";
-        self.level = std::cmp::min(self.max_depth- 1, self.level + 1);
+        self.level = std::cmp::min(self.max_depth - 1, self.level + 1);
         self.num_elements[self.level] = 0;
         Ok(self)
     }
@@ -272,7 +272,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     // length without needing to look at the serialized data.
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
         self.output += "(";
-        self.level = std::cmp::min(self.max_depth- 1, self.level + 1);
+        self.level = std::cmp::min(self.max_depth - 1, self.level + 1);
         self.num_elements[self.level] = 0;
         Ok(self)
     }
@@ -298,7 +298,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         // variant.serialize(&mut *self)?;
         self.output += variant;
         self.output += "(";
-        self.level = std::cmp::min(self.max_depth- 1, self.level + 1);
+        self.level = std::cmp::min(self.max_depth - 1, self.level + 1);
         self.num_elements[self.level] = 0;
         Ok(self)
     }
@@ -306,7 +306,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     // Maps are represented in JSON as `{ K: V, K: V, ... }`.
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
         self.output += "{";
-        self.level = std::cmp::min(self.max_depth- 1, self.level + 1);
+        self.level = std::cmp::min(self.max_depth - 1, self.level + 1);
         self.num_elements[self.level] = 0;
         Ok(self)
     }
@@ -325,7 +325,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             self.output += name
         }
         self.output += "(";
-        self.level = std::cmp::min(self.max_depth- 1, self.level + 1);
+        self.level = std::cmp::min(self.max_depth - 1, self.level + 1);
         self.num_elements[self.level] = 0;
         Ok(self)
     }
@@ -342,7 +342,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         // variant.serialize(&mut *self)?;
         self.output += variant;
         self.output += "(";
-        self.level = std::cmp::min(self.max_depth- 1, self.level + 1);
+        self.level = std::cmp::min(self.max_depth - 1, self.level + 1);
         self.num_elements[self.level] = 0;
         Ok(self)
     }
@@ -368,13 +368,13 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
     {
         self.num_elements[self.level] += 1;
         let num_elements = self.num_elements[self.level];
-        if num_elements < self.max_elements{
+        if num_elements < self.max_elements {
             if !self.output.ends_with('[') {
                 self.output += ", ";
             }
             value.serialize(&mut **self)
-        }else{
-            if num_elements == self.max_elements{
+        } else {
+            if num_elements == self.max_elements {
                 self.output += ", ...";
             }
             Ok(())
@@ -401,13 +401,13 @@ impl<'a> ser::SerializeTuple for &'a mut Serializer {
     {
         self.num_elements[self.level] += 1;
         let num_elements = self.num_elements[self.level];
-        if num_elements < self.max_elements{
+        if num_elements < self.max_elements {
             if !self.output.ends_with('(') {
                 self.output += ", ";
             }
             value.serialize(&mut **self)
-        }else{
-            if num_elements == self.max_elements{
+        } else {
+            if num_elements == self.max_elements {
                 self.output += ", ...";
             }
             Ok(())
@@ -433,13 +433,13 @@ impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
     {
         self.num_elements[self.level] += 1;
         let num_elements = self.num_elements[self.level];
-        if num_elements < self.max_elements{
+        if num_elements < self.max_elements {
             if !self.output.ends_with('(') {
                 self.output += ", ";
             }
             value.serialize(&mut **self)
-        }else{
-            if num_elements == self.max_elements{
+        } else {
+            if num_elements == self.max_elements {
                 self.output += ", ...";
             }
             Ok(())
@@ -473,13 +473,13 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
     {
         self.num_elements[self.level] += 1;
         let num_elements = self.num_elements[self.level];
-        if num_elements < self.max_elements{
+        if num_elements < self.max_elements {
             if !self.output.ends_with('(') {
                 self.output += ", ";
             }
             value.serialize(&mut **self)
-        }else{
-            if num_elements == self.max_elements{
+        } else {
+            if num_elements == self.max_elements {
                 self.output += ", ...";
             }
             Ok(())
@@ -520,13 +520,13 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
     {
         self.num_elements[self.level] += 1;
         let num_elements = self.num_elements[self.level];
-        if num_elements < self.max_elements{
+        if num_elements < self.max_elements {
             if !self.output.ends_with('{') {
                 self.output += ", ";
             }
             key.serialize(&mut **self)
-        }else{
-            if num_elements == self.max_elements{
+        } else {
+            if num_elements == self.max_elements {
                 self.output += ", ...";
             }
             Ok(())
@@ -541,10 +541,10 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
         T: ?Sized + Serialize,
     {
         let num_elements = self.num_elements[self.level];
-        if num_elements < self.max_elements{
+        if num_elements < self.max_elements {
             self.output += ":";
             value.serialize(&mut **self)
-        }else{
+        } else {
             Ok(())
         }
     }
