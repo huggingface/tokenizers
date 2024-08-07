@@ -44,8 +44,8 @@ impl PyNormalizedStringMut<'_> {
 /// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct PyNormalizer {
-    #[serde(flatten)]
     pub(crate) normalizer: PyNormalizerTypeWrapper,
 }
 
@@ -168,6 +168,16 @@ impl PyNormalizer {
         let mut normalized = NormalizedString::from(sequence);
         ToPyResult(self.normalizer.normalize(&mut normalized)).into_py()?;
         Ok(normalized.get().to_owned())
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        crate::utils::serde_pyo3::repr(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+    }
+
+    fn __str__(&self) -> PyResult<String> {
+        crate::utils::serde_pyo3::to_string(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
     }
 }
 

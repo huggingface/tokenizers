@@ -28,8 +28,8 @@ use tokenizers as tk;
     subclass
 )]
 #[derive(Clone, Deserialize, Serialize)]
+#[serde(transparent)]
 pub struct PyPostProcessor {
-    #[serde(flatten)]
     pub processor: Arc<PostProcessorWrapper>,
 }
 
@@ -138,6 +138,16 @@ impl PyPostProcessor {
         ))
         .into_py()?;
         Ok(final_encoding.into())
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        crate::utils::serde_pyo3::repr(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+    }
+
+    fn __str__(&self) -> PyResult<String> {
+        crate::utils::serde_pyo3::to_string(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
     }
 }
 

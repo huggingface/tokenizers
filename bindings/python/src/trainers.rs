@@ -16,8 +16,8 @@ use tokenizers as tk;
 /// Trainer will return an instance of this class when instantiated.
 #[pyclass(module = "tokenizers.trainers", name = "Trainer", subclass)]
 #[derive(Clone, Deserialize, Serialize)]
+#[serde(transparent)]
 pub struct PyTrainer {
-    #[serde(flatten)]
     pub trainer: Arc<RwLock<TrainerWrapper>>,
 }
 
@@ -68,6 +68,16 @@ impl PyTrainer {
             }
             Err(e) => Err(e),
         }
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        crate::utils::serde_pyo3::repr(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+    }
+
+    fn __str__(&self) -> PyResult<String> {
+        crate::utils::serde_pyo3::to_string(self)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
     }
 }
 
