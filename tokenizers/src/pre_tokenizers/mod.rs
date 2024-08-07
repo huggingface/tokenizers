@@ -293,12 +293,13 @@ mod tests {
             _ => panic!("Expected an error here"),
         }
 
-        let json = r#"{"type":"Metaspace", "replacement":"▁" }"#;
+        let json = r#"{"type":"Metaspace", "str_rep":"▁" }"#;
         let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
+        println!("{:?}",reconstructed);
         match reconstructed {
             Err(err) => assert_eq!(
                 err.to_string(),
-                "data did not match any variant of untagged enum PreTokenizerUntagged"
+                "missing field `replacement`"
             ),
             _ => panic!("Expected an error here"),
         }
@@ -308,7 +309,7 @@ mod tests {
         match reconstructed {
             Err(err) => assert_eq!(
                 err.to_string(),
-                "data did not match any variant of untagged enum PreTokenizerWrapper"
+                "missing field `replacement`"
             ),
             _ => panic!("Expected an error here"),
         }
