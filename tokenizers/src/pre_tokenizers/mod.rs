@@ -293,13 +293,12 @@ mod tests {
             _ => panic!("Expected an error here"),
         }
 
-        let json = r#"{"type":"Metaspace", "str_rep":"▁" }"#;
-        let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
-        println!("{:?}", reconstructed);
-        match reconstructed {
-            Err(err) => assert_eq!(err.to_string(), "missing field `replacement`"),
-            _ => panic!("Expected an error here"),
-        }
+        let json = r#"{"type":"Metaspace", "replacement":"▁" }"#;
+        let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json).unwrap();
+        assert_eq!(
+            reconstructed,
+            PreTokenizerWrapper::Metaspace(Metaspace::default())
+        );
 
         let json = r#"{"type":"Metaspace", "add_prefix_space":true }"#;
         let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
