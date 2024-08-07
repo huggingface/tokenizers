@@ -57,8 +57,6 @@ impl PreTokenizer for PreTokenizerWrapper {
     }
 }
 
-
-
 impl<'de> Deserialize<'de> for PreTokenizerWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -106,69 +104,89 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
             Punctuation(Punctuation),
             WhitespaceSplit(WhitespaceSplit),
             Digits(Digits),
-            UnicodeScripts(UnicodeScripts), 
+            UnicodeScripts(UnicodeScripts),
         }
 
         let helper = PreTokenizerHelper::deserialize(deserializer)?;
 
         Ok(match helper {
-            PreTokenizerHelper::Tagged(pretok) => { 
-            let mut values: serde_json::Map<String, serde_json::Value> = serde_json::from_value(pretok.rest).map_err(serde::de::Error::custom)?;
-            values.insert(
-                "type".to_string(),
-                serde_json::to_value(&pretok.variant).map_err(serde::de::Error::custom)?,
-            );
-            let values = serde_json::Value::Object(values);
-            match pretok.variant {
-                EnumType::BertPreTokenizer => PreTokenizerWrapper::BertPreTokenizer(
-                    serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::ByteLevel => PreTokenizerWrapper::ByteLevel(
-                    serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::Delimiter => PreTokenizerWrapper::Delimiter(
-                    serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::Metaspace => PreTokenizerWrapper::Metaspace(
-                    serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::Whitespace => PreTokenizerWrapper::Whitespace(
-                    serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::Sequence => PreTokenizerWrapper::Sequence(
-                    serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::Split => PreTokenizerWrapper::Split(
-                    serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::Punctuation => PreTokenizerWrapper::Punctuation(
-                    serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::WhitespaceSplit => PreTokenizerWrapper::WhitespaceSplit(
-                    serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::Digits => PreTokenizerWrapper::Digits(
-                    serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::UnicodeScripts => PreTokenizerWrapper::UnicodeScripts(
-                    serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                ),
-            }},
-            
+            PreTokenizerHelper::Tagged(pretok) => {
+                let mut values: serde_json::Map<String, serde_json::Value> =
+                    serde_json::from_value(pretok.rest).map_err(serde::de::Error::custom)?;
+                values.insert(
+                    "type".to_string(),
+                    serde_json::to_value(&pretok.variant).map_err(serde::de::Error::custom)?,
+                );
+                let values = serde_json::Value::Object(values);
+                match pretok.variant {
+                    EnumType::BertPreTokenizer => PreTokenizerWrapper::BertPreTokenizer(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
+                    EnumType::ByteLevel => PreTokenizerWrapper::ByteLevel(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
+                    EnumType::Delimiter => PreTokenizerWrapper::Delimiter(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
+                    EnumType::Metaspace => PreTokenizerWrapper::Metaspace(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
+                    EnumType::Whitespace => PreTokenizerWrapper::Whitespace(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
+                    EnumType::Sequence => PreTokenizerWrapper::Sequence(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
+                    EnumType::Split => PreTokenizerWrapper::Split(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
+                    EnumType::Punctuation => PreTokenizerWrapper::Punctuation(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
+                    EnumType::WhitespaceSplit => PreTokenizerWrapper::WhitespaceSplit(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
+                    EnumType::Digits => PreTokenizerWrapper::Digits(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
+                    EnumType::UnicodeScripts => PreTokenizerWrapper::UnicodeScripts(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
+                }
+            }
+
             PreTokenizerHelper::Legacy(value) => {
                 let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
                 let pre_tokenizer_wrapper = match untagged {
-                    PreTokenizerUntagged::BertPreTokenizer(bert) => PreTokenizerWrapper::BertPreTokenizer(bert),
-                    PreTokenizerUntagged::ByteLevel(byte_level) => PreTokenizerWrapper::ByteLevel(byte_level),
-                    PreTokenizerUntagged::Delimiter(delimiter) => PreTokenizerWrapper::Delimiter(delimiter),
-                    PreTokenizerUntagged::Metaspace(metaspace) => PreTokenizerWrapper::Metaspace(metaspace),
-                    PreTokenizerUntagged::Whitespace(whitespace) => PreTokenizerWrapper::Whitespace(whitespace),
-                    PreTokenizerUntagged::Sequence(sequence) => PreTokenizerWrapper::Sequence(sequence),
+                    PreTokenizerUntagged::BertPreTokenizer(bert) => {
+                        PreTokenizerWrapper::BertPreTokenizer(bert)
+                    }
+                    PreTokenizerUntagged::ByteLevel(byte_level) => {
+                        PreTokenizerWrapper::ByteLevel(byte_level)
+                    }
+                    PreTokenizerUntagged::Delimiter(delimiter) => {
+                        PreTokenizerWrapper::Delimiter(delimiter)
+                    }
+                    PreTokenizerUntagged::Metaspace(metaspace) => {
+                        PreTokenizerWrapper::Metaspace(metaspace)
+                    }
+                    PreTokenizerUntagged::Whitespace(whitespace) => {
+                        PreTokenizerWrapper::Whitespace(whitespace)
+                    }
+                    PreTokenizerUntagged::Sequence(sequence) => {
+                        PreTokenizerWrapper::Sequence(sequence)
+                    }
                     PreTokenizerUntagged::Split(split) => PreTokenizerWrapper::Split(split),
-                    PreTokenizerUntagged::Punctuation(punctuation) => PreTokenizerWrapper::Punctuation(punctuation),
-                    PreTokenizerUntagged::WhitespaceSplit(whitespace_split) => PreTokenizerWrapper::WhitespaceSplit(whitespace_split),
+                    PreTokenizerUntagged::Punctuation(punctuation) => {
+                        PreTokenizerWrapper::Punctuation(punctuation)
+                    }
+                    PreTokenizerUntagged::WhitespaceSplit(whitespace_split) => {
+                        PreTokenizerWrapper::WhitespaceSplit(whitespace_split)
+                    }
                     PreTokenizerUntagged::Digits(digits) => PreTokenizerWrapper::Digits(digits),
-                    PreTokenizerUntagged::UnicodeScripts(unicode_scripts) => PreTokenizerWrapper::UnicodeScripts(unicode_scripts),
+                    PreTokenizerUntagged::UnicodeScripts(unicode_scripts) => {
+                        PreTokenizerWrapper::UnicodeScripts(unicode_scripts)
+                    }
                 };
                 pre_tokenizer_wrapper
             }
