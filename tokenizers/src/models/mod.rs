@@ -312,11 +312,14 @@ mod tests {
             .unwrap();
 
         let model = ModelWrapper::BPE(bpe);
+        let legacy = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b":2,"ab":3},"merges":["a b"]}"#;
+        let legacy = serde_json::from_str(legacy).unwrap();
+        assert_eq!(model, legacy);
 
         let data = serde_json::to_string(&model).unwrap();
         assert_eq!(
             data,
-            r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b":2,"ab":3},"merges":["a b"]}"#
+            r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b":2,"ab":3},"merges":[["a","b"]]}"#
         );
         let reconstructed = serde_json::from_str(&data).unwrap();
         assert_eq!(model, reconstructed);
