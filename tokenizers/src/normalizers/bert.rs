@@ -1,5 +1,5 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use crate::utils::macro_rules_attribute;
+
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 
@@ -47,8 +47,8 @@ fn is_chinese_char(c: char) -> bool {
     )
 }
 
-#[derive(Copy, Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type")]
 #[non_exhaustive]
 pub struct BertNormalizer {
     /// Whether to do the bert basic cleaning:
