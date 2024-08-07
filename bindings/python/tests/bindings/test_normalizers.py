@@ -73,6 +73,7 @@ class TestSequence:
         pre_tokenizers[0].lower_case = False
         assert not pre_tokenizers[0].lower_case
 
+
 class TestLowercase:
     def test_instantiate(self):
         assert isinstance(Lowercase(), Normalizer)
