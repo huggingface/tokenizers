@@ -208,7 +208,7 @@ impl Tokenizer {
       .tokenizer
       .write()
       .unwrap()
-      .with_pre_tokenizer((*pre_tokenizer).clone());
+      .with_pre_tokenizer(Some((*pre_tokenizer).clone()));
   }
 
   #[napi]
@@ -217,7 +217,7 @@ impl Tokenizer {
       .tokenizer
       .write()
       .unwrap()
-      .with_decoder((*decoder).clone());
+      .with_decoder(Some((*decoder).clone()));
   }
 
   #[napi]
@@ -231,7 +231,7 @@ impl Tokenizer {
       .tokenizer
       .write()
       .unwrap()
-      .with_post_processor((*post_processor).clone());
+      .with_post_processor(Some((*post_processor).clone()));
   }
 
   #[napi]
@@ -240,7 +240,7 @@ impl Tokenizer {
       .tokenizer
       .write()
       .unwrap()
-      .with_normalizer((*normalizer).clone());
+      .with_normalizer(Some((*normalizer).clone()));
   }
 
   #[napi]

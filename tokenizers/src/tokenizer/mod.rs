@@ -550,19 +550,18 @@ where
     }
 
     /// Set the normalizer
-    pub fn with_normalizer(&mut self, normalizer: impl Into<N>) -> &mut Self {
-        self.normalizer = Some(normalizer.into());
+    pub fn with_normalizer(&mut self, normalizer: Option<impl Into<N>>) -> &mut Self {
+        self.normalizer = normalizer.map(|norm| norm.into());
         self
     }
-
     /// Get the normalizer
     pub fn get_normalizer(&self) -> Option<&N> {
         self.normalizer.as_ref()
     }
 
     /// Set the pre tokenizer
-    pub fn with_pre_tokenizer(&mut self, pre_tokenizer: impl Into<PT>) -> &mut Self {
-        self.pre_tokenizer = Some(pre_tokenizer.into());
+    pub fn with_pre_tokenizer(&mut self, pre_tokenizer: Option<impl Into<PT>>) -> &mut Self {
+        self.pre_tokenizer = pre_tokenizer.map(|tok| tok.into());
         self
     }
 
@@ -572,8 +571,8 @@ where
     }
 
     /// Set the post processor
-    pub fn with_post_processor(&mut self, post_processor: impl Into<PP>) -> &mut Self {
-        self.post_processor = Some(post_processor.into());
+    pub fn with_post_processor(&mut self, post_processor: Option<impl Into<PP>>) -> &mut Self {
+        self.post_processor = post_processor.map(|post_proc| post_proc.into());
         self
     }
 
@@ -583,8 +582,8 @@ where
     }
 
     /// Set the decoder
-    pub fn with_decoder(&mut self, decoder: impl Into<D>) -> &mut Self {
-        self.decoder = Some(decoder.into());
+    pub fn with_decoder(&mut self, decoder: Option<impl Into<D>>) -> &mut Self {
+        self.decoder = decoder.map(|dec| dec.into());
         self
     }
 

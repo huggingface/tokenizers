@@ -93,7 +93,7 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
     // START quicktour_init_pretok
     use tokenizers::pre_tokenizers::whitespace::Whitespace;
 
-    tokenizer.with_pre_tokenizer(Whitespace {});
+    tokenizer.with_pre_tokenizer(Some(Whitespace {}));
     // END quicktour_init_pretok
 
     // START quicktour_train
@@ -157,7 +157,7 @@ fn quicktour() -> tokenizers::Result<()> {
         ("[CLS]", tokenizer.token_to_id("[CLS]").unwrap()),
         ("[SEP]", tokenizer.token_to_id("[SEP]").unwrap()),
     ];
-    tokenizer.with_post_processor(
+    tokenizer.with_post_processor(Some(
         TemplateProcessing::builder()
             .try_single("[CLS] $A [SEP]")
             .unwrap()
@@ -165,7 +165,7 @@ fn quicktour() -> tokenizers::Result<()> {
             .unwrap()
             .special_tokens(special_tokens)
             .build()?,
-    );
+    ));
     // END quicktour_init_template_processing
     // START quicktour_print_special_tokens
     let output = tokenizer.encode("Hello, y'all! How are you 😁 ?", true)?;
@@ -261,7 +261,7 @@ fn pipeline() -> tokenizers::Result<()> {
     // END pipeline_test_normalizer
     assert_eq!(normalized.get(), "Hello how are u?");
     // START pipeline_replace_normalizer
-    tokenizer.with_normalizer(normalizer);
+    tokenizer.with_normalizer(Some(normalizer));
     // END pipeline_replace_normalizer
     // START pipeline_setup_pre_tokenizer
     use tokenizers::pre_tokenizers::whitespace::Whitespace;
@@ -325,12 +325,12 @@ fn pipeline() -> tokenizers::Result<()> {
         ]
     );
     // START pipeline_replace_pre_tokenizer
-    tokenizer.with_pre_tokenizer(pre_tokenizer);
+    tokenizer.with_pre_tokenizer(Some(pre_tokenizer));
     // END pipeline_replace_pre_tokenizer
     // START pipeline_setup_processor
     use tokenizers::processors::template::TemplateProcessing;
 
-    tokenizer.with_post_processor(
+    tokenizer.with_post_processor(Some(
         TemplateProcessing::builder()
             .try_single("[CLS] $A [SEP]")
             .unwrap()
@@ -339,7 +339,7 @@ fn pipeline() -> tokenizers::Result<()> {
             .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
             .build()
             .unwrap(),
-    );
+    ));
     // END pipeline_setup_processor
     // START pipeline_test_decoding
     let output = tokenizer.encode("Hello, y'all! How are you 😁 ?", true)?;
@@ -375,21 +375,21 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
     use tokenizers::normalizers::utils::Sequence as NormalizerSequence;
     use tokenizers::normalizers::{strip::StripAccents, unicode::NFD, utils::Lowercase};
 
-    bert_tokenizer.with_normalizer(NormalizerSequence::new(vec![
+    bert_tokenizer.with_normalizer(Some(NormalizerSequence::new(vec![
         NFD.into(),
         Lowercase.into(),
         StripAccents.into(),
-    ]));
+    ])));
     // END bert_setup_normalizer
     // START bert_setup_pre_tokenizer
     use tokenizers::pre_tokenizers::whitespace::Whitespace;
 
-    bert_tokenizer.with_pre_tokenizer(Whitespace {});
+    bert_tokenizer.with_pre_tokenizer(Some(Whitespace {}));
     // END bert_setup_pre_tokenizer
     // START bert_setup_processor
     use tokenizers::processors::template::TemplateProcessing;
 
-    bert_tokenizer.with_post_processor(
+    bert_tokenizer.with_post_processor(Some(
         TemplateProcessing::builder()
             .try_single("[CLS] $A [SEP]")
             .unwrap()
@@ -398,7 +398,7 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
             .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
             .build()
             .unwrap(),
-    );
+    ));
     // END bert_setup_processor
     // START bert_train_tokenizer
     use tokenizers::models::{wordpiece::WordPieceTrainer, TrainerWrapper};
@@ -450,7 +450,7 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     // START bert_proper_decoding
     use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 
-    bert_tokenizer.with_decoder(WordPieceDecoder::default());
+    bert_tokenizer.with_decoder(Some(WordPieceDecoder::default()));
     let decoded = bert_tokenizer.decode(output.get_ids(), true)?;
     // "welcome to the tokenizers library."
     // END bert_proper_decoding

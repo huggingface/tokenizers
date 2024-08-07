@@ -22,8 +22,8 @@ static BATCH_SIZE: usize = 1_000;
 
 fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer {
     let mut tokenizer = Tokenizer::new(bpe);
-    tokenizer.with_pre_tokenizer(ByteLevel::default());
-    tokenizer.with_decoder(ByteLevel::default());
+    tokenizer.with_pre_tokenizer(Some(ByteLevel::default()));
+    tokenizer.with_decoder(Some(ByteLevel::default()));
     tokenizer.add_tokens(&[AddedToken::from("ing", false).single_word(false)]);
     tokenizer.add_special_tokens(&[AddedToken::from("[ENT]", true).single_word(true)]);
     tokenizer
@@ -74,7 +74,7 @@ fn bench_train(c: &mut Criterion) {
         .build()
         .into();
     let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
-    tokenizer.with_pre_tokenizer(Whitespace {});
+    tokenizer.with_pre_tokenizer(Some(Whitespace {}));
     c.bench_function("BPE Train vocabulary (small)", |b| {
         b.iter_custom(|iters| {
             iter_bench_train(
@@ -87,7 +87,7 @@ fn bench_train(c: &mut Criterion) {
     });
 
     let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
-    tokenizer.with_pre_tokenizer(Whitespace {});
+    tokenizer.with_pre_tokenizer(Some(Whitespace {}));
     c.bench_function("BPE Train vocabulary (big)", |b| {
         b.iter_custom(|iters| {
             iter_bench_train(

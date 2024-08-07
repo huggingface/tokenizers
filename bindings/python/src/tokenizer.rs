@@ -1371,8 +1371,9 @@ impl PyTokenizer {
 
     /// Set the :class:`~tokenizers.normalizers.Normalizer`
     #[setter]
-    fn set_normalizer(&mut self, normalizer: PyRef<PyNormalizer>) {
-        self.tokenizer.with_normalizer(normalizer.clone());
+    fn set_normalizer(&mut self, normalizer: Option<PyRef<PyNormalizer>>) {
+        let normalizer_option = normalizer.map(|norm| norm.clone());
+        self.tokenizer.with_normalizer(normalizer_option);
     }
 
     /// The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
@@ -1387,8 +1388,9 @@ impl PyTokenizer {
 
     /// Set the :class:`~tokenizers.normalizers.Normalizer`
     #[setter]
-    fn set_pre_tokenizer(&mut self, pretok: PyRef<PyPreTokenizer>) {
-        self.tokenizer.with_pre_tokenizer(pretok.clone());
+    fn set_pre_tokenizer(&mut self, pretok: Option<PyRef<PyPreTokenizer>>) {
+        self.tokenizer
+            .with_pre_tokenizer(pretok.map(|pre| pre.clone()));
     }
 
     /// The `optional` :class:`~tokenizers.processors.PostProcessor` in use by the Tokenizer
@@ -1403,8 +1405,9 @@ impl PyTokenizer {
 
     /// Set the :class:`~tokenizers.processors.PostProcessor`
     #[setter]
-    fn set_post_processor(&mut self, processor: PyRef<PyPostProcessor>) {
-        self.tokenizer.with_post_processor(processor.clone());
+    fn set_post_processor(&mut self, processor: Option<PyRef<PyPostProcessor>>) {
+        self.tokenizer
+            .with_post_processor(processor.map(|p| p.clone()));
     }
 
     /// The `optional` :class:`~tokenizers.decoders.Decoder` in use by the Tokenizer
@@ -1419,8 +1422,8 @@ impl PyTokenizer {
 
     /// Set the :class:`~tokenizers.decoders.Decoder`
     #[setter]
-    fn set_decoder(&mut self, decoder: PyRef<PyDecoder>) {
-        self.tokenizer.with_decoder(decoder.clone());
+    fn set_decoder(&mut self, decoder: Option<PyRef<PyDecoder>>) {
+        self.tokenizer.with_decoder(decoder.map(|d| d.clone()));
     }
 }
 
@@ -1436,10 +1439,12 @@ mod test {
     #[test]
     fn serialize() {
         let mut tokenizer = Tokenizer::new(PyModel::from(BPE::default()));
-        tokenizer.with_normalizer(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(vec![
-            Arc::new(RwLock::new(NFKC.into())),
-            Arc::new(RwLock::new(Lowercase.into())),
-        ])));
+        tokenizer.with_normalizer(Some(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(
+            vec![
+                Arc::new(RwLock::new(NFKC.into())),
+                Arc::new(RwLock::new(Lowercase.into())),
+            ],
+        ))));
 
         let tmp = NamedTempFile::new().unwrap().into_temp_path();
         tokenizer.save(&tmp, false).unwrap();
@@ -1450,10 +1455,12 @@ mod test {
     #[test]
     fn serde_pyo3() {
         let mut tokenizer = Tokenizer::new(PyModel::from(BPE::default()));
-        tokenizer.with_normalizer(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(vec![
-            Arc::new(RwLock::new(NFKC.into())),
-            Arc::new(RwLock::new(Lowercase.into())),
-        ])));
+        tokenizer.with_normalizer(Some(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(
+            vec![
+                Arc::new(RwLock::new(NFKC.into())),
+                Arc::new(RwLock::new(Lowercase.into())),
+            ],
+        ))));
 
         let output = crate::utils::serde_pyo3::to_string(&tokenizer).unwrap();
         assert_eq!(output, "Tokenizer(version=\"1.0\", truncation=None, padding=None, added_tokens=[], normalizer=Sequence(normalizers=[NFKC(), Lowercase()]), pre_tokenizer=None, post_processor=None, decoder=None, model=BPE(dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=False, byte_fallback=False, ignore_merges=False, vocab={}, merges=[]))");

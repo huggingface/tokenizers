@@ -1,8 +1,6 @@
-use std::sync::{Arc, RwLock};
-
-use pyo3::exceptions;
-use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3::{exceptions, prelude::*};
+use std::sync::{Arc, RwLock};
 
 use crate::error::ToPyResult;
 use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
@@ -354,6 +352,7 @@ impl PyNFKC {
 ///         A list of Normalizer to be run as a sequence
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Sequence")]
 pub struct PySequence {}
+
 #[pymethods]
 impl PySequence {
     #[new]
@@ -379,6 +378,22 @@ impl PySequence {
 
     fn __len__(&self) -> usize {
         0
+    }
+
+    fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
+        match &self_.as_ref().normalizer {
+            PyNormalizerTypeWrapper::Sequence(inner) => match inner.get(index) {
+                Some(item) => PyNormalizer::new(PyNormalizerTypeWrapper::Single(Arc::clone(item)))
+                    .get_as_subtype(py),
+                _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                    "Index not found",
+                )),
+            },
+            PyNormalizerTypeWrapper::Single(inner) => {
+                PyNormalizer::new(PyNormalizerTypeWrapper::Single(Arc::clone(inner)))
+                    .get_as_subtype(py)
+            }
+        }
     }
 }
 

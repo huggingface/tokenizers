@@ -23,9 +23,11 @@ pub fn get_byte_level_bpe() -> BPE {
 pub fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
     let mut tokenizer = Tokenizer::new(get_byte_level_bpe());
     tokenizer
-        .with_pre_tokenizer(ByteLevel::default().add_prefix_space(add_prefix_space))
-        .with_decoder(ByteLevel::default())
-        .with_post_processor(ByteLevel::default().trim_offsets(trim_offsets));
+        .with_pre_tokenizer(Some(
+            ByteLevel::default().add_prefix_space(add_prefix_space),
+        ))
+        .with_decoder(Some(ByteLevel::default()))
+        .with_post_processor(Some(ByteLevel::default().trim_offsets(trim_offsets)));
 
     tokenizer
 }
@@ -43,13 +45,13 @@ pub fn get_bert() -> Tokenizer {
     let sep = tokenizer.get_model().token_to_id("[SEP]").unwrap();
     let cls = tokenizer.get_model().token_to_id("[CLS]").unwrap();
     tokenizer
-        .with_normalizer(BertNormalizer::default())
-        .with_pre_tokenizer(BertPreTokenizer)
-        .with_decoder(WordPieceDecoder::default())
-        .with_post_processor(BertProcessing::new(
+        .with_normalizer(Some(BertNormalizer::default()))
+        .with_pre_tokenizer(Some(BertPreTokenizer))
+        .with_decoder(Some(WordPieceDecoder::default()))
+        .with_post_processor(Some(BertProcessing::new(
             (String::from("[SEP]"), sep),
             (String::from("[CLS]"), cls),
-        ));
+        )));
 
     tokenizer
 }

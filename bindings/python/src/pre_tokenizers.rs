@@ -463,6 +463,24 @@ impl PySequence {
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
         PyTuple::new_bound(py, [PyList::empty_bound(py)])
     }
+
+    fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
+        match &self_.as_ref().pretok {
+            PyPreTokenizerTypeWrapper::Sequence(inner) => match inner.get(index) {
+                Some(item) => {
+                    PyPreTokenizer::new(PyPreTokenizerTypeWrapper::Single(Arc::clone(item)))
+                        .get_as_subtype(py)
+                }
+                _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                    "Index not found",
+                )),
+            },
+            PyPreTokenizerTypeWrapper::Single(inner) => {
+                PyPreTokenizer::new(PyPreTokenizerTypeWrapper::Single(Arc::clone(inner)))
+                    .get_as_subtype(py)
+            }
+        }
+    }
 }
 
 pub(crate) fn from_string(string: String) -> Result<PrependScheme, PyErr> {
