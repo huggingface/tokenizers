@@ -188,7 +188,30 @@ mod test {
             r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b":2,"ab":3},"merges":[["a","b"]]}"#
         );
         let reconstructed = serde_json::from_str(&data).unwrap();
+        assert_eq!(bpe, reconstructed);
 
+        // With a space in the token
+        let vocab: Vocab = [
+            ("<unk>".into(), 0),
+            ("a".into(), 1),
+            ("b c d".into(), 2),
+            ("ab c d".into(), 3),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![("a".to_string(), "b c d".to_string())])
+            .unk_token("<unk>".to_string())
+            .ignore_merges(true)
+            .build()
+            .unwrap();
+        let data = serde_json::to_string(&bpe).unwrap();
+        assert_eq!(
+            data,
+            r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b c d":2,"ab c d":3},"merges":[["a","b c d"]]}"#
+        );
+        let reconstructed = serde_json::from_str(&data).unwrap();
         assert_eq!(bpe, reconstructed);
     }
 
