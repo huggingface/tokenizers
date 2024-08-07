@@ -65,7 +65,7 @@ impl PyNormalizer {
                         Py::new(py, (PyBertNormalizer {}, base))?.into_py(py)
                     }
                     NormalizerWrapper::StripNormalizer(_) => {
-                        Py::new(py, (PyBertNormalizer {}, base))?.into_py(py)
+                        Py::new(py, (PyStrip {}, base))?.into_py(py)
                     }
                     NormalizerWrapper::Prepend(_) => Py::new(py, (PyPrepend {}, base))?.into_py(py),
                     NormalizerWrapper::ByteLevel(_) => {
