@@ -157,7 +157,7 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
 
             PreTokenizerHelper::Legacy(value) => {
                 let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-                let pre_tokenizer_wrapper = match untagged {
+                match untagged {
                     PreTokenizerUntagged::BertPreTokenizer(bert) => {
                         PreTokenizerWrapper::BertPreTokenizer(bert)
                     }
@@ -187,8 +187,7 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
                     PreTokenizerUntagged::UnicodeScripts(unicode_scripts) => {
                         PreTokenizerWrapper::UnicodeScripts(unicode_scripts)
                     }
-                };
-                pre_tokenizer_wrapper
+                }
             }
         })
     }
