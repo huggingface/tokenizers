@@ -356,16 +356,23 @@ pub struct PySequence {}
 #[pymethods]
 impl PySequence {
     #[new]
-    #[pyo3(text_signature = None)]
+    #[pyo3(text_signature = "(self)")]
     fn new(normalizers: &Bound<'_, PyList>) -> PyResult<(Self, PyNormalizer)> {
         let mut sequence = Vec::with_capacity(normalizers.len());
         for n in normalizers.iter() {
             let normalizer: PyRef<PyNormalizer> = n.extract()?;
             match &normalizer.normalizer {
-                PyNormalizerTypeWrapper::Sequence(inner) => sequence.extend(inner.iter().cloned()),
-                PyNormalizerTypeWrapper::Single(inner) => sequence.push(inner.clone()),
+                PyNormalizerTypeWrapper::Sequence(inner) => {
+                    println!("sequence:{:?}", inner);
+                    sequence.extend(inner.iter().cloned())
+                }
+                PyNormalizerTypeWrapper::Single(inner) => {
+                    println!("dingle {:?}", inner);
+                    sequence.push(inner.clone())
+                }
             }
         }
+        println!("The sequence: {:?}", sequence);
         Ok((
             PySequence {},
             PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(sequence)),
@@ -437,7 +444,7 @@ impl PyStrip {
     #[new]
     #[pyo3(signature = (left = true, right = true), text_signature = "(self, left=True, right=True)")]
     fn new(left: bool, right: bool) -> (Self, PyNormalizer) {
-        (PyStrip {}, Strip::new(left, right).into())
+        (PyStrip {}, StripNormalizer::new(left, right).into())
     }
 }
 

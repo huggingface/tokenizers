@@ -3,8 +3,8 @@ use crate::utils::macro_rules_attribute;
 use serde::{Deserialize, Serialize};
 use unicode_normalization_alignments::char::is_combining_mark;
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
+#[derive(Copy, Clone, Debug)]
+#[macro_rules_attribute(impl_serde_type!)]
 #[non_exhaustive]
 pub struct Strip {
     pub strip_left: bool,

@@ -4,8 +4,8 @@ use crate::normalizers::NormalizerWrapper;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 
-#[derive(Clone, Deserialize, Debug, Serialize)]
-#[serde(tag = "type")]
+#[derive(Clone, Debug)]
+#[macro_rules_attribute(impl_serde_type!)]
 /// Allows concatenating multiple other Normalizer as a Sequence.
 /// All the normalizers run in sequence in the given order against the same NormalizedString.
 pub struct Sequence {
