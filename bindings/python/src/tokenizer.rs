@@ -1111,7 +1111,7 @@ impl PyTokenizer {
         py.allow_threads(|| {
             ToPyResult(
                 self.tokenizer
-                    .encode_batch(input, add_special_tokens)
+                    .encode_batch_fast(input, add_special_tokens)
                     .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
             )
             .into()
