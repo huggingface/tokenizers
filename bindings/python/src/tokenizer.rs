@@ -1048,16 +1048,49 @@ impl PyTokenizer {
         py.allow_threads(|| {
             ToPyResult(
                 self.tokenizer
-                    .encode_batch(input, add_special_tokens)
+                    .encode_batch_char_offsets(input, add_special_tokens)
                     .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
             )
             .into()
         })
     }
 
+    /// Encode the given batch of inputs. This method is faster than `encode_batch`
+    /// because it doesn't keep track of offsets.
+    /// Note: Currently the offsets are tracked in bytes instead of characters
+    /// But this may evolve in future releases to speed things even further.
+    ///
+    /// Example:
+    ///     Here are some examples of the inputs that are accepted::
+    ///
+    ///         encode_batch_fast([
+    ///             "A single sequence",
+    ///             ("A tuple with a sequence", "And its pair"),
+    ///             [ "A", "pre", "tokenized", "sequence" ],
+    ///             ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
+    ///         ])
+    ///
+    /// Args:
+    ///     input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
+    ///         A list of single sequences or pair sequences to encode. Each sequence
+    ///         can be either raw text or pre-tokenized, according to the ``is_pretokenized``
+    ///         argument:
+    ///
+    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
+    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
+    ///
+    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+    ///         Whether the input is already pre-tokenized
+    ///
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to add the special tokens
+    ///
+    /// Returns:
+    ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
+    ///
     #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true))]
     #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
-    fn encode_batch_char_offsets(
+    fn encode_batch_fast(
         &self,
         py: Python<'_>,
         input: Vec<&PyAny>,
@@ -1078,7 +1111,7 @@ impl PyTokenizer {
         py.allow_threads(|| {
             ToPyResult(
                 self.tokenizer
-                    .encode_batch_char_offsets(input, add_special_tokens)
+                    .encode_batch(input, add_special_tokens)
                     .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
             )
             .into()
