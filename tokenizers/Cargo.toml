@@ -36,6 +36,11 @@ harness = false
 name = "unigram_benchmark"
 harness = false
 
+[[bench]]
+name = "llama3"
+required-features = ["http"]
+harness = false
+
 [dependencies]
 lazy_static = "1.4"
 rand = "0.8"
@@ -80,3 +85,8 @@ tracing-subscriber = "0.3.18"
 
 [profile.release]
 lto = "fat"
+
+[[example]]
+name = "encode_batch"
+required-features = ["http"]
+
