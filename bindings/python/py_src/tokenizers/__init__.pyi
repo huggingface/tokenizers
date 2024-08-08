@@ -895,9 +895,7 @@ class Tokenizer:
     def encode_batch_fast(self, input, is_pretokenized=False, add_special_tokens=True):
         """
         Encode the given batch of inputs. This method is faster than `encode_batch`
-        because it doesn't keep track of offsets.
-        Note: Currently the offsets are tracked in bytes instead of characters
-        But this may evolve in future releases to speed things even further.
+        because it doesn't keep track of offsets, they will be all zeros.
 
         Example:
             Here are some examples of the inputs that are accepted::
