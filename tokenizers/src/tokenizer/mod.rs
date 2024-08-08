@@ -1123,7 +1123,6 @@ where
         Ok(encodings)
     }
 
-
     /// Decode all sentences in parallel
     pub fn decode_batch(
         &self,

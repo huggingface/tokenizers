@@ -149,17 +149,17 @@ impl PreTokenizedString {
                 OffsetType::Byte => None,
                 OffsetType::None => {
                     let tokens = self
-                .splits
-                .into_iter()
-                .flat_map(|split| {
-                    split.tokens.unwrap().into_iter().map(|token| {
-                        // Replace this with the actual fields you need for the Encoding type
-                        (token.id, String::new(), (0, 0), None, 0)
-                    })
-                })
-                .collect();
-                return Ok(tokens);
-                },
+                        .splits
+                        .into_iter()
+                        .flat_map(|split| {
+                            split.tokens.unwrap().into_iter().map(|token| {
+                                // Replace this with the actual fields you need for the Encoding type
+                                (token.id, String::new(), (0, 0), None, 0)
+                            })
+                        })
+                        .collect();
+                    return Ok(tokens);
+                }
             };
 
             Ok(self
