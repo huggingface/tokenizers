@@ -487,7 +487,6 @@ impl AddedVocabulary {
                 Ok(self.split_with_indices(sequence, &self.split_normalized_trie))
             })
             .expect("AddedVocabulary bad split");
-
         // ["I read a book", "   <s>", "Hey"] -> ["▁I read a book", "▁   <s>", "▁Hey"]
         // ["▁I read a book", "▁   <s>", "▁Hey"] -> [.., "▁   ", "<s>", "▁Hey"]
 

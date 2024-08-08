@@ -1,4 +1,7 @@
-use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::{
+    tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior},
+    NormalizedString,
+};
 use serde::{de, Deserialize, Deserializer, Serialize};
 
 /// Enum representing options for the metaspace prepending scheme.
@@ -115,29 +118,50 @@ impl Default for Metaspace {
 
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, mut normalized| {
-            normalized.replace(' ', &self.str_rep)?;
-            match self.prepend_scheme {
-                PrependScheme::Always => {
-                    if !normalized.get().starts_with(self.replacement) {
-                        normalized.prepend(&self.str_rep);
-                    }
+        let result = if self.prepend_scheme == PrependScheme::First {
+            let first = &mut pretokenized.splits[0];
+            first.normalized.replace(' ', &self.str_rep)?;
+            if !first.normalized.get().starts_with(self.replacement)
+                && first.normalized.offsets_original().0 == 0
+            {
+                if first.tokens.clone().is_some() {
+                    pretokenized.splits.insert(
+                        0,
+                        NormalizedString::from(self.replacement.to_string()).into(),
+                    );
+                } else {
+                    first.normalized.prepend(&self.str_rep);
                 }
-                PrependScheme::First => {
-                    if !normalized.get().starts_with(self.replacement)
-                        && normalized.offsets_original().0 == 0
-                    {
-                        normalized.prepend(&self.str_rep);
-                    }
-                }
-                PrependScheme::Never => {}
-            };
-            if self.split {
-                normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
-            } else {
-                Ok(vec![normalized])
             }
-        })
+            let _ = pretokenized.split(|_, mut normalized| {
+                normalized.replace(' ', &self.str_rep)?;
+                if self.split {
+                    normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
+                } else {
+                    Ok(vec![normalized])
+                }
+            });
+            Ok(())
+        } else {
+            pretokenized.split(|_, mut normalized| {
+                normalized.replace(' ', &self.str_rep)?;
+                match self.prepend_scheme {
+                    PrependScheme::Always => {
+                        if !normalized.get().starts_with(self.replacement) {
+                            normalized.prepend(&self.str_rep);
+                        }
+                    }
+                    PrependScheme::Never => {}
+                    _ => {} // Handle other cases if needed
+                };
+                if self.split {
+                    normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
+                } else {
+                    Ok(vec![normalized])
+                }
+            })
+        };
+        result
     }
 }
 

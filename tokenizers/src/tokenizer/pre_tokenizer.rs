@@ -21,9 +21,9 @@ pub struct Split {
     /// The underlying `NormalizedString`. Each SubString is represented by a `NormalizedString`
     /// and in the end we might be carrying a lot of SubString representing various parts of the
     /// original input string.
-    normalized: NormalizedString,
+    pub(crate) normalized: NormalizedString,
     /// Optional Tokens associated to this Split
-    tokens: Option<Vec<Token>>,
+    pub(crate) tokens: Option<Vec<Token>>,
 }
 
 impl From<NormalizedString> for Split {
@@ -53,7 +53,7 @@ impl From<(NormalizedString, Option<Vec<Token>>)> for Split {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreTokenizedString {
     original: String,
-    splits: Vec<Split>,
+    pub(crate) splits: Vec<Split>,
 }
 
 impl PreTokenizedString {
@@ -97,10 +97,8 @@ impl PreTokenizedString {
             );
         }
         self.splits = new_splits;
-
         Ok(())
     }
-
     /// Normalized all the splits that do not have attached `Tokens`, using the provided
     /// `normalize` function.
     pub fn normalize<F>(&mut self, normalize: F) -> Result<()>
@@ -170,7 +168,6 @@ impl PreTokenizedString {
                     let normalized = split.normalized;
                     let offsets = normalized.offsets_original();
                     let offset_converter = &offset_converter;
-
                     split.tokens.unwrap().into_iter().map(move |token| {
                         let mut offsets = normalized
                             .convert_offsets(Range::Normalized(token.offsets.0..token.offsets.1))
@@ -182,7 +179,6 @@ impl PreTokenizedString {
                         if let Some(converter) = offset_converter {
                             offsets = converter.convert(offsets).unwrap_or(offsets);
                         }
-
                         (
                             token.id,
                             token.value,
