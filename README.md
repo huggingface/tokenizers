@@ -27,6 +27,11 @@ versatility.
    original sentence that corresponds to a given token.
  - Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
 
+## Performances
+Performances can vary depending on hardware, but running the [~/bindings/python/benches/test_tiktoken.py](https://github.com/huggingface/tokenizers/bindings/python/benches/test_tiktoken.py) should give the following on a g6 aws instance:
+![image](https://github.com/user-attachments/assets/2b913d4b-e488-4cbc-b542-f90a6c40643d)
+
+
 ## Bindings
 
 We provide bindings to the following languages (more to come!):
