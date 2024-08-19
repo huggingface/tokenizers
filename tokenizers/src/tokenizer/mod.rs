@@ -1188,7 +1188,9 @@ where
                         s
                     }),
                     |seq| {
-                        let normalized = self.added_vocabulary.extract_and_normalize(self.normalizer.as_ref(), seq.as_ref());
+                        let normalized = self
+                            .added_vocabulary
+                            .extract_and_normalize(self.normalizer.as_ref(), seq.as_ref());
                         let pre_tokenized = self.do_pre_tokenize(normalized)?;
                         Ok(pre_tokenized
                             .get_splits(OffsetReferential::Original, OffsetType::Byte)
@@ -1240,7 +1242,9 @@ where
                 s
             }),
             |seq| {
-                let normalized = self.added_vocabulary.extract_and_normalize(self.normalizer.as_ref(), seq.as_ref());
+                let normalized = self
+                    .added_vocabulary
+                    .extract_and_normalize(self.normalizer.as_ref(), seq.as_ref());
                 let pre_tokenized = self.do_pre_tokenize(normalized)?;
                 Ok(pre_tokenized
                     .get_splits(OffsetReferential::Original, OffsetType::Byte)
