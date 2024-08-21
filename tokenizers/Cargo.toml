@@ -68,6 +68,9 @@ fancy-regex = { version = "0.13", optional = true}
 getrandom = { version = "0.2.10" }
 esaxx-rs = { version = "0.1.10", default-features = false, features=[]}
 monostate = "0.1.12"
+ahash = { version = "0.8.11", features = ["serde"] }
+dary_heap = { version = "0.3.6", features = ["serde"] }
+compact_str = { version = "0.8.0", features = ["serde"] }
 
 [features]
 default = ["progressbar", "onig", "esaxx_fast"]
