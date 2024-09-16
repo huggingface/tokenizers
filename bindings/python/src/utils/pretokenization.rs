@@ -39,7 +39,7 @@ fn normalize(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResu
     } else {
         ToPyResult(pretok.normalize(|normalized| {
             let norm = PyNormalizedStringRefMut::new(normalized);
-            func.call((norm.get(),), None)?;
+            func.call((norm.get().clone(),), None)?;
             Ok(())
         }))
         .into()
