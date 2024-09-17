@@ -272,7 +272,7 @@ impl DestroyPtr for PyPreTokenizedStringRefMut {
 }
 
 impl PyPreTokenizedStringRefMut {
-    pub fn new(pretok: &mut tk::PreTokenizedString) -> RefMutGuard<Self> {
+    pub fn new(pretok: &mut tk::PreTokenizedString) -> RefMutGuard<'_, Self> {
         // SAFETY: This is safe because we return a RefMutGuard here.
         // The compiler will make sure the &mut stays valid as necessary.
         RefMutGuard::new(Self {
