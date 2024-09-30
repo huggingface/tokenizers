@@ -1181,11 +1181,10 @@ where
                 };
 
                 trainer.feed(
-                    sequences.map(|s| {
+                    sequences.inspect(|s| {
                         if let Some(progress) = &progress {
                             progress.inc(s.len() as u64)
                         }
-                        s
                     }),
                     |seq| {
                         let normalized = self.do_normalize(seq.as_ref())?;
@@ -1233,11 +1232,10 @@ where
         };
 
         trainer.feed(
-            sequences.map(|s| {
+            sequences.inspect(|_s| {
                 if let Some(progress) = &progress {
                     progress.inc(1)
                 }
-                s
             }),
             |seq| {
                 let normalized = self.do_normalize(seq.as_ref())?;
