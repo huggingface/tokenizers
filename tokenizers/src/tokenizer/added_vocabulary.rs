@@ -385,6 +385,10 @@ impl AddedVocabulary {
 
             if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content)
             {
+                println!(
+                    "finding matched, but encode special tokens is true. skipping: {:?}",
+                    added_token
+                );
                 continue;
             }
 

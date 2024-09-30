@@ -6,10 +6,13 @@ use super::{
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::Cache;
 
-use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 type TokenMap = HashMap<String, u32>;
 type Vocab = Vec<(String, f64)>;
@@ -28,6 +31,7 @@ pub struct Unigram {
     fuse_unk: bool,
     is_optimized: bool,
     byte_fallback: bool,
+    pub special_tokens: Option<Arc<HashSet<String>>>,
 }
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
@@ -52,6 +56,7 @@ impl Clone for Unigram {
             fuse_unk: self.fuse_unk,
             is_optimized: self.is_optimized,
             byte_fallback: self.byte_fallback,
+            special_tokens: self.special_tokens.as_ref().map(Arc::clone),
         }
     }
 }
@@ -114,6 +119,9 @@ impl Unigram {
 
         let mut min_score = f64::INFINITY;
         for (id, (token, score)) in vocab.iter().enumerate() {
+            if &token.to_string() == "<s>" {
+                continue;
+            }
             token_to_ids.insert(token.to_string(), id as u32);
             let bytes: Vec<u8> = token.bytes().collect();
             builder.push(&bytes);
@@ -137,6 +145,7 @@ impl Unigram {
             cache: Cache::default(),
             is_optimized,
             byte_fallback,
+            special_tokens: None,
         })
     }
 
