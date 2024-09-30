@@ -945,10 +945,13 @@ mod tests {
             .build()
             .unwrap();
         let tokens = bpe.tokenize(".:.:").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, ".:.:".into(), (0, 0))]);
+        assert_eq!(tokens, vec![Token::new(0u32, ".:.:".into(), (0, 4))]);
 
         let tokens = bpe.tokenize("Ġbelirtilen").unwrap();
-        assert_eq!(tokens, vec![Token::new(1u32, "Ġbelirtilen".into(), (0, 0))]);
+        assert_eq!(
+            tokens,
+            vec![Token::new(1u32, "Ġbelirtilen".into(), (0, 12))]
+        );
 
         bpe.ignore_merges = false;
 
