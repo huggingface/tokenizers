@@ -462,7 +462,11 @@ impl BPE {
     fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
         if self.ignore_merges {
             if let Some(id) = self.vocab.get(sequence) {
-                return Ok(vec![Token::new(*id, sequence.to_string().clone(), (0, 0))]);
+                return Ok(vec![Token::new(
+                    *id,
+                    sequence.to_string().clone(),
+                    (0, sequence.len()),
+                )]);
             }
         }
         if let Some(ref hit) = self.cache.as_ref().and_then(|c| c.get(sequence)) {
