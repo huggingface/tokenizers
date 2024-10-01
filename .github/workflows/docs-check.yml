@@ -35,7 +35,7 @@ jobs:
         run: make clean && make html_all O="-W --keep-going"
 
       - name: Upload built doc
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: documentation
           path: ./docs/build/*
