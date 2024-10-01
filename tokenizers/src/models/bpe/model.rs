@@ -385,13 +385,13 @@ impl BPE {
             // Add the `continuing_subword_prefix` if relevant
             if !is_first {
                 if let Some(ref prefix) = self.continuing_subword_prefix {
-                    s = format!("{}{}", prefix, s).into()
+                    s = format!("{prefix}{s}").into()
                 }
             }
             // Add the `end_of_word_suffix` if relevant
             if is_last {
                 if let Some(ref suffix) = self.end_of_word_suffix {
-                    s = format!("{}{}", s, suffix).into()
+                    s = format!("{s}{suffix}").into()
                 }
             }
 
@@ -406,7 +406,7 @@ impl BPE {
                     let tokens: Option<Vec<_>> = s
                         .bytes()
                         .map(|b| -> Option<&u32> {
-                            let code = format!("<{:#04X}>", b);
+                            let code = format!("<{b:#04X}>");
 
                             self.vocab.get(&code)
                         })
@@ -515,7 +515,7 @@ impl Model for BPE {
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let vocab_file_name = match name {
-            Some(name) => format!("{}-vocab.json", name),
+            Some(name) => format!("{name}-vocab.json"),
             None => "vocab.json".to_string(),
         };
 
@@ -530,7 +530,7 @@ impl Model for BPE {
 
         // Write merges.txt
         let merges_file_name = match name {
-            Some(name) => format!("{}-merges.txt", name),
+            Some(name) => format!("{name}-merges.txt"),
             None => "merges.txt".to_string(),
         };
 

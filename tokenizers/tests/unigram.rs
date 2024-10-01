@@ -44,7 +44,7 @@ fn test_train_unigram_from_file() {
     let mut word_counts = HashMap::new();
     content.split_whitespace().for_each(|word| {
         // This is important for the test of char vs u8
-        let word = format!("▁{}", word);
+        let word = format!("▁{word}");
         *word_counts.entry(word).or_insert(0) += 1;
     });
 

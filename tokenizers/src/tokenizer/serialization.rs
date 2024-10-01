@@ -116,7 +116,7 @@ where
                 "version" => {
                     let v: String = map.next_value()?;
                     if &v != "1.0" {
-                        return Err(Error::custom(format!("Unknown tokenizer version '{}'", v)));
+                        return Err(Error::custom(format!("Unknown tokenizer version '{v}'")));
                     }
                 }
                 "truncation" => {

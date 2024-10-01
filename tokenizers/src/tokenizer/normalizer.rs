@@ -351,7 +351,7 @@ impl NormalizedString {
                     match changes {
                         0 => "Replacing".into(),
                         ch if ch > 0 => "Adding".into(),
-                        ch if ch < 0 => format!("Replacing + removing {} following chars", ch),
+                        ch if ch < 0 => format!("Replacing + removing {ch} following chars"),
                         _ => "Undefined".into(),
                     },
                     offset

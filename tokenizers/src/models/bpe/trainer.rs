@@ -342,13 +342,13 @@ impl BpeTrainer {
                     // Add the `continuing_subword_prefix` if relevant
                     if !is_first {
                         if let Some(prefix) = &self.continuing_subword_prefix {
-                            s = format!("{}{}", prefix, s);
+                            s = format!("{prefix}{s}");
                         }
                     }
                     // Add the `end_of_word_suffix` if relevant
                     if is_last {
                         if let Some(suffix) = &self.end_of_word_suffix {
-                            s = format!("{}{}", s, suffix);
+                            s = format!("{s}{suffix}");
                         }
                     }
 
@@ -513,7 +513,7 @@ impl BpeTrainer {
                     part_b = part_b[prefix_byte_len..].to_string();
                 }
             }
-            let new_token = format!("{}{}", part_a, part_b);
+            let new_token = format!("{part_a}{part_b}");
             // implement sentencepiece-like merge.
             // if this code were to be merged, integrate a way in the python bindings to communicate this variable
             // default should be 0/None to maintain previous behavior. 16 is the spm default.
