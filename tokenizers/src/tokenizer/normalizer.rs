@@ -45,8 +45,8 @@ where
 
         match range.start_bound() {
             Bound::Unbounded => Some(end),
-            Bound::Included(i) => Some(end - (*i + 1)),
-            Bound::Excluded(i) => Some(end - *i),
+            Bound::Included(i) => Some(end - *i),
+            Bound::Excluded(i) => Some(end - (*i + 1)),
         }
     }
 
@@ -1012,6 +1012,20 @@ mod tests {
     use super::*;
     use regex::Regex;
     use unicode_categories::UnicodeCategories;
+
+    #[test]
+    fn test_len_range_inclusive() {
+        let range = Range::Original(3..=7);
+        let len = range.len();
+        assert_eq!(len, Some(5)); // 7 - 3 + 1 = 5
+    }
+
+    #[test]
+    fn test_len_range_exclusive() {
+        let range = Range::Original(3..7);
+        let len = range.len();
+        assert_eq!(len, Some(4)); // 7 - 3 = 4
+    }
 
     #[test]
     fn nfd_adds_new_chars() {
