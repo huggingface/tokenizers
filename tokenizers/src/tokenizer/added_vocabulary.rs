@@ -321,6 +321,10 @@ impl AddedVocabulary {
                     .unwrap()
                     .entry(id)
                     .and_modify(|t| *t = new_token.clone()); // Replace entire entry with new_token
+                self.added_tokens_map
+                    .lock()
+                    .unwrap()
+                    .remove(old_token.content.as_str());
                 self.refresh_added_tokens(model, normalizer);
             } else {
                 error!(
