@@ -311,25 +311,26 @@ impl AddedVocabulary {
     /// use reserved tokens (which usually are in the original vocab, and in the added vocab)
     pub fn assign_tokens<N: Normalizer>(
         &mut self,
-        old_token_content: &[AddedToken],
-        new_token_content: &[AddedToken],
+        token_map: &HashMap<AddedToken, AddedToken>, // HashMap of old token to new token
         model: &impl Model,
         normalizer: Option<&N>,
     ) {
-        for (old, new) in old_token_content.iter().zip(new_token_content.iter()) {
-            if let Some(id) = self.token_to_id(old.content.as_str(), model) {
+        for (old_token, new_token) in token_map.iter() {
+            if let Some(id) = self.token_to_id(old_token.content.as_str(), model) {
                 self.added_tokens_map_r
                     .lock()
                     .unwrap()
                     .entry(id)
-                    .and_modify(|t| t.content = new.content.clone());
+                    .and_modify(|t| *t = new_token.clone()); // Replace entire entry with new_token
                 self.refresh_added_tokens(model, normalizer);
             } else {
-                error!("Error: you tried to re-assign a token that does not exist in the added vocab. Make sure {:?} is first added to the vocab", old.content.clone())
+                error!(
+                "Error: you tried to re-assign a token that does not exist in the added vocab. Make sure {:?} is first added to the vocab",
+                old_token.content.clone()
+            )
             }
         }
     }
-
     /// Reconstruct our internal RegexSet when new tokens are added to the vocabulary.
     ///
     /// We keep two different RegexSet, one that will take care of matching against the

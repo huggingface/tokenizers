@@ -960,10 +960,9 @@ where
     }
 
     /// Assign a new token
-    pub fn assign_tokens(&mut self, old_tokens: &[AddedToken], new_tokens: &[AddedToken]) {
+    pub fn assign_tokens(&mut self, old_to_new_map: &HashMap<AddedToken, AddedToken>) {
         self.added_vocabulary.assign_tokens(
-            old_tokens,
-            new_tokens,
+            old_to_new_map, // HashMap of old token to new token
             &self.model,
             self.normalizer.as_ref(),
         )

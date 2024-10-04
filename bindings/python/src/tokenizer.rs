@@ -1250,21 +1250,11 @@ impl PyTokenizer {
     /// Returns:
     ///     :obj:`int`: The number of tokens that were created in the vocabulary
     #[pyo3(text_signature = "(self, old_tokens, new_tokens)")]
-    fn assign_tokens(
-        &mut self,
-        old_tokens: &Bound<'_, PyList>,
-        new_tokens: &Bound<'_, PyList>,
-    ) -> PyResult<()> {
+    fn assign_tokens(&mut self, old_to_new_map: &Bound<'_, PyDict>) -> PyResult<()> {
         use pyo3::exceptions::PyTypeError;
-        if old_tokens.len() != new_tokens.len() {
-            return Err(PyTypeError::new_err(
-                "old_tokens and new_tokens must have the same length",
-            ));
-        }
 
-        let mut processed_old_tokens = Vec::with_capacity(old_tokens.len());
-        let mut processed_new_tokens = Vec::with_capacity(new_tokens.len());
-        for (old, new) in old_tokens.iter().zip(new_tokens.iter()) {
+        let mut processed_old_tokens = HashMap::with_capacity(old_to_new_map.len());
+        for (old, new) in old_to_new_map.iter() {
             let old_token = if let Ok(content) = old.extract::<&str>() {
                 PyAddedToken::from(content.to_string(), Some(false)).get_token()
             } else if let Ok(token) = old.extract::<PyRefMut<PyAddedToken>>() {
@@ -1287,12 +1277,10 @@ impl PyTokenizer {
                 ));
             };
 
-            processed_old_tokens.push(old_token);
-            processed_new_tokens.push(new_token);
+            processed_old_tokens.insert(old_token, new_token);
         }
-        Ok(self
-            .tokenizer
-            .assign_tokens(&processed_old_tokens, &processed_new_tokens))
+        self.tokenizer.assign_tokens(&processed_old_tokens);
+        Ok(())
     }
     /// Add the given special tokens to the Tokenizer.
     ///
