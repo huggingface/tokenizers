@@ -725,7 +725,7 @@ class Tokenizer:
         """
         pass
 
-    def assing_tokens(self, old_tokens, new_tokens):
+    def assign_tokens(self, old_tokens, new_tokens):
         """
         Add the given tokens to the vocabulary
 

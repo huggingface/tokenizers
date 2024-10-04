@@ -562,6 +562,13 @@ class TestTokenizer:
         tokenizer.pre_tokenizer = None
         assert tokenizer.pre_tokenizer == None
 
+    def test_re_assign_tokens(self):
+        tokenizer = Tokenizer.from_pretrained("t5-base")
+        tokenizer.assign_tokens({"<extra_id_0>": "my_new_token"})
+        assert tokenizer.decode([32099]) == "my_new_token"
+        assert tokenizer.encode("<extra_id_0>").tokens == ["▁", "<", "extra", "_", "i", "d", "_", "0", ">", "</s>"]
+        assert "my_new_token" in tokenizer.get_vocab(True).keys()
+
 
 class TestTokenizerRepr:
     def test_repr(self):
