@@ -148,8 +148,6 @@ pub struct AddedVocabulary {
     /// Contains the mapping from ID to AddedToken for all the added tokens, both special
     /// and classic.
     added_tokens_map_r: Arc<Mutex<HashMap<u32, AddedToken>>>,
-    /// Contains only the classic AddedToken, in the specific order the user gave them.
-    added_tokens: Vec<AddedToken>,
 
     /// A RegexSet containing all the non-normalized patterns used to split on AddedTokens
     split_trie: MatchingSet,
@@ -173,7 +171,6 @@ impl AddedVocabulary {
         Self {
             added_tokens_map: Arc::new(Mutex::new(HashMap::new())),
             added_tokens_map_r: Arc::new(Mutex::new(HashMap::new())),
-            added_tokens: vec![],
             split_trie: (trie, vec![]),
             split_normalized_trie: (normalized_trie, vec![]),
             encode_special_tokens: false,
@@ -218,12 +215,14 @@ impl AddedVocabulary {
 
     /// Check if a token is a special token
     pub fn is_special_token(&self, token: &str) -> bool {
-        self.added_tokens_map_r
-            .lock()
-            .unwrap()
-            .get(self.added_tokens_map.lock().unwrap().get(token).unwrap())
-            .unwrap()
-            .special
+        let hash_map = &self.added_tokens_map_r.lock().unwrap();
+        let revert_hash_map = &self.added_tokens_map.lock().unwrap();
+        if let Some(id) = revert_hash_map.get(token) {
+            if let Some(token) = hash_map.get(id) {
+                return token.special;
+            }
+        }
+        false
     }
 
     /// Add some special tokens to the vocabulary
@@ -335,7 +334,7 @@ impl AddedVocabulary {
     ///
     /// We keep two different RegexSet, one that will take care of matching against the
     /// non-normalized string, and one matching against the normalized one.
-    fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer: Option<&N>) {
+    fn refresh_added_tokens<N: Normalizer>(&mut self, _model: &impl Model, normalizer: Option<&N>) {
         type TupleTokenId<'a> = (&'a AddedToken, u32);
         let added_tokens_map_r = self.added_tokens_map_r.lock().unwrap().clone();
         let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) =
