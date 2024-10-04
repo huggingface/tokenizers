@@ -8,7 +8,7 @@ use std::path::PathBuf;
 pub struct FromPretrainedParameters {
     pub revision: String,
     pub user_agent: HashMap<String, String>,
-    pub auth_token: Option<String>,
+    pub token: Option<String>,
 }
 
 impl Default for FromPretrainedParameters {
@@ -16,7 +16,7 @@ impl Default for FromPretrainedParameters {
         Self {
             revision: "main".into(),
             user_agent: HashMap::new(),
-            auth_token: None,
+            token: None,
         }
     }
 }
@@ -60,7 +60,7 @@ pub fn from_pretrained<S: AsRef<str>>(
     }
 
     let mut builder = ApiBuilder::new();
-    if let Some(token) = params.auth_token {
+    if let Some(token) = params.token {
         builder = builder.with_token(Some(token));
     }
     let api = builder.build()?;
