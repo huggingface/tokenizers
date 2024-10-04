@@ -425,7 +425,7 @@ impl Model for Unigram {
                         let byte_tokens: Option<Vec<_>> = string
                             .bytes()
                             .map(|byte| -> Option<Token> {
-                                let byte_string = format!("<0x{:02X}>", byte);
+                                let byte_string = format!("<0x{byte:02X}>");
                                 let id = self.token_to_ids.get(&byte_string);
                                 id.map(|id| Token::new(*id, byte_string, (offset, offset + len)))
                             })
@@ -457,7 +457,7 @@ impl Model for Unigram {
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let name = match name {
-            Some(name) => format!("{}-unigram.json", name),
+            Some(name) => format!("{name}-unigram.json"),
             None => "unigram.json".to_string(),
         };
         let mut fullpath = PathBuf::new();
@@ -568,7 +568,7 @@ mod tests {
 
         for is_optimized in &[true, false] {
             model.set_optimized(*is_optimized);
-            println!("IsOptimized {:?}", is_optimized);
+            println!("IsOptimized {is_optimized:?}");
             assert_eq!(model.encode("abc").unwrap(), vec!["abc"]);
             assert_eq!(model.encode("AB").unwrap(), vec!["AB"]);
 

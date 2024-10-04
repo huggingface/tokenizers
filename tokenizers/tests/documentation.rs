@@ -199,7 +199,7 @@ fn quicktour() -> tokenizers::Result<()> {
     // START quicktour_encode_batch
     let output = tokenizer.encode_batch(vec!["Hello, y'all!", "How are you 😁 ?"], true)?;
     // END quicktour_encode_batch
-    println!("{:?}", output);
+    println!("{output:?}");
     // START quicktour_encode_batch_pair
     let output = tokenizer.encode_batch(
         vec![
@@ -209,7 +209,7 @@ fn quicktour() -> tokenizers::Result<()> {
         true,
     )?;
     // END quicktour_encode_batch_pair
-    println!("{:?}", output);
+    println!("{output:?}");
     // START quicktour_enable_padding
     use tokenizers::PaddingParams;
 
@@ -350,7 +350,7 @@ fn pipeline() -> tokenizers::Result<()> {
         &[1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2],
         true,
     )?;
-    println!("{}", decoded);
+    println!("{decoded}");
     // "Hello , y ' all ! How are you ?"
     // END pipeline_test_decoding
 
@@ -436,7 +436,7 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     // ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
 
     let decoded = bert_tokenizer.decode(output.get_ids(), true)?;
-    println!("{}", decoded);
+    println!("{decoded}");
     // "welcome to the tok ##eni ##zer ##s library ."
     // END bert_test_decoding
     assert_eq!(

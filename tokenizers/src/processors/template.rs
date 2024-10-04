@@ -150,7 +150,7 @@ impl TryFrom<String> for Piece {
     fn try_from(s: String) -> StdResult<Self, Self::Error> {
         let parts = s.split(':').collect::<Vec<_>>();
 
-        let err = || format!("Cannot build Piece from string \"{}\"", s);
+        let err = || format!("Cannot build Piece from string \"{s}\"");
         match parts.as_slice() {
             [id, type_id] => {
                 let type_id: u32 = type_id.parse().map_err(|_| err())?;

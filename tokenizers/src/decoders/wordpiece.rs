@@ -53,7 +53,7 @@ impl Decoder for WordPiece {
                     if token.starts_with(&self.prefix) {
                         *token = token.replacen(&self.prefix, "", 1);
                     } else {
-                        *token = format!(" {}", token);
+                        *token = format!(" {token}");
                     }
                 }
                 if self.cleanup {

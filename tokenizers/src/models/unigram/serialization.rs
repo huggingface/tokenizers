@@ -70,7 +70,7 @@ impl<'de> Visitor<'de> for UnigramVisitor {
         }
         match (vocab, unk_id, byte_fallback) {
             (Some(vocab), unk_id, byte_fallback) => Ok(Unigram::from(vocab, unk_id, byte_fallback)
-                .map_err(|err| Error::custom(format!("Unable to load vocab {:?}", err)))?),
+                .map_err(|err| Error::custom(format!("Unable to load vocab {err:?}")))?),
             (None, _, _) => Err(Error::custom("Missing vocab")),
         }
     }
