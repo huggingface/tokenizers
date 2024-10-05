@@ -724,15 +724,15 @@ mod tests {
         assert_eq!(vocab.len(), 3); // New token was added
         assert!(vocab.is_special_token("test"));
         assert_eq!(
-            *vocab.get_added_tokens_decoder(),
+            vocab.get_added_tokens_decoder(),
             HashMap::from([
                 (0, AddedToken::from("test", true)),
                 (2, AddedToken::from("added_token_1", true)),
                 (3, AddedToken::from("added_token_2", true)),
             ])
         );
-        assert!(vocab.added_tokens_map.contains_key("test"));
-        assert!(vocab.added_tokens_map_r.contains_key(&0));
+        assert!(vocab.added_tokens_map.lock().unwrap().contains_key("test"));
+        assert!(vocab.added_tokens_map_r.lock().unwrap().contains_key(&0));
 
         vocab.add_tokens(
             &[
