@@ -562,15 +562,25 @@ class TestTokenizer:
         tokenizer.pre_tokenizer = None
         assert tokenizer.pre_tokenizer == None
 
-    def test_re_assign_tokens(self):
+    def test_re_assign_tokens_bpe(self):
+        tokenizer = Tokenizer.from_pretrained("gpt2")
+        tokenizer.assign_tokens({"<|endoftext|>": "my_new_token"})
+        assert tokenizer.decode([50256]) == "my_new_token"
+        assert tokenizer.encode("my_new_token").tokens == ["my_new_token"]
+        assert tokenizer.encode("my_new_token").ids == [50256]
+        assert tokenizer.encode("<|endoftext|>").ids == [27, 91, 437, 1659, 5239, 91, 29]
+        assert tokenizer.encode("<|endoftext|>").tokens == ["<", "|", "end", "of", "text", "|", ">"]
+        assert "my_new_token" in {k.content for k in tokenizer.get_added_tokens_decoder().values()}
+
+    def test_re_assign_tokens_unigram(self):
         tokenizer = Tokenizer.from_pretrained("t5-base")
         tokenizer.assign_tokens({"<extra_id_0>": "my_new_token"})
         assert tokenizer.decode([32099]) == "my_new_token"
-        assert tokenizer.encode("my_new_token").tokens == ["my_new_token", "</s>"]
-        assert tokenizer.encode("my_new_token").ids == [32099, 1]
-        assert tokenizer.encode("<extra_id_0>").ids == [0, 1]
-        assert tokenizer.encode("<extra_id_0>").tokens == ["▁", "<", "extra", "_", "i", "d", "_", "0", ">", "</s>"]
-        assert "my_new_token" in tokenizer.get_vocab(True).keys()
+        assert tokenizer.encode("my_new_token").tokens == ["my_new_token"]
+        assert tokenizer.encode("my_new_token").ids == [32099]
+        assert tokenizer.encode("<extra_id_0>").ids == [27, 91, 437, 1659, 5239, 91, 29]
+        assert tokenizer.encode("<extra_id_0>").tokens == ["<", "|", "end", "of", "text", "|", ">"]
+        assert "my_new_token" in {k.content for k in tokenizer.get_added_tokens_decoder().values()}
 
 
 class TestTokenizerRepr:
