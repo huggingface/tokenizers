@@ -1,3 +1,5 @@
+use crate::AddedVocabulary;
+
 use super::model::Unigram;
 use serde::{
     de::{Error, MapAccess, Visitor},
@@ -69,8 +71,12 @@ impl<'de> Visitor<'de> for UnigramVisitor {
             }
         }
         match (vocab, unk_id, byte_fallback) {
-            (Some(vocab), unk_id, byte_fallback) => Ok(Unigram::from(vocab, unk_id, byte_fallback)
-                .map_err(|err| Error::custom(format!("Unable to load vocab {err:?}")))?),
+            (Some(vocab), unk_id, byte_fallback) => {
+                Ok(
+                    Unigram::from(vocab, unk_id, byte_fallback, &AddedVocabulary::default())
+                        .map_err(|err| Error::custom(format!("Unable to load vocab {err:?}")))?,
+                )
+            }
             (None, _, _) => Err(Error::custom("Missing vocab")),
         }
     }

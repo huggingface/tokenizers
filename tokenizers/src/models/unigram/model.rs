@@ -548,7 +548,8 @@ mod tests {
             ("abcd".to_string(), 10.0),
         ];
 
-        let model = Unigram::from(sentencepieces, Some(0), false).unwrap();
+        let model =
+            Unigram::from(sentencepieces, Some(0), false, &AddedVocabulary::default()).unwrap();
         let result = model.encode("abcd").unwrap();
         assert_eq!(result, vec!["abcd"]);
     }
@@ -570,7 +571,8 @@ mod tests {
             ("qr".to_string(), -0.5),
         ];
 
-        let mut model = Unigram::from(sentencepieces, Some(0), false).unwrap();
+        let mut model =
+            Unigram::from(sentencepieces, Some(0), false, &AddedVocabulary::default()).unwrap();
 
         for is_optimized in &[true, false] {
             model.set_optimized(*is_optimized);
@@ -617,7 +619,8 @@ mod tests {
             ("<0xC3>".to_string(), -0.01),
             ("<0xA9>".to_string(), -0.03),
         ];
-        let unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
+        let unigram =
+            Unigram::from(sentencepieces, Some(0), true, &AddedVocabulary::default()).unwrap();
         let tokens: Vec<Token> = unigram.tokenize("é").unwrap();
         assert_eq!(
             tokens,
