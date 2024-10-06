@@ -18,6 +18,7 @@ pyo3 = { version = "0.21" }
 numpy = "0.21"
 ndarray = "0.15"
 itertools = "0.12"
+ahash = { version = "0.8.11", features = ["serde"] }
 
 [dependencies.tokenizers]
 path = "../../tokenizers"

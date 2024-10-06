@@ -2,10 +2,10 @@ use crate::models::unigram::{lattice::Lattice, model::Unigram};
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
+use ahash::{AHashMap, AHashSet};
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
-use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
 // A token and a score
@@ -57,8 +57,8 @@ pub struct UnigramTrainer {
     pub shrinking_factor: f64,
     #[builder(default = "vec![]")]
     pub special_tokens: Vec<AddedToken>,
-    #[builder(default = "HashSet::new()")]
-    pub initial_alphabet: HashSet<char>,
+    #[builder(default = "AHashSet::new()")]
+    pub initial_alphabet: AHashSet<char>,
 
     #[builder(default = "None")]
     pub unk_token: Option<String>,
@@ -67,8 +67,8 @@ pub struct UnigramTrainer {
     pub max_piece_length: usize,
     #[builder(default = "1_000_000")]
     seed_size: usize,
-    #[builder(default = "HashMap::new()")]
-    words: HashMap<String, u32>,
+    #[builder(default = "AHashMap::new()")]
+    words: AHashMap<String, u32>,
 }
 
 impl Default for UnigramTrainer {
@@ -110,17 +110,17 @@ impl UnigramTrainer {
         true
     }
 
-    fn finalize(&self, model: Unigram, required_chars: HashSet<String>) -> Result<Unigram> {
+    fn finalize(&self, model: Unigram, required_chars: AHashSet<String>) -> Result<Unigram> {
         let mut min_score_penalty = 0.0;
         let min_score_penalty_delta = 0.0001;
 
         let mut pieces: Vec<(String, f64)> = vec![];
-        let mut inserted: HashSet<String> = HashSet::new();
+        let mut inserted: AHashSet<String> = AHashSet::new();
 
         // We don't want to include the <UNK> that was used to train
         inserted.insert("<UNK>".into());
 
-        let existing_pieces: HashMap<String, f64> = model.iter().cloned().collect();
+        let existing_pieces: AHashMap<String, f64> = model.iter().cloned().collect();
         for c in required_chars {
             if let Some(t) = existing_pieces.get(&c) {
                 inserted.insert(c.clone());
@@ -185,7 +185,7 @@ impl UnigramTrainer {
         )
     }
 
-    fn required_chars(&self, word_counts: &[Sentence]) -> HashSet<String> {
+    fn required_chars(&self, word_counts: &[Sentence]) -> AHashSet<String> {
         word_counts
             .iter()
             .flat_map(|(s, _count)| s.chars())
@@ -205,7 +205,7 @@ impl UnigramTrainer {
             .sum::<usize>()
             + sentences.len();
         let mut flat_string = String::with_capacity(total);
-        let mut all_chars: HashMap<char, u32> = HashMap::new();
+        let mut all_chars: AHashMap<char, u32> = AHashMap::new();
         let c_sentence_boundary = '\0';
         let k_sentence_boundary = '\0'.to_string();
         for (string, n) in sentences {
@@ -631,18 +631,18 @@ impl Trainer for UnigramTrainer {
         S: AsRef<str> + Send,
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
-        let words: Result<HashMap<String, u32>> = iterator
+        let words: Result<AHashMap<String, u32>> = iterator
             .maybe_par_bridge()
             .map(|sequence| {
                 let words = process(sequence.as_ref())?;
-                let mut map = HashMap::new();
+                let mut map = AHashMap::new();
                 for word in words {
                     map.entry(word).and_modify(|c| *c += 1).or_insert(1);
                 }
                 Ok(map)
             })
             .reduce(
-                || Ok(HashMap::new()),
+                || Ok(AHashMap::new()),
                 |acc, ws| {
                     let mut acc = acc?;
                     for (k, v) in ws? {
@@ -716,7 +716,7 @@ mod tests {
     fn test_initial_alphabet() {
         let trainer = UnigramTrainerBuilder::default()
             .show_progress(false)
-            .initial_alphabet(HashSet::from_iter(vec!['a', 'b', 'c', 'd', 'e', 'f']))
+            .initial_alphabet(AHashSet::from_iter(vec!['a', 'b', 'c', 'd', 'e', 'f']))
             .build()
             .unwrap();
 
@@ -727,7 +727,7 @@ mod tests {
             vec!["こ", "ん", "に", "ち", "は", "友", "達", "a", "b", "c", "d", "e", "f"]
                 .into_iter()
                 .map(|s| s.to_owned())
-                .collect::<HashSet<_>>()
+                .collect::<AHashSet<_>>()
         );
     }
 

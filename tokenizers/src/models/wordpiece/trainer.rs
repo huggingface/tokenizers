@@ -1,8 +1,8 @@
 use super::WordPiece;
 use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder, BPE};
 use crate::tokenizer::{AddedToken, Result, Trainer};
+use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
 /// configuration.
@@ -61,7 +61,7 @@ impl WordPieceTrainerBuilder {
 
     /// Set the initial alphabet
     #[must_use]
-    pub fn initial_alphabet(mut self, alphabet: HashSet<char>) -> Self {
+    pub fn initial_alphabet(mut self, alphabet: AHashSet<char>) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.initial_alphabet(alphabet);
         self
     }
@@ -134,11 +134,11 @@ impl WordPieceTrainer {
         self.bpe_trainer.limit_alphabet = limit;
     }
 
-    pub fn initial_alphabet(&self) -> &HashSet<char> {
+    pub fn initial_alphabet(&self) -> &AHashSet<char> {
         &self.bpe_trainer.initial_alphabet
     }
 
-    pub fn set_initial_alphabet(&mut self, alphabet: HashSet<char>) {
+    pub fn set_initial_alphabet(&mut self, alphabet: AHashSet<char>) {
         self.bpe_trainer.initial_alphabet = alphabet;
     }
 

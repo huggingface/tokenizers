@@ -2,8 +2,8 @@ use crate::parallelism::*;
 use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
+use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::ops::Range;
 
 /// Represents the output of a `Tokenizer`.
@@ -27,7 +27,7 @@ pub struct Encoding {
     overflowing: Vec<Encoding>,
     /// Ranges of tokens covered by each sequence. If this is empty we consider
     /// there is only one sequence in this Encoding, and that it covers the entire range.
-    sequence_ranges: HashMap<usize, Range<usize>>,
+    sequence_ranges: AHashMap<usize, Range<usize>>,
 }
 impl Encoding {
     #[allow(clippy::too_many_arguments)]
@@ -40,7 +40,7 @@ impl Encoding {
         special_tokens_mask: Vec<u32>,
         attention_mask: Vec<u32>,
         overflowing: Vec<Self>,
-        sequence_ranges: HashMap<usize, Range<usize>>,
+        sequence_ranges: AHashMap<usize, Range<usize>>,
     ) -> Self {
         Self {
             ids,
@@ -65,7 +65,7 @@ impl Encoding {
             special_tokens_mask: Vec::with_capacity(len),
             attention_mask: Vec::with_capacity(len),
             overflowing: vec![],
-            sequence_ranges: HashMap::new(),
+            sequence_ranges: AHashMap::new(),
         }
     }
 
@@ -94,7 +94,7 @@ impl Encoding {
             attention_mask: vec![1; length],
             special_tokens_mask: vec![0; length],
             overflowing: vec![],
-            sequence_ranges: HashMap::new(),
+            sequence_ranges: AHashMap::new(),
         }
     }
 
@@ -363,7 +363,7 @@ impl Encoding {
             special_tokens_mask: self.special_tokens_mask[start..stop].to_vec(),
             attention_mask: self.attention_mask[start..stop].to_vec(),
             overflowing: vec![],
-            sequence_ranges: HashMap::new(),
+            sequence_ranges: AHashMap::new(),
         };
 
         loop {
@@ -381,7 +381,7 @@ impl Encoding {
                 special_tokens_mask: self.special_tokens_mask[start..stop].to_vec(),
                 attention_mask: self.attention_mask[start..stop].to_vec(),
                 overflowing: vec![],
-                sequence_ranges: HashMap::new(),
+                sequence_ranges: AHashMap::new(),
             });
         }
         *self = new_encoding;
@@ -837,7 +837,7 @@ mod tests {
                 Some(2),
                 Some(3),
             ],
-            sequence_ranges: HashMap::from_iter(vec![(0, 0..7), (1, 7..11)]),
+            sequence_ranges: AHashMap::from_iter(vec![(0, 0..7), (1, 7..11)]),
             ..Default::default()
         };
         assert_eq!(encoding.word_to_tokens(0, 0), Some((0, 2)));
@@ -890,7 +890,7 @@ mod tests {
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],
             attention_mask: vec![1],
-            sequence_ranges: HashMap::from([(0, 0..1)]),
+            sequence_ranges: AHashMap::from([(0, 0..1)]),
             ..Default::default()
         };
         let target_length = 2;
@@ -904,6 +904,6 @@ mod tests {
             pad_token,
             PaddingDirection::Left,
         );
-        assert_eq!(a.sequence_ranges, HashMap::from([(0, 1..2)]));
+        assert_eq!(a.sequence_ranges, AHashMap::from([(0, 1..2)]));
     }
 }
