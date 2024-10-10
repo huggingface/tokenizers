@@ -131,7 +131,7 @@ jobs:
   build-sdist:
     name: build sdist
     needs: [lock_exists]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04 # waiting for https://github.com/PyO3/maturin-action/issues/291 to be fixed
     steps:
       - uses: actions/checkout@v3
       - uses: PyO3/maturin-action@v1
