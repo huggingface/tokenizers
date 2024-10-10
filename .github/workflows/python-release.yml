@@ -131,14 +131,14 @@ jobs:
   build-sdist:
     name: build sdist
     needs: [lock_exists]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04 # waiting for https://github.com/PyO3/maturin-action/issues/291 to be fixed
     steps:
       - uses: actions/checkout@v3
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: ./bindings/python
           command: sdist
-          args: --out dist --interpreter ${{ matrix.interpreter || '3.7 3.8 3.9 3.10 3.11 3.12 pypy3.7 pypy3.8 pypy3.9 pypy3.10' }}
+          args: --out dist
           rust-toolchain: stable
       - uses: actions/upload-artifact@v4
         with:
