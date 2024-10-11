@@ -530,13 +530,19 @@ impl BpeTrainer {
             merges.push((top.pair, new_token_id));
 
             // Merge the new pair in every words
-            let changes = top
-                .pos
+            // Safety: This is just a type assertion, the code below may no longer be safe
+            // if the type of `pos` changes
+            let ref pos: HashSet<usize> = top.pos;
+            let changes = pos
                 .maybe_par_iter()
                 .flat_map(|&i| {
+                    // Safety: Accessing this Vec overall as an &T whilst parts of it
+                    // are being mutated is *probably* safe, see https://github.com/rust-lang/unsafe-code-guidelines/issues/412
+                    // and related issues. If not, we can always use raw pointers here.
                     let word = &words[i] as *const _ as *mut Word;
-                    // We can merge each of these words in parallel here because each position
-                    // can be there only once (HashSet). So this is safe.
+                    // Safety:
+                    // We can acces each `word` here in parallel because each position
+                    // can be there only once (pos is a HashSet). So this is safe.
                     unsafe {
                         // let word: &mut Word = &mut (*word);
                         (*word)
