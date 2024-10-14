@@ -362,6 +362,7 @@ impl TemplateProcessing {
     pub fn set_single(&mut self, single: Template) {
         println!("Setting single to: {:?}", single); // Debugging output
         self.single = single;
+        println!("Single is now {:?}", self.single); 
     }
 
     // Getter for `pair`

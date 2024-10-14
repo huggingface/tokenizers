@@ -33,6 +33,17 @@ pub struct PyPostProcessor {
     pub processor: Arc<RwLock<PostProcessorWrapper>>,
 }
 
+impl<I> From<I> for PyPostProcessor
+where
+    I: Into<PostProcessorWrapper>,
+{
+    fn from(processor: I) -> Self {
+        PyPostProcessor {
+            processor: Arc::new(RwLock::new(processor.into())), // Wrap the PostProcessorWrapper in Arc<RwLock<>>
+        }
+    }
+}
+
 impl PyPostProcessor {
     pub fn new(processor: Arc<RwLock<PostProcessorWrapper>>) -> Self {
         PyPostProcessor { processor }
@@ -522,10 +533,21 @@ impl PySequence {
     }
 
     fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
-        match &self_.as_ref().processor.read().unwrap().clone() {
-            PostProcessorWrapper::Sequence(inner) => match inner.get(index) {
+        let super_ = self_.as_ref();
+        let mut wrapper = super_.processor.write().unwrap();
+        // if let PostProcessorWrapper::Sequence(ref mut post) = *wrapper {
+        //     match post.get(index) {
+        //         Some(item) => PyPostProcessor::new(Arc::clone(item)).get_as_subtype(py),
+        //         _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+        //             "Index not found",
+        //         )),
+        //     }
+        // }
+
+        match *wrapper {
+            PostProcessorWrapper::Sequence(ref mut inner) => match inner.get_mut(index) {
                 Some(item) => {
-                    PyPostProcessor::new(Arc::new(RwLock::new(item.clone()))).get_as_subtype(py)
+                    PyPostProcessor::new(Arc::new(RwLock::new(item.to_owned()))).get_as_subtype(py)
                 }
                 _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
                     "Index not found",
@@ -533,6 +555,35 @@ impl PySequence {
             },
             _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
                 "This processor is not a Sequence, it does not support __getitem__",
+            )),
+        }
+    }
+
+    fn __setitem__(
+        self_: PyRefMut<'_, Self>,
+        py: Python<'_>,
+        index: usize,
+        value: PyRef<'_, PyPostProcessor>,
+    ) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut wrapper = super_.processor.write().unwrap();
+        let value = value.processor.read().unwrap().clone();
+        match *wrapper {
+            PostProcessorWrapper::Sequence(ref mut inner) => {
+                // Convert the Py<PyAny> into the appropriate Rust type
+                // Ensure we can set an item at the given index
+                if index < inner.get_processors().len() {
+                    inner.set_mut(index, value); // Assuming you want to wrap the new item in Arc<RwLock>
+
+                    Ok(())
+                } else {
+                    Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                        "Index out of bounds",
+                    ))
+                }
+            }
+            _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                "This processor is not a Sequence, it does not support __setitem__",
             )),
         }
     }
