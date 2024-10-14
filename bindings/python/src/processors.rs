@@ -1,13 +1,14 @@
 use std::convert::TryInto;
 use std::sync::Arc;
-
-use pyo3::exceptions;
-use pyo3::prelude::*;
-use pyo3::types::*;
+use std::sync::RwLock;
 
 use crate::encoding::PyEncoding;
 use crate::error::ToPyResult;
+use pyo3::exceptions;
+use pyo3::prelude::*;
+use pyo3::types::*;
 use serde::{Deserialize, Serialize};
+use std::ops::DerefMut;
 use tk::processors::bert::BertProcessing;
 use tk::processors::byte_level::ByteLevel;
 use tk::processors::roberta::RobertaProcessing;
@@ -30,17 +31,17 @@ use tokenizers as tk;
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct PyPostProcessor {
-    pub processor: Arc<PostProcessorWrapper>,
+    pub processor: Arc<RwLock<PostProcessorWrapper>>,
 }
 
 impl PyPostProcessor {
-    pub fn new(processor: Arc<PostProcessorWrapper>) -> Self {
+    pub fn new(processor: Arc<RwLock<PostProcessorWrapper>>) -> Self {
         PyPostProcessor { processor }
     }
 
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
-        Ok(match self.processor.as_ref() {
+        Ok(match self.processor.read().unwrap().clone() {
             PostProcessorWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
                 .into_pyobject(py)?
                 .into_any()
@@ -67,7 +68,7 @@ impl PyPostProcessor {
 
 impl PostProcessor for PyPostProcessor {
     fn added_tokens(&self, is_pair: bool) -> usize {
-        self.processor.added_tokens(is_pair)
+        self.processor.read().unwrap().added_tokens(is_pair)
     }
 
     fn process_encodings(
@@ -76,6 +77,8 @@ impl PostProcessor for PyPostProcessor {
         add_special_tokens: bool,
     ) -> tk::Result<Vec<Encoding>> {
         self.processor
+            .read()
+            .unwrap()
             .process_encodings(encodings, add_special_tokens)
     }
 }
@@ -83,7 +86,7 @@ impl PostProcessor for PyPostProcessor {
 #[pymethods]
 impl PyPostProcessor {
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        let data = serde_json::to_string(self.processor.as_ref()).map_err(|e| {
+        let data = serde_json::to_string(&self.processor).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle PostProcessor: {}",
                 e
@@ -117,7 +120,7 @@ impl PyPostProcessor {
     ///     :obj:`int`: The number of tokens to add
     #[pyo3(text_signature = "(self, is_pair)")]
     fn num_special_tokens_to_add(&self, is_pair: bool) -> usize {
-        self.processor.added_tokens(is_pair)
+        self.processor.read().unwrap().added_tokens(is_pair)
     }
 
     /// Post-process the given encodings, generating the final one
@@ -142,7 +145,7 @@ impl PyPostProcessor {
         pair: Option<&PyEncoding>,
         add_special_tokens: bool,
     ) -> PyResult<PyEncoding> {
-        let final_encoding = ToPyResult(self.processor.process(
+        let final_encoding = ToPyResult(self.processor.read().unwrap().process(
             encoding.encoding.clone(),
             pair.map(|e| e.encoding.clone()),
             add_special_tokens,
@@ -160,6 +163,42 @@ impl PyPostProcessor {
         crate::utils::serde_pyo3::to_string(self)
             .map_err(|e| exceptions::PyException::new_err(e.to_string()))
     }
+}
+
+macro_rules! getter {
+    ($self: ident, $variant: ident, $($name: tt)+) => {{
+        let super_ = $self.as_ref();
+        if let PostProcessorWrapper::$variant(ref post) = *super_.processor.read().unwrap() {
+            let output = post.$($name)+;
+            return format!("{:?}", output)
+        } else {
+            unreachable!()
+        }
+    }};
+}
+
+macro_rules! setter {
+    ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
+        let super_ = $self;
+        if let PostProcessorWrapper::$variant(ref mut post) = super_.processor.as_ref() {
+            post.$name = $value;
+        }
+    }};
+    ($self: ident, $variant: ident, @$name: ident, $value: expr) => {{
+        let super_ = &$self.as_ref();
+        match &super_.processor.as_ref() {
+            PostProcessorWrapper::$variant(post_variant) => post_variant.$name($value),
+            _ => unreachable!(),
+        }
+
+        {
+            if let Some(PostProcessorWrapper::$variant(post_variant)) =
+                Arc::get_mut(&mut super_.processor)
+            {
+                post_variant.$name($value);
+            }
+        };
+    };};
 }
 
 /// This post-processor takes care of adding the special tokens needed by
@@ -183,7 +222,7 @@ impl PyBertProcessing {
     fn new(sep: (String, u32), cls: (String, u32)) -> (Self, PyPostProcessor) {
         (
             PyBertProcessing {},
-            PyPostProcessor::new(Arc::new(BertProcessing::new(sep, cls).into())),
+            PyPostProcessor::new(Arc::new(RwLock::new(BertProcessing::new(sep, cls).into()))),
         )
     }
 
@@ -233,7 +272,7 @@ impl PyRobertaProcessing {
             .add_prefix_space(add_prefix_space);
         (
             PyRobertaProcessing {},
-            PyPostProcessor::new(Arc::new(proc.into())),
+            PyPostProcessor::new(Arc::new(RwLock::new(proc.into()))),
         )
     }
 
@@ -268,7 +307,7 @@ impl PyByteLevel {
 
         (
             PyByteLevel {},
-            PyPostProcessor::new(Arc::new(byte_level.into())),
+            PyPostProcessor::new(Arc::new(RwLock::new(byte_level.into()))),
         )
     }
 }
@@ -432,8 +471,42 @@ impl PyTemplateProcessing {
 
         Ok((
             PyTemplateProcessing {},
-            PyPostProcessor::new(Arc::new(processor.into())),
+            PyPostProcessor::new(Arc::new(RwLock::new(processor.into()))),
         ))
+    }
+
+    #[getter]
+    fn get_single(self_: PyRef<Self>) -> String {
+        getter!(self_, Template, get_single())
+    }
+
+    #[setter]
+    fn set_single(self_: PyRefMut<Self>, single: PyTemplate) {
+        let template: Template = Template::from(single);
+
+        let super_ = &self_.into_super();
+
+        // Acquire a write lock on the processor
+        let binding = super_.processor.clone(); // Clone the Arc
+        let mut write_lock = match binding.write() {
+            // Make this mutable
+            Ok(lock) => lock,
+            Err(e) => {
+                eprintln!("Failed to acquire write lock: {:?}", e);
+                return; // Handle lock acquisition failure appropriately
+            }
+        };
+
+        // Use deref_mut to get a mutable reference and match against the PostProcessorWrapper type
+        match write_lock.deref_mut() {
+            PostProcessorWrapper::Template(value) => {
+                println!("Created template single : {template:?}");
+                value.set_single(template.clone());
+            }
+            _ => {
+                eprintln!("Processor is not of type PostProcessorWrapper::Template");
+            }
+        }
     }
 }
 
@@ -452,18 +525,36 @@ impl PySequence {
         let mut processors: Vec<PostProcessorWrapper> = Vec::with_capacity(processors_py.len());
         for n in processors_py.iter() {
             let processor: PyRef<PyPostProcessor> = n.extract().unwrap();
-            let processor = processor.processor.as_ref();
+            let processor = processor.processor.write().unwrap();
             processors.push(processor.clone());
         }
         let sequence_processor = Sequence::new(processors);
         (
             PySequence {},
-            PyPostProcessor::new(Arc::new(PostProcessorWrapper::Sequence(sequence_processor))),
+            PyPostProcessor::new(Arc::new(RwLock::new(PostProcessorWrapper::Sequence(
+                sequence_processor,
+            )))),
         )
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
         PyTuple::new(py, [PyList::empty(py)])
+    }
+
+    fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
+        match &self_.as_ref().processor.read().unwrap().clone() {
+            PostProcessorWrapper::Sequence(inner) => match inner.get(index) {
+                Some(item) => {
+                    PyPostProcessor::new(Arc::new(RwLock::new(item.clone()))).get_as_subtype(py)
+                }
+                _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                    "Index not found",
+                )),
+            },
+            _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                "This processor is not a Sequence, it does not support __getitem__",
+            )),
+        }
     }
 }
 
@@ -481,7 +572,7 @@ pub fn processors(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
+    use std::sync::{Arc, RwLock};
 
     use pyo3::prelude::*;
     use tk::processors::bert::BertProcessing;
@@ -492,9 +583,9 @@ mod test {
     #[test]
     fn get_subtype() {
         Python::with_gil(|py| {
-            let py_proc = PyPostProcessor::new(Arc::new(
+            let py_proc = PyPostProcessor::new(Arc::new(RwLock::new(
                 BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 1)).into(),
-            ));
+            )));
             let py_bert = py_proc.get_as_subtype(py).unwrap();
             assert_eq!(
                 "BertProcessing",
@@ -510,21 +601,21 @@ mod test {
         let rs_processing_ser = serde_json::to_string(&rs_processing).unwrap();
         let rs_wrapper_ser = serde_json::to_string(&rs_wrapper).unwrap();
 
-        let py_processing = PyPostProcessor::new(Arc::new(rs_wrapper));
+        let py_processing = PyPostProcessor::new(Arc::new(RwLock::new(rs_wrapper)));
         let py_ser = serde_json::to_string(&py_processing).unwrap();
         assert_eq!(py_ser, rs_processing_ser);
         assert_eq!(py_ser, rs_wrapper_ser);
 
         let py_processing: PyPostProcessor = serde_json::from_str(&rs_processing_ser).unwrap();
-        match py_processing.processor.as_ref() {
+        match *py_processing.processor.as_ref().read().unwrap() {
             PostProcessorWrapper::Bert(_) => (),
             _ => panic!("Expected Bert postprocessor."),
         }
 
         let py_processing: PyPostProcessor = serde_json::from_str(&rs_wrapper_ser).unwrap();
-        match py_processing.processor.as_ref() {
+        match *py_processing.processor.as_ref().read().unwrap() {
             PostProcessorWrapper::Bert(_) => (),
             _ => panic!("Expected Bert postprocessor."),
-        }
+        };
     }
 }

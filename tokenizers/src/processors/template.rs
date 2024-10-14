@@ -338,7 +338,7 @@ impl From<HashMap<String, SpecialToken>> for Tokens {
 #[builder(build_fn(validate = "Self::validate"))]
 pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
-    single: Template,
+    pub single: Template,
     #[builder(try_setter, default = "\"$A:0 $B:1\".try_into().unwrap()")]
     pair: Template,
     #[builder(setter(skip), default = "self.default_added(true)")]
@@ -349,6 +349,60 @@ pub struct TemplateProcessing {
     added_pair: usize,
     #[builder(setter(into), default)]
     special_tokens: Tokens,
+}
+
+
+impl TemplateProcessing {
+    // Getter for `single`
+    pub fn get_single(& self) -> Template {
+        self.single.clone()
+    }
+
+    // Setter for `single`
+    pub fn set_single(&mut self, single: Template) {
+        println!("Setting single to: {:?}", single); // Debugging output
+        self.single = single;
+    }
+
+    // Getter for `pair`
+    pub fn get_pair(&self) -> &Template {
+        &self.pair
+    }
+
+    // Setter for `pair`
+    pub fn set_pair(&mut self, pair: Template) {
+        self.pair = pair;
+    }
+
+    // Getter for `added_single`
+    pub fn get_added_single(&self) -> usize {
+        self.added_single
+    }
+
+    // Setter for `added_single`
+    pub fn set_added_single(&mut self, added_single: usize) {
+        self.added_single = added_single;
+    }
+
+    // Getter for `added_pair`
+    pub fn get_added_pair(&self) -> usize {
+        self.added_pair
+    }
+
+    // Setter for `added_pair`
+    pub fn set_added_pair(&mut self, added_pair: usize) {
+        self.added_pair = added_pair;
+    }
+
+    // Getter for `special_tokens`
+    pub fn get_special_tokens(&self) -> &Tokens {
+        &self.special_tokens
+    }
+
+    // Setter for `special_tokens`
+    pub fn set_special_tokens(&mut self, special_tokens: Tokens) {
+        self.special_tokens = special_tokens;
+    }
 }
 
 impl From<&str> for TemplateProcessingBuilderError {

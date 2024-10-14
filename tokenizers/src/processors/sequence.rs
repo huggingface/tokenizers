@@ -13,6 +13,14 @@ impl Sequence {
     pub fn new(processors: Vec<PostProcessorWrapper>) -> Self {
         Self { processors }
     }
+
+    pub fn get(&self, index: usize) -> Option<& PostProcessorWrapper> {
+        self.processors.get(index as usize)
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut PostProcessorWrapper> {
+        self.processors.get_mut(index)
+    }
 }
 
 impl PostProcessor for Sequence {
