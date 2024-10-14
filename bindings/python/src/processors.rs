@@ -8,7 +8,6 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
-use std::ops::DerefMut;
 use tk::processors::bert::BertProcessing;
 use tk::processors::byte_level::ByteLevel;
 use tk::processors::roberta::RobertaProcessing;
@@ -481,32 +480,13 @@ impl PyTemplateProcessing {
     }
 
     #[setter]
-    fn set_single(self_: PyRefMut<Self>, single: PyTemplate) {
+    fn set_single(self_: PyRef<Self>, single: PyTemplate) {
         let template: Template = Template::from(single);
-
-        let super_ = &self_.into_super();
-
-        // Acquire a write lock on the processor
-        let binding = super_.processor.clone(); // Clone the Arc
-        let mut write_lock = match binding.write() {
-            // Make this mutable
-            Ok(lock) => lock,
-            Err(e) => {
-                eprintln!("Failed to acquire write lock: {:?}", e);
-                return; // Handle lock acquisition failure appropriately
-            }
+        let super_ = self_.as_ref();
+        let mut wrapper = super_.processor.write().unwrap();
+        if let PostProcessorWrapper::Template(ref mut post) = *wrapper {
+            post.set_single(template);
         };
-
-        // Use deref_mut to get a mutable reference and match against the PostProcessorWrapper type
-        match write_lock.deref_mut() {
-            PostProcessorWrapper::Template(value) => {
-                println!("Created template single : {template:?}");
-                value.set_single(template.clone());
-            }
-            _ => {
-                eprintln!("Processor is not of type PostProcessorWrapper::Template");
-            }
-        }
     }
 }
 
