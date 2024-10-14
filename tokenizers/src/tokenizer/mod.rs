@@ -541,9 +541,7 @@ where
             model,
             post_processor: None,
             decoder: None,
-
             added_vocabulary: AddedVocabulary::new(),
-
             truncation: None,
             padding: None,
         }
@@ -667,7 +665,7 @@ where
             if !added_vocab.is_empty() {
                 final_vocab.reserve(added_vocab.len());
                 for (token, id) in added_vocab {
-                    final_vocab.insert(token.clone(), *id);
+                    final_vocab.insert(token.clone(), id);
                 }
             }
         }
@@ -959,6 +957,15 @@ where
     pub fn add_tokens(&mut self, tokens: &[AddedToken]) -> usize {
         self.added_vocabulary
             .add_tokens(tokens, &self.model, self.normalizer.as_ref())
+    }
+
+    /// Assign a new token
+    pub fn assign_tokens(&mut self, old_to_new_map: &HashMap<AddedToken, AddedToken>) {
+        self.added_vocabulary.assign_tokens(
+            old_to_new_map, // HashMap of old token to new token
+            &self.model,
+            self.normalizer.as_ref(),
+        )
     }
 }
 
