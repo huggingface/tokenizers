@@ -1,13 +1,13 @@
+use dary_heap::QuaternaryHeap;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use std::cell::RefCell;
 use std::cmp::{min, Ordering};
-use std::collections::BinaryHeap;
 use std::rc::Rc;
 
 type NodeRef = Rc<RefCell<Node>>;
 type HypothesisRef = Rc<RefCell<Hypothesis>>;
-type Agenda = BinaryHeap<Hypothesis>;
+type Agenda = QuaternaryHeap<Hypothesis>;
 
 struct Hypothesis {
     node_ref: NodeRef,
@@ -240,7 +240,7 @@ impl<'a> Lattice<'a> {
             1 => vec![self.viterbi()],
             _ => {
                 // let k_reserved_hypothesis_size = 512;
-                let mut agenda: Agenda = BinaryHeap::new();
+                let mut agenda: Agenda = QuaternaryHeap::new();
                 let mut hypotheses: Vec<Vec<NodeRef>> = vec![];
                 let eos = self.eos_node();
                 let score = eos.borrow().score;
@@ -282,7 +282,7 @@ impl<'a> Lattice<'a> {
                         let k_max_agenda_size = 100_000;
                         let k_min_agenda_size = 512;
                         if agenda.len() > k_max_agenda_size {
-                            let mut new_agenda = BinaryHeap::new();
+                            let mut new_agenda = QuaternaryHeap::new();
                             let len = min(k_min_agenda_size, n * 10);
                             for _i in 0..len {
                                 new_agenda.push(agenda.pop().unwrap());
