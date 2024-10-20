@@ -506,13 +506,14 @@ impl NormalizedString {
 
     /// Append the given string to ourself
     pub fn append(&mut self, s: &str) -> &mut Self {
-        if let Some((b, prev)) = self.normalized.char_indices().last() {
-            let transformations = std::iter::once((prev, 0)).chain(s.chars().map(|c| (c, 1)));
-            self.transform_range(Range::Normalized(b..), transformations, 0);
-        }
+        let original_len = self.original.len();
+        self.normalized.push_str(s);
+        self.alignments.extend(s.chars().flat_map(|c| {
+            let len = c.len_utf8();
+            std::iter::repeat((original_len.saturating_sub(1), original_len)).take(len)
+        }));
         self
     }
-
     /// Map our characters
     pub fn map<F: Fn(char) -> char>(&mut self, map: F) -> &mut Self {
         let transformations = self
@@ -664,7 +665,11 @@ impl NormalizedString {
     /// Clear the normalized part of the string
     pub fn clear(&mut self) -> usize {
         let len = self.len();
-        self.transform(std::iter::empty(), len);
+        self.normalized.clear();
+        self.alignments.clear();
+        // Add a single alignment point to represent the empty state
+        self.alignments
+            .push((self.original.len(), self.original.len()));
         len
     }
 
@@ -2275,5 +2280,25 @@ mod tests {
         s.transform(transforms, 0);
         s.lowercase();
         assert_eq!(s.get(), "a...");
+    }
+    
+    #[test]
+    fn test_append_after_clear() {
+        let mut n = NormalizedString::from("Hello");
+        assert_eq!(n.get(), "Hello");
+
+        n.clear();
+        assert_eq!(n.get(), "");
+
+        n.append(" World");
+        assert_eq!(n.get(), " World");
+
+        assert_eq!(n.len_original(), 5);
+        assert_eq!(n.len(), 6);
+
+        assert_eq!(n.get_range_original(Range::Original(0..5)), Some("Hello"));
+        assert_eq!(n.get_range_original(Range::Normalized(0..6)), Some(""));
+
+        assert_eq!(n.get_range(Range::Normalized(0..6)), Some(" World"));
     }
 }
