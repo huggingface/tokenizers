@@ -537,8 +537,8 @@ impl PyBPE {
 
     fn clear_cache(self_: PyRef<Self>){
         let super_ = self_.as_ref();
-        let model = super_.model.read().unwrap();
-        if let ModelWrapper::BPE(ref mo) = *model {
+        let mut model = super_.model.write().unwrap();
+        if let ModelWrapper::Unigram(ref mut mo) = *model {
             mo.clear_cache()
         } else {
             unreachable!()
@@ -867,6 +867,16 @@ impl PyUnigram {
                 "`vocab` and `unk_id` must be both specified",
             )),
         }
+    }
+
+    fn clear_cache(self_: PyRef<Self>){
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().unwrap();
+        if let ModelWrapper::Unigram(ref mut mo) = *model {
+            mo.clear_cache()
+        } else {
+            unreachable!()
+        };
     }
 }
 
