@@ -56,8 +56,6 @@ where
         } else{
             use_default_capacity
         };
-        let h_format = capacity / (1024 * 1024 * 1024);
-        println!("Using capacity {h_format} (nb of elements)");
         let map = RwLock::new(HashMap::with_capacity(capacity));
         Cache { map, capacity }
     }
@@ -138,13 +136,9 @@ fn default_cache_capacity<K, V>() -> usize {
     // Get the sizes of the key and value types in bytes
     let key_size = mem::size_of::<K>();
     let value_size = mem::size_of::<V>();
-    println!("{key_size}bytes, {value_size}bytes");
     let entry_size = key_size + value_size;
 
-    // Total available memory in bytes (from KB to bytes)
     let available_memory_bytes = ((total_memory as f64* 0.90) as usize / 64) * entry_size ;
-    let h_format = available_memory_bytes/ (1024 * 1024 * 1024);
-    println!("Available memory: {h_format}GB");
     return available_memory_bytes /entry_size
 }
 
