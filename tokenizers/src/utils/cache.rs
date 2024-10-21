@@ -2,8 +2,12 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::RwLock;
-use sysinfo::{System};
+use sysinfo::System;
 use std::mem;
+
+
+/// The default capacity for a `BPE`'s internal cache.
+pub static DEFAULT_CACHE_CAPACITY: usize = 10000;
 
 /// Provides a simple multithread cache to speed up BPE tokenization that will try to read values
 /// concurrently but won't block if another thread is writing.
@@ -36,7 +40,7 @@ where
     V: Clone,
 {
     fn default() -> Self {
-        Self::new(false)
+        Self::new(0)
     }
 }
 
@@ -46,11 +50,11 @@ where
     V: Clone,
 {
     /// Create new `Cache` with the given capacity.
-    pub(crate) fn new(use_default_capacity: bool) -> Self {
-        let capacity = if use_default_capacity{
-            DEFAULT_CACHE_CAPACITY
-        } else{
+    pub(crate) fn new(use_default_capacity: usize) -> Self {
+        let capacity = if use_default_capacity == 0{
             default_cache_capacity::<K, V>()
+        } else{
+            use_default_capacity
         };
         let h_format = capacity / (1024 * 1024 * 1024);
         println!("Using capacity {h_format} (nb of elements)");
@@ -60,7 +64,7 @@ where
 
     /// Create a fresh `Cache` with the same configuration.
     pub(crate) fn fresh(&self) -> Self {
-        Self::new(false)
+        Self::new(0)
     }
 
     /// Clear the cache.
@@ -144,5 +148,3 @@ fn default_cache_capacity<K, V>() -> usize {
     return available_memory_bytes /entry_size
 }
 
-/// The default capacity for a `BPE`'s internal cache.
-pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;

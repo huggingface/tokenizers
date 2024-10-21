@@ -154,10 +154,7 @@ impl BpeBuilder {
             .iter()
             .map(|(key, val)| (*val, key.to_owned()))
             .collect();
-        let cache = match self.config.cache_capacity {
-            0 => None,
-            capacity => Some(Cache::new(false)),
-        };
+        let cache =Some(Cache::new(self.config.cache_capacity));
 
         let vocab = self.config.vocab;
         let prefix_len = if let Some(prefix) = &self.config.continuing_subword_prefix {
