@@ -534,6 +534,16 @@ impl PyBPE {
             )?,
         )
     }
+
+    fn clear_cache(self_: PyRef<Self>){
+        let super_ = self_.as_ref();
+        let model = super_.model.read().unwrap();
+        if let ModelWrapper::BPE(ref mo) = *model {
+            mo.clear_cache()
+        } else {
+            unreachable!()
+        };
+    }
 }
 
 /// An implementation of the WordPiece algorithm
