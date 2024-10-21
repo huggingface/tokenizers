@@ -36,7 +36,7 @@ where
     V: Clone,
 {
     fn default() -> Self {
-        Self::new(DEFAULT_CACHE_CAPACITY)
+        Self::new(false)
     }
 }
 
@@ -46,17 +46,21 @@ where
     V: Clone,
 {
     /// Create new `Cache` with the given capacity.
-    pub(crate) fn new(capacity: usize) -> Self {
-        let capacity = default_cache_capacity::<K, V>();
-        let h_format = capacity/ (1024 * 1024 * 1024);
-        println!("Using capacity {h_format}GB");
+    pub(crate) fn new(use_default_capacity: bool) -> Self {
+        let capacity = if use_default_capacity{
+            DEFAULT_CACHE_CAPACITY
+        } else{
+            default_cache_capacity::<K, V>()
+        };
+        let h_format = capacity / (1024 * 1024 * 1024);
+        println!("Using capacity {h_format} (nb of elements)");
         let map = RwLock::new(HashMap::with_capacity(capacity));
         Cache { map, capacity }
     }
 
     /// Create a fresh `Cache` with the same configuration.
     pub(crate) fn fresh(&self) -> Self {
-        Self::new(self.capacity)
+        Self::new(false)
     }
 
     /// Clear the cache.
@@ -134,16 +138,10 @@ fn default_cache_capacity<K, V>() -> usize {
     let entry_size = key_size + value_size;
 
     // Total available memory in bytes (from KB to bytes)
-    let available_memory_bytes = ((total_memory as f64* 0.90) as usize / 64) *entry_size ;
+    let available_memory_bytes = ((total_memory as f64* 0.90) as usize / 64) * entry_size ;
     let h_format = available_memory_bytes/ (1024 * 1024 * 1024);
     println!("Available memory: {h_format}GB");
-
-    if entry_size > 0 {
-        std::cmp::max(available_memory_bytes , DEFAULT_CACHE_CAPACITY)
-    } else {
-        // Fallback in case the size_of fails (e.g., for zero-sized types)
-        DEFAULT_CACHE_CAPACITY
-    }
+    return available_memory_bytes /entry_size
 }
 
 /// The default capacity for a `BPE`'s internal cache.

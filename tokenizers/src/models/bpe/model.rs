@@ -156,7 +156,7 @@ impl BpeBuilder {
             .collect();
         let cache = match self.config.cache_capacity {
             0 => None,
-            capacity => Some(Cache::new(capacity)),
+            capacity => Some(Cache::new(false)),
         };
 
         let vocab = self.config.vocab;
