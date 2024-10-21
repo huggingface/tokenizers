@@ -2,9 +2,8 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::RwLock;
-
-/// The default capacity for a `BPE`'s internal cache.
-pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
+use sysinfo::{System};
+use std::mem;
 
 /// Provides a simple multithread cache to speed up BPE tokenization that will try to read values
 /// concurrently but won't block if another thread is writing.
@@ -48,6 +47,9 @@ where
 {
     /// Create new `Cache` with the given capacity.
     pub(crate) fn new(capacity: usize) -> Self {
+        let capacity = default_cache_capacity::<K, V>();
+        let h_format = capacity/ (1024 * 1024 * 1024);
+        println!("Using capacity {h_format}GB");
         let map = RwLock::new(HashMap::with_capacity(capacity));
         Cache { map, capacity }
     }
@@ -116,3 +118,33 @@ where
         self.set_values(std::iter::once((key, value)))
     }
 }
+
+
+/// Determines the default cache capacity based on 90% of available system RAM
+/// and the memory size of the key (`K`) and value (`V`) types.
+fn default_cache_capacity<K, V>() -> usize {
+    let mut system = System::new_all(); // Initialize system information
+    system.refresh_memory(); // Refresh to get the latest memory info
+    let total_memory = system.total_memory(); // Total memory in KB
+
+    // Get the sizes of the key and value types in bytes
+    let key_size = mem::size_of::<K>();
+    let value_size = mem::size_of::<V>();
+    println!("{key_size}bytes, {value_size}bytes");
+    let entry_size = key_size + value_size;
+
+    // Total available memory in bytes (from KB to bytes)
+    let available_memory_bytes = ((total_memory as f64* 0.90) as usize / 64) *entry_size ;
+    let h_format = available_memory_bytes/ (1024 * 1024 * 1024);
+    println!("Available memory: {h_format}GB");
+
+    if entry_size > 0 {
+        std::cmp::max(available_memory_bytes , DEFAULT_CACHE_CAPACITY)
+    } else {
+        // Fallback in case the size_of fails (e.g., for zero-sized types)
+        DEFAULT_CACHE_CAPACITY
+    }
+}
+
+/// The default capacity for a `BPE`'s internal cache.
+pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
