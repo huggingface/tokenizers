@@ -60,7 +60,7 @@ pub enum PyRange<'s> {
     #[pyo3(annotation = "Tuple[uint, uint]")]
     Range(usize, usize),
     #[pyo3(annotation = "slice")]
-    Slice(&'s PySlice),
+    Slice(Bound<'s, PySlice>),
 }
 impl PyRange<'_> {
     pub fn to_range(&self, max_len: usize) -> PyResult<std::ops::Range<usize>> {
@@ -83,7 +83,7 @@ impl PyRange<'_> {
             }
             PyRange::Range(s, e) => Ok(*s..*e),
             PyRange::Slice(s) => {
-                let r = s.indices(max_len as std::os::raw::c_long)?;
+                let r = s.indices(max_len.try_into()?)?;
                 Ok(r.start as usize..r.stop as usize)
             }
         }
@@ -94,7 +94,7 @@ impl PyRange<'_> {
 pub struct PySplitDelimiterBehavior(pub SplitDelimiterBehavior);
 
 impl FromPyObject<'_> for PySplitDelimiterBehavior {
-    fn extract(obj: &PyAny) -> PyResult<Self> {
+    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let s = obj.extract::<&str>()?;
 
         Ok(Self(match s {

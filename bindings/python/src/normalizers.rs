@@ -118,9 +118,9 @@ impl PyNormalizer {
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        match state.extract::<&PyBytes>(py) {
+        match state.extract::<&[u8]>(py) {
             Ok(s) => {
-                self.normalizer = serde_json::from_slice(s.as_bytes()).map_err(|e| {
+                self.normalizer = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle Normalizer: {}",
                         e
