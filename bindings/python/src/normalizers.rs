@@ -553,7 +553,7 @@ impl tk::tokenizer::Normalizer for CustomNormalizer {
         Python::with_gil(|py| {
             let normalized = PyNormalizedStringRefMut::new(normalized);
             let py_normalized = self.inner.bind(py);
-            py_normalized.call_method("normalize", (normalized.get(),), None)?;
+            py_normalized.call_method("normalize", (normalized.get().clone(),), None)?;
             Ok(())
         })
     }

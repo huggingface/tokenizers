@@ -634,7 +634,7 @@ impl tk::tokenizer::PreTokenizer for CustomPreTokenizer {
         Python::with_gil(|py| {
             let pretok = PyPreTokenizedStringRefMut::new(sentence);
             let py_pretok = self.inner.bind(py);
-            py_pretok.call_method("pre_tokenize", (pretok.get(),), None)?;
+            py_pretok.call_method("pre_tokenize", (pretok.get().clone(),), None)?;
             Ok(())
         })
     }

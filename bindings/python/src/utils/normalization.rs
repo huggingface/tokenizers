@@ -1,5 +1,5 @@
 use super::regex::PyRegex;
-use super::{DestroyPtr, RefMutContainer, RefMutGuard};
+use super::{DestroyPtr, RefMutContainer};
 use crate::error::ToPyResult;
 use pyo3::exceptions;
 use pyo3::prelude::*;
@@ -396,8 +396,8 @@ impl DestroyPtr for PyNormalizedStringRefMut {
 }
 
 impl PyNormalizedStringRefMut {
-    pub fn new(normalized: &mut NormalizedString) -> RefMutGuard<Self> {
-        RefMutGuard::new(Self {
+    pub fn new(normalized: &mut NormalizedString) -> super::RefMutGuard<'_, Self> {
+        super::RefMutGuard::new(Self {
             inner: RefMutContainer::new(normalized),
         })
     }
