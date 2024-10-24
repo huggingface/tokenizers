@@ -2,6 +2,7 @@ use crate::models::unigram::{lattice::Lattice, model::Unigram};
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
+use crate::AddedVocabulary;
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
@@ -182,6 +183,7 @@ impl UnigramTrainer {
             special_tokens.into_iter().chain(pieces).collect(),
             unk_id,
             model.byte_fallback(),
+            &AddedVocabulary::default(),
         )
     }
 
@@ -567,7 +569,8 @@ impl UnigramTrainer {
         if required_chars.len() as u32 > self.vocab_size {
             return Err(Box::new(UnigramTrainerError::VocabularyTooSmall));
         }
-        let mut new_model = Unigram::from(pieces.clone(), Some(0), false)?;
+        let mut new_model =
+            Unigram::from(pieces.clone(), Some(0), false, &AddedVocabulary::default())?;
         loop {
             // Sub-EM iteration.
             for _iter in 0..self.n_sub_iterations {
@@ -576,7 +579,8 @@ impl UnigramTrainer {
 
                 // Executes M step.
                 pieces = self.run_m_step(&pieces, &expected);
-                new_model = Unigram::from(pieces.clone(), Some(0), false)?;
+                new_model =
+                    Unigram::from(pieces.clone(), Some(0), false, &AddedVocabulary::default())?;
 
                 // Useful comment for checking compatibility with spm
                 debug!(
@@ -600,7 +604,7 @@ impl UnigramTrainer {
 
             // Prunes pieces.
             pieces = self.prune_sentence_pieces(&new_model, &pieces, &sentences);
-            new_model = Unigram::from(pieces.clone(), Some(0), false)?;
+            new_model = Unigram::from(pieces.clone(), Some(0), false, &AddedVocabulary::default())?;
         }
         self.finalize_progress(&progress, expected_updates);
 
