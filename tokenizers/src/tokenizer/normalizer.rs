@@ -411,8 +411,16 @@ impl NormalizedString {
             .collect::<String>();
 
         self.alignments.splice(n_range.clone(), alignments);
+
+        // This bounds check already happens above (`self.normalized[n_range.clone()]`), but future
+        // code could change to mutate `self` or `self.normalized` in the interim.
+        // Perform it again and hope the optimizer collapses it.
+        assert!(self.normalized.get(n_range.clone()).is_some());
         unsafe {
             self.normalized
+                // Safety: This is safe as long as we do not splice across a
+                // UTF-8 character, and we only add UTF-8 text. `normalized` is a String
+                // so the latter is trivially true, and we assert for the former above.
                 .as_mut_vec()
                 .splice(n_range, normalized.bytes());
         }
