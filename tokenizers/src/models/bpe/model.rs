@@ -21,7 +21,7 @@ struct Config {
     files: Option<(String, String)>,
     vocab: Vocab,
     merges: Merges,
-    cache_capacity: usize,
+    cache_capacity: i64,
     dropout: Option<f32>,
     unk_token: Option<String>,
     continuing_subword_prefix: Option<String>,
@@ -43,7 +43,7 @@ impl Default for BpeBuilder {
                 files: None,
                 vocab: HashMap::new(),
                 merges: vec![],
-                cache_capacity: DEFAULT_CACHE_CAPACITY,
+                cache_capacity: -1,
                 dropout: None,
                 unk_token: None,
                 continuing_subword_prefix: None,
@@ -80,7 +80,7 @@ impl BpeBuilder {
     /// Set the cache's capacity. Set to 0 if you want to disable caching.
     #[must_use]
     pub fn cache_capacity(mut self, capacity: usize) -> Self {
-        self.config.cache_capacity = capacity;
+        self.config.cache_capacity = capacity as i64;
         self
     }
 
@@ -156,7 +156,8 @@ impl BpeBuilder {
             .collect();
         let cache = match self.config.cache_capacity {
             0 => None,
-            capacity => Some(Cache::new(capacity)),
+            -1 => Some(Cache::new(0)),
+            capacity => Some(Cache::new(capacity as usize)),
         };
 
         let vocab = self.config.vocab;

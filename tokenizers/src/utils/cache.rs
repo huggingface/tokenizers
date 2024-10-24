@@ -2,9 +2,12 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::RwLock;
+use sysinfo::System;
+use std::mem;
+
 
 /// The default capacity for a `BPE`'s internal cache.
-pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
+pub static DEFAULT_CACHE_CAPACITY: usize = 10000;
 
 /// Provides a simple multithread cache to speed up BPE tokenization that will try to read values
 /// concurrently but won't block if another thread is writing.
@@ -37,7 +40,7 @@ where
     V: Clone,
 {
     fn default() -> Self {
-        Self::new(DEFAULT_CACHE_CAPACITY)
+        Self::new(0)
     }
 }
 
@@ -47,14 +50,19 @@ where
     V: Clone,
 {
     /// Create new `Cache` with the given capacity.
-    pub(crate) fn new(capacity: usize) -> Self {
+    pub(crate) fn new(use_default_capacity: usize) -> Self {
+        let capacity = if use_default_capacity == 0{
+            default_cache_capacity::<K, V>()
+        } else{
+            use_default_capacity
+        };
         let map = RwLock::new(HashMap::with_capacity(capacity));
         Cache { map, capacity }
     }
 
     /// Create a fresh `Cache` with the same configuration.
     pub(crate) fn fresh(&self) -> Self {
-        Self::new(self.capacity)
+        Self::new(0)
     }
 
     /// Clear the cache.
@@ -116,3 +124,21 @@ where
         self.set_values(std::iter::once((key, value)))
     }
 }
+
+
+/// Determines the default cache capacity based on 90% of available system RAM
+/// and the memory size of the key (`K`) and value (`V`) types.
+fn default_cache_capacity<K, V>() -> usize {
+    let mut system = System::new_all(); // Initialize system information
+    system.refresh_memory(); // Refresh to get the latest memory info
+    let total_memory = system.total_memory(); // Total memory in KB
+
+    // Get the sizes of the key and value types in bytes
+    let key_size = mem::size_of::<K>();
+    let value_size = mem::size_of::<V>();
+    let entry_size = key_size + value_size;
+
+    let available_memory_bytes = ((total_memory as f64* 0.90) as usize / 64) * entry_size ;
+    return available_memory_bytes /entry_size
+}
+
