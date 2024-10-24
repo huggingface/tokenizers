@@ -534,7 +534,6 @@ impl BpeTrainer {
             // if the type of `pos` changes
             let ref pos: HashSet<usize> = top.pos;
 
-
             let words_len = words.len();
             struct WordPtr(*mut Word);
             // Safety: We do not actually use this for concurrent access to the same memory,
