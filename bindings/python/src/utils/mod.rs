@@ -18,11 +18,11 @@ pub trait DestroyPtr {
     fn destroy(&mut self);
 }
 
-pub struct RefMutGuard<'r, T: DestroyPtr + Clone> {
+pub struct RefMutGuard<'r, T: DestroyPtr> {
     content: T,
     r: PhantomData<&'r mut T>,
 }
-impl<T: DestroyPtr + Clone> RefMutGuard<'_, T> {
+impl<T: DestroyPtr> RefMutGuard<'_, T> {
     pub fn new(content: T) -> Self {
         Self {
             content,
@@ -30,12 +30,12 @@ impl<T: DestroyPtr + Clone> RefMutGuard<'_, T> {
         }
     }
 
-    pub fn get(&self) -> T {
-        self.content.clone()
+    pub fn get(&self) -> &T {
+        &self.content
     }
 }
 
-impl<T: DestroyPtr + Clone> Drop for RefMutGuard<'_, T> {
+impl<T: DestroyPtr> Drop for RefMutGuard<'_, T> {
     fn drop(&mut self) {
         self.content.destroy()
     }
