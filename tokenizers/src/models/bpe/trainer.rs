@@ -532,7 +532,7 @@ impl BpeTrainer {
             // Merge the new pair in every words
             // Safety: This is just a type assertion, the code below may no longer be safe
             // if the type of `pos` changes
-            let ref pos: HashSet<usize> = top.pos;
+            let pos: &HashSet<usize> = &top.pos;
 
             let words_len = words.len();
             struct WordPtr(*mut Word);
