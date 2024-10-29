@@ -34,7 +34,7 @@ jobs:
 
 
       - name: Install Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
           architecture: x86
@@ -70,7 +70,7 @@ jobs:
           args: cargo-audit
 
       - name: Install Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: 3.11
           architecture: "x64"
