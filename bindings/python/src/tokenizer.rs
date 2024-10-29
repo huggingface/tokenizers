@@ -578,19 +578,19 @@ impl PyTokenizer {
     ///         a tokenizer.json file
     ///     revision (:obj:`str`, defaults to `main`):
     ///         A branch or commit id
-    ///     auth_token (:obj:`str`, `optional`, defaults to `None`):
+    ///     token (:obj:`str`, `optional`, defaults to `None`):
     ///         An optional auth token used to access private repositories on the
     ///         Hugging Face Hub
     ///
     /// Returns:
     ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
-    #[pyo3(signature = (identifier, revision = String::from("main"), auth_token = None))]
-    #[pyo3(text_signature = "(identifier, revision=\"main\", auth_token=None)")]
+    #[pyo3(signature = (identifier, revision = String::from("main"), token = None))]
+    #[pyo3(text_signature = "(identifier, revision=\"main\", token=None)")]
     fn from_pretrained(
         identifier: &str,
         revision: String,
-        auth_token: Option<String>,
+        token: Option<String>,
     ) -> PyResult<Self> {
         let path = Python::with_gil(|py| -> PyResult<String> {
             let huggingface_hub = PyModule::import_bound(py, intern!(py, "huggingface_hub"))?;
@@ -601,8 +601,8 @@ impl PyTokenizer {
                 (intern!(py, "revision"), &revision),
             ]
             .into_py_dict_bound(py);
-            if let Some(auth_token) = auth_token {
-                kwargs.set_item(intern!(py, "token"), auth_token)?;
+            if let Some(token) = token {
+                kwargs.set_item(intern!(py, "token"), token)?;
             }
             let path: String = hf_hub_download.call((), Some(&kwargs))?.extract()?;
             Ok(path)

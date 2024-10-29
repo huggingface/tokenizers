@@ -396,7 +396,7 @@ impl DestroyPtr for PyNormalizedStringRefMut {
 }
 
 impl PyNormalizedStringRefMut {
-    pub fn new(normalized: &mut NormalizedString) -> RefMutGuard<Self> {
+    pub fn new(normalized: &mut NormalizedString) -> RefMutGuard<'_, Self> {
         RefMutGuard::new(Self {
             inner: RefMutContainer::new(normalized),
         })

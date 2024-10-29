@@ -28,6 +28,9 @@ pub(crate) fn bytes_char() -> HashMap<u8, char> {
         }
     }
 
+    // Safety: cs contains all values from bs (between 0 and 255),
+    // and some values of value 2⁸ + n, where n is between 0 and 255. This is between 255 and 512.
+    // Both ranges are valid UTF-32 values (which is fully saturated until 0xD000)
     bs.into_iter()
         .zip(cs)
         .map(|(f, t)| (f, unsafe { std::char::from_u32_unchecked(t) }))
