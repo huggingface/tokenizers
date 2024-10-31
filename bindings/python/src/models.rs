@@ -181,7 +181,7 @@ impl PyModel {
     ///
     /// Returns:
     ///     :obj:`List[str]`: The list of saved files
-    #[pyo3(signature = (folder, prefix=None, name=None), text_signature = "(self, folder, prefix, name)")]
+    #[pyo3(signature = (folder, prefix=None, name=None), text_signature = "(self, folder, prefix)")]
     fn save<'a>(
         &self,
         py: Python<'_>,
