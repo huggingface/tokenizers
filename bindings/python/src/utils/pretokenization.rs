@@ -56,7 +56,7 @@ fn tokenize(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResul
         ToPyResult(pretok.tokenize(|normalized| {
             let output = func.call((normalized.get(),), None)?;
             Ok(output
-                .extract::<&PyList>()?
+                .extract::<Bound<PyList>>()?
                 .into_iter()
                 .map(|obj| Ok(Token::from(obj.extract::<PyToken>()?)))
                 .collect::<PyResult<Vec<_>>>()?)
@@ -69,7 +69,7 @@ fn tokenize(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResul
 #[derive(Clone)]
 pub struct PyOffsetReferential(OffsetReferential);
 impl FromPyObject<'_> for PyOffsetReferential {
-    fn extract(obj: &PyAny) -> PyResult<Self> {
+    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let s = obj.extract::<&str>()?;
 
         Ok(Self(match s {
@@ -85,7 +85,7 @@ impl FromPyObject<'_> for PyOffsetReferential {
 #[derive(Clone)]
 pub struct PyOffsetType(OffsetType);
 impl FromPyObject<'_> for PyOffsetType {
-    fn extract(obj: &PyAny) -> PyResult<Self> {
+    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let s = obj.extract::<&str>()?;
 
         Ok(Self(match s {

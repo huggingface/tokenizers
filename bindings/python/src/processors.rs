@@ -82,9 +82,9 @@ impl PyPostProcessor {
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        match state.extract::<&PyBytes>(py) {
+        match state.extract::<&[u8]>(py) {
             Ok(s) => {
-                self.processor = serde_json::from_slice(s.as_bytes()).map_err(|e| {
+                self.processor = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle PostProcessor: {}",
                         e
@@ -272,7 +272,7 @@ impl From<PySpecialToken> for SpecialToken {
 }
 
 impl FromPyObject<'_> for PySpecialToken {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         if let Ok(v) = ob.extract::<(String, u32)>() {
             Ok(Self(v.into()))
         } else if let Ok(v) = ob.extract::<(u32, String)>() {
@@ -312,7 +312,7 @@ impl From<PyTemplate> for Template {
 }
 
 impl FromPyObject<'_> for PyTemplate {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         if let Ok(s) = ob.extract::<&str>() {
             Ok(Self(
                 s.try_into().map_err(exceptions::PyValueError::new_err)?,
