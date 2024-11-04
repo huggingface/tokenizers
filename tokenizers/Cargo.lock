@@ -1431,7 +1431,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers"
-version = "0.20.2"
+version = "0.20.2-rc1"
 dependencies = [
  "aho-corasick",
  "assert_approx_eq",
