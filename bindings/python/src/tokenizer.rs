@@ -1036,8 +1036,8 @@ impl PyTokenizer {
         is_pretokenized: bool,
         add_special_tokens: bool,
     ) -> PyResult<Vec<PyEncoding>> {
-        let mut items= Vec::<tk::EncodeInput>::new();
-        for i in 0..input.len()?{
+        let mut items = Vec::<tk::EncodeInput>::new();
+        for i in 0..input.len()? {
             let item = input.get_item(i)?;
             let item: tk::EncodeInput = if is_pretokenized {
                 item.extract::<PreTokenizedEncodeInput>()?.into()
