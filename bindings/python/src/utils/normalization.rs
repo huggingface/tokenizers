@@ -8,7 +8,7 @@ use tk::normalizer::{char_to_bytes, NormalizedString, Range, SplitDelimiterBehav
 use tk::pattern::Pattern;
 
 /// Represents a Pattern as used by `NormalizedString`
-#[derive(Clone, FromPyObject)]
+#[derive(FromPyObject)]
 pub enum PyPattern {
     #[pyo3(annotation = "str")]
     Str(String),

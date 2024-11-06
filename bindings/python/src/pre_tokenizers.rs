@@ -618,7 +618,6 @@ impl PyUnicodeScripts {
     }
 }
 
-#[derive(Clone)]
 pub(crate) struct CustomPreTokenizer {
     inner: PyObject,
 }
@@ -662,7 +661,7 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerWrapper {
     Custom(CustomPreTokenizer),

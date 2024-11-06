@@ -287,7 +287,7 @@ impl FromPyObject<'_> for PyArrayUnicode {
         }
         let arr = ob.as_ptr() as *mut npyffi::PyArrayObject;
         // SAFETY Getting all the metadata about the numpy array to check its sanity
-        let (type_num, elsize, alignment, data, nd, flags) = unsafe {
+        let (type_num, elsize, _alignment, data, nd, flags) = unsafe {
             let desc = (*arr).descr;
             (
                 (*desc).type_num,
