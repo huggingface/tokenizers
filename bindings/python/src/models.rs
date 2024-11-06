@@ -553,7 +553,7 @@ impl PyBPE {
     fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
         let super_ = self_.as_ref();
         let mut model = super_.model.write().map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while clearing BPE cache: {}", e))
+            exceptions::PyException::new_err(format!("Error while resizing BPE cache: {}", e))
         })?;
         model.resize_cache(capacity);
         Ok(())
@@ -889,7 +889,7 @@ impl PyUnigram {
     fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
         let super_ = self_.as_ref();
         let mut model = super_.model.write().map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while clearing BPE cache: {}", e))
+            exceptions::PyException::new_err(format!("Error while clearing Unigram cache: {}", e))
         })?;
         model.clear_cache();
         Ok(())
@@ -901,7 +901,7 @@ impl PyUnigram {
     fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
         let super_ = self_.as_ref();
         let mut model = super_.model.write().map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while clearing BPE cache: {}", e))
+            exceptions::PyException::new_err(format!("Error while resizing Unigram cache: {}", e))
         })?;
         model.resize_cache(capacity);
         Ok(())
