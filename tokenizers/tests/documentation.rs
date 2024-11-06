@@ -71,6 +71,7 @@ fn streaming_tokenizer() {
         Some(" example".to_string())
     );
 
+    // TODO change the tokenizer to prove side effects of the streaming state.
     // TODO add an example with byte fallback for `None` example
 }
 
