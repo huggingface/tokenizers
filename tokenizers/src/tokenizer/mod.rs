@@ -907,10 +907,7 @@ where
     }
 
     /// Decode the given ids, back to a String
-    pub fn decode_stream<'tok>(
-        &self,
-        skip_special_tokens: bool,
-    ) -> DecodeStream<'_, M, N, PT, PP, D> {
+    pub fn decode_stream(&self, skip_special_tokens: bool) -> DecodeStream<'_, M, N, PT, PP, D> {
         DecodeStream::new(self, skip_special_tokens)
     }
 }
