@@ -908,9 +908,9 @@ where
 
     /// Decode the given ids, back to a String
     pub fn decode_stream<'tok>(
-        &'tok self,
+        &self,
         skip_special_tokens: bool,
-    ) -> DecodeStream<'tok, M, N, PT, PP, D> {
+    ) -> DecodeStream<'_, M, N, PT, PP, D> {
         DecodeStream::new(self, skip_special_tokens)
     }
 }
