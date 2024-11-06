@@ -12,8 +12,7 @@
 use std::{
     collections::HashMap,
     fs::{read_to_string, File},
-    io::prelude::*,
-    io::BufReader,
+    io::{prelude::*, BufReader},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
 };
@@ -904,6 +903,59 @@ where
             decoder.decode(tokens)
         } else {
             Ok(tokens.join(" "))
+        }
+    }
+
+    /// Decode the given ids, back to a String
+    pub fn decode_stream<'tok>(
+        &'tok self,
+        skip_special_tokens: bool,
+    ) -> DecodeStream<'tok, M, N, PT, PP, D> {
+        DecodeStream::new(self, skip_special_tokens)
+    }
+}
+
+pub struct DecodeStream<'tok, M, N, PT, PP, D> {
+    tokenizer: &'tok TokenizerImpl<M, N, PT, PP, D>,
+    ids: Vec<u32>,
+    prefix_index: usize,
+    prefix: String,
+    skip_special_tokens: bool,
+}
+
+impl<'tok, M, N, PT, PP, D> DecodeStream<'tok, M, N, PT, PP, D>
+where
+    M: Model,
+    N: Normalizer,
+    PT: PreTokenizer,
+    PP: PostProcessor,
+    D: Decoder,
+{
+    fn new(tokenizer: &'tok TokenizerImpl<M, N, PT, PP, D>, skip_special_tokens: bool) -> Self {
+        Self {
+            tokenizer,
+            ids: vec![],
+            skip_special_tokens,
+            prefix: "".to_string(),
+            prefix_index: 0,
+        }
+    }
+
+    pub fn step(&mut self, id: u32) -> Result<Option<String>> {
+        self.ids.push(id);
+        let string = self
+            .tokenizer
+            .decode(self.ids.as_slice(), self.skip_special_tokens)?;
+        println!("Decode got {string} {} Ids:{:?}", self.prefix, self.ids);
+        if string.len() > self.prefix.len() && !string.ends_with('�') {
+            let new_text = &string[self.prefix.len()..];
+            self.prefix = new_text.to_string();
+            let new_prefix_index = self.ids.len() - self.prefix_index;
+            self.ids = self.ids.drain(self.prefix_index..).collect();
+            self.prefix_index = new_prefix_index;
+            Ok(Some(new_text.to_string()))
+        } else {
+            Ok(None)
         }
     }
 }

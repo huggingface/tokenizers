@@ -59,6 +59,22 @@ fn load_tokenizer() {
 }
 
 #[test]
+fn streaming_tokenizer() {
+    let tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();
+
+    let mut decode_stream = tokenizer.decode_stream(false);
+    assert_eq!(decode_stream.step(713).unwrap(), Some("This".to_string()));
+    assert_eq!(decode_stream.step(16).unwrap(), Some(" is".to_string()));
+    assert_eq!(decode_stream.step(41).unwrap(), Some(" an".to_string()));
+    assert_eq!(
+        decode_stream.step(1246).unwrap(),
+        Some(" example".to_string())
+    );
+
+    // TODO add an example with byte fallback for `None` example
+}
+
+#[test]
 #[ignore]
 fn quicktour_slow_train() -> tokenizers::Result<()> {
     // START quicktour_init_tokenizer
