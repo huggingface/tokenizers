@@ -115,4 +115,11 @@ where
     pub(crate) fn set(&self, key: K, value: V) {
         self.set_values(std::iter::once((key, value)))
     }
+
+    pub(crate) fn resize(&mut self, capacity: usize) {
+        self.capacity = capacity;
+        if let Ok(mut cache) = self.map.try_write() {
+            cache.shrink_to(capacity);
+        }
+    }
 }

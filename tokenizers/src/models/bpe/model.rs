@@ -354,6 +354,13 @@ impl BPE {
         }
     }
 
+    /// Resize the cache
+    pub fn resize_cache(&mut self, capacity: usize) {
+        if let Some(ref mut cache) = self.cache {
+            cache.resize(capacity);
+        }
+    }
+
     pub fn get_vocab(&self) -> Vocab {
         self.vocab.clone()
     }

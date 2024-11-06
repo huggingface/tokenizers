@@ -534,6 +534,30 @@ impl PyBPE {
             )?,
         )
     }
+
+    /// Clears the internal cache
+    #[pyo3(signature = ())]
+    #[pyo3(text_signature = "(self)")]
+    fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while clearing BPE cache: {}", e))
+        })?;
+        model.clear_cache();
+        Ok(())
+    }
+
+    /// Resize the internal cache
+    #[pyo3(signature = (capacity))]
+    #[pyo3(text_signature = "(self, capacity)")]
+    fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while resizing BPE cache: {}", e))
+        })?;
+        model.resize_cache(capacity);
+        Ok(())
+    }
 }
 
 /// An implementation of the WordPiece algorithm
@@ -857,6 +881,30 @@ impl PyUnigram {
                 "`vocab` and `unk_id` must be both specified",
             )),
         }
+    }
+
+    /// Clears the internal cache
+    #[pyo3(signature = ())]
+    #[pyo3(text_signature = "(self)")]
+    fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while clearing Unigram cache: {}", e))
+        })?;
+        model.clear_cache();
+        Ok(())
+    }
+
+    /// Resize the internal cache
+    #[pyo3(signature = (capacity))]
+    #[pyo3(text_signature = "(self, capacity)")]
+    fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while resizing Unigram cache: {}", e))
+        })?;
+        model.resize_cache(capacity);
+        Ok(())
     }
 }
 
