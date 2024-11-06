@@ -136,8 +136,8 @@ impl PyAddedToken {
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "single_word" => token.single_word = Some(value.extract()?),
                     "lstrip" => token.lstrip = Some(value.extract()?),
                     "rstrip" => token.rstrip = Some(value.extract()?),
@@ -159,8 +159,8 @@ impl PyAddedToken {
         match state.downcast_bound::<PyDict>(py) {
             Ok(state) => {
                 for (key, value) in state {
-                    let key: &str = key.extract()?;
-                    match key {
+                    let key: String = key.extract()?;
+                    match key.as_ref() {
                         "content" => self.content = value.extract()?,
                         "single_word" => self.single_word = Some(value.extract()?),
                         "lstrip" => self.lstrip = Some(value.extract()?),
@@ -323,15 +323,16 @@ impl FromPyObject<'_> for PyArrayUnicode {
             let seq = (0..n_elem)
                 .map(|i| {
                     let bytes = &all_bytes[i * elsize..(i + 1) * elsize];
-                    let unicode = pyo3::ffi::PyUnicode_FromKindAndData(
-                        pyo3::ffi::PyUnicode_4BYTE_KIND as _,
-                        bytes.as_ptr() as *const _,
-                        elsize as isize / alignment as isize,
-                    );
-                    let py = ob.py();
-                    let obj = PyObject::from_owned_ptr(py, unicode);
-                    let s = obj.downcast_bound::<PyString>(py)?;
-                    Ok(s.to_string_lossy().trim_matches(char::from(0)).to_owned())
+                    Ok(std::str::from_utf8(bytes)?.to_owned())
+                    // let unicode = pyo3::ffi::PyUnicode_FromKindAndData(
+                    //     pyo3::ffi::PyUnicode_4BYTE_KIND as _,
+                    //     bytes.as_ptr() as *const _,
+                    //     elsize as isize / alignment as isize,
+                    // );
+                    // let py = ob.py();
+                    // let obj = PyObject::from_owned_ptr(py, unicode);
+                    // let s = obj.downcast_bound::<PyString>(py)?;
+                    // Ok(s.to_string_lossy().trim_matches(char::from(0)).to_owned())
                 })
                 .collect::<PyResult<Vec<_>>>()?;
 
@@ -736,12 +737,12 @@ impl PyTokenizer {
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "stride" => params.stride = value.extract()?,
                     "strategy" => {
-                        let value: &str = value.extract()?;
-                        params.strategy = match value {
+                        let value: String = value.extract()?;
+                        params.strategy = match value.as_ref() {
                             "longest_first" => Ok(TruncationStrategy::LongestFirst),
                             "only_first" => Ok(TruncationStrategy::OnlyFirst),
                             "only_second" => Ok(TruncationStrategy::OnlySecond),
@@ -754,8 +755,8 @@ impl PyTokenizer {
                         }?
                     }
                     "direction" => {
-                        let value: &str = value.extract()?;
-                        params.direction = match value {
+                        let value: String = value.extract()?;
+                        params.direction = match value.as_ref() {
                             "left" => Ok(TruncationDirection::Left),
                             "right" => Ok(TruncationDirection::Right),
                             _ => Err(PyError(format!(
@@ -838,11 +839,11 @@ impl PyTokenizer {
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "direction" => {
-                        let value: &str = value.extract()?;
-                        params.direction = match value {
+                        let value: String = value.extract()?;
+                        params.direction = match value.as_ref() {
                             "left" => Ok(PaddingDirection::Left),
                             "right" => Ok(PaddingDirection::Right),
                             other => Err(PyError(format!(
@@ -1341,7 +1342,7 @@ impl PyTokenizer {
                 //  - An iterator, to allow batching
                 //  - A string
                 if let Ok(s) = element.downcast::<PyString>() {
-                    itertools::Either::Right(std::iter::once(s.to_str().map(|s| s.to_owned())))
+                    itertools::Either::Right(std::iter::once(s.to_cow().map(|s| s.into_owned())))
                 } else {
                     match element.iter() {
                         Ok(iter) => itertools::Either::Left(
