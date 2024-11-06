@@ -377,6 +377,16 @@ impl Unigram {
         let string = read_to_string(path)?;
         Ok(serde_json::from_str(&string)?)
     }
+
+    /// Clears the internal cache
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
+    }
+
+    /// Resize the cache
+    pub fn resize_cache(&mut self, capacity: usize) {
+        self.cache.resize(capacity);
+    }
 }
 
 /// Iterator to iterate of vocabulary of the model, and their relative score.

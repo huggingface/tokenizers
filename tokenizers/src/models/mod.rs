@@ -207,6 +207,23 @@ impl Model for ModelWrapper {
     }
 }
 
+impl ModelWrapper {
+    pub fn clear_cache(&mut self) {
+        match self {
+            Self::Unigram(model) => model.clear_cache(),
+            Self::BPE(model) => model.clear_cache(),
+            _ => (),
+        }
+    }
+    pub fn resize_cache(&mut self, capacity: usize) {
+        match self {
+            Self::Unigram(model) => model.resize_cache(capacity),
+            Self::BPE(model) => model.resize_cache(capacity),
+            _ => (),
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub enum TrainerWrapper {
     BpeTrainer(BpeTrainer),
