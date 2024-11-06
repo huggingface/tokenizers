@@ -1,3 +1,5 @@
+use crate::AddedVocabulary;
+
 use super::model::Unigram;
 use serde::{
     de::{Error, MapAccess, Visitor},
@@ -69,8 +71,12 @@ impl<'de> Visitor<'de> for UnigramVisitor {
             }
         }
         match (vocab, unk_id, byte_fallback) {
-            (Some(vocab), unk_id, byte_fallback) => Ok(Unigram::from(vocab, unk_id, byte_fallback)
-                .map_err(|err| Error::custom(format!("Unable to load vocab {err:?}")))?),
+            (Some(vocab), unk_id, byte_fallback) => {
+                Ok(
+                    Unigram::from(vocab, unk_id, byte_fallback, &AddedVocabulary::default())
+                        .map_err(|err| Error::custom(format!("Unable to load vocab {err:?}")))?,
+                )
+            }
             (None, _, _) => Err(Error::custom("Missing vocab")),
         }
     }
@@ -78,12 +84,14 @@ impl<'de> Visitor<'de> for UnigramVisitor {
 
 #[cfg(test)]
 mod test {
+    use crate::AddedVocabulary;
+
     use super::*;
 
     #[test]
     fn test_serialization() {
         let vocab = vec![("<unk>".to_string(), 0.0), ("a".to_string(), -0.5)];
-        let model = Unigram::from(vocab, Some(0), false).unwrap();
+        let model = Unigram::from(vocab, Some(0), false, &AddedVocabulary::default()).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
         let reconstructed = serde_json::from_str(&data).unwrap();
@@ -94,7 +102,7 @@ mod test {
     #[test]
     fn test_serialization_unk_id_not_zero() {
         let vocab = vec![("a".to_string(), -0.5), ("<unk>".to_string(), 0.0)];
-        let model = Unigram::from(vocab, Some(1), false).unwrap();
+        let model = Unigram::from(vocab, Some(1), false, &AddedVocabulary::default()).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
         let reconstructed = serde_json::from_str(&data).unwrap();
@@ -105,7 +113,7 @@ mod test {
     #[test]
     fn test_serialization_no_unk_id() {
         let vocab = vec![("a".to_string(), -0.5)];
-        let model = Unigram::from(vocab, None, false).unwrap();
+        let model = Unigram::from(vocab, None, false, &AddedVocabulary::default()).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
         let reconstructed = serde_json::from_str(&data).unwrap();

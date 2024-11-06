@@ -1237,6 +1237,51 @@ impl PyTokenizer {
         Ok(self.tokenizer.add_tokens(&tokens))
     }
 
+    /// Add the given tokens to the vocabulary
+    ///
+    /// The given tokens are added only if they don't already exist in the vocabulary.
+    /// Each token then gets a new attributed id.
+    ///
+    /// Args:
+    ///     tokens (A :obj:`List` of :class:`~tokenizers.AddedToken` or :obj:`str`):
+    ///         The list of tokens we want to add to the vocabulary. Each token can be either a
+    ///         string or an instance of :class:`~tokenizers.AddedToken` for more customization.
+    ///
+    /// Returns:
+    ///     :obj:`int`: The number of tokens that were created in the vocabulary
+    #[pyo3(text_signature = "(self, old_tokens, new_tokens)")]
+    fn assign_tokens(&mut self, old_to_new_map: &Bound<'_, PyDict>) -> PyResult<()> {
+        use pyo3::exceptions::PyTypeError;
+
+        let mut processed_old_tokens = HashMap::with_capacity(old_to_new_map.len());
+        for (old, new) in old_to_new_map.iter() {
+            let old_token = if let Ok(content) = old.extract::<&str>() {
+                PyAddedToken::from(content.to_string(), Some(false)).get_token()
+            } else if let Ok(token) = old.extract::<PyRefMut<PyAddedToken>>() {
+                token.get_token()
+            } else {
+                return Err(PyTypeError::new_err(
+                    "old_tokens must be a List[Union[str, AddedToken]]",
+                ));
+            };
+
+            let new_token = if let Ok(content) = new.extract::<&str>() {
+                let mut updated_token = old_token.clone();
+                updated_token.content = content.to_string();
+                updated_token
+            } else if let Ok(token) = new.extract::<PyRefMut<PyAddedToken>>() {
+                token.get_token()
+            } else {
+                return Err(PyTypeError::new_err(
+                    "new_tokens must be a List[Union[str, AddedToken]]",
+                ));
+            };
+
+            processed_old_tokens.insert(old_token, new_token);
+        }
+        self.tokenizer.assign_tokens(&processed_old_tokens);
+        Ok(())
+    }
     /// Add the given special tokens to the Tokenizer.
     ///
     /// If these tokens are already part of the vocabulary, it just let the Tokenizer know about

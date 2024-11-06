@@ -3,8 +3,11 @@ use super::{
     trainer::UnigramTrainer,
     trie::{Trie, TrieBuilder},
 };
-use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::Cache;
+use crate::{
+    tokenizer::{Model, Result, Token},
+    AddedVocabulary,
+};
 
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -81,7 +84,7 @@ pub enum UnigramError {
 impl Default for Unigram {
     fn default() -> Self {
         let vocab = vec![("<unk>".to_string(), 0.0)];
-        Self::from(vocab, Some(0), false).unwrap()
+        Self::from(vocab, Some(0), false, &AddedVocabulary::default()).unwrap()
     }
 }
 
@@ -96,6 +99,7 @@ impl Unigram {
         vocab: Vec<(String, f64)>,
         unk_id: Option<usize>,
         byte_fallback: bool,
+        added_tokens: &AddedVocabulary,
     ) -> Result<Self> {
         let n = vocab.len();
         let mut token_to_ids: TokenMap = HashMap::new();
@@ -114,11 +118,13 @@ impl Unigram {
 
         let mut min_score = f64::INFINITY;
         for (id, (token, score)) in vocab.iter().enumerate() {
-            token_to_ids.insert(token.to_string(), id as u32);
-            let bytes: Vec<u8> = token.bytes().collect();
-            builder.push(&bytes);
-            if score < &min_score {
-                min_score = *score;
+            if !added_tokens.is_special_token(token) {
+                token_to_ids.insert(token.to_string(), id as u32);
+                let bytes: Vec<u8> = token.bytes().collect();
+                builder.push(&bytes);
+                if score < &min_score {
+                    min_score = *score;
+                }
             }
         }
         let trie = builder.build();
@@ -490,7 +496,7 @@ mod tests {
     #[test]
     fn test_populate_nodes_unk() {
         let pieces = vec![("<unk>".to_string(), 0.0)];
-        let model = Unigram::from(pieces, Some(0), false).unwrap();
+        let model = Unigram::from(pieces, Some(0), false, &AddedVocabulary::default()).unwrap();
 
         let mut lattice = Lattice::from("abc", model.bos_id, model.eos_id);
         model.populate_nodes(&mut lattice);
@@ -515,7 +521,7 @@ mod tests {
             ("ab".to_string(), 0.3),
             ("bc".to_string(), 0.4),
         ];
-        let model = Unigram::from(pieces, Some(0), false).unwrap();
+        let model = Unigram::from(pieces, Some(0), false, &AddedVocabulary::default()).unwrap();
 
         let mut lattice = Lattice::from("abc", model.bos_id, model.eos_id);
         model.populate_nodes(&mut lattice);
@@ -552,7 +558,8 @@ mod tests {
             ("abcd".to_string(), 10.0),
         ];
 
-        let model = Unigram::from(sentencepieces, Some(0), false).unwrap();
+        let model =
+            Unigram::from(sentencepieces, Some(0), false, &AddedVocabulary::default()).unwrap();
         let result = model.encode("abcd").unwrap();
         assert_eq!(result, vec!["abcd"]);
     }
@@ -574,7 +581,8 @@ mod tests {
             ("qr".to_string(), -0.5),
         ];
 
-        let mut model = Unigram::from(sentencepieces, Some(0), false).unwrap();
+        let mut model =
+            Unigram::from(sentencepieces, Some(0), false, &AddedVocabulary::default()).unwrap();
 
         for is_optimized in &[true, false] {
             model.set_optimized(*is_optimized);
@@ -621,7 +629,8 @@ mod tests {
             ("<0xC3>".to_string(), -0.01),
             ("<0xA9>".to_string(), -0.03),
         ];
-        let unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
+        let unigram =
+            Unigram::from(sentencepieces, Some(0), true, &AddedVocabulary::default()).unwrap();
         let tokens: Vec<Token> = unigram.tokenize("é").unwrap();
         assert_eq!(
             tokens,
