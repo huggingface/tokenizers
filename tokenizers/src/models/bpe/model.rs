@@ -1,6 +1,6 @@
 use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
-use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY};
+use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use serde_json::Value;
 use std::borrow::Cow;
@@ -475,7 +475,9 @@ impl BPE {
         let word = self.merge_word(sequence)?;
         let ret = self.word_to_tokens(&word).collect();
         if let Some(ref cache) = self.cache {
-            cache.set(sequence.to_owned(), word);
+            if sequence.len() < MAX_LENGTH {
+                cache.set(sequence.to_owned(), word);
+            }
         }
         Ok(ret)
     }

@@ -4,7 +4,7 @@ use super::{
     trie::{Trie, TrieBuilder},
 };
 use crate::tokenizer::{Model, Result, Token};
-use crate::utils::cache::Cache;
+use crate::utils::cache::{Cache, MAX_LENGTH};
 
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -230,7 +230,9 @@ impl Unigram {
             } else {
                 self.encode_unoptimized(sentence)?
             };
-            self.cache.set(sentence.to_owned(), result.clone());
+            if sentence.len() < MAX_LENGTH {
+                self.cache.set(sentence.to_owned(), result.clone());
+            }
             Ok(result)
         }
     }
