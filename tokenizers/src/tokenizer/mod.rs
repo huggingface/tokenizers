@@ -915,9 +915,20 @@ where
 pub struct DecodeStream<'tok, M, N, PT, PP, D> {
     tokenizer: &'tok TokenizerImpl<M, N, PT, PP, D>,
     ids: Vec<u32>,
-    prefix_index: usize,
     prefix: String,
+    prefix_index: usize,
+    /// We need to keep 2 prefixes.
+    /// Prefix is the second one that was already emitted to discard the part
+    /// of the text of all the ids
+    /// read is the prefix kept only for starting side effects of the prefix
+    read_index: usize,
     skip_special_tokens: bool,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DecodeStreamError {
+    #[error("Invalid prefix encountered")]
+    InvalidPrefix,
 }
 
 impl<'tok, M, N, PT, PP, D> DecodeStream<'tok, M, N, PT, PP, D>
@@ -935,6 +946,7 @@ where
             skip_special_tokens,
             prefix: "".to_string(),
             prefix_index: 0,
+            read_index: 0,
         }
     }
 
@@ -943,12 +955,15 @@ where
         let string = self
             .tokenizer
             .decode(self.ids.as_slice(), self.skip_special_tokens)?;
-        println!("Decode got {string} {} Ids:{:?}", self.prefix, self.ids);
         if string.len() > self.prefix.len() && !string.ends_with('�') {
-            let new_text = &string[self.prefix.len()..];
-            self.prefix = new_text.to_string();
+            if !(string.starts_with(&self.prefix)) {
+                return Err(Box::new(DecodeStreamError::InvalidPrefix));
+            }
+            let new_text = &string[self.prefix.len()..].to_string();
             let new_prefix_index = self.ids.len() - self.prefix_index;
-            self.ids = self.ids.drain(self.prefix_index..).collect();
+            self.ids = self.ids.drain(self.read_index..).collect();
+            self.prefix = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+            self.read_index = self.prefix_index;
             self.prefix_index = new_prefix_index;
             Ok(Some(new_text.to_string()))
         } else {
