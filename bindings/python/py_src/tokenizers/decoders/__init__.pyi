@@ -1,4 +1,12 @@
 # Generated content DO NOT EDIT
+class DecodeStream:
+    """
+    Class needed for streaming decode
+
+    """
+    def __init__(self, skip_special_tokens):
+        pass
+
 class Decoder:
     """
     Base class for all decoders

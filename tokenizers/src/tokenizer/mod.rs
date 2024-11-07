@@ -1069,24 +1069,50 @@ where
 
     /// See [`DecodeStream`]
     pub fn step(&mut self, id: u32) -> Result<Option<String>> {
-        self.ids.push(id);
-        let string = self
-            .tokenizer
-            .decode(self.ids.as_slice(), self.skip_special_tokens)?;
-        if string.len() > self.prefix.len() && !string.ends_with('�') {
-            if !(string.starts_with(&self.prefix)) {
-                return Err(Box::new(DecodeStreamError::InvalidPrefix));
-            }
-            let new_text = &string[self.prefix.len()..].to_string();
-            let new_prefix_index = self.ids.len() - self.prefix_index;
-            self.ids = self.ids.drain(self.read_index..).collect();
-            self.prefix = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
-            self.read_index = self.prefix_index;
-            self.prefix_index = new_prefix_index;
-            Ok(Some(new_text.to_string()))
-        } else {
-            Ok(None)
+        step_decode_stream(
+            &self.tokenizer,
+            id,
+            self.skip_special_tokens,
+            &mut self.ids,
+            &mut self.prefix,
+            &mut self.prefix_index,
+            &mut self.read_index,
+        )
+    }
+}
+
+/// Internal function exposed only to bypass python limitations
+pub fn step_decode_stream<M, N, PT, PP, D>(
+    tokenizer: &TokenizerImpl<M, N, PT, PP, D>,
+    id: u32,
+    skip_special_tokens: bool,
+    ids: &mut Vec<u32>,
+    prefix: &mut String,
+    prefix_index: &mut usize,
+    read_index: &mut usize,
+) -> Result<Option<String>>
+where
+    M: Model,
+    N: Normalizer,
+    PT: PreTokenizer,
+    PP: PostProcessor,
+    D: Decoder,
+{
+    ids.push(id);
+    let string = tokenizer.decode(ids.as_slice(), skip_special_tokens)?;
+    if string.len() > prefix.len() && !string.ends_with('�') {
+        if !(string.starts_with(&*prefix)) {
+            return Err(Box::new(DecodeStreamError::InvalidPrefix));
         }
+        let new_text = &string[prefix.len()..].to_string();
+        let new_prefix_index = ids.len() - *prefix_index;
+        *ids = ids.drain(*read_index..).collect();
+        *prefix = tokenizer.decode(&ids, skip_special_tokens)?;
+        *read_index = *prefix_index;
+        *prefix_index = new_prefix_index;
+        Ok(Some(new_text.to_string()))
+    } else {
+        Ok(None)
     }
 }
 
