@@ -907,22 +907,135 @@ where
     }
 
     /// Decode the given ids, back to a String
+    /// See [`DecodeStream`]
     pub fn decode_stream(&self, skip_special_tokens: bool) -> DecodeStream<'_, M, N, PT, PP, D> {
         DecodeStream::new(self, skip_special_tokens)
     }
 }
 
+/// DecodeStream will keep the state necessary to produce individual chunks of
+/// strings given an input stream of token_ids.
+///
+/// This is necessary because decoding in general cannot achieve that since strings
+/// depend on surrounding ids to provide a valid string. Typically stripping extra spaces
+///
+/// Example:
+///
+/// ```
+/// use tokenizers::Tokenizer;
+/// let tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();
+///
+/// let mut decode_stream = tokenizer.decode_stream(false);
+/// assert_eq!(decode_stream.step(713).unwrap(), Some("This".to_string()));
+/// assert_eq!(decode_stream.step(16).unwrap(), Some(" is".to_string()));
+/// assert_eq!(decode_stream.step(41).unwrap(), Some(" an".to_string()));
+/// assert_eq!(
+///     decode_stream.step(1246).unwrap(),
+///     Some(" example".to_string())
+/// );
+/// ```
+///
+/// Returning `None` means the given id is not enough to produce a chunk.
+/// This typically happens with `byte_fallback` options where some tokens do
+/// not represent valid utf-8, and only follow-up token_ids will help produce
+/// a valid chunk.
+/// ```
+/// use tokenizers::{Tokenizer, TokenizerBuilder, models::bpe::BPE, decoders::byte_fallback::ByteFallback, pre_tokenizers::byte_level::ByteLevel, normalizers::unicode::NFC};
+/// use std::collections::HashMap;
+/// use std::iter::FromIterator;
+///
+/// let vocab = HashMap::from_iter([
+///     ("<0x20>".to_string(), 0),
+///     ("<0xC3>".to_string(), 1),
+///     ("<0xA9>".to_string(), 2),
+///     (" This".to_string(), 3),
+/// ]);
+/// let merges = vec![];
+/// let bpe = BPE::builder()
+///     .vocab_and_merges(vocab, merges)
+///     .byte_fallback(true)
+///     .build()
+///     .unwrap();
+/// let tokenizer = TokenizerBuilder::default()
+///     .with_model(bpe)
+///     .with_decoder(Some(ByteFallback::default()))
+///     .with_normalizer(Some(NFC))
+///     .with_pre_tokenizer(Some(ByteLevel::default()))
+///     .with_post_processor(Some(ByteLevel::default()))
+///     .build().unwrap();
+///
+/// let mut decode_stream = tokenizer.decode_stream(false);
+/// // Single byte_fallback is valid utf-8
+/// assert_eq!(decode_stream.step(0).unwrap(), Some(" ".to_string()));
+/// // Invalid utf-8
+/// assert_eq!(decode_stream.step(1).unwrap(), None);
+/// // Valid utf-8 again, this corresponds to both tokens: [1, 2]
+/// assert_eq!(decode_stream.step(2).unwrap(), Some("é".to_string()));
+/// ```
+///
+/// To see how [`DecodeStream`] is necessary, let's show how using raw [`Tokenizer::decode`] would
+/// fail.
+///
+/// ```
+/// use tokenizers::{Tokenizer, TokenizerBuilder, models::bpe::BPE, pre_tokenizers::{byte_level::ByteLevel, metaspace::Metaspace}, normalizers::unicode::NFC};
+/// use std::collections::HashMap;
+/// use std::iter::FromIterator;
+///
+/// let vocab = HashMap::from_iter([
+///     ("▁This".to_string(), 0),
+/// ]);
+/// let merges = vec![];
+/// let bpe = BPE::builder()
+///     .vocab_and_merges(vocab, merges)
+///     .byte_fallback(true)
+///     .build()
+///     .unwrap();
+/// let tokenizer = TokenizerBuilder::new()
+///     .with_model(bpe)
+///     .with_decoder(Some(Metaspace::default()))
+///     .with_normalizer(Some(NFC))
+///     .with_pre_tokenizer(Some(ByteLevel::default()))
+///     .with_post_processor(Some(ByteLevel::default()))
+///     .build()
+///     .unwrap();
+///
+/// // Strip decoder removes the extra initial space
+/// assert_eq!(tokenizer.decode(&[0, 0], false).unwrap(), "This This");
+/// // Decoding one token at a time would produce "ThisThis"
+/// assert_eq!(tokenizer.decode(&[0], false).unwrap(), "This");
+///
+/// // Using a stream fixes it by keeping the necessary state.
+/// let mut decode_stream = tokenizer.decode_stream(false);
+/// assert_eq!(decode_stream.step(0).unwrap(), Some("This".to_string()));
+/// assert_eq!(decode_stream.step(0).unwrap(), Some(" This".to_string()));
+/// ```
 pub struct DecodeStream<'tok, M, N, PT, PP, D> {
+    /// A reference to the tokenizer
     tokenizer: &'tok TokenizerImpl<M, N, PT, PP, D>,
+    /// Regular decode option that is kept throughout.
+    skip_special_tokens: bool,
+    /// A temporary buffer of the necessary token_ids needed
+    /// to produce valid string chunks.
+    /// This typically contains 3 parts:
+    ///  - read
+    ///  - prefix
+    ///  - rest
+    /// Read is the bit necessary to surround the prefix
+    /// so decoding the whole ids produces a valid prefix.
+    /// Prefix is the previously produced string, kept around to trim off of
+    /// the next valid chunk
     ids: Vec<u32>,
+    /// The previously returned chunk that needs to be discarded from the
+    /// decoding of the current ids to produce the next chunk
     prefix: String,
+    /// The index within the ids corresponding to the prefix so we can drain
+    /// correctly
     prefix_index: usize,
     /// We need to keep 2 prefixes.
     /// Prefix is the second one that was already emitted to discard the part
     /// of the text of all the ids
     /// read is the prefix kept only for starting side effects of the prefix
     read_index: usize,
-    skip_special_tokens: bool,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -950,6 +1063,7 @@ where
         }
     }
 
+    /// See [`DecodeStream`]
     pub fn step(&mut self, id: u32) -> Result<Option<String>> {
         self.ids.push(id);
         let string = self

@@ -95,6 +95,7 @@ fn streaming_tokenizer() {
         ("<0x20>".to_string(), 0),
         ("<0xC3>".to_string(), 1),
         ("<0xA9>".to_string(), 2),
+        (" This".to_string(), 3),
     ]);
     let merges = vec![];
     let bpe = BPE::builder()
