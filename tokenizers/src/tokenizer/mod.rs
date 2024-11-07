@@ -973,7 +973,7 @@ where
 /// assert_eq!(decode_stream.step(2).unwrap(), Some("é".to_string()));
 /// ```
 ///
-/// To see how [`DecodeStream`] is necessary, let's show how using raw [`Tokenizer::decode`] would
+/// To see how [`DecodeStream`] is necessary, let's show how using raw [`TokenizerImpl::decode`] would
 /// fail.
 ///
 /// ```
