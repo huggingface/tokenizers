@@ -175,7 +175,7 @@ jobs:
         if: "startsWith(github.ref, 'refs/tags/')"
         uses: PyO3/maturin-action@v1
         env:
-          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_TOKEN_DIST}}
         with:
           command: upload
           args: --non-interactive --skip-existing wheels-*/*
