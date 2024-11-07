@@ -1070,7 +1070,7 @@ where
     /// See [`DecodeStream`]
     pub fn step(&mut self, id: u32) -> Result<Option<String>> {
         step_decode_stream(
-            &self.tokenizer,
+            self.tokenizer,
             id,
             self.skip_special_tokens,
             &mut self.ids,
@@ -1107,7 +1107,7 @@ where
         let new_text = &string[prefix.len()..].to_string();
         let new_prefix_index = ids.len() - *prefix_index;
         *ids = ids.drain(*read_index..).collect();
-        *prefix = tokenizer.decode(&ids, skip_special_tokens)?;
+        *prefix = tokenizer.decode(ids, skip_special_tokens)?;
         *read_index = *prefix_index;
         *prefix_index = new_prefix_index;
         Ok(Some(new_text.to_string()))
