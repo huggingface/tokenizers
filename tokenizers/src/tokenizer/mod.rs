@@ -1020,6 +1020,7 @@ pub struct DecodeStream<'tok, M, N, PT, PP, D> {
     ///  - read
     ///  - prefix
     ///  - rest
+    ///
     /// Read is the bit necessary to surround the prefix
     /// so decoding the whole ids produces a valid prefix.
     /// Prefix is the previously produced string, kept around to trim off of
