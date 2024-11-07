@@ -922,6 +922,8 @@ where
 /// Example:
 ///
 /// ```
+/// # #[cfg(not(target_os = "windows"))]
+/// # {
 /// use tokenizers::Tokenizer;
 /// let tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();
 ///
@@ -933,6 +935,7 @@ where
 ///     decode_stream.step(1246).unwrap(),
 ///     Some(" example".to_string())
 /// );
+/// # }
 /// ```
 ///
 /// Returning `None` means the given id is not enough to produce a chunk.
