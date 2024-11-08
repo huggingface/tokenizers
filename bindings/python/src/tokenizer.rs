@@ -407,10 +407,10 @@ impl<'s> FromPyObject<'s> for TextEncodeInput<'s> {
         if let Ok((i1, i2)) = ob.extract::<(TextInputSequence, TextInputSequence)>() {
             return Ok(Self((i1, i2).into()));
         }
-        if let Ok(arr) = ob.downcast::<PyList>() {
+        if let Ok(arr) = ob.extract::<Vec<Bound<PyAny>>>() {
             if arr.len() == 2 {
-                let first = arr.get_item(0)?.extract::<TextInputSequence>()?;
-                let second = arr.get_item(1)?.extract::<TextInputSequence>()?;
+                let first = arr[0].extract::<TextInputSequence>()?;
+                let second = arr[1].extract::<TextInputSequence>()?;
                 return Ok(Self((first, second).into()));
             }
         }
@@ -434,10 +434,10 @@ impl<'s> FromPyObject<'s> for PreTokenizedEncodeInput<'s> {
         {
             return Ok(Self((i1, i2).into()));
         }
-        if let Ok(arr) = ob.downcast::<PyList>() {
+        if let Ok(arr) = ob.extract::<Vec<Bound<PyAny>>>() {
             if arr.len() == 2 {
-                let first = arr.get_item(0)?.extract::<PreTokenizedInputSequence>()?;
-                let second = arr.get_item(1)?.extract::<PreTokenizedInputSequence>()?;
+                let first = arr[0].extract::<PreTokenizedInputSequence>()?;
+                let second = arr[1].extract::<PreTokenizedInputSequence>()?;
                 return Ok(Self((first, second).into()));
             }
         }
@@ -1032,13 +1032,13 @@ impl PyTokenizer {
     fn encode_batch(
         &self,
         py: Python<'_>,
-        input: Bound<'_, PySequence>,
+        input: Vec<Bound<'_, PyAny>>,
         is_pretokenized: bool,
         add_special_tokens: bool,
     ) -> PyResult<Vec<PyEncoding>> {
-        let mut items = Vec::<tk::EncodeInput>::with_capacity(input.len()?);
-        for i in 0..input.len()? {
-            let item = input.get_item(i)?;
+        let mut items = Vec::<tk::EncodeInput>::with_capacity(input.len());
+        for i in 0..input.len() {
+            let item = &input[i];
             let item: tk::EncodeInput = if is_pretokenized {
                 item.extract::<PreTokenizedEncodeInput>()?.into()
             } else {
@@ -1092,13 +1092,13 @@ impl PyTokenizer {
     fn encode_batch_fast(
         &self,
         py: Python<'_>,
-        input: Bound<'_, PySequence>,
+        input: Vec<Bound<'_, PyAny>>,
         is_pretokenized: bool,
         add_special_tokens: bool,
     ) -> PyResult<Vec<PyEncoding>> {
-        let mut items = Vec::<tk::EncodeInput>::with_capacity(input.len()?);
-        for i in 0..input.len()? {
-            let item = input.get_item(i)?;
+        let mut items = Vec::<tk::EncodeInput>::with_capacity(input.len());
+        for i in 0..input.len() {
+            let item = &input[i];
             let item: tk::EncodeInput = if is_pretokenized {
                 item.extract::<PreTokenizedEncodeInput>()?.into()
             } else {
