@@ -488,7 +488,6 @@ impl PySequenceDecoder {
     }
 }
 
-#[derive(Clone)]
 pub(crate) struct CustomDecoder {
     inner: PyObject,
 }

@@ -399,11 +399,11 @@ impl PyEncoding {
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "direction" => {
-                        let value: &str = value.extract()?;
-                        direction = match value {
+                        let value: String = value.extract()?;
+                        direction = match value.as_ref() {
                             "left" => Ok(PaddingDirection::Left),
                             "right" => Ok(PaddingDirection::Right),
                             other => Err(PyError(format!(

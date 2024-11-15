@@ -164,8 +164,9 @@ jobs:
         with:
           path: ./bindings/python/dist
           merge-multiple: true
-      - name: Upload to PyPi
-        working-directory: ./bindings/python
-        run: |
-          pip install twine
-          twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
+          # Temporary deactivation while testing abi3 CI
+          # - name: Upload to PyPi
+          #   working-directory: ./bindings/python
+          #   run: |
+          #     pip install twine
+          #     twine upload dist/* -u __token__ -p "$PYPI_TOKEN"

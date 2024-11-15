@@ -70,9 +70,9 @@ fn tokenize(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResul
 pub struct PyOffsetReferential(OffsetReferential);
 impl FromPyObject<'_> for PyOffsetReferential {
     fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let s = obj.extract::<&str>()?;
+        let s = obj.extract::<String>()?;
 
-        Ok(Self(match s {
+        Ok(Self(match s.as_ref() {
             "original" => Ok(OffsetReferential::Original),
             "normalized" => Ok(OffsetReferential::Normalized),
             _ => Err(exceptions::PyValueError::new_err(
@@ -86,9 +86,9 @@ impl FromPyObject<'_> for PyOffsetReferential {
 pub struct PyOffsetType(OffsetType);
 impl FromPyObject<'_> for PyOffsetType {
     fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let s = obj.extract::<&str>()?;
+        let s = obj.extract::<String>()?;
 
-        Ok(Self(match s {
+        Ok(Self(match s.as_ref() {
             "byte" => Ok(OffsetType::Byte),
             "char" => Ok(OffsetType::Char),
             _ => Err(exceptions::PyValueError::new_err(

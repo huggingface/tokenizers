@@ -313,8 +313,8 @@ impl PyBpeTrainer {
         let mut builder = tk::models::bpe::BpeTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "vocab_size" => builder = builder.vocab_size(val.extract()?),
                     "min_frequency" => builder = builder.min_frequency(val.extract()?),
                     "show_progress" => builder = builder.show_progress(val.extract()?),
@@ -520,8 +520,8 @@ impl PyWordPieceTrainer {
         let mut builder = tk::models::wordpiece::WordPieceTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "vocab_size" => builder = builder.vocab_size(val.extract()?),
                     "min_frequency" => builder = builder.min_frequency(val.extract()?),
                     "show_progress" => builder = builder.show_progress(val.extract()?),
@@ -661,8 +661,8 @@ impl PyWordLevelTrainer {
 
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "vocab_size" => {
                         builder.vocab_size(val.extract()?);
                     }
@@ -828,8 +828,8 @@ impl PyUnigramTrainer {
         let mut builder = tk::models::unigram::UnigramTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "vocab_size" => builder.vocab_size(val.extract()?),
                     "show_progress" => builder.show_progress(val.extract()?),
                     "n_sub_iterations" => builder.n_sub_iterations(val.extract()?),

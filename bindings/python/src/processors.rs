@@ -313,7 +313,7 @@ impl From<PyTemplate> for Template {
 
 impl FromPyObject<'_> for PyTemplate {
     fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
-        if let Ok(s) = ob.extract::<&str>() {
+        if let Ok(s) = ob.extract::<String>() {
             Ok(Self(
                 s.try_into().map_err(exceptions::PyValueError::new_err)?,
             ))

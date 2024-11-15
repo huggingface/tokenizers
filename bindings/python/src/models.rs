@@ -276,8 +276,8 @@ impl PyBPE {
     ) -> PyResult<(Self, PyModel)> {
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "cache_capacity" => builder = builder.cache_capacity(value.extract()?),
                     "dropout" => {
                         if let Some(dropout) = value.extract()? {
@@ -581,8 +581,8 @@ impl PyWordPiece {
     ) -> PyResult<(Self, PyModel)> {
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "unk_token" => {
                         builder = builder.unk_token(val.extract()?);
                     }

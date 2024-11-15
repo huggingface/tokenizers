@@ -184,9 +184,8 @@ macro_rules! getter {
         let super_ = $self.as_ref();
         if let PyNormalizerTypeWrapper::Single(ref norm) = super_.normalizer {
             let wrapper = norm.read().unwrap();
-            if let PyNormalizerWrapper::Wrapped(NormalizerWrapper::$variant(o)) = (*wrapper).clone()
-            {
-                o.$name
+            if let PyNormalizerWrapper::Wrapped(NormalizerWrapper::$variant(o)) = (&*wrapper) {
+                o.$name.clone()
             } else {
                 unreachable!()
             }
@@ -538,7 +537,7 @@ impl PyReplace {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct CustomNormalizer {
     inner: PyObject,
 }
@@ -581,7 +580,7 @@ impl<'de> Deserialize<'de> for CustomNormalizer {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyNormalizerWrapper {
     Custom(CustomNormalizer),
