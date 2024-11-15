@@ -39,6 +39,19 @@ We provide bindings to the following languages (more to come!):
   - [Python](https://github.com/huggingface/tokenizers/tree/main/bindings/python)
   - [Node.js](https://github.com/huggingface/tokenizers/tree/main/bindings/node)
   - [Ruby](https://github.com/ankane/tokenizers-ruby) (Contributed by @ankane, external repo)
+
+## Installation
+
+You can install from source using:
+```bash
+pip install git+https://github.com/huggingface/tokenizers.git#subdirectory=bindings/python
+```
+
+our install the released versions with
+
+```bash
+pip install tokenizers
+```
  
 ## Quick example using Python:
 
