@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::iter::FromIterator;
+
+use tokenizers::decoders::byte_fallback::ByteFallback;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::normalizers::{Sequence, Strip, NFC};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
@@ -56,6 +60,65 @@ fn load_tokenizer() {
 
     let decoded = tokenizer.decode(&ids, false).unwrap();
     assert_eq!(decoded, example);
+}
+
+#[test]
+fn streaming_tokenizer() {
+    let tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();
+
+    let mut decode_stream = tokenizer.decode_stream(false);
+    assert_eq!(decode_stream.step(713).unwrap(), Some("This".to_string()));
+    assert_eq!(decode_stream.step(16).unwrap(), Some(" is".to_string()));
+    assert_eq!(decode_stream.step(41).unwrap(), Some(" an".to_string()));
+    assert_eq!(
+        decode_stream.step(1246).unwrap(),
+        Some(" example".to_string())
+    );
+
+    let tokenizer = Tokenizer::from_file("data/albert-base-v1-tokenizer.json").unwrap();
+    let encoded = tokenizer.encode("This is an example", false).unwrap();
+    assert_eq!(encoded.get_ids(), &[48, 25, 40, 823]);
+    let mut decode_stream = tokenizer.decode_stream(false);
+    // No space anymore
+    assert_eq!(decode_stream.step(25).unwrap(), Some("is".to_string()));
+    let mut decode_stream = tokenizer.decode_stream(false);
+    assert_eq!(decode_stream.step(48).unwrap(), Some("this".to_string()));
+    assert_eq!(decode_stream.step(25).unwrap(), Some(" is".to_string()));
+    assert_eq!(decode_stream.step(40).unwrap(), Some(" an".to_string()));
+    assert_eq!(
+        decode_stream.step(823).unwrap(),
+        Some(" example".to_string())
+    );
+
+    // None example
+    let vocab = HashMap::from_iter([
+        ("<0x20>".to_string(), 0),
+        ("<0xC3>".to_string(), 1),
+        ("<0xA9>".to_string(), 2),
+        (" This".to_string(), 3),
+    ]);
+    let merges = vec![];
+    let bpe = BPE::builder()
+        .vocab_and_merges(vocab, merges)
+        .byte_fallback(true)
+        .build()
+        .unwrap();
+    let tokenizer = TokenizerBuilder::new()
+        .with_model(bpe)
+        .with_normalizer(Some(Sequence::new(vec![
+            Strip::new(true, true).into(),
+            NFC.into(),
+        ])))
+        .with_pre_tokenizer(Some(ByteLevel::default()))
+        .with_post_processor(Some(ByteLevel::default()))
+        .with_decoder(Some(ByteFallback::default()))
+        .build()
+        .unwrap();
+    let mut decode_stream = tokenizer.decode_stream(false);
+    assert_eq!(decode_stream.step(0).unwrap(), Some(" ".to_string()));
+    assert_eq!(decode_stream.step(1).unwrap(), None);
+    assert_eq!(decode_stream.step(2).unwrap(), Some("é".to_string()));
+    assert_eq!(decode_stream.step(2).unwrap(), None);
 }
 
 #[test]
