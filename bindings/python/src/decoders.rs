@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use crate::pre_tokenizers::from_string;
+use crate::tokenizer::PyTokenizer;
 use crate::utils::PyPattern;
 use pyo3::exceptions;
 use pyo3::prelude::*;
@@ -590,7 +591,69 @@ pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBPEDecoder>()?;
     m.add_class::<PyCTCDecoder>()?;
     m.add_class::<PySequenceDecoder>()?;
+    m.add_class::<PyDecodeStream>()?;
     Ok(())
+}
+
+/// Class needed for streaming decode
+///
+#[pyclass(module = "tokenizers.decoders", name = "DecodeStream")]
+#[derive(Clone)]
+pub struct PyDecodeStream {
+    /// Regular decode option that is kept throughout.
+    skip_special_tokens: bool,
+    /// A temporary buffer of the necessary token_ids needed
+    /// to produce valid string chunks.
+    /// This typically contains 3 parts:
+    ///  - read
+    ///  - prefix
+    ///  - rest
+    ///
+    /// Read is the bit necessary to surround the prefix
+    /// so decoding the whole ids produces a valid prefix.
+    /// Prefix is the previously produced string, kept around to trim off of
+    /// the next valid chunk
+    ids: Vec<u32>,
+    /// The previously returned chunk that needs to be discarded from the
+    /// decoding of the current ids to produce the next chunk
+    prefix: String,
+    /// The index within the ids corresponding to the prefix so we can drain
+    /// correctly
+    prefix_index: usize,
+    /// We need to keep 2 prefixes.
+    /// Prefix is the second one that was already emitted to discard the part
+    /// of the text of all the ids
+    /// read is the prefix kept only for starting side effects of the prefix
+    read_index: usize,
+}
+
+#[pymethods]
+impl PyDecodeStream {
+    #[new]
+    #[pyo3(signature = (skip_special_tokens), text_signature = "(self, skip_special_tokens)")]
+    fn new(skip_special_tokens: bool) -> Self {
+        PyDecodeStream {
+            skip_special_tokens,
+            ids: vec![],
+            prefix: "".to_string(),
+            prefix_index: 0,
+            read_index: 0,
+        }
+    }
+
+    #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
+    fn step(&mut self, tokenizer: &PyTokenizer, id: u32) -> PyResult<Option<String>> {
+        ToPyResult(tk::tokenizer::step_decode_stream(
+            &tokenizer.tokenizer,
+            id,
+            self.skip_special_tokens,
+            &mut self.ids,
+            &mut self.prefix,
+            &mut self.prefix_index,
+            &mut self.read_index,
+        ))
+        .into()
+    }
 }
 
 #[cfg(test)]
