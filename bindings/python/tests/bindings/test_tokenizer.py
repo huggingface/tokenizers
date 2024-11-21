@@ -153,8 +153,6 @@ class TestTokenizer:
         assert len(output) == 2
 
     def test_encode_formats(self, bert_files):
-        print("Broken by the change from std::usize::Max to usixeMax")
-        return 0
         with pytest.deprecated_call():
             tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
 
