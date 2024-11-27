@@ -1,6 +1,6 @@
 [project]
 name = 'tokenizers'
-requires-python = '>=3.7'
+requires-python = '>=3.9'
 authors = [
     {name = 'Nicolas Patry', email = 'patry.nicolas@protonmail.com'},
     {name = 'Anthony Moi', email = 'anthony@huggingface.co'}
