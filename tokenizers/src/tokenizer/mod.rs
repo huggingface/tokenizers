@@ -1106,7 +1106,7 @@ where
         }
         let new_text = &string[prefix.len()..].to_string();
         let new_prefix_index = ids.len() - *prefix_index;
-        *ids = ids.drain(*read_index..).collect();
+        *ids = ids.drain(*prefix_index..).collect();
         *prefix = tokenizer.decode(ids, skip_special_tokens)?;
         *read_index = *prefix_index;
         *prefix_index = new_prefix_index;
