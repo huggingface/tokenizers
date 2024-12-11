@@ -1616,4 +1616,23 @@ mod test {
         let decoded = tokenizer.decode(encoded.get_ids(), false);
         assert_eq!(decoded.unwrap(), "Hey! how is this token: д")
     }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn test_decode_stream_step_no_panic() {
+        use std::panic;
+
+        use crate::Tokenizer;
+
+        let tokenizer =
+            Tokenizer::from_pretrained("meta-llama/Meta-Llama-3-8B", None).unwrap();
+        let mut decode_stream = tokenizer.decode_stream(false);
+
+        // "A B C D E F G H I J"
+        let output_tokens = vec![32, 426, 356, 423, 469, 435, 480, 473, 358, 622];
+        for token in output_tokens {
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| decode_stream.step(token)));
+            assert!(result.is_ok());
+        }
+    }
 }
