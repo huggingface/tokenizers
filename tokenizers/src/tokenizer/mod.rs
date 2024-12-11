@@ -1624,15 +1624,51 @@ mod test {
 
         use crate::Tokenizer;
 
-        let tokenizer =
-            Tokenizer::from_pretrained("meta-llama/Meta-Llama-3-8B", None).unwrap();
-        let mut decode_stream = tokenizer.decode_stream(false);
+        let tokenizer = Tokenizer::from_pretrained("meta-llama/Meta-Llama-3-8B", None).unwrap();
 
         // "A B C D E F G H I J"
+        let mut decode_stream = tokenizer.decode_stream(false);
         let output_tokens = vec![32, 426, 356, 423, 469, 435, 480, 473, 358, 622];
-        for token in output_tokens {
-            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| decode_stream.step(token)));
+        let expected_outputs = vec![
+            Some("A".to_string()),
+            Some(" B".to_string()),
+            Some(" C".to_string()),
+            Some(" D".to_string()),
+            Some(" E".to_string()),
+            Some(" F".to_string()),
+            Some(" G".to_string()),
+            Some(" H".to_string()),
+            Some(" I".to_string()),
+            Some(" J".to_string()),
+        ];
+        for (i, &token) in output_tokens.iter().enumerate() {
+            let maybe_panic =
+                panic::catch_unwind(panic::AssertUnwindSafe(|| decode_stream.step(token)));
+            assert!(maybe_panic.is_ok());
+            let result = maybe_panic.unwrap();
             assert!(result.is_ok());
+            assert_eq!(result.unwrap(), expected_outputs[i]);
+        }
+
+        // "삥뽕빵" (Korean words composed of 2-3 tokens: [80690, 98], [167, 121, 243], and [102457, 113])
+        let mut decode_stream = tokenizer.decode_stream(false);
+        let output_tokens = vec![80690, 98, 167, 121, 243, 102457, 113];
+        let expected_outputs = vec![
+            None,
+            Some("삥".to_string()),
+            None,
+            None,
+            Some("뽕".to_string()),
+            None,
+            Some("빵".to_string()),
+        ];
+        for (i, &token) in output_tokens.iter().enumerate() {
+            let maybe_panic =
+                panic::catch_unwind(panic::AssertUnwindSafe(|| decode_stream.step(token)));
+            assert!(maybe_panic.is_ok());
+            let result = maybe_panic.unwrap();
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), expected_outputs[i]);
         }
     }
 }
