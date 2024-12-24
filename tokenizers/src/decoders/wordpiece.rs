@@ -47,8 +47,8 @@ impl Decoder for WordPiece {
     fn decode_chain(&self, mut tokens: Vec<String>) -> Result<Vec<String>> {
         for (i, token) in tokens.iter_mut().enumerate() {
             if i != 0 {
-                if token.starts_with(&self.prefix) {
-                    *token = token.replacen(&self.prefix, "", 1);
+                if let Some(tk) = token.strip_prefix(&self.prefix) {
+                    *token = tk.to_string();
                 } else {
                     *token = format!(" {token}");
                 }
