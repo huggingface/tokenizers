@@ -459,11 +459,10 @@ impl BpeTrainer {
                 break;
             }
 
-            if queue.is_empty() {
+            let Some(mut top) = queue.pop() else {
                 break;
-            }
+            };
 
-            let mut top = queue.pop().unwrap();
             if top.count != pair_counts[&top.pair] as u64 {
                 top.count = pair_counts[&top.pair] as u64;
                 queue.push(top);
