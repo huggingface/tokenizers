@@ -509,7 +509,7 @@ impl BpeTrainer {
             // Build new token
             if let Some(prefix) = &self.continuing_subword_prefix {
                 if part_b.starts_with(prefix) {
-                    let prefix_byte_len = prefix.chars().map(|c| c.len_utf8()).sum();
+                    let prefix_byte_len = prefix.len();
                     part_b = part_b[prefix_byte_len..].to_string();
                 }
             }
