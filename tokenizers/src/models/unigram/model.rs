@@ -307,22 +307,15 @@ impl Unigram {
         while ends_at > 0 {
             let node = &best_path_ends_at[ends_at];
             let starts_at = node.starts_at.unwrap();
-            if self.fuse_unk
-                && self.unk_id.is_some()
-                && node.id == self.unk_id.ok_or(UnigramError::MissingUnkId)?
-            {
-                token.push(
-                    String::from_utf8((sentence.as_bytes()[starts_at..ends_at]).to_vec()).unwrap(),
-                );
+            if self.fuse_unk && Some(node.id) == self.unk_id {
+                token.push(sentence[starts_at..ends_at].to_string());
             } else {
                 if !token.is_empty() {
                     token.reverse();
                     results.push(token.concat());
                     token = vec![];
                 }
-                results.push(
-                    String::from_utf8((sentence.as_bytes()[starts_at..ends_at]).to_vec()).unwrap(),
-                );
+                results.push(sentence[starts_at..ends_at].to_string());
             }
             ends_at = starts_at;
         }

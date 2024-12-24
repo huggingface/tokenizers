@@ -296,15 +296,12 @@ impl AddedVocabulary {
                 )
             };
             // Make sure we modify the previous entry
-            self.added_tokens_map
+            *self
+                .added_tokens_map
                 .entry(token.content.clone())
-                .and_modify(|old_id| *old_id = new_id)
-                .or_insert_with(|| new_id);
+                .or_default() = new_id;
             // Update the current revert operation
-            self.added_tokens_map_r
-                .entry(new_id)
-                .and_modify(|t| *t = token.clone())
-                .or_insert_with(|| token.clone());
+            *self.added_tokens_map_r.entry(new_id).or_default() = token.clone();
             // Make sure to remove previous entry (if the token gets a new id)
 
             // Finally add the token to the classic set if special
