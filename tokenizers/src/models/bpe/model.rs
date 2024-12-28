@@ -460,7 +460,7 @@ impl BPE {
         Ok(word)
     }
 
-    fn word_to_tokens<'a, 'b: 'a>(&'a self, word: &'b Word) -> impl Iterator<Item = Token> + 'a {
+    fn word_to_tokens<'a>(&'a self, word: &'a Word) -> impl Iterator<Item = Token> + 'a {
         word.get_chars_iter()
             .zip(word.get_offsets_iter())
             .map(move |(id, offsets)| Token::new(id, self.vocab_r[&id].clone(), offsets))
