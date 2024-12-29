@@ -115,8 +115,7 @@ impl Unigram {
         let mut min_score = f64::INFINITY;
         for (id, (token, score)) in vocab.iter().enumerate() {
             token_to_ids.insert(token.to_string(), id as u32);
-            let bytes: Vec<u8> = token.bytes().collect();
-            builder.push(&bytes);
+            builder.push(token.as_bytes());
             if score < &min_score {
                 min_score = *score;
             }
@@ -350,7 +349,7 @@ impl Unigram {
                         results.push(token);
                         token = String::new();
                     }
-                    results.push(item.to_string());
+                    results.push(item);
                 }
             }
             if !token.is_empty() {
