@@ -471,7 +471,7 @@ impl BPE {
             if let Some(id) = self.vocab.get(sequence) {
                 return Ok(vec![Token::new(
                     *id,
-                    sequence.to_string().clone(),
+                    sequence.to_string(),
                     (0, sequence.len()),
                 )]);
             }

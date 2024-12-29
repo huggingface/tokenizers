@@ -45,10 +45,10 @@ pub fn cleanup(dirty_input: &str) -> String {
 
 impl Decoder for WordPiece {
     fn decode_chain(&self, mut tokens: Vec<String>) -> Result<Vec<String>> {
-        tokens
+        for (i, token) in tokens
             .iter_mut()
             .enumerate()
-            .map(|(i, token)| {
+            {
                 if i != 0 {
                     if token.starts_with(&self.prefix) {
                         *token = token.replacen(&self.prefix, "", 1);
@@ -59,9 +59,8 @@ impl Decoder for WordPiece {
                 if self.cleanup {
                     *token = cleanup(token);
                 }
-                Ok(token.to_string())
-            })
-            .collect::<Result<_>>()
+            }
+        Ok(tokens)
     }
 }
 
