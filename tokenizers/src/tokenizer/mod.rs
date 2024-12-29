@@ -233,7 +233,7 @@ impl<'s> From<&'s [String]> for InputSequence<'s> {
     }
 }
 
-impl<'s> From<Vec<String>> for InputSequence<'s> {
+impl From<Vec<String>> for InputSequence<'_> {
     fn from(input: Vec<String>) -> Self {
         Self::PreTokenizedOwned(Cow::Owned(input))
     }
