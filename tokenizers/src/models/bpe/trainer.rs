@@ -342,13 +342,13 @@ impl BpeTrainer {
                     // Add the `continuing_subword_prefix` if relevant
                     if !is_first {
                         if let Some(prefix) = &self.continuing_subword_prefix {
-                            s = format!("{prefix}{s}");
+                            s.insert_str(0, prefix);
                         }
                     }
                     // Add the `end_of_word_suffix` if relevant
                     if is_last {
                         if let Some(suffix) = &self.end_of_word_suffix {
-                            s = format!("{s}{suffix}");
+                            s.push_str(suffix);
                         }
                     }
 
@@ -504,13 +504,13 @@ impl BpeTrainer {
             }
 
             let part_a = &id_to_word[top.pair.0 as usize];
-            let mut part_b = id_to_word[top.pair.1 as usize].to_owned();
+            let mut part_b = id_to_word[top.pair.1 as usize].as_str();
 
             // Build new token
             if let Some(prefix) = &self.continuing_subword_prefix {
                 if part_b.starts_with(prefix) {
                     let prefix_byte_len = prefix.len();
-                    part_b = part_b[prefix_byte_len..].to_string();
+                    part_b = &part_b[prefix_byte_len..];
                 }
             }
             let new_token = format!("{part_a}{part_b}");

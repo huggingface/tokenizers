@@ -428,7 +428,7 @@ impl UnigramTrainer {
             new_pieces.push(pieces[id].clone());
         }
 
-        new_pieces.to_vec()
+        new_pieces
     }
 
     /// Update the progress bar with the new provided length and message
