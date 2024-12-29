@@ -54,38 +54,73 @@ impl PyNormalizer {
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
         Ok(match self.normalizer {
-            PyNormalizerTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_py(py),
+            PyNormalizerTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
             PyNormalizerTypeWrapper::Single(ref inner) => match &*inner.as_ref().read().unwrap() {
-                PyNormalizerWrapper::Custom(_) => Py::new(py, base)?.into_py(py),
+                PyNormalizerWrapper::Custom(_) => {
+                    Py::new(py, base)?.into_pyobject(py)?.into_any().into()
+                }
                 PyNormalizerWrapper::Wrapped(ref inner) => match inner {
-                    NormalizerWrapper::Sequence(_) => {
-                        Py::new(py, (PySequence {}, base))?.into_py(py)
-                    }
+                    NormalizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
                     NormalizerWrapper::BertNormalizer(_) => {
-                        Py::new(py, (PyBertNormalizer {}, base))?.into_py(py)
+                        Py::new(py, (PyBertNormalizer {}, base))?
+                            .into_pyobject(py)?
+                            .into_any()
+                            .into()
                     }
-                    NormalizerWrapper::StripNormalizer(_) => {
-                        Py::new(py, (PyStrip {}, base))?.into_py(py)
-                    }
-                    NormalizerWrapper::Prepend(_) => Py::new(py, (PyPrepend {}, base))?.into_py(py),
-                    NormalizerWrapper::ByteLevel(_) => {
-                        Py::new(py, (PyByteLevel {}, base))?.into_py(py)
-                    }
-                    NormalizerWrapper::StripAccents(_) => {
-                        Py::new(py, (PyStripAccents {}, base))?.into_py(py)
-                    }
-                    NormalizerWrapper::NFC(_) => Py::new(py, (PyNFC {}, base))?.into_py(py),
-                    NormalizerWrapper::NFD(_) => Py::new(py, (PyNFD {}, base))?.into_py(py),
-                    NormalizerWrapper::NFKC(_) => Py::new(py, (PyNFKC {}, base))?.into_py(py),
-                    NormalizerWrapper::NFKD(_) => Py::new(py, (PyNFKD {}, base))?.into_py(py),
-                    NormalizerWrapper::Lowercase(_) => {
-                        Py::new(py, (PyLowercase {}, base))?.into_py(py)
-                    }
-                    NormalizerWrapper::Precompiled(_) => {
-                        Py::new(py, (PyPrecompiled {}, base))?.into_py(py)
-                    }
-                    NormalizerWrapper::Replace(_) => Py::new(py, (PyReplace {}, base))?.into_py(py),
-                    NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base))?.into_py(py),
+                    NormalizerWrapper::StripNormalizer(_) => Py::new(py, (PyStrip {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::Prepend(_) => Py::new(py, (PyPrepend {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::StripAccents(_) => Py::new(py, (PyStripAccents {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::NFC(_) => Py::new(py, (PyNFC {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::NFD(_) => Py::new(py, (PyNFD {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::NFKC(_) => Py::new(py, (PyNFKC {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::NFKD(_) => Py::new(py, (PyNFKD {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::Lowercase(_) => Py::new(py, (PyLowercase {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::Precompiled(_) => Py::new(py, (PyPrecompiled {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::Replace(_) => Py::new(py, (PyReplace {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
                 },
             },
         })
@@ -114,7 +149,7 @@ impl PyNormalizer {
                 e
             ))
         })?;
-        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -371,8 +406,8 @@ impl PySequence {
         ))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
-        PyTuple::new_bound(py, [PyList::empty_bound(py)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
+        PyTuple::new(py, [PyList::empty(py)])
     }
 
     fn __len__(&self) -> usize {

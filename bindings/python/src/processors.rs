@@ -41,15 +41,26 @@ impl PyPostProcessor {
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
         Ok(match self.processor.as_ref() {
-            PostProcessorWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?.into_py(py),
-            PostProcessorWrapper::Bert(_) => Py::new(py, (PyBertProcessing {}, base))?.into_py(py),
-            PostProcessorWrapper::Roberta(_) => {
-                Py::new(py, (PyRobertaProcessing {}, base))?.into_py(py)
-            }
-            PostProcessorWrapper::Template(_) => {
-                Py::new(py, (PyTemplateProcessing {}, base))?.into_py(py)
-            }
-            PostProcessorWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_py(py),
+            PostProcessorWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            PostProcessorWrapper::Bert(_) => Py::new(py, (PyBertProcessing {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            PostProcessorWrapper::Roberta(_) => Py::new(py, (PyRobertaProcessing {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            PostProcessorWrapper::Template(_) => Py::new(py, (PyTemplateProcessing {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            PostProcessorWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
         })
     }
 }
@@ -78,7 +89,7 @@ impl PyPostProcessor {
                 e
             ))
         })?;
-        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -176,8 +187,8 @@ impl PyBertProcessing {
         )
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
-        PyTuple::new_bound(py, [("", 0), ("", 0)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
+        PyTuple::new(py, [("", 0), ("", 0)])
     }
 }
 
@@ -226,8 +237,8 @@ impl PyRobertaProcessing {
         )
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
-        PyTuple::new_bound(py, [("", 0), ("", 0)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
+        PyTuple::new(py, [("", 0), ("", 0)])
     }
 }
 
@@ -451,8 +462,8 @@ impl PySequence {
         )
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
-        PyTuple::new_bound(py, [PyList::empty_bound(py)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
+        PyTuple::new(py, [PyList::empty(py)])
     }
 }
 

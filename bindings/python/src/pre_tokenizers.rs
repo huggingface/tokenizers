@@ -49,45 +49,69 @@ impl PyPreTokenizer {
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
         Ok(match &self.pretok {
-            PyPreTokenizerTypeWrapper::Sequence(_) => {
-                Py::new(py, (PySequence {}, base))?.into_py(py)
-            }
+            PyPreTokenizerTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
             PyPreTokenizerTypeWrapper::Single(ref inner) => {
                 match &*inner.as_ref().read().unwrap() {
-                    PyPreTokenizerWrapper::Custom(_) => Py::new(py, base)?.into_py(py),
+                    PyPreTokenizerWrapper::Custom(_) => {
+                        Py::new(py, base)?.into_pyobject(py)?.into_any().into()
+                    }
                     PyPreTokenizerWrapper::Wrapped(inner) => match inner {
-                        PreTokenizerWrapper::Whitespace(_) => {
-                            Py::new(py, (PyWhitespace {}, base))?.into_py(py)
-                        }
-                        PreTokenizerWrapper::Split(_) => {
-                            Py::new(py, (PySplit {}, base))?.into_py(py)
-                        }
+                        PreTokenizerWrapper::Whitespace(_) => Py::new(py, (PyWhitespace {}, base))?
+                            .into_pyobject(py)?
+                            .into_any()
+                            .into(),
+                        PreTokenizerWrapper::Split(_) => Py::new(py, (PySplit {}, base))?
+                            .into_pyobject(py)?
+                            .into_any()
+                            .into(),
                         PreTokenizerWrapper::Punctuation(_) => {
-                            Py::new(py, (PyPunctuation {}, base))?.into_py(py)
+                            Py::new(py, (PyPunctuation {}, base))?
+                                .into_pyobject(py)?
+                                .into_any()
+                                .into()
                         }
-                        PreTokenizerWrapper::Sequence(_) => {
-                            Py::new(py, (PySequence {}, base))?.into_py(py)
-                        }
-                        PreTokenizerWrapper::Metaspace(_) => {
-                            Py::new(py, (PyMetaspace {}, base))?.into_py(py)
-                        }
+                        PreTokenizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
+                            .into_pyobject(py)?
+                            .into_any()
+                            .into(),
+                        PreTokenizerWrapper::Metaspace(_) => Py::new(py, (PyMetaspace {}, base))?
+                            .into_pyobject(py)?
+                            .into_any()
+                            .into(),
                         PreTokenizerWrapper::Delimiter(_) => {
-                            Py::new(py, (PyCharDelimiterSplit {}, base))?.into_py(py)
+                            Py::new(py, (PyCharDelimiterSplit {}, base))?
+                                .into_pyobject(py)?
+                                .into_any()
+                                .into()
                         }
                         PreTokenizerWrapper::WhitespaceSplit(_) => {
-                            Py::new(py, (PyWhitespaceSplit {}, base))?.into_py(py)
+                            Py::new(py, (PyWhitespaceSplit {}, base))?
+                                .into_pyobject(py)?
+                                .into_any()
+                                .into()
                         }
-                        PreTokenizerWrapper::ByteLevel(_) => {
-                            Py::new(py, (PyByteLevel {}, base))?.into_py(py)
-                        }
+                        PreTokenizerWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
+                            .into_pyobject(py)?
+                            .into_any()
+                            .into(),
                         PreTokenizerWrapper::BertPreTokenizer(_) => {
-                            Py::new(py, (PyBertPreTokenizer {}, base))?.into_py(py)
+                            Py::new(py, (PyBertPreTokenizer {}, base))?
+                                .into_pyobject(py)?
+                                .into_any()
+                                .into()
                         }
-                        PreTokenizerWrapper::Digits(_) => {
-                            Py::new(py, (PyDigits {}, base))?.into_py(py)
-                        }
+                        PreTokenizerWrapper::Digits(_) => Py::new(py, (PyDigits {}, base))?
+                            .into_pyobject(py)?
+                            .into_any()
+                            .into(),
                         PreTokenizerWrapper::UnicodeScripts(_) => {
-                            Py::new(py, (PyUnicodeScripts {}, base))?.into_py(py)
+                            Py::new(py, (PyUnicodeScripts {}, base))?
+                                .into_pyobject(py)?
+                                .into_any()
+                                .into()
                         }
                     },
                 }
@@ -118,7 +142,7 @@ impl PyPreTokenizer {
                 e
             ))
         })?;
-        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -365,8 +389,8 @@ impl PySplit {
         ))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
-        PyTuple::new_bound(py, [" ", "removed"])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
+        PyTuple::new(py, [" ", "removed"])
     }
 }
 
@@ -398,8 +422,8 @@ impl PyCharDelimiterSplit {
         ))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
-        PyTuple::new_bound(py, [" "])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
+        PyTuple::new(py, [" "])
     }
 }
 
@@ -460,8 +484,8 @@ impl PySequence {
         ))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
-        PyTuple::new_bound(py, [PyList::empty_bound(py)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
+        PyTuple::new(py, [PyList::empty(py)])
     }
 
     fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
@@ -823,7 +847,12 @@ mod test {
 
         let obj = Python::with_gil(|py| {
             let py_wsp = PyPreTokenizer::new(Whitespace {}.into());
-            let obj: PyObject = Py::new(py, py_wsp).unwrap().into_py(py);
+            let obj: PyObject = Py::new(py, py_wsp)
+                .unwrap()
+                .into_pyobject(py)
+                .unwrap()
+                .into_any()
+                .into();
             obj
         });
         let py_seq: PyPreTokenizerWrapper =

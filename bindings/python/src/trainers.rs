@@ -29,16 +29,22 @@ impl PyTrainer {
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
         Ok(match *self.trainer.as_ref().read().unwrap() {
-            TrainerWrapper::BpeTrainer(_) => Py::new(py, (PyBpeTrainer {}, base))?.into_py(py),
-            TrainerWrapper::WordPieceTrainer(_) => {
-                Py::new(py, (PyWordPieceTrainer {}, base))?.into_py(py)
-            }
-            TrainerWrapper::WordLevelTrainer(_) => {
-                Py::new(py, (PyWordLevelTrainer {}, base))?.into_py(py)
-            }
-            TrainerWrapper::UnigramTrainer(_) => {
-                Py::new(py, (PyUnigramTrainer {}, base))?.into_py(py)
-            }
+            TrainerWrapper::BpeTrainer(_) => Py::new(py, (PyBpeTrainer {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            TrainerWrapper::WordPieceTrainer(_) => Py::new(py, (PyWordPieceTrainer {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            TrainerWrapper::WordLevelTrainer(_) => Py::new(py, (PyWordLevelTrainer {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            TrainerWrapper::UnigramTrainer(_) => Py::new(py, (PyUnigramTrainer {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
         })
     }
 }
@@ -51,7 +57,7 @@ impl PyTrainer {
                 e
             ))
         })?;
-        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
