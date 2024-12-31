@@ -100,7 +100,7 @@ impl PyAddedToken {
     }
 
     pub fn as_pydict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         let token = self.get_token();
 
         dict.set_item("content", token.content)?;
@@ -347,6 +347,7 @@ impl From<PyArrayUnicode> for tk::InputSequence<'_> {
 }
 
 struct PyArrayStr(Vec<String>);
+
 impl FromPyObject<'_> for PyArrayStr {
     fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         let array = ob.downcast::<PyArray1<PyObject>>()?;
@@ -495,7 +496,7 @@ impl PyTokenizer {
                 e
             ))
         })?;
-        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -513,9 +514,12 @@ impl PyTokenizer {
         }
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
-        let model = PyModel::from(BPE::default()).into_py(py);
-        PyTuple::new_bound(py, vec![model])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
+        let model: PyObject = PyModel::from(BPE::default())
+            .into_pyobject(py)?
+            .into_any()
+            .into();
+        PyTuple::new(py, vec![model])
     }
 
     /// Instantiate a new :class:`~tokenizers.Tokenizer` from the given JSON string.
@@ -594,14 +598,14 @@ impl PyTokenizer {
         token: Option<String>,
     ) -> PyResult<Self> {
         let path = Python::with_gil(|py| -> PyResult<String> {
-            let huggingface_hub = PyModule::import_bound(py, intern!(py, "huggingface_hub"))?;
+            let huggingface_hub = PyModule::import(py, intern!(py, "huggingface_hub"))?;
             let hf_hub_download = huggingface_hub.getattr(intern!(py, "hf_hub_download"))?;
             let kwargs = [
                 (intern!(py, "repo_id"), identifier),
                 (intern!(py, "filename"), "tokenizer.json"),
                 (intern!(py, "revision"), &revision),
             ]
-            .into_py_dict_bound(py);
+            .into_py_dict(py)?;
             if let Some(token) = token {
                 kwargs.set_item(intern!(py, "token"), token)?;
             }
@@ -796,7 +800,7 @@ impl PyTokenizer {
     #[getter]
     fn get_truncation<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
         self.tokenizer.get_truncation().map_or(Ok(None), |params| {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
 
             dict.set_item("max_length", params.max_length)?;
             dict.set_item("stride", params.stride)?;
@@ -906,7 +910,7 @@ impl PyTokenizer {
     #[getter]
     fn get_padding<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
         self.tokenizer.get_padding().map_or(Ok(None), |params| {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
 
             dict.set_item(
                 "length",
@@ -1342,7 +1346,7 @@ impl PyTokenizer {
                 if let Ok(s) = element.downcast::<PyString>() {
                     itertools::Either::Right(std::iter::once(s.to_cow().map(|s| s.into_owned())))
                 } else {
-                    match element.iter() {
+                    match element.try_iter() {
                         Ok(iter) => itertools::Either::Left(
                             iter.map(|i| i?.extract::<String>())
                                 .collect::<Vec<_>>()
