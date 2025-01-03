@@ -36,6 +36,7 @@ impl PyModel {
         let base = self.clone();
         Ok(match *self.model.as_ref().read().unwrap() {
             ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?.into_py(py),
+            ModelWrapper::BacktrackBpe(_) => Py::new(py, (PyBacktrackBPE {}, base))?.into_py(py),
             ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base))?.into_py(py),
             ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base))?.into_py(py),
             ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base))?.into_py(py),
@@ -559,6 +560,145 @@ impl PyBPE {
         Ok(())
     }
 }
+
+#[pyclass(module = "bpe")]
+struct PyBacktrackBpe {}
+
+#[pymethods]
+impl PyBacktrackBpe {
+    #[getter]
+    fn get_dropout(self_: PyRef<Self>) -> Option<f32> {
+        getter!(self_, BPE, dropout)
+    }
+
+    #[setter]
+    fn set_dropout(self_: PyRef<Self>, dropout: Option<f32>) {
+        setter!(self_, BPE, dropout, dropout);
+    }
+
+    #[getter]
+    fn get_unk_token(self_: PyRef<Self>) -> Option<String> {
+        getter!(self_, BPE, unk_token.clone())
+    }
+
+    #[setter]
+    fn set_unk_token(self_: PyRef<Self>, unk_token: Option<String>) {
+        setter!(self_, BPE, unk_token, unk_token);
+    }
+    #[new]
+    #[pyo3(
+        signature = (vocab=None, merges=None, **kwargs),
+        text_signature = "(self, vocab=None, merges=None, dropout=None, unk_token=None)")]
+    fn new(
+        py: Python<'_>,
+        vocab: Option<PyVocab>,
+        merges: Option<PyMerges>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<(Self, PyModel)> {
+        if (vocab.is_some() && merges.is_none()) || (vocab.is_none() && merges.is_some()) {
+            return Err(exceptions::PyValueError::new_err(
+                "`vocab` and `merges` must be both specified",
+            ));
+        }
+
+        let mut builder = BPE::builder();
+        if let (Some(vocab), Some(merges)) = (vocab, merges) {
+            match (vocab, merges) {
+                (PyVocab::Vocab(vocab), PyMerges::Merges(merges)) => {
+                    builder = builder.vocab_and_merges(vocab, merges);
+                }
+                (PyVocab::Filename(vocab_filename), PyMerges::Filename(merges_filename)) => {
+                    deprecation_warning(
+                        py,
+                        "0.9.0",
+                        "BPE.__init__ will not create from files anymore, try `BPE.from_file` instead",
+                    )?;
+                    builder =
+                        builder.files(vocab_filename.to_string(), merges_filename.to_string());
+                }
+                _ => {
+                    return Err(exceptions::PyValueError::new_err(
+                        "`vocab` and `merges` must be both be from memory or both filenames",
+                    ));
+                }
+            }
+        }
+
+        PyBPE::with_builder(builder, kwargs)
+    }
+
+    /// Read a :obj:`vocab.json` and a :obj:`merges.txt` files
+    ///
+    /// This method provides a way to read and parse the content of these files,
+    /// returning the relevant data structures. If you want to instantiate some BPE models
+    /// from memory, this method gives you the expected input from the standard files.
+    ///
+    /// Args:
+    ///     vocab (:obj:`str`):
+    ///         The path to a :obj:`vocab.json` file
+    ///
+    ///     merges (:obj:`str`):
+    ///         The path to a :obj:`merges.txt` file
+    ///
+    /// Returns:
+    ///     A :obj:`Tuple` with the vocab and the merges:
+    ///         The vocabulary and merges loaded into memory
+    #[staticmethod]
+    #[pyo3(text_signature = "(self, vocab, merges)")]
+    fn read_file(vocab: &str, merges: &str) -> PyResult<(Vocab, Merges)> {
+        BPE::read_file(vocab, merges).map_err(|e| {
+            exceptions::PyException::new_err(format!(
+                "Error while reading vocab & merges files: {}",
+                e
+            ))
+        })
+    }
+
+    /// Instantiate a BPE model from the given files.
+    ///
+    /// This method is roughly equivalent to doing::
+    ///
+    ///    vocab, merges = BPE.read_file(vocab_filename, merges_filename)
+    ///    bpe = BPE(vocab, merges)
+    ///
+    /// If you don't need to keep the :obj:`vocab, merges` values lying around,
+    /// this method is more optimized than manually calling
+    /// :meth:`~tokenizers.models.BPE.read_file` to initialize a :class:`~tokenizers.models.BPE`
+    ///
+    /// Args:
+    ///     vocab (:obj:`str`):
+    ///         The path to a :obj:`vocab.json` file
+    ///
+    ///     merges (:obj:`str`):
+    ///         The path to a :obj:`merges.txt` file
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
+    #[classmethod]
+    #[pyo3(signature = (vocab, merges, **kwargs))]
+    #[pyo3(text_signature = "(cls, vocab, merge, **kwargs)")]
+    fn from_file(
+        _cls: &Bound<'_, PyType>,
+        py: Python,
+        vocab: &str,
+        merges: &str,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<Self>> {
+        let (vocab, merges) = BPE::read_file(vocab, merges).map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while reading BPE files: {}", e))
+        })?;
+        Py::new(
+            py,
+            PyBPE::new(
+                py,
+                Some(PyVocab::Vocab(vocab)),
+                Some(PyMerges::Merges(merges)),
+                kwargs,
+            )?,
+        )
+    }
+}
+
 
 /// An implementation of the WordPiece algorithm
 ///

@@ -3,6 +3,7 @@ extern crate criterion;
 
 use criterion::{Criterion, Throughput};
 use tokenizers::Tokenizer;
+use tokenizers::models::backtracking_bpe;
 
 pub fn llama3(c: &mut Criterion) {
     let data = std::fs::read_to_string("data/big.txt").unwrap();
@@ -22,6 +23,19 @@ pub fn llama3(c: &mut Criterion) {
     group.bench_function("llama3-nooffsets", |b| {
         let tokenizer =
             Tokenizer::from_pretrained("meta-llama/Meta-Llama-3.1-8B-Instruct", None).unwrap();
+        let data: Vec<_> = data.lines().collect();
+        let add_special_tokens = false;
+        b.iter(|| {
+            tokenizer
+                .encode_batch(criterion::black_box(data.clone()), add_special_tokens)
+                .unwrap()
+        })
+    });
+
+    group.bench_function("llama3-backtracking", |b| {
+        let vocab = None;
+        let model: backtracking_bpe::BacktrackingBpe = backtracking_bpe::BacktrackingBpe::from_dictionary(vocab, None, None);
+        let tokenizer = Tokenizer::new(model);
         let data: Vec<_> = data.lines().collect();
         let add_special_tokens = false;
         b.iter(|| {

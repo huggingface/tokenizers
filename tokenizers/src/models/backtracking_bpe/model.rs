@@ -103,7 +103,7 @@ impl Default for BacktrackingBpeBuilder {
 }
 
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
-#[derive(Serialize, PartialEq)]
+#[derive(Serialize, PartialEq, Clone) ]
 pub struct BacktrackingBpe {
     /// All the decoded tokens concatenated into? used to build the aho corasick searchers
     all_tokens: Vec<u8>,
@@ -148,6 +148,18 @@ pub struct BacktrackingBpe {
     vocab: Vocab,
     vocab_r: VocabR,
     unk_token: Option<String>,
+}
+
+use std::fmt;
+// Manually implement the Debug trait to exclude the `cache` field
+impl fmt::Debug for BacktrackingBpe {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("BacktrackingBpe")
+            .field("vocab", &self.vocab)
+            .field("vocab_r", &self.vocab_r)
+            // Skipping `cache` field here, it won't be included in debug output
+            .finish()
+    }
 }
 
 impl BacktrackingBpeBuilder {
