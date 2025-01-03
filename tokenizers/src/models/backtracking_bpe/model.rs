@@ -103,7 +103,7 @@ impl Default for BacktrackingBpeBuilder {
 }
 
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
-#[derive(Serialize, PartialEq, Clone) ]
+#[derive(Serialize, PartialEq, Clone)]
 pub struct BacktrackingBpe {
     /// All the decoded tokens concatenated into? used to build the aho corasick searchers
     all_tokens: Vec<u8>,
@@ -529,11 +529,12 @@ impl BacktrackingBpe {
         };
         for token_id in 0..bpe.num_tokens() as u32 {
             let bytes = bpe.token_bytes(token_id);
+            let strs = bytes.iter().map(|b|char::from(*b)).collect::<Vec<_>>();
             let tokens = bpe.encode_via_bitfield(bytes);
             assert_eq!(
                 tokens,
                 vec![token_id],
-                "token {token_id} with bytes {bytes:?} encodes to {tokens:?} instead of to itself"
+                "token {token_id} with bytes {bytes:?} (tokens {strs:?} encodes to {tokens:?} instead of to itself"
             );
         }
         bpe
@@ -682,7 +683,6 @@ impl BacktrackingBpe {
         let next_token = self.next_match(text);
         let mut enc = BacktrackState::new(text, next_token);
         while self.step(&mut enc).is_some() {}
-        println!("_______________________________");
         enc.into_tokens()
     }
 

@@ -11,12 +11,12 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::models::backtracking_bpe::BacktrackingBpe;
 use crate::models::bpe::{BpeTrainer, BPE};
 use crate::models::unigram::{Unigram, UnigramTrainer};
 use crate::models::wordlevel::{WordLevel, WordLevelTrainer};
 use crate::models::wordpiece::{WordPiece, WordPieceTrainer};
 use crate::{AddedToken, Model, Result, Token, Trainer};
-use crate::models::backtracking_bpe::BacktrackingBpe;
 
 /// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
 /// of token ID, smallest to largest.
@@ -62,7 +62,6 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
 #[derive(Serialize, Debug, PartialEq, Clone)]
 #[serde(untagged)]
 pub enum ModelWrapper {
-
     BPE(BPE),
     BacktrackingBpe(BacktrackingBpe),
     // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
@@ -154,7 +153,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.tokenize(tokens),
             Self::BPE(t) => t.tokenize(tokens),
             Self::Unigram(t) => t.tokenize(tokens),
-            Self::BacktrackingBpe(t)  => t.tokenize(tokens),
+            Self::BacktrackingBpe(t) => t.tokenize(tokens),
         }
     }
 
@@ -164,7 +163,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.token_to_id(token),
             Self::BPE(t) => t.token_to_id(token),
             Self::Unigram(t) => t.token_to_id(token),
-            Self::BacktrackingBpe(t)  =>t.token_to_id(token),
+            Self::BacktrackingBpe(t) => t.token_to_id(token),
         }
     }
 
@@ -174,7 +173,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.id_to_token(id),
             Self::BPE(t) => t.id_to_token(id),
             Self::Unigram(t) => t.id_to_token(id),
-            Self::BacktrackingBpe(t)  => t.id_to_token(id),
+            Self::BacktrackingBpe(t) => t.id_to_token(id),
         }
     }
 
@@ -184,7 +183,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.get_vocab(),
             Self::BPE(t) => t.get_vocab(),
             Self::Unigram(t) => t.get_vocab(),
-            Self::BacktrackingBpe(t)  => t.get_vocab(),
+            Self::BacktrackingBpe(t) => t.get_vocab(),
         }
     }
 
@@ -194,7 +193,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.get_vocab_size(),
             Self::BPE(t) => t.get_vocab_size(),
             Self::Unigram(t) => t.get_vocab_size(),
-            Self::BacktrackingBpe(t)  => t.get_vocab_size(),
+            Self::BacktrackingBpe(t) => t.get_vocab_size(),
         }
     }
 
@@ -204,7 +203,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.save(folder, name),
             Self::BPE(t) => t.save(folder, name),
             Self::Unigram(t) => t.save(folder, name),
-            Self::BacktrackingBpe(t)  =>t.save(folder, name),
+            Self::BacktrackingBpe(t) => t.save(folder, name),
         }
     }
 
@@ -214,7 +213,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.get_trainer().into(),
             Self::BPE(t) => t.get_trainer().into(),
             Self::Unigram(t) => t.get_trainer().into(),
-            Self::BacktrackingBpe(t)  => t.get_trainer().into(),
+            Self::BacktrackingBpe(t) => t.get_trainer().into(),
         }
     }
 }
