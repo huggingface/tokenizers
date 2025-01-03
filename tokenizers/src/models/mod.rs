@@ -1,5 +1,6 @@
 //! Popular tokenizer models.
 
+pub mod backtracking_bpe;
 pub mod bpe;
 pub mod unigram;
 pub mod wordlevel;
