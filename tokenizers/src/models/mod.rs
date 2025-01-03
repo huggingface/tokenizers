@@ -101,7 +101,7 @@ impl<'de> Deserialize<'de> for ModelWrapper {
         #[derive(Deserialize)]
         #[serde(untagged)]
         pub enum ModelUntagged {
-            BPE(BPE),
+            BPE(BacktrackingBpe),
             // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
             // with the versions not including the "type"), since WordLevel is a subset of WordPiece
             WordPiece(WordPiece),
@@ -128,7 +128,7 @@ impl<'de> Deserialize<'de> for ModelWrapper {
             ModelHelper::Legacy(value) => {
                 let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
                 match untagged {
-                    ModelUntagged::BPE(bpe) => ModelWrapper::BPE(bpe),
+                    ModelUntagged::BPE(bpe) => ModelWrapper::BacktrackingBpe(bpe),
                     ModelUntagged::WordPiece(bpe) => ModelWrapper::WordPiece(bpe),
                     ModelUntagged::WordLevel(bpe) => ModelWrapper::WordLevel(bpe),
                     ModelUntagged::Unigram(bpe) => ModelWrapper::Unigram(bpe),

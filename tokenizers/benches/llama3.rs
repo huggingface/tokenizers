@@ -29,7 +29,7 @@ pub fn llama3(c: &mut Criterion) {
         let add_special_tokens = false;
         b.iter(|| {
             tokenizer
-                .encode_batch(criterion::black_box(data.clone()), add_special_tokens)
+                .encode_batch_fast(criterion::black_box(data.clone()), add_special_tokens)
                 .unwrap()
         })
     });
@@ -52,22 +52,22 @@ pub fn llama3(c: &mut Criterion) {
         let add_special_tokens = false;
         b.iter(|| {
             tokenizer
-                .encode_batch(criterion::black_box(data.clone()), add_special_tokens)
+                .encode_batch_fast(criterion::black_box(data.clone()), add_special_tokens)
                 .unwrap()
         })
     });
 
-    group.bench_function("llama3-offsets", |b| {
+    group.bench_function("llama3-encode_batch_fast", |b| {
         let tokenizer = Tokenizer::from_pretrained("gpt2", None).unwrap();
         let data: Vec<_> = data.lines().collect();
         let add_special_tokens = false;
         b.iter(|| {
             tokenizer
-                .encode_batch_char_offsets(criterion::black_box(data.clone()), add_special_tokens)
+                .encode_batch_fast(criterion::black_box(data.clone()), add_special_tokens)
                 .unwrap()
         })
     });
-    group.bench_function("llama3-nooffsets", |b| {
+    group.bench_function("llama3-encode_batch", |b| {
         let tokenizer = Tokenizer::from_pretrained("gpt2", None).unwrap();
         let data: Vec<_> = data.lines().collect();
         let add_special_tokens = false;
