@@ -323,7 +323,7 @@ impl BacktrackingBpe {
         let mut start = 0;
         while start < bytes.len() {
             let end = bitfield.successor(start + 1);
-            let token = self.find_token_by_bytes(&bytes[start..end]).expect("");
+            let token = self.find_token_by_bytes(&bytes[start..end]).expect(&format!("Could not convert bytes to tokens for bytes: [{:?}]", bytes.into_iter().map(|b| char::from(*b)).join(",")));
             encoded.push(token);
             start = end;
         }
@@ -745,32 +745,6 @@ impl Model for BacktrackingBpe {
         let order_vocab_iter = OrderedVocabIter::new(&self.vocab_r);
         let serialized = serde_json::to_string(&order_vocab_iter)?;
         vocab_file.write_all(serialized.as_bytes())?;
-        //
-        // // Write merges.txt
-        // let merges_file_name = match name {
-        //     Some(name) => format!("{name}-merges.txt"),
-        //     None => "merges.txt".to_string(),
-        // };
-        //
-        // let merges_path: PathBuf = [folder, Path::new(merges_file_name.as_str())]
-        //     .iter()
-        //     .collect();
-        // let mut merges_file = File::create(&merges_path)?;
-        // let mut merges: Vec<(&Vec<&str, &str>, &u32)> = self
-        //     .merges
-        //     .iter()
-        //     .map(|(pair, (rank, _))| (pair, rank))
-        //     .collect();
-        // merges.sort_unstable_by_key(|k| *k.1);
-        // merges_file.write_all(b"#version: 0.2\n")?;
-        // merges_file.write_all(
-        //     &merges
-        //         .into_iter()
-        //         .flat_map(|(pair, _)| {
-        //             format!("{} {}\n", self.vocab_r[&pair.0], self.vocab_r[&pair.1]).into_bytes()
-        //         })
-        //         .collect::<Vec<_>>()[..],
-        // )?;
         Ok(vec![vocab_path])
         // Ok(vec![vocab_path, merges_path])
     }
@@ -783,7 +757,6 @@ impl Model for BacktrackingBpe {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
 
     #[test]
     fn my_example() {
