@@ -4,7 +4,7 @@ use std::{iter, mem};
 mod model;
 mod serialization;
 pub mod trainer;
-mod word;
+pub mod word;
 
 pub(crate) type Pair = (u32, u32);
 
@@ -79,4 +79,4 @@ where
 // Re-export
 pub use model::*;
 pub use trainer::*;
-use word::*;
+pub use word::*;

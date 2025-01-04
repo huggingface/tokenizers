@@ -53,7 +53,7 @@ impl Symbol {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct Word {
+pub struct Word {
     symbols: Vec<Symbol>,
 }
 impl std::fmt::Debug for Word {
@@ -74,7 +74,7 @@ impl std::fmt::Debug for Word {
 }
 
 impl Word {
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Word { symbols: vec![] }
     }
 
@@ -84,7 +84,7 @@ impl Word {
         }
     }
 
-    pub(super) fn add(&mut self, c: u32, byte_len: usize) {
+    pub(crate) fn add(&mut self, c: u32, byte_len: usize) {
         let (prev, next) = {
             let len = self.symbols.len() as isize;
             if let Some(last) = self.symbols.last_mut() {
@@ -103,7 +103,7 @@ impl Word {
         });
     }
 
-    pub(super) fn merge(
+    pub(crate) fn merge(
         &mut self,
         c1: u32,
         c2: u32,
@@ -251,7 +251,7 @@ impl Word {
         self.symbols.retain(|s| s.len != 0);
     }
 
-    pub(super) fn get_chars(&self) -> Vec<u32> {
+    pub(crate) fn get_chars(&self) -> Vec<u32> {
         self.symbols.iter().map(|s| s.c).collect()
     }
 

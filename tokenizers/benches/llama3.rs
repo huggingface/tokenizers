@@ -14,11 +14,15 @@ pub fn llama3(c: &mut Criterion) {
 
     group.bench_function("llama3-backtracking", |b| {
         let mut tokenizer = Tokenizer::from_pretrained("gpt2", None).unwrap();
-        let mut vocab = &mut tokenizer.get_vocab(false).clone().into_iter().collect::<Vec<_>>(); // Convert HashMap into a Vec of (String, u32) tuples
-                                                                                    //
+        let mut vocab = &mut tokenizer
+            .get_vocab(false)
+            .clone()
+            .into_iter()
+            .collect::<Vec<_>>(); // Convert HashMap into a Vec of (String, u32) tuples
+                                  //
         vocab.sort_by(|a, b| a.1.cmp(&b.1));
         vocab.truncate(vocab.len().saturating_sub(3));
-        let vocab: Vec<_>  = vocab // Sort by u32 value
+        let vocab: Vec<_> = vocab // Sort by u32 value
             .into_iter() // IntoIterator to get the iterator of Vec<u8>
             .map(|(tok, _)| Vec::from(tok.as_bytes()))
             .collect();
@@ -36,11 +40,15 @@ pub fn llama3(c: &mut Criterion) {
 
     group.bench_function("llama3-backtracking-no-pretok", |b| {
         let mut tokenizer = Tokenizer::from_pretrained("gpt2", None).unwrap();
-        let mut vocab = &mut tokenizer.get_vocab(false).clone().into_iter().collect::<Vec<_>>(); // Convert HashMap into a Vec of (String, u32) tuples
-        //
+        let mut vocab = &mut tokenizer
+            .get_vocab(false)
+            .clone()
+            .into_iter()
+            .collect::<Vec<_>>(); // Convert HashMap into a Vec of (String, u32) tuples
+                                  //
         vocab.sort_by(|a, b| a.1.cmp(&b.1));
         vocab.truncate(vocab.len().saturating_sub(3));
-        let vocab: Vec<_>  = vocab // Sort by u32 value
+        let vocab: Vec<_> = vocab // Sort by u32 value
             .into_iter() // IntoIterator to get the iterator of Vec<u8>
             .map(|(tok, _)| Vec::from(tok.as_bytes()))
             .collect();

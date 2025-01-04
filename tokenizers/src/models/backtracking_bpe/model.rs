@@ -24,54 +24,7 @@ pub type Vocab = HashMap<String, u32>;
 type VocabR = HashMap<u32, String>;
 pub type Merges = Vec<(String, String)>;
 
-
-/// This can be thought of as a lazy variation of the dynamic programming approach.
-/// It only computes those states which have to be visited in order to compute the tokenization
-/// for a given input text.
-/// It keeps track of visited states in a bitfield and only remembers the tokenization
-/// of the currently processed dynamic programming state.
-///
-/// The biggest downside of this approach is that the search for the longest leftmost match (the firt token?)
-/// has to be reset at every (backtracking) step which is still a net win in practice compared to other approaches.
-#[derive(Clone, PartialEq)]
-pub(crate) struct BacktrackState<'a> {
-    text: &'a [u8],
-    tokens: Vec<u32>,        // len of the tezt / 3
-    next_token: Option<u32>, // bpe.next_match(text) wich is longest_searcher.leftmost_find_iter(text)'s first match value
-    pos: usize,              // current pos in the text?
-    bitfield: BitField, // keeps track of token boundaries? keeps track of all the valid tokenization positions and making the runtime linear in the input length.
-}
-
-impl<'a> BacktrackState<'a> {
-    pub(crate) fn new(text: &'a [u8], next_token: Option<u32>) -> Self {
-        Self::with_capacity(text, next_token, text.len() / 3)
-    }
-
-    pub(crate) fn with_capacity(text: &'a [u8], next_token: Option<u32>, cap: usize) -> Self {
-        Self {
-            text,
-            tokens: Vec::with_capacity(cap),
-            next_token,
-            pos: 0,
-            bitfield: BitField::new(text.len() + 1),
-        }
-    }
-    pub(crate) fn count(&self) -> usize {
-        self.tokens.len()
-    }
-
-    pub(crate) fn pos(&self) -> usize {
-        self.pos
-    }
-
-    pub(crate) fn last_token(&self) -> Option<u32> {
-        self.tokens.last().copied()
-    }
-
-    pub(crate) fn into_tokens(self) -> Vec<u32> {
-        self.tokens
-    }
-}
+use super::backtracking_state::BacktrackState;
 
 struct Config {
     files: Option<(String, String)>,
@@ -102,7 +55,6 @@ impl Default for BacktrackingBpeBuilder {
         }
     }
 }
-
 
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 #[derive(PartialEq, Clone)]
@@ -441,7 +393,7 @@ impl BacktrackingBpe {
         let mut all_tokens_rev = Vec::new();
         let mut token_starts = vec![0];
         let mut bytes_hash_to_token = FnvHashMap::default();
-        let mut merge_map :HashMap<Pair, (u32, u32)> = HashMap::new();
+        let mut merge_map: HashMap<Pair, (u32, u32)> = HashMap::new();
         for (i, token) in tokens.into_iter().enumerate() {
             bytes_hash_to_token.insert(hash_bytes(&token, hash_factor), i as u32);
             all_tokens_rev.extend(token.iter().copied().rev());
@@ -488,13 +440,14 @@ impl BacktrackingBpe {
         let mut pair_lookup = FnvHashMap::default();
 
         if let Some(ref merges) = merges {
-            for (id, pair) in merges.into_iter().enumerate(){
+            for (id, pair) in merges.into_iter().enumerate() {
                 let token1 = vocab[&pair.0.clone()];
                 let token2 = vocab[&pair.1.clone()];
                 pair_lookup.insert((token1, token2), id as u32);
                 split_table.push((token1, token2));
-                merge_map.insert(Pair::from(pair), (id as u32, id as u32)); // TODO wrong
-            };
+                merge_map.insert(Pair::from((token1, token2)), (id as u32, id as u32));
+                // TODO wrong
+            }
         } else {
             // Reverse engineer the merge/split table.
             for (id, token) in token_iter(&all_tokens, &token_starts).enumerate() {
@@ -514,9 +467,7 @@ impl BacktrackingBpe {
                         {
                             pair_lookup.insert((token1, token2), id as u32);
                             split_table.push((token1, token2));
-                            let str_token1 = unsafe { String::from_utf8_unchecked(Vec::from(&all_tokens[token_range(&token_starts, token1)]))};
-                            let str_token2 = unsafe { String::from_utf8_unchecked(Vec::from(&all_tokens[token_range(&token_starts, token2)]))};
-                            merge_map.insert(Pair::from(&(str_token1,str_token2)), (id as u32, id as u32));  // TODO wrong
+                            merge_map.insert(Pair::from((token1, token2)), (id as u32, id as u32));
                             break;
                         }
                     }
@@ -527,8 +478,6 @@ impl BacktrackingBpe {
                 }
             }
         };
-
-
 
         let bpe = Self {
             all_tokens,
@@ -544,11 +493,11 @@ impl BacktrackingBpe {
             unk_token: None,
             vocab,
             vocab_r,
-            merges: merge_map
+            merges: merge_map,
         };
         for token_id in 0..bpe.num_tokens() as u32 {
             let bytes = bpe.token_bytes(token_id);
-            let strs = bytes.iter().map(|b|char::from(*b)).collect::<Vec<_>>();
+            let strs = bytes.iter().map(|b| char::from(*b)).collect::<Vec<_>>();
             let tokens = bpe.encode_via_bitfield(bytes);
             assert_eq!(
                 tokens,
@@ -751,6 +700,7 @@ impl BacktrackingBpe {
     ) -> impl Iterator<Item = Token> + 'a {
         word.into_iter()
             .map(move |id| Token::new(*id, self.vocab_r[&id].clone(), (0usize, 0usize)))
+        // TODO offsets should be easy to integrate as well!
     }
 }
 impl Model for BacktrackingBpe {
