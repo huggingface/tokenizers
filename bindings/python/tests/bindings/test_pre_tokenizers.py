@@ -8,6 +8,7 @@ from tokenizers.pre_tokenizers import (
     ByteLevel,
     CharDelimiterSplit,
     Digits,
+    FixedLength,
     Metaspace,
     PreTokenizer,
     Punctuation,
@@ -193,6 +194,21 @@ class TestDigits:
         # Modify these
         pretok.individual_digits = True
         assert pretok.individual_digits == True
+
+
+class TestFixedLength:
+    def test_instantiate(self):
+        assert FixedLength() is not None
+        assert isinstance(FixedLength(), PreTokenizer)
+        assert isinstance(FixedLength(), FixedLength)
+        assert isinstance(pickle.loads(pickle.dumps(FixedLength())), FixedLength)
+
+    def test_can_modify(self):
+        pretok = FixedLength(length=5)
+        assert pretok.length == 5
+
+        pretok.length = 10
+        assert pretok.length == 10
 
 
 class TestUnicodeScripts:
