@@ -114,7 +114,7 @@ impl<'de> Visitor<'de> for BacktrackingBpeVisitor {
                 }
             };
             builder = builder.vocab_and_merges(vocab, merges);
-            Ok(builder.build().map_err(Error::custom)?)
+            Ok(builder.build().map_err(|e| Error::custom(format!("Error building the backtraciing BPE {:?}", e)))?)
         } else {
             Err(Error::custom("Missing vocab/merges"))
         }
