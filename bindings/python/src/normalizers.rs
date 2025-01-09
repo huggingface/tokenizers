@@ -534,7 +534,7 @@ impl PyNmt {
 }
 
 /// Precompiled normalizer
-/// Don't use manually it is used for compatiblity for SentencePiece.
+/// Don't use manually it is used for compatibility for SentencePiece.
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Precompiled")]
 pub struct PyPrecompiled {}
 #[pymethods]

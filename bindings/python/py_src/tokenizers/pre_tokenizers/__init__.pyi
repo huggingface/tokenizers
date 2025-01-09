@@ -48,7 +48,7 @@ class BertPreTokenizer(PreTokenizer):
     BertPreTokenizer
 
     This pre-tokenizer splits tokens on spaces, and also on punctuation.
-    Each occurence of a punctuation character will be treated separately.
+    Each occurrence of a punctuation character will be treated separately.
     """
     def __init__(self):
         pass

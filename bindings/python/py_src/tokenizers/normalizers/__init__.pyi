@@ -389,7 +389,7 @@ class Nmt(Normalizer):
 class Precompiled(Normalizer):
     """
     Precompiled normalizer
-    Don't use manually it is used for compatiblity for SentencePiece.
+    Don't use manually it is used for compatibility for SentencePiece.
     """
     def __init__(self, precompiled_charsmap):
         pass

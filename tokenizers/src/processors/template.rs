@@ -508,7 +508,7 @@ impl TemplateProcessing {
                     }
                     Piece::SpecialToken { id, type_id } => {
                         if add_special_tokens {
-                            let tok = &self.special_tokens.0[id]; // We already checked existance above
+                            let tok = &self.special_tokens.0[id]; // We already checked existence above
                             let len = tok.ids.len();
 
                             let encoding = Encoding::new(
