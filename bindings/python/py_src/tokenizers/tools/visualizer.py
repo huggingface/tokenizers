@@ -241,7 +241,7 @@ class EncodingVisualizer:
             # In this case we are looking at a group/single char that is not tokenized.
             # e.g. white space
             css_classes.append("non-token")
-        css = f'''class="{' '.join(css_classes)}"'''
+        css = f'''class="{" ".join(css_classes)}"'''
         data = ""
         for key, val in data_items.items():
             data += f' data-{key}="{val}"'
