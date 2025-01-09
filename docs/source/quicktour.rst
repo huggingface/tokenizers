@@ -438,7 +438,7 @@ list of special tokens, so this should be their IDs. To double-check, we can use
         :end-before: END check_sep
         :dedent: 4
 
-Here is how we can set the post-processing to give us the tradditional BERT inputs:
+Here is how we can set the post-processing to give us the traditional BERT inputs:
 
 .. only:: python
 
