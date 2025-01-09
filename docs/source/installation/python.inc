@@ -24,7 +24,7 @@ If you are using a unix based OS, the installation should be as simple as runnin
 
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-Or you can easiy update it with the following command::
+Or you can easily update it with the following command::
 
     rustup update
 

@@ -3,7 +3,7 @@ use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Defines the aditional parameters available for the `from_pretrained` function
+/// Defines the additional parameters available for the `from_pretrained` function
 #[derive(Debug, Clone)]
 pub struct FromPretrainedParameters {
     pub revision: String,

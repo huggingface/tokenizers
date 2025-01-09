@@ -430,7 +430,7 @@ impl PyCharDelimiterSplit {
 /// BertPreTokenizer
 ///
 /// This pre-tokenizer splits tokens on spaces, and also on punctuation.
-/// Each occurence of a punctuation character will be treated separately.
+/// Each occurrence of a punctuation character will be treated separately.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "BertPreTokenizer")]
 pub struct PyBertPreTokenizer {}
 #[pymethods]

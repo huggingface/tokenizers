@@ -49,7 +49,7 @@ class CustomNormalizer:
     def normalize(self, normalized: NormalizedString):
         # Most of these can be replaced by a `Sequence` combining some provided Normalizer,
         # (ie Sequence([ NFKC(), Replace(Regex("\s+"), " "), Lowercase() ])
-        # and it should be the prefered way. That being said, here is an example of the kind
+        # and it should be the preferred way. That being said, here is an example of the kind
         # of things that can be done here:
         normalized.nfkc()
         normalized.filter(lambda char: not char.isnumeric())

@@ -136,7 +136,7 @@ pub fn truncate_encodings(
                     n2 = n1 + params.max_length % 2;
                 }
 
-                // Swap lengths if we swapped previosuly
+                // Swap lengths if we swapped previously
                 if swap {
                     mem::swap(&mut n1, &mut n2);
                 }

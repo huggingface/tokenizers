@@ -62,7 +62,7 @@ special tokens and/or added tokens in the sequence).
 - [#363]: Fix panic from unwrapping `File::open` in `count_words`
 
 ### Changed
-- [#234]: Completely changed the alignement mappings available on `Encoding`. Previous mappings
+- [#234]: Completely changed the alignment mappings available on `Encoding`. Previous mappings
 were misleading and only providing offsets. New ones provide methods to easily convert between
 `char` or `word` (input space) and `token` (output space)
 - [#236]: `AddedToken` with special options like `rstrip` will keep the matched whitespaces
