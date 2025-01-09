@@ -5,6 +5,7 @@ use std::sync::RwLock;
 use crate::encoding::PyEncoding;
 use crate::error::ToPyResult;
 use pyo3::exceptions;
+use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
@@ -508,24 +509,28 @@ impl PyTemplateProcessing {
 ///         The processors that need to be chained
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "Sequence")]
 pub struct PySequence {}
+
 #[pymethods]
 impl PySequence {
     #[new]
     #[pyo3(signature = (processors_py), text_signature = "(self, processors)")]
-    fn new(processors_py: &Bound<'_, PyList>) -> (Self, PyPostProcessor) {
+    fn new(processors_py: &Bound<'_, PyList>) -> PyResult<(Self, PyPostProcessor)> {
         let mut processors: Vec<PostProcessorWrapper> = Vec::with_capacity(processors_py.len());
         for n in processors_py.iter() {
-            let processor: PyRef<PyPostProcessor> = n.extract().unwrap();
-            let processor = processor.processor.write().unwrap();
+            let processor: PyRef<PyPostProcessor> = n.extract()?;
+            let processor = processor
+                .processor
+                .write()
+                .map_err(|_| PyException::new_err("rwlock mutex is poisoned"))?;
             processors.push(processor.clone());
         }
         let sequence_processor = Sequence::new(processors);
-        (
+        Ok((
             PySequence {},
             PyPostProcessor::new(Arc::new(RwLock::new(PostProcessorWrapper::Sequence(
                 sequence_processor,
             )))),
-        )
+        ))
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
@@ -561,7 +566,6 @@ impl PySequence {
 
     fn __setitem__(
         self_: PyRefMut<'_, Self>,
-        py: Python<'_>,
         index: usize,
         value: PyRef<'_, PyPostProcessor>,
     ) -> PyResult<()> {

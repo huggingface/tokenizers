@@ -41,7 +41,7 @@ impl PyNormalizedStringMut<'_> {
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PyNormalizer {
     pub(crate) normalizer: PyNormalizerTypeWrapper,
@@ -417,15 +417,14 @@ impl PySequence {
     fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
         match &self_.as_ref().normalizer {
             PyNormalizerTypeWrapper::Sequence(inner) => match inner.get(index) {
-                Some(item) => PyNormalizer::new(PyNormalizerTypeWrapper::Single(Arc::clone(item)))
+                Some(item) => PyNormalizer::new(PyNormalizerTypeWrapper::Single(item.clone()))
                     .get_as_subtype(py),
                 _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
                     "Index not found",
                 )),
             },
             PyNormalizerTypeWrapper::Single(inner) => {
-                PyNormalizer::new(PyNormalizerTypeWrapper::Single(Arc::clone(inner)))
-                    .get_as_subtype(py)
+                PyNormalizer::new(PyNormalizerTypeWrapper::Single(inner.clone())).get_as_subtype(py)
             }
         }
     }
@@ -634,11 +633,21 @@ impl Serialize for PyNormalizerWrapper {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
 pub(crate) enum PyNormalizerTypeWrapper {
     Sequence(Vec<Arc<RwLock<PyNormalizerWrapper>>>),
     Single(Arc<RwLock<PyNormalizerWrapper>>),
+}
+
+impl<'de> Deserialize<'de> for PyNormalizerTypeWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wrapper = NormalizerWrapper::deserialize(deserializer)?;
+        let py_wrapper: PyNormalizerWrapper = wrapper.into();
+        Ok(py_wrapper.into())
+    }
 }
 
 impl Serialize for PyNormalizerTypeWrapper {
@@ -672,7 +681,17 @@ where
     I: Into<PyNormalizerWrapper>,
 {
     fn from(norm: I) -> Self {
-        PyNormalizerTypeWrapper::Single(Arc::new(RwLock::new(norm.into())))
+        let norm = norm.into();
+        match norm {
+            PyNormalizerWrapper::Wrapped(NormalizerWrapper::Sequence(seq)) => {
+                PyNormalizerTypeWrapper::Sequence(
+                    seq.into_iter()
+                        .map(|e| Arc::new(RwLock::new(PyNormalizerWrapper::Wrapped(e.clone()))))
+                        .collect(),
+                )
+            }
+            _ => PyNormalizerTypeWrapper::Single(Arc::new(RwLock::new(norm))),
+        }
     }
 }
 
@@ -795,7 +814,7 @@ mod test {
         match normalizer.normalizer {
             PyNormalizerTypeWrapper::Single(inner) => match &*inner.as_ref().read().unwrap() {
                 PyNormalizerWrapper::Wrapped(NormalizerWrapper::Sequence(sequence)) => {
-                    let normalizers = sequence.get_normalizers();
+                    let normalizers = sequence.as_ref();
                     assert_eq!(normalizers.len(), 1);
                     match normalizers[0] {
                         NormalizerWrapper::NFKC(_) => {}
