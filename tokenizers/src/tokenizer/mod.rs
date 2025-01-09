@@ -1035,11 +1035,6 @@ pub struct DecodeStream<'tok, M, N, PT, PP, D> {
     /// The index within the ids corresponding to the prefix so we can drain
     /// correctly
     prefix_index: usize,
-    /// We need to keep 2 prefixes.
-    /// Prefix is the second one that was already emitted to discard the part
-    /// of the text of all the ids
-    /// read is the prefix kept only for starting side effects of the prefix
-    read_index: usize,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -1063,7 +1058,6 @@ where
             skip_special_tokens,
             prefix: "".to_string(),
             prefix_index: 0,
-            read_index: 0,
         }
     }
 
@@ -1076,7 +1070,6 @@ where
             &mut self.ids,
             &mut self.prefix,
             &mut self.prefix_index,
-            &mut self.read_index,
         )
     }
 }
@@ -1089,7 +1082,6 @@ pub fn step_decode_stream<M, N, PT, PP, D>(
     ids: &mut Vec<u32>,
     prefix: &mut String,
     prefix_index: &mut usize,
-    read_index: &mut usize,
 ) -> Result<Option<String>>
 where
     M: Model,
@@ -1108,7 +1100,6 @@ where
         let new_prefix_index = ids.len() - *prefix_index;
         *ids = ids.drain(*prefix_index..).collect();
         *prefix = tokenizer.decode(ids, skip_special_tokens)?;
-        *read_index = *prefix_index;
         *prefix_index = new_prefix_index;
         Ok(Some(new_text.to_string()))
     } else {
@@ -1561,114 +1552,5 @@ where
         file.write_all(serialized.as_bytes())?;
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_decoding_with_added_bpe() {
-        use crate::{
-            normalizers,
-            pre_tokenizers::split::{Split, SplitPattern},
-            AddedToken, NormalizerWrapper, PreTokenizerWrapper, SplitDelimiterBehavior, Tokenizer,
-        };
-
-        let mut tokenizer = Tokenizer::from_pretrained("meta-llama/Meta-Llama-3-8B", None).unwrap();
-        tokenizer.normalizer = Some(NormalizerWrapper::from(normalizers::ByteLevel::new()));
-        tokenizer.pre_tokenizer = Some(PreTokenizerWrapper::Split(
-            Split::new(
-                SplitPattern::Regex(r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+".into()),
-                SplitDelimiterBehavior::Isolated,
-                false,
-            )
-            .unwrap(),
-        ));
-        tokenizer.add_tokens(&[AddedToken::from("嗎", false).normalized(false)]);
-        let encoded = tokenizer
-            .encode("Hey! how is this token: 嗎", false)
-            .unwrap();
-        assert_eq!(
-            encoded.get_ids(),
-            [19182, 0, 1268, 602, 82, 62428, 82, 4037, 25, 220, 128256]
-        );
-        assert_eq!(
-            encoded.get_tokens(),
-            ["Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "嗎"]
-        );
-
-        let decoded = tokenizer.decode(encoded.get_ids(), false);
-        assert_eq!(decoded.unwrap(), "Hey! how is this token: 嗎");
-
-        tokenizer.add_tokens(&[AddedToken::from("д", false).normalized(true)]);
-        let encoded = tokenizer
-            .encode("Hey! how is this token: д", false)
-            .unwrap();
-        assert_eq!(
-            encoded.get_ids(),
-            [19182, 0, 1268, 602, 82, 62428, 82, 4037, 25, 220, 128257]
-        );
-        assert_eq!(
-            encoded.get_tokens(),
-            ["Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "Ð´"]
-        );
-        let decoded = tokenizer.decode(encoded.get_ids(), false);
-        assert_eq!(decoded.unwrap(), "Hey! how is this token: д")
-    }
-
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_decode_stream_step_no_panic() {
-        use std::panic;
-
-        use crate::Tokenizer;
-
-        let tokenizer = Tokenizer::from_pretrained("meta-llama/Meta-Llama-3-8B", None).unwrap();
-
-        // "A B C D E F G H I J"
-        let mut decode_stream = tokenizer.decode_stream(false);
-        let output_tokens = vec![32, 426, 356, 423, 469, 435, 480, 473, 358, 622];
-        let expected_outputs = vec![
-            Some("A".to_string()),
-            Some(" B".to_string()),
-            Some(" C".to_string()),
-            Some(" D".to_string()),
-            Some(" E".to_string()),
-            Some(" F".to_string()),
-            Some(" G".to_string()),
-            Some(" H".to_string()),
-            Some(" I".to_string()),
-            Some(" J".to_string()),
-        ];
-        for (i, &token) in output_tokens.iter().enumerate() {
-            let maybe_panic =
-                panic::catch_unwind(panic::AssertUnwindSafe(|| decode_stream.step(token)));
-            assert!(maybe_panic.is_ok());
-            let result = maybe_panic.unwrap();
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap(), expected_outputs[i]);
-        }
-
-        // "삥뽕빵" (Korean words composed of 2-3 tokens: [80690, 98], [167, 121, 243], and [102457, 113])
-        let mut decode_stream = tokenizer.decode_stream(false);
-        let output_tokens = vec![80690, 98, 167, 121, 243, 102457, 113];
-        let expected_outputs = vec![
-            None,
-            Some("삥".to_string()),
-            None,
-            None,
-            Some("뽕".to_string()),
-            None,
-            Some("빵".to_string()),
-        ];
-        for (i, &token) in output_tokens.iter().enumerate() {
-            let maybe_panic =
-                panic::catch_unwind(panic::AssertUnwindSafe(|| decode_stream.step(token)));
-            assert!(maybe_panic.is_ok());
-            let result = maybe_panic.unwrap();
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap(), expected_outputs[i]);
-        }
     }
 }

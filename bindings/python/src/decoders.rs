@@ -646,11 +646,6 @@ pub struct PyDecodeStream {
     /// The index within the ids corresponding to the prefix so we can drain
     /// correctly
     prefix_index: usize,
-    /// We need to keep 2 prefixes.
-    /// Prefix is the second one that was already emitted to discard the part
-    /// of the text of all the ids
-    /// read is the prefix kept only for starting side effects of the prefix
-    read_index: usize,
 }
 
 #[pymethods]
@@ -663,7 +658,6 @@ impl PyDecodeStream {
             ids: vec![],
             prefix: "".to_string(),
             prefix_index: 0,
-            read_index: 0,
         }
     }
 
@@ -676,7 +670,6 @@ impl PyDecodeStream {
             &mut self.ids,
             &mut self.prefix,
             &mut self.prefix_index,
-            &mut self.read_index,
         ))
         .into()
     }
