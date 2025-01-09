@@ -441,7 +441,7 @@ impl TemplateProcessingBuilder {
             let exist = self
                 .special_tokens
                 .as_ref()
-                .map_or(false, |map| map.0.contains_key(sp));
+                .is_some_and(|map| map.0.contains_key(sp));
 
             match exist {
                 false => Some(sp),
