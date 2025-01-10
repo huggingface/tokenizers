@@ -704,11 +704,21 @@ impl Serialize for PyPreTokenizerWrapper {
     }
 }
 
-#[derive(Clone, Deserialize)]
-#[serde(untagged)]
+#[derive(Clone)]
 pub(crate) enum PyPreTokenizerTypeWrapper {
     Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),
     Single(Arc<RwLock<PyPreTokenizerWrapper>>),
+}
+
+impl<'de> Deserialize<'de> for PyPreTokenizerTypeWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wrapper = PreTokenizerWrapper::deserialize(deserializer)?;
+        let py_wrapper: PyPreTokenizerWrapper = wrapper.into();
+        Ok(py_wrapper.into())
+    }
 }
 
 impl Serialize for PyPreTokenizerTypeWrapper {
@@ -742,7 +752,17 @@ where
     I: Into<PyPreTokenizerWrapper>,
 {
     fn from(pretok: I) -> Self {
-        PyPreTokenizerTypeWrapper::Single(Arc::new(RwLock::new(pretok.into())))
+        let pretok = pretok.into();
+        match pretok {
+            PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::Sequence(seq)) => {
+                PyPreTokenizerTypeWrapper::Sequence(
+                    seq.into_iter()
+                        .map(|e| Arc::new(RwLock::new(PyPreTokenizerWrapper::Wrapped(e.clone()))))
+                        .collect(),
+                )
+            }
+            _ => PyPreTokenizerTypeWrapper::Single(Arc::new(RwLock::new(pretok))),
+        }
     }
 }
 
