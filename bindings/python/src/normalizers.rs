@@ -410,8 +410,11 @@ impl PySequence {
         PyTuple::new(py, [PyList::empty(py)])
     }
 
-    fn __len__(&self) -> usize {
-        0
+    fn __len__(self_: PyRef<'_, Self>) -> usize {
+        match &self_.as_ref().normalizer {
+            PyNormalizerTypeWrapper::Sequence(inner) => inner.len(),
+            PyNormalizerTypeWrapper::Single(_) => 1,
+        }
     }
 
     fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
