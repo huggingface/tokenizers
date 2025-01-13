@@ -1,3 +1,4 @@
+use pyo3::exceptions::PyException;
 use pyo3::types::*;
 use pyo3::{exceptions, prelude::*};
 use std::sync::{Arc, RwLock};
@@ -430,6 +431,27 @@ impl PySequence {
                 PyNormalizer::new(PyNormalizerTypeWrapper::Single(inner.clone())).get_as_subtype(py)
             }
         }
+    }
+
+    fn __setitem__(self_: PyRef<'_, Self>, index: usize, value: Bound<'_, PyAny>) -> PyResult<()> {
+        let norm: PyNormalizer = value.extract()?;
+        let PyNormalizerTypeWrapper::Single(norm) = norm.normalizer else { return Err(PyException::new_err("normalizer should not be a sequence")); };
+        match &self_.as_ref().normalizer {
+            PyNormalizerTypeWrapper::Sequence(inner) => match inner.get(index) {
+                Some(item) => {
+                    *item.write().unwrap() = norm.read().unwrap().clone();
+                }
+                _ => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                        "Index not found",
+                    ))
+                }
+            },
+            PyNormalizerTypeWrapper::Single(_) => {
+                return Err(PyException::new_err("normalizer is not a sequence"))
+            }
+        };
+        Ok(())
     }
 }
 
