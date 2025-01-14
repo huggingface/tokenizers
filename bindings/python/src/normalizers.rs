@@ -596,7 +596,7 @@ impl PyReplace {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct CustomNormalizer {
     inner: PyObject,
 }
@@ -639,7 +639,7 @@ impl<'de> Deserialize<'de> for CustomNormalizer {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyNormalizerWrapper {
     Custom(CustomNormalizer),
