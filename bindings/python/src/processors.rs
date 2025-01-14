@@ -52,28 +52,34 @@ impl PyPostProcessor {
 
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
-        Ok(match self.processor.read().unwrap().clone() {
-            PostProcessorWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            PostProcessorWrapper::Bert(_) => Py::new(py, (PyBertProcessing {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            PostProcessorWrapper::Roberta(_) => Py::new(py, (PyRobertaProcessing {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            PostProcessorWrapper::Template(_) => Py::new(py, (PyTemplateProcessing {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            PostProcessorWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-        })
+        Ok(
+            match &*self
+                .processor
+                .read()
+                .map_err(|_| PyException::new_err("pre tokenizer rwlock is poisoned"))?
+            {
+                PostProcessorWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                PostProcessorWrapper::Bert(_) => Py::new(py, (PyBertProcessing {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                PostProcessorWrapper::Roberta(_) => Py::new(py, (PyRobertaProcessing {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                PostProcessorWrapper::Template(_) => Py::new(py, (PyTemplateProcessing {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                PostProcessorWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+            },
+        )
     }
 }
 
@@ -538,19 +544,14 @@ impl PySequence {
     }
 
     fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
-        let super_ = self_.as_ref();
-        let mut wrapper = super_.processor.write().unwrap();
-        // if let PostProcessorWrapper::Sequence(ref mut post) = *wrapper {
-        //     match post.get(index) {
-        //         Some(item) => PyPostProcessor::new(Arc::clone(item)).get_as_subtype(py),
-        //         _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-        //             "Index not found",
-        //         )),
-        //     }
-        // }
+        let wrapper = self_
+            .as_ref()
+            .processor
+            .read()
+            .map_err(|_| PyException::new_err("post processor rwlock is poisoned"))?;
 
         match *wrapper {
-            PostProcessorWrapper::Sequence(ref mut inner) => match inner.get_mut(index) {
+            PostProcessorWrapper::Sequence(ref inner) => match inner.get(index) {
                 Some(item) => {
                     PyPostProcessor::new(Arc::new(RwLock::new(item.to_owned()))).get_as_subtype(py)
                 }
@@ -564,32 +565,31 @@ impl PySequence {
         }
     }
 
-    fn __setitem__(
-        self_: PyRefMut<'_, Self>,
-        index: usize,
-        value: PyRef<'_, PyPostProcessor>,
-    ) -> PyResult<()> {
-        let super_ = self_.as_ref();
-        let mut wrapper = super_.processor.write().unwrap();
-        let value = value.processor.read().unwrap().clone();
+    fn __setitem__(self_: PyRef<'_, Self>, index: usize, value: Bound<'_, PyAny>) -> PyResult<()> {
+        let processor: PyPostProcessor = value.extract()?;
+        let mut wrapper = self_
+            .as_ref()
+            .processor
+            .write()
+            .map_err(|_| PyException::new_err("post processor rwlock is poisoned"))?;
         match *wrapper {
-            PostProcessorWrapper::Sequence(ref mut inner) => {
-                // Convert the Py<PyAny> into the appropriate Rust type
-                // Ensure we can set an item at the given index
-                if index < inner.get_processors().len() {
-                    inner.set_mut(index, value); // Assuming you want to wrap the new item in Arc<RwLock>
-
-                    Ok(())
-                } else {
-                    Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                        "Index out of bounds",
+            PostProcessorWrapper::Sequence(ref mut inner) => match inner.get_mut(index) {
+                Some(item) => {
+                    *item = processor.processor.read().unwrap().clone();
+                }
+                _ => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                        "Index not found",
                     ))
                 }
+            },
+            _ => {
+                return Err(PyException::new_err(
+                    "This processor is not a Sequence, it does not support __setitem__",
+                ))
             }
-            _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                "This processor is not a Sequence, it does not support __setitem__",
-            )),
-        }
+        };
+        Ok(())
     }
 }
 
