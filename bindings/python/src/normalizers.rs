@@ -435,7 +435,9 @@ impl PySequence {
 
     fn __setitem__(self_: PyRef<'_, Self>, index: usize, value: Bound<'_, PyAny>) -> PyResult<()> {
         let norm: PyNormalizer = value.extract()?;
-        let PyNormalizerTypeWrapper::Single(norm) = norm.normalizer else { return Err(PyException::new_err("normalizer should not be a sequence")); };
+        let PyNormalizerTypeWrapper::Single(norm) = norm.normalizer else {
+            return Err(PyException::new_err("normalizer should not be a sequence"));
+        };
         match &self_.as_ref().normalizer {
             PyNormalizerTypeWrapper::Sequence(inner) => match inner.get(index) {
                 Some(item) => {

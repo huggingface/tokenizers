@@ -511,7 +511,9 @@ impl PySequence {
 
     fn __setitem__(self_: PyRef<'_, Self>, index: usize, value: Bound<'_, PyAny>) -> PyResult<()> {
         let pretok: PyPreTokenizer = value.extract()?;
-        let PyPreTokenizerTypeWrapper::Single(norm) = pretok.pretok else { return Err(PyException::new_err("normalizer should not be a sequence")); };
+        let PyPreTokenizerTypeWrapper::Single(norm) = pretok.pretok else {
+            return Err(PyException::new_err("normalizer should not be a sequence"));
+        };
         match &self_.as_ref().pretok {
             PyPreTokenizerTypeWrapper::Sequence(inner) => match inner.get(index) {
                 Some(item) => {

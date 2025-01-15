@@ -75,6 +75,8 @@ class TestSequence:
         assert normalizers[2].__class__ == Strip
         with pytest.raises(IndexError):
             print(normalizers[3])
+        normalizers[1] = Strip()
+        assert normalizers[1].__class__ == Strip
 
 
 class TestLowercase:
