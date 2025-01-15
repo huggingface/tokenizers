@@ -194,6 +194,7 @@ macro_rules! getter {
     }};
 }
 
+#[allow(unused)]
 macro_rules! setter {
     ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
         let super_ = $self;
