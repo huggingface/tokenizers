@@ -351,10 +351,9 @@ pub struct TemplateProcessing {
     special_tokens: Tokens,
 }
 
-
 impl TemplateProcessing {
     // Getter for `single`
-    pub fn get_single(& self) -> Template {
+    pub fn get_single(&self) -> Template {
         self.single.clone()
     }
 
@@ -362,7 +361,7 @@ impl TemplateProcessing {
     pub fn set_single(&mut self, single: Template) {
         println!("Setting single to: {:?}", single); // Debugging output
         self.single = single;
-        println!("Single is now {:?}", self.single); 
+        println!("Single is now {:?}", self.single);
     }
 
     // Getter for `pair`
