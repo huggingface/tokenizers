@@ -175,6 +175,8 @@ class TestSequence:
         assert pre_tokenizers[0].__class__ == Metaspace
         pre_tokenizers[0].split = False
         assert not pre_tokenizers[0].split
+        pre_tokenizers[1] = Metaspace()
+        assert pre_tokenizers[1].__class__ == Metaspace
 
 
 class TestDigits:

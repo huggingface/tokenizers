@@ -227,3 +227,10 @@ class TestSequenceProcessing:
         # assert pair.ids == [1, 2, 3, 4, 5, 0, 6, 0]
         assert pair.type_ids == [0, 0, 0, 0, 0, 0, 1, 1]
         assert pair.offsets == [(0, 0), (0, 2), (3, 7), (8, 10), (12, 16), (0, 0), (0, 4), (0, 0)]
+
+    def test_items(self):
+        processors = Sequence([RobertaProcessing(("</s>", 1), ("<s>", 0)), ByteLevel()])
+        assert processors[0].__class__ == RobertaProcessing
+        assert processors[1].__class__ == ByteLevel
+        processors[0] = ByteLevel()
+        assert processors[0].__class__ == ByteLevel

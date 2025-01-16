@@ -839,18 +839,14 @@ mod test {
         let normalizer: PyNormalizer = serde_json::from_str(&sequence_string).unwrap();
 
         match normalizer.normalizer {
-            PyNormalizerTypeWrapper::Single(inner) => match &*inner.as_ref().read().unwrap() {
-                PyNormalizerWrapper::Wrapped(NormalizerWrapper::Sequence(sequence)) => {
-                    let normalizers = sequence.as_ref();
-                    assert_eq!(normalizers.len(), 1);
-                    match normalizers[0] {
-                        NormalizerWrapper::NFKC(_) => {}
-                        _ => panic!("Expected NFKC"),
-                    }
-                }
-                _ => panic!("Expected sequence"),
-            },
-            _ => panic!("Expected single"),
+            PyNormalizerTypeWrapper::Sequence(inner) => {
+                assert_eq!(inner.len(), 1);
+                match *inner[0].as_ref().read().unwrap() {
+                    PyNormalizerWrapper::Wrapped(NormalizerWrapper::NFKC(_)) => {}
+                    _ => panic!("Expected NFKC"),
+                };
+            }
+            _ => panic!("Expected sequence"),
         };
     }
 }
