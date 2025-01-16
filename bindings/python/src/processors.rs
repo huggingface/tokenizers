@@ -84,8 +84,12 @@ impl PyPostProcessor {
 }
 
 impl PostProcessor for PyPostProcessor {
+    // TODO: update signature to `tk::Result<usize>`
     fn added_tokens(&self, is_pair: bool) -> usize {
-        self.processor.read().unwrap().added_tokens(is_pair)
+        self.processor
+            .read()
+            .expect("rwlock is poisoned")
+            .added_tokens(is_pair)
     }
 
     fn process_encodings(
@@ -95,7 +99,7 @@ impl PostProcessor for PyPostProcessor {
     ) -> tk::Result<Vec<Encoding>> {
         self.processor
             .read()
-            .unwrap()
+            .map_err(|_| PyException::new_err("rwlock is poisoned"))?
             .process_encodings(encodings, add_special_tokens)
     }
 }
@@ -136,8 +140,12 @@ impl PyPostProcessor {
     /// Returns:
     ///     :obj:`int`: The number of tokens to add
     #[pyo3(text_signature = "(self, is_pair)")]
-    fn num_special_tokens_to_add(&self, is_pair: bool) -> usize {
-        self.processor.read().unwrap().added_tokens(is_pair)
+    fn num_special_tokens_to_add(&self, is_pair: bool) -> PyResult<usize> {
+        Ok(self
+            .processor
+            .read()
+            .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+            .added_tokens(is_pair))
     }
 
     /// Post-process the given encodings, generating the final one
@@ -162,11 +170,16 @@ impl PyPostProcessor {
         pair: Option<&PyEncoding>,
         add_special_tokens: bool,
     ) -> PyResult<PyEncoding> {
-        let final_encoding = ToPyResult(self.processor.read().unwrap().process(
-            encoding.encoding.clone(),
-            pair.map(|e| e.encoding.clone()),
-            add_special_tokens,
-        ))
+        let final_encoding = ToPyResult(
+            self.processor
+                .read()
+                .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                .process(
+                    encoding.encoding.clone(),
+                    pair.map(|e| e.encoding.clone()),
+                    add_special_tokens,
+                ),
+        )
         .into_py()?;
         Ok(final_encoding.into())
     }
@@ -185,7 +198,7 @@ impl PyPostProcessor {
 macro_rules! getter {
     ($self: ident, $variant: ident, $($name: tt)+) => {{
         let super_ = $self.as_ref();
-        if let PostProcessorWrapper::$variant(ref post) = *super_.processor.read().unwrap() {
+        if let PostProcessorWrapper::$variant(ref post) = *super_.processor.read().expect("rwlock is poisoned") {
             let output = post.$($name)+;
             return format!("{:?}", output)
         } else {
@@ -499,13 +512,17 @@ impl PyTemplateProcessing {
     }
 
     #[setter]
-    fn set_single(self_: PyRef<Self>, single: PyTemplate) {
+    fn set_single(self_: PyRef<Self>, single: PyTemplate) -> PyResult<()> {
         let template: Template = Template::from(single);
         let super_ = self_.as_ref();
-        let mut wrapper = super_.processor.write().unwrap();
+        let mut wrapper = super_
+            .processor
+            .write()
+            .map_err(|_| PyException::new_err("rwlock is poisoned"))?;
         if let PostProcessorWrapper::Template(ref mut post) = *wrapper {
             post.set_single(template);
         };
+        Ok(())
     }
 }
 
@@ -576,7 +593,11 @@ impl PySequence {
         match *wrapper {
             PostProcessorWrapper::Sequence(ref mut inner) => match inner.get_mut(index) {
                 Some(item) => {
-                    *item = processor.processor.read().unwrap().clone();
+                    *item = processor
+                        .processor
+                        .read()
+                        .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                        .clone();
                 }
                 _ => {
                     return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(

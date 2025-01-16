@@ -227,7 +227,7 @@ macro_rules! getter {
         let super_ = $self.as_ref();
         if let PyPreTokenizerTypeWrapper::Single(ref single) = super_.pretok {
             if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::$variant(ref pretok)) =
-                *single.read().unwrap() {
+                *single.read().expect("rwlock is poisoned") {
                     pretok.$($name)+
                 } else {
                     unreachable!()
@@ -243,7 +243,7 @@ macro_rules! setter {
         let super_ = $self.as_ref();
         if let PyPreTokenizerTypeWrapper::Single(ref single) = super_.pretok {
             if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::$variant(ref mut pretok)) =
-                *single.write().unwrap()
+                *single.write().expect("rwlock is poisoned")
             {
                 pretok.$name = $value;
             }
@@ -253,7 +253,7 @@ macro_rules! setter {
         let super_ = $self.as_ref();
         if let PyPreTokenizerTypeWrapper::Single(ref single) = super_.pretok {
             if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::$variant(ref mut pretok)) =
-                *single.write().unwrap()
+                *single.write().expect("rwlock is poisoned")
             {
                 pretok.$name($value);
             }
@@ -517,7 +517,12 @@ impl PySequence {
         match &self_.as_ref().pretok {
             PyPreTokenizerTypeWrapper::Sequence(inner) => match inner.get(index) {
                 Some(item) => {
-                    *item.write().unwrap() = (*norm.read().unwrap()).clone();
+                    *item
+                        .write()
+                        .map_err(|_| PyException::new_err("rwlock is poisoned"))? = (*norm
+                        .read()
+                        .map_err(|_| PyException::new_err("rwlock is poisoned"))?)
+                    .clone();
                 }
                 _ => {
                     return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
@@ -807,10 +812,15 @@ where
 impl PreTokenizer for PyPreTokenizerTypeWrapper {
     fn pre_tokenize(&self, pretok: &mut PreTokenizedString) -> tk::Result<()> {
         match self {
-            PyPreTokenizerTypeWrapper::Single(inner) => inner.read().unwrap().pre_tokenize(pretok),
-            PyPreTokenizerTypeWrapper::Sequence(inner) => inner
-                .iter()
-                .try_for_each(|n| n.read().unwrap().pre_tokenize(pretok)),
+            PyPreTokenizerTypeWrapper::Single(inner) => inner
+                .read()
+                .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                .pre_tokenize(pretok),
+            PyPreTokenizerTypeWrapper::Sequence(inner) => inner.iter().try_for_each(|n| {
+                n.read()
+                    .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                    .pre_tokenize(pretok)
+            }),
         }
     }
 }

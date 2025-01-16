@@ -59,7 +59,11 @@ impl PyNormalizer {
                 .into_pyobject(py)?
                 .into_any()
                 .into(),
-            PyNormalizerTypeWrapper::Single(ref inner) => match &*inner.as_ref().read().unwrap() {
+            PyNormalizerTypeWrapper::Single(ref inner) => match &*inner
+                .as_ref()
+                .read()
+                .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+            {
                 PyNormalizerWrapper::Custom(_) => {
                     Py::new(py, base)?.into_pyobject(py)?.into_any().into()
                 }
@@ -219,7 +223,7 @@ macro_rules! getter {
     ($self: ident, $variant: ident, $name: ident) => {{
         let super_ = $self.as_ref();
         if let PyNormalizerTypeWrapper::Single(ref norm) = super_.normalizer {
-            let wrapper = norm.read().unwrap();
+            let wrapper = norm.read().expect("rwlock is poisoned");
             if let PyNormalizerWrapper::Wrapped(NormalizerWrapper::$variant(o)) = (&*wrapper) {
                 o.$name.clone()
             } else {
@@ -235,7 +239,7 @@ macro_rules! setter {
     ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
         let super_ = $self.as_ref();
         if let PyNormalizerTypeWrapper::Single(ref norm) = super_.normalizer {
-            let mut wrapper = norm.write().unwrap();
+            let mut wrapper = norm.write().expect("rwlock is poisoned");
             if let PyNormalizerWrapper::Wrapped(NormalizerWrapper::$variant(ref mut o)) = *wrapper {
                 o.$name = $value;
             }
@@ -441,7 +445,12 @@ impl PySequence {
         match &self_.as_ref().normalizer {
             PyNormalizerTypeWrapper::Sequence(inner) => match inner.get(index) {
                 Some(item) => {
-                    *item.write().unwrap() = norm.read().unwrap().clone();
+                    *item
+                        .write()
+                        .map_err(|_| PyException::new_err("rwlock is poisoned"))? = norm
+                        .read()
+                        .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                        .clone();
                 }
                 _ => {
                     return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
@@ -736,10 +745,15 @@ where
 impl Normalizer for PyNormalizerTypeWrapper {
     fn normalize(&self, normalized: &mut NormalizedString) -> tk::Result<()> {
         match self {
-            PyNormalizerTypeWrapper::Single(inner) => inner.read().unwrap().normalize(normalized),
-            PyNormalizerTypeWrapper::Sequence(inner) => inner
-                .iter()
-                .try_for_each(|n| n.read().unwrap().normalize(normalized)),
+            PyNormalizerTypeWrapper::Single(inner) => inner
+                .read()
+                .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                .normalize(normalized),
+            PyNormalizerTypeWrapper::Sequence(inner) => inner.iter().try_for_each(|n| {
+                n.read()
+                    .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                    .normalize(normalized)
+            }),
         }
     }
 }
