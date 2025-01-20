@@ -297,6 +297,16 @@ impl PyByteLevel {
         setter!(self_, ByteLevel, use_regex, use_regex);
     }
 
+    #[getter]
+    fn get_trim_offsets(self_: PyRef<Self>) -> bool {
+        getter!(self_, ByteLevel, trim_offsets)
+    }
+
+    #[setter]
+    fn set_trim_offsets(self_: PyRef<Self>, trim_offsets: bool) {
+        setter!(self_, ByteLevel, trim_offsets, trim_offsets)
+    }
+
     #[new]
     #[pyo3(signature = (add_prefix_space = true, use_regex = true, **_kwargs), text_signature = "(self, add_prefix_space=True, use_regex=True)")]
     fn new(
@@ -397,6 +407,54 @@ impl PySplit {
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
         PyTuple::new(py, [" ", "removed"])
     }
+
+    #[getter]
+    fn get_pattern(_self: PyRef<Self>) -> PyResult<()> {
+        Err(PyException::new_err("Cannot get pattern"))
+    }
+
+    #[setter]
+    fn set_pattern(_self: PyRef<Self>, _pattern: PyPattern) -> PyResult<()> {
+        Err(PyException::new_err(
+            "Cannot set pattern, please instantiate a new split pattern instead",
+        ))
+    }
+
+    #[getter]
+    fn get_behavior(self_: PyRef<Self>) -> String {
+        getter!(self_, Punctuation, behavior)
+            .to_string()
+            .to_lowercase()
+    }
+
+    #[setter]
+    fn set_behavior(self_: PyRef<Self>, behavior: String) -> PyResult<()> {
+        let behavior = match behavior.as_ref() {
+            "removed" => SplitDelimiterBehavior::Removed,
+            "isolated" => SplitDelimiterBehavior::Isolated,
+            "merged_with_previous" => SplitDelimiterBehavior::MergedWithPrevious,
+            "merged_with_next" => SplitDelimiterBehavior::MergedWithNext,
+            "contiguous" => SplitDelimiterBehavior::Contiguous,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Wrong value for SplitDelimiterBehavior, expected one of: \
+                `removed, isolated, merged_with_previous, merged_with_next, contiguous`",
+                ))
+            }
+        };
+        setter!(self_, Punctuation, behavior, behavior);
+        Ok(())
+    }
+
+    #[getter]
+    fn get_invert(self_: PyRef<Self>) -> bool {
+        getter!(self_, Split, invert)
+    }
+
+    #[setter]
+    fn set_invert(self_: PyRef<Self>, invert: bool) {
+        setter!(self_, Split, invert, invert)
+    }
 }
 
 /// This pre-tokenizer simply splits on the provided char. Works like `.split(delimiter)`
@@ -462,6 +520,32 @@ impl PyPunctuation {
     #[pyo3( signature = (behavior = PySplitDelimiterBehavior(SplitDelimiterBehavior::Isolated)), text_signature = "(self, behavior=\"isolated\")")]
     fn new(behavior: PySplitDelimiterBehavior) -> (Self, PyPreTokenizer) {
         (PyPunctuation {}, Punctuation::new(behavior.into()).into())
+    }
+
+    #[getter]
+    fn get_behavior(self_: PyRef<Self>) -> String {
+        getter!(self_, Punctuation, behavior)
+            .to_string()
+            .to_lowercase()
+    }
+
+    #[setter]
+    fn set_behavior(self_: PyRef<Self>, behavior: String) -> PyResult<()> {
+        let behavior = match behavior.as_ref() {
+            "removed" => SplitDelimiterBehavior::Removed,
+            "isolated" => SplitDelimiterBehavior::Isolated,
+            "merged_with_previous" => SplitDelimiterBehavior::MergedWithPrevious,
+            "merged_with_next" => SplitDelimiterBehavior::MergedWithNext,
+            "contiguous" => SplitDelimiterBehavior::Contiguous,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Wrong value for SplitDelimiterBehavior, expected one of: \
+                `removed, isolated, merged_with_previous, merged_with_next, contiguous`",
+                ))
+            }
+        };
+        setter!(self_, Punctuation, behavior, behavior);
+        Ok(())
     }
 }
 
@@ -596,13 +680,7 @@ impl PyMetaspace {
     #[getter]
     fn get_prepend_scheme(self_: PyRef<Self>) -> String {
         // Assuming Metaspace has a method to get the prepend_scheme as a string
-        let scheme: PrependScheme = getter!(self_, Metaspace, get_prepend_scheme());
-        match scheme {
-            PrependScheme::First => "first",
-            PrependScheme::Never => "never",
-            PrependScheme::Always => "always",
-        }
-        .to_string()
+        getter!(self_, Metaspace, get_prepend_scheme()).to_string()
     }
 
     #[setter]
