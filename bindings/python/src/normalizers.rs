@@ -679,6 +679,10 @@ pub(crate) enum PyNormalizerTypeWrapper {
     Single(Arc<RwLock<PyNormalizerWrapper>>),
 }
 
+/// XXX: we need to manually implement deserialize here because of the structure of the
+/// PyNormalizerTypeWrapper enum. Given the underlying PyNormalizerWrapper can contain a Sequence,
+/// default deserialization will give us a PyNormalizerTypeWrapper::Single(Sequence) when we'd like
+/// it to be PyNormalizerTypeWrapper::Sequence(// ...).
 impl<'de> Deserialize<'de> for PyNormalizerTypeWrapper {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
