@@ -53,11 +53,9 @@ impl PyPostProcessor {
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
         Ok(
-            match &*self
-                .processor
-                .read()
-                .map_err(|_| PyException::new_err("pre tokenizer rwlock is poisoned"))?
-            {
+            match &*self.processor.read().map_err(|_| {
+                PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor")
+            })? {
                 PostProcessorWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
                     .into_pyobject(py)?
                     .into_any()
@@ -88,7 +86,7 @@ impl PostProcessor for PyPostProcessor {
     fn added_tokens(&self, is_pair: bool) -> usize {
         self.processor
             .read()
-            .expect("rwlock is poisoned")
+            .expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor")
             .added_tokens(is_pair)
     }
 
@@ -99,7 +97,7 @@ impl PostProcessor for PyPostProcessor {
     ) -> tk::Result<Vec<Encoding>> {
         self.processor
             .read()
-            .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+            .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?
             .process_encodings(encodings, add_special_tokens)
     }
 }
@@ -144,7 +142,7 @@ impl PyPostProcessor {
         Ok(self
             .processor
             .read()
-            .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+            .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?
             .added_tokens(is_pair))
     }
 
@@ -173,7 +171,7 @@ impl PyPostProcessor {
         let final_encoding = ToPyResult(
             self.processor
                 .read()
-                .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?
                 .process(
                     encoding.encoding.clone(),
                     pair.map(|e| e.encoding.clone()),
@@ -198,7 +196,7 @@ impl PyPostProcessor {
 macro_rules! getter {
     ($self: ident, $variant: ident, $($name: tt)+) => {{
         let super_ = $self.as_ref();
-        if let PostProcessorWrapper::$variant(ref post) = *super_.processor.read().expect("rwlock is poisoned") {
+        if let PostProcessorWrapper::$variant(ref post) = *super_.processor.read().expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor") {
             post.$($name)+
         } else {
             unreachable!()
@@ -210,9 +208,9 @@ macro_rules! getter {
 macro_rules! setter {
     ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
         let super_ = $self.as_ref();
-        if let PostProcessorWrapper::$variant(ref mut post) =
-            *super_.processor.write().expect("rwlock is poisoned")
-        {
+        if let PostProcessorWrapper::$variant(ref mut post) = *super_.processor.write().expect(
+            "RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor",
+        ) {
             post.$name = $value;
         }
     }};
@@ -637,7 +635,7 @@ impl PyTemplateProcessing {
         let mut wrapper = super_
             .processor
             .write()
-            .map_err(|_| PyException::new_err("rwlock is poisoned"))?;
+            .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?;
         if let PostProcessorWrapper::Template(ref mut post) = *wrapper {
             post.set_single(template);
         };
@@ -685,7 +683,7 @@ impl PySequence {
             .as_ref()
             .processor
             .read()
-            .map_err(|_| PyException::new_err("post processor rwlock is poisoned"))?;
+            .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?;
 
         match *wrapper {
             PostProcessorWrapper::Sequence(ref inner) => match inner.get(index) {
@@ -708,14 +706,14 @@ impl PySequence {
             .as_ref()
             .processor
             .write()
-            .map_err(|_| PyException::new_err("post processor rwlock is poisoned"))?;
+            .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?;
         match *wrapper {
             PostProcessorWrapper::Sequence(ref mut inner) => match inner.get_mut(index) {
                 Some(item) => {
                     *item = processor
                         .processor
                         .read()
-                        .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?
                         .clone();
                 }
                 _ => {

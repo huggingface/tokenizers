@@ -58,7 +58,7 @@ impl PyPreTokenizer {
                 match &*inner
                     .as_ref()
                     .read()
-                    .map_err(|_| PyException::new_err("pre tokenizer rwlock is poisoned"))?
+                    .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
                 {
                     PyPreTokenizerWrapper::Custom(_) => {
                         Py::new(py, base)?.into_pyobject(py)?.into_any().into()
@@ -227,7 +227,7 @@ macro_rules! getter {
         let super_ = $self.as_ref();
         if let PyPreTokenizerTypeWrapper::Single(ref single) = super_.pretok {
             if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::$variant(ref pretok)) =
-                *single.read().expect("rwlock is poisoned") {
+                *single.read().expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer") {
                     pretok.$($name)+
                 } else {
                     unreachable!()
@@ -243,7 +243,7 @@ macro_rules! setter {
         let super_ = $self.as_ref();
         if let PyPreTokenizerTypeWrapper::Single(ref single) = super_.pretok {
             if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::$variant(ref mut pretok)) =
-                *single.write().expect("rwlock is poisoned")
+                *single.write().expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer")
             {
                 pretok.$name = $value;
             }
@@ -253,7 +253,7 @@ macro_rules! setter {
         let super_ = $self.as_ref();
         if let PyPreTokenizerTypeWrapper::Single(ref single) = super_.pretok {
             if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::$variant(ref mut pretok)) =
-                *single.write().expect("rwlock is poisoned")
+                *single.write().expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer")
             {
                 pretok.$name($value);
             }
@@ -603,9 +603,9 @@ impl PySequence {
                 Some(item) => {
                     *item
                         .write()
-                        .map_err(|_| PyException::new_err("rwlock is poisoned"))? = (*norm
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))? = (*norm
                         .read()
-                        .map_err(|_| PyException::new_err("rwlock is poisoned"))?)
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?)
                     .clone();
                 }
                 _ => {
@@ -892,11 +892,11 @@ impl PreTokenizer for PyPreTokenizerTypeWrapper {
         match self {
             PyPreTokenizerTypeWrapper::Single(inner) => inner
                 .read()
-                .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
                 .pre_tokenize(pretok),
             PyPreTokenizerTypeWrapper::Sequence(inner) => inner.iter().try_for_each(|n| {
                 n.read()
-                    .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                    .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
                     .pre_tokenize(pretok)
             }),
         }

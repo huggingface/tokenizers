@@ -62,7 +62,7 @@ impl PyNormalizer {
             PyNormalizerTypeWrapper::Single(ref inner) => match &*inner
                 .as_ref()
                 .read()
-                .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))?
             {
                 PyNormalizerWrapper::Custom(_) => {
                     Py::new(py, base)?.into_pyobject(py)?.into_any().into()
@@ -223,7 +223,9 @@ macro_rules! getter {
     ($self: ident, $variant: ident, $name: ident) => {{
         let super_ = $self.as_ref();
         if let PyNormalizerTypeWrapper::Single(ref norm) = super_.normalizer {
-            let wrapper = norm.read().expect("rwlock is poisoned");
+            let wrapper = norm.read().expect(
+                "RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer",
+            );
             if let PyNormalizerWrapper::Wrapped(NormalizerWrapper::$variant(o)) = (&*wrapper) {
                 o.$name.clone()
             } else {
@@ -239,7 +241,9 @@ macro_rules! setter {
     ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
         let super_ = $self.as_ref();
         if let PyNormalizerTypeWrapper::Single(ref norm) = super_.normalizer {
-            let mut wrapper = norm.write().expect("rwlock is poisoned");
+            let mut wrapper = norm.write().expect(
+                "RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer",
+            );
             if let PyNormalizerWrapper::Wrapped(NormalizerWrapper::$variant(ref mut o)) = *wrapper {
                 o.$name = $value;
             }
@@ -447,9 +451,9 @@ impl PySequence {
                 Some(item) => {
                     *item
                         .write()
-                        .map_err(|_| PyException::new_err("rwlock is poisoned"))? = norm
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))? = norm
                         .read()
-                        .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))?
                         .clone();
                 }
                 _ => {
@@ -747,11 +751,11 @@ impl Normalizer for PyNormalizerTypeWrapper {
         match self {
             PyNormalizerTypeWrapper::Single(inner) => inner
                 .read()
-                .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))?
                 .normalize(normalized),
             PyNormalizerTypeWrapper::Sequence(inner) => inner.iter().try_for_each(|n| {
                 n.read()
-                    .map_err(|_| PyException::new_err("rwlock is poisoned"))?
+                    .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))?
                     .normalize(normalized)
             }),
         }
