@@ -661,6 +661,11 @@ impl PyDecodeStream {
         }
     }
 
+    #[pyo3(signature = (sequence_ids), text_signature = "(self, sequence_ids)")]
+    fn from_sequence(&mut self, sequence_ids: Vec<u32>) {
+        self.ids = sequence_ids;
+    }
+
     #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
     fn step(&mut self, tokenizer: &PyTokenizer, id: u32) -> PyResult<Option<String>> {
         ToPyResult(tk::tokenizer::step_decode_stream(
