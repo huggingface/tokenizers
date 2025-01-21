@@ -114,7 +114,9 @@ impl<'de> Visitor<'de> for BacktrackingBpeVisitor {
                 }
             };
             builder = builder.vocab_and_merges(vocab, merges);
-            Ok(builder.build().map_err(|e| Error::custom(format!("Error building the backtraciing BPE {:?}", e)))?)
+            let model = builder.build().map_err(|e| Error::custom(format!("Error building the backtraciing BPE {:?}", e)))?;
+            println!("{:?}", model);
+            Ok(model)
         } else {
             Err(Error::custom("Missing vocab/merges"))
         }
@@ -150,7 +152,6 @@ mod test {
         println!("End of my example");
 
 
-
         let vocab: Vocab = [
             ("a".into(), 1),
             ("b".into(), 2),
@@ -168,6 +169,7 @@ mod test {
         match reconstructed {
             Ok(reconstructed) => {
                 println!("Good");
+                println!("{:?}", reconstructed.encode_via_backtracking(b"aab c d"));
                 assert_eq!(bpe, reconstructed);
             }
             Err(err) => {

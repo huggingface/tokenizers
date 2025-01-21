@@ -36,7 +36,7 @@ impl PyModel {
         let base = self.clone();
         Ok(match *self.model.as_ref().read().unwrap() {
             ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?.into_py(py),
-            ModelWrapper::BacktrackBpe(_) => Py::new(py, (PyBacktrackBPE {}, base))?.into_py(py),
+            ModelWrapper::BacktrackingBpe(_) => Py::new(py, (PyBacktrackingBpe {}, base))?.into_py(py),
             ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base))?.into_py(py),
             ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base))?.into_py(py),
             ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base))?.into_py(py),
@@ -562,10 +562,10 @@ impl PyBPE {
 }
 
 #[pyclass(module = "bpe")]
-struct PyBacktrackBpe {}
+struct PyBacktrackingBpe {}
 
 #[pymethods]
-impl PyBacktrackBpe {
+impl PyBacktrackingBpe {
     #[getter]
     fn get_dropout(self_: PyRef<Self>) -> Option<f32> {
         getter!(self_, BPE, dropout)
