@@ -664,6 +664,8 @@ impl PyDecodeStream {
     #[pyo3(signature = (sequence_ids), text_signature = "(self, sequence_ids)")]
     fn with_sequence(&mut self, sequence_ids: Vec<u32>) {
         self.ids = sequence_ids;
+        self.prefix_index = 0;
+        self.prefix = "".to_string();
     }
 
     #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
