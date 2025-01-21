@@ -57,7 +57,7 @@ class ByteFallback(Decoder):
     ByteFallback Decoder
     ByteFallback is a simple trick which converts tokens looking like `<0x61>`
     to pure bytes, and attempts to make them into a string. If the tokens
-    cannot be decoded you will get � instead for each inconvertible byte token
+    cannot be decoded you will get � instead for each inconvertable byte token
 
     """
     def __init__(self):

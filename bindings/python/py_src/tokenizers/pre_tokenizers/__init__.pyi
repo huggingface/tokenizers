@@ -48,7 +48,7 @@ class BertPreTokenizer(PreTokenizer):
     BertPreTokenizer
 
     This pre-tokenizer splits tokens on spaces, and also on punctuation.
-    Each occurrence of a punctuation character will be treated separately.
+    Each occurence of a punctuation character will be treated separately.
     """
     def __init__(self):
         pass
@@ -421,11 +421,11 @@ class Split(PreTokenizer):
 
     Args:
         pattern (:obj:`str` or :class:`~tokenizers.Regex`):
-            A pattern used to split the string. Usually a string or a regex built with `tokenizers.Regex`.
-            If you want to use a regex pattern, it has to be wrapped around a `tokenizers.Regex`,
+            A pattern used to split the string. Usually a string or a a regex built with `tokenizers.Regex`.
+            If you want to use a regex pattern, it has to be wrapped around a `tokenizer.Regex`,
             otherwise we consider is as a string pattern. For example `pattern="|"`
             means you want to split on `|` (imagine a csv file for example), while
-            `pattern=tokenizers.Regex("1|2")` means you split on either '1' or '2'.
+            `patter=tokenizer.Regex("1|2")` means you split on either '1' or '2'.
         behavior (:class:`~tokenizers.SplitDelimiterBehavior`):
             The behavior to use when splitting.
             Choices: "removed", "isolated", "merged_with_previous", "merged_with_next",
