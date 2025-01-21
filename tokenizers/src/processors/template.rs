@@ -353,8 +353,8 @@ pub struct TemplateProcessing {
 
 impl TemplateProcessing {
     // Getter for `single`
-    pub fn get_single(&self) -> Template {
-        self.single.clone()
+    pub fn get_single(&self) -> String {
+        format!("{:?}", self.single)
     }
 
     // Setter for `single`

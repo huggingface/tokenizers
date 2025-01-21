@@ -199,8 +199,7 @@ macro_rules! getter {
     ($self: ident, $variant: ident, $($name: tt)+) => {{
         let super_ = $self.as_ref();
         if let PostProcessorWrapper::$variant(ref post) = *super_.processor.read().expect("rwlock is poisoned") {
-            let output = post.$($name)+;
-            return format!("{:?}", output)
+            post.$($name)+
         } else {
             unreachable!()
         }
@@ -210,8 +209,10 @@ macro_rules! getter {
 #[allow(unused)]
 macro_rules! setter {
     ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
-        let super_ = $self;
-        if let PostProcessorWrapper::$variant(ref mut post) = super_.processor.as_ref() {
+        let super_ = $self.as_ref();
+        if let PostProcessorWrapper::$variant(ref mut post) =
+            *super_.processor.write().expect("rwlock is poisoned")
+        {
             post.$name = $value;
         }
     }};
@@ -259,6 +260,40 @@ impl PyBertProcessing {
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
         PyTuple::new(py, [("", 0), ("", 0)])
+    }
+
+    #[getter]
+    fn get_sep(self_: PyRef<Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
+        let py = self_.py();
+        let (tok, id) = getter!(self_, Bert, get_sep_copy());
+        PyTuple::new(
+            py,
+            Vec::<PyObject>::from([tok.into_pyobject(py)?.into(), id.into_pyobject(py)?.into()]),
+        )
+    }
+
+    #[setter]
+    fn set_sep(self_: PyRef<Self>, sep: Bound<'_, PyTuple>) -> PyResult<()> {
+        let sep = sep.extract()?;
+        setter!(self_, Bert, sep, sep);
+        Ok(())
+    }
+
+    #[getter]
+    fn get_cls(self_: PyRef<Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
+        let py = self_.py();
+        let (tok, id) = getter!(self_, Bert, get_cls_copy());
+        PyTuple::new(
+            py,
+            Vec::<PyObject>::from([tok.into_pyobject(py)?.into(), id.into_pyobject(py)?.into()]),
+        )
+    }
+
+    #[setter]
+    fn set_cls(self_: PyRef<Self>, cls: Bound<'_, PyTuple>) -> PyResult<()> {
+        let cls = cls.extract()?;
+        setter!(self_, Bert, cls, cls);
+        Ok(())
     }
 }
 
@@ -310,6 +345,60 @@ impl PyRobertaProcessing {
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
         PyTuple::new(py, [("", 0), ("", 0)])
     }
+
+    #[getter]
+    fn get_sep(self_: PyRef<Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
+        let py = self_.py();
+        let (tok, id) = getter!(self_, Roberta, get_sep_copy());
+        PyTuple::new(
+            py,
+            Vec::<PyObject>::from([tok.into_pyobject(py)?.into(), id.into_pyobject(py)?.into()]),
+        )
+    }
+
+    #[setter]
+    fn set_sep(self_: PyRef<Self>, sep: Bound<'_, PyTuple>) -> PyResult<()> {
+        let sep = sep.extract()?;
+        setter!(self_, Roberta, sep, sep);
+        Ok(())
+    }
+
+    #[getter]
+    fn get_cls(self_: PyRef<Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
+        let py = self_.py();
+        let (tok, id) = getter!(self_, Roberta, get_cls_copy());
+        PyTuple::new(
+            py,
+            Vec::<PyObject>::from([tok.into_pyobject(py)?.into(), id.into_pyobject(py)?.into()]),
+        )
+    }
+
+    #[setter]
+    fn set_cls(self_: PyRef<Self>, cls: Bound<'_, PyTuple>) -> PyResult<()> {
+        let cls = cls.extract()?;
+        setter!(self_, Roberta, cls, cls);
+        Ok(())
+    }
+
+    #[getter]
+    fn get_trim_offsets(self_: PyRef<Self>) -> bool {
+        getter!(self_, Roberta, trim_offsets)
+    }
+
+    #[setter]
+    fn set_trim_offsets(self_: PyRef<Self>, trim_offsets: bool) {
+        setter!(self_, Roberta, trim_offsets, trim_offsets)
+    }
+
+    #[getter]
+    fn get_add_prefix_space(self_: PyRef<Self>) -> bool {
+        getter!(self_, Roberta, add_prefix_space)
+    }
+
+    #[setter]
+    fn set_add_prefix_space(self_: PyRef<Self>, add_prefix_space: bool) {
+        setter!(self_, Roberta, add_prefix_space, add_prefix_space)
+    }
 }
 
 /// This post-processor takes care of trimming the offsets.
@@ -340,6 +429,36 @@ impl PyByteLevel {
             PyByteLevel {},
             PyPostProcessor::new(Arc::new(RwLock::new(byte_level.into()))),
         )
+    }
+
+    #[getter]
+    fn get_add_prefix_space(self_: PyRef<Self>) -> bool {
+        getter!(self_, ByteLevel, add_prefix_space)
+    }
+
+    #[setter]
+    fn set_add_prefix_space(self_: PyRef<Self>, add_prefix_space: bool) {
+        setter!(self_, ByteLevel, add_prefix_space, add_prefix_space)
+    }
+
+    #[getter]
+    fn get_trim_offsets(self_: PyRef<Self>) -> bool {
+        getter!(self_, ByteLevel, trim_offsets)
+    }
+
+    #[setter]
+    fn set_trim_offsets(self_: PyRef<Self>, trim_offsets: bool) {
+        setter!(self_, ByteLevel, trim_offsets, trim_offsets)
+    }
+
+    #[getter]
+    fn get_use_regex(self_: PyRef<Self>) -> bool {
+        getter!(self_, ByteLevel, use_regex)
+    }
+
+    #[setter]
+    fn set_use_regex(self_: PyRef<Self>, use_regex: bool) {
+        setter!(self_, ByteLevel, use_regex, use_regex)
     }
 }
 
