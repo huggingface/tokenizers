@@ -3,7 +3,16 @@ import pickle
 import pytest
 
 from tokenizers import NormalizedString
-from tokenizers.normalizers import BertNormalizer, Lowercase, Normalizer, Sequence, Strip, Prepend
+from tokenizers.normalizers import (
+    BertNormalizer,
+    Lowercase,
+    Normalizer,
+    Precompiled,
+    Sequence,
+    Strip,
+    Prepend,
+    Replace,
+)
 
 
 class TestBertNormalizer:
@@ -67,16 +76,57 @@ class TestSequence:
         output = normalizer.normalize_str("  HELLO  ")
         assert output == "hello"
 
-    def test_items(self):
-        normalizers = Sequence([BertNormalizer(True, True), Prepend(), Strip()])
+    def test_set_item(self):
+        normalizers = Sequence(
+            [
+                BertNormalizer(True, True),
+                Prepend(prepend="test"),
+            ]
+        )
+        assert normalizers[0].__class__ == BertNormalizer
         assert normalizers[1].__class__ == Prepend
-        normalizers[0].lowercase = False
-        assert not normalizers[0].lowercase
-        assert normalizers[2].__class__ == Strip
-        with pytest.raises(IndexError):
-            print(normalizers[3])
         normalizers[1] = Strip()
         assert normalizers[1].__class__ == Strip
+        with pytest.raises(IndexError):
+            print(normalizers[2])
+
+    def test_item_getters_and_setters(self):
+        normalizers = Sequence(
+            [
+                BertNormalizer(clean_text=True, handle_chinese_chars=True, strip_accents=True, lowercase=True),
+                Strip(left=True, right=True),
+                Prepend(prepend="_"),
+                Replace(pattern="something", content="else"),
+            ]
+        )
+
+        assert normalizers[0].__class__ == BertNormalizer
+        normalizers[0].clean_text = False
+        normalizers[0].handle_chinese_chars = False
+        normalizers[0].strip_accents = False
+        normalizers[0].lowercase = False
+        assert not normalizers[0].clean_text
+        assert not normalizers[0].handle_chinese_chars
+        assert not normalizers[0].strip_accents
+        assert not normalizers[0].lowercase
+
+        assert normalizers[1].__class__ == Strip
+        normalizers[1].left = False
+        normalizers[1].right = False
+        assert not normalizers[1].left
+        assert not normalizers[1].right
+
+        assert normalizers[2].__class__ == Prepend
+        normalizers[2].prepend = " "
+        assert normalizers[2].prepend == " "
+
+        assert normalizers[3].__class__ == Replace
+        with pytest.raises(Exception):
+            normalizers[3].pattern = "test"
+        with pytest.raises(Exception):
+            print(normalizers[3].pattern)
+        normalizers[3].content = "test"
+        assert normalizers[3].content == "test"
 
 
 class TestLowercase:

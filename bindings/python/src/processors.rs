@@ -8,11 +8,13 @@ use pyo3::exceptions;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use serde::ser::SerializeStruct;
+use serde::Deserializer;
+use serde::Serializer;
 use serde::{Deserialize, Serialize};
 use tk::processors::bert::BertProcessing;
 use tk::processors::byte_level::ByteLevel;
 use tk::processors::roberta::RobertaProcessing;
-use tk::processors::sequence::Sequence;
 use tk::processors::template::{SpecialToken, Template};
 use tk::processors::PostProcessorWrapper;
 use tk::{Encoding, PostProcessor};
@@ -31,7 +33,7 @@ use tokenizers as tk;
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct PyPostProcessor {
-    pub processor: Arc<RwLock<PostProcessorWrapper>>,
+    processor: PyPostProcessorTypeWrapper,
 }
 
 impl<I> From<I> for PyPostProcessor
@@ -40,20 +42,27 @@ where
 {
     fn from(processor: I) -> Self {
         PyPostProcessor {
-            processor: Arc::new(RwLock::new(processor.into())), // Wrap the PostProcessorWrapper in Arc<RwLock<>>
+            processor: processor.into().into(),
         }
     }
 }
 
 impl PyPostProcessor {
-    pub fn new(processor: Arc<RwLock<PostProcessorWrapper>>) -> Self {
+    pub(crate) fn new(processor: PyPostProcessorTypeWrapper) -> Self {
         PyPostProcessor { processor }
     }
 
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
         Ok(
-            match &*self.processor.read().map_err(|_| {
+            match self.processor {
+                PyPostProcessorTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+                PyPostProcessorTypeWrapper::Single(ref inner) => {
+
+            match &*inner.read().map_err(|_| {
                 PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor")
             })? {
                 PostProcessorWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
@@ -76,7 +85,9 @@ impl PyPostProcessor {
                     .into_pyobject(py)?
                     .into_any()
                     .into(),
-            },
+            }
+                }
+            }
         )
     }
 }
@@ -84,10 +95,7 @@ impl PyPostProcessor {
 impl PostProcessor for PyPostProcessor {
     // TODO: update signature to `tk::Result<usize>`
     fn added_tokens(&self, is_pair: bool) -> usize {
-        self.processor
-            .read()
-            .expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor")
-            .added_tokens(is_pair)
+        self.processor.added_tokens(is_pair)
     }
 
     fn process_encodings(
@@ -96,8 +104,6 @@ impl PostProcessor for PyPostProcessor {
         add_special_tokens: bool,
     ) -> tk::Result<Vec<Encoding>> {
         self.processor
-            .read()
-            .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?
             .process_encodings(encodings, add_special_tokens)
     }
 }
@@ -139,11 +145,7 @@ impl PyPostProcessor {
     ///     :obj:`int`: The number of tokens to add
     #[pyo3(text_signature = "(self, is_pair)")]
     fn num_special_tokens_to_add(&self, is_pair: bool) -> PyResult<usize> {
-        Ok(self
-            .processor
-            .read()
-            .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?
-            .added_tokens(is_pair))
+        Ok(self.processor.added_tokens(is_pair))
     }
 
     /// Post-process the given encodings, generating the final one
@@ -168,16 +170,11 @@ impl PyPostProcessor {
         pair: Option<&PyEncoding>,
         add_special_tokens: bool,
     ) -> PyResult<PyEncoding> {
-        let final_encoding = ToPyResult(
-            self.processor
-                .read()
-                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?
-                .process(
-                    encoding.encoding.clone(),
-                    pair.map(|e| e.encoding.clone()),
-                    add_special_tokens,
-                ),
-        )
+        let final_encoding = ToPyResult(self.processor.process(
+            encoding.encoding.clone(),
+            pair.map(|e| e.encoding.clone()),
+            add_special_tokens,
+        ))
         .into_py()?;
         Ok(final_encoding.into())
     }
@@ -196,39 +193,127 @@ impl PyPostProcessor {
 macro_rules! getter {
     ($self: ident, $variant: ident, $($name: tt)+) => {{
         let super_ = $self.as_ref();
-        if let PostProcessorWrapper::$variant(ref post) = *super_.processor.read().expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor") {
-            post.$($name)+
+        if let PyPostProcessorTypeWrapper::Single(ref single) = super_.processor {
+            if let PostProcessorWrapper::$variant(ref post) = *single.read().expect(
+                "RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"
+            ) {
+                post.$($name)+
+            } else {
+                unreachable!()
+            }
         } else {
             unreachable!()
         }
     }};
 }
 
-#[allow(unused)]
 macro_rules! setter {
     ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
         let super_ = $self.as_ref();
-        if let PostProcessorWrapper::$variant(ref mut post) = *super_.processor.write().expect(
+        if let PyPostProcessorTypeWrapper::Single(ref single) = super_.processor {
+        if let PostProcessorWrapper::$variant(ref mut post) = *single.write().expect(
             "RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor",
         ) {
             post.$name = $value;
         }
+        }
     }};
     ($self: ident, $variant: ident, @$name: ident, $value: expr) => {{
-        let super_ = &$self.as_ref();
-        match &super_.processor.as_ref() {
-            PostProcessorWrapper::$variant(post_variant) => post_variant.$name($value),
-            _ => unreachable!(),
+        let super_ = $self.as_ref();
+        if let PyPostProcessorTypeWrapper::Single(ref single) = super_.processor {
+        if let PostProcessorWrapper::$variant(ref mut post) = *single.write().expect(
+            "RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor",
+        ) {
+            post.$name($value);
         }
-
-        {
-            if let Some(PostProcessorWrapper::$variant(post_variant)) =
-                Arc::get_mut(&mut super_.processor)
-            {
-                post_variant.$name($value);
-            }
-        };
+        }
     };};
+}
+
+#[derive(Clone)]
+pub(crate) enum PyPostProcessorTypeWrapper {
+    Sequence(Vec<Arc<RwLock<PostProcessorWrapper>>>),
+    Single(Arc<RwLock<PostProcessorWrapper>>),
+}
+
+impl PostProcessor for PyPostProcessorTypeWrapper {
+    fn added_tokens(&self, is_pair: bool) -> usize {
+        match self {
+            PyPostProcessorTypeWrapper::Single(inner) => inner
+                .read()
+                .expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor")
+                .added_tokens(is_pair),
+            PyPostProcessorTypeWrapper::Sequence(inner) => inner.iter().map(|p| {
+                p.read()
+                    .expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor")
+                    .added_tokens(is_pair)
+            }).sum::<usize>(),
+        }
+    }
+
+    fn process_encodings(
+        &self,
+        mut encodings: Vec<Encoding>,
+        add_special_tokens: bool,
+    ) -> tk::Result<Vec<Encoding>> {
+        match self {
+            PyPostProcessorTypeWrapper::Single(inner) => inner
+                .read()
+                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
+                .process_encodings(encodings, add_special_tokens),
+            PyPostProcessorTypeWrapper::Sequence(inner) => {
+                for processor in inner.iter() {
+                    encodings = processor
+                        .read()
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
+                        .process_encodings(encodings, add_special_tokens)?;
+                }
+        Ok(encodings)
+            },
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PyPostProcessorTypeWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wrapper = PostProcessorWrapper::deserialize(deserializer)?;
+        Ok(wrapper.into())
+    }
+}
+
+impl Serialize for PyPostProcessorTypeWrapper {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            PyPostProcessorTypeWrapper::Sequence(seq) => {
+                let mut ser = serializer.serialize_struct("Sequence", 2)?;
+                ser.serialize_field("type", "Sequence")?;
+                ser.serialize_field("postprocessors", seq)?;
+                ser.end()
+            }
+            PyPostProcessorTypeWrapper::Single(inner) => inner.serialize(serializer),
+        }
+    }
+}
+
+impl<I> From<I> for PyPostProcessorTypeWrapper
+where
+    I: Into<PostProcessorWrapper>,
+{
+    fn from(processor: I) -> Self {
+        let processor = processor.into();
+        match processor {
+            PostProcessorWrapper::Sequence(seq) => PyPostProcessorTypeWrapper::Sequence(
+                seq.into_iter().map(|p| Arc::new(RwLock::new(p))).collect(),
+            ),
+            _ => PyPostProcessorTypeWrapper::Single(Arc::new(RwLock::new(processor.clone()))),
+        }
+    }
 }
 
 /// This post-processor takes care of adding the special tokens needed by
@@ -250,10 +335,7 @@ impl PyBertProcessing {
     #[new]
     #[pyo3(text_signature = "(self, sep, cls)")]
     fn new(sep: (String, u32), cls: (String, u32)) -> (Self, PyPostProcessor) {
-        (
-            PyBertProcessing {},
-            PyPostProcessor::new(Arc::new(RwLock::new(BertProcessing::new(sep, cls).into()))),
-        )
+        (PyBertProcessing {}, BertProcessing::new(sep, cls).into())
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
@@ -334,10 +416,7 @@ impl PyRobertaProcessing {
         let proc = RobertaProcessing::new(sep, cls)
             .trim_offsets(trim_offsets)
             .add_prefix_space(add_prefix_space);
-        (
-            PyRobertaProcessing {},
-            PyPostProcessor::new(Arc::new(RwLock::new(proc.into()))),
-        )
+        (PyRobertaProcessing {}, proc.into())
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
@@ -412,21 +491,28 @@ pub struct PyByteLevel {}
 #[pymethods]
 impl PyByteLevel {
     #[new]
-    #[pyo3(signature = (trim_offsets = None, **_kwargs), text_signature = "(self, trim_offsets=True)")]
+    #[pyo3(signature = (add_prefix_space = None, trim_offsets = None, use_regex = None, **_kwargs), text_signature = "(self, trim_offsets=True)")]
     fn new(
+        add_prefix_space: Option<bool>,
         trim_offsets: Option<bool>,
+        use_regex: Option<bool>,
         _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> (Self, PyPostProcessor) {
         let mut byte_level = ByteLevel::default();
+
+        if let Some(aps) = add_prefix_space {
+            byte_level = byte_level.add_prefix_space(aps);
+        }
 
         if let Some(to) = trim_offsets {
             byte_level = byte_level.trim_offsets(to);
         }
 
-        (
-            PyByteLevel {},
-            PyPostProcessor::new(Arc::new(RwLock::new(byte_level.into()))),
-        )
+        if let Some(ur) = use_regex {
+            byte_level = byte_level.use_regex(ur);
+        }
+
+        (PyByteLevel {}, byte_level.into())
     }
 
     #[getter]
@@ -617,10 +703,7 @@ impl PyTemplateProcessing {
             .build()
             .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
 
-        Ok((
-            PyTemplateProcessing {},
-            PyPostProcessor::new(Arc::new(RwLock::new(processor.into()))),
-        ))
+        Ok((PyTemplateProcessing {}, processor.into()))
     }
 
     #[getter]
@@ -632,13 +715,13 @@ impl PyTemplateProcessing {
     fn set_single(self_: PyRef<Self>, single: PyTemplate) -> PyResult<()> {
         let template: Template = Template::from(single);
         let super_ = self_.as_ref();
-        let mut wrapper = super_
-            .processor
-            .write()
-            .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?;
-        if let PostProcessorWrapper::Template(ref mut post) = *wrapper {
-            post.set_single(template);
-        };
+        if let PyPostProcessorTypeWrapper::Single(ref inner) = super_.processor {
+            if let PostProcessorWrapper::Template(ref mut post) = *inner
+                .write()
+                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))? {
+                post.set_single(template);
+            }
+        }
         Ok(())
     }
 }
@@ -656,21 +739,19 @@ impl PySequence {
     #[new]
     #[pyo3(signature = (processors_py), text_signature = "(self, processors)")]
     fn new(processors_py: &Bound<'_, PyList>) -> PyResult<(Self, PyPostProcessor)> {
-        let mut processors: Vec<PostProcessorWrapper> = Vec::with_capacity(processors_py.len());
+        let mut processors = Vec::with_capacity(processors_py.len());
         for n in processors_py.iter() {
             let processor: PyRef<PyPostProcessor> = n.extract()?;
-            let processor = processor
-                .processor
-                .write()
-                .map_err(|_| PyException::new_err("rwlock mutex is poisoned"))?;
-            processors.push(processor.clone());
+            match &processor.processor {
+                PyPostProcessorTypeWrapper::Sequence(inner) => {
+                    processors.extend(inner.iter().cloned())
+                }
+                PyPostProcessorTypeWrapper::Single(inner) => processors.push(inner.clone()),
+            }
         }
-        let sequence_processor = Sequence::new(processors);
         Ok((
             PySequence {},
-            PyPostProcessor::new(Arc::new(RwLock::new(PostProcessorWrapper::Sequence(
-                sequence_processor,
-            )))),
+            PyPostProcessor::new(PyPostProcessorTypeWrapper::Sequence(processors)),
         ))
     }
 
@@ -679,16 +760,11 @@ impl PySequence {
     }
 
     fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
-        let wrapper = self_
-            .as_ref()
-            .processor
-            .read()
-            .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?;
-
-        match *wrapper {
-            PostProcessorWrapper::Sequence(ref inner) => match inner.get(index) {
+        match &self_.as_ref().processor {
+            PyPostProcessorTypeWrapper::Sequence(ref inner) => match inner.get(index) {
                 Some(item) => {
-                    PyPostProcessor::new(Arc::new(RwLock::new(item.to_owned()))).get_as_subtype(py)
+                    PyPostProcessor::new(PyPostProcessorTypeWrapper::Single(item.clone()))
+                        .get_as_subtype(py)
                 }
                 _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
                     "Index not found",
@@ -702,16 +778,16 @@ impl PySequence {
 
     fn __setitem__(self_: PyRef<'_, Self>, index: usize, value: Bound<'_, PyAny>) -> PyResult<()> {
         let processor: PyPostProcessor = value.extract()?;
-        let mut wrapper = self_
-            .as_ref()
-            .processor
-            .write()
-            .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?;
-        match *wrapper {
-            PostProcessorWrapper::Sequence(ref mut inner) => match inner.get_mut(index) {
+        let PyPostProcessorTypeWrapper::Single(processor) = processor.processor else {
+            return Err(PyException::new_err("processor should not be a sequence"));
+        };
+
+        match &self_.as_ref().processor {
+            PyPostProcessorTypeWrapper::Sequence(inner) => match inner.get(index) {
                 Some(item) => {
-                    *item = processor
-                        .processor
+                    *item
+                        .write()
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))? = processor
                         .read()
                         .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?
                         .clone();
@@ -752,13 +828,13 @@ mod test {
     use tk::processors::bert::BertProcessing;
     use tk::processors::PostProcessorWrapper;
 
-    use crate::processors::PyPostProcessor;
+    use crate::processors::{PyPostProcessor, PyPostProcessorTypeWrapper};
 
     #[test]
     fn get_subtype() {
         Python::with_gil(|py| {
-            let py_proc = PyPostProcessor::new(Arc::new(RwLock::new(
-                BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 1)).into(),
+            let py_proc = PyPostProcessor::new(PyPostProcessorTypeWrapper::Single(Arc::new(
+                RwLock::new(BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 1)).into()),
             )));
             let py_bert = py_proc.get_as_subtype(py).unwrap();
             assert_eq!(
@@ -775,21 +851,29 @@ mod test {
         let rs_processing_ser = serde_json::to_string(&rs_processing).unwrap();
         let rs_wrapper_ser = serde_json::to_string(&rs_wrapper).unwrap();
 
-        let py_processing = PyPostProcessor::new(Arc::new(RwLock::new(rs_wrapper)));
+        let py_processing = PyPostProcessor::new(PyPostProcessorTypeWrapper::Single(Arc::new(
+            RwLock::new(rs_wrapper),
+        )));
         let py_ser = serde_json::to_string(&py_processing).unwrap();
         assert_eq!(py_ser, rs_processing_ser);
         assert_eq!(py_ser, rs_wrapper_ser);
 
         let py_processing: PyPostProcessor = serde_json::from_str(&rs_processing_ser).unwrap();
-        match *py_processing.processor.as_ref().read().unwrap() {
-            PostProcessorWrapper::Bert(_) => (),
-            _ => panic!("Expected Bert postprocessor."),
+        match py_processing.processor {
+            PyPostProcessorTypeWrapper::Single(inner) => match *inner.as_ref().read().unwrap() {
+                PostProcessorWrapper::Bert(_) => (),
+                _ => panic!("Expected Bert postprocessor."),
+            },
+            _ => panic!("Expected a single processor, got a sequence"),
         }
 
         let py_processing: PyPostProcessor = serde_json::from_str(&rs_wrapper_ser).unwrap();
-        match *py_processing.processor.as_ref().read().unwrap() {
-            PostProcessorWrapper::Bert(_) => (),
-            _ => panic!("Expected Bert postprocessor."),
+        match py_processing.processor {
+            PyPostProcessorTypeWrapper::Single(inner) => match *inner.as_ref().read().unwrap() {
+                PostProcessorWrapper::Bert(_) => (),
+                _ => panic!("Expected Bert postprocessor."),
+            },
+            _ => panic!("Expected a single processor, got a sequence"),
         };
     }
 }

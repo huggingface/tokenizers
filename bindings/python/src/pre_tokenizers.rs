@@ -422,9 +422,7 @@ impl PySplit {
 
     #[getter]
     fn get_behavior(self_: PyRef<Self>) -> String {
-        getter!(self_, Punctuation, behavior)
-            .to_string()
-            .to_lowercase()
+        getter!(self_, Split, behavior).to_string().to_lowercase()
     }
 
     #[setter]
@@ -442,7 +440,7 @@ impl PySplit {
                 ))
             }
         };
-        setter!(self_, Punctuation, behavior, behavior);
+        setter!(self_, Split, behavior, behavior);
         Ok(())
     }
 
@@ -586,24 +584,25 @@ impl PySequence {
                     "Index not found",
                 )),
             },
-            PyPreTokenizerTypeWrapper::Single(inner) => {
-                PyPreTokenizer::new(PyPreTokenizerTypeWrapper::Single(inner.clone()))
-                    .get_as_subtype(py)
-            }
+            _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                "This processor is not a Sequence, it does not support __getitem__",
+            )),
         }
     }
 
     fn __setitem__(self_: PyRef<'_, Self>, index: usize, value: Bound<'_, PyAny>) -> PyResult<()> {
         let pretok: PyPreTokenizer = value.extract()?;
-        let PyPreTokenizerTypeWrapper::Single(norm) = pretok.pretok else {
-            return Err(PyException::new_err("normalizer should not be a sequence"));
+        let PyPreTokenizerTypeWrapper::Single(pretok) = pretok.pretok else {
+            return Err(PyException::new_err(
+                "pre tokenizer should not be a sequence",
+            ));
         };
         match &self_.as_ref().pretok {
             PyPreTokenizerTypeWrapper::Sequence(inner) => match inner.get(index) {
                 Some(item) => {
                     *item
                         .write()
-                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))? = (*norm
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))? = (*pretok
                         .read()
                         .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?)
                     .clone();

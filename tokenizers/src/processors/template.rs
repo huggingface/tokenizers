@@ -338,7 +338,7 @@ impl From<HashMap<String, SpecialToken>> for Tokens {
 #[builder(build_fn(validate = "Self::validate"))]
 pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
-    single: Template,
+    pub single: Template,
     #[builder(try_setter, default = "\"$A:0 $B:1\".try_into().unwrap()")]
     pair: Template,
     #[builder(setter(skip), default = "self.default_added(true)")]

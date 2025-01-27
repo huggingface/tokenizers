@@ -232,5 +232,13 @@ class TestSequenceProcessing:
         processors = Sequence([RobertaProcessing(("</s>", 1), ("<s>", 0)), ByteLevel()])
         assert processors[0].__class__ == RobertaProcessing
         assert processors[1].__class__ == ByteLevel
-        processors[0] = ByteLevel()
+        processors[0] = ByteLevel(add_prefix_space=False, trim_offsets=False, use_regex=False)
+        print(processors[0])
+        processors[0].add_prefix_space = True
+        processors[0].trim_offsets = True
+        processors[0].use_regex = True
+        print(processors[0])
         assert processors[0].__class__ == ByteLevel
+        assert processors[0].add_prefix_space
+        assert processors[0].trim_offsets
+        assert processors[0].use_regex

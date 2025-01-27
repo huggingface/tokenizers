@@ -609,6 +609,28 @@ impl PyReplace {
             ToPyResult(Replace::new(pattern, content)).into_py()?.into(),
         ))
     }
+
+    #[getter]
+    fn get_pattern(_self: PyRef<Self>) -> PyResult<()> {
+        Err(PyException::new_err("Cannot get pattern"))
+    }
+
+    #[setter]
+    fn set_pattern(_self: PyRef<Self>, _pattern: PyPattern) -> PyResult<()> {
+        Err(PyException::new_err(
+            "Cannot set pattern, please instantiate a new replace pattern instead",
+        ))
+    }
+
+    #[getter]
+    fn get_content(self_: PyRef<Self>) -> String {
+        getter!(self_, Replace, content)
+    }
+
+    #[setter]
+    fn set_content(self_: PyRef<Self>, content: String) {
+        setter!(self_, Replace, content, content)
+    }
 }
 
 #[derive(Clone, Debug)]
