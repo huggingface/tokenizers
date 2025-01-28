@@ -12,7 +12,7 @@ fn is_punc(x: char) -> bool {
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Punctuation {
     #[serde(default = "default_split")]
-    behavior: SplitDelimiterBehavior,
+    pub behavior: SplitDelimiterBehavior,
 }
 
 fn default_split() -> SplitDelimiterBehavior {

@@ -13,6 +13,12 @@ pub enum PrependScheme {
     Always,
 }
 
+impl std::fmt::Display for PrependScheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.serialize(f)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Eq)]
 /// Replaces all the whitespaces by the provided meta character and then
 /// splits on this character
