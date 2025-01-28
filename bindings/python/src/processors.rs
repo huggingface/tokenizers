@@ -293,7 +293,7 @@ impl Serialize for PyPostProcessorTypeWrapper {
             PyPostProcessorTypeWrapper::Sequence(seq) => {
                 let mut ser = serializer.serialize_struct("Sequence", 2)?;
                 ser.serialize_field("type", "Sequence")?;
-                ser.serialize_field("postprocessors", seq)?;
+                ser.serialize_field("processors", seq)?;
                 ser.end()
             }
             PyPostProcessorTypeWrapper::Single(inner) => inner.serialize(serializer),
