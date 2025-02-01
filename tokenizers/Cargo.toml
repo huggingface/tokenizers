@@ -49,24 +49,24 @@ regex = "1.10"
 regex-syntax = "0.8"
 rayon = "1.10"
 rayon-cond = "0.3"
-serde = { version = "1.0", features = [ "derive" ] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 unicode-normalization-alignments = "0.1"
 unicode_categories = "0.1"
 unicode-segmentation = "1.11"
-indicatif = {version = "0.17", optional = true}
+indicatif = { version = "0.17", optional = true }
 itertools = "0.13"
 log = "0.4"
 derive_builder = "0.20"
 spm_precompiled = "0.1.3"
-hf-hub = { version = "0.3.2", optional = true }
+hf-hub = { version = "0.4.0", optional = true }
 aho-corasick = "1.1"
 paste = "1.0.14"
 macro_rules_attribute = "0.2.0"
 thiserror = "2"
-fancy-regex = { version = "0.14", optional = true}
+fancy-regex = { version = "0.14", optional = true }
 getrandom = { version = "0.2.10" }
-esaxx-rs = { version = "0.1.10", default-features = false, features=[]}
+esaxx-rs = { version = "0.1.10", default-features = false, features = [] }
 monostate = "0.1.12"
 
 [features]
@@ -89,4 +89,3 @@ lto = "fat"
 [[example]]
 name = "encode_batch"
 required-features = ["http"]
-
