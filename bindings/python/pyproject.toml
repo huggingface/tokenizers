@@ -2,32 +2,27 @@
 name = "tokenizers"
 requires-python = ">=3.9"
 authors = [
-    {name = "Nicolas Patry", email = "patry.nicolas@protonmail.com"},
-    {name = "Anthony Moi", email = "anthony@huggingface.co"}
+  { name = "Nicolas Patry", email = "patry.nicolas@protonmail.com" },
+  { name = "Anthony Moi", email = "anthony@huggingface.co" },
 ]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Education",
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: Apache Software License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3 :: Only",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Education",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 keywords = ["NLP", "tokenizer", "BPE", "transformer", "deep learning"]
-dynamic = [
-    "description",
-    "license",
-    "readme",
-    "version",
-]
+dynamic = ["description", "license", "readme", "version"]
 dependencies = ["huggingface_hub>=0.16.4,<1.0"]
 
 [project.urls]
@@ -59,16 +54,16 @@ target-version = ["py35"]
 line-length = 119
 target-version = "py311"
 lint.ignore = [
-    # a == None in tests vs is None.
-    "E711",
-    # a == False in tests vs is False.
-    "E712",
-    # try.. import except.. pattern without using the lib.
-    "F401",
-    # Raw type equality is required in asserts
-    "E721",
-    # Import order
-    "E402",
-    # Fixtures unused import
-    "F811",
+  # a == None in tests vs is None.
+  "E711",
+  # a == False in tests vs is False.
+  "E712",
+  # try.. import except.. pattern without using the lib.
+  "F401",
+  # Raw type equality is required in asserts
+  "E721",
+  # Import order
+  "E402",
+  # Fixtures unused import
+  "F811",
 ]

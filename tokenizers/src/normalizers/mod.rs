@@ -43,14 +43,14 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
+        #[derive(Debug, Deserialize)]
         pub struct Tagged {
             #[serde(rename = "type")]
             variant: EnumType,
             #[serde(flatten)]
             rest: serde_json::Value,
         }
-        #[derive(Serialize, Deserialize)]
+        #[derive(Debug, Serialize, Deserialize)]
         pub enum EnumType {
             Bert,
             Strip,
@@ -168,7 +168,7 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                     NormalizerUntagged::NFD(bpe) => NormalizerWrapper::NFD(bpe),
                     NormalizerUntagged::NFKC(bpe) => NormalizerWrapper::NFKC(bpe),
                     NormalizerUntagged::NFKD(bpe) => NormalizerWrapper::NFKD(bpe),
-                    NormalizerUntagged::Sequence(bpe) => NormalizerWrapper::Sequence(bpe),
+                    NormalizerUntagged::Sequence(seq) => NormalizerWrapper::Sequence(seq),
                     NormalizerUntagged::Lowercase(bpe) => NormalizerWrapper::Lowercase(bpe),
                     NormalizerUntagged::Nmt(bpe) => NormalizerWrapper::Nmt(bpe),
                     NormalizerUntagged::Precompiled(bpe) => NormalizerWrapper::Precompiled(bpe),

@@ -27,11 +27,11 @@ impl From<&str> for SplitPattern {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type")]
 pub struct Split {
-    pattern: SplitPattern,
+    pub pattern: SplitPattern,
     #[serde(skip)]
-    regex: SysRegex,
-    behavior: SplitDelimiterBehavior,
-    invert: bool,
+    pub regex: SysRegex,
+    pub behavior: SplitDelimiterBehavior,
+    pub invert: bool,
 }
 
 impl<'de> Deserialize<'de> for Split {

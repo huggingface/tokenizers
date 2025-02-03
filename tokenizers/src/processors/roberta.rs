@@ -7,10 +7,10 @@ use std::iter::FromIterator;
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "type")]
 pub struct RobertaProcessing {
-    sep: (String, u32),
-    cls: (String, u32),
-    trim_offsets: bool,
-    add_prefix_space: bool,
+    pub sep: (String, u32),
+    pub cls: (String, u32),
+    pub trim_offsets: bool,
+    pub add_prefix_space: bool,
 }
 
 impl Default for RobertaProcessing {
@@ -43,6 +43,14 @@ impl RobertaProcessing {
     pub fn add_prefix_space(mut self, v: bool) -> Self {
         self.add_prefix_space = v;
         self
+    }
+
+    pub fn get_sep_copy(&self) -> (String, u32) {
+        (self.sep.0.clone(), self.sep.1)
+    }
+
+    pub fn get_cls_copy(&self) -> (String, u32) {
+        (self.cls.0.clone(), self.cls.1)
     }
 }
 
