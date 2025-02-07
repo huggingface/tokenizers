@@ -5,16 +5,16 @@ use crate::utils::iter::ResultShunt;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::{
-    collections::HashMap,
     fs::File,
     io::prelude::*,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
+use rustc_hash::FxHashMap;
 
-pub type Vocab = HashMap<String, u32>;
-type VocabR = HashMap<u32, String>;
-pub type MergeMap = HashMap<Pair, (u32, u32)>;
+pub type Vocab = FxHashMap<String, u32>;
+type VocabR = FxHashMap<u32, String>;
+pub type MergeMap = FxHashMap<Pair, (u32, u32)>;
 pub type Merges = Vec<(String, String)>;
 
 struct Config {
@@ -41,7 +41,7 @@ impl Default for BpeBuilder {
         Self {
             config: Config {
                 files: None,
-                vocab: HashMap::new(),
+                vocab: FxHashMap::default(),
                 merges: vec![],
                 cache_capacity: DEFAULT_CACHE_CAPACITY,
                 dropout: None,
@@ -324,7 +324,7 @@ impl BPE {
         let mut buffer = String::new();
         vocab_file.read_to_string(&mut buffer)?;
         let json: Value = serde_json::from_str(&buffer)?;
-        let mut vocab = HashMap::new();
+        let mut vocab = FxHashMap::default();
         match json {
             Value::Object(m) => {
                 for (token, id) in m {
@@ -493,7 +493,7 @@ impl BPE {
 impl Model for BPE {
     type Trainer = BpeTrainer;
 
-    fn get_vocab(&self) -> HashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<String, u32> {
         self.vocab.clone()
     }
 

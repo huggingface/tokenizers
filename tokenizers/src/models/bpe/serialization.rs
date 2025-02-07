@@ -4,7 +4,7 @@ use serde::{
     ser::SerializeStruct,
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 impl Serialize for BPE {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -80,7 +80,7 @@ impl<'de> Visitor<'de> for BPEVisitor {
         V: MapAccess<'de>,
     {
         let mut builder = BpeBuilder::new();
-        let mut vocab: Option<HashMap<String, u32>> = None;
+        let mut vocab: Option<FxHashMap<String, u32>> = None;
 
         #[derive(Debug, Deserialize)]
         #[serde(untagged)]
