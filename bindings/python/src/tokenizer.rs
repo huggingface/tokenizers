@@ -1,5 +1,6 @@
 use serde::Serialize;
-use std::collections::{hash_map::DefaultHasher, HashMap};
+use std::collections::hash_map::DefaultHasher;
+use rustc_hash::FxHashMap;
 use std::hash::{Hash, Hasher};
 
 use numpy::{npyffi, PyArray1, PyArrayMethods};
@@ -675,7 +676,7 @@ impl PyTokenizer {
     ///     :obj:`Dict[str, int]`: The vocabulary
     #[pyo3(signature = (with_added_tokens = true))]
     #[pyo3(text_signature = "(self, with_added_tokens=True)")]
-    fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+    fn get_vocab(&self, with_added_tokens: bool) -> FxHashMap<String, u32> {
         self.tokenizer.get_vocab(with_added_tokens)
     }
 
