@@ -10,12 +10,12 @@
 //!     ...).
 
 use std::{
-    collections::HashMap,
     fs::{read_to_string, File},
     io::{prelude::*, BufReader},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
 };
+use rustc_hash::FxHashMap;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -77,7 +77,7 @@ pub trait Model {
     /// Find the string token associated to an ID
     fn id_to_token(&self, id: u32) -> Option<String>;
     /// Retrieve the entire vocabulary mapping (token -> ID)
-    fn get_vocab(&self) -> HashMap<String, u32>;
+    fn get_vocab(&self) -> FxHashMap<String, u32>;
     /// Retrieve the size of the vocabulary
     fn get_vocab_size(&self) -> usize;
     /// Save the current `Model` in the given folder, using the given `prefix` for the various
@@ -658,7 +658,7 @@ where
     }
 
     /// Get the vocabulary
-    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+    pub fn get_vocab(&self, with_added_tokens: bool) -> FxHashMap<String, u32> {
         let mut final_vocab = self.model.get_vocab();
 
         if with_added_tokens {
@@ -675,7 +675,7 @@ where
     }
 
     /// Get the added tokens decoder
-    pub fn get_added_tokens_decoder(&self) -> HashMap<u32, AddedToken> {
+    pub fn get_added_tokens_decoder(&self) -> FxHashMap<u32, AddedToken> {
         self.added_vocabulary.get_added_tokens_decoder().clone()
     }
 
