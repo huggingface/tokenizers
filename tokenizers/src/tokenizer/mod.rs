@@ -152,11 +152,17 @@ pub enum ProcessorError {
 
 /// A `Decoder` changes the raw tokens into its more readable form.
 pub trait Decoder {
-    fn decode(&self, tokens: Vec<CompactString>) -> Result<CompactString> {
-        let results = self.decode_chain(tokens)?;
+    fn decode<T: Into<CompactString> + From<String> + Clone>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<CompactString> {
+        let results = self.decode_chain(tokens.into_iter().map(|x| x.into()).collect())?;
         Ok(results.join("").into())
     }
-    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>>;
+    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<CompactString>>;
 }
 
 /// A `Trainer` has the responsibility to train a model. We feed it with lines/sentences

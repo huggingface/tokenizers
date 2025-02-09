@@ -87,13 +87,17 @@ impl Normalizer for Replace {
 }
 
 impl Decoder for Replace {
-    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
+    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<CompactString>> {
         tokens
             .into_iter()
             .map(|token| -> Result<CompactString> {
+                let token = Into::<CompactString>::into(token);
                 let mut new_token = CompactString::from("");
 
-                for ((start, stop), is_match) in (&self.regex).find_matches(&token)? {
+                for ((start, stop), is_match) in (&self.regex).find_matches(token.as_str())? {
                     if is_match {
                         new_token.push_str(&self.content);
                     } else {
@@ -150,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_replace_decode() {
-        let original = vec!["hello".into(), "_hello".into()];
+        let original = vec!["hello".to_owned(), "_hello".to_owned()];
         let replace = Replace::new("_", " ").unwrap();
         assert_eq!(
             replace.decode_chain(original).unwrap(),

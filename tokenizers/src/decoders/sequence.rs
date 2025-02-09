@@ -25,18 +25,23 @@ impl Sequence {
 }
 
 impl Decoder for Sequence {
-    fn decode_chain(&self, mut tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
+    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+        &self,
+        mut tokens: Vec<T>,
+    ) -> Result<Vec<CompactString>> {
         for decoder in &self.decoders {
-            tokens = decoder.decode_chain(tokens)?;
+            tokens = decoder
+                .decode_chain(tokens)?
+                .into_iter()
+                .map(|token| token.to_string().into())
+                .collect();
         }
-        Ok(tokens)
+        Ok(tokens.into_iter().map(|token| token.into()).collect())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use compact_str::ToCompactString;
-
     use super::*;
     use crate::decoders::ctc::CTC;
     use crate::pre_tokenizers::metaspace::Metaspace;
@@ -50,7 +55,7 @@ mod tests {
         let decoder = Sequence::new(decoders);
         let tokens: Vec<CompactString> = vec!["▁", "▁", "H", "H", "i", "i", "▁", "y", "o", "u"]
             .into_iter()
-            .map(|s| s.to_compact_string())
+            .map(|s| s.into())
             .collect();
         let out_tokens = decoder.decode(tokens).unwrap();
         assert_eq!(out_tokens, "Hi you");

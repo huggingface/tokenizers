@@ -149,12 +149,16 @@ impl PreTokenizer for Metaspace {
 }
 
 impl Decoder for Metaspace {
-    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
+    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<CompactString>> {
         Ok(tokens
             .iter()
             .enumerate()
             .map(|(i, token)| {
-                token
+                let tmp_token = Into::<CompactString>::into(token.clone());
+                tmp_token
                     .chars()
                     .flat_map(|c| {
                         if c == self.replacement {
@@ -358,13 +362,13 @@ mod tests {
     fn decode() {
         let decoder = Metaspace::new('▁', PrependScheme::Always, true);
         let res = decoder
-            .decode_chain(vec!["▁Hey".into(), "▁friend!".into()])
+            .decode_chain(vec!["▁Hey".to_owned(), "▁friend!".to_owned()])
             .unwrap();
         assert_eq!(res, vec!["Hey", " friend!"]);
 
         let decoder = Metaspace::new('▁', PrependScheme::Never, true);
         let res = decoder
-            .decode_chain(vec!["▁Hey".into(), "▁friend!".into()])
+            .decode_chain(vec!["▁Hey".to_owned(), "▁friend!".to_owned()])
             .unwrap();
         assert_eq!(res, vec![" Hey", " friend!"]);
     }

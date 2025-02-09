@@ -26,11 +26,14 @@ impl Strip {
 }
 
 impl Decoder for Strip {
-    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
+    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<CompactString>> {
         Ok(tokens
             .into_iter()
             .map(|token| {
-                let chars: Vec<char> = token.chars().collect();
+                let chars: Vec<char> = token.into().chars().collect();
 
                 let mut start_cut = 0;
                 for (i, &c) in chars.iter().enumerate().take(self.start) {
@@ -68,13 +71,17 @@ mod tests {
     fn decode() {
         let decoder = Strip::new('H', 1, 0);
         let res = decoder
-            .decode_chain(vec!["Hey".into(), " friend!".into(), "HHH".into()])
+            .decode_chain(vec![
+                "Hey".to_owned(),
+                " friend!".to_owned(),
+                "HHH".to_owned(),
+            ])
             .unwrap();
         assert_eq!(res, vec!["ey", " friend!", "HH"]);
 
         let decoder = Strip::new('y', 0, 1);
         let res = decoder
-            .decode_chain(vec!["Hey".into(), " friend!".into()])
+            .decode_chain(vec!["Hey".to_owned(), " friend!".to_owned()])
             .unwrap();
         assert_eq!(res, vec!["He", " friend!"]);
     }
