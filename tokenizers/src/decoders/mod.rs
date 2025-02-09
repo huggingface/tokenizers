@@ -10,6 +10,7 @@ pub mod wordpiece;
 pub use super::pre_tokenizers::byte_level;
 pub use super::pre_tokenizers::metaspace;
 
+use compact_str::CompactString;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::decoders::bpe::BPEDecoder;
@@ -150,7 +151,7 @@ impl<'de> Deserialize<'de> for DecoderWrapper {
 }
 
 impl Decoder for DecoderWrapper {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
         match self {
             Self::BPE(bpe) => bpe.decode_chain(tokens),
             Self::ByteLevel(bl) => bl.decode_chain(tokens),

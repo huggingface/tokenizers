@@ -2,9 +2,10 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
 };
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
+use compact_str::CompactString;
 use regex::Regex;
-use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use rustc_hash::{FxHashMap, FxHashSet};
+use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
@@ -14,7 +15,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AddedToken {
     /// The content of the added token
-    pub content: String,
+    pub content: CompactString,
     /// Whether this token must be a single word or can break words
     pub single_word: bool,
     /// Whether this token should strip whitespaces on its left
@@ -30,7 +31,7 @@ pub struct AddedToken {
 impl AddedToken {
     /// Build this token from the given content, specifying if it is intented to be a
     /// special token. Special tokens are not normalized by default.
-    pub fn from<S: Into<String>>(content: S, special: bool) -> Self {
+    pub fn from<S: Into<CompactString>>(content: S, special: bool) -> Self {
         Self {
             content: content.into(),
             normalized: !special,
@@ -76,7 +77,7 @@ impl AddedToken {
 impl Default for AddedToken {
     fn default() -> Self {
         Self {
-            content: String::new(),
+            content: CompactString::default(),
             single_word: false,
             lstrip: false,
             rstrip: false,
@@ -142,7 +143,7 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
 pub struct AddedVocabulary {
     /// Contains the mapping from String (token content) to ID. This map contains both special
     /// tokens and classic added tokens that were added to the this vocabulary.
-    added_tokens_map: FxHashMap<String, u32>,
+    added_tokens_map: FxHashMap<CompactString, u32>,
     /// Contains the mapping from ID to AddedToken for all the added tokens, both special
     /// and classic.
     added_tokens_map_r: FxHashMap<u32, AddedToken>,
@@ -154,7 +155,7 @@ pub struct AddedVocabulary {
 
     /// A Set, containing all the special token for easy access while decoding. This let's
     /// us remove them easily with an O(1) complexity.
-    special_tokens_set: FxHashSet<String>,
+    special_tokens_set: FxHashSet<CompactString>,
 
     /// A RegexSet containing all the non-normalized patterns used to split on AddedTokens
     split_trie: MatchingSet,
@@ -198,7 +199,7 @@ impl AddedVocabulary {
     }
 
     /// Get the additional vocabulary
-    pub fn get_vocab(&self) -> &FxHashMap<String, u32> {
+    pub fn get_vocab(&self) -> &FxHashMap<CompactString, u32> {
         &self.added_tokens_map
     }
 
@@ -220,14 +221,14 @@ impl AddedVocabulary {
         since = "0.19.0",
         note = "please use `added_vocabulary.simple_id_to_token(id).or_else(|| model.id_to_token(id)` instead"
     )]
-    pub fn id_to_token(&self, id: u32, model: &impl Model) -> Option<String> {
+    pub fn id_to_token(&self, id: u32, model: &impl Model) -> Option<CompactString> {
         self.added_tokens_map_r
             .get(&id)
             .map(|t| t.content.clone())
             .or_else(|| model.id_to_token(id))
     }
 
-    pub fn simple_id_to_token(&self, id: u32) -> Option<String> {
+    pub fn simple_id_to_token(&self, id: u32) -> Option<CompactString> {
         self.added_tokens_map_r.get(&id).map(|t| t.content.clone())
     }
 
@@ -440,7 +441,7 @@ impl AddedVocabulary {
                     .slice(Range::Normalized(byte_offsets.0..byte_offsets.1))
                     .expect("AddedVocabulary bad split");
                 if let Some(id) = id {
-                    let value = slice.get().to_owned();
+                    let value: CompactString = slice.get().into();
                     let len = value.len();
                     (slice, Some(vec![Token::new(id, value, (0, len))]))
                 } else {
@@ -542,6 +543,8 @@ impl Serialize for AddedVocabulary {
 
 #[cfg(test)]
 mod tests {
+    use compact_str::ToCompactString;
+
     use super::*;
     use crate::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
     use crate::normalizers::utils::Lowercase;
@@ -551,17 +554,17 @@ mod tests {
 
     #[derive(Serialize, Deserialize)]
     struct ModelMock {
-        vocab: FxHashMap<String, u32>,
-        vocab_r: FxHashMap<u32, String>,
+        vocab: FxHashMap<CompactString, u32>,
+        vocab_r: FxHashMap<u32, CompactString>,
     }
     impl ModelMock {
         pub fn new<I>(iter: I) -> Self
         where
             I: IntoIterator<Item = &'static (&'static str, u32)>,
         {
-            let vocab: FxHashMap<String, u32> = iter
+            let vocab: FxHashMap<CompactString, u32> = iter
                 .into_iter()
-                .map(|&(tok, id)| (tok.to_string(), id))
+                .map(|&(tok, id)| (tok.to_compact_string(), id))
                 .collect();
             Self {
                 vocab_r: vocab
@@ -601,7 +604,7 @@ mod tests {
         where
             I: Iterator<Item = S> + Send,
             S: AsRef<str> + Send,
-            F: Fn(&str) -> Result<Vec<String>> + Sync,
+            F: Fn(&str) -> Result<Vec<CompactString>> + Sync,
         {
             unimplemented!()
         }
@@ -616,10 +619,10 @@ mod tests {
         fn token_to_id(&self, token: &str) -> Option<u32> {
             self.vocab.get(token).copied()
         }
-        fn id_to_token(&self, id: u32) -> Option<String> {
+        fn id_to_token(&self, id: u32) -> Option<CompactString> {
             self.vocab_r.get(&id).cloned()
         }
-        fn get_vocab(&self) -> FxHashMap<String, u32> {
+        fn get_vocab(&self) -> FxHashMap<CompactString, u32> {
             self.vocab.clone()
         }
         fn get_vocab_size(&self) -> usize {
@@ -714,16 +717,13 @@ mod tests {
         );
         assert_eq!(vocab.len(), 3); // New token was added
         assert!(vocab.is_special_token("test"));
-        assert_eq!(
-            *vocab.get_added_tokens_decoder(),
-            {
-                let mut map = FxHashMap::default();
-                map.insert(0, AddedToken::from("test", true));
-                map.insert(2, AddedToken::from("added_token_1", true));
-                map.insert(3, AddedToken::from("added_token_2", true));
-                map
-            }
-        );
+        assert_eq!(*vocab.get_added_tokens_decoder(), {
+            let mut map = FxHashMap::default();
+            map.insert(0, AddedToken::from("test", true));
+            map.insert(2, AddedToken::from("added_token_1", true));
+            map.insert(3, AddedToken::from("added_token_2", true));
+            map
+        });
         assert!(vocab.added_tokens_map.contains_key("test"));
         assert!(vocab.added_tokens_map_r.contains_key(&0));
 
@@ -748,7 +748,7 @@ mod tests {
 
         // Just checking that we can set the content of the string in rust
         let mut token: AddedToken = AddedToken::from("Hey", false);
-        token.content = "hey".to_string();
+        token.content = "hey".into();
         assert_eq!(token.content, "hey"); // Token was already there
 
         token.special = true;

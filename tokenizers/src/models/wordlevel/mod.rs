@@ -1,7 +1,8 @@
 use super::OrderedVocabIter;
 use crate::tokenizer::{Model, Result, Token};
-use serde_json::Value;
+use compact_str::CompactString;
 use rustc_hash::FxHashMap;
+use serde_json::Value;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -12,7 +13,7 @@ mod trainer;
 // Re-export
 pub use trainer::*;
 
-type Vocab = FxHashMap<String, u32>;
+type Vocab = FxHashMap<CompactString, u32>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -23,9 +24,9 @@ pub enum Error {
 }
 
 struct Config {
-    files: Option<String>,
-    vocab: FxHashMap<String, u32>,
-    unk_token: String,
+    files: Option<CompactString>,
+    vocab: FxHashMap<CompactString, u32>,
+    unk_token: CompactString,
 }
 
 /// A `WordLevelBuilder` can be used to create a `WordLevel`
@@ -40,7 +41,7 @@ impl Default for WordLevelBuilder {
             config: Config {
                 files: None,
                 vocab: FxHashMap::default(),
-                unk_token: String::from("<unk>"),
+                unk_token: CompactString::from("<unk>"),
             },
         }
     }
@@ -54,21 +55,21 @@ impl WordLevelBuilder {
 
     /// Set the input files.
     #[must_use]
-    pub fn files(mut self, vocab: String) -> Self {
+    pub fn files(mut self, vocab: CompactString) -> Self {
         self.config.files = Some(vocab);
         self
     }
 
     /// Set the vocab (token -> ID) mapping.
     #[must_use]
-    pub fn vocab(mut self, vocab: FxHashMap<String, u32>) -> Self {
+    pub fn vocab(mut self, vocab: FxHashMap<CompactString, u32>) -> Self {
         self.config.vocab = vocab;
         self
     }
 
     /// The the `UNK` token for the vocab.
     #[must_use]
-    pub fn unk_token(mut self, unk_token: String) -> Self {
+    pub fn unk_token(mut self, unk_token: CompactString) -> Self {
         self.config.unk_token = unk_token;
         self
     }
@@ -96,9 +97,9 @@ impl WordLevelBuilder {
 
 #[derive(PartialEq, Clone, Eq)]
 pub struct WordLevel {
-    vocab: FxHashMap<String, u32>,
-    vocab_r: FxHashMap<u32, String>,
-    pub unk_token: String,
+    vocab: FxHashMap<CompactString, u32>,
+    vocab_r: FxHashMap<u32, CompactString>,
+    pub unk_token: CompactString,
 }
 
 impl std::fmt::Debug for WordLevel {
@@ -129,7 +130,7 @@ impl WordLevel {
                 for (token, id) in m {
                     if let Value::Number(id) = id {
                         let id = id.as_u64().ok_or(Error::BadVocabulary)? as u32;
-                        vocab.insert(token, id);
+                        vocab.insert(token.into(), id);
                     }
                 }
             }
@@ -139,7 +140,7 @@ impl WordLevel {
     }
 
     /// Initialize a WordLevel model from vocab and merges file.
-    pub fn from_file(vocab_path: &str, unk_token: String) -> Result<WordLevel> {
+    pub fn from_file(vocab_path: &str, unk_token: CompactString) -> Result<WordLevel> {
         let vocab = WordLevel::read_file(vocab_path)?;
         Self::builder().vocab(vocab).unk_token(unk_token).build()
     }
@@ -150,7 +151,7 @@ impl Default for WordLevel {
         Self {
             vocab: FxHashMap::default(),
             vocab_r: FxHashMap::default(),
-            unk_token: String::from("<unk>"),
+            unk_token: CompactString::from("<unk>"),
         }
     }
 }
@@ -162,7 +163,7 @@ impl Model for WordLevel {
         if let Some(&id) = self.vocab.get(token) {
             Ok(vec![Token {
                 id,
-                value: token.to_owned(),
+                value: token.into(),
                 offsets: (0, token.len()),
             }])
         } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
@@ -180,11 +181,11 @@ impl Model for WordLevel {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    fn id_to_token(&self, id: u32) -> Option<CompactString> {
         self.vocab_r.get(&id).cloned()
     }
 
-    fn get_vocab(&self) -> FxHashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<CompactString, u32> {
         self.vocab.clone()
     }
 
@@ -217,6 +218,8 @@ impl Model for WordLevel {
 
 #[cfg(test)]
 mod tests {
+    use compact_str::ToCompactString;
+
     use super::*;
 
     #[test]
@@ -227,7 +230,7 @@ mod tests {
             .collect();
         let wordlevel = WordLevelBuilder::default()
             .vocab(vocab)
-            .unk_token("<unk>".to_string())
+            .unk_token("<unk>".to_compact_string())
             .build()
             .unwrap();
         let tokens = wordlevel.tokenize("c").unwrap();

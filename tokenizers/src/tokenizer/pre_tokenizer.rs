@@ -1,3 +1,5 @@
+use compact_str::CompactString;
+
 use crate::{
     normalizer::Range, Encoding, NormalizedString, OffsetReferential, Offsets, Result, Token,
 };
@@ -154,7 +156,7 @@ impl PreTokenizedString {
                         .flat_map(|split| {
                             split.tokens.unwrap().into_iter().map(|token| {
                                 // Replace this with the actual fields you need for the Encoding type
-                                (token.id, String::with_capacity(0), (0, 0), None, 0)
+                                (token.id, CompactString::with_capacity(0), (0, 0), None, 0)
                             })
                         })
                         .collect();

@@ -54,25 +54,25 @@ fn test_decode_stream_step_no_panic() {
 
     // "A B C D E F G H I J"
     let mut decode_stream = tokenizer.decode_stream(false);
-    assert_eq!(decode_stream.step(32).unwrap(), Some("A".to_string()));
-    assert_eq!(decode_stream.step(426).unwrap(), Some(" B".to_string()));
-    assert_eq!(decode_stream.step(356).unwrap(), Some(" C".to_string()));
-    assert_eq!(decode_stream.step(423).unwrap(), Some(" D".to_string()));
-    assert_eq!(decode_stream.step(469).unwrap(), Some(" E".to_string()));
-    assert_eq!(decode_stream.step(435).unwrap(), Some(" F".to_string()));
-    assert_eq!(decode_stream.step(480).unwrap(), Some(" G".to_string()));
-    assert_eq!(decode_stream.step(473).unwrap(), Some(" H".to_string()));
-    assert_eq!(decode_stream.step(358).unwrap(), Some(" I".to_string()));
-    assert_eq!(decode_stream.step(622).unwrap(), Some(" J".to_string()));
+    assert_eq!(decode_stream.step(32).unwrap(), Some("A".into()));
+    assert_eq!(decode_stream.step(426).unwrap(), Some(" B".into()));
+    assert_eq!(decode_stream.step(356).unwrap(), Some(" C".into()));
+    assert_eq!(decode_stream.step(423).unwrap(), Some(" D".into()));
+    assert_eq!(decode_stream.step(469).unwrap(), Some(" E".into()));
+    assert_eq!(decode_stream.step(435).unwrap(), Some(" F".into()));
+    assert_eq!(decode_stream.step(480).unwrap(), Some(" G".into()));
+    assert_eq!(decode_stream.step(473).unwrap(), Some(" H".into()));
+    assert_eq!(decode_stream.step(358).unwrap(), Some(" I".into()));
+    assert_eq!(decode_stream.step(622).unwrap(), Some(" J".into()));
     // for (i, &token) in output_tokens.iter().enumerate() {}
 
     // "삥뽕빵" (Korean words composed of 2-3 tokens: [80690, 98], [167, 121, 243], and [102457, 113])
     let mut decode_stream = tokenizer.decode_stream(false);
     assert_eq!(decode_stream.step(80690).unwrap(), None);
-    assert_eq!(decode_stream.step(98).unwrap(), Some("삥".to_string()));
+    assert_eq!(decode_stream.step(98).unwrap(), Some("삥".into()));
     assert_eq!(decode_stream.step(167).unwrap(), None);
     assert_eq!(decode_stream.step(121).unwrap(), None);
-    assert_eq!(decode_stream.step(243).unwrap(), Some("뽕".to_string()));
+    assert_eq!(decode_stream.step(243).unwrap(), Some("뽕".into()));
     assert_eq!(decode_stream.step(102457).unwrap(), None);
-    assert_eq!(decode_stream.step(113).unwrap(), Some("빵".to_string()));
+    assert_eq!(decode_stream.step(113).unwrap(), Some("빵".into()));
 }

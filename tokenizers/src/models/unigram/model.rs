@@ -6,19 +6,20 @@ use super::{
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, MAX_LENGTH};
 
+use compact_str::{format_compact, CompactString};
+use rustc_hash::FxHashMap;
 use std::convert::TryInto;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
-use rustc_hash::FxHashMap;
 
-type TokenMap = FxHashMap<String, u32>;
-type Vocab = Vec<(String, f64)>;
+type TokenMap = FxHashMap<CompactString, u32>;
+type Vocab = Vec<(CompactString, f64)>;
 
 /// A `Unigram` model to encode sentences.
 pub struct Unigram {
     token_to_ids: TokenMap,
     pub(crate) vocab: Vocab,
-    cache: Cache<String, Vec<String>>,
+    cache: Cache<CompactString, Vec<CompactString>>,
     trie: Trie<u8>,
     pub min_score: f64,
     pub(super) unk_id: Option<usize>,
@@ -80,7 +81,7 @@ pub enum UnigramError {
 
 impl Default for Unigram {
     fn default() -> Self {
-        let vocab = vec![("<unk>".to_string(), 0.0)];
+        let vocab = vec![("<unk>".into(), 0.0)];
         Self::from(vocab, Some(0), false).unwrap()
     }
 }
@@ -93,7 +94,7 @@ impl Unigram {
     /// For now `Unigram` *requires* at least `unk` because we might find a never seen char.
     /// Further versions might allow that part to be hidden.
     pub fn from(
-        vocab: Vec<(String, f64)>,
+        vocab: Vec<(CompactString, f64)>,
         unk_id: Option<usize>,
         byte_fallback: bool,
     ) -> Result<Self> {
@@ -114,7 +115,7 @@ impl Unigram {
 
         let mut min_score = f64::INFINITY;
         for (id, (token, score)) in vocab.iter().enumerate() {
-            token_to_ids.insert(token.to_string(), id as u32);
+            token_to_ids.insert(token.clone(), id as u32);
             let bytes: Vec<u8> = token.bytes().collect();
             builder.push(&bytes);
             if score < &min_score {
@@ -177,7 +178,7 @@ impl Unigram {
                 .common_prefix_search(lattice.sentence.bytes().skip(begin_pos))
             {
                 let n = bytes.len();
-                let tok = String::from_utf8(bytes).unwrap();
+                let tok = CompactString::from_utf8(bytes).unwrap();
                 let id = *self.token_to_ids.get(&tok).unwrap();
 
                 let item = &self.vocab[id as usize];
@@ -204,21 +205,21 @@ impl Unigram {
     /// use tokenizers::models::unigram::Unigram;
     ///
     /// let pieces = vec![
-    ///     ("<unk>".to_string(), 0.0),
-    ///     ("a".to_string(), 0.0),
-    ///     ("b".to_string(), 0.0),
-    ///     ("c".to_string(), 0.0),
-    ///     ("d".to_string(), 0.0),
-    ///     ("cd".to_string(), 1.0),
-    ///     ("ab".to_string(), 2.0),
-    ///     ("abc".to_string(), 5.0),
-    ///     ("abcd".to_string(), 10.0),
+    ///     ("<unk>".into(), 0.0),
+    ///     ("a".into(), 0.0),
+    ///     ("b".into(), 0.0),
+    ///     ("c".into(), 0.0),
+    ///     ("d".into(), 0.0),
+    ///     ("cd".into(), 1.0),
+    ///     ("ab".into(), 2.0),
+    ///     ("abc".into(), 5.0),
+    ///     ("abcd".into(), 10.0),
     /// ];
     /// let model = Unigram::from(pieces, Some(0), false).unwrap();
     /// let result = model.encode("abcdacdxx").unwrap();
     /// assert_eq!(result, vec!["abcd", "a", "cd", "xx"]);
     /// ```
-    pub fn encode(&self, sentence: &str) -> Result<Vec<String>> {
+    pub fn encode(&self, sentence: &str) -> Result<Vec<CompactString>> {
         if sentence.is_empty() {
             return Ok(vec![]);
         }
@@ -231,13 +232,13 @@ impl Unigram {
                 self.encode_unoptimized(sentence)?
             };
             if sentence.len() < MAX_LENGTH {
-                self.cache.set(sentence.to_owned(), result.clone());
+                self.cache.set(sentence.into(), result.clone());
             }
             Ok(result)
         }
     }
 
-    fn encode_optimized(&self, sentence: &str) -> Result<Vec<String>> {
+    fn encode_optimized(&self, sentence: &str) -> Result<Vec<CompactString>> {
         // https://github.com/google/sentencepiece/blob/d48247191a6d50e469ed1a4a36e877befffd1851/src/unigram_model.cc#L600
         #[derive(Debug, Clone)]
         struct BestPathNode {
@@ -272,7 +273,7 @@ impl Unigram {
                 .common_prefix_search(sentence.bytes().skip(starts_at))
             {
                 let key_pos = starts_at + tok_bytes.len();
-                let token: String = String::from_utf8(tok_bytes).unwrap();
+                let token: CompactString = CompactString::from_utf8(tok_bytes).unwrap();
                 let target_node = &mut best_path_ends_at[key_pos];
                 let length = key_pos - starts_at;
                 let id = self.token_to_ids.get(&token).unwrap();
@@ -303,7 +304,7 @@ impl Unigram {
             starts_at += mblen
         }
         let mut ends_at = size;
-        let mut results: Vec<String> = vec![];
+        let mut results: Vec<CompactString> = vec![];
         let mut token = vec![];
         while ends_at > 0 {
             let node = &best_path_ends_at[ends_at];
@@ -313,34 +314,34 @@ impl Unigram {
                 && node.id == self.unk_id.ok_or(UnigramError::MissingUnkId)?
             {
                 token.push(
-                    String::from_utf8(sentence[starts_at..ends_at].as_bytes().to_vec()).unwrap(),
+                    CompactString::from_utf8(sentence[starts_at..ends_at].as_bytes()).unwrap(),
                 );
             } else {
                 if !token.is_empty() {
                     token.reverse();
-                    results.push(token.concat());
+                    results.push(token.concat().into());
                     token = vec![];
                 }
                 results.push(
-                    String::from_utf8(sentence[starts_at..ends_at].as_bytes().to_vec()).unwrap(),
+                    CompactString::from_utf8(sentence[starts_at..ends_at].as_bytes()).unwrap(),
                 );
             }
             ends_at = starts_at;
         }
         if !token.is_empty() {
             token.reverse();
-            results.push(token.concat());
+            results.push(token.concat().into());
         }
         results.reverse();
         Ok(results)
     }
 
-    fn encode_unoptimized(&self, sentence: &str) -> Result<Vec<String>> {
+    fn encode_unoptimized(&self, sentence: &str) -> Result<Vec<CompactString>> {
         let mut lattice = Lattice::from(sentence, self.bos_id, self.eos_id);
         self.populate_nodes(&mut lattice);
         if self.fuse_unk {
             let mut results = vec![];
-            let mut token = String::new();
+            let mut token = CompactString::default();
             for node in lattice.viterbi().iter() {
                 let item = lattice.piece(&node.borrow());
                 if node.borrow().id == self.unk_id.ok_or(UnigramError::MissingUnkId)? {
@@ -348,9 +349,9 @@ impl Unigram {
                 } else {
                     if !token.is_empty() {
                         results.push(token);
-                        token = String::new();
+                        token = CompactString::default();
                     }
-                    results.push(item.to_string());
+                    results.push(item);
                 }
             }
             if !token.is_empty() {
@@ -398,7 +399,7 @@ pub struct UnigramIterator<'a> {
 }
 
 impl<'a> Iterator for UnigramIterator<'a> {
-    type Item = &'a (String, f64);
+    type Item = &'a (CompactString, f64);
 
     fn next(&mut self) -> Option<Self::Item> {
         let i = self.i;
@@ -415,7 +416,7 @@ impl<'a> Iterator for UnigramIterator<'a> {
 impl Model for Unigram {
     type Trainer = UnigramTrainer;
 
-    fn get_vocab(&self) -> FxHashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<CompactString, u32> {
         self.token_to_ids.clone()
     }
 
@@ -437,7 +438,7 @@ impl Model for Unigram {
                         let byte_tokens: Option<Vec<_>> = string
                             .bytes()
                             .map(|byte| -> Option<Token> {
-                                let byte_string = format!("<0x{byte:02X}>");
+                                let byte_string = format_compact!("<0x{byte:02X}>");
                                 let id = self.token_to_ids.get(&byte_string);
                                 id.map(|id| Token::new(*id, byte_string, (offset, offset + len)))
                             })
@@ -463,7 +464,7 @@ impl Model for Unigram {
         self.token_to_ids.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    fn id_to_token(&self, id: u32) -> Option<CompactString> {
         self.vocab.get(id as usize).map(|item| item.0.clone())
     }
 
@@ -491,7 +492,7 @@ mod tests {
 
     #[test]
     fn test_populate_nodes_unk() {
-        let pieces = vec![("<unk>".to_string(), 0.0)];
+        let pieces = vec![("<unk>".into(), 0.0)];
         let model = Unigram::from(pieces, Some(0), false).unwrap();
 
         let mut lattice = Lattice::from("abc", model.bos_id, model.eos_id);
@@ -511,11 +512,11 @@ mod tests {
     #[test]
     fn test_populate_nodes() {
         let pieces = vec![
-            ("<unk>".to_string(), 0.0),
-            ("a".to_string(), 0.1),
-            ("b".to_string(), 0.2),
-            ("ab".to_string(), 0.3),
-            ("bc".to_string(), 0.4),
+            ("<unk>".into(), 0.0),
+            ("a".into(), 0.1),
+            ("b".into(), 0.2),
+            ("ab".into(), 0.3),
+            ("bc".into(), 0.4),
         ];
         let model = Unigram::from(pieces, Some(0), false).unwrap();
 
@@ -543,15 +544,15 @@ mod tests {
     #[test]
     fn test_encode() {
         let sentencepieces = vec![
-            ("<unk>".to_string(), 0.0),
-            ("a".to_string(), 0.0),
-            ("b".to_string(), 0.0),
-            ("c".to_string(), 0.0),
-            ("d".to_string(), 0.0),
-            ("cd".to_string(), 1.0),
-            ("ab".to_string(), 2.0),
-            ("abc".to_string(), 5.0),
-            ("abcd".to_string(), 10.0),
+            ("<unk>".into(), 0.0),
+            ("a".into(), 0.0),
+            ("b".into(), 0.0),
+            ("c".into(), 0.0),
+            ("d".into(), 0.0),
+            ("cd".into(), 1.0),
+            ("ab".into(), 2.0),
+            ("abc".into(), 5.0),
+            ("abcd".into(), 10.0),
         ];
 
         let model = Unigram::from(sentencepieces, Some(0), false).unwrap();
@@ -562,18 +563,18 @@ mod tests {
     #[test]
     fn test_encode2() {
         let sentencepieces = vec![
-            ("<unk>".to_string(), 0.0),
-            ("ab".to_string(), 0.0),
-            ("cd".to_string(), -0.1),
-            ("abc".to_string(), -0.2),
-            ("a".to_string(), -0.3),
-            ("b".to_string(), -0.4),
-            ("c".to_string(), -0.5),
-            ("ABC".to_string(), -0.5),
-            ("abcdabcd".to_string(), 20.0), // User defined just max the scores.
-            ("q".to_string(), 20.5),
-            ("r".to_string(), 20.5),
-            ("qr".to_string(), -0.5),
+            ("<unk>".into(), 0.0),
+            ("ab".into(), 0.0),
+            ("cd".into(), -0.1),
+            ("abc".into(), -0.2),
+            ("a".into(), -0.3),
+            ("b".into(), -0.4),
+            ("c".into(), -0.5),
+            ("ABC".into(), -0.5),
+            ("abcdabcd".into(), 20.0), // User defined just max the scores.
+            ("q".into(), 20.5),
+            ("r".into(), 20.5),
+            ("qr".into(), -0.5),
         ];
 
         let mut model = Unigram::from(sentencepieces, Some(0), false).unwrap();
@@ -619,9 +620,9 @@ mod tests {
         // In [97]: processor.encode_as_pieces("⅐⅛⅑ ")
         // Out[97]: ['▁', '<0xE2>', '<0x85>', '<0x90>', '⅛', '<0xE2>', '<0x85>', '<0x91>', '▁']
         let sentencepieces = vec![
-            ("<unk>".to_string(), 0.0),
-            ("<0xC3>".to_string(), -0.01),
-            ("<0xA9>".to_string(), -0.03),
+            ("<unk>".into(), 0.0),
+            ("<0xC3>".into(), -0.01),
+            ("<0xA9>".into(), -0.03),
         ];
         let unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
         let tokens: Vec<Token> = unigram.tokenize("é").unwrap();
@@ -630,12 +631,12 @@ mod tests {
             [
                 Token {
                     id: 1,
-                    value: "<0xC3>".to_string(),
+                    value: "<0xC3>".into(),
                     offsets: (0, 2)
                 },
                 Token {
                     id: 2,
-                    value: "<0xA9>".to_string(),
+                    value: "<0xA9>".into(),
                     offsets: (0, 2)
                 }
             ]

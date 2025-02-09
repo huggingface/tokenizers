@@ -67,35 +67,29 @@ fn streaming_tokenizer() {
     let tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();
 
     let mut decode_stream = tokenizer.decode_stream(false);
-    assert_eq!(decode_stream.step(713).unwrap(), Some("This".to_string()));
-    assert_eq!(decode_stream.step(16).unwrap(), Some(" is".to_string()));
-    assert_eq!(decode_stream.step(41).unwrap(), Some(" an".to_string()));
-    assert_eq!(
-        decode_stream.step(1246).unwrap(),
-        Some(" example".to_string())
-    );
+    assert_eq!(decode_stream.step(713).unwrap(), Some("This".into()));
+    assert_eq!(decode_stream.step(16).unwrap(), Some(" is".into()));
+    assert_eq!(decode_stream.step(41).unwrap(), Some(" an".into()));
+    assert_eq!(decode_stream.step(1246).unwrap(), Some(" example".into()));
 
     let tokenizer = Tokenizer::from_file("data/albert-base-v1-tokenizer.json").unwrap();
     let encoded = tokenizer.encode("This is an example", false).unwrap();
     assert_eq!(encoded.get_ids(), &[48, 25, 40, 823]);
     let mut decode_stream = tokenizer.decode_stream(false);
     // No space anymore
-    assert_eq!(decode_stream.step(25).unwrap(), Some("is".to_string()));
+    assert_eq!(decode_stream.step(25).unwrap(), Some("is".into()));
     let mut decode_stream = tokenizer.decode_stream(false);
-    assert_eq!(decode_stream.step(48).unwrap(), Some("this".to_string()));
-    assert_eq!(decode_stream.step(25).unwrap(), Some(" is".to_string()));
-    assert_eq!(decode_stream.step(40).unwrap(), Some(" an".to_string()));
-    assert_eq!(
-        decode_stream.step(823).unwrap(),
-        Some(" example".to_string())
-    );
+    assert_eq!(decode_stream.step(48).unwrap(), Some("this".into()));
+    assert_eq!(decode_stream.step(25).unwrap(), Some(" is".into()));
+    assert_eq!(decode_stream.step(40).unwrap(), Some(" an".into()));
+    assert_eq!(decode_stream.step(823).unwrap(), Some(" example".into()));
 
     // None example
     let vocab = HashMap::from_iter([
-        ("<0x20>".to_string(), 0),
-        ("<0xC3>".to_string(), 1),
-        ("<0xA9>".to_string(), 2),
-        (" This".to_string(), 3),
+        ("<0x20>".into(), 0),
+        ("<0xC3>".into(), 1),
+        ("<0xA9>".into(), 2),
+        (" This".into(), 3),
     ]);
     let merges = vec![];
     let bpe = BPE::builder()
@@ -115,9 +109,9 @@ fn streaming_tokenizer() {
         .build()
         .unwrap();
     let mut decode_stream = tokenizer.decode_stream(false);
-    assert_eq!(decode_stream.step(0).unwrap(), Some(" ".to_string()));
+    assert_eq!(decode_stream.step(0).unwrap(), Some(" ".into()));
     assert_eq!(decode_stream.step(1).unwrap(), None);
-    assert_eq!(decode_stream.step(2).unwrap(), Some("é".to_string()));
+    assert_eq!(decode_stream.step(2).unwrap(), Some("é".into()));
     assert_eq!(decode_stream.step(2).unwrap(), None);
 }
 
@@ -133,12 +127,7 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
         PreTokenizerWrapper,
         PostProcessorWrapper,
         DecoderWrapper,
-    > = TokenizerImpl::new(
-        BPE::builder()
-            .unk_token("[UNK]".to_string())
-            .build()
-            .unwrap(),
-    );
+    > = TokenizerImpl::new(BPE::builder().unk_token("[UNK]".into()).build().unwrap());
     // END quicktour_init_tokenizer
     // START quicktour_init_trainer
     use tokenizers::models::bpe::BpeTrainer;
@@ -429,7 +418,7 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
 
     let mut bert_tokenizer = Tokenizer::new(
         WordPiece::builder()
-            .unk_token("[UNK]".to_string())
+            .unk_token("[UNK]".into())
             .build()
             .unwrap(),
     );

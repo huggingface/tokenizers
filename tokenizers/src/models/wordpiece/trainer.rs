@@ -1,8 +1,9 @@
 use super::WordPiece;
 use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder, BPE};
 use crate::tokenizer::{AddedToken, Result, Trainer};
-use serde::{Deserialize, Serialize};
+use compact_str::CompactString;
 use rustc_hash::FxHashSet;
+use serde::{Deserialize, Serialize};
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
 /// configuration.
@@ -68,14 +69,14 @@ impl WordPieceTrainerBuilder {
 
     /// Set the continuing_subword_prefix
     #[must_use]
-    pub fn continuing_subword_prefix(mut self, prefix: String) -> Self {
+    pub fn continuing_subword_prefix(mut self, prefix: CompactString) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.continuing_subword_prefix(prefix);
         self
     }
 
     /// Set the end_of_word_suffix
     #[must_use]
-    pub fn end_of_word_suffix(mut self, suffix: String) -> Self {
+    pub fn end_of_word_suffix(mut self, suffix: CompactString) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.end_of_word_suffix(suffix);
         self
     }
@@ -142,19 +143,19 @@ impl WordPieceTrainer {
         self.bpe_trainer.initial_alphabet = alphabet;
     }
 
-    pub fn continuing_subword_prefix(&self) -> &Option<String> {
+    pub fn continuing_subword_prefix(&self) -> &Option<CompactString> {
         &self.bpe_trainer.continuing_subword_prefix
     }
 
-    pub fn set_continuing_subword_prefix(&mut self, prefix: Option<String>) {
+    pub fn set_continuing_subword_prefix(&mut self, prefix: Option<CompactString>) {
         self.bpe_trainer.continuing_subword_prefix = prefix;
     }
 
-    pub fn end_of_word_suffix(&self) -> &Option<String> {
+    pub fn end_of_word_suffix(&self) -> &Option<CompactString> {
         &self.bpe_trainer.end_of_word_suffix
     }
 
-    pub fn set_end_of_word_suffix(&mut self, suffix: Option<String>) {
+    pub fn set_end_of_word_suffix(&mut self, suffix: Option<CompactString>) {
         self.bpe_trainer.end_of_word_suffix = suffix;
     }
 
@@ -192,7 +193,7 @@ impl Trainer for WordPieceTrainer {
     where
         I: Iterator<Item = S> + Send,
         S: AsRef<str> + Send,
-        F: Fn(&str) -> Result<Vec<String>> + Sync,
+        F: Fn(&str) -> Result<Vec<CompactString>> + Sync,
     {
         self.bpe_trainer.feed(iterator, process)
     }

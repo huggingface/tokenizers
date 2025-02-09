@@ -1,4 +1,5 @@
 use super::model::Unigram;
+use compact_str::CompactString;
 use serde::{
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
@@ -46,10 +47,10 @@ impl<'de> Visitor<'de> for UnigramVisitor {
     where
         V: MapAccess<'de>,
     {
-        let mut vocab: Option<Vec<(String, f64)>> = None;
+        let mut vocab: Option<Vec<(CompactString, f64)>> = None;
         let mut unk_id: Option<usize> = None;
         let mut byte_fallback: bool = false;
-        while let Some(key) = map.next_key::<String>()? {
+        while let Some(key) = map.next_key::<CompactString>()? {
             match key.as_ref() {
                 "unk_id" => {
                     unk_id = map.next_value()?;
@@ -82,7 +83,7 @@ mod test {
 
     #[test]
     fn test_serialization() {
-        let vocab = vec![("<unk>".to_string(), 0.0), ("a".to_string(), -0.5)];
+        let vocab = vec![("<unk>".into(), 0.0), ("a".into(), -0.5)];
         let model = Unigram::from(vocab, Some(0), false).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
@@ -93,7 +94,7 @@ mod test {
 
     #[test]
     fn test_serialization_unk_id_not_zero() {
-        let vocab = vec![("a".to_string(), -0.5), ("<unk>".to_string(), 0.0)];
+        let vocab = vec![("a".into(), -0.5), ("<unk>".into(), 0.0)];
         let model = Unigram::from(vocab, Some(1), false).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
@@ -104,7 +105,7 @@ mod test {
 
     #[test]
     fn test_serialization_no_unk_id() {
-        let vocab = vec![("a".to_string(), -0.5)];
+        let vocab = vec![("a".into(), -0.5)];
         let model = Unigram::from(vocab, None, false).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();

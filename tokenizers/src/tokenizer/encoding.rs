@@ -2,6 +2,7 @@ use crate::parallelism::*;
 use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
+use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -14,7 +15,7 @@ pub struct Encoding {
     /// Type of the IDs
     type_ids: Vec<u32>,
     /// Tokens associated to each ID
-    tokens: Vec<String>,
+    tokens: Vec<CompactString>,
     /// Indice of the word associated to each token/ID
     words: Vec<Option<u32>>,
     /// Offsets of the token/ID from the NormalizedString
@@ -34,7 +35,7 @@ impl Encoding {
     pub fn new(
         ids: Vec<u32>,
         type_ids: Vec<u32>,
-        tokens: Vec<String>,
+        tokens: Vec<CompactString>,
         words: Vec<Option<u32>>,
         offsets: Vec<Offsets>,
         special_tokens_mask: Vec<u32>,
@@ -122,7 +123,7 @@ impl Encoding {
         self.sequence_ranges.insert(sequence_id, 0..self.len());
     }
 
-    pub fn get_tokens(&self) -> &[String] {
+    pub fn get_tokens(&self) -> &[CompactString] {
         &self.tokens[..]
     }
 
@@ -190,7 +191,7 @@ impl Encoding {
 
     pub(crate) fn process_tokens_with_offsets_mut<F>(&mut self, func: F)
     where
-        F: FnMut((usize, (&String, &mut Offsets))),
+        F: FnMut((usize, (&CompactString, &mut Offsets))),
     {
         self.tokens
             .iter()
@@ -493,7 +494,7 @@ impl Encoding {
                     .chain(self.type_ids.drain(..))
                     .collect();
                 self.tokens = (0..pad_length)
-                    .map(|_| pad_token.to_owned())
+                    .map(|_| pad_token.into())
                     .chain(self.tokens.drain(..))
                     .collect();
                 self.words = (0..pad_length)
@@ -522,7 +523,7 @@ impl Encoding {
                 self.ids.extend((0..pad_length).map(|_| pad_id));
                 self.type_ids.extend((0..pad_length).map(|_| pad_type_id));
                 self.tokens
-                    .extend((0..pad_length).map(|_| pad_token.to_owned()));
+                    .extend((0..pad_length).map(|_| pad_token.into()));
                 self.words.extend((0..pad_length).map(|_| None));
                 self.attention_mask.extend((0..pad_length).map(|_| 0));
                 self.special_tokens_mask.extend((0..pad_length).map(|_| 1));
@@ -538,8 +539,8 @@ impl std::iter::FromIterator<Encoding> for Encoding {
     }
 }
 
-impl std::iter::FromIterator<(u32, String, (usize, usize), Option<u32>, u32)> for Encoding {
-    fn from_iter<I: IntoIterator<Item = (u32, String, (usize, usize), Option<u32>, u32)>>(
+impl std::iter::FromIterator<(u32, CompactString, (usize, usize), Option<u32>, u32)> for Encoding {
+    fn from_iter<I: IntoIterator<Item = (u32, CompactString, (usize, usize), Option<u32>, u32)>>(
         iter: I,
     ) -> Self {
         let items = iter.into_iter();
@@ -571,7 +572,7 @@ mod tests {
         let mut a = Encoding {
             ids: vec![1],
             type_ids: vec![0],
-            tokens: vec![String::from("Hello ")],
+            tokens: vec![CompactString::from("Hello ")],
             words: vec![Some(0)],
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],
@@ -581,7 +582,7 @@ mod tests {
         let b = Encoding {
             ids: vec![2],
             type_ids: vec![1],
-            tokens: vec![String::from("World!")],
+            tokens: vec![CompactString::from("World!")],
             words: vec![Some(0)],
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],
@@ -595,7 +596,7 @@ mod tests {
             Encoding {
                 ids: vec![1, 2],
                 type_ids: vec![0, 1],
-                tokens: vec![String::from("Hello "), String::from("World!")],
+                tokens: vec![CompactString::from("Hello "), CompactString::from("World!")],
                 words: vec![Some(0), Some(0)],
                 offsets: vec![(0, 6), (6, 12)],
                 special_tokens_mask: vec![0, 0],
@@ -611,9 +612,9 @@ mod tests {
             ids: vec![1, 2, 3],
             type_ids: vec![0, 0, 0],
             tokens: vec![
-                String::from("Hello"),
-                String::from("World"),
-                String::from("!"),
+                CompactString::from("Hello"),
+                CompactString::from("World"),
+                CompactString::from("!"),
             ],
             words: vec![Some(0), Some(1), Some(2)],
             offsets: vec![(0, 5), (6, 11), (11, 12)],
@@ -628,7 +629,7 @@ mod tests {
             Encoding {
                 ids: vec![1, 2],
                 type_ids: vec![0, 0],
-                tokens: vec![String::from("Hello"), String::from("World")],
+                tokens: vec![CompactString::from("Hello"), CompactString::from("World")],
                 words: vec![Some(0), Some(1)],
                 offsets: vec![(0, 5), (6, 11)],
                 special_tokens_mask: vec![0, 0],
@@ -636,7 +637,7 @@ mod tests {
                 overflowing: vec![Encoding {
                     ids: vec![3],
                     type_ids: vec![0],
-                    tokens: vec![String::from("!")],
+                    tokens: vec![CompactString::from("!")],
                     words: vec![Some(2)],
                     offsets: vec![(11, 12)],
                     special_tokens_mask: vec![0],
@@ -654,9 +655,9 @@ mod tests {
             ids: vec![1, 2, 3],
             type_ids: vec![0, 0, 0],
             tokens: vec![
-                String::from("Hello"),
-                String::from("World"),
-                String::from("!"),
+                CompactString::from("Hello"),
+                CompactString::from("World"),
+                CompactString::from("!"),
             ],
             words: vec![Some(0), Some(1), Some(2)],
             offsets: vec![(0, 5), (6, 11), (11, 12)],
@@ -673,9 +674,9 @@ mod tests {
                     ids: vec![1, 2, 3],
                     type_ids: vec![0, 0, 0],
                     tokens: vec![
-                        String::from("Hello"),
-                        String::from("World"),
-                        String::from("!"),
+                        CompactString::from("Hello"),
+                        CompactString::from("World"),
+                        CompactString::from("!"),
                     ],
                     words: vec![Some(0), Some(1), Some(2)],
                     offsets: vec![(0, 5), (6, 11), (11, 12)],
@@ -695,11 +696,11 @@ mod tests {
             ids: vec![1, 2, 3, 4, 5],
             type_ids: vec![0, 0, 0, 0, 0],
             tokens: vec![
-                String::from("42"),
-                String::from("is"),
-                String::from("the"),
-                String::from("answer"),
-                String::from("!"),
+                CompactString::from("42"),
+                CompactString::from("is"),
+                CompactString::from("the"),
+                CompactString::from("answer"),
+                CompactString::from("!"),
             ],
             words: vec![Some(0), Some(1), Some(2), Some(3), Some(4)],
             offsets: vec![(0, 2), (2, 4), (4, 7), (7, 13), (13, 14)],
@@ -716,10 +717,10 @@ mod tests {
                 ids: vec![1, 2, 3, 4],
                 type_ids: vec![0, 0, 0, 0],
                 tokens: vec![
-                    String::from("42"),
-                    String::from("is"),
-                    String::from("the"),
-                    String::from("answer"),
+                    CompactString::from("42"),
+                    CompactString::from("is"),
+                    CompactString::from("the"),
+                    CompactString::from("answer"),
                 ],
                 words: vec![Some(0), Some(1), Some(2), Some(3)],
                 offsets: vec![(0, 2), (2, 4), (4, 7), (7, 13)],
@@ -729,9 +730,9 @@ mod tests {
                     ids: vec![3, 4, 5],
                     type_ids: vec![0, 0, 0],
                     tokens: vec![
-                        String::from("the"),
-                        String::from("answer"),
-                        String::from("!"),
+                        CompactString::from("the"),
+                        CompactString::from("answer"),
+                        CompactString::from("!"),
                     ],
                     words: vec![Some(2), Some(3), Some(4)],
                     offsets: vec![(4, 7), (7, 13), (13, 14)],
@@ -751,9 +752,9 @@ mod tests {
             ids: vec![1, 2, 3],
             type_ids: vec![0, 0, 0],
             tokens: vec![
-                String::from("Hello"),
-                String::from("World"),
-                String::from("!"),
+                CompactString::from("Hello"),
+                CompactString::from("World"),
+                CompactString::from("!"),
             ],
             words: vec![Some(0), Some(1), Some(2)],
             offsets: vec![(0, 5), (6, 11), (11, 12)],
@@ -768,7 +769,7 @@ mod tests {
             Encoding {
                 ids: vec![2, 3],
                 type_ids: vec![0, 0],
-                tokens: vec![String::from("World"), String::from("!")],
+                tokens: vec![CompactString::from("World"), CompactString::from("!")],
                 words: vec![Some(1), Some(2)],
                 offsets: vec![(6, 11), (11, 12)],
                 special_tokens_mask: vec![0, 0],
@@ -776,7 +777,7 @@ mod tests {
                 overflowing: vec![Encoding {
                     ids: vec![1],
                     type_ids: vec![0],
-                    tokens: vec![String::from("Hello")],
+                    tokens: vec![CompactString::from("Hello")],
                     words: vec![Some(0)],
                     offsets: vec![(0, 5)],
                     special_tokens_mask: vec![0],
@@ -885,7 +886,7 @@ mod tests {
         let mut a = Encoding {
             ids: vec![1],
             type_ids: vec![0],
-            tokens: vec![String::from("Hello ")],
+            tokens: vec![CompactString::from("Hello ")],
             words: vec![Some(0)],
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],

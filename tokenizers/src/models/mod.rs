@@ -5,6 +5,7 @@ pub mod unigram;
 pub mod wordlevel;
 pub mod wordpiece;
 
+use compact_str::CompactString;
 use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 
@@ -19,11 +20,11 @@ use crate::{AddedToken, Model, Result, Token, Trainer};
 /// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
 /// of token ID, smallest to largest.
 struct OrderedVocabIter<'a> {
-    vocab_r: &'a FxHashMap<u32, String>,
+    vocab_r: &'a FxHashMap<u32, CompactString>,
 }
 
 impl<'a> OrderedVocabIter<'a> {
-    fn new(vocab_r: &'a FxHashMap<u32, String>) -> Self {
+    fn new(vocab_r: &'a FxHashMap<u32, CompactString>) -> Self {
         Self { vocab_r }
     }
 }
@@ -161,7 +162,7 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    fn id_to_token(&self, id: u32) -> Option<CompactString> {
         match self {
             Self::WordLevel(t) => t.id_to_token(id),
             Self::WordPiece(t) => t.id_to_token(id),
@@ -170,7 +171,7 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn get_vocab(&self) -> FxHashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<CompactString, u32> {
         match self {
             Self::WordLevel(t) => t.get_vocab(),
             Self::WordPiece(t) => t.get_vocab(),
@@ -269,7 +270,7 @@ impl Trainer for TrainerWrapper {
     where
         I: Iterator<Item = S> + Send,
         S: AsRef<str> + Send,
-        F: Fn(&str) -> Result<Vec<String>> + Sync,
+        F: Fn(&str) -> Result<Vec<CompactString>> + Sync,
     {
         match self {
             Self::BpeTrainer(bpe) => bpe.feed(iterator, process),
@@ -301,10 +302,10 @@ mod tests {
 
     #[test]
     fn incomplete_ordered_vocab() {
-        let vocab_r: FxHashMap<u32, String> = {
+        let vocab_r: FxHashMap<u32, CompactString> = {
             let mut tmp = FxHashMap::default();
-            tmp.insert(0, "Hi".to_string());
-            tmp.insert(2, "There".to_string());
+            tmp.insert(0, "Hi".into());
+            tmp.insert(2, "There".into());
             tmp
         };
 
@@ -326,8 +327,8 @@ mod tests {
         .cloned()
         .collect();
         let bpe = BpeBuilder::default()
-            .vocab_and_merges(vocab, vec![("a".to_string(), "b".to_string())])
-            .unk_token("<unk>".to_string())
+            .vocab_and_merges(vocab, vec![("a".into(), "b".into())])
+            .unk_token("<unk>".into())
             .ignore_merges(true)
             .build()
             .unwrap();
