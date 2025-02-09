@@ -1,5 +1,5 @@
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString};
 use serde::{de, Deserialize, Deserializer, Serialize};
 
 /// Enum representing options for the metaspace prepending scheme.
@@ -149,16 +149,13 @@ impl PreTokenizer for Metaspace {
 }
 
 impl Decoder for Metaspace {
-    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
-        &self,
-        tokens: Vec<T>,
-    ) -> Result<Vec<CompactString>> {
+    fn decode_chain<T: ToCompactString>(&self, tokens: Vec<T>) -> Result<Vec<CompactString>> {
         Ok(tokens
-            .iter()
+            .into_iter()
             .enumerate()
             .map(|(i, token)| {
-                let tmp_token = Into::<CompactString>::into(token.clone());
-                tmp_token
+                token
+                    .to_compact_string()
                     .chars()
                     .flat_map(|c| {
                         if c == self.replacement {
@@ -209,7 +206,7 @@ mod tests {
         let metaspace_parsed: Metaspace = serde_json::from_str(
             r#"{"type":"Metaspace","replacement":"_","add_prefix_space":true}"#,
         )
-        .unwrap();
+            .unwrap();
         assert_eq!(metaspace_parsed, metaspace);
     }
 

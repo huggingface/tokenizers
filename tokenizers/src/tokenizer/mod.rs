@@ -9,7 +9,7 @@
 //!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
 //!     ...).
 
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString};
 use rustc_hash::FxHashMap;
 use std::{
     fs::{read_to_string, File},
@@ -152,14 +152,14 @@ pub enum ProcessorError {
 
 /// A `Decoder` changes the raw tokens into its more readable form.
 pub trait Decoder {
-    fn decode<T: Into<CompactString> + From<String> + Clone>(
+    fn decode<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
     ) -> Result<CompactString> {
-        let results = self.decode_chain(tokens.into_iter().map(|x| x.into()).collect())?;
+        let results: Vec<CompactString> = self.decode_chain(tokens.into_iter().map(|x| x.to_compact_string()).collect())?;
         Ok(results.join("").into())
     }
-    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+    fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
     ) -> Result<Vec<CompactString>>;

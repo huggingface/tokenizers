@@ -1,6 +1,6 @@
 use crate::tokenizer::{Decoder, Result};
 
-use compact_str::CompactString;
+use compact_str::{format_compact, CompactString, ToCompactString};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Clone, Debug, Serialize)]
@@ -29,8 +29,9 @@ impl Default for WordPiece {
         }
     }
 }
-pub fn cleanup(dirty_input: &str) -> CompactString {
+pub fn cleanup(dirty_input: impl ToCompactString) -> CompactString {
     dirty_input
+        .to_compact_string()
         .replace(" .", ".")
         .replace(" ?", "?")
         .replace(" !", "!")
@@ -46,27 +47,24 @@ pub fn cleanup(dirty_input: &str) -> CompactString {
 }
 
 impl Decoder for WordPiece {
-    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+    fn decode_chain<T: ToCompactString>(
         &self,
-        mut tokens: Vec<T>,
+        tokens: Vec<T>,
     ) -> Result<Vec<CompactString>> {
         tokens
-            .iter_mut()
+            .into_iter()
+            .map(|t| t.to_compact_string())
             .enumerate()
-            .map(|(i, token)| {
+            .map(|(i, mut token)| {
                 if i != 0 {
-                    if Into::<CompactString>::into(token.clone()).starts_with(&*self.prefix) {
-                        *token = Into::<CompactString>::into(token.clone())
-                            .replacen(&*self.prefix, "", 1)
-                            .into();
+                    if token.starts_with(&*self.prefix) {
+                        token = token.replacen(&*self.prefix, "", 1).to_compact_string();
                     } else {
-                        *token = format!(" {}", Into::<CompactString>::into(token.clone())).into();
+                        token = format_compact!(" {}", token);
                     }
                 }
                 if self.cleanup {
-                    *token = cleanup(Into::<CompactString>::into(token.clone()).as_str())
-                        .into_string()
-                        .into();
+                    token = cleanup(token);
                 }
                 Ok(token.clone().into())
             })
