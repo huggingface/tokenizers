@@ -929,18 +929,19 @@ where
 /// Example:
 ///
 /// ```
-/// # #[cfg(not(target_os = "windows"))]
+/// # use compact_str::ToCompactString;
+/// #[cfg(not(target_os = "windows"))]
 /// # {
 /// use tokenizers::Tokenizer;
 /// let tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();
 ///
 /// let mut decode_stream = tokenizer.decode_stream(false);
-/// assert_eq!(decode_stream.step(713).unwrap(), Some("This".to_string()));
-/// assert_eq!(decode_stream.step(16).unwrap(), Some(" is".to_string()));
-/// assert_eq!(decode_stream.step(41).unwrap(), Some(" an".to_string()));
+/// assert_eq!(decode_stream.step(713).unwrap(), Some("This".to_compact_string()));
+/// assert_eq!(decode_stream.step(16).unwrap(), Some(" is".to_compact_string()));
+/// assert_eq!(decode_stream.step(41).unwrap(), Some(" an".to_compact_string()));
 /// assert_eq!(
 ///     decode_stream.step(1246).unwrap(),
-///     Some(" example".to_string())
+///     Some(" example".to_compact_string())
 /// );
 /// # }
 /// ```
@@ -951,14 +952,15 @@ where
 /// a valid chunk.
 /// ```
 /// use tokenizers::{Tokenizer, TokenizerBuilder, models::bpe::BPE, decoders::byte_fallback::ByteFallback, pre_tokenizers::byte_level::ByteLevel, normalizers::unicode::NFC};
-/// use std::collections::HashMap;
 /// use std::iter::FromIterator;
+/// use compact_str::{CompactString, ToCompactString};
+/// use rustc_hash::FxHashMap;
 ///
-/// let vocab = HashMap::from_iter([
-///     ("<0x20>".to_string(), 0),
-///     ("<0xC3>".to_string(), 1),
-///     ("<0xA9>".to_string(), 2),
-///     (" This".to_string(), 3),
+/// let vocab: FxHashMap<CompactString, u32> = FxHashMap::from_iter([
+///     ("<0x20>".into(), 0),
+///     ("<0xC3>".into(), 1),
+///     ("<0xA9>".into(), 2),
+///     (" This".into(), 3),
 /// ]);
 /// let merges = vec![];
 /// let bpe = BPE::builder()
@@ -976,11 +978,11 @@ where
 ///
 /// let mut decode_stream = tokenizer.decode_stream(false);
 /// // Single byte_fallback is valid utf-8
-/// assert_eq!(decode_stream.step(0).unwrap(), Some(" ".to_string()));
+/// assert_eq!(decode_stream.step(0).unwrap(), Some(" ".to_compact_string()));
 /// // Invalid utf-8
 /// assert_eq!(decode_stream.step(1).unwrap(), None);
 /// // Valid utf-8 again, this corresponds to both tokens: [1, 2]
-/// assert_eq!(decode_stream.step(2).unwrap(), Some("é".to_string()));
+/// assert_eq!(decode_stream.step(2).unwrap(), Some("é".to_compact_string()));
 /// ```
 ///
 /// To see how [`DecodeStream`] is necessary, let's show how using raw [`TokenizerImpl::decode`] would
@@ -988,11 +990,12 @@ where
 ///
 /// ```
 /// use tokenizers::{Tokenizer, TokenizerBuilder, models::bpe::BPE, pre_tokenizers::{byte_level::ByteLevel, metaspace::Metaspace}, normalizers::unicode::NFC};
-/// use std::collections::HashMap;
 /// use std::iter::FromIterator;
+/// use compact_str::{CompactString, ToCompactString};
+/// use rustc_hash::FxHashMap;
 ///
-/// let vocab = HashMap::from_iter([
-///     ("▁This".to_string(), 0),
+/// let vocab: FxHashMap<CompactString, u32> = FxHashMap::from_iter([
+///     ("▁This".into(), 0),
 /// ]);
 /// let merges = vec![];
 /// let bpe = BPE::builder()
@@ -1016,8 +1019,8 @@ where
 ///
 /// // Using a stream fixes it by keeping the necessary state.
 /// let mut decode_stream = tokenizer.decode_stream(false);
-/// assert_eq!(decode_stream.step(0).unwrap(), Some("This".to_string()));
-/// assert_eq!(decode_stream.step(0).unwrap(), Some(" This".to_string()));
+/// assert_eq!(decode_stream.step(0).unwrap(), Some("This".to_compact_string()));
+/// assert_eq!(decode_stream.step(0).unwrap(), Some(" This".to_compact_string()));
 /// ```
 pub struct DecodeStream<'tok, M, N, PT, PP, D> {
     /// A reference to the tokenizer

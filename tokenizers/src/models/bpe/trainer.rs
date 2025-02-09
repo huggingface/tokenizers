@@ -163,13 +163,14 @@ impl BpeTrainerBuilder {
 /// # Examples
 ///
 /// ```
+/// use compact_str::ToCompactString;
 /// use tokenizers::tokenizer::Trainer;
 /// use tokenizers::models::bpe::{BPE, BpeTrainer};
 ///
 /// let sequences = vec![ "Hello", "World" ];
 ///
 /// let mut trainer = BpeTrainer::default();
-/// trainer.feed(sequences.iter(), |s| Ok(vec![s.to_owned()]));
+/// let  _ = trainer.feed(sequences.iter(), |s| Ok(vec![s.to_compact_string()]));
 ///
 /// let mut model = BPE::default();
 /// let special_tokens = trainer.train(&mut model).unwrap();
