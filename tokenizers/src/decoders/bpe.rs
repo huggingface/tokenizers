@@ -1,6 +1,6 @@
 use crate::tokenizer::{Decoder, Result};
 
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Clone, Debug, Serialize)]
@@ -25,7 +25,7 @@ impl Default for BPEDecoder {
 }
 
 impl Decoder for BPEDecoder {
-    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+    fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
     ) -> Result<Vec<CompactString>> {
@@ -35,7 +35,7 @@ impl Decoder for BPEDecoder {
             .enumerate()
             .map(|(i, token)| {
                 let replacement = if i == n { "" } else { " " };
-                token.into().replace(&self.suffix, replacement).into()
+                token.to_compact_string().replace(&self.suffix, replacement).into()
             })
             .collect())
     }

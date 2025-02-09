@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::utils::SysRegex;
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString};
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{
@@ -158,14 +158,14 @@ impl PreTokenizer for ByteLevel {
 /// the fact that single token decoded might be a byte not representable as
 /// as String.
 impl Decoder for ByteLevel {
-    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+    fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
     ) -> Result<Vec<CompactString>> {
         let toks = tokens
             .into_iter()
             .flat_map(|t| {
-                let t: CompactString = t.into();
+                let t: CompactString = t.to_compact_string();
                 t.chars()
                     .try_fold(vec![], |mut acc, c| {
                         CHAR_BYTES.get(&c).map(|b| {
@@ -302,9 +302,9 @@ mod tests {
                         "Hello", "Ġmy", "Ġfriend", ",", "Ġhow", "Ġis", "Ġyour", "Ġday", "Ġgoing",
                         "?"
                     ]
-                    .into_iter()
-                    .map(|s| s.into())
-                    .collect::<Vec<CompactString>>()
+                        .into_iter()
+                        .map(|s| s.into())
+                        .collect::<Vec<CompactString>>()
                 )
                 .unwrap(),
             vec!["Hello my friend, how is your day going?"]
@@ -583,20 +583,20 @@ mod tests {
         let byte_level: ByteLevel = serde_json::from_str(
             r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false}"#,
         )
-        .unwrap();
+            .unwrap();
         assert!(byte_level.use_regex);
 
         // Loading works, new future BC test.
         let byte_level: ByteLevel = serde_json::from_str(
             r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "use_regex": true}"#,
         )
-        .unwrap();
+            .unwrap();
         assert!(byte_level.use_regex);
 
         let byte_level: ByteLevel = serde_json::from_str(
             r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "use_regex": false}"#,
         )
-        .unwrap();
+            .unwrap();
         assert!(!byte_level.use_regex);
     }
 }

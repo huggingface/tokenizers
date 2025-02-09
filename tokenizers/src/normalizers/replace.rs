@@ -2,7 +2,7 @@ use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::Decoder;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::SysRegex;
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString};
 use serde::{Deserialize, Serialize};
 
 /// Represents the different patterns that `Replace` can use
@@ -87,14 +87,14 @@ impl Normalizer for Replace {
 }
 
 impl Decoder for Replace {
-    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+    fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
     ) -> Result<Vec<CompactString>> {
         tokens
             .into_iter()
             .map(|token| -> Result<CompactString> {
-                let token = Into::<CompactString>::into(token);
+                let token = token.to_compact_string();
                 let mut new_token = CompactString::from("");
 
                 for ((start, stop), is_match) in (&self.regex).find_matches(token.as_str())? {

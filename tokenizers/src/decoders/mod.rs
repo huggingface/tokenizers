@@ -10,7 +10,7 @@ pub mod wordpiece;
 pub use super::pre_tokenizers::byte_level;
 pub use super::pre_tokenizers::metaspace;
 
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::decoders::bpe::BPEDecoder;
@@ -151,7 +151,7 @@ impl<'de> Deserialize<'de> for DecoderWrapper {
 }
 
 impl Decoder for DecoderWrapper {
-    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+    fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
     ) -> Result<Vec<CompactString>> {

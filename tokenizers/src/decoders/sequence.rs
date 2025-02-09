@@ -1,7 +1,7 @@
 use crate::decoders::DecoderWrapper;
 use crate::tokenizer::{Decoder, Result};
 use crate::utils::macro_rules_attribute;
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
@@ -25,18 +25,15 @@ impl Sequence {
 }
 
 impl Decoder for Sequence {
-    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+    fn decode_chain<T: ToCompactString>(
         &self,
-        mut tokens: Vec<T>,
+        tokens: Vec<T>,
     ) -> Result<Vec<CompactString>> {
+        let mut current_tokens = tokens.into_iter().map(|t| t.to_compact_string()).collect();
         for decoder in &self.decoders {
-            tokens = decoder
-                .decode_chain(tokens)?
-                .into_iter()
-                .map(|token| token.to_string().into())
-                .collect();
+            current_tokens = decoder.decode_chain(current_tokens)?;
         }
-        Ok(tokens.into_iter().map(|token| token.into()).collect())
+        Ok(current_tokens)
     }
 }
 

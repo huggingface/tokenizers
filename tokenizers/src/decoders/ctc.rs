@@ -1,7 +1,7 @@
 use crate::decoders::wordpiece;
 use crate::tokenizer::{Decoder, Result};
 
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
@@ -43,13 +43,13 @@ impl Default for CTC {
 }
 
 impl Decoder for CTC {
-    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+    fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
     ) -> Result<Vec<CompactString>> {
         Ok(tokens
             .into_iter()
-            .map(|token| token.into())
+            .map(|token| token.to_compact_string())
             .dedup()
             .filter_map(|token| {
                 let mut replaced: CompactString = token.replace(&self.pad_token, "").into();
