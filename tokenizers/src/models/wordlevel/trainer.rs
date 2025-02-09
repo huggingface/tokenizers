@@ -1,9 +1,10 @@
 use super::WordLevel;
 use crate::utils::parallelism::*;
 use crate::{AddedToken, Result, Trainer};
+use compact_str::CompactString;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use rustc_hash::FxHashMap;
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Builder, Serialize, Deserialize)]
@@ -22,7 +23,7 @@ pub struct WordLevelTrainer {
     pub special_tokens: Vec<AddedToken>,
 
     #[builder(default, private)]
-    words: FxHashMap<String, u64>,
+    words: FxHashMap<CompactString, u64>,
 }
 
 impl Default for WordLevelTrainer {
@@ -38,14 +39,14 @@ impl WordLevelTrainer {
 
     fn do_train(
         &self,
-        word_counts: &FxHashMap<String, u64>,
+        word_counts: &FxHashMap<CompactString, u64>,
         model: &mut WordLevel,
     ) -> Result<Vec<AddedToken>> {
         let mut ordered_counts = word_counts.iter().collect::<Vec<_>>();
 
         //sort the word counts first by inverse counts and then by word, in order
         //to keep the sorting deterministic in case of equal counts
-        let cmp = |l: &(&String, &u64), r: &(&String, &u64)| -> Ordering {
+        let cmp = |l: &(&CompactString, &u64), r: &(&CompactString, &u64)| -> Ordering {
             let count_comp: Ordering = l.1.cmp(r.1);
             if count_comp != Ordering::Equal {
                 return count_comp.reverse();
@@ -98,9 +99,9 @@ impl Trainer for WordLevelTrainer {
     where
         I: Iterator<Item = S> + Send,
         S: AsRef<str> + Send,
-        F: Fn(&str) -> Result<Vec<String>> + Sync,
+        F: Fn(&str) -> Result<Vec<CompactString>> + Sync,
     {
-        let words: Result<FxHashMap<String, u64>> = iterator
+        let words: Result<FxHashMap<CompactString, u64>> = iterator
             .maybe_par_bridge()
             .map(|sequence| {
                 let words = process(sequence.as_ref())?;
@@ -132,7 +133,7 @@ mod tests {
 
     #[test]
     fn test_train() {
-        let word_counts: FxHashMap<String, u64> = [
+        let word_counts: FxHashMap<CompactString, u64> = [
             ("the".into(), 25),
             ("roses".into(), 22),
             ("are".into(), 24),
@@ -151,7 +152,7 @@ mod tests {
 
         let mut model = WordLevel::default();
         trainer.do_train(&word_counts, &mut model).unwrap();
-        let expected_vocab: FxHashMap<String, u32> = [
+        let expected_vocab: FxHashMap<CompactString, u32> = [
             ("the".into(), 0),
             ("are".into(), 1),
             ("roses".into(), 2),
@@ -167,7 +168,7 @@ mod tests {
         trainer.min_frequency = 15;
         let mut model = WordLevel::default();
         trainer.do_train(&word_counts, &mut model).unwrap();
-        let expected_vocab: FxHashMap<String, u32> = [
+        let expected_vocab: FxHashMap<CompactString, u32> = [
             ("the".into(), 0),
             ("are".into(), 1),
             ("roses".into(), 2),

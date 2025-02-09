@@ -1,5 +1,6 @@
 use crate::tokenizer::{Decoder, Result};
 
+use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Clone, Debug, Serialize, Default)]
@@ -25,7 +26,7 @@ impl Strip {
 }
 
 impl Decoder for Strip {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
         Ok(tokens
             .into_iter()
             .map(|token| {
@@ -52,7 +53,7 @@ impl Decoder for Strip {
                     }
                 }
 
-                let new_token: String = chars[start_cut..stop_cut].iter().collect();
+                let new_token: CompactString = chars[start_cut..stop_cut].iter().collect();
                 new_token
             })
             .collect())

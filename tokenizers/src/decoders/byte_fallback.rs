@@ -1,4 +1,5 @@
 use crate::tokenizer::{Decoder, Result};
+use compact_str::CompactString;
 use monostate::MustBe;
 
 use serde::{Deserialize, Serialize};
@@ -22,8 +23,8 @@ impl ByteFallback {
 }
 
 impl Decoder for ByteFallback {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        let mut new_tokens: Vec<String> = vec![];
+    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
+        let mut new_tokens: Vec<CompactString> = vec![];
         let mut previous_byte_tokens: Vec<u8> = vec![];
 
         for token in tokens {
@@ -40,7 +41,7 @@ impl Decoder for ByteFallback {
                 previous_byte_tokens.push(bytes);
             } else {
                 if !previous_byte_tokens.is_empty() {
-                    if let Ok(string) = String::from_utf8(previous_byte_tokens.clone()) {
+                    if let Ok(string) = CompactString::from_utf8(previous_byte_tokens.clone()) {
                         new_tokens.push(string);
                     } else {
                         for _ in 0..previous_byte_tokens.len() {
@@ -53,7 +54,7 @@ impl Decoder for ByteFallback {
             }
         }
         if !previous_byte_tokens.is_empty() {
-            if let Ok(string) = String::from_utf8(previous_byte_tokens.clone()) {
+            if let Ok(string) = CompactString::from_utf8(previous_byte_tokens.clone()) {
                 new_tokens.push(string);
             } else {
                 for _ in 0..previous_byte_tokens.len() {

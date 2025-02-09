@@ -2,17 +2,18 @@ use crate::models::unigram::{lattice::Lattice, model::Unigram};
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
+use compact_str::{CompactString, ToCompactString};
 use log::debug;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
-use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
 // A token and a score
-type SentencePiece = (String, f64);
+type SentencePiece = (CompactString, f64);
 
 // A full sentence or word + it's count within the dataset
-type Sentence = (String, u32);
+type Sentence = (CompactString, u32);
 
 fn digamma(mut x: f64) -> f64 {
     let mut result = 0.0;
@@ -57,18 +58,18 @@ pub struct UnigramTrainer {
     pub shrinking_factor: f64,
     #[builder(default = "vec![]")]
     pub special_tokens: Vec<AddedToken>,
-    #[builder(default = "HashSet::new()")]
-    pub initial_alphabet: HashSet<char>,
+    #[builder(default = "FxHashSet::default()")]
+    pub initial_alphabet: FxHashSet<char>,
 
     #[builder(default = "None")]
-    pub unk_token: Option<String>,
+    pub unk_token: Option<CompactString>,
 
     #[builder(default = "16")]
     pub max_piece_length: usize,
     #[builder(default = "1_000_000")]
     seed_size: usize,
-    #[builder(default = "HashMap::new()")]
-    words: HashMap<String, u32>,
+    #[builder(default = "FxHashMap::default()")]
+    words: FxHashMap<CompactString, u32>,
 }
 
 impl Default for UnigramTrainer {
@@ -110,17 +111,21 @@ impl UnigramTrainer {
         true
     }
 
-    fn finalize(&self, model: Unigram, required_chars: HashSet<String>) -> Result<Unigram> {
+    fn finalize(
+        &self,
+        model: Unigram,
+        required_chars: FxHashSet<CompactString>,
+    ) -> Result<Unigram> {
         let mut min_score_penalty = 0.0;
         let min_score_penalty_delta = 0.0001;
 
-        let mut pieces: Vec<(String, f64)> = vec![];
-        let mut inserted: HashSet<String> = HashSet::new();
+        let mut pieces: Vec<(CompactString, f64)> = vec![];
+        let mut inserted: FxHashSet<CompactString> = FxHashSet::default();
 
         // We don't want to include the <UNK> that was used to train
         inserted.insert("<UNK>".into());
 
-        let existing_pieces: HashMap<String, f64> = model.iter().cloned().collect();
+        let existing_pieces: FxHashMap<CompactString, f64> = model.iter().cloned().collect();
         for c in required_chars {
             if let Some(t) = existing_pieces.get(&c) {
                 inserted.insert(c.clone());
@@ -159,8 +164,8 @@ impl UnigramTrainer {
             if inserted.contains::<str>(token) {
                 continue;
             }
-            inserted.insert(token.to_string());
-            pieces.push((token.to_string(), if score.is_nan() { 0.0 } else { *score }));
+            inserted.insert(token.clone());
+            pieces.push((token.clone(), if score.is_nan() { 0.0 } else { *score }));
 
             if pieces.len() == vocab_size_without_special_tokens {
                 break;
@@ -185,12 +190,12 @@ impl UnigramTrainer {
         )
     }
 
-    fn required_chars(&self, word_counts: &[Sentence]) -> HashSet<String> {
+    fn required_chars(&self, word_counts: &[Sentence]) -> FxHashSet<CompactString> {
         word_counts
             .iter()
             .flat_map(|(s, _count)| s.chars())
             .chain(self.initial_alphabet.iter().copied())
-            .map(|c| c.to_string())
+            .map(|c| c.to_compact_string())
             .collect()
     }
     fn make_seed_sentence_pieces(
@@ -204,8 +209,8 @@ impl UnigramTrainer {
             .map(|(s, _)| s.chars().count())
             .sum::<usize>()
             + sentences.len();
-        let mut flat_string = String::with_capacity(total);
-        let mut all_chars: HashMap<char, u32> = HashMap::new();
+        let mut flat_string = CompactString::with_capacity(total);
+        let mut all_chars: FxHashMap<char, u32> = FxHashMap::default();
         let c_sentence_boundary = '\0';
         let k_sentence_boundary = '\0'.to_string();
         for (string, n) in sentences {
@@ -257,7 +262,7 @@ impl UnigramTrainer {
 
         // Fill seed_sentencepieces
         for (count, character) in sall_chars {
-            seed_sentencepieces.push((character.to_string(), count.into()));
+            seed_sentencepieces.push((character.to_compact_string(), count.into()));
         }
 
         // sort by decreasing score
@@ -265,7 +270,7 @@ impl UnigramTrainer {
         for (score, char_string) in substr_index {
             // Just in case
             assert!(self.is_valid_sentencepiece(char_string));
-            let string: String = char_string.iter().collect();
+            let string: CompactString = char_string.iter().collect();
             seed_sentencepieces.push((string, score.into()));
             if seed_sentencepieces.len() >= self.seed_size {
                 break;
@@ -378,7 +383,7 @@ impl UnigramTrainer {
                 continue;
             } else if alternatives[id].is_empty() {
                 // no alternatives. Keeps this entry.
-                new_pieces.push((token.to_string(), *score));
+                new_pieces.push((token.to_compact_string(), *score));
             } else {
                 let mut f = 0.0; // the frequency of pieces[i];
 
@@ -616,7 +621,11 @@ impl Trainer for UnigramTrainer {
 
     /// Train a Unigram model
     fn train(&self, model: &mut Unigram) -> Result<Vec<AddedToken>> {
-        let sentences: Vec<_> = self.words.iter().map(|(s, i)| (s.to_owned(), *i)).collect();
+        let sentences: Vec<_> = self
+            .words
+            .iter()
+            .map(|(s, i)| (s.to_compact_string(), *i))
+            .collect();
         self.do_train(sentences, model)
     }
 
@@ -629,20 +638,20 @@ impl Trainer for UnigramTrainer {
     where
         I: Iterator<Item = S> + Send,
         S: AsRef<str> + Send,
-        F: Fn(&str) -> Result<Vec<String>> + Sync,
+        F: Fn(&str) -> Result<Vec<CompactString>> + Sync,
     {
-        let words: Result<HashMap<String, u32>> = iterator
+        let words: Result<FxHashMap<CompactString, u32>> = iterator
             .maybe_par_bridge()
             .map(|sequence| {
                 let words = process(sequence.as_ref())?;
-                let mut map = HashMap::new();
+                let mut map = FxHashMap::default();
                 for word in words {
                     map.entry(word).and_modify(|c| *c += 1).or_insert(1);
                 }
                 Ok(map)
             })
             .reduce(
-                || Ok(HashMap::new()),
+                || Ok(FxHashMap::default()),
                 |acc, ws| {
                     let mut acc = acc?;
                     for (k, v) in ws? {
@@ -670,10 +679,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let sentences = vec![
-            ("This is a".to_string(), 1),
-            ("こんにちは友達".to_string(), 1),
-        ];
+        let sentences = vec![("This is a".into(), 1), ("こんにちは友達".into(), 1)];
 
         let required_chars = trainer.required_chars(&sentences);
         assert_eq!(required_chars.len(), 13);
@@ -716,18 +722,18 @@ mod tests {
     fn test_initial_alphabet() {
         let trainer = UnigramTrainerBuilder::default()
             .show_progress(false)
-            .initial_alphabet(HashSet::from_iter(vec!['a', 'b', 'c', 'd', 'e', 'f']))
+            .initial_alphabet(FxHashSet::from_iter(vec!['a', 'b', 'c', 'd', 'e', 'f']))
             .build()
             .unwrap();
 
-        let sentences = vec![("こんにちは友達".to_string(), 1)];
+        let sentences = vec![("こんにちは友達".into(), 1)];
         let required_chars = trainer.required_chars(&sentences);
         assert_eq!(
             required_chars,
             vec!["こ", "ん", "に", "ち", "は", "友", "達", "a", "b", "c", "d", "e", "f"]
                 .into_iter()
-                .map(|s| s.to_owned())
-                .collect::<HashSet<_>>()
+                .map(|s| s.to_compact_string())
+                .collect::<FxHashSet<_>>()
         );
     }
 
@@ -814,7 +820,7 @@ mod tests {
 
     #[test]
     fn test_to_log_prob() {
-        let mut a = vec![("".to_string(), 1.0), ("".to_string(), 2.0)];
+        let mut a = vec![("".into(), 1.0), ("".into(), 2.0)];
         to_log_prob(&mut a);
         let scores = a.iter().map(|(_, score)| *score).collect::<Vec<_>>();
         // ln(1) - ln(3)

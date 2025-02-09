@@ -168,6 +168,8 @@ pub fn truncate_encodings(
 
 #[cfg(test)]
 mod tests {
+    use compact_str::CompactString;
+
     use super::*;
     use crate::tokenizer::Encoding;
     use std::collections::HashMap;
@@ -190,7 +192,7 @@ mod tests {
         Encoding::new(
             vec![1, 2],
             vec![0, 0],
-            vec![String::from("a"), String::from("b")],
+            vec![CompactString::from("a"), CompactString::from("b")],
             vec![Some(0), Some(1)],
             vec![(0, 1), (1, 2)],
             vec![0, 0],
@@ -205,10 +207,10 @@ mod tests {
             vec![3, 4, 5, 6],
             vec![0, 0, 0, 0],
             vec![
-                String::from("d"),
-                String::from("e"),
-                String::from("f"),
-                String::from("g"),
+                CompactString::from("d"),
+                CompactString::from("e"),
+                CompactString::from("f"),
+                CompactString::from("g"),
             ],
             vec![Some(0), Some(1), Some(2), Some(3)],
             vec![(0, 1), (1, 2), (2, 3), (3, 4)],
@@ -224,14 +226,14 @@ mod tests {
             vec![7, 8, 9, 10, 11, 12, 13, 14],
             vec![0, 0, 0, 0, 0, 0, 0, 0],
             vec![
-                String::from("h"),
-                String::from("i"),
-                String::from("j"),
-                String::from("k"),
-                String::from("l"),
-                String::from("m"),
-                String::from("n"),
-                String::from("o"),
+                CompactString::from("h"),
+                CompactString::from("i"),
+                CompactString::from("j"),
+                CompactString::from("k"),
+                CompactString::from("l"),
+                CompactString::from("m"),
+                CompactString::from("n"),
+                CompactString::from("o"),
             ],
             vec![
                 Some(0),

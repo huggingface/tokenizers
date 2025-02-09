@@ -1,4 +1,5 @@
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use compact_str::CompactString;
 use serde::{de, Deserialize, Deserializer, Serialize};
 
 /// Enum representing options for the metaspace prepending scheme.
@@ -148,7 +149,7 @@ impl PreTokenizer for Metaspace {
 }
 
 impl Decoder for Metaspace {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
         Ok(tokens
             .iter()
             .enumerate()
@@ -166,7 +167,7 @@ impl Decoder for Metaspace {
                             Some(c)
                         }
                     })
-                    .collect::<String>()
+                    .collect()
             })
             .collect())
     }

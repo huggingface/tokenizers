@@ -3,6 +3,8 @@
 
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
+use compact_str::CompactString;
+use rustc_hash::FxHashMap;
 use std::{
     borrow::Cow,
     fs::File,
@@ -10,7 +12,6 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
-use rustc_hash::FxHashMap;
 
 mod serialization;
 mod trainer;
@@ -22,14 +23,14 @@ pub enum Error {
     MissingUnkToken,
 }
 
-type Vocab = FxHashMap<String, u32>;
-type VocabR = FxHashMap<u32, String>;
+type Vocab = FxHashMap<CompactString, u32>;
+type VocabR = FxHashMap<u32, CompactString>;
 
 struct Config {
-    files: Option<String>,
+    files: Option<CompactString>,
     vocab: Vocab,
-    unk_token: String,
-    continuing_subword_prefix: String,
+    unk_token: CompactString,
+    continuing_subword_prefix: CompactString,
     max_input_chars_per_word: usize,
 }
 
@@ -44,8 +45,8 @@ impl Default for WordPieceBuilder {
             config: Config {
                 files: None,
                 vocab: FxHashMap::default(),
-                unk_token: String::from("[UNK]"),
-                continuing_subword_prefix: String::from("##"),
+                unk_token: CompactString::from("[UNK]"),
+                continuing_subword_prefix: CompactString::from("##"),
                 max_input_chars_per_word: 100,
             },
         }
@@ -60,7 +61,7 @@ impl WordPieceBuilder {
 
     /// Set the input files.
     #[must_use]
-    pub fn files(mut self, vocab: String) -> Self {
+    pub fn files(mut self, vocab: CompactString) -> Self {
         self.config.files = Some(vocab);
         self
     }
@@ -74,14 +75,14 @@ impl WordPieceBuilder {
 
     /// The the `UNK` token for the vocab.
     #[must_use]
-    pub fn unk_token(mut self, unk_token: String) -> Self {
+    pub fn unk_token(mut self, unk_token: CompactString) -> Self {
         self.config.unk_token = unk_token;
         self
     }
 
     /// Set the prefix for continuing subwords.
     #[must_use]
-    pub fn continuing_subword_prefix(mut self, continuing_subword_prefix: String) -> Self {
+    pub fn continuing_subword_prefix(mut self, continuing_subword_prefix: CompactString) -> Self {
         self.config.continuing_subword_prefix = continuing_subword_prefix;
         self
     }
@@ -123,8 +124,8 @@ impl WordPieceBuilder {
 pub struct WordPiece {
     vocab: Vocab,
     vocab_r: VocabR,
-    pub unk_token: String,
-    pub continuing_subword_prefix: String,
+    pub unk_token: CompactString,
+    pub continuing_subword_prefix: CompactString,
     pub max_input_chars_per_word: usize,
 }
 
@@ -144,8 +145,8 @@ impl Default for WordPiece {
         Self {
             vocab: FxHashMap::default(),
             vocab_r: FxHashMap::default(),
-            unk_token: String::from("[UNK]"),
-            continuing_subword_prefix: String::from("##"),
+            unk_token: CompactString::from("[UNK]"),
+            continuing_subword_prefix: CompactString::from("##"),
             max_input_chars_per_word: 100,
         }
     }
@@ -165,7 +166,7 @@ impl WordPiece {
         let mut vocab = FxHashMap::default();
         for (index, line) in file.lines().enumerate() {
             let line = line?;
-            vocab.insert(line.trim_end().to_owned(), index as u32);
+            vocab.insert(line.trim_end().into(), index as u32);
         }
 
         Ok(vocab)
@@ -173,7 +174,7 @@ impl WordPiece {
 
     /// Initialize a `WordPiece` model from a vocab mapping file.
     pub fn from_file(vocab: &str) -> WordPieceBuilder {
-        WordPiece::builder().files(vocab.to_owned())
+        WordPiece::builder().files(vocab.into())
     }
 
     /// Create a `WordPiece` model from a `BPE` model.
@@ -192,7 +193,7 @@ impl WordPiece {
 impl Model for WordPiece {
     type Trainer = WordPieceTrainer;
 
-    fn get_vocab(&self) -> FxHashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<CompactString, u32> {
         self.vocab.clone()
     }
 
@@ -230,7 +231,7 @@ impl Model for WordPiece {
                 if self.vocab.contains_key(substr.as_ref()) {
                     cur_str = Some(Token {
                         id: self.vocab[substr.as_ref()],
-                        value: substr.to_string(),
+                        value: substr.into(),
                         offsets: (start, end),
                     });
                     break;
@@ -265,7 +266,7 @@ impl Model for WordPiece {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    fn id_to_token(&self, id: u32) -> Option<CompactString> {
         self.vocab_r.get(&id).cloned()
     }
 
@@ -280,7 +281,7 @@ impl Model for WordPiece {
             .iter()
             .collect();
         let mut vocab_file = File::create(&vocab_path)?;
-        let mut vocab: Vec<(&String, &u32)> = self.vocab.iter().collect();
+        let mut vocab: Vec<(&CompactString, &u32)> = self.vocab.iter().collect();
         vocab.sort_unstable_by_key(|k| *k.1);
         vocab_file.write_all(
             &vocab

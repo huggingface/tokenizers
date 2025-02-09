@@ -2,6 +2,7 @@ use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::Decoder;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::SysRegex;
+use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
 /// Represents the different patterns that `Replace` can use
@@ -86,11 +87,11 @@ impl Normalizer for Replace {
 }
 
 impl Decoder for Replace {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
         tokens
             .into_iter()
-            .map(|token| -> Result<String> {
-                let mut new_token = "".to_string();
+            .map(|token| -> Result<CompactString> {
+                let mut new_token = CompactString::from("");
 
                 for ((start, stop), is_match) in (&self.regex).find_matches(&token)? {
                     if is_match {
@@ -149,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_replace_decode() {
-        let original = vec!["hello".to_string(), "_hello".to_string()];
+        let original = vec!["hello".into(), "_hello".into()];
         let replace = Replace::new("_", " ").unwrap();
         assert_eq!(
             replace.decode_chain(original).unwrap(),

@@ -1,10 +1,11 @@
 use super::{super::OrderedVocabIter, convert_merges_to_hashmap, BpeBuilder, Pair, BPE};
+use compact_str::CompactString;
+use rustc_hash::FxHashMap;
 use serde::{
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use rustc_hash::FxHashMap;
 
 impl Serialize for BPE {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -80,13 +81,13 @@ impl<'de> Visitor<'de> for BPEVisitor {
         V: MapAccess<'de>,
     {
         let mut builder = BpeBuilder::new();
-        let mut vocab: Option<FxHashMap<String, u32>> = None;
+        let mut vocab: Option<FxHashMap<CompactString, u32>> = None;
 
         #[derive(Debug, Deserialize)]
         #[serde(untagged)]
         enum MergeType {
-            Tuple(Vec<(String, String)>),
-            Legacy(Vec<String>),
+            Tuple(Vec<(CompactString, CompactString)>),
+            Legacy(Vec<CompactString>),
         }
         let mut merges: Option<MergeType> = None;
         while let Some(key) = map.next_key::<String>()? {
@@ -172,8 +173,8 @@ mod test {
         .cloned()
         .collect();
         let bpe = BpeBuilder::default()
-            .vocab_and_merges(vocab, vec![("a".to_string(), "b".to_string())])
-            .unk_token("<unk>".to_string())
+            .vocab_and_merges(vocab, vec![("a".into(), "b".into())])
+            .unk_token("<unk>".into())
             .ignore_merges(true)
             .build()
             .unwrap();
@@ -201,8 +202,8 @@ mod test {
         .cloned()
         .collect();
         let bpe = BpeBuilder::default()
-            .vocab_and_merges(vocab, vec![("a".to_string(), "b c d".to_string())])
-            .unk_token("<unk>".to_string())
+            .vocab_and_merges(vocab, vec![("a".into(), "b c d".into())])
+            .unk_token("<unk>".into())
             .ignore_merges(true)
             .build()
             .unwrap();
@@ -223,7 +224,7 @@ mod test {
             .collect();
         let mut bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, vec![])
-            .unk_token("<unk>".to_string())
+            .unk_token("<unk>".into())
             .ignore_merges(true)
             .build()
             .unwrap();

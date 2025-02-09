@@ -38,8 +38,8 @@ fn create_bert_tokenizer(wp: WordPiece) -> BertTokenizer {
     tokenizer.with_normalizer(Some(BertNormalizer::default()));
     tokenizer.with_decoder(Some(decoders::wordpiece::WordPiece::default()));
     tokenizer.with_post_processor(Some(BertProcessing::new(
-        ("[SEP]".to_string(), sep_id),
-        ("[CLS]".to_string(), cls_id),
+        ("[SEP]".into(), sep_id),
+        ("[CLS]".into(), cls_id),
     )));
     tokenizer
 }

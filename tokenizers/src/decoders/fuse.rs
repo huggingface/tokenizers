@@ -1,4 +1,5 @@
 use crate::tokenizer::{Decoder, Result};
+use compact_str::CompactString;
 use monostate::MustBe;
 use serde::{Deserialize, Serialize};
 
@@ -22,8 +23,8 @@ impl Fuse {
 }
 
 impl Decoder for Fuse {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        let new_string = tokens.join("");
+    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
+        let new_string: CompactString = tokens.join("").into();
         Ok(vec![new_string])
     }
 }

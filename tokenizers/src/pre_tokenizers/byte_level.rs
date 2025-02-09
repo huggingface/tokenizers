@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::utils::SysRegex;
+use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{
@@ -157,7 +158,7 @@ impl PreTokenizer for ByteLevel {
 /// the fact that single token decoded might be a byte not representable as
 /// as String.
 impl Decoder for ByteLevel {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
         let toks = tokens
             .into_iter()
             .flat_map(|t| {
@@ -171,7 +172,7 @@ impl Decoder for ByteLevel {
                     .unwrap_or_else(|| t.as_bytes().to_vec())
             })
             .collect::<Vec<u8>>();
-        Ok(vec![String::from_utf8_lossy(&toks).to_string()])
+        Ok(vec![String::from_utf8_lossy(&toks).into()])
     }
 }
 
@@ -299,7 +300,7 @@ mod tests {
                     ]
                     .into_iter()
                     .map(|s| s.into())
-                    .collect::<Vec<String>>()
+                    .collect::<Vec<_>>()
                 )
                 .unwrap(),
             vec!["Hello my friend, how is your day going?"]

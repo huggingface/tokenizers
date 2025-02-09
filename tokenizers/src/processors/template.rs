@@ -57,6 +57,7 @@
 //! [`TemplateProcessing`]: struct.TemplateProcessing.html
 //!
 use crate::{Encoding, PostProcessor, Result};
+use compact_str::{CompactString, ToCompactString};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -95,7 +96,7 @@ pub enum Sequence {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum Piece {
     Sequence { id: Sequence, type_id: u32 },
-    SpecialToken { id: String, type_id: u32 },
+    SpecialToken { id: CompactString, type_id: u32 },
 }
 
 impl Piece {
@@ -130,7 +131,7 @@ impl Piece {
             }
         } else {
             Some(Self::SpecialToken {
-                id: s.to_owned(),
+                id: s.into(),
                 type_id: 0,
             })
         }
@@ -192,15 +193,15 @@ impl TryFrom<&str> for Piece {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub struct SpecialToken {
     /// A unique id used to identify this SpecialToken in the template
-    id: String,
+    id: CompactString,
     /// The list of associated ids
     ids: Vec<u32>,
     /// The list of associated tokens
-    tokens: Vec<String>,
+    tokens: Vec<CompactString>,
 }
 
-impl From<(String, u32)> for SpecialToken {
-    fn from(v: (String, u32)) -> Self {
+impl From<(CompactString, u32)> for SpecialToken {
+    fn from(v: (CompactString, u32)) -> Self {
         Self {
             id: v.0.clone(),
             ids: vec![v.1],
@@ -210,22 +211,22 @@ impl From<(String, u32)> for SpecialToken {
 }
 impl From<(&str, u32)> for SpecialToken {
     fn from(v: (&str, u32)) -> Self {
-        Self::from((v.0.to_owned(), v.1))
+        Self::from((v.0.to_compact_string(), v.1))
     }
 }
-impl From<(u32, String)> for SpecialToken {
-    fn from(v: (u32, String)) -> Self {
+impl From<(u32, CompactString)> for SpecialToken {
+    fn from(v: (u32, CompactString)) -> Self {
         Self::from((v.1, v.0))
     }
 }
 impl From<(u32, &str)> for SpecialToken {
     fn from(v: (u32, &str)) -> Self {
-        Self::from((v.1.to_owned(), v.0))
+        Self::from((v.1.to_compact_string(), v.0))
     }
 }
 
 impl SpecialToken {
-    pub fn new(id: String, ids: Vec<u32>, tokens: Vec<String>) -> Result<Self> {
+    pub fn new(id: CompactString, ids: Vec<u32>, tokens: Vec<CompactString>) -> Result<Self> {
         if ids.len() != tokens.len() {
             Err("SpecialToken: ids and tokens must be of the same length".into())
         } else {
@@ -293,7 +294,7 @@ impl TryFrom<&str> for Template {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Eq)]
 #[serde(transparent)]
 pub struct Tokens(
-    #[serde(serialize_with = "crate::utils::ordered_map")] pub HashMap<String, SpecialToken>,
+    #[serde(serialize_with = "crate::utils::ordered_map")] pub HashMap<CompactString, SpecialToken>,
 );
 
 impl<T: Into<SpecialToken>> From<Vec<T>> for Tokens {
@@ -309,8 +310,8 @@ impl<T: Into<SpecialToken>> From<Vec<T>> for Tokens {
     }
 }
 
-impl From<HashMap<String, SpecialToken>> for Tokens {
-    fn from(v: HashMap<String, SpecialToken>) -> Self {
+impl From<HashMap<CompactString, SpecialToken>> for Tokens {
+    fn from(v: HashMap<CompactString, SpecialToken>) -> Self {
         Self(v)
     }
 }
