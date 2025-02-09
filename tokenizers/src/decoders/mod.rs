@@ -151,7 +151,10 @@ impl<'de> Deserialize<'de> for DecoderWrapper {
 }
 
 impl Decoder for DecoderWrapper {
-    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
+    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<CompactString>> {
         match self {
             Self::BPE(bpe) => bpe.decode_chain(tokens),
             Self::ByteLevel(bl) => bl.decode_chain(tokens),

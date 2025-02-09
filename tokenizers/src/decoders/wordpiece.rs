@@ -1,6 +1,6 @@
 use crate::tokenizer::{Decoder, Result};
 
-use compact_str::{format_compact, CompactString};
+use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Clone, Debug, Serialize)]
@@ -46,24 +46,31 @@ pub fn cleanup(dirty_input: &str) -> CompactString {
 }
 
 impl Decoder for WordPiece {
-    fn decode_chain(&self, mut tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
+    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+        &self,
+        mut tokens: Vec<T>,
+    ) -> Result<Vec<CompactString>> {
         tokens
             .iter_mut()
             .enumerate()
             .map(|(i, token)| {
                 if i != 0 {
-                    if token.starts_with(&*self.prefix) {
-                        *token = token.replacen(&*self.prefix, "", 1).into();
+                    if Into::<CompactString>::into(token.clone()).starts_with(&*self.prefix) {
+                        *token = Into::<CompactString>::into(token.clone())
+                            .replacen(&*self.prefix, "", 1)
+                            .into();
                     } else {
-                        *token = format_compact!(" {token}");
+                        *token = format!(" {}", Into::<CompactString>::into(token.clone())).into();
                     }
                 }
                 if self.cleanup {
-                    *token = cleanup(token);
+                    *token = cleanup(Into::<CompactString>::into(token.clone()).as_str())
+                        .into_string()
+                        .into();
                 }
-                Ok(token.clone())
+                Ok(token.clone().into())
             })
-            .collect::<Result<_>>()
+            .collect::<Result<Vec<CompactString>>>()
     }
 }
 
@@ -78,12 +85,12 @@ mod tests {
         assert_eq!(
             decoder
                 .decode(vec![
-                    "##uelo".into(),
-                    "Ara".into(),
-                    "##új".into(),
-                    "##o".into(),
-                    "No".into(),
-                    "##guera".into()
+                    "##uelo".to_owned(),
+                    "Ara".to_owned(),
+                    "##új".to_owned(),
+                    "##o".to_owned(),
+                    "No".to_owned(),
+                    "##guera".to_owned()
                 ])
                 .unwrap(),
             "##uelo Araújo Noguera"

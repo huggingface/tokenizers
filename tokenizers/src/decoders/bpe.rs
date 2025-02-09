@@ -25,14 +25,17 @@ impl Default for BPEDecoder {
 }
 
 impl Decoder for BPEDecoder {
-    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
+    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<CompactString>> {
         let n = tokens.len() - 1;
         Ok(tokens
             .into_iter()
             .enumerate()
             .map(|(i, token)| {
                 let replacement = if i == n { "" } else { " " };
-                token.replace(&self.suffix, replacement).into()
+                token.into().replace(&self.suffix, replacement).into()
             })
             .collect())
     }

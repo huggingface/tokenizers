@@ -158,10 +158,14 @@ impl PreTokenizer for ByteLevel {
 /// the fact that single token decoded might be a byte not representable as
 /// as String.
 impl Decoder for ByteLevel {
-    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
+    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<CompactString>> {
         let toks = tokens
             .into_iter()
             .flat_map(|t| {
+                let t: CompactString = t.into();
                 t.chars()
                     .try_fold(vec![], |mut acc, c| {
                         CHAR_BYTES.get(&c).map(|b| {
@@ -300,7 +304,7 @@ mod tests {
                     ]
                     .into_iter()
                     .map(|s| s.into())
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<CompactString>>()
                 )
                 .unwrap(),
             vec!["Hello my friend, how is your day going?"]
@@ -354,7 +358,7 @@ mod tests {
                 .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .iter()
                 .flat_map(|(s, _, _)| s.split("").map(|t| t.into()))
-                .collect::<Vec<_>>();
+                .collect::<Vec<CompactString>>();
             assert_eq!(
                 sample,
                 bytelevel.decode_chain(separated_tokens).unwrap().join("")
@@ -561,12 +565,12 @@ mod tests {
         assert_eq!(
             byte_level
                 .decode_chain(vec![
-                    "Hello".into(),
-                    "Ġthere".into(),
-                    "Ġdear".into(),
-                    "Ġfriend!".into(),
-                    "Ġ".into(),
-                    "[PA D]".into()
+                    "Hello".to_owned(),
+                    "Ġthere".to_owned(),
+                    "Ġdear".to_owned(),
+                    "Ġfriend!".to_owned(),
+                    "Ġ".to_owned(),
+                    "[PA D]".to_owned()
                 ])
                 .unwrap(),
             vec!["Hello there dear friend! [PA D]"]

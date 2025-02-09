@@ -43,9 +43,13 @@ impl Default for CTC {
 }
 
 impl Decoder for CTC {
-    fn decode_chain(&self, tokens: Vec<CompactString>) -> Result<Vec<CompactString>> {
+    fn decode_chain<T: Into<CompactString> + From<String> + Clone>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<CompactString>> {
         Ok(tokens
             .into_iter()
+            .map(|token| token.into())
             .dedup()
             .filter_map(|token| {
                 let mut replaced: CompactString = token.replace(&self.pad_token, "").into();
