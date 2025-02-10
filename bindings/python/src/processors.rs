@@ -4,6 +4,7 @@ use std::sync::RwLock;
 
 use crate::encoding::PyEncoding;
 use crate::error::ToPyResult;
+use compact_str::ToCompactString;
 use pyo3::exceptions;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
@@ -335,7 +336,14 @@ impl PyBertProcessing {
     #[new]
     #[pyo3(text_signature = "(self, sep, cls)")]
     fn new(sep: (String, u32), cls: (String, u32)) -> (Self, PyPostProcessor) {
-        (PyBertProcessing {}, BertProcessing::new(sep, cls).into())
+        (
+            PyBertProcessing {},
+            BertProcessing::new(
+                (sep.0.to_compact_string(), sep.1),
+                (cls.0.to_compact_string(), cls.1),
+            )
+            .into(),
+        )
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
@@ -354,8 +362,8 @@ impl PyBertProcessing {
 
     #[setter]
     fn set_sep(self_: PyRef<Self>, sep: Bound<'_, PyTuple>) -> PyResult<()> {
-        let sep = sep.extract()?;
-        setter!(self_, Bert, sep, sep);
+        let sep = sep.extract::<(String, u32)>()?;
+        setter!(self_, Bert, sep, (sep.0.to_compact_string(), sep.1));
         Ok(())
     }
 
@@ -371,8 +379,8 @@ impl PyBertProcessing {
 
     #[setter]
     fn set_cls(self_: PyRef<Self>, cls: Bound<'_, PyTuple>) -> PyResult<()> {
-        let cls = cls.extract()?;
-        setter!(self_, Bert, cls, cls);
+        let cls = cls.extract::<(String, u32)>()?;
+        setter!(self_, Bert, cls, (cls.0.to_compact_string(), cls.1));
         Ok(())
     }
 }
@@ -413,6 +421,8 @@ impl PyRobertaProcessing {
         trim_offsets: bool,
         add_prefix_space: bool,
     ) -> (Self, PyPostProcessor) {
+        let sep = (sep.0.to_compact_string(), sep.1);
+        let cls = (cls.0.to_compact_string(), cls.1);
         let proc = RobertaProcessing::new(sep, cls)
             .trim_offsets(trim_offsets)
             .add_prefix_space(add_prefix_space);
@@ -435,8 +445,8 @@ impl PyRobertaProcessing {
 
     #[setter]
     fn set_sep(self_: PyRef<Self>, sep: Bound<'_, PyTuple>) -> PyResult<()> {
-        let sep = sep.extract()?;
-        setter!(self_, Roberta, sep, sep);
+        let sep = sep.extract::<(String, u32)>()?;
+        setter!(self_, Roberta, sep, (sep.0.to_compact_string(), sep.1));
         Ok(())
     }
 
@@ -452,8 +462,8 @@ impl PyRobertaProcessing {
 
     #[setter]
     fn set_cls(self_: PyRef<Self>, cls: Bound<'_, PyTuple>) -> PyResult<()> {
-        let cls = cls.extract()?;
-        setter!(self_, Roberta, cls, cls);
+        let cls = cls.extract::<(String, u32)>()?;
+        setter!(self_, Roberta, cls, (cls.0.to_compact_string(), cls.1));
         Ok(())
     }
 
@@ -558,9 +568,9 @@ impl From<PySpecialToken> for SpecialToken {
 impl FromPyObject<'_> for PySpecialToken {
     fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         if let Ok(v) = ob.extract::<(String, u32)>() {
-            Ok(Self(v.into()))
+            Ok(Self((v.0.to_compact_string(), v.1).into()))
         } else if let Ok(v) = ob.extract::<(u32, String)>() {
-            Ok(Self(v.into()))
+            Ok(Self((v.0, v.1.to_compact_string()).into()))
         } else if let Ok(d) = ob.downcast::<PyDict>() {
             let id = d
                 .get_item("id")?
@@ -573,10 +583,13 @@ impl FromPyObject<'_> for PySpecialToken {
             let tokens = d
                 .get_item("tokens")?
                 .ok_or_else(|| exceptions::PyValueError::new_err("`tokens` must be specified"))?
-                .extract::<Vec<String>>()?;
+                .extract::<Vec<String>>()?
+                .into_iter()
+                .map(|s| s.to_compact_string())
+                .collect();
 
             Ok(Self(
-                ToPyResult(SpecialToken::new(id, ids, tokens)).into_py()?,
+                ToPyResult(SpecialToken::new(id.to_compact_string(), ids, tokens)).into_py()?,
             ))
         } else {
             Err(exceptions::PyTypeError::new_err(

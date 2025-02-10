@@ -2,6 +2,8 @@ use std::sync::{Arc, RwLock};
 
 use crate::models::PyModel;
 use crate::tokenizer::PyAddedToken;
+use compact_str::CompactString;
+use compact_str::ToCompactString;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -105,7 +107,7 @@ impl Trainer for PyTrainer {
     where
         I: Iterator<Item = S> + Send,
         S: AsRef<str> + Send,
-        F: Fn(&str) -> tk::Result<Vec<String>> + Sync,
+        F: Fn(&str) -> tk::Result<Vec<CompactString>> + Sync,
     {
         self.trainer.write().unwrap().feed(iterator, process)
     }
@@ -295,22 +297,40 @@ impl PyBpeTrainer {
 
     #[getter]
     fn get_continuing_subword_prefix(self_: PyRef<Self>) -> Option<String> {
-        getter!(self_, BpeTrainer, continuing_subword_prefix.clone())
+        getter!(
+            self_,
+            BpeTrainer,
+            continuing_subword_prefix.clone().map(|s| s.to_string())
+        )
     }
 
     #[setter]
     fn set_continuing_subword_prefix(self_: PyRef<Self>, prefix: Option<String>) {
-        setter!(self_, BpeTrainer, continuing_subword_prefix, prefix);
+        setter!(
+            self_,
+            BpeTrainer,
+            continuing_subword_prefix,
+            prefix.map(|s| s.to_compact_string())
+        );
     }
 
     #[getter]
     fn get_end_of_word_suffix(self_: PyRef<Self>) -> Option<String> {
-        getter!(self_, BpeTrainer, end_of_word_suffix.clone())
+        getter!(
+            self_,
+            BpeTrainer,
+            end_of_word_suffix.clone().map(|s| s.to_string())
+        )
     }
 
     #[setter]
     fn set_end_of_word_suffix(self_: PyRef<Self>, suffix: Option<String>) {
-        setter!(self_, BpeTrainer, end_of_word_suffix, suffix);
+        setter!(
+            self_,
+            BpeTrainer,
+            end_of_word_suffix,
+            suffix.map(|s| s.to_compact_string())
+        );
     }
 
     #[new]
@@ -357,9 +377,13 @@ impl PyBpeTrainer {
                         );
                     }
                     "continuing_subword_prefix" => {
-                        builder = builder.continuing_subword_prefix(val.extract()?)
+                        builder = builder
+                            .continuing_subword_prefix(val.extract::<String>()?.to_compact_string())
                     }
-                    "end_of_word_suffix" => builder = builder.end_of_word_suffix(val.extract()?),
+                    "end_of_word_suffix" => {
+                        builder =
+                            builder.end_of_word_suffix(val.extract::<String>()?.to_compact_string())
+                    }
                     _ => println!("Ignored unknown kwargs option {}", key),
                 };
             }
@@ -499,22 +523,30 @@ impl PyWordPieceTrainer {
 
     #[getter]
     fn get_continuing_subword_prefix(self_: PyRef<Self>) -> Option<String> {
-        getter!(self_, WordPieceTrainer, continuing_subword_prefix().clone())
+        getter!(
+            self_,
+            WordPieceTrainer,
+            continuing_subword_prefix().clone().map(|s| s.to_string())
+        )
     }
 
     #[setter]
     fn set_continuing_subword_prefix(self_: PyRef<Self>, prefix: Option<String>) {
-        setter!(self_, WordPieceTrainer, @set_continuing_subword_prefix, prefix);
+        setter!(self_, WordPieceTrainer, @set_continuing_subword_prefix, prefix.map(|s| s.to_compact_string()));
     }
 
     #[getter]
     fn get_end_of_word_suffix(self_: PyRef<Self>) -> Option<String> {
-        getter!(self_, WordPieceTrainer, end_of_word_suffix().clone())
+        getter!(
+            self_,
+            WordPieceTrainer,
+            end_of_word_suffix().clone().map(|s| s.to_string())
+        )
     }
 
     #[setter]
     fn set_end_of_word_suffix(self_: PyRef<Self>, suffix: Option<String>) {
-        setter!(self_, WordPieceTrainer, @set_end_of_word_suffix, suffix);
+        setter!(self_, WordPieceTrainer, @set_end_of_word_suffix, suffix.map(|s| s.to_compact_string()));
     }
 
     #[new]
@@ -563,9 +595,13 @@ impl PyWordPieceTrainer {
                         );
                     }
                     "continuing_subword_prefix" => {
-                        builder = builder.continuing_subword_prefix(val.extract()?)
+                        builder = builder
+                            .continuing_subword_prefix(val.extract::<String>()?.to_compact_string())
                     }
-                    "end_of_word_suffix" => builder = builder.end_of_word_suffix(val.extract()?),
+                    "end_of_word_suffix" => {
+                        builder =
+                            builder.end_of_word_suffix(val.extract::<String>()?.to_compact_string())
+                    }
                     _ => println!("Ignored unknown kwargs option {}", key),
                 };
             }
@@ -840,7 +876,10 @@ impl PyUnigramTrainer {
                     "show_progress" => builder.show_progress(val.extract()?),
                     "n_sub_iterations" => builder.n_sub_iterations(val.extract()?),
                     "shrinking_factor" => builder.shrinking_factor(val.extract()?),
-                    "unk_token" => builder.unk_token(val.extract()?),
+                    "unk_token" => builder.unk_token(
+                        val.extract::<Option<String>>()?
+                            .map(|s| s.to_compact_string()),
+                    ),
                     "max_piece_length" => builder.max_piece_length(val.extract()?),
                     "seed_size" => builder.seed_size(val.extract()?),
                     "initial_alphabet" => {

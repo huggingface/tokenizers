@@ -1,6 +1,7 @@
+use compact_str::ToCompactString;
+use rustc_hash::FxHashMap;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
-use rustc_hash::FxHashMap;
 use std::hash::{Hash, Hasher};
 
 use numpy::{npyffi, PyArray1, PyArrayMethods};
@@ -104,7 +105,7 @@ impl PyAddedToken {
         let dict = PyDict::new(py);
         let token = self.get_token();
 
-        dict.set_item("content", token.content)?;
+        dict.set_item("content", token.content.to_string())?;
         dict.set_item("single_word", token.single_word)?;
         dict.set_item("lstrip", token.lstrip)?;
         dict.set_item("rstrip", token.rstrip)?;
@@ -118,7 +119,7 @@ impl PyAddedToken {
 impl From<tk::AddedToken> for PyAddedToken {
     fn from(token: tk::AddedToken) -> Self {
         Self {
-            content: token.content,
+            content: token.content.to_string(),
             single_word: Some(token.single_word),
             lstrip: Some(token.lstrip),
             rstrip: Some(token.rstrip),
@@ -677,7 +678,11 @@ impl PyTokenizer {
     #[pyo3(signature = (with_added_tokens = true))]
     #[pyo3(text_signature = "(self, with_added_tokens=True)")]
     fn get_vocab(&self, with_added_tokens: bool) -> FxHashMap<String, u32> {
-        self.tokenizer.get_vocab(with_added_tokens)
+        self.tokenizer
+            .get_vocab(with_added_tokens)
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect()
     }
 
     /// Get the underlying vocabulary
@@ -1136,7 +1141,12 @@ impl PyTokenizer {
     #[pyo3(signature = (ids, skip_special_tokens = true))]
     #[pyo3(text_signature = "(self, ids, skip_special_tokens=True)")]
     fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> PyResult<String> {
-        ToPyResult(self.tokenizer.decode(&ids, skip_special_tokens)).into()
+        ToPyResult(
+            self.tokenizer
+                .decode(&ids, skip_special_tokens)
+                .map(|t| t.to_compact_string().to_string()),
+        )
+        .into()
     }
 
     /// Decode a batch of ids back to their corresponding string
@@ -1160,7 +1170,16 @@ impl PyTokenizer {
     ) -> PyResult<Vec<String>> {
         py.allow_threads(|| {
             let slices = sequences.iter().map(|v| &v[..]).collect::<Vec<&[u32]>>();
-            ToPyResult(self.tokenizer.decode_batch(&slices, skip_special_tokens)).into()
+            ToPyResult(
+                self.tokenizer
+                    .decode_batch(&slices, skip_special_tokens)
+                    .map(|r| {
+                        r.into_iter()
+                            .map(|e| e.to_compact_string().to_string())
+                            .collect()
+                    }),
+            )
+            .into()
         })
     }
 
@@ -1187,7 +1206,7 @@ impl PyTokenizer {
     ///     :obj:`Optional[str]`: An optional token, :obj:`None` if out of vocabulary
     #[pyo3(text_signature = "(self, id)")]
     fn id_to_token(&self, id: u32) -> Option<String> {
-        self.tokenizer.id_to_token(id)
+        self.tokenizer.id_to_token(id).map(|v| v.to_string())
     }
 
     /// Modifies the tokenizer in order to use or not the special tokens

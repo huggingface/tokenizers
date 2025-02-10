@@ -3,6 +3,7 @@ use std::sync::{Arc, RwLock};
 use crate::pre_tokenizers::from_string;
 use crate::tokenizer::PyTokenizer;
 use crate::utils::PyPattern;
+use compact_str::ToCompactString;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -91,7 +92,10 @@ impl PyDecoder {
 }
 
 impl Decoder for PyDecoder {
-    fn decode_chain(&self, tokens: Vec<String>) -> tk::Result<Vec<String>> {
+    fn decode_chain<T: ToCompactString>(
+        &self,
+        tokens: Vec<T>,
+    ) -> tk::Result<Vec<impl ToCompactString>> {
         self.decoder.decode_chain(tokens)
     }
 }
@@ -139,7 +143,12 @@ impl PyDecoder {
     ///     :obj:`str`: The decoded string
     #[pyo3(text_signature = "(self, tokens)")]
     fn decode(&self, tokens: Vec<String>) -> PyResult<String> {
-        ToPyResult(self.decoder.decode(tokens)).into()
+        ToPyResult(
+            self.decoder
+                .decode(tokens)
+                .map(|t| t.to_compact_string().to_string()),
+        )
+        .into()
     }
 
     fn __repr__(&self) -> PyResult<String> {
@@ -235,12 +244,12 @@ pub struct PyWordPieceDec {}
 impl PyWordPieceDec {
     #[getter]
     fn get_prefix(self_: PyRef<Self>) -> String {
-        getter!(self_, WordPiece, prefix.clone())
+        getter!(self_, WordPiece, prefix.clone().to_string())
     }
 
     #[setter]
     fn set_prefix(self_: PyRef<Self>, prefix: String) {
-        setter!(self_, WordPiece, prefix, prefix);
+        setter!(self_, WordPiece, prefix, prefix.to_compact_string());
     }
 
     #[getter]
@@ -256,7 +265,10 @@ impl PyWordPieceDec {
     #[new]
     #[pyo3(signature = (prefix = String::from("##"), cleanup = true), text_signature = "(self, prefix=\"##\", cleanup=True)")]
     fn new(prefix: String, cleanup: bool) -> (Self, PyDecoder) {
-        (PyWordPieceDec {}, WordPiece::new(prefix, cleanup).into())
+        (
+            PyWordPieceDec {},
+            WordPiece::new(prefix.to_compact_string(), cleanup).into(),
+        )
     }
 }
 
@@ -526,22 +538,33 @@ impl CustomDecoder {
 }
 
 impl Decoder for CustomDecoder {
-    fn decode(&self, tokens: Vec<String>) -> tk::Result<String> {
+    fn decode<T: ToCompactString>(&self, tokens: Vec<T>) -> tk::Result<impl ToCompactString> {
+        let tokens: Vec<String> = tokens
+            .into_iter()
+            .map(|t| t.to_compact_string().to_string())
+            .collect();
         Python::with_gil(|py| {
             let decoded = self
                 .inner
                 .call_method(py, "decode", (tokens,), None)?
-                .extract(py)?;
+                .extract::<String>(py)?;
             Ok(decoded)
         })
     }
 
-    fn decode_chain(&self, tokens: Vec<String>) -> tk::Result<Vec<String>> {
+    fn decode_chain<T: ToCompactString>(
+        &self,
+        tokens: Vec<T>,
+    ) -> tk::Result<Vec<impl ToCompactString>> {
+        let tokens: Vec<String> = tokens
+            .into_iter()
+            .map(|t| t.to_compact_string().to_string())
+            .collect();
         Python::with_gil(|py| {
             let decoded = self
                 .inner
                 .call_method(py, "decode_chain", (tokens,), None)?
-                .extract(py)?;
+                .extract::<Vec<String>>(py)?;
             Ok(decoded)
         })
     }
@@ -595,10 +618,21 @@ where
 }
 
 impl Decoder for PyDecoderWrapper {
-    fn decode_chain(&self, tokens: Vec<String>) -> tk::Result<Vec<String>> {
+    fn decode_chain<T: ToCompactString>(
+        &self,
+        tokens: Vec<T>,
+    ) -> tk::Result<Vec<impl ToCompactString>> {
         match self {
-            PyDecoderWrapper::Wrapped(inner) => inner.read().unwrap().decode_chain(tokens),
-            PyDecoderWrapper::Custom(inner) => inner.read().unwrap().decode_chain(tokens),
+            PyDecoderWrapper::Wrapped(inner) => inner
+                .read()
+                .unwrap()
+                .decode_chain(tokens)
+                .map(|v| v.into_iter().map(|t| t.to_compact_string()).collect()),
+            PyDecoderWrapper::Custom(inner) => inner
+                .read()
+                .unwrap()
+                .decode_chain(tokens)
+                .map(|v| v.into_iter().map(|t| t.to_compact_string()).collect()),
         }
     }
 }
@@ -663,14 +697,17 @@ impl PyDecodeStream {
 
     #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
     fn step(&mut self, tokenizer: &PyTokenizer, id: u32) -> PyResult<Option<String>> {
-        ToPyResult(tk::tokenizer::step_decode_stream(
-            &tokenizer.tokenizer,
-            id,
-            self.skip_special_tokens,
-            &mut self.ids,
-            &mut self.prefix,
-            &mut self.prefix_index,
-        ))
+        ToPyResult(
+            tk::tokenizer::step_decode_stream(
+                &tokenizer.tokenizer,
+                id,
+                self.skip_special_tokens,
+                &mut self.ids,
+                &mut self.prefix.to_compact_string(),
+                &mut self.prefix_index,
+            )
+            .map(|o| o.map(|s| s.to_string())),
+        )
         .into()
     }
 }
