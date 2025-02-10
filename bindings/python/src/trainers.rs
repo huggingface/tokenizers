@@ -48,7 +48,7 @@ impl PyTrainer {
             TrainerWrapper::BacktrackingBpeTrainer(_) => {
                 Py::new(py, (PyBacktrackingBpeTrainer {}, base))?.into_pyobject(py)?
                 .into_any()
-                .into(),
+                .into()
             }
         })
     }
