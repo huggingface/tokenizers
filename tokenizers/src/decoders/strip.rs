@@ -29,7 +29,7 @@ impl Decoder for Strip {
     fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
-    ) -> Result<Vec<CompactString>> {
+    ) -> Result<Vec<impl ToCompactString>> {
         Ok(tokens
             .into_iter()
             .map(|token| {
@@ -77,12 +77,22 @@ mod tests {
                 "HHH".to_owned(),
             ])
             .unwrap();
-        assert_eq!(res, vec!["ey", " friend!", "HH"]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["ey", " friend!", "HH"]
+        );
 
         let decoder = Strip::new('y', 0, 1);
         let res = decoder
             .decode_chain(vec!["Hey".to_owned(), " friend!".to_owned()])
             .unwrap();
-        assert_eq!(res, vec!["He", " friend!"]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["He", " friend!"]
+        );
     }
 }

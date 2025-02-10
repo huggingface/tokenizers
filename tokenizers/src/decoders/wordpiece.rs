@@ -50,7 +50,7 @@ impl Decoder for WordPiece {
     fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
-    ) -> Result<Vec<CompactString>> {
+    ) -> Result<Vec<impl ToCompactString>> {
         tokens
             .into_iter()
             .map(|t| t.to_compact_string())
@@ -66,7 +66,7 @@ impl Decoder for WordPiece {
                 if self.cleanup {
                     token = cleanup(token);
                 }
-                Ok(token.clone().into())
+                Ok(token)
             })
             .collect::<Result<Vec<CompactString>>>()
     }
@@ -90,7 +90,8 @@ mod tests {
                     "No".to_owned(),
                     "##guera".to_owned()
                 ])
-                .unwrap(),
+                .unwrap()
+                .to_compact_string(),
             "##uelo Araújo Noguera"
         );
     }

@@ -90,7 +90,7 @@ impl Decoder for Replace {
     fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
-    ) -> Result<Vec<CompactString>> {
+    ) -> Result<Vec<impl ToCompactString>> {
         tokens
             .into_iter()
             .map(|token| -> Result<CompactString> {
@@ -157,7 +157,12 @@ mod tests {
         let original = vec!["hello".to_owned(), "_hello".to_owned()];
         let replace = Replace::new("_", " ").unwrap();
         assert_eq!(
-            replace.decode_chain(original).unwrap(),
+            replace
+                .decode_chain(original)
+                .unwrap()
+                .into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
             vec!["hello", " hello"]
         );
     }
