@@ -1,3 +1,4 @@
+use compact_str::ToCompactString;
 use pyo3::prelude::*;
 use tk::Token;
 
@@ -22,7 +23,7 @@ impl PyToken {
     #[new]
     #[pyo3(text_signature = None)]
     fn new(id: u32, value: String, offsets: (usize, usize)) -> PyToken {
-        Token::new(id, value, offsets).into()
+        Token::new(id, value.to_compact_string(), offsets).into()
     }
 
     #[getter]
