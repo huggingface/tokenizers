@@ -341,7 +341,7 @@ impl Encoding {
                 .step_by(offset)
                 .filter_map(|stop| {
                     let stop = stop + 1;
-                    let start = if stop < max_len { 0 } else { stop - max_len };
+                    let start = stop.saturating_sub(max_len);
                     if start < stop && !end {
                         end = start == 0;
                         Some((start, stop))

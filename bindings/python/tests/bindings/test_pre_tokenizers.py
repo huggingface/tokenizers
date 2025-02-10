@@ -169,12 +169,69 @@ class TestSequence:
             ("?", (29, 30)),
         ]
 
-    def test_items(self):
-        pre_tokenizers = Sequence([Metaspace("a", "never", split=True), Punctuation()])
-        assert pre_tokenizers[1].__class__ == Punctuation
-        assert pre_tokenizers[0].__class__ == Metaspace
-        pre_tokenizers[0].split = False
-        assert not pre_tokenizers[0].split
+    def test_set_item(self):
+        pre_tokenizers = Sequence(
+            [
+                ByteLevel(),
+                Split(pattern="/test/", behavior="removed"),
+            ]
+        )
+        assert pre_tokenizers[0].__class__ == ByteLevel
+        assert pre_tokenizers[1].__class__ == Split
+        pre_tokenizers[1] = Metaspace()
+        assert pre_tokenizers[1].__class__ == Metaspace
+        with pytest.raises(IndexError):
+            print(pre_tokenizers[2])
+
+    def test_item_getters_and_setters(self):
+        pre_tokenizers = Sequence(
+            [
+                ByteLevel(add_prefix_space=True, trim_offsets=True, use_regex=True),
+                Split(pattern="/test/", behavior="removed", invert=False),
+                Metaspace("a", "never", split=False),
+                CharDelimiterSplit(delimiter=" "),
+                Punctuation(behavior="removed"),
+                Digits(individual_digits=True),
+            ]
+        )
+
+        assert pre_tokenizers[0].__class__ == ByteLevel
+        pre_tokenizers[0].add_prefix_space = False
+        pre_tokenizers[0].trim_offsets = False
+        pre_tokenizers[0].use_regex = False
+        assert not pre_tokenizers[0].add_prefix_space
+        assert not pre_tokenizers[0].trim_offsets
+        assert not pre_tokenizers[0].use_regex
+
+        assert pre_tokenizers[1].__class__ == Split
+        with pytest.raises(Exception):
+            pre_tokenizers[1].pattern = "/pattern/"
+        pre_tokenizers[1].behavior = "isolated"
+        pre_tokenizers[1].invert = True
+        with pytest.raises(Exception):
+            pre_tokenizers[1].pattern
+        assert pre_tokenizers[1].behavior == "isolated"
+        assert pre_tokenizers[1].invert
+
+        assert pre_tokenizers[2].__class__ == Metaspace
+        pre_tokenizers[2].replacement = " "
+        pre_tokenizers[2].prepend_scheme = "always"
+        pre_tokenizers[2].split = True
+        assert pre_tokenizers[2].replacement == " "
+        assert pre_tokenizers[2].prepend_scheme == "always"
+        assert pre_tokenizers[2].split
+
+        assert pre_tokenizers[3].__class__ == CharDelimiterSplit
+        pre_tokenizers[3].delimiter = "_"
+        assert pre_tokenizers[3].delimiter == "_"
+
+        assert pre_tokenizers[4].__class__ == Punctuation
+        pre_tokenizers[4].behavior = "isolated"
+        assert pre_tokenizers[4].behavior == "isolated"
+
+        assert pre_tokenizers[5].__class__ == Digits
+        pre_tokenizers[5].individual_digits = False
+        assert not pre_tokenizers[5].individual_digits
 
 
 class TestDigits:

@@ -13,13 +13,26 @@ impl Sequence {
     pub fn new(pretokenizers: Vec<PreTokenizerWrapper>) -> Self {
         Self { pretokenizers }
     }
+}
 
-    pub fn get_pre_tokenizers(&self) -> &[PreTokenizerWrapper] {
+impl AsRef<[PreTokenizerWrapper]> for Sequence {
+    fn as_ref(&self) -> &[PreTokenizerWrapper] {
         &self.pretokenizers
     }
+}
 
-    pub fn get_pre_tokenizers_mut(&mut self) -> &mut [PreTokenizerWrapper] {
+impl AsMut<[PreTokenizerWrapper]> for Sequence {
+    fn as_mut(&mut self) -> &mut [PreTokenizerWrapper] {
         &mut self.pretokenizers
+    }
+}
+
+impl IntoIterator for Sequence {
+    type Item = PreTokenizerWrapper;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.pretokenizers.into_iter()
     }
 }
 

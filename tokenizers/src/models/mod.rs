@@ -30,7 +30,7 @@ impl<'a> OrderedVocabIter<'a> {
     }
 }
 
-impl<'a> Serialize for OrderedVocabIter<'a> {
+impl Serialize for OrderedVocabIter<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,

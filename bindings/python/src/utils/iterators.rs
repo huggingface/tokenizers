@@ -65,8 +65,7 @@ where
     pub fn new(iter: &Bound<'_, PyAny>, converter: F, buffer_size: usize) -> PyResult<Self> {
         let py = iter.py();
         let iter: Py<PyAny> = unsafe {
-            Bound::from_borrowed_ptr_or_err(py, pyo3::ffi::PyObject_GetIter(iter.as_ptr()))?
-                .to_object(py)
+            Bound::from_borrowed_ptr_or_err(py, pyo3::ffi::PyObject_GetIter(iter.as_ptr()))?.into()
         };
 
         Ok(Self {

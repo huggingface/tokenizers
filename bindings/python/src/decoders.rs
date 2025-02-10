@@ -43,22 +43,48 @@ impl PyDecoder {
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
         Ok(match &self.decoder {
-            PyDecoderWrapper::Custom(_) => Py::new(py, base)?.into_py(py),
+            PyDecoderWrapper::Custom(_) => Py::new(py, base)?.into_pyobject(py)?.into_any().into(),
             PyDecoderWrapper::Wrapped(inner) => match &*inner.as_ref().read().unwrap() {
-                DecoderWrapper::Metaspace(_) => Py::new(py, (PyMetaspaceDec {}, base))?.into_py(py),
-                DecoderWrapper::WordPiece(_) => Py::new(py, (PyWordPieceDec {}, base))?.into_py(py),
-                DecoderWrapper::ByteFallback(_) => {
-                    Py::new(py, (PyByteFallbackDec {}, base))?.into_py(py)
-                }
-                DecoderWrapper::Strip(_) => Py::new(py, (PyStrip {}, base))?.into_py(py),
-                DecoderWrapper::Fuse(_) => Py::new(py, (PyFuseDec {}, base))?.into_py(py),
-                DecoderWrapper::ByteLevel(_) => Py::new(py, (PyByteLevelDec {}, base))?.into_py(py),
-                DecoderWrapper::Replace(_) => Py::new(py, (PyReplaceDec {}, base))?.into_py(py),
-                DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base))?.into_py(py),
-                DecoderWrapper::CTC(_) => Py::new(py, (PyCTCDecoder {}, base))?.into_py(py),
-                DecoderWrapper::Sequence(_) => {
-                    Py::new(py, (PySequenceDecoder {}, base))?.into_py(py)
-                }
+                DecoderWrapper::Metaspace(_) => Py::new(py, (PyMetaspaceDec {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::WordPiece(_) => Py::new(py, (PyWordPieceDec {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::ByteFallback(_) => Py::new(py, (PyByteFallbackDec {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::Strip(_) => Py::new(py, (PyStrip {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::Fuse(_) => Py::new(py, (PyFuseDec {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::ByteLevel(_) => Py::new(py, (PyByteLevelDec {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::Replace(_) => Py::new(py, (PyReplaceDec {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::CTC(_) => Py::new(py, (PyCTCDecoder {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::Sequence(_) => Py::new(py, (PySequenceDecoder {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
             },
         })
     }
@@ -85,7 +111,7 @@ impl PyDecoder {
                 e
             ))
         })?;
-        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -237,7 +263,7 @@ impl PyWordPieceDec {
 /// ByteFallback Decoder
 /// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
 /// to pure bytes, and attempts to make them into a string. If the tokens
-/// cannot be decoded you will get � instead for each inconvertable byte token
+/// cannot be decoded you will get � instead for each inconvertible byte token
 ///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "ByteFallback")]
 pub struct PyByteFallbackDec {}
@@ -484,8 +510,8 @@ impl PySequenceDecoder {
         Ok((PySequenceDecoder {}, Sequence::new(decoders).into()))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
-        PyTuple::new_bound(py, [PyList::empty_bound(py)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
+        PyTuple::new(py, [PyList::empty(py)])
     }
 }
 
@@ -504,7 +530,7 @@ impl Decoder for CustomDecoder {
         Python::with_gil(|py| {
             let decoded = self
                 .inner
-                .call_method_bound(py, "decode", (tokens,), None)?
+                .call_method(py, "decode", (tokens,), None)?
                 .extract(py)?;
             Ok(decoded)
         })
@@ -514,7 +540,7 @@ impl Decoder for CustomDecoder {
         Python::with_gil(|py| {
             let decoded = self
                 .inner
-                .call_method_bound(py, "decode_chain", (tokens,), None)?
+                .call_method(py, "decode_chain", (tokens,), None)?
                 .extract(py)?;
             Ok(decoded)
         })
@@ -620,11 +646,6 @@ pub struct PyDecodeStream {
     /// The index within the ids corresponding to the prefix so we can drain
     /// correctly
     prefix_index: usize,
-    /// We need to keep 2 prefixes.
-    /// Prefix is the second one that was already emitted to discard the part
-    /// of the text of all the ids
-    /// read is the prefix kept only for starting side effects of the prefix
-    read_index: usize,
 }
 
 #[pymethods]
@@ -637,7 +658,6 @@ impl PyDecodeStream {
             ids: vec![],
             prefix: "".to_string(),
             prefix_index: 0,
-            read_index: 0,
         }
     }
 
@@ -650,7 +670,6 @@ impl PyDecodeStream {
             &mut self.ids,
             &mut self.prefix,
             &mut self.prefix_index,
-            &mut self.read_index,
         ))
         .into()
     }
@@ -693,7 +712,12 @@ mod test {
 
         let obj = Python::with_gil(|py| {
             let py_msp = PyDecoder::new(Metaspace::default().into());
-            let obj: PyObject = Py::new(py, py_msp).unwrap().into_py(py);
+            let obj: PyObject = Py::new(py, py_msp)
+                .unwrap()
+                .into_pyobject(py)
+                .unwrap()
+                .into_any()
+                .into();
             obj
         });
         let py_seq = PyDecoderWrapper::Custom(Arc::new(RwLock::new(CustomDecoder::new(obj))));

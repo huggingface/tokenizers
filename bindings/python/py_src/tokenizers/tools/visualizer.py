@@ -241,7 +241,7 @@ class EncodingVisualizer:
             # In this case we are looking at a group/single char that is not tokenized.
             # e.g. white space
             css_classes.append("non-token")
-        css = f'''class="{' '.join(css_classes)}"'''
+        css = f'''class="{" ".join(css_classes)}"'''
         data = ""
         for key, val in data_items.items():
             data += f' data-{key}="{val}"'
@@ -325,7 +325,7 @@ class EncodingVisualizer:
 
         Returns:
             A list of  length len(text) whose entry at index i is None if there is no annotation on
-            charachter i or k, the index of the annotation that covers index i where k is with
+            character i or k, the index of the annotation that covers index i where k is with
             respect to the list of annotations
         """
         annotation_map = [None] * len(text)

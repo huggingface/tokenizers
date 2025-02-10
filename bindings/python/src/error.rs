@@ -1,6 +1,7 @@
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::type_object::PyTypeInfo;
+use std::ffi::CString;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use tokenizers::tokenizer::Result;
 
@@ -35,7 +36,7 @@ impl<T> ToPyResult<T> {
 }
 
 pub(crate) fn deprecation_warning(py: Python<'_>, version: &str, message: &str) -> PyResult<()> {
-    let deprecation_warning = py.import_bound("builtins")?.getattr("DeprecationWarning")?;
+    let deprecation_warning = py.import("builtins")?.getattr("DeprecationWarning")?;
     let full_message = format!("Deprecated in {}: {}", version, message);
-    pyo3::PyErr::warn_bound(py, &deprecation_warning, &full_message, 0)
+    pyo3::PyErr::warn(py, &deprecation_warning, &CString::new(full_message)?, 0)
 }

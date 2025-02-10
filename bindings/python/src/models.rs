@@ -36,11 +36,26 @@ impl PyModel {
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
         Ok(match *self.model.as_ref().read().unwrap() {
-            ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?.into_py(py),
-            ModelWrapper::BacktrackingBpe(_) => Py::new(py, (PyBacktrackingBpe {}, base))?.into_py(py),
-            ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base))?.into_py(py),
-            ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base))?.into_py(py),
-            ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base))?.into_py(py),
+            ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            ModelWrapper::BacktrackingBpe(_) => Py::new(py, (PyBacktrackingBpe {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
         })
     }
 }
@@ -107,7 +122,7 @@ impl PyModel {
                 e
             ))
         })?;
-        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {

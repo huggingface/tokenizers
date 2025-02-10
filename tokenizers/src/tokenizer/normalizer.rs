@@ -87,6 +87,12 @@ pub enum SplitDelimiterBehavior {
     Contiguous,
 }
 
+impl std::fmt::Display for SplitDelimiterBehavior {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.serialize(f)
+    }
+}
+
 /// A `NormalizedString` takes care of processing an "original" string to modify
 /// it and obtain a "normalized" string. It keeps both version of the string,
 /// alignments information between both and provides an interface to retrieve
@@ -195,9 +201,9 @@ impl NormalizedString {
                 });
 
             match (start, end) {
-                // Targetting inexistant beginning
+                // Targeting inexistant beginning
                 (Some(s), None) => Some(s..s),
-                // Targetting inexistant end
+                // Targeting inexistant end
                 (None, Some(e)) => Some(e..e),
                 // Found the range
                 (Some(s), Some(e)) => Some(s..e),
@@ -517,6 +523,9 @@ impl NormalizedString {
         if let Some((b, prev)) = self.normalized.char_indices().last() {
             let transformations = std::iter::once((prev, 0)).chain(s.chars().map(|c| (c, 1)));
             self.transform_range(Range::Normalized(b..), transformations, 0);
+        } else {
+            let transformations = s.chars().map(|c| (c, 1));
+            self.transform_range(Range::Normalized(..), transformations, 0);
         }
         self
     }
@@ -2283,5 +2292,25 @@ mod tests {
         s.transform(transforms, 0);
         s.lowercase();
         assert_eq!(s.get(), "a...");
+    }
+
+    #[test]
+    fn test_append_after_clear() {
+        let mut n = NormalizedString::from("Hello");
+        assert_eq!(n.get(), "Hello");
+
+        n.clear();
+        assert_eq!(n.get(), "");
+
+        n.append(" World");
+        assert_eq!(n.get(), " World");
+
+        assert_eq!(n.len_original(), 5);
+        assert_eq!(n.len(), 6);
+
+        assert_eq!(n.get_range_original(Range::Original(0..5)), Some("Hello"));
+        assert_eq!(n.get_range_original(Range::Normalized(0..6)), Some(""));
+
+        assert_eq!(n.get_range(Range::Normalized(0..6)), Some(" World"));
     }
 }

@@ -42,10 +42,11 @@ use tokenizers::tokenizer::{Result, Tokenizer};
 fn main() -> Result<()> {
     # #[cfg(feature = "http")]
     # {
-        let tokenizer = Tokenizer::from_pretrained("bert-base-cased", None)?;
+    // needs http feature enabled
+    let tokenizer = Tokenizer::from_pretrained("bert-base-cased", None)?;
 
-        let encoding = tokenizer.encode("Hey there!", false)?;
-        println!("{:?}", encoding.get_tokens());
+    let encoding = tokenizer.encode("Hey there!", false)?;
+    println!("{:?}", encoding.get_tokens());
     # }
     Ok(())
 }
@@ -136,3 +137,5 @@ fn main() -> Result<()> {
 **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
   compilation for certain targets is not supported by the [termios](https://crates.io/crates/termios)
   dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
+**http**: This feature enables downloading the tokenizer via HTTP. It is disabled by default.
+  With this feature enabled, `Tokenizer::from_pretrained` becomes accessible.

@@ -25,8 +25,8 @@ The `Normalizer` is optional.
 | NFKC | NFKC unicode normalization |  |
 | Lowercase | Replaces all uppercase to lowercase | Input: `HELLO ὈΔΥΣΣΕΎΣ` <br> Output: `hello`ὀδυσσεύς`  |
 | Strip | Removes all whitespace characters on the specified sides (left, right or both) of the input | Input: `"`hi`"` <br> Output: `"hi"`  |
-| StripAccents | Removes all accent symbols in unicode (to be used with NFD for consistency) | Input: `é` <br> Ouput: `e`  |
-| Replace | Replaces a custom string or regexp and changes it with given content | `Replace("a", "e")` will behave like this: <br> Input: `"banana"` <br> Ouput: `"benene"`  |
+| StripAccents | Removes all accent symbols in unicode (to be used with NFD for consistency) | Input: `é` <br> Output: `e`  |
+| Replace | Replaces a custom string or regexp and changes it with given content | `Replace("a", "e")` will behave like this: <br> Input: `"banana"` <br> Output: `"benene"`  |
 | BertNormalizer | Provides an implementation of the Normalizer used in the original BERT. Options that can be set are: <ul> <li>clean_text</li> <li>handle_chinese_chars</li> <li>strip_accents</li> <li>lowercase</li> </ul>  |  |
 | Sequence | Composes multiple normalizers that will run in the provided order | `Sequence([NFKC(), Lowercase()])` |
 </python>
@@ -39,8 +39,8 @@ The `Normalizer` is optional.
 | NFKC | NFKC unicode normalization |  |
 | Lowercase | Replaces all uppercase to lowercase | Input: `HELLO ὈΔΥΣΣΕΎΣ` <br> Output: `hello`ὀδυσσεύς`  |
 | Strip | Removes all whitespace characters on the specified sides (left, right or both) of the input | Input: `"`hi`"` <br> Output: `"hi"`  |
-| StripAccents | Removes all accent symbols in unicode (to be used with NFD for consistency) | Input: `é` <br> Ouput: `e`  |
-| Replace | Replaces a custom string or regexp and changes it with given content | `Replace("a", "e")` will behave like this: <br> Input: `"banana"` <br> Ouput: `"benene"`  |
+| StripAccents | Removes all accent symbols in unicode (to be used with NFD for consistency) | Input: `é` <br> Output: `e`  |
+| Replace | Replaces a custom string or regexp and changes it with given content | `Replace("a", "e")` will behave like this: <br> Input: `"banana"` <br> Output: `"benene"`  |
 | BertNormalizer | Provides an implementation of the Normalizer used in the original BERT. Options that can be set are: <ul> <li>clean_text</li> <li>handle_chinese_chars</li> <li>strip_accents</li> <li>lowercase</li> </ul>  |  |
 | Sequence | Composes multiple normalizers that will run in the provided order | `Sequence::new(vec![NFKC, Lowercase])` |
 </rust>
@@ -53,8 +53,8 @@ The `Normalizer` is optional.
 | NFKC | NFKC unicode normalization |  |
 | Lowercase | Replaces all uppercase to lowercase | Input: `HELLO ὈΔΥΣΣΕΎΣ` <br> Output: `hello`ὀδυσσεύς`  |
 | Strip | Removes all whitespace characters on the specified sides (left, right or both) of the input | Input: `"`hi`"` <br> Output: `"hi"`  |
-| StripAccents | Removes all accent symbols in unicode (to be used with NFD for consistency) | Input: `é` <br> Ouput: `e`  |
-| Replace | Replaces a custom string or regexp and changes it with given content | `Replace("a", "e")` will behave like this: <br> Input: `"banana"` <br> Ouput: `"benene"`  |
+| StripAccents | Removes all accent symbols in unicode (to be used with NFD for consistency) | Input: `é` <br> Output: `e`  |
+| Replace | Replaces a custom string or regexp and changes it with given content | `Replace("a", "e")` will behave like this: <br> Input: `"banana"` <br> Output: `"benene"`  |
 | BertNormalizer | Provides an implementation of the Normalizer used in the original BERT. Options that can be set are: <ul> <li>cleanText</li> <li>handleChineseChars</li> <li>stripAccents</li> <li>lowercase</li> </ul>  |  |
 | Sequence | Composes multiple normalizers that will run in the provided order | |
 </node>
@@ -78,12 +78,12 @@ the ByteLevel)
 <python>
 | Name | Description | Example |
 | :--- | :--- | :--- |
-| ByteLevel | Splits on whitespaces while remapping all the bytes to a set of visible characters. This technique as been introduced by OpenAI with GPT-2 and has some more or less nice properties: <ul> <li>Since it maps on bytes, a tokenizer using this only requires **256** characters as initial alphabet (the number of values a byte can have), as opposed to the 130,000+ Unicode characters.</li> <li>A consequence of the previous point is that it is absolutely unnecessary to have an unknown token using this since we can represent anything with 256 tokens (Youhou!! 🎉🎉)</li> <li>For non ascii characters, it gets completely unreadable, but it works nonetheless!</li> </ul> | Input: `"Hello my friend, how are you?"` <br> Ouput: `"Hello", "Ġmy", Ġfriend", ",", "Ġhow", "Ġare", "Ġyou", "?"`  |
+| ByteLevel | Splits on whitespaces while remapping all the bytes to a set of visible characters. This technique as been introduced by OpenAI with GPT-2 and has some more or less nice properties: <ul> <li>Since it maps on bytes, a tokenizer using this only requires **256** characters as initial alphabet (the number of values a byte can have), as opposed to the 130,000+ Unicode characters.</li> <li>A consequence of the previous point is that it is absolutely unnecessary to have an unknown token using this since we can represent anything with 256 tokens (Youhou!! 🎉🎉)</li> <li>For non ascii characters, it gets completely unreadable, but it works nonetheless!</li> </ul> | Input: `"Hello my friend, how are you?"` <br> Output: `"Hello", "Ġmy", Ġfriend", ",", "Ġhow", "Ġare", "Ġyou", "?"`  |
 | Whitespace | Splits on word boundaries (using the following regular expression: `\w+&#124;[^\w\s]+` | Input: `"Hello there!"` <br> Output: `"Hello", "there", "!"`  |
 | WhitespaceSplit | Splits on any whitespace character | Input: `"Hello there!"` <br> Output: `"Hello", "there!"`  |
-| Punctuation | Will isolate all punctuation characters | Input: `"Hello?"` <br> Ouput: `"Hello", "?"`  |
-| Metaspace | Splits on whitespaces and replaces them with a special char “▁” (U+2581) | Input: `"Hello there"` <br> Ouput: `"Hello", "▁there"`  |
-| CharDelimiterSplit | Splits on a given character | Example with `x`: <br> Input: `"Helloxthere"` <br> Ouput: `"Hello", "there"`  |
+| Punctuation | Will isolate all punctuation characters | Input: `"Hello?"` <br> Output: `"Hello", "?"`  |
+| Metaspace | Splits on whitespaces and replaces them with a special char “▁” (U+2581) | Input: `"Hello there"` <br> Output: `"Hello", "▁there"`  |
+| CharDelimiterSplit | Splits on a given character | Example with `x`: <br> Input: `"Helloxthere"` <br> Output: `"Hello", "there"`  |
 | Digits | Splits the numbers from any other characters. | Input: `"Hello123there"` <br>  Output: ``"Hello", "123", "there"``  |
 | Split | Versatile pre-tokenizer that splits on provided pattern and according to provided behavior. The pattern can be inverted if necessary. <ul> <li>pattern should be either a custom string or regexp.</li> <li>behavior should be one of: <ul><li>removed</li><li>isolated</li><li>merged_with_previous</li><li>merged_with_next</li><li>contiguous</li></ul></li> <li>invert should be a boolean flag.</li> </ul> | Example with pattern = ` `, behavior = `"isolated"`, invert = `False`: <br> Input: `"Hello, how are you?"` <br> Output: `"Hello,", " ", "how", " ", "are", " ", "you?"` |
 | Sequence | Lets you compose multiple `PreTokenizer` that will be run in the given order | `Sequence([Punctuation(), WhitespaceSplit()])` |
@@ -91,12 +91,12 @@ the ByteLevel)
 <rust>
 | Name | Description | Example |
 | :--- | :--- | :--- |
-| ByteLevel | Splits on whitespaces while remapping all the bytes to a set of visible characters. This technique as been introduced by OpenAI with GPT-2 and has some more or less nice properties: <ul> <li>Since it maps on bytes, a tokenizer using this only requires **256** characters as initial alphabet (the number of values a byte can have), as opposed to the 130,000+ Unicode characters.</li> <li>A consequence of the previous point is that it is absolutely unnecessary to have an unknown token using this since we can represent anything with 256 tokens (Youhou!! 🎉🎉)</li> <li>For non ascii characters, it gets completely unreadable, but it works nonetheless!</li> </ul> | Input: `"Hello my friend, how are you?"` <br> Ouput: `"Hello", "Ġmy", Ġfriend", ",", "Ġhow", "Ġare", "Ġyou", "?"`  |
+| ByteLevel | Splits on whitespaces while remapping all the bytes to a set of visible characters. This technique as been introduced by OpenAI with GPT-2 and has some more or less nice properties: <ul> <li>Since it maps on bytes, a tokenizer using this only requires **256** characters as initial alphabet (the number of values a byte can have), as opposed to the 130,000+ Unicode characters.</li> <li>A consequence of the previous point is that it is absolutely unnecessary to have an unknown token using this since we can represent anything with 256 tokens (Youhou!! 🎉🎉)</li> <li>For non ascii characters, it gets completely unreadable, but it works nonetheless!</li> </ul> | Input: `"Hello my friend, how are you?"` <br> Output: `"Hello", "Ġmy", Ġfriend", ",", "Ġhow", "Ġare", "Ġyou", "?"`  |
 | Whitespace | Splits on word boundaries (using the following regular expression: `\w+&#124;[^\w\s]+` | Input: `"Hello there!"` <br> Output: `"Hello", "there", "!"`  |
 | WhitespaceSplit | Splits on any whitespace character | Input: `"Hello there!"` <br> Output: `"Hello", "there!"`  |
-| Punctuation | Will isolate all punctuation characters | Input: `"Hello?"` <br> Ouput: `"Hello", "?"`  |
-| Metaspace | Splits on whitespaces and replaces them with a special char “▁” (U+2581) | Input: `"Hello there"` <br> Ouput: `"Hello", "▁there"`  |
-| CharDelimiterSplit | Splits on a given character | Example with `x`: <br> Input: `"Helloxthere"` <br> Ouput: `"Hello", "there"`  |
+| Punctuation | Will isolate all punctuation characters | Input: `"Hello?"` <br> Output: `"Hello", "?"`  |
+| Metaspace | Splits on whitespaces and replaces them with a special char “▁” (U+2581) | Input: `"Hello there"` <br> Output: `"Hello", "▁there"`  |
+| CharDelimiterSplit | Splits on a given character | Example with `x`: <br> Input: `"Helloxthere"` <br> Output: `"Hello", "there"`  |
 | Digits | Splits the numbers from any other characters. | Input: `"Hello123there"` <br>  Output: ``"Hello", "123", "there"``  |
 | Split | Versatile pre-tokenizer that splits on provided pattern and according to provided behavior. The pattern can be inverted if necessary. <ul> <li>pattern should be either a custom string or regexp.</li> <li>behavior should be one of: <ul><li>Removed</li><li>Isolated</li><li>MergedWithPrevious</li><li>MergedWithNext</li><li>Contiguous</li></ul></li> <li>invert should be a boolean flag.</li> </ul> | Example with pattern = ` `, behavior = `"isolated"`, invert = `False`: <br> Input: `"Hello, how are you?"` <br> Output: `"Hello,", " ", "how", " ", "are", " ", "you?"` |
 | Sequence | Lets you compose multiple `PreTokenizer` that will be run in the given order | `Sequence::new(vec![Punctuation, WhitespaceSplit])` |
@@ -104,12 +104,12 @@ the ByteLevel)
 <node>
 | Name | Description | Example |
 | :--- | :--- | :--- |
-| ByteLevel | Splits on whitespaces while remapping all the bytes to a set of visible characters. This technique as been introduced by OpenAI with GPT-2 and has some more or less nice properties: <ul> <li>Since it maps on bytes, a tokenizer using this only requires **256** characters as initial alphabet (the number of values a byte can have), as opposed to the 130,000+ Unicode characters.</li> <li>A consequence of the previous point is that it is absolutely unnecessary to have an unknown token using this since we can represent anything with 256 tokens (Youhou!! 🎉🎉)</li> <li>For non ascii characters, it gets completely unreadable, but it works nonetheless!</li> </ul> | Input: `"Hello my friend, how are you?"` <br> Ouput: `"Hello", "Ġmy", Ġfriend", ",", "Ġhow", "Ġare", "Ġyou", "?"`  |
+| ByteLevel | Splits on whitespaces while remapping all the bytes to a set of visible characters. This technique as been introduced by OpenAI with GPT-2 and has some more or less nice properties: <ul> <li>Since it maps on bytes, a tokenizer using this only requires **256** characters as initial alphabet (the number of values a byte can have), as opposed to the 130,000+ Unicode characters.</li> <li>A consequence of the previous point is that it is absolutely unnecessary to have an unknown token using this since we can represent anything with 256 tokens (Youhou!! 🎉🎉)</li> <li>For non ascii characters, it gets completely unreadable, but it works nonetheless!</li> </ul> | Input: `"Hello my friend, how are you?"` <br> Output: `"Hello", "Ġmy", Ġfriend", ",", "Ġhow", "Ġare", "Ġyou", "?"`  |
 | Whitespace | Splits on word boundaries (using the following regular expression: `\w+&#124;[^\w\s]+` | Input: `"Hello there!"` <br> Output: `"Hello", "there", "!"`  |
 | WhitespaceSplit | Splits on any whitespace character | Input: `"Hello there!"` <br> Output: `"Hello", "there!"`  |
-| Punctuation | Will isolate all punctuation characters | Input: `"Hello?"` <br> Ouput: `"Hello", "?"`  |
-| Metaspace | Splits on whitespaces and replaces them with a special char “▁” (U+2581) | Input: `"Hello there"` <br> Ouput: `"Hello", "▁there"`  |
-| CharDelimiterSplit | Splits on a given character | Example with `x`: <br> Input: `"Helloxthere"` <br> Ouput: `"Hello", "there"`  |
+| Punctuation | Will isolate all punctuation characters | Input: `"Hello?"` <br> Output: `"Hello", "?"`  |
+| Metaspace | Splits on whitespaces and replaces them with a special char “▁” (U+2581) | Input: `"Hello there"` <br> Output: `"Hello", "▁there"`  |
+| CharDelimiterSplit | Splits on a given character | Example with `x`: <br> Input: `"Helloxthere"` <br> Output: `"Hello", "there"`  |
 | Digits | Splits the numbers from any other characters. | Input: `"Hello123there"` <br>  Output: ``"Hello", "123", "there"``  |
 | Split | Versatile pre-tokenizer that splits on provided pattern and according to provided behavior. The pattern can be inverted if necessary. <ul> <li>pattern should be either a custom string or regexp.</li> <li>behavior should be one of: <ul><li>removed</li><li>isolated</li><li>mergedWithPrevious</li><li>mergedWithNext</li><li>contiguous</li></ul></li> <li>invert should be a boolean flag.</li> </ul> | Example with pattern = ` `, behavior = `"isolated"`, invert = `False`: <br> Input: `"Hello, how are you?"` <br> Output: `"Hello,", " ", "how", " ", "are", " ", "you?"` |
 | Sequence | Lets you compose multiple `PreTokenizer` that will be run in the given order | |
@@ -148,5 +148,5 @@ special characters or identifiers that need to be reverted for example.
 | Name | Description |
 | :--- | :--- |
 | ByteLevel | Reverts the ByteLevel PreTokenizer. This PreTokenizer encodes at the byte-level, using a set of visible Unicode characters to represent each byte, so we need a Decoder to revert this process and get something readable again. |
-| Metaspace | Reverts the Metaspace PreTokenizer. This PreTokenizer uses a special identifer `▁` to identify whitespaces, and so this Decoder helps with decoding these. |
+| Metaspace | Reverts the Metaspace PreTokenizer. This PreTokenizer uses a special identifier `▁` to identify whitespaces, and so this Decoder helps with decoding these. |
 | WordPiece | Reverts the WordPiece Model. This model uses a special identifier `##` for continuing subwords, and so this Decoder helps with decoding these. |

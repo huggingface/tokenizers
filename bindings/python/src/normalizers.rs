@@ -1,3 +1,4 @@
+use pyo3::exceptions::PyException;
 use pyo3::types::*;
 use pyo3::{exceptions, prelude::*};
 use std::sync::{Arc, RwLock};
@@ -41,7 +42,7 @@ impl PyNormalizedStringMut<'_> {
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Normalizer will return an instance of this class when instantiated.
 #[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PyNormalizer {
     pub(crate) normalizer: PyNormalizerTypeWrapper,
@@ -54,38 +55,77 @@ impl PyNormalizer {
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
         Ok(match self.normalizer {
-            PyNormalizerTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_py(py),
-            PyNormalizerTypeWrapper::Single(ref inner) => match &*inner.as_ref().read().unwrap() {
-                PyNormalizerWrapper::Custom(_) => Py::new(py, base)?.into_py(py),
+            PyNormalizerTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            PyNormalizerTypeWrapper::Single(ref inner) => match &*inner
+                .as_ref()
+                .read()
+                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))?
+            {
+                PyNormalizerWrapper::Custom(_) => {
+                    Py::new(py, base)?.into_pyobject(py)?.into_any().into()
+                }
                 PyNormalizerWrapper::Wrapped(ref inner) => match inner {
-                    NormalizerWrapper::Sequence(_) => {
-                        Py::new(py, (PySequence {}, base))?.into_py(py)
-                    }
+                    NormalizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
                     NormalizerWrapper::BertNormalizer(_) => {
-                        Py::new(py, (PyBertNormalizer {}, base))?.into_py(py)
+                        Py::new(py, (PyBertNormalizer {}, base))?
+                            .into_pyobject(py)?
+                            .into_any()
+                            .into()
                     }
-                    NormalizerWrapper::StripNormalizer(_) => {
-                        Py::new(py, (PyStrip {}, base))?.into_py(py)
-                    }
-                    NormalizerWrapper::Prepend(_) => Py::new(py, (PyPrepend {}, base))?.into_py(py),
-                    NormalizerWrapper::ByteLevel(_) => {
-                        Py::new(py, (PyByteLevel {}, base))?.into_py(py)
-                    }
-                    NormalizerWrapper::StripAccents(_) => {
-                        Py::new(py, (PyStripAccents {}, base))?.into_py(py)
-                    }
-                    NormalizerWrapper::NFC(_) => Py::new(py, (PyNFC {}, base))?.into_py(py),
-                    NormalizerWrapper::NFD(_) => Py::new(py, (PyNFD {}, base))?.into_py(py),
-                    NormalizerWrapper::NFKC(_) => Py::new(py, (PyNFKC {}, base))?.into_py(py),
-                    NormalizerWrapper::NFKD(_) => Py::new(py, (PyNFKD {}, base))?.into_py(py),
-                    NormalizerWrapper::Lowercase(_) => {
-                        Py::new(py, (PyLowercase {}, base))?.into_py(py)
-                    }
-                    NormalizerWrapper::Precompiled(_) => {
-                        Py::new(py, (PyPrecompiled {}, base))?.into_py(py)
-                    }
-                    NormalizerWrapper::Replace(_) => Py::new(py, (PyReplace {}, base))?.into_py(py),
-                    NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base))?.into_py(py),
+                    NormalizerWrapper::StripNormalizer(_) => Py::new(py, (PyStrip {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::Prepend(_) => Py::new(py, (PyPrepend {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::StripAccents(_) => Py::new(py, (PyStripAccents {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::NFC(_) => Py::new(py, (PyNFC {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::NFD(_) => Py::new(py, (PyNFD {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::NFKC(_) => Py::new(py, (PyNFKC {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::NFKD(_) => Py::new(py, (PyNFKD {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::Lowercase(_) => Py::new(py, (PyLowercase {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::Precompiled(_) => Py::new(py, (PyPrecompiled {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::Replace(_) => Py::new(py, (PyReplace {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
                 },
             },
         })
@@ -114,7 +154,7 @@ impl PyNormalizer {
                 e
             ))
         })?;
-        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -183,7 +223,9 @@ macro_rules! getter {
     ($self: ident, $variant: ident, $name: ident) => {{
         let super_ = $self.as_ref();
         if let PyNormalizerTypeWrapper::Single(ref norm) = super_.normalizer {
-            let wrapper = norm.read().unwrap();
+            let wrapper = norm.read().expect(
+                "RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer",
+            );
             if let PyNormalizerWrapper::Wrapped(NormalizerWrapper::$variant(o)) = (&*wrapper) {
                 o.$name.clone()
             } else {
@@ -199,7 +241,9 @@ macro_rules! setter {
     ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
         let super_ = $self.as_ref();
         if let PyNormalizerTypeWrapper::Single(ref norm) = super_.normalizer {
-            let mut wrapper = norm.write().unwrap();
+            let mut wrapper = norm.write().expect(
+                "RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer",
+            );
             if let PyNormalizerWrapper::Wrapped(NormalizerWrapper::$variant(ref mut o)) = *wrapper {
                 o.$name = $value;
             }
@@ -371,28 +415,58 @@ impl PySequence {
         ))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
-        PyTuple::new_bound(py, [PyList::empty_bound(py)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
+        PyTuple::new(py, [PyList::empty(py)])
     }
 
-    fn __len__(&self) -> usize {
-        0
+    fn __len__(self_: PyRef<'_, Self>) -> usize {
+        match &self_.as_ref().normalizer {
+            PyNormalizerTypeWrapper::Sequence(inner) => inner.len(),
+            PyNormalizerTypeWrapper::Single(_) => 1,
+        }
     }
 
     fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
         match &self_.as_ref().normalizer {
             PyNormalizerTypeWrapper::Sequence(inner) => match inner.get(index) {
-                Some(item) => PyNormalizer::new(PyNormalizerTypeWrapper::Single(Arc::clone(item)))
+                Some(item) => PyNormalizer::new(PyNormalizerTypeWrapper::Single(item.clone()))
                     .get_as_subtype(py),
                 _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
                     "Index not found",
                 )),
             },
             PyNormalizerTypeWrapper::Single(inner) => {
-                PyNormalizer::new(PyNormalizerTypeWrapper::Single(Arc::clone(inner)))
-                    .get_as_subtype(py)
+                PyNormalizer::new(PyNormalizerTypeWrapper::Single(inner.clone())).get_as_subtype(py)
             }
         }
+    }
+
+    fn __setitem__(self_: PyRef<'_, Self>, index: usize, value: Bound<'_, PyAny>) -> PyResult<()> {
+        let norm: PyNormalizer = value.extract()?;
+        let PyNormalizerTypeWrapper::Single(norm) = norm.normalizer else {
+            return Err(PyException::new_err("normalizer should not be a sequence"));
+        };
+        match &self_.as_ref().normalizer {
+            PyNormalizerTypeWrapper::Sequence(inner) => match inner.get(index) {
+                Some(item) => {
+                    *item
+                        .write()
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))? = norm
+                        .read()
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))?
+                        .clone();
+                }
+                _ => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                        "Index not found",
+                    ))
+                }
+            },
+            PyNormalizerTypeWrapper::Single(_) => {
+                return Err(PyException::new_err("normalizer is not a sequence"))
+            }
+        };
+        Ok(())
     }
 }
 
@@ -499,7 +573,7 @@ impl PyNmt {
 }
 
 /// Precompiled normalizer
-/// Don't use manually it is used for compatiblity for SentencePiece.
+/// Don't use manually it is used for compatibility for SentencePiece.
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Precompiled")]
 pub struct PyPrecompiled {}
 #[pymethods]
@@ -535,9 +609,31 @@ impl PyReplace {
             ToPyResult(Replace::new(pattern, content)).into_py()?.into(),
         ))
     }
+
+    #[getter]
+    fn get_pattern(_self: PyRef<Self>) -> PyResult<()> {
+        Err(PyException::new_err("Cannot get pattern"))
+    }
+
+    #[setter]
+    fn set_pattern(_self: PyRef<Self>, _pattern: PyPattern) -> PyResult<()> {
+        Err(PyException::new_err(
+            "Cannot set pattern, please instantiate a new replace pattern instead",
+        ))
+    }
+
+    #[getter]
+    fn get_content(self_: PyRef<Self>) -> String {
+        getter!(self_, Replace, content)
+    }
+
+    #[setter]
+    fn set_content(self_: PyRef<Self>, content: String) {
+        setter!(self_, Replace, content, content)
+    }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct CustomNormalizer {
     inner: PyObject,
 }
@@ -580,7 +676,7 @@ impl<'de> Deserialize<'de> for CustomNormalizer {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyNormalizerWrapper {
     Custom(CustomNormalizer),
@@ -599,11 +695,25 @@ impl Serialize for PyNormalizerWrapper {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
 pub(crate) enum PyNormalizerTypeWrapper {
     Sequence(Vec<Arc<RwLock<PyNormalizerWrapper>>>),
     Single(Arc<RwLock<PyNormalizerWrapper>>),
+}
+
+/// XXX: we need to manually implement deserialize here because of the structure of the
+/// PyNormalizerTypeWrapper enum. Given the underlying PyNormalizerWrapper can contain a Sequence,
+/// default deserialization will give us a PyNormalizerTypeWrapper::Single(Sequence) when we'd like
+/// it to be PyNormalizerTypeWrapper::Sequence(// ...).
+impl<'de> Deserialize<'de> for PyNormalizerTypeWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wrapper = NormalizerWrapper::deserialize(deserializer)?;
+        let py_wrapper: PyNormalizerWrapper = wrapper.into();
+        Ok(py_wrapper.into())
+    }
 }
 
 impl Serialize for PyNormalizerTypeWrapper {
@@ -637,7 +747,17 @@ where
     I: Into<PyNormalizerWrapper>,
 {
     fn from(norm: I) -> Self {
-        PyNormalizerTypeWrapper::Single(Arc::new(RwLock::new(norm.into())))
+        let norm = norm.into();
+        match norm {
+            PyNormalizerWrapper::Wrapped(NormalizerWrapper::Sequence(seq)) => {
+                PyNormalizerTypeWrapper::Sequence(
+                    seq.into_iter()
+                        .map(|e| Arc::new(RwLock::new(PyNormalizerWrapper::Wrapped(e.clone()))))
+                        .collect(),
+                )
+            }
+            _ => PyNormalizerTypeWrapper::Single(Arc::new(RwLock::new(norm))),
+        }
     }
 }
 
@@ -655,10 +775,15 @@ where
 impl Normalizer for PyNormalizerTypeWrapper {
     fn normalize(&self, normalized: &mut NormalizedString) -> tk::Result<()> {
         match self {
-            PyNormalizerTypeWrapper::Single(inner) => inner.read().unwrap().normalize(normalized),
-            PyNormalizerTypeWrapper::Sequence(inner) => inner
-                .iter()
-                .try_for_each(|n| n.read().unwrap().normalize(normalized)),
+            PyNormalizerTypeWrapper::Single(inner) => inner
+                .read()
+                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))?
+                .normalize(normalized),
+            PyNormalizerTypeWrapper::Sequence(inner) => inner.iter().try_for_each(|n| {
+                n.read()
+                    .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))?
+                    .normalize(normalized)
+            }),
         }
     }
 }
@@ -758,18 +883,14 @@ mod test {
         let normalizer: PyNormalizer = serde_json::from_str(&sequence_string).unwrap();
 
         match normalizer.normalizer {
-            PyNormalizerTypeWrapper::Single(inner) => match &*inner.as_ref().read().unwrap() {
-                PyNormalizerWrapper::Wrapped(NormalizerWrapper::Sequence(sequence)) => {
-                    let normalizers = sequence.get_normalizers();
-                    assert_eq!(normalizers.len(), 1);
-                    match normalizers[0] {
-                        NormalizerWrapper::NFKC(_) => {}
-                        _ => panic!("Expected NFKC"),
-                    }
-                }
-                _ => panic!("Expected sequence"),
-            },
-            _ => panic!("Expected single"),
+            PyNormalizerTypeWrapper::Sequence(inner) => {
+                assert_eq!(inner.len(), 1);
+                match *inner[0].as_ref().read().unwrap() {
+                    PyNormalizerWrapper::Wrapped(NormalizerWrapper::NFKC(_)) => {}
+                    _ => panic!("Expected NFKC"),
+                };
+            }
+            _ => panic!("Expected sequence"),
         };
     }
 }

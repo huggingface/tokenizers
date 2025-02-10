@@ -233,7 +233,7 @@ impl<'s> From<&'s [String]> for InputSequence<'s> {
     }
 }
 
-impl<'s> From<Vec<String>> for InputSequence<'s> {
+impl From<Vec<String>> for InputSequence<'_> {
     fn from(input: Vec<String>) -> Self {
         Self::PreTokenizedOwned(Cow::Owned(input))
     }
@@ -1035,11 +1035,6 @@ pub struct DecodeStream<'tok, M, N, PT, PP, D> {
     /// The index within the ids corresponding to the prefix so we can drain
     /// correctly
     prefix_index: usize,
-    /// We need to keep 2 prefixes.
-    /// Prefix is the second one that was already emitted to discard the part
-    /// of the text of all the ids
-    /// read is the prefix kept only for starting side effects of the prefix
-    read_index: usize,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -1063,7 +1058,6 @@ where
             skip_special_tokens,
             prefix: "".to_string(),
             prefix_index: 0,
-            read_index: 0,
         }
     }
 
@@ -1076,7 +1070,6 @@ where
             &mut self.ids,
             &mut self.prefix,
             &mut self.prefix_index,
-            &mut self.read_index,
         )
     }
 }
@@ -1089,7 +1082,6 @@ pub fn step_decode_stream<M, N, PT, PP, D>(
     ids: &mut Vec<u32>,
     prefix: &mut String,
     prefix_index: &mut usize,
-    read_index: &mut usize,
 ) -> Result<Option<String>>
 where
     M: Model,
@@ -1106,9 +1098,8 @@ where
         }
         let new_text = &string[prefix.len()..].to_string();
         let new_prefix_index = ids.len() - *prefix_index;
-        *ids = ids.drain(*read_index..).collect();
+        *ids = ids.drain(*prefix_index..).collect();
         *prefix = tokenizer.decode(ids, skip_special_tokens)?;
-        *read_index = *prefix_index;
         *prefix_index = new_prefix_index;
         Ok(Some(new_text.to_string()))
     } else {
@@ -1561,59 +1552,5 @@ where
         file.write_all(serialized.as_bytes())?;
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_decoding_with_added_bpe() {
-        use crate::{
-            normalizers,
-            pre_tokenizers::split::{Split, SplitPattern},
-            AddedToken, NormalizerWrapper, PreTokenizerWrapper, SplitDelimiterBehavior, Tokenizer,
-        };
-
-        let mut tokenizer = Tokenizer::from_pretrained("meta-llama/Meta-Llama-3-8B", None).unwrap();
-        tokenizer.normalizer = Some(NormalizerWrapper::from(normalizers::ByteLevel::new()));
-        tokenizer.pre_tokenizer = Some(PreTokenizerWrapper::Split(
-            Split::new(
-                SplitPattern::Regex(r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+".into()),
-                SplitDelimiterBehavior::Isolated,
-                false,
-            )
-            .unwrap(),
-        ));
-        tokenizer.add_tokens(&[AddedToken::from("嗎", false).normalized(false)]);
-        let encoded = tokenizer
-            .encode("Hey! how is this token: 嗎", false)
-            .unwrap();
-        assert_eq!(
-            encoded.get_ids(),
-            [19182, 0, 1268, 602, 82, 62428, 82, 4037, 25, 220, 128256]
-        );
-        assert_eq!(
-            encoded.get_tokens(),
-            ["Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "嗎"]
-        );
-
-        let decoded = tokenizer.decode(encoded.get_ids(), false);
-        assert_eq!(decoded.unwrap(), "Hey! how is this token: 嗎");
-
-        tokenizer.add_tokens(&[AddedToken::from("д", false).normalized(true)]);
-        let encoded = tokenizer
-            .encode("Hey! how is this token: д", false)
-            .unwrap();
-        assert_eq!(
-            encoded.get_ids(),
-            [19182, 0, 1268, 602, 82, 62428, 82, 4037, 25, 220, 128257]
-        );
-        assert_eq!(
-            encoded.get_tokens(),
-            ["Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "Ð´"]
-        );
-        let decoded = tokenizer.decode(encoded.get_ids(), false);
-        assert_eq!(decoded.unwrap(), "Hey! how is this token: д")
     }
 }

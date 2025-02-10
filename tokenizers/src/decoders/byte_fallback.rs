@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Clone, Debug, Serialize, Default)]
 /// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
 /// to pure bytes, and attempts to make them into a string. If the tokens
-/// cannot be decoded you will get � instead for each inconvertable byte token
+/// cannot be decoded you will get � instead for each inconvertible byte token
 #[non_exhaustive]
 pub struct ByteFallback {
     #[serde(rename = "type")]

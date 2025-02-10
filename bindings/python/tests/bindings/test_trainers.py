@@ -287,7 +287,7 @@ class TestUnigram:
         trainer.initial_alphabet = ["d", "z"]
         assert sorted(trainer.initial_alphabet) == ["d", "z"]
 
-    def test_continuing_prefix_trainer_mistmatch(self):
+    def test_continuing_prefix_trainer_mismatch(self):
         UNK = "[UNK]"
         special_tokens = [UNK]
         tokenizer = Tokenizer(models.BPE(unk_token=UNK, continuing_subword_prefix="##"))
