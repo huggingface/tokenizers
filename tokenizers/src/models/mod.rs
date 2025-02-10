@@ -9,6 +9,7 @@ pub mod wordpiece;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use backtracking_bpe::Vocab;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::models::backtracking_bpe::{BacktrackingBpe, BacktrackingBpeTrainer};
@@ -113,7 +114,7 @@ impl<'de> Deserialize<'de> for ModelWrapper {
         let helper = ModelHelper::deserialize(deserializer)?;
         Ok(match helper {
             ModelHelper::Tagged(model) => match model.variant {
-                EnumType::BPE => ModelWrapper::BPE(
+                EnumType::BPE => ModelWrapper::BacktrackingBpe(
                     serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
                 EnumType::WordPiece => ModelWrapper::WordPiece(
@@ -132,7 +133,12 @@ impl<'de> Deserialize<'de> for ModelWrapper {
             ModelHelper::Legacy(value) => {
                 let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
                 match untagged {
-                    ModelUntagged::BPE(bpe) => ModelWrapper::BPE(bpe),
+                    ModelUntagged::BPE(bpe) =>{
+                        let vocabulary = bpe.get_vocab().into_keys().into_iter().map(| token | token.into_bytes());
+                        let merges = bpe.merges.iter().map(|(a, _)| (bpe.id_to_token(a.0).unwrap(), bpe.id_to_token(a.1).unwrap())).collect();
+                        let backtracking_bpe = BacktrackingBpe::from_dictionary(vocabulary, Some(merges), None);
+                        ModelWrapper::BacktrackingBpe(backtracking_bpe)
+                    },
                     ModelUntagged::WordPiece(bpe) => ModelWrapper::WordPiece(bpe),
                     ModelUntagged::WordLevel(bpe) => ModelWrapper::WordLevel(bpe),
                     ModelUntagged::Unigram(bpe) => ModelWrapper::Unigram(bpe),
