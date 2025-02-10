@@ -9,6 +9,7 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
 use tk::models::bpe::{BpeBuilder, Merges, Vocab, BPE};
+use tk::models::backtracking_bpe::{BacktrackingBpeBuilder, BacktrackingBpe};
 use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
@@ -561,30 +562,42 @@ impl PyBPE {
     }
 }
 
-#[pyclass(module = "bpe")]
+#[pyclass(extends=PyModel, module = "tokenizers.models", name = "BacktrackingBpe")]
 struct PyBacktrackingBpe {}
+
+impl PyBacktrackingBpe {
+    fn with_builder(
+        mut builder: BacktrackingBpeBuilder,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<(Self, PyModel)> {
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: String = key.extract()?;
+                match key.as_ref() {
+                    "unk_token" => {
+                        if let Some(unk) = value.extract()? {
+                            builder = builder.unk_token(unk);
+                        }
+                    }
+                    "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
+                    "byte_fallback" => builder = builder.byte_fallback(value.extract()?),
+                    _ => println!("Ignored unknown kwarg option {}", key),
+                };
+            }
+        }
+
+        match builder.build() {
+            Err(e) => Err(exceptions::PyException::new_err(format!(
+                "Error while initializing BPE: {}",
+                e
+            ))),
+            Ok(bpe) => Ok((PyBacktrackingBpe {}, bpe.into())),
+        }
+    }
+}
 
 #[pymethods]
 impl PyBacktrackingBpe {
-    #[getter]
-    fn get_dropout(self_: PyRef<Self>) -> Option<f32> {
-        getter!(self_, BPE, dropout)
-    }
-
-    #[setter]
-    fn set_dropout(self_: PyRef<Self>, dropout: Option<f32>) {
-        setter!(self_, BPE, dropout, dropout);
-    }
-
-    #[getter]
-    fn get_unk_token(self_: PyRef<Self>) -> Option<String> {
-        getter!(self_, BPE, unk_token.clone())
-    }
-
-    #[setter]
-    fn set_unk_token(self_: PyRef<Self>, unk_token: Option<String>) {
-        setter!(self_, BPE, unk_token, unk_token);
-    }
     #[new]
     #[pyo3(
         signature = (vocab=None, merges=None, **kwargs),
@@ -601,21 +614,12 @@ impl PyBacktrackingBpe {
             ));
         }
 
-        let mut builder = BPE::builder();
+        let mut builder = BacktrackingBpe::builder();
         if let (Some(vocab), Some(merges)) = (vocab, merges) {
             match (vocab, merges) {
                 (PyVocab::Vocab(vocab), PyMerges::Merges(merges)) => {
                     builder = builder.vocab_and_merges(vocab, merges);
-                }
-                (PyVocab::Filename(vocab_filename), PyMerges::Filename(merges_filename)) => {
-                    deprecation_warning(
-                        py,
-                        "0.9.0",
-                        "BPE.__init__ will not create from files anymore, try `BPE.from_file` instead",
-                    )?;
-                    builder =
-                        builder.files(vocab_filename.to_string(), merges_filename.to_string());
-                }
+                },
                 _ => {
                     return Err(exceptions::PyValueError::new_err(
                         "`vocab` and `merges` must be both be from memory or both filenames",
@@ -624,7 +628,7 @@ impl PyBacktrackingBpe {
             }
         }
 
-        PyBPE::with_builder(builder, kwargs)
+        PyBacktrackingBpe::with_builder(builder, kwargs)
     }
 
     /// Read a :obj:`vocab.json` and a :obj:`merges.txt` files
@@ -646,7 +650,7 @@ impl PyBacktrackingBpe {
     #[staticmethod]
     #[pyo3(text_signature = "(self, vocab, merges)")]
     fn read_file(vocab: &str, merges: &str) -> PyResult<(Vocab, Merges)> {
-        BPE::read_file(vocab, merges).map_err(|e| {
+        BacktrackingBpe::read_file(vocab, merges).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while reading vocab & merges files: {}",
                 e
@@ -689,7 +693,7 @@ impl PyBacktrackingBpe {
         })?;
         Py::new(
             py,
-            PyBPE::new(
+            PyBacktrackingBpe::new(
                 py,
                 Some(PyVocab::Vocab(vocab)),
                 Some(PyMerges::Merges(merges)),
