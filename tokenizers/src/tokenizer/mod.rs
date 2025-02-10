@@ -152,17 +152,16 @@ pub enum ProcessorError {
 
 /// A `Decoder` changes the raw tokens into its more readable form.
 pub trait Decoder {
-    fn decode<T: ToCompactString>(
-        &self,
-        tokens: Vec<T>,
-    ) -> Result<CompactString> {
-        let results: Vec<CompactString> = self.decode_chain(tokens.into_iter().map(|x| x.to_compact_string()).collect())?;
-        Ok(results.join("").into())
+    fn decode<T: ToCompactString>(&self, tokens: Vec<T>) -> Result<impl ToCompactString> {
+        let results: Vec<CompactString> = self
+            .decode_chain(tokens)?
+            .iter()
+            .map(|r| r.to_compact_string())
+            .collect();
+        Ok(results.join(""))
     }
-    fn decode_chain<T: ToCompactString>(
-        &self,
-        tokens: Vec<T>,
-    ) -> Result<Vec<CompactString>>;
+    fn decode_chain<T: ToCompactString>(&self, tokens: Vec<T>)
+        -> Result<Vec<impl ToCompactString>>;
 }
 
 /// A `Trainer` has the responsibility to train a model. We feed it with lines/sentences
@@ -893,7 +892,7 @@ where
     }
 
     /// Decode the given ids, back to a String
-    pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<CompactString> {
+    pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<impl ToCompactString> {
         let tokens = ids
             .iter()
             .filter_map(|id| {
@@ -907,9 +906,9 @@ where
             .collect::<Vec<_>>();
 
         if let Some(decoder) = &self.decoder {
-            decoder.decode(tokens)
+            decoder.decode(tokens).map(|t| t.to_compact_string())
         } else {
-            Ok(tokens.join(" ").into())
+            Ok(tokens.join(" ").to_compact_string())
         }
     }
 
@@ -1101,7 +1100,9 @@ where
     D: Decoder,
 {
     ids.push(id);
-    let string = tokenizer.decode(ids.as_slice(), skip_special_tokens)?;
+    let string = tokenizer
+        .decode(ids.as_slice(), skip_special_tokens)?
+        .to_compact_string();
     if string.len() > prefix.len() && !string.ends_with('�') {
         if !(string.starts_with(&**prefix)) {
             return Err(Box::new(DecodeStreamError::InvalidPrefix));
@@ -1109,7 +1110,9 @@ where
         let new_text = &string[prefix.len()..].to_string();
         let new_prefix_index = ids.len() - *prefix_index;
         *ids = ids.drain(*prefix_index..).collect();
-        *prefix = tokenizer.decode(ids, skip_special_tokens)?;
+        *prefix = tokenizer
+            .decode(ids, skip_special_tokens)?
+            .to_compact_string();
         *prefix_index = new_prefix_index;
         Ok(Some(new_text.into()))
     } else {
@@ -1343,7 +1346,10 @@ where
     {
         sentences
             .into_maybe_par_iter()
-            .map(|sentence| self.decode(sentence, skip_special_tokens))
+            .map(|sentence| {
+                self.decode(sentence, skip_special_tokens)
+                    .map(|t| t.to_compact_string())
+            })
             .collect()
     }
 

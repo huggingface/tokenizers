@@ -161,7 +161,7 @@ impl Decoder for ByteLevel {
     fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
-    ) -> Result<Vec<CompactString>> {
+    ) -> Result<Vec<impl ToCompactString>> {
         let toks = tokens
             .into_iter()
             .flat_map(|t| {
@@ -176,7 +176,7 @@ impl Decoder for ByteLevel {
                     .unwrap_or_else(|| t.as_bytes().to_vec())
             })
             .collect::<Vec<u8>>();
-        Ok(vec![String::from_utf8_lossy(&toks).into()])
+        Ok(Vec::from([CompactString::from_utf8_lossy(&toks)]))
     }
 }
 
@@ -249,6 +249,7 @@ mod tests {
         Decoder, Encoding, OffsetReferential, OffsetType, PostProcessor, PreTokenizedString,
         PreTokenizer,
     };
+    use crate::utils::compact_string::to_compact_strings;
     use std::iter::FromIterator;
 
     #[test]
@@ -297,15 +298,10 @@ mod tests {
         let bytelevel = ByteLevel::default().add_prefix_space(false);
         assert_eq!(
             bytelevel
-                .decode_chain(
-                    vec![
-                        "Hello", "Ġmy", "Ġfriend", ",", "Ġhow", "Ġis", "Ġyour", "Ġday", "Ġgoing",
-                        "?"
-                    ]
-                        .into_iter()
-                        .map(|s| s.into())
-                        .collect::<Vec<CompactString>>()
-                )
+                .decode_chain(vec![
+                    "Hello", "Ġmy", "Ġfriend", ",", "Ġhow", "Ġis", "Ġyour", "Ġday", "Ġgoing", "?"
+                ])
+                .map(to_compact_strings)
                 .unwrap(),
             vec!["Hello my friend, how is your day going?"]
         );
@@ -361,7 +357,11 @@ mod tests {
                 .collect::<Vec<CompactString>>();
             assert_eq!(
                 sample,
-                bytelevel.decode_chain(separated_tokens).unwrap().join("")
+                bytelevel
+                    .decode_chain(separated_tokens)
+                    .map(to_compact_strings)
+                    .unwrap()
+                    .join("")
             );
         }
     }
@@ -564,14 +564,8 @@ mod tests {
         let byte_level = ByteLevel::default();
         assert_eq!(
             byte_level
-                .decode_chain(vec![
-                    "Hello".to_owned(),
-                    "Ġthere".to_owned(),
-                    "Ġdear".to_owned(),
-                    "Ġfriend!".to_owned(),
-                    "Ġ".to_owned(),
-                    "[PA D]".to_owned()
-                ])
+                .decode_chain(vec!["Hello", "Ġthere", "Ġdear", "Ġfriend!", "Ġ", "[PA D]"])
+                .map(to_compact_strings)
                 .unwrap(),
             vec!["Hello there dear friend! [PA D]"]
         );
@@ -583,7 +577,7 @@ mod tests {
         let byte_level: ByteLevel = serde_json::from_str(
             r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false}"#,
         )
-            .unwrap();
+        .unwrap();
         assert!(byte_level.use_regex);
 
         // Loading works, new future BC test.

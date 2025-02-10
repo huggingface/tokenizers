@@ -28,15 +28,18 @@ impl Decoder for BPEDecoder {
     fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
-    ) -> Result<Vec<CompactString>> {
+    ) -> Result<Vec<impl ToCompactString>> {
         let n = tokens.len() - 1;
         Ok(tokens
             .into_iter()
             .enumerate()
             .map(|(i, token)| {
                 let replacement = if i == n { "" } else { " " };
-                token.to_compact_string().replace(&self.suffix, replacement).into()
+                token
+                    .to_compact_string()
+                    .replace(&self.suffix, replacement)
+                    .to_compact_string()
             })
-            .collect())
+            .collect::<Vec<CompactString>>())
     }
 }

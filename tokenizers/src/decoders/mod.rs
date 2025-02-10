@@ -10,7 +10,7 @@ pub mod wordpiece;
 pub use super::pre_tokenizers::byte_level;
 pub use super::pre_tokenizers::metaspace;
 
-use compact_str::{CompactString, ToCompactString};
+use compact_str::ToCompactString;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::decoders::bpe::BPEDecoder;
@@ -23,6 +23,7 @@ use crate::decoders::wordpiece::WordPiece;
 use crate::normalizers::replace::Replace;
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::metaspace::Metaspace;
+use crate::utils::compact_string::to_compact_strings;
 use crate::{Decoder, Result};
 
 #[derive(Serialize, Clone, Debug)]
@@ -154,18 +155,18 @@ impl Decoder for DecoderWrapper {
     fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
-    ) -> Result<Vec<CompactString>> {
+    ) -> Result<Vec<impl ToCompactString>> {
         match self {
-            Self::BPE(bpe) => bpe.decode_chain(tokens),
-            Self::ByteLevel(bl) => bl.decode_chain(tokens),
-            Self::Metaspace(ms) => ms.decode_chain(tokens),
-            Self::WordPiece(wp) => wp.decode_chain(tokens),
-            Self::CTC(ctc) => ctc.decode_chain(tokens),
-            Self::Sequence(seq) => seq.decode_chain(tokens),
-            Self::Replace(seq) => seq.decode_chain(tokens),
-            Self::ByteFallback(bf) => bf.decode_chain(tokens),
-            Self::Strip(bf) => bf.decode_chain(tokens),
-            Self::Fuse(bf) => bf.decode_chain(tokens),
+            Self::BPE(bpe) => bpe.decode_chain(tokens).map(to_compact_strings),
+            Self::ByteLevel(bl) => bl.decode_chain(tokens).map(to_compact_strings),
+            Self::Metaspace(ms) => ms.decode_chain(tokens).map(to_compact_strings),
+            Self::WordPiece(wp) => wp.decode_chain(tokens).map(to_compact_strings),
+            Self::CTC(ctc) => ctc.decode_chain(tokens).map(to_compact_strings),
+            Self::Sequence(seq) => seq.decode_chain(tokens).map(to_compact_strings),
+            Self::Replace(seq) => seq.decode_chain(tokens).map(to_compact_strings),
+            Self::ByteFallback(bf) => bf.decode_chain(tokens).map(to_compact_strings),
+            Self::Strip(bf) => bf.decode_chain(tokens).map(to_compact_strings),
+            Self::Fuse(bf) => bf.decode_chain(tokens).map(to_compact_strings),
         }
     }
 }

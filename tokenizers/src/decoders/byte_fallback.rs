@@ -26,7 +26,7 @@ impl Decoder for ByteFallback {
     fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
-    ) -> Result<Vec<CompactString>> {
+    ) -> Result<Vec<impl ToCompactString>> {
         let mut new_tokens: Vec<CompactString> = vec![];
         let mut previous_byte_tokens: Vec<u8> = vec![];
 
@@ -81,18 +81,38 @@ mod tests {
         let res = decoder
             .decode_chain(vec!["Hey".to_owned(), "friend!".to_owned()])
             .unwrap();
-        assert_eq!(res, vec!["Hey".to_owned(), "friend!".to_owned()]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["Hey".to_owned(), "friend!".to_owned()]
+        );
 
         let res = decoder.decode_chain(vec!["<0x61>".to_owned()]).unwrap();
-        assert_eq!(res, vec!["a".to_owned()]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["a".to_owned()]
+        );
 
         let res = decoder.decode_chain(vec!["<0xE5>".to_owned()]).unwrap();
-        assert_eq!(res, vec!["�"]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["�"]
+        );
 
         let res = decoder
             .decode_chain(vec!["<0xE5>".to_owned(), "<0x8f>".to_owned()])
             .unwrap();
-        assert_eq!(res, vec!["�".to_owned(), "�".to_owned()]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["�".to_owned(), "�".to_owned()]
+        );
 
         // 叫
         let res = decoder
@@ -102,7 +122,12 @@ mod tests {
                 "<0xab>".to_owned(),
             ])
             .unwrap();
-        assert_eq!(res, vec!["叫"]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["叫"]
+        );
 
         let res = decoder
             .decode_chain(vec![
@@ -112,7 +137,12 @@ mod tests {
                 "a".to_owned(),
             ])
             .unwrap();
-        assert_eq!(res, vec!["叫".to_owned(), "a".to_owned()]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["叫".to_owned(), "a".to_owned()]
+        );
 
         let res = decoder
             .decode_chain(vec![
@@ -121,6 +151,11 @@ mod tests {
                 "a".to_owned(),
             ])
             .unwrap();
-        assert_eq!(res, vec!["�".to_owned(), "�".to_owned(), "a".to_owned()]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["�".to_owned(), "�".to_owned(), "a".to_owned()]
+        );
     }
 }

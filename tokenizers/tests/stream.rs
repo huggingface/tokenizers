@@ -1,3 +1,4 @@
+use compact_str::ToCompactString;
 use tokenizers::{
     normalizers,
     pre_tokenizers::split::{Split, SplitPattern},
@@ -29,8 +30,11 @@ fn test_decoding_with_added_bpe() {
         ["Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "嗎"]
     );
 
-    let decoded = tokenizer.decode(encoded.get_ids(), false);
-    assert_eq!(decoded.unwrap(), "Hey! how is this token: 嗎");
+    let decoded = tokenizer
+        .decode(encoded.get_ids(), false)
+        .unwrap()
+        .to_compact_string();
+    assert_eq!(decoded, "Hey! how is this token: 嗎");
 
     tokenizer.add_tokens(&[AddedToken::from("д", false).normalized(true)]);
     let encoded = tokenizer
@@ -44,8 +48,11 @@ fn test_decoding_with_added_bpe() {
         encoded.get_tokens(),
         ["Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "Ð´"]
     );
-    let decoded = tokenizer.decode(encoded.get_ids(), false);
-    assert_eq!(decoded.unwrap(), "Hey! how is this token: д")
+    let decoded = tokenizer
+        .decode(encoded.get_ids(), false)
+        .unwrap()
+        .to_compact_string();
+    assert_eq!(decoded, "Hey! how is this token: д")
 }
 
 #[test]

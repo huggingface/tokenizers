@@ -149,7 +149,10 @@ impl PreTokenizer for Metaspace {
 }
 
 impl Decoder for Metaspace {
-    fn decode_chain<T: ToCompactString>(&self, tokens: Vec<T>) -> Result<Vec<CompactString>> {
+    fn decode_chain<T: ToCompactString>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<impl ToCompactString>> {
         Ok(tokens
             .into_iter()
             .enumerate()
@@ -168,7 +171,7 @@ impl Decoder for Metaspace {
                             Some(c)
                         }
                     })
-                    .collect()
+                    .collect::<CompactString>()
             })
             .collect())
     }
@@ -179,6 +182,7 @@ mod tests {
     use regex::Regex;
 
     use super::*;
+    use crate::utils::compact_string::to_compact_strings;
     use crate::{OffsetReferential, OffsetType};
 
     #[test]
@@ -206,7 +210,7 @@ mod tests {
         let metaspace_parsed: Metaspace = serde_json::from_str(
             r#"{"type":"Metaspace","replacement":"_","add_prefix_space":true}"#,
         )
-            .unwrap();
+        .unwrap();
         assert_eq!(metaspace_parsed, metaspace);
     }
 
@@ -359,13 +363,15 @@ mod tests {
     fn decode() {
         let decoder = Metaspace::new('▁', PrependScheme::Always, true);
         let res = decoder
-            .decode_chain(vec!["▁Hey".to_owned(), "▁friend!".to_owned()])
+            .decode_chain(vec!["▁Hey", "▁friend!"])
+            .map(to_compact_strings)
             .unwrap();
         assert_eq!(res, vec!["Hey", " friend!"]);
 
         let decoder = Metaspace::new('▁', PrependScheme::Never, true);
         let res = decoder
-            .decode_chain(vec!["▁Hey".to_owned(), "▁friend!".to_owned()])
+            .decode_chain(vec!["▁Hey", "▁friend!"])
+            .map(to_compact_strings)
             .unwrap();
         assert_eq!(res, vec![" Hey", " friend!"]);
     }

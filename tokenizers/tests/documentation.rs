@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
+use compact_str::ToCompactString;
+
 use tokenizers::decoders::byte_fallback::ByteFallback;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::normalizers::{Sequence, Strip, NFC};
@@ -58,7 +60,7 @@ fn load_tokenizer() {
     assert_eq!(encodings.get_ids(), ids);
     assert_eq!(encodings.get_tokens(), tokens);
 
-    let decoded = tokenizer.decode(&ids, false).unwrap();
+    let decoded = tokenizer.decode(&ids, false).unwrap().to_compact_string();
     assert_eq!(decoded, example);
 }
 
@@ -127,7 +129,7 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
         PreTokenizerWrapper,
         PostProcessorWrapper,
         DecoderWrapper,
-    > = TokenizerImpl::new(BPE::builder().unk_token("[UNK]".into()).build().unwrap());
+    > = TokenizerImpl::new(BPE::builder().unk_token("[UNK]".into()).build()?);
     // END quicktour_init_tokenizer
     // START quicktour_init_trainer
     use tokenizers::models::bpe::BpeTrainer;
@@ -384,10 +386,8 @@ fn pipeline() -> tokenizers::Result<()> {
 
     tokenizer.with_post_processor(Some(
         TemplateProcessing::builder()
-            .try_single("[CLS] $A [SEP]")
-            .unwrap()
-            .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
-            .unwrap()
+            .try_single("[CLS] $A [SEP]")?
+            .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")?
             .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
             .build()
             .unwrap(),
@@ -398,10 +398,12 @@ fn pipeline() -> tokenizers::Result<()> {
     println!("{:?}", output.get_ids());
     // [1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2]
 
-    let decoded = tokenizer.decode(
-        &[1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2],
-        true,
-    )?;
+    let decoded = tokenizer
+        .decode(
+            &[1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2],
+            true,
+        )?
+        .to_compact_string();
     println!("{decoded}");
     // "Hello , y ' all ! How are you ?"
     // END pipeline_test_decoding
@@ -416,12 +418,8 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
     use tokenizers::models::wordpiece::WordPiece;
     use tokenizers::Tokenizer;
 
-    let mut bert_tokenizer = Tokenizer::new(
-        WordPiece::builder()
-            .unk_token("[UNK]".into())
-            .build()
-            .unwrap(),
-    );
+    let mut bert_tokenizer =
+        Tokenizer::new(WordPiece::builder().unk_token("[UNK]".into()).build()?);
     // END bert_setup_tokenizer
     // START bert_setup_normalizer
     use tokenizers::normalizers::utils::Sequence as NormalizerSequence;
@@ -443,10 +441,8 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
 
     bert_tokenizer.with_post_processor(Some(
         TemplateProcessing::builder()
-            .try_single("[CLS] $A [SEP]")
-            .unwrap()
-            .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
-            .unwrap()
+            .try_single("[CLS] $A [SEP]")?
+            .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")?
             .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
             .build()
             .unwrap(),
@@ -487,7 +483,9 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     println!("{:?}", output.get_tokens());
     // ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
 
-    let decoded = bert_tokenizer.decode(output.get_ids(), true)?;
+    let decoded = bert_tokenizer
+        .decode(output.get_ids(), true)?
+        .to_compact_string();
     println!("{decoded}");
     // "welcome to the tok ##eni ##zer ##s library ."
     // END bert_test_decoding
@@ -503,7 +501,9 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 
     bert_tokenizer.with_decoder(Some(WordPieceDecoder::default()));
-    let decoded = bert_tokenizer.decode(output.get_ids(), true)?;
+    let decoded = bert_tokenizer
+        .decode(output.get_ids(), true)?
+        .to_compact_string();
     // "welcome to the tokenizers library."
     // END bert_proper_decoding
     assert_eq!(decoded, "welcome to the tokenizers library.");

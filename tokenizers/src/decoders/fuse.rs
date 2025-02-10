@@ -26,7 +26,7 @@ impl Decoder for Fuse {
     fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
-    ) -> Result<Vec<CompactString>> {
+    ) -> Result<Vec<impl ToCompactString>> {
         let new_string: CompactString = tokens
             .into_iter()
             .map(|token| token.to_compact_string())
@@ -47,6 +47,11 @@ mod tests {
         let res = decoder
             .decode_chain(vec!["Hey".to_owned(), " friend!".to_owned()])
             .unwrap();
-        assert_eq!(res, vec!["Hey friend!"]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["Hey friend!"]
+        );
     }
 }

@@ -46,7 +46,7 @@ impl Decoder for CTC {
     fn decode_chain<T: ToCompactString>(
         &self,
         tokens: Vec<T>,
-    ) -> Result<Vec<CompactString>> {
+    ) -> Result<Vec<impl ToCompactString>> {
         Ok(tokens
             .into_iter()
             .map(|token| token.to_compact_string())
@@ -70,9 +70,10 @@ impl Decoder for CTC {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::utils::compact_string::to_compact_strings;
     use compact_str::ToCompactString;
 
-    use super::*;
     #[test]
     fn handmade_sample() {
         let ctc_decoder = CTC::default();
@@ -81,7 +82,10 @@ mod tests {
             .map(|s| s.to_compact_string())
             .collect();
         assert_eq!(
-            ctc_decoder.decode_chain(id_to_string_result).unwrap(),
+            ctc_decoder
+                .decode_chain(id_to_string_result)
+                .map(to_compact_strings)
+                .unwrap(),
             vec!["h", "e", "l", "l", "o"]
         );
     }
@@ -93,7 +97,10 @@ mod tests {
             .map(|s| s.to_compact_string())
             .collect();
         assert_eq!(
-            ctc_decoder.decode_chain(id_to_string_result).unwrap(),
+            ctc_decoder
+                .decode_chain(id_to_string_result)
+                .map(to_compact_strings)
+                .unwrap(),
             vec!["h", "e", "l", "l", "o", " ", "w", "o", "r", "l", "d"]
         );
     }
@@ -102,7 +109,10 @@ mod tests {
         let ctc_decoder = CTC::default();
         let id_to_string_result = "<pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> A | | <pad> M <pad> <pad> <pad> <pad> A <pad> <pad> N <pad> <pad> <pad> | | | <pad> <pad> <pad> <pad> S <pad> <pad> <pad> A I <pad> D D | | T T <pad> O <pad> | | T H E E | | | <pad> U U <pad> N N <pad> I <pad> <pad> V <pad> <pad> <pad> E R R <pad> <pad> <pad> S E E | | <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> S S <pad> <pad> <pad> <pad> I <pad> R R <pad> <pad> | | | <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> I <pad> <pad> <pad> | <pad> <pad> <pad> E X <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> I <pad> S <pad> <pad> T <pad> <pad> | | <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad>".split(' ').map(|s| s.to_compact_string()).collect();
         assert_eq!(
-            ctc_decoder.decode_chain(id_to_string_result).unwrap(),
+            ctc_decoder
+                .decode_chain(id_to_string_result)
+                .map(to_compact_strings)
+                .unwrap(),
             vec![
                 "A", " ", "M", "A", "N", " ", "S", "A", "I", "D", " ", "T", "O", " ", "T", "H",
                 "E", " ", "U", "N", "I", "V", "E", "R", "S", "E", " ", "S", "I", "R", " ", "I",
@@ -115,7 +125,10 @@ mod tests {
         let ctc_decoder = CTC::default();
         let id_to_string_result = "<pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> H <pad> I <pad> S S | | <pad> <pad> <pad> I N <pad> <pad> S <pad> T T <pad> <pad> A N C C T <pad> | | | | | <pad> <pad> <pad> <pad> P <pad> <pad> <pad> <pad> A <pad> <pad> N N N <pad> <pad> I <pad> C <pad> <pad> | | <pad> W <pad> <pad> A S <pad> | | <pad> <pad> <pad> F <pad> <pad> O L <pad> <pad> L L O O W E E D | | <pad> B <pad> <pad> <pad> Y <pad> | | | A | | <pad> S S S <pad> M M <pad> <pad> <pad> A L L <pad> <pad> <pad> <pad> L <pad> | | | <pad> <pad> <pad> <pad> S H H <pad> <pad> <pad> <pad> A R R <pad> <pad> P <pad> <pad> | <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> B <pad> <pad> L L <pad> <pad> <pad> <pad> <pad> O W W <pad> <pad> | | | <pad> <pad> <pad> <pad> <pad> <pad> <pad> H <pad> <pad> <pad> <pad> <pad> <pad> <pad> I G H H | | <pad> <pad> O N <pad> | | H <pad> I S S | | <pad> <pad> C H H <pad> <pad> <pad> E <pad> S S <pad> T T <pad> <pad> | | | <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad> <pad>".split(' ').map(|s| s.to_compact_string()).collect();
         assert_eq!(
-            ctc_decoder.decode_chain(id_to_string_result).unwrap(),
+            ctc_decoder
+                .decode_chain(id_to_string_result)
+                .map(to_compact_strings)
+                .unwrap(),
             vec![
                 "H", "I", "S", " ", "I", "N", "S", "T", "A", "N", "C", "T", " ", "P", "A", "N",
                 "I", "C", " ", "W", "A", "S", " ", "F", "O", "L", "L", "O", "W", "E", "D", " ",
