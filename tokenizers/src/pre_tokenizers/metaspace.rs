@@ -29,7 +29,7 @@ pub struct Metaspace {
     pub prepend_scheme: PrependScheme,
     pub split: bool,
     #[serde(skip)]
-    str_rep: String,
+    str_rep: CompactString,
 }
 
 impl<'de> Deserialize<'de> for Metaspace {
@@ -57,7 +57,7 @@ impl<'de> Deserialize<'de> for Metaspace {
             pub prepend_scheme: PrependScheme,
             pub split: Option<bool>,
             #[serde(rename = "str_rep")]
-            _str_rep: Option<String>,
+            _str_rep: Option<CompactString>,
         }
 
         let mut helper = MetaspaceHelper::deserialize(deserializer)?;
@@ -82,7 +82,7 @@ impl Metaspace {
     pub fn new(replacement: char, prepend_scheme: PrependScheme, split: bool) -> Self {
         Self {
             replacement,
-            str_rep: replacement.to_string(),
+            str_rep: replacement.to_compact_string(),
             prepend_scheme,
             split,
         }
@@ -94,7 +94,7 @@ impl Metaspace {
 
     pub fn set_replacement(&mut self, replacement: char) {
         self.replacement = replacement;
-        self.str_rep = replacement.to_string();
+        self.str_rep = replacement.to_compact_string();
     }
 
     pub fn get_split(&self) -> bool {

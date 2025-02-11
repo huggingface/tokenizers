@@ -83,7 +83,7 @@ mod test {
 
     #[test]
     fn test_serialization() {
-        let vocab = vec![("<unk>".into(), 0.0), ("a".into(), -0.5)];
+        let vocab = vec![("<unk>", 0.0), ("a", -0.5)];
         let model = Unigram::from(vocab, Some(0), false).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
@@ -94,7 +94,7 @@ mod test {
 
     #[test]
     fn test_serialization_unk_id_not_zero() {
-        let vocab = vec![("a".into(), -0.5), ("<unk>".into(), 0.0)];
+        let vocab = vec![("a", -0.5), ("<unk>", 0.0)];
         let model = Unigram::from(vocab, Some(1), false).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();
@@ -105,7 +105,7 @@ mod test {
 
     #[test]
     fn test_serialization_no_unk_id() {
-        let vocab = vec![("a".into(), -0.5)];
+        let vocab = vec![("a", -0.5)];
         let model = Unigram::from(vocab, None, false).unwrap();
 
         let data = serde_json::to_string(&model).unwrap();

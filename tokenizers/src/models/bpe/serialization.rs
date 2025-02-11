@@ -98,17 +98,17 @@ impl<'de> Visitor<'de> for BPEVisitor {
                     }
                 }
                 "unk_token" => {
-                    if let Some(unk) = map.next_value()? {
+                    if let Some(unk) = map.next_value::<Option<String>>()? {
                         builder = builder.unk_token(unk);
                     }
                 }
                 "continuing_subword_prefix" => {
-                    if let Some(prefix) = map.next_value()? {
+                    if let Some(prefix) = map.next_value::<Option<String>>()? {
                         builder = builder.continuing_subword_prefix(prefix);
                     }
                 }
                 "end_of_word_suffix" => {
-                    if let Some(suffix) = map.next_value()? {
+                    if let Some(suffix) = map.next_value::<Option<String>>()? {
                         builder = builder.end_of_word_suffix(suffix);
                     }
                 }
@@ -174,7 +174,7 @@ mod test {
         .collect();
         let bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, vec![("a".into(), "b".into())])
-            .unk_token("<unk>".into())
+            .unk_token("<unk>")
             .ignore_merges(true)
             .build()
             .unwrap();
@@ -203,7 +203,7 @@ mod test {
         .collect();
         let bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, vec![("a".into(), "b c d".into())])
-            .unk_token("<unk>".into())
+            .unk_token("<unk>")
             .ignore_merges(true)
             .build()
             .unwrap();
@@ -224,7 +224,7 @@ mod test {
             .collect();
         let mut bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, vec![])
-            .unk_token("<unk>".into())
+            .unk_token("<unk>")
             .ignore_merges(true)
             .build()
             .unwrap();

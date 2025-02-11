@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-use compact_str::ToCompactString;
+use compact_str::{CompactString, ToCompactString};
 
 use tokenizers::decoders::byte_fallback::ByteFallback;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
@@ -31,11 +31,11 @@ fn train_tokenizer() {
         .vocab_size(vocab_size)
         .min_frequency(0)
         .special_tokens(vec![
-            AddedToken::from(String::from("<s>"), true),
-            AddedToken::from(String::from("<pad>"), true),
-            AddedToken::from(String::from("</s>"), true),
-            AddedToken::from(String::from("<unk>"), true),
-            AddedToken::from(String::from("<mask>"), true),
+            AddedToken::from("<s>", true),
+            AddedToken::from("<pad>", true),
+            AddedToken::from("</s>", true),
+            AddedToken::from("<unk>", true),
+            AddedToken::from("<mask>", true),
         ])
         .build();
 
@@ -129,7 +129,7 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
         PreTokenizerWrapper,
         PostProcessorWrapper,
         DecoderWrapper,
-    > = TokenizerImpl::new(BPE::builder().unk_token("[UNK]".into()).build()?);
+    > = TokenizerImpl::new(BPE::builder().unk_token("[UNK]").build()?);
     // END quicktour_init_tokenizer
     // START quicktour_init_trainer
     use tokenizers::models::bpe::BpeTrainer;
@@ -269,7 +269,7 @@ fn quicktour() -> tokenizers::Result<()> {
 
     tokenizer.with_padding(Some(PaddingParams {
         pad_id: 3,
-        pad_token: "[PAD]".to_string(),
+        pad_token: CompactString::from("[PAD]"),
         ..PaddingParams::default()
     }));
     // END quicktour_enable_padding

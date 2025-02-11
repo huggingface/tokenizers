@@ -351,7 +351,7 @@ impl AddedVocabulary {
         let patterns: Vec<_> = ntokens
             .iter()
             .map(|token| {
-                let mut content = NormalizedString::from(token.content.as_ref());
+                let mut content = NormalizedString::from(token.content.clone());
                 if let Some(n) = normalizer {
                     n.normalize(&mut content).unwrap();
                 }

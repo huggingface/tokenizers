@@ -83,11 +83,11 @@
 //!         .vocab_size(vocab_size)
 //!         .min_frequency(0)
 //!         .special_tokens(vec![
-//!             AddedToken::from(String::from("<s>"), true),
-//!             AddedToken::from(String::from("<pad>"), true),
-//!             AddedToken::from(String::from("</s>"), true),
-//!             AddedToken::from(String::from("<unk>"), true),
-//!             AddedToken::from(String::from("<mask>"), true),
+//!             AddedToken::from("<s>", true),
+//!             AddedToken::from("<pad>", true),
+//!             AddedToken::from("</s>", true),
+//!             AddedToken::from("<unk>", true),
+//!             AddedToken::from("<mask>", true),
 //!         ])
 //!         .build();
 //!

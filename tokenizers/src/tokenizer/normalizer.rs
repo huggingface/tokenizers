@@ -1,5 +1,6 @@
 use crate::pattern::Pattern;
 use crate::{Offsets, Result};
+use compact_str::CompactString;
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
 
@@ -104,9 +105,9 @@ impl std::fmt::Display for SplitDelimiterBehavior {
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct NormalizedString {
     /// The original version of the string, before any modification
-    original: String,
+    original: CompactString,
     /// The normalized version of the string, after all modifications
-    normalized: String,
+    normalized: CompactString,
     /// Mapping from normalized string to original one: (start, end) for each
     /// byte of the normalized string
     alignments: Vec<(usize, usize)>,
@@ -119,14 +120,14 @@ pub struct NormalizedString {
 impl NormalizedString {
     #[cfg(test)]
     pub(crate) fn new(
-        original: String,
-        normalized: String,
+        original: impl Into<CompactString>,
+        normalized: impl Into<CompactString>,
         alignments: Vec<(usize, usize)>,
         original_shift: usize,
     ) -> Self {
         Self {
-            original,
-            normalized,
+            original: original.into(),
+            normalized: normalized.into(),
             alignments,
             original_shift,
         }
@@ -422,14 +423,16 @@ impl NormalizedString {
         // code could change to mutate `self` or `self.normalized` in the interim.
         // Perform it again and hope the optimizer collapses it.
         assert!(self.normalized.get(n_range.clone()).is_some());
+        let mut tmp = self.normalized.to_string();
         unsafe {
-            self.normalized
+            tmp
                 // Safety: This is safe as long as we do not splice across a
                 // UTF-8 character, and we only add UTF-8 text. `normalized` is a String
                 // so the latter is trivially true, and we assert for the former above.
                 .as_mut_vec()
                 .splice(n_range, normalized.bytes());
         }
+        self.normalized = tmp.into();
     }
 
     /// Applies transformations to the current normalized version of the string,
@@ -573,7 +576,7 @@ impl NormalizedString {
 
     /// Replace anything that matches the pattern with the given content.
     pub fn replace<P: Pattern>(&mut self, pattern: P, content: &str) -> Result<()> {
-        let mut new_normalized = String::with_capacity(self.normalized.len()); // Initially allocate for the input size
+        let mut new_normalized = CompactString::with_capacity(self.normalized.len()); // Initially allocate for the input size
         let mut new_alignments: Vec<(usize, usize)> = Vec::with_capacity(self.alignments.len());
         let mut last_end = 0; // Keep track of the last end position
 
@@ -1000,8 +1003,9 @@ pub fn char_to_bytes(s: &str, range: std::ops::Range<usize>) -> Option<std::ops:
     Some(start?..end?)
 }
 
-impl From<String> for NormalizedString {
-    fn from(s: String) -> Self {
+impl<T: Into<CompactString>> From<T> for NormalizedString {
+    fn from(s: T) -> Self {
+        let s = s.into();
         let alignments = s
             .char_indices()
             .flat_map(|(b, c)| {
@@ -1015,12 +1019,6 @@ impl From<String> for NormalizedString {
             alignments,
             original_shift: 0,
         }
-    }
-}
-
-impl From<&str> for NormalizedString {
-    fn from(s: &str) -> Self {
-        Self::from(s.to_owned())
     }
 }
 
@@ -1252,10 +1250,10 @@ mod tests {
 
         assert_eq!(
             n,
-            NormalizedString {
-                original: "野口 No".into(),
-                normalized: " 野  口  No".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "野口 No",
+                " 野  口  No",
+                vec![
                     (0, 3),
                     (0, 3),
                     (0, 3),
@@ -1270,8 +1268,8 @@ mod tests {
                     (7, 8),
                     (8, 9)
                 ],
-                original_shift: 0
-            }
+                0
+            )
         );
         assert_eq!(
             n.alignments_original(),
@@ -1520,10 +1518,10 @@ mod tests {
         current.transform_range(Range::Original(0..4), vec![('Y', 0)], 3);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "Hello friend".into(),
-                normalized: "Yo friend".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "Hello friend",
+                "Yo friend",
+                vec![
                     (3, 4),
                     (4, 5),
                     (5, 6),
@@ -1534,8 +1532,8 @@ mod tests {
                     (10, 11),
                     (11, 12)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
 
         assert_eq!(
@@ -1565,10 +1563,10 @@ mod tests {
         );
         assert_eq!(
             current,
-            NormalizedString {
-                original: "Hello friend".into(),
-                normalized: "Hel_FRnd".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "Hello friend",
+                "Hel_FRnd",
+                vec![
                     (0, 1),
                     (1, 2),
                     (2, 3),
@@ -1578,8 +1576,8 @@ mod tests {
                     (10, 11),
                     (11, 12)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
 
         assert_eq!(
@@ -1605,12 +1603,12 @@ mod tests {
         current.transform_range(Range::Original(5..), vec![('_', 0), ('F', -5)], 0);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "Hello friend".into(),
-                normalized: "Hello_F".into(),
-                alignments: vec![(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)],
-                original_shift: 0,
-            }
+            NormalizedString::new(
+                "Hello friend",
+                "Hello_F",
+                vec![(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)],
+                0,
+            )
         );
         assert_eq!(
             current.alignments_original(),
@@ -1635,10 +1633,10 @@ mod tests {
         current.transform_range(Range::Original(0..1), vec![('H', 1), ('H', 0)], 0);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "Hello friend".into(),
-                normalized: "HHello friend".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "Hello friend",
+                "HHello friend",
+                vec![
                     (0, 0),
                     (0, 1),
                     (1, 2),
@@ -1653,8 +1651,8 @@ mod tests {
                     (10, 11),
                     (11, 12)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
         assert_eq!(
             current.alignments_original(),
@@ -1678,10 +1676,10 @@ mod tests {
         current.transform_range(Range::Original(0..0), vec![('H', 1)], 0);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "Hello friend".into(),
-                normalized: "HHello friend".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "Hello friend",
+                "HHello friend",
+                vec![
                     (0, 0),
                     (0, 1),
                     (1, 2),
@@ -1696,8 +1694,8 @@ mod tests {
                     (10, 11),
                     (11, 12)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
         assert_eq!(
             current.alignments_original(),
@@ -1721,10 +1719,10 @@ mod tests {
         current.transform_range(Range::Original(0..1), vec![('H', 0), ('H', 1)], 0);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "Hello friend".into(),
-                normalized: "HHello friend".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "Hello friend",
+                "HHello friend",
+                vec![
                     (0, 1),
                     (0, 1),
                     (1, 2),
@@ -1739,8 +1737,8 @@ mod tests {
                     (10, 11),
                     (11, 12)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
 
         assert_eq!(
@@ -1770,10 +1768,10 @@ mod tests {
         );
         assert_eq!(
             current,
-            NormalizedString {
-                original: "Hello friend".into(),
-                normalized: "Hello_my_friend".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "Hello friend",
+                "Hello_my_friend",
+                vec![
                     (0, 1),
                     (1, 2),
                     (2, 3),
@@ -1790,8 +1788,8 @@ mod tests {
                     (10, 11),
                     (11, 12)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
         assert_eq!(
             current.alignments_original(),
@@ -1816,10 +1814,10 @@ mod tests {
         current.transform_range(Range::Original(11..), vec![('d', 0), ('_', 1), ('!', 1)], 0);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "Hello friend".into(),
-                normalized: "Hello friend_!".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "Hello friend",
+                "Hello friend_!",
+                vec![
                     (0, 1),
                     (1, 2),
                     (2, 3),
@@ -1835,8 +1833,8 @@ mod tests {
                     (11, 12),
                     (11, 12)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
         assert_eq!(
             current.alignments_original(),
@@ -1866,10 +1864,10 @@ mod tests {
         current.transform_range(Range::Original(0..8), vec![('G', -1)], 0);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "𝔾𝕠𝕠𝕕".into(),
-                normalized: "G𝕠𝕕".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "𝔾𝕠𝕠𝕕",
+                "G𝕠𝕕",
+                vec![
                     (0, 4),
                     (8, 12),
                     (8, 12),
@@ -1880,8 +1878,8 @@ mod tests {
                     (12, 16),
                     (12, 16)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
         assert_eq!(
             current.alignments_original(),
@@ -1920,10 +1918,10 @@ mod tests {
         current.transform_range(Range::Original(4..12), vec![('o', -1)], 0);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "𝔾𝕠𝕠𝕕".into(),
-                normalized: "𝔾o𝕕".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "𝔾𝕠𝕠𝕕",
+                "𝔾o𝕕",
+                vec![
                     (0, 4),
                     (0, 4),
                     (0, 4),
@@ -1934,8 +1932,8 @@ mod tests {
                     (12, 16),
                     (12, 16)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
         assert_eq!(
             current.alignments_original(),
@@ -1964,10 +1962,10 @@ mod tests {
         current.transform_range(Range::Original(12..), vec![('d', 0), ('!', 1)], 0);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "𝔾𝕠𝕠𝕕".into(),
-                normalized: "𝔾𝕠𝕠d!".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "𝔾𝕠𝕠𝕕",
+                "𝔾𝕠𝕠d!",
+                vec![
                     (0, 4),
                     (0, 4),
                     (0, 4),
@@ -1983,8 +1981,8 @@ mod tests {
                     (12, 16),
                     (12, 16)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
 
         // Adding at the beginning
@@ -1992,10 +1990,10 @@ mod tests {
         current.transform_range(Range::Original(0..4), vec![('_', 1), ('𝔾', 0)], 0);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "𝔾𝕠𝕠𝕕".into(),
-                normalized: "_𝔾𝕠𝕠𝕕".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "𝔾𝕠𝕠𝕕",
+                "_𝔾𝕠𝕠𝕕",
+                vec![
                     (0, 0),
                     (0, 4),
                     (0, 4),
@@ -2014,8 +2012,8 @@ mod tests {
                     (12, 16),
                     (12, 16)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
         assert_eq!(
             current.alignments_original(),
@@ -2054,10 +2052,10 @@ mod tests {
         current.transform_range(Range::Original(0..0), vec![('_', 1)], 0);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "𝔾𝕠𝕠𝕕".into(),
-                normalized: "_𝔾𝕠𝕠𝕕".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "𝔾𝕠𝕠𝕕",
+                "_𝔾𝕠𝕠𝕕",
+                vec![
                     (0, 0),
                     (0, 4),
                     (0, 4),
@@ -2076,8 +2074,8 @@ mod tests {
                     (12, 16),
                     (12, 16)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
         assert_eq!(
             current.alignments_original(),
@@ -2116,10 +2114,10 @@ mod tests {
         current.transform_range(Range::Original(0..4), vec![('𝔾', 0), ('o', 1)], 0);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "𝔾𝕠𝕠𝕕".into(),
-                normalized: "𝔾o𝕠𝕠𝕕".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "𝔾𝕠𝕠𝕕",
+                "𝔾o𝕠𝕠𝕕",
+                vec![
                     (0, 4),
                     (0, 4),
                     (0, 4),
@@ -2138,8 +2136,8 @@ mod tests {
                     (12, 16),
                     (12, 16)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
         assert_eq!(
             current.alignments_original(),
@@ -2182,10 +2180,10 @@ mod tests {
         );
         assert_eq!(
             current,
-            NormalizedString {
-                original: "𝔾𝕠𝕠𝕕".into(),
-                normalized: "𝔾𝕠ooo𝕠𝕕".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "𝔾𝕠𝕠𝕕",
+                "𝔾𝕠ooo𝕠𝕕",
+                vec![
                     (0, 4),
                     (0, 4),
                     (0, 4),
@@ -2206,8 +2204,8 @@ mod tests {
                     (12, 16),
                     (12, 16)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
         assert_eq!(
             current.alignments_original(),
@@ -2236,10 +2234,10 @@ mod tests {
         current.transform_range(Range::Original(16..), vec![('!', 1)], 0);
         assert_eq!(
             current,
-            NormalizedString {
-                original: "𝔾𝕠𝕠𝕕".into(),
-                normalized: "𝔾𝕠𝕠𝕕!".into(),
-                alignments: vec![
+            NormalizedString::new(
+                "𝔾𝕠𝕠𝕕",
+                "𝔾𝕠𝕠𝕕!",
+                vec![
                     (0, 4),
                     (0, 4),
                     (0, 4),
@@ -2258,8 +2256,8 @@ mod tests {
                     (12, 16),
                     (12, 16)
                 ],
-                original_shift: 0,
-            }
+                0,
+            )
         );
         assert_eq!(
             current.alignments_original(),

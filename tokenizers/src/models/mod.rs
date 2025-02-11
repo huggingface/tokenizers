@@ -328,7 +328,7 @@ mod tests {
         .collect();
         let bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, vec![("a".into(), "b".into())])
-            .unk_token("<unk>".into())
+            .unk_token("<unk>")
             .ignore_merges(true)
             .build()
             .unwrap();

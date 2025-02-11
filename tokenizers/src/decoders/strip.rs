@@ -71,11 +71,7 @@ mod tests {
     fn decode() {
         let decoder = Strip::new('H', 1, 0);
         let res = decoder
-            .decode_chain(vec![
-                "Hey".to_owned(),
-                " friend!".to_owned(),
-                "HHH".to_owned(),
-            ])
+            .decode_chain(vec!["Hey", " friend!", "HHH"])
             .unwrap();
         assert_eq!(
             res.into_iter()
@@ -85,9 +81,7 @@ mod tests {
         );
 
         let decoder = Strip::new('y', 0, 1);
-        let res = decoder
-            .decode_chain(vec!["Hey".to_owned(), " friend!".to_owned()])
-            .unwrap();
+        let res = decoder.decode_chain(vec!["Hey", " friend!"]).unwrap();
         assert_eq!(
             res.into_iter()
                 .map(|t| t.to_compact_string())

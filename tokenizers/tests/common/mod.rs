@@ -49,10 +49,7 @@ pub fn get_bert() -> Tokenizer {
         .with_normalizer(Some(BertNormalizer::default()))
         .with_pre_tokenizer(Some(BertPreTokenizer))
         .with_decoder(Some(WordPieceDecoder::default()))
-        .with_post_processor(Some(BertProcessing::new(
-            (CompactString::from("[SEP]"), sep),
-            (CompactString::from("[CLS]"), cls),
-        )));
+        .with_post_processor(Some(BertProcessing::new(("[SEP]", sep), ("[CLS]", cls))));
 
     tokenizer
 }

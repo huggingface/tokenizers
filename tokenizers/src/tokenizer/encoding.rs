@@ -35,7 +35,7 @@ impl Encoding {
     pub fn new(
         ids: Vec<u32>,
         type_ids: Vec<u32>,
-        tokens: Vec<CompactString>,
+        tokens: Vec<impl Into<CompactString>>,
         words: Vec<Option<u32>>,
         offsets: Vec<Offsets>,
         special_tokens_mask: Vec<u32>,
@@ -46,7 +46,7 @@ impl Encoding {
         Self {
             ids,
             type_ids,
-            tokens,
+            tokens: tokens.into_iter().map(|t| t.into()).collect(),
             words,
             offsets,
             special_tokens_mask,
@@ -569,26 +569,28 @@ mod tests {
 
     #[test]
     fn merge_encodings() {
-        let mut a = Encoding {
-            ids: vec![1],
-            type_ids: vec![0],
-            tokens: vec![CompactString::from("Hello ")],
-            words: vec![Some(0)],
-            offsets: vec![(0, 6)],
-            special_tokens_mask: vec![0],
-            attention_mask: vec![1],
-            ..Default::default()
-        };
-        let b = Encoding {
-            ids: vec![2],
-            type_ids: vec![1],
-            tokens: vec![CompactString::from("World!")],
-            words: vec![Some(0)],
-            offsets: vec![(0, 6)],
-            special_tokens_mask: vec![0],
-            attention_mask: vec![1],
-            ..Default::default()
-        };
+        let mut a = Encoding::new(
+            vec![1],
+            vec![0],
+            vec!["Hello "],
+            vec![Some(0)],
+            vec![(0, 6)],
+            vec![0],
+            vec![1],
+            Default::default(),
+            Default::default(),
+        );
+        let b = Encoding::new(
+            vec![2],
+            vec![1],
+            vec!["World!"],
+            vec![Some(0)],
+            vec![(0, 6)],
+            vec![0],
+            vec![1],
+            Default::default(),
+            Default::default(),
+        );
         a.merge_with(b, true);
 
         assert_eq!(
@@ -608,184 +610,165 @@ mod tests {
 
     #[test]
     fn truncate() {
-        let mut a = Encoding {
-            ids: vec![1, 2, 3],
-            type_ids: vec![0, 0, 0],
-            tokens: vec![
-                CompactString::from("Hello"),
-                CompactString::from("World"),
-                CompactString::from("!"),
-            ],
-            words: vec![Some(0), Some(1), Some(2)],
-            offsets: vec![(0, 5), (6, 11), (11, 12)],
-            special_tokens_mask: vec![0, 0, 0],
-            attention_mask: vec![1, 1, 1],
-            ..Default::default()
-        };
+        let mut a = Encoding::new(
+            vec![1, 2, 3],
+            vec![0, 0, 0],
+            vec!["Hello", "World", "!"],
+            vec![Some(0), Some(1), Some(2)],
+            vec![(0, 5), (6, 11), (11, 12)],
+            vec![0, 0, 0],
+            vec![1, 1, 1],
+            Default::default(),
+            Default::default(),
+        );
         a.truncate(2, 0, TruncationDirection::Right);
 
         assert_eq!(
             a,
-            Encoding {
-                ids: vec![1, 2],
-                type_ids: vec![0, 0],
-                tokens: vec![CompactString::from("Hello"), CompactString::from("World")],
-                words: vec![Some(0), Some(1)],
-                offsets: vec![(0, 5), (6, 11)],
-                special_tokens_mask: vec![0, 0],
-                attention_mask: vec![1, 1],
-                overflowing: vec![Encoding {
-                    ids: vec![3],
-                    type_ids: vec![0],
-                    tokens: vec![CompactString::from("!")],
-                    words: vec![Some(2)],
-                    offsets: vec![(11, 12)],
-                    special_tokens_mask: vec![0],
-                    attention_mask: vec![1],
-                    ..Default::default()
-                }],
-                ..Default::default()
-            }
+            Encoding::new(
+                vec![1, 2],
+                vec![0, 0],
+                vec!["Hello", "World"],
+                vec![Some(0), Some(1)],
+                vec![(0, 5), (6, 11)],
+                vec![0, 0],
+                vec![1, 1],
+                vec![Encoding::new(
+                    vec![3],
+                    vec![0],
+                    vec!["!"],
+                    vec![Some(2)],
+                    vec![(11, 12)],
+                    vec![0],
+                    vec![1],
+                    Default::default(),
+                    Default::default(),
+                )],
+                Default::default()
+            )
         );
     }
 
     #[test]
     fn truncate_to_empty() {
-        let mut a = Encoding {
-            ids: vec![1, 2, 3],
-            type_ids: vec![0, 0, 0],
-            tokens: vec![
-                CompactString::from("Hello"),
-                CompactString::from("World"),
-                CompactString::from("!"),
-            ],
-            words: vec![Some(0), Some(1), Some(2)],
-            offsets: vec![(0, 5), (6, 11), (11, 12)],
-            special_tokens_mask: vec![0, 0, 0],
-            attention_mask: vec![1, 1, 1],
-            ..Default::default()
-        };
+        let mut a = Encoding::new(
+            vec![1, 2, 3],
+            vec![0, 0, 0],
+            vec!["Hello", "World", "!"],
+            vec![Some(0), Some(1), Some(2)],
+            vec![(0, 5), (6, 11), (11, 12)],
+            vec![0, 0, 0],
+            vec![1, 1, 1],
+            Default::default(),
+            Default::default(),
+        );
         a.truncate(0, 0, TruncationDirection::Right);
 
         assert_eq!(
             a,
-            Encoding {
-                overflowing: vec![Encoding {
-                    ids: vec![1, 2, 3],
-                    type_ids: vec![0, 0, 0],
-                    tokens: vec![
-                        CompactString::from("Hello"),
-                        CompactString::from("World"),
-                        CompactString::from("!"),
-                    ],
-                    words: vec![Some(0), Some(1), Some(2)],
-                    offsets: vec![(0, 5), (6, 11), (11, 12)],
-                    special_tokens_mask: vec![0, 0, 0],
-                    attention_mask: vec![1, 1, 1],
-                    overflowing: vec![],
-                    ..Default::default()
-                }],
-                ..Default::default()
-            }
+            Encoding::new(
+                Default::default(),
+                Default::default(),
+                Vec::<CompactString>::new(), // Cannot use Default::default, since the argument is an impl trait.
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                vec![Encoding::new(
+                    vec![1, 2, 3],
+                    vec![0, 0, 0],
+                    vec!["Hello", "World", "!",],
+                    vec![Some(0), Some(1), Some(2)],
+                    vec![(0, 5), (6, 11), (11, 12)],
+                    vec![0, 0, 0],
+                    vec![1, 1, 1],
+                    vec![],
+                    Default::default()
+                )],
+                Default::default(),
+            )
         );
     }
 
     #[test]
     fn truncate_overflow_with_stride() {
-        let mut enc = Encoding {
-            ids: vec![1, 2, 3, 4, 5],
-            type_ids: vec![0, 0, 0, 0, 0],
-            tokens: vec![
-                CompactString::from("42"),
-                CompactString::from("is"),
-                CompactString::from("the"),
-                CompactString::from("answer"),
-                CompactString::from("!"),
-            ],
-            words: vec![Some(0), Some(1), Some(2), Some(3), Some(4)],
-            offsets: vec![(0, 2), (2, 4), (4, 7), (7, 13), (13, 14)],
-            special_tokens_mask: vec![0, 0, 0, 0, 0],
-            attention_mask: vec![1, 1, 1, 1, 1],
-            overflowing: vec![],
-            ..Default::default()
-        };
+        let mut enc = Encoding::new(
+            vec![1, 2, 3, 4, 5],
+            vec![0, 0, 0, 0, 0],
+            vec!["42", "is", "the", "answer", "!"],
+            vec![Some(0), Some(1), Some(2), Some(3), Some(4)],
+            vec![(0, 2), (2, 4), (4, 7), (7, 13), (13, 14)],
+            vec![0, 0, 0, 0, 0],
+            vec![1, 1, 1, 1, 1],
+            vec![],
+            Default::default(),
+        );
         enc.truncate(4, 2, TruncationDirection::Right);
 
         assert_eq!(
             enc,
-            Encoding {
-                ids: vec![1, 2, 3, 4],
-                type_ids: vec![0, 0, 0, 0],
-                tokens: vec![
-                    CompactString::from("42"),
-                    CompactString::from("is"),
-                    CompactString::from("the"),
-                    CompactString::from("answer"),
-                ],
-                words: vec![Some(0), Some(1), Some(2), Some(3)],
-                offsets: vec![(0, 2), (2, 4), (4, 7), (7, 13)],
-                special_tokens_mask: vec![0, 0, 0, 0],
-                attention_mask: vec![1, 1, 1, 1],
-                overflowing: vec![Encoding {
-                    ids: vec![3, 4, 5],
-                    type_ids: vec![0, 0, 0],
-                    tokens: vec![
-                        CompactString::from("the"),
-                        CompactString::from("answer"),
-                        CompactString::from("!"),
-                    ],
-                    words: vec![Some(2), Some(3), Some(4)],
-                    offsets: vec![(4, 7), (7, 13), (13, 14)],
-                    special_tokens_mask: vec![0, 0, 0],
-                    attention_mask: vec![1, 1, 1],
-                    overflowing: vec![],
-                    ..Default::default()
-                }],
-                ..Default::default()
-            }
+            Encoding::new(
+                vec![1, 2, 3, 4],
+                vec![0, 0, 0, 0],
+                vec!["42", "is", "the", "answer",],
+                vec![Some(0), Some(1), Some(2), Some(3)],
+                vec![(0, 2), (2, 4), (4, 7), (7, 13)],
+                vec![0, 0, 0, 0],
+                vec![1, 1, 1, 1],
+                vec![Encoding::new(
+                    vec![3, 4, 5],
+                    vec![0, 0, 0],
+                    vec!["the", "answer", "!",],
+                    vec![Some(2), Some(3), Some(4)],
+                    vec![(4, 7), (7, 13), (13, 14)],
+                    vec![0, 0, 0],
+                    vec![1, 1, 1],
+                    vec![],
+                    Default::default()
+                )],
+                Default::default()
+            )
         );
     }
 
     #[test]
     fn truncate_left() {
-        let mut a = Encoding {
-            ids: vec![1, 2, 3],
-            type_ids: vec![0, 0, 0],
-            tokens: vec![
-                CompactString::from("Hello"),
-                CompactString::from("World"),
-                CompactString::from("!"),
-            ],
-            words: vec![Some(0), Some(1), Some(2)],
-            offsets: vec![(0, 5), (6, 11), (11, 12)],
-            special_tokens_mask: vec![0, 0, 0],
-            attention_mask: vec![1, 1, 1],
-            ..Default::default()
-        };
+        let mut a = Encoding::new(
+            vec![1, 2, 3],
+            vec![0, 0, 0],
+            vec!["Hello", "World", "!"],
+            vec![Some(0), Some(1), Some(2)],
+            vec![(0, 5), (6, 11), (11, 12)],
+            vec![0, 0, 0],
+            vec![1, 1, 1],
+            Default::default(),
+            Default::default(),
+        );
         a.truncate(2, 0, TruncationDirection::Left);
 
         assert_eq!(
             a,
-            Encoding {
-                ids: vec![2, 3],
-                type_ids: vec![0, 0],
-                tokens: vec![CompactString::from("World"), CompactString::from("!")],
-                words: vec![Some(1), Some(2)],
-                offsets: vec![(6, 11), (11, 12)],
-                special_tokens_mask: vec![0, 0],
-                attention_mask: vec![1, 1],
-                overflowing: vec![Encoding {
-                    ids: vec![1],
-                    type_ids: vec![0],
-                    tokens: vec![CompactString::from("Hello")],
-                    words: vec![Some(0)],
-                    offsets: vec![(0, 5)],
-                    special_tokens_mask: vec![0],
-                    attention_mask: vec![1],
-                    ..Default::default()
-                }],
-                ..Default::default()
-            }
+            Encoding::new(
+                vec![2, 3],
+                vec![0, 0],
+                vec!["World", "!"],
+                vec![Some(1), Some(2)],
+                vec![(6, 11), (11, 12)],
+                vec![0, 0],
+                vec![1, 1],
+                vec![Encoding::new(
+                    vec![1],
+                    vec![0],
+                    vec!["Hello"],
+                    vec![Some(0)],
+                    vec![(0, 5)],
+                    vec![0],
+                    vec![1],
+                    Default::default(),
+                    Default::default()
+                )],
+                Default::default()
+            )
         );
     }
 
@@ -883,17 +866,17 @@ mod tests {
 
     #[test]
     fn padding() {
-        let mut a = Encoding {
-            ids: vec![1],
-            type_ids: vec![0],
-            tokens: vec![CompactString::from("Hello ")],
-            words: vec![Some(0)],
-            offsets: vec![(0, 6)],
-            special_tokens_mask: vec![0],
-            attention_mask: vec![1],
-            sequence_ranges: HashMap::from([(0, 0..1)]),
-            ..Default::default()
-        };
+        let mut a = Encoding::new(
+            vec![1],
+            vec![0],
+            vec!["Hello "],
+            vec![Some(0)],
+            vec![(0, 6)],
+            vec![0],
+            vec![1],
+            Default::default(),
+            HashMap::from([(0, 0..1)]),
+        );
         let target_length = 2;
         let pad_id = 99;
         let pad_type_id = 0;
