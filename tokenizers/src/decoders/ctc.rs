@@ -71,7 +71,6 @@ impl Decoder for CTC {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::compact_string::to_compact_strings;
     use compact_str::ToCompactString;
 
     #[test]
@@ -84,8 +83,10 @@ mod tests {
         assert_eq!(
             ctc_decoder
                 .decode_chain(id_to_string_result)
-                .map(to_compact_strings)
-                .unwrap(),
+                .unwrap()
+                .into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
             vec!["h", "e", "l", "l", "o"]
         );
     }
@@ -99,8 +100,10 @@ mod tests {
         assert_eq!(
             ctc_decoder
                 .decode_chain(id_to_string_result)
-                .map(to_compact_strings)
-                .unwrap(),
+                .unwrap()
+                .into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
             vec!["h", "e", "l", "l", "o", " ", "w", "o", "r", "l", "d"]
         );
     }
@@ -111,8 +114,10 @@ mod tests {
         assert_eq!(
             ctc_decoder
                 .decode_chain(id_to_string_result)
-                .map(to_compact_strings)
-                .unwrap(),
+                .unwrap()
+                .into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
             vec![
                 "A", " ", "M", "A", "N", " ", "S", "A", "I", "D", " ", "T", "O", " ", "T", "H",
                 "E", " ", "U", "N", "I", "V", "E", "R", "S", "E", " ", "S", "I", "R", " ", "I",
@@ -127,8 +132,10 @@ mod tests {
         assert_eq!(
             ctc_decoder
                 .decode_chain(id_to_string_result)
-                .map(to_compact_strings)
-                .unwrap(),
+                .unwrap()
+                .into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
             vec![
                 "H", "I", "S", " ", "I", "N", "S", "T", "A", "N", "C", "T", " ", "P", "A", "N",
                 "I", "C", " ", "W", "A", "S", " ", "F", "O", "L", "L", "O", "W", "E", "D", " ",

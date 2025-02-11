@@ -11,7 +11,6 @@ mod onig;
 #[cfg(not(feature = "unstable_wasm"))]
 pub use crate::utils::onig::SysRegex;
 
-pub mod compact_string;
 pub mod iter;
 pub mod padding;
 pub mod parallelism;

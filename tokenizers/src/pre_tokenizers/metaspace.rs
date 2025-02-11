@@ -182,7 +182,6 @@ mod tests {
     use regex::Regex;
 
     use super::*;
-    use crate::utils::compact_string::to_compact_strings;
     use crate::{OffsetReferential, OffsetType};
 
     #[test]
@@ -364,15 +363,19 @@ mod tests {
         let decoder = Metaspace::new('▁', PrependScheme::Always, true);
         let res = decoder
             .decode_chain(vec!["▁Hey", "▁friend!"])
-            .map(to_compact_strings)
-            .unwrap();
+            .unwrap()
+            .into_iter()
+            .map(|t| t.to_compact_string())
+            .collect::<Vec<_>>();
         assert_eq!(res, vec!["Hey", " friend!"]);
 
         let decoder = Metaspace::new('▁', PrependScheme::Never, true);
         let res = decoder
             .decode_chain(vec!["▁Hey", "▁friend!"])
-            .map(to_compact_strings)
-            .unwrap();
+            .unwrap()
+            .into_iter()
+            .map(|t| t.to_compact_string())
+            .collect::<Vec<_>>();
         assert_eq!(res, vec![" Hey", " friend!"]);
     }
 }
