@@ -25,10 +25,7 @@ pub fn bench_train(c: &mut Criterion) {
         *word_counts.entry(word).or_insert(0) += 1;
     });
 
-    let sentences: Vec<_> = word_counts
-        .iter()
-        .map(|(s, i)| (s.to_owned(), *i))
-        .collect();
+    let sentences: Vec<_> = word_counts.iter().map(|(s, i)| (s.into(), *i)).collect();
 
     c.bench_function("Unigram Train vocabulary (small)", |b| {
         b.iter_custom(|iters| {
@@ -53,10 +50,7 @@ pub fn bench_train(c: &mut Criterion) {
         *word_counts.entry(word).or_insert(0) += 1;
     });
 
-    let sentences: Vec<_> = word_counts
-        .iter()
-        .map(|(s, i)| (s.to_owned(), *i))
-        .collect();
+    let sentences: Vec<_> = word_counts.iter().map(|(s, i)| (s.into(), *i)).collect();
 
     c.bench_function("Unigram Train vocabulary (medium)", |b| {
         b.iter_custom(|iters| {

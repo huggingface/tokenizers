@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use compact_str::{CompactString, ToCompactString};
+use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -8,7 +9,7 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
-use tk::models::bpe::{BpeBuilder, Merges, Vocab, BPE};
+use tk::models::bpe::{BpeBuilder, BPE};
 use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
@@ -17,6 +18,9 @@ use tk::{Model, Token};
 use tokenizers as tk;
 
 use super::error::{deprecation_warning, ToPyResult};
+
+pub type Vocab = FxHashMap<String, u32>;
+pub type Merges = Vec<(String, String)>;
 
 /// Base class for all models
 ///
@@ -66,11 +70,15 @@ impl Model for PyModel {
         self.model.read().unwrap().token_to_id(token)
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
-        self.model.read().unwrap().id_to_token(id)
+    fn id_to_token(&self, id: u32) -> Option<CompactString> {
+        self.model
+            .read()
+            .unwrap()
+            .id_to_token(id)
+            .map(|t| t.to_compact_string())
     }
 
-    fn get_vocab(&self) -> HashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<CompactString, u32> {
         self.model.read().unwrap().get_vocab()
     }
 
@@ -175,7 +183,7 @@ impl PyModel {
     ///     :obj:`str`: The token associated to the ID
     #[pyo3(text_signature = "(self, id)")]
     fn id_to_token(&self, id: u32) -> Option<String> {
-        self.model.read().unwrap().id_to_token(id)
+        self.model.read().unwrap().id_to_token(id).map(|t| t.into())
     }
 
     /// Save the current model
@@ -297,14 +305,19 @@ impl PyBPE {
                         }
                     }
                     "unk_token" => {
-                        if let Some(unk) = value.extract()? {
-                            builder = builder.unk_token(unk);
+                        if let Some(unk) = value.extract::<Option<String>>()? {
+                            builder = builder.unk_token(unk.to_compact_string());
                         }
                     }
                     "continuing_subword_prefix" => {
-                        builder = builder.continuing_subword_prefix(value.extract()?)
+                        builder = builder.continuing_subword_prefix(
+                            value.extract::<String>()?.to_compact_string(),
+                        )
                     }
-                    "end_of_word_suffix" => builder = builder.end_of_word_suffix(value.extract()?),
+                    "end_of_word_suffix" => {
+                        builder = builder
+                            .end_of_word_suffix(value.extract::<String>()?.to_compact_string())
+                    }
                     "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
                     "byte_fallback" => builder = builder.byte_fallback(value.extract()?),
                     "ignore_merges" => builder = builder.ignore_merges(value.extract()?),
@@ -345,15 +358,63 @@ macro_rules! setter {
     }};
 }
 
-#[derive(FromPyObject)]
 enum PyVocab {
     Vocab(Vocab),
     Filename(String),
 }
-#[derive(FromPyObject)]
+impl<'py> FromPyObject<'py> for PyVocab {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(dict) = ob.downcast::<PyDict>() {
+            let mut vocab: Vocab = FxHashMap::default();
+            for (key, value) in dict.iter() {
+                let key_str = key.extract::<String>()?;
+                let value_u32 = value.extract::<u32>()?;
+                vocab.insert(key_str, value_u32);
+            }
+            Ok(PyVocab::Vocab(vocab))
+        } else if let Ok(s) = ob.extract::<String>() {
+            Ok(PyVocab::Filename(s))
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                "Expected a dictionary (str -> u32) or a string for PyVocab",
+            ))
+        }
+    }
+}
 enum PyMerges {
     Merges(Merges),
     Filename(String),
+}
+impl<'py> FromPyObject<'py> for PyMerges {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(list) = ob.downcast::<PyList>() {
+            let mut merges: Merges = Vec::new();
+            for item in list.iter() {
+                if let Ok(tup) = item.downcast::<PyTuple>() {
+                    if tup.len() == 2 {
+                        let first = tup.get_item(0)?.extract::<String>()?;
+                        let second = tup.get_item(1)?.extract::<String>()?;
+                        merges.push((first, second))
+                    } else {
+                        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                            "Expected tuples of length 2 for Merges variant",
+                        ));
+                    }
+                } else {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        "Expected a list of tuples (CompactString, CompactString) for Merges variant",
+                    ));
+                }
+            }
+            Ok(PyMerges::Merges(merges))
+        } else if let Ok(s) = ob.downcast::<PyString>() {
+            Ok(PyMerges::Filename(s.to_string()))
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                "Expected list of tuples or a string for Merges",
+            ))
+        }
+    }
 }
 
 #[pymethods]
@@ -370,17 +431,22 @@ impl PyBPE {
 
     #[getter]
     fn get_unk_token(self_: PyRef<Self>) -> Option<String> {
-        getter!(self_, BPE, unk_token.clone())
+        getter!(self_, BPE, unk_token.clone()).map(|t| t.into())
     }
 
     #[setter]
     fn set_unk_token(self_: PyRef<Self>, unk_token: Option<String>) {
-        setter!(self_, BPE, unk_token, unk_token);
+        setter!(
+            self_,
+            BPE,
+            unk_token,
+            unk_token.map(|t| t.to_compact_string())
+        );
     }
 
     #[getter]
     fn get_continuing_subword_prefix(self_: PyRef<Self>) -> Option<String> {
-        getter!(self_, BPE, continuing_subword_prefix.clone())
+        getter!(self_, BPE, continuing_subword_prefix.clone()).map(|t| t.into())
     }
 
     #[setter]
@@ -392,18 +458,23 @@ impl PyBPE {
             self_,
             BPE,
             continuing_subword_prefix,
-            continuing_subword_prefix
+            continuing_subword_prefix.map(|t| t.to_compact_string())
         );
     }
 
     #[getter]
     fn get_end_of_word_suffix(self_: PyRef<Self>) -> Option<String> {
-        getter!(self_, BPE, end_of_word_suffix.clone())
+        getter!(self_, BPE, end_of_word_suffix.clone()).map(|t| t.into())
     }
 
     #[setter]
     fn set_end_of_word_suffix(self_: PyRef<Self>, end_of_word_suffix: Option<String>) {
-        setter!(self_, BPE, end_of_word_suffix, end_of_word_suffix);
+        setter!(
+            self_,
+            BPE,
+            end_of_word_suffix,
+            end_of_word_suffix.map(|t| t.to_compact_string())
+        );
     }
 
     #[getter]
@@ -454,6 +525,14 @@ impl PyBPE {
         if let (Some(vocab), Some(merges)) = (vocab, merges) {
             match (vocab, merges) {
                 (PyVocab::Vocab(vocab), PyMerges::Merges(merges)) => {
+                    let vocab = vocab
+                        .into_iter()
+                        .map(|(k, v)| (k.to_compact_string(), v))
+                        .collect();
+                    let merges = merges
+                        .into_iter()
+                        .map(|(k, v)| (k.to_compact_string(), v.to_compact_string()))
+                        .collect();
                     builder = builder.vocab_and_merges(vocab, merges);
                 }
                 (PyVocab::Filename(vocab_filename), PyMerges::Filename(merges_filename)) => {
@@ -495,12 +574,22 @@ impl PyBPE {
     #[staticmethod]
     #[pyo3(text_signature = "(self, vocab, merges)")]
     fn read_file(vocab: &str, merges: &str) -> PyResult<(Vocab, Merges)> {
-        BPE::read_file(vocab, merges).map_err(|e| {
-            exceptions::PyException::new_err(format!(
-                "Error while reading vocab & merges files: {}",
-                e
-            ))
-        })
+        BPE::read_file(vocab, merges)
+            .map(|(vocab, merges)| {
+                (
+                    vocab.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
+                    merges
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect(),
+                )
+            })
+            .map_err(|e| {
+                exceptions::PyException::new_err(format!(
+                    "Error while reading vocab & merges files: {}",
+                    e
+                ))
+            })
     }
 
     /// Instantiate a BPE model from the given files.
@@ -540,8 +629,15 @@ impl PyBPE {
             py,
             PyBPE::new(
                 py,
-                Some(PyVocab::Vocab(vocab)),
-                Some(PyMerges::Merges(merges)),
+                Some(PyVocab::Vocab(
+                    vocab.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
+                )),
+                Some(PyMerges::Merges(
+                    merges
+                        .into_iter()
+                        .map(|(s1, s2)| (s1.to_string(), s2.to_string()))
+                        .collect(),
+                )),
                 kwargs,
             )?,
         )
@@ -596,13 +692,15 @@ impl PyWordPiece {
                 let key: String = key.extract()?;
                 match key.as_ref() {
                     "unk_token" => {
-                        builder = builder.unk_token(val.extract()?);
+                        builder = builder.unk_token(val.extract::<String>()?.to_compact_string());
                     }
                     "max_input_chars_per_word" => {
                         builder = builder.max_input_chars_per_word(val.extract()?);
                     }
                     "continuing_subword_prefix" => {
-                        builder = builder.continuing_subword_prefix(val.extract()?);
+                        builder = builder.continuing_subword_prefix(
+                            val.extract::<String>()?.to_compact_string(),
+                        );
                     }
                     _ => println!("Ignored unknown kwargs option {}", key),
                 }
@@ -623,17 +721,17 @@ impl PyWordPiece {
 impl PyWordPiece {
     #[getter]
     fn get_unk_token(self_: PyRef<Self>) -> String {
-        getter!(self_, WordPiece, unk_token.clone())
+        getter!(self_, WordPiece, unk_token.clone()).into()
     }
 
     #[setter]
     fn set_unk_token(self_: PyRef<Self>, unk_token: String) {
-        setter!(self_, WordPiece, unk_token, unk_token);
+        setter!(self_, WordPiece, unk_token, unk_token.to_compact_string());
     }
 
     #[getter]
     fn get_continuing_subword_prefix(self_: PyRef<Self>) -> String {
-        getter!(self_, WordPiece, continuing_subword_prefix.clone())
+        getter!(self_, WordPiece, continuing_subword_prefix.clone()).into()
     }
 
     #[setter]
@@ -642,7 +740,7 @@ impl PyWordPiece {
             self_,
             WordPiece,
             continuing_subword_prefix,
-            continuing_subword_prefix
+            continuing_subword_prefix.to_compact_string()
         );
     }
 
@@ -668,6 +766,10 @@ impl PyWordPiece {
         if let Some(vocab) = vocab {
             match vocab {
                 PyVocab::Vocab(vocab) => {
+                    let vocab = vocab
+                        .into_iter()
+                        .map(|(k, v)| (k.to_compact_string(), v))
+                        .collect();
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
@@ -676,7 +778,7 @@ impl PyWordPiece {
                         "0.9.0",
                         "WordPiece.__init__ will not create from files anymore, try `WordPiece.from_file` instead",
                     )?;
-                    builder = builder.files(vocab_filename.to_string());
+                    builder = builder.files(vocab_filename.to_compact_string());
                 }
             }
         }
@@ -700,9 +802,14 @@ impl PyWordPiece {
     #[staticmethod]
     #[pyo3(text_signature = "(vocab)")]
     fn read_file(vocab: &str) -> PyResult<Vocab> {
-        WordPiece::read_file(vocab).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while reading WordPiece file: {}", e))
-        })
+        WordPiece::read_file(vocab)
+            .map(|vocab| vocab.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+            .map_err(|e| {
+                exceptions::PyException::new_err(format!(
+                    "Error while reading WordPiece file: {}",
+                    e
+                ))
+            })
     }
 
     /// Instantiate a WordPiece model from the given file
@@ -736,7 +843,13 @@ impl PyWordPiece {
         })?;
         Py::new(
             py,
-            PyWordPiece::new(py, Some(PyVocab::Vocab(vocab)), kwargs)?,
+            PyWordPiece::new(
+                py,
+                Some(PyVocab::Vocab(
+                    vocab.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
+                )),
+                kwargs,
+            )?,
         )
     }
 }
@@ -758,12 +871,12 @@ pub struct PyWordLevel {}
 impl PyWordLevel {
     #[getter]
     fn get_unk_token(self_: PyRef<Self>) -> String {
-        getter!(self_, WordLevel, unk_token.clone())
+        getter!(self_, WordLevel, unk_token.clone()).into()
     }
 
     #[setter]
     fn set_unk_token(self_: PyRef<Self>, unk_token: String) {
-        setter!(self_, WordLevel, unk_token, unk_token);
+        setter!(self_, WordLevel, unk_token, unk_token.to_compact_string());
     }
 
     #[new]
@@ -778,6 +891,10 @@ impl PyWordLevel {
         if let Some(vocab) = vocab {
             match vocab {
                 PyVocab::Vocab(vocab) => {
+                    let vocab = vocab
+                        .into_iter()
+                        .map(|(k, v)| (k.to_compact_string(), v))
+                        .collect();
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
@@ -787,12 +904,12 @@ impl PyWordLevel {
                         "WordLevel.__init__ will not create from files anymore, \
                             try `WordLevel.from_file` instead",
                     )?;
-                    builder = builder.files(vocab_filename.to_string());
+                    builder = builder.files(vocab_filename.to_compact_string());
                 }
             };
         }
         if let Some(unk_token) = unk_token {
-            builder = builder.unk_token(unk_token);
+            builder = builder.unk_token(unk_token.to_compact_string());
         }
 
         Ok((
@@ -819,9 +936,14 @@ impl PyWordLevel {
     #[staticmethod]
     #[pyo3(text_signature = "(vocab)")]
     fn read_file(vocab: &str) -> PyResult<Vocab> {
-        WordLevel::read_file(vocab).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while reading WordLevel file: {}", e))
-        })
+        WordLevel::read_file(vocab)
+            .map(|vocab| vocab.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+            .map_err(|e| {
+                exceptions::PyException::new_err(format!(
+                    "Error while reading WordLevel file: {}",
+                    e
+                ))
+            })
     }
 
     /// Instantiate a WordLevel model from the given file
@@ -855,7 +977,13 @@ impl PyWordLevel {
         })?;
         Py::new(
             py,
-            PyWordLevel::new(py, Some(PyVocab::Vocab(vocab)), unk_token)?,
+            PyWordLevel::new(
+                py,
+                Some(PyVocab::Vocab(
+                    vocab.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
+                )),
+                unk_token,
+            )?,
         )
     }
 }
@@ -879,6 +1007,10 @@ impl PyUnigram {
     ) -> PyResult<(Self, PyModel)> {
         match (vocab, unk_id, byte_fallback) {
             (Some(vocab), unk_id, byte_fallback) => {
+                let vocab = vocab
+                    .into_iter()
+                    .map(|(t, s)| (t.to_compact_string(), s))
+                    .collect();
                 let model =
                     Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false)).map_err(|e| {
                         exceptions::PyException::new_err(format!(

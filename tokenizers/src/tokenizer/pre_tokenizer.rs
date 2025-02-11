@@ -1,3 +1,5 @@
+use compact_str::CompactString;
+
 use crate::{
     normalizer::Range, Encoding, NormalizedString, OffsetReferential, Offsets, Result, Token,
 };
@@ -52,7 +54,7 @@ impl From<(NormalizedString, Option<Vec<Token>>)> for Split {
 /// original string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreTokenizedString {
-    original: String,
+    original: CompactString,
     splits: Vec<Split>,
 }
 
@@ -154,7 +156,7 @@ impl PreTokenizedString {
                         .flat_map(|split| {
                             split.tokens.unwrap().into_iter().map(|token| {
                                 // Replace this with the actual fields you need for the Encoding type
-                                (token.id, String::with_capacity(0), (0, 0), None, 0)
+                                (token.id, CompactString::with_capacity(0), (0, 0), None, 0)
                             })
                         })
                         .collect();
@@ -241,7 +243,7 @@ impl PreTokenizedString {
 impl From<NormalizedString> for PreTokenizedString {
     fn from(s: NormalizedString) -> Self {
         Self {
-            original: s.get_original().to_owned(),
+            original: s.get_original().into(),
             splits: vec![Split {
                 normalized: s,
                 tokens: None,
@@ -259,6 +261,13 @@ impl From<&str> for PreTokenizedString {
 
 impl From<String> for PreTokenizedString {
     fn from(s: String) -> Self {
+        let normalized: NormalizedString = s.into();
+        normalized.into()
+    }
+}
+
+impl From<CompactString> for PreTokenizedString {
+    fn from(s: CompactString) -> Self {
         let normalized: NormalizedString = s.into();
         normalized.into()
     }

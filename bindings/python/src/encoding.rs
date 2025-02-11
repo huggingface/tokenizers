@@ -127,7 +127,11 @@ impl PyEncoding {
     ///     :obj:`List[str]`: The list of tokens
     #[getter]
     fn get_tokens(&self) -> Vec<String> {
-        self.encoding.get_tokens().to_vec()
+        self.encoding
+            .get_tokens()
+            .iter()
+            .map(|x| x.to_string())
+            .collect()
     }
 
     /// The generated word indices.

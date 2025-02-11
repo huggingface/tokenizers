@@ -57,10 +57,7 @@ fn test_train_unigram_from_file() {
         .unwrap();
     let mut model = Unigram::default();
 
-    let sentences: Vec<_> = word_counts
-        .iter()
-        .map(|(s, i)| (s.to_owned(), *i))
-        .collect();
+    let sentences: Vec<_> = word_counts.iter().map(|(s, i)| (s.into(), *i)).collect();
     trainer.do_train(sentences, &mut model).unwrap();
     assert_eq!(model.get_vocab_size(), 719);
 }

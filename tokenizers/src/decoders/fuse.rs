@@ -1,4 +1,5 @@
 use crate::tokenizer::{Decoder, Result};
+use compact_str::{CompactString, ToCompactString};
 use monostate::MustBe;
 use serde::{Deserialize, Serialize};
 
@@ -22,8 +23,16 @@ impl Fuse {
 }
 
 impl Decoder for Fuse {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        let new_string = tokens.join("");
+    fn decode_chain<T: ToCompactString>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<impl ToCompactString>> {
+        let new_string: CompactString = tokens
+            .into_iter()
+            .map(|token| token.to_compact_string())
+            .collect::<Vec<_>>()
+            .join("")
+            .into();
         Ok(vec![new_string])
     }
 }
@@ -35,9 +44,12 @@ mod tests {
     #[test]
     fn decode() {
         let decoder = Fuse::new();
-        let res = decoder
-            .decode_chain(vec!["Hey".into(), " friend!".into()])
-            .unwrap();
-        assert_eq!(res, vec!["Hey friend!"]);
+        let res = decoder.decode_chain(vec!["Hey", " friend!"]).unwrap();
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["Hey friend!"]
+        );
     }
 }

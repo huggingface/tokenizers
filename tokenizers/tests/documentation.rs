@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
+use compact_str::{CompactString, ToCompactString};
+
 use tokenizers::decoders::byte_fallback::ByteFallback;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::normalizers::{Sequence, Strip, NFC};
@@ -29,11 +31,11 @@ fn train_tokenizer() {
         .vocab_size(vocab_size)
         .min_frequency(0)
         .special_tokens(vec![
-            AddedToken::from(String::from("<s>"), true),
-            AddedToken::from(String::from("<pad>"), true),
-            AddedToken::from(String::from("</s>"), true),
-            AddedToken::from(String::from("<unk>"), true),
-            AddedToken::from(String::from("<mask>"), true),
+            AddedToken::from("<s>", true),
+            AddedToken::from("<pad>", true),
+            AddedToken::from("</s>", true),
+            AddedToken::from("<unk>", true),
+            AddedToken::from("<mask>", true),
         ])
         .build();
 
@@ -58,7 +60,7 @@ fn load_tokenizer() {
     assert_eq!(encodings.get_ids(), ids);
     assert_eq!(encodings.get_tokens(), tokens);
 
-    let decoded = tokenizer.decode(&ids, false).unwrap();
+    let decoded = tokenizer.decode(&ids, false).unwrap().to_compact_string();
     assert_eq!(decoded, example);
 }
 
@@ -67,35 +69,29 @@ fn streaming_tokenizer() {
     let tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();
 
     let mut decode_stream = tokenizer.decode_stream(false);
-    assert_eq!(decode_stream.step(713).unwrap(), Some("This".to_string()));
-    assert_eq!(decode_stream.step(16).unwrap(), Some(" is".to_string()));
-    assert_eq!(decode_stream.step(41).unwrap(), Some(" an".to_string()));
-    assert_eq!(
-        decode_stream.step(1246).unwrap(),
-        Some(" example".to_string())
-    );
+    assert_eq!(decode_stream.step(713).unwrap(), Some("This".into()));
+    assert_eq!(decode_stream.step(16).unwrap(), Some(" is".into()));
+    assert_eq!(decode_stream.step(41).unwrap(), Some(" an".into()));
+    assert_eq!(decode_stream.step(1246).unwrap(), Some(" example".into()));
 
     let tokenizer = Tokenizer::from_file("data/albert-base-v1-tokenizer.json").unwrap();
     let encoded = tokenizer.encode("This is an example", false).unwrap();
     assert_eq!(encoded.get_ids(), &[48, 25, 40, 823]);
     let mut decode_stream = tokenizer.decode_stream(false);
     // No space anymore
-    assert_eq!(decode_stream.step(25).unwrap(), Some("is".to_string()));
+    assert_eq!(decode_stream.step(25).unwrap(), Some("is".into()));
     let mut decode_stream = tokenizer.decode_stream(false);
-    assert_eq!(decode_stream.step(48).unwrap(), Some("this".to_string()));
-    assert_eq!(decode_stream.step(25).unwrap(), Some(" is".to_string()));
-    assert_eq!(decode_stream.step(40).unwrap(), Some(" an".to_string()));
-    assert_eq!(
-        decode_stream.step(823).unwrap(),
-        Some(" example".to_string())
-    );
+    assert_eq!(decode_stream.step(48).unwrap(), Some("this".into()));
+    assert_eq!(decode_stream.step(25).unwrap(), Some(" is".into()));
+    assert_eq!(decode_stream.step(40).unwrap(), Some(" an".into()));
+    assert_eq!(decode_stream.step(823).unwrap(), Some(" example".into()));
 
     // None example
     let vocab = HashMap::from_iter([
-        ("<0x20>".to_string(), 0),
-        ("<0xC3>".to_string(), 1),
-        ("<0xA9>".to_string(), 2),
-        (" This".to_string(), 3),
+        ("<0x20>".into(), 0),
+        ("<0xC3>".into(), 1),
+        ("<0xA9>".into(), 2),
+        (" This".into(), 3),
     ]);
     let merges = vec![];
     let bpe = BPE::builder()
@@ -115,9 +111,9 @@ fn streaming_tokenizer() {
         .build()
         .unwrap();
     let mut decode_stream = tokenizer.decode_stream(false);
-    assert_eq!(decode_stream.step(0).unwrap(), Some(" ".to_string()));
+    assert_eq!(decode_stream.step(0).unwrap(), Some(" ".into()));
     assert_eq!(decode_stream.step(1).unwrap(), None);
-    assert_eq!(decode_stream.step(2).unwrap(), Some("é".to_string()));
+    assert_eq!(decode_stream.step(2).unwrap(), Some("é".into()));
     assert_eq!(decode_stream.step(2).unwrap(), None);
 }
 
@@ -133,12 +129,7 @@ fn quicktour_slow_train() -> tokenizers::Result<()> {
         PreTokenizerWrapper,
         PostProcessorWrapper,
         DecoderWrapper,
-    > = TokenizerImpl::new(
-        BPE::builder()
-            .unk_token("[UNK]".to_string())
-            .build()
-            .unwrap(),
-    );
+    > = TokenizerImpl::new(BPE::builder().unk_token("[UNK]").build()?);
     // END quicktour_init_tokenizer
     // START quicktour_init_trainer
     use tokenizers::models::bpe::BpeTrainer;
@@ -278,7 +269,7 @@ fn quicktour() -> tokenizers::Result<()> {
 
     tokenizer.with_padding(Some(PaddingParams {
         pad_id: 3,
-        pad_token: "[PAD]".to_string(),
+        pad_token: CompactString::from("[PAD]"),
         ..PaddingParams::default()
     }));
     // END quicktour_enable_padding
@@ -395,10 +386,8 @@ fn pipeline() -> tokenizers::Result<()> {
 
     tokenizer.with_post_processor(Some(
         TemplateProcessing::builder()
-            .try_single("[CLS] $A [SEP]")
-            .unwrap()
-            .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
-            .unwrap()
+            .try_single("[CLS] $A [SEP]")?
+            .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")?
             .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
             .build()
             .unwrap(),
@@ -409,10 +398,12 @@ fn pipeline() -> tokenizers::Result<()> {
     println!("{:?}", output.get_ids());
     // [1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2]
 
-    let decoded = tokenizer.decode(
-        &[1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2],
-        true,
-    )?;
+    let decoded = tokenizer
+        .decode(
+            &[1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2],
+            true,
+        )?
+        .to_compact_string();
     println!("{decoded}");
     // "Hello , y ' all ! How are you ?"
     // END pipeline_test_decoding
@@ -427,12 +418,8 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
     use tokenizers::models::wordpiece::WordPiece;
     use tokenizers::Tokenizer;
 
-    let mut bert_tokenizer = Tokenizer::new(
-        WordPiece::builder()
-            .unk_token("[UNK]".to_string())
-            .build()
-            .unwrap(),
-    );
+    let mut bert_tokenizer =
+        Tokenizer::new(WordPiece::builder().unk_token("[UNK]".into()).build()?);
     // END bert_setup_tokenizer
     // START bert_setup_normalizer
     use tokenizers::normalizers::utils::Sequence as NormalizerSequence;
@@ -454,10 +441,8 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
 
     bert_tokenizer.with_post_processor(Some(
         TemplateProcessing::builder()
-            .try_single("[CLS] $A [SEP]")
-            .unwrap()
-            .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
-            .unwrap()
+            .try_single("[CLS] $A [SEP]")?
+            .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")?
             .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
             .build()
             .unwrap(),
@@ -498,7 +483,9 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     println!("{:?}", output.get_tokens());
     // ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
 
-    let decoded = bert_tokenizer.decode(output.get_ids(), true)?;
+    let decoded = bert_tokenizer
+        .decode(output.get_ids(), true)?
+        .to_compact_string();
     println!("{decoded}");
     // "welcome to the tok ##eni ##zer ##s library ."
     // END bert_test_decoding
@@ -514,7 +501,9 @@ fn pipeline_bert() -> tokenizers::Result<()> {
     use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 
     bert_tokenizer.with_decoder(Some(WordPieceDecoder::default()));
-    let decoded = bert_tokenizer.decode(output.get_ids(), true)?;
+    let decoded = bert_tokenizer
+        .decode(output.get_ids(), true)?
+        .to_compact_string();
     // "welcome to the tokenizers library."
     // END bert_proper_decoding
     assert_eq!(decoded, "welcome to the tokenizers library.");

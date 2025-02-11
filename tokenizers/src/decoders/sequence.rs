@@ -1,6 +1,7 @@
 use crate::decoders::DecoderWrapper;
 use crate::tokenizer::{Decoder, Result};
 use crate::utils::macro_rules_attribute;
+use compact_str::ToCompactString;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
@@ -24,11 +25,19 @@ impl Sequence {
 }
 
 impl Decoder for Sequence {
-    fn decode_chain(&self, mut tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode_chain<T: ToCompactString>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<impl ToCompactString>> {
+        let mut current_tokens = tokens.into_iter().map(|t| t.to_compact_string()).collect();
         for decoder in &self.decoders {
-            tokens = decoder.decode_chain(tokens)?;
+            current_tokens = decoder
+                .decode_chain(current_tokens)?
+                .into_iter()
+                .map(|t| t.to_compact_string())
+                .collect();
         }
-        Ok(tokens)
+        Ok(current_tokens)
     }
 }
 
@@ -37,6 +46,7 @@ mod tests {
     use super::*;
     use crate::decoders::ctc::CTC;
     use crate::pre_tokenizers::metaspace::Metaspace;
+    use compact_str::CompactString;
 
     #[test]
     fn sequence_basic() {
@@ -45,11 +55,11 @@ mod tests {
             DecoderWrapper::Metaspace(Metaspace::default()),
         ];
         let decoder = Sequence::new(decoders);
-        let tokens: Vec<String> = vec!["▁", "▁", "H", "H", "i", "i", "▁", "y", "o", "u"]
+        let tokens: Vec<CompactString> = vec!["▁", "▁", "H", "H", "i", "i", "▁", "y", "o", "u"]
             .into_iter()
-            .map(|s| s.to_string())
+            .map(|s| s.into())
             .collect();
-        let out_tokens = decoder.decode(tokens).unwrap();
+        let out_tokens = decoder.decode(tokens).unwrap().to_compact_string();
         assert_eq!(out_tokens, "Hi you");
     }
 }

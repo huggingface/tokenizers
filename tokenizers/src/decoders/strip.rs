@@ -1,5 +1,6 @@
 use crate::tokenizer::{Decoder, Result};
 
+use compact_str::{CompactString, ToCompactString};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Clone, Debug, Serialize, Default)]
@@ -25,11 +26,14 @@ impl Strip {
 }
 
 impl Decoder for Strip {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode_chain<T: ToCompactString>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<impl ToCompactString>> {
         Ok(tokens
             .into_iter()
             .map(|token| {
-                let chars: Vec<char> = token.chars().collect();
+                let chars: Vec<char> = token.to_compact_string().chars().collect();
 
                 let mut start_cut = 0;
                 for (i, &c) in chars.iter().enumerate().take(self.start) {
@@ -52,7 +56,7 @@ impl Decoder for Strip {
                     }
                 }
 
-                let new_token: String = chars[start_cut..stop_cut].iter().collect();
+                let new_token: CompactString = chars[start_cut..stop_cut].iter().collect();
                 new_token
             })
             .collect())
@@ -67,14 +71,22 @@ mod tests {
     fn decode() {
         let decoder = Strip::new('H', 1, 0);
         let res = decoder
-            .decode_chain(vec!["Hey".into(), " friend!".into(), "HHH".into()])
+            .decode_chain(vec!["Hey", " friend!", "HHH"])
             .unwrap();
-        assert_eq!(res, vec!["ey", " friend!", "HH"]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["ey", " friend!", "HH"]
+        );
 
         let decoder = Strip::new('y', 0, 1);
-        let res = decoder
-            .decode_chain(vec!["Hey".into(), " friend!".into()])
-            .unwrap();
-        assert_eq!(res, vec!["He", " friend!"]);
+        let res = decoder.decode_chain(vec!["Hey", " friend!"]).unwrap();
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["He", " friend!"]
+        );
     }
 }
