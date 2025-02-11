@@ -1,6 +1,5 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 use std::{iter, mem};
-use compact_str::CompactString;
 
 mod model;
 mod serialization;
@@ -27,10 +26,10 @@ pub enum Error {
     BadMerges(usize),
     /// If a token found in merges, is not in the vocab
     #[error("Token `{0}` out of vocabulary")]
-    MergeTokenOutOfVocabulary(CompactString),
+    MergeTokenOutOfVocabulary(String),
     /// If the provided unk token is out of vocabulary
     #[error("Unk token `{0}` not found in the vocabulary")]
-    UnkTokenOutOfVocabulary(CompactString),
+    UnkTokenOutOfVocabulary(String),
     /// Dropout not between 0 and 1.
     #[error("Dropout should be between 0 and 1, inclusive")]
     InvalidDropout,

@@ -1,5 +1,6 @@
 use crate::parallelism::*;
 use crate::tokenizer::{Encoding, Result};
+use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
 /// The various possible padding directions.
@@ -25,7 +26,7 @@ pub struct PaddingParams {
     pub pad_to_multiple_of: Option<usize>,
     pub pad_id: u32,
     pub pad_type_id: u32,
-    pub pad_token: String,
+    pub pad_token: CompactString,
 }
 
 impl Default for PaddingParams {
@@ -36,7 +37,7 @@ impl Default for PaddingParams {
             pad_to_multiple_of: None,
             pad_id: 0,
             pad_type_id: 0,
-            pad_token: String::from("[PAD]"),
+            pad_token: CompactString::from("[PAD]"),
         }
     }
 }
@@ -93,7 +94,7 @@ mod tests {
                 Encoding::new(
                     vec![0, 1, 2, 3, 4],
                     vec![],
-                    vec![],
+                    Vec::<CompactString>::new(),
                     vec![],
                     vec![],
                     vec![],
@@ -104,7 +105,7 @@ mod tests {
                 Encoding::new(
                     vec![0, 1, 2],
                     vec![],
-                    vec![],
+                    Vec::<CompactString>::new(),
                     vec![],
                     vec![],
                     vec![],
@@ -123,7 +124,7 @@ mod tests {
             pad_to_multiple_of: Some(8),
             pad_id: 0,
             pad_type_id: 0,
-            pad_token: String::from("[PAD]"),
+            pad_token: CompactString::from("[PAD]"),
         };
         pad_encodings(&mut encodings, &params).unwrap();
         assert!(encodings.iter().all(|e| e.get_ids().len() == 8));

@@ -54,7 +54,7 @@ impl From<(NormalizedString, Option<Vec<Token>>)> for Split {
 /// original string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreTokenizedString {
-    original: String,
+    original: CompactString,
     splits: Vec<Split>,
 }
 
@@ -243,7 +243,7 @@ impl PreTokenizedString {
 impl From<NormalizedString> for PreTokenizedString {
     fn from(s: NormalizedString) -> Self {
         Self {
-            original: s.get_original().to_owned(),
+            original: s.get_original().into(),
             splits: vec![Split {
                 normalized: s,
                 tokens: None,
@@ -261,6 +261,13 @@ impl From<&str> for PreTokenizedString {
 
 impl From<String> for PreTokenizedString {
     fn from(s: String) -> Self {
+        let normalized: NormalizedString = s.into();
+        normalized.into()
+    }
+}
+
+impl From<CompactString> for PreTokenizedString {
+    fn from(s: CompactString) -> Self {
         let normalized: NormalizedString = s.into();
         normalized.into()
     }

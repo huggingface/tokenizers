@@ -81,7 +81,7 @@ pub enum UnigramError {
 
 impl Default for Unigram {
     fn default() -> Self {
-        let vocab = vec![("<unk>".into(), 0.0)];
+        let vocab = vec![("<unk>", 0.0)];
         Self::from(vocab, Some(0), false).unwrap()
     }
 }
@@ -94,7 +94,7 @@ impl Unigram {
     /// For now `Unigram` *requires* at least `unk` because we might find a never seen char.
     /// Further versions might allow that part to be hidden.
     pub fn from(
-        vocab: Vec<(CompactString, f64)>,
+        vocab: Vec<(impl Into<CompactString>, f64)>,
         unk_id: Option<usize>,
         byte_fallback: bool,
     ) -> Result<Self> {
@@ -112,6 +112,9 @@ impl Unigram {
         }
         let bos_id = n + 1;
         let eos_id = n + 2;
+
+        let vocab: Vec<(CompactString, f64)> =
+            vocab.into_iter().map(|(s, f)| (s.into(), f)).collect();
 
         let mut min_score = f64::INFINITY;
         for (id, (token, score)) in vocab.iter().enumerate() {
@@ -492,7 +495,7 @@ mod tests {
 
     #[test]
     fn test_populate_nodes_unk() {
-        let pieces = vec![("<unk>".into(), 0.0)];
+        let pieces = vec![("<unk>", 0.0)];
         let model = Unigram::from(pieces, Some(0), false).unwrap();
 
         let mut lattice = Lattice::from("abc", model.bos_id, model.eos_id);
@@ -512,11 +515,11 @@ mod tests {
     #[test]
     fn test_populate_nodes() {
         let pieces = vec![
-            ("<unk>".into(), 0.0),
-            ("a".into(), 0.1),
-            ("b".into(), 0.2),
-            ("ab".into(), 0.3),
-            ("bc".into(), 0.4),
+            ("<unk>", 0.0),
+            ("a", 0.1),
+            ("b", 0.2),
+            ("ab", 0.3),
+            ("bc", 0.4),
         ];
         let model = Unigram::from(pieces, Some(0), false).unwrap();
 
@@ -544,15 +547,15 @@ mod tests {
     #[test]
     fn test_encode() {
         let sentencepieces = vec![
-            ("<unk>".into(), 0.0),
-            ("a".into(), 0.0),
-            ("b".into(), 0.0),
-            ("c".into(), 0.0),
-            ("d".into(), 0.0),
-            ("cd".into(), 1.0),
-            ("ab".into(), 2.0),
-            ("abc".into(), 5.0),
-            ("abcd".into(), 10.0),
+            ("<unk>", 0.0),
+            ("a", 0.0),
+            ("b", 0.0),
+            ("c", 0.0),
+            ("d", 0.0),
+            ("cd", 1.0),
+            ("ab", 2.0),
+            ("abc", 5.0),
+            ("abcd", 10.0),
         ];
 
         let model = Unigram::from(sentencepieces, Some(0), false).unwrap();
@@ -563,18 +566,18 @@ mod tests {
     #[test]
     fn test_encode2() {
         let sentencepieces = vec![
-            ("<unk>".into(), 0.0),
-            ("ab".into(), 0.0),
-            ("cd".into(), -0.1),
-            ("abc".into(), -0.2),
-            ("a".into(), -0.3),
-            ("b".into(), -0.4),
-            ("c".into(), -0.5),
-            ("ABC".into(), -0.5),
-            ("abcdabcd".into(), 20.0), // User defined just max the scores.
-            ("q".into(), 20.5),
-            ("r".into(), 20.5),
-            ("qr".into(), -0.5),
+            ("<unk>", 0.0),
+            ("ab", 0.0),
+            ("cd", -0.1),
+            ("abc", -0.2),
+            ("a", -0.3),
+            ("b", -0.4),
+            ("c", -0.5),
+            ("ABC", -0.5),
+            ("abcdabcd", 20.0), // User defined just max the scores.
+            ("q", 20.5),
+            ("r", 20.5),
+            ("qr", -0.5),
         ];
 
         let mut model = Unigram::from(sentencepieces, Some(0), false).unwrap();
@@ -619,26 +622,14 @@ mod tests {
     fn test_unigram_bytefallback() {
         // In [97]: processor.encode_as_pieces("⅐⅛⅑ ")
         // Out[97]: ['▁', '<0xE2>', '<0x85>', '<0x90>', '⅛', '<0xE2>', '<0x85>', '<0x91>', '▁']
-        let sentencepieces = vec![
-            ("<unk>".into(), 0.0),
-            ("<0xC3>".into(), -0.01),
-            ("<0xA9>".into(), -0.03),
-        ];
+        let sentencepieces = vec![("<unk>", 0.0), ("<0xC3>", -0.01), ("<0xA9>", -0.03)];
         let unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
         let tokens: Vec<Token> = unigram.tokenize("é").unwrap();
         assert_eq!(
             tokens,
             [
-                Token {
-                    id: 1,
-                    value: "<0xC3>".into(),
-                    offsets: (0, 2)
-                },
-                Token {
-                    id: 2,
-                    value: "<0xA9>".into(),
-                    offsets: (0, 2)
-                }
+                Token::new(1, "<0xC3>", (0, 2)),
+                Token::new(2, "<0xA9>", (0, 2))
             ]
         );
 

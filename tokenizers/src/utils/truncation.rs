@@ -178,7 +178,7 @@ mod tests {
         Encoding::new(
             vec![],
             vec![],
-            vec![],
+            Vec::<CompactString>::new(),
             vec![],
             vec![],
             vec![],
@@ -192,7 +192,7 @@ mod tests {
         Encoding::new(
             vec![1, 2],
             vec![0, 0],
-            vec![CompactString::from("a"), CompactString::from("b")],
+            vec!["a", "b"],
             vec![Some(0), Some(1)],
             vec![(0, 1), (1, 2)],
             vec![0, 0],
@@ -206,12 +206,7 @@ mod tests {
         Encoding::new(
             vec![3, 4, 5, 6],
             vec![0, 0, 0, 0],
-            vec![
-                CompactString::from("d"),
-                CompactString::from("e"),
-                CompactString::from("f"),
-                CompactString::from("g"),
-            ],
+            vec!["d", "e", "f", "g"],
             vec![Some(0), Some(1), Some(2), Some(3)],
             vec![(0, 1), (1, 2), (2, 3), (3, 4)],
             vec![0, 0, 0, 0],
@@ -225,16 +220,7 @@ mod tests {
         Encoding::new(
             vec![7, 8, 9, 10, 11, 12, 13, 14],
             vec![0, 0, 0, 0, 0, 0, 0, 0],
-            vec![
-                CompactString::from("h"),
-                CompactString::from("i"),
-                CompactString::from("j"),
-                CompactString::from("k"),
-                CompactString::from("l"),
-                CompactString::from("m"),
-                CompactString::from("n"),
-                CompactString::from("o"),
-            ],
+            vec!["h", "i", "j", "k", "l", "m", "n", "o"],
             vec![
                 Some(0),
                 Some(1),

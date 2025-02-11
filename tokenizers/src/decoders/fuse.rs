@@ -44,9 +44,7 @@ mod tests {
     #[test]
     fn decode() {
         let decoder = Fuse::new();
-        let res = decoder
-            .decode_chain(vec!["Hey".to_owned(), " friend!".to_owned()])
-            .unwrap();
+        let res = decoder.decode_chain(vec!["Hey", " friend!"]).unwrap();
         assert_eq!(
             res.into_iter()
                 .map(|t| t.to_compact_string())

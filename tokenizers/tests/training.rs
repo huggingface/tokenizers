@@ -14,7 +14,7 @@ fn bpe_values_after_training() {
     >::default()
     .with_model(
         BPE::builder()
-            .unk_token("[UNK]".into())
+            .unk_token("[UNK]")
             .dropout(0.1)
             .build()
             .unwrap(),
@@ -40,8 +40,8 @@ fn bpe_continuing_subword_prefix_error() {
     >::default()
     .with_model(
         BPE::builder()
-            .unk_token("[UNK]".into())
-            .continuing_subword_prefix("##".into())
+            .unk_token("[UNK]")
+            .continuing_subword_prefix("##")
             .build()
             .unwrap(),
     )

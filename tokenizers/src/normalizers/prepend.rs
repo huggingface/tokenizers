@@ -1,15 +1,18 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub struct Prepend {
-    pub prepend: String,
+    pub prepend: CompactString,
 }
 
 impl Prepend {
-    pub fn new(prepend: String) -> Self {
-        Self { prepend }
+    pub fn new(prepend: impl Into<CompactString>) -> Self {
+        Self {
+            prepend: prepend.into(),
+        }
     }
 }
 

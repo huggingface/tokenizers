@@ -189,8 +189,12 @@ pub struct Token {
     pub offsets: (usize, usize),
 }
 impl Token {
-    pub fn new(id: u32, value: CompactString, offsets: (usize, usize)) -> Self {
-        Self { id, value, offsets }
+    pub fn new(id: u32, value: impl Into<CompactString>, offsets: (usize, usize)) -> Self {
+        Self {
+            id,
+            value: value.into(),
+            offsets,
+        }
     }
 }
 
@@ -199,7 +203,7 @@ use std::borrow::Cow;
 pub enum InputSequence<'s> {
     Raw(Cow<'s, str>),
     PreTokenized(Cow<'s, [&'s str]>),
-    PreTokenizedOwned(Cow<'s, [String]>),
+    PreTokenizedOwned(Cow<'s, [CompactString]>),
     PreTokenizedCow(Cow<'s, [Cow<'s, str>]>),
 }
 
@@ -235,12 +239,26 @@ impl<'s> From<Vec<&'s str>> for InputSequence<'s> {
 
 impl<'s> From<&'s [String]> for InputSequence<'s> {
     fn from(input: &'s [String]) -> Self {
-        Self::PreTokenizedOwned(Cow::Borrowed(input))
+        Self::PreTokenizedOwned(Cow::Owned(
+            input.iter().map(|s| s.to_compact_string()).collect(),
+        ))
     }
 }
 
 impl From<Vec<String>> for InputSequence<'_> {
     fn from(input: Vec<String>) -> Self {
+        Self::PreTokenizedOwned(Cow::Owned(input.into_iter().map(|s| s.into()).collect()))
+    }
+}
+
+impl<'s> From<&'s [CompactString]> for InputSequence<'s> {
+    fn from(input: &'s [CompactString]) -> Self {
+        Self::PreTokenizedOwned(Cow::Borrowed(input))
+    }
+}
+
+impl From<Vec<CompactString>> for InputSequence<'_> {
+    fn from(input: Vec<CompactString>) -> Self {
         Self::PreTokenizedOwned(Cow::Owned(input))
     }
 }
@@ -1402,7 +1420,7 @@ where
                         }
                     }),
                     |seq| {
-                        let normalized = self.do_normalize(seq.as_ref())?;
+                        let normalized = self.do_normalize(seq)?;
                         let pre_tokenized = self.do_pre_tokenize(normalized)?;
                         Ok(pre_tokenized
                             .get_splits(OffsetReferential::Original, OffsetType::Byte)
@@ -1453,7 +1471,7 @@ where
                 }
             }),
             |seq| {
-                let normalized = self.do_normalize(seq.as_ref())?;
+                let normalized = self.do_normalize(seq)?;
                 let pre_tokenized = self.do_pre_tokenize(normalized)?;
                 Ok(pre_tokenized
                     .get_splits(OffsetReferential::Original, OffsetType::Byte)

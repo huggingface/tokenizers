@@ -84,7 +84,7 @@ fn normalizers() {
 
 #[test]
 fn processors() {
-    let bert = BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 0));
+    let bert = BertProcessing::new(("SEP", 0), ("CLS", 0));
     let bert_ser = serde_json::to_string(&bert).unwrap();
     assert_eq!(
         bert_ser,
@@ -157,7 +157,7 @@ fn pretoks() {
     );
     assert_eq!(serde_json::from_str::<Split>(&pretok_str).unwrap(), pretok);
 
-    let pattern = SplitPattern::Regex("[SEP]".to_string());
+    let pattern = SplitPattern::Regex("[SEP]".into());
     let pretok = Split::new(pattern, SplitDelimiterBehavior::Isolated, false).unwrap();
     let pretok_str = serde_json::to_string(&pretok).unwrap();
     assert_eq!(

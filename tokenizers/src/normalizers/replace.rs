@@ -8,19 +8,13 @@ use serde::{Deserialize, Serialize};
 /// Represents the different patterns that `Replace` can use
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum ReplacePattern {
-    String(String),
-    Regex(String),
+    String(CompactString),
+    Regex(CompactString),
 }
 
-impl From<String> for ReplacePattern {
-    fn from(v: String) -> Self {
-        Self::String(v)
-    }
-}
-
-impl From<&str> for ReplacePattern {
-    fn from(v: &str) -> Self {
-        Self::String(v.to_owned())
+impl<T: Into<CompactString>> From<T> for ReplacePattern {
+    fn from(v: T) -> Self {
+        Self::String(v.into())
     }
 }
 
@@ -30,7 +24,7 @@ impl From<&str> for ReplacePattern {
 #[serde(tag = "type")]
 struct ReplaceDeserializer {
     pattern: ReplacePattern,
-    content: String,
+    content: CompactString,
 }
 
 impl std::convert::TryFrom<ReplaceDeserializer> for Replace {
@@ -47,14 +41,14 @@ impl std::convert::TryFrom<ReplaceDeserializer> for Replace {
 #[serde(tag = "type", try_from = "ReplaceDeserializer")]
 pub struct Replace {
     pattern: ReplacePattern,
-    pub content: String,
+    pub content: CompactString,
     #[serde(skip)]
     regex: SysRegex,
 }
 
 impl Clone for Replace {
     fn clone(&self) -> Self {
-        Self::new(self.pattern.clone(), &self.content).unwrap()
+        Self::new(self.pattern.clone(), &*self.content).unwrap()
     }
 }
 
@@ -65,7 +59,10 @@ impl PartialEq for Replace {
 }
 
 impl Replace {
-    pub fn new<I: Into<ReplacePattern>, C: Into<String>>(pattern: I, content: C) -> Result<Self> {
+    pub fn new<I: Into<ReplacePattern>, C: Into<CompactString>>(
+        pattern: I,
+        content: C,
+    ) -> Result<Self> {
         let pattern: ReplacePattern = pattern.into();
         let regex = match &pattern {
             ReplacePattern::String(s) => SysRegex::new(&regex::escape(s))?,
@@ -131,7 +128,7 @@ mod tests {
         let normalized = "This is a test";
 
         let mut n = NormalizedString::from(original);
-        Replace::new(ReplacePattern::Regex(r"\s+".into()), ' ')
+        Replace::new(ReplacePattern::Regex(r"\s+".into()), " ")
             .unwrap()
             .normalize(&mut n)
             .unwrap();
@@ -146,7 +143,7 @@ mod tests {
         assert_eq!(serde_json::to_string(&replace).unwrap(), replace_s);
         assert_eq!(serde_json::from_str::<Replace>(replace_s).unwrap(), replace);
 
-        let replace = Replace::new(ReplacePattern::Regex(r"\s+".into()), ' ').unwrap();
+        let replace = Replace::new(ReplacePattern::Regex(r"\s+".into()), " ").unwrap();
         let replace_s = r#"{"type":"Replace","pattern":{"Regex":"\\s+"},"content":" "}"#;
         assert_eq!(serde_json::to_string(&replace).unwrap(), replace_s);
         assert_eq!(serde_json::from_str::<Replace>(replace_s).unwrap(), replace);
@@ -154,7 +151,7 @@ mod tests {
 
     #[test]
     fn test_replace_decode() {
-        let original = vec!["hello".to_owned(), "_hello".to_owned()];
+        let original = vec!["hello", "_hello"];
         let replace = Replace::new("_", " ").unwrap();
         assert_eq!(
             replace

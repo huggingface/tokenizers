@@ -78,25 +78,23 @@ mod tests {
     #[test]
     fn decode() {
         let decoder = ByteFallback::new();
-        let res = decoder
-            .decode_chain(vec!["Hey".to_owned(), "friend!".to_owned()])
-            .unwrap();
+        let res = decoder.decode_chain(vec!["Hey", "friend!"]).unwrap();
         assert_eq!(
             res.into_iter()
                 .map(|t| t.to_compact_string())
                 .collect::<Vec<_>>(),
-            vec!["Hey".to_owned(), "friend!".to_owned()]
+            vec!["Hey", "friend!"]
         );
 
-        let res = decoder.decode_chain(vec!["<0x61>".to_owned()]).unwrap();
+        let res = decoder.decode_chain(vec!["<0x61>"]).unwrap();
         assert_eq!(
             res.into_iter()
                 .map(|t| t.to_compact_string())
                 .collect::<Vec<_>>(),
-            vec!["a".to_owned()]
+            vec!["a"]
         );
 
-        let res = decoder.decode_chain(vec!["<0xE5>".to_owned()]).unwrap();
+        let res = decoder.decode_chain(vec!["<0xE5>"]).unwrap();
         assert_eq!(
             res.into_iter()
                 .map(|t| t.to_compact_string())
@@ -104,23 +102,17 @@ mod tests {
             vec!["�"]
         );
 
-        let res = decoder
-            .decode_chain(vec!["<0xE5>".to_owned(), "<0x8f>".to_owned()])
-            .unwrap();
+        let res = decoder.decode_chain(vec!["<0xE5>", "<0x8f>"]).unwrap();
         assert_eq!(
             res.into_iter()
                 .map(|t| t.to_compact_string())
                 .collect::<Vec<_>>(),
-            vec!["�".to_owned(), "�".to_owned()]
+            vec!["�", "�"]
         );
 
         // 叫
         let res = decoder
-            .decode_chain(vec![
-                "<0xE5>".to_owned(),
-                "<0x8f>".to_owned(),
-                "<0xab>".to_owned(),
-            ])
+            .decode_chain(vec!["<0xE5>", "<0x8f>", "<0xab>"])
             .unwrap();
         assert_eq!(
             res.into_iter()
@@ -130,32 +122,21 @@ mod tests {
         );
 
         let res = decoder
-            .decode_chain(vec![
-                "<0xE5>".to_owned(),
-                "<0x8f>".to_owned(),
-                "<0xab>".to_owned(),
-                "a".to_owned(),
-            ])
+            .decode_chain(vec!["<0xE5>", "<0x8f>", "<0xab>", "a"])
             .unwrap();
         assert_eq!(
             res.into_iter()
                 .map(|t| t.to_compact_string())
                 .collect::<Vec<_>>(),
-            vec!["叫".to_owned(), "a".to_owned()]
+            vec!["叫", "a"]
         );
 
-        let res = decoder
-            .decode_chain(vec![
-                "<0xE5>".to_owned(),
-                "<0x8f>".to_owned(),
-                "a".to_owned(),
-            ])
-            .unwrap();
+        let res = decoder.decode_chain(vec!["<0xE5>", "<0x8f>", "a"]).unwrap();
         assert_eq!(
             res.into_iter()
                 .map(|t| t.to_compact_string())
                 .collect::<Vec<_>>(),
-            vec!["�".to_owned(), "�".to_owned(), "a".to_owned()]
+            vec!["�", "�", "a"]
         );
     }
 }

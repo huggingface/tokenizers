@@ -14,19 +14,23 @@ use serde::{Deserialize, Serialize};
 #[non_exhaustive]
 pub struct CTC {
     /// The pad token used by CTC to delimit a new token.
-    pub pad_token: String,
+    pub pad_token: CompactString,
     /// The word delimiter token. It will be replaced by a `<space>`.
-    pub word_delimiter_token: String,
+    pub word_delimiter_token: CompactString,
     /// Whether to cleanup some tokenization artifacts.
     /// Mainly spaces before punctuation, and some abbreviated english forms.
     pub cleanup: bool,
 }
 
 impl CTC {
-    pub fn new(pad_token: String, word_delimiter_token: String, cleanup: bool) -> Self {
+    pub fn new(
+        pad_token: impl Into<CompactString>,
+        word_delimiter_token: impl Into<CompactString>,
+        cleanup: bool,
+    ) -> Self {
         Self {
-            pad_token,
-            word_delimiter_token,
+            pad_token: pad_token.into(),
+            word_delimiter_token: word_delimiter_token.into(),
             cleanup,
         }
     }
@@ -34,11 +38,7 @@ impl CTC {
 
 impl Default for CTC {
     fn default() -> Self {
-        Self {
-            pad_token: "<pad>".to_string(),
-            word_delimiter_token: "|".to_string(),
-            cleanup: true,
-        }
+        Self::new("<pad>", "|", true)
     }
 }
 
@@ -52,10 +52,10 @@ impl Decoder for CTC {
             .map(|token| token.to_compact_string())
             .dedup()
             .filter_map(|token| {
-                let mut replaced: CompactString = token.replace(&self.pad_token, "").into();
+                let mut replaced: CompactString = token.replace(&*self.pad_token, "").into();
                 if self.cleanup {
                     replaced = wordpiece::cleanup(&replaced)
-                        .replace(&self.word_delimiter_token, " ")
+                        .replace(&*self.word_delimiter_token, " ")
                         .into();
                 }
                 if replaced.is_empty() {

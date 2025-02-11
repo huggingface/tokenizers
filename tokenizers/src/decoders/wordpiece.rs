@@ -82,14 +82,7 @@ mod tests {
 
         assert_eq!(
             decoder
-                .decode(vec![
-                    "##uelo".to_owned(),
-                    "Ara".to_owned(),
-                    "##új".to_owned(),
-                    "##o".to_owned(),
-                    "No".to_owned(),
-                    "##guera".to_owned()
-                ])
+                .decode(vec!["##uelo", "Ara", "##új", "##o", "No", "##guera"])
                 .unwrap()
                 .to_compact_string(),
             "##uelo Araújo Noguera"
