@@ -249,7 +249,6 @@ mod tests {
         Decoder, Encoding, OffsetReferential, OffsetType, PostProcessor, PreTokenizedString,
         PreTokenizer,
     };
-    use crate::utils::compact_string::to_compact_strings;
     use std::iter::FromIterator;
 
     #[test]
@@ -301,8 +300,10 @@ mod tests {
                 .decode_chain(vec![
                     "Hello", "Ġmy", "Ġfriend", ",", "Ġhow", "Ġis", "Ġyour", "Ġday", "Ġgoing", "?"
                 ])
-                .map(to_compact_strings)
-                .unwrap(),
+                .unwrap()
+                .into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
             vec!["Hello my friend, how is your day going?"]
         );
     }
@@ -359,8 +360,10 @@ mod tests {
                 sample,
                 bytelevel
                     .decode_chain(separated_tokens)
-                    .map(to_compact_strings)
                     .unwrap()
+                    .into_iter()
+                    .map(|t| t.to_compact_string())
+                    .collect::<Vec<_>>()
                     .join("")
             );
         }
@@ -565,8 +568,10 @@ mod tests {
         assert_eq!(
             byte_level
                 .decode_chain(vec!["Hello", "Ġthere", "Ġdear", "Ġfriend!", "Ġ", "[PA D]"])
-                .map(to_compact_strings)
-                .unwrap(),
+                .unwrap()
+                .into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
             vec!["Hello there dear friend! [PA D]"]
         );
     }
