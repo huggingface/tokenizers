@@ -721,7 +721,7 @@ impl PyTemplateProcessing {
 
     #[getter]
     fn get_single(self_: PyRef<Self>) -> String {
-        getter!(self_, Template, get_single())
+        getter!(self_, Template, get_single()).into()
     }
 
     #[setter]
@@ -847,7 +847,7 @@ mod test {
     fn get_subtype() {
         Python::with_gil(|py| {
             let py_proc = PyPostProcessor::new(PyPostProcessorTypeWrapper::Single(Arc::new(
-                RwLock::new(BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 1)).into()),
+                RwLock::new(BertProcessing::new(("SEP", 0), ("CLS", 1)).into()),
             )));
             let py_bert = py_proc.get_as_subtype(py).unwrap();
             assert_eq!(
@@ -859,7 +859,7 @@ mod test {
 
     #[test]
     fn serialize() {
-        let rs_processing = BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 1));
+        let rs_processing = BertProcessing::new(("SEP", 0), ("CLS", 1));
         let rs_wrapper: PostProcessorWrapper = rs_processing.clone().into();
         let rs_processing_ser = serde_json::to_string(&rs_processing).unwrap();
         let rs_wrapper_ser = serde_json::to_string(&rs_wrapper).unwrap();

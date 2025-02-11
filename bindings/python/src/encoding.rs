@@ -129,7 +129,7 @@ impl PyEncoding {
     fn get_tokens(&self) -> Vec<String> {
         self.encoding
             .get_tokens()
-            .into_iter()
+            .iter()
             .map(|x| x.to_string())
             .collect()
     }

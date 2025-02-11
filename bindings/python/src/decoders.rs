@@ -424,12 +424,12 @@ pub struct PyBPEDecoder {}
 impl PyBPEDecoder {
     #[getter]
     fn get_suffix(self_: PyRef<Self>) -> String {
-        getter!(self_, BPE, suffix.clone())
+        getter!(self_, BPE, suffix.to_string())
     }
 
     #[setter]
     fn set_suffix(self_: PyRef<Self>, suffix: String) {
-        setter!(self_, BPE, suffix, suffix);
+        setter!(self_, BPE, suffix, suffix.into());
     }
 
     #[new]
@@ -455,22 +455,27 @@ pub struct PyCTCDecoder {}
 impl PyCTCDecoder {
     #[getter]
     fn get_pad_token(self_: PyRef<Self>) -> String {
-        getter!(self_, CTC, pad_token.clone())
+        getter!(self_, CTC, pad_token.to_string())
     }
 
     #[setter]
     fn set_pad_token(self_: PyRef<Self>, pad_token: String) {
-        setter!(self_, CTC, pad_token, pad_token);
+        setter!(self_, CTC, pad_token, pad_token.into());
     }
 
     #[getter]
     fn get_word_delimiter_token(self_: PyRef<Self>) -> String {
-        getter!(self_, CTC, word_delimiter_token.clone())
+        getter!(self_, CTC, word_delimiter_token.clone()).to_string()
     }
 
     #[setter]
     fn set_word_delimiter_token(self_: PyRef<Self>, word_delimiter_token: String) {
-        setter!(self_, CTC, word_delimiter_token, word_delimiter_token);
+        setter!(
+            self_,
+            CTC,
+            word_delimiter_token,
+            word_delimiter_token.into()
+        );
     }
 
     #[getter]

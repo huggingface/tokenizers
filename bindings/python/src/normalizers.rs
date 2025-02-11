@@ -521,12 +521,12 @@ pub struct PyPrepend {}
 impl PyPrepend {
     #[getter]
     fn get_prepend(self_: PyRef<Self>) -> String {
-        getter!(self_, Prepend, prepend)
+        getter!(self_, Prepend, prepend).into()
     }
 
     #[setter]
     fn set_prepend(self_: PyRef<Self>, prepend: String) {
-        setter!(self_, Prepend, prepend, prepend)
+        setter!(self_, Prepend, prepend, prepend.into())
     }
 
     #[new]
@@ -624,12 +624,12 @@ impl PyReplace {
 
     #[getter]
     fn get_content(self_: PyRef<Self>) -> String {
-        getter!(self_, Replace, content)
+        getter!(self_, Replace, content).to_string()
     }
 
     #[setter]
     fn set_content(self_: PyRef<Self>, content: String) {
-        setter!(self_, Replace, content, content)
+        setter!(self_, Replace, content, content.into())
     }
 }
 

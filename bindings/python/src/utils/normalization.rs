@@ -1,6 +1,7 @@
 use super::regex::PyRegex;
 use super::{DestroyPtr, RefMutContainer, RefMutGuard};
 use crate::error::ToPyResult;
+use compact_str::ToCompactString;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -38,8 +39,10 @@ impl Pattern for PyPattern {
 impl From<PyPattern> for tk::normalizers::replace::ReplacePattern {
     fn from(pattern: PyPattern) -> Self {
         match pattern {
-            PyPattern::Str(s) => Self::String(s.to_owned()),
-            PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),
+            PyPattern::Str(s) => Self::String(s.into()),
+            PyPattern::Regex(r) => {
+                Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.to_compact_string()))
+            }
         }
     }
 }
@@ -47,8 +50,10 @@ impl From<PyPattern> for tk::normalizers::replace::ReplacePattern {
 impl From<PyPattern> for tk::pre_tokenizers::split::SplitPattern {
     fn from(pattern: PyPattern) -> Self {
         match pattern {
-            PyPattern::Str(s) => Self::String(s.to_owned()),
-            PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),
+            PyPattern::Str(s) => Self::String(s.into()),
+            PyPattern::Regex(r) => {
+                Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.to_compact_string()))
+            }
         }
     }
 }
