@@ -371,6 +371,9 @@ class TestTokenizer:
         assert stream.step(tokenizer, 2) == " is"
         assert stream.step(tokenizer, 3) == " john"
 
+        stream.with_sequence([0, 1, 2, 3])
+        assert stream.step(tokenizer, 4) == "my name is john pair"
+
     def test_decode_stream(self):
         vocab = [
             ("<unk>", 0.0),
