@@ -871,7 +871,9 @@ impl PyTokenizer {
                     }
                     "pad_id" => params.pad_id = value.extract()?,
                     "pad_type_id" => params.pad_type_id = value.extract()?,
-                    "pad_token" => params.pad_token = value.extract()?,
+                    "pad_token" => {
+                        params.pad_token = value.extract::<String>()?.to_compact_string()
+                    }
                     "max_length" => {
                         println!(
                             "enable_padding(max_length=X) is deprecated, \
@@ -927,7 +929,7 @@ impl PyTokenizer {
             )?;
             dict.set_item("pad_to_multiple_of", params.pad_to_multiple_of)?;
             dict.set_item("pad_id", params.pad_id)?;
-            dict.set_item("pad_token", &params.pad_token)?;
+            dict.set_item("pad_token", &*params.pad_token)?;
             dict.set_item("pad_type_id", params.pad_type_id)?;
             dict.set_item("direction", params.direction.as_ref())?;
 

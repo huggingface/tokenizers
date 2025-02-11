@@ -590,7 +590,6 @@ impl PyBPE {
                     e
                 ))
             })
-            .into()
     }
 
     /// Instantiate a BPE model from the given files.
