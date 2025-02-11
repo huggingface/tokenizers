@@ -51,7 +51,6 @@ impl Serialize for OrderedVocabIter<'_> {
         } else {
             serializer.collect_map(std::iter::empty::<(&str, u32)>())
         };
-
         if !holes.is_empty() {
             warn!("The OrderedVocab you are attempting to save contains holes for indices {:?}, your vocabulary could be corrupted !", holes);
             println!("The OrderedVocab you are attempting to save contains holes for indices {holes:?}, your vocabulary could be corrupted !");

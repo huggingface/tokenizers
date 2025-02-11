@@ -135,7 +135,7 @@ where
                     builder = builder.with_pre_tokenizer(map.next_value()?);
                 }
                 "model" => {
-                    builder = builder.with_model(map.next_value()?);
+                    builder = builder.with_model(map.next_value()?); // TODO use with_seed to add args / kwargs
                 }
                 "decoder" => {
                     builder = builder.with_decoder(map.next_value()?);

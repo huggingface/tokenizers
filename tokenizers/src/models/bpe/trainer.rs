@@ -432,7 +432,7 @@ impl BpeTrainer {
     pub fn do_train(
         &self,
         word_counts: &HashMap<String, u64>,
-        model: &mut BPE,
+        model: &mut BPE, // add a generic BPE
     ) -> Result<Vec<AddedToken>> {
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);

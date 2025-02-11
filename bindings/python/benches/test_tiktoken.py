@@ -74,9 +74,9 @@ def benchmark_batch(model: str, documents: list[str], num_threads: int, document
     readable_size, unit = format_byte_size(num_bytes / (end - start) * 1e9)
     print(f"tiktoken \t{readable_size}  / s")
 
-
+    print(hf_enc)
     start = time.perf_counter_ns()
-    hf_enc.encode_batch_fast(documents)
+    hf_enc.encode_batch(documents)
     end = time.perf_counter_ns()
     readable_size, unit = format_byte_size(num_bytes / (end - start) * 1e9)
     print(f"huggingface \t{readable_size} / s")
