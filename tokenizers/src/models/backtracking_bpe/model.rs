@@ -1,5 +1,6 @@
 use super::bitfield::BitField;
 use super::{super::bpe::trainer::BpeTrainer, super::bpe::Error, super::OrderedVocabIter};
+use crate::models::Bpe;
 use crate::{decoders, pre_tokenizers, Decoder};
 use crate::models::bpe::{MergeMap, Pair, BPE};
 use crate::tokenizer::{Model, Result, Token};
@@ -786,6 +787,31 @@ impl Model for BacktrackingBpe {
     }
 }
 
+impl Bpe for BacktrackingBpe {
+    fn get_vocab_r(&self) -> VocabR {
+        self.vocab_r.clone()
+    }
+
+    fn get_vocab(&self) -> Vocab {
+        self.vocab.clone()
+    }
+
+    fn with_vocab(&mut self, vocab: HashMap<String, u32>) ->  &mut Self {
+        self.vocab = vocab;
+        self
+    }
+
+    fn with_vocab_r(&mut self, vocab_r: HashMap<u32, String>) -> &mut Self {
+        self.vocab_r = vocab_r;
+        self    
+    }
+
+    fn with_merges(&mut self, merge_map:HashMap<(u32, u32), (u32, u32)>) -> &mut Self {
+        self.merges = merge_map;
+        self
+    }
+
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,6 +1,7 @@
 #![allow(clippy::map_entry)]
 
 use super::{Pair, WithFirstLastIterator, Word, BPE};
+use crate::models::Bpe;
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::progress::{ProgressBar, ProgressStyle};
@@ -429,11 +430,11 @@ impl BpeTrainer {
             )
     }
 
-    pub fn do_train(
+    pub fn do_train<I: Bpe>(
         &self,
         word_counts: &HashMap<String, u64>,
-        model: &mut BPE, // add a generic BPE
-    ) -> Result<Vec<AddedToken>> {
+        model: &mut I, // add a generic BPE
+    ) -> Result<Vec<AddedToken>>{
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
         let max_token_length: usize = self.max_token_length.unwrap_or(usize::MAX);
@@ -601,27 +602,26 @@ impl BpeTrainer {
         self.finalize_progress(&progress, merges.len());
 
         // Transfer new vocab & options to model
-        model.vocab = word_to_id;
-        model.vocab_r = model
-            .vocab
+        model.with_vocab(word_to_id.clone());
+        model.with_vocab_r(word_to_id
             .iter()
             .map(|(key, val)| (*val, key.to_owned()))
-            .collect();
-        model.merges = merges
+            .collect());
+        model.with_merges(merges
             .into_iter()
             .enumerate()
             .map(|(i, (pair, new_token_id))| (pair, (i as u32, new_token_id)))
-            .collect();
+            .collect());
 
         if let Some(prefix) = &self.continuing_subword_prefix {
-            model.continuing_subword_prefix = Some(prefix.to_owned());
+            model.with_continuing_subword_prefix(Some(prefix.to_owned()));
         } else {
-            model.continuing_subword_prefix = None;
+            model.with_continuing_subword_prefix(None);
         }
         if let Some(suffix) = &self.end_of_word_suffix {
-            model.end_of_word_suffix = Some(suffix.to_owned());
+            model.with_end_of_word_suffix(Some(suffix.to_owned()));
         } else {
-            model.end_of_word_suffix = None;
+            model.with_end_of_word_suffix(None);
         }
 
         Ok(self.special_tokens.clone())

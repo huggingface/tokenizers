@@ -71,6 +71,32 @@ pub enum ModelWrapper {
     Unigram(Unigram),
 }
 
+trait Bpe: Sized{
+    fn get_vocab(&self) -> HashMap<String, u32>;
+    fn with_vocab(&mut self, vocab: HashMap<String, u32>) -> &mut Self;
+    fn get_vocab_r(&self) -> HashMap<u32, String>;
+    fn with_vocab_r(&mut self, vocab_r: HashMap<u32, String>) -> &mut Self;
+
+    fn with_merges(&mut self, merges: HashMap<(u32, u32), (u32, u32)>) -> &mut Self;
+
+
+    fn get_continuing_subword_prefix(&self) -> Option<String> {
+        None // Default: No prefix
+    }
+
+    fn with_continuing_subword_prefix(&mut self, _prefix: Option<String>) -> &mut Self {
+        self // Default: return self unchanged
+    }
+
+    fn get_end_of_word_suffix(&self) -> Option<String> {
+        None // Default: No suffix
+    }
+
+    fn with_end_of_word_suffix(&mut self, _suffix: Option<String>) -> &mut Self {
+        self // Default: return self unchanged
+    }
+}
+
 impl<'de> Deserialize<'de> for ModelWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
