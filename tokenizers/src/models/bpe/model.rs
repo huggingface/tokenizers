@@ -574,14 +574,6 @@ impl Model for BPE {
 
 
 impl Bpe for BPE {
-    fn get_vocab_r(&self) -> VocabR {
-        self.vocab_r.clone()
-    }
-
-    fn get_vocab(&self) -> Vocab {
-        self.vocab.clone()
-    }
-
     fn with_vocab(&mut self, vocab: HashMap<String, u32>) ->  &mut Self {
         self.vocab = vocab;
         self
