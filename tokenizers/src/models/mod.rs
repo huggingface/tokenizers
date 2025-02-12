@@ -9,7 +9,6 @@ pub mod wordpiece;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use backtracking_bpe::Vocab;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::models::backtracking_bpe::{BacktrackingBpe, BacktrackingBpeTrainer};
@@ -250,7 +249,6 @@ pub enum TrainerWrapper {
     WordPieceTrainer(WordPieceTrainer),
     WordLevelTrainer(WordLevelTrainer),
     UnigramTrainer(UnigramTrainer),
-    BacktrackingBpeTrainer(BacktrackingBpeTrainer),
 }
 
 impl Trainer for TrainerWrapper {
@@ -262,7 +260,6 @@ impl Trainer for TrainerWrapper {
             Self::WordPieceTrainer(wpt) => wpt.should_show_progress(),
             Self::WordLevelTrainer(wpt) => wpt.should_show_progress(),
             Self::UnigramTrainer(wpt) => wpt.should_show_progress(),
-            Self::BacktrackingBpeTrainer(wpt) => wpt.should_show_progress(),
         }
     }
 
@@ -284,10 +281,6 @@ impl Trainer for TrainerWrapper {
                 ModelWrapper::Unigram(u) => t.train(u),
                 _ => Err("UnigramTrainer can only train a Unigram".into()),
             },
-            Self::BacktrackingBpeTrainer(t) => match model {
-                ModelWrapper::BacktrackingBpe(bpe) => t.train(bpe),
-                _ => Err("BpeTrainer can only train a BPE".into()),
-            },
         }
     }
 
@@ -302,7 +295,6 @@ impl Trainer for TrainerWrapper {
             Self::WordPieceTrainer(wpt) => wpt.feed(iterator, process),
             Self::WordLevelTrainer(wpt) => wpt.feed(iterator, process),
             Self::UnigramTrainer(wpt) => wpt.feed(iterator, process),
-            Self::BacktrackingBpeTrainer(wpt) => wpt.feed(iterator, process),
         }
     }
 }
@@ -311,12 +303,6 @@ impl_enum_from!(BpeTrainer, TrainerWrapper, BpeTrainer);
 impl_enum_from!(WordPieceTrainer, TrainerWrapper, WordPieceTrainer);
 impl_enum_from!(UnigramTrainer, TrainerWrapper, UnigramTrainer);
 impl_enum_from!(WordLevelTrainer, TrainerWrapper, WordLevelTrainer);
-impl_enum_from!(
-    BacktrackingBpeTrainer,
-    TrainerWrapper,
-    BacktrackingBpeTrainer
-);
-
 #[cfg(test)]
 mod tests {
     use super::*;
