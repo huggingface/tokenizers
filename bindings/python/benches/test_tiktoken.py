@@ -63,7 +63,7 @@ def benchmark_batch(model: str, documents: list[str], num_threads: int, document
     out = enc.encode("This is a test")
 
     hf_enc = Tokenizer.from_pretrained(model)
-    hf_enc.pre_tokenizer = None
+    hf_enc.pre_tokenizer = None # apparently backtracking does not work without this
     out2 = hf_enc.encode("This is a test", add_special_tokens=False).ids
     print([hf_enc.decode([k]) for k in out2])
     print([hf_enc.decode([k]) for k in out])

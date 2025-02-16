@@ -1,5 +1,6 @@
 use super::bitfield::BitField;
 use super::{super::bpe::trainer::BpeTrainer, super::bpe::Error, super::OrderedVocabIter};
+use crate::decoders::byte_level::{BYTES_CHAR, CHAR_BYTES};
 use crate::models::bpe::{MergeMap, Pair, BPE};
 use crate::models::find_hash_factor_for_dictionary;
 use crate::tokenizer::{Model, Result, Token};
@@ -349,7 +350,7 @@ impl BacktrackingBpe {
                 .find_token_by_bytes(&bytes[start..end])
                 .expect(&format!(
                     "Could not convert bytes to tokens for bytes: [{:?}]",
-                    bytes.into_iter().map(|b| char::from(*b)).join("|")
+                    bytes.into_iter().map(|b| BYTES_CHAR[b]).join("")
                 ));
             encoded.push(token);
             start = end;
