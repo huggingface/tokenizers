@@ -8,6 +8,7 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
+use tk::models::backtracking_bpe::{BacktrackingBpe, BacktrackingBpeBuilder};
 use tk::models::bpe::{BpeBuilder, Merges, Vocab, BPE};
 use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
@@ -36,6 +37,10 @@ impl PyModel {
         let base = self.clone();
         Ok(match *self.model.as_ref().read().unwrap() {
             ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            ModelWrapper::BacktrackingBpe(_) => Py::new(py, (PyBacktrackingBpe {}, base))?
                 .into_pyobject(py)?
                 .into_any()
                 .into(),
@@ -569,6 +574,147 @@ impl PyBPE {
         })?;
         model.resize_cache(capacity);
         Ok(())
+    }
+}
+
+#[pyclass(extends=PyModel, module = "tokenizers.models", name = "BacktrackingBpe")]
+struct PyBacktrackingBpe {}
+
+impl PyBacktrackingBpe {
+    fn with_builder(
+        mut builder: BacktrackingBpeBuilder,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<(Self, PyModel)> {
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: String = key.extract()?;
+                match key.as_ref() {
+                    "unk_token" => {
+                        if let Some(unk) = value.extract()? {
+                            builder = builder.unk_token(unk);
+                        }
+                    }
+                    "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
+                    "byte_fallback" => builder = builder.byte_fallback(value.extract()?),
+                    _ => println!("Ignored unknown kwarg option {}", key),
+                };
+            }
+        }
+
+        match builder.build() {
+            Err(e) => Err(exceptions::PyException::new_err(format!(
+                "Error while initializing BPE: {}",
+                e
+            ))),
+            Ok(bpe) => Ok((PyBacktrackingBpe {}, bpe.into())),
+        }
+    }
+}
+
+#[pymethods]
+impl PyBacktrackingBpe {
+    #[new]
+    #[pyo3(
+        signature = (vocab=None, merges=None, **kwargs),
+        text_signature = "(self, vocab=None, merges=None, dropout=None, unk_token=None)")]
+    fn new(
+        py: Python<'_>,
+        vocab: Option<PyVocab>,
+        merges: Option<PyMerges>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<(Self, PyModel)> {
+        if (vocab.is_some() && merges.is_none()) || (vocab.is_none() && merges.is_some()) {
+            return Err(exceptions::PyValueError::new_err(
+                "`vocab` and `merges` must be both specified",
+            ));
+        }
+
+        let mut builder = BacktrackingBpe::builder();
+        if let (Some(vocab), Some(merges)) = (vocab, merges) {
+            match (vocab, merges) {
+                (PyVocab::Vocab(vocab), PyMerges::Merges(merges)) => {
+                    builder = builder.vocab_and_merges(vocab, merges);
+                }
+                _ => {
+                    return Err(exceptions::PyValueError::new_err(
+                        "`vocab` and `merges` must be both be from memory or both filenames",
+                    ));
+                }
+            }
+        }
+
+        PyBacktrackingBpe::with_builder(builder, kwargs)
+    }
+
+    /// Read a :obj:`vocab.json` and a :obj:`merges.txt` files
+    ///
+    /// This method provides a way to read and parse the content of these files,
+    /// returning the relevant data structures. If you want to instantiate some BPE models
+    /// from memory, this method gives you the expected input from the standard files.
+    ///
+    /// Args:
+    ///     vocab (:obj:`str`):
+    ///         The path to a :obj:`vocab.json` file
+    ///
+    ///     merges (:obj:`str`):
+    ///         The path to a :obj:`merges.txt` file
+    ///
+    /// Returns:
+    ///     A :obj:`Tuple` with the vocab and the merges:
+    ///         The vocabulary and merges loaded into memory
+    #[staticmethod]
+    #[pyo3(text_signature = "(self, vocab, merges)")]
+    fn read_file(vocab: &str, merges: &str) -> PyResult<(Vocab, Merges)> {
+        BacktrackingBpe::read_file(vocab, merges).map_err(|e| {
+            exceptions::PyException::new_err(format!(
+                "Error while reading vocab & merges files: {}",
+                e
+            ))
+        })
+    }
+
+    /// Instantiate a BPE model from the given files.
+    ///
+    /// This method is roughly equivalent to doing::
+    ///
+    ///    vocab, merges = BPE.read_file(vocab_filename, merges_filename)
+    ///    bpe = BPE(vocab, merges)
+    ///
+    /// If you don't need to keep the :obj:`vocab, merges` values lying around,
+    /// this method is more optimized than manually calling
+    /// :meth:`~tokenizers.models.BPE.read_file` to initialize a :class:`~tokenizers.models.BPE`
+    ///
+    /// Args:
+    ///     vocab (:obj:`str`):
+    ///         The path to a :obj:`vocab.json` file
+    ///
+    ///     merges (:obj:`str`):
+    ///         The path to a :obj:`merges.txt` file
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
+    #[classmethod]
+    #[pyo3(signature = (vocab, merges, **kwargs))]
+    #[pyo3(text_signature = "(cls, vocab, merge, **kwargs)")]
+    fn from_file(
+        _cls: &Bound<'_, PyType>,
+        py: Python,
+        vocab: &str,
+        merges: &str,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<Self>> {
+        let (vocab, merges) = BPE::read_file(vocab, merges).map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while reading BPE files: {}", e))
+        })?;
+        Py::new(
+            py,
+            PyBacktrackingBpe::new(
+                py,
+                Some(PyVocab::Vocab(vocab)),
+                Some(PyMerges::Merges(merges)),
+                kwargs,
+            )?,
+        )
     }
 }
 

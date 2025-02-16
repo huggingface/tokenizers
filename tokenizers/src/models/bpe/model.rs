@@ -1,4 +1,5 @@
 use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
+
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
@@ -13,7 +14,7 @@ use std::{
 };
 
 pub type Vocab = HashMap<String, u32>;
-type VocabR = HashMap<u32, String>;
+pub type VocabR = HashMap<u32, String>;
 pub type MergeMap = HashMap<Pair, (u32, u32)>;
 pub type Merges = Vec<(String, String)>;
 
