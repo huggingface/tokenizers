@@ -126,6 +126,8 @@ impl<'de> Visitor<'de> for BacktrackingBpeVisitor {
 
 #[cfg(test)]
 mod test {
+    use std::process::exit;
+
     use super::*;
     use crate::models::bpe::Vocab;
     use crate::tokenizer::Tokenizer;
@@ -154,9 +156,8 @@ mod test {
                 ["a", "b"],
                 ["ab", "a"],
                 ["ab", "b"],
-                ["ab", "bb"],
-                ["b", "b"]
-
+                ["b", "b"],
+                ["ab", "bb"]
             ]
         }"#;
         // [(0, 1), (2, 0), (2, 1), (2, 5), (1, 1), (5, 5), (0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]
@@ -167,14 +168,14 @@ mod test {
         match reconstructed {
             Ok(reconstructed) => {
                 println!("Good. Now doing backtracking:");
-                // println!("{:?}", reconstructed.encode_via_backtracking(b"aab c d"));
+                println!("{:?}", reconstructed.encode_via_backtracking(b"aab"));
             }
             Err(err) => {
                 println!("Error deserializing: {:?}", err);
             }
         }
         println!("End of my example");
-
+        exit(0);
         let vocab: Vocab = [
             ("a".into(), 0),
             ("b".into(), 1),
