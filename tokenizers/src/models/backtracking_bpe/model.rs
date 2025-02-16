@@ -230,16 +230,18 @@ fn is_valid_token_pair(
 ) -> bool {
     // Keep track of the maximum token which can still be chosen across the split point.
     let mut limit = u32::MAX;
+    // println!("checking if {token1}, {token2} is a valid token_pair");
     loop {
         // Check whether BPE would choose a different token pair across the split point.
         // this is super super important
         if let Some(combined) = pair_lookup.get(&(token1, token2)) {
             if *combined < limit {
+                // println!("Done1");
                 return false;
             }
         }
         // Reverse the merge operation from BPE.
-        // println!("{token1}, {token2}");
+        
         // println!("{:?}", split_table);
         if token1 > token2 {
             limit = token1;
@@ -248,6 +250,7 @@ fn is_valid_token_pair(
                 limit = token2 + 1;
                 token2 = unsafe { split_table.get_unchecked(token2 as usize).0 };
                 if token2 + 1 == limit {
+                    // println!("Done2");
                     return true;
                 }
             }
@@ -258,11 +261,13 @@ fn is_valid_token_pair(
                 limit = token1;
                 token1 = unsafe { split_table.get_unchecked(token1 as usize).1 };
                 if token1 == limit {
+                    // println!("Done3");
                     return true;
                 }
             }
         }
     }
+    
 }
 
 fn token_range(token_starts: &[u32], token_id: u32) -> Range<usize> {
@@ -477,36 +482,36 @@ impl BacktrackingBpe {
         let mut split_table = vec![];
         let mut pair_lookup = FnvHashMap::default();
 
-        // First option, use the input merge table.
-        if let Some(ref merges) = merges {
-            for (index, pair) in merges.into_iter().enumerate() {
-                let token1 = &pair.0.clone();
-                let token2 = &pair.1.clone();
-                // TODO something is weird here
-                if token1.len() ==1{
-                    split_table.push((vocab[token1], vocab[token1]));
-                }
-                if token2.len() == 1 {
-                    split_table.push((vocab[token2], vocab[token2]));
-                }
-                let id1 = vocab[token1];
-                let id2 = vocab[token2];
-                let new_token = format!("{}{}", token1, &token2);
-                let new_id = vocab
-                    .get(&new_token)
-                    .ok_or(Error::MergeTokenOutOfVocabulary(new_token));
-                if let Ok(id) = new_id {
-                    pair_lookup.insert((id1, id2), *id);
-                    split_table.push((id1, id2));
-                    merge_map.insert(Pair::from((id1, id2)), (index as u32, *id));
-                } else {
-                    println!("Token not added?");
-                }
+        // // First option, use the input merge table.
+        // if let Some(ref merges) = merges {
+        //     for (index, pair) in merges.into_iter().enumerate() {
+        //         let token1 = &pair.0.clone();
+        //         let token2 = &pair.1.clone();
+        //         // TODO something is weird here
+        //         if token1.len() ==1{
+        //             split_table.push((vocab[token1], vocab[token1]));
+        //         }
+        //         if token2.len() == 1 {
+        //             split_table.push((vocab[token2], vocab[token2]));
+        //         }
+        //         let id1 = vocab[token1];
+        //         let id2 = vocab[token2];
+        //         let new_token = format!("{}{}", token1, &token2);
+        //         let new_id = vocab
+        //             .get(&new_token)
+        //             .ok_or(Error::MergeTokenOutOfVocabulary(new_token));
+        //         if let Ok(id) = new_id {
+        //             pair_lookup.insert((id1, id2), *id);
+        //             split_table.push((id1, id2));
+        //             merge_map.insert(Pair::from((id1, id2)), (index as u32, *id));
+        //         } else {
+        //             println!("Token not added?");
+        //         }
 
-                // TODO wrong
-            }
-            split_table.push((merges.len() as u32, merges.len() as u32));
-        }
+        //         // TODO wrong
+        //     }
+        //     split_table.push((merges.len() as u32, merges.len() as u32));
+        // }
         // Second option, reverse engineer the merge/split table from the vocabulary.
         {
             for (id, token) in token_iter(&all_tokens, &token_starts).enumerate() {
@@ -684,6 +689,7 @@ impl BacktrackingBpe {
                         last_token.push(new_token);
                         break;
                     }
+                    // println!("Finished encoding prefix")
                 }
             }
         }
@@ -729,9 +735,9 @@ impl BacktrackingBpe {
         let mut token = backtrack_state.next_token?;
         let last = backtrack_state.tokens.last().copied();
         loop {
+            // println!("in step, token: {last:?}, {token}");
             let token_len = self.token_len(token);
             let end_pos = backtrack_state.pos + token_len;
-            // println!("in step, token: {last:?}, {token}");
             if backtrack_state.bitfield.is_set(end_pos)
                 && last
                     .map(|last_token| self.is_valid_token_pair(last_token, token))
@@ -755,6 +761,8 @@ impl BacktrackingBpe {
                 break;
             }
         }
+        // println!("finished step, token: {last:?}, {token}");
+
         backtrack_state.next_token
     }
 

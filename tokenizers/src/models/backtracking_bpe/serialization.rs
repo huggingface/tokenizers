@@ -175,7 +175,6 @@ mod test {
             }
         }
         println!("End of my example");
-        exit(0);
         let vocab: Vocab = [
             ("a".into(), 0),
             ("b".into(), 1),

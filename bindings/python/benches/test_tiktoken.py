@@ -63,9 +63,11 @@ def benchmark_batch(model: str, documents: list[str], num_threads: int, document
     out = enc.encode("This is a test")
 
     hf_enc = Tokenizer.from_pretrained(model)
+    hf_enc.pre_tokenizer = None
     out2 = hf_enc.encode("This is a test", add_special_tokens=False).ids
-
-    assert out == out2, "sanity check"
+    print([hf_enc.decode([k]) for k in out2])
+    print([hf_enc.decode([k]) for k in out])
+    assert out == out2, f"sanity check {out} == {out2}, {hf_enc.decode(out)} == {hf_enc.decode(out2)}"
 
     start = time.perf_counter_ns()
     enc.encode_ordinary_batch(documents, num_threads=num_threads)
@@ -74,7 +76,6 @@ def benchmark_batch(model: str, documents: list[str], num_threads: int, document
     readable_size, unit = format_byte_size(num_bytes / (end - start) * 1e9)
     print(f"tiktoken \t{readable_size}  / s")
 
-    print(hf_enc)
     start = time.perf_counter_ns()
     hf_enc.encode_batch(documents)
     end = time.perf_counter_ns()
