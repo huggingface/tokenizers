@@ -149,6 +149,8 @@ pub fn find_hash_factor_for_dictionary(tokens: impl IntoIterator<Item = Vec<u8>>
     }
 }
 
+pub const USE_ORIGINAL_BPE:bool = false;
+
 impl<'de> Deserialize<'de> for ModelWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -191,9 +193,12 @@ impl<'de> Deserialize<'de> for ModelWrapper {
         let helper = ModelHelper::deserialize(deserializer)?;
         Ok(match helper {
             ModelHelper::Tagged(model) => match model.variant {
-                EnumType::BPE => ModelWrapper::BacktrackingBpe(
+                EnumType::BPE => if USE_ORIGINAL_BPE{
+                    ModelWrapper::BPE(serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?)
+                }
+                else { ModelWrapper::BacktrackingBpe(
                     serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
-                ),
+                )},
                 EnumType::WordPiece => ModelWrapper::WordPiece(
                     serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
@@ -210,7 +215,7 @@ impl<'de> Deserialize<'de> for ModelWrapper {
             ModelHelper::Legacy(value) => {
                 let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
                 match untagged {
-                    ModelUntagged::BPE(bpe) => {
+                    ModelUntagged::BPE(bpe) => if !USE_ORIGINAL_BPE {
                         let vocabulary = bpe
                             .get_vocab()
                             .into_keys()
@@ -228,6 +233,8 @@ impl<'de> Deserialize<'de> for ModelWrapper {
                         let backtracking_bpe =
                                                     BacktrackingBpe::from_dictionary(vocab_vec.clone(), Some(merges), Some(rng_hash));
                         ModelWrapper::BacktrackingBpe(backtracking_bpe)
+                    } else {
+                        ModelWrapper::BPE(bpe)
                     }
                     ModelUntagged::WordPiece(bpe) => ModelWrapper::WordPiece(bpe),
                     ModelUntagged::WordLevel(bpe) => ModelWrapper::WordLevel(bpe),

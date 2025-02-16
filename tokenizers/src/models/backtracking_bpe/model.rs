@@ -565,13 +565,13 @@ impl BacktrackingBpe {
         for token_id in 0..bpe.num_tokens() as u32 {
             let bytes = bpe.token_bytes(token_id);
             let strs = bytes.iter().map(|b| char::from(*b)).collect::<Vec<_>>();
-            // println!("Encoding {bytes:?} into bitfield");
+            println!("Encoding {bytes:?} into bitfield");
             let tokens = bpe.encode_via_bitfield(bytes);
-            // assert_eq!(
-            //     tokens,
-            //     vec![token_id],
-            //     "token {token_id} with bytes {bytes:?} (tokens {strs:?} encodes to {tokens:?} instead of to itself"
-            // );
+            assert_eq!(
+                tokens,
+                vec![token_id],
+                "token {token_id} with bytes {bytes:?} (tokens {strs:?} encodes to {tokens:?} instead of to itself"
+            );
         }
         // println!("{:#?}", bpe);
         bpe
