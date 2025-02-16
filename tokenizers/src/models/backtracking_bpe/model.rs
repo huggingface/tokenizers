@@ -1,10 +1,10 @@
 use super::bitfield::BitField;
 use super::{super::bpe::trainer::BpeTrainer, super::bpe::Error, super::OrderedVocabIter};
-use crate::models::Bpe;
-use crate::{decoders, pre_tokenizers, Decoder};
 use crate::models::bpe::{MergeMap, Pair, BPE};
+use crate::models::Bpe;
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::iter::ResultShunt;
+use crate::{decoders, pre_tokenizers, Decoder};
 use aneubeck_daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder};
 use fnv::{FnvHashMap, FnvHasher};
 use itertools::Itertools;
@@ -186,7 +186,11 @@ impl BacktrackingBpeBuilder {
         }
 
         let backtraching_bpe = BacktrackingBpe::from_dictionary(
-            self.config.vocab.into_iter().sorted_unstable_by(|a,b| a.1.cmp(&b.1)).map(|(k, v)| k.into_bytes()),
+            self.config
+                .vocab
+                .into_iter()
+                .sorted_unstable_by(|a, b| a.1.cmp(&b.1))
+                .map(|(k, v)| k.into_bytes()),
             Some(self.config.merges),
             None,
         );
@@ -332,7 +336,12 @@ impl BacktrackingBpe {
         while start < bytes.len() {
             let end = bitfield.successor(start + 1);
             println!("bitfield's successor {:?}", &bytes[start..end]);
-            let token = self.find_token_by_bytes(&bytes[start..end]).expect(&format!("Could not convert bytes to tokens for bytes: [{:?}]", bytes.into_iter().map(|b| char::from(*b)).join("|")));
+            let token = self
+                .find_token_by_bytes(&bytes[start..end])
+                .expect(&format!(
+                    "Could not convert bytes to tokens for bytes: [{:?}]",
+                    bytes.into_iter().map(|b| char::from(*b)).join("|")
+                ));
             encoded.push(token);
             start = end;
         }
@@ -405,9 +414,12 @@ impl BacktrackingBpe {
         let mut merge_map: HashMap<Pair, (u32, u32)> = HashMap::new();
         for (i, token) in tokens.into_iter().enumerate() {
             use pre_tokenizers::byte_level::ByteLevel;
-            info!("token byte: {:?}, {i}", ByteLevel::default().decode_chain(unsafe {
-                vec![String::from_utf8_unchecked(token.clone())]
-            }).unwrap());
+            info!(
+                "token byte: {:?}, {i}",
+                ByteLevel::default()
+                    .decode_chain(unsafe { vec![String::from_utf8_unchecked(token.clone())] })
+                    .unwrap()
+            );
             bytes_hash_to_token.insert(hash_bytes(&token, hash_factor), i as u32);
             all_tokens_rev.extend(token.iter().copied().rev());
             all_tokens.extend(token);
@@ -453,7 +465,7 @@ impl BacktrackingBpe {
         let mut pair_lookup = FnvHashMap::default();
 
         // First option, use the input merge table.
-        if let Some( ref merges) = merges{
+        if let Some(ref merges) = merges {
             for (index, pair) in merges.into_iter().enumerate() {
                 let token1 = &pair.0.clone();
                 let token2 = &pair.1.clone();
@@ -464,22 +476,22 @@ impl BacktrackingBpe {
                     .get(&new_token)
                     .ok_or(Error::MergeTokenOutOfVocabulary(new_token));
                 if let Ok(id) = new_id {
-                    println!("adding to the split table: ({token1}, {token2}), ({id1}, {id2}), {id}");
+                    println!(
+                        "adding to the split table: ({token1}, {token2}), ({id1}, {id2}), {id}"
+                    );
                     pair_lookup.insert((id1, id2), *id);
                     split_table.push((id1, id2));
-                    merge_map.insert(Pair::from((id1, id2)), (index as u32, *id ));
-                }else{
+                    merge_map.insert(Pair::from((id1, id2)), (index as u32, *id));
+                } else {
                     println!("Token not added?");
                 }
 
                 // TODO wrong
             }
             split_table.push((merges.len() as u32, merges.len() as u32));
-        }  
-
+        }
         // Second option, reverse engineer the merge/split table from the vocabulary.
-        else
-        {
+        else {
             for (id, token) in token_iter(&all_tokens, &token_starts).enumerate() {
                 let mut id1 = next_prefix_match[id];
                 while id1 != u32::MAX {
@@ -787,22 +799,21 @@ impl Model for BacktrackingBpe {
     }
 }
 
-impl  BacktrackingBpe {
-    fn with_vocab(&mut self, vocab: HashMap<String, u32>) ->  &mut Self {
+impl BacktrackingBpe {
+    fn with_vocab(&mut self, vocab: HashMap<String, u32>) -> &mut Self {
         self.vocab = vocab;
         self
     }
 
     fn with_vocab_r(&mut self, vocab_r: HashMap<u32, String>) -> &mut Self {
         self.vocab_r = vocab_r;
-        self    
-    }
-
-    fn with_merges(&mut self, merge_map:HashMap<(u32, u32), (u32, u32)>) -> &mut Self {
-        self.merges = merge_map;
         self
     }
 
+    fn with_merges(&mut self, merge_map: HashMap<(u32, u32), (u32, u32)>) -> &mut Self {
+        self.merges = merge_map;
+        self
+    }
 }
 #[cfg(test)]
 mod tests {

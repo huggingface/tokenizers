@@ -85,11 +85,13 @@ impl<'de> Visitor<'de> for BacktrackingBpeVisitor {
                         builder = builder.unk_token(unk);
                     }
                 }
-                "vocab" => vocab =  Some(map.next_value()?),
+                "vocab" => vocab = Some(map.next_value()?),
                 "merges" => merges = Some(map.next_value()?),
                 "type" => match map.next_value()? {
                     "BacktrackingBpe" => {}
-                    "BPE" => {info!("Type is BPE but initializing a backtracking BPE")}
+                    "BPE" => {
+                        info!("Type is BPE but initializing a backtracking BPE")
+                    }
                     u => {
                         return Err(serde::de::Error::invalid_value(
                             serde::de::Unexpected::Str(u),
@@ -99,7 +101,7 @@ impl<'de> Visitor<'de> for BacktrackingBpeVisitor {
                 },
                 field => {
                     info!("Ignoring unused field {:?}", field); // TODO make it into a logger
-                    // Ensure the value is consumed to maintain valid deserialization
+                                                                // Ensure the value is consumed to maintain valid deserialization
                     let _ = map.next_value::<serde::de::IgnoredAny>()?;
                 }
             }
@@ -107,12 +109,13 @@ impl<'de> Visitor<'de> for BacktrackingBpeVisitor {
         if let (Some(vocab), Some(merges)) = (vocab, merges) {
             let merges = match merges {
                 MergeType::Tuple(merges) => merges,
-                MergeType::Legacy(merges) => {
-                    convert_merges_to_hashmap(merges.into_iter(), &vocab).map_err(|e| Error::custom("Error in convert merges to hashmap"))?
-                }
+                MergeType::Legacy(merges) => convert_merges_to_hashmap(merges.into_iter(), &vocab)
+                    .map_err(|e| Error::custom("Error in convert merges to hashmap"))?,
             };
             builder = builder.vocab_and_merges(vocab, merges);
-            let model = builder.build().map_err(|e| Error::custom(format!("Error building the backtraciing BPE {:?}", e)))?;
+            let model = builder.build().map_err(|e| {
+                Error::custom(format!("Error building the backtraciing BPE {:?}", e))
+            })?;
             println!("{:?}", model);
             Ok(model)
         } else {
@@ -157,9 +160,10 @@ mod test {
             ]
         }"#;
         // [(0, 1), (2, 0), (2, 1), (2, 5), (1, 1), (5, 5), (0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]
-        // above is the expected split table. In string equivalent: 
+        // above is the expected split table. In string equivalent:
         // ["a,b", "c,a", "c,b", "c,bb", "b,b", "bb, bb", "a,a", "b,b". "ab,ab", "abb, abb", "bb, bb"]
-        let reconstructed: Result<BacktrackingBpe, serde_json::Error> = serde_json::from_str(&bpe_string);
+        let reconstructed: Result<BacktrackingBpe, serde_json::Error> =
+            serde_json::from_str(&bpe_string);
         match reconstructed {
             Ok(reconstructed) => {
                 println!("Good. Now doing backtracking:");
@@ -167,7 +171,6 @@ mod test {
             }
             Err(err) => {
                 println!("Error deserializing: {:?}", err);
-                
             }
         }
         println!("End of my example");
@@ -187,10 +190,12 @@ mod test {
             .unk_token("<unk>".to_string())
             .build()
             .unwrap();
-        
-        println!("First encoding: {:?}", bpe.encode_via_backtracking(b"aabbab"));
 
-    
+        println!(
+            "First encoding: {:?}",
+            bpe.encode_via_backtracking(b"aabbab")
+        );
+
         let legacy = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","fuse_unk":false,"byte_fallback":false,"vocab":{"a":1,"b":2,"ab":3},"merges":["a b"]}"#;
         let legacy = serde_json::from_str(legacy);
         match legacy {
@@ -202,7 +207,6 @@ mod test {
                 println!("Error: {:?}", err);
             }
         }
-        
 
         let data = serde_json::to_string(&bpe).unwrap();
         assert_eq!(
@@ -238,14 +242,18 @@ mod test {
 
     #[cfg(feature = "http")]
     #[test]
-    fn test_from_pretrained(){
+    fn test_from_pretrained() {
         let bpe = Tokenizer::from_pretrained("gpt2", None).unwrap();
         let bpe_string = serde_json::to_string(&bpe.get_model()).unwrap();
-        let reconstructed: Result<BacktrackingBpe, serde_json::Error> = serde_json::from_str(&bpe_string);
+        let reconstructed: Result<BacktrackingBpe, serde_json::Error> =
+            serde_json::from_str(&bpe_string);
         match reconstructed {
             Ok(reconstructed) => {
                 println!("Good from_pretrained reconstruction");
-                println!("{:?}", reconstructed.encode_via_backtracking(b"Hello, my name is"));
+                println!(
+                    "{:?}",
+                    reconstructed.encode_via_backtracking(b"Hello, my name is")
+                );
                 // assert_eq!(bpe, reconstructed);
             }
             Err(err) => {

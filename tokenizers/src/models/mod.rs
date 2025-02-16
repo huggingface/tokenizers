@@ -71,7 +71,7 @@ pub enum ModelWrapper {
     Unigram(Unigram),
 }
 
-pub enum Bpe{
+pub enum Bpe {
     OriginalBpe(BPE),
     BacktrackingBpe(BacktrackingBpe),
 }
@@ -146,12 +146,23 @@ impl<'de> Deserialize<'de> for ModelWrapper {
             ModelHelper::Legacy(value) => {
                 let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
                 match untagged {
-                    ModelUntagged::BPE(bpe) =>{
-                        let vocabulary = bpe.get_vocab().into_keys().into_iter().map(| token | token.into_bytes());
-                        let merges = bpe.merges.iter().map(|(a, _)| (bpe.id_to_token(a.0).unwrap(), bpe.id_to_token(a.1).unwrap())).collect();
-                        let backtracking_bpe = BacktrackingBpe::from_dictionary(vocabulary, Some(merges), None);
+                    ModelUntagged::BPE(bpe) => {
+                        let vocabulary = bpe
+                            .get_vocab()
+                            .into_keys()
+                            .into_iter()
+                            .map(|token| token.into_bytes());
+                        let merges = bpe
+                            .merges
+                            .iter()
+                            .map(|(a, _)| {
+                                (bpe.id_to_token(a.0).unwrap(), bpe.id_to_token(a.1).unwrap())
+                            })
+                            .collect();
+                        let backtracking_bpe =
+                            BacktrackingBpe::from_dictionary(vocabulary, Some(merges), None);
                         ModelWrapper::BacktrackingBpe(backtracking_bpe)
-                    },
+                    }
                     ModelUntagged::WordPiece(bpe) => ModelWrapper::WordPiece(bpe),
                     ModelUntagged::WordLevel(bpe) => ModelWrapper::WordLevel(bpe),
                     ModelUntagged::Unigram(bpe) => ModelWrapper::Unigram(bpe),

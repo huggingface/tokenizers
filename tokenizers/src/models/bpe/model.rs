@@ -572,18 +572,17 @@ impl Model for BPE {
     }
 }
 
-
 impl BPE {
-    fn with_vocab(&mut self, vocab: HashMap<String, u32>) ->  &mut Self {
+    fn with_vocab(&mut self, vocab: HashMap<String, u32>) -> &mut Self {
         self.vocab = vocab;
         self
     }
 
     fn with_vocab_r(&mut self, vocab_r: HashMap<u32, String>) -> &mut Self {
         self.vocab_r = vocab_r;
-        self    
+        self
     }
-    fn with_merges(&mut self, merge_map:HashMap<(u32, u32), (u32, u32)>) -> &mut Self {
+    fn with_merges(&mut self, merge_map: HashMap<(u32, u32), (u32, u32)>) -> &mut Self {
         self.merges = merge_map;
         self
     }
