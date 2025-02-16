@@ -9,7 +9,7 @@ pub mod wordpiece;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use bpe::Vocab;
+use bpe::{Vocab, VocabR};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::models::backtracking_bpe::BacktrackingBpe;
@@ -82,6 +82,30 @@ impl Bpe {
             Bpe::OriginalBpe(model) => model.vocab = vocab,
             Bpe::BacktrackingBpe(model) => model.vocab = vocab,
         }
+    }
+    fn with(
+        &mut self,
+        vocab: Vocab,
+        vocab_r: VocabR,
+        merge_map: HashMap<(u32, u32), (u32, u32)>,
+        end_of_word_suffix: Option<String>,
+        continous_subword_prefix: Option<String>,
+    ) -> &mut Self {
+        match self {
+            Bpe::OriginalBpe(model) => {
+                model.vocab = vocab;
+                model.vocab_r = vocab_r;
+                model.merges = merge_map;
+                model.end_of_word_suffix = end_of_word_suffix;
+                model.continuing_subword_prefix = continous_subword_prefix;
+            }
+            Bpe::BacktrackingBpe(model) => {
+                model.vocab = vocab;
+                model.vocab_r = vocab_r;
+                model.merges = merge_map;
+            }
+        }
+        self
     }
 }
 

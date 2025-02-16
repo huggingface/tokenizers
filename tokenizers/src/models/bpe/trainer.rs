@@ -434,7 +434,7 @@ impl BpeTrainer {
         &self,
         word_counts: &HashMap<String, u64>,
         model: &mut Bpe, // add a generic BPE
-    ) -> Result<Vec<AddedToken>>{
+    ) -> Result<Vec<AddedToken>> {
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
         let max_token_length: usize = self.max_token_length.unwrap_or(usize::MAX);
@@ -604,14 +604,14 @@ impl BpeTrainer {
         // Transfer new vocab & options to model
         let vocabulary = word_to_id.clone();
         let vocab_reversed: HashMap<u32, String> = word_to_id
-        .iter()
-        .map(|(key, val)| (*val, key.to_owned()))
-        .collect();
-        let merges: HashMap<Pair, (u32, u32)> = merges.into_iter()
-        .enumerate()
-        .map(|(i, (pair, new_token_id))| (pair, (i as u32, new_token_id)))
-        .collect();
-
+            .iter()
+            .map(|(key, val)| (*val, key.to_owned()))
+            .collect();
+        let merges: HashMap<Pair, (u32, u32)> = merges
+            .into_iter()
+            .enumerate()
+            .map(|(i, (pair, new_token_id))| (pair, (i as u32, new_token_id)))
+            .collect();
 
         let continuing_subword_prefix = if let Some(prefix) = &self.continuing_subword_prefix {
             Some(prefix.to_owned())
@@ -623,8 +623,13 @@ impl BpeTrainer {
         } else {
             None
         };
-
-
+        model.with(
+            vocabulary,
+            vocab_reversed,
+            merges,
+            end_of_word_suffix,
+            continuing_subword_prefix,
+        );
         Ok(self.special_tokens.clone())
     }
 }

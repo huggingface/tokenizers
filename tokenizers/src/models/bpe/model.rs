@@ -14,7 +14,7 @@ use std::{
 };
 
 pub type Vocab = HashMap<String, u32>;
-type VocabR = HashMap<u32, String>;
+pub type VocabR = HashMap<u32, String>;
 pub type MergeMap = HashMap<Pair, (u32, u32)>;
 pub type Merges = Vec<(String, String)>;
 
@@ -573,17 +573,19 @@ impl Model for BPE {
 }
 
 impl BPE {
-    fn with_vocab(&mut self, vocab: HashMap<String, u32>) -> &mut Self {
-        self.vocab = vocab;
-        self
-    }
-
-    fn with_vocab_r(&mut self, vocab_r: HashMap<u32, String>) -> &mut Self {
-        self.vocab_r = vocab_r;
-        self
-    }
-    fn with_merges(&mut self, merge_map: HashMap<(u32, u32), (u32, u32)>) -> &mut Self {
+    fn with(
+        &mut self,
+        vocab: Vocab,
+        vocab_r: VocabR,
+        merge_map: HashMap<(u32, u32), (u32, u32)>,
+        end_of_word_suffix: Option<String>,
+        continous_subword_prefix: Option<String>,
+    ) -> &mut Self {
         self.merges = merge_map;
+        self.vocab = vocab;
+        self.vocab_r = vocab_r;
+        self.end_of_word_suffix = end_of_word_suffix;
+        self.continuing_subword_prefix = continous_subword_prefix;
         self
     }
 }
