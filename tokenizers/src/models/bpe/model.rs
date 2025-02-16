@@ -1,5 +1,5 @@
 use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
-use crate::models::Bpe;
+
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
@@ -573,7 +573,7 @@ impl Model for BPE {
 }
 
 
-impl Bpe for BPE {
+impl BPE {
     fn with_vocab(&mut self, vocab: HashMap<String, u32>) ->  &mut Self {
         self.vocab = vocab;
         self

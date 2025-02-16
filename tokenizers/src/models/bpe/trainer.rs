@@ -430,10 +430,10 @@ impl BpeTrainer {
             )
     }
 
-    pub fn do_train<I: Bpe>(
+    pub fn do_train(
         &self,
         word_counts: &HashMap<String, u64>,
-        model: &mut I, // add a generic BPE
+        model: &mut Bpe, // add a generic BPE
     ) -> Result<Vec<AddedToken>>{
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
@@ -602,27 +602,28 @@ impl BpeTrainer {
         self.finalize_progress(&progress, merges.len());
 
         // Transfer new vocab & options to model
-        model.with_vocab(word_to_id.clone());
-        model.with_vocab_r(word_to_id
-            .iter()
-            .map(|(key, val)| (*val, key.to_owned()))
-            .collect());
-        model.with_merges(merges
-            .into_iter()
-            .enumerate()
-            .map(|(i, (pair, new_token_id))| (pair, (i as u32, new_token_id)))
-            .collect());
+        let vocabulary = word_to_id.clone();
+        let vocab_reversed: HashMap<u32, String> = word_to_id
+        .iter()
+        .map(|(key, val)| (*val, key.to_owned()))
+        .collect();
+        let merges: HashMap<Pair, (u32, u32)> = merges.into_iter()
+        .enumerate()
+        .map(|(i, (pair, new_token_id))| (pair, (i as u32, new_token_id)))
+        .collect();
 
-        if let Some(prefix) = &self.continuing_subword_prefix {
-            model.with_continuing_subword_prefix(Some(prefix.to_owned()));
+
+        let continuing_subword_prefix = if let Some(prefix) = &self.continuing_subword_prefix {
+            Some(prefix.to_owned())
         } else {
-            model.with_continuing_subword_prefix(None);
-        }
-        if let Some(suffix) = &self.end_of_word_suffix {
-            model.with_end_of_word_suffix(Some(suffix.to_owned()));
+            None
+        };
+        let end_of_word_suffix = if let Some(suffix) = &self.end_of_word_suffix {
+            Some(suffix.to_owned())
         } else {
-            model.with_end_of_word_suffix(None);
-        }
+            None
+        };
+
 
         Ok(self.special_tokens.clone())
     }

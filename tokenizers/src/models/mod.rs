@@ -9,9 +9,10 @@ pub mod wordpiece;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use bpe::Vocab;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::models::backtracking_bpe::{BacktrackingBpe, BacktrackingBpeTrainer};
+use crate::models::backtracking_bpe::BacktrackingBpe;
 use crate::models::bpe::{BpeTrainer, BPE};
 use crate::models::unigram::{Unigram, UnigramTrainer};
 use crate::models::wordlevel::{WordLevel, WordLevelTrainer};
@@ -70,18 +71,17 @@ pub enum ModelWrapper {
     Unigram(Unigram),
 }
 
-trait Bpe: Sized{
-    fn with_vocab(&mut self, vocab: HashMap<String, u32>) -> &mut Self;
-    fn with_vocab_r(&mut self, vocab_r: HashMap<u32, String>) -> &mut Self;
+pub enum Bpe{
+    OriginalBpe(BPE),
+    BacktrackingBpe(BacktrackingBpe),
+}
 
-    fn with_merges(&mut self, merges: HashMap<(u32, u32), (u32, u32)>) -> &mut Self;
-
-    fn with_continuing_subword_prefix(&mut self, _prefix: Option<String>) -> &mut Self {
-        self // Default: return self unchanged
-    }
-
-    fn with_end_of_word_suffix(&mut self, _suffix: Option<String>) -> &mut Self {
-        self // Default: return self unchanged
+impl Bpe {
+    fn with_vocab(&mut self, vocab: Vocab) {
+        match self {
+            Bpe::OriginalBpe(model) => model.vocab = vocab,
+            Bpe::BacktrackingBpe(model) => model.vocab = vocab,
+        }
     }
 }
 

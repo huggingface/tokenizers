@@ -787,7 +787,7 @@ impl Model for BacktrackingBpe {
     }
 }
 
-impl Bpe for BacktrackingBpe {
+impl  BacktrackingBpe {
     fn with_vocab(&mut self, vocab: HashMap<String, u32>) ->  &mut Self {
         self.vocab = vocab;
         self
