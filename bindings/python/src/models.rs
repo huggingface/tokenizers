@@ -8,8 +8,8 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
+use tk::models::backtracking_bpe::{BacktrackingBpe, BacktrackingBpeBuilder};
 use tk::models::bpe::{BpeBuilder, Merges, Vocab, BPE};
-use tk::models::backtracking_bpe::{BacktrackingBpeBuilder, BacktrackingBpe};
 use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
@@ -634,7 +634,7 @@ impl PyBacktrackingBpe {
             match (vocab, merges) {
                 (PyVocab::Vocab(vocab), PyMerges::Merges(merges)) => {
                     builder = builder.vocab_and_merges(vocab, merges);
-                },
+                }
                 _ => {
                     return Err(exceptions::PyValueError::new_err(
                         "`vocab` and `merges` must be both be from memory or both filenames",
@@ -717,7 +717,6 @@ impl PyBacktrackingBpe {
         )
     }
 }
-
 
 /// An implementation of the WordPiece algorithm
 ///

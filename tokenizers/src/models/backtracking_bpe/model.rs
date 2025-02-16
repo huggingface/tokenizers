@@ -1,12 +1,14 @@
 use super::bitfield::BitField;
 use super::{super::bpe::trainer::BpeTrainer, super::bpe::Error, super::OrderedVocabIter};
 use crate::models::bpe::{MergeMap, Pair, BPE};
+use crate::models::find_hash_factor_for_dictionary;
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::iter::ResultShunt;
 use crate::{pre_tokenizers, Decoder};
 use aneubeck_daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder};
 use fnv::{FnvHashMap, FnvHasher};
 use itertools::Itertools;
+use regex_syntax::ast::print;
 use serde_json::Value;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -112,7 +114,6 @@ impl fmt::Debug for BacktrackingBpe {
             .field("split_table", &self.split_table)
             .field("token_starts", &self.token_starts)
             .field("pair_lookup", &self.pair_lookup)
-            // Skipping `cache` field here, it won't be included in debug output
             .finish()
     }
 }
@@ -181,15 +182,21 @@ impl BacktrackingBpeBuilder {
             self.config.vocab = v;
             self.config.merges = m;
         }
-
+        use crate::pre_tokenizers::byte_level::CHAR_BYTES;
+        let vocab_vec: Vec<_> = self.config
+            .vocab
+            .into_iter()
+            .sorted_unstable_by(|a, b| a.1.cmp(&b.1))
+            .map(|(k, v)| {
+                k.chars().map(|b| CHAR_BYTES[&b] as u8).collect::<Vec<_>>()
+            
+            }).collect();
+        let hash = find_hash_factor_for_dictionary(vocab_vec.clone());
+        println!("hash factor: {hash}");
         let backtraching_bpe = BacktrackingBpe::from_dictionary(
-            self.config
-                .vocab
-                .into_iter()
-                .sorted_unstable_by(|a, b| a.1.cmp(&b.1))
-                .map(|(k, v)| k.into_bytes()),
+            vocab_vec.clone(),
             Some(self.config.merges),
-            None,
+            Some(hash),
         );
         Ok(backtraching_bpe)
     }
@@ -226,6 +233,7 @@ fn is_valid_token_pair(
     let mut limit = u32::MAX;
     loop {
         // Check whether BPE would choose a different token pair across the split point.
+        // this is super super important
         if let Some(combined) = pair_lookup.get(&(token1, token2)) {
             if *combined < limit {
                 return false;
@@ -422,7 +430,7 @@ impl BacktrackingBpe {
             all_tokens.extend(token);
             token_starts.push(all_tokens.len() as u32);
         }
-        // assert_eq!(bytes_hash_to_token.len() + 1, token_starts.len()); # TODO maybe this check is needed?
+        assert_eq!(bytes_hash_to_token.len() + 1, token_starts.len(), "Some tokens are not unique under the hash function!"); // TODO maybe this check is needed?
         let longest_searcher = DoubleArrayAhoCorasickBuilder::new()
             .match_kind(aneubeck_daachorse::MatchKind::LeftmostLongest)
             .build(token_iter(&all_tokens, &token_starts))
@@ -431,7 +439,8 @@ impl BacktrackingBpe {
         let overlapping_searcher =
             DoubleArrayAhoCorasick::<u32>::new(token_iter(&all_tokens, &token_starts)).expect("");
         let overlapping_searcher_rev =
-            DoubleArrayAhoCorasick::<u32>::new(token_iter(&all_tokens, &token_starts)).expect("");
+            DoubleArrayAhoCorasick::<u32>::new(token_iter(&all_tokens_rev, &token_starts))
+                .expect("");
 
         let next_prefix_match: Vec<_> = token_iter(&all_tokens, &token_starts)
             .map(|token| {
@@ -439,11 +448,16 @@ impl BacktrackingBpe {
             })
             .collect();
 
+        use pre_tokenizers::byte_level::BYTES_CHAR;
         let vocab: HashMap<String, u32> = token_iter(&all_tokens, &token_starts)
             .enumerate()
-            .map(|(id, item)| {
+            .map(|(id, bytes)| {
                 (
-                    unsafe { String::from_utf8_unchecked(Vec::from(item)) },
+                    bytes
+                        .iter()
+                        .enumerate()
+                        .map(|(i, b)| BYTES_CHAR[b])
+                        .collect::<String>(),
                     id as u32,
                 )
             })
@@ -451,10 +465,15 @@ impl BacktrackingBpe {
 
         let vocab_r: HashMap<u32, String> = token_iter(&all_tokens, &token_starts)
             .enumerate()
-            .map(|(id, item)| {
-                (id as u32, unsafe {
-                    String::from_utf8_unchecked(Vec::from(item))
-                })
+            .map(|(id, bytes)| {
+                (
+                    id as u32,
+                    bytes
+                        .iter()
+                        .enumerate()
+                        .map(|(i, b)| BYTES_CHAR[b])
+                        .collect::<String>(),
+                )
             })
             .collect();
 
@@ -488,7 +507,7 @@ impl BacktrackingBpe {
             split_table.push((merges.len() as u32, merges.len() as u32));
         }
         // Second option, reverse engineer the merge/split table from the vocabulary.
-        else {
+        {
             for (id, token) in token_iter(&all_tokens, &token_starts).enumerate() {
                 let mut id1 = next_prefix_match[id];
                 while id1 != u32::MAX {

@@ -7,9 +7,11 @@ pub mod wordlevel;
 pub mod wordpiece;
 
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use bpe::{Vocab, VocabR};
+use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::models::backtracking_bpe::BacktrackingBpe;
@@ -109,6 +111,36 @@ impl Bpe {
     }
 }
 
+use fnv::{FnvHashMap, FnvHasher};
+
+fn hash_bytes(bytes: &[u8], factor: u64) -> u32 {
+    let mut hasher = FnvHasher::default();
+    bytes.hash(&mut hasher);
+    // Note: we save 1/3 of space for the hashmap by only using the most significant bits of the hash.
+    // To make them unique for the given tokens, we have to add unfortunately another multiplication.
+    ((hasher.finish().wrapping_mul(factor)) >> 32) as u32
+}
+
+// #[cfg(feature = "rand")]
+pub fn find_hash_factor_for_dictionary(tokens: impl IntoIterator<Item = Vec<u8>>) -> u64 {
+    use std::collections::HashSet;
+
+    use rand::Rng;
+
+    let all_tokens = tokens.into_iter().collect_vec();
+    let mut rnd = rand::thread_rng();
+    loop {
+        let factor: u64 = rnd.gen();
+        let mut seen = HashSet::new();
+        if all_tokens
+            .iter()
+            .all(|token| seen.insert(hash_bytes(token, factor)))
+        {
+            return factor;
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for ModelWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -175,7 +207,7 @@ impl<'de> Deserialize<'de> for ModelWrapper {
                             .get_vocab()
                             .into_keys()
                             .into_iter()
-                            .map(|token| token.into_bytes());
+                            .map(|token| token.into_bytes());   
                         let merges = bpe
                             .merges
                             .iter()
@@ -183,8 +215,11 @@ impl<'de> Deserialize<'de> for ModelWrapper {
                                 (bpe.id_to_token(a.0).unwrap(), bpe.id_to_token(a.1).unwrap())
                             })
                             .collect();
+                        let vocab_vec: Vec<_> = vocabulary.collect();
+                        let rng_hash = find_hash_factor_for_dictionary(vocab_vec.clone());
+                        println!("Hash factor: {}", rng_hash);
                         let backtracking_bpe =
-                            BacktrackingBpe::from_dictionary(vocabulary, Some(merges), None);
+                                                    BacktrackingBpe::from_dictionary(vocab_vec.clone(), Some(merges), Some(rng_hash));
                         ModelWrapper::BacktrackingBpe(backtracking_bpe)
                     }
                     ModelUntagged::WordPiece(bpe) => ModelWrapper::WordPiece(bpe),
