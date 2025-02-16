@@ -681,6 +681,8 @@ impl Trainer for BpeTrainer {
 
 #[cfg(test)]
 mod tests {
+    use crate::models::Bpe;
+
     use super::{BpeTrainer, Pair, BPE};
     use std::collections::HashMap;
 
@@ -706,7 +708,7 @@ mod tests {
             .show_progress(false)
             .min_frequency(2)
             .build();
-        let mut model = BPE::default();
+        let mut model =Bpe::OriginalBpe(BPE::default());
         trainer.do_train(&word_counts, &mut model).unwrap();
 
         // Vocab should contain all of the characters from the `word_counts` mapping
@@ -741,7 +743,7 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.vocab, expected_vocab);
+        assert_eq!(model.get_vocab(), expected_vocab);
 
         // The keys in `merges` are pairs of symbols, the values are tuples of (rank, id),
         // where 'rank' determines the order in which this merge will be applied during
@@ -755,7 +757,7 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.merges, expected_merges);
+        assert_eq!(model.get_merges(), expected_merges);
     }
     #[test]
     fn bpe_test_max_token_length_16() {
@@ -787,7 +789,8 @@ mod tests {
             .show_progress(false)
             .min_frequency(0)
             .build();
-        let mut model = BPE::default();
+        let mut model = Bpe::OriginalBpe(BPE::default());
+
         trainer.do_train(&long_word_counts, &mut model).unwrap();
         let vocab = model.get_vocab();
         for token in vocab.keys() {
@@ -827,7 +830,7 @@ mod tests {
             .show_progress(false)
             .min_frequency(0)
             .build();
-        let mut model = BPE::default();
+        let mut model = Bpe::OriginalBpe(BPE::default());
         trainer.do_train(&long_word_counts, &mut model).unwrap();
         let trained_vocab: HashMap<String, u32> = model.get_vocab();
         let expected_vocab: HashMap<String, u32> = [

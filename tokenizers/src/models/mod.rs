@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use bpe::{Vocab, VocabR};
+use bpe::{Merges, Vocab, VocabR};
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -79,12 +79,20 @@ pub enum Bpe {
 }
 
 impl Bpe {
-    fn with_vocab(&mut self, vocab: Vocab) {
+    fn get_vocab(& self) -> Vocab {
         match self {
-            Bpe::OriginalBpe(model) => model.vocab = vocab,
-            Bpe::BacktrackingBpe(model) => model.vocab = vocab,
+            Bpe::OriginalBpe(model) => model.get_vocab(),
+            Bpe::BacktrackingBpe(model) => model.get_vocab()
         }
     }
+
+    fn get_merges(&self) -> HashMap<(u32, u32), (u32, u32)> {
+        match self {
+            Bpe::OriginalBpe(model) => model.merges.clone(),
+            Bpe::BacktrackingBpe(model) => model.merges.clone()
+        }
+    }
+
     fn with(
         &mut self,
         vocab: Vocab,
