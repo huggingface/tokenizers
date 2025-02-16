@@ -116,7 +116,7 @@ impl<'de> Visitor<'de> for BacktrackingBpeVisitor {
             let model = builder.build().map_err(|e| {
                 Error::custom(format!("Error building the backtraciing BPE {:?}", e))
             })?;
-            println!("{:?}", model);
+            println!("deserialized the model");
             Ok(model)
         } else {
             Err(Error::custom("Missing vocab/merges"))

@@ -225,7 +225,6 @@ impl<'de> Deserialize<'de> for ModelWrapper {
                             .collect();
                         let vocab_vec: Vec<_> = vocabulary.collect();
                         let rng_hash = find_hash_factor_for_dictionary(vocab_vec.clone());
-                        println!("Hash factor: {}", rng_hash);
                         let backtracking_bpe =
                                                     BacktrackingBpe::from_dictionary(vocab_vec.clone(), Some(merges), Some(rng_hash));
                         ModelWrapper::BacktrackingBpe(backtracking_bpe)
