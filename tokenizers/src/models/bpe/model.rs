@@ -572,24 +572,6 @@ impl Model for BPE {
     }
 }
 
-impl BPE {
-    fn with(
-        &mut self,
-        vocab: Vocab,
-        vocab_r: VocabR,
-        merge_map: HashMap<(u32, u32), (u32, u32)>,
-        end_of_word_suffix: Option<String>,
-        continous_subword_prefix: Option<String>,
-    ) -> &mut Self {
-        self.merges = merge_map;
-        self.vocab = vocab;
-        self.vocab_r = vocab_r;
-        self.end_of_word_suffix = end_of_word_suffix;
-        self.continuing_subword_prefix = continous_subword_prefix;
-        self
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
