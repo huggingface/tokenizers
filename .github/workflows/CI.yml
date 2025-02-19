@@ -94,6 +94,8 @@ jobs:
             target: x64
           - runner: windows-latest
             target: x86
+          - runner: windows-latest
+            target: arm64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
