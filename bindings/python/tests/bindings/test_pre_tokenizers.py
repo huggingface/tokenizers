@@ -203,12 +203,21 @@ class TestFixedLength:
         assert isinstance(FixedLength(), FixedLength)
         assert isinstance(pickle.loads(pickle.dumps(FixedLength())), FixedLength)
 
-    def test_can_modify(self):
+    def test_pre_tokenize_str(self):
         pretok = FixedLength(length=5)
         assert pretok.length == 5
+        assert pretok.pre_tokenize_str("ATCCTGGTACTG") == [
+            ("ATCCT", (0, 5)),
+            ("GGTAC", (5, 10)),
+            ("TG", (10, 12)),
+        ]
 
         pretok.length = 10
         assert pretok.length == 10
+        assert pretok.pre_tokenize_str("ATCCTGGTACTG") == [
+            ("ATCCTGGTAC", (0, 10)),
+            ("TG", (10, 12)),
+        ]
 
 
 class TestUnicodeScripts:
