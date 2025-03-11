@@ -414,7 +414,7 @@ impl TemplateProcessingBuilder {
     }
 
     fn validate(&self) -> std::result::Result<(), String> {
-        let pair_has_both = self.pair.as_ref().map_or(true, |pair| {
+        let pair_has_both = self.pair.as_ref().is_none_or(|pair| {
             let mut has_a = false;
             let mut has_b = false;
             for piece in &pair.0 {
