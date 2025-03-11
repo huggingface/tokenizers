@@ -87,12 +87,6 @@ pub enum SplitDelimiterBehavior {
     Contiguous,
 }
 
-impl std::fmt::Display for SplitDelimiterBehavior {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.serialize(f)
-    }
-}
-
 /// A `NormalizedString` takes care of processing an "original" string to modify
 /// it and obtain a "normalized" string. It keeps both version of the string,
 /// alignments information between both and provides an interface to retrieve

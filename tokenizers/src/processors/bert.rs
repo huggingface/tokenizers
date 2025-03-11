@@ -6,8 +6,8 @@ use std::iter::FromIterator;
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(tag = "type")]
 pub struct BertProcessing {
-    pub sep: (String, u32),
-    pub cls: (String, u32),
+    sep: (String, u32),
+    cls: (String, u32),
 }
 
 impl Default for BertProcessing {
@@ -22,14 +22,6 @@ impl Default for BertProcessing {
 impl BertProcessing {
     pub fn new(sep: (String, u32), cls: (String, u32)) -> Self {
         Self { sep, cls }
-    }
-
-    pub fn get_sep_copy(&self) -> (String, u32) {
-        (self.sep.0.clone(), self.sep.1)
-    }
-
-    pub fn get_cls_copy(&self) -> (String, u32) {
-        (self.cls.0.clone(), self.cls.1)
     }
 }
 

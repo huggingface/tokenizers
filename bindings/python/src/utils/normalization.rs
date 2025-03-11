@@ -117,12 +117,6 @@ impl From<PySplitDelimiterBehavior> for SplitDelimiterBehavior {
     }
 }
 
-impl From<SplitDelimiterBehavior> for PySplitDelimiterBehavior {
-    fn from(v: SplitDelimiterBehavior) -> Self {
-        Self(v)
-    }
-}
-
 fn filter(normalized: &mut NormalizedString, func: &Bound<'_, PyAny>) -> PyResult<()> {
     let err = "`filter` expect a callable with the signature: `fn(char) -> bool`";
 

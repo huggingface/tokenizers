@@ -46,7 +46,7 @@ impl std::convert::TryFrom<ReplaceDeserializer> for Replace {
 #[serde(tag = "type", try_from = "ReplaceDeserializer")]
 pub struct Replace {
     pattern: ReplacePattern,
-    pub content: String,
+    content: String,
     #[serde(skip)]
     regex: SysRegex,
 }
