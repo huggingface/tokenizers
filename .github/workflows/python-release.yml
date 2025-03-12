@@ -1,5 +1,6 @@
 name: Python Release
 on:
+  pull_request:
   push:
     tags:
       - v*
@@ -37,7 +38,7 @@ jobs:
             platform: linux
           - os: windows
             ls: dir
-            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.8 pypy3.9 pypy3.10
+            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
           - os: windows
             ls: dir
             target: x86_64
@@ -54,7 +55,7 @@ jobs:
               #   interpreter: 3.11 3.12
           - os: macos
             target: aarch64
-            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.8 pypy3.9 pypy3.10
+            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
           - os: ubuntu
             platform: linux
             target: i686
