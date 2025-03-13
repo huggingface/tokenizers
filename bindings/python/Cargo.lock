@@ -929,7 +929,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers"
-version = "0.21.1-rc.0"
+version = "0.21.1"
 dependencies = [
  "aho-corasick",
  "derive_builder",
@@ -959,7 +959,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers-python"
-version = "0.21.1-rc.0"
+version = "0.21.1"
 dependencies = [
  "env_logger",
  "itertools 0.12.1",

@@ -1,6 +1,5 @@
 name: Python Release
 on:
-  pull_request:
   push:
     tags:
       - v*
