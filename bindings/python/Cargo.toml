@@ -18,6 +18,8 @@ pyo3 = { version = "0.23", features = ["abi3", "abi3-py39", "py-clone"] }
 numpy = "0.23"
 ndarray = "0.16"
 itertools = "0.12"
+rustc-hash = "2.1.1"
+compact_str = { version = "0.8.1", features = ["serde"] }
 
 [dependencies.tokenizers]
 path = "../../tokenizers"

@@ -1,3 +1,4 @@
+use compact_str::CompactString;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use std::cell::RefCell;
@@ -223,11 +224,11 @@ impl<'a> Lattice<'a> {
         results
     }
 
-    pub fn piece(&self, node: &Node) -> String {
-        self.sentence[node.pos..node.pos + node.length].to_owned()
+    pub fn piece(&self, node: &Node) -> CompactString {
+        self.sentence[node.pos..node.pos + node.length].into()
     }
 
-    pub fn tokens(&mut self) -> Vec<String> {
+    pub fn tokens(&mut self) -> Vec<CompactString> {
         self.viterbi()
             .iter()
             .map(|node| self.piece(&node.borrow()))
@@ -296,7 +297,7 @@ impl<'a> Lattice<'a> {
         }
     }
 
-    pub fn nbest_tokens(&mut self, n: usize) -> Vec<Vec<String>> {
+    pub fn nbest_tokens(&mut self, n: usize) -> Vec<Vec<CompactString>> {
         self.nbest(n)
             .iter()
             .map(|v| v.iter().map(|node| self.piece(&node.borrow())).collect())
@@ -422,7 +423,7 @@ impl<'a> Lattice<'a> {
         results
     }
 
-    pub fn sample_token(&self, theta: f64) -> Vec<String> {
+    pub fn sample_token(&self, theta: f64) -> Vec<CompactString> {
         self.sample(theta)
             .iter()
             .map(|node| self.piece(&node.borrow()))

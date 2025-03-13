@@ -1,4 +1,5 @@
 use crate::tokenizer::{Decoder, Result};
+use compact_str::{CompactString, ToCompactString};
 use monostate::MustBe;
 
 use serde::{Deserialize, Serialize};
@@ -22,11 +23,15 @@ impl ByteFallback {
 }
 
 impl Decoder for ByteFallback {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        let mut new_tokens: Vec<String> = vec![];
+    fn decode_chain<T: ToCompactString>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<impl ToCompactString>> {
+        let mut new_tokens: Vec<CompactString> = vec![];
         let mut previous_byte_tokens: Vec<u8> = vec![];
 
         for token in tokens {
+            let token: CompactString = token.to_compact_string();
             let bytes = if token.len() == 6 && token.starts_with("<0x") && token.ends_with('>') {
                 if let Ok(byte) = u8::from_str_radix(&token[3..5], 16) {
                     Some(byte)
@@ -40,7 +45,7 @@ impl Decoder for ByteFallback {
                 previous_byte_tokens.push(bytes);
             } else {
                 if !previous_byte_tokens.is_empty() {
-                    if let Ok(string) = String::from_utf8(previous_byte_tokens.clone()) {
+                    if let Ok(string) = CompactString::from_utf8(previous_byte_tokens.clone()) {
                         new_tokens.push(string);
                     } else {
                         for _ in 0..previous_byte_tokens.len() {
@@ -53,7 +58,7 @@ impl Decoder for ByteFallback {
             }
         }
         if !previous_byte_tokens.is_empty() {
-            if let Ok(string) = String::from_utf8(previous_byte_tokens.clone()) {
+            if let Ok(string) = CompactString::from_utf8(previous_byte_tokens.clone()) {
                 new_tokens.push(string);
             } else {
                 for _ in 0..previous_byte_tokens.len() {
@@ -73,41 +78,65 @@ mod tests {
     #[test]
     fn decode() {
         let decoder = ByteFallback::new();
-        let res = decoder
-            .decode_chain(vec!["Hey".into(), "friend!".into()])
-            .unwrap();
-        assert_eq!(res, vec!["Hey", "friend!"]);
+        let res = decoder.decode_chain(vec!["Hey", "friend!"]).unwrap();
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["Hey", "friend!"]
+        );
 
-        let res = decoder.decode_chain(vec!["<0x61>".into()]).unwrap();
-        assert_eq!(res, vec!["a"]);
+        let res = decoder.decode_chain(vec!["<0x61>"]).unwrap();
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["a"]
+        );
 
-        let res = decoder.decode_chain(vec!["<0xE5>".into()]).unwrap();
-        assert_eq!(res, vec!["�"]);
+        let res = decoder.decode_chain(vec!["<0xE5>"]).unwrap();
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["�"]
+        );
 
-        let res = decoder
-            .decode_chain(vec!["<0xE5>".into(), "<0x8f>".into()])
-            .unwrap();
-        assert_eq!(res, vec!["�", "�"]);
+        let res = decoder.decode_chain(vec!["<0xE5>", "<0x8f>"]).unwrap();
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["�", "�"]
+        );
 
         // 叫
         let res = decoder
-            .decode_chain(vec!["<0xE5>".into(), "<0x8f>".into(), "<0xab>".into()])
+            .decode_chain(vec!["<0xE5>", "<0x8f>", "<0xab>"])
             .unwrap();
-        assert_eq!(res, vec!["叫"]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["叫"]
+        );
 
         let res = decoder
-            .decode_chain(vec![
-                "<0xE5>".into(),
-                "<0x8f>".into(),
-                "<0xab>".into(),
-                "a".into(),
-            ])
+            .decode_chain(vec!["<0xE5>", "<0x8f>", "<0xab>", "a"])
             .unwrap();
-        assert_eq!(res, vec!["叫", "a"]);
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["叫", "a"]
+        );
 
-        let res = decoder
-            .decode_chain(vec!["<0xE5>".into(), "<0x8f>".into(), "a".into()])
-            .unwrap();
-        assert_eq!(res, vec!["�", "�", "a"]);
+        let res = decoder.decode_chain(vec!["<0xE5>", "<0x8f>", "a"]).unwrap();
+        assert_eq!(
+            res.into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
+            vec!["�", "�", "a"]
+        );
     }
 }

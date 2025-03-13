@@ -1,3 +1,4 @@
+use compact_str::CompactString;
 use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 use tokenizers::models::bpe::BPE;
 use tokenizers::models::wordpiece::WordPiece;
@@ -48,10 +49,7 @@ pub fn get_bert() -> Tokenizer {
         .with_normalizer(Some(BertNormalizer::default()))
         .with_pre_tokenizer(Some(BertPreTokenizer))
         .with_decoder(Some(WordPieceDecoder::default()))
-        .with_post_processor(Some(BertProcessing::new(
-            (String::from("[SEP]"), sep),
-            (String::from("[CLS]"), cls),
-        )));
+        .with_post_processor(Some(BertProcessing::new(("[SEP]", sep), ("[CLS]", cls))));
 
     tokenizer
 }

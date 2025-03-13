@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::utils::SysRegex;
+use compact_str::{CompactString, ToCompactString};
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{
@@ -157,10 +158,14 @@ impl PreTokenizer for ByteLevel {
 /// the fact that single token decoded might be a byte not representable as
 /// as String.
 impl Decoder for ByteLevel {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode_chain<T: ToCompactString>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<impl ToCompactString>> {
         let toks = tokens
             .into_iter()
             .flat_map(|t| {
+                let t: CompactString = t.to_compact_string();
                 t.chars()
                     .try_fold(vec![], |mut acc, c| {
                         CHAR_BYTES.get(&c).map(|b| {
@@ -171,7 +176,7 @@ impl Decoder for ByteLevel {
                     .unwrap_or_else(|| t.as_bytes().to_vec())
             })
             .collect::<Vec<u8>>();
-        Ok(vec![String::from_utf8_lossy(&toks).to_string()])
+        Ok(Vec::from([CompactString::from_utf8_lossy(&toks)]))
     }
 }
 
@@ -292,16 +297,13 @@ mod tests {
         let bytelevel = ByteLevel::default().add_prefix_space(false);
         assert_eq!(
             bytelevel
-                .decode_chain(
-                    vec![
-                        "Hello", "Ġmy", "Ġfriend", ",", "Ġhow", "Ġis", "Ġyour", "Ġday", "Ġgoing",
-                        "?"
-                    ]
-                    .into_iter()
-                    .map(|s| s.into())
-                    .collect::<Vec<String>>()
-                )
-                .unwrap(),
+                .decode_chain(vec![
+                    "Hello", "Ġmy", "Ġfriend", ",", "Ġhow", "Ġis", "Ġyour", "Ġday", "Ġgoing", "?"
+                ])
+                .unwrap()
+                .into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
             vec!["Hello my friend, how is your day going?"]
         );
     }
@@ -353,10 +355,16 @@ mod tests {
                 .get_splits(OffsetReferential::Original, OffsetType::Byte)
                 .iter()
                 .flat_map(|(s, _, _)| s.split("").map(|t| t.into()))
-                .collect::<Vec<_>>();
+                .collect::<Vec<CompactString>>();
             assert_eq!(
                 sample,
-                bytelevel.decode_chain(separated_tokens).unwrap().join("")
+                bytelevel
+                    .decode_chain(separated_tokens)
+                    .unwrap()
+                    .into_iter()
+                    .map(|t| t.to_compact_string())
+                    .collect::<Vec<_>>()
+                    .join("")
             );
         }
     }
@@ -445,7 +453,7 @@ mod tests {
         let mut encoding = Encoding::new(
             vec![0; 5],
             vec![],
-            vec!["Ġl".into(), "ove".into(), "Ġl".into(), "ove".into()],
+            vec!["Ġl", "ove", "Ġl", "ove"],
             vec![],
             vec![(0, 1), (1, 4), (0, 1), (1, 4)],
             vec![],
@@ -459,7 +467,7 @@ mod tests {
             Encoding::new(
                 vec![0; 5],
                 vec![],
-                vec!["Ġl".into(), "ove".into(), "Ġl".into(), "ove".into()],
+                vec!["Ġl", "ove", "Ġl", "ove"],
                 vec![],
                 vec![(0, 1), (1, 4), (0, 1), (1, 4)],
                 vec![],
@@ -475,13 +483,7 @@ mod tests {
         let start = Encoding::new(
             vec![0; 5],
             vec![],
-            vec![
-                "Ġ".into(),
-                "ĠĠĠĠHelloĠĠ".into(),
-                "ĠĠHello".into(),
-                "HelloĠĠ".into(),
-                "ĠĠĠĠ".into(),
-            ],
+            vec!["Ġ", "ĠĠĠĠHelloĠĠ", "ĠĠHello", "HelloĠĠ", "ĠĠĠĠ"],
             vec![],
             vec![(0, 1), (0, 11), (11, 18), (18, 25), (25, 29)],
             vec![],
@@ -492,13 +494,7 @@ mod tests {
         let expected = Encoding::new(
             vec![0; 5],
             vec![0; 5],
-            vec![
-                "Ġ".into(),
-                "ĠĠĠĠHelloĠĠ".into(),
-                "ĠĠHello".into(),
-                "HelloĠĠ".into(),
-                "ĠĠĠĠ".into(),
-            ],
+            vec!["Ġ", "ĠĠĠĠHelloĠĠ", "ĠĠHello", "HelloĠĠ", "ĠĠĠĠ"],
             vec![],
             vec![(0, 0), (4, 9), (13, 18), (18, 23), (29, 29)],
             vec![],
@@ -517,16 +513,16 @@ mod tests {
             vec![0; 10],
             vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
             vec![
-                "Ġ".into(),
-                "ĠĠĠĠHelloĠĠ".into(),
-                "ĠĠHello".into(),
-                "HelloĠĠ".into(),
-                "ĠĠĠĠ".into(),
-                "Ġ".into(),
-                "ĠĠĠĠHelloĠĠ".into(),
-                "ĠĠHello".into(),
-                "HelloĠĠ".into(),
-                "ĠĠĠĠ".into(),
+                "Ġ",
+                "ĠĠĠĠHelloĠĠ",
+                "ĠĠHello",
+                "HelloĠĠ",
+                "ĠĠĠĠ",
+                "Ġ",
+                "ĠĠĠĠHelloĠĠ",
+                "ĠĠHello",
+                "HelloĠĠ",
+                "ĠĠĠĠ",
             ],
             vec![],
             vec![
@@ -559,15 +555,11 @@ mod tests {
         let byte_level = ByteLevel::default();
         assert_eq!(
             byte_level
-                .decode_chain(vec![
-                    "Hello".into(),
-                    "Ġthere".into(),
-                    "Ġdear".into(),
-                    "Ġfriend!".into(),
-                    "Ġ".into(),
-                    "[PA D]".into()
-                ])
-                .unwrap(),
+                .decode_chain(vec!["Hello", "Ġthere", "Ġdear", "Ġfriend!", "Ġ", "[PA D]"])
+                .unwrap()
+                .into_iter()
+                .map(|t| t.to_compact_string())
+                .collect::<Vec<_>>(),
             vec!["Hello there dear friend! [PA D]"]
         );
     }
@@ -585,13 +577,13 @@ mod tests {
         let byte_level: ByteLevel = serde_json::from_str(
             r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "use_regex": true}"#,
         )
-        .unwrap();
+            .unwrap();
         assert!(byte_level.use_regex);
 
         let byte_level: ByteLevel = serde_json::from_str(
             r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "use_regex": false}"#,
         )
-        .unwrap();
+            .unwrap();
         assert!(!byte_level.use_regex);
     }
 }

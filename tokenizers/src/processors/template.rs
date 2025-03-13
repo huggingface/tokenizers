@@ -57,6 +57,7 @@
 //! [`TemplateProcessing`]: struct.TemplateProcessing.html
 //!
 use crate::{Encoding, PostProcessor, Result};
+use compact_str::{format_compact, CompactString, ToCompactString};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -95,7 +96,7 @@ pub enum Sequence {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum Piece {
     Sequence { id: Sequence, type_id: u32 },
-    SpecialToken { id: String, type_id: u32 },
+    SpecialToken { id: CompactString, type_id: u32 },
 }
 
 impl Piece {
@@ -130,7 +131,7 @@ impl Piece {
             }
         } else {
             Some(Self::SpecialToken {
-                id: s.to_owned(),
+                id: s.into(),
                 type_id: 0,
             })
         }
@@ -140,6 +141,26 @@ impl Piece {
         match self {
             Self::Sequence { id, .. } => Self::Sequence { id, type_id },
             Self::SpecialToken { id, .. } => Self::SpecialToken { id, type_id },
+        }
+    }
+}
+
+impl TryFrom<CompactString> for Piece {
+    type Error = String;
+
+    fn try_from(s: CompactString) -> StdResult<Self, Self::Error> {
+        let s = s.to_string();
+        let parts = s.split(':').collect::<Vec<_>>();
+
+        let err = || format!("Cannot build Piece from compact string \"{s}\"");
+        match parts.as_slice() {
+            [id, type_id] => {
+                let type_id: u32 = type_id.parse().map_err(|_| err())?;
+                let piece = Self::extract_id(id).ok_or_else(err)?;
+                Ok(piece.with_type_id(type_id))
+            }
+            [id] => Self::extract_id(id).ok_or_else(err),
+            _ => Err(err()),
         }
     }
 }
@@ -192,15 +213,15 @@ impl TryFrom<&str> for Piece {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub struct SpecialToken {
     /// A unique id used to identify this SpecialToken in the template
-    id: String,
+    id: CompactString,
     /// The list of associated ids
     ids: Vec<u32>,
     /// The list of associated tokens
-    tokens: Vec<String>,
+    tokens: Vec<CompactString>,
 }
 
-impl From<(String, u32)> for SpecialToken {
-    fn from(v: (String, u32)) -> Self {
+impl From<(CompactString, u32)> for SpecialToken {
+    fn from(v: (CompactString, u32)) -> Self {
         Self {
             id: v.0.clone(),
             ids: vec![v.1],
@@ -210,22 +231,22 @@ impl From<(String, u32)> for SpecialToken {
 }
 impl From<(&str, u32)> for SpecialToken {
     fn from(v: (&str, u32)) -> Self {
-        Self::from((v.0.to_owned(), v.1))
+        Self::from((v.0.to_compact_string(), v.1))
     }
 }
-impl From<(u32, String)> for SpecialToken {
-    fn from(v: (u32, String)) -> Self {
+impl From<(u32, CompactString)> for SpecialToken {
+    fn from(v: (u32, CompactString)) -> Self {
         Self::from((v.1, v.0))
     }
 }
 impl From<(u32, &str)> for SpecialToken {
     fn from(v: (u32, &str)) -> Self {
-        Self::from((v.1.to_owned(), v.0))
+        Self::from((v.1.to_compact_string(), v.0))
     }
 }
 
 impl SpecialToken {
-    pub fn new(id: String, ids: Vec<u32>, tokens: Vec<String>) -> Result<Self> {
+    pub fn new(id: CompactString, ids: Vec<u32>, tokens: Vec<CompactString>) -> Result<Self> {
         if ids.len() != tokens.len() {
             Err("SpecialToken: ids and tokens must be of the same length".into())
         } else {
@@ -269,6 +290,14 @@ where
     }
 }
 
+impl TryFrom<CompactString> for Template {
+    type Error = String;
+
+    fn try_from(s: CompactString) -> StdResult<Self, Self::Error> {
+        Self::try_from(s.to_string().as_ref())
+    }
+}
+
 impl TryFrom<String> for Template {
     type Error = String;
 
@@ -293,7 +322,7 @@ impl TryFrom<&str> for Template {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Eq)]
 #[serde(transparent)]
 pub struct Tokens(
-    #[serde(serialize_with = "crate::utils::ordered_map")] pub HashMap<String, SpecialToken>,
+    #[serde(serialize_with = "crate::utils::ordered_map")] pub HashMap<CompactString, SpecialToken>,
 );
 
 impl<T: Into<SpecialToken>> From<Vec<T>> for Tokens {
@@ -309,8 +338,8 @@ impl<T: Into<SpecialToken>> From<Vec<T>> for Tokens {
     }
 }
 
-impl From<HashMap<String, SpecialToken>> for Tokens {
-    fn from(v: HashMap<String, SpecialToken>) -> Self {
+impl From<HashMap<CompactString, SpecialToken>> for Tokens {
+    fn from(v: HashMap<CompactString, SpecialToken>) -> Self {
         Self(v)
     }
 }
@@ -353,8 +382,8 @@ pub struct TemplateProcessing {
 
 impl TemplateProcessing {
     // Getter for `single`
-    pub fn get_single(&self) -> String {
-        format!("{:?}", self.single)
+    pub fn get_single(&self) -> CompactString {
+        format_compact!("{:?}", self.single)
     }
 
     // Setter for `single`
@@ -894,24 +923,19 @@ mod tests {
         use crate::Token;
         let encoding = Encoding::from_tokens(
             vec![
-                Token::new(12, "Hello".into(), (0, 5)),
-                Token::new(14, "there".into(), (6, 11)),
+                Token::new(12, "Hello", (0, 5)),
+                Token::new(14, "there", (6, 11)),
             ],
             0,
         );
-        let pair = Encoding::from_tokens(vec![Token::new(15, "pair".into(), (0, 4))], 0);
+        let pair = Encoding::from_tokens(vec![Token::new(15, "pair", (0, 4))], 0);
         let single_encoding = processor.process(encoding.clone(), None, true).unwrap();
         assert_eq!(
             single_encoding,
             Encoding::new(
                 vec![1, 12, 14, 0],
                 vec![0, 0, 0, 0],
-                vec![
-                    "[CLS]".into(),
-                    "Hello".into(),
-                    "there".into(),
-                    "[SEP]".into()
-                ],
+                vec!["[CLS]", "Hello", "there", "[SEP]"],
                 vec![None, None, None, None],
                 vec![(0, 0), (0, 5), (6, 11), (0, 0)],
                 vec![1, 0, 0, 1],
@@ -928,14 +952,7 @@ mod tests {
             Encoding::new(
                 vec![1, 12, 14, 0, 15, 0],
                 vec![0, 0, 0, 0, 1, 1],
-                vec![
-                    "[CLS]".into(),
-                    "Hello".into(),
-                    "there".into(),
-                    "[SEP]".into(),
-                    "pair".into(),
-                    "[SEP]".into()
-                ],
+                vec!["[CLS]", "Hello", "there", "[SEP]", "pair", "[SEP]"],
                 vec![None, None, None, None, None, None],
                 vec![(0, 0), (0, 5), (6, 11), (0, 0), (0, 4), (0, 0)],
                 vec![1, 0, 0, 1, 0, 1],
@@ -959,23 +976,22 @@ mod tests {
         use crate::Token;
         let mut encoding = Encoding::from_tokens(
             vec![
-                Token::new(12, "Hello".into(), (0, 5)),
-                Token::new(14, "there".into(), (6, 11)),
+                Token::new(12, "Hello", (0, 5)),
+                Token::new(14, "there", (6, 11)),
             ],
             0,
         );
-        let overflowing = Encoding::from_tokens(vec![Token::new(13, "you".into(), (12, 15))], 0);
+        let overflowing = Encoding::from_tokens(vec![Token::new(13, "you", (12, 15))], 0);
         encoding.set_overflowing(vec![overflowing]);
 
         let mut pair = Encoding::from_tokens(
             vec![
-                Token::new(15, "pair".into(), (0, 4)),
-                Token::new(16, "with".into(), (5, 9)),
+                Token::new(15, "pair", (0, 4)),
+                Token::new(16, "with", (5, 9)),
             ],
             0,
         );
-        let pair_overflowing =
-            Encoding::from_tokens(vec![Token::new(17, "info".into(), (10, 14))], 0);
+        let pair_overflowing = Encoding::from_tokens(vec![Token::new(17, "info", (10, 14))], 0);
         pair.set_overflowing(vec![pair_overflowing]);
 
         let single_encoding = processor.process(encoding.clone(), None, true).unwrap();
@@ -984,12 +1000,7 @@ mod tests {
             Encoding::new(
                 vec![1, 12, 14, 0],
                 vec![0, 0, 0, 0],
-                vec![
-                    "[CLS]".into(),
-                    "Hello".into(),
-                    "there".into(),
-                    "[SEP]".into()
-                ],
+                vec!["[CLS]", "Hello", "there", "[SEP]"],
                 vec![None, None, None, None],
                 vec![(0, 0), (0, 5), (6, 11), (0, 0)],
                 vec![1, 0, 0, 1],
@@ -997,7 +1008,7 @@ mod tests {
                 vec![Encoding::new(
                     vec![1, 13, 0],
                     vec![0, 0, 0],
-                    vec!["[CLS]".into(), "you".into(), "[SEP]".into()],
+                    vec!["[CLS]", "you".into(), "[SEP]".into()],
                     vec![None, None, None],
                     vec![(0, 0), (12, 15), (0, 0)],
                     vec![1, 0, 1],
@@ -1017,15 +1028,7 @@ mod tests {
             Encoding::new(
                 vec![1, 12, 14, 0, 15, 16, 0],
                 vec![0, 0, 0, 0, 1, 1, 1],
-                vec![
-                    "[CLS]".into(),
-                    "Hello".into(),
-                    "there".into(),
-                    "[SEP]".into(),
-                    "pair".into(),
-                    "with".into(),
-                    "[SEP]".into()
-                ],
+                vec!["[CLS]", "Hello", "there", "[SEP]", "pair", "with", "[SEP]"],
                 vec![None, None, None, None, None, None, None],
                 vec![(0, 0), (0, 5), (6, 11), (0, 0), (0, 4), (5, 9), (0, 0)],
                 vec![1, 0, 0, 1, 0, 0, 1],
@@ -1034,14 +1037,7 @@ mod tests {
                     Encoding::new(
                         vec![1, 13, 0, 15, 16, 0],
                         vec![0, 0, 0, 1, 1, 1],
-                        vec![
-                            "[CLS]".into(),
-                            "you".into(),
-                            "[SEP]".into(),
-                            "pair".into(),
-                            "with".into(),
-                            "[SEP]".into()
-                        ],
+                        vec!["[CLS]", "you", "[SEP]", "pair", "with", "[SEP]"],
                         vec![None, None, None, None, None, None],
                         vec![(0, 0), (12, 15), (0, 0), (0, 4), (5, 9), (0, 0)],
                         vec![1, 0, 1, 0, 0, 1],
@@ -1049,13 +1045,7 @@ mod tests {
                         vec![Encoding::new(
                             vec![1, 13, 0, 17, 0],
                             vec![0, 0, 0, 0, 1],
-                            vec![
-                                "[CLS]".into(),
-                                "you".into(),
-                                "[SEP]".into(),
-                                "info".into(),
-                                "[SEP]".into()
-                            ],
+                            vec!["[CLS]", "you", "[SEP]", "info", "[SEP]"],
                             vec![None, None, None, None, None,],
                             vec![(0, 0), (12, 15), (0, 0), (10, 14), (0, 0)],
                             vec![1, 0, 1, 0, 1],
@@ -1068,13 +1058,7 @@ mod tests {
                     Encoding::new(
                         vec![1, 13, 0, 17, 0],
                         vec![0, 0, 0, 0, 1],
-                        vec![
-                            "[CLS]".into(),
-                            "you".into(),
-                            "[SEP]".into(),
-                            "info".into(),
-                            "[SEP]".into()
-                        ],
+                        vec!["[CLS]", "you", "[SEP]", "info", "[SEP]"],
                         vec![None, None, None, None, None,],
                         vec![(0, 0), (12, 15), (0, 0), (10, 14), (0, 0)],
                         vec![1, 0, 1, 0, 1],
@@ -1085,14 +1069,7 @@ mod tests {
                     Encoding::new(
                         vec![1, 12, 14, 0, 17, 0],
                         vec![0, 0, 0, 0, 0, 1],
-                        vec![
-                            "[CLS]".into(),
-                            "Hello".into(),
-                            "there".into(),
-                            "[SEP]".into(),
-                            "info".into(),
-                            "[SEP]".into()
-                        ],
+                        vec!["[CLS]", "Hello", "there", "[SEP]", "info", "[SEP]"],
                         vec![None, None, None, None, None, None],
                         vec![(0, 0), (0, 5), (6, 11), (0, 0), (10, 14), (0, 0)],
                         vec![1, 0, 0, 1, 0, 1],
@@ -1100,13 +1077,7 @@ mod tests {
                         vec![Encoding::new(
                             vec![1, 13, 0, 17, 0],
                             vec![0, 0, 0, 0, 1],
-                            vec![
-                                "[CLS]".into(),
-                                "you".into(),
-                                "[SEP]".into(),
-                                "info".into(),
-                                "[SEP]".into()
-                            ],
+                            vec!["[CLS]", "you", "[SEP]", "info", "[SEP]"],
                             vec![None, None, None, None, None,],
                             vec![(0, 0), (12, 15), (0, 0), (10, 14), (0, 0)],
                             vec![1, 0, 1, 0, 1],

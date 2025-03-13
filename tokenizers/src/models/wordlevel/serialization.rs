@@ -83,6 +83,8 @@ impl<'de> Visitor<'de> for WordLevelVisitor {
 
 #[cfg(test)]
 mod tests {
+    use compact_str::ToCompactString;
+
     use crate::models::wordlevel::{Vocab, WordLevel, WordLevelBuilder};
 
     #[test]
@@ -102,7 +104,7 @@ mod tests {
             .collect();
         let wordlevel = WordLevelBuilder::default()
             .vocab(vocab)
-            .unk_token("<unk>".to_string())
+            .unk_token("<unk>".to_compact_string())
             .build()
             .unwrap();
         let wl_s = r#"{"type":"WordLevel","vocab":{"<unk>":0,"b":2},"unk_token":"<unk>"}"#;

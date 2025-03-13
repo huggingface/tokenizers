@@ -1,5 +1,6 @@
 use crate::tokenizer::{Decoder, Result};
 
+use compact_str::{format_compact, CompactString, ToCompactString};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Clone, Debug, Serialize)]
@@ -9,13 +10,13 @@ use serde::{Deserialize, Serialize};
 #[non_exhaustive]
 pub struct WordPiece {
     /// The prefix to be used for continuing subwords
-    pub prefix: String,
+    pub prefix: CompactString,
     /// Whether to cleanup some tokenization artifacts (spaces before punctuation, ...)
     pub cleanup: bool,
 }
 
 impl WordPiece {
-    pub fn new(prefix: String, cleanup: bool) -> Self {
+    pub fn new(prefix: CompactString, cleanup: bool) -> Self {
         Self { prefix, cleanup }
     }
 }
@@ -23,13 +24,14 @@ impl WordPiece {
 impl Default for WordPiece {
     fn default() -> Self {
         Self {
-            prefix: "##".to_owned(),
+            prefix: "##".into(),
             cleanup: true,
         }
     }
 }
-pub fn cleanup(dirty_input: &str) -> String {
+pub fn cleanup(dirty_input: impl ToCompactString) -> CompactString {
     dirty_input
+        .to_compact_string()
         .replace(" .", ".")
         .replace(" ?", "?")
         .replace(" !", "!")
@@ -41,27 +43,32 @@ pub fn cleanup(dirty_input: &str) -> String {
         .replace(" 's", "'s")
         .replace(" 've", "'ve")
         .replace(" 're", "'re")
+        .into()
 }
 
 impl Decoder for WordPiece {
-    fn decode_chain(&self, mut tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode_chain<T: ToCompactString>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<impl ToCompactString>> {
         tokens
-            .iter_mut()
+            .into_iter()
+            .map(|t| t.to_compact_string())
             .enumerate()
-            .map(|(i, token)| {
+            .map(|(i, mut token)| {
                 if i != 0 {
-                    if token.starts_with(&self.prefix) {
-                        *token = token.replacen(&self.prefix, "", 1);
+                    if token.starts_with(&*self.prefix) {
+                        token = token.replacen(&*self.prefix, "", 1).to_compact_string();
                     } else {
-                        *token = format!(" {token}");
+                        token = format_compact!(" {}", token);
                     }
                 }
                 if self.cleanup {
-                    *token = cleanup(token);
+                    token = cleanup(token);
                 }
-                Ok(token.to_string())
+                Ok(token)
             })
-            .collect::<Result<_>>()
+            .collect::<Result<Vec<CompactString>>>()
     }
 }
 
@@ -71,19 +78,13 @@ mod tests {
 
     #[test]
     fn wordpiece_decoder() {
-        let decoder = WordPiece::new("##".to_string(), false);
+        let decoder = WordPiece::new("##".into(), false);
 
         assert_eq!(
             decoder
-                .decode(vec![
-                    "##uelo".to_string(),
-                    "Ara".to_string(),
-                    "##új".to_string(),
-                    "##o".to_string(),
-                    "No".to_string(),
-                    "##guera".to_string()
-                ])
-                .unwrap(),
+                .decode(vec!["##uelo", "Ara", "##új", "##o", "No", "##guera"])
+                .unwrap()
+                .to_compact_string(),
             "##uelo Araújo Noguera"
         );
     }

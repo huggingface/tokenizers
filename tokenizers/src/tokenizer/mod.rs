@@ -9,8 +9,9 @@
 //!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
 //!     ...).
 
+use compact_str::{CompactString, ToCompactString};
+use rustc_hash::FxHashMap;
 use std::{
-    collections::HashMap,
     fs::{read_to_string, File},
     io::{prelude::*, BufReader},
     ops::{Deref, DerefMut},
@@ -75,9 +76,9 @@ pub trait Model {
     /// Find the ID associated to a string token
     fn token_to_id(&self, token: &str) -> Option<u32>;
     /// Find the string token associated to an ID
-    fn id_to_token(&self, id: u32) -> Option<String>;
+    fn id_to_token(&self, id: u32) -> Option<CompactString>;
     /// Retrieve the entire vocabulary mapping (token -> ID)
-    fn get_vocab(&self) -> HashMap<String, u32>;
+    fn get_vocab(&self) -> FxHashMap<CompactString, u32>;
     /// Retrieve the size of the vocabulary
     fn get_vocab_size(&self) -> usize;
     /// Save the current `Model` in the given folder, using the given `prefix` for the various
@@ -151,11 +152,16 @@ pub enum ProcessorError {
 
 /// A `Decoder` changes the raw tokens into its more readable form.
 pub trait Decoder {
-    fn decode(&self, tokens: Vec<String>) -> Result<String> {
-        let results = self.decode_chain(tokens)?;
+    fn decode<T: ToCompactString>(&self, tokens: Vec<T>) -> Result<impl ToCompactString> {
+        let results: Vec<CompactString> = self
+            .decode_chain(tokens)?
+            .iter()
+            .map(|r| r.to_compact_string())
+            .collect();
         Ok(results.join(""))
     }
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>>;
+    fn decode_chain<T: ToCompactString>(&self, tokens: Vec<T>)
+        -> Result<Vec<impl ToCompactString>>;
 }
 
 /// A `Trainer` has the responsibility to train a model. We feed it with lines/sentences
@@ -173,18 +179,22 @@ pub trait Trainer {
     where
         I: Iterator<Item = S> + Send,
         S: AsRef<str> + Send,
-        F: Fn(&str) -> Result<Vec<String>> + Sync;
+        F: Fn(&str) -> Result<Vec<CompactString>> + Sync;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub id: u32,
-    pub value: String,
+    pub value: CompactString,
     pub offsets: (usize, usize),
 }
 impl Token {
-    pub fn new(id: u32, value: String, offsets: (usize, usize)) -> Self {
-        Self { id, value, offsets }
+    pub fn new(id: u32, value: impl Into<CompactString>, offsets: (usize, usize)) -> Self {
+        Self {
+            id,
+            value: value.into(),
+            offsets,
+        }
     }
 }
 
@@ -193,7 +203,7 @@ use std::borrow::Cow;
 pub enum InputSequence<'s> {
     Raw(Cow<'s, str>),
     PreTokenized(Cow<'s, [&'s str]>),
-    PreTokenizedOwned(Cow<'s, [String]>),
+    PreTokenizedOwned(Cow<'s, [CompactString]>),
     PreTokenizedCow(Cow<'s, [Cow<'s, str>]>),
 }
 
@@ -229,12 +239,26 @@ impl<'s> From<Vec<&'s str>> for InputSequence<'s> {
 
 impl<'s> From<&'s [String]> for InputSequence<'s> {
     fn from(input: &'s [String]) -> Self {
-        Self::PreTokenizedOwned(Cow::Borrowed(input))
+        Self::PreTokenizedOwned(Cow::Owned(
+            input.iter().map(|s| s.to_compact_string()).collect(),
+        ))
     }
 }
 
 impl From<Vec<String>> for InputSequence<'_> {
     fn from(input: Vec<String>) -> Self {
+        Self::PreTokenizedOwned(Cow::Owned(input.into_iter().map(|s| s.into()).collect()))
+    }
+}
+
+impl<'s> From<&'s [CompactString]> for InputSequence<'s> {
+    fn from(input: &'s [CompactString]) -> Self {
+        Self::PreTokenizedOwned(Cow::Borrowed(input))
+    }
+}
+
+impl From<Vec<CompactString>> for InputSequence<'_> {
+    fn from(input: Vec<CompactString>) -> Self {
         Self::PreTokenizedOwned(Cow::Owned(input))
     }
 }
@@ -658,7 +682,7 @@ where
     }
 
     /// Get the vocabulary
-    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+    pub fn get_vocab(&self, with_added_tokens: bool) -> FxHashMap<CompactString, u32> {
         let mut final_vocab = self.model.get_vocab();
 
         if with_added_tokens {
@@ -675,7 +699,7 @@ where
     }
 
     /// Get the added tokens decoder
-    pub fn get_added_tokens_decoder(&self) -> HashMap<u32, AddedToken> {
+    pub fn get_added_tokens_decoder(&self) -> FxHashMap<u32, AddedToken> {
         self.added_vocabulary.get_added_tokens_decoder().clone()
     }
 
@@ -696,7 +720,7 @@ where
     }
 
     /// Converts an id to the corresponding token.
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
+    pub fn id_to_token(&self, id: u32) -> Option<CompactString> {
         self.added_vocabulary
             .simple_id_to_token(id)
             .or_else(|| self.model.id_to_token(id))
@@ -886,7 +910,7 @@ where
     }
 
     /// Decode the given ids, back to a String
-    pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
+    pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<impl ToCompactString> {
         let tokens = ids
             .iter()
             .filter_map(|id| {
@@ -900,9 +924,9 @@ where
             .collect::<Vec<_>>();
 
         if let Some(decoder) = &self.decoder {
-            decoder.decode(tokens)
+            decoder.decode(tokens).map(|t| t.to_compact_string())
         } else {
-            Ok(tokens.join(" "))
+            Ok(tokens.join(" ").to_compact_string())
         }
     }
 
@@ -922,18 +946,19 @@ where
 /// Example:
 ///
 /// ```
-/// # #[cfg(not(target_os = "windows"))]
+/// # use compact_str::ToCompactString;
+/// #[cfg(not(target_os = "windows"))]
 /// # {
 /// use tokenizers::Tokenizer;
 /// let tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();
 ///
 /// let mut decode_stream = tokenizer.decode_stream(false);
-/// assert_eq!(decode_stream.step(713).unwrap(), Some("This".to_string()));
-/// assert_eq!(decode_stream.step(16).unwrap(), Some(" is".to_string()));
-/// assert_eq!(decode_stream.step(41).unwrap(), Some(" an".to_string()));
+/// assert_eq!(decode_stream.step(713).unwrap(), Some("This".to_compact_string()));
+/// assert_eq!(decode_stream.step(16).unwrap(), Some(" is".to_compact_string()));
+/// assert_eq!(decode_stream.step(41).unwrap(), Some(" an".to_compact_string()));
 /// assert_eq!(
 ///     decode_stream.step(1246).unwrap(),
-///     Some(" example".to_string())
+///     Some(" example".to_compact_string())
 /// );
 /// # }
 /// ```
@@ -944,14 +969,15 @@ where
 /// a valid chunk.
 /// ```
 /// use tokenizers::{Tokenizer, TokenizerBuilder, models::bpe::BPE, decoders::byte_fallback::ByteFallback, pre_tokenizers::byte_level::ByteLevel, normalizers::unicode::NFC};
-/// use std::collections::HashMap;
 /// use std::iter::FromIterator;
+/// use compact_str::{CompactString, ToCompactString};
+/// use rustc_hash::FxHashMap;
 ///
-/// let vocab = HashMap::from_iter([
-///     ("<0x20>".to_string(), 0),
-///     ("<0xC3>".to_string(), 1),
-///     ("<0xA9>".to_string(), 2),
-///     (" This".to_string(), 3),
+/// let vocab: FxHashMap<CompactString, u32> = FxHashMap::from_iter([
+///     ("<0x20>".into(), 0),
+///     ("<0xC3>".into(), 1),
+///     ("<0xA9>".into(), 2),
+///     (" This".into(), 3),
 /// ]);
 /// let merges = vec![];
 /// let bpe = BPE::builder()
@@ -969,11 +995,11 @@ where
 ///
 /// let mut decode_stream = tokenizer.decode_stream(false);
 /// // Single byte_fallback is valid utf-8
-/// assert_eq!(decode_stream.step(0).unwrap(), Some(" ".to_string()));
+/// assert_eq!(decode_stream.step(0).unwrap(), Some(" ".to_compact_string()));
 /// // Invalid utf-8
 /// assert_eq!(decode_stream.step(1).unwrap(), None);
 /// // Valid utf-8 again, this corresponds to both tokens: [1, 2]
-/// assert_eq!(decode_stream.step(2).unwrap(), Some("é".to_string()));
+/// assert_eq!(decode_stream.step(2).unwrap(), Some("é".to_compact_string()));
 /// ```
 ///
 /// To see how [`DecodeStream`] is necessary, let's show how using raw [`TokenizerImpl::decode`] would
@@ -981,11 +1007,12 @@ where
 ///
 /// ```
 /// use tokenizers::{Tokenizer, TokenizerBuilder, models::bpe::BPE, pre_tokenizers::{byte_level::ByteLevel, metaspace::Metaspace}, normalizers::unicode::NFC};
-/// use std::collections::HashMap;
 /// use std::iter::FromIterator;
+/// use compact_str::{CompactString, ToCompactString};
+/// use rustc_hash::FxHashMap;
 ///
-/// let vocab = HashMap::from_iter([
-///     ("▁This".to_string(), 0),
+/// let vocab: FxHashMap<CompactString, u32> = FxHashMap::from_iter([
+///     ("▁This".into(), 0),
 /// ]);
 /// let merges = vec![];
 /// let bpe = BPE::builder()
@@ -1009,8 +1036,8 @@ where
 ///
 /// // Using a stream fixes it by keeping the necessary state.
 /// let mut decode_stream = tokenizer.decode_stream(false);
-/// assert_eq!(decode_stream.step(0).unwrap(), Some("This".to_string()));
-/// assert_eq!(decode_stream.step(0).unwrap(), Some(" This".to_string()));
+/// assert_eq!(decode_stream.step(0).unwrap(), Some("This".to_compact_string()));
+/// assert_eq!(decode_stream.step(0).unwrap(), Some(" This".to_compact_string()));
 /// ```
 pub struct DecodeStream<'tok, M, N, PT, PP, D> {
     /// A reference to the tokenizer
@@ -1031,7 +1058,7 @@ pub struct DecodeStream<'tok, M, N, PT, PP, D> {
     ids: Vec<u32>,
     /// The previously returned chunk that needs to be discarded from the
     /// decoding of the current ids to produce the next chunk
-    prefix: String,
+    prefix: CompactString,
     /// The index within the ids corresponding to the prefix so we can drain
     /// correctly
     prefix_index: usize,
@@ -1056,13 +1083,13 @@ where
             tokenizer,
             ids: vec![],
             skip_special_tokens,
-            prefix: "".to_string(),
+            prefix: "".into(),
             prefix_index: 0,
         }
     }
 
     /// See [`DecodeStream`]
-    pub fn step(&mut self, id: u32) -> Result<Option<String>> {
+    pub fn step(&mut self, id: u32) -> Result<Option<CompactString>> {
         step_decode_stream(
             self.tokenizer,
             id,
@@ -1080,9 +1107,9 @@ pub fn step_decode_stream<M, N, PT, PP, D>(
     id: u32,
     skip_special_tokens: bool,
     ids: &mut Vec<u32>,
-    prefix: &mut String,
+    prefix: &mut CompactString,
     prefix_index: &mut usize,
-) -> Result<Option<String>>
+) -> Result<Option<CompactString>>
 where
     M: Model,
     N: Normalizer,
@@ -1091,17 +1118,21 @@ where
     D: Decoder,
 {
     ids.push(id);
-    let string = tokenizer.decode(ids.as_slice(), skip_special_tokens)?;
+    let string = tokenizer
+        .decode(ids.as_slice(), skip_special_tokens)?
+        .to_compact_string();
     if string.len() > prefix.len() && !string.ends_with('�') {
-        if !(string.starts_with(&*prefix)) {
+        if !(string.starts_with(&**prefix)) {
             return Err(Box::new(DecodeStreamError::InvalidPrefix));
         }
         let new_text = &string[prefix.len()..].to_string();
         let new_prefix_index = ids.len() - *prefix_index;
         *ids = ids.drain(*prefix_index..).collect();
-        *prefix = tokenizer.decode(ids, skip_special_tokens)?;
+        *prefix = tokenizer
+            .decode(ids, skip_special_tokens)?
+            .to_compact_string();
         *prefix_index = new_prefix_index;
-        Ok(Some(new_text.to_string()))
+        Ok(Some(new_text.into()))
     } else {
         Ok(None)
     }
@@ -1327,13 +1358,16 @@ where
         &self,
         sentences: &[&[u32]],
         skip_special_tokens: bool,
-    ) -> Result<Vec<String>>
+    ) -> Result<Vec<CompactString>>
     where
         M: Send + Sync,
     {
         sentences
             .into_maybe_par_iter()
-            .map(|sentence| self.decode(sentence, skip_special_tokens))
+            .map(|sentence| {
+                self.decode(sentence, skip_special_tokens)
+                    .map(|t| t.to_compact_string())
+            })
             .collect()
     }
 
@@ -1386,12 +1420,12 @@ where
                         }
                     }),
                     |seq| {
-                        let normalized = self.do_normalize(seq.as_ref())?;
+                        let normalized = self.do_normalize(seq)?;
                         let pre_tokenized = self.do_pre_tokenize(normalized)?;
                         Ok(pre_tokenized
                             .get_splits(OffsetReferential::Original, OffsetType::Byte)
                             .into_iter()
-                            .map(|(s, _, _)| s.to_owned())
+                            .map(|(s, _, _)| s.into())
                             .collect())
                     },
                 )?;
@@ -1437,12 +1471,12 @@ where
                 }
             }),
             |seq| {
-                let normalized = self.do_normalize(seq.as_ref())?;
+                let normalized = self.do_normalize(seq)?;
                 let pre_tokenized = self.do_pre_tokenize(normalized)?;
                 Ok(pre_tokenized
                     .get_splits(OffsetReferential::Original, OffsetType::Byte)
                     .into_iter()
-                    .map(|(s, _, _)| s.to_owned())
+                    .map(|(s, _, _)| s.into())
                     .collect())
             },
         )?;

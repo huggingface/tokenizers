@@ -1,10 +1,11 @@
 use super::{super::OrderedVocabIter, convert_merges_to_hashmap, BpeBuilder, Pair, BPE};
+use compact_str::CompactString;
+use rustc_hash::FxHashMap;
 use serde::{
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use std::collections::HashMap;
 
 impl Serialize for BPE {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -80,13 +81,13 @@ impl<'de> Visitor<'de> for BPEVisitor {
         V: MapAccess<'de>,
     {
         let mut builder = BpeBuilder::new();
-        let mut vocab: Option<HashMap<String, u32>> = None;
+        let mut vocab: Option<FxHashMap<CompactString, u32>> = None;
 
         #[derive(Debug, Deserialize)]
         #[serde(untagged)]
         enum MergeType {
-            Tuple(Vec<(String, String)>),
-            Legacy(Vec<String>),
+            Tuple(Vec<(CompactString, CompactString)>),
+            Legacy(Vec<CompactString>),
         }
         let mut merges: Option<MergeType> = None;
         while let Some(key) = map.next_key::<String>()? {
@@ -97,17 +98,17 @@ impl<'de> Visitor<'de> for BPEVisitor {
                     }
                 }
                 "unk_token" => {
-                    if let Some(unk) = map.next_value()? {
+                    if let Some(unk) = map.next_value::<Option<String>>()? {
                         builder = builder.unk_token(unk);
                     }
                 }
                 "continuing_subword_prefix" => {
-                    if let Some(prefix) = map.next_value()? {
+                    if let Some(prefix) = map.next_value::<Option<String>>()? {
                         builder = builder.continuing_subword_prefix(prefix);
                     }
                 }
                 "end_of_word_suffix" => {
-                    if let Some(suffix) = map.next_value()? {
+                    if let Some(suffix) = map.next_value::<Option<String>>()? {
                         builder = builder.end_of_word_suffix(suffix);
                     }
                 }
@@ -172,8 +173,8 @@ mod test {
         .cloned()
         .collect();
         let bpe = BpeBuilder::default()
-            .vocab_and_merges(vocab, vec![("a".to_string(), "b".to_string())])
-            .unk_token("<unk>".to_string())
+            .vocab_and_merges(vocab, vec![("a".into(), "b".into())])
+            .unk_token("<unk>")
             .ignore_merges(true)
             .build()
             .unwrap();
@@ -201,8 +202,8 @@ mod test {
         .cloned()
         .collect();
         let bpe = BpeBuilder::default()
-            .vocab_and_merges(vocab, vec![("a".to_string(), "b c d".to_string())])
-            .unk_token("<unk>".to_string())
+            .vocab_and_merges(vocab, vec![("a".into(), "b c d".into())])
+            .unk_token("<unk>")
             .ignore_merges(true)
             .build()
             .unwrap();
@@ -223,7 +224,7 @@ mod test {
             .collect();
         let mut bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, vec![])
-            .unk_token("<unk>".to_string())
+            .unk_token("<unk>")
             .ignore_merges(true)
             .build()
             .unwrap();

@@ -1,4 +1,5 @@
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use compact_str::{CompactString, ToCompactString};
 use serde::{de, Deserialize, Deserializer, Serialize};
 
 /// Enum representing options for the metaspace prepending scheme.
@@ -28,7 +29,7 @@ pub struct Metaspace {
     pub prepend_scheme: PrependScheme,
     pub split: bool,
     #[serde(skip)]
-    str_rep: String,
+    str_rep: CompactString,
 }
 
 impl<'de> Deserialize<'de> for Metaspace {
@@ -56,7 +57,7 @@ impl<'de> Deserialize<'de> for Metaspace {
             pub prepend_scheme: PrependScheme,
             pub split: Option<bool>,
             #[serde(rename = "str_rep")]
-            _str_rep: Option<String>,
+            _str_rep: Option<CompactString>,
         }
 
         let mut helper = MetaspaceHelper::deserialize(deserializer)?;
@@ -81,7 +82,7 @@ impl Metaspace {
     pub fn new(replacement: char, prepend_scheme: PrependScheme, split: bool) -> Self {
         Self {
             replacement,
-            str_rep: replacement.to_string(),
+            str_rep: replacement.to_compact_string(),
             prepend_scheme,
             split,
         }
@@ -93,7 +94,7 @@ impl Metaspace {
 
     pub fn set_replacement(&mut self, replacement: char) {
         self.replacement = replacement;
-        self.str_rep = replacement.to_string();
+        self.str_rep = replacement.to_compact_string();
     }
 
     pub fn get_split(&self) -> bool {
@@ -148,12 +149,16 @@ impl PreTokenizer for Metaspace {
 }
 
 impl Decoder for Metaspace {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode_chain<T: ToCompactString>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<impl ToCompactString>> {
         Ok(tokens
-            .iter()
+            .into_iter()
             .enumerate()
             .map(|(i, token)| {
                 token
+                    .to_compact_string()
                     .chars()
                     .flat_map(|c| {
                         if c == self.replacement {
@@ -166,7 +171,7 @@ impl Decoder for Metaspace {
                             Some(c)
                         }
                     })
-                    .collect::<String>()
+                    .collect::<CompactString>()
             })
             .collect())
     }
@@ -357,14 +362,20 @@ mod tests {
     fn decode() {
         let decoder = Metaspace::new('▁', PrependScheme::Always, true);
         let res = decoder
-            .decode_chain(vec!["▁Hey".into(), "▁friend!".into()])
-            .unwrap();
+            .decode_chain(vec!["▁Hey", "▁friend!"])
+            .unwrap()
+            .into_iter()
+            .map(|t| t.to_compact_string())
+            .collect::<Vec<_>>();
         assert_eq!(res, vec!["Hey", " friend!"]);
 
         let decoder = Metaspace::new('▁', PrependScheme::Never, true);
         let res = decoder
-            .decode_chain(vec!["▁Hey".into(), "▁friend!".into()])
-            .unwrap();
+            .decode_chain(vec!["▁Hey", "▁friend!"])
+            .unwrap()
+            .into_iter()
+            .map(|t| t.to_compact_string())
+            .collect::<Vec<_>>();
         assert_eq!(res, vec![" Hey", " friend!"]);
     }
 }

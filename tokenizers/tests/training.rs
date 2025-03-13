@@ -14,7 +14,7 @@ fn bpe_values_after_training() {
     >::default()
     .with_model(
         BPE::builder()
-            .unk_token("[UNK]".to_string())
+            .unk_token("[UNK]")
             .dropout(0.1)
             .build()
             .unwrap(),
@@ -23,10 +23,10 @@ fn bpe_values_after_training() {
     .unwrap();
     let mut trainer = tokenizer.get_model().get_trainer();
     tokenizer
-        .train_from_files(&mut trainer, vec!["./data/small.txt".to_string()])
+        .train_from_files(&mut trainer, vec!["./data/small.txt".into()])
         .unwrap();
     assert_eq!(tokenizer.get_model().dropout, Some(0.1));
-    assert_eq!(tokenizer.get_model().unk_token, Some("[UNK]".to_string()));
+    assert_eq!(tokenizer.get_model().unk_token, Some("[UNK]".into()));
 }
 
 #[test]
@@ -40,8 +40,8 @@ fn bpe_continuing_subword_prefix_error() {
     >::default()
     .with_model(
         BPE::builder()
-            .unk_token("[UNK]".to_string())
-            .continuing_subword_prefix("##".to_string())
+            .unk_token("[UNK]")
+            .continuing_subword_prefix("##")
             .build()
             .unwrap(),
     )

@@ -2,20 +2,21 @@ use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
+use compact_str::{format_compact, CompactString};
+use rustc_hash::FxHashMap;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::{
-    collections::HashMap,
     fs::File,
     io::prelude::*,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
 
-pub type Vocab = HashMap<String, u32>;
-type VocabR = HashMap<u32, String>;
-pub type MergeMap = HashMap<Pair, (u32, u32)>;
-pub type Merges = Vec<(String, String)>;
+pub type Vocab = FxHashMap<CompactString, u32>;
+type VocabR = FxHashMap<u32, CompactString>;
+pub type MergeMap = FxHashMap<Pair, (u32, u32)>;
+pub type Merges = Vec<(CompactString, CompactString)>;
 
 struct Config {
     files: Option<(String, String)>,
@@ -23,9 +24,9 @@ struct Config {
     merges: Merges,
     cache_capacity: usize,
     dropout: Option<f32>,
-    unk_token: Option<String>,
-    continuing_subword_prefix: Option<String>,
-    end_of_word_suffix: Option<String>,
+    unk_token: Option<CompactString>,
+    continuing_subword_prefix: Option<CompactString>,
+    end_of_word_suffix: Option<CompactString>,
     fuse_unk: bool,
     byte_fallback: bool,
     ignore_merges: bool,
@@ -41,7 +42,7 @@ impl Default for BpeBuilder {
         Self {
             config: Config {
                 files: None,
-                vocab: HashMap::new(),
+                vocab: FxHashMap::default(),
                 merges: vec![],
                 cache_capacity: DEFAULT_CACHE_CAPACITY,
                 dropout: None,
@@ -93,22 +94,22 @@ impl BpeBuilder {
 
     /// Set the `UNK` token for the vocab.
     #[must_use]
-    pub fn unk_token(mut self, unk_token: String) -> Self {
-        self.config.unk_token = Some(unk_token);
+    pub fn unk_token(mut self, unk_token: impl Into<CompactString>) -> Self {
+        self.config.unk_token = Some(unk_token.into());
         self
     }
 
     /// Set the `continuing_subword_prefix` option.
     #[must_use]
-    pub fn continuing_subword_prefix(mut self, prefix: String) -> Self {
-        self.config.continuing_subword_prefix = Some(prefix);
+    pub fn continuing_subword_prefix(mut self, prefix: impl Into<CompactString>) -> Self {
+        self.config.continuing_subword_prefix = Some(prefix.into());
         self
     }
 
     /// Set the `end_of_word_suffix` option.
     #[must_use]
-    pub fn end_of_word_suffix(mut self, prefix: String) -> Self {
-        self.config.end_of_word_suffix = Some(prefix);
+    pub fn end_of_word_suffix(mut self, prefix: impl Into<CompactString>) -> Self {
+        self.config.end_of_word_suffix = Some(prefix.into());
         self
     }
 
@@ -173,14 +174,14 @@ impl BpeBuilder {
             .map(|(i, (a, b))| -> Result<(Pair, (u32, u32))> {
                 let a_id = vocab
                     .get(&a)
-                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(a.to_owned()))?;
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(a.to_string()))?;
                 let b_id = vocab
                     .get(&b)
-                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
-                let new_token = format!("{}{}", a, &b[prefix_len..]);
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_string()))?;
+                let new_token = format_compact!("{}{}", a, &b[prefix_len..]);
                 let new_id = vocab
                     .get(&new_token)
-                    .ok_or(Error::MergeTokenOutOfVocabulary(new_token))?;
+                    .ok_or(Error::MergeTokenOutOfVocabulary(new_token.to_string()))?;
                 Ok(((*a_id, *b_id), (i as u32, *new_id)))
             })
             .collect::<Result<MergeMap>>()?;
@@ -213,16 +214,16 @@ pub struct BPE {
     /// Contains the mapping between Pairs and their (rank, new_id).
     pub(crate) merges: MergeMap,
     /// Contains the cache for optimizing the encoding step.
-    cache: Option<Cache<String, Word>>,
+    cache: Option<Cache<CompactString, Word>>,
     /// Dropout probability for merges. 0.0 = no dropout is the default. At 1.0, tokenization will
     /// perform no merges, so the result will just be characters.
     pub dropout: Option<f32>,
     /// The unknown token to be used when we encounter an unknown char
-    pub unk_token: Option<String>,
+    pub unk_token: Option<CompactString>,
     /// An optional prefix to use on any subword that exist only behind another one
-    pub continuing_subword_prefix: Option<String>,
+    pub continuing_subword_prefix: Option<CompactString>,
     /// An optional suffix to caracterize and end-of-word subword
-    pub end_of_word_suffix: Option<String>,
+    pub end_of_word_suffix: Option<CompactString>,
     /// Do multiple unk tokens get fused
     pub fuse_unk: bool,
     /// Byte fallback from sentence pieces, instead of UNK, uses `"<0x00>"`
@@ -277,7 +278,7 @@ impl Clone for BPE {
 
 /// Converts the merges strings (for example from `merges.txt` file) with the format
 /// "{pair_a} {pair_b}" into the format expected by the BPE struct
-pub(crate) fn convert_merges_to_hashmap<I: Iterator<Item = String>>(
+pub(crate) fn convert_merges_to_hashmap<I: Iterator<Item = CompactString>>(
     iter: I,
     _vocab: &Vocab,
 ) -> Result<Merges> {
@@ -290,7 +291,7 @@ pub(crate) fn convert_merges_to_hashmap<I: Iterator<Item = String>>(
             return Err(Error::BadMerges(rank + 1).into());
         }
 
-        merges.push((parts[0].to_string(), parts[1].to_string()));
+        merges.push((parts[0].into(), parts[1].into()));
     }
 
     Ok(merges)
@@ -324,13 +325,13 @@ impl BPE {
         let mut buffer = String::new();
         vocab_file.read_to_string(&mut buffer)?;
         let json: Value = serde_json::from_str(&buffer)?;
-        let mut vocab = HashMap::new();
+        let mut vocab = FxHashMap::default();
         match json {
             Value::Object(m) => {
                 for (token, id) in m {
                     if let Value::Number(id) = id {
                         let id = id.as_u64().ok_or(Error::BadVocabulary)? as u32;
-                        vocab.insert(token, id);
+                        vocab.insert(token.into(), id);
                     }
                 }
             }
@@ -340,9 +341,10 @@ impl BPE {
         // Read merges file
         let merge_file = File::open(merges)?;
         let merge_file = BufReader::new(merge_file);
-        let merges = ResultShunt::process(merge_file.lines(), |iter| {
-            convert_merges_to_hashmap(iter, &vocab)
-        })??;
+        let merges = ResultShunt::process(
+            merge_file.lines().map(|line| line.map(CompactString::from)),
+            |iter| convert_merges_to_hashmap(iter, &vocab),
+        )??;
 
         Ok((vocab, merges))
     }
@@ -365,11 +367,11 @@ impl BPE {
         self.vocab.clone()
     }
 
-    pub fn get_unk_token(&self) -> &Option<String> {
+    pub fn get_unk_token(&self) -> &Option<CompactString> {
         &self.unk_token
     }
 
-    pub fn get_continuing_subword_prefix(&self) -> &Option<String> {
+    pub fn get_continuing_subword_prefix(&self) -> &Option<CompactString> {
         &self.continuing_subword_prefix
     }
 
@@ -413,7 +415,7 @@ impl BPE {
                     let tokens: Option<Vec<_>> = s
                         .bytes()
                         .map(|b| -> Option<&u32> {
-                            let code = format!("<{b:#04X}>");
+                            let code = format_compact!("<{b:#04X}>");
 
                             self.vocab.get(&code)
                         })
@@ -436,14 +438,14 @@ impl BPE {
                             word.add(unk_id, unk_len);
                             Some((
                                 *self.vocab.get(unk_token).ok_or_else(|| {
-                                    Error::UnkTokenOutOfVocabulary(unk_token.to_owned())
+                                    Error::UnkTokenOutOfVocabulary(unk_token.to_string())
                                 })?,
                                 byte_len,
                             ))
                         }
                         _ => Some((
                             *self.vocab.get(unk_token).ok_or_else(|| {
-                                Error::UnkTokenOutOfVocabulary(unk_token.to_owned())
+                                Error::UnkTokenOutOfVocabulary(unk_token.to_string())
                             })?,
                             byte_len,
                         )),
@@ -469,11 +471,7 @@ impl BPE {
     fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
         if self.ignore_merges {
             if let Some(id) = self.vocab.get(sequence) {
-                return Ok(vec![Token::new(
-                    *id,
-                    sequence.to_string().clone(),
-                    (0, sequence.len()),
-                )]);
+                return Ok(vec![Token::new(*id, sequence, (0, sequence.len()))]);
             }
         }
         if let Some(ref hit) = self.cache.as_ref().and_then(|c| c.get(sequence)) {
@@ -483,7 +481,7 @@ impl BPE {
         let ret = self.word_to_tokens(&word).collect();
         if let Some(ref cache) = self.cache {
             if sequence.len() < MAX_LENGTH {
-                cache.set(sequence.to_owned(), word);
+                cache.set(sequence.into(), word);
             }
         }
         Ok(ret)
@@ -493,7 +491,7 @@ impl BPE {
 impl Model for BPE {
     type Trainer = BpeTrainer;
 
-    fn get_vocab(&self) -> HashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<CompactString, u32> {
         self.vocab.clone()
     }
 
@@ -518,7 +516,7 @@ impl Model for BPE {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    fn id_to_token(&self, id: u32) -> Option<CompactString> {
         self.vocab_r.get(&id).cloned()
     }
 
@@ -600,18 +598,18 @@ mod tests {
             .collect();
         let bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, vec![])
-            .unk_token("<unk>".to_string())
+            .unk_token("<unk>")
             .build()
             .unwrap();
         let tokens = bpe.tokenize("c").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
+        assert_eq!(tokens, vec![Token::new(0u32, "<unk>", (0, 1)),]);
 
         let tokens = bpe.tokenize("cc").unwrap();
         assert_eq!(
             tokens,
             vec![
-                Token::new(0u32, "<unk>".into(), (0, 1)),
-                Token::new(0u32, "<unk>".into(), (1, 2)),
+                Token::new(0u32, "<unk>", (0, 1)),
+                Token::new(0u32, "<unk>", (1, 2)),
             ]
         );
 
@@ -619,10 +617,10 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(1u32, "a".into(), (0, 1)),
-                Token::new(0u32, "<unk>".into(), (1, 2)),
-                Token::new(0u32, "<unk>".into(), (2, 3)),
-                Token::new(2u32, "b".into(), (3, 4)),
+                Token::new(1u32, "a", (0, 1)),
+                Token::new(0u32, "<unk>", (1, 2)),
+                Token::new(0u32, "<unk>", (2, 3)),
+                Token::new(2u32, "b", (3, 4)),
             ]
         );
     }
@@ -634,23 +632,23 @@ mod tests {
             .collect();
         let bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, vec![])
-            .unk_token("<unk>".to_string())
+            .unk_token("<unk>")
             .fuse_unk(true)
             .build()
             .unwrap();
         let tokens = bpe.tokenize("c").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
+        assert_eq!(tokens, vec![Token::new(0u32, "<unk>", (0, 1)),]);
 
         let tokens = bpe.tokenize("cc").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 2)),]);
+        assert_eq!(tokens, vec![Token::new(0u32, "<unk>", (0, 2)),]);
 
         let tokens = bpe.tokenize("accb").unwrap();
         assert_eq!(
             tokens,
             vec![
-                Token::new(1u32, "a".into(), (0, 1)),
-                Token::new(0u32, "<unk>".into(), (1, 3)),
-                Token::new(2u32, "b".into(), (3, 4)),
+                Token::new(1u32, "a", (0, 1)),
+                Token::new(0u32, "<unk>", (1, 3)),
+                Token::new(2u32, "b", (3, 4)),
             ]
         );
     }
@@ -683,25 +681,25 @@ mod tests {
         .cloned()
         .collect();
         let merges: Merges = vec![
-            ("r".to_string(), "e".to_string()),
-            ("a".to_string(), "t".to_string()),
-            ("e".to_string(), "d".to_string()),
-            ("u".to_string(), "n".to_string()),
-            ("at".to_string(), "ed".to_string()),
-            ("re".to_string(), "l".to_string()),
-            ("rel".to_string(), "ated".to_string()),
-            ("un".to_string(), "related".to_string()),
+            ("r".into(), "e".into()),
+            ("a".into(), "t".into()),
+            ("e".into(), "d".into()),
+            ("u".into(), "n".into()),
+            ("at".into(), "ed".into()),
+            ("re".into(), "l".into()),
+            ("rel".into(), "ated".into()),
+            ("un".into(), "related".into()),
         ];
         let mut bpe = BPE::new(vocab, merges);
 
         // With no dropout:
         let tokens = bpe.tokenize("unrelated").unwrap();
-        assert_eq!(tokens, vec![Token::new(15u32, "unrelated".into(), (0, 9))]);
+        assert_eq!(tokens, vec![Token::new(15u32, "unrelated", (0, 9))]);
 
         // With dropout = 0.0 (equivalent to dropout == none)
         bpe.dropout = Some(0.0);
         let tokens = bpe.tokenize("unrelated").unwrap();
-        assert_eq!(tokens, vec![Token::new(15u32, "unrelated".into(), (0, 9))]);
+        assert_eq!(tokens, vec![Token::new(15u32, "unrelated", (0, 9))]);
 
         // Now set dropout to 1.0. Result should be no merges performed.
         bpe.dropout = Some(1.0);
@@ -709,15 +707,15 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(0u32, "u".into(), (0, 1)),
-                Token::new(1u32, "n".into(), (1, 2)),
-                Token::new(2u32, "r".into(), (2, 3)),
-                Token::new(3u32, "e".into(), (3, 4)),
-                Token::new(4u32, "l".into(), (4, 5)),
-                Token::new(5u32, "a".into(), (5, 6)),
-                Token::new(6u32, "t".into(), (6, 7)),
-                Token::new(3u32, "e".into(), (7, 8)),
-                Token::new(7u32, "d".into(), (8, 9)),
+                Token::new(0u32, "u", (0, 1)),
+                Token::new(1u32, "n", (1, 2)),
+                Token::new(2u32, "r", (2, 3)),
+                Token::new(3u32, "e", (3, 4)),
+                Token::new(4u32, "l", (4, 5)),
+                Token::new(5u32, "a", (5, 6)),
+                Token::new(6u32, "t", (6, 7)),
+                Token::new(3u32, "e", (7, 8)),
+                Token::new(7u32, "d", (8, 9)),
             ]
         );
 
@@ -768,45 +766,28 @@ mod tests {
     // Ensure `BPE::from_file` works as expected.
     fn test_bpe_with_continuing_subword_prefix() {
         let vocab: Vocab = vec![
-            ("a".to_string(), 0),
-            ("##b".to_string(), 1),
-            ("##c".to_string(), 2),
-            ("ab".to_string(), 3),
-            ("abc".to_string(), 4),
+            ("a".into(), 0),
+            ("##b".into(), 1),
+            ("##c".into(), 2),
+            ("ab".into(), 3),
+            ("abc".into(), 4),
         ]
         .into_iter()
         .collect();
 
-        let merges = vec![
-            ("a".to_string(), "##b".to_string()),
-            ("ab".to_string(), "##c".to_string()),
-        ];
+        let merges = vec![("a".into(), "##b".into()), ("ab".into(), "##c".into())];
 
         let bpe = BPE::builder()
             .vocab_and_merges(vocab, merges)
-            .unk_token("[UNK]".to_string())
-            .continuing_subword_prefix("##".to_string())
+            .unk_token("[UNK]")
+            .continuing_subword_prefix("##")
             .build()
             .unwrap();
 
         let res = bpe.tokenize("ab");
-        assert_eq!(
-            res.unwrap(),
-            vec![Token {
-                id: 3,
-                value: "ab".to_string(),
-                offsets: (0, 2)
-            }]
-        );
+        assert_eq!(res.unwrap(), vec![Token::new(3, "ab", (0, 2))]);
         let res = bpe.tokenize("abc");
-        assert_eq!(
-            res.unwrap(),
-            vec![Token {
-                id: 4,
-                value: "abc".to_string(),
-                offsets: (0, 3)
-            }]
-        );
+        assert_eq!(res.unwrap(), vec![Token::new(4, "abc", (0, 3))]);
     }
 
     #[test]
@@ -877,15 +858,15 @@ mod tests {
             .collect();
         let bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, vec![])
-            .unk_token("<unk>".to_string())
+            .unk_token("<unk>")
             .byte_fallback(true)
             .build()
             .unwrap();
         let tokens = bpe.tokenize("c").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
+        assert_eq!(tokens, vec![Token::new(0u32, "<unk>", (0, 1)),]);
 
         let tokens = bpe.tokenize("a").unwrap();
-        assert_eq!(tokens, vec![Token::new(1u32, "<0x61>".into(), (0, 1)),]);
+        assert_eq!(tokens, vec![Token::new(1u32, "<0x61>", (0, 1)),]);
     }
 
     #[test]
@@ -897,12 +878,12 @@ mod tests {
             .collect();
         let bpe = BpeBuilder::default()
             .vocab_and_merges(vocab, vec![])
-            .unk_token("<unk>".to_string())
+            .unk_token("<unk>")
             .byte_fallback(true)
             .build()
             .unwrap();
         let tokens = bpe.tokenize("\n").unwrap();
-        assert_eq!(tokens, vec![Token::new(1u32, "<0x0A>".into(), (0, 1)),]);
+        assert_eq!(tokens, vec![Token::new(1u32, "<0x0A>", (0, 1)),]);
     }
 
     #[test]
@@ -954,13 +935,10 @@ mod tests {
             .build()
             .unwrap();
         let tokens = bpe.tokenize(".:.:").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, ".:.:".into(), (0, 4))]);
+        assert_eq!(tokens, vec![Token::new(0u32, ".:.:", (0, 4))]);
 
         let tokens = bpe.tokenize("Ġbelirtilen").unwrap();
-        assert_eq!(
-            tokens,
-            vec![Token::new(1u32, "Ġbelirtilen".into(), (0, 12))]
-        );
+        assert_eq!(tokens, vec![Token::new(1u32, "Ġbelirtilen", (0, 12))]);
 
         bpe.ignore_merges = false;
 
@@ -968,8 +946,8 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(7u32, ".:".into(), (0, 2)),
-                Token::new(7u32, ".:".into(), (2, 4))
+                Token::new(7u32, ".:", (0, 2)),
+                Token::new(7u32, ".:", (2, 4))
             ]
         );
 
@@ -977,26 +955,10 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token {
-                    id: 6,
-                    value: "Ġ".into(),
-                    offsets: (0, 2)
-                },
-                Token {
-                    id: 4,
-                    value: "bel".into(),
-                    offsets: (2, 5)
-                },
-                Token {
-                    id: 15,
-                    value: "irtil".into(),
-                    offsets: (5, 10)
-                },
-                Token {
-                    id: 14,
-                    value: "en".into(),
-                    offsets: (10, 12)
-                }
+                Token::new(6, "Ġ", (0, 2)),
+                Token::new(4, "bel", (2, 5)),
+                Token::new(15, "irtil", (5, 10)),
+                Token::new(14, "en", (10, 12))
             ]
         )
     }

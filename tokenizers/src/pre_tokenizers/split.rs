@@ -1,4 +1,5 @@
 use crate::utils::SysRegex;
+use compact_str::CompactString;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
@@ -8,19 +9,13 @@ use crate::tokenizer::{
 /// Represents the different patterns that `Split` can use
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 pub enum SplitPattern {
-    String(String),
-    Regex(String),
+    String(CompactString),
+    Regex(CompactString),
 }
 
-impl From<String> for SplitPattern {
-    fn from(v: String) -> Self {
-        Self::String(v)
-    }
-}
-
-impl From<&str> for SplitPattern {
-    fn from(v: &str) -> Self {
-        Self::String(v.to_owned())
+impl<T: Into<CompactString>> From<T> for SplitPattern {
+    fn from(v: T) -> Self {
+        Self::String(v.into())
     }
 }
 

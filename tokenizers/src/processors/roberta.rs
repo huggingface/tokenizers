@@ -1,5 +1,6 @@
 use crate::processors::byte_level::process_offsets;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
+use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::iter::FromIterator;
@@ -7,8 +8,8 @@ use std::iter::FromIterator;
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "type")]
 pub struct RobertaProcessing {
-    pub sep: (String, u32),
-    pub cls: (String, u32),
+    pub sep: (CompactString, u32),
+    pub cls: (CompactString, u32),
     pub trim_offsets: bool,
     pub add_prefix_space: bool,
 }
@@ -25,10 +26,10 @@ impl Default for RobertaProcessing {
 }
 
 impl RobertaProcessing {
-    pub fn new(sep: (String, u32), cls: (String, u32)) -> Self {
+    pub fn new(sep: (impl Into<CompactString>, u32), cls: (impl Into<CompactString>, u32)) -> Self {
         Self {
-            sep,
-            cls,
+            sep: (sep.0.into(), sep.1),
+            cls: (cls.0.into(), cls.1),
             ..Default::default()
         }
     }
@@ -45,11 +46,11 @@ impl RobertaProcessing {
         self
     }
 
-    pub fn get_sep_copy(&self) -> (String, u32) {
+    pub fn get_sep_copy(&self) -> (CompactString, u32) {
         (self.sep.0.clone(), self.sep.1)
     }
 
-    pub fn get_cls_copy(&self) -> (String, u32) {
+    pub fn get_cls_copy(&self) -> (CompactString, u32) {
         (self.cls.0.clone(), self.cls.1)
     }
 }
@@ -263,19 +264,19 @@ mod tests {
         use crate::Token;
         let encoding = Encoding::from_tokens(
             vec![
-                Token::new(12, "Hello".into(), (0, 5)),
-                Token::new(14, "there".into(), (6, 11)),
+                Token::new(12, "Hello", (0, 5)),
+                Token::new(14, "there", (6, 11)),
             ],
             0,
         );
-        let pair = Encoding::from_tokens(vec![Token::new(15, "pair".into(), (0, 4))], 0);
+        let pair = Encoding::from_tokens(vec![Token::new(15, "pair", (0, 4))], 0);
         let single_encoding = processor.process(encoding.clone(), None, true).unwrap();
         assert_eq!(
             single_encoding,
             Encoding::new(
                 vec![0, 12, 14, 2],
                 vec![0, 0, 0, 0],
-                vec!["<s>".into(), "Hello".into(), "there".into(), "</s>".into()],
+                vec!["<s>", "Hello", "there", "</s>"],
                 vec![None, None, None, None],
                 vec![(0, 0), (0, 5), (6, 11), (0, 0)],
                 vec![1, 0, 0, 1],
@@ -294,15 +295,7 @@ mod tests {
             Encoding::new(
                 vec![0, 12, 14, 2, 2, 15, 2],
                 vec![0, 0, 0, 0, 0, 0, 0],
-                vec![
-                    "<s>".into(),
-                    "Hello".into(),
-                    "there".into(),
-                    "</s>".into(),
-                    "</s>".into(),
-                    "pair".into(),
-                    "</s>".into()
-                ],
+                vec!["<s>", "Hello", "there", "</s>", "</s>", "pair", "</s>"],
                 vec![None, None, None, None, None, None, None],
                 vec![(0, 0), (0, 5), (6, 11), (0, 0), (0, 0), (0, 4), (0, 0)],
                 vec![1, 0, 0, 1, 1, 0, 1],
@@ -324,7 +317,7 @@ mod tests {
             Encoding::new(
                 vec![12, 14, 15],
                 vec![0, 0, 0],
-                vec!["Hello".into(), "there".into(), "pair".into(),],
+                vec!["Hello", "there", "pair",],
                 vec![None, None, None],
                 vec![(0, 5), (6, 11), (0, 4)],
                 vec![0, 0, 0],

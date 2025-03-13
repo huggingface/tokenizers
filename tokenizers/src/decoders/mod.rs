@@ -10,6 +10,7 @@ pub mod wordpiece;
 pub use super::pre_tokenizers::byte_level;
 pub use super::pre_tokenizers::metaspace;
 
+use compact_str::ToCompactString;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::decoders::bpe::BPEDecoder;
@@ -150,18 +151,41 @@ impl<'de> Deserialize<'de> for DecoderWrapper {
 }
 
 impl Decoder for DecoderWrapper {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode_chain<T: ToCompactString>(
+        &self,
+        tokens: Vec<T>,
+    ) -> Result<Vec<impl ToCompactString>> {
         match self {
-            Self::BPE(bpe) => bpe.decode_chain(tokens),
-            Self::ByteLevel(bl) => bl.decode_chain(tokens),
-            Self::Metaspace(ms) => ms.decode_chain(tokens),
-            Self::WordPiece(wp) => wp.decode_chain(tokens),
-            Self::CTC(ctc) => ctc.decode_chain(tokens),
-            Self::Sequence(seq) => seq.decode_chain(tokens),
-            Self::Replace(seq) => seq.decode_chain(tokens),
-            Self::ByteFallback(bf) => bf.decode_chain(tokens),
-            Self::Strip(bf) => bf.decode_chain(tokens),
-            Self::Fuse(bf) => bf.decode_chain(tokens),
+            Self::BPE(bpe) => bpe
+                .decode_chain(tokens)
+                .map(|v| v.into_iter().map(|t| t.to_compact_string()).collect()),
+            Self::ByteLevel(bl) => bl
+                .decode_chain(tokens)
+                .map(|v| v.into_iter().map(|t| t.to_compact_string()).collect()),
+            Self::Metaspace(ms) => ms
+                .decode_chain(tokens)
+                .map(|v| v.into_iter().map(|t| t.to_compact_string()).collect()),
+            Self::WordPiece(wp) => wp
+                .decode_chain(tokens)
+                .map(|v| v.into_iter().map(|t| t.to_compact_string()).collect()),
+            Self::CTC(ctc) => ctc
+                .decode_chain(tokens)
+                .map(|v| v.into_iter().map(|t| t.to_compact_string()).collect()),
+            Self::Sequence(seq) => seq
+                .decode_chain(tokens)
+                .map(|v| v.into_iter().map(|t| t.to_compact_string()).collect()),
+            Self::Replace(seq) => seq
+                .decode_chain(tokens)
+                .map(|v| v.into_iter().map(|t| t.to_compact_string()).collect()),
+            Self::ByteFallback(bf) => bf
+                .decode_chain(tokens)
+                .map(|v| v.into_iter().map(|t| t.to_compact_string()).collect()),
+            Self::Strip(bf) => bf
+                .decode_chain(tokens)
+                .map(|v| v.into_iter().map(|t| t.to_compact_string()).collect()),
+            Self::Fuse(bf) => bf
+                .decode_chain(tokens)
+                .map(|v| v.into_iter().map(|t| t.to_compact_string()).collect()),
         }
     }
 }
