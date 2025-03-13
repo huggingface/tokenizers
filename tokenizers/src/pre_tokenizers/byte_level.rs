@@ -44,8 +44,8 @@ lazy_static! {
         r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
     )
     .unwrap();
-    static ref BYTES_CHAR: HashMap<u8, char> = bytes_char();
-    static ref CHAR_BYTES: HashMap<char, u8> =
+    pub static ref BYTES_CHAR: HashMap<u8, char> = bytes_char();
+    pub static ref CHAR_BYTES: HashMap<char, u8> =
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
 }
 
