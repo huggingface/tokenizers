@@ -44,6 +44,14 @@ lazy_static! {
         r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
     )
     .unwrap();
+    static ref RE_VEC: Vec<SysRegex> = {
+        let pattern = r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
+        let mut vec = Vec::with_capacity(MAX_NUM_THREADS);
+        for _ in 0..MAX_NUM_THREADS {
+            vec.push(SysRegex::new(pattern).unwrap());
+        }
+        vec
+    };
     static ref BYTES_CHAR: HashMap<u8, char> = bytes_char();
     static ref CHAR_BYTES: HashMap<char, u8> =
         bytes_char().into_iter().map(|(c, b)| (b, c)).collect();
@@ -114,12 +122,31 @@ impl ByteLevel {
     }
 }
 
+use std::num::NonZeroU64;
+use std::thread;
+
+pub struct FakeThreadId(NonZeroU64);
+
+fn hash_current_thread() -> usize {
+    // It's easier to use unsafe than to use nightly. Rust has this nice u64 thread id counter
+    // that works great for our use case of avoiding collisions in our array. Unfortunately,
+    // it's private. However, there are only so many ways you can layout a u64, so just transmute
+    // https://github.com/rust-lang/rust/issues/67939
+    const _: [u8; 8] = [0; std::mem::size_of::<thread::ThreadId>()];
+    const _: [u8; 8] = [0; std::mem::size_of::<FakeThreadId>()];
+    let x =
+        unsafe { std::mem::transmute::<thread::ThreadId, FakeThreadId>(thread::current().id()).0 };
+    u64::from(x) as usize - 1
+}
+
+const MAX_NUM_THREADS: usize = 128;
+
 /// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
 /// their byte-level counterpart. It also splits the input according to the configured regex.
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        let re_ref: &SysRegex = &RE;
+        let re_ref: &SysRegex = &RE_VEC[hash_current_thread() % MAX_NUM_THREADS]; // TODO use the thread thing here as well!
         pretokenized.split(|_, mut normalized| {
             if self.add_prefix_space && !normalized.get().starts_with(' ') {
                 normalized.prepend(" ");
