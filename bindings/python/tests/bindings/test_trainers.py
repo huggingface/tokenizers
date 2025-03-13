@@ -14,7 +14,7 @@ from tokenizers import (
     trainers,
 )
 
-from ..utils import data_dir, train_files
+from ..utils import data_dir, train_files, DATA_PATH
 
 
 class TestBpeTrainer:
@@ -287,7 +287,7 @@ class TestUnigram:
         trainer.initial_alphabet = ["d", "z"]
         assert sorted(trainer.initial_alphabet) == ["d", "z"]
 
-    def test_continuing_prefix_trainer_mismatch(self):
+    def test_continuing_prefix_trainer_mismatch(self, train_files):
         UNK = "[UNK]"
         special_tokens = [UNK]
         tokenizer = Tokenizer(models.BPE(unk_token=UNK, continuing_subword_prefix="##"))
@@ -295,8 +295,9 @@ class TestUnigram:
         tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
             [pre_tokenizers.Whitespace(), pre_tokenizers.Digits(individual_digits=True)]
         )
-        tokenizer.train(files=["data/big.txt"], trainer=trainer)
+        tokenizer.train(files=[train_files["big"]], trainer=trainer)
 
-        tokenizer.save("data/tokenizer.json")
+        tokenizer_json = os.path.join(DATA_PATH, "tokenizer.json")
+        tokenizer.save(tokenizer_json)
 
-        tokenizer.from_file("data/tokenizer.json")
+        tokenizer.from_file(tokenizer_json)
