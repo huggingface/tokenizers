@@ -3,9 +3,9 @@
 
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
+use rustc_hash::FxHashMap;
 use std::{
     borrow::Cow,
-    collections::HashMap,
     fs::File,
     io::prelude::*,
     io::{BufRead, BufReader},
@@ -22,8 +22,8 @@ pub enum Error {
     MissingUnkToken,
 }
 
-type Vocab = HashMap<String, u32>;
-type VocabR = HashMap<u32, String>;
+type Vocab = FxHashMap<String, u32>;
+type VocabR = FxHashMap<u32, String>;
 
 struct Config {
     files: Option<String>,
@@ -43,7 +43,7 @@ impl Default for WordPieceBuilder {
         Self {
             config: Config {
                 files: None,
-                vocab: HashMap::new(),
+                vocab: FxHashMap::default(),
                 unk_token: String::from("[UNK]"),
                 continuing_subword_prefix: String::from("##"),
                 max_input_chars_per_word: 100,
@@ -142,8 +142,8 @@ impl std::fmt::Debug for WordPiece {
 impl Default for WordPiece {
     fn default() -> Self {
         Self {
-            vocab: HashMap::new(),
-            vocab_r: HashMap::new(),
+            vocab: FxHashMap::default(),
+            vocab_r: FxHashMap::default(),
             unk_token: String::from("[UNK]"),
             continuing_subword_prefix: String::from("##"),
             max_input_chars_per_word: 100,
@@ -162,7 +162,7 @@ impl WordPiece {
         let file = File::open(vocab)?;
         let file = BufReader::new(file);
 
-        let mut vocab = HashMap::new();
+        let mut vocab = FxHashMap::default();
         for (index, line) in file.lines().enumerate() {
             let line = line?;
             vocab.insert(line.trim_end().to_owned(), index as u32);
@@ -192,7 +192,7 @@ impl WordPiece {
 impl Model for WordPiece {
     type Trainer = WordPieceTrainer;
 
-    fn get_vocab(&self) -> HashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<String, u32> {
         self.vocab.clone()
     }
 

@@ -1,7 +1,7 @@
 use crate::{
     normalizer::Range, Encoding, NormalizedString, OffsetReferential, Offsets, Result, Token,
 };
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 /// Various possible types of offsets
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -265,7 +265,7 @@ impl From<String> for PreTokenizedString {
 }
 
 struct BytesToCharOffsetConverter {
-    map: HashMap<usize, usize>,
+    map: FxHashMap<usize, usize>,
 }
 
 impl BytesToCharOffsetConverter {

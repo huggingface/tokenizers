@@ -73,7 +73,7 @@ mod tests {
     use super::*;
     use crate::processors::{ByteLevel, PostProcessorWrapper};
     use crate::tokenizer::{Encoding, PostProcessor};
-    use std::collections::HashMap;
+    use rustc_hash::FxHashMap;
     use std::iter::FromIterator;
 
     #[test]
@@ -93,7 +93,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::new(),
+            FxHashMap::default(),
         );
 
         let bytelevel = ByteLevel::default().trim_offsets(true);
@@ -113,7 +113,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::from_iter(vec![(0, 0..5)]),
+            FxHashMap::from_iter(vec![(0, 0..5)]),
         );
 
         assert_eq!(
@@ -156,7 +156,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::from_iter(vec![(0, 0..5), (1, 5..10)]),
+            FxHashMap::from_iter(vec![(0, 0..5), (1, 5..10)]),
         );
         assert_eq!(
             pair_expected,

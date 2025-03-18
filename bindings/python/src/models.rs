@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -70,7 +70,7 @@ impl Model for PyModel {
         self.model.read().unwrap().id_to_token(id)
     }
 
-    fn get_vocab(&self) -> HashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<String, u32> {
         self.model.read().unwrap().get_vocab()
     }
 

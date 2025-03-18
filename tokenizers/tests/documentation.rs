@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::iter::FromIterator;
 
 use tokenizers::decoders::byte_fallback::ByteFallback;
@@ -91,7 +91,7 @@ fn streaming_tokenizer() {
     );
 
     // None example
-    let vocab = HashMap::from_iter([
+    let vocab = FxHashMap::from_iter([
         ("<0x20>".to_string(), 0),
         ("<0xC3>".to_string(), 1),
         ("<0xA9>".to_string(), 2),

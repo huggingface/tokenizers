@@ -3,8 +3,8 @@ use crate::tasks::models::{BPEFromFilesTask, WordLevelFromFilesTask, WordPieceFr
 use crate::trainers::Trainer;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use tokenizers as tk;
@@ -95,7 +95,7 @@ impl tk::Model for Model {
     self.model.as_ref()?.read().unwrap().id_to_token(id)
   }
 
-  fn get_vocab(&self) -> HashMap<String, u32> {
+  fn get_vocab(&self) -> FxHashMap<String, u32> {
     self
       .model
       .as_ref()

@@ -1,7 +1,7 @@
 use crate::processors::byte_level::process_offsets;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::iter::FromIterator;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -108,7 +108,7 @@ impl PostProcessor for RobertaProcessing {
 
                     // For compatibility with `TemplateProcessing`, the sequence_ranges shouldn't contain
                     // the special tokens.
-                    let sequence_ranges = HashMap::from_iter(vec![(0, 1..ids.len() - 1)]);
+                    let sequence_ranges = FxHashMap::from_iter(vec![(0, 1..ids.len() - 1)]);
                     Encoding::new(
                         ids,
                         type_ids,
@@ -141,7 +141,7 @@ impl PostProcessor for RobertaProcessing {
                                 // For compatibility with `TemplateProcessing`, the sequence_ranges shouldn't
                                 // contain the special tokens.
                                 let sequence_ranges =
-                                    HashMap::from_iter(vec![(0, 1..ids.len() - 1)]);
+                                    FxHashMap::from_iter(vec![(0, 1..ids.len() - 1)]);
                                 Encoding::new(
                                     ids,
                                     type_ids,
@@ -174,7 +174,8 @@ impl PostProcessor for RobertaProcessing {
 
                     // For compatibility with `TemplateProcessing`, the sequence_ranges shouldn't contain
                     // the special tokens.
-                    let pair_sequence_ranges = HashMap::from_iter(vec![(1, 1..pair_ids.len() - 1)]);
+                    let pair_sequence_ranges =
+                        FxHashMap::from_iter(vec![(1, 1..pair_ids.len() - 1)]);
                     Encoding::new(
                         pair_ids,
                         pair_type_ids,
@@ -208,7 +209,7 @@ impl PostProcessor for RobertaProcessing {
                                 // For compatibility with `TemplateProcessing`, the sequence_ranges
                                 // shouldn't contain the special tokens.
                                 let pair_sequence_ranges =
-                                    HashMap::from_iter(vec![(1, 1..pair_ids.len() - 1)]);
+                                    FxHashMap::from_iter(vec![(1, 1..pair_ids.len() - 1)]);
                                 Encoding::new(
                                     pair_ids,
                                     pair_type_ids,
@@ -281,7 +282,7 @@ mod tests {
                 vec![1, 0, 0, 1],
                 vec![1, 1, 1, 1],
                 vec![],
-                HashMap::from_iter(vec![(0, 1..3)]),
+                FxHashMap::from_iter(vec![(0, 1..3)]),
             )
         );
         assert_eq!(single_encoding.token_to_sequence(2), Some(0));
@@ -308,7 +309,7 @@ mod tests {
                 vec![1, 0, 0, 1, 1, 0, 1],
                 vec![1, 1, 1, 1, 1, 1, 1],
                 vec![],
-                HashMap::from_iter(vec![(0, 1..3), (1, 5..6)]),
+                FxHashMap::from_iter(vec![(0, 1..3), (1, 5..6)]),
             )
         );
         assert_eq!(pair_encoding.token_to_sequence(2), Some(0));
@@ -330,7 +331,7 @@ mod tests {
                 vec![0, 0, 0],
                 vec![1, 1, 1],
                 vec![],
-                HashMap::from_iter(vec![(0, 0..2), (1, 2..3)]),
+                FxHashMap::from_iter(vec![(0, 0..2), (1, 2..3)]),
             )
         );
         assert_eq!(pair_encoding.token_to_sequence(0), Some(0));

@@ -2,7 +2,7 @@
 extern crate criterion;
 
 use criterion::Criterion;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::fs::read_to_string;
 use std::time::{Duration, Instant};
 use tokenizers::models::unigram::Unigram;
@@ -18,7 +18,7 @@ pub fn bench_train(c: &mut Criterion) {
     let mut model = Unigram::default();
 
     let content = read_to_string("data/small.txt").unwrap();
-    let mut word_counts = HashMap::new();
+    let mut word_counts = FxHashMap::default();
     content.split_whitespace().for_each(|word| {
         // This is important for the test of char vs u8
         let word = format!("▁{word}");
@@ -46,7 +46,7 @@ pub fn bench_train(c: &mut Criterion) {
     let content = read_to_string("data/big.txt").unwrap();
     // creating `medium` data, which is the first 25% of `data/big.txt`
     let content = String::from(&content[..(content.len() as f64 * 0.25) as usize]);
-    let mut word_counts = HashMap::new();
+    let mut word_counts = FxHashMap::default();
     content.split_whitespace().for_each(|word| {
         // This is important for the test of char vs u8
         let word = format!("▁{word}");

@@ -1,6 +1,6 @@
 #[cfg(not(debug_assertions))]
 use assert_approx_eq::assert_approx_eq;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::fs::read_to_string;
 use std::path::Path;
 #[cfg(not(debug_assertions))]
@@ -41,7 +41,7 @@ fn test_unigram_from_file() {
 #[test]
 fn test_train_unigram_from_file() {
     let content = read_to_string("data/small.txt").unwrap();
-    let mut word_counts = HashMap::new();
+    let mut word_counts = FxHashMap::default();
     content.split_whitespace().for_each(|word| {
         // This is important for the test of char vs u8
         let word = format!("▁{word}");

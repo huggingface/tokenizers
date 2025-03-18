@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::FxHashMap;
+use rustc_hash::FxHashSet;
 use std::sync::LazyLock;
 
 use crate::utils::SysRegex;
@@ -12,7 +13,7 @@ use crate::utils::macro_rules_attribute;
 
 /// Converts bytes to unicode characters.
 /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L9
-pub(crate) fn bytes_char() -> HashMap<u8, char> {
+pub(crate) fn bytes_char() -> FxHashMap<u8, char> {
     let mut bs: Vec<u8> = vec![];
     bs.extend(b'!'..=b'~');
     bs.extend(b'\xA1'..=b'\xAC');
@@ -44,8 +45,8 @@ static RE: LazyLock<SysRegex> = LazyLock::new(|| {
     SysRegex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
         .unwrap()
 });
-static BYTES_CHAR: LazyLock<HashMap<u8, char>> = LazyLock::new(bytes_char);
-static CHAR_BYTES: LazyLock<HashMap<char, u8>> =
+static BYTES_CHAR: LazyLock<FxHashMap<u8, char>> = LazyLock::new(bytes_char);
+static CHAR_BYTES: LazyLock<FxHashMap<char, u8>> =
     LazyLock::new(|| bytes_char().into_iter().map(|(c, b)| (b, c)).collect());
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -90,7 +91,7 @@ impl ByteLevel {
         }
     }
 
-    pub fn alphabet() -> HashSet<char> {
+    pub fn alphabet() -> FxHashSet<char> {
         BYTES_CHAR.values().copied().collect()
     }
 
@@ -450,7 +451,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::new(),
+            FxHashMap::default(),
         );
         process_offsets(&mut encoding, true);
         assert_eq!(
@@ -464,7 +465,7 @@ mod tests {
                 vec![],
                 vec![],
                 vec![],
-                HashMap::new(),
+                FxHashMap::default(),
             )
         );
     }
@@ -486,7 +487,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::new(),
+            FxHashMap::default(),
         );
         let expected = Encoding::new(
             vec![0; 5],
@@ -503,7 +504,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::from_iter(vec![(0, 0..5)]),
+            FxHashMap::from_iter(vec![(0, 0..5)]),
         );
 
         let bytelevel = ByteLevel::default().trim_offsets(true);
@@ -543,7 +544,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::from_iter(vec![(0, 0..5), (1, 5..10)]),
+            FxHashMap::from_iter(vec![(0, 0..5), (1, 5..10)]),
         );
         assert_eq!(
             pair_expected,

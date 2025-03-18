@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 napi        = "2"
 napi-derive = "2"
+rustc-hash = "2.1.1"
 serde       = { version = "1.0.163", features = ["derive"] }
 tokenizers  = { path = "../../tokenizers/" }
 

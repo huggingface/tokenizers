@@ -17,11 +17,12 @@ pub mod parallelism;
 pub(crate) mod progress;
 pub mod truncation;
 
+use rustc_hash::FxHashMap;
 use serde::{Serialize, Serializer};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 pub(crate) fn ordered_map<S, K, V>(
-    value: &HashMap<K, V>,
+    value: &FxHashMap<K, V>,
     serializer: S,
 ) -> std::result::Result<S::Ok, S::Error>
 where
