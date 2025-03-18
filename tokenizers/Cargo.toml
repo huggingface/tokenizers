@@ -42,7 +42,6 @@ required-features = ["http"]
 harness = false
 
 [dependencies]
-lazy_static = "1.4"
 rand = "0.8"
 onig = { version = "6.4", default-features = false, optional = true }
 regex = "1.10"
