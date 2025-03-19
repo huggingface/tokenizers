@@ -2,6 +2,7 @@ pub mod bert;
 pub mod byte_level;
 pub mod delimiter;
 pub mod digits;
+pub mod fixed_length;
 pub mod metaspace;
 pub mod punctuation;
 pub mod sequence;
@@ -15,6 +16,7 @@ use crate::pre_tokenizers::bert::BertPreTokenizer;
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::delimiter::CharDelimiterSplit;
 use crate::pre_tokenizers::digits::Digits;
+use crate::pre_tokenizers::fixed_length::FixedLength;
 use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::pre_tokenizers::punctuation::Punctuation;
 use crate::pre_tokenizers::sequence::Sequence;
@@ -37,6 +39,7 @@ pub enum PreTokenizerWrapper {
     WhitespaceSplit(WhitespaceSplit),
     Digits(Digits),
     UnicodeScripts(UnicodeScripts),
+    FixedLength(FixedLength),
 }
 
 impl PreTokenizer for PreTokenizerWrapper {
@@ -53,6 +56,7 @@ impl PreTokenizer for PreTokenizerWrapper {
             Self::WhitespaceSplit(wspt) => wspt.pre_tokenize(normalized),
             Self::Digits(wspt) => wspt.pre_tokenize(normalized),
             Self::UnicodeScripts(us) => us.pre_tokenize(normalized),
+            Self::FixedLength(fl) => fl.pre_tokenize(normalized),
         }
     }
 }
@@ -82,6 +86,7 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
             WhitespaceSplit,
             Digits,
             UnicodeScripts,
+            FixedLength,
         }
 
         #[derive(Deserialize)]
@@ -105,6 +110,7 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
             WhitespaceSplit(WhitespaceSplit),
             Digits(Digits),
             UnicodeScripts(UnicodeScripts),
+            FixedLength(FixedLength),
         }
 
         let helper = PreTokenizerHelper::deserialize(deserializer)?;
@@ -152,6 +158,9 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
                     EnumType::UnicodeScripts => PreTokenizerWrapper::UnicodeScripts(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
+                    EnumType::FixedLength => PreTokenizerWrapper::FixedLength(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
                 }
             }
 
@@ -187,6 +196,9 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
                     PreTokenizerUntagged::UnicodeScripts(unicode_scripts) => {
                         PreTokenizerWrapper::UnicodeScripts(unicode_scripts)
                     }
+                    PreTokenizerUntagged::FixedLength(fixed_length) => {
+                        PreTokenizerWrapper::FixedLength(fixed_length)
+                    }
                 }
             }
         })
@@ -204,6 +216,7 @@ impl_enum_from!(Metaspace, PreTokenizerWrapper, Metaspace);
 impl_enum_from!(WhitespaceSplit, PreTokenizerWrapper, WhitespaceSplit);
 impl_enum_from!(Digits, PreTokenizerWrapper, Digits);
 impl_enum_from!(UnicodeScripts, PreTokenizerWrapper, UnicodeScripts);
+impl_enum_from!(FixedLength, PreTokenizerWrapper, FixedLength);
 
 #[cfg(test)]
 mod tests {
