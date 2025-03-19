@@ -944,10 +944,10 @@ where
 /// a valid chunk.
 /// ```
 /// use tokenizers::{Tokenizer, TokenizerBuilder, models::bpe::BPE, decoders::byte_fallback::ByteFallback, pre_tokenizers::byte_level::ByteLevel, normalizers::unicode::NFC};
-/// use rustc_hash::FxHashMap;
+/// use std::collections::HashMap;
 /// use std::iter::FromIterator;
 ///
-/// let vocab = FxHashMap::from_iter([
+/// let vocab = HashMap::from([
 ///     ("<0x20>".to_string(), 0),
 ///     ("<0xC3>".to_string(), 1),
 ///     ("<0xA9>".to_string(), 2),
@@ -981,10 +981,10 @@ where
 ///
 /// ```
 /// use tokenizers::{Tokenizer, TokenizerBuilder, models::bpe::BPE, pre_tokenizers::{byte_level::ByteLevel, metaspace::Metaspace}, normalizers::unicode::NFC};
-/// use rustc_hash::FxHashMap;
+/// use std::collections::HashMap;
 /// use std::iter::FromIterator;
 ///
-/// let vocab = FxHashMap::from_iter([
+/// let vocab = HashMap::from([
 ///     ("▁This".to_string(), 0),
 /// ]);
 /// let merges = vec![];

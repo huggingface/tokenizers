@@ -168,9 +168,10 @@ pub fn truncate_encodings(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::tokenizer::Encoding;
-    use rustc_hash::FxHashMap;
 
     fn get_empty() -> Encoding {
         Encoding::new(
@@ -182,7 +183,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            FxHashMap::default(),
+            HashMap::new(),
         )
     }
 
@@ -196,7 +197,7 @@ mod tests {
             vec![0, 0],
             vec![1, 1],
             vec![],
-            FxHashMap::default(),
+            HashMap::new(),
         )
     }
 
@@ -215,7 +216,7 @@ mod tests {
             vec![0, 0, 0, 0],
             vec![1, 1, 1, 1],
             vec![],
-            FxHashMap::default(),
+            HashMap::new(),
         )
     }
 
@@ -256,7 +257,7 @@ mod tests {
             vec![0, 0, 0, 0, 0, 0, 0, 0],
             vec![1, 1, 1, 1, 1, 1, 1, 1],
             vec![],
-            FxHashMap::default(),
+            HashMap::new(),
         )
     }
 

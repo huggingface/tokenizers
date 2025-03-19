@@ -1,9 +1,11 @@
 use super::WordLevel;
 use crate::utils::parallelism::*;
 use crate::{AddedToken, Result, Trainer};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::hash::BuildHasher;
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Builder, Serialize, Deserialize)]
@@ -36,9 +38,9 @@ impl WordLevelTrainer {
         WordLevelTrainerBuilder::default()
     }
 
-    fn do_train(
+    fn do_train<S: BuildHasher>(
         &self,
-        word_counts: &FxHashMap<String, u64>,
+        word_counts: &HashMap<String, u64, S>,
         model: &mut WordLevel,
     ) -> Result<Vec<AddedToken>> {
         let mut ordered_counts = word_counts.iter().collect::<Vec<_>>();
@@ -56,7 +58,7 @@ impl WordLevelTrainer {
         ordered_counts.sort_by(cmp);
 
         let word_level = WordLevel::builder()
-            .vocab(
+            .vocab::<FxBuildHasher>(
                 self.special_tokens
                     .iter()
                     .map(|token| token.content.clone())
@@ -128,11 +130,13 @@ impl Trainer for WordLevelTrainer {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
     fn test_train() {
-        let word_counts: FxHashMap<String, u64> = [
+        let word_counts: HashMap<String, u64> = [
             ("the".into(), 25),
             ("roses".into(), 22),
             ("are".into(), 24),
@@ -151,7 +155,7 @@ mod tests {
 
         let mut model = WordLevel::default();
         trainer.do_train(&word_counts, &mut model).unwrap();
-        let expected_vocab: FxHashMap<String, u32> = [
+        let expected_vocab: HashMap<String, u32> = [
             ("the".into(), 0),
             ("are".into(), 1),
             ("roses".into(), 2),
@@ -161,13 +165,18 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.vocab, expected_vocab);
+
+        let mut lhs = model.vocab.into_iter().collect::<Vec<_>>();
+        let mut rhs = expected_vocab.into_iter().collect::<Vec<_>>();
+        lhs.sort_unstable();
+        rhs.sort_unstable();
+        assert_eq!(lhs, rhs);
 
         // If we specify a min_frequency
         trainer.min_frequency = 15;
         let mut model = WordLevel::default();
         trainer.do_train(&word_counts, &mut model).unwrap();
-        let expected_vocab: FxHashMap<String, u32> = [
+        let expected_vocab: HashMap<String, u32> = [
             ("the".into(), 0),
             ("are".into(), 1),
             ("roses".into(), 2),
@@ -177,6 +186,10 @@ mod tests {
         .cloned()
         .collect();
 
-        assert_eq!(model.vocab, expected_vocab);
+        let mut lhs = model.vocab.into_iter().collect::<Vec<_>>();
+        let mut rhs = expected_vocab.into_iter().collect::<Vec<_>>();
+        lhs.sort_unstable();
+        rhs.sort_unstable();
+        assert_eq!(lhs, rhs);
     }
 }

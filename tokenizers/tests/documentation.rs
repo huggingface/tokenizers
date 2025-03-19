@@ -1,5 +1,4 @@
-use rustc_hash::FxHashMap;
-use std::iter::FromIterator;
+use std::collections::HashMap;
 
 use tokenizers::decoders::byte_fallback::ByteFallback;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
@@ -91,7 +90,7 @@ fn streaming_tokenizer() {
     );
 
     // None example
-    let vocab = FxHashMap::from_iter([
+    let vocab = HashMap::from([
         ("<0x20>".to_string(), 0),
         ("<0xC3>".to_string(), 1),
         ("<0xA9>".to_string(), 2),

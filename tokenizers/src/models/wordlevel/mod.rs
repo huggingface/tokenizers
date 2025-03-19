@@ -2,8 +2,11 @@ use super::OrderedVocabIter;
 use crate::tokenizer::{Model, Result, Token};
 use rustc_hash::FxHashMap;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs::File;
+use std::hash::BuildHasher;
 use std::io::{BufReader, Read, Write};
+use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 
 mod serialization;
@@ -61,8 +64,8 @@ impl WordLevelBuilder {
 
     /// Set the vocab (token -> ID) mapping.
     #[must_use]
-    pub fn vocab(mut self, vocab: FxHashMap<String, u32>) -> Self {
-        self.config.vocab = vocab;
+    pub fn vocab<S: BuildHasher>(mut self, vocab: HashMap<String, u32, S>) -> Self {
+        self.config.vocab = FxHashMap::from_iter(vocab);
         self
     }
 
@@ -203,7 +206,7 @@ impl Model for WordLevel {
             .iter()
             .collect();
         let mut vocab_file = File::create(&vocab_path)?;
-        let order_vocab_iter = OrderedVocabIter::new(&self.vocab_r);
+        let order_vocab_iter = OrderedVocabIter::new(self.vocab_r.clone());
         let serialized = serde_json::to_string(&order_vocab_iter)?;
         vocab_file.write_all(serialized.as_bytes())?;
 

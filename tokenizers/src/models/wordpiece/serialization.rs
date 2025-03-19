@@ -20,7 +20,7 @@ impl Serialize for WordPiece {
         model.serialize_field("max_input_chars_per_word", &self.max_input_chars_per_word)?;
 
         // Then large ones
-        let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
+        let ordered_vocab = OrderedVocabIter::new(self.vocab_r.clone());
         model.serialize_field("vocab", &ordered_vocab)?;
 
         model.end()

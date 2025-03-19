@@ -17,18 +17,21 @@ pub mod parallelism;
 pub(crate) mod progress;
 pub mod truncation;
 
-use rustc_hash::FxHashMap;
 use serde::{Serialize, Serializer};
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, HashMap},
+    hash::BuildHasher,
+};
 
-pub(crate) fn ordered_map<S, K, V>(
-    value: &FxHashMap<K, V>,
+pub(crate) fn ordered_map<S, K, V, H>(
+    value: &HashMap<K, V, H>,
     serializer: S,
 ) -> std::result::Result<S::Ok, S::Error>
 where
     S: Serializer,
     K: Serialize + std::cmp::Ord,
     V: Serialize,
+    H: BuildHasher,
 {
     let ordered: BTreeMap<_, _> = value.iter().collect();
     ordered.serialize(serializer)

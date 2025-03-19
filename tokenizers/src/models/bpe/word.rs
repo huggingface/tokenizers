@@ -1,8 +1,8 @@
 use super::Pair;
 use rand::{thread_rng, Rng};
-use rustc_hash::FxHashMap;
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, HashMap};
+use std::hash::BuildHasher;
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -159,7 +159,11 @@ impl Word {
         changes
     }
 
-    pub(super) fn merge_all(&mut self, merges: &FxHashMap<Pair, (u32, u32)>, dropout: Option<f32>) {
+    pub(super) fn merge_all<S: BuildHasher>(
+        &mut self,
+        merges: &HashMap<Pair, (u32, u32), S>,
+        dropout: Option<f32>,
+    ) {
         let mut queue = BinaryHeap::with_capacity(self.symbols.len());
         let mut skip = Vec::with_capacity(queue.len());
 

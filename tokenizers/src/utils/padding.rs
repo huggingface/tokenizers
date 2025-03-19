@@ -82,9 +82,10 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::tokenizer::Encoding;
-    use rustc_hash::FxHashMap;
 
     #[test]
     fn pad_to_multiple() {
@@ -99,7 +100,7 @@ mod tests {
                     vec![],
                     vec![],
                     vec![],
-                    FxHashMap::default(),
+                    HashMap::new(),
                 ),
                 Encoding::new(
                     vec![0, 1, 2],
@@ -110,7 +111,7 @@ mod tests {
                     vec![],
                     vec![],
                     vec![],
-                    FxHashMap::default(),
+                    HashMap::new(),
                 ),
             ]
         }

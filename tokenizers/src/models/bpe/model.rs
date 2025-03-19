@@ -5,6 +5,9 @@ use crate::utils::iter::ResultShunt;
 use rustc_hash::FxHashMap;
 use serde_json::Value;
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::hash::BuildHasher;
+use std::iter::FromIterator;
 use std::{
     fs::File,
     io::prelude::*,
@@ -71,8 +74,12 @@ impl BpeBuilder {
 
     /// Set the vocab (token -> ID) and merges mappings.
     #[must_use]
-    pub fn vocab_and_merges(mut self, vocab: Vocab, merges: Merges) -> Self {
-        self.config.vocab = vocab;
+    pub fn vocab_and_merges<S: BuildHasher>(
+        mut self,
+        vocab: HashMap<String, u32, S>,
+        merges: Merges,
+    ) -> Self {
+        self.config.vocab = FxHashMap::from_iter(vocab);
         self.config.merges = merges;
         self
     }
@@ -533,7 +540,7 @@ impl Model for BPE {
             .iter()
             .collect();
         let mut vocab_file = File::create(&vocab_path)?;
-        let order_vocab_iter = OrderedVocabIter::new(&self.vocab_r);
+        let order_vocab_iter = OrderedVocabIter::new(self.vocab_r.clone());
         let serialized = serde_json::to_string(&order_vocab_iter)?;
         vocab_file.write_all(serialized.as_bytes())?;
 
@@ -587,7 +594,7 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        let order_vocab_iter = OrderedVocabIter::new(&vocab_r);
+        let order_vocab_iter = OrderedVocabIter::new(vocab_r.clone());
         let serialized = serde_json::to_string(&order_vocab_iter).unwrap();
         assert_eq!(serialized, "{\"a\":0,\"b\":1,\"c\":2,\"ab\":3}");
     }

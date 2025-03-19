@@ -4,6 +4,9 @@ use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::hash::BuildHasher;
+use std::iter::FromIterator;
 use std::ops::Range;
 
 /// Represents the output of a `Tokenizer`.
@@ -31,7 +34,7 @@ pub struct Encoding {
 }
 impl Encoding {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub fn new<S: BuildHasher>(
         ids: Vec<u32>,
         type_ids: Vec<u32>,
         tokens: Vec<String>,
@@ -40,7 +43,7 @@ impl Encoding {
         special_tokens_mask: Vec<u32>,
         attention_mask: Vec<u32>,
         overflowing: Vec<Self>,
-        sequence_ranges: FxHashMap<usize, Range<usize>>,
+        sequence_ranges: HashMap<usize, Range<usize>, S>,
     ) -> Self {
         Self {
             ids,
@@ -51,7 +54,7 @@ impl Encoding {
             special_tokens_mask,
             attention_mask,
             overflowing,
-            sequence_ranges,
+            sequence_ranges: FxHashMap::from_iter(sequence_ranges),
         }
     }
 
@@ -838,7 +841,7 @@ mod tests {
                 Some(2),
                 Some(3),
             ],
-            sequence_ranges: FxHashMap::from_iter(vec![(0, 0..7), (1, 7..11)]),
+            sequence_ranges: HashMap::from_iter(vec![(0, 0..7), (1, 7..11)]),
             ..Default::default()
         };
         assert_eq!(encoding.word_to_tokens(0, 0), Some((0, 2)));
@@ -891,7 +894,7 @@ mod tests {
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],
             attention_mask: vec![1],
-            sequence_ranges: FxHashMap::from_iter([(0, 0..1)]),
+            sequence_ranges: HashMap::from_iter([(0, 0..1)]),
             ..Default::default()
         };
         let target_length = 2;
@@ -905,6 +908,6 @@ mod tests {
             pad_token,
             PaddingDirection::Left,
         );
-        assert_eq!(a.sequence_ranges, FxHashMap::from_iter([(0, 1..2)]));
+        assert_eq!(a.sequence_ranges, HashMap::from_iter([(0, 1..2)]));
     }
 }

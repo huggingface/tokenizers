@@ -7,7 +7,9 @@ use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
+use std::collections::HashSet;
 use std::convert::TryInto;
+use std::hash::BuildHasher;
 
 // A token and a score
 type SentencePiece = (String, f64);
@@ -111,7 +113,11 @@ impl UnigramTrainer {
         true
     }
 
-    fn finalize(&self, model: Unigram, required_chars: FxHashSet<String>) -> Result<Unigram> {
+    fn finalize<S: BuildHasher>(
+        &self,
+        model: Unigram,
+        required_chars: HashSet<String, S>,
+    ) -> Result<Unigram> {
         let mut min_score_penalty = 0.0;
         let min_score_penalty_delta = 0.0001;
 
@@ -662,7 +668,7 @@ impl Trainer for UnigramTrainer {
 mod tests {
     use super::*;
     use assert_approx_eq::assert_approx_eq;
-    use std::iter::FromIterator;
+    use std::{collections::HashSet, iter::FromIterator};
 
     #[test]
     fn test_unigram_chars() {
@@ -717,19 +723,24 @@ mod tests {
     fn test_initial_alphabet() {
         let trainer = UnigramTrainerBuilder::default()
             .show_progress(false)
-            .initial_alphabet(FxHashSet::from_iter(vec!['a', 'b', 'c', 'd', 'e', 'f']))
+            .initial_alphabet(HashSet::from_iter(vec!['a', 'b', 'c', 'd', 'e', 'f']))
             .build()
             .unwrap();
 
         let sentences = vec![("こんにちは友達".to_string(), 1)];
         let required_chars = trainer.required_chars(&sentences);
-        assert_eq!(
-            required_chars,
-            vec!["こ", "ん", "に", "ち", "は", "友", "達", "a", "b", "c", "d", "e", "f"]
-                .into_iter()
-                .map(|s| s.to_owned())
-                .collect::<FxHashSet<_>>()
-        );
+
+        let mut lhs = required_chars.into_iter().collect::<Vec<_>>();
+        let mut rhs = vec![
+            "こ", "ん", "に", "ち", "は", "友", "達", "a", "b", "c", "d", "e", "f",
+        ]
+        .into_iter()
+        .collect::<Vec<_>>();
+
+        lhs.sort_unstable();
+        rhs.sort_unstable();
+
+        assert_eq!(lhs, rhs);
     }
 
     #[test]

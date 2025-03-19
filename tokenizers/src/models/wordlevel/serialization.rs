@@ -12,7 +12,7 @@ impl Serialize for WordLevel {
         S: Serializer,
     {
         let mut model = serializer.serialize_struct("WordLevel", 3)?;
-        let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
+        let ordered_vocab = OrderedVocabIter::new(self.vocab_r.clone());
         model.serialize_field("type", "WordLevel")?;
         model.serialize_field("vocab", &ordered_vocab)?;
         model.serialize_field("unk_token", &self.unk_token)?;
@@ -55,7 +55,7 @@ impl<'de> Visitor<'de> for WordLevelVisitor {
         .collect::<FxHashSet<_>>();
         while let Some(key) = map.next_key::<String>()? {
             match key.as_ref() {
-                "vocab" => builder = builder.vocab(map.next_value()?),
+                "vocab" => builder = builder.vocab::<rustc_hash::FxBuildHasher>(map.next_value()?),
                 "unk_token" => builder = builder.unk_token(map.next_value()?),
                 "type" => match map.next_value()? {
                     "WordLevel" => {}

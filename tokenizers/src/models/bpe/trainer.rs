@@ -8,7 +8,9 @@ use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::hash::BuildHasher;
+use std::iter::FromIterator;
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -116,8 +118,8 @@ impl BpeTrainerBuilder {
 
     /// Set the initial alphabet
     #[must_use]
-    pub fn initial_alphabet(mut self, alphabet: FxHashSet<char>) -> Self {
-        self.config.initial_alphabet = alphabet;
+    pub fn initial_alphabet<S: BuildHasher>(mut self, alphabet: HashSet<char, S>) -> Self {
+        self.config.initial_alphabet = FxHashSet::from_iter(alphabet);
         self
     }
 
@@ -253,7 +255,11 @@ impl BpeTrainer {
     }
 
     /// Add the provided special tokens to the initial vocabulary
-    fn add_special_tokens(&self, w2id: &mut FxHashMap<String, u32>, id2w: &mut Vec<String>) {
+    fn add_special_tokens<S: BuildHasher>(
+        &self,
+        w2id: &mut HashMap<String, u32, S>,
+        id2w: &mut Vec<String>,
+    ) {
         for token in &self.special_tokens {
             if !w2id.contains_key(&token.content) {
                 id2w.push(token.content.to_owned());
@@ -263,10 +269,10 @@ impl BpeTrainer {
     }
 
     /// Compute the initial alphabet and limit it if relevant
-    fn compute_alphabet(
+    fn compute_alphabet<S1: BuildHasher, S2: BuildHasher>(
         &self,
-        wc: &FxHashMap<String, u64>,
-        w2id: &mut FxHashMap<String, u32>,
+        wc: &HashMap<String, u64, S1>,
+        w2id: &mut HashMap<String, u32, S2>,
         id2w: &mut Vec<String>,
     ) {
         // Compute the alphabet from seen words
@@ -322,10 +328,10 @@ impl BpeTrainer {
     }
 
     /// Tokenize words and add subwords to the vocabulary when relevant
-    fn tokenize_words(
+    fn tokenize_words<S1: BuildHasher, S2: BuildHasher>(
         &self,
-        wc: &FxHashMap<String, u64>,
-        w2id: &mut FxHashMap<String, u32>,
+        wc: &HashMap<String, u64, S1>,
+        w2id: &mut HashMap<String, u32, S2>,
         id2w: &mut Vec<String>,
         p: &Option<ProgressBar>,
     ) -> (Vec<Word>, Vec<u64>) {
@@ -431,9 +437,9 @@ impl BpeTrainer {
             )
     }
 
-    pub fn do_train(
+    pub fn do_train<S: BuildHasher>(
         &self,
-        word_counts: &FxHashMap<String, u64>,
+        word_counts: &HashMap<String, u64, S>,
         model: &mut BPE,
     ) -> Result<Vec<AddedToken>> {
         let mut word_to_id: FxHashMap<String, u32> =
@@ -678,12 +684,13 @@ impl Trainer for BpeTrainer {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::{BpeTrainer, Pair, BPE};
-    use rustc_hash::FxHashMap;
 
     #[test]
     fn test_train() {
-        let word_counts: FxHashMap<String, u64> = [
+        let word_counts: HashMap<String, u64> = [
             ("roses".into(), 1),
             ("are".into(), 2),
             ("red".into(), 1),
@@ -708,7 +715,7 @@ mod tests {
 
         // Vocab should contain all of the characters from the `word_counts` mapping
         // as well as three merges: 're', 'are', and 'is'.
-        let expected_vocab: FxHashMap<String, u32> = [
+        let expected_vocab: HashMap<String, u32> = [
             ("-".into(), 0),
             ("2".into(), 1),
             ("B".into(), 2),
@@ -738,13 +745,18 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.vocab, expected_vocab);
+
+        let mut lhs = model.vocab.into_iter().collect::<Vec<_>>();
+        let mut rhs = expected_vocab.into_iter().collect::<Vec<_>>();
+        lhs.sort_unstable();
+        rhs.sort_unstable();
+        assert_eq!(lhs, rhs);
 
         // The keys in `merges` are pairs of symbols, the values are tuples of (rank, id),
         // where 'rank' determines the order in which this merge will be applied during
         // tokenization, and 'id' is the vocab id of the symbol resulting from merging
         // the pair of symbols in the corresponding key.
-        let expected_merges: FxHashMap<Pair, (u32, u32)> = [
+        let expected_merges: HashMap<Pair, (u32, u32)> = [
             ((17, 11), (0, 22)), // 'r' + 'e'  -> 're'
             ((8, 22), (1, 23)),  // 'a' + 're' -> 'are'
             ((13, 18), (2, 24)), // 'i' + 's'  -> 'is'
@@ -752,7 +764,12 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.merges, expected_merges);
+
+        let mut lhs = model.merges.into_iter().collect::<Vec<_>>();
+        let mut rhs = expected_merges.into_iter().collect::<Vec<_>>();
+        lhs.sort_unstable();
+        rhs.sort_unstable();
+        assert_eq!(lhs, rhs);
     }
     #[test]
     fn bpe_test_max_token_length_16() {
@@ -762,7 +779,7 @@ mod tests {
          */
 
         let max_token_length = 16;
-        let long_word_counts: FxHashMap<String, u64> = [
+        let long_word_counts: HashMap<String, u64> = [
             ("singlelongtokenwithoutcasechange", 2),
             ("singleLongTokenWithCamelCaseChange", 2),
             ("Longsingletokenwithpunctu@t!onwithin", 2),
@@ -802,7 +819,7 @@ mod tests {
         // directly compares tokens with known expected values.
         // maybe unstable depending on specific settings or changes.
          */
-        let long_word_counts: FxHashMap<String, u64> = [
+        let long_word_counts: HashMap<String, u64> = [
             ("sin", 2),
             ("Sin", 2),
             ("Lon", 2),
@@ -826,8 +843,8 @@ mod tests {
             .build();
         let mut model = BPE::default();
         trainer.do_train(&long_word_counts, &mut model).unwrap();
-        let trained_vocab: FxHashMap<String, u32> = model.get_vocab();
-        let expected_vocab: FxHashMap<String, u32> = [
+        let trained_vocab = model.get_vocab();
+        let expected_vocab: HashMap<String, u32> = [
             ("短", 12),
             ("n", 6),
             ("i", 5),
@@ -863,6 +880,11 @@ mod tests {
         .cloned()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
-        assert_eq!(trained_vocab, expected_vocab)
+
+        let mut lhs = trained_vocab.into_iter().collect::<Vec<_>>();
+        let mut rhs = expected_vocab.into_iter().collect::<Vec<_>>();
+        lhs.sort_unstable();
+        rhs.sort_unstable();
+        assert_eq!(lhs, rhs)
     }
 }

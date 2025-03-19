@@ -34,7 +34,7 @@ impl Serialize for BPE {
             .into_iter()
             .map(|(pair, _)| (self.vocab_r[&pair.0].clone(), self.vocab_r[&pair.1].clone()))
             .collect::<Vec<_>>();
-        let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
+        let ordered_vocab = OrderedVocabIter::new(self.vocab_r.clone());
 
         model.serialize_field("vocab", &ordered_vocab)?;
         model.serialize_field("merges", &merges)?;

@@ -192,6 +192,8 @@ impl PostProcessor for BertProcessing {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
@@ -237,7 +239,7 @@ mod tests {
                 vec![1, 0, 0, 1],
                 vec![1, 1, 1, 1],
                 vec![],
-                FxHashMap::from_iter(vec![(0, 1..3)]),
+                HashMap::from([(0, 1..3)]),
             )
         );
         assert_eq!(single_encoding.token_to_sequence(2), Some(0));
@@ -263,7 +265,7 @@ mod tests {
                 vec![1, 0, 0, 1, 0, 1],
                 vec![1, 1, 1, 1, 1, 1],
                 vec![],
-                FxHashMap::from_iter(vec![(0, 1..3), (1, 4..5)]),
+                HashMap::from([(0, 1..3), (1, 4..5)]),
             )
         );
         assert_eq!(pair_encoding.token_to_sequence(2), Some(0));
@@ -284,7 +286,7 @@ mod tests {
                 vec![0, 0, 0],
                 vec![1, 1, 1],
                 vec![],
-                FxHashMap::from_iter(vec![(0, 0..2), (1, 2..3)]),
+                HashMap::from([(0, 0..2), (1, 2..3)]),
             )
         );
         assert_eq!(pair_encoding.token_to_sequence(0), Some(0));

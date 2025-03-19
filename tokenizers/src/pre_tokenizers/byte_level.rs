@@ -244,7 +244,7 @@ mod tests {
         Decoder, Encoding, OffsetReferential, OffsetType, PostProcessor, PreTokenizedString,
         PreTokenizer,
     };
-    use std::iter::FromIterator;
+    use std::collections::HashMap;
 
     #[test]
     fn pre_tokenization() {
@@ -451,7 +451,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            FxHashMap::default(),
+            HashMap::new(),
         );
         process_offsets(&mut encoding, true);
         assert_eq!(
@@ -465,7 +465,7 @@ mod tests {
                 vec![],
                 vec![],
                 vec![],
-                FxHashMap::default(),
+                HashMap::new(),
             )
         );
     }
@@ -487,7 +487,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            FxHashMap::default(),
+            HashMap::new(),
         );
         let expected = Encoding::new(
             vec![0; 5],
@@ -504,7 +504,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            FxHashMap::from_iter(vec![(0, 0..5)]),
+            HashMap::from([(0, 0..5)]),
         );
 
         let bytelevel = ByteLevel::default().trim_offsets(true);
@@ -544,7 +544,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            FxHashMap::from_iter(vec![(0, 0..5), (1, 5..10)]),
+            HashMap::from([(0, 0..5), (1, 5..10)]),
         );
         assert_eq!(
             pair_expected,
