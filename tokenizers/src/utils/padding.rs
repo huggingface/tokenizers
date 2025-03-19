@@ -82,9 +82,10 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::tokenizer::Encoding;
-    use std::collections::HashMap;
 
     #[test]
     fn pad_to_multiple() {

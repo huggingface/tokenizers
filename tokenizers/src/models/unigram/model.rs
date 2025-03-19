@@ -6,12 +6,12 @@ use super::{
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, MAX_LENGTH};
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::convert::TryInto;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
-type TokenMap = HashMap<String, u32>;
+type TokenMap = FxHashMap<String, u32>;
 type Vocab = Vec<(String, f64)>;
 
 /// A `Unigram` model to encode sentences.
@@ -98,7 +98,7 @@ impl Unigram {
         byte_fallback: bool,
     ) -> Result<Self> {
         let n = vocab.len();
-        let mut token_to_ids: TokenMap = HashMap::new();
+        let mut token_to_ids: TokenMap = FxHashMap::default();
         let mut builder = TrieBuilder::default();
 
         if let Some(unk_id) = unk_id {
@@ -415,7 +415,7 @@ impl<'a> Iterator for UnigramIterator<'a> {
 impl Model for Unigram {
     type Trainer = UnigramTrainer;
 
-    fn get_vocab(&self) -> HashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<String, u32> {
         self.token_to_ids.clone()
     }
 

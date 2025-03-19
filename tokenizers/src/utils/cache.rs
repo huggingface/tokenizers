@@ -1,5 +1,5 @@
+use rustc_hash::FxHashMap;
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::RwLock;
 
@@ -19,7 +19,7 @@ where
     K: Eq + Hash + Clone,
     V: Clone,
 {
-    map: RwLock<HashMap<K, V>>,
+    map: RwLock<FxHashMap<K, V>>,
     pub capacity: usize,
 }
 
@@ -51,7 +51,10 @@ where
 {
     /// Create new `Cache` with the given capacity.
     pub(crate) fn new(capacity: usize) -> Self {
-        let map = RwLock::new(HashMap::with_capacity(capacity));
+        let map = RwLock::new(FxHashMap::with_capacity_and_hasher(
+            capacity,
+            Default::default(),
+        ));
         Cache { map, capacity }
     }
 

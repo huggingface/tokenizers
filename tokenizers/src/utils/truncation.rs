@@ -168,9 +168,10 @@ pub fn truncate_encodings(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::tokenizer::Encoding;
-    use std::collections::HashMap;
 
     fn get_empty() -> Encoding {
         Encoding::new(

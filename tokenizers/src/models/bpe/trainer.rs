@@ -4,15 +4,19 @@ use super::{Pair, WithFirstLastIterator, Word, BPE};
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::progress::{ProgressBar, ProgressStyle};
+use rustc_hash::FxHashMap;
+use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::hash::BuildHasher;
+use std::iter::FromIterator;
 
 #[derive(Debug, Eq)]
 struct Merge {
     pair: Pair,
     count: u64,
-    pos: HashSet<usize>,
+    pos: FxHashSet<usize>,
 }
 impl PartialEq for Merge {
     fn eq(&self, other: &Self) -> bool {
@@ -41,7 +45,7 @@ struct Config {
     show_progress: bool,
     special_tokens: Vec<AddedToken>,
     limit_alphabet: Option<usize>,
-    initial_alphabet: HashSet<char>,
+    initial_alphabet: FxHashSet<char>,
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
     max_token_length: Option<usize>,
@@ -62,7 +66,7 @@ impl Default for BpeTrainerBuilder {
                 show_progress: true,
                 special_tokens: vec![],
                 limit_alphabet: None,
-                initial_alphabet: HashSet::new(),
+                initial_alphabet: FxHashSet::default(),
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
                 max_token_length: None,
@@ -114,8 +118,8 @@ impl BpeTrainerBuilder {
 
     /// Set the initial alphabet
     #[must_use]
-    pub fn initial_alphabet(mut self, alphabet: HashSet<char>) -> Self {
-        self.config.initial_alphabet = alphabet;
+    pub fn initial_alphabet<S: BuildHasher>(mut self, alphabet: HashSet<char, S>) -> Self {
+        self.config.initial_alphabet = FxHashSet::from_iter(alphabet);
         self
     }
 
@@ -151,7 +155,7 @@ impl BpeTrainerBuilder {
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             end_of_word_suffix: self.config.end_of_word_suffix,
             max_token_length: self.config.max_token_length,
-            words: HashMap::new(),
+            words: FxHashMap::default(),
         }
     }
 }
@@ -187,7 +191,7 @@ pub struct BpeTrainer {
     pub limit_alphabet: Option<usize>,
     /// The initial alphabet we want absolutely to include. This allows to cover
     /// some characters that are not necessarily in the training set
-    pub initial_alphabet: HashSet<char>,
+    pub initial_alphabet: FxHashSet<char>,
     /// An optional prefix to use on any subword that exist only behind another one
     pub continuing_subword_prefix: Option<String>,
     /// An optional suffix to caracterize and end-of-word subword
@@ -195,7 +199,7 @@ pub struct BpeTrainer {
     /// An optional parameter to limit the max length of any single token
     pub max_token_length: Option<usize>,
 
-    words: HashMap<String, u64>,
+    words: FxHashMap<String, u64>,
 }
 
 impl Default for BpeTrainer {
@@ -251,7 +255,11 @@ impl BpeTrainer {
     }
 
     /// Add the provided special tokens to the initial vocabulary
-    fn add_special_tokens(&self, w2id: &mut HashMap<String, u32>, id2w: &mut Vec<String>) {
+    fn add_special_tokens<S: BuildHasher>(
+        &self,
+        w2id: &mut HashMap<String, u32, S>,
+        id2w: &mut Vec<String>,
+    ) {
         for token in &self.special_tokens {
             if !w2id.contains_key(&token.content) {
                 id2w.push(token.content.to_owned());
@@ -261,14 +269,14 @@ impl BpeTrainer {
     }
 
     /// Compute the initial alphabet and limit it if relevant
-    fn compute_alphabet(
+    fn compute_alphabet<S1: BuildHasher, S2: BuildHasher>(
         &self,
-        wc: &HashMap<String, u64>,
-        w2id: &mut HashMap<String, u32>,
+        wc: &HashMap<String, u64, S1>,
+        w2id: &mut HashMap<String, u32, S2>,
         id2w: &mut Vec<String>,
     ) {
         // Compute the alphabet from seen words
-        let mut alphabet: HashMap<char, usize> = HashMap::new();
+        let mut alphabet: FxHashMap<char, usize> = FxHashMap::default();
         for (word, count) in wc {
             for c in word.chars() {
                 alphabet
@@ -320,10 +328,10 @@ impl BpeTrainer {
     }
 
     /// Tokenize words and add subwords to the vocabulary when relevant
-    fn tokenize_words(
+    fn tokenize_words<S1: BuildHasher, S2: BuildHasher>(
         &self,
-        wc: &HashMap<String, u64>,
-        w2id: &mut HashMap<String, u32>,
+        wc: &HashMap<String, u64, S1>,
+        w2id: &mut HashMap<String, u32, S2>,
         id2w: &mut Vec<String>,
         p: &Option<ProgressBar>,
     ) -> (Vec<Word>, Vec<u64>) {
@@ -375,13 +383,13 @@ impl BpeTrainer {
         words: &[Word],
         counts: &[u64],
         p: &Option<ProgressBar>,
-    ) -> (HashMap<Pair, i32>, HashMap<Pair, HashSet<usize>>) {
+    ) -> (FxHashMap<Pair, i32>, FxHashMap<Pair, FxHashSet<usize>>) {
         words
             .maybe_par_iter()
             .enumerate()
             .map(|(i, word)| {
-                let mut pair_counts = HashMap::new();
-                let mut where_to_update: HashMap<Pair, HashSet<usize>> = HashMap::new();
+                let mut pair_counts = FxHashMap::default();
+                let mut where_to_update: FxHashMap<Pair, FxHashSet<usize>> = FxHashMap::default();
 
                 for window in word.get_chars().windows(2) {
                     let cur_pair: Pair = (window[0], window[1]);
@@ -399,7 +407,7 @@ impl BpeTrainer {
                             h.insert(i);
                         })
                         .or_insert_with(|| {
-                            let mut h = HashSet::new();
+                            let mut h = FxHashSet::default();
                             h.insert(i);
                             h
                         });
@@ -413,7 +421,7 @@ impl BpeTrainer {
                 (pair_counts, where_to_update)
             })
             .reduce(
-                || (HashMap::new(), HashMap::new()),
+                || (FxHashMap::default(), FxHashMap::default()),
                 |(mut pair_counts, mut where_to_update), (pc, wtu)| {
                     for (k, v) in pc {
                         pair_counts.entry(k).and_modify(|c| *c += v).or_insert(v);
@@ -429,12 +437,13 @@ impl BpeTrainer {
             )
     }
 
-    pub fn do_train(
+    pub fn do_train<S: BuildHasher>(
         &self,
-        word_counts: &HashMap<String, u64>,
+        word_counts: &HashMap<String, u64, S>,
         model: &mut BPE,
     ) -> Result<Vec<AddedToken>> {
-        let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
+        let mut word_to_id: FxHashMap<String, u32> =
+            FxHashMap::with_capacity_and_hasher(self.vocab_size, Default::default());
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
         let max_token_length: usize = self.max_token_length.unwrap_or(usize::MAX);
 
@@ -532,7 +541,7 @@ impl BpeTrainer {
             // Merge the new pair in every words
             // Safety: This is just a type assertion, the code below may no longer be safe
             // if the type of `pos` changes
-            let pos: &HashSet<usize> = &top.pos;
+            let pos: &FxHashSet<usize> = &top.pos;
 
             let words_len = words.len();
             struct WordPtr(*mut Word);
@@ -577,7 +586,7 @@ impl BpeTrainer {
                             h.insert(iw);
                         })
                         .or_insert_with(|| {
-                            let mut h = HashSet::new();
+                            let mut h = FxHashSet::default();
                             h.insert(iw);
                             h
                         });
@@ -647,18 +656,18 @@ impl Trainer for BpeTrainer {
         S: AsRef<str> + Send,
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
-        let words: Result<HashMap<String, u64>> = iterator
+        let words: Result<FxHashMap<String, u64>> = iterator
             .maybe_par_bridge()
             .map(|sequence| {
                 let words = process(sequence.as_ref())?;
-                let mut map = HashMap::new();
+                let mut map = FxHashMap::default();
                 for word in words {
                     map.entry(word).and_modify(|c| *c += 1).or_insert(1);
                 }
                 Ok(map)
             })
             .reduce(
-                || Ok(HashMap::new()),
+                || Ok(FxHashMap::default()),
                 |acc, ws| {
                     let mut acc = acc?;
                     for (k, v) in ws? {
@@ -675,8 +684,9 @@ impl Trainer for BpeTrainer {
 
 #[cfg(test)]
 mod tests {
-    use super::{BpeTrainer, Pair, BPE};
     use std::collections::HashMap;
+
+    use super::{BpeTrainer, Pair, BPE};
 
     #[test]
     fn test_train() {
@@ -735,7 +745,12 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.vocab, expected_vocab);
+
+        let mut lhs = model.vocab.into_iter().collect::<Vec<_>>();
+        let mut rhs = expected_vocab.into_iter().collect::<Vec<_>>();
+        lhs.sort_unstable();
+        rhs.sort_unstable();
+        assert_eq!(lhs, rhs);
 
         // The keys in `merges` are pairs of symbols, the values are tuples of (rank, id),
         // where 'rank' determines the order in which this merge will be applied during
@@ -749,7 +764,12 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.merges, expected_merges);
+
+        let mut lhs = model.merges.into_iter().collect::<Vec<_>>();
+        let mut rhs = expected_merges.into_iter().collect::<Vec<_>>();
+        lhs.sort_unstable();
+        rhs.sort_unstable();
+        assert_eq!(lhs, rhs);
     }
     #[test]
     fn bpe_test_max_token_length_16() {
@@ -823,7 +843,7 @@ mod tests {
             .build();
         let mut model = BPE::default();
         trainer.do_train(&long_word_counts, &mut model).unwrap();
-        let trained_vocab: HashMap<String, u32> = model.get_vocab();
+        let trained_vocab = model.get_vocab();
         let expected_vocab: HashMap<String, u32> = [
             ("短", 12),
             ("n", 6),
@@ -860,6 +880,11 @@ mod tests {
         .cloned()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
-        assert_eq!(trained_vocab, expected_vocab)
+
+        let mut lhs = trained_vocab.into_iter().collect::<Vec<_>>();
+        let mut rhs = expected_vocab.into_iter().collect::<Vec<_>>();
+        lhs.sort_unstable();
+        rhs.sort_unstable();
+        assert_eq!(lhs, rhs)
     }
 }

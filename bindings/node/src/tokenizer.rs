@@ -6,7 +6,7 @@ use crate::pre_tokenizers::PreTokenizer;
 use crate::processors::Processor;
 use crate::tasks::tokenizer::{DecodeBatchTask, DecodeTask, EncodeBatchTask, EncodeTask};
 use crate::trainers::Trainer;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use tokenizers::Model as ModelTrait;
 
 use napi::bindgen_prelude::*;
@@ -433,7 +433,7 @@ impl Tokenizer {
   }
 
   #[napi]
-  pub fn get_vocab(&self, with_added_tokens: Option<bool>) -> HashMap<String, u32> {
+  pub fn get_vocab(&self, with_added_tokens: Option<bool>) -> FxHashMap<String, u32> {
     let with_added_tokens = with_added_tokens.unwrap_or(true);
     self.tokenizer.read().unwrap().get_vocab(with_added_tokens)
   }

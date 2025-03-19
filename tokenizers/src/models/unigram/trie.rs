@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::hash::Hash;
 
 #[derive(Default)]
@@ -78,14 +78,14 @@ impl<Label> Default for Trie<Label> {
 #[derive(Clone)]
 pub struct Node<Label> {
     is_leaf: bool,
-    children: HashMap<Label, Node<Label>>,
+    children: FxHashMap<Label, Node<Label>>,
 }
 
 impl<Label> Default for Node<Label> {
     fn default() -> Self {
         Self {
             is_leaf: false,
-            children: HashMap::new(),
+            children: FxHashMap::default(),
         }
     }
 }

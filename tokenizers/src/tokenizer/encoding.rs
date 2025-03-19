@@ -2,8 +2,11 @@ use crate::parallelism::*;
 use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::hash::BuildHasher;
+use std::iter::FromIterator;
 use std::ops::Range;
 
 /// Represents the output of a `Tokenizer`.
@@ -27,11 +30,11 @@ pub struct Encoding {
     overflowing: Vec<Encoding>,
     /// Ranges of tokens covered by each sequence. If this is empty we consider
     /// there is only one sequence in this Encoding, and that it covers the entire range.
-    sequence_ranges: HashMap<usize, Range<usize>>,
+    sequence_ranges: FxHashMap<usize, Range<usize>>,
 }
 impl Encoding {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub fn new<S: BuildHasher>(
         ids: Vec<u32>,
         type_ids: Vec<u32>,
         tokens: Vec<String>,
@@ -40,7 +43,7 @@ impl Encoding {
         special_tokens_mask: Vec<u32>,
         attention_mask: Vec<u32>,
         overflowing: Vec<Self>,
-        sequence_ranges: HashMap<usize, Range<usize>>,
+        sequence_ranges: HashMap<usize, Range<usize>, S>,
     ) -> Self {
         Self {
             ids,
@@ -51,7 +54,7 @@ impl Encoding {
             special_tokens_mask,
             attention_mask,
             overflowing,
-            sequence_ranges,
+            sequence_ranges: FxHashMap::from_iter(sequence_ranges),
         }
     }
 
@@ -65,7 +68,7 @@ impl Encoding {
             special_tokens_mask: Vec::with_capacity(len),
             attention_mask: Vec::with_capacity(len),
             overflowing: vec![],
-            sequence_ranges: HashMap::new(),
+            sequence_ranges: FxHashMap::default(),
         }
     }
 
@@ -94,7 +97,7 @@ impl Encoding {
             attention_mask: vec![1; length],
             special_tokens_mask: vec![0; length],
             overflowing: vec![],
-            sequence_ranges: HashMap::new(),
+            sequence_ranges: FxHashMap::default(),
         }
     }
 
@@ -363,7 +366,7 @@ impl Encoding {
             special_tokens_mask: self.special_tokens_mask[start..stop].to_vec(),
             attention_mask: self.attention_mask[start..stop].to_vec(),
             overflowing: vec![],
-            sequence_ranges: HashMap::new(),
+            sequence_ranges: FxHashMap::default(),
         };
 
         loop {
@@ -381,7 +384,7 @@ impl Encoding {
                 special_tokens_mask: self.special_tokens_mask[start..stop].to_vec(),
                 attention_mask: self.attention_mask[start..stop].to_vec(),
                 overflowing: vec![],
-                sequence_ranges: HashMap::new(),
+                sequence_ranges: FxHashMap::default(),
             });
         }
         *self = new_encoding;
@@ -563,8 +566,9 @@ impl std::iter::FromIterator<(u32, String, (usize, usize), Option<u32>, u32)> fo
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::iter::FromIterator;
+
+    use super::*;
 
     #[test]
     fn merge_encodings() {
@@ -890,7 +894,7 @@ mod tests {
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],
             attention_mask: vec![1],
-            sequence_ranges: HashMap::from([(0, 0..1)]),
+            sequence_ranges: HashMap::from_iter([(0, 0..1)]),
             ..Default::default()
         };
         let target_length = 2;
@@ -904,6 +908,6 @@ mod tests {
             pad_token,
             PaddingDirection::Left,
         );
-        assert_eq!(a.sequence_ranges, HashMap::from([(0, 1..2)]));
+        assert_eq!(a.sequence_ranges, HashMap::from_iter([(0, 1..2)]));
     }
 }

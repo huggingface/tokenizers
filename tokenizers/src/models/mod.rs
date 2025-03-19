@@ -5,7 +5,10 @@ pub mod unigram;
 pub mod wordlevel;
 pub mod wordpiece;
 
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
+use std::hash::BuildHasher;
+use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -18,24 +21,26 @@ use crate::{AddedToken, Model, Result, Token, Trainer};
 
 /// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
 /// of token ID, smallest to largest.
-struct OrderedVocabIter<'a> {
-    vocab_r: &'a HashMap<u32, String>,
+struct OrderedVocabIter {
+    vocab_r: FxHashMap<u32, String>,
 }
 
-impl<'a> OrderedVocabIter<'a> {
-    fn new(vocab_r: &'a HashMap<u32, String>) -> Self {
-        Self { vocab_r }
+impl OrderedVocabIter {
+    fn new<S: BuildHasher>(vocab_r: HashMap<u32, String, S>) -> Self {
+        Self {
+            vocab_r: FxHashMap::from_iter(vocab_r),
+        }
     }
 }
 
-impl Serialize for OrderedVocabIter<'_> {
+impl Serialize for OrderedVocabIter {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         // There could be holes so max + 1 is more correct than vocab_r.len()
         let mut holes = vec![];
-        let result = if let Some(max) = self.vocab_r.iter().map(|(key, _)| key).max() {
+        let result = if let Some(max) = self.vocab_r.keys().max() {
             let iter = (0..*max + 1).filter_map(|i| {
                 if let Some(token) = self.vocab_r.get(&i) {
                     Some((token, i))
@@ -170,7 +175,7 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn get_vocab(&self) -> HashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<String, u32> {
         match self {
             Self::WordLevel(t) => t.get_vocab(),
             Self::WordPiece(t) => t.get_vocab(),
@@ -287,6 +292,8 @@ impl_enum_from!(WordLevelTrainer, TrainerWrapper, WordLevelTrainer);
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::models::bpe::{BpeBuilder, Vocab};
 
@@ -304,7 +311,7 @@ mod tests {
         let vocab_r: HashMap<u32, String> =
             HashMap::from([(0, "Hi".to_string()), (2, "There".to_string())]);
 
-        let ordered = OrderedVocabIter::new(&vocab_r);
+        let ordered = OrderedVocabIter::new(vocab_r.clone());
 
         let serialized = serde_json::to_string(&ordered).unwrap();
         assert_eq!(serialized, "{\"Hi\":0,\"There\":2}");

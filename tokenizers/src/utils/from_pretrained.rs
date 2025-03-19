@@ -1,13 +1,13 @@
 use crate::Result;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::path::PathBuf;
 
 /// Defines the additional parameters available for the `from_pretrained` function
 #[derive(Debug, Clone)]
 pub struct FromPretrainedParameters {
     pub revision: String,
-    pub user_agent: HashMap<String, String>,
+    pub user_agent: FxHashMap<String, String>,
     pub token: Option<String>,
 }
 
@@ -15,7 +15,7 @@ impl Default for FromPretrainedParameters {
     fn default() -> Self {
         Self {
             revision: "main".into(),
-            user_agent: HashMap::new(),
+            user_agent: FxHashMap::default(),
             token: None,
         }
     }
