@@ -14,6 +14,9 @@ pub struct RandomChunkSplit {
     pub min_length: usize,
     /// Maximum chunk length (in characters)
     pub max_length: usize,
+    /// When true, uses deterministic behavior instead of random chunks (for inference)
+    #[serde(default)]
+    pub deterministic: bool,
 }
 
 impl RandomChunkSplit {
@@ -26,23 +29,36 @@ impl RandomChunkSplit {
         Self {
             min_length,
             max_length,
+            deterministic: false,
         }
+    }
+    
+    /// Sets the deterministic mode for inference
+    ///
+    /// When deterministic is true, chunks of fixed length will be created
+    /// instead of random-length chunks. This provides consistent tokenization
+    /// at inference time.
+    pub fn with_deterministic(mut self, deterministic: bool) -> Self {
+        self.deterministic = deterministic;
+        self
     }
 }
 
-/// Split pattern that creates chunks of random lengths
+/// Split pattern that creates chunks of random or fixed lengths
 struct RandomChunkPattern<'a> {
     min_length: usize,
     max_length: usize,
+    deterministic: bool,
     chars: &'a [char],
     current_pos: usize,
 }
 
 impl<'a> RandomChunkPattern<'a> {
-    fn new(chars: &'a [char], min_length: usize, max_length: usize) -> Self {
+    fn new(chars: &'a [char], min_length: usize, max_length: usize, deterministic: bool) -> Self {
         Self {
             min_length,
             max_length,
+            deterministic,
             chars,
             current_pos: 0,
         }
@@ -80,10 +96,17 @@ impl<'a> Pattern for RandomChunkPattern<'a> {
                 break;
             }
             
-            // Generate random chunk length between min_length and effective_max
-            let chunk_len = if self.min_length == effective_max {
+            // Choose chunk length based on deterministic mode
+            let chunk_len = if self.deterministic {
+                // In deterministic mode, use a consistent length
+                // For inference, we use the average of min and max length for consistency
+                // This gives a predictable behavior while still allowing multi-word tokens
+                let avg_length = (self.min_length + self.max_length) / 2;
+                avg_length.min(effective_max)
+            } else if self.min_length == effective_max {
                 self.min_length
             } else {
+                // In random mode, generate a random length
                 let mut rng = rand::thread_rng();
                 rng.gen_range(self.min_length..=effective_max)
             };
@@ -108,9 +131,10 @@ impl<'a> Pattern for RandomChunkPattern<'a> {
 
 impl PreTokenizer for RandomChunkSplit {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        let deterministic = self.deterministic;
         pretokenized.split(|_, normalized| {
             let chars: Vec<char> = normalized.get().chars().collect();
-            let pattern = RandomChunkPattern::new(&chars, self.min_length, self.max_length);
+            let pattern = RandomChunkPattern::new(&chars, self.min_length, self.max_length, deterministic);
             normalized.split(pattern, SplitDelimiterBehavior::Isolated)
         })
     }
@@ -213,6 +237,45 @@ mod tests {
         for (chunk, _) in &splits {
             let chunk_chars = chunk.chars().count();
             assert!(chunk_chars >= 1 && chunk_chars <= 5);
+        }
+    }
+    
+    #[test]
+    fn test_deterministic_mode() {
+        // Test with deterministic mode enabled
+        let s = "The quick brown fox jumps over the lazy dog.";
+        
+        // Create a pre-tokenizer with deterministic mode enabled
+        let deterministic_pretok = RandomChunkSplit::new(2, 6).with_deterministic(true);
+        let mut deterministic_pretokenized1 = PreTokenizedString::from(s);
+        deterministic_pretok.pre_tokenize(&mut deterministic_pretokenized1).unwrap();
+        
+        // Run it again to verify consistency
+        let mut deterministic_pretokenized2 = PreTokenizedString::from(s);
+        deterministic_pretok.pre_tokenize(&mut deterministic_pretokenized2).unwrap();
+        
+        // Get the splits from both runs
+        let splits1 = deterministic_pretokenized1
+            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, o, _)| (s, o))
+            .collect::<Vec<_>>();
+            
+        let splits2 = deterministic_pretokenized2
+            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, o, _)| (s, o))
+            .collect::<Vec<_>>();
+        
+        // The two runs should produce identical results in deterministic mode
+        assert_eq!(splits1, splits2);
+        
+        // Each chunk should have the average length of min and max (4 in this case)
+        // unless we hit the end of the string
+        let avg_length = (deterministic_pretok.min_length + deterministic_pretok.max_length) / 2;
+        for (chunk, _) in splits1.iter().take(splits1.len() - 1) {  // Skip the last chunk
+            let chunk_chars = chunk.chars().count();
+            assert_eq!(chunk_chars, avg_length);
         }
     }
 }
