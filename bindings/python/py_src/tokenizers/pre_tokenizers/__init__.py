@@ -8,6 +8,7 @@ CharDelimiterSplit = pre_tokenizers.CharDelimiterSplit
 Digits = pre_tokenizers.Digits
 Metaspace = pre_tokenizers.Metaspace
 Punctuation = pre_tokenizers.Punctuation
+RandomChunkSplit = pre_tokenizers.RandomChunkSplit
 Sequence = pre_tokenizers.Sequence
 Split = pre_tokenizers.Split
 UnicodeScripts = pre_tokenizers.UnicodeScripts

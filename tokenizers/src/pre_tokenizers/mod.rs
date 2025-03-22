@@ -4,6 +4,7 @@ pub mod delimiter;
 pub mod digits;
 pub mod metaspace;
 pub mod punctuation;
+pub mod random_chunk;
 pub mod sequence;
 pub mod split;
 pub mod unicode_scripts;
@@ -17,6 +18,7 @@ use crate::pre_tokenizers::delimiter::CharDelimiterSplit;
 use crate::pre_tokenizers::digits::Digits;
 use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::pre_tokenizers::punctuation::Punctuation;
+use crate::pre_tokenizers::random_chunk::RandomChunkSplit;
 use crate::pre_tokenizers::sequence::Sequence;
 use crate::pre_tokenizers::split::Split;
 use crate::pre_tokenizers::unicode_scripts::UnicodeScripts;
@@ -37,6 +39,7 @@ pub enum PreTokenizerWrapper {
     WhitespaceSplit(WhitespaceSplit),
     Digits(Digits),
     UnicodeScripts(UnicodeScripts),
+    RandomChunkSplit(RandomChunkSplit),
 }
 
 impl PreTokenizer for PreTokenizerWrapper {
@@ -53,6 +56,7 @@ impl PreTokenizer for PreTokenizerWrapper {
             Self::WhitespaceSplit(wspt) => wspt.pre_tokenize(normalized),
             Self::Digits(wspt) => wspt.pre_tokenize(normalized),
             Self::UnicodeScripts(us) => us.pre_tokenize(normalized),
+            Self::RandomChunkSplit(rcs) => rcs.pre_tokenize(normalized),
         }
     }
 }
@@ -82,6 +86,7 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
             WhitespaceSplit,
             Digits,
             UnicodeScripts,
+            RandomChunkSplit,
         }
 
         #[derive(Deserialize)]
@@ -105,6 +110,7 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
             WhitespaceSplit(WhitespaceSplit),
             Digits(Digits),
             UnicodeScripts(UnicodeScripts),
+            RandomChunkSplit(RandomChunkSplit),
         }
 
         let helper = PreTokenizerHelper::deserialize(deserializer)?;
@@ -152,6 +158,9 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
                     EnumType::UnicodeScripts => PreTokenizerWrapper::UnicodeScripts(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
+                    EnumType::RandomChunkSplit => PreTokenizerWrapper::RandomChunkSplit(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
                 }
             }
 
@@ -187,6 +196,9 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
                     PreTokenizerUntagged::UnicodeScripts(unicode_scripts) => {
                         PreTokenizerWrapper::UnicodeScripts(unicode_scripts)
                     }
+                    PreTokenizerUntagged::RandomChunkSplit(random_chunk_split) => {
+                        PreTokenizerWrapper::RandomChunkSplit(random_chunk_split)
+                    }
                 }
             }
         })
@@ -204,6 +216,7 @@ impl_enum_from!(Metaspace, PreTokenizerWrapper, Metaspace);
 impl_enum_from!(WhitespaceSplit, PreTokenizerWrapper, WhitespaceSplit);
 impl_enum_from!(Digits, PreTokenizerWrapper, Digits);
 impl_enum_from!(UnicodeScripts, PreTokenizerWrapper, UnicodeScripts);
+impl_enum_from!(RandomChunkSplit, PreTokenizerWrapper, RandomChunkSplit);
 
 #[cfg(test)]
 mod tests {
@@ -278,6 +291,16 @@ mod tests {
         assert_eq!(
             pre_tokenizer,
             PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit {})
+        );
+    }
+    
+    #[test]
+    fn test_deserialize_random_chunk_split() {
+        let pre_tokenizer: PreTokenizerWrapper =
+            serde_json::from_str(r#"{"type":"RandomChunkSplit","min_length":2,"max_length":5}"#).unwrap();
+        assert_eq!(
+            pre_tokenizer,
+            PreTokenizerWrapper::RandomChunkSplit(RandomChunkSplit::new(2, 5))
         );
     }
 

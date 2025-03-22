@@ -216,3 +216,23 @@ macro_rules! impl_serde_type{
 
 // Re-export macro_rules_attribute
 pub use macro_rules_attribute::macro_rules_attribute;
+
+/// Extension trait for Option to add the is_none_or method
+pub trait OptionExt<T> {
+    /// Returns true if the option is None or if the predicate returns true for the contained value
+    fn is_none_or<F>(&self, predicate: F) -> bool
+    where
+        F: FnOnce(&T) -> bool;
+}
+
+impl<T> OptionExt<T> for Option<T> {
+    fn is_none_or<F>(&self, predicate: F) -> bool
+    where
+        F: FnOnce(&T) -> bool,
+    {
+        match self {
+            None => true,
+            Some(val) => predicate(val),
+        }
+    }
+}

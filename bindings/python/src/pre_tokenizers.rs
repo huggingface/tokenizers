@@ -14,6 +14,7 @@ use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk::pre_tokenizers::digits::Digits;
 use tk::pre_tokenizers::metaspace::{Metaspace, PrependScheme};
 use tk::pre_tokenizers::punctuation::Punctuation;
+use tk::pre_tokenizers::random_chunk::RandomChunkSplit;
 use tk::pre_tokenizers::split::Split;
 use tk::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
@@ -114,6 +115,12 @@ impl PyPreTokenizer {
                             .into(),
                         PreTokenizerWrapper::UnicodeScripts(_) => {
                             Py::new(py, (PyUnicodeScripts {}, base))?
+                                .into_pyobject(py)?
+                                .into_any()
+                                .into()
+                        }
+                        PreTokenizerWrapper::RandomChunkSplit(_) => {
+                            Py::new(py, (PyRandomChunkSplit {}, base))?
                                 .into_pyobject(py)?
                                 .into_any()
                                 .into()
@@ -750,6 +757,50 @@ impl PyUnicodeScripts {
     }
 }
 
+/// RandomChunkSplit PreTokenizer
+///
+/// This pre-tokenizer splits text into random-length chunks regardless of whitespace
+/// boundaries. It's useful for enabling BPE to learn tokens that span across whitespace.
+///
+/// Args:
+///     min_length (:obj:`int`, `optional`, defaults to :obj:`1`):
+///         The minimum length (in characters) for each chunk.
+///     max_length (:obj:`int`, `optional`, defaults to :obj:`5`):
+///         The maximum length (in characters) for each chunk.
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "RandomChunkSplit")]
+pub struct PyRandomChunkSplit {}
+#[pymethods]
+impl PyRandomChunkSplit {
+    #[getter]
+    fn get_min_length(self_: PyRef<Self>) -> usize {
+        getter!(self_, RandomChunkSplit, min_length)
+    }
+
+    #[setter]
+    fn set_min_length(self_: PyRef<Self>, min_length: usize) {
+        setter!(self_, RandomChunkSplit, min_length, min_length);
+    }
+
+    #[getter]
+    fn get_max_length(self_: PyRef<Self>) -> usize {
+        getter!(self_, RandomChunkSplit, max_length)
+    }
+
+    #[setter]
+    fn set_max_length(self_: PyRef<Self>, max_length: usize) {
+        setter!(self_, RandomChunkSplit, max_length, max_length);
+    }
+
+    #[new]
+    #[pyo3(signature = (min_length = 1, max_length = 5), text_signature = "(self, min_length=1, max_length=5)")]
+    fn new(min_length: usize, max_length: usize) -> (Self, PyPreTokenizer) {
+        (
+            PyRandomChunkSplit {},
+            RandomChunkSplit::new(min_length, max_length).into(),
+        )
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct CustomPreTokenizer {
     inner: PyObject,
@@ -926,6 +977,7 @@ pub fn pre_tokenizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySequence>()?;
     m.add_class::<PyDigits>()?;
     m.add_class::<PyUnicodeScripts>()?;
+    m.add_class::<PyRandomChunkSplit>()?;
     Ok(())
 }
 
