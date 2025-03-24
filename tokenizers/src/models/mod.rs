@@ -6,9 +6,6 @@ pub mod wordlevel;
 pub mod wordpiece;
 
 use rustc_hash::FxHashMap;
-use std::collections::HashMap;
-use std::hash::BuildHasher;
-use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -21,19 +18,17 @@ use crate::{AddedToken, Model, Result, Token, Trainer};
 
 /// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
 /// of token ID, smallest to largest.
-struct OrderedVocabIter {
-    vocab_r: FxHashMap<u32, String>,
+struct OrderedVocabIter<'a> {
+    vocab_r: &'a FxHashMap<u32, String>,
 }
 
-impl OrderedVocabIter {
-    fn new<S: BuildHasher>(vocab_r: HashMap<u32, String, S>) -> Self {
-        Self {
-            vocab_r: FxHashMap::from_iter(vocab_r),
-        }
+impl<'a> OrderedVocabIter<'a> {
+    fn new(vocab_r: &'a FxHashMap<u32, String>) -> Self {
+        Self { vocab_r }
     }
 }
 
-impl Serialize for OrderedVocabIter {
+impl Serialize for OrderedVocabIter<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -292,7 +287,7 @@ impl_enum_from!(WordLevelTrainer, TrainerWrapper, WordLevelTrainer);
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::iter::FromIterator;
 
     use super::*;
     use crate::models::bpe::{BpeBuilder, Vocab};
@@ -308,10 +303,10 @@ mod tests {
 
     #[test]
     fn incomplete_ordered_vocab() {
-        let vocab_r: HashMap<u32, String> =
-            HashMap::from([(0, "Hi".to_string()), (2, "There".to_string())]);
+        let vocab_r: FxHashMap<u32, String> =
+            FxHashMap::from_iter([(0, "Hi".to_string()), (2, "There".to_string())]);
 
-        let ordered = OrderedVocabIter::new(vocab_r.clone());
+        let ordered = OrderedVocabIter::new(&vocab_r);
 
         let serialized = serde_json::to_string(&ordered).unwrap();
         assert_eq!(serialized, "{\"Hi\":0,\"There\":2}");

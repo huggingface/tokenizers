@@ -540,7 +540,7 @@ impl Model for BPE {
             .iter()
             .collect();
         let mut vocab_file = File::create(&vocab_path)?;
-        let order_vocab_iter = OrderedVocabIter::new(self.vocab_r.clone());
+        let order_vocab_iter = OrderedVocabIter::new(&self.vocab_r);
         let serialized = serde_json::to_string(&order_vocab_iter)?;
         vocab_file.write_all(serialized.as_bytes())?;
 
@@ -594,7 +594,7 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        let order_vocab_iter = OrderedVocabIter::new(vocab_r.clone());
+        let order_vocab_iter = OrderedVocabIter::new(&vocab_r);
         let serialized = serde_json::to_string(&order_vocab_iter).unwrap();
         assert_eq!(serialized, "{\"a\":0,\"b\":1,\"c\":2,\"ab\":3}");
     }
