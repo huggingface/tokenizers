@@ -13,8 +13,13 @@
     </a>
 </p>
 
+
+# Key Feature
+This fork adds the Append normalization to the library.
+
 Provides an implementation of today's most used tokenizers, with a focus on performance and
 versatility.
+
 
 ## Main features:
 
