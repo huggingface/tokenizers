@@ -602,6 +602,11 @@ where
         &self.model
     }
 
+    /// Get a mutable reference to the model
+    pub fn get_model_mut(&mut self) -> &mut M {
+        &mut self.model
+    }
+
     /// Set the added vocabulary.
     pub fn with_added_vocabulary(&mut self, added_vocabulary: AddedVocabulary) -> &mut Self {
         self.added_vocabulary = added_vocabulary;
