@@ -522,7 +522,7 @@ class UnicodeScripts(PreTokenizer):
         pass
 
 class Whitespace(PreTokenizer):
-    """
+    r"""
     This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`
     """
     def __init__(self):
