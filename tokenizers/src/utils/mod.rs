@@ -2,14 +2,20 @@ pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
 
-#[cfg(feature = "unstable_wasm")]
+#[cfg(feature = "fancy-regex")]
 mod fancy;
-#[cfg(feature = "unstable_wasm")]
+#[cfg(feature = "fancy-regex")]
 pub use fancy::SysRegex;
-#[cfg(not(feature = "unstable_wasm"))]
+#[cfg(feature = "onig")]
 mod onig;
-#[cfg(not(feature = "unstable_wasm"))]
+#[cfg(feature = "onig")]
 pub use crate::utils::onig::SysRegex;
+
+#[cfg(all(feature = "onig", feature = "fancy-regex"))]
+compile_error!("Features `onig` and `fancy-regex` are mutually exclusive");
+
+#[cfg(not(any(feature = "onig", feature = "fancy-regex")))]
+compile_error!("One of the `onig`, or `fancy-regex` features must be enabled");
 
 pub mod iter;
 pub mod padding;
