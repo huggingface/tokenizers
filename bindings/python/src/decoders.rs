@@ -1,5 +1,5 @@
 use std::sync::{Arc, RwLock};
-
+use std::collections::HashMap;
 use crate::pre_tokenizers::from_string;
 use crate::tokenizer::PyTokenizer;
 use crate::utils::PyPattern;
@@ -643,28 +643,20 @@ struct PyDecodeState {
     prefix_index: usize,
 }
 
-fn compute_prefill_hash(ids: &[u32]) -> String {
-    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME: u64 = 0x100000001b3;
-    let mut hash = FNV_OFFSET;
-    for &id in ids {
-        hash ^= id as u64;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    format!("{:016x}", hash)
-}
-
+// Define enum for inputs
 #[derive(FromPyObject)]
 enum StepInput {
-    Map(std::collections::HashMap<String, u32>),
-    Single(u32),
+    Map(HashMap<String, Vec<u32>>),
+    Single(Vec<u32>),
 }
 
+// Define enum for outputs
 #[derive(IntoPyObject)]
 enum StepOutput {
     Map(HashMap<String, Option<String>>),
     Single(Option<String>),
 }
+
 
 #[pymethods]
 impl PyDecodeStream {
@@ -675,36 +667,9 @@ impl PyDecodeStream {
             skip_special_tokens,
             prefills: prefills.unwrap_or_default(),
             states: Vec::new(),
-            hash_to_index: std::collections::HashMap::new(),
+            hash_to_index: HashMap::new(),
             prefill_hashes: Vec::new(),
         }
-    }
-
-    fn ensure_initialized(&mut self, tokenizer: &tk::Tokenizer) -> tk::Result<()> {
-        if !self.states.is_empty() {
-            return Ok(());
-        }
-        if self.prefills.is_empty() {
-            self.prefills.push(vec![]);
-        }
-        for (i, prefill) in self.prefills.iter().enumerate() {
-            let mut state = PyDecodeState { ids: Vec::new(), prefix: String::new(), prefix_index: 0 };
-            for id in prefill {
-                let _ = tk::tokenizer::step_decode_stream(
-                    tokenizer,
-                    *id,
-                    self.skip_special_tokens,
-                    &mut state.ids,
-                    &mut state.prefix,
-                    &mut state.prefix_index,
-                )?;
-            }
-            let hash = compute_prefill_hash(prefill);
-            self.hash_to_index.insert(hash.clone(), i);
-            self.prefill_hashes.push(hash);
-            self.states.push(state);
-        }
-        Ok(())
     }
 
     #[pyo3(signature = (tokenizer, inputs), text_signature = "(self, tokenizer, inputs)")]
@@ -713,39 +678,73 @@ impl PyDecodeStream {
         tokenizer: &PyTokenizer,
         inputs: StepInput,
     ) -> PyResult<StepOutput> {
-        self.ensure_initialized(&tokenizer.tokenizer)?;
         match inputs {
             StepInput::Map(map) => {
-                for (hash, id) in map {
-                    if let Some(&idx) = self.hash_to_index.get(&hash) {
-                        let state = &mut self.states[idx];
-                        let res = tk::tokenizer::step_decode_stream(
+                let mut output = HashMap::new();
+
+                for (hash, tokens) in map {
+                    let idx = if let Some(&idx) = self.hash_to_index.get(&hash) {
+                        idx
+                    } else {
+                        let state = PyDecodeState {
+                            ids: tokens.clone(),
+                            prefix: String::new(),
+                            prefix_index: 0,
+                        };
+                        self.states.push(state);
+                        self.prefill_hashes.push(hash.clone());
+                        let new_idx = self.states.len() - 1;
+                        self.hash_to_index.insert(hash.clone(), new_idx);
+                        new_idx
+                    };
+
+                    let state = &mut self.states[idx];
+                    let mut res = None;
+
+                    for &token in &tokens {
+                        res = tk::tokenizer::step_decode_stream(
                             &tokenizer.tokenizer,
-                            id,
+                            token,
                             self.skip_special_tokens,
                             &mut state.ids,
                             &mut state.prefix,
                             &mut state.prefix_index,
                         )?;
-                        output.insert(hash, res);
                     }
+
+                    output.insert(hash, res);
                 }
+
                 Ok(StepOutput::Map(output))
             }
-            StepInput::Single(id) => {
-                // Default hash key if only one input
-                let state = &mut self.states[0];
-                let res = tk::tokenizer::step_decode_stream(
-                    &tokenizer.tokenizer,
-                    id,
-                    self.skip_special_tokens,
-                    &mut state.ids,
-                    &mut state.prefix,
-                    &mut state.prefix_index,
-                )?;
-                Ok(StepOutput::Single(res))
+
+            StepInput::Single(tokens) => {
+                if self.states.is_empty() {
+                    let state = PyDecodeState {
+                        ids: tokens.clone(),
+                        prefix: String::new(),
+                        prefix_index: 0,
+                    };
+                    self.states.push(state);
+                    self.prefill_hashes.push("default".into());
+                    self.hash_to_index.insert("default".into(), 0);
                 }
+                let state = &mut self.states[0];
+                let mut res = None;
+                for &token in &tokens {
+                    res = tk::tokenizer::step_decode_stream(
+                        &tokenizer.tokenizer,
+                        token,
+                        self.skip_special_tokens,
+                        &mut state.ids,
+                        &mut state.prefix,
+                        &mut state.prefix_index,
+                    )?;
+                }
+
+                Ok(StepOutput::Single(res))
             }
+        }
     }
 
     #[getter]
@@ -753,7 +752,6 @@ impl PyDecodeStream {
         self.prefill_hashes.clone()
     }
 }
-
 #[cfg(test)]
 mod test {
     use std::sync::{Arc, RwLock};
