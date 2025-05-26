@@ -624,12 +624,14 @@ pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
 /// Class needed for streaming decode
 ///
 #[pyclass(module = "tokenizers.decoders", name = "DecodeStream")]
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct PyDecodeStream {
     /// Regular decode option that is kept throughout.
     skip_special_tokens: bool,
     prefills: Vec<Vec<u32>>,
+    #[serde(skip)]
     states: Vec<PyDecodeState>,
+    #[serde(skip)]
     hash_to_index: std::collections::HashMap<String, usize>,
     prefill_hashes: Vec<String>,
 }
@@ -650,6 +652,18 @@ fn compute_prefill_hash(ids: &[u32]) -> String {
         hash = hash.wrapping_mul(FNV_PRIME);
     }
     format!("{:016x}", hash)
+}
+
+#[derive(FromPyObject)]
+enum StepInput {
+    Map(std::collections::HashMap<String, u32>),
+    Single(u32),
+}
+
+#[derive(IntoPyObject)]
+enum StepOutput {
+    Map(HashMap<String, Option<String>>),
+    Single(Option<String>),
 }
 
 #[pymethods]
@@ -697,13 +711,30 @@ impl PyDecodeStream {
     fn step(
         &mut self,
         tokenizer: &PyTokenizer,
-        inputs: std::collections::HashMap<String, u32>,
-    ) -> PyResult<std::collections::HashMap<String, Option<String>>> {
-        self.ensure_initialized(&tokenizer.tokenizer).map_err(|e| PyErr::from(e))?;
-        let mut output = std::collections::HashMap::new();
-        for (hash, id) in inputs {
-            if let Some(&idx) = self.hash_to_index.get(&hash) {
-                let state = &mut self.states[idx];
+        inputs: StepInput,
+    ) -> PyResult<StepOutput> {
+        self.ensure_initialized(&tokenizer.tokenizer)?;
+        match inputs {
+            StepInput::Map(map) => {
+                for (hash, id) in map {
+                    if let Some(&idx) = self.hash_to_index.get(&hash) {
+                        let state = &mut self.states[idx];
+                        let res = tk::tokenizer::step_decode_stream(
+                            &tokenizer.tokenizer,
+                            id,
+                            self.skip_special_tokens,
+                            &mut state.ids,
+                            &mut state.prefix,
+                            &mut state.prefix_index,
+                        )?;
+                        output.insert(hash, res);
+                    }
+                }
+                Ok(StepOutput::Map(output))
+            }
+            StepInput::Single(id) => {
+                // Default hash key if only one input
+                let state = &mut self.states[0];
                 let res = tk::tokenizer::step_decode_stream(
                     &tokenizer.tokenizer,
                     id,
@@ -712,10 +743,10 @@ impl PyDecodeStream {
                     &mut state.prefix,
                     &mut state.prefix_index,
                 )?;
-                output.insert(hash, res);
+                Ok(StepOutput::Single(res))
+                }
             }
         }
-        Ok(output)
     }
 
     #[getter]
