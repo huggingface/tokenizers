@@ -629,14 +629,12 @@ pub struct PyDecodeStream {
     /// Regular decode option that is kept throughout.
     skip_special_tokens: bool,
     prefills: Vec<Vec<u32>>,
-    #[serde(skip)]
     states: Vec<PyDecodeState>,
-    #[serde(skip)]
     hash_to_index: std::collections::HashMap<String, usize>,
     prefill_hashes: Vec<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 struct PyDecodeState {
     ids: Vec<u32>,
     prefix: String,
