@@ -746,7 +746,6 @@ impl PyDecodeStream {
                 Ok(StepOutput::Single(res))
                 }
             }
-        }
     }
 
     #[getter]
