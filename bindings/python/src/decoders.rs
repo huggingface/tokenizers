@@ -679,13 +679,16 @@ impl PyDecodeStream {
         match inputs {
             StepInput::Map(map) => {
                 let mut output = HashMap::new();
-
                 for (hash, tokens) in map {
+                    let (prefix_ids, last_token) = match tokens.split_last() {
+                        Some((last, prefix)) => (prefix.to_vec(), *last),
+                        None => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Empty token sequence")),
+                    };
                     let idx = if let Some(&idx) = self.hash_to_index.get(&hash) {
                         idx
                     } else {
                         let state = PyDecodeState {
-                            ids: tokens.clone(),
+                            ids: prefix_ids.clone(),
                             prefix: String::new(),
                             prefix_index: 0,
                         };
@@ -697,29 +700,27 @@ impl PyDecodeStream {
                     };
 
                     let state = &mut self.states[idx];
-                    let mut res = None;
-
-                    for &token in &tokens {
-                        res = tk::tokenizer::step_decode_stream(
+                    let res = tk::tokenizer::step_decode_stream(
                             &tokenizer.tokenizer,
-                            token,
+                            last_token,
                             self.skip_special_tokens,
                             &mut state.ids,
                             &mut state.prefix,
                             &mut state.prefix_index,
                         ).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("decode error: {}", e)))?;;
-                    }
-
                     output.insert(hash, res);
                 }
-
                 Ok(StepOutput::Map(output))
             }
 
             StepInput::Single(tokens) => {
+                let (prefix_ids, last_token) = match tokens.split_last() {
+                    Some((last, prefix)) => (prefix.to_vec(), *last),
+                    None => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Empty token sequence")),
+                };
                 if self.states.is_empty() {
                     let state = PyDecodeState {
-                        ids: tokens.clone(),
+                        ids: prefix_ids.clone(),
                         prefix: String::new(),
                         prefix_index: 0,
                     };
@@ -728,21 +729,43 @@ impl PyDecodeStream {
                     self.hash_to_index.insert("default".into(), 0);
                 }
                 let state = &mut self.states[0];
-                let mut res = None;
-                for &token in &tokens {
-                    res = tk::tokenizer::step_decode_stream(
+                let res = tk::tokenizer::step_decode_stream(
                         &tokenizer.tokenizer,
-                        token,
+                        last_token,
                         self.skip_special_tokens,
                         &mut state.ids,
                         &mut state.prefix,
                         &mut state.prefix_index,
                     ).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("decode error: {}", e)))?;;
-                }
 
                 Ok(StepOutput::Single(res))
             }
         }
+    }
+
+    #[pyo3(signature = (hashes), text_signature = "(self, hashes)")]
+    fn finish(&mut self, hashes: Vec<String>) {
+        // Build a set of hashes to remove
+        use std::collections::HashSet;
+        let remove_set: HashSet<String> = hashes.into_iter().collect();
+
+        // New vectors to hold retained states and hashes
+        let mut new_states = Vec::new();
+        let mut new_hash_to_index = HashMap::new();
+        let mut new_prefill_hashes = Vec::new();
+
+        for (idx, hash) in self.prefill_hashes.iter().enumerate() {
+            if !remove_set.contains(hash) {
+                new_hash_to_index.insert(hash.clone(), new_states.len());
+                new_states.push(self.states[idx].clone());
+                new_prefill_hashes.push(hash.clone());
+            }
+        }
+
+        // Replace old data
+        self.states = new_states;
+        self.hash_to_index = new_hash_to_index;
+        self.prefill_hashes = new_prefill_hashes;
     }
 
     #[getter]
@@ -750,6 +773,7 @@ impl PyDecodeStream {
         self.prefill_hashes.clone()
     }
 }
+
 #[cfg(test)]
 mod test {
     use std::sync::{Arc, RwLock};
