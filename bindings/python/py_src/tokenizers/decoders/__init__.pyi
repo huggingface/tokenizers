@@ -1,11 +1,19 @@
 # Generated content DO NOT EDIT
+from typing import List, Dict, Optional
 class DecodeStream:
     """
     Class needed for streaming decode
 
     """
-    def __init__(self, skip_special_tokens):
+    def __init__(self, skip_special_tokens, prefills: Optional[List[List[int]]] = None):
         pass
+
+    def step(self, tokenizer, inputs: Dict[str, int]) -> Dict[str, Optional[str]]:
+        pass
+
+    @property
+    def prefill_hashes(self) -> List[str]:
+        ...
 
 class Decoder:
     """

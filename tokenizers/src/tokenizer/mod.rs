@@ -911,6 +911,15 @@ where
     pub fn decode_stream(&self, skip_special_tokens: bool) -> DecodeStream<'_, M, N, PT, PP, D> {
         DecodeStream::new(self, skip_special_tokens)
     }
+
+    /// DecodeStream with prefills
+    pub fn decode_stream_with_prefills(
+        &self,
+        skip_special_tokens: bool,
+        prefills: Vec<Vec<u32>>,
+    ) -> Result<DecodeStream<'_, M, N, PT, PP, D>> {
+        DecodeStream::new_with_prefills(self, skip_special_tokens, prefills)
+    }
 }
 
 /// DecodeStream will keep the state necessary to produce individual chunks of
@@ -1017,24 +1026,30 @@ pub struct DecodeStream<'tok, M, N, PT, PP, D> {
     tokenizer: &'tok TokenizerImpl<M, N, PT, PP, D>,
     /// Regular decode option that is kept throughout.
     skip_special_tokens: bool,
-    /// A temporary buffer of the necessary token_ids needed
-    /// to produce valid string chunks.
-    /// This typically contains 3 parts:
-    ///  - read
-    ///  - prefix
-    ///  - rest
-    ///
-    /// Read is the bit necessary to surround the prefix
-    /// so decoding the whole ids produces a valid prefix.
-    /// Prefix is the previously produced string, kept around to trim off of
-    /// the next valid chunk
+    /// Each decoding state associated to a given prefill.
+    states: Vec<DecodeState>,
+    /// Mapping between the prefill hash and its index within `states`
+    hash_to_index: std::collections::HashMap<String, usize>,
+    /// Stored hashes to return to the caller
+    prefill_hashes: Vec<String>,
+}
+
+#[derive(Clone)]
+struct DecodeState {
     ids: Vec<u32>,
-    /// The previously returned chunk that needs to be discarded from the
-    /// decoding of the current ids to produce the next chunk
     prefix: String,
-    /// The index within the ids corresponding to the prefix so we can drain
-    /// correctly
     prefix_index: usize,
+}
+
+fn compute_prefill_hash(ids: &[u32]) -> String {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut hash = FNV_OFFSET;
+    for &id in ids {
+        hash ^= id as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    format!("{:016x}", hash)
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -1052,25 +1067,87 @@ where
     D: Decoder,
 {
     fn new(tokenizer: &'tok TokenizerImpl<M, N, PT, PP, D>, skip_special_tokens: bool) -> Self {
+        let state = DecodeState { ids: vec![], prefix: String::new(), prefix_index: 0 };
+        let hash = compute_prefill_hash(&[]);
         Self {
             tokenizer,
-            ids: vec![],
             skip_special_tokens,
-            prefix: "".to_string(),
-            prefix_index: 0,
+            states: vec![state],
+            hash_to_index: std::iter::once((hash.clone(), 0)).collect(),
+            prefill_hashes: vec![hash],
         }
     }
 
+    fn new_with_prefills(
+        tokenizer: &'tok TokenizerImpl<M, N, PT, PP, D>,
+        skip_special_tokens: bool,
+        prefills: Vec<Vec<u32>>,
+    ) -> Result<Self> {
+        let mut states = Vec::new();
+        let mut prefill_hashes = Vec::new();
+        let mut hash_to_index = std::collections::HashMap::new();
+        for (i, prefill) in prefills.into_iter().enumerate() {
+            let mut state = DecodeState { ids: vec![], prefix: String::new(), prefix_index: 0 };
+            for id in &prefill {
+                let _ = step_decode_stream(
+                    tokenizer,
+                    *id,
+                    skip_special_tokens,
+                    &mut state.ids,
+                    &mut state.prefix,
+                    &mut state.prefix_index,
+                )?;
+            }
+            let hash = compute_prefill_hash(&prefill);
+            hash_to_index.insert(hash.clone(), i);
+            prefill_hashes.push(hash);
+            states.push(state);
+        }
+        Ok(Self {
+            tokenizer,
+            skip_special_tokens,
+            states,
+            hash_to_index,
+            prefill_hashes,
+        })
+    }
+
+    pub fn prefill_hashes(&self) -> &Vec<String> {
+        &self.prefill_hashes
+    }
+
     /// See [`DecodeStream`]
-    pub fn step(&mut self, id: u32) -> Result<Option<String>> {
-        step_decode_stream(
-            self.tokenizer,
-            id,
-            self.skip_special_tokens,
-            &mut self.ids,
-            &mut self.prefix,
-            &mut self.prefix_index,
-        )
+    pub fn step(
+        &mut self,
+        inputs: std::collections::HashMap<String, u32>,
+    ) -> Result<std::collections::HashMap<String, Option<String>>> {
+        let mut output = std::collections::HashMap::new();
+        for (hash, id) in inputs {
+            if let Some(&idx) = self.hash_to_index.get(&hash) {
+                let state = &mut self.states[idx];
+                let res = step_decode_stream(
+                    self.tokenizer,
+                    id,
+                    self.skip_special_tokens,
+                    &mut state.ids,
+                    &mut state.prefix,
+                    &mut state.prefix_index,
+                )?;
+                output.insert(hash, res);
+            }
+        }
+        Ok(output)
+    }
+
+    /// Convenience method when only a single state is used
+    pub fn step_token(&mut self, id: u32) -> Result<Option<String>> {
+        if let Some(hash) = self.prefill_hashes.get(0).cloned() {
+            let mut map = std::collections::HashMap::new();
+            map.insert(hash.clone(), id);
+            Ok(self.step(map)?.remove(&hash).unwrap())
+        } else {
+            Ok(None)
+        }
     }
 }
 

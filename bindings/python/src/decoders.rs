@@ -628,50 +628,99 @@ pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
 pub struct PyDecodeStream {
     /// Regular decode option that is kept throughout.
     skip_special_tokens: bool,
-    /// A temporary buffer of the necessary token_ids needed
-    /// to produce valid string chunks.
-    /// This typically contains 3 parts:
-    ///  - read
-    ///  - prefix
-    ///  - rest
-    ///
-    /// Read is the bit necessary to surround the prefix
-    /// so decoding the whole ids produces a valid prefix.
-    /// Prefix is the previously produced string, kept around to trim off of
-    /// the next valid chunk
+    prefills: Vec<Vec<u32>>,
+    states: Vec<PyDecodeState>,
+    hash_to_index: std::collections::HashMap<String, usize>,
+    prefill_hashes: Vec<String>,
+}
+
+#[derive(Clone)]
+struct PyDecodeState {
     ids: Vec<u32>,
-    /// The previously returned chunk that needs to be discarded from the
-    /// decoding of the current ids to produce the next chunk
     prefix: String,
-    /// The index within the ids corresponding to the prefix so we can drain
-    /// correctly
     prefix_index: usize,
+}
+
+fn compute_prefill_hash(ids: &[u32]) -> String {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut hash = FNV_OFFSET;
+    for &id in ids {
+        hash ^= id as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    format!("{:016x}", hash)
 }
 
 #[pymethods]
 impl PyDecodeStream {
     #[new]
-    #[pyo3(signature = (skip_special_tokens), text_signature = "(self, skip_special_tokens)")]
-    fn new(skip_special_tokens: bool) -> Self {
+    #[pyo3(signature = (skip_special_tokens, prefills=None), text_signature = "(self, skip_special_tokens, prefills=None)")]
+    fn new(skip_special_tokens: bool, prefills: Option<Vec<Vec<u32>>>) -> Self {
         PyDecodeStream {
             skip_special_tokens,
-            ids: vec![],
-            prefix: "".to_string(),
-            prefix_index: 0,
+            prefills: prefills.unwrap_or_default(),
+            states: Vec::new(),
+            hash_to_index: std::collections::HashMap::new(),
+            prefill_hashes: Vec::new(),
         }
     }
 
-    #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
-    fn step(&mut self, tokenizer: &PyTokenizer, id: u32) -> PyResult<Option<String>> {
-        ToPyResult(tk::tokenizer::step_decode_stream(
-            &tokenizer.tokenizer,
-            id,
-            self.skip_special_tokens,
-            &mut self.ids,
-            &mut self.prefix,
-            &mut self.prefix_index,
-        ))
-        .into()
+    fn ensure_initialized(&mut self, tokenizer: &tk::Tokenizer) -> tk::Result<()> {
+        if !self.states.is_empty() {
+            return Ok(());
+        }
+        if self.prefills.is_empty() {
+            self.prefills.push(vec![]);
+        }
+        for (i, prefill) in self.prefills.iter().enumerate() {
+            let mut state = PyDecodeState { ids: Vec::new(), prefix: String::new(), prefix_index: 0 };
+            for id in prefill {
+                let _ = tk::tokenizer::step_decode_stream(
+                    tokenizer,
+                    *id,
+                    self.skip_special_tokens,
+                    &mut state.ids,
+                    &mut state.prefix,
+                    &mut state.prefix_index,
+                )?;
+            }
+            let hash = compute_prefill_hash(prefill);
+            self.hash_to_index.insert(hash.clone(), i);
+            self.prefill_hashes.push(hash);
+            self.states.push(state);
+        }
+        Ok(())
+    }
+
+    #[pyo3(signature = (tokenizer, inputs), text_signature = "(self, tokenizer, inputs)")]
+    fn step(
+        &mut self,
+        tokenizer: &PyTokenizer,
+        inputs: std::collections::HashMap<String, u32>,
+    ) -> PyResult<std::collections::HashMap<String, Option<String>>> {
+        self.ensure_initialized(&tokenizer.tokenizer).map_err(|e| PyErr::from(e))?;
+        let mut output = std::collections::HashMap::new();
+        for (hash, id) in inputs {
+            if let Some(&idx) = self.hash_to_index.get(&hash) {
+                let state = &mut self.states[idx];
+                let res = tk::tokenizer::step_decode_stream(
+                    &tokenizer.tokenizer,
+                    id,
+                    self.skip_special_tokens,
+                    &mut state.ids,
+                    &mut state.prefix,
+                    &mut state.prefix_index,
+                )?;
+                output.insert(hash, res);
+            }
+        }
+        Ok(output)
+    }
+
+    #[getter]
+    fn prefill_hashes(&self) -> Vec<String> {
+        self.prefill_hashes.clone()
     }
 }
 
