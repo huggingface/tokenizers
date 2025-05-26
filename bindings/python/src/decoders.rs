@@ -707,7 +707,7 @@ impl PyDecodeStream {
                             &mut state.ids,
                             &mut state.prefix,
                             &mut state.prefix_index,
-                        ).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("decode error: {}", e)))?;;
+                        ).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("decode error: {}", e)))?;
                     output.insert(hash, res);
                 }
                 Ok(StepOutput::Map(output))
@@ -736,7 +736,7 @@ impl PyDecodeStream {
                         &mut state.ids,
                         &mut state.prefix,
                         &mut state.prefix_index,
-                    ).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("decode error: {}", e)))?;;
+                    ).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("decode error: {}", e)))?;
 
                 Ok(StepOutput::Single(res))
             }
