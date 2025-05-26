@@ -659,11 +659,12 @@ enum StepOutput {
 #[pymethods]
 impl PyDecodeStream {
     #[new]
-    #[pyo3(signature = (skip_special_tokens, prefills=None), text_signature = "(self, skip_special_tokens, prefills=None)")]
-    fn new(skip_special_tokens: bool, prefills: Option<Vec<Vec<u32>>>) -> Self {
+    #[pyo3(signature = (skip_special_tokens=true), text_signature = "(self, skip_special_tokens=True)")]
+    fn new(skip_special_tokens: Option<bool>) -> Self {
+        let skip_special_tokens = skip_special_tokens.unwrap_or(true);
         PyDecodeStream {
             skip_special_tokens,
-            prefills: prefills.unwrap_or_default(),
+            prefills: Vec::new(),
             states: Vec::new(),
             hash_to_index: HashMap::new(),
             prefill_hashes: Vec::new(),
@@ -690,7 +691,7 @@ impl PyDecodeStream {
                         let state = PyDecodeState {
                             ids: prefix_ids.clone(),
                             prefix: String::new(),
-                            prefix_index: 0,
+                            prefix_index: prefix_ids.len(),
                         };
                         self.states.push(state);
                         self.prefill_hashes.push(hash.clone());
@@ -725,8 +726,8 @@ impl PyDecodeStream {
                         prefix_index: 0,
                     };
                     self.states.push(state);
-                    self.prefill_hashes.push("default".into());
-                    self.hash_to_index.insert("default".into(), 0);
+                    self.prefill_hashes.push("".into());
+                    self.hash_to_index.insert("".into(), 0);
                 }
                 let state = &mut self.states[0];
                 let res = tk::tokenizer::step_decode_stream(
@@ -743,29 +744,29 @@ impl PyDecodeStream {
         }
     }
 
-    #[pyo3(signature = (hashes), text_signature = "(self, hashes)")]
-    fn finish(&mut self, hashes: Vec<String>) {
-        // Build a set of hashes to remove
-        use std::collections::HashSet;
-        let remove_set: HashSet<String> = hashes.into_iter().collect();
-
-        // New vectors to hold retained states and hashes
-        let mut new_states = Vec::new();
-        let mut new_hash_to_index = HashMap::new();
-        let mut new_prefill_hashes = Vec::new();
-
-        for (idx, hash) in self.prefill_hashes.iter().enumerate() {
-            if !remove_set.contains(hash) {
-                new_hash_to_index.insert(hash.clone(), new_states.len());
-                new_states.push(self.states[idx].clone());
-                new_prefill_hashes.push(hash.clone());
+    #[pyo3(signature = (hashes=None), text_signature = "(self, hashes=None)")]
+    fn finish(&mut self, hashes: Option<Vec<String>>) {
+        if let Some(hashes) = hashes {
+            // If no hashes are provided, we clear all states
+            use std::collections::HashSet;
+            let remove_set: HashSet<String> = hashes.into_iter().collect();
+            for hash in remove_set {
+                if self.hash_to_index.contains_key(&hash) {
+                    // Remove the state and hash
+                    let idx = self.hash_to_index[&hash];
+                    self.states.remove(idx);
+                    self.prefill_hashes.remove(idx);
+                    self.hash_to_index.remove(&hash);
+                }
             }
-        }
+        } else {
+            self.states.clear();
+            self.prefill_hashes.clear();
+            self.hash_to_index.clear();
+            return;
+            // Build a set of hashes to remove
 
-        // Replace old data
-        self.states = new_states;
-        self.hash_to_index = new_hash_to_index;
-        self.prefill_hashes = new_prefill_hashes;
+        }
     }
 
     #[getter]

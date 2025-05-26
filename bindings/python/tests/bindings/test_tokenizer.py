@@ -376,10 +376,10 @@ class TestTokenizer:
         # Can decode stream
         stream = DecodeStream(skip_special_tokens=False)
         h = prefill_hash([])
-        assert stream.step(tokenizer, {h: 0})[h] == "my"
-        assert stream.step(tokenizer, {h: 1})[h] == " name"
-        assert stream.step(tokenizer, {h: 2})[h] == " is"
-        assert stream.step(tokenizer, {h: 3})[h] == " john"
+        assert stream.step(tokenizer, {h: [0]})[h] == "my"
+        assert stream.step(tokenizer, {h: [1]})[h] == " name"
+        assert stream.step(tokenizer, {h: [2]})[h] == " is"
+        assert stream.step(tokenizer, {h: [3]})[h] == " john"
 
     def test_decode_stream(self):
         vocab = [
@@ -392,9 +392,9 @@ class TestTokenizer:
         tokenizer.decoder = ByteFallback()
         stream = DecodeStream(skip_special_tokens=False)
         h = prefill_hash([])
-        assert stream.step(tokenizer, {h: 1})[h] == " "
-        assert stream.step(tokenizer, {h: 2})[h] is None
-        assert stream.step(tokenizer, {h: 3})[h] == "é"
+        assert stream.step(tokenizer, {h: [1]})[h] == " "
+        assert stream.step(tokenizer, {h: [2]})[h] is None
+        assert stream.step(tokenizer, {h: [3]})[h] == "é"
 
         vocab = [
             ("<unk>", 0.0),
@@ -404,19 +404,31 @@ class TestTokenizer:
         tokenizer.decoder = DecoderMetaspace()
         stream = DecodeStream(skip_special_tokens=False)
         h = prefill_hash([])
-        assert stream.step(tokenizer, {h: 1})[h] == "This"
-        assert stream.step(tokenizer, {h: 1})[h] == " This"
+        assert stream.step(tokenizer, {h: [1]})[h] == "This"
+        assert stream.step(tokenizer, {h: [1]})[h] == " This"
 
     def test_decode_stream_prefills(self):
         vocab = [
             ("<unk>", 0.0),
             ("▁This", -0.1),
+            ("▁is", -0.2),
+            ("▁a", -0.3),
+            ("▁test", -0.4),
+            ("▁sentence", -0.5),
+            ("<0x20>", -0.6),
+            ("<0xC3>", -0.6),
+            ("<0xA9>", -0.6),
         ]
         tokenizer = Tokenizer(Unigram(vocab, 0, byte_fallback=False))
         tokenizer.decoder = DecoderMetaspace()
-        stream = DecodeStream(skip_special_tokens=False, prefills=[[1]])
-        h = prefill_hash([1])
-        assert stream.step(tokenizer, {h: 1})[h] == " This"
+        stream = DecodeStream(skip_special_tokens=False)
+        assert stream.step(tokenizer, [1]) ==  "This"
+        assert stream.step(tokenizer, [1]) ==  " This"
+        assert stream.step(tokenizer, {"": [1]}) == {"":" This"}
+        assert stream.step(tokenizer, {"": [1, 0, 3, 4, 5, 6]}) == {"": "<0x20>"}
+        stream.finish()
+        assert stream.step(tokenizer, {"": [6, 7, 8]}) == {"": "ë"}
+
 
     def test_get_vocab(self):
         tokenizer = Tokenizer(BPE())
