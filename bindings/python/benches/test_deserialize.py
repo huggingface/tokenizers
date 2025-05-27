@@ -11,16 +11,12 @@ def build_tokenizer_json(size, normalizer=None, special_tokens=True):
     # Build vocab and WordLevel model
     vocab = {"a": 0}
     model = WordLevel(vocab=vocab, unk_token="[UNK]")
-    tokenizer = Tokenizer(model)
-
-    # Add many tokens
-    tokens = [AddedToken(f"tok{i}", special=special_tokens) for i in range(size)]
-    tokenizer.add_tokens(tokens)
-
     # Add normalizer if specified
+    tokenizer = Tokenizer(model)
     if normalizer:
         tokenizer.normalizer = normalizer
-
+    tokens = [AddedToken(f"tok{i}", special=special_tokens) for i in range(size)]
+    tokenizer.add_tokens(tokens)
     # Return serialized tokenizer JSON
     return tokenizer.to_str()
 
