@@ -38,25 +38,10 @@ normalizer_factories = {
 
 
 
-normalizer_factories = {
-    "none": None,
-    "byte_level": ByteLevel,
-    "lowercase": Lowercase,
-    "nfc": NFC,
-    "nfd": NFD,
-    "nfkc": NFKC,
-    "nfkd": NFKD,
-    "nmt": Nmt,
-    "strip": lambda: Strip(True, True),
-    "replace": lambda: Replace("a", "b"),
-    "prepend": lambda: Prepend("pre_"),
-    "bert": BertNormalizer,
-}
 
-
-@pytest.mark.parametrize("size", [10_000, 100_000])
 @pytest.mark.parametrize("special_tokens", [True, False])
 @pytest.mark.parametrize("norm_name,norm_factory", normalizer_factories.items())
+@pytest.mark.parametrize("size", [10_000, 100_000])
 def test_tokenizer_deserialization(benchmark, size, special_tokens, norm_name, norm_factory):
     """Benchmark Tokenizer.from_str deserialization with different vocab sizes and normalizers."""
     normalizer = norm_factory() if norm_factory else None
