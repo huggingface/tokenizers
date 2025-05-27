@@ -1012,6 +1012,7 @@ where
 /// assert_eq!(decode_stream.step(0).unwrap(), Some("This".to_string()));
 /// assert_eq!(decode_stream.step(0).unwrap(), Some(" This".to_string()));
 /// ```
+#[derive(Clone, Serialize)]
 pub struct DecodeStream<'tok, M, N, PT, PP, D> {
     /// A reference to the tokenizer
     tokenizer: &'tok TokenizerImpl<M, N, PT, PP, D>,
@@ -1064,9 +1065,9 @@ where
     /// See [`DecodeStream`]
     pub fn step(&mut self, id: u32) -> Result<Option<String>> {
         step_decode_stream(
-            self.tokenizer,
-            id,
-            self.skip_special_tokens,
+                    self.tokenizer,
+                    id,
+                    self.skip_special_tokens,
             &mut self.ids,
             &mut self.prefix,
             &mut self.prefix_index,
