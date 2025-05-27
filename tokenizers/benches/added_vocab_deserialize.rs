@@ -1,13 +1,9 @@
 #[macro_use]
 extern crate criterion;
 
-use std::collections::HashMap;
 use criterion::{black_box, Criterion};
-use tokenizers::{
-    AddedToken, Normalizer, Tokenizer,
-    models::wordlevel::WordLevel,
-    normalizers::*,
-};
+use std::collections::HashMap;
+use tokenizers::{models::wordlevel::WordLevel, normalizers::*, AddedToken, Normalizer, Tokenizer};
 
 fn serialized_tokenizer<N: Normalizer + Into<NormalizerWrapper>>(
     size: usize,
@@ -37,7 +33,6 @@ fn serialized_tokenizer<N: Normalizer + Into<NormalizerWrapper>>(
 fn bench_deserialize(c: &mut Criterion) {
     let normalizers: Vec<(&str, Option<fn() -> NormalizerWrapper>)> = vec![
         ("none", None),
-        ("bert", Some(|| BertNormalizer::default().into())),
         ("byte_level", Some(|| ByteLevel::default().into())),
         ("lowercase", Some(|| Lowercase.into())),
         ("nfc", Some(|| NFC.into())),
@@ -48,6 +43,7 @@ fn bench_deserialize(c: &mut Criterion) {
         ("strip", Some(|| Strip::new(true, true).into())),
         ("replace", Some(|| Replace::new("a", "b").unwrap().into())),
         ("prepend", Some(|| Prepend::new("pre_".to_string()).into())),
+        ("bert", Some(|| BertNormalizer::default().into())),
     ];
 
     for &size in &[10_000usize, 100_000, 400_000] {

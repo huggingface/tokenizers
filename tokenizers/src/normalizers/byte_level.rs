@@ -8,8 +8,6 @@ use std::sync::LazyLock;
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct ByteLevel;
 
-
-
 static BYTES_CHAR: LazyLock<HashMap<u8, char>> = LazyLock::new(bytes_char);
 
 impl Default for ByteLevel {

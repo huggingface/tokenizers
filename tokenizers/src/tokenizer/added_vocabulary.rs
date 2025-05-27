@@ -2,11 +2,11 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
 };
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
+use rayon::prelude::*;
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
-use rayon::prelude::*;
 
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
@@ -165,17 +165,13 @@ pub struct AddedVocabulary {
     encode_special_tokens: bool,
 }
 
-
-fn normalize_token_contents<N: Normalizer + Sync>(
-    n: &N,
-    ntokens: Vec<&AddedToken>,
-) -> Vec<String> {
+fn normalize_token_contents<N: Normalizer + Sync>(n: &N, ntokens: Vec<&AddedToken>) -> Vec<String> {
     ntokens
         .par_iter()
         .map(|token| {
             let mut content = NormalizedString::from(token.content.as_ref());
             n.normalize(&mut content).expect("Normalization failed");
-            content.get().to_string()  // Convert once, reuse later
+            content.get().to_string() // Convert once, reuse later
         })
         .collect()
 }
@@ -291,18 +287,16 @@ impl AddedVocabulary {
         let mut ignored = 0;
         use std::collections::HashSet;
         let mut existing: HashSet<AddedToken> = self.added_tokens_map_r.values().cloned().collect();
-        let mut next_id = self
-            .added_tokens_map_r
-            .keys()
-            .copied()
-            .max()
-            .map_or(model.get_vocab_size() as u32, |max| {
+        let mut next_id = self.added_tokens_map_r.keys().copied().max().map_or(
+            model.get_vocab_size() as u32,
+            |max| {
                 if max >= model.get_vocab_size() as u32 || model.get_vocab_size() == 0 {
                     max + 1
                 } else {
                     model.get_vocab_size() as u32
                 }
-            });
+            },
+        );
 
         for token in tokens {
             if token.content.is_empty() || existing.contains(token) {
@@ -342,42 +336,42 @@ impl AddedVocabulary {
     ///
     /// We keep two different RegexSet, one that will take care of matching against the
     /// non-normalized string, and one matching against the normalized one.
-fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer: Option<&N>) {
-    type TupleTokenId<'a> = (&'a AddedToken, u32);
-    let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
-        .special_tokens
-        .iter()
-        .chain(self.added_tokens.iter())
-        .map(|token| {
-            (
-                token,
-                self.token_to_id(&token.content, model)
-                    .expect("Missing additional token"),
-            )
-        })
-        .partition(|(token, _)| token.normalized);
+    fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer: Option<&N>) {
+        type TupleTokenId<'a> = (&'a AddedToken, u32);
+        let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
+            .special_tokens
+            .iter()
+            .chain(self.added_tokens.iter())
+            .map(|token| {
+                (
+                    token,
+                    self.token_to_id(&token.content, model)
+                        .expect("Missing additional token"),
+                )
+            })
+            .partition(|(token, _)| token.normalized);
 
-    // Build non-normalized trie
-    let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
-    let trie = AhoCorasickBuilder::new()
-        .match_kind(MatchKind::LeftmostLongest)
-        .build(tokens.iter().map(|token| &token.content))
-        .expect("Failed to build trie when refreshing tokens");
-    self.split_trie = (trie.clone(), ids.clone());
-
-    // Build normalized trie
-    if let Some(n) = normalizer {
-        let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
-        let patterns: Vec<_> = normalize_token_contents(n, ntokens);
-        let normalized_trie = AhoCorasickBuilder::new()
+        // Build non-normalized trie
+        let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
+        let trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
-            .build(patterns)
-            .expect("Failed to build tried when refreshing tokens (normalized)");
-        self.split_normalized_trie = (normalized_trie, nids);
-    } else {
-        self.split_normalized_trie = (trie, ids); // non normalized is the same
+            .build(tokens.iter().map(|token| &token.content))
+            .expect("Failed to build trie when refreshing tokens");
+        self.split_trie = (trie.clone(), ids.clone());
+
+        // Build normalized trie
+        if let Some(n) = normalizer {
+            let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
+            let patterns: Vec<_> = normalize_token_contents(n, ntokens);
+            let normalized_trie = AhoCorasickBuilder::new()
+                .match_kind(MatchKind::LeftmostLongest)
+                .build(patterns)
+                .expect("Failed to build tried when refreshing tokens (normalized)");
+            self.split_normalized_trie = (normalized_trie, nids);
+        } else {
+            self.split_normalized_trie = (trie, ids); // non normalized is the same
+        }
     }
-}
 
     /// Find any AddedToken in the given sentence, using the provided MatchingSet.
     /// This method returns a list "splits", each of them being a pair of Offsets
