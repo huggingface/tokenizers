@@ -16,7 +16,7 @@ class SentencePieceBPETokenizer(BaseTokenizer):
     def __init__(
         self,
         vocab: Optional[Union[str, Dict[str, int]]] = None,
-        merges: Optional[Union[str, Dict[Tuple[int, int], Tuple[int, int]]]] = None,
+        merges: Optional[Union[str, List[Tuple[str, str]]]] = None,
         unk_token: Union[str, AddedToken] = "<unk>",
         replacement: str = "▁",
         add_prefix_space: bool = True,
