@@ -368,7 +368,7 @@ fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer
     // Build normalized trie
     if let Some(n) = normalizer {
         let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
-        let patterns: Vec<_> =normalize_token_contents(n, ntokens);
+        let patterns: Vec<_> = normalize_token_contents(n, ntokens);
         let normalized_trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
             .build(patterns)
