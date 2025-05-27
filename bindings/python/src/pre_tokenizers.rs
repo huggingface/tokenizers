@@ -346,28 +346,30 @@ impl PyByteLevel {
 /// whitespaces (punctuation such as hyphens, apostrophes, commas ,etc.).
 ///
 /// Example:
-///    ```python
-///    from tokenizers.pre_tokenizers import Whitespace
+///    
+///    Use the `Whitespace` function as shown below::
 ///
-///    pre_tokenizer = Whitespace()
-///    text = "Hello, world! Let's try the Whitespace pre-tokenizer."
-///    pre_tokenizer.pre_tokenize_str(text)
-///    [('Hello', (0, 5)),
-///     (',', (5, 6)),
-///     ('world', (7, 12)),
-///     ('!', (12, 13)),
-///     ('Let', (14, 17)),
-///     ("'", (17, 18)),
-///     ('s', (18, 19)),
-///     ('try', (20, 23)),
-///     ('the', (24, 27)),
-///     ('Whitespace', (28, 38)),
-///     ('pre', (39, 42)),
-///     ('-', (42, 43)),
-///     ('tokenizer', (43, 52)),
-///     ('.', (52, 53))]
-///    ```
+///        from tokenizers.pre_tokenizers import Whitespace
 ///
+///        pre_tokenizer = Whitespace()
+///        text = "Hello, world! Let's try the Whitespace pre-tokenizer."
+///        pre_tokenizer.pre_tokenize_str(text)
+///        [('Hello', (0, 5)),
+///         (',', (5, 6)),
+///         ('world', (7, 12)),
+///         ('!', (12, 13)),
+///         ('Let', (14, 17)),
+///         ("'", (17, 18)),
+///         ('s', (18, 19)),
+///         ('try', (20, 23)),
+///         ('the', (24, 27)),
+///         ('Whitespace', (28, 38)),
+///         ('pre', (39, 42)),
+///         ('-', (42, 43)),
+///         ('tokenizer', (43, 52)),
+///         ('.', (52, 53))]
+///
+
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Whitespace")]
 pub struct PyWhitespace {}
 #[pymethods]
