@@ -73,7 +73,7 @@ impl WordLevelBuilder {
         self
     }
 
-    /// Contructs a `WordLevel` model that uses the `WordLevelBuilder`'s configuration.
+    /// Constructs a `WordLevel` model that uses the `WordLevelBuilder`'s configuration.
     pub fn build(mut self) -> Result<WordLevel> {
         if let Some(vocab) = self.config.files {
             self.config.vocab = WordLevel::read_file(&vocab)?;

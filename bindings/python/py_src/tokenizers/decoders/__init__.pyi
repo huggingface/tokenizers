@@ -33,7 +33,7 @@ class BPEDecoder(Decoder):
 
     Args:
         suffix (:obj:`str`, `optional`, defaults to :obj:`</w>`):
-            The suffix that was used to caracterize an end-of-word. This suffix will
+            The suffix that was used to characterize an end-of-word. This suffix will
             be replaced by whitespaces during the decoding
     """
     def __init__(self, suffix="</w>"):
