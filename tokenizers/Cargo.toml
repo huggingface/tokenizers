@@ -43,7 +43,7 @@ harness = false
 
 [dependencies]
 rand = "0.8"
-onig = { version = "6.4", default-features = false, optional = true }
+onig = { version = "6.5.1", default-features = false, optional = true }
 regex = "1.10"
 regex-syntax = "0.8"
 rayon = "1.10"
