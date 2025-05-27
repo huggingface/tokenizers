@@ -170,7 +170,7 @@ pub struct AddedVocabulary {
 fn normalize_token_contents<N: Normalizer>(n: &N, ntokens: Vec<&AddedToken>) -> Vec<String> {
     ntokens
             .iter()
-            .map(|token| n.normalize_fast(token.content.to_owned()))
+            .map(|token| n.normalize_fast(&token.content))
             .collect() 
 }
 

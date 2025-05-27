@@ -55,9 +55,9 @@ pub type Offsets = (usize, usize);
 /// Takes care of pre-processing strings.
 pub trait Normalizer: Sync {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
-    fn normalize_fast(&self, normalized: String) -> String {
+    fn normalize_fast(&self, normalized: &str) -> String {
         // Default implementation just calls the normalizer
-        normalized
+        normalized.to_owned()
     }
 }
 
