@@ -326,45 +326,65 @@ impl AddedVocabulary {
     ///
     /// We keep two different RegexSet, one that will take care of matching against the
     /// non-normalized string, and one matching against the normalized one.
-    fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer: Option<&N>) {
-        type TupleTokenId<'a> = (&'a AddedToken, u32);
-        let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
-            .special_tokens
-            .iter()
-            .chain(self.added_tokens.iter())
-            .map(|token| {
-                (
-                    token,
-                    self.token_to_id(&token.content, model)
-                        .expect("Missing additional token"),
-                )
-            })
-            .partition(|(token, _)| token.normalized);
+fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer: Option<&N>) {
+    type TupleTokenId<'a> = (&'a AddedToken, u32);
+    let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
+        .special_tokens
+        .iter()
+        .chain(self.added_tokens.iter())
+        .map(|token| {
+            (
+                token,
+                self.token_to_id(&token.content, model)
+                    .expect("Missing additional token"),
+            )
+        })
+        .partition(|(token, _)| token.normalized);
 
-        let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
-        let trie = AhoCorasickBuilder::new()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build(tokens.iter().map(|token| &token.content))
-            .expect("Failed to build tried when refreshing tokens");
-        self.split_trie = (trie, ids);
+    // Build non-normalized trie
+    let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
+    let trie = AhoCorasickBuilder::new()
+        .match_kind(MatchKind::LeftmostLongest)
+        .build(tokens.iter().map(|token| &token.content))
+        .expect("Failed to build trie when refreshing tokens");
+    self.split_trie = (trie, ids);
 
-        let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
-        let patterns: Vec<_> = ntokens
+    // Build normalized trie
+    let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
+    if let Some(n) = normalizer {
+        let delimiter = "\u{0000}";
+        let joined = ntokens
             .iter()
-            .map(|token| {
-                let mut content = NormalizedString::from(token.content.as_ref());
-                if let Some(n) = normalizer {
-                    n.normalize(&mut content).unwrap();
-                }
-                content
-            })
-            .collect();
+            .map(|token| token.content.as_str())
+            .collect::<Vec<_>>()
+            .join(delimiter);
+
+        let mut content = NormalizedString::from(joined);
+        n.normalize(&mut content).unwrap();
+        let normalized_str = content.get();
+        let split_normalized: Vec<&str> = normalized_str.split(delimiter).collect();
+
+        assert_eq!(
+            split_normalized.len(),
+            ntokens.len(),
+            "Mismatch between normalized tokens and split results"
+        );
+
         let normalized_trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
-            .build(patterns.iter().map(|content| content.get()))
-            .expect("Failed to build tried when refreshing tokens (normalized)");
+            .build(split_normalized)
+            .expect("Failed to build trie when refreshing tokens (normalized)");
+        self.split_normalized_trie = (normalized_trie, nids);
+    } else {
+        // Fallback: use raw content if no normalizer provided
+        let patterns: Vec<&str> = ntokens.iter().map(|token| token.content.as_str()).collect();
+        let normalized_trie = AhoCorasickBuilder::new()
+            .match_kind(MatchKind::LeftmostLongest)
+            .build(patterns)
+            .expect("Failed to build trie when refreshing tokens (normalized)");
         self.split_normalized_trie = (normalized_trie, nids);
     }
+}
 
     /// Find any AddedToken in the given sentence, using the provided MatchingSet.
     /// This method returns a list "splits", each of them being a pair of Offsets
