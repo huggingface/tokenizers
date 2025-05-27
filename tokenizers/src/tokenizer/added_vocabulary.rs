@@ -668,7 +668,7 @@ mod tests {
         // Also adds tokens already covered by the model
         let added_token = AddedToken::from("test", false);
         assert_eq!(
-            vocab.add_tokens(&[added_token.clone()], &model, normalizer),
+            vocab.add_tokens(std::slice::from_ref(&added_token), &model, normalizer),
             1
         );
         assert_eq!(vocab.len(), 3);
