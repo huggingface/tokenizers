@@ -167,22 +167,11 @@ pub struct AddedVocabulary {
 }
 
 
-fn normalize_token_contents<N: Normalizer + Sync>(n: &N, ntokens: Vec<&AddedToken>) -> Vec<String> {
-    let pool = ThreadPoolBuilder::new()
-        .num_threads(24)
-        .build()
-        .expect("Failed to build custom Rayon thread pool");
-
-    pool.install(|| {
-        ntokens
-            .par_iter()
-            .map( |token| n.normalize_fast(token.content.to_owned()))
-            .collect()
-    })
-    // ntokens
-    //         .iter()
-    //         .map(|token| n.normalize_fast(&token.content))
-    //         .collect() 
+fn normalize_token_contents<N: Normalizer>(n: &N, ntokens: Vec<&AddedToken>) -> Vec<String> {
+    ntokens
+            .iter()
+            .map(|token| n.normalize_fast(token.content.to_owned()))
+            .collect() 
 }
 
 impl AddedVocabulary {

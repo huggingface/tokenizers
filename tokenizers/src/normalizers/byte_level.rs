@@ -67,8 +67,6 @@ impl Normalizer for ByteLevel {
     }
 }
 
-unsafe impl Sync for ByteLevel {}
-
 #[cfg(test)]
 mod tests {
 

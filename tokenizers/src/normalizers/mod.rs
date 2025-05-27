@@ -38,8 +38,6 @@ pub enum NormalizerWrapper {
     ByteLevel(ByteLevel),
 }
 
-unsafe impl Sync for NormalizerWrapper {}
-
 impl<'de> Deserialize<'de> for NormalizerWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
