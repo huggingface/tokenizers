@@ -28,11 +28,7 @@ impl Decoder for ByteFallback {
 
         for token in tokens {
             let bytes = if token.len() == 6 && token.starts_with("<0x") && token.ends_with('>') {
-                if let Ok(byte) = u8::from_str_radix(&token[3..5], 16) {
-                    Some(byte)
-                } else {
-                    None
-                }
+                u8::from_str_radix(&token[3..5], 16).ok()
             } else {
                 None
             };
