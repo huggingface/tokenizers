@@ -3,7 +3,6 @@ use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
-use std::cell::RefCell;
 
 
 
@@ -11,11 +10,7 @@ use std::cell::RefCell;
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct ByteLevel;
 
-pub static BYTES_CHAR: LazyLock<HashMap<u8, char>> = LazyLock::new(bytes_char);
-
-thread_local! {
-    static THREAD_BYTES_CHAR: RefCell<HashMap<u8, char>> = RefCell::new(BYTES_CHAR.clone());
-}
+static BYTES_CHAR: LazyLock<HashMap<u8, char>> = LazyLock::new(bytes_char);
 
 impl Default for ByteLevel {
     fn default() -> Self {
@@ -38,32 +33,22 @@ impl Normalizer for ByteLevel {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         if !normalized.is_empty() {
             let s = normalized.get();
-            let s_bytes = s.as_bytes();
             let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());
             let mut i = 0;
             for cur_char in s.chars() {
                 let size = cur_char.len_utf8();
-                let bytes = &s_bytes[i..i + size];
+                let bytes = &s.as_bytes()[i..i + size];
                 i += size;
-                for (j, b) in bytes.iter().enumerate() {
-                    transformations.push((BYTES_CHAR[b], if j > 0 { 1 } else { 0 }));
-                }
+                transformations.extend(
+                    bytes
+                        .iter()
+                        .enumerate()
+                        .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
+                );
             }
             normalized.transform(transformations, 0);
         }
     Ok(())
-    }
-
-    /// Fast normalization: byte-to-char mapping without tracking positions
-    fn normalize_fast(&self, input: &str) -> String {
-        THREAD_BYTES_CHAR.with(|map_cell| {
-        let map = map_cell.borrow();
-            let mut out = String::with_capacity(input.len());
-            for b in input.as_bytes() {
-                out.push(map[b]);
-            }
-            out
-        })
     }
 }
 

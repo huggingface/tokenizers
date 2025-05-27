@@ -53,12 +53,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub type Offsets = (usize, usize);
 
 /// Takes care of pre-processing strings.
-pub trait Normalizer: Sync {
+pub trait Normalizer {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
-    fn normalize_fast(&self, normalized: &str) -> String {
-        // Default implementation just calls the normalizer
-        normalized.to_owned()
-    }
 }
 
 /// The `PreTokenizer` is in charge of doing the pre-segmentation step. It splits the given string
