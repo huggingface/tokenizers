@@ -168,21 +168,21 @@ pub struct AddedVocabulary {
 
 
 fn normalize_token_contents<N: Normalizer + Sync>(n: &N, ntokens: Vec<&AddedToken>) -> Vec<String> {
-    // let pool = ThreadPoolBuilder::new()
-    //     .num_threads(24)
-    //     .build()
-    //     .expect("Failed to build custom Rayon thread pool");
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(24)
+        .build()
+        .expect("Failed to build custom Rayon thread pool");
 
-    // pool.install(|| {
-    //     ntokens
-    //         .par_iter()
+    pool.install(|| {
+        ntokens
+            .par_iter()
+            .map( |token| n.normalize_fast(token.content.to_owned()))
+            .collect()
+    })
+    // ntokens
+    //         .iter()
     //         .map(|token| n.normalize_fast(&token.content))
-    //         .collect()
-    // })
-    ntokens
-            .iter()
-            .map(|token| n.normalize_fast(&token.content))
-            .collect() 
+    //         .collect() 
 }
 
 impl AddedVocabulary {
@@ -370,13 +370,12 @@ impl AddedVocabulary {
 
         // Build normalized trie
         if let Some(n) = normalizer {
-            let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
-            let patterns: Vec<_> = normalize_token_contents(n, ntokens);
+            let patterns: Vec<_> = normalize_token_contents(n, tokens);
             let normalized_trie = AhoCorasickBuilder::new()
                 .match_kind(MatchKind::LeftmostLongest)
                 .build(patterns)
                 .expect("Failed to build tried when refreshing tokens (normalized)");
-            self.split_normalized_trie = (normalized_trie, nids);
+            self.split_normalized_trie = (normalized_trie, ids);
         } else {
             self.split_normalized_trie = (trie, ids); // non normalized is the same
         }

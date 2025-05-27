@@ -55,8 +55,8 @@ impl Normalizer for ByteLevel {
     }
 
     /// Fast normalization: byte-to-char mapping without tracking positions
-    fn normalize_fast(&self, input: &str) -> String {
-    THREAD_BYTES_CHAR.with(|map_cell| {
+    fn normalize_fast(&self, input: String) -> String {
+        THREAD_BYTES_CHAR.with(|map_cell| {
         let map = map_cell.borrow();
             let mut out = String::with_capacity(input.len());
             for b in input.as_bytes() {

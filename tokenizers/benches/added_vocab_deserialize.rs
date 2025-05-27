@@ -1,6 +1,6 @@
 #[macro_use]
 extern crate criterion;
-use std::str::FromStr;
+use std::{process::exit, str::FromStr};
 use criterion::{black_box, Criterion};
 use std::collections::HashMap;
 use tokenizers::{models::wordlevel::WordLevel, normalizers::*, AddedToken, Normalizer, Tokenizer};
@@ -54,7 +54,6 @@ fn bench_deserialize(c: &mut Criterion) {
                 Some(factory) => serialized_tokenizer(size, Some(factory())),
                 None => serialized_tokenizer::<NormalizerWrapper>(size, None),
             };
-
             c.bench_function(&label, |b| {
                 b.iter(|| {
                     let tok: Tokenizer = black_box(Tokenizer::from_str(&json).unwrap());
@@ -62,6 +61,7 @@ fn bench_deserialize(c: &mut Criterion) {
                 })
             });
         }
+        exit(0);
     }
 }
 
