@@ -3,12 +3,19 @@ use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
+use std::cell::RefCell;
+
+
 
 #[derive(Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct ByteLevel;
 
-static BYTES_CHAR: LazyLock<HashMap<u8, char>> = LazyLock::new(bytes_char);
+pub static BYTES_CHAR: LazyLock<HashMap<u8, char>> = LazyLock::new(bytes_char);
+
+thread_local! {
+    static THREAD_BYTES_CHAR: RefCell<HashMap<u8, char>> = RefCell::new(BYTES_CHAR.clone());
+}
 
 impl Default for ByteLevel {
     fn default() -> Self {
@@ -49,11 +56,14 @@ impl Normalizer for ByteLevel {
 
     /// Fast normalization: byte-to-char mapping without tracking positions
     fn normalize_fast(&self, input: &str) -> String {
-        let mut out = String::with_capacity(input.len());
+    THREAD_BYTES_CHAR.with(|map_cell| {
+        let map = map_cell.borrow();
+            let mut out = String::with_capacity(input.len());
             for b in input.as_bytes() {
-                out.push(BYTES_CHAR[b]);
+                out.push(map[b]);
             }
-        out
+            out
+        })
     }
 }
 

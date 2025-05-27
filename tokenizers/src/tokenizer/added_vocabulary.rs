@@ -7,6 +7,7 @@ use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
+use rayon::ThreadPoolBuilder;
 
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
@@ -165,13 +166,23 @@ pub struct AddedVocabulary {
     encode_special_tokens: bool,
 }
 
+
 fn normalize_token_contents<N: Normalizer + Sync>(n: &N, ntokens: Vec<&AddedToken>) -> Vec<String> {
+    // let pool = ThreadPoolBuilder::new()
+    //     .num_threads(24)
+    //     .build()
+    //     .expect("Failed to build custom Rayon thread pool");
+
+    // pool.install(|| {
+    //     ntokens
+    //         .par_iter()
+    //         .map(|token| n.normalize_fast(&token.content))
+    //         .collect()
+    // })
     ntokens
-        .par_iter()
-        .map(|token| {
-            n.normalize_fast(&token.content)
-        })
-        .collect()
+            .iter()
+            .map(|token| n.normalize_fast(&token.content))
+            .collect() 
 }
 
 impl AddedVocabulary {
