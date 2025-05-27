@@ -389,7 +389,7 @@ where
         self
     }
 
-    /// Set the trunaction parameters.
+    /// Set the truncation parameters.
     #[must_use]
     pub fn with_truncation(mut self, trunc: Option<TruncationParams>) -> Self {
         self.truncation = trunc;

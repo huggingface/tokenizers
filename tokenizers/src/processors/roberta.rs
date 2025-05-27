@@ -95,9 +95,9 @@ impl PostProcessor for RobertaProcessing {
                     let ids = [&[self.cls.1], encoding.get_ids(), &[self.sep.1]].concat();
                     let type_ids = [&[0], encoding.get_type_ids(), &[0]].concat();
                     let tokens = [
-                        &[self.cls.0.clone()],
+                        std::slice::from_ref(&self.cls.0),
                         encoding.get_tokens(),
-                        &[self.sep.0.clone()],
+                        std::slice::from_ref(&self.sep.0),
                     ]
                     .concat();
                     let words = [&[None], encoding.get_word_ids(), &[None]].concat();
@@ -125,9 +125,9 @@ impl PostProcessor for RobertaProcessing {
                                     [&[self.cls.1], encoding.get_ids(), &[self.sep.1]].concat();
                                 let type_ids = vec![0; encoding.get_ids().len() + 2];
                                 let tokens = [
-                                    &[self.cls.0.clone()],
+                                    std::slice::from_ref(&self.cls.0),
                                     encoding.get_tokens(),
-                                    &[self.sep.0.clone()],
+                                    std::slice::from_ref(&self.sep.0),
                                 ]
                                 .concat();
                                 let words = [&[None], encoding.get_word_ids(), &[None]].concat();
@@ -161,9 +161,9 @@ impl PostProcessor for RobertaProcessing {
                     let pair_ids = [&[self.sep.1], encoding.get_ids(), &[self.sep.1]].concat();
                     let pair_type_ids = vec![0; encoding.get_ids().len() + 2];
                     let pair_tokens = [
-                        &[self.sep.0.clone()],
+                        std::slice::from_ref(&self.sep.0),
                         encoding.get_tokens(),
-                        &[self.sep.0.clone()],
+                        std::slice::from_ref(&self.sep.0),
                     ]
                     .concat();
                     let pair_words = [&[None], encoding.get_word_ids(), &[None]].concat();
@@ -191,9 +191,9 @@ impl PostProcessor for RobertaProcessing {
                                     [&[self.sep.1], encoding.get_ids(), &[self.sep.1]].concat();
                                 let pair_type_ids = vec![0; encoding.get_ids().len() + 2];
                                 let pair_tokens = [
-                                    &[self.sep.0.clone()],
+                                    std::slice::from_ref(&self.sep.0),
                                     encoding.get_tokens(),
-                                    &[self.sep.0.clone()],
+                                    std::slice::from_ref(&self.sep.0),
                                 ]
                                 .concat();
                                 let pair_words =
