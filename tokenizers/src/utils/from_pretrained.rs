@@ -36,14 +36,13 @@ pub fn from_pretrained<S: AsRef<str>>(
     let valid_chars_stringified = valid_chars
         .iter()
         .fold(vec![], |mut buf, x| {
-            buf.push(format!("'{}'", x));
+            buf.push(format!("'{x}'"));
             buf
         })
         .join(", "); // "'/', '-', '_', '.'"
     if !valid {
         return Err(format!(
-            "Model \"{}\" contains invalid characters, expected only alphanumeric or {valid_chars_stringified}",
-            identifier
+            "Model \"{identifier}\" contains invalid characters, expected only alphanumeric or {valid_chars_stringified}"
         )
         .into());
     }
@@ -53,8 +52,7 @@ pub fn from_pretrained<S: AsRef<str>>(
     let valid_revision = revision.chars().all(is_valid_char);
     if !valid_revision {
         return Err(format!(
-            "Revision \"{}\" contains invalid characters, expected only alphanumeric or {valid_chars_stringified}",
-            revision
+            "Revision \"{revision}\" contains invalid characters, expected only alphanumeric or {valid_chars_stringified}"
         )
         .into());
     }

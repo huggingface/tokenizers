@@ -35,7 +35,7 @@ impl Normalizer for ByteLevel {
             let mut i = 0;
             for cur_char in s.chars() {
                 let size = cur_char.len_utf8();
-                let bytes = s[i..i + size].as_bytes();
+                let bytes = &s.as_bytes()[i..i + size];
                 i += size;
                 transformations.extend(
                     bytes

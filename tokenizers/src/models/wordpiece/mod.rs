@@ -93,7 +93,7 @@ impl WordPieceBuilder {
         self
     }
 
-    /// Contructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
+    /// Constructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
     pub fn build(mut self) -> Result<WordPiece> {
         if let Some(vocab) = self.config.files {
             self.config.vocab = WordPiece::read_file(&vocab)?;
