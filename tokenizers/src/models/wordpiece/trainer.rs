@@ -1,8 +1,12 @@
+use std::collections::HashSet;
+use std::hash::BuildHasher;
+use std::iter::FromIterator;
+
 use super::WordPiece;
 use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder, BPE};
 use crate::tokenizer::{AddedToken, Result, Trainer};
+use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
 /// configuration.
@@ -61,7 +65,7 @@ impl WordPieceTrainerBuilder {
 
     /// Set the initial alphabet
     #[must_use]
-    pub fn initial_alphabet(mut self, alphabet: HashSet<char>) -> Self {
+    pub fn initial_alphabet<S: BuildHasher>(mut self, alphabet: HashSet<char, S>) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.initial_alphabet(alphabet);
         self
     }
@@ -134,12 +138,12 @@ impl WordPieceTrainer {
         self.bpe_trainer.limit_alphabet = limit;
     }
 
-    pub fn initial_alphabet(&self) -> &HashSet<char> {
+    pub fn initial_alphabet(&self) -> &FxHashSet<char> {
         &self.bpe_trainer.initial_alphabet
     }
 
-    pub fn set_initial_alphabet(&mut self, alphabet: HashSet<char>) {
-        self.bpe_trainer.initial_alphabet = alphabet;
+    pub fn set_initial_alphabet<S: BuildHasher>(&mut self, alphabet: HashSet<char, S>) {
+        self.bpe_trainer.initial_alphabet = FxHashSet::from_iter(alphabet);
     }
 
     pub fn continuing_subword_prefix(&self) -> &Option<String> {

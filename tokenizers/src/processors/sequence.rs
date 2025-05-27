@@ -74,7 +74,6 @@ mod tests {
     use crate::processors::{ByteLevel, PostProcessorWrapper};
     use crate::tokenizer::{Encoding, PostProcessor};
     use std::collections::HashMap;
-    use std::iter::FromIterator;
 
     #[test]
     fn process_chain() {
@@ -113,7 +112,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::from_iter(vec![(0, 0..5)]),
+            HashMap::from([(0, 0..5)]),
         );
 
         assert_eq!(
@@ -156,7 +155,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::from_iter(vec![(0, 0..5), (1, 5..10)]),
+            HashMap::from([(0, 0..5), (1, 5..10)]),
         );
         assert_eq!(
             pair_expected,

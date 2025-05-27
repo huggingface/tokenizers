@@ -58,9 +58,13 @@
 //!
 use crate::{Encoding, PostProcessor, Result};
 use itertools::Itertools;
+use rustc_hash::FxHashMap;
+use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
+use std::hash::BuildHasher;
+use std::iter::FromIterator;
 use std::result::Result as StdResult;
 
 /// Represents any sequences received as input of the PostProcessor
@@ -293,7 +297,7 @@ impl TryFrom<&str> for Template {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Eq)]
 #[serde(transparent)]
 pub struct Tokens(
-    #[serde(serialize_with = "crate::utils::ordered_map")] pub HashMap<String, SpecialToken>,
+    #[serde(serialize_with = "crate::utils::ordered_map")] pub FxHashMap<String, SpecialToken>,
 );
 
 impl<T: Into<SpecialToken>> From<Vec<T>> for Tokens {
@@ -309,9 +313,9 @@ impl<T: Into<SpecialToken>> From<Vec<T>> for Tokens {
     }
 }
 
-impl From<HashMap<String, SpecialToken>> for Tokens {
-    fn from(v: HashMap<String, SpecialToken>) -> Self {
-        Self(v)
+impl<S: BuildHasher> From<HashMap<String, SpecialToken, S>> for Tokens {
+    fn from(v: HashMap<String, SpecialToken, S>) -> Self {
+        Self(FxHashMap::from_iter(v))
     }
 }
 
@@ -502,7 +506,7 @@ impl TemplateProcessingBuilder {
         };
 
         let empty = [];
-        let missing: HashSet<&str> = self
+        let missing: FxHashSet<&str> = self
             .single
             .as_ref()
             .map_or(empty.iter(), |s| s.0.iter())
@@ -511,7 +515,7 @@ impl TemplateProcessingBuilder {
                 Piece::Sequence { .. } => None,
                 Piece::SpecialToken { id, .. } => check(id.as_ref()),
             })
-            .collect::<HashSet<_>>();
+            .collect::<FxHashSet<_>>();
 
         if missing.is_empty() {
             Ok(())
@@ -578,7 +582,7 @@ impl TemplateProcessing {
                                 // overflowing
                                 vec![],
                                 // sequence_range
-                                HashMap::new(),
+                                FxHashMap::default(),
                             );
                             Some(encoding)
                         } else {
@@ -688,8 +692,8 @@ impl PostProcessor for TemplateProcessing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use std::convert::TryInto;
-    use std::iter::FromIterator;
 
     #[test]
     fn piece_serde() {
@@ -917,7 +921,7 @@ mod tests {
                 vec![1, 0, 0, 1],
                 vec![1, 1, 1, 1],
                 vec![],
-                HashMap::from_iter(vec![(0, 1..3)]),
+                HashMap::from([(0, 1..3)]),
             )
         );
         assert_eq!(single_encoding.token_to_sequence(2), Some(0));
@@ -941,7 +945,7 @@ mod tests {
                 vec![1, 0, 0, 1, 0, 1],
                 vec![1, 1, 1, 1, 1, 1],
                 vec![],
-                HashMap::from_iter(vec![(0, 1..3), (1, 4..5)]),
+                HashMap::from([(0, 1..3), (1, 4..5)]),
             )
         );
         assert_eq!(pair_encoding.token_to_sequence(2), Some(0));
@@ -1003,9 +1007,9 @@ mod tests {
                     vec![1, 0, 1],
                     vec![1, 1, 1],
                     vec![],
-                    HashMap::from_iter(vec![(0, 1..2)]),
+                    HashMap::from([(0, 1..2)]),
                 )],
-                HashMap::from_iter(vec![(0, 1..3)]),
+                HashMap::from([(0, 1..3)]),
             )
         );
         assert_eq!(single_encoding.token_to_sequence(2), Some(0));
@@ -1061,9 +1065,9 @@ mod tests {
                             vec![1, 0, 1, 0, 1],
                             vec![1, 1, 1, 1, 1],
                             vec![],
-                            HashMap::from_iter(vec![(0, 1..2), (1, 3..4)]),
+                            HashMap::from([(0, 1..2), (1, 3..4)]),
                         ),],
-                        HashMap::from_iter(vec![(1, 3..5), (0, 1..2)]),
+                        HashMap::from([(1, 3..5), (0, 1..2)]),
                     ),
                     Encoding::new(
                         vec![1, 13, 0, 17, 0],
@@ -1080,7 +1084,7 @@ mod tests {
                         vec![1, 0, 1, 0, 1],
                         vec![1, 1, 1, 1, 1],
                         vec![],
-                        HashMap::from_iter(vec![(0, 1..2), (1, 3..4)]),
+                        HashMap::from([(0, 1..2), (1, 3..4)]),
                     ),
                     Encoding::new(
                         vec![1, 12, 14, 0, 17, 0],
@@ -1112,12 +1116,12 @@ mod tests {
                             vec![1, 0, 1, 0, 1],
                             vec![1, 1, 1, 1, 1],
                             vec![],
-                            HashMap::from_iter(vec![(0, 1..2), (1, 3..4)]),
+                            HashMap::from([(0, 1..2), (1, 3..4)]),
                         ),],
-                        HashMap::from_iter(vec![(0, 1..3), (1, 4..5)]),
+                        HashMap::from([(0, 1..3), (1, 4..5)]),
                     )
                 ],
-                HashMap::from_iter(vec![(0, 1..3), (1, 4..6)]),
+                HashMap::from([(0, 1..3), (1, 4..6)]),
             )
         );
         assert_eq!(pair_encoding.token_to_sequence(2), Some(0));

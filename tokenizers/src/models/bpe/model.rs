@@ -2,19 +2,22 @@ use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
+use rustc_hash::FxHashMap;
 use serde_json::Value;
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::hash::BuildHasher;
+use std::iter::FromIterator;
 use std::{
-    collections::HashMap,
     fs::File,
     io::prelude::*,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
 
-pub type Vocab = HashMap<String, u32>;
-type VocabR = HashMap<u32, String>;
-pub type MergeMap = HashMap<Pair, (u32, u32)>;
+pub type Vocab = FxHashMap<String, u32>;
+type VocabR = FxHashMap<u32, String>;
+pub type MergeMap = FxHashMap<Pair, (u32, u32)>;
 pub type Merges = Vec<(String, String)>;
 
 struct Config {
@@ -41,7 +44,7 @@ impl Default for BpeBuilder {
         Self {
             config: Config {
                 files: None,
-                vocab: HashMap::new(),
+                vocab: FxHashMap::default(),
                 merges: vec![],
                 cache_capacity: DEFAULT_CACHE_CAPACITY,
                 dropout: None,
@@ -71,8 +74,12 @@ impl BpeBuilder {
 
     /// Set the vocab (token -> ID) and merges mappings.
     #[must_use]
-    pub fn vocab_and_merges(mut self, vocab: Vocab, merges: Merges) -> Self {
-        self.config.vocab = vocab;
+    pub fn vocab_and_merges<S: BuildHasher>(
+        mut self,
+        vocab: HashMap<String, u32, S>,
+        merges: Merges,
+    ) -> Self {
+        self.config.vocab = FxHashMap::from_iter(vocab);
         self.config.merges = merges;
         self
     }
@@ -324,7 +331,7 @@ impl BPE {
         let mut buffer = String::new();
         vocab_file.read_to_string(&mut buffer)?;
         let json: Value = serde_json::from_str(&buffer)?;
-        let mut vocab = HashMap::new();
+        let mut vocab = FxHashMap::default();
         match json {
             Value::Object(m) => {
                 for (token, id) in m {
@@ -493,7 +500,7 @@ impl BPE {
 impl Model for BPE {
     type Trainer = BpeTrainer;
 
-    fn get_vocab(&self) -> HashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<String, u32> {
         self.vocab.clone()
     }
 

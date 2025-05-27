@@ -1,9 +1,11 @@
 use super::WordLevel;
 use crate::utils::parallelism::*;
 use crate::{AddedToken, Result, Trainer};
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Builder, Serialize, Deserialize)]
@@ -22,7 +24,7 @@ pub struct WordLevelTrainer {
     pub special_tokens: Vec<AddedToken>,
 
     #[builder(default, private)]
-    words: HashMap<String, u64>,
+    words: FxHashMap<String, u64>,
 }
 
 impl Default for WordLevelTrainer {
@@ -36,9 +38,9 @@ impl WordLevelTrainer {
         WordLevelTrainerBuilder::default()
     }
 
-    fn do_train(
+    fn do_train<S: BuildHasher>(
         &self,
-        word_counts: &HashMap<String, u64>,
+        word_counts: &HashMap<String, u64, S>,
         model: &mut WordLevel,
     ) -> Result<Vec<AddedToken>> {
         let mut ordered_counts = word_counts.iter().collect::<Vec<_>>();
@@ -56,7 +58,7 @@ impl WordLevelTrainer {
         ordered_counts.sort_by(cmp);
 
         let word_level = WordLevel::builder()
-            .vocab(
+            .vocab::<FxBuildHasher>(
                 self.special_tokens
                     .iter()
                     .map(|token| token.content.clone())
@@ -100,18 +102,18 @@ impl Trainer for WordLevelTrainer {
         S: AsRef<str> + Send,
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
-        let words: Result<HashMap<String, u64>> = iterator
+        let words: Result<FxHashMap<String, u64>> = iterator
             .maybe_par_bridge()
             .map(|sequence| {
                 let words = process(sequence.as_ref())?;
-                let mut map = HashMap::new();
+                let mut map = FxHashMap::default();
                 for word in words {
                     map.entry(word).and_modify(|c| *c += 1).or_insert(1);
                 }
                 Ok(map)
             })
             .reduce(
-                || Ok(HashMap::new()),
+                || Ok(FxHashMap::default()),
                 |acc, ws| {
                     let mut acc = acc?;
                     for (k, v) in ws? {
@@ -128,6 +130,8 @@ impl Trainer for WordLevelTrainer {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
@@ -161,7 +165,12 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.vocab, expected_vocab);
+
+        let mut lhs = model.vocab.into_iter().collect::<Vec<_>>();
+        let mut rhs = expected_vocab.into_iter().collect::<Vec<_>>();
+        lhs.sort_unstable();
+        rhs.sort_unstable();
+        assert_eq!(lhs, rhs);
 
         // If we specify a min_frequency
         trainer.min_frequency = 15;
@@ -177,6 +186,10 @@ mod tests {
         .cloned()
         .collect();
 
-        assert_eq!(model.vocab, expected_vocab);
+        let mut lhs = model.vocab.into_iter().collect::<Vec<_>>();
+        let mut rhs = expected_vocab.into_iter().collect::<Vec<_>>();
+        lhs.sort_unstable();
+        rhs.sort_unstable();
+        assert_eq!(lhs, rhs);
     }
 }

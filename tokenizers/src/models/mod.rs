@@ -5,7 +5,7 @@ pub mod unigram;
 pub mod wordlevel;
 pub mod wordpiece;
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -19,11 +19,11 @@ use crate::{AddedToken, Model, Result, Token, Trainer};
 /// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
 /// of token ID, smallest to largest.
 struct OrderedVocabIter<'a> {
-    vocab_r: &'a HashMap<u32, String>,
+    vocab_r: &'a FxHashMap<u32, String>,
 }
 
 impl<'a> OrderedVocabIter<'a> {
-    fn new(vocab_r: &'a HashMap<u32, String>) -> Self {
+    fn new(vocab_r: &'a FxHashMap<u32, String>) -> Self {
         Self { vocab_r }
     }
 }
@@ -170,7 +170,7 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn get_vocab(&self) -> HashMap<String, u32> {
+    fn get_vocab(&self) -> FxHashMap<String, u32> {
         match self {
             Self::WordLevel(t) => t.get_vocab(),
             Self::WordPiece(t) => t.get_vocab(),
@@ -287,6 +287,8 @@ impl_enum_from!(WordLevelTrainer, TrainerWrapper, WordLevelTrainer);
 
 #[cfg(test)]
 mod tests {
+    use std::iter::FromIterator;
+
     use super::*;
     use crate::models::bpe::{BpeBuilder, Vocab};
 
@@ -301,8 +303,8 @@ mod tests {
 
     #[test]
     fn incomplete_ordered_vocab() {
-        let vocab_r: HashMap<u32, String> =
-            HashMap::from([(0, "Hi".to_string()), (2, "There".to_string())]);
+        let vocab_r: FxHashMap<u32, String> =
+            FxHashMap::from_iter([(0, "Hi".to_string()), (2, "There".to_string())]);
 
         let ordered = OrderedVocabIter::new(&vocab_r);
 

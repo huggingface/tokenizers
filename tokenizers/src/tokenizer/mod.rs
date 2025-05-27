@@ -9,8 +9,8 @@
 //!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
 //!     ...).
 
+use rustc_hash::FxHashMap;
 use std::{
-    collections::HashMap,
     fs::{read_to_string, File},
     io::{prelude::*, BufReader},
     ops::{Deref, DerefMut},
@@ -77,7 +77,7 @@ pub trait Model {
     /// Find the string token associated to an ID
     fn id_to_token(&self, id: u32) -> Option<String>;
     /// Retrieve the entire vocabulary mapping (token -> ID)
-    fn get_vocab(&self) -> HashMap<String, u32>;
+    fn get_vocab(&self) -> FxHashMap<String, u32>;
     /// Retrieve the size of the vocabulary
     fn get_vocab_size(&self) -> usize;
     /// Save the current `Model` in the given folder, using the given `prefix` for the various
@@ -658,7 +658,7 @@ where
     }
 
     /// Get the vocabulary
-    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+    pub fn get_vocab(&self, with_added_tokens: bool) -> FxHashMap<String, u32> {
         let mut final_vocab = self.model.get_vocab();
 
         if with_added_tokens {
@@ -675,7 +675,7 @@ where
     }
 
     /// Get the added tokens decoder
-    pub fn get_added_tokens_decoder(&self) -> HashMap<u32, AddedToken> {
+    pub fn get_added_tokens_decoder(&self) -> FxHashMap<u32, AddedToken> {
         self.added_vocabulary.get_added_tokens_decoder().clone()
     }
 
@@ -947,7 +947,7 @@ where
 /// use std::collections::HashMap;
 /// use std::iter::FromIterator;
 ///
-/// let vocab = HashMap::from_iter([
+/// let vocab = HashMap::from([
 ///     ("<0x20>".to_string(), 0),
 ///     ("<0xC3>".to_string(), 1),
 ///     ("<0xA9>".to_string(), 2),
@@ -984,7 +984,7 @@ where
 /// use std::collections::HashMap;
 /// use std::iter::FromIterator;
 ///
-/// let vocab = HashMap::from_iter([
+/// let vocab = HashMap::from([
 ///     ("▁This".to_string(), 0),
 /// ]);
 /// let merges = vec![];

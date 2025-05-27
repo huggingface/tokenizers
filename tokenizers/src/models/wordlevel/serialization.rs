@@ -1,10 +1,10 @@
 use super::{super::OrderedVocabIter, WordLevel, WordLevelBuilder};
+use rustc_hash::FxHashSet;
 use serde::{
     de::{MapAccess, Visitor},
     ser::SerializeStruct,
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use std::collections::HashSet;
 
 impl Serialize for WordLevel {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -52,10 +52,10 @@ impl<'de> Visitor<'de> for WordLevelVisitor {
             "vocab",
         ]
         .into_iter()
-        .collect::<HashSet<_>>();
+        .collect::<FxHashSet<_>>();
         while let Some(key) = map.next_key::<String>()? {
             match key.as_ref() {
-                "vocab" => builder = builder.vocab(map.next_value()?),
+                "vocab" => builder = builder.vocab::<rustc_hash::FxBuildHasher>(map.next_value()?),
                 "unk_token" => builder = builder.unk_token(map.next_value()?),
                 "type" => match map.next_value()? {
                     "WordLevel" => {}
