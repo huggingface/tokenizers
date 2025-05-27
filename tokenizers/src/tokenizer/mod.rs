@@ -55,6 +55,10 @@ pub type Offsets = (usize, usize);
 /// Takes care of pre-processing strings.
 pub trait Normalizer: Sync {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
+    fn normalize_fast(&self, normalized: &str) ->String {
+        // Default implementation just calls the normalizer
+        normalized.to_string()
+    }
 }
 
 /// The `PreTokenizer` is in charge of doing the pre-segmentation step. It splits the given string

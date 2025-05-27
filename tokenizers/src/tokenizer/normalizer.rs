@@ -304,6 +304,24 @@ impl NormalizedString {
         })
     }
 
+    pub fn fast_transform<I>(&mut self, dest: I)
+        where
+            I: IntoIterator<Item = (char, isize)>,
+        {
+            let mut buf = String::with_capacity(self.normalized.len());
+            for (c, _) in dest {
+                buf.push(c);
+            }
+            unsafe {
+                // This assumes you're not mutating in the middle of a UTF-8 char
+                self.normalized.as_mut_vec().clear();
+                self.normalized.as_mut_vec().extend_from_slice(buf.as_bytes());
+            }
+
+            // Drop alignments if unused
+            self.alignments.clear();
+        }
+
     /// Applies transformations to the current normalized version of the string,
     /// while updating the alignments.
     /// This method expect an Iterator yielding each char of the new normalized string

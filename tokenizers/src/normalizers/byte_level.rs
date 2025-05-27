@@ -31,24 +31,33 @@ impl Normalizer for ByteLevel {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         if !normalized.is_empty() {
             let s = normalized.get();
+            let s_bytes = s.as_bytes();
             let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());
             let mut i = 0;
             for cur_char in s.chars() {
                 let size = cur_char.len_utf8();
-                let bytes = &s.as_bytes()[i..i + size];
+                let bytes = &s_bytes[i..i + size];
                 i += size;
-                transformations.extend(
-                    bytes
-                        .iter()
-                        .enumerate()
-                        .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
-                );
+                for (j, b) in bytes.iter().enumerate() {
+                    transformations.push((BYTES_CHAR[b], if j > 0 { 1 } else { 0 }));
+                }
             }
             normalized.transform(transformations, 0);
         }
-        Ok(())
+    Ok(())
+    }
+
+    /// Fast normalization: byte-to-char mapping without tracking positions
+    fn normalize_fast(&self, input: &str) -> String {
+        let mut out = String::with_capacity(input.len());
+            for b in input.as_bytes() {
+                out.push(BYTES_CHAR[b]);
+            }
+        out
     }
 }
+
+unsafe impl Sync for ByteLevel {}
 
 #[cfg(test)]
 mod tests {

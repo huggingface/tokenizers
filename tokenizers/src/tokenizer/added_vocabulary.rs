@@ -169,9 +169,7 @@ fn normalize_token_contents<N: Normalizer + Sync>(n: &N, ntokens: Vec<&AddedToke
     ntokens
         .par_iter()
         .map(|token| {
-            let mut content = NormalizedString::from(token.content.as_ref());
-            n.normalize(&mut content).expect("Normalization failed");
-            content.get().to_string() // Convert once, reuse later
+            n.normalize_fast(&token.content)
         })
         .collect()
 }
