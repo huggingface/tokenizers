@@ -2,17 +2,14 @@ pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
 
-#[cfg(feature = "fancy-regex")]
+#[cfg(all(feature = "fancy-regex", not(feature = "onig")))]
 mod fancy;
-#[cfg(feature = "fancy-regex")]
+#[cfg(all(feature = "fancy-regex", not(feature = "onig")))]
 pub use fancy::SysRegex;
 #[cfg(feature = "onig")]
 mod onig;
 #[cfg(feature = "onig")]
 pub use crate::utils::onig::SysRegex;
-
-#[cfg(all(feature = "onig", feature = "fancy-regex"))]
-compile_error!("Features `onig` and `fancy-regex` are mutually exclusive");
 
 #[cfg(not(any(feature = "onig", feature = "fancy-regex")))]
 compile_error!("One of the `onig`, or `fancy-regex` features must be enabled");
