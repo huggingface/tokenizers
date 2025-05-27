@@ -222,6 +222,16 @@ impl ModelWrapper {
             _ => (),
         }
     }
+
+    /// Add tokens to the vocabulary of the underlying model.
+    pub fn add_tokens(&mut self, tokens: &[String]) -> usize {
+        match self {
+            Self::WordLevel(model) => model.add_tokens(tokens),
+            Self::WordPiece(model) => model.add_tokens(tokens),
+            Self::BPE(model) => model.add_tokens(tokens),
+            Self::Unigram(model) => model.add_tokens(tokens),
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
