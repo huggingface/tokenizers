@@ -29,7 +29,7 @@ pub struct AddedToken {
 }
 
 impl AddedToken {
-    /// Build this token from the given content, specifying if it is intented to be a
+    /// Build this token from the given content, specifying if it is intended to be a
     /// special token. Special tokens are not normalized by default.
     pub fn from<S: Into<String>>(content: S, special: bool) -> Self {
         Self {

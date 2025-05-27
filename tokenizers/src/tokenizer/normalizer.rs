@@ -201,9 +201,9 @@ impl NormalizedString {
                 });
 
             match (start, end) {
-                // Targeting inexistant beginning
+                // Targeting inexistent beginning
                 (Some(s), None) => Some(s..s),
-                // Targeting inexistant end
+                // Targeting inexistent end
                 (None, Some(e)) => Some(e..e),
                 // Found the range
                 (Some(s), Some(e)) => Some(s..e),
