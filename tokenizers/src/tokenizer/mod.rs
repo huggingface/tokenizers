@@ -53,7 +53,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub type Offsets = (usize, usize);
 
 /// Takes care of pre-processing strings.
-pub trait Normalizer {
+pub trait Normalizer : Sync{
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
 }
 

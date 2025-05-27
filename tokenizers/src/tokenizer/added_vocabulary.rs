@@ -6,6 +6,7 @@ use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
+use rayon::prelude::*;
 
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
@@ -162,6 +163,21 @@ pub struct AddedVocabulary {
 
     /// Whether or not special tokens should be splitted when encoding. This is equivalent to ignoring them
     encode_special_tokens: bool,
+}
+
+
+fn normalize_token_contents<N: Normalizer + Sync>(
+    n: &N,
+    ntokens: Vec<&AddedToken>,
+) -> Vec<String> {
+    ntokens
+        .par_iter()
+        .map(|token| {
+            let mut content = NormalizedString::from(token.content.as_ref());
+            n.normalize(&mut content).expect("Normalization failed");
+            content.get().to_string()  // Convert once, reuse later
+        })
+        .collect()
 }
 
 impl AddedVocabulary {
@@ -350,30 +366,13 @@ fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer
     self.split_trie = (trie.clone(), ids.clone());
 
     // Build normalized trie
-    let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
     if let Some(n) = normalizer {
-        let delimiter = "\u{0000}";
-        let joined = ntokens
-            .iter()
-            .map(|token| token.content.as_str())
-            .collect::<Vec<_>>()
-            .join(delimiter);
-
-        let mut content = NormalizedString::from(joined);
-        n.normalize(&mut content).unwrap();
-        let normalized_str = content.get();
-        let split_normalized: Vec<&str> = normalized_str.split(delimiter).collect();
-
-        assert_eq!(
-            split_normalized.len(),
-            ntokens.len(),
-            "Mismatch between normalized tokens and split results"
-        );
-
+        let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
+        let patterns: Vec<_> =normalize_token_contents(n, ntokens);
         let normalized_trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
-            .build(split_normalized)
-            .expect("Failed to build trie when refreshing tokens (normalized)");
+            .build(patterns)
+            .expect("Failed to build tried when refreshing tokens (normalized)");
         self.split_normalized_trie = (normalized_trie, nids);
     } else {
         self.split_normalized_trie = (trie, ids); // non normalized is the same
