@@ -14,6 +14,7 @@ from tokenizers.pre_tokenizers import (
     Sequence,
     Split,
     UnicodeScripts,
+    Truncate,
     Whitespace,
     WhitespaceSplit,
 )
@@ -335,3 +336,13 @@ class TestCustomPreTokenizer:
             ("Is", (15, 17)),
             ("Life", (17, 21)),
         ]
+
+
+class TestTruncate:
+    def test_right(self):
+        pretok = Truncate(5)
+        assert pretok.pre_tokenize_str("Hello World") == [("Hello", (0, 5))]
+
+    def test_left(self):
+        pretok = Truncate(5, direction="left")
+        assert pretok.pre_tokenize_str("Hello World") == [("World", (6, 11))]

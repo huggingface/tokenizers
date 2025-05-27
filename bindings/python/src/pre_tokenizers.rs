@@ -17,7 +17,9 @@ use tk::pre_tokenizers::punctuation::Punctuation;
 use tk::pre_tokenizers::split::Split;
 use tk::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
+use tk::pre_tokenizers::truncate::Truncate;
 use tk::pre_tokenizers::PreTokenizerWrapper;
+use tk::utils::truncation::{TruncationDirection, TruncationParams};
 use tk::tokenizer::Offsets;
 use tk::{PreTokenizedString, PreTokenizer};
 use tokenizers as tk;
@@ -114,6 +116,12 @@ impl PyPreTokenizer {
                             .into(),
                         PreTokenizerWrapper::UnicodeScripts(_) => {
                             Py::new(py, (PyUnicodeScripts {}, base))?
+                                .into_pyobject(py)?
+                                .into_any()
+                                .into()
+                        }
+                        PreTokenizerWrapper::Truncate(_) => {
+                            Py::new(py, (PyTruncate {}, base))?
                                 .into_pyobject(py)?
                                 .into_any()
                                 .into()
@@ -750,6 +758,78 @@ impl PyUnicodeScripts {
     }
 }
 
+/// Truncate pre-tokenizer
+///
+/// This pre-tokenizer truncates text based on the provided parameters before tokenization.
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Truncate")]
+pub struct PyTruncate {}
+
+#[pymethods]
+impl PyTruncate {
+    #[getter]
+    fn get_max_length(self_: PyRef<Self>) -> usize {
+        getter!(self_, Truncate, params.max_length)
+    }
+
+    #[setter]
+    fn set_max_length(self_: PyRef<Self>, value: usize) {
+        setter!(self_, Truncate, params.max_length, value);
+    }
+
+    #[getter]
+    fn get_stride(self_: PyRef<Self>) -> usize {
+        getter!(self_, Truncate, params.stride)
+    }
+
+    #[setter]
+    fn set_stride(self_: PyRef<Self>, value: usize) {
+        setter!(self_, Truncate, params.stride, value);
+    }
+
+    #[getter]
+    fn get_direction(self_: PyRef<Self>) -> String {
+        getter!(self_, Truncate, params.direction.as_ref()).to_string()
+    }
+
+    #[setter]
+    fn set_direction(self_: PyRef<Self>, direction: &str) -> PyResult<()> {
+        let dir = match direction {
+            "left" => TruncationDirection::Left,
+            "right" => TruncationDirection::Right,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(format!(
+                    "Invalid truncation direction value : {}",
+                    direction
+                )))
+            }
+        };
+        setter!(self_, Truncate, @params.direction, dir);
+        Ok(())
+    }
+
+    #[new]
+    #[pyo3(signature = (max_length=512, stride=0, direction="right"), text_signature = "(self, max_length=512, stride=0, direction='right')")]
+    fn new(max_length: usize, stride: usize, direction: &str) -> PyResult<(Self, PyPreTokenizer)> {
+        let dir = match direction {
+            "left" => TruncationDirection::Left,
+            "right" => TruncationDirection::Right,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(format!(
+                    "Invalid truncation direction value : {}",
+                    direction
+                )))
+            }
+        };
+        let params = TruncationParams {
+            max_length,
+            stride,
+            direction: dir,
+            ..Default::default()
+        };
+        Ok((PyTruncate {}, Truncate::new(params).into()))
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct CustomPreTokenizer {
     inner: PyObject,
@@ -926,6 +1006,7 @@ pub fn pre_tokenizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySequence>()?;
     m.add_class::<PyDigits>()?;
     m.add_class::<PyUnicodeScripts>()?;
+    m.add_class::<PyTruncate>()?;
     Ok(())
 }
 
