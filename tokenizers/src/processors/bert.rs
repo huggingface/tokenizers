@@ -130,7 +130,8 @@ impl PostProcessor for BertProcessing {
                 } else {
                     let pair_ids = [encoding.get_ids(), &[self.sep.1]].concat();
                     let pair_type_ids = [encoding.get_type_ids(), &[1]].concat();
-                    let pair_tokens = [encoding.get_tokens(), std::slice::from_ref(&self.sep.0)].concat();
+                    let pair_tokens =
+                        [encoding.get_tokens(), std::slice::from_ref(&self.sep.0)].concat();
                     let pair_words = [encoding.get_word_ids(), &[None]].concat();
                     let pair_offsets = [encoding.get_offsets(), &[(0, 0)]].concat();
                     let pair_special_tokens =
@@ -155,7 +156,8 @@ impl PostProcessor for BertProcessing {
                                 let pair_ids = [encoding.get_ids(), &[self.sep.1]].concat();
                                 let pair_type_ids = [encoding.get_type_ids(), &[1]].concat();
                                 let pair_tokens =
-                                    [encoding.get_tokens(), std::slice::from_ref(&self.sep.0)].concat();
+                                    [encoding.get_tokens(), std::slice::from_ref(&self.sep.0)]
+                                        .concat();
                                 let pair_words = [encoding.get_word_ids(), &[None]].concat();
                                 let pair_offsets = [encoding.get_offsets(), &[(0, 0)]].concat();
                                 let pair_special_tokens =
