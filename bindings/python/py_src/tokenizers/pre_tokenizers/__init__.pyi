@@ -521,6 +521,18 @@ class UnicodeScripts(PreTokenizer):
         """
         pass
 
+class Truncate(PreTokenizer):
+    """Truncate pre-tokenizer"""
+
+    def __init__(self, max_length: int = 512, stride: int = 0, direction: str = "right"):
+        pass
+
+    def pre_tokenize(self, pretok):
+        pass
+
+    def pre_tokenize_str(self, sequence):
+        pass
+
 class Whitespace(PreTokenizer):
     """
     This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`

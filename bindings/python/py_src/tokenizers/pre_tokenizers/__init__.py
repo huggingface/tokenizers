@@ -11,5 +11,6 @@ Punctuation = pre_tokenizers.Punctuation
 Sequence = pre_tokenizers.Sequence
 Split = pre_tokenizers.Split
 UnicodeScripts = pre_tokenizers.UnicodeScripts
+Truncate = pre_tokenizers.Truncate
 Whitespace = pre_tokenizers.Whitespace
 WhitespaceSplit = pre_tokenizers.WhitespaceSplit
