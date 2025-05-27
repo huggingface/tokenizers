@@ -8,7 +8,7 @@ use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
-    BertNormalizer, ByteLevel, Lowercase, Nmt, NormalizerWrapper, Precompiled, Prepend, Replace,
+    BertNormalizer, ByteLevel, Lowercase, Nmt, NormalizerWrapper, Precompiled, Append, Prepend, Replace,
     Strip, StripAccents, NFC, NFD, NFKC, NFKD,
 };
 use tk::{NormalizedString, Normalizer};
@@ -79,6 +79,10 @@ impl PyNormalizer {
                             .into()
                     }
                     NormalizerWrapper::StripNormalizer(_) => Py::new(py, (PyStrip {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::Append(_) => Py::new(py, (PyAppend {}, base))?
                         .into_pyobject(py)?
                         .into_any()
                         .into(),
@@ -514,6 +518,28 @@ impl PyStrip {
     }
 }
 
+/// Append normalizer
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Append")]
+pub struct PyAppend {}
+#[pymethods]
+impl PyAppend {
+    #[getter]
+    fn get_append(self_: PyRef<Self>) -> String {
+        getter!(self_, Append, append)
+    }
+
+    #[setter]
+    fn set_append(self_: PyRef<Self>, append: String) {
+        setter!(self_, Append, append, append)
+    }
+
+    #[new]
+    #[pyo3(signature = (append="▁".to_string()), text_signature = "(self, append)")]
+    fn new(append: String) -> (Self, PyNormalizer) {
+        (PyAppend {}, Append::new(append).into())
+    }
+}
+
 /// Prepend normalizer
 #[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Prepend")]
 pub struct PyPrepend {}
@@ -810,6 +836,7 @@ pub fn normalizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyLowercase>()?;
     m.add_class::<PyStrip>()?;
     m.add_class::<PyStripAccents>()?;
+    m.add_class::<PyAppend>()?;
     m.add_class::<PyPrepend>()?;
     m.add_class::<PyByteLevel>()?;
     m.add_class::<PyNmt>()?;
