@@ -346,7 +346,7 @@ impl PyByteLevel {
 /// whitespaces (punctuation such as hyphens, apostrophes, commas ,etc.).
 ///
 /// Example:
-///
+///    ```python
 ///    from tokenizers.pre_tokenizers import Whitespace
 ///
 ///    pre_tokenizer = Whitespace()
@@ -366,6 +366,7 @@ impl PyByteLevel {
 ///     ('-', (42, 43)),
 ///     ('tokenizer', (43, 52)),
 ///     ('.', (52, 53))]
+///    ```
 ///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Whitespace")]
 pub struct PyWhitespace {}
