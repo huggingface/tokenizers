@@ -347,7 +347,7 @@ fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer
         .match_kind(MatchKind::LeftmostLongest)
         .build(tokens.iter().map(|token| &token.content))
         .expect("Failed to build trie when refreshing tokens");
-    self.split_trie = (trie, ids);
+    self.split_trie = (trie.clone(), ids.clone());
 
     // Build normalized trie
     let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
@@ -376,13 +376,7 @@ fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer
             .expect("Failed to build trie when refreshing tokens (normalized)");
         self.split_normalized_trie = (normalized_trie, nids);
     } else {
-        // Fallback: use raw content if no normalizer provided
-        let patterns: Vec<&str> = ntokens.iter().map(|token| token.content.as_str()).collect();
-        let normalized_trie = AhoCorasickBuilder::new()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build(patterns)
-            .expect("Failed to build trie when refreshing tokens (normalized)");
-        self.split_normalized_trie = (normalized_trie, nids);
+        self.split_normalized_trie = (trie, ids); // non normalized is the same
     }
 }
 
