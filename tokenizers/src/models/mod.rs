@@ -79,17 +79,17 @@ pub enum Bpe {
 }
 
 impl Bpe {
-    fn get_vocab(& self) -> Vocab {
+    fn get_vocab(&self) -> Vocab {
         match self {
             Bpe::OriginalBpe(model) => model.get_vocab(),
-            Bpe::BacktrackingBpe(model) => model.get_vocab()
+            Bpe::BacktrackingBpe(model) => model.get_vocab(),
         }
     }
 
     fn get_merges(&self) -> HashMap<(u32, u32), (u32, u32)> {
         match self {
             Bpe::OriginalBpe(model) => model.merges.clone(),
-            Bpe::BacktrackingBpe(model) => model.merges.clone()
+            Bpe::BacktrackingBpe(model) => model.merges.clone(),
         }
     }
 
@@ -149,7 +149,7 @@ pub fn find_hash_factor_for_dictionary(tokens: impl IntoIterator<Item = Vec<u8>>
     }
 }
 
-pub const USE_ORIGINAL_BPE:bool = false;
+pub const USE_ORIGINAL_BPE: bool = false;
 
 impl<'de> Deserialize<'de> for ModelWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
@@ -193,12 +193,17 @@ impl<'de> Deserialize<'de> for ModelWrapper {
         let helper = ModelHelper::deserialize(deserializer)?;
         Ok(match helper {
             ModelHelper::Tagged(model) => match model.variant {
-                EnumType::BPE => if USE_ORIGINAL_BPE{
-                    ModelWrapper::BPE(serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?)
+                EnumType::BPE => {
+                    if USE_ORIGINAL_BPE {
+                        ModelWrapper::BPE(
+                            serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
+                        )
+                    } else {
+                        ModelWrapper::BacktrackingBpe(
+                            serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
+                        )
+                    }
                 }
-                else { ModelWrapper::BacktrackingBpe(
-                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
-                )},
                 EnumType::WordPiece => ModelWrapper::WordPiece(
                     serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
@@ -215,26 +220,31 @@ impl<'de> Deserialize<'de> for ModelWrapper {
             ModelHelper::Legacy(value) => {
                 let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
                 match untagged {
-                    ModelUntagged::BPE(bpe) => if !USE_ORIGINAL_BPE {
-                        let vocabulary = bpe
-                            .get_vocab()
-                            .into_keys()
-                            .into_iter()
-                            .map(|token| token.into_bytes());   
-                        let merges = bpe
-                            .merges
-                            .iter()
-                            .map(|(a, _)| {
-                                (bpe.id_to_token(a.0).unwrap(), bpe.id_to_token(a.1).unwrap())
-                            })
-                            .collect();
-                        let vocab_vec: Vec<_> = vocabulary.collect();
-                        let rng_hash = find_hash_factor_for_dictionary(vocab_vec.clone());
-                        let backtracking_bpe =
-                                                    BacktrackingBpe::from_dictionary(vocab_vec.clone(), Some(merges), Some(rng_hash));
-                        ModelWrapper::BacktrackingBpe(backtracking_bpe)
-                    } else {
-                        ModelWrapper::BPE(bpe)
+                    ModelUntagged::BPE(bpe) => {
+                        if !USE_ORIGINAL_BPE {
+                            let vocabulary = bpe
+                                .get_vocab()
+                                .into_keys()
+                                .into_iter()
+                                .map(|token| token.into_bytes());
+                            let merges = bpe
+                                .merges
+                                .iter()
+                                .map(|(a, _)| {
+                                    (bpe.id_to_token(a.0).unwrap(), bpe.id_to_token(a.1).unwrap())
+                                })
+                                .collect();
+                            let vocab_vec: Vec<_> = vocabulary.collect();
+                            let rng_hash = find_hash_factor_for_dictionary(vocab_vec.clone());
+                            let backtracking_bpe = BacktrackingBpe::from_dictionary(
+                                vocab_vec.clone(),
+                                Some(merges),
+                                Some(rng_hash),
+                            );
+                            ModelWrapper::BacktrackingBpe(backtracking_bpe)
+                        } else {
+                            ModelWrapper::BPE(bpe)
+                        }
                     }
                     ModelUntagged::WordPiece(bpe) => ModelWrapper::WordPiece(bpe),
                     ModelUntagged::WordLevel(bpe) => ModelWrapper::WordLevel(bpe),

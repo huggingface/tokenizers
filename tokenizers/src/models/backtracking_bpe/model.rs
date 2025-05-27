@@ -184,14 +184,13 @@ impl BacktrackingBpeBuilder {
             self.config.merges = m;
         }
         use crate::pre_tokenizers::byte_level::CHAR_BYTES;
-        let vocab_vec: Vec<_> = self.config
+        let vocab_vec: Vec<_> = self
+            .config
             .vocab
             .into_iter()
             .sorted_unstable_by(|a, b| a.1.cmp(&b.1))
-            .map(|(k, v)| {
-                k.chars().map(|b| CHAR_BYTES[&b] as u8).collect::<Vec<_>>()
-            
-            }).collect();
+            .map(|(k, v)| k.chars().map(|b| CHAR_BYTES[&b] as u8).collect::<Vec<_>>())
+            .collect();
         let hash = find_hash_factor_for_dictionary(vocab_vec.clone());
         let backtraching_bpe = BacktrackingBpe::from_dictionary(
             vocab_vec.clone(),
@@ -242,7 +241,7 @@ fn is_valid_token_pair(
             }
         }
         // Reverse the merge operation from BPE.
-        
+
         // println!("{:?}", split_table);
         if token1 > token2 {
             limit = token1;
@@ -268,7 +267,6 @@ fn is_valid_token_pair(
             }
         }
     }
-    
 }
 
 fn token_range(token_starts: &[u32], token_id: u32) -> Range<usize> {
@@ -435,7 +433,11 @@ impl BacktrackingBpe {
             all_tokens.extend(token);
             token_starts.push(all_tokens.len() as u32);
         }
-        assert_eq!(bytes_hash_to_token.len() + 1, token_starts.len(), "Some tokens are not unique under the hash function!"); // TODO maybe this check is needed?
+        assert_eq!(
+            bytes_hash_to_token.len() + 1,
+            token_starts.len(),
+            "Some tokens are not unique under the hash function!"
+        ); // TODO maybe this check is needed?
         let longest_searcher = DoubleArrayAhoCorasickBuilder::new()
             .match_kind(aneubeck_daachorse::MatchKind::LeftmostLongest)
             .build(token_iter(&all_tokens, &token_starts))
@@ -458,10 +460,7 @@ impl BacktrackingBpe {
             .enumerate()
             .map(|(id, bytes)| {
                 (
-                    bytes
-                        .iter()
-                        .map(|b| BYTES_CHAR[b])
-                        .collect::<String>(),
+                    bytes.iter().map(|b| BYTES_CHAR[b]).collect::<String>(),
                     id as u32,
                 )
             })
@@ -472,10 +471,7 @@ impl BacktrackingBpe {
             .map(|(id, bytes)| {
                 (
                     id as u32,
-                    bytes
-                        .iter()
-                        .map(| b| BYTES_CHAR[b])
-                        .collect::<String>(),
+                    bytes.iter().map(|b| BYTES_CHAR[b]).collect::<String>(),
                 )
             })
             .collect();

@@ -708,7 +708,7 @@ mod tests {
             .show_progress(false)
             .min_frequency(2)
             .build();
-        let mut model =Bpe::OriginalBpe(BPE::default());
+        let mut model = Bpe::OriginalBpe(BPE::default());
         trainer.do_train(&word_counts, &mut model).unwrap();
 
         // Vocab should contain all of the characters from the `word_counts` mapping
