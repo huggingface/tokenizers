@@ -401,7 +401,7 @@ impl UnigramTrainer {
 
                 let logsum_alt = (sum + freq[id] * (alternatives.len() - 1) as f64).ln();
 
-                // The frequencies of altenatives are increased by freq[i].
+                // The frequencies of alternatives are increased by freq[i].
                 let mut logprob_alt = 0.0;
                 for n in &alternatives[id] {
                     logprob_alt += (freq[*n] + freq[id]).ln() - logsum_alt;
