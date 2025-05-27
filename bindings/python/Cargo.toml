@@ -27,4 +27,4 @@ tempfile = "3.10"
 pyo3 = { version = "0.24.2", features = ["auto-initialize"] }
 
 [features]
-defaut = ["pyo3/extension-module"]
+default = ["pyo3/extension-module"]

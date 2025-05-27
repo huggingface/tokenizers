@@ -313,7 +313,7 @@ impl Unigram {
                 && node.id == self.unk_id.ok_or(UnigramError::MissingUnkId)?
             {
                 token.push(
-                    String::from_utf8(sentence[starts_at..ends_at].as_bytes().to_vec()).unwrap(),
+                    String::from_utf8((sentence.as_bytes()[starts_at..ends_at]).to_vec()).unwrap(),
                 );
             } else {
                 if !token.is_empty() {
@@ -322,7 +322,7 @@ impl Unigram {
                     token = vec![];
                 }
                 results.push(
-                    String::from_utf8(sentence[starts_at..ends_at].as_bytes().to_vec()).unwrap(),
+                    String::from_utf8((sentence.as_bytes()[starts_at..ends_at]).to_vec()).unwrap(),
                 );
             }
             ends_at = starts_at;
