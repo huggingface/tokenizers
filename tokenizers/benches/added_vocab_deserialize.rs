@@ -8,6 +8,7 @@ use tokenizers::{models::wordlevel::WordLevel, normalizers::*, AddedToken, Norma
 fn serialized_tokenizer<N: Normalizer + Into<NormalizerWrapper>>(
     size: usize,
     normalizer: Option<N>,
+    special_tokens: bool,
 ) -> String {
     let mut vocab = HashMap::new();
     vocab.insert("a".to_string(), 0);
@@ -19,7 +20,7 @@ fn serialized_tokenizer<N: Normalizer + Into<NormalizerWrapper>>(
 
     let mut tokenizer = Tokenizer::new(model);
     let tokens: Vec<_> = (0..size)
-        .map(|i| AddedToken::from(format!("tok{i}"), false))
+        .map(|i| AddedToken::from(format!("tok{i}"), special_tokens))
         .collect();
     tokenizer.add_tokens(&tokens);
 
@@ -48,11 +49,24 @@ fn bench_deserialize(c: &mut Criterion) {
 
     for &size in &[10_000usize, 100_000, 400_000] {
         for (norm_name, maybe_factory) in &normalizers {
-            let label = format!("deserialize_added_vocab_{}_norm_{}", size, norm_name);
+            let label = format!("special tokens deserialize_added_vocab_{}_norm_{}", size, norm_name);
 
             let json = match maybe_factory {
-                Some(factory) => serialized_tokenizer(size, Some(factory())),
-                None => serialized_tokenizer::<NormalizerWrapper>(size, None),
+                Some(factory) => serialized_tokenizer(size, Some(factory()), true),
+                None => serialized_tokenizer::<NormalizerWrapper>(size, None, true),
+            };
+            c.bench_function(&label, |b| {
+                b.iter(|| {
+                    let tok: Tokenizer = black_box(Tokenizer::from_str(&json).unwrap());
+                    black_box(tok);
+                })
+            });
+
+            let label = format!("non special deserialize_added_vocab_{}_norm_{}", size, norm_name);
+
+            let json = match maybe_factory {
+                Some(factory) => serialized_tokenizer(size, Some(factory()), false),
+                None => serialized_tokenizer::<NormalizerWrapper>(size, None, false),
             };
             c.bench_function(&label, |b| {
                 b.iter(|| {
