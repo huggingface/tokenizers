@@ -361,34 +361,6 @@ impl BPE {
         }
     }
 
-    /// Add tokens to the vocabulary. New tokens will be assigned consecutive IDs
-    /// after the current maximum ID.
-    pub fn add_tokens(&mut self, tokens: &[String]) -> usize {
-        let mut added = 0;
-        let mut next_id = self
-            .vocab_r
-            .keys()
-            .copied()
-            .max()
-            .map_or(0, |max| max + 1);
-
-        for token in tokens {
-            if self.vocab.contains_key(token) {
-                continue;
-            }
-            self.vocab.insert(token.clone(), next_id);
-            self.vocab_r.insert(next_id, token.clone());
-            added += 1;
-            next_id += 1;
-        }
-
-        if let Some(ref cache) = self.cache {
-            cache.clear();
-        }
-
-        added
-    }
-
     pub fn get_vocab(&self) -> Vocab {
         self.vocab.clone()
     }

@@ -157,25 +157,6 @@ impl Unigram {
         self.vocab.len()
     }
 
-    /// Add tokens to the vocabulary. New tokens receive a default score equal to
-    /// the current minimum score and are appended at the end of the vocab.
-    pub fn add_tokens(&mut self, tokens: &[String]) -> usize {
-        let mut added = 0;
-        let mut next_id = self.vocab.len() as u32;
-        for token in tokens {
-            if self.token_to_ids.contains_key(token) {
-                continue;
-            }
-            self.token_to_ids.insert(token.clone(), next_id);
-            self.trie.push(&token.as_bytes());
-            self.vocab.push((token.clone(), self.min_score));
-            added += 1;
-            next_id += 1;
-        }
-        self.cache.clear();
-        added
-    }
-
     pub(super) fn populate_nodes(&self, lattice: &mut Lattice) {
         let unk_score = self.min_score - K_UNK_PENALTY;
 
