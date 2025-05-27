@@ -1,5 +1,3 @@
-use std::sync::{Arc, RwLock};
-use std::collections::HashMap;
 use crate::pre_tokenizers::from_string;
 use crate::tokenizer::PyTokenizer;
 use crate::utils::PyPattern;
@@ -8,6 +6,8 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use tk::decoders::bpe::BPEDecoder;
 use tk::decoders::byte_fallback::ByteFallback;
 use tk::decoders::byte_level::ByteLevel;
@@ -603,7 +603,6 @@ impl Decoder for PyDecoderWrapper {
     }
 }
 
-
 /// Class needed for streaming decode
 ///
 #[pyclass(module = "tokenizers.decoders", name = "DecodeStream")]
@@ -640,7 +639,6 @@ enum StepOutput {
     Single(Option<String>),
 }
 
-
 #[pymethods]
 impl PyDecodeStream {
     #[new]
@@ -657,18 +655,18 @@ impl PyDecodeStream {
     }
 
     #[pyo3(signature = (tokenizer, inputs), text_signature = "(self, tokenizer, inputs)")]
-    fn step(
-        &mut self,
-        tokenizer: &PyTokenizer,
-        inputs: StepInput,
-    ) -> PyResult<StepOutput> {
+    fn step(&mut self, tokenizer: &PyTokenizer, inputs: StepInput) -> PyResult<StepOutput> {
         match inputs {
             StepInput::Map(map) => {
                 let mut output = HashMap::new();
                 for (hash, tokens) in map {
                     let (prefix_ids, last_token) = match tokens.split_last() {
                         Some((last, prefix)) => (prefix.to_vec(), *last),
-                        None => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Empty token sequence")),
+                        None => {
+                            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                                "Empty token sequence",
+                            ))
+                        }
                     };
                     let idx = if let Some(&idx) = self.hash_to_index.get(&hash) {
                         idx
@@ -687,13 +685,19 @@ impl PyDecodeStream {
 
                     let state = &mut self.states[idx];
                     let res = tk::tokenizer::step_decode_stream(
-                            &tokenizer.tokenizer,
-                            last_token,
-                            self.skip_special_tokens,
-                            &mut state.ids,
-                            &mut state.prefix,
-                            &mut state.prefix_index,
-                        ).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("decode error: {}", e)))?;
+                        &tokenizer.tokenizer,
+                        last_token,
+                        self.skip_special_tokens,
+                        &mut state.ids,
+                        &mut state.prefix,
+                        &mut state.prefix_index,
+                    )
+                    .map_err(|e| {
+                        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                            "decode error: {}",
+                            e
+                        ))
+                    })?;
                     output.insert(hash, res);
                 }
                 Ok(StepOutput::Map(output))
@@ -702,7 +706,11 @@ impl PyDecodeStream {
             StepInput::Single(tokens) => {
                 let (prefix_ids, last_token) = match tokens.split_last() {
                     Some((last, prefix)) => (prefix.to_vec(), *last),
-                    None => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Empty token sequence")),
+                    None => {
+                        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                            "Empty token sequence",
+                        ))
+                    }
                 };
                 if self.states.is_empty() {
                     let state = PyDecodeState {
@@ -716,13 +724,19 @@ impl PyDecodeStream {
                 }
                 let state = &mut self.states[0];
                 let res = tk::tokenizer::step_decode_stream(
-                        &tokenizer.tokenizer,
-                        last_token,
-                        self.skip_special_tokens,
-                        &mut state.ids,
-                        &mut state.prefix,
-                        &mut state.prefix_index,
-                    ).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("decode error: {}", e)))?;
+                    &tokenizer.tokenizer,
+                    last_token,
+                    self.skip_special_tokens,
+                    &mut state.ids,
+                    &mut state.prefix,
+                    &mut state.prefix_index,
+                )
+                .map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                        "decode error: {}",
+                        e
+                    ))
+                })?;
 
                 Ok(StepOutput::Single(res))
             }
@@ -750,7 +764,6 @@ impl PyDecodeStream {
             self.hash_to_index.clear();
             return;
             // Build a set of hashes to remove
-
         }
     }
 
@@ -759,7 +772,6 @@ impl PyDecodeStream {
         self.prefill_hashes.clone()
     }
 }
-
 
 /// Decoders Module
 #[pymodule]
@@ -778,7 +790,6 @@ pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDecodeStream>()?;
     Ok(())
 }
-
 
 #[cfg(test)]
 mod test {
