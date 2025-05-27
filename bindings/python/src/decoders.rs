@@ -603,28 +603,12 @@ impl Decoder for PyDecoderWrapper {
     }
 }
 
-/// Decoders Module
-#[pymodule]
-pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyDecoder>()?;
-    m.add_class::<PyByteLevelDec>()?;
-    m.add_class::<PyReplaceDec>()?;
-    m.add_class::<PyWordPieceDec>()?;
-    m.add_class::<PyByteFallbackDec>()?;
-    m.add_class::<PyFuseDec>()?;
-    m.add_class::<PyStrip>()?;
-    m.add_class::<PyMetaspaceDec>()?;
-    m.add_class::<PyBPEDecoder>()?;
-    m.add_class::<PyCTCDecoder>()?;
-    m.add_class::<PySequenceDecoder>()?;
-    m.add_class::<PyDecodeStream>()?;
-    Ok(())
-}
 
 /// Class needed for streaming decode
 ///
 #[pyclass(module = "tokenizers.decoders", name = "DecodeStream")]
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub struct PyDecodeStream {
     /// Regular decode option that is kept throughout.
     skip_special_tokens: bool,
@@ -634,7 +618,8 @@ pub struct PyDecodeStream {
     prefill_hashes: Vec<String>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(tag = "state")]
 struct PyDecodeState {
     ids: Vec<u32>,
     prefix: String,
@@ -774,6 +759,26 @@ impl PyDecodeStream {
         self.prefill_hashes.clone()
     }
 }
+
+
+/// Decoders Module
+#[pymodule]
+pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<PyDecoder>()?;
+    m.add_class::<PyByteLevelDec>()?;
+    m.add_class::<PyReplaceDec>()?;
+    m.add_class::<PyWordPieceDec>()?;
+    m.add_class::<PyByteFallbackDec>()?;
+    m.add_class::<PyFuseDec>()?;
+    m.add_class::<PyStrip>()?;
+    m.add_class::<PyMetaspaceDec>()?;
+    m.add_class::<PyBPEDecoder>()?;
+    m.add_class::<PyCTCDecoder>()?;
+    m.add_class::<PySequenceDecoder>()?;
+    m.add_class::<PyDecodeStream>()?;
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod test {

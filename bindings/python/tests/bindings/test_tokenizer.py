@@ -427,6 +427,7 @@ class TestTokenizer:
         assert stream.step(tokenizer, {"": [1]}) == {"":" This"}
         assert stream.step(tokenizer, {"": [1, 0, 3, 4, 5, 6]}) == {"": "<0x20>"}
         stream.finish()
+        print(stream)
         assert stream.step(tokenizer, {"": [6, 7, 8]}) == {"": "ë"}
 
 

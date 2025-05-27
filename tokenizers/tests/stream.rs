@@ -54,7 +54,7 @@ fn test_decode_stream_step_no_panic() {
 
     // "A B C D E F G H I J"
     let mut decode_stream = tokenizer.decode_stream(false);
-    assert_eq!(decode_stream.step(32).unwrap(), Some("A".to_string()));
+    assert_eq!(decode_stream.step([32]).unwrap(), Some("A".to_string()));
     assert_eq!(decode_stream.step(426).unwrap(), Some(" B".to_string()));
     assert_eq!(decode_stream.step(356).unwrap(), Some(" C".to_string()));
     assert_eq!(decode_stream.step(423).unwrap(), Some(" D".to_string()));
