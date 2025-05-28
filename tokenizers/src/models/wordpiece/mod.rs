@@ -171,6 +171,22 @@ impl WordPiece {
         Ok(vocab)
     }
 
+    pub fn read_bytes(vocab: &[u8]) -> Result<Vocab> {
+        let file = BufReader::new(vocab);
+
+        let mut vocab = HashMap::new();
+        for (index, line) in file.lines().enumerate() {
+            let line = line?;
+            vocab.insert(line.trim_end().to_owned(), index as u32);
+        }
+
+        Ok(vocab)
+    }
+    pub fn from_bytes(vocab: &[u8]) -> Result<WordPieceBuilder> {
+        let vocab = WordPiece::read_bytes(vocab)?;
+        Ok(WordPiece::builder().vocab(vocab))
+    }
+
     /// Initialize a `WordPiece` model from a vocab mapping file.
     pub fn from_file(vocab: &str) -> WordPieceBuilder {
         WordPiece::builder().files(vocab.to_owned())
