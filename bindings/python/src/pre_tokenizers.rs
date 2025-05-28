@@ -369,7 +369,6 @@ impl PyByteLevel {
 ///          ('tokenizer', (43, 52)),
 ///          ('.', (52, 53))]
 ///         ```
-
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Whitespace")]
 pub struct PyWhitespace {}
 #[pymethods]
