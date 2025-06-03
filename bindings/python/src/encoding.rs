@@ -119,6 +119,21 @@ impl PyEncoding {
         self.encoding.get_ids().to_vec()
     }
 
+    /// The generated IDs as a buffer.
+    ///
+    /// The IDs are the main input to a Language Model. They are the token indices,
+    /// the numerical representations that a LM understands.
+    ///
+    /// Returns
+    ///    :obj:`Buffer`: The buffer of IDs
+    #[getter]
+    fn get_ids_buffer<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyUInt32Buffer>> {
+        let data = self.encoding.get_ids().to_vec();
+        let shape = vec![data.len() as isize];
+        let buffer = PyUInt32Buffer::new(data, shape);
+        buffer.into_pyobject(py)
+    }
+
     /// The generated tokens
     ///
     /// They are the string representation of the IDs.
@@ -198,6 +213,21 @@ impl PyEncoding {
         self.encoding.get_type_ids().to_vec()
     }
 
+    /// The generated type IDs as a buffer.
+    ///
+    /// Generally used for tasks like sequence classification or question answering,
+    /// these tokens let the LM know which input sequence corresponds to each tokens.
+    ///
+    /// Returns
+    ///    :obj:`Buffer`: The buffer of type ids
+    #[getter]
+    fn get_type_ids_buffer<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyUInt32Buffer>> {
+        let data = self.encoding.get_type_ids().to_vec();
+        let shape = vec![data.len() as isize];
+        let buffer = PyUInt32Buffer::new(data, shape);
+        buffer.into_pyobject(py)
+    }
+
     /// The offsets associated to each token
     ///
     /// These offsets let's you slice the input string, and thus retrieve the original
@@ -208,6 +238,25 @@ impl PyEncoding {
     #[getter]
     fn get_offsets(&self) -> Vec<(usize, usize)> {
         self.encoding.get_offsets().to_vec()
+    }
+
+    /// The offsets associated to each token as a buffer.
+    ///
+    /// Generally used for tasks like sequence classification or question answering,
+    /// these tokens let the LM know which input sequence corresponds to each tokens.
+    ///
+    /// Returns
+    ///    :obj:`Buffer`: The buffer of offsets
+    #[getter]
+    fn get_offsets_buffer<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyUSizeBuffer>> {
+        let data = self.encoding.get_offsets().to_vec();
+        let shape = vec![data.len() as isize, 2];
+        let data: Vec<usize> = data
+            .into_iter()
+            .flat_map(|(start, end)| [start, end])
+            .collect();
+        let buffer = PyUSizeBuffer::new(data, shape);
+        buffer.into_pyobject(py)
     }
 
     /// The special token mask
@@ -221,6 +270,23 @@ impl PyEncoding {
         self.encoding.get_special_tokens_mask().to_vec()
     }
 
+    /// The special token mask as a buffer.
+    ///
+    /// This indicates which tokens are special tokens, and which are not.
+    ///
+    /// Returns
+    ///    :obj:`Buffer`: The special tokens mask
+    #[getter]
+    fn get_special_tokens_mask_buffer<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyUInt32Buffer>> {
+        let data = self.encoding.get_special_tokens_mask().to_vec();
+        let shape = vec![data.len() as isize];
+        let buffer = PyUInt32Buffer::new(data, shape);
+        buffer.into_pyobject(py)
+    }
+
     /// The attention mask
     ///
     /// This indicates to the LM which tokens should be attended to, and which should not.
@@ -232,6 +298,25 @@ impl PyEncoding {
     #[getter]
     fn get_attention_mask(&self) -> Vec<u32> {
         self.encoding.get_attention_mask().to_vec()
+    }
+
+    /// The attention mask as a buffer.
+    ///
+    /// This indicates to the LM which tokens should be attended to, and which should not.
+    /// This is especially important when batching sequences, where we need to applying
+    /// padding.
+    ///
+    /// Returns
+    ///    :obj:`Buffer`: The attention mask
+    #[getter]
+    fn get_attention_mask_buffer<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyUInt32Buffer>> {
+        let data = self.encoding.get_attention_mask().to_vec();
+        let shape = vec![data.len() as isize];
+        let buffer = PyUInt32Buffer::new(data, shape);
+        buffer.into_pyobject(py)
     }
 
     /// A :obj:`List` of overflowing :class:`~tokenizers.Encoding`
@@ -457,3 +542,125 @@ impl PyEncoding {
         Ok(())
     }
 }
+
+macro_rules! define_py_buffer_protocol_type {
+    ($struct_name:ident, $data_type:ty) => {
+        #[pyclass]
+        struct $struct_name {
+            data: Vec<$data_type>,
+            shape: Vec<isize>,
+            strides: Vec<isize>,
+        }
+
+        impl $struct_name {
+            fn new(data: Vec<$data_type>, shape: Vec<isize>) -> Self {
+                let mut strides: Vec<isize> = Vec::with_capacity(shape.len());
+                let mut stride = std::mem::size_of::<$data_type>() as isize;
+                for dim in shape.iter().rev() {
+                    strides.push(stride);
+                    stride *= dim;
+                }
+                strides.reverse();
+
+                Self {
+                    data,
+                    shape,
+                    strides,
+                }
+            }
+        }
+
+        #[pymethods]
+        impl $struct_name {
+            // Based on https://github.com/PyO3/pyo3/blob/v0.22.2/tests/test_buffer_protocol.rs#L25
+            unsafe fn __getbuffer__(
+                slf: pyo3::prelude::Bound<'_, Self>,
+                view: *mut pyo3::ffi::Py_buffer,
+                flags: std::os::raw::c_int,
+            ) -> pyo3::prelude::PyResult<()> {
+                if view.is_null() {
+                    return Err(pyo3::exceptions::PyBufferError::new_err("View is null"));
+                }
+                if (flags & pyo3::ffi::PyBUF_WRITABLE) == pyo3::ffi::PyBUF_WRITABLE {
+                    return Err(pyo3::exceptions::PyBufferError::new_err(
+                        "Object is not writable",
+                    ));
+                }
+
+                let borrow = slf.borrow();
+                let data = &borrow.data;
+                let shape = &borrow.shape;
+                let strides = &borrow.strides;
+
+                (*view).obj = slf.clone().into_any().into_ptr();
+                (*view).buf = data.as_ptr() as *mut std::os::raw::c_void;
+                (*view).len = (data.len() * std::mem::size_of::<$data_type>()) as isize;
+                (*view).readonly = 1;
+                (*view).itemsize = std::mem::size_of::<$data_type>() as isize;
+                (*view).format = if (flags & pyo3::ffi::PyBUF_FORMAT) == pyo3::ffi::PyBUF_FORMAT {
+                    let data_type_id = std::any::TypeId::of::<$data_type>();
+                    let format = {
+                        if data_type_id == std::any::TypeId::of::<bool>() {
+                            "?"
+                        } else if data_type_id == std::any::TypeId::of::<i8>() {
+                            "b"
+                        } else if data_type_id == std::any::TypeId::of::<u8>() {
+                            "B"
+                        } else if data_type_id == std::any::TypeId::of::<i16>() {
+                            "h"
+                        } else if data_type_id == std::any::TypeId::of::<u16>() {
+                            "H"
+                        } else if data_type_id == std::any::TypeId::of::<i32>() {
+                            "i"
+                        } else if data_type_id == std::any::TypeId::of::<u32>() {
+                            "I"
+                        } else if data_type_id == std::any::TypeId::of::<i64>() {
+                            "q"
+                        } else if data_type_id == std::any::TypeId::of::<u64>() {
+                            "Q"
+                        } else if data_type_id == std::any::TypeId::of::<isize>() {
+                            "n"
+                        } else if data_type_id == std::any::TypeId::of::<usize>() {
+                            "N"
+                        } else if data_type_id == std::any::TypeId::of::<f32>() {
+                            "f"
+                        } else if data_type_id == std::any::TypeId::of::<f64>() {
+                            "d"
+                        } else {
+                            return Err(pyo3::exceptions::PyBufferError::new_err(
+                                "Unsupported data type",
+                            ));
+                        }
+                    };
+                    let msg = std::ffi::CString::new(format).unwrap();
+                    msg.into_raw()
+                } else {
+                    std::ptr::null_mut()
+                };
+                (*view).ndim = shape.len() as i32;
+                (*view).shape = if (flags & pyo3::ffi::PyBUF_ND) == pyo3::ffi::PyBUF_ND {
+                    shape.as_ptr() as *mut _
+                } else {
+                    std::ptr::null_mut()
+                };
+                (*view).strides = if (flags & pyo3::ffi::PyBUF_STRIDES) == pyo3::ffi::PyBUF_STRIDES
+                {
+                    strides.as_ptr() as *mut _
+                } else {
+                    std::ptr::null_mut()
+                };
+                (*view).suboffsets = std::ptr::null_mut();
+                (*view).internal = std::ptr::null_mut();
+
+                Ok(())
+            }
+
+            unsafe fn __releasebuffer__(&self, view: *mut pyo3::ffi::Py_buffer) {
+                std::mem::drop(std::ffi::CString::from_raw((*view).format));
+            }
+        }
+    };
+}
+
+define_py_buffer_protocol_type!(PyUInt32Buffer, u32);
+define_py_buffer_protocol_type!(PyUSizeBuffer, usize);
