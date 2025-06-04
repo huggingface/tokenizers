@@ -97,6 +97,20 @@ class Encoding:
         """
         pass
 
+    @property
+    def attention_mask_buffer(self):
+        """
+        The attention mask as a buffer.
+
+        This indicates to the LM which tokens should be attended to, and which should not.
+        This is especially important when batching sequences, where we need to applying
+        padding.
+
+        Returns
+           :obj:`Buffer`: The attention mask
+        """
+        pass
+
     def char_to_token(self, char_pos, sequence_index=0):
         """
         Get the token that contains the char at the given position in the input sequence.
@@ -140,6 +154,19 @@ class Encoding:
         """
         pass
 
+    @property
+    def ids_buffer(self):
+        """
+        The generated IDs as a buffer.
+
+        The IDs are the main input to a Language Model. They are the token indices,
+        the numerical representations that a LM understands.
+
+        Returns
+           :obj:`Buffer`: The buffer of IDs
+        """
+        pass
+
     @staticmethod
     def merge(encodings, growing_offsets=True):
         """
@@ -177,6 +204,19 @@ class Encoding:
 
         Returns:
             A :obj:`List` of :obj:`Tuple[int, int]`: The list of offsets
+        """
+        pass
+
+    @property
+    def offsets_buffer(self):
+        """
+        The generated type IDs as a buffer.
+
+        Generally used for tasks like sequence classification or question answering,
+        these tokens let the LM know which input sequence corresponds to each tokens.
+
+        Returns
+           :obj:`Buffer`: The buffer of type IDs
         """
         pass
 
@@ -249,6 +289,18 @@ class Encoding:
 
         Returns:
             :obj:`List[int]`: The special tokens mask
+        """
+        pass
+
+    @property
+    def special_tokens_mask_buffer(self):
+        """
+        The special token mask as a buffer.
+
+        This indicates which tokens are special tokens, and which are not.
+
+        Returns
+           :obj:`Buffer`: The special tokens mask
         """
         pass
 
@@ -343,6 +395,19 @@ class Encoding:
 
         Returns:
             :obj:`List[int]`: The list of type ids
+        """
+        pass
+
+    @property
+    def type_ids_buffer(self):
+        """
+        The generated type IDs as a buffer.
+
+        Generally used for tasks like sequence classification or question answering,
+        these tokens let the LM know which input sequence corresponds to each tokens.
+
+        Returns
+           :obj:`Buffer`: The buffer of type IDs
         """
         pass
 
