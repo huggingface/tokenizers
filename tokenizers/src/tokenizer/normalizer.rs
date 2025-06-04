@@ -201,9 +201,9 @@ impl NormalizedString {
                 });
 
             match (start, end) {
-                // Targeting inexistant beginning
+                // Targeting inexistent beginning
                 (Some(s), None) => Some(s..s),
-                // Targeting inexistant end
+                // Targeting inexistent end
                 (None, Some(e)) => Some(e..e),
                 // Found the range
                 (Some(s), Some(e)) => Some(s..e),
@@ -328,9 +328,7 @@ impl NormalizedString {
             },
         };
         trace!(
-            "===== transform_range call with {:?} (initial_offset: {}) =====",
-            n_range,
-            initial_offset
+            "===== transform_range call with {n_range:?} (initial_offset: {initial_offset}) ====="
         );
 
         // Retrieve the original characters that are being replaced. This let us
@@ -386,9 +384,7 @@ impl NormalizedString {
                 let replaced_char_size_change = c.len_utf8() as isize - replaced_char_size as isize;
                 if let Some(ref replaced_char) = replaced_char {
                     trace!(
-                        "Replacing char {:?} - with a change in size: {}",
-                        replaced_char,
-                        replaced_char_size_change
+                        "Replacing char {replaced_char:?} - with a change in size: {replaced_char_size_change}"
                     );
                 }
 
@@ -401,12 +397,12 @@ impl NormalizedString {
                 } else {
                     0
                 };
-                trace!("Total bytes to remove: {}", total_bytes_to_remove);
+                trace!("Total bytes to remove: {total_bytes_to_remove}");
 
                 // Keep track of the changes for next offsets
                 offset += replaced_char_size as isize;
                 offset += total_bytes_to_remove as isize;
-                trace!("New offset: {}", offset);
+                trace!("New offset: {offset}");
 
                 trace!("New normalized alignment: {}x {:?}", c.len_utf8(), align);
                 alignments.extend((0..c.len_utf8()).map(|_| align));

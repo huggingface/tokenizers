@@ -190,7 +190,7 @@ pub struct BpeTrainer {
     pub initial_alphabet: HashSet<char>,
     /// An optional prefix to use on any subword that exist only behind another one
     pub continuing_subword_prefix: Option<String>,
-    /// An optional suffix to caracterize and end-of-word subword
+    /// An optional suffix to characterize and end-of-word subword
     pub end_of_word_suffix: Option<String>,
     /// An optional parameter to limit the max length of any single token
     pub max_token_length: Option<usize>,
