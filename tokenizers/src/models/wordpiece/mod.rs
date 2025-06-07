@@ -182,9 +182,10 @@ impl WordPiece {
 
         Ok(vocab)
     }
-    pub fn from_bytes(vocab: &[u8]) -> Result<WordPieceBuilder> {
-        let vocab = WordPiece::read_bytes(vocab)?;
-        Ok(WordPiece::builder().vocab(vocab))
+
+    pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<Self> {
+        let tokenizer = serde_json::from_slice(bytes.as_ref())?;
+        Ok(tokenizer)
     }
 
     /// Initialize a `WordPiece` model from a vocab mapping file.
