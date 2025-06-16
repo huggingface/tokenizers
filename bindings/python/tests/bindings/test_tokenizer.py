@@ -592,6 +592,16 @@ class TestTokenizer:
         tokenizer.pre_tokenizer = None
         assert tokenizer.pre_tokenizer == None
 
+    def test_encode_buffer_protocol(self):
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_tokens(["my", "name", "is", "john"])
+        output = tokenizer.encode("my name is john")
+        assert output.ids == memoryview(output.ids_buffer).tolist()
+        assert output.type_ids == memoryview(output.type_ids_buffer).tolist()
+        assert output.attention_mask == memoryview(output.attention_mask_buffer).tolist()
+        assert output.offsets == [tuple(offset) for offset in memoryview(output.offsets_buffer).tolist()]
+        assert output.special_tokens_mask == memoryview(output.special_tokens_mask_buffer).tolist()
+
 
 class TestTokenizerRepr:
     def test_repr(self):
