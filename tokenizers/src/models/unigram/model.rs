@@ -18,7 +18,7 @@ type Vocab = Vec<(String, f64)>;
 pub struct Unigram {
     token_to_ids: TokenMap,
     pub(crate) vocab: Vocab,
-    cache: Cache<String, Vec<String>>,
+    cache: Option<Cache<String, Vec<String>>>,
     trie: Trie<u8>,
     pub min_score: f64,
     pub(super) unk_id: Option<usize>,
@@ -39,7 +39,7 @@ impl Clone for Unigram {
     // `Clone` can't be derive because it's not implemented for `Cache`.
     // To keep things simple when we clone, the new Unigram will start with a fresh cache.
     fn clone(&self) -> Self {
-        let fresh_cache = self.cache.fresh();
+        let fresh_cache = self.cache.as_ref().map(|cache| cache.fresh());
         Self {
             vocab: self.vocab.clone(),
             cache: fresh_cache,
@@ -134,7 +134,7 @@ impl Unigram {
             eos_id,
             unk_id,
             fuse_unk,
-            cache: Cache::default(),
+            cache: Some(Cache::default()),
             is_optimized,
             byte_fallback,
         })
@@ -143,7 +143,7 @@ impl Unigram {
     #[cfg(test)]
     pub(super) fn set_fuse_unk(&mut self, fuse_unk: bool) {
         self.fuse_unk = fuse_unk;
-        self.cache = self.cache.fresh();
+        self.cache = self.cache.as_ref().map(|cache| cache.fresh());
     }
 
     #[cfg(test)]
@@ -222,19 +222,20 @@ impl Unigram {
         if sentence.is_empty() {
             return Ok(vec![]);
         }
-        if let Some(result) = self.cache.get(sentence) {
-            Ok(result.to_vec())
-        } else {
-            let result = if self.is_optimized {
-                self.encode_optimized(sentence)?
-            } else {
-                self.encode_unoptimized(sentence)?
-            };
-            if sentence.len() < MAX_LENGTH {
-                self.cache.set(sentence.to_owned(), result.clone());
-            }
-            Ok(result)
+        if let Some(result) = self.cache.as_ref().and_then(|cache| cache.get(sentence)) {
+            return Ok(result.to_vec());
         }
+        let result = if self.is_optimized {
+            self.encode_optimized(sentence)?
+        } else {
+            self.encode_unoptimized(sentence)?
+        };
+        if sentence.len() < MAX_LENGTH {
+            if let Some(cache) = self.cache.as_ref() {
+                cache.set(sentence.to_owned(), result.clone());
+            }
+        }
+        Ok(result)
     }
 
     fn encode_optimized(&self, sentence: &str) -> Result<Vec<String>> {
@@ -382,12 +383,20 @@ impl Unigram {
 
     /// Clears the internal cache
     pub fn clear_cache(&mut self) {
-        self.cache.clear();
+        if let Some(cache) = self.cache.as_ref() {
+            cache.clear();
+        }
     }
 
     /// Resize the cache
     pub fn resize_cache(&mut self, capacity: usize) {
-        self.cache.resize(capacity);
+        if capacity == 0 {
+            self.cache = None;
+        } else if let Some(cache) = self.cache.as_mut() {
+            cache.resize(capacity);
+        } else {
+            self.cache = Some(Cache::new(capacity));
+        }
     }
 }
 
