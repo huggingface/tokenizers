@@ -533,9 +533,6 @@ impl BpeTrainer {
             let changes = pos
                 .maybe_par_iter()
                 .flat_map(|&i| {
-                    // Safety:
-                    // We are producing a valid pointer since we are indexing in bounds
-                    //
                     // We can merge each of these words in parallel here because each position
                     // can be there only once (AHashSet). So this is safe.
                     unsafe {
