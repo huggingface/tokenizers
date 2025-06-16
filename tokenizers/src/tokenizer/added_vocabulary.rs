@@ -272,35 +272,38 @@ impl AddedVocabulary {
             }
         }
 
-        // Then we delegate to `add_tokens`, that will take care of refreshing added tokens too.
         let mut ignored = 0;
+
+        let mut existing: HashSet<AddedToken> = self.added_tokens_map_r.values().cloned().collect();
+        let mut next_id = self.added_tokens_map_r.keys().copied().max().map_or(
+            model.get_vocab_size() as u32,
+            |max| {
+                if max >= model.get_vocab_size() as u32 || model.get_vocab_size() == 0 {
+                    max + 1
+                } else {
+                    model.get_vocab_size() as u32
+                }
+            },
+        );
+
         for token in tokens {
-            if token.content.is_empty() || self.added_tokens_map_r.values().any(|val| val == token)
-            {
+            if token.content.is_empty() || existing.contains(token) {
                 ignored += 1;
                 continue;
             }
-            // If a token is already part of the vocabulary, we mark it as added
+
             let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
                 new_id
             } else {
-                self.added_tokens_map.values().cloned().max().map_or(
-                    model.get_vocab_size() as u32,
-                    |max| {
-                        if (max >= model.get_vocab_size() as u32) || model.get_vocab_size() == 0 {
-                            max + 1
-                        } else {
-                            model.get_vocab_size() as u32
-                        }
-                    },
-                )
+                let id = next_id;
+                next_id += 1;
+                id
             };
-            // Make sure we modify the previous entry
+
             self.added_tokens_map
                 .entry(token.content.clone())
                 .and_modify(|old_id| *old_id = new_id)
-                .or_insert_with(|| new_id);
-            // Update the current revert operation
+                .or_insert(new_id);
             self.added_tokens_map_r
                 .entry(new_id)
                 .and_modify(|t| *t = token.clone())
@@ -311,6 +314,7 @@ impl AddedVocabulary {
             if !self.special_tokens_set.contains(&token.content) {
                 self.added_tokens.push(token.clone());
             }
+            existing.insert(token.clone());
         }
 
         self.refresh_added_tokens(model, normalizer);
@@ -338,29 +342,33 @@ impl AddedVocabulary {
             })
             .partition(|(token, _)| token.normalized);
 
+        // Build non-normalized trie
         let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
         let trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
             .build(tokens.iter().map(|token| &token.content))
-            .expect("Failed to build tried when refreshing tokens");
-        self.split_trie = (trie, ids);
+            .expect("Failed to build trie when refreshing tokens");
+        self.split_trie = (trie.clone(), ids.clone());
 
-        let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
-        let patterns: Vec<_> = ntokens
-            .iter()
-            .map(|token| {
-                let mut content = NormalizedString::from(token.content.as_ref());
-                if let Some(n) = normalizer {
+        // Build normalized trie
+        if let Some(n) = normalizer {
+            let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
+            let patterns: Vec<_> = ntokens
+                .iter()
+                .map(|token| {
+                    let mut content = NormalizedString::from(token.content.as_ref());
                     n.normalize(&mut content).unwrap();
-                }
-                content
-            })
-            .collect();
-        let normalized_trie = AhoCorasickBuilder::new()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build(patterns.iter().map(|content| content.get()))
-            .expect("Failed to build tried when refreshing tokens (normalized)");
-        self.split_normalized_trie = (normalized_trie, nids);
+                    content
+                })
+                .collect();
+            let normalized_trie = AhoCorasickBuilder::new()
+                .match_kind(MatchKind::LeftmostLongest)
+                .build(patterns.iter().map(|content| content.get()))
+                .expect("Failed to build tried when refreshing tokens (normalized)");
+            self.split_normalized_trie = (normalized_trie, nids);
+        } else {
+            self.split_normalized_trie = (trie, ids); // non normalized is the same
+        }
     }
 
     /// Find any AddedToken in the given sentence, using the provided MatchingSet.
