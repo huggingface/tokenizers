@@ -132,13 +132,10 @@ impl PreTokenizer for ByteLevel {
         pretokenized.normalize(|normalized| {
             let s = normalized.get();
             let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());
-            let mut i = 0;
-            for cur_char in s.chars() {
+            for (i, cur_char) in s.char_indices() {
                 let size = cur_char.len_utf8();
-                let bytes = &s.as_bytes()[i..i + size];
-                i += size;
                 transformations.extend(
-                    bytes
+                    s.as_bytes()[i..i + size]
                         .iter()
                         .enumerate()
                         .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
