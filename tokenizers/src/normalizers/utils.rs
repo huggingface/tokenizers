@@ -16,13 +16,26 @@ impl Sequence {
     pub fn new(normalizers: Vec<NormalizerWrapper>) -> Self {
         Self { normalizers }
     }
+}
 
-    pub fn get_normalizers(&self) -> &[NormalizerWrapper] {
+impl AsRef<[NormalizerWrapper]> for Sequence {
+    fn as_ref(&self) -> &[NormalizerWrapper] {
         &self.normalizers
     }
+}
 
-    pub fn get_normalizers_mut(&mut self) -> &mut [NormalizerWrapper] {
+impl AsMut<[NormalizerWrapper]> for Sequence {
+    fn as_mut(&mut self) -> &mut [NormalizerWrapper] {
         &mut self.normalizers
+    }
+}
+
+impl IntoIterator for Sequence {
+    type Item = NormalizerWrapper;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.normalizers.into_iter()
     }
 }
 
