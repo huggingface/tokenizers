@@ -122,16 +122,16 @@
 //!   **_Please note this behavior may evolve in the future_**
 //!
 //! # Features
-//! **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
+//!
+//! - **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
 //!   compilation for certain targets is not supported by the [termios](https://crates.io/crates/termios)
 //!   dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
-//! **http**: This feature enables downloading the tokenizer via HTTP. It is disabled by default.
+//!
+//! - **http**: This feature enables downloading the tokenizer via HTTP. It is disabled by default.
 //!   With this feature enabled, `Tokenizer::from_pretrained` becomes accessible.
 
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate lazy_static;
 
 #[macro_use]
 extern crate derive_builder;

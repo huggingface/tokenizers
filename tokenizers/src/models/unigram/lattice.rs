@@ -1,5 +1,5 @@
-use rand::distributions::WeightedIndex;
-use rand::prelude::*;
+use rand::distr::weighted::WeightedIndex;
+use rand::{prelude::*, rng};
 use std::cell::RefCell;
 use std::cmp::{min, Ordering};
 use std::collections::BinaryHeap;
@@ -397,7 +397,7 @@ impl<'a> Lattice<'a> {
             }
         }
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut results: Vec<NodeRef> = vec![];
         let mut probs: Vec<f64> = vec![];
         let mut z = alpha[self.eos_node().borrow().node_id];

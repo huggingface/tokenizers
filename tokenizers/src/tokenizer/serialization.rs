@@ -159,9 +159,7 @@ where
                 if rid != token.id {
                     warn!(
                         "Warning: Token '{}' was expected to have ID '{}' but was given ID '{}'",
-                        token.token.content,
-                        token.id,
-                        rid.to_string()
+                        token.token.content, token.id, rid
                     );
                 }
             }

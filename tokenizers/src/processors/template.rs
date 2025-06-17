@@ -466,7 +466,7 @@ impl TemplateProcessingBuilder {
     }
 
     fn validate(&self) -> std::result::Result<(), String> {
-        let pair_has_both = self.pair.as_ref().map_or(true, |pair| {
+        let pair_has_both = self.pair.as_ref().is_none_or(|pair| {
             let mut has_a = false;
             let mut has_b = false;
             for piece in &pair.0 {
@@ -565,16 +565,16 @@ impl TemplateProcessing {
 
                             let encoding = Encoding::new(
                                 tok.ids.clone(),
-                                std::iter::repeat(*type_id).take(len).collect(),
+                                std::iter::repeat_n(*type_id, len).collect(),
                                 tok.tokens.clone(),
                                 // words
-                                std::iter::repeat(None).take(len).collect(),
+                                std::iter::repeat_n(None, len).collect(),
                                 // offsets
-                                std::iter::repeat((0, 0)).take(len).collect(),
+                                std::iter::repeat_n((0, 0), len).collect(),
                                 // special_tokens_mask
-                                std::iter::repeat(1).take(len).collect(),
+                                std::iter::repeat_n(1, len).collect(),
                                 // attention_mask
-                                std::iter::repeat(1).take(len).collect(),
+                                std::iter::repeat_n(1, len).collect(),
                                 // overflowing
                                 vec![],
                                 // sequence_range

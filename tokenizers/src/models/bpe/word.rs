@@ -1,5 +1,5 @@
 use super::Pair;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 
@@ -177,10 +177,7 @@ impl Word {
         );
 
         while let Some(top) = queue.pop() {
-            if dropout
-                .map(|d| thread_rng().gen::<f32>() < d)
-                .unwrap_or(false)
-            {
+            if dropout.map(|d| rng().random::<f32>() < d).unwrap_or(false) {
                 skip.push(top);
             } else {
                 // Re-insert the skipped elements

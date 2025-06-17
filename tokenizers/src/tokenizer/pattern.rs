@@ -122,7 +122,7 @@ where
     }
 }
 
-/// Invert the `is_match` flags for the wrapped Pattern. This is usefull
+/// Invert the `is_match` flags for the wrapped Pattern. This is useful
 /// for example when we use a regex that matches words instead of a delimiter,
 /// and we want to match the delimiter.
 pub struct Invert<P: Pattern>(pub P);
