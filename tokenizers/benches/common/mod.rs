@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use criterion::black_box;
+use std::hint::black_box;
 
 use tokenizers::{
     Decoder, EncodeInput, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerImpl, Trainer,
