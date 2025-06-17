@@ -37,8 +37,7 @@ name = "unigram_benchmark"
 harness = false
 
 [[bench]]
-name = "llama3"
-required-features = ["http"]
+name = "llama3_benchmark"
 harness = false
 
 [dependencies]
