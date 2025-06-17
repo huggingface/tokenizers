@@ -4,9 +4,9 @@ use std::{iter, mem};
 mod model;
 mod serialization;
 pub mod trainer;
-mod word;
+pub mod word;
 
-type Pair = (u32, u32);
+pub(crate) type Pair = (u32, u32);
 
 /// Errors that can be encountered while using or constructing a `BPE` model.
 #[derive(thiserror::Error, Debug)]
@@ -79,4 +79,4 @@ where
 // Re-export
 pub use model::*;
 pub use trainer::*;
-use word::*;
+pub use word::*;

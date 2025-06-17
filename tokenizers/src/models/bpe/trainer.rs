@@ -1,6 +1,7 @@
 #![allow(clippy::map_entry)]
 
 use super::{Pair, WithFirstLastIterator, Word, BPE};
+use crate::models::Bpe;
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::progress::{ProgressBar, ProgressStyle};
@@ -432,7 +433,7 @@ impl BpeTrainer {
     pub fn do_train(
         &self,
         word_counts: &HashMap<String, u64>,
-        model: &mut BPE,
+        model: &mut Bpe, // add a generic BPE
     ) -> Result<Vec<AddedToken>> {
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
@@ -601,29 +602,34 @@ impl BpeTrainer {
         self.finalize_progress(&progress, merges.len());
 
         // Transfer new vocab & options to model
-        model.vocab = word_to_id;
-        model.vocab_r = model
-            .vocab
+        let vocabulary = word_to_id.clone();
+        let vocab_reversed: HashMap<u32, String> = word_to_id
             .iter()
             .map(|(key, val)| (*val, key.to_owned()))
             .collect();
-        model.merges = merges
+        let merges: HashMap<Pair, (u32, u32)> = merges
             .into_iter()
             .enumerate()
             .map(|(i, (pair, new_token_id))| (pair, (i as u32, new_token_id)))
             .collect();
 
-        if let Some(prefix) = &self.continuing_subword_prefix {
-            model.continuing_subword_prefix = Some(prefix.to_owned());
+        let continuing_subword_prefix = if let Some(prefix) = &self.continuing_subword_prefix {
+            Some(prefix.to_owned())
         } else {
-            model.continuing_subword_prefix = None;
-        }
-        if let Some(suffix) = &self.end_of_word_suffix {
-            model.end_of_word_suffix = Some(suffix.to_owned());
+            None
+        };
+        let end_of_word_suffix = if let Some(suffix) = &self.end_of_word_suffix {
+            Some(suffix.to_owned())
         } else {
-            model.end_of_word_suffix = None;
-        }
-
+            None
+        };
+        model.with(
+            vocabulary,
+            vocab_reversed,
+            merges,
+            end_of_word_suffix,
+            continuing_subword_prefix,
+        );
         Ok(self.special_tokens.clone())
     }
 }
@@ -633,7 +639,7 @@ impl Trainer for BpeTrainer {
 
     /// Train a BPE model
     fn train(&self, model: &mut BPE) -> Result<Vec<AddedToken>> {
-        self.do_train(&self.words, model)
+        self.do_train(&self.words, &mut Bpe::OriginalBpe(model.to_owned()))
     }
 
     /// Whether we should show progress
@@ -675,6 +681,8 @@ impl Trainer for BpeTrainer {
 
 #[cfg(test)]
 mod tests {
+    use crate::models::Bpe;
+
     use super::{BpeTrainer, Pair, BPE};
     use std::collections::HashMap;
 
@@ -700,7 +708,7 @@ mod tests {
             .show_progress(false)
             .min_frequency(2)
             .build();
-        let mut model = BPE::default();
+        let mut model = Bpe::OriginalBpe(BPE::default());
         trainer.do_train(&word_counts, &mut model).unwrap();
 
         // Vocab should contain all of the characters from the `word_counts` mapping
@@ -735,7 +743,7 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.vocab, expected_vocab);
+        assert_eq!(model.get_vocab(), expected_vocab);
 
         // The keys in `merges` are pairs of symbols, the values are tuples of (rank, id),
         // where 'rank' determines the order in which this merge will be applied during
@@ -749,7 +757,7 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.merges, expected_merges);
+        assert_eq!(model.get_merges(), expected_merges);
     }
     #[test]
     fn bpe_test_max_token_length_16() {
@@ -781,7 +789,8 @@ mod tests {
             .show_progress(false)
             .min_frequency(0)
             .build();
-        let mut model = BPE::default();
+        let mut model = Bpe::OriginalBpe(BPE::default());
+
         trainer.do_train(&long_word_counts, &mut model).unwrap();
         let vocab = model.get_vocab();
         for token in vocab.keys() {
@@ -821,7 +830,7 @@ mod tests {
             .show_progress(false)
             .min_frequency(0)
             .build();
-        let mut model = BPE::default();
+        let mut model = Bpe::OriginalBpe(BPE::default());
         trainer.do_train(&long_word_counts, &mut model).unwrap();
         let trained_vocab: HashMap<String, u32> = model.get_vocab();
         let expected_vocab: HashMap<String, u32> = [

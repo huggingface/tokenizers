@@ -1,15 +1,20 @@
 //! Popular tokenizer models.
 
+pub mod backtracking_bpe;
 pub mod bpe;
 pub mod unigram;
 pub mod wordlevel;
 pub mod wordpiece;
 
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
+use bpe::{Merges, Vocab, VocabR};
+use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::models::backtracking_bpe::BacktrackingBpe;
 use crate::models::bpe::{BpeTrainer, BPE};
 use crate::models::unigram::{Unigram, UnigramTrainer};
 use crate::models::wordlevel::{WordLevel, WordLevelTrainer};
@@ -48,7 +53,6 @@ impl Serialize for OrderedVocabIter<'_> {
         } else {
             serializer.collect_map(std::iter::empty::<(&str, u32)>())
         };
-
         if !holes.is_empty() {
             warn!("The OrderedVocab you are attempting to save contains holes for indices {holes:?}, your vocabulary could be corrupted !");
             println!("The OrderedVocab you are attempting to save contains holes for indices {holes:?}, your vocabulary could be corrupted !");
@@ -61,12 +65,91 @@ impl Serialize for OrderedVocabIter<'_> {
 #[serde(untagged)]
 pub enum ModelWrapper {
     BPE(BPE),
+    BacktrackingBpe(BacktrackingBpe),
     // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
     // with the versions not including the "type"), since WordLevel is a subset of WordPiece
     WordPiece(WordPiece),
     WordLevel(WordLevel),
     Unigram(Unigram),
 }
+
+pub enum Bpe {
+    OriginalBpe(BPE),
+    BacktrackingBpe(BacktrackingBpe),
+}
+
+impl Bpe {
+    fn get_vocab(&self) -> Vocab {
+        match self {
+            Bpe::OriginalBpe(model) => model.get_vocab(),
+            Bpe::BacktrackingBpe(model) => model.get_vocab(),
+        }
+    }
+
+    fn get_merges(&self) -> HashMap<(u32, u32), (u32, u32)> {
+        match self {
+            Bpe::OriginalBpe(model) => model.merges.clone(),
+            Bpe::BacktrackingBpe(model) => model.merges.clone(),
+        }
+    }
+
+    fn with(
+        &mut self,
+        vocab: Vocab,
+        vocab_r: VocabR,
+        merge_map: HashMap<(u32, u32), (u32, u32)>,
+        end_of_word_suffix: Option<String>,
+        continous_subword_prefix: Option<String>,
+    ) -> &mut Self {
+        match self {
+            Bpe::OriginalBpe(model) => {
+                model.vocab = vocab;
+                model.vocab_r = vocab_r;
+                model.merges = merge_map;
+                model.end_of_word_suffix = end_of_word_suffix;
+                model.continuing_subword_prefix = continous_subword_prefix;
+            }
+            Bpe::BacktrackingBpe(model) => {
+                model.vocab = vocab;
+                model.vocab_r = vocab_r;
+                model.merges = merge_map;
+            }
+        }
+        self
+    }
+}
+
+use fnv::{FnvHashMap, FnvHasher};
+
+fn hash_bytes(bytes: &[u8], factor: u64) -> u32 {
+    let mut hasher = FnvHasher::default();
+    bytes.hash(&mut hasher);
+    // Note: we save 1/3 of space for the hashmap by only using the most significant bits of the hash.
+    // To make them unique for the given tokens, we have to add unfortunately another multiplication.
+    ((hasher.finish().wrapping_mul(factor)) >> 32) as u32
+}
+
+// #[cfg(feature = "rand")]
+pub fn find_hash_factor_for_dictionary(tokens: impl IntoIterator<Item = Vec<u8>>) -> u64 {
+    use std::collections::HashSet;
+
+    use rand::Rng;
+
+    let all_tokens = tokens.into_iter().collect_vec();
+    let mut rnd = rand::thread_rng();
+    loop {
+        let factor: u64 = rnd.gen();
+        let mut seen = HashSet::new();
+        if all_tokens
+            .iter()
+            .all(|token| seen.insert(hash_bytes(token, factor)))
+        {
+            return factor;
+        }
+    }
+}
+
+pub const USE_ORIGINAL_BPE: bool = false;
 
 impl<'de> Deserialize<'de> for ModelWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
@@ -86,6 +169,7 @@ impl<'de> Deserialize<'de> for ModelWrapper {
             WordPiece,
             WordLevel,
             Unigram,
+            BacktrackingBpe,
         }
 
         #[derive(Deserialize)]
@@ -109,9 +193,17 @@ impl<'de> Deserialize<'de> for ModelWrapper {
         let helper = ModelHelper::deserialize(deserializer)?;
         Ok(match helper {
             ModelHelper::Tagged(model) => match model.variant {
-                EnumType::BPE => ModelWrapper::BPE(
-                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
-                ),
+                EnumType::BPE => {
+                    if USE_ORIGINAL_BPE {
+                        ModelWrapper::BPE(
+                            serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
+                        )
+                    } else {
+                        ModelWrapper::BacktrackingBpe(
+                            serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
+                        )
+                    }
+                }
                 EnumType::WordPiece => ModelWrapper::WordPiece(
                     serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
@@ -121,11 +213,39 @@ impl<'de> Deserialize<'de> for ModelWrapper {
                 EnumType::Unigram => ModelWrapper::Unigram(
                     serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
+                EnumType::BacktrackingBpe => ModelWrapper::BacktrackingBpe(
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
+                ),
             },
             ModelHelper::Legacy(value) => {
                 let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
                 match untagged {
-                    ModelUntagged::BPE(bpe) => ModelWrapper::BPE(bpe),
+                    ModelUntagged::BPE(bpe) => {
+                        if !USE_ORIGINAL_BPE {
+                            let vocabulary = bpe
+                                .get_vocab()
+                                .into_keys()
+                                .into_iter()
+                                .map(|token| token.into_bytes());
+                            let merges = bpe
+                                .merges
+                                .iter()
+                                .map(|(a, _)| {
+                                    (bpe.id_to_token(a.0).unwrap(), bpe.id_to_token(a.1).unwrap())
+                                })
+                                .collect();
+                            let vocab_vec: Vec<_> = vocabulary.collect();
+                            let rng_hash = find_hash_factor_for_dictionary(vocab_vec.clone());
+                            let backtracking_bpe = BacktrackingBpe::from_dictionary(
+                                vocab_vec.clone(),
+                                Some(merges),
+                                Some(rng_hash),
+                            );
+                            ModelWrapper::BacktrackingBpe(backtracking_bpe)
+                        } else {
+                            ModelWrapper::BPE(bpe)
+                        }
+                    }
                     ModelUntagged::WordPiece(bpe) => ModelWrapper::WordPiece(bpe),
                     ModelUntagged::WordLevel(bpe) => ModelWrapper::WordLevel(bpe),
                     ModelUntagged::Unigram(bpe) => ModelWrapper::Unigram(bpe),
@@ -139,6 +259,7 @@ impl_enum_from!(WordLevel, ModelWrapper, WordLevel);
 impl_enum_from!(WordPiece, ModelWrapper, WordPiece);
 impl_enum_from!(BPE, ModelWrapper, BPE);
 impl_enum_from!(Unigram, ModelWrapper, Unigram);
+impl_enum_from!(BacktrackingBpe, ModelWrapper, BacktrackingBpe);
 
 impl Model for ModelWrapper {
     type Trainer = TrainerWrapper;
@@ -149,6 +270,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.tokenize(tokens),
             Self::BPE(t) => t.tokenize(tokens),
             Self::Unigram(t) => t.tokenize(tokens),
+            Self::BacktrackingBpe(t) => t.tokenize(tokens),
         }
     }
 
@@ -158,6 +280,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.token_to_id(token),
             Self::BPE(t) => t.token_to_id(token),
             Self::Unigram(t) => t.token_to_id(token),
+            Self::BacktrackingBpe(t) => t.token_to_id(token),
         }
     }
 
@@ -167,6 +290,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.id_to_token(id),
             Self::BPE(t) => t.id_to_token(id),
             Self::Unigram(t) => t.id_to_token(id),
+            Self::BacktrackingBpe(t) => t.id_to_token(id),
         }
     }
 
@@ -176,6 +300,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.get_vocab(),
             Self::BPE(t) => t.get_vocab(),
             Self::Unigram(t) => t.get_vocab(),
+            Self::BacktrackingBpe(t) => t.get_vocab(),
         }
     }
 
@@ -185,6 +310,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.get_vocab_size(),
             Self::BPE(t) => t.get_vocab_size(),
             Self::Unigram(t) => t.get_vocab_size(),
+            Self::BacktrackingBpe(t) => t.get_vocab_size(),
         }
     }
 
@@ -194,6 +320,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.save(folder, name),
             Self::BPE(t) => t.save(folder, name),
             Self::Unigram(t) => t.save(folder, name),
+            Self::BacktrackingBpe(t) => t.save(folder, name),
         }
     }
 
@@ -203,6 +330,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.get_trainer().into(),
             Self::BPE(t) => t.get_trainer().into(),
             Self::Unigram(t) => t.get_trainer().into(),
+            Self::BacktrackingBpe(t) => t.get_trainer().into(),
         }
     }
 }
@@ -284,7 +412,6 @@ impl_enum_from!(BpeTrainer, TrainerWrapper, BpeTrainer);
 impl_enum_from!(WordPieceTrainer, TrainerWrapper, WordPieceTrainer);
 impl_enum_from!(UnigramTrainer, TrainerWrapper, UnigramTrainer);
 impl_enum_from!(WordLevelTrainer, TrainerWrapper, WordLevelTrainer);
-
 #[cfg(test)]
 mod tests {
     use super::*;

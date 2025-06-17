@@ -66,6 +66,8 @@ fancy-regex = { version = "0.14", optional = true}
 getrandom = { version = "0.3" }
 esaxx-rs = { version = "0.1.10", default-features = false, features=[]}
 monostate = "0.1.12"
+fnv = "1.0.7"
+aneubeck-daachorse = "1.1.1"
 
 [features]
 default = ["progressbar", "onig", "esaxx_fast"]
