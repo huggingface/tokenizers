@@ -41,7 +41,7 @@ name = "llama3_benchmark"
 harness = false
 
 [dependencies]
-rand = "0.8"
+rand = "0.9"
 onig = { version = "6.5.1", default-features = false, optional = true }
 regex = "1.10"
 regex-syntax = "0.8"
@@ -63,7 +63,7 @@ paste = "1.0.14"
 macro_rules_attribute = "0.2.0"
 thiserror = "2"
 fancy-regex = { version = "0.14", optional = true}
-getrandom = { version = "0.2.10" }
+getrandom = { version = "0.3" }
 esaxx-rs = { version = "0.1.10", default-features = false, features=[]}
 monostate = "0.1.12"
 
@@ -72,11 +72,11 @@ default = ["progressbar", "onig", "esaxx_fast"]
 esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
-unstable_wasm = ["fancy-regex", "getrandom/js"]
+unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.6"
 tempfile = "3.10"
 assert_approx_eq = "1.1"
 tracing = "0.1"

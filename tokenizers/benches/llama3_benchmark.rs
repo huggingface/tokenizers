@@ -5,6 +5,7 @@ mod common;
 
 use common::{iter_bench_encode, iter_bench_encode_batch, iter_bench_train};
 use criterion::{Criterion, Throughput};
+use std::hint::black_box;
 use tokenizers::{
     models::{bpe::BpeTrainerBuilder, TrainerWrapper},
     EncodeInput, Tokenizer,
@@ -32,7 +33,7 @@ pub fn llama3(c: &mut Criterion) {
         let add_special_tokens = false;
         b.iter(|| {
             tokenizer
-                .encode_batch_char_offsets(criterion::black_box(data.clone()), add_special_tokens)
+                .encode_batch_char_offsets(black_box(data.clone()), add_special_tokens)
                 .unwrap()
         })
     });
@@ -42,15 +43,6 @@ pub fn llama3(c: &mut Criterion) {
     group.bench_function("llama3-batch", |b| {
         b.iter_custom(|iters| iter_bench_encode_batch(iters, &tokenizer, &batches))
     });
-    // group.bench_function("llama3-nooffsets", |b| {
-    //     let data: Vec<_> = data.lines().collect();
-    //     let add_special_tokens = false;
-    //     b.iter(|| {
-    //         tokenizer
-    //             .encode_batch(criterion::black_box(data.clone()), add_special_tokens)
-    //             .unwrap()
-    //     })
-    // });
     let mut trainer: TrainerWrapper = BpeTrainerBuilder::default()
         .show_progress(false)
         .build()
