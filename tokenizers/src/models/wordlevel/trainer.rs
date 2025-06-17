@@ -1,9 +1,9 @@
 use super::WordLevel;
 use crate::utils::parallelism::*;
 use crate::{AddedToken, Result, Trainer};
+use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::HashMap;
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Builder, Serialize, Deserialize)]
@@ -22,7 +22,7 @@ pub struct WordLevelTrainer {
     pub special_tokens: Vec<AddedToken>,
 
     #[builder(default, private)]
-    words: HashMap<String, u64>,
+    words: AHashMap<String, u64>,
 }
 
 impl Default for WordLevelTrainer {
@@ -38,7 +38,7 @@ impl WordLevelTrainer {
 
     fn do_train(
         &self,
-        word_counts: &HashMap<String, u64>,
+        word_counts: &AHashMap<String, u64>,
         model: &mut WordLevel,
     ) -> Result<Vec<AddedToken>> {
         let mut ordered_counts = word_counts.iter().collect::<Vec<_>>();
@@ -100,18 +100,18 @@ impl Trainer for WordLevelTrainer {
         S: AsRef<str> + Send,
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
-        let words: Result<HashMap<String, u64>> = iterator
+        let words: Result<AHashMap<String, u64>> = iterator
             .maybe_par_bridge()
             .map(|sequence| {
                 let words = process(sequence.as_ref())?;
-                let mut map = HashMap::new();
+                let mut map = AHashMap::new();
                 for word in words {
                     map.entry(word).and_modify(|c| *c += 1).or_insert(1);
                 }
                 Ok(map)
             })
             .reduce(
-                || Ok(HashMap::new()),
+                || Ok(AHashMap::new()),
                 |acc, ws| {
                     let mut acc = acc?;
                     for (k, v) in ws? {
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn test_train() {
-        let word_counts: HashMap<String, u64> = [
+        let word_counts: AHashMap<String, u64> = [
             ("the".into(), 25),
             ("roses".into(), 22),
             ("are".into(), 24),
@@ -151,7 +151,7 @@ mod tests {
 
         let mut model = WordLevel::default();
         trainer.do_train(&word_counts, &mut model).unwrap();
-        let expected_vocab: HashMap<String, u32> = [
+        let expected_vocab: AHashMap<String, u32> = [
             ("the".into(), 0),
             ("are".into(), 1),
             ("roses".into(), 2),
@@ -167,7 +167,7 @@ mod tests {
         trainer.min_frequency = 15;
         let mut model = WordLevel::default();
         trainer.do_train(&word_counts, &mut model).unwrap();
-        let expected_vocab: HashMap<String, u32> = [
+        let expected_vocab: AHashMap<String, u32> = [
             ("the".into(), 0),
             ("are".into(), 1),
             ("roses".into(), 2),

@@ -1,9 +1,12 @@
 use std::collections::HashMap;
+use std::hash::Hash;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use crate::token::PyToken;
 use crate::trainers::PyTrainer;
+use ahash::AHashMap;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -29,6 +32,53 @@ use super::error::{deprecation_warning, ToPyResult};
 #[serde(transparent)]
 pub struct PyModel {
     pub model: Arc<RwLock<ModelWrapper>>,
+}
+
+// Newtype wrapper for AHashMap
+#[derive(Clone, Debug)]
+pub struct PyAHashMap<K, V>(pub AHashMap<K, V>);
+
+impl<K, V> IntoPy<PyObject> for PyAHashMap<K, V>
+where
+    K: IntoPy<PyObject> + Eq + Hash,
+    V: IntoPy<PyObject>,
+{
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        let dict = PyDict::new_bound(py);
+        for (k, v) in self.0 {
+            dict.set_item(k.into_py(py), v.into_py(py)).unwrap();
+        }
+        dict.into()
+    }
+}
+
+impl<'source, K, V> FromPyObject<'source> for PyAHashMap<K, V>
+where
+    K: FromPyObject<'source> + Eq + Hash,
+    V: FromPyObject<'source>,
+{
+    fn extract(ob: &'source PyAny) -> PyResult<Self> {
+        let dict = ob.downcast::<PyDict>()?;
+        let mut map = AHashMap::new();
+        for (k, v) in dict.iter() {
+            map.insert(K::extract(k)?, V::extract(v)?);
+        }
+        Ok(PyAHashMap(map))
+    }
+}
+
+impl<K, V> Deref for PyAHashMap<K, V> {
+    type Target = AHashMap<K, V>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<K, V> DerefMut for PyAHashMap<K, V> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }
 
 impl PyModel {
@@ -72,6 +122,10 @@ impl Model for PyModel {
 
     fn get_vocab(&self) -> HashMap<String, u32> {
         self.model.read().unwrap().get_vocab()
+    }
+
+    fn get_vocab_ahash(&self) -> AHashMap<String, u32> {
+        self.model.read().unwrap().get_vocab_ahash()
     }
 
     fn get_vocab_size(&self) -> usize {
