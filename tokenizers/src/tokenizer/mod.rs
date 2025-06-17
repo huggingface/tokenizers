@@ -9,8 +9,8 @@
 //!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
 //!     ...).
 
+use ahash::AHashMap;
 use std::{
-    collections::HashMap,
     fs::{read_to_string, File},
     io::{prelude::*, BufReader},
     ops::{Deref, DerefMut},
@@ -78,6 +78,8 @@ pub trait Model {
     fn id_to_token(&self, id: u32) -> Option<String>;
     /// Retrieve the entire vocabulary mapping (token -> ID)
     fn get_vocab(&self) -> HashMap<String, u32>;
+    /// Retrieve the raw AHashMap vocab
+    fn get_vocab_ahash(&self) -> AHashMap<String, u32>;
     /// Retrieve the size of the vocabulary
     fn get_vocab_size(&self) -> usize;
     /// Save the current `Model` in the given folder, using the given `prefix` for the various
@@ -189,6 +191,8 @@ impl Token {
 }
 
 use std::borrow::Cow;
+use std::collections::HashMap;
+
 #[derive(Debug, Clone)]
 pub enum InputSequence<'s> {
     Raw(Cow<'s, str>),
@@ -658,8 +662,8 @@ where
     }
 
     /// Get the vocabulary
-    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
-        let mut final_vocab = self.model.get_vocab();
+    pub fn get_vocab_ahash(&self, with_added_tokens: bool) -> AHashMap<String, u32> {
+        let mut final_vocab = self.model.get_vocab_ahash();
 
         if with_added_tokens {
             let added_vocab = self.added_vocabulary.get_vocab();
@@ -674,8 +678,15 @@ where
         final_vocab
     }
 
+    // Get the vocabulary as a plain HashMap for bindings compatibility
+    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+        self.get_vocab_ahash(with_added_tokens)
+            .into_iter()
+            .collect()
+    }
+
     /// Get the added tokens decoder
-    pub fn get_added_tokens_decoder(&self) -> HashMap<u32, AddedToken> {
+    pub fn get_added_tokens_decoder(&self) -> AHashMap<u32, AddedToken> {
         self.added_vocabulary.get_added_tokens_decoder().clone()
     }
 
@@ -702,7 +713,7 @@ where
             .or_else(|| self.model.id_to_token(id))
     }
 
-    /// set the added bocab's splitting scheme
+    /// set the added vocab's splitting scheme
     pub fn set_encode_special_tokens(&mut self, value: bool) {
         self.added_vocabulary.set_encode_special_tokens(value);
     }
