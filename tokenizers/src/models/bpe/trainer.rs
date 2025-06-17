@@ -814,7 +814,7 @@ mod tests {
             .build();
         let mut model = BPE::default();
         trainer.do_train(&long_word_counts, &mut model).unwrap();
-        let trained_vocab: AHashMap<String, u32> = model.get_vocab_ahash();
+        let trained_vocab: AHashMap<String, u32> = model.get_vocab().into_iter().collect();
         let expected_vocab: AHashMap<String, u32> = [
             ("短", 12),
             ("n", 6),
