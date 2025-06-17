@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use tokenizers as tk;
-use tokenizers::models::bpe::{BpeBuilder, Merges, Vocab};
+use tokenizers::models::bpe::{BpeBuilder, Merges};
 use tokenizers::models::wordlevel::WordLevelBuilder;
 use tokenizers::models::wordpiece::WordPieceBuilder;
 
