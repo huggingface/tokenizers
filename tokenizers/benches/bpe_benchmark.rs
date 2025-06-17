@@ -11,6 +11,7 @@ use criterion::Criterion;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::models::TrainerWrapper;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::pre_tokenizers::random_chunk::RandomChunkSplit;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::tokenizer::{AddedToken, EncodeInput};
 use tokenizers::Tokenizer;
@@ -69,13 +70,14 @@ fn bench_gpt2(c: &mut Criterion) {
 }
 
 fn bench_train(c: &mut Criterion) {
+    // Standard Whitespace pre-tokenizer
     let mut trainer: TrainerWrapper = BpeTrainerBuilder::default()
         .show_progress(false)
         .build()
         .into();
     let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
     tokenizer.with_pre_tokenizer(Some(Whitespace {}));
-    c.bench_function("BPE Train vocabulary (small)", |b| {
+    c.bench_function("BPE Train vocabulary (small, whitespace)", |b| {
         b.iter_custom(|iters| {
             iter_bench_train(
                 iters,
@@ -86,9 +88,52 @@ fn bench_train(c: &mut Criterion) {
         })
     });
 
+    // RandomChunkSplit pre-tokenizer with small chunks
+    let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
+    tokenizer.with_pre_tokenizer(Some(RandomChunkSplit::new(1, 3)));
+    c.bench_function("BPE Train vocabulary (small, random-1-3)", |b| {
+        b.iter_custom(|iters| {
+            iter_bench_train(
+                iters,
+                &mut tokenizer,
+                &mut trainer,
+                vec!["data/small.txt".to_string()],
+            )
+        })
+    });
+    
+    // RandomChunkSplit pre-tokenizer with medium chunks
+    let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
+    tokenizer.with_pre_tokenizer(Some(RandomChunkSplit::new(2, 5)));
+    c.bench_function("BPE Train vocabulary (small, random-2-5)", |b| {
+        b.iter_custom(|iters| {
+            iter_bench_train(
+                iters,
+                &mut tokenizer,
+                &mut trainer,
+                vec!["data/small.txt".to_string()],
+            )
+        })
+    });
+
+    // Big file benchmarks with whitespace pre-tokenizer
     let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
     tokenizer.with_pre_tokenizer(Some(Whitespace {}));
-    c.bench_function("BPE Train vocabulary (big)", |b| {
+    c.bench_function("BPE Train vocabulary (big, whitespace)", |b| {
+        b.iter_custom(|iters| {
+            iter_bench_train(
+                iters,
+                &mut tokenizer,
+                &mut trainer,
+                vec!["data/big.txt".to_string()],
+            )
+        })
+    });
+    
+    // RandomChunkSplit on big file
+    let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
+    tokenizer.with_pre_tokenizer(Some(RandomChunkSplit::new(2, 5)));
+    c.bench_function("BPE Train vocabulary (big, random-2-5)", |b| {
         b.iter_custom(|iters| {
             iter_bench_train(
                 iters,

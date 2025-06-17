@@ -11,6 +11,8 @@ from tokenizers.pre_tokenizers import (
     Metaspace,
     PreTokenizer,
     Punctuation,
+    RandomChunkSplit,
+    RandomWhitespaceSplit,
     Sequence,
     Split,
     UnicodeScripts,
@@ -258,6 +260,135 @@ class TestUnicodeScripts:
         assert isinstance(UnicodeScripts(), PreTokenizer)
         assert isinstance(UnicodeScripts(), UnicodeScripts)
         assert isinstance(pickle.loads(pickle.dumps(UnicodeScripts())), UnicodeScripts)
+
+
+class TestRandomChunkSplit:
+    def test_instantiate(self):
+        assert RandomChunkSplit() is not None
+        assert RandomChunkSplit(min_length=2, max_length=5) is not None
+        assert isinstance(RandomChunkSplit(), PreTokenizer)
+        assert isinstance(RandomChunkSplit(), RandomChunkSplit)
+        assert isinstance(pickle.loads(pickle.dumps(RandomChunkSplit())), RandomChunkSplit)
+    
+    def test_can_modify(self):
+        pretok = RandomChunkSplit(min_length=2, max_length=10)
+        
+        assert pretok.min_length == 2
+        assert pretok.max_length == 10
+        
+        # Modify these
+        pretok.min_length = 3
+        assert pretok.min_length == 3
+        pretok.max_length = 8
+        assert pretok.max_length == 8
+    
+    def test_pre_tokenize_str(self):
+        pretok = RandomChunkSplit(min_length=2, max_length=2)  # Fixed length for deterministic testing
+        
+        # Test with a simple string - chunks of exactly 2 chars, except possibly the last one
+        text = "Hello world"
+        result = pretok.pre_tokenize_str(text)
+        
+        # Make sure all characters are accounted for
+        joined = "".join(token for token, _ in result)
+        assert joined == text
+        
+        # Most tokens should have length 2 (except possibly the last one if odd length)
+        for i, (token, _) in enumerate(result[:-1]):
+            assert len(token) == 2, f"Token at position {i} has length {len(token)}, expected 2"
+        
+        # If total length is odd, last token might be length 1
+        if len(text) % 2 == 1:
+            assert 1 <= len(result[-1][0]) <= 2
+        else:
+            assert len(result[-1][0]) == 2
+            
+        # Test with unicode characters
+        text = "こんにちは"  # Japanese for "Hello"
+        result = pretok.pre_tokenize_str(text)
+        
+        # Make sure all characters are accounted for
+        joined = "".join(token for token, _ in result)
+        assert joined == text
+
+
+class TestRandomWhitespaceSplit:
+    def test_instantiate(self):
+        assert RandomWhitespaceSplit() is not None
+        assert RandomWhitespaceSplit(split_probability=0.5) is not None
+        assert RandomWhitespaceSplit(split_probability=0.0) is not None
+        assert RandomWhitespaceSplit(split_probability=1.0) is not None
+        assert isinstance(RandomWhitespaceSplit(), PreTokenizer)
+        assert isinstance(RandomWhitespaceSplit(), RandomWhitespaceSplit)
+        assert isinstance(pickle.loads(pickle.dumps(RandomWhitespaceSplit())), RandomWhitespaceSplit)
+    
+    def test_can_modify(self):
+        pretok = RandomWhitespaceSplit(split_probability=0.5)
+        
+        assert pretok.split_probability == 0.5
+        
+        # Modify the split probability
+        pretok.split_probability = 0.75
+        assert pretok.split_probability == 0.75
+        
+        # Test value limiting (should clamp between 0 and 1)
+        pretok.split_probability = 1.5  # Should be clamped to 1.0
+        assert pretok.split_probability == 1.0
+        
+        pretok.split_probability = -0.5  # Should be clamped to 0.0
+        assert pretok.split_probability == 0.0
+    
+    def test_pre_tokenize_str_full_probability(self):
+        # With split_probability = 1.0, should behave like WhitespaceSplit
+        pretok = RandomWhitespaceSplit(split_probability=1.0)
+        
+        text = "Hello world!"
+        result = pretok.pre_tokenize_str(text)
+        
+        # Make sure all characters are accounted for
+        joined = "".join(token for token, _ in result)
+        assert joined == text
+        
+        # Should split on the whitespace
+        assert len(result) == 3
+        assert result[0][0] == "Hello"
+        assert result[1][0] == " "
+        assert result[2][0] == "world!"
+    
+    def test_pre_tokenize_str_zero_probability(self):
+        # With split_probability = 0.0, should not split
+        pretok = RandomWhitespaceSplit(split_probability=0.0)
+        
+        text = "Hello world!"
+        result = pretok.pre_tokenize_str(text)
+        
+        # Make sure all characters are accounted for
+        joined = "".join(token for token, _ in result)
+        assert joined == text
+        
+        # Should not split at all
+        assert len(result) == 1
+        assert result[0][0] == "Hello world!"
+    
+    def test_pre_tokenize_multiple_whitespaces(self):
+        # Test with multiple whitespaces and probability = 1.0
+        pretok = RandomWhitespaceSplit(split_probability=1.0)
+        
+        text = "Hello  world!\nTest"
+        result = pretok.pre_tokenize_str(text)
+        
+        # Make sure all characters are accounted for
+        joined = "".join(token for token, _ in result)
+        assert joined == text
+        
+        # Should split on all whitespaces
+        assert len(result) == 6
+        assert result[0][0] == "Hello"
+        assert result[1][0] == " "
+        assert result[2][0] == " "
+        assert result[3][0] == "world!"
+        assert result[4][0] == "\n"
+        assert result[5][0] == "Test"
 
 
 class TestCustomPreTokenizer:

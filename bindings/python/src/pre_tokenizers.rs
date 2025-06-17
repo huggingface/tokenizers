@@ -14,6 +14,8 @@ use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk::pre_tokenizers::digits::Digits;
 use tk::pre_tokenizers::metaspace::{Metaspace, PrependScheme};
 use tk::pre_tokenizers::punctuation::Punctuation;
+use tk::pre_tokenizers::random_chunk::RandomChunkSplit;
+use tk::pre_tokenizers::random_whitespace::RandomWhitespaceSplit;
 use tk::pre_tokenizers::split::Split;
 use tk::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
@@ -114,6 +116,18 @@ impl PyPreTokenizer {
                             .into(),
                         PreTokenizerWrapper::UnicodeScripts(_) => {
                             Py::new(py, (PyUnicodeScripts {}, base))?
+                                .into_pyobject(py)?
+                                .into_any()
+                                .into()
+                        }
+                        PreTokenizerWrapper::RandomChunkSplit(_) => {
+                            Py::new(py, (PyRandomChunkSplit {}, base))?
+                                .into_pyobject(py)?
+                                .into_any()
+                                .into()
+                        }
+                        PreTokenizerWrapper::RandomWhitespaceSplit(_) => {
+                            Py::new(py, (PyRandomWhitespaceSplit {}, base))?
                                 .into_pyobject(py)?
                                 .into_any()
                                 .into()
@@ -750,6 +764,121 @@ impl PyUnicodeScripts {
     }
 }
 
+/// RandomChunkSplit PreTokenizer
+///
+/// This pre-tokenizer splits text into random-length chunks regardless of whitespace
+/// boundaries. It's useful for enabling BPE to learn tokens that span across whitespace.
+///
+/// Args:
+///     min_length (:obj:`int`, `optional`, defaults to :obj:`1`):
+///         The minimum length (in characters) for each chunk.
+///     max_length (:obj:`int`, `optional`, defaults to :obj:`5`):
+///         The maximum length (in characters) for each chunk.
+///     deterministic (:obj:`bool`, `optional`, defaults to :obj:`False`):
+///         Whether to use deterministic mode for inference. In deterministic mode,
+///         instead of random-length chunks, fixed-length chunks of average size 
+///         between min_length and max_length will be used, ensuring consistent
+///         tokenization for the same input.
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "RandomChunkSplit")]
+pub struct PyRandomChunkSplit {}
+#[pymethods]
+impl PyRandomChunkSplit {
+    #[getter]
+    fn get_min_length(self_: PyRef<Self>) -> usize {
+        getter!(self_, RandomChunkSplit, min_length)
+    }
+
+    #[setter]
+    fn set_min_length(self_: PyRef<Self>, min_length: usize) {
+        setter!(self_, RandomChunkSplit, min_length, min_length);
+    }
+
+    #[getter]
+    fn get_max_length(self_: PyRef<Self>) -> usize {
+        getter!(self_, RandomChunkSplit, max_length)
+    }
+
+    #[setter]
+    fn set_max_length(self_: PyRef<Self>, max_length: usize) {
+        setter!(self_, RandomChunkSplit, max_length, max_length);
+    }
+    
+    #[getter]
+    fn get_deterministic(self_: PyRef<Self>) -> bool {
+        getter!(self_, RandomChunkSplit, deterministic)
+    }
+
+    #[setter]
+    fn set_deterministic(self_: PyRef<Self>, deterministic: bool) {
+        setter!(self_, RandomChunkSplit, deterministic, deterministic);
+    }
+
+    #[new]
+    #[pyo3(signature = (min_length = 1, max_length = 5, deterministic = false), text_signature = "(self, min_length=1, max_length=5, deterministic=False)")]
+    fn new(min_length: usize, max_length: usize, deterministic: bool) -> (Self, PyPreTokenizer) {
+        (
+            PyRandomChunkSplit {},
+            RandomChunkSplit::new(min_length, max_length)
+                .with_deterministic(deterministic)
+                .into(),
+        )
+    }
+}
+
+/// RandomWhitespaceSplit PreTokenizer
+///
+/// Split the text by randomly deciding at each whitespace character whether to
+/// split there or continue. This enables the tokenizer to learn common multi-word
+/// expressions as a single token.
+///
+/// Args:
+///     split_probability (:obj:`float`, `optional`, defaults to :obj:`0.5`):
+///         The probability (0.0-1.0) of splitting at each whitespace character.
+///         Higher values (closer to 1.0) make the tokenizer behave more like traditional
+///         whitespace splitting, while lower values promote more multi-word tokens.
+///     deterministic (:obj:`bool`, `optional`, defaults to :obj:`False`):
+///         Whether to use deterministic mode for inference. In deterministic mode:
+///         - If split_probability > 0.5, all whitespace is split (like WhitespaceSplit)
+///         - If split_probability <= 0.5, no whitespace is split (preserving multi-word tokens)
+///         This ensures consistent tokenization for the same input during inference.
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "RandomWhitespaceSplit")]
+pub struct PyRandomWhitespaceSplit {}
+#[pymethods]
+impl PyRandomWhitespaceSplit {
+    #[getter]
+    fn get_split_probability(self_: PyRef<Self>) -> f32 {
+        getter!(self_, RandomWhitespaceSplit, split_probability)
+    }
+
+    #[setter]
+    fn set_split_probability(self_: PyRef<Self>, split_probability: f32) {
+        // Clamp the value between 0.0 and 1.0
+        let clamped_probability = split_probability.min(1.0).max(0.0);
+        setter!(self_, RandomWhitespaceSplit, split_probability, clamped_probability);
+    }
+    
+    #[getter]
+    fn get_deterministic(self_: PyRef<Self>) -> bool {
+        getter!(self_, RandomWhitespaceSplit, deterministic)
+    }
+
+    #[setter]
+    fn set_deterministic(self_: PyRef<Self>, deterministic: bool) {
+        setter!(self_, RandomWhitespaceSplit, deterministic, deterministic);
+    }
+
+    #[new]
+    #[pyo3(signature = (split_probability = 0.5, deterministic = false), text_signature = "(self, split_probability=0.5, deterministic=False)")]
+    fn new(split_probability: f32, deterministic: bool) -> (Self, PyPreTokenizer) {
+        (
+            PyRandomWhitespaceSplit {},
+            RandomWhitespaceSplit::new(split_probability)
+                .with_deterministic(deterministic)
+                .into(),
+        )
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct CustomPreTokenizer {
     inner: PyObject,
@@ -926,6 +1055,8 @@ pub fn pre_tokenizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySequence>()?;
     m.add_class::<PyDigits>()?;
     m.add_class::<PyUnicodeScripts>()?;
+    m.add_class::<PyRandomChunkSplit>()?;
+    m.add_class::<PyRandomWhitespaceSplit>()?;
     Ok(())
 }
 
