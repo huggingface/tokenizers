@@ -1,5 +1,5 @@
 use super::{super::OrderedVocabIter, WordPiece, WordPieceBuilder};
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use serde::{
     de::{MapAccess, Visitor},
     ser::SerializeStruct,
@@ -78,7 +78,10 @@ impl<'de> Visitor<'de> for WordPieceVisitor {
                 "max_input_chars_per_word" => {
                     builder = builder.max_input_chars_per_word(map.next_value()?)
                 }
-                "vocab" => builder = builder.vocab(map.next_value()?),
+                "vocab" => {
+                    let vocab: AHashMap<String, u32> = map.next_value()?;
+                    builder = builder.vocab(vocab)
+                }
                 "type" => match map.next_value()? {
                     "WordPiece" => {}
                     u => {

@@ -420,10 +420,6 @@ impl Model for Unigram {
         self.token_to_ids.clone().into_iter().collect()
     }
 
-    fn get_vocab_ahash(&self) -> AHashMap<String, u32> {
-        self.token_to_ids.clone()
-    }
-
     fn get_vocab_size(&self) -> usize {
         self.vocab.len()
     }

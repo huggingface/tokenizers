@@ -180,15 +180,6 @@ impl Model for ModelWrapper {
         }
     }
 
-    fn get_vocab_ahash(&self) -> AHashMap<String, u32> {
-        match self {
-            Self::WordLevel(t) => t.get_vocab_ahash(),
-            Self::WordPiece(t) => t.get_vocab_ahash(),
-            Self::BPE(t) => t.get_vocab_ahash(),
-            Self::Unigram(t) => t.get_vocab_ahash(),
-        }
-    }
-
     fn get_vocab_size(&self) -> usize {
         match self {
             Self::WordLevel(t) => t.get_vocab_size(),
