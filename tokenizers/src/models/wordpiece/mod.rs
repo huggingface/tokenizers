@@ -68,8 +68,8 @@ impl WordPieceBuilder {
 
     /// Set the vocab (token -> ID) mapping.
     #[must_use]
-    pub fn vocab(mut self, vocab: Vocab) -> Self {
-        self.config.vocab = vocab;
+    pub fn vocab<V: Into<AHashMap<String, u32>>>(mut self, vocab: V) -> Self {
+        self.config.vocab = vocab.into();
         self
     }
 
@@ -180,7 +180,7 @@ impl WordPiece {
     /// Create a `WordPiece` model from a `BPE` model.
     pub fn from_bpe(bpe: &BPE) -> Self {
         let mut wp = Self::builder()
-            .vocab(bpe.get_vocab_ahash())
+            .vocab(bpe.get_vocab().into_iter().collect::<AHashMap<_, _>>())
             .build()
             .unwrap();
         if let Some(unk) = bpe.get_unk_token() {
@@ -198,10 +198,6 @@ impl Model for WordPiece {
 
     fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab.clone().into_iter().collect()
-    }
-
-    fn get_vocab_ahash(&self) -> AHashMap<String, u32> {
-        self.vocab.clone()
     }
 
     fn get_vocab_size(&self) -> usize {

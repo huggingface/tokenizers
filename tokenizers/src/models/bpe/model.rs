@@ -371,10 +371,6 @@ impl BPE {
         self.vocab.clone().into_iter().collect()
     }
 
-    pub fn get_vocab_ahash(&self) -> AHashMap<String, u32> {
-        self.vocab.clone()
-    }
-
     pub fn get_unk_token(&self) -> &Option<String> {
         &self.unk_token
     }
@@ -505,10 +501,6 @@ impl Model for BPE {
 
     fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab.clone().into_iter().collect()
-    }
-
-    fn get_vocab_ahash(&self) -> AHashMap<String, u32> {
-        self.vocab.clone()
     }
 
     fn get_vocab_size(&self) -> usize {

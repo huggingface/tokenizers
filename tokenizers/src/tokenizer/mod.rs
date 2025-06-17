@@ -78,8 +78,6 @@ pub trait Model {
     fn id_to_token(&self, id: u32) -> Option<String>;
     /// Retrieve the entire vocabulary mapping (token -> ID)
     fn get_vocab(&self) -> HashMap<String, u32>;
-    /// Retrieve the raw AHashMap vocab
-    fn get_vocab_ahash(&self) -> AHashMap<String, u32>;
     /// Retrieve the size of the vocabulary
     fn get_vocab_size(&self) -> usize;
     /// Save the current `Model` in the given folder, using the given `prefix` for the various
@@ -661,9 +659,9 @@ where
         self.padding.as_mut()
     }
 
-    /// Get the vocabulary
-    pub fn get_vocab_ahash(&self, with_added_tokens: bool) -> AHashMap<String, u32> {
-        let mut final_vocab = self.model.get_vocab_ahash();
+    // Get the vocabulary as a plain HashMap for bindings compatibility
+    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+        let mut final_vocab = self.model.get_vocab();
 
         if with_added_tokens {
             let added_vocab = self.added_vocabulary.get_vocab();
@@ -676,13 +674,6 @@ where
         }
 
         final_vocab
-    }
-
-    // Get the vocabulary as a plain HashMap for bindings compatibility
-    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
-        self.get_vocab_ahash(with_added_tokens)
-            .into_iter()
-            .collect()
     }
 
     /// Get the added tokens decoder
