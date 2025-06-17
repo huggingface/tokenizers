@@ -535,7 +535,7 @@ class Whitespace(PreTokenizer):
 
             pre_tokenizer = Whitespace()
             text = "Hello, world! Let's try the Whitespace pre-tokenizer."
-            pre_tokenizer.pretokenize_str(text)
+            pre_tokenizer.pre_tokenize_str(text)
             [('Hello', (0, 5)),
              (',', (5, 6)),
              ('world', (7, 12)),
