@@ -61,6 +61,10 @@ $(DATA_DIR)/albert-base-v1-tokenizer.json :
 	$(dir_guard)
 	wget https://s3.amazonaws.com/models.huggingface.co/bert/albert-base-v1-tokenizer.json -O $@
 
+$(DATA_DIR)/tokenizer-llama3.json :
+	$(dir_guard)
+	wget https://huggingface.co/Narsil/llama-tokenizer/resolve/main/tokenizer.json -O $@
+
 $(DATA_DIR)/big.txt :
 	$(dir_guard)
 	wget https://norvig.com/big.txt -O $@
