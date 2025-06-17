@@ -75,10 +75,6 @@ impl Model for PyModel {
         self.model.read().unwrap().get_vocab()
     }
 
-    fn get_vocab_ahash(&self) -> AHashMap<String, u32> {
-        self.model.read().unwrap().get_vocab_ahash()
-    }
-
     fn get_vocab_size(&self) -> usize {
         self.model.read().unwrap().get_vocab_size()
     }
@@ -678,7 +674,7 @@ impl PyWordPiece {
         if let Some(vocab) = vocab {
             match vocab {
                 PyVocab::Vocab(vocab) => {
-                    let vocab = vocab.into_iter().collect();
+                    let vocab: AHashMap<_, _> = vocab.into_iter().collect();
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
