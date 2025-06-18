@@ -106,7 +106,7 @@ impl Trainer for WordLevelTrainer {
                 let words = process(sequence.as_ref())?;
                 let mut map = HashMap::new();
                 for word in words {
-                    map.entry(word).and_modify(|c| *c += 1).or_insert(1);
+                    *map.entry(word).or_default() += 1;
                 }
                 Ok(map)
             })
@@ -115,7 +115,7 @@ impl Trainer for WordLevelTrainer {
                 |acc, ws| {
                     let mut acc = acc?;
                     for (k, v) in ws? {
-                        acc.entry(k).and_modify(|c| *c += v).or_insert(v);
+                        *acc.entry(k).or_default() += v;
                     }
                     Ok(acc)
                 },
