@@ -1,6 +1,7 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 use std::{iter, mem};
 
+mod backtrack;
 mod model;
 mod serialization;
 pub mod trainer;

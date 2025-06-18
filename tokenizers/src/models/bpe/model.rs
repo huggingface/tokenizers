@@ -1,3 +1,4 @@
+use super::backtrack::Backtrack;
 use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
@@ -15,7 +16,7 @@ use std::{
 };
 
 pub type Vocab = AHashMap<String, u32>;
-type VocabR = AHashMap<u32, String>;
+pub type VocabR = AHashMap<u32, String>;
 pub type MergeMap = AHashMap<Pair, (u32, u32)>;
 pub type Merges = Vec<(String, String)>;
 
@@ -205,6 +206,7 @@ impl BpeBuilder {
             fuse_unk: self.config.fuse_unk,
             byte_fallback: self.config.byte_fallback,
             ignore_merges: self.config.ignore_merges,
+            backtrack: None,
         })
     }
 }
@@ -236,6 +238,8 @@ pub struct BPE {
     pub byte_fallback: bool,
     /// Whether or not to direct output words if they are part of the vocab.
     pub ignore_merges: bool,
+
+    backtrack: Option<Backtrack>,
 }
 
 impl std::fmt::Debug for BPE {
@@ -277,6 +281,7 @@ impl Clone for BPE {
             fuse_unk: self.fuse_unk,
             byte_fallback: self.byte_fallback,
             ignore_merges: self.ignore_merges,
+            backtrack: None,
         }
     }
 }
@@ -461,7 +466,10 @@ impl BPE {
             word.add(unk_id, unk_len);
         }
 
+        // println!("Word {word:?}");
+
         word.merge_all(&self.merges, self.dropout);
+        // println!("After Word {word:?}");
 
         Ok(word)
     }
@@ -494,6 +502,10 @@ impl BPE {
         }
         Ok(ret)
     }
+
+    pub fn enable_backtrack(&mut self) {
+        self.backtrack = Some(Backtrack::new(self.vocab.clone(), self.merges.clone()));
+    }
 }
 
 impl Model for BPE {
@@ -508,8 +520,22 @@ impl Model for BPE {
     }
 
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
+        // println!("Tokenizing {sequence}");
         if sequence.is_empty() {
             return Ok(vec![]);
+        }
+
+        if let Some(backtrack) = &self.backtrack {
+            let ids = backtrack.encode_via_backtracking(sequence.as_bytes());
+            let tokens = ids
+                .into_iter()
+                .map(|id| Token {
+                    id,
+                    value: self.vocab_r[&id].clone(),
+                    offsets: (0, 0),
+                })
+                .collect();
+            return Ok(tokens);
         }
 
         if self.dropout.is_none() || self.dropout == Some(0.0) {

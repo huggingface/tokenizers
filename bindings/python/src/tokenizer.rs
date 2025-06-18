@@ -1,6 +1,8 @@
 use serde::Serialize;
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
+use tk::pre_tokenizers::byte_level::ByteLevel;
+use tk::ModelWrapper;
 
 use numpy::{npyffi, PyArray1, PyArrayMethods};
 use pyo3::class::basic::CompareOp;
@@ -1117,6 +1119,19 @@ impl PyTokenizer {
             )
             .into()
         })
+    }
+    ///
+    #[pyo3(signature = ())]
+    #[pyo3(text_signature = "(self)")]
+    fn enable_backtrack(&mut self) -> PyResult<()> {
+        // self.tokenizer.with_pre_tokenizer(None::<ByteLevel>);
+        let model = self.tokenizer.get_model();
+        let mut model = model.model.write().unwrap();
+        let ModelWrapper::BPE(ref mut model) = *model else {
+            todo!();
+        };
+        model.enable_backtrack();
+        Ok(())
     }
 
     /// Decode the given list of ids back to a string
