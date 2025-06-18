@@ -198,12 +198,41 @@ pub fn find_hash_factor_for_dictionary(tokens: impl IntoIterator<Item = Vec<u8>>
 }
 
 impl Backtrack {
-    pub(crate) fn new(vocab: Vocab, mut merge_map: MergeMap) -> Self {
-        let vocab_vec: Vec<_> = vocab
+    pub(crate) fn new(vocab: Vocab, merge_map: MergeMap) -> Self {
+        // let vocab_vec: Vec<_> = vocab
+        //     .into_iter()
+        //     .sorted_unstable_by(|a, b| a.1.cmp(&b.1))
+        //     .map(|(k, _v)| k.chars().map(|b| CHAR_BYTES[&b] as u8).collect::<Vec<_>>())
+        //     .collect();
+        let mut merges: Vec<_> = merge_map.values().collect();
+        merges.sort();
+        let merge_vocab: Vec<u32> = merges
             .into_iter()
-            .sorted_unstable_by(|a, b| a.1.cmp(&b.1))
-            .map(|(k, _v)| k.chars().map(|b| CHAR_BYTES[&b] as u8).collect::<Vec<_>>())
+            .map(|(_rank, token_id)| *token_id)
             .collect();
+
+        let vocab_r: AHashMap<_, _> = vocab.iter().map(|(k, v)| (v, k)).collect();
+        let mut tokens: Vec<_> = vocab
+            .clone()
+            .into_iter()
+            .flat_map(|(k, token_id)| {
+                if merge_vocab.contains(&token_id) {
+                    Some((token_id, k))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        tokens.sort();
+        let mut tokens: Vec<_> = tokens.into_iter().map(|(_token_id, k)| k).collect();
+
+        let merge_vocab: Vec<String> = merge_vocab
+            .into_iter()
+            .map(|token_id| vocab_r[&token_id].clone())
+            .collect();
+        tokens.extend(merge_vocab);
+        let vocab_vec: Vec<_> = tokens.into_iter().map(|k| k.as_bytes().to_vec()).collect();
+
         let hash_factor = find_hash_factor_for_dictionary(vocab_vec.clone());
         let mut all_tokens = Vec::new();
         let mut all_tokens_rev = Vec::new();
@@ -266,6 +295,7 @@ impl Backtrack {
 
         let mut split_table = vec![];
         let mut pair_lookup = FnvHashMap::default();
+        let mut merge_map = AHashMap::new();
 
         // // First option, use the input merge table.
         // if let Some(ref merges) = merges {
@@ -349,11 +379,11 @@ impl Backtrack {
             let strs = bytes.iter().map(|b| char::from(*b)).collect::<Vec<_>>();
             // println!("Encoding {bytes:?} into bitfield");
             let tokens = bpe.encode_via_bitfield(bytes);
-            // assert_eq!(
-            //     tokens,
-            //     vec![token_id],
-            //     "token {token_id} with bytes {bytes:?} (tokens {strs:?} encodes to {tokens:?} instead of to itself"
-            // );
+            assert_eq!(
+                tokens,
+                vec![token_id],
+                "token {token_id} with bytes {bytes:?} (tokens {strs:?} encodes to {tokens:?} instead of to itself"
+            );
         }
         bpe
     }

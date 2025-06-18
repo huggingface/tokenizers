@@ -80,6 +80,35 @@ impl BpeBuilder {
         merges: Merges,
     ) -> Self {
         self.config.vocab = vocab.into();
+        // for (i, (left, right)) in merges.iter().enumerate() {
+        //     // println!("{left:?} - {right:?}");
+        //     let mut result = left.clone();
+        //     result.push_str(right);
+        //     if result == String::from("Ġvi") {
+        //         println!("Original merge {left:?} - {right:?} - {i}");
+        //         // panic!("Stop");
+        //     }
+        //     if result == String::from("á»") {
+        //         println!("Original merge {left:?} - {right:?}");
+        //         // panic!("Stop");
+        //     }
+        //     if result == String::from("á»ĩ") {
+        //         println!("Original merge {left:?} - {right:?}");
+        //         // panic!("Stop");
+        //     }
+        //     if result == String::from("iá»ĩ") {
+        //         println!("Original merge {left:?} - {right:?}");
+        //         // panic!("Stop");
+        //     }
+        //     if result == String::from("iá»ĩc") {
+        //         println!("Original merge {left:?} - {right:?}");
+        //         // panic!("Stop");
+        //     }
+        //     if result == String::from("Ġviá»ĩc") {
+        //         println!("Original merge {left:?} - {right:?}");
+        //         // panic!("Stop");
+        //     }
+        // }
         self.config.merges = merges;
         self
     }
@@ -374,6 +403,14 @@ impl BPE {
 
     pub fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab.clone().into_iter().collect()
+    }
+
+    pub fn get_vocab_r(&self) -> HashMap<u32, String> {
+        self.vocab_r.clone().into_iter().collect()
+    }
+
+    pub fn get_merges(&self) -> &AHashMap<Pair, Pair> {
+        &self.merges
     }
 
     pub fn get_unk_token(&self) -> &Option<String> {
