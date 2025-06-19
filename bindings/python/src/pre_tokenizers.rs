@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use pyo3::exceptions;
+use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::ser::SerializeStruct;
@@ -49,13 +50,17 @@ impl PyPreTokenizer {
 
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
-        Ok(match &self.pretok {
+        Ok(match self.pretok {
             PyPreTokenizerTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
                 .into_pyobject(py)?
                 .into_any()
                 .into(),
             PyPreTokenizerTypeWrapper::Single(ref inner) => {
-                match &*inner.as_ref().read().unwrap() {
+                match &*inner
+                    .as_ref()
+                    .read()
+                    .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
+                {
                     PyPreTokenizerWrapper::Custom(_) => {
                         Py::new(py, base)?.into_pyobject(py)?.into_any().into()
                     }
@@ -229,7 +234,7 @@ macro_rules! getter {
         let super_ = $self.as_ref();
         if let PyPreTokenizerTypeWrapper::Single(ref single) = super_.pretok {
             if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::$variant(ref pretok)) =
-                *single.read().unwrap() {
+                *single.read().expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer") {
                     pretok.$($name)+
                 } else {
                     unreachable!()
@@ -245,7 +250,7 @@ macro_rules! setter {
         let super_ = $self.as_ref();
         if let PyPreTokenizerTypeWrapper::Single(ref single) = super_.pretok {
             if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::$variant(ref mut pretok)) =
-                *single.write().unwrap()
+                *single.write().expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer")
             {
                 pretok.$name = $value;
             }
@@ -255,7 +260,7 @@ macro_rules! setter {
         let super_ = $self.as_ref();
         if let PyPreTokenizerTypeWrapper::Single(ref single) = super_.pretok {
             if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::$variant(ref mut pretok)) =
-                *single.write().unwrap()
+                *single.write().expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer")
             {
                 pretok.$name($value);
             }
@@ -299,6 +304,16 @@ impl PyByteLevel {
         setter!(self_, ByteLevel, use_regex, use_regex);
     }
 
+    #[getter]
+    fn get_trim_offsets(self_: PyRef<Self>) -> bool {
+        getter!(self_, ByteLevel, trim_offsets)
+    }
+
+    #[setter]
+    fn set_trim_offsets(self_: PyRef<Self>, trim_offsets: bool) {
+        setter!(self_, ByteLevel, trim_offsets, trim_offsets)
+    }
+
     #[new]
     #[pyo3(signature = (add_prefix_space = true, use_regex = true, **_kwargs), text_signature = "(self, add_prefix_space=True, use_regex=True)")]
     fn new(
@@ -333,7 +348,34 @@ impl PyByteLevel {
     }
 }
 
-/// This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`
+/// This pre-tokenizer splits on word boundaries according to the `\w+|[^\w\s]+`
+/// regex pattern. It splits on word characters or characters that aren't words or
+/// whitespaces (punctuation such as hyphens, apostrophes, commas, etc.).
+///
+/// Example:
+///     Use the `Whitespace` function as shown below::
+///
+///         ```python
+///         from tokenizers.pre_tokenizers import Whitespace
+///
+///         pre_tokenizer = Whitespace()
+///         text = "Hello, world! Let's try the Whitespace pre-tokenizer."
+///         pre_tokenizer.pre_tokenize_str(text)
+///         [('Hello', (0, 5)),
+///          (',', (5, 6)),
+///          ('world', (7, 12)),
+///          ('!', (12, 13)),
+///          ('Let', (14, 17)),
+///          ("'", (17, 18)),
+///          ('s', (18, 19)),
+///          ('try', (20, 23)),
+///          ('the', (24, 27)),
+///          ('Whitespace', (28, 38)),
+///          ('pre', (39, 42)),
+///          ('-', (42, 43)),
+///          ('tokenizer', (43, 52)),
+///          ('.', (52, 53))]
+///         ```
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Whitespace")]
 pub struct PyWhitespace {}
 #[pymethods]
@@ -366,10 +408,10 @@ impl PyWhitespaceSplit {
 /// Args:
 ///     pattern (:obj:`str` or :class:`~tokenizers.Regex`):
 ///         A pattern used to split the string. Usually a string or a regex built with `tokenizers.Regex`.
-///         If you want to use a regex pattern, it has to be wrapped around a `tokenizer.Regex`,
+///         If you want to use a regex pattern, it has to be wrapped around a `tokenizers.Regex`,
 ///         otherwise we consider is as a string pattern. For example `pattern="|"`
 ///         means you want to split on `|` (imagine a csv file for example), while
-///         `patter=tokenizer.Regex("1|2")` means you split on either '1' or '2'.
+///         `pattern=tokenizers.Regex("1|2")` means you split on either '1' or '2'.
 ///     behavior (:class:`~tokenizers.SplitDelimiterBehavior`):
 ///         The behavior to use when splitting.
 ///         Choices: "removed", "isolated", "merged_with_previous", "merged_with_next",
@@ -398,6 +440,52 @@ impl PySplit {
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
         PyTuple::new(py, [" ", "removed"])
+    }
+
+    #[getter]
+    fn get_pattern(_self: PyRef<Self>) -> PyResult<()> {
+        Err(PyException::new_err("Cannot get pattern"))
+    }
+
+    #[setter]
+    fn set_pattern(_self: PyRef<Self>, _pattern: PyPattern) -> PyResult<()> {
+        Err(PyException::new_err(
+            "Cannot set pattern, please instantiate a new split pattern instead",
+        ))
+    }
+
+    #[getter]
+    fn get_behavior(self_: PyRef<Self>) -> String {
+        getter!(self_, Split, behavior).to_string().to_lowercase()
+    }
+
+    #[setter]
+    fn set_behavior(self_: PyRef<Self>, behavior: String) -> PyResult<()> {
+        let behavior = match behavior.as_ref() {
+            "removed" => SplitDelimiterBehavior::Removed,
+            "isolated" => SplitDelimiterBehavior::Isolated,
+            "merged_with_previous" => SplitDelimiterBehavior::MergedWithPrevious,
+            "merged_with_next" => SplitDelimiterBehavior::MergedWithNext,
+            "contiguous" => SplitDelimiterBehavior::Contiguous,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Wrong value for SplitDelimiterBehavior, expected one of: \
+                `removed, isolated, merged_with_previous, merged_with_next, contiguous`",
+                ))
+            }
+        };
+        setter!(self_, Split, behavior, behavior);
+        Ok(())
+    }
+
+    #[getter]
+    fn get_invert(self_: PyRef<Self>) -> bool {
+        getter!(self_, Split, invert)
+    }
+
+    #[setter]
+    fn set_invert(self_: PyRef<Self>, invert: bool) {
+        setter!(self_, Split, invert, invert)
     }
 }
 
@@ -437,7 +525,7 @@ impl PyCharDelimiterSplit {
 /// BertPreTokenizer
 ///
 /// This pre-tokenizer splits tokens on spaces, and also on punctuation.
-/// Each occurence of a punctuation character will be treated separately.
+/// Each occurrence of a punctuation character will be treated separately.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "BertPreTokenizer")]
 pub struct PyBertPreTokenizer {}
 #[pymethods]
@@ -464,6 +552,32 @@ impl PyPunctuation {
     #[pyo3( signature = (behavior = PySplitDelimiterBehavior(SplitDelimiterBehavior::Isolated)), text_signature = "(self, behavior=\"isolated\")")]
     fn new(behavior: PySplitDelimiterBehavior) -> (Self, PyPreTokenizer) {
         (PyPunctuation {}, Punctuation::new(behavior.into()).into())
+    }
+
+    #[getter]
+    fn get_behavior(self_: PyRef<Self>) -> String {
+        getter!(self_, Punctuation, behavior)
+            .to_string()
+            .to_lowercase()
+    }
+
+    #[setter]
+    fn set_behavior(self_: PyRef<Self>, behavior: String) -> PyResult<()> {
+        let behavior = match behavior.as_ref() {
+            "removed" => SplitDelimiterBehavior::Removed,
+            "isolated" => SplitDelimiterBehavior::Isolated,
+            "merged_with_previous" => SplitDelimiterBehavior::MergedWithPrevious,
+            "merged_with_next" => SplitDelimiterBehavior::MergedWithNext,
+            "contiguous" => SplitDelimiterBehavior::Contiguous,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Wrong value for SplitDelimiterBehavior, expected one of: \
+                `removed, isolated, merged_with_previous, merged_with_next, contiguous`",
+                ))
+            }
+        };
+        setter!(self_, Punctuation, behavior, behavior);
+        Ok(())
     }
 }
 
@@ -498,19 +612,46 @@ impl PySequence {
     fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
         match &self_.as_ref().pretok {
             PyPreTokenizerTypeWrapper::Sequence(inner) => match inner.get(index) {
-                Some(item) => {
-                    PyPreTokenizer::new(PyPreTokenizerTypeWrapper::Single(Arc::clone(item)))
-                        .get_as_subtype(py)
-                }
+                Some(item) => PyPreTokenizer::new(PyPreTokenizerTypeWrapper::Single(item.clone()))
+                    .get_as_subtype(py),
                 _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
                     "Index not found",
                 )),
             },
-            PyPreTokenizerTypeWrapper::Single(inner) => {
-                PyPreTokenizer::new(PyPreTokenizerTypeWrapper::Single(Arc::clone(inner)))
-                    .get_as_subtype(py)
-            }
+            _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                "This processor is not a Sequence, it does not support __getitem__",
+            )),
         }
+    }
+
+    fn __setitem__(self_: PyRef<'_, Self>, index: usize, value: Bound<'_, PyAny>) -> PyResult<()> {
+        let pretok: PyPreTokenizer = value.extract()?;
+        let PyPreTokenizerTypeWrapper::Single(pretok) = pretok.pretok else {
+            return Err(PyException::new_err(
+                "pre tokenizer should not be a sequence",
+            ));
+        };
+        match &self_.as_ref().pretok {
+            PyPreTokenizerTypeWrapper::Sequence(inner) => match inner.get(index) {
+                Some(item) => {
+                    *item
+                        .write()
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))? = (*pretok
+                        .read()
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?)
+                    .clone();
+                }
+                _ => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                        "Index not found",
+                    ))
+                }
+            },
+            PyPreTokenizerTypeWrapper::Single(_) => {
+                return Err(PyException::new_err("pre tokenizer is not a sequence"))
+            }
+        };
+        Ok(())
     }
 }
 
@@ -572,13 +713,7 @@ impl PyMetaspace {
     #[getter]
     fn get_prepend_scheme(self_: PyRef<Self>) -> String {
         // Assuming Metaspace has a method to get the prepend_scheme as a string
-        let scheme: PrependScheme = getter!(self_, Metaspace, get_prepend_scheme());
-        match scheme {
-            PrependScheme::First => "first",
-            PrependScheme::Never => "never",
-            PrependScheme::Always => "always",
-        }
-        .to_string()
+        getter!(self_, Metaspace, get_prepend_scheme()).to_string()
     }
 
     #[setter]
@@ -679,6 +814,7 @@ impl PyUnicodeScripts {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct CustomPreTokenizer {
     inner: PyObject,
 }
@@ -722,7 +858,7 @@ impl<'de> Deserialize<'de> for CustomPreTokenizer {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum PyPreTokenizerWrapper {
     Custom(CustomPreTokenizer),
@@ -741,11 +877,21 @@ impl Serialize for PyPreTokenizerWrapper {
     }
 }
 
-#[derive(Clone, Deserialize)]
-#[serde(untagged)]
+#[derive(Clone)]
 pub(crate) enum PyPreTokenizerTypeWrapper {
     Sequence(Vec<Arc<RwLock<PyPreTokenizerWrapper>>>),
     Single(Arc<RwLock<PyPreTokenizerWrapper>>),
+}
+
+impl<'de> Deserialize<'de> for PyPreTokenizerTypeWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wrapper = PreTokenizerWrapper::deserialize(deserializer)?;
+        let py_wrapper: PyPreTokenizerWrapper = wrapper.into();
+        Ok(py_wrapper.into())
+    }
 }
 
 impl Serialize for PyPreTokenizerTypeWrapper {
@@ -779,7 +925,17 @@ where
     I: Into<PyPreTokenizerWrapper>,
 {
     fn from(pretok: I) -> Self {
-        PyPreTokenizerTypeWrapper::Single(Arc::new(RwLock::new(pretok.into())))
+        let pretok = pretok.into();
+        match pretok {
+            PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::Sequence(seq)) => {
+                PyPreTokenizerTypeWrapper::Sequence(
+                    seq.into_iter()
+                        .map(|e| Arc::new(RwLock::new(PyPreTokenizerWrapper::Wrapped(e.clone()))))
+                        .collect(),
+                )
+            }
+            _ => PyPreTokenizerTypeWrapper::Single(Arc::new(RwLock::new(pretok))),
+        }
     }
 }
 
@@ -797,10 +953,15 @@ where
 impl PreTokenizer for PyPreTokenizerTypeWrapper {
     fn pre_tokenize(&self, pretok: &mut PreTokenizedString) -> tk::Result<()> {
         match self {
-            PyPreTokenizerTypeWrapper::Single(inner) => inner.read().unwrap().pre_tokenize(pretok),
-            PyPreTokenizerTypeWrapper::Sequence(inner) => inner
-                .iter()
-                .try_for_each(|n| n.read().unwrap().pre_tokenize(pretok)),
+            PyPreTokenizerTypeWrapper::Single(inner) => inner
+                .read()
+                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
+                .pre_tokenize(pretok),
+            PyPreTokenizerTypeWrapper::Sequence(inner) => inner.iter().try_for_each(|n| {
+                n.read()
+                    .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
+                    .pre_tokenize(pretok)
+            }),
         }
     }
 }

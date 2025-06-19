@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// The CTC (Connectionist Temporal Classification) decoder takes care
 /// of sanitizing a list of inputs token.
-/// Due to some alignement problem the output of some models can come
+/// Due to some alignment problem the output of some models can come
 /// with duplicated token.
 #[serde(tag = "type")]
 #[non_exhaustive]

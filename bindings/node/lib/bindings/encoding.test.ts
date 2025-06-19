@@ -122,7 +122,7 @@ describe('Encoding', () => {
       expect(indexes).toEqual([3, 5])
     })
 
-    it('returns the corrent indexes with pair sequences', () => {
+    it('returns the correct indexes with pair sequences', () => {
       expect(encodingDual.wordToTokens(3, 0)).toEqual([3, 5])
       expect(encodingDual.wordToTokens(3, 1)).toEqual([8, 9])
     })

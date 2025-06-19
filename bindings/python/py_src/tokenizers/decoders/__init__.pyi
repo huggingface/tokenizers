@@ -33,7 +33,7 @@ class BPEDecoder(Decoder):
 
     Args:
         suffix (:obj:`str`, `optional`, defaults to :obj:`</w>`):
-            The suffix that was used to caracterize an end-of-word. This suffix will
+            The suffix that was used to characterize an end-of-word. This suffix will
             be replaced by whitespaces during the decoding
     """
     def __init__(self, suffix="</w>"):
@@ -57,7 +57,7 @@ class ByteFallback(Decoder):
     ByteFallback Decoder
     ByteFallback is a simple trick which converts tokens looking like `<0x61>`
     to pure bytes, and attempts to make them into a string. If the tokens
-    cannot be decoded you will get � instead for each inconvertable byte token
+    cannot be decoded you will get � instead for each inconvertible byte token
 
     """
     def __init__(self):

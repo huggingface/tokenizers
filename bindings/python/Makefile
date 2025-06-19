@@ -14,8 +14,8 @@ style:
 # Check the source code is formatted correctly
 check-style:
 	python stub.py --check
-	ruff check examples py_src/tokenizers tests 
-	ruff format --check examples py_src/tokenizers tests 
+	ruff check $(check_dirs)
+	ruff format --check $(check_dirs)
 
 TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 

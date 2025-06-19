@@ -221,7 +221,7 @@ pub struct BPE {
     pub unk_token: Option<String>,
     /// An optional prefix to use on any subword that exist only behind another one
     pub continuing_subword_prefix: Option<String>,
-    /// An optional suffix to caracterize and end-of-word subword
+    /// An optional suffix to characterize and end-of-word subword
     pub end_of_word_suffix: Option<String>,
     /// Do multiple unk tokens get fused
     pub fuse_unk: bool,
@@ -460,7 +460,7 @@ impl BPE {
         Ok(word)
     }
 
-    fn word_to_tokens<'a, 'b: 'a>(&'a self, word: &'b Word) -> impl Iterator<Item = Token> + 'a {
+    fn word_to_tokens<'a>(&'a self, word: &'a Word) -> impl Iterator<Item = Token> + 'a {
         word.get_chars_iter()
             .zip(word.get_offsets_iter())
             .map(move |(id, offsets)| Token::new(id, self.vocab_r[&id].clone(), offsets))
@@ -471,7 +471,7 @@ impl BPE {
             if let Some(id) = self.vocab.get(sequence) {
                 return Ok(vec![Token::new(
                     *id,
-                    sequence.to_string().clone(),
+                    sequence.to_string(),
                     (0, sequence.len()),
                 )]);
             }

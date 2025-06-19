@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use criterion::Criterion;
+use criterion::{Criterion, Throughput};
 use tokenizers::models::wordpiece::{WordPiece, WordPieceTrainerBuilder};
 use tokenizers::normalizers::{BertNormalizer, NormalizerWrapper};
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
@@ -49,6 +49,9 @@ pub fn bench_bert(c: &mut Criterion) {
         .build()
         .unwrap();
     let tokenizer = create_bert_tokenizer(wp);
+    let mut group = c.benchmark_group("bert-encode");
+    let data = std::fs::read_to_string("data/big.txt").unwrap();
+    group.throughput(Throughput::Bytes(data.len() as u64));
     let mut lines: Vec<EncodeInput> = vec![];
     let mut batches: Vec<Vec<EncodeInput>> = vec![vec![]];
     for line in BufReader::new(File::open(Path::new("data/big.txt")).unwrap()).lines() {
@@ -60,16 +63,16 @@ pub fn bench_bert(c: &mut Criterion) {
         batches.last_mut().unwrap().push(line);
     }
 
-    c.bench_function("WordPiece BERT encode", |b| {
+    group.bench_function("WordPiece BERT encode", |b| {
         b.iter_custom(|iters| iter_bench_encode(iters, &tokenizer, &lines))
     });
 
-    c.bench_function("WordPiece BERT encode batch", |b| {
+    group.bench_function("WordPiece BERT encode batch", |b| {
         b.iter_custom(|iters| iter_bench_encode_batch(iters, &tokenizer, &batches))
     });
 }
 
-fn bench_train(c: &mut Criterion) {
+fn bench_train_small(c: &mut Criterion) {
     let mut trainer = WordPieceTrainerBuilder::default()
         .show_progress(false)
         .build();
@@ -82,7 +85,10 @@ fn bench_train(c: &mut Criterion) {
     >;
     let mut tokenizer = Tok::new(WordPiece::default());
     tokenizer.with_pre_tokenizer(Some(Whitespace {}));
-    c.bench_function("WordPiece Train vocabulary (small)", |b| {
+    let mut group = c.benchmark_group("bert-train-small");
+    let data = std::fs::read_to_string("data/small.txt").unwrap();
+    group.throughput(Throughput::Bytes(data.len() as u64));
+    group.bench_function("WordPiece Train vocabulary (small)", |b| {
         b.iter_custom(|iters| {
             iter_bench_train(
                 iters,
@@ -92,10 +98,25 @@ fn bench_train(c: &mut Criterion) {
             )
         })
     });
+}
 
+fn bench_train_big(c: &mut Criterion) {
+    let mut trainer = WordPieceTrainerBuilder::default()
+        .show_progress(false)
+        .build();
+    type Tok = TokenizerImpl<
+        WordPiece,
+        NormalizerWrapper,
+        Whitespace,
+        PostProcessorWrapper,
+        DecoderWrapper,
+    >;
     let mut tokenizer = Tok::new(WordPiece::default());
     tokenizer.with_pre_tokenizer(Some(Whitespace {}));
-    c.bench_function("WordPiece Train vocabulary (big)", |b| {
+    let mut group = c.benchmark_group("bert-train-big");
+    let data = std::fs::read_to_string("data/big.txt").unwrap();
+    group.throughput(Throughput::Bytes(data.len() as u64));
+    group.bench_function("WordPiece Train vocabulary (big)", |b| {
         b.iter_custom(|iters| {
             iter_bench_train(
                 iters,
@@ -114,9 +135,15 @@ criterion_group! {
 }
 
 criterion_group! {
-    name = benches_train;
+    name = benches_train_small;
     config = Criterion::default().sample_size(10);
-    targets = bench_train
+    targets = bench_train_small
 }
 
-criterion_main!(bert_benches, benches_train);
+criterion_group! {
+    name = benches_train_big;
+    config = Criterion::default().sample_size(10);
+    targets = bench_train_big
+}
+
+criterion_main!(bert_benches, benches_train_small, benches_train_big);

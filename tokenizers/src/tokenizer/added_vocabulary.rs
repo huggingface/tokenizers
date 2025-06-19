@@ -5,6 +5,7 @@ use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
@@ -28,7 +29,7 @@ pub struct AddedToken {
 }
 
 impl AddedToken {
-    /// Build this token from the given content, specifying if it is intented to be a
+    /// Build this token from the given content, specifying if it is intended to be a
     /// special token. Special tokens are not normalized by default.
     pub fn from<S: Into<String>>(content: S, special: bool) -> Self {
         Self {
@@ -94,12 +95,10 @@ impl std::hash::Hash for AddedToken {
 
 type MatchingSet = (AhoCorasick, Vec<u32>);
 
-lazy_static! {
-    static ref STARTS_WITH_WORD: Regex = Regex::new(r"^\w").unwrap();
-    static ref ENDS_WITH_WORD: Regex = Regex::new(r"\w$").unwrap();
-    static ref RIGHTMOST_SPACE_AT_START: Regex = Regex::new(r"^\s*").unwrap();
-    static ref LEFTMOST_SPACE_AT_END: Regex = Regex::new(r"\s*$").unwrap();
-}
+static STARTS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\w").unwrap());
+static ENDS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\w$").unwrap());
+static RIGHTMOST_SPACE_AT_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*").unwrap());
+static LEFTMOST_SPACE_AT_END: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*$").unwrap());
 
 fn ends_with_word(sentence: &str) -> bool {
     ENDS_WITH_WORD.is_match(sentence)
@@ -297,15 +296,12 @@ impl AddedVocabulary {
                 )
             };
             // Make sure we modify the previous entry
-            self.added_tokens_map
+            *self
+                .added_tokens_map
                 .entry(token.content.clone())
-                .and_modify(|old_id| *old_id = new_id)
-                .or_insert_with(|| new_id);
+                .or_default() = new_id;
             // Update the current revert operation
-            self.added_tokens_map_r
-                .entry(new_id)
-                .and_modify(|t| *t = token.clone())
-                .or_insert_with(|| token.clone());
+            *self.added_tokens_map_r.entry(new_id).or_default() = token.clone();
             // Make sure to remove previous entry (if the token gets a new id)
 
             // Finally add the token to the classic set if special
@@ -669,7 +665,7 @@ mod tests {
         // Also adds tokens already covered by the model
         let added_token = AddedToken::from("test", false);
         assert_eq!(
-            vocab.add_tokens(&[added_token.clone()], &model, normalizer),
+            vocab.add_tokens(std::slice::from_ref(&added_token), &model, normalizer),
             1
         );
         assert_eq!(vocab.len(), 3);

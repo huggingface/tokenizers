@@ -48,7 +48,7 @@ class BertPreTokenizer(PreTokenizer):
     BertPreTokenizer
 
     This pre-tokenizer splits tokens on spaces, and also on punctuation.
-    Each occurence of a punctuation character will be treated separately.
+    Each occurrence of a punctuation character will be treated separately.
     """
     def __init__(self):
         pass
@@ -474,10 +474,10 @@ class Split(PreTokenizer):
     Args:
         pattern (:obj:`str` or :class:`~tokenizers.Regex`):
             A pattern used to split the string. Usually a string or a regex built with `tokenizers.Regex`.
-            If you want to use a regex pattern, it has to be wrapped around a `tokenizer.Regex`,
+            If you want to use a regex pattern, it has to be wrapped around a `tokenizers.Regex`,
             otherwise we consider is as a string pattern. For example `pattern="|"`
             means you want to split on `|` (imagine a csv file for example), while
-            `patter=tokenizer.Regex("1|2")` means you split on either '1' or '2'.
+            `pattern=tokenizers.Regex("1|2")` means you split on either '1' or '2'.
         behavior (:class:`~tokenizers.SplitDelimiterBehavior`):
             The behavior to use when splitting.
             Choices: "removed", "isolated", "merged_with_previous", "merged_with_next",
@@ -575,7 +575,34 @@ class UnicodeScripts(PreTokenizer):
 
 class Whitespace(PreTokenizer):
     """
-    This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`
+    This pre-tokenizer splits on word boundaries according to the `\w+|[^\w\s]+`
+    regex pattern. It splits on word characters or characters that aren't words or
+    whitespaces (punctuation such as hyphens, apostrophes, commas, etc.).
+
+    Example:
+        Use the `Whitespace` function as shown below::
+
+            ```python
+            from tokenizers.pre_tokenizers import Whitespace
+
+            pre_tokenizer = Whitespace()
+            text = "Hello, world! Let's try the Whitespace pre-tokenizer."
+            pre_tokenizer.pre_tokenize_str(text)
+            [('Hello', (0, 5)),
+             (',', (5, 6)),
+             ('world', (7, 12)),
+             ('!', (12, 13)),
+             ('Let', (14, 17)),
+             ("'", (17, 18)),
+             ('s', (18, 19)),
+             ('try', (20, 23)),
+             ('the', (24, 27)),
+             ('Whitespace', (28, 38)),
+             ('pre', (39, 42)),
+             ('-', (42, 43)),
+             ('tokenizer', (43, 52)),
+             ('.', (52, 53))]
+            ```
     """
     def __init__(self):
         pass

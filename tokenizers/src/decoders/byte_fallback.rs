@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Clone, Debug, Serialize, Default)]
 /// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
 /// to pure bytes, and attempts to make them into a string. If the tokens
-/// cannot be decoded you will get � instead for each inconvertable byte token
+/// cannot be decoded you will get � instead for each inconvertible byte token
 #[non_exhaustive]
 pub struct ByteFallback {
     #[serde(rename = "type")]
@@ -28,11 +28,7 @@ impl Decoder for ByteFallback {
 
         for token in tokens {
             let bytes = if token.len() == 6 && token.starts_with("<0x") && token.ends_with('>') {
-                if let Ok(byte) = u8::from_str_radix(&token[3..5], 16) {
-                    Some(byte)
-                } else {
-                    None
-                }
+                u8::from_str_radix(&token[3..5], 16).ok()
             } else {
                 None
             };

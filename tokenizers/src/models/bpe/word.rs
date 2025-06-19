@@ -1,5 +1,5 @@
 use super::Pair;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 
@@ -177,10 +177,7 @@ impl Word {
         );
 
         while let Some(top) = queue.pop() {
-            if dropout
-                .map(|d| thread_rng().gen::<f32>() < d)
-                .unwrap_or(false)
-            {
+            if dropout.map(|d| rng().random::<f32>() < d).unwrap_or(false) {
                 skip.push(top);
             } else {
                 // Re-insert the skipped elements
@@ -199,9 +196,9 @@ impl Word {
 
                 // Make sure we are not processing an expired queue entry
                 let target_new_pair = (self.symbols[top.pos].c, right.c);
-                if !merges
+                if merges
                     .get(&target_new_pair)
-                    .map_or(false, |(_, new_id)| *new_id == top.new_id)
+                    .is_none_or(|(_, new_id)| *new_id != top.new_id)
                 {
                     continue;
                 }
