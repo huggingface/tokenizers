@@ -12,6 +12,7 @@ use tk::pre_tokenizers::bert::BertPreTokenizer;
 use tk::pre_tokenizers::byte_level::ByteLevel;
 use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk::pre_tokenizers::digits::Digits;
+use tk::pre_tokenizers::fixed_length::FixedLength;
 use tk::pre_tokenizers::metaspace::{Metaspace, PrependScheme};
 use tk::pre_tokenizers::punctuation::Punctuation;
 use tk::pre_tokenizers::split::Split;
@@ -114,6 +115,12 @@ impl PyPreTokenizer {
                             .into(),
                         PreTokenizerWrapper::UnicodeScripts(_) => {
                             Py::new(py, (PyUnicodeScripts {}, base))?
+                                .into_pyobject(py)?
+                                .into_any()
+                                .into()
+                        }
+                        PreTokenizerWrapper::FixedLength(_) => {
+                            Py::new(py, (PyFixedLength {}, base))?
                                 .into_pyobject(py)?
                                 .into_any()
                                 .into()
@@ -762,6 +769,36 @@ impl PyDigits {
     }
 }
 
+/// This pre-tokenizer splits the text into fixed length chunks as used
+/// [here](https://www.biorxiv.org/content/10.1101/2023.01.11.523679v1.full)
+///
+/// Args:
+///     length (:obj:`int`, `optional`, defaults to :obj:`5`):
+///         The length of the chunks to split the text into.
+///
+///         Strings are split on the character level rather than the byte level to avoid
+///         splitting unicode characters consisting of multiple bytes.
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "FixedLength")]
+pub struct PyFixedLength {}
+#[pymethods]
+impl PyFixedLength {
+    #[getter]
+    fn get_length(self_: PyRef<Self>) -> usize {
+        getter!(self_, FixedLength, length)
+    }
+
+    #[setter]
+    fn set_length(self_: PyRef<Self>, length: usize) {
+        setter!(self_, FixedLength, length, length);
+    }
+
+    #[new]
+    #[pyo3(signature = (length = 5), text_signature = "(self, length=5)")]
+    fn new(length: usize) -> (Self, PyPreTokenizer) {
+        (PyFixedLength {}, FixedLength::new(length).into())
+    }
+}
+
 /// This pre-tokenizer splits on characters that belong to different language family
 /// It roughly follows https://github.com/google/sentencepiece/blob/master/data/Scripts.txt
 /// Actually Hiragana and Katakana are fused with Han, and 0x30FC is Han too.
@@ -953,6 +990,7 @@ pub fn pre_tokenizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySequence>()?;
     m.add_class::<PyDigits>()?;
     m.add_class::<PyUnicodeScripts>()?;
+    m.add_class::<PyFixedLength>()?;
     Ok(())
 }
 
