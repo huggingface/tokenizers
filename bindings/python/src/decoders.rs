@@ -1,5 +1,3 @@
-use std::sync::{Arc, RwLock};
-
 use crate::pre_tokenizers::from_string;
 use crate::tokenizer::PyTokenizer;
 use crate::utils::PyPattern;
@@ -8,6 +6,8 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use tk::decoders::bpe::BPEDecoder;
 use tk::decoders::byte_fallback::ByteFallback;
 use tk::decoders::byte_level::ByteLevel;
@@ -603,6 +603,176 @@ impl Decoder for PyDecoderWrapper {
     }
 }
 
+/// Class needed for streaming decode
+///
+#[pyclass(module = "tokenizers.decoders", name = "DecodeStream")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub struct PyDecodeStream {
+    /// Regular decode option that is kept throughout.
+    skip_special_tokens: bool,
+    prefills: Vec<Vec<u32>>,
+    states: Vec<PyDecodeState>,
+    hash_to_index: std::collections::HashMap<String, usize>,
+    prefill_hashes: Vec<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(tag = "state")]
+struct PyDecodeState {
+    ids: Vec<u32>,
+    prefix: String,
+    prefix_index: usize,
+}
+
+// Define enum for inputs
+#[derive(FromPyObject)]
+enum StepInput {
+    Map(HashMap<String, Vec<u32>>),
+    Single(Vec<u32>),
+}
+
+// Define enum for outputs
+#[derive(IntoPyObject)]
+enum StepOutput {
+    Map(HashMap<String, Option<String>>),
+    Single(Option<String>),
+}
+
+#[pymethods]
+impl PyDecodeStream {
+    #[new]
+    #[pyo3(signature = (skip_special_tokens=true), text_signature = "(self, skip_special_tokens=True)")]
+    fn new(skip_special_tokens: Option<bool>) -> Self {
+        let skip_special_tokens = skip_special_tokens.unwrap_or(true);
+        PyDecodeStream {
+            skip_special_tokens,
+            prefills: Vec::new(),
+            states: Vec::new(),
+            hash_to_index: HashMap::new(),
+            prefill_hashes: Vec::new(),
+        }
+    }
+
+    #[pyo3(signature = (tokenizer, inputs), text_signature = "(self, tokenizer, inputs)")]
+    fn step(&mut self, tokenizer: &PyTokenizer, inputs: StepInput) -> PyResult<StepOutput> {
+        match inputs {
+            StepInput::Map(map) => {
+                let mut output = HashMap::new();
+                for (hash, tokens) in map {
+                    let (prefix_ids, last_token) = match tokens.split_last() {
+                        Some((last, prefix)) => (prefix.to_vec(), *last),
+                        None => {
+                            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                                "Empty token sequence",
+                            ))
+                        }
+                    };
+                    let idx = if let Some(&idx) = self.hash_to_index.get(&hash) {
+                        idx
+                    } else {
+                        let state = PyDecodeState {
+                            ids: prefix_ids.clone(),
+                            prefix: String::new(),
+                            prefix_index: prefix_ids.len(),
+                        };
+                        self.states.push(state);
+                        self.prefill_hashes.push(hash.clone());
+                        let new_idx = self.states.len() - 1;
+                        self.hash_to_index.insert(hash.clone(), new_idx);
+                        new_idx
+                    };
+
+                    let state = &mut self.states[idx];
+                    let res = tk::tokenizer::step_decode_stream(
+                        &tokenizer.tokenizer,
+                        last_token,
+                        self.skip_special_tokens,
+                        &mut state.ids,
+                        &mut state.prefix,
+                        &mut state.prefix_index,
+                    )
+                    .map_err(|e| {
+                        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                            "decode error: {}",
+                            e
+                        ))
+                    })?;
+                    output.insert(hash, res);
+                }
+                Ok(StepOutput::Map(output))
+            }
+
+            StepInput::Single(tokens) => {
+                let (prefix_ids, last_token) = match tokens.split_last() {
+                    Some((last, prefix)) => (prefix.to_vec(), *last),
+                    None => {
+                        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                            "Empty token sequence",
+                        ))
+                    }
+                };
+                if self.states.is_empty() {
+                    let state = PyDecodeState {
+                        ids: prefix_ids.clone(),
+                        prefix: String::new(),
+                        prefix_index: 0,
+                    };
+                    self.states.push(state);
+                    self.prefill_hashes.push("".into());
+                    self.hash_to_index.insert("".into(), 0);
+                }
+                let state = &mut self.states[0];
+                let res = tk::tokenizer::step_decode_stream(
+                    &tokenizer.tokenizer,
+                    last_token,
+                    self.skip_special_tokens,
+                    &mut state.ids,
+                    &mut state.prefix,
+                    &mut state.prefix_index,
+                )
+                .map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                        "decode error: {}",
+                        e
+                    ))
+                })?;
+
+                Ok(StepOutput::Single(res))
+            }
+        }
+    }
+
+    #[pyo3(signature = (hashes=None), text_signature = "(self, hashes=None)")]
+    fn finish(&mut self, hashes: Option<Vec<String>>) {
+        if let Some(hashes) = hashes {
+            // If no hashes are provided, we clear all states
+            use std::collections::HashSet;
+            let remove_set: HashSet<String> = hashes.into_iter().collect();
+            for hash in remove_set {
+                if self.hash_to_index.contains_key(&hash) {
+                    // Remove the state and hash
+                    let idx = self.hash_to_index[&hash];
+                    self.states.remove(idx);
+                    self.prefill_hashes.remove(idx);
+                    self.hash_to_index.remove(&hash);
+                }
+            }
+        } else {
+            self.states.clear();
+            self.prefill_hashes.clear();
+            self.hash_to_index.clear();
+            return;
+            // Build a set of hashes to remove
+        }
+    }
+
+    #[getter]
+    fn prefill_hashes(&self) -> Vec<String> {
+        self.prefill_hashes.clone()
+    }
+}
+
 /// Decoders Module
 #[pymodule]
 pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -619,60 +789,6 @@ pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySequenceDecoder>()?;
     m.add_class::<PyDecodeStream>()?;
     Ok(())
-}
-
-/// Class needed for streaming decode
-///
-#[pyclass(module = "tokenizers.decoders", name = "DecodeStream")]
-#[derive(Clone)]
-pub struct PyDecodeStream {
-    /// Regular decode option that is kept throughout.
-    skip_special_tokens: bool,
-    /// A temporary buffer of the necessary token_ids needed
-    /// to produce valid string chunks.
-    /// This typically contains 3 parts:
-    ///  - read
-    ///  - prefix
-    ///  - rest
-    ///
-    /// Read is the bit necessary to surround the prefix
-    /// so decoding the whole ids produces a valid prefix.
-    /// Prefix is the previously produced string, kept around to trim off of
-    /// the next valid chunk
-    ids: Vec<u32>,
-    /// The previously returned chunk that needs to be discarded from the
-    /// decoding of the current ids to produce the next chunk
-    prefix: String,
-    /// The index within the ids corresponding to the prefix so we can drain
-    /// correctly
-    prefix_index: usize,
-}
-
-#[pymethods]
-impl PyDecodeStream {
-    #[new]
-    #[pyo3(signature = (skip_special_tokens), text_signature = "(self, skip_special_tokens)")]
-    fn new(skip_special_tokens: bool) -> Self {
-        PyDecodeStream {
-            skip_special_tokens,
-            ids: vec![],
-            prefix: "".to_string(),
-            prefix_index: 0,
-        }
-    }
-
-    #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
-    fn step(&mut self, tokenizer: &PyTokenizer, id: u32) -> PyResult<Option<String>> {
-        ToPyResult(tk::tokenizer::step_decode_stream(
-            &tokenizer.tokenizer,
-            id,
-            self.skip_special_tokens,
-            &mut self.ids,
-            &mut self.prefix,
-            &mut self.prefix_index,
-        ))
-        .into()
-    }
 }
 
 #[cfg(test)]
