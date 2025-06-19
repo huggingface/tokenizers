@@ -27,6 +27,11 @@ versatility.
    original sentence that corresponds to a given token.
  - Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
 
+## Performances
+Performances can vary depending on hardware, but running the [~/bindings/python/benches/test_tiktoken.py](bindings/python/benches/test_tiktoken.py) should give the following on a g6 aws instance:
+![image](https://github.com/user-attachments/assets/2b913d4b-e488-4cbc-b542-f90a6c40643d)
+
+
 ## Bindings
 
 We provide bindings to the following languages (more to come!):
@@ -34,6 +39,19 @@ We provide bindings to the following languages (more to come!):
   - [Python](https://github.com/huggingface/tokenizers/tree/main/bindings/python)
   - [Node.js](https://github.com/huggingface/tokenizers/tree/main/bindings/node)
   - [Ruby](https://github.com/ankane/tokenizers-ruby) (Contributed by @ankane, external repo)
+
+## Installation
+
+You can install from source using:
+```bash
+pip install git+https://github.com/huggingface/tokenizers.git#subdirectory=bindings/python
+```
+
+our install the released versions with
+
+```bash
+pip install tokenizers
+```
  
 ## Quick example using Python:
 

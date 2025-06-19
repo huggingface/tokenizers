@@ -35,10 +35,22 @@ impl PyModel {
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
         Ok(match *self.model.as_ref().read().unwrap() {
-            ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?.into_py(py),
-            ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base))?.into_py(py),
-            ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base))?.into_py(py),
-            ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base))?.into_py(py),
+            ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
         })
     }
 }
@@ -105,13 +117,13 @@ impl PyModel {
                 e
             ))
         })?;
-        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        match state.extract::<&PyBytes>(py) {
+        match state.extract::<&[u8]>(py) {
             Ok(s) => {
-                self.model = serde_json::from_slice(s.as_bytes()).map_err(|e| {
+                self.model = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle Model: {}",
                         e
@@ -181,7 +193,7 @@ impl PyModel {
     ///
     /// Returns:
     ///     :obj:`List[str]`: The list of saved files
-    #[pyo3(text_signature = "(self, folder, prefix)")]
+    #[pyo3(signature = (folder, prefix=None, name=None), text_signature = "(self, folder, prefix)")]
     fn save<'a>(
         &self,
         py: Python<'_>,
@@ -276,8 +288,8 @@ impl PyBPE {
     ) -> PyResult<(Self, PyModel)> {
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "cache_capacity" => builder = builder.cache_capacity(value.extract()?),
                     "dropout" => {
                         if let Some(dropout) = value.extract()? {
@@ -534,6 +546,30 @@ impl PyBPE {
             )?,
         )
     }
+
+    /// Clears the internal cache
+    #[pyo3(signature = ())]
+    #[pyo3(text_signature = "(self)")]
+    fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while clearing BPE cache: {}", e))
+        })?;
+        model.clear_cache();
+        Ok(())
+    }
+
+    /// Resize the internal cache
+    #[pyo3(signature = (capacity))]
+    #[pyo3(text_signature = "(self, capacity)")]
+    fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while resizing BPE cache: {}", e))
+        })?;
+        model.resize_cache(capacity);
+        Ok(())
+    }
 }
 
 /// An implementation of the WordPiece algorithm
@@ -557,8 +593,8 @@ impl PyWordPiece {
     ) -> PyResult<(Self, PyModel)> {
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "unk_token" => {
                         builder = builder.unk_token(val.extract()?);
                     }
@@ -835,7 +871,7 @@ pub struct PyUnigram {}
 #[pymethods]
 impl PyUnigram {
     #[new]
-    #[pyo3(text_signature = "(self, vocab, unk_id, byte_fallback)")]
+    #[pyo3(signature = (vocab=None, unk_id=None, byte_fallback=None), text_signature = "(self, vocab, unk_id, byte_fallback)")]
     fn new(
         vocab: Option<Vec<(String, f64)>>,
         unk_id: Option<usize>,
@@ -857,6 +893,30 @@ impl PyUnigram {
                 "`vocab` and `unk_id` must be both specified",
             )),
         }
+    }
+
+    /// Clears the internal cache
+    #[pyo3(signature = ())]
+    #[pyo3(text_signature = "(self)")]
+    fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while clearing Unigram cache: {}", e))
+        })?;
+        model.clear_cache();
+        Ok(())
+    }
+
+    /// Resize the internal cache
+    #[pyo3(signature = (capacity))]
+    #[pyo3(text_signature = "(self, capacity)")]
+    fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while resizing Unigram cache: {}", e))
+        })?;
+        model.resize_cache(capacity);
+        Ok(())
     }
 }
 

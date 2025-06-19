@@ -401,7 +401,7 @@ impl UnigramTrainer {
 
                 let logsum_alt = (sum + freq[id] * (alternatives.len() - 1) as f64).ln();
 
-                // The frequencies of altenatives are increased by freq[i].
+                // The frequencies of alternatives are increased by freq[i].
                 let mut logprob_alt = 0.0;
                 for n in &alternatives[id] {
                     logprob_alt += (freq[*n] + freq[id]).ln() - logsum_alt;
@@ -428,7 +428,7 @@ impl UnigramTrainer {
             new_pieces.push(pieces[id].clone());
         }
 
-        new_pieces.to_vec()
+        new_pieces
     }
 
     /// Update the progress bar with the new provided length and message
@@ -637,7 +637,7 @@ impl Trainer for UnigramTrainer {
                 let words = process(sequence.as_ref())?;
                 let mut map = HashMap::new();
                 for word in words {
-                    map.entry(word).and_modify(|c| *c += 1).or_insert(1);
+                    *map.entry(word).or_default() += 1;
                 }
                 Ok(map)
             })
@@ -646,7 +646,7 @@ impl Trainer for UnigramTrainer {
                 |acc, ws| {
                     let mut acc = acc?;
                     for (k, v) in ws? {
-                        acc.entry(k).and_modify(|c| *c += v).or_insert(v);
+                        *acc.entry(k).or_default() += v;
                     }
                     Ok(acc)
                 },

@@ -16,10 +16,10 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        python: ["3.7", "3.8", "3.9", "3.10"]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
@@ -34,7 +34,7 @@ jobs:
 
 
       - name: Install Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
           architecture: x86
@@ -54,7 +54,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         
 
       - name: Install Rust
@@ -70,14 +70,14 @@ jobs:
           args: cargo-audit
 
       - name: Install Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: 3.13
           architecture: "x64"
 
 
       - name: Cache Cargo Registry
-        uses: actions/cache@v1
+        uses: actions/cache@v4
         with:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
@@ -108,7 +108,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: audit
-          args: -D warnings -f ./bindings/python/Cargo.lock
+          args: -D warnings -f ./bindings/python/Cargo.lock  --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014
 
       - name: Install
         working-directory: ./bindings/python

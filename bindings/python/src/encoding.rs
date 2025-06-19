@@ -37,13 +37,13 @@ impl PyEncoding {
                 e
             ))
         })?;
-        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        match state.extract::<&PyBytes>(py) {
+        match state.extract::<&[u8]>(py) {
             Ok(s) => {
-                self.encoding = serde_json::from_slice(s.as_bytes()).map_err(|e| {
+                self.encoding = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle Encoding: {}",
                         e
@@ -399,11 +399,11 @@ impl PyEncoding {
 
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "direction" => {
-                        let value: &str = value.extract()?;
-                        direction = match value {
+                        let value: String = value.extract()?;
+                        direction = match value.as_ref() {
                             "left" => Ok(PaddingDirection::Left),
                             "right" => Ok(PaddingDirection::Right),
                             other => Err(PyError(format!(

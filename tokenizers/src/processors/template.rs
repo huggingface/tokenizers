@@ -150,7 +150,7 @@ impl TryFrom<String> for Piece {
     fn try_from(s: String) -> StdResult<Self, Self::Error> {
         let parts = s.split(':').collect::<Vec<_>>();
 
-        let err = || format!("Cannot build Piece from string \"{}\"", s);
+        let err = || format!("Cannot build Piece from string \"{s}\"");
         match parts.as_slice() {
             [id, type_id] => {
                 let type_id: u32 = type_id.parse().map_err(|_| err())?;
@@ -338,7 +338,7 @@ impl From<HashMap<String, SpecialToken>> for Tokens {
 #[builder(build_fn(validate = "Self::validate"))]
 pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
-    single: Template,
+    pub single: Template,
     #[builder(try_setter, default = "\"$A:0 $B:1\".try_into().unwrap()")]
     pair: Template,
     #[builder(setter(skip), default = "self.default_added(true)")]
@@ -349,6 +349,58 @@ pub struct TemplateProcessing {
     added_pair: usize,
     #[builder(setter(into), default)]
     special_tokens: Tokens,
+}
+
+impl TemplateProcessing {
+    // Getter for `single`
+    pub fn get_single(&self) -> String {
+        format!("{:?}", self.single)
+    }
+
+    // Setter for `single`
+    pub fn set_single(&mut self, single: Template) {
+        self.single = single;
+    }
+
+    // Getter for `pair`
+    pub fn get_pair(&self) -> &Template {
+        &self.pair
+    }
+
+    // Setter for `pair`
+    pub fn set_pair(&mut self, pair: Template) {
+        self.pair = pair;
+    }
+
+    // Getter for `added_single`
+    pub fn get_added_single(&self) -> usize {
+        self.added_single
+    }
+
+    // Setter for `added_single`
+    pub fn set_added_single(&mut self, added_single: usize) {
+        self.added_single = added_single;
+    }
+
+    // Getter for `added_pair`
+    pub fn get_added_pair(&self) -> usize {
+        self.added_pair
+    }
+
+    // Setter for `added_pair`
+    pub fn set_added_pair(&mut self, added_pair: usize) {
+        self.added_pair = added_pair;
+    }
+
+    // Getter for `special_tokens`
+    pub fn get_special_tokens(&self) -> &Tokens {
+        &self.special_tokens
+    }
+
+    // Setter for `special_tokens`
+    pub fn set_special_tokens(&mut self, special_tokens: Tokens) {
+        self.special_tokens = special_tokens;
+    }
 }
 
 impl From<&str> for TemplateProcessingBuilderError {
@@ -414,7 +466,7 @@ impl TemplateProcessingBuilder {
     }
 
     fn validate(&self) -> std::result::Result<(), String> {
-        let pair_has_both = self.pair.as_ref().map_or(true, |pair| {
+        let pair_has_both = self.pair.as_ref().is_none_or(|pair| {
             let mut has_a = false;
             let mut has_b = false;
             for piece in &pair.0 {
@@ -441,7 +493,7 @@ impl TemplateProcessingBuilder {
             let exist = self
                 .special_tokens
                 .as_ref()
-                .map_or(false, |map| map.0.contains_key(sp));
+                .is_some_and(|map| map.0.contains_key(sp));
 
             match exist {
                 false => Some(sp),
@@ -508,21 +560,21 @@ impl TemplateProcessing {
                     }
                     Piece::SpecialToken { id, type_id } => {
                         if add_special_tokens {
-                            let tok = &self.special_tokens.0[id]; // We already checked existance above
+                            let tok = &self.special_tokens.0[id]; // We already checked existence above
                             let len = tok.ids.len();
 
                             let encoding = Encoding::new(
                                 tok.ids.clone(),
-                                std::iter::repeat(*type_id).take(len).collect(),
+                                std::iter::repeat_n(*type_id, len).collect(),
                                 tok.tokens.clone(),
                                 // words
-                                std::iter::repeat(None).take(len).collect(),
+                                std::iter::repeat_n(None, len).collect(),
                                 // offsets
-                                std::iter::repeat((0, 0)).take(len).collect(),
+                                std::iter::repeat_n((0, 0), len).collect(),
                                 // special_tokens_mask
-                                std::iter::repeat(1).take(len).collect(),
+                                std::iter::repeat_n(1, len).collect(),
                                 // attention_mask
-                                std::iter::repeat(1).take(len).collect(),
+                                std::iter::repeat_n(1, len).collect(),
                                 // overflowing
                                 vec![],
                                 // sequence_range

@@ -93,7 +93,7 @@ impl WordPieceBuilder {
         self
     }
 
-    /// Contructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
+    /// Constructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
     pub fn build(mut self) -> Result<WordPiece> {
         if let Some(vocab) = self.config.files {
             self.config.vocab = WordPiece::read_file(&vocab)?;
@@ -271,7 +271,7 @@ impl Model for WordPiece {
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let vocab_file_name = match name {
-            Some(name) => format!("{}-vocab.txt", name),
+            Some(name) => format!("{name}-vocab.txt"),
             None => "vocab.txt".to_string(),
         };
 
@@ -285,7 +285,7 @@ impl Model for WordPiece {
         vocab_file.write_all(
             &vocab
                 .into_iter()
-                .flat_map(|(token, _)| format!("{}\n", token).as_bytes().to_owned())
+                .flat_map(|(token, _)| format!("{token}\n").as_bytes().to_owned())
                 .collect::<Vec<_>>()[..],
         )?;
 

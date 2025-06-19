@@ -253,7 +253,7 @@ been trained if you are using a pretrained tokenizer).
 The role of the model is to split your "words" into tokens, using the rules it has learned. It's
 also responsible for mapping those tokens to their corresponding IDs in the vocabulary of the model.
 
-This model is passed along when intializing the :entity:`Tokenizer` so you already know
+This model is passed along when initializing the :entity:`Tokenizer` so you already know
 how to customize this part. Currently, the 🤗 Tokenizers library supports:
 
 - :entity:`models.BPE`

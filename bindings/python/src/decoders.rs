@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use crate::pre_tokenizers::from_string;
+use crate::tokenizer::PyTokenizer;
 use crate::utils::PyPattern;
 use pyo3::exceptions;
 use pyo3::prelude::*;
@@ -42,22 +43,48 @@ impl PyDecoder {
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
         Ok(match &self.decoder {
-            PyDecoderWrapper::Custom(_) => Py::new(py, base)?.into_py(py),
+            PyDecoderWrapper::Custom(_) => Py::new(py, base)?.into_pyobject(py)?.into_any().into(),
             PyDecoderWrapper::Wrapped(inner) => match &*inner.as_ref().read().unwrap() {
-                DecoderWrapper::Metaspace(_) => Py::new(py, (PyMetaspaceDec {}, base))?.into_py(py),
-                DecoderWrapper::WordPiece(_) => Py::new(py, (PyWordPieceDec {}, base))?.into_py(py),
-                DecoderWrapper::ByteFallback(_) => {
-                    Py::new(py, (PyByteFallbackDec {}, base))?.into_py(py)
-                }
-                DecoderWrapper::Strip(_) => Py::new(py, (PyStrip {}, base))?.into_py(py),
-                DecoderWrapper::Fuse(_) => Py::new(py, (PyFuseDec {}, base))?.into_py(py),
-                DecoderWrapper::ByteLevel(_) => Py::new(py, (PyByteLevelDec {}, base))?.into_py(py),
-                DecoderWrapper::Replace(_) => Py::new(py, (PyReplaceDec {}, base))?.into_py(py),
-                DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base))?.into_py(py),
-                DecoderWrapper::CTC(_) => Py::new(py, (PyCTCDecoder {}, base))?.into_py(py),
-                DecoderWrapper::Sequence(_) => {
-                    Py::new(py, (PySequenceDecoder {}, base))?.into_py(py)
-                }
+                DecoderWrapper::Metaspace(_) => Py::new(py, (PyMetaspaceDec {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::WordPiece(_) => Py::new(py, (PyWordPieceDec {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::ByteFallback(_) => Py::new(py, (PyByteFallbackDec {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::Strip(_) => Py::new(py, (PyStrip {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::Fuse(_) => Py::new(py, (PyFuseDec {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::ByteLevel(_) => Py::new(py, (PyByteLevelDec {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::Replace(_) => Py::new(py, (PyReplaceDec {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::CTC(_) => Py::new(py, (PyCTCDecoder {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
+                DecoderWrapper::Sequence(_) => Py::new(py, (PySequenceDecoder {}, base))?
+                    .into_pyobject(py)?
+                    .into_any()
+                    .into(),
             },
         })
     }
@@ -84,13 +111,13 @@ impl PyDecoder {
                 e
             ))
         })?;
-        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        match state.extract::<&PyBytes>(py) {
+        match state.extract::<&[u8]>(py) {
             Ok(s) => {
-                self.decoder = serde_json::from_slice(s.as_bytes()).map_err(|e| {
+                self.decoder = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle Decoder: {}",
                         e
@@ -236,7 +263,7 @@ impl PyWordPieceDec {
 /// ByteFallback Decoder
 /// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
 /// to pure bytes, and attempts to make them into a string. If the tokens
-/// cannot be decoded you will get � instead for each inconvertable byte token
+/// cannot be decoded you will get � instead for each inconvertible byte token
 ///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "ByteFallback")]
 pub struct PyByteFallbackDec {}
@@ -377,7 +404,7 @@ impl PyMetaspaceDec {
 ///
 /// Args:
 ///     suffix (:obj:`str`, `optional`, defaults to :obj:`</w>`):
-///         The suffix that was used to caracterize an end-of-word. This suffix will
+///         The suffix that was used to characterize an end-of-word. This suffix will
 ///         be replaced by whitespaces during the decoding
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "BPEDecoder")]
 pub struct PyBPEDecoder {}
@@ -483,12 +510,11 @@ impl PySequenceDecoder {
         Ok((PySequenceDecoder {}, Sequence::new(decoders).into()))
     }
 
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> Bound<'p, PyTuple> {
-        PyTuple::new_bound(py, [PyList::empty_bound(py)])
+    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
+        PyTuple::new(py, [PyList::empty(py)])
     }
 }
 
-#[derive(Clone)]
 pub(crate) struct CustomDecoder {
     inner: PyObject,
 }
@@ -504,7 +530,7 @@ impl Decoder for CustomDecoder {
         Python::with_gil(|py| {
             let decoded = self
                 .inner
-                .call_method_bound(py, "decode", (tokens,), None)?
+                .call_method(py, "decode", (tokens,), None)?
                 .extract(py)?;
             Ok(decoded)
         })
@@ -514,7 +540,7 @@ impl Decoder for CustomDecoder {
         Python::with_gil(|py| {
             let decoded = self
                 .inner
-                .call_method_bound(py, "decode_chain", (tokens,), None)?
+                .call_method(py, "decode_chain", (tokens,), None)?
                 .extract(py)?;
             Ok(decoded)
         })
@@ -591,7 +617,62 @@ pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBPEDecoder>()?;
     m.add_class::<PyCTCDecoder>()?;
     m.add_class::<PySequenceDecoder>()?;
+    m.add_class::<PyDecodeStream>()?;
     Ok(())
+}
+
+/// Class needed for streaming decode
+///
+#[pyclass(module = "tokenizers.decoders", name = "DecodeStream")]
+#[derive(Clone)]
+pub struct PyDecodeStream {
+    /// Regular decode option that is kept throughout.
+    skip_special_tokens: bool,
+    /// A temporary buffer of the necessary token_ids needed
+    /// to produce valid string chunks.
+    /// This typically contains 3 parts:
+    ///  - read
+    ///  - prefix
+    ///  - rest
+    ///
+    /// Read is the bit necessary to surround the prefix
+    /// so decoding the whole ids produces a valid prefix.
+    /// Prefix is the previously produced string, kept around to trim off of
+    /// the next valid chunk
+    ids: Vec<u32>,
+    /// The previously returned chunk that needs to be discarded from the
+    /// decoding of the current ids to produce the next chunk
+    prefix: String,
+    /// The index within the ids corresponding to the prefix so we can drain
+    /// correctly
+    prefix_index: usize,
+}
+
+#[pymethods]
+impl PyDecodeStream {
+    #[new]
+    #[pyo3(signature = (skip_special_tokens), text_signature = "(self, skip_special_tokens)")]
+    fn new(skip_special_tokens: bool) -> Self {
+        PyDecodeStream {
+            skip_special_tokens,
+            ids: vec![],
+            prefix: "".to_string(),
+            prefix_index: 0,
+        }
+    }
+
+    #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
+    fn step(&mut self, tokenizer: &PyTokenizer, id: u32) -> PyResult<Option<String>> {
+        ToPyResult(tk::tokenizer::step_decode_stream(
+            &tokenizer.tokenizer,
+            id,
+            self.skip_special_tokens,
+            &mut self.ids,
+            &mut self.prefix,
+            &mut self.prefix_index,
+        ))
+        .into()
+    }
 }
 
 #[cfg(test)]
@@ -631,7 +712,12 @@ mod test {
 
         let obj = Python::with_gil(|py| {
             let py_msp = PyDecoder::new(Metaspace::default().into());
-            let obj: PyObject = Py::new(py, py_msp).unwrap().into_py(py);
+            let obj: PyObject = Py::new(py, py_msp)
+                .unwrap()
+                .into_pyobject(py)
+                .unwrap()
+                .into_any()
+                .into();
             obj
         });
         let py_seq = PyDecoderWrapper::Custom(Arc::new(RwLock::new(CustomDecoder::new(obj))));

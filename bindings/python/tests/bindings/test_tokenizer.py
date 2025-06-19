@@ -9,6 +9,7 @@ from tokenizers.models import BPE, Model, Unigram
 from tokenizers.pre_tokenizers import ByteLevel, Metaspace
 from tokenizers.processors import RobertaProcessing, TemplateProcessing
 from tokenizers.normalizers import Strip, Lowercase, Sequence
+from tokenizers.decoders import ByteFallback, DecodeStream, Metaspace as DecoderMetaspace
 
 
 from ..utils import bert_files, data_dir, multiprocessing_with_parallelism, roberta_files
@@ -152,8 +153,6 @@ class TestTokenizer:
         assert len(output) == 2
 
     def test_encode_formats(self, bert_files):
-        print("Broken by the change from std::usize::Max to usixeMax")
-        return 0
         with pytest.deprecated_call():
             tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
 
@@ -364,6 +363,37 @@ class TestTokenizer:
         # Can decode batch
         output = tokenizer.decode_batch([[0, 1, 2, 3], [4]])
         assert output == ["my name is john", "pair"]
+
+        # Can decode stream
+        stream = DecodeStream(skip_special_tokens=False)
+        assert stream.step(tokenizer, 0) == "my"
+        assert stream.step(tokenizer, 1) == " name"
+        assert stream.step(tokenizer, 2) == " is"
+        assert stream.step(tokenizer, 3) == " john"
+
+    def test_decode_stream(self):
+        vocab = [
+            ("<unk>", 0.0),
+            ("<0x20>", -0.1),
+            ("<0xC3>", -0.2),
+            ("<0xA9>", -0.3),
+        ]
+        tokenizer = Tokenizer(Unigram(vocab, 0, byte_fallback=True))
+        tokenizer.decoder = ByteFallback()
+        stream = DecodeStream(skip_special_tokens=False)
+        assert stream.step(tokenizer, 1) == " "
+        assert stream.step(tokenizer, 2) == None
+        assert stream.step(tokenizer, 3) == "é"
+
+        vocab = [
+            ("<unk>", 0.0),
+            ("▁This", -0.1),
+        ]
+        tokenizer = Tokenizer(Unigram(vocab, 0, byte_fallback=False))
+        tokenizer.decoder = DecoderMetaspace()
+        stream = DecodeStream(skip_special_tokens=False)
+        assert stream.step(tokenizer, 1) == "This"
+        assert stream.step(tokenizer, 1) == " This"
 
     def test_get_vocab(self):
         tokenizer = Tokenizer(BPE())

@@ -11,20 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Python
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.9
+          python-version: 3.12
 
       - name: Install dependencies
         run: pip install sphinx sphinx_rtd_theme setuptools-rust
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Build tokenizers
         working-directory: ./bindings/python
@@ -35,7 +33,7 @@ jobs:
         run: make clean && make html_all O="-W --keep-going"
 
       - name: Upload built doc
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: documentation
           path: ./docs/build/*

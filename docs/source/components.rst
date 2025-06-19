@@ -132,14 +132,14 @@ The ``Normalizer`` is optional.
      - Removes all accent symbols in unicode (to be used with NFD for consistency)
      - Input: ``é``
 
-       Ouput: ``e``
+       Output: ``e``
 
    * - Replace
      - Replaces a custom string or regexp and changes it with given content
      - ``Replace("a", "e")`` will behave like this:
 
        Input: ``"banana"``
-       Ouput: ``"benene"``
+       Output: ``"benene"``
 
    * - BertNormalizer
      - Provides an implementation of the Normalizer used in the original BERT. Options
@@ -193,7 +193,7 @@ the ByteLevel)
 
      - Input: ``"Hello my friend, how are you?"``
 
-       Ouput: ``"Hello", "Ġmy", Ġfriend", ",", "Ġhow", "Ġare", "Ġyou", "?"``
+       Output: ``"Hello", "Ġmy", Ġfriend", ",", "Ġhow", "Ġare", "Ġyou", "?"``
 
    * - Whitespace
      - Splits on word boundaries (using the following regular expression: ``\w+|[^\w\s]+``
@@ -211,13 +211,13 @@ the ByteLevel)
      - Will isolate all punctuation characters
      - Input: ``"Hello?"``
 
-       Ouput: ``"Hello", "?"``
+       Output: ``"Hello", "?"``
 
    * - Metaspace
      - Splits on whitespaces and replaces them with a special char "▁" (U+2581)
      - Input: ``"Hello there"``
 
-       Ouput: ``"Hello", "▁there"``
+       Output: ``"Hello", "▁there"``
 
    * - CharDelimiterSplit
      - Splits on a given character
@@ -225,7 +225,7 @@ the ByteLevel)
 
        Input: ``"Helloxthere"``
 
-       Ouput: ``"Hello", "there"``
+       Output: ``"Hello", "there"``
 
    * - Digits
      - Splits the numbers from any other characters.
@@ -361,7 +361,7 @@ reverted for example.
        a set of visible Unicode characters to represent each byte, so we need a Decoder to
        revert this process and get something readable again.
    * - Metaspace
-     - Reverts the Metaspace PreTokenizer. This PreTokenizer uses a special identifer ``▁`` to
+     - Reverts the Metaspace PreTokenizer. This PreTokenizer uses a special identifier ``▁`` to
        identify whitespaces, and so this Decoder helps with decoding these.
    * - WordPiece
      - Reverts the WordPiece Model. This model uses a special identifier ``##`` for continuing

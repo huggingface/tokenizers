@@ -39,7 +39,7 @@ fn normalize(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResu
     } else {
         ToPyResult(pretok.normalize(|normalized| {
             let norm = PyNormalizedStringRefMut::new(normalized);
-            func.call((norm.get(),), None)?;
+            func.call((norm.get().clone(),), None)?;
             Ok(())
         }))
         .into()
@@ -56,7 +56,7 @@ fn tokenize(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResul
         ToPyResult(pretok.tokenize(|normalized| {
             let output = func.call((normalized.get(),), None)?;
             Ok(output
-                .extract::<&PyList>()?
+                .extract::<Bound<PyList>>()?
                 .into_iter()
                 .map(|obj| Ok(Token::from(obj.extract::<PyToken>()?)))
                 .collect::<PyResult<Vec<_>>>()?)
@@ -69,10 +69,10 @@ fn tokenize(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResul
 #[derive(Clone)]
 pub struct PyOffsetReferential(OffsetReferential);
 impl FromPyObject<'_> for PyOffsetReferential {
-    fn extract(obj: &PyAny) -> PyResult<Self> {
-        let s = obj.extract::<&str>()?;
+    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let s = obj.extract::<String>()?;
 
-        Ok(Self(match s {
+        Ok(Self(match s.as_ref() {
             "original" => Ok(OffsetReferential::Original),
             "normalized" => Ok(OffsetReferential::Normalized),
             _ => Err(exceptions::PyValueError::new_err(
@@ -85,10 +85,10 @@ impl FromPyObject<'_> for PyOffsetReferential {
 #[derive(Clone)]
 pub struct PyOffsetType(OffsetType);
 impl FromPyObject<'_> for PyOffsetType {
-    fn extract(obj: &PyAny) -> PyResult<Self> {
-        let s = obj.extract::<&str>()?;
+    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let s = obj.extract::<String>()?;
 
-        Ok(Self(match s {
+        Ok(Self(match s.as_ref() {
             "byte" => Ok(OffsetType::Byte),
             "char" => Ok(OffsetType::Char),
             _ => Err(exceptions::PyValueError::new_err(
@@ -272,7 +272,7 @@ impl DestroyPtr for PyPreTokenizedStringRefMut {
 }
 
 impl PyPreTokenizedStringRefMut {
-    pub fn new(pretok: &mut tk::PreTokenizedString) -> RefMutGuard<Self> {
+    pub fn new(pretok: &mut tk::PreTokenizedString) -> RefMutGuard<'_, Self> {
         // SAFETY: This is safe because we return a RefMutGuard here.
         // The compiler will make sure the &mut stays valid as necessary.
         RefMutGuard::new(Self {

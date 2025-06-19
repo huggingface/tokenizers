@@ -1,73 +1,58 @@
 #[macro_use]
 extern crate criterion;
 
-use criterion::Criterion;
-use std::collections::HashMap;
-use std::fs::read_to_string;
-use std::time::{Duration, Instant};
-use tokenizers::models::unigram::Unigram;
-use tokenizers::models::unigram::UnigramTrainer;
+mod common;
 
-pub fn bench_train(c: &mut Criterion) {
-    let trainer = UnigramTrainer::builder()
+use common::iter_bench_train;
+
+use criterion::{Criterion, Throughput};
+use tokenizers::models::unigram::{Unigram, UnigramTrainerBuilder};
+use tokenizers::models::TrainerWrapper;
+use tokenizers::pre_tokenizers::whitespace::Whitespace;
+use tokenizers::Tokenizer;
+
+// pub fn bench_train(c: &mut Criterion) {
+//     let trainer = UnigramTrainer::builder()
+//         .show_progress(false)
+//         .unk_token(Some("<UNK>".into()))
+//         .build()
+//         .unwrap();
+//
+//     let mut model = Unigram::default();
+//
+//     let content = read_to_string("data/big.txt").unwrap();
+//     c.bench_function("Unigram Train vocabulary (medium)", |b| {
+//         b.iter_custom(|iters| {
+//             let mut duration = Duration::new(0, 0);
+//             for _i in 0..iters {
+//                 let sentences = sentences.clone();
+//                 let start = Instant::now();
+//                 trainer.do_train(sentences, &mut model).unwrap();
+//                 duration = duration.checked_add(start.elapsed()).unwrap();
+//             }
+//             duration
+//         })
+//     });
+// }
+fn bench_train(c: &mut Criterion) {
+    let mut trainer: TrainerWrapper = UnigramTrainerBuilder::default()
         .show_progress(false)
-        .unk_token(Some("<UNK>".into()))
         .build()
-        .unwrap();
-
-    let mut model = Unigram::default();
-
-    let content = read_to_string("data/small.txt").unwrap();
-    let mut word_counts = HashMap::new();
-    content.split_whitespace().for_each(|word| {
-        // This is important for the test of char vs u8
-        let word = format!("▁{}", word);
-        *word_counts.entry(word).or_insert(0) += 1;
-    });
-
-    let sentences: Vec<_> = word_counts
-        .iter()
-        .map(|(s, i)| (s.to_owned(), *i))
-        .collect();
-
-    c.bench_function("Unigram Train vocabulary (small)", |b| {
+        .unwrap()
+        .into();
+    let mut tokenizer = Tokenizer::new(Unigram::default()).into_inner();
+    tokenizer.with_pre_tokenizer(Some(Whitespace {}));
+    let mut group = c.benchmark_group("unigram-train-large");
+    let data = std::fs::read_to_string("data/big.txt").unwrap();
+    group.throughput(Throughput::Bytes(data.len() as u64));
+    group.bench_function("BPE Train vocabulary (big)", |b| {
         b.iter_custom(|iters| {
-            let mut duration = Duration::new(0, 0);
-            for _i in 0..iters {
-                let sentences = sentences.clone();
-                let start = Instant::now();
-                trainer.do_train(sentences, &mut model).unwrap();
-                duration = duration.checked_add(start.elapsed()).unwrap();
-            }
-            duration
-        })
-    });
-
-    let content = read_to_string("data/big.txt").unwrap();
-    // creating `medium` data, which is the first 25% of `data/big.txt`
-    let content = String::from(&content[..(content.len() as f64 * 0.25) as usize]);
-    let mut word_counts = HashMap::new();
-    content.split_whitespace().for_each(|word| {
-        // This is important for the test of char vs u8
-        let word = format!("▁{}", word);
-        *word_counts.entry(word).or_insert(0) += 1;
-    });
-
-    let sentences: Vec<_> = word_counts
-        .iter()
-        .map(|(s, i)| (s.to_owned(), *i))
-        .collect();
-
-    c.bench_function("Unigram Train vocabulary (medium)", |b| {
-        b.iter_custom(|iters| {
-            let mut duration = Duration::new(0, 0);
-            for _i in 0..iters {
-                let sentences = sentences.clone();
-                let start = Instant::now();
-                trainer.do_train(sentences, &mut model).unwrap();
-                duration = duration.checked_add(start.elapsed()).unwrap();
-            }
-            duration
+            iter_bench_train(
+                iters,
+                &mut tokenizer,
+                &mut trainer,
+                vec!["data/big.txt".to_string()],
+            )
         })
     });
 }

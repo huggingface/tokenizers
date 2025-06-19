@@ -12,7 +12,7 @@ fn replace(transformations: &mut Vec<(char, isize)>, old_part: &str, new_part: &
     transformations.extend(new_part.chars().map(|c| (c, 0)));
 
     match diff.cmp(&0) {
-        // If we are adding some characters, the last DIFF characters shoud be == 1
+        // If we are adding some characters, the last DIFF characters should be == 1
         Ordering::Greater => {
             transformations
                 .iter_mut()

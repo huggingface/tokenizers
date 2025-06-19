@@ -28,14 +28,14 @@ impl<'a> OrderedVocabIter<'a> {
     }
 }
 
-impl<'a> Serialize for OrderedVocabIter<'a> {
+impl Serialize for OrderedVocabIter<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         // There could be holes so max + 1 is more correct than vocab_r.len()
         let mut holes = vec![];
-        let result = if let Some(max) = self.vocab_r.iter().map(|(key, _)| key).max() {
+        let result = if let Some(max) = self.vocab_r.keys().max() {
             let iter = (0..*max + 1).filter_map(|i| {
                 if let Some(token) = self.vocab_r.get(&i) {
                     Some((token, i))
@@ -50,8 +50,8 @@ impl<'a> Serialize for OrderedVocabIter<'a> {
         };
 
         if !holes.is_empty() {
-            warn!("The OrderedVocab you are attempting to save contains holes for indices {:?}, your vocabulary could be corrupted !", holes);
-            println!("The OrderedVocab you are attempting to save contains holes for indices {:?}, your vocabulary could be corrupted !", holes);
+            warn!("The OrderedVocab you are attempting to save contains holes for indices {holes:?}, your vocabulary could be corrupted !");
+            println!("The OrderedVocab you are attempting to save contains holes for indices {holes:?}, your vocabulary could be corrupted !");
         }
         result
     }
@@ -203,6 +203,23 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.get_trainer().into(),
             Self::BPE(t) => t.get_trainer().into(),
             Self::Unigram(t) => t.get_trainer().into(),
+        }
+    }
+}
+
+impl ModelWrapper {
+    pub fn clear_cache(&mut self) {
+        match self {
+            Self::Unigram(model) => model.clear_cache(),
+            Self::BPE(model) => model.clear_cache(),
+            _ => (),
+        }
+    }
+    pub fn resize_cache(&mut self, capacity: usize) {
+        match self {
+            Self::Unigram(model) => model.resize_cache(capacity),
+            Self::BPE(model) => model.resize_cache(capacity),
+            _ => (),
         }
     }
 }

@@ -116,7 +116,7 @@ where
                 "version" => {
                     let v: String = map.next_value()?;
                     if &v != "1.0" {
-                        return Err(Error::custom(format!("Unknown tokenizer version '{}'", v)));
+                        return Err(Error::custom(format!("Unknown tokenizer version '{v}'")));
                     }
                 }
                 "truncation" => {
@@ -159,9 +159,7 @@ where
                 if rid != token.id {
                     warn!(
                         "Warning: Token '{}' was expected to have ID '{}' but was given ID '{}'",
-                        token.token.content,
-                        token.id,
-                        rid.to_string()
+                        token.token.content, token.id, rid
                     );
                 }
             }

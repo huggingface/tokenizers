@@ -3,12 +3,12 @@ use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Defines the aditional parameters available for the `from_pretrained` function
+/// Defines the additional parameters available for the `from_pretrained` function
 #[derive(Debug, Clone)]
 pub struct FromPretrainedParameters {
     pub revision: String,
     pub user_agent: HashMap<String, String>,
-    pub auth_token: Option<String>,
+    pub token: Option<String>,
 }
 
 impl Default for FromPretrainedParameters {
@@ -16,7 +16,7 @@ impl Default for FromPretrainedParameters {
         Self {
             revision: "main".into(),
             user_agent: HashMap::new(),
-            auth_token: None,
+            token: None,
         }
     }
 }
@@ -36,14 +36,13 @@ pub fn from_pretrained<S: AsRef<str>>(
     let valid_chars_stringified = valid_chars
         .iter()
         .fold(vec![], |mut buf, x| {
-            buf.push(format!("'{}'", x));
+            buf.push(format!("'{x}'"));
             buf
         })
         .join(", "); // "'/', '-', '_', '.'"
     if !valid {
         return Err(format!(
-            "Model \"{}\" contains invalid characters, expected only alphanumeric or {valid_chars_stringified}",
-            identifier
+            "Model \"{identifier}\" contains invalid characters, expected only alphanumeric or {valid_chars_stringified}"
         )
         .into());
     }
@@ -53,14 +52,13 @@ pub fn from_pretrained<S: AsRef<str>>(
     let valid_revision = revision.chars().all(is_valid_char);
     if !valid_revision {
         return Err(format!(
-            "Revision \"{}\" contains invalid characters, expected only alphanumeric or {valid_chars_stringified}",
-            revision
+            "Revision \"{revision}\" contains invalid characters, expected only alphanumeric or {valid_chars_stringified}"
         )
         .into());
     }
 
-    let mut builder = ApiBuilder::new();
-    if let Some(token) = params.auth_token {
+    let mut builder = ApiBuilder::from_env();
+    if let Some(token) = params.token {
         builder = builder.with_token(Some(token));
     }
     let api = builder.build()?;

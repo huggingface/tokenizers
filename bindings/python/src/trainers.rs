@@ -29,16 +29,22 @@ impl PyTrainer {
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
         let base = self.clone();
         Ok(match *self.trainer.as_ref().read().unwrap() {
-            TrainerWrapper::BpeTrainer(_) => Py::new(py, (PyBpeTrainer {}, base))?.into_py(py),
-            TrainerWrapper::WordPieceTrainer(_) => {
-                Py::new(py, (PyWordPieceTrainer {}, base))?.into_py(py)
-            }
-            TrainerWrapper::WordLevelTrainer(_) => {
-                Py::new(py, (PyWordLevelTrainer {}, base))?.into_py(py)
-            }
-            TrainerWrapper::UnigramTrainer(_) => {
-                Py::new(py, (PyUnigramTrainer {}, base))?.into_py(py)
-            }
+            TrainerWrapper::BpeTrainer(_) => Py::new(py, (PyBpeTrainer {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            TrainerWrapper::WordPieceTrainer(_) => Py::new(py, (PyWordPieceTrainer {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            TrainerWrapper::WordLevelTrainer(_) => Py::new(py, (PyWordLevelTrainer {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            TrainerWrapper::UnigramTrainer(_) => Py::new(py, (PyUnigramTrainer {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
         })
     }
 }
@@ -51,13 +57,13 @@ impl PyTrainer {
                 e
             ))
         })?;
-        Ok(PyBytes::new_bound(py, data.as_bytes()).to_object(py))
+        Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        match state.extract::<&PyBytes>(py) {
+        match state.extract::<&[u8]>(py) {
             Ok(s) => {
-                let unpickled = serde_json::from_slice(s.as_bytes()).map_err(|e| {
+                let unpickled = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle PyTrainer: {}",
                         e
@@ -313,8 +319,8 @@ impl PyBpeTrainer {
         let mut builder = tk::models::bpe::BpeTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "vocab_size" => builder = builder.vocab_size(val.extract()?),
                     "min_frequency" => builder = builder.min_frequency(val.extract()?),
                     "show_progress" => builder = builder.show_progress(val.extract()?),
@@ -520,8 +526,8 @@ impl PyWordPieceTrainer {
         let mut builder = tk::models::wordpiece::WordPieceTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "vocab_size" => builder = builder.vocab_size(val.extract()?),
                     "min_frequency" => builder = builder.min_frequency(val.extract()?),
                     "show_progress" => builder = builder.show_progress(val.extract()?),
@@ -661,8 +667,8 @@ impl PyWordLevelTrainer {
 
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "vocab_size" => {
                         builder.vocab_size(val.extract()?);
                     }
@@ -828,8 +834,8 @@ impl PyUnigramTrainer {
         let mut builder = tk::models::unigram::UnigramTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
-                let key: &str = key.extract()?;
-                match key {
+                let key: String = key.extract()?;
+                match key.as_ref() {
                     "vocab_size" => builder.vocab_size(val.extract()?),
                     "show_progress" => builder.show_progress(val.extract()?),
                     "n_sub_iterations" => builder.n_sub_iterations(val.extract()?),

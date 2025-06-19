@@ -4,7 +4,7 @@ use super::{
     trie::{Trie, TrieBuilder},
 };
 use crate::tokenizer::{Model, Result, Token};
-use crate::utils::cache::Cache;
+use crate::utils::cache::{Cache, MAX_LENGTH};
 
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -115,8 +115,7 @@ impl Unigram {
         let mut min_score = f64::INFINITY;
         for (id, (token, score)) in vocab.iter().enumerate() {
             token_to_ids.insert(token.to_string(), id as u32);
-            let bytes: Vec<u8> = token.bytes().collect();
-            builder.push(&bytes);
+            builder.push(token.as_bytes());
             if score < &min_score {
                 min_score = *score;
             }
@@ -230,7 +229,9 @@ impl Unigram {
             } else {
                 self.encode_unoptimized(sentence)?
             };
-            self.cache.set(sentence.to_owned(), result.clone());
+            if sentence.len() < MAX_LENGTH {
+                self.cache.set(sentence.to_owned(), result.clone());
+            }
             Ok(result)
         }
     }
@@ -306,22 +307,15 @@ impl Unigram {
         while ends_at > 0 {
             let node = &best_path_ends_at[ends_at];
             let starts_at = node.starts_at.unwrap();
-            if self.fuse_unk
-                && self.unk_id.is_some()
-                && node.id == self.unk_id.ok_or(UnigramError::MissingUnkId)?
-            {
-                token.push(
-                    String::from_utf8(sentence[starts_at..ends_at].as_bytes().to_vec()).unwrap(),
-                );
+            if self.fuse_unk && Some(node.id) == self.unk_id {
+                token.push(sentence[starts_at..ends_at].to_string());
             } else {
                 if !token.is_empty() {
                     token.reverse();
                     results.push(token.concat());
                     token = vec![];
                 }
-                results.push(
-                    String::from_utf8(sentence[starts_at..ends_at].as_bytes().to_vec()).unwrap(),
-                );
+                results.push(sentence[starts_at..ends_at].to_string());
             }
             ends_at = starts_at;
         }
@@ -348,7 +342,7 @@ impl Unigram {
                         results.push(token);
                         token = String::new();
                     }
-                    results.push(item.to_string());
+                    results.push(item);
                 }
             }
             if !token.is_empty() {
@@ -376,6 +370,16 @@ impl Unigram {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Unigram> {
         let string = read_to_string(path)?;
         Ok(serde_json::from_str(&string)?)
+    }
+
+    /// Clears the internal cache
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
+    }
+
+    /// Resize the cache
+    pub fn resize_cache(&mut self, capacity: usize) {
+        self.cache.resize(capacity);
     }
 }
 
@@ -425,7 +429,7 @@ impl Model for Unigram {
                         let byte_tokens: Option<Vec<_>> = string
                             .bytes()
                             .map(|byte| -> Option<Token> {
-                                let byte_string = format!("<0x{:02X}>", byte);
+                                let byte_string = format!("<0x{byte:02X}>");
                                 let id = self.token_to_ids.get(&byte_string);
                                 id.map(|id| Token::new(*id, byte_string, (offset, offset + len)))
                             })
@@ -457,7 +461,7 @@ impl Model for Unigram {
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let name = match name {
-            Some(name) => format!("{}-unigram.json", name),
+            Some(name) => format!("{name}-unigram.json"),
             None => "unigram.json".to_string(),
         };
         let mut fullpath = PathBuf::new();
@@ -568,7 +572,7 @@ mod tests {
 
         for is_optimized in &[true, false] {
             model.set_optimized(*is_optimized);
-            println!("IsOptimized {:?}", is_optimized);
+            println!("IsOptimized {is_optimized:?}");
             assert_eq!(model.encode("abc").unwrap(), vec!["abc"]);
             assert_eq!(model.encode("AB").unwrap(), vec!["AB"]);
 

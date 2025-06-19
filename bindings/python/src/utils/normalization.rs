@@ -8,7 +8,7 @@ use tk::normalizer::{char_to_bytes, NormalizedString, Range, SplitDelimiterBehav
 use tk::pattern::Pattern;
 
 /// Represents a Pattern as used by `NormalizedString`
-#[derive(Clone, FromPyObject)]
+#[derive(FromPyObject)]
 pub enum PyPattern {
     #[pyo3(annotation = "str")]
     Str(String),
@@ -60,7 +60,7 @@ pub enum PyRange<'s> {
     #[pyo3(annotation = "Tuple[uint, uint]")]
     Range(usize, usize),
     #[pyo3(annotation = "slice")]
-    Slice(&'s PySlice),
+    Slice(Bound<'s, PySlice>),
 }
 impl PyRange<'_> {
     pub fn to_range(&self, max_len: usize) -> PyResult<std::ops::Range<usize>> {
@@ -83,7 +83,7 @@ impl PyRange<'_> {
             }
             PyRange::Range(s, e) => Ok(*s..*e),
             PyRange::Slice(s) => {
-                let r = s.indices(max_len as std::os::raw::c_long)?;
+                let r = s.indices(max_len.try_into()?)?;
                 Ok(r.start as usize..r.stop as usize)
             }
         }
@@ -94,10 +94,10 @@ impl PyRange<'_> {
 pub struct PySplitDelimiterBehavior(pub SplitDelimiterBehavior);
 
 impl FromPyObject<'_> for PySplitDelimiterBehavior {
-    fn extract(obj: &PyAny) -> PyResult<Self> {
-        let s = obj.extract::<&str>()?;
+    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let s = obj.extract::<String>()?;
 
-        Ok(Self(match s {
+        Ok(Self(match s.as_ref() {
             "removed" => Ok(SplitDelimiterBehavior::Removed),
             "isolated" => Ok(SplitDelimiterBehavior::Isolated),
             "merged_with_previous" => Ok(SplitDelimiterBehavior::MergedWithPrevious),
@@ -114,6 +114,12 @@ impl FromPyObject<'_> for PySplitDelimiterBehavior {
 impl From<PySplitDelimiterBehavior> for SplitDelimiterBehavior {
     fn from(v: PySplitDelimiterBehavior) -> Self {
         v.0
+    }
+}
+
+impl From<SplitDelimiterBehavior> for PySplitDelimiterBehavior {
+    fn from(v: SplitDelimiterBehavior) -> Self {
+        Self(v)
     }
 }
 
@@ -396,7 +402,7 @@ impl DestroyPtr for PyNormalizedStringRefMut {
 }
 
 impl PyNormalizedStringRefMut {
-    pub fn new(normalized: &mut NormalizedString) -> RefMutGuard<Self> {
+    pub fn new(normalized: &mut NormalizedString) -> RefMutGuard<'_, Self> {
         RefMutGuard::new(Self {
             inner: RefMutContainer::new(normalized),
         })

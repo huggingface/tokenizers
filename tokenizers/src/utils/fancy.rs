@@ -22,7 +22,7 @@ impl SysRegex {
 
 pub struct Matches<'r, 't>(fancy_regex::Matches<'r, 't>);
 
-impl<'r, 't> Iterator for Matches<'r, 't> {
+impl Iterator for Matches<'_, '_> {
     type Item = (usize, usize);
 
     fn next(&mut self) -> Option<Self::Item> {

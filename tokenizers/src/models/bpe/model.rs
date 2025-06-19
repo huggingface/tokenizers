@@ -1,6 +1,6 @@
 use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
-use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY};
+use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use serde_json::Value;
 use std::borrow::Cow;
@@ -221,7 +221,7 @@ pub struct BPE {
     pub unk_token: Option<String>,
     /// An optional prefix to use on any subword that exist only behind another one
     pub continuing_subword_prefix: Option<String>,
-    /// An optional suffix to caracterize and end-of-word subword
+    /// An optional suffix to characterize and end-of-word subword
     pub end_of_word_suffix: Option<String>,
     /// Do multiple unk tokens get fused
     pub fuse_unk: bool,
@@ -354,6 +354,13 @@ impl BPE {
         }
     }
 
+    /// Resize the cache
+    pub fn resize_cache(&mut self, capacity: usize) {
+        if let Some(ref mut cache) = self.cache {
+            cache.resize(capacity);
+        }
+    }
+
     pub fn get_vocab(&self) -> Vocab {
         self.vocab.clone()
     }
@@ -385,13 +392,13 @@ impl BPE {
             // Add the `continuing_subword_prefix` if relevant
             if !is_first {
                 if let Some(ref prefix) = self.continuing_subword_prefix {
-                    s = format!("{}{}", prefix, s).into()
+                    s = format!("{prefix}{s}").into()
                 }
             }
             // Add the `end_of_word_suffix` if relevant
             if is_last {
                 if let Some(ref suffix) = self.end_of_word_suffix {
-                    s = format!("{}{}", s, suffix).into()
+                    s = format!("{s}{suffix}").into()
                 }
             }
 
@@ -406,7 +413,7 @@ impl BPE {
                     let tokens: Option<Vec<_>> = s
                         .bytes()
                         .map(|b| -> Option<&u32> {
-                            let code = format!("<{:#04X}>", b);
+                            let code = format!("<{b:#04X}>");
 
                             self.vocab.get(&code)
                         })
@@ -453,7 +460,7 @@ impl BPE {
         Ok(word)
     }
 
-    fn word_to_tokens<'a, 'b: 'a>(&'a self, word: &'b Word) -> impl Iterator<Item = Token> + 'a {
+    fn word_to_tokens<'a>(&'a self, word: &'a Word) -> impl Iterator<Item = Token> + 'a {
         word.get_chars_iter()
             .zip(word.get_offsets_iter())
             .map(move |(id, offsets)| Token::new(id, self.vocab_r[&id].clone(), offsets))
@@ -462,7 +469,11 @@ impl BPE {
     fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
         if self.ignore_merges {
             if let Some(id) = self.vocab.get(sequence) {
-                return Ok(vec![Token::new(*id, sequence.to_string().clone(), (0, 0))]);
+                return Ok(vec![Token::new(
+                    *id,
+                    sequence.to_string(),
+                    (0, sequence.len()),
+                )]);
             }
         }
         if let Some(ref hit) = self.cache.as_ref().and_then(|c| c.get(sequence)) {
@@ -471,7 +482,9 @@ impl BPE {
         let word = self.merge_word(sequence)?;
         let ret = self.word_to_tokens(&word).collect();
         if let Some(ref cache) = self.cache {
-            cache.set(sequence.to_owned(), word);
+            if sequence.len() < MAX_LENGTH {
+                cache.set(sequence.to_owned(), word);
+            }
         }
         Ok(ret)
     }
@@ -511,7 +524,7 @@ impl Model for BPE {
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let vocab_file_name = match name {
-            Some(name) => format!("{}-vocab.json", name),
+            Some(name) => format!("{name}-vocab.json"),
             None => "vocab.json".to_string(),
         };
 
@@ -526,7 +539,7 @@ impl Model for BPE {
 
         // Write merges.txt
         let merges_file_name = match name {
-            Some(name) => format!("{}-merges.txt", name),
+            Some(name) => format!("{name}-merges.txt"),
             None => "merges.txt".to_string(),
         };
 
@@ -941,10 +954,13 @@ mod tests {
             .build()
             .unwrap();
         let tokens = bpe.tokenize(".:.:").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, ".:.:".into(), (0, 0))]);
+        assert_eq!(tokens, vec![Token::new(0u32, ".:.:".into(), (0, 4))]);
 
         let tokens = bpe.tokenize("Ġbelirtilen").unwrap();
-        assert_eq!(tokens, vec![Token::new(1u32, "Ġbelirtilen".into(), (0, 0))]);
+        assert_eq!(
+            tokens,
+            vec![Token::new(1u32, "Ġbelirtilen".into(), (0, 12))]
+        );
 
         bpe.ignore_merges = false;
 

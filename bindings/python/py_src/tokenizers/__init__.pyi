@@ -859,7 +859,9 @@ class Tokenizer:
     def encode_batch(self, input, is_pretokenized=False, add_special_tokens=True):
         """
         Encode the given batch of inputs. This method accept both raw text sequences
-        as well as already pre-tokenized sequences.
+        as well as already pre-tokenized sequences. The reason we use `PySequence` is
+        because it allows type checking with zero-cost (according to PyO3) as we don't
+        have to convert to check.
 
         Example:
             Here are some examples of the inputs that are accepted::
@@ -971,7 +973,7 @@ class Tokenizer:
         pass
 
     @staticmethod
-    def from_pretrained(identifier, revision="main", auth_token=None):
+    def from_pretrained(identifier, revision="main", token=None):
         """
         Instantiate a new :class:`~tokenizers.Tokenizer` from an existing file on the
         Hugging Face Hub.
@@ -982,7 +984,7 @@ class Tokenizer:
                 a tokenizer.json file
             revision (:obj:`str`, defaults to `main`):
                 A branch or commit id
-            auth_token (:obj:`str`, `optional`, defaults to `None`):
+            token (:obj:`str`, `optional`, defaults to `None`):
                 An optional auth token used to access private repositories on the
                 Hugging Face Hub
 

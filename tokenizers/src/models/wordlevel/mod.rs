@@ -73,7 +73,7 @@ impl WordLevelBuilder {
         self
     }
 
-    /// Contructs a `WordLevel` model that uses the `WordLevelBuilder`'s configuration.
+    /// Constructs a `WordLevel` model that uses the `WordLevelBuilder`'s configuration.
     pub fn build(mut self) -> Result<WordLevel> {
         if let Some(vocab) = self.config.files {
             self.config.vocab = WordLevel::read_file(&vocab)?;
@@ -194,7 +194,7 @@ impl Model for WordLevel {
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let vocab_file_name = match name {
-            Some(name) => format!("{}-vocab.json", name),
+            Some(name) => format!("{name}-vocab.json"),
             None => "vocab.json".to_string(),
         };
 

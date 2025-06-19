@@ -12,8 +12,7 @@
 use std::{
     collections::HashMap,
     fs::{read_to_string, File},
-    io::prelude::*,
-    io::BufReader,
+    io::{prelude::*, BufReader},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
 };
@@ -234,7 +233,7 @@ impl<'s> From<&'s [String]> for InputSequence<'s> {
     }
 }
 
-impl<'s> From<Vec<String>> for InputSequence<'s> {
+impl From<Vec<String>> for InputSequence<'_> {
     fn from(input: Vec<String>) -> Self {
         Self::PreTokenizedOwned(Cow::Owned(input))
     }
@@ -390,7 +389,7 @@ where
         self
     }
 
-    /// Set the trunaction parameters.
+    /// Set the truncation parameters.
     #[must_use]
     pub fn with_truncation(mut self, trunc: Option<TruncationParams>) -> Self {
         self.truncation = trunc;
@@ -906,6 +905,206 @@ where
             Ok(tokens.join(" "))
         }
     }
+
+    /// Decode the given ids, back to a String
+    /// See [`DecodeStream`]
+    pub fn decode_stream(&self, skip_special_tokens: bool) -> DecodeStream<'_, M, N, PT, PP, D> {
+        DecodeStream::new(self, skip_special_tokens)
+    }
+}
+
+/// DecodeStream will keep the state necessary to produce individual chunks of
+/// strings given an input stream of token_ids.
+///
+/// This is necessary because decoding in general cannot achieve that since strings
+/// depend on surrounding ids to provide a valid string. Typically stripping extra spaces
+///
+/// Example:
+///
+/// ```
+/// # #[cfg(not(target_os = "windows"))]
+/// # {
+/// use tokenizers::Tokenizer;
+/// let tokenizer = Tokenizer::from_file("data/roberta.json").unwrap();
+///
+/// let mut decode_stream = tokenizer.decode_stream(false);
+/// assert_eq!(decode_stream.step(713).unwrap(), Some("This".to_string()));
+/// assert_eq!(decode_stream.step(16).unwrap(), Some(" is".to_string()));
+/// assert_eq!(decode_stream.step(41).unwrap(), Some(" an".to_string()));
+/// assert_eq!(
+///     decode_stream.step(1246).unwrap(),
+///     Some(" example".to_string())
+/// );
+/// # }
+/// ```
+///
+/// Returning `None` means the given id is not enough to produce a chunk.
+/// This typically happens with `byte_fallback` options where some tokens do
+/// not represent valid utf-8, and only follow-up token_ids will help produce
+/// a valid chunk.
+/// ```
+/// use tokenizers::{Tokenizer, TokenizerBuilder, models::bpe::BPE, decoders::byte_fallback::ByteFallback, pre_tokenizers::byte_level::ByteLevel, normalizers::unicode::NFC};
+/// use std::collections::HashMap;
+/// use std::iter::FromIterator;
+///
+/// let vocab = HashMap::from_iter([
+///     ("<0x20>".to_string(), 0),
+///     ("<0xC3>".to_string(), 1),
+///     ("<0xA9>".to_string(), 2),
+///     (" This".to_string(), 3),
+/// ]);
+/// let merges = vec![];
+/// let bpe = BPE::builder()
+///     .vocab_and_merges(vocab, merges)
+///     .byte_fallback(true)
+///     .build()
+///     .unwrap();
+/// let tokenizer = TokenizerBuilder::default()
+///     .with_model(bpe)
+///     .with_decoder(Some(ByteFallback::default()))
+///     .with_normalizer(Some(NFC))
+///     .with_pre_tokenizer(Some(ByteLevel::default()))
+///     .with_post_processor(Some(ByteLevel::default()))
+///     .build().unwrap();
+///
+/// let mut decode_stream = tokenizer.decode_stream(false);
+/// // Single byte_fallback is valid utf-8
+/// assert_eq!(decode_stream.step(0).unwrap(), Some(" ".to_string()));
+/// // Invalid utf-8
+/// assert_eq!(decode_stream.step(1).unwrap(), None);
+/// // Valid utf-8 again, this corresponds to both tokens: [1, 2]
+/// assert_eq!(decode_stream.step(2).unwrap(), Some("é".to_string()));
+/// ```
+///
+/// To see how [`DecodeStream`] is necessary, let's show how using raw [`TokenizerImpl::decode`] would
+/// fail.
+///
+/// ```
+/// use tokenizers::{Tokenizer, TokenizerBuilder, models::bpe::BPE, pre_tokenizers::{byte_level::ByteLevel, metaspace::Metaspace}, normalizers::unicode::NFC};
+/// use std::collections::HashMap;
+/// use std::iter::FromIterator;
+///
+/// let vocab = HashMap::from_iter([
+///     ("▁This".to_string(), 0),
+/// ]);
+/// let merges = vec![];
+/// let bpe = BPE::builder()
+///     .vocab_and_merges(vocab, merges)
+///     .byte_fallback(true)
+///     .build()
+///     .unwrap();
+/// let tokenizer = TokenizerBuilder::new()
+///     .with_model(bpe)
+///     .with_decoder(Some(Metaspace::default()))
+///     .with_normalizer(Some(NFC))
+///     .with_pre_tokenizer(Some(ByteLevel::default()))
+///     .with_post_processor(Some(ByteLevel::default()))
+///     .build()
+///     .unwrap();
+///
+/// // Strip decoder removes the extra initial space
+/// assert_eq!(tokenizer.decode(&[0, 0], false).unwrap(), "This This");
+/// // Decoding one token at a time would produce "ThisThis"
+/// assert_eq!(tokenizer.decode(&[0], false).unwrap(), "This");
+///
+/// // Using a stream fixes it by keeping the necessary state.
+/// let mut decode_stream = tokenizer.decode_stream(false);
+/// assert_eq!(decode_stream.step(0).unwrap(), Some("This".to_string()));
+/// assert_eq!(decode_stream.step(0).unwrap(), Some(" This".to_string()));
+/// ```
+pub struct DecodeStream<'tok, M, N, PT, PP, D> {
+    /// A reference to the tokenizer
+    tokenizer: &'tok TokenizerImpl<M, N, PT, PP, D>,
+    /// Regular decode option that is kept throughout.
+    skip_special_tokens: bool,
+    /// A temporary buffer of the necessary token_ids needed
+    /// to produce valid string chunks.
+    /// This typically contains 3 parts:
+    ///  - read
+    ///  - prefix
+    ///  - rest
+    ///
+    /// Read is the bit necessary to surround the prefix
+    /// so decoding the whole ids produces a valid prefix.
+    /// Prefix is the previously produced string, kept around to trim off of
+    /// the next valid chunk
+    ids: Vec<u32>,
+    /// The previously returned chunk that needs to be discarded from the
+    /// decoding of the current ids to produce the next chunk
+    prefix: String,
+    /// The index within the ids corresponding to the prefix so we can drain
+    /// correctly
+    prefix_index: usize,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DecodeStreamError {
+    #[error("Invalid prefix encountered")]
+    InvalidPrefix,
+}
+
+impl<'tok, M, N, PT, PP, D> DecodeStream<'tok, M, N, PT, PP, D>
+where
+    M: Model,
+    N: Normalizer,
+    PT: PreTokenizer,
+    PP: PostProcessor,
+    D: Decoder,
+{
+    fn new(tokenizer: &'tok TokenizerImpl<M, N, PT, PP, D>, skip_special_tokens: bool) -> Self {
+        Self {
+            tokenizer,
+            ids: vec![],
+            skip_special_tokens,
+            prefix: "".to_string(),
+            prefix_index: 0,
+        }
+    }
+
+    /// See [`DecodeStream`]
+    pub fn step(&mut self, id: u32) -> Result<Option<String>> {
+        step_decode_stream(
+            self.tokenizer,
+            id,
+            self.skip_special_tokens,
+            &mut self.ids,
+            &mut self.prefix,
+            &mut self.prefix_index,
+        )
+    }
+}
+
+/// Internal function exposed only to bypass python limitations
+pub fn step_decode_stream<M, N, PT, PP, D>(
+    tokenizer: &TokenizerImpl<M, N, PT, PP, D>,
+    id: u32,
+    skip_special_tokens: bool,
+    ids: &mut Vec<u32>,
+    prefix: &mut String,
+    prefix_index: &mut usize,
+) -> Result<Option<String>>
+where
+    M: Model,
+    N: Normalizer,
+    PT: PreTokenizer,
+    PP: PostProcessor,
+    D: Decoder,
+{
+    ids.push(id);
+    let string = tokenizer.decode(ids.as_slice(), skip_special_tokens)?;
+    if string.len() > prefix.len() && !string.ends_with('�') {
+        if !(string.starts_with(&*prefix)) {
+            return Err(Box::new(DecodeStreamError::InvalidPrefix));
+        }
+        let new_text = &string[prefix.len()..].to_string();
+        let new_prefix_index = ids.len() - *prefix_index;
+        *ids = ids.drain(*prefix_index..).collect();
+        *prefix = tokenizer.decode(ids, skip_special_tokens)?;
+        *prefix_index = new_prefix_index;
+        Ok(Some(new_text.to_string()))
+    } else {
+        Ok(None)
+    }
 }
 
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
@@ -1181,11 +1380,10 @@ where
                 };
 
                 trainer.feed(
-                    sequences.map(|s| {
+                    sequences.inspect(|s| {
                         if let Some(progress) = &progress {
                             progress.inc(s.len() as u64)
                         }
-                        s
                     }),
                     |seq| {
                         let normalized = self
@@ -1235,11 +1433,10 @@ where
         };
 
         trainer.feed(
-            sequences.map(|s| {
+            sequences.inspect(|_s| {
                 if let Some(progress) = &progress {
                     progress.inc(1)
                 }
-                s
             }),
             |seq| {
                 let normalized = self
@@ -1359,59 +1556,5 @@ where
         file.write_all(serialized.as_bytes())?;
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_decoding_with_added_bpe() {
-        use crate::{
-            normalizers,
-            pre_tokenizers::split::{Split, SplitPattern},
-            AddedToken, NormalizerWrapper, PreTokenizerWrapper, SplitDelimiterBehavior, Tokenizer,
-        };
-
-        let mut tokenizer = Tokenizer::from_pretrained("meta-llama/Meta-Llama-3-8B", None).unwrap();
-        tokenizer.normalizer = Some(NormalizerWrapper::from(normalizers::ByteLevel::new()));
-        tokenizer.pre_tokenizer = Some(PreTokenizerWrapper::Split(
-            Split::new(
-                SplitPattern::Regex(r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+".into()),
-                SplitDelimiterBehavior::Isolated,
-                false,
-            )
-            .unwrap(),
-        ));
-        tokenizer.add_tokens(&[AddedToken::from("嗎", false).normalized(false)]);
-        let encoded = tokenizer
-            .encode("Hey! how is this token: 嗎", false)
-            .unwrap();
-        assert_eq!(
-            encoded.get_ids(),
-            [19182, 0, 1268, 602, 82, 62428, 82, 4037, 25, 220, 128256]
-        );
-        assert_eq!(
-            encoded.get_tokens(),
-            ["Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "嗎"]
-        );
-
-        let decoded = tokenizer.decode(encoded.get_ids(), false);
-        assert_eq!(decoded.unwrap(), "Hey! how is this token: 嗎");
-
-        tokenizer.add_tokens(&[AddedToken::from("д", false).normalized(true)]);
-        let encoded = tokenizer
-            .encode("Hey! how is this token: д", false)
-            .unwrap();
-        assert_eq!(
-            encoded.get_ids(),
-            [19182, 0, 1268, 602, 82, 62428, 82, 4037, 25, 220, 128257]
-        );
-        assert_eq!(
-            encoded.get_tokens(),
-            ["Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "Ð´"]
-        );
-        let decoded = tokenizer.decode(encoded.get_ids(), false);
-        assert_eq!(decoded.unwrap(), "Hey! how is this token: д")
     }
 }

@@ -139,7 +139,7 @@ impl Encoding {
         for seq_id in 0..self.n_sequences() {
             let range = self.sequence_range(seq_id);
             let seq_len = range.len();
-            sequences.splice(range, std::iter::repeat(Some(seq_id)).take(seq_len));
+            sequences.splice(range, std::iter::repeat_n(Some(seq_id), seq_len));
         }
         sequences
     }
@@ -341,7 +341,7 @@ impl Encoding {
                 .step_by(offset)
                 .filter_map(|stop| {
                     let stop = stop + 1;
-                    let start = if stop < max_len { 0 } else { stop - max_len };
+                    let start = stop.saturating_sub(max_len);
                     if start < stop && !end {
                         end = start == 0;
                         Some((start, stop))
