@@ -769,13 +769,13 @@ impl PyDigits {
     }
 }
 
-/// This pre-tokenizer splits the text into fixed length chunks as used 
+/// This pre-tokenizer splits the text into fixed length chunks as used
 /// [here](https://www.biorxiv.org/content/10.1101/2023.01.11.523679v1.full)
 ///
 /// Args:
 ///     length (:obj:`int`, `optional`, defaults to :obj:`5`):
 ///         The length of the chunks to split the text into.
-/// 
+///
 ///         Strings are split on the character level rather than the byte level to avoid
 ///         splitting unicode characters consisting of multiple bytes.
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "FixedLength")]

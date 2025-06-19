@@ -33,9 +33,15 @@ impl PreTokenizer for FixedLength {
             let char_positions: Vec<_> = text.char_indices().collect();
             for chunk in char_positions.chunks(self.length) {
                 let start = chunk.first().map(|(i, _)| *i).unwrap_or(0);
-                let end = chunk.last().map(|(i, c)| i + c.len_utf8()).unwrap_or(text.len());
-                splits.push(normalized.slice(Range::Normalized(start..end))
-                    .ok_or("Failed to slice normalized text")?);
+                let end = chunk
+                    .last()
+                    .map(|(i, c)| i + c.len_utf8())
+                    .unwrap_or(text.len());
+                splits.push(
+                    normalized
+                        .slice(Range::Normalized(start..end))
+                        .ok_or("Failed to slice normalized text")?,
+                );
             }
 
             Ok(splits)
