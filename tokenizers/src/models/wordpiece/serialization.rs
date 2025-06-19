@@ -1,10 +1,10 @@
 use super::{super::OrderedVocabIter, WordPiece, WordPieceBuilder};
+use ahash::{AHashMap, AHashSet};
 use serde::{
     de::{MapAccess, Visitor},
     ser::SerializeStruct,
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use std::collections::HashSet;
 
 impl Serialize for WordPiece {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -67,7 +67,7 @@ impl<'de> Visitor<'de> for WordPieceVisitor {
             "vocab",
         ]
         .into_iter()
-        .collect::<HashSet<_>>();
+        .collect::<AHashSet<_>>();
 
         while let Some(key) = map.next_key::<String>()? {
             match key.as_ref() {
@@ -78,7 +78,10 @@ impl<'de> Visitor<'de> for WordPieceVisitor {
                 "max_input_chars_per_word" => {
                     builder = builder.max_input_chars_per_word(map.next_value()?)
                 }
-                "vocab" => builder = builder.vocab(map.next_value()?),
+                "vocab" => {
+                    let vocab: AHashMap<String, u32> = map.next_value()?;
+                    builder = builder.vocab(vocab)
+                }
                 "type" => match map.next_value()? {
                     "WordPiece" => {}
                     u => {

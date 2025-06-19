@@ -1,14 +1,14 @@
 use crate::processors::byte_level::bytes_char;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
-use std::collections::{HashMap, HashSet};
+use ahash::{AHashMap, AHashSet};
 use std::sync::LazyLock;
 
 #[derive(Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct ByteLevel;
 
-static BYTES_CHAR: LazyLock<HashMap<u8, char>> = LazyLock::new(bytes_char);
+static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
 
 impl Default for ByteLevel {
     fn default() -> Self {
@@ -21,7 +21,7 @@ impl ByteLevel {
         Self {}
     }
 
-    pub fn alphabet() -> HashSet<char> {
+    pub fn alphabet() -> AHashSet<char> {
         BYTES_CHAR.values().copied().collect()
     }
 }
