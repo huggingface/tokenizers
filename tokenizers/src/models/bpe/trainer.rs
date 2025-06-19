@@ -492,14 +492,8 @@ impl BpeTrainer {
 
             // Build new token
             if let Some(prefix) = &self.continuing_subword_prefix {
-<<<<<<< HEAD
                 if let Some(rest) = part_b.strip_prefix(prefix) {
                     part_b = rest;
-=======
-                if part_b.starts_with(prefix) {
-                    let prefix_byte_len = prefix.chars().map(|c| c.len_utf8()).sum();
-                    part_b = CompactString::from(&part_b[prefix_byte_len..]);
->>>>>>> 74edefbe (free speed/mem optimizations with ahash, dary_heap, and compact_str (bindings broken without library refactor))
                 }
             }
             let new_token = format!("{part_a}{part_b}");
@@ -554,20 +548,7 @@ impl BpeTrainer {
                 let count = change * counts[iw] as i32;
                 *pair_counts.entry(pair).or_default() += count;
                 if change > 0 {
-<<<<<<< HEAD
                     where_to_update.entry(pair).or_default().insert(iw);
-=======
-                    where_to_update
-                        .entry(pair)
-                        .and_modify(|h| {
-                            h.insert(iw);
-                        })
-                        .or_insert_with(|| {
-                            let mut h = AHashSet::new();
-                            h.insert(iw);
-                            h
-                        });
->>>>>>> 74edefbe (free speed/mem optimizations with ahash, dary_heap, and compact_str (bindings broken without library refactor))
                 }
             }
             where_to_update.drain().for_each(|(pair, pos)| {
@@ -637,13 +618,7 @@ impl Trainer for BpeTrainer {
                 let words = process(sequence.as_ref())?;
                 let mut map = AHashMap::new();
                 for word in words {
-<<<<<<< HEAD
                     *map.entry(word).or_default() += 1;
-=======
-                    map.entry(CompactString::from(word))
-                        .and_modify(|c| *c += 1)
-                        .or_insert(1);
->>>>>>> 74edefbe (free speed/mem optimizations with ahash, dary_heap, and compact_str (bindings broken without library refactor))
                 }
                 Ok(map)
             })
