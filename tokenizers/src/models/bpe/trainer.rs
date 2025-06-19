@@ -447,7 +447,7 @@ impl BpeTrainer {
         // 4. Count pairs in words
         //
         self.update_progress(&progress, words.len(), "Count pairs");
-        let (mut pair_counts, mut where_to_update) = self.count_pairs(&words, &counts, &progress);
+        let (mut pair_counts, mut where_to_update) = self.count_pairs_chunked(&words, &counts, &progress);
         // Insert them in the queue
         let mut queue = OctonaryHeap::with_capacity(pair_counts.len());
         where_to_update.drain().for_each(|(pair, pos)| {
@@ -590,6 +590,43 @@ impl BpeTrainer {
         model.end_of_word_suffix = self.end_of_word_suffix.clone();
 
         Ok(self.special_tokens.clone())
+    }
+
+    /// Counts pairs in chunks to be more memory-efficient
+    fn count_pairs_chunked(
+        &self,
+        words: &[Word],
+        counts: &[u64],
+        p: &Option<ProgressBar>,
+    ) -> (AHashMap<Pair, i32>, AHashMap<Pair, AHashSet<usize>>) {
+        let chunk_size = 100_000; // Process 100,000 words at a time
+        let mut final_pair_counts = AHashMap::new();
+        let mut final_where_to_update: AHashMap<Pair, AHashSet<usize>> = AHashMap::new();
+
+        // Iterate over the data in chunks
+        for (chunk_offset, word_chunk) in words.chunks(chunk_size).enumerate() {
+            let counts_chunk = &counts[chunk_offset * chunk_size .. (chunk_offset * chunk_size) + word_chunk.len()];
+            println!("[LUNARIS-DEBUG] Processing word chunk #{}", chunk_offset + 1);
+
+            // Use the original parallel function to count pairs just for this chunk
+            let (chunk_pair_counts, chunk_where_to_update) = self.count_pairs(word_chunk, counts_chunk, p);
+
+            // Accumulate the results into the final HashMaps
+            for (pair, count) in chunk_pair_counts {
+                // Future optimization: filter low-frequency pairs here.
+                // For now, just accumulate to test the chunking logic.
+                *final_pair_counts.entry(pair).or_default() += count;
+            }
+
+            for (pair, positions) in chunk_where_to_update {
+                // The positions from `count_pairs` are relative to the chunk, so we adjust them
+                let adjusted_positions = positions.into_iter().map(|pos| pos + chunk_offset * chunk_size);
+                final_where_to_update.entry(pair).or_default().extend(adjusted_positions);
+            }
+        }
+
+        println!("[LUNARIS-DEBUG] Finished processing all chunks.");
+        (final_pair_counts, final_where_to_update)
     }
 }
 
