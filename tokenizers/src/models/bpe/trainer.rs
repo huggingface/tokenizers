@@ -618,7 +618,7 @@ impl Trainer for BpeTrainer {
                 let words = process(sequence.as_ref())?;
                 let mut map = AHashMap::new();
                 for word in words {
-                    *map.entry(word).or_default() += 1;
+                    *map.entry(CompactString::from(word)).or_default() += 1;
                 }
                 Ok(map)
             })
