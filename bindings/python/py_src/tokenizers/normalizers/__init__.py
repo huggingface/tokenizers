@@ -9,6 +9,7 @@ NFC = normalizers.NFC
 NFKC = normalizers.NFKC
 Sequence = normalizers.Sequence
 Lowercase = normalizers.Lowercase
+Append = normalizers.Append
 Prepend = normalizers.Prepend
 Strip = normalizers.Strip
 StripAccents = normalizers.StripAccents
