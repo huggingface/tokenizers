@@ -5,6 +5,7 @@ pub mod unigram;
 pub mod wordlevel;
 pub mod wordpiece;
 
+use ahash::AHashMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -19,11 +20,11 @@ use crate::{AddedToken, Model, Result, Token, Trainer};
 /// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
 /// of token ID, smallest to largest.
 struct OrderedVocabIter<'a> {
-    vocab_r: &'a HashMap<u32, String>,
+    vocab_r: &'a AHashMap<u32, String>,
 }
 
 impl<'a> OrderedVocabIter<'a> {
-    fn new(vocab_r: &'a HashMap<u32, String>) -> Self {
+    fn new(vocab_r: &'a AHashMap<u32, String>) -> Self {
         Self { vocab_r }
     }
 }
@@ -35,7 +36,7 @@ impl Serialize for OrderedVocabIter<'_> {
     {
         // There could be holes so max + 1 is more correct than vocab_r.len()
         let mut holes = vec![];
-        let result = if let Some(max) = self.vocab_r.iter().map(|(key, _)| key).max() {
+        let result = if let Some(max) = self.vocab_r.keys().max() {
             let iter = (0..*max + 1).filter_map(|i| {
                 if let Some(token) = self.vocab_r.get(&i) {
                     Some((token, i))
@@ -50,7 +51,7 @@ impl Serialize for OrderedVocabIter<'_> {
         };
 
         if !holes.is_empty() {
-            warn!("The OrderedVocab you are attempting to save contains holes for indices {:?}, your vocabulary could be corrupted !", holes);
+            warn!("The OrderedVocab you are attempting to save contains holes for indices {holes:?}, your vocabulary could be corrupted !");
             println!("The OrderedVocab you are attempting to save contains holes for indices {holes:?}, your vocabulary could be corrupted !");
         }
         result
@@ -301,8 +302,8 @@ mod tests {
 
     #[test]
     fn incomplete_ordered_vocab() {
-        let vocab_r: HashMap<u32, String> =
-            HashMap::from([(0, "Hi".to_string()), (2, "There".to_string())]);
+        let vocab_r: AHashMap<u32, String> =
+            AHashMap::from([(0, "Hi".to_string()), (2, "There".to_string())]);
 
         let ordered = OrderedVocabIter::new(&vocab_r);
 

@@ -397,7 +397,7 @@ def main():
         "--models",
         type=lambda s: s.split(","),
         default=pretraineds,
-        help=f"The pretrained tokenizers you want to test agains, (default: {pretraineds})",
+        help=f"The pretrained tokenizers you want to test against, (default: {pretraineds})",
     )
     args = parser.parse_args()
 

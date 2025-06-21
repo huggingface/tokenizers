@@ -5,13 +5,14 @@ use super::{
 };
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, MAX_LENGTH};
-
 use std::collections::HashMap;
+
+use ahash::AHashMap;
 use std::convert::TryInto;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
-type TokenMap = HashMap<String, u32>;
+type TokenMap = AHashMap<String, u32>;
 type Vocab = Vec<(String, f64)>;
 
 /// A `Unigram` model to encode sentences.
@@ -98,7 +99,7 @@ impl Unigram {
         byte_fallback: bool,
     ) -> Result<Self> {
         let n = vocab.len();
-        let mut token_to_ids: TokenMap = HashMap::new();
+        let mut token_to_ids: TokenMap = AHashMap::new();
         let mut builder = TrieBuilder::default();
 
         if let Some(unk_id) = unk_id {
@@ -115,8 +116,7 @@ impl Unigram {
         let mut min_score = f64::INFINITY;
         for (id, (token, score)) in vocab.iter().enumerate() {
             token_to_ids.insert(token.to_string(), id as u32);
-            let bytes: Vec<u8> = token.bytes().collect();
-            builder.push(&bytes);
+            builder.push(token.as_bytes());
             if score < &min_score {
                 min_score = *score;
             }
@@ -308,22 +308,15 @@ impl Unigram {
         while ends_at > 0 {
             let node = &best_path_ends_at[ends_at];
             let starts_at = node.starts_at.unwrap();
-            if self.fuse_unk
-                && self.unk_id.is_some()
-                && node.id == self.unk_id.ok_or(UnigramError::MissingUnkId)?
-            {
-                token.push(
-                    String::from_utf8(sentence[starts_at..ends_at].as_bytes().to_vec()).unwrap(),
-                );
+            if self.fuse_unk && Some(node.id) == self.unk_id {
+                token.push(sentence[starts_at..ends_at].to_string());
             } else {
                 if !token.is_empty() {
                     token.reverse();
                     results.push(token.concat());
                     token = vec![];
                 }
-                results.push(
-                    String::from_utf8(sentence[starts_at..ends_at].as_bytes().to_vec()).unwrap(),
-                );
+                results.push(sentence[starts_at..ends_at].to_string());
             }
             ends_at = starts_at;
         }
@@ -350,7 +343,7 @@ impl Unigram {
                         results.push(token);
                         token = String::new();
                     }
-                    results.push(item.to_string());
+                    results.push(item);
                 }
             }
             if !token.is_empty() {
@@ -416,7 +409,7 @@ impl Model for Unigram {
     type Trainer = UnigramTrainer;
 
     fn get_vocab(&self) -> HashMap<String, u32> {
-        self.token_to_ids.clone()
+        self.token_to_ids.clone().into_iter().collect()
     }
 
     fn get_vocab_size(&self) -> usize {

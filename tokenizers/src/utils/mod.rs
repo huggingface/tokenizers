@@ -2,14 +2,17 @@ pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
 
-#[cfg(feature = "unstable_wasm")]
+#[cfg(all(feature = "fancy-regex", not(feature = "onig")))]
 mod fancy;
-#[cfg(feature = "unstable_wasm")]
+#[cfg(all(feature = "fancy-regex", not(feature = "onig")))]
 pub use fancy::SysRegex;
-#[cfg(not(feature = "unstable_wasm"))]
+#[cfg(feature = "onig")]
 mod onig;
-#[cfg(not(feature = "unstable_wasm"))]
+#[cfg(feature = "onig")]
 pub use crate::utils::onig::SysRegex;
+
+#[cfg(not(any(feature = "onig", feature = "fancy-regex")))]
+compile_error!("One of the `onig`, or `fancy-regex` features must be enabled");
 
 pub mod iter;
 pub mod padding;
@@ -17,11 +20,12 @@ pub mod parallelism;
 pub(crate) mod progress;
 pub mod truncation;
 
+use ahash::AHashMap;
 use serde::{Serialize, Serializer};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 pub(crate) fn ordered_map<S, K, V>(
-    value: &HashMap<K, V>,
+    value: &AHashMap<K, V>,
     serializer: S,
 ) -> std::result::Result<S::Ok, S::Error>
 where
