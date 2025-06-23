@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from tokenizers import SentencePieceBPETokenizer, SentencePieceUnigramTokenizer
@@ -14,9 +16,10 @@ class TestSentencePieceBPE:
 
 
 class TestSentencePieceUnigram:
-    def test_train(self, tmpdir):
-        p = tmpdir.mkdir("tmpdir").join("file.txt")
-        p.write("A first sentence\nAnother sentence\nAnd a last one")
+    def test_train(self, tmp_path_factory):
+        p = tmp_path_factory.mktemp("tmpdir") / "file.txt"
+        with open(p, "w") as f:
+            f.write("A first sentence\nAnother sentence\nAnd a last one")
 
         tokenizer = SentencePieceUnigramTokenizer()
         tokenizer.train(files=str(p), show_progress=False)
@@ -28,9 +31,10 @@ class TestSentencePieceUnigram:
             _ = tokenizer.encode("A sentence 🤗")
         assert str(excinfo.value) == "Encountered an unknown token but `unk_id` is missing"
 
-    def test_train_with_unk_token(self, tmpdir):
-        p = tmpdir.mkdir("tmpdir").join("file.txt")
-        p.write("A first sentence\nAnother sentence\nAnd a last one")
+    def test_train_with_unk_token(self, tmp_path_factory):
+        p = tmp_path_factory.mktemp("tmpdir") / "file.txt"
+        with open(p, "w") as f:
+            f.write("A first sentence\nAnother sentence\nAnd a last one")
 
         tokenizer = SentencePieceUnigramTokenizer()
         tokenizer.train(files=str(p), show_progress=False, special_tokens=["<unk>"], unk_token="<unk>")

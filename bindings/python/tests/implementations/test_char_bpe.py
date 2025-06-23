@@ -1,3 +1,5 @@
+import pytest
+
 from tokenizers import CharBPETokenizer
 
 from ..utils import data_dir, multiprocessing_with_parallelism, openai_files
@@ -44,6 +46,7 @@ class TestCharBPETokenizer:
         decoded = tokenizer.decode(tokenizer.encode("my name is john").ids)
         assert decoded == "my name is john"
 
+    @pytest.mark.thread_unsafe(reason="mutates os.environ")
     def test_multiprocessing_with_parallelism(self, openai_files):
         tokenizer = CharBPETokenizer.from_file(openai_files["vocab"], openai_files["merges"])
         multiprocessing_with_parallelism(tokenizer, False)

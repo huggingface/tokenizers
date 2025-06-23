@@ -108,12 +108,14 @@ class TestEncoding:
         assert pair.char_to_word(2, 1) == None
         assert pair.char_to_word(3, 1) == 1
 
+    @pytest.mark.thread_unsafe(reason="mutable operation on fixture that is shared between threads")
     def test_truncation(self, encodings):
         single, _ = encodings
         single.truncate(2, 1, "right")
         assert single.tokens == ["[CLS]", "i"]
         assert single.overflowing[0].tokens == ["i", "love"]
 
+    @pytest.mark.thread_unsafe(reason="mutable operation on fixture that is shared between threads")
     def test_invalid_truncate_direction(self, encodings):
         single, _ = encodings
         with pytest.raises(ValueError) as excinfo:

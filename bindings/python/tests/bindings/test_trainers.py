@@ -1,6 +1,7 @@
 import copy
 import os
 import pickle
+import uuid
 
 import pytest
 
@@ -150,14 +151,15 @@ class TestWordLevelTrainer:
 
 
 class TestUnigram:
-    def test_train(self, train_files):
+    def test_train(self, tmp_path, train_files):
         tokenizer = SentencePieceUnigramTokenizer()
         tokenizer.train(train_files["small"], show_progress=False)
 
-        filename = "tests/data/unigram_trained.json"
-        tokenizer.save(filename)
+        filename = f"tests/data/unigram_trained{uuid.uuid4()}.json"
+        tokenizer.save(str(filename))
         os.remove(filename)
 
+    @pytest.mark.thread_unsafe(reason="mutates os.environ")
     def test_train_parallelism_with_custom_pretokenizer(self, train_files):
         class GoodCustomPretok:
             def split(self, n, normalized):
@@ -183,7 +185,7 @@ class TestUnigram:
         assert isinstance(pickle.loads(pickle.dumps(trainers.UnigramTrainer())), trainers.UnigramTrainer)
 
     def test_train_with_special_tokens(self):
-        filename = "tests/data/dummy-unigram-special_tokens-train.txt"
+        filename = f"tests/data/dummy-unigram-special_tokens-train{uuid.uuid4()}.txt"
         with open(filename, "w") as f:
             f.write(
                 """
@@ -297,7 +299,7 @@ class TestUnigram:
         )
         tokenizer.train(files=[train_files["big"]], trainer=trainer)
 
-        tokenizer_json = os.path.join(DATA_PATH, "tokenizer.json")
+        tokenizer_json = os.path.join(DATA_PATH, f"tokenizer{uuid.uuid4()}.json")
         tokenizer.save(tokenizer_json)
 
         tokenizer.from_file(tokenizer_json)

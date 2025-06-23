@@ -446,6 +446,7 @@ class TestTokenizer:
         output = tokenizer.post_process(encoding, pair_encoding)
         assert output.tokens == ["my", "pair", "[PAD]", "[PAD]"]
 
+    @pytest.mark.thread_unsafe(reason="mutates os.environ")
     def test_multiprocessing_with_parallelism(self):
         tokenizer = Tokenizer(BPE())
         multiprocessing_with_parallelism(tokenizer, False)
