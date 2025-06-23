@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -11,12 +13,14 @@ use crate::error::{deprecation_warning, PyError};
 #[pyclass(dict, module = "tokenizers", name = "Encoding")]
 #[repr(transparent)]
 pub struct PyEncoding {
-    pub encoding: tk::tokenizer::Encoding,
+    pub encoding: Mutex<tk::tokenizer::Encoding>,
 }
 
 impl From<tk::tokenizer::Encoding> for PyEncoding {
     fn from(v: tk::tokenizer::Encoding) -> Self {
-        Self { encoding: v }
+        Self {
+            encoding: Mutex::new(v),
+        }
     }
 }
 
@@ -26,7 +30,7 @@ impl PyEncoding {
     #[pyo3(text_signature = None)]
     fn new() -> Self {
         Self {
-            encoding: tk::tokenizer::Encoding::default(),
+            encoding: Mutex::new(tk::tokenizer::Encoding::default()),
         }
     }
 
@@ -57,12 +61,12 @@ impl PyEncoding {
         Ok(format!(
             "Encoding(num_tokens={}, attributes=[ids, type_ids, tokens, offsets, \
              attention_mask, special_tokens_mask, overflowing])",
-            self.encoding.get_ids().len()
+            self.encoding.lock().unwrap().get_ids().len()
         ))
     }
 
     fn __len__(&self) -> PyResult<usize> {
-        Ok(self.encoding.len())
+        Ok(self.encoding.lock().unwrap().len())
     }
 
     /// Merge the list of encodings into one final :class:`~tokenizers.Encoding`
@@ -81,7 +85,9 @@ impl PyEncoding {
     #[pyo3(text_signature = "(encodings, growing_offsets=True)")]
     fn merge(encodings: Vec<PyRef<PyEncoding>>, growing_offsets: bool) -> PyEncoding {
         tk::tokenizer::Encoding::merge(
-            encodings.into_iter().map(|e| e.encoding.clone()),
+            encodings
+                .into_iter()
+                .map(|e| e.encoding.lock().unwrap().clone()),
             growing_offsets,
         )
         .into()
@@ -93,7 +99,7 @@ impl PyEncoding {
     ///     :obj:`int`: The number of sequences in this :class:`~tokenizers.Encoding`
     #[getter]
     fn get_n_sequences(&self) -> usize {
-        self.encoding.n_sequences()
+        self.encoding.lock().unwrap().n_sequences()
     }
 
     /// Set the given sequence index
@@ -102,7 +108,7 @@ impl PyEncoding {
     /// :class:`~tokenizers.Encoding`.
     #[pyo3(text_signature = "(self, sequence_id)")]
     fn set_sequence_id(&mut self, sequence_id: usize) {
-        self.encoding.set_sequence_id(sequence_id);
+        self.encoding.lock().unwrap().set_sequence_id(sequence_id);
     }
 
     /// The generated IDs
@@ -114,7 +120,7 @@ impl PyEncoding {
     ///     :obj:`List[int]`: The list of IDs
     #[getter]
     fn get_ids(&self) -> Vec<u32> {
-        self.encoding.get_ids().to_vec()
+        self.encoding.lock().unwrap().get_ids().to_vec()
     }
 
     /// The generated tokens
@@ -125,7 +131,7 @@ impl PyEncoding {
     ///     :obj:`List[str]`: The list of tokens
     #[getter]
     fn get_tokens(&self) -> Vec<String> {
-        self.encoding.get_tokens().to_vec()
+        self.encoding.lock().unwrap().get_tokens().to_vec()
     }
 
     /// The generated word indices.
@@ -168,7 +174,7 @@ impl PyEncoding {
     ///     A :obj:`List` of :obj:`Optional[int]`: A list of optional word index.
     #[getter]
     fn get_word_ids(&self) -> Vec<Option<u32>> {
-        self.encoding.get_word_ids().to_vec()
+        self.encoding.lock().unwrap().get_word_ids().to_vec()
     }
 
     /// The generated sequence indices.
@@ -181,7 +187,7 @@ impl PyEncoding {
     ///     A :obj:`List` of :obj:`Optional[int]`: A list of optional sequence index.
     #[getter]
     fn get_sequence_ids(&self) -> Vec<Option<usize>> {
-        self.encoding.get_sequence_ids()
+        self.encoding.lock().unwrap().get_sequence_ids()
     }
 
     /// The generated type IDs
@@ -193,7 +199,7 @@ impl PyEncoding {
     ///     :obj:`List[int]`: The list of type ids
     #[getter]
     fn get_type_ids(&self) -> Vec<u32> {
-        self.encoding.get_type_ids().to_vec()
+        self.encoding.lock().unwrap().get_type_ids().to_vec()
     }
 
     /// The offsets associated to each token
@@ -205,7 +211,7 @@ impl PyEncoding {
     ///     A :obj:`List` of :obj:`Tuple[int, int]`: The list of offsets
     #[getter]
     fn get_offsets(&self) -> Vec<(usize, usize)> {
-        self.encoding.get_offsets().to_vec()
+        self.encoding.lock().unwrap().get_offsets().to_vec()
     }
 
     /// The special token mask
@@ -216,7 +222,11 @@ impl PyEncoding {
     ///     :obj:`List[int]`: The special tokens mask
     #[getter]
     fn get_special_tokens_mask(&self) -> Vec<u32> {
-        self.encoding.get_special_tokens_mask().to_vec()
+        self.encoding
+            .lock()
+            .unwrap()
+            .get_special_tokens_mask()
+            .to_vec()
     }
 
     /// The attention mask
@@ -229,7 +239,7 @@ impl PyEncoding {
     ///    :obj:`List[int]`: The attention mask
     #[getter]
     fn get_attention_mask(&self) -> Vec<u32> {
-        self.encoding.get_attention_mask().to_vec()
+        self.encoding.lock().unwrap().get_attention_mask().to_vec()
     }
 
     /// A :obj:`List` of overflowing :class:`~tokenizers.Encoding`
@@ -244,6 +254,8 @@ impl PyEncoding {
     #[getter]
     fn get_overflowing(&self) -> Vec<PyEncoding> {
         self.encoding
+            .lock()
+            .unwrap()
             .get_overflowing()
             .clone()
             .into_iter()
@@ -265,7 +277,10 @@ impl PyEncoding {
     #[pyo3(signature = (word_index, sequence_index = 0))]
     #[pyo3(text_signature = "(self, word_index, sequence_index=0)")]
     fn word_to_tokens(&self, word_index: u32, sequence_index: usize) -> Option<(usize, usize)> {
-        self.encoding.word_to_tokens(word_index, sequence_index)
+        self.encoding
+            .lock()
+            .unwrap()
+            .word_to_tokens(word_index, sequence_index)
     }
 
     /// Get the offsets of the word at the given index in one of the input sequences.
@@ -281,7 +296,10 @@ impl PyEncoding {
     #[pyo3(signature = (word_index, sequence_index = 0))]
     #[pyo3(text_signature = "(self, word_index, sequence_index=0)")]
     fn word_to_chars(&self, word_index: u32, sequence_index: usize) -> Option<Offsets> {
-        self.encoding.word_to_chars(word_index, sequence_index)
+        self.encoding
+            .lock()
+            .unwrap()
+            .word_to_chars(word_index, sequence_index)
     }
 
     /// Get the index of the sequence represented by the given token.
@@ -297,7 +315,7 @@ impl PyEncoding {
     ///     :obj:`int`: The sequence id of the given token
     #[pyo3(text_signature = "(self, token_index)")]
     fn token_to_sequence(&self, token_index: usize) -> Option<usize> {
-        self.encoding.token_to_sequence(token_index)
+        self.encoding.lock().unwrap().token_to_sequence(token_index)
     }
 
     /// Get the offsets of the token at the given index.
@@ -314,7 +332,7 @@ impl PyEncoding {
     ///     :obj:`Tuple[int, int]`: The token offsets :obj:`(first, last + 1)`
     #[pyo3(text_signature = "(self, token_index)")]
     fn token_to_chars(&self, token_index: usize) -> Option<Offsets> {
-        let (_, offsets) = self.encoding.token_to_chars(token_index)?;
+        let (_, offsets) = self.encoding.lock().unwrap().token_to_chars(token_index)?;
         Some(offsets)
     }
 
@@ -332,7 +350,7 @@ impl PyEncoding {
     ///     :obj:`int`: The index of the word in the relevant input sequence.
     #[pyo3(text_signature = "(self, token_index)")]
     fn token_to_word(&self, token_index: usize) -> Option<u32> {
-        let (_, word_idx) = self.encoding.token_to_word(token_index)?;
+        let (_, word_idx) = self.encoding.lock().unwrap().token_to_word(token_index)?;
         Some(word_idx)
     }
 
@@ -349,7 +367,10 @@ impl PyEncoding {
     #[pyo3(signature = (char_pos, sequence_index = 0))]
     #[pyo3(text_signature = "(self, char_pos, sequence_index=0)")]
     fn char_to_token(&self, char_pos: usize, sequence_index: usize) -> Option<usize> {
-        self.encoding.char_to_token(char_pos, sequence_index)
+        self.encoding
+            .lock()
+            .unwrap()
+            .char_to_token(char_pos, sequence_index)
     }
 
     /// Get the word that contains the char at the given position in the input sequence.
@@ -365,7 +386,10 @@ impl PyEncoding {
     #[pyo3(signature = (char_pos, sequence_index = 0))]
     #[pyo3(text_signature = "(self, char_pos, sequence_index=0)")]
     fn char_to_word(&self, char_pos: usize, sequence_index: usize) -> Option<u32> {
-        self.encoding.char_to_word(char_pos, sequence_index)
+        self.encoding
+            .lock()
+            .unwrap()
+            .char_to_word(char_pos, sequence_index)
     }
 
     /// Pad the :class:`~tokenizers.Encoding` at the given length
@@ -419,6 +443,8 @@ impl PyEncoding {
             }
         }
         self.encoding
+            .lock()
+            .unwrap()
             .pad(length, pad_id, pad_type_id, &pad_token, direction);
         Ok(())
     }
@@ -449,7 +475,10 @@ impl PyEncoding {
             ),
         }?;
 
-        self.encoding.truncate(max_length, stride, tdir);
+        self.encoding
+            .lock()
+            .unwrap()
+            .truncate(max_length, stride, tdir);
         Ok(())
     }
 }

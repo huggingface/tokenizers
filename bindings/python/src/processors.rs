@@ -169,8 +169,8 @@ impl PyPostProcessor {
         add_special_tokens: bool,
     ) -> PyResult<PyEncoding> {
         let final_encoding = ToPyResult(self.processor.process(
-            encoding.encoding.clone(),
-            pair.map(|e| e.encoding.clone()),
+            encoding.encoding.lock().unwrap().clone(),
+            pair.map(|e| e.encoding.lock().unwrap().clone()),
             add_special_tokens,
         ))
         .into_py()?;
