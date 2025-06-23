@@ -1,3 +1,5 @@
+import pytest
+
 from tokenizers import ByteLevelBPETokenizer
 
 from ..utils import data_dir, multiprocessing_with_parallelism, roberta_files
@@ -84,6 +86,7 @@ class TestByteLevelBPE:
             "Ġdog",
         ]
 
+    @pytest.mark.thread_unsafe(reason="mutates OS.environ")
     def test_multiprocessing_with_parallelism(self, roberta_files):
         tokenizer = ByteLevelBPETokenizer.from_file(roberta_files["vocab"], roberta_files["merges"])
         multiprocessing_with_parallelism(tokenizer, False)

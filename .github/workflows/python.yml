@@ -16,7 +16,7 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.13t"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -52,6 +52,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
+        python: ["3.13", "3.13t"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -72,7 +73,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.13
+          python-version: ${{ matrix.python }}
           architecture: "x64"
 
 
@@ -116,7 +117,7 @@ jobs:
           python -m venv .env
           source .env/bin/activate
           pip install -U pip
-          pip install pytest requests setuptools_rust numpy pyarrow datasets
+          pip install pytest requests setuptools_rust numpy pyarrow datasets pytest-run-parallel
           pip install -e .[dev]
 
       - name: Check style

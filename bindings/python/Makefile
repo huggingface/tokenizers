@@ -21,8 +21,8 @@ TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 
 # Launch the test suite
 test: $(TESTS_RESOURCES)
-	pip install pytest requests setuptools_rust numpy pyarrow datasets
-	python -m pytest -s -v tests
+	pip install pytest requests setuptools_rust numpy pyarrow datasets pytest-run-parallel
+	python -m pytest -s -v tests --parallel-threads=4
 	cargo test --no-default-features
 
 $(DATA_DIR)/big.txt :
