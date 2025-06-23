@@ -5,13 +5,17 @@ from tokenizers import BertWordPieceTokenizer
 from ..utils import bert_files, data_dir
 
 
+def get_encodings(bert_files):
+    tokenizer = BertWordPieceTokenizer.from_file(bert_files["vocab"])
+    single_encoding = tokenizer.encode("I love HuggingFace")
+    pair_encoding = tokenizer.encode("I love HuggingFace", "Do you?")
+    return single_encoding, pair_encoding
+
+
 class TestEncoding:
     @pytest.fixture(scope="class")
     def encodings(self, bert_files):
-        tokenizer = BertWordPieceTokenizer.from_file(bert_files["vocab"])
-        single_encoding = tokenizer.encode("I love HuggingFace")
-        pair_encoding = tokenizer.encode("I love HuggingFace", "Do you?")
-        return single_encoding, pair_encoding
+        return get_encodings(bert_files)
 
     def test_sequence_ids(self, encodings):
         single, pair = encodings
@@ -108,16 +112,14 @@ class TestEncoding:
         assert pair.char_to_word(2, 1) == None
         assert pair.char_to_word(3, 1) == 1
 
-    @pytest.mark.thread_unsafe(reason="mutable operation on fixture that is shared between threads")
-    def test_truncation(self, encodings):
-        single, _ = encodings
+    def test_truncation(self, bert_files):
+        single, _ = get_encodings(bert_files)
         single.truncate(2, 1, "right")
         assert single.tokens == ["[CLS]", "i"]
         assert single.overflowing[0].tokens == ["i", "love"]
 
-    @pytest.mark.thread_unsafe(reason="mutable operation on fixture that is shared between threads")
-    def test_invalid_truncate_direction(self, encodings):
-        single, _ = encodings
+    def test_invalid_truncate_direction(self, bert_files):
+        single, _ = get_encodings(bert_files)
         with pytest.raises(ValueError) as excinfo:
             single.truncate(2, 1, "not_a_direction")
         assert "Invalid truncation direction value : not_a_direction" == str(excinfo.value)
