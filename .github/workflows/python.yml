@@ -127,7 +127,15 @@ jobs:
           make check-style
 
       - name: Run tests
+        if: ${{ !endsWith(matrix.python, 't') }}
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
           make test
+
+      - name: Run tests (free-threaded)
+        if: ${{ endsWith(matrix.python, 't') }}
+        working-directory: ./bindings/python
+        run: |
+          source .env/bin/activate
+          make nogil-test
