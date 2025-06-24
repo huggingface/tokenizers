@@ -1074,6 +1074,11 @@ where
             &mut self.prefix_index,
         )
     }
+
+    // Allows prefilling the tokenizer. Bit weird because not called in python
+    pub fn with_sequence(&mut self, sequence_ids: Vec<u32>) {
+        self.ids = sequence_ids;
+    }
 }
 
 /// Internal function exposed only to bypass python limitations
