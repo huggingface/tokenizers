@@ -1128,6 +1128,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     N: Normalizer,
