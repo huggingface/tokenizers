@@ -9,8 +9,8 @@
 //!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
 //!     ...).
 
+use ahash::AHashMap;
 use std::{
-    collections::HashMap,
     fs::{read_to_string, File},
     io::{prelude::*, BufReader},
     ops::{Deref, DerefMut},
@@ -189,6 +189,8 @@ impl Token {
 }
 
 use std::borrow::Cow;
+use std::collections::HashMap;
+
 #[derive(Debug, Clone)]
 pub enum InputSequence<'s> {
     Raw(Cow<'s, str>),
@@ -657,7 +659,7 @@ where
         self.padding.as_mut()
     }
 
-    /// Get the vocabulary
+    // Get the vocabulary as a plain HashMap for bindings compatibility
     pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
         let mut final_vocab = self.model.get_vocab();
 
@@ -675,7 +677,7 @@ where
     }
 
     /// Get the added tokens decoder
-    pub fn get_added_tokens_decoder(&self) -> HashMap<u32, AddedToken> {
+    pub fn get_added_tokens_decoder(&self) -> AHashMap<u32, AddedToken> {
         self.added_vocabulary.get_added_tokens_decoder().clone()
     }
 
@@ -702,7 +704,7 @@ where
             .or_else(|| self.model.id_to_token(id))
     }
 
-    /// set the added bocab's splitting scheme
+    /// set the added vocab's splitting scheme
     pub fn set_encode_special_tokens(&mut self, value: bool) {
         self.added_vocabulary.set_encode_special_tokens(value);
     }
