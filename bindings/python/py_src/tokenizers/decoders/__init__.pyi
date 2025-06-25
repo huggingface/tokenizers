@@ -4,7 +4,7 @@ class DecodeStream:
     Class needed for streaming decode
 
     """
-    def __init__(self, skip_special_tokens):
+    def __init__(self, skip_special_tokens=True):
         pass
 
 class Decoder:
