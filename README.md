@@ -47,7 +47,7 @@ You can install from source using:
 pip install git+https://github.com/huggingface/tokenizers.git#subdirectory=bindings/python
 ```
 
-our install the released versions with
+or install the released versions with
 
 ```bash
 pip install tokenizers
