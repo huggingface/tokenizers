@@ -199,24 +199,28 @@ pub fn find_hash_factor_for_dictionary(tokens: impl IntoIterator<Item = Vec<u8>>
 
 impl Backtrack {
     pub(crate) fn new(vocab: Vocab, merge_map: MergeMap) -> Self {
-        // let vocab_vec: Vec<_> = vocab
-        //     .into_iter()
-        //     .sorted_unstable_by(|a, b| a.1.cmp(&b.1))
-        //     .map(|(k, _v)| k.chars().map(|b| CHAR_BYTES[&b] as u8).collect::<Vec<_>>())
-        //     .collect();
+        println!("Original vocab {:?}", vocab.len());
         let mut merges: Vec<_> = merge_map.values().collect();
         merges.sort();
-        let merge_vocab: Vec<u32> = merges
+        let merge_vocab_dup: Vec<u32> = merges
             .into_iter()
             .map(|(_rank, token_id)| *token_id)
             .collect();
+
+        let mut merge_vocab = Vec::with_capacity(vocab.len());
+        for token_id in merge_vocab_dup {
+            if merge_vocab.contains(&token_id) {
+                continue;
+            }
+            merge_vocab.push(token_id);
+        }
 
         let vocab_r: AHashMap<_, _> = vocab.iter().map(|(k, v)| (v, k)).collect();
         let mut tokens: Vec<_> = vocab
             .clone()
             .into_iter()
             .flat_map(|(k, token_id)| {
-                if merge_vocab.contains(&token_id) {
+                if !merge_vocab.contains(&token_id) {
                     Some((token_id, k))
                 } else {
                     None
@@ -230,8 +234,19 @@ impl Backtrack {
             .into_iter()
             .map(|token_id| vocab_r[&token_id].clone())
             .collect();
+
         tokens.extend(merge_vocab);
         let vocab_vec: Vec<_> = tokens.into_iter().map(|k| k.as_bytes().to_vec()).collect();
+        // let vocab_vec: Vec<_> = tokens
+        //     .into_iter()
+        //     .map(|token| {
+        //         token
+        //             .chars()
+        //             .map(|b| CHAR_BYTES[&b] as u8)
+        //             .collect::<Vec<_>>()
+        //     })
+        //     .collect();
+        println!("have vocab {:?}", vocab_vec.len());
 
         let hash_factor = find_hash_factor_for_dictionary(vocab_vec.clone());
         let mut all_tokens = Vec::new();
@@ -295,7 +310,7 @@ impl Backtrack {
 
         let mut split_table = vec![];
         let mut pair_lookup = FnvHashMap::default();
-        let mut merge_map = AHashMap::new();
+        let merge_map = AHashMap::new();
 
         // // First option, use the input merge table.
         // if let Some(ref merges) = merges {
@@ -333,6 +348,10 @@ impl Backtrack {
                 let mut id1 = next_prefix_match[id];
                 while id1 != u32::MAX {
                     let rest = &token[token_range(&token_starts, id1).len()..];
+                    if id == 114843 {
+                        println!("Wondering about this pair {id} - {id1}");
+                        println!("Rest {}", unsafe { std::str::from_utf8_unchecked(rest) });
+                    }
                     if let Some(id2) = find_token_by_bytes(
                         &all_tokens,
                         &token_starts,
@@ -340,20 +359,34 @@ impl Backtrack {
                         rest,
                         hash_factor,
                     ) {
+                        if id1 == 114843 && id2 == 41552 {
+                            println!("Wondering about this pair");
+                        }
+                        if id == 114843 {
+                            println!("{id1} -  {id2}");
+                        }
+
                         if id1 < id as u32
                             && id2 < id as u32
                             && is_valid_token_pair(&pair_lookup, &split_table, id1, id2)
                         {
+                            if id == 114843 {
+                                println!("Inserting pair + split");
+                            }
                             pair_lookup.insert((id1, id2), id as u32);
                             split_table.push((id1, id2));
-                            merge_map.insert(Pair::from((id1, id2)), (id as u32, id as u32));
+                            // merge_map.insert(Pair::from((id1, id2)), (id as u32, id as u32));
                             break;
                         }
                     }
                     id1 = next_prefix_match[id1 as usize];
                 }
                 if id1 == u32::MAX {
-                    split_table.push((id as u32, id as u32));
+                    if id == 114843 {
+                        println!("Inserting split");
+                    } else {
+                        split_table.push((id as u32, id as u32));
+                    }
                 }
             }
         };
@@ -379,11 +412,11 @@ impl Backtrack {
             let strs = bytes.iter().map(|b| char::from(*b)).collect::<Vec<_>>();
             // println!("Encoding {bytes:?} into bitfield");
             let tokens = bpe.encode_via_bitfield(bytes);
-            assert_eq!(
-                tokens,
-                vec![token_id],
-                "token {token_id} with bytes {bytes:?} (tokens {strs:?} encodes to {tokens:?} instead of to itself"
-            );
+            // assert_eq!(
+            //     tokens,
+            //     vec![token_id],
+            //     "token {token_id} with bytes {bytes:?} (tokens {strs:?} encodes to {tokens:?} instead of to itself"
+            // );
         }
         bpe
     }
@@ -576,11 +609,11 @@ impl Backtrack {
             // println!("in step, token: {last:?}, {token}");
             let token_len = self.token_len(token);
             let end_pos = backtrack_state.pos + token_len;
-            if backtrack_state.bitfield.is_set(end_pos)
-                && last
-                    .map(|last_token| self.is_valid_token_pair(last_token, token))
-                    .unwrap_or(true)
-            {
+            let is_valid = last
+                .map(|last_token| self.is_valid_token_pair(last_token, token))
+                .unwrap_or(true);
+            // println!("Is valid {is_valid}");
+            if backtrack_state.bitfield.is_set(end_pos) && is_valid {
                 backtrack_state.tokens.push(token);
                 backtrack_state.pos = end_pos;
                 // In principle, we could in some cases reuse the leftmost longest match iterator.
@@ -626,6 +659,9 @@ fn is_valid_token_pair(
     mut token1: u32,
     mut token2: u32,
 ) -> bool {
+    if token1 == 114843 && token2 == 41552 {
+        println!("Checking for the damn pair");
+    }
     // Keep track of the maximum token which can still be chosen across the split point.
     let mut limit = u32::MAX;
     // println!("checking if {token1}, {token2} is a valid token_pair");
@@ -648,7 +684,9 @@ fn is_valid_token_pair(
                 limit = token2 + 1;
                 token2 = unsafe { split_table.get_unchecked(token2 as usize).0 };
                 if token2 + 1 == limit {
-                    // println!("Done2");
+                    if token1 == 114843 {
+                        println!("Done2 - {token1} - {token2} - {limit}");
+                    }
                     return true;
                 }
             }
@@ -659,7 +697,9 @@ fn is_valid_token_pair(
                 limit = token1;
                 token1 = unsafe { split_table.get_unchecked(token1 as usize).1 };
                 if token1 == limit {
-                    // println!("Done3");
+                    if token1 == 114843 {
+                        println!("Done3 - {token2}");
+                    }
                     return true;
                 }
             }

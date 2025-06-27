@@ -159,7 +159,12 @@ impl Word {
         changes
     }
 
-    pub(super) fn merge_all(&mut self, merges: &AHashMap<Pair, (u32, u32)>, dropout: Option<f32>) {
+    pub(super) fn merge_all(
+        &mut self,
+        merges: &AHashMap<Pair, (u32, u32)>,
+        dropout: Option<f32>,
+        vocab_r: &AHashMap<u32, String>,
+    ) {
         let mut queue = QuaternaryHeap::with_capacity(self.symbols.len());
         let mut skip = Vec::with_capacity(queue.len());
 
@@ -176,6 +181,14 @@ impl Word {
                     })
                 }),
         );
+        // println!(
+        //     "Merging {:#?}",
+        //     self.symbols
+        //         .iter()
+        //         .map(|s| vocab_r[&s.c].clone())
+        //         .collect::<Vec<_>>()
+        //         .join("-")
+        // );
 
         while let Some(top) = queue.pop() {
             if dropout.map(|d| rng().random::<f32>() < d).unwrap_or(false) {
@@ -242,6 +255,18 @@ impl Word {
                         });
                     }
                 }
+                // let mut s = String::new();
+                // let mut si = 0;
+                // loop {
+                //     let symbol = &self.symbols[si];
+                //     s.push_str(&vocab_r[&symbol.c]);
+                //     s.push_str("-");
+                //     si = symbol.next as usize;
+                //     if si >= self.symbols.len() {
+                //         break;
+                //     }
+                // }
+                // println!("Merge Rank {} {:#?}", top.rank, s);
             }
         }
 

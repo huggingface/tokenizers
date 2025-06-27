@@ -505,7 +505,7 @@ impl BPE {
 
         // println!("Word {word:?}");
 
-        word.merge_all(&self.merges, self.dropout);
+        word.merge_all(&self.merges, self.dropout, &self.vocab_r);
         // println!("After Word {word:?}");
 
         Ok(word)

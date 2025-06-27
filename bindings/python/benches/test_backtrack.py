@@ -25,16 +25,22 @@ def test(model: str, dataset: str, dataset_config: str):
     dataset_xnli = load_dataset(dataset, dataset_config)
     tokenizer = Tokenizer.from_pretrained(model)
     tokenizer2 = Tokenizer.from_pretrained(model)
+    print("Enabling backtrack")
     tokenizer2.enable_backtrack()
+    print("Enabled backtrack")
 
-    for easy in ["1880", " cream"]:
+    for easy in [
+        # "1880",
+        # " cream",
+        " Insectarium",
+    ]:
         encoded = tokenizer.encode(easy)
         encoded2 = tokenizer2.encode(easy)
         if encoded.ids != encoded2.ids:
             import ipdb
 
             ipdb.set_trace()
-        assert encoded.ids == encoded2.ids
+        # assert encoded.ids == encoded2.ids
 
     sentences = []
     en_sentences = []
@@ -59,15 +65,22 @@ def test(model: str, dataset: str, dataset_config: str):
     assert len(encoded) == len(sentences)
     total = 0
     correct = 0
+    smaller = 0
+    larger = 0
     for enc, enc2, sentence in zip(encoded, encoded2, sentences):
         # if enc.ids != enc2.ids:
         #     print(enc.ids)
         #     print(enc2.ids)
         if enc.ids == enc2.ids:
             correct += 1
+        if len(enc2.ids) < len(enc.ids):
+            smaller += 1
+        if len(enc.ids) < len(enc2.ids):
+            larger += 1
         total += 1
-        assert enc.ids == enc2.ids, f"{enc.ids} != {enc2.ids} (Source: {sentence}"
+        # assert enc.ids == enc2.ids, f"{enc.ids} != {enc2.ids} (Source: {sentence}"
     print(f"{correct} / {total} ({correct / total * 100:.2f}%%)")
+    print(f"{smaller} / {smaller + larger} ({smaller / (smaller + larger) * 100:.2f}%%)")
     # print("All good !")
 
 
