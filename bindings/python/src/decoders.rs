@@ -603,24 +603,6 @@ impl Decoder for PyDecoderWrapper {
     }
 }
 
-/// Decoders Module
-#[pymodule]
-pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyDecoder>()?;
-    m.add_class::<PyByteLevelDec>()?;
-    m.add_class::<PyReplaceDec>()?;
-    m.add_class::<PyWordPieceDec>()?;
-    m.add_class::<PyByteFallbackDec>()?;
-    m.add_class::<PyFuseDec>()?;
-    m.add_class::<PyStrip>()?;
-    m.add_class::<PyMetaspaceDec>()?;
-    m.add_class::<PyBPEDecoder>()?;
-    m.add_class::<PyCTCDecoder>()?;
-    m.add_class::<PySequenceDecoder>()?;
-    m.add_class::<PyDecodeStream>()?;
-    Ok(())
-}
-
 /// Class needed for streaming decode
 ///
 #[pyclass(module = "tokenizers.decoders", name = "DecodeStream")]
@@ -661,6 +643,13 @@ impl PyDecodeStream {
         }
     }
 
+    #[pyo3(signature = (sequence_ids), text_signature = "(self, sequence_ids)")]
+    fn with_sequence(&mut self, sequence_ids: Vec<u32>) {
+        self.ids = sequence_ids;
+        self.prefix_index = self.ids.len();
+        self.prefix = "".to_string();
+    }
+
     #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
     fn step(&mut self, tokenizer: &PyTokenizer, id: u32) -> PyResult<Option<String>> {
         ToPyResult(tk::tokenizer::step_decode_stream(
@@ -673,6 +662,24 @@ impl PyDecodeStream {
         ))
         .into()
     }
+}
+
+/// Decoders Module
+#[pymodule]
+pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<PyDecoder>()?;
+    m.add_class::<PyByteLevelDec>()?;
+    m.add_class::<PyReplaceDec>()?;
+    m.add_class::<PyWordPieceDec>()?;
+    m.add_class::<PyByteFallbackDec>()?;
+    m.add_class::<PyFuseDec>()?;
+    m.add_class::<PyStrip>()?;
+    m.add_class::<PyMetaspaceDec>()?;
+    m.add_class::<PyBPEDecoder>()?;
+    m.add_class::<PyCTCDecoder>()?;
+    m.add_class::<PySequenceDecoder>()?;
+    m.add_class::<PyDecodeStream>()?;
+    Ok(())
 }
 
 #[cfg(test)]
