@@ -1,0 +1,26 @@
+name: vendor-crates
+on: [workflow_dispatch]
+
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Cargo vendor
+        run: |
+          cd bindings/python
+          cargo vendor --locked --versioned-dirs vendor
+          tar -cJf ../../vendor.tar.xz vendor .cargo/config.toml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tokenizers-vendor
+          path: vendor.tar.xz
+          retention-days: 14
