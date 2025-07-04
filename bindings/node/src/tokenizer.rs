@@ -341,9 +341,7 @@ impl Tokenizer {
       PreTokenizer,
       Processor,
       Decoder,
-    > = s
-      .parse()
-      .map_err(|e| Error::from_reason(format!("{e}")))?;
+    > = s.parse().map_err(|e| Error::from_reason(format!("{e}")))?;
     Ok(Self {
       tokenizer: Arc::new(RwLock::new(tokenizer)),
     })
