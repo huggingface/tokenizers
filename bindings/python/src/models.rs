@@ -114,8 +114,7 @@ impl PyModel {
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.model).map_err(|e| {
             exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle Model: {}",
-                e
+                "Error while attempting to pickle Model: {e}"
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).into())
@@ -126,8 +125,7 @@ impl PyModel {
             Ok(s) => {
                 self.model = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle Model: {}",
-                        e
+                        "Error while attempting to unpickle Model: {e}"
                     ))
                 })?;
                 Ok(())
@@ -309,15 +307,14 @@ impl PyBPE {
                     "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
                     "byte_fallback" => builder = builder.byte_fallback(value.extract()?),
                     "ignore_merges" => builder = builder.ignore_merges(value.extract()?),
-                    _ => println!("Ignored unknown kwarg option {}", key),
+                    _ => println!("Ignored unknown kwarg option {key}"),
                 };
             }
         }
 
         match builder.build() {
             Err(e) => Err(exceptions::PyException::new_err(format!(
-                "Error while initializing BPE: {}",
-                e
+                "Error while initializing BPE: {e}"
             ))),
             Ok(bpe) => Ok((PyBPE {}, bpe.into())),
         }
@@ -500,8 +497,7 @@ impl PyBPE {
     fn read_file(vocab: &str, merges: &str) -> PyResult<(HashMap<String, u32>, Merges)> {
         let (vocab, merges) = BPE::read_file(vocab, merges).map_err(|e| {
             exceptions::PyException::new_err(format!(
-                "Error while reading vocab & merges files: {}",
-                e
+                "Error while reading vocab & merges files: {e}"
             ))
         })?;
         let vocab = vocab.into_iter().collect();
@@ -539,7 +535,7 @@ impl PyBPE {
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<Self>> {
         let (vocab, merges) = BPE::read_file(vocab, merges).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while reading BPE files: {}", e))
+            exceptions::PyException::new_err(format!("Error while reading BPE files: {e}"))
         })?;
         let vocab = vocab.into_iter().collect();
         Py::new(
@@ -559,7 +555,7 @@ impl PyBPE {
     fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
         let super_ = self_.as_ref();
         let mut model = super_.model.write().map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while clearing BPE cache: {}", e))
+            exceptions::PyException::new_err(format!("Error while clearing BPE cache: {e}"))
         })?;
         model.clear_cache();
         Ok(())
@@ -571,7 +567,7 @@ impl PyBPE {
     fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
         let super_ = self_.as_ref();
         let mut model = super_.model.write().map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while resizing BPE cache: {}", e))
+            exceptions::PyException::new_err(format!("Error while resizing BPE cache: {e}"))
         })?;
         model.resize_cache(capacity);
         Ok(())
@@ -610,15 +606,14 @@ impl PyWordPiece {
                     "continuing_subword_prefix" => {
                         builder = builder.continuing_subword_prefix(val.extract()?);
                     }
-                    _ => println!("Ignored unknown kwargs option {}", key),
+                    _ => println!("Ignored unknown kwargs option {key}"),
                 }
             }
         }
 
         match builder.build() {
             Err(e) => Err(exceptions::PyException::new_err(format!(
-                "Error while initializing WordPiece: {}",
-                e
+                "Error while initializing WordPiece: {e}"
             ))),
             Ok(wordpiece) => Ok((PyWordPiece {}, wordpiece.into())),
         }
@@ -708,7 +703,7 @@ impl PyWordPiece {
     #[pyo3(text_signature = "(vocab)")]
     fn read_file(vocab: &str) -> PyResult<HashMap<String, u32>> {
         let vocab = WordPiece::read_file(vocab).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while reading WordPiece file: {}", e))
+            exceptions::PyException::new_err(format!("Error while reading WordPiece file: {e}"))
         })?;
         Ok(vocab.into_iter().collect())
     }
@@ -740,7 +735,7 @@ impl PyWordPiece {
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<Self>> {
         let vocab = WordPiece::read_file(vocab).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while reading WordPiece file: {}", e))
+            exceptions::PyException::new_err(format!("Error while reading WordPiece file: {e}"))
         })?;
         let vocab = vocab.into_iter().collect();
         Py::new(
@@ -830,7 +825,7 @@ impl PyWordLevel {
     #[pyo3(text_signature = "(vocab)")]
     fn read_file(vocab: &str) -> PyResult<HashMap<String, u32>> {
         let vocab = WordLevel::read_file(vocab).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while reading WordLevel file: {}", e))
+            exceptions::PyException::new_err(format!("Error while reading WordLevel file: {e}"))
         })?;
         let vocab: HashMap<_, _> = vocab.into_iter().collect();
         Ok(vocab)
@@ -863,7 +858,7 @@ impl PyWordLevel {
         unk_token: Option<String>,
     ) -> PyResult<Py<Self>> {
         let vocab = WordLevel::read_file(vocab).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while reading WordLevel file: {}", e))
+            exceptions::PyException::new_err(format!("Error while reading WordLevel file: {e}"))
         })?;
         let vocab = vocab.into_iter().collect();
         Py::new(
@@ -895,8 +890,7 @@ impl PyUnigram {
                 let model =
                     Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false)).map_err(|e| {
                         exceptions::PyException::new_err(format!(
-                            "Error while loading Unigram: {}",
-                            e
+                            "Error while loading Unigram: {e}"
                         ))
                     })?;
                 Ok((PyUnigram {}, model.into()))
@@ -914,7 +908,7 @@ impl PyUnigram {
     fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
         let super_ = self_.as_ref();
         let mut model = super_.model.write().map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while clearing Unigram cache: {}", e))
+            exceptions::PyException::new_err(format!("Error while clearing Unigram cache: {e}"))
         })?;
         model.clear_cache();
         Ok(())
@@ -926,7 +920,7 @@ impl PyUnigram {
     fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
         let super_ = self_.as_ref();
         let mut model = super_.model.write().map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while resizing Unigram cache: {}", e))
+            exceptions::PyException::new_err(format!("Error while resizing Unigram cache: {e}"))
         })?;
         model.resize_cache(capacity);
         Ok(())

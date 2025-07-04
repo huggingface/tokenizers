@@ -150,8 +150,7 @@ impl PyPreTokenizer {
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.pretok).map_err(|e| {
             exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle PreTokenizer: {}",
-                e
+                "Error while attempting to pickle PreTokenizer: {e}"
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).into())
@@ -162,8 +161,7 @@ impl PyPreTokenizer {
             Ok(s) => {
                 let unpickled = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle PreTokenizer: {}",
-                        e
+                        "Error while attempting to unpickle PreTokenizer: {e}"
                     ))
                 })?;
                 self.pretok = unpickled;
@@ -662,8 +660,7 @@ pub(crate) fn from_string(string: String) -> Result<PrependScheme, PyErr> {
         "always" => PrependScheme::Always,
         _ => {
             return Err(exceptions::PyValueError::new_err(format!(
-                "{} is an unknown variant, should be one of ['first', 'never', 'always']",
-                string
+                "{string} is an unknown variant, should be one of ['first', 'never', 'always']"
             )));
         }
     };

@@ -33,8 +33,7 @@ impl PyEncoding {
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.encoding).map_err(|e| {
             exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle Encoding: {}",
-                e
+                "Error while attempting to pickle Encoding: {e}"
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).into())
@@ -45,8 +44,7 @@ impl PyEncoding {
             Ok(s) => {
                 self.encoding = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle Encoding: {}",
-                        e
+                        "Error while attempting to unpickle Encoding: {e}"
                     ))
                 })?;
                 Ok(())
@@ -407,9 +405,8 @@ impl PyEncoding {
                             "left" => Ok(PaddingDirection::Left),
                             "right" => Ok(PaddingDirection::Right),
                             other => Err(PyError(format!(
-                                "Unknown `direction`: `{}`. Use \
-                                 one of `left` or `right`",
-                                other
+                                "Unknown `direction`: `{other}`. Use \
+                                 one of `left` or `right`"
                             ))
                             .into_pyerr::<exceptions::PyValueError>()),
                         }?;
@@ -417,7 +414,7 @@ impl PyEncoding {
                     "pad_id" => pad_id = value.extract()?,
                     "pad_type_id" => pad_type_id = value.extract()?,
                     "pad_token" => pad_token = value.extract()?,
-                    _ => println!("Ignored unknown kwarg option {}", key),
+                    _ => println!("Ignored unknown kwarg option {key}"),
                 }
             }
         }
@@ -447,8 +444,7 @@ impl PyEncoding {
             "left" => Ok(TruncationDirection::Left),
             "right" => Ok(TruncationDirection::Right),
             _ => Err(PyError(format!(
-                "Invalid truncation direction value : {}",
-                direction
+                "Invalid truncation direction value : {direction}"
             ))
             .into_pyerr::<exceptions::PyValueError>()),
         }?;

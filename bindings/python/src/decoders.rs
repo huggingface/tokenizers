@@ -107,8 +107,7 @@ impl PyDecoder {
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.decoder).map_err(|e| {
             exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle Decoder: {}",
-                e
+                "Error while attempting to pickle Decoder: {e}"
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).into())
@@ -119,8 +118,7 @@ impl PyDecoder {
             Ok(s) => {
                 self.decoder = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle Decoder: {}",
-                        e
+                        "Error while attempting to unpickle Decoder: {e}"
                     ))
                 })?;
                 Ok(())

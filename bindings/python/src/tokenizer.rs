@@ -143,7 +143,7 @@ impl PyAddedToken {
                     "rstrip" => token.rstrip = Some(value.extract()?),
                     "normalized" => token.normalized = Some(value.extract()?),
                     "special" => token.special = value.extract()?,
-                    _ => println!("Ignored unknown kwarg option {}", key),
+                    _ => println!("Ignored unknown kwarg option {key}"),
                 }
             }
         }
@@ -492,8 +492,7 @@ impl PyTokenizer {
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.tokenizer).map_err(|e| {
             exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle Tokenizer: {}",
-                e
+                "Error while attempting to pickle Tokenizer: {e}"
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).into())
@@ -504,8 +503,7 @@ impl PyTokenizer {
             Ok(s) => {
                 self.tokenizer = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle Tokenizer: {}",
-                        e
+                        "Error while attempting to unpickle Tokenizer: {e}"
                     ))
                 })?;
                 Ok(())
@@ -567,8 +565,7 @@ impl PyTokenizer {
     fn from_buffer(buffer: &Bound<'_, PyBytes>) -> PyResult<Self> {
         let tokenizer = serde_json::from_slice(buffer.as_bytes()).map_err(|e| {
             exceptions::PyValueError::new_err(format!(
-                "Cannot instantiate Tokenizer from buffer: {}",
-                e
+                "Cannot instantiate Tokenizer from buffer: {e}"
             ))
         })?;
         Ok(Self { tokenizer })
@@ -751,9 +748,8 @@ impl PyTokenizer {
                             "only_first" => Ok(TruncationStrategy::OnlyFirst),
                             "only_second" => Ok(TruncationStrategy::OnlySecond),
                             _ => Err(PyError(format!(
-                                "Unknown `strategy`: `{}`. Use \
-                                 one of `longest_first`, `only_first`, or `only_second`",
-                                value
+                                "Unknown `strategy`: `{value}`. Use \
+                                 one of `longest_first`, `only_first`, or `only_second`"
                             ))
                             .into_pyerr::<exceptions::PyValueError>()),
                         }?
@@ -764,14 +760,13 @@ impl PyTokenizer {
                             "left" => Ok(TruncationDirection::Left),
                             "right" => Ok(TruncationDirection::Right),
                             _ => Err(PyError(format!(
-                                "Unknown `direction`: `{}`. Use \
-                                 one of `left` or `right`.",
-                                value
+                                "Unknown `direction`: `{value}`. Use \
+                                 one of `left` or `right`."
                             ))
                             .into_pyerr::<exceptions::PyValueError>()),
                         }?
                     }
-                    _ => println!("Ignored unknown kwarg option {}", key),
+                    _ => println!("Ignored unknown kwarg option {key}"),
                 }
             }
         }
@@ -851,9 +846,8 @@ impl PyTokenizer {
                             "left" => Ok(PaddingDirection::Left),
                             "right" => Ok(PaddingDirection::Right),
                             other => Err(PyError(format!(
-                                "Unknown `direction`: `{}`. Use \
-                                 one of `left` or `right`",
-                                other
+                                "Unknown `direction`: `{other}`. Use \
+                                 one of `left` or `right`"
                             ))
                             .into_pyerr::<exceptions::PyValueError>()),
                         }?;
@@ -884,7 +878,7 @@ impl PyTokenizer {
                             params.strategy = PaddingStrategy::BatchLongest;
                         }
                     }
-                    _ => println!("Ignored unknown kwarg option {}", key),
+                    _ => println!("Ignored unknown kwarg option {key}"),
                 }
             }
         }
