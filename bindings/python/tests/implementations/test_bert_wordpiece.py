@@ -1,3 +1,5 @@
+import pytest
+
 from tokenizers import BertWordPieceTokenizer
 
 from ..utils import bert_files, data_dir, multiprocessing_with_parallelism
@@ -39,6 +41,7 @@ class TestBertWordPieceTokenizer:
         assert output.offsets == [(0, 2), (3, 7), (8, 10), (11, 15), (0, 4)]
         assert output.type_ids == [0, 0, 0, 0, 1]
 
+    @pytest.mark.thread_unsafe(reason="mutates os.environ")
     def test_multiprocessing_with_parallelism(self, bert_files):
         tokenizer = BertWordPieceTokenizer.from_file(bert_files["vocab"])
         multiprocessing_with_parallelism(tokenizer, False)
