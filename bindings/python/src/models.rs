@@ -113,9 +113,7 @@ impl PyModel {
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.model).map_err(|e| {
-            exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle Model: {e}"
-            ))
+            exceptions::PyException::new_err(format!("Error while attempting to pickle Model: {e}"))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).into())
     }

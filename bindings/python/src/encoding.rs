@@ -443,10 +443,10 @@ impl PyEncoding {
         let tdir = match direction {
             "left" => Ok(TruncationDirection::Left),
             "right" => Ok(TruncationDirection::Right),
-            _ => Err(PyError(format!(
-                "Invalid truncation direction value : {direction}"
-            ))
-            .into_pyerr::<exceptions::PyValueError>()),
+            _ => Err(
+                PyError(format!("Invalid truncation direction value : {direction}"))
+                    .into_pyerr::<exceptions::PyValueError>(),
+            ),
         }?;
 
         self.encoding.truncate(max_length, stride, tdir);
