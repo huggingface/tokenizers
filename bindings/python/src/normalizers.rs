@@ -33,7 +33,7 @@ impl PyNormalizedStringMut<'_> {
             PyNormalizedStringMut::Owned(ref mut n) => normalizer.normalize(&mut n.normalized),
             PyNormalizedStringMut::RefMut(n) => n.map_as_mut(|n| normalizer.normalize(n))?,
         }
-        .map_err(|e| exceptions::PyException::new_err(format!("{}", e)))
+        .map_err(|e| exceptions::PyException::new_err(format!("{e}")))
     }
 }
 
@@ -150,8 +150,7 @@ impl PyNormalizer {
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.normalizer).map_err(|e| {
             exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle Normalizer: {}",
-                e
+                "Error while attempting to pickle Normalizer: {e}"
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).into())
@@ -162,8 +161,7 @@ impl PyNormalizer {
             Ok(s) => {
                 self.normalizer = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle Normalizer: {}",
-                        e
+                        "Error while attempting to unpickle Normalizer: {e}"
                     ))
                 })?;
                 Ok(())
@@ -587,8 +585,7 @@ impl PyPrecompiled {
             Precompiled::from(&precompiled_charsmap)
                 .map_err(|e| {
                     exceptions::PyException::new_err(format!(
-                        "Error while attempting to build Precompiled normalizer: {}",
-                        e
+                        "Error while attempting to build Precompiled normalizer: {e}"
                     ))
                 })?
                 .into(),
@@ -879,7 +876,7 @@ mod test {
             _ => panic!("Expected wrapped, not sequence."),
         }
 
-        let sequence_string = format!(r#"{{"type": "Sequence", "normalizers": [{}]}}"#, string);
+        let sequence_string = format!(r#"{{"type": "Sequence", "normalizers": [{string}]}}"#);
         let normalizer: PyNormalizer = serde_json::from_str(&sequence_string).unwrap();
 
         match normalizer.normalizer {
