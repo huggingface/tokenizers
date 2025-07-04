@@ -9,6 +9,7 @@ use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::collections::HashSet;
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -116,8 +117,10 @@ impl BpeTrainerBuilder {
 
     /// Set the initial alphabet
     #[must_use]
-    pub fn initial_alphabet(mut self, alphabet: AHashSet<char>) -> Self {
-        self.config.initial_alphabet = alphabet;
+    pub fn initial_alphabet(mut self, alphabet: HashSet<char>) -> Self {
+        let mut initial_alphabet = AHashSet::with_capacity(alphabet.len());
+        initial_alphabet.extend(alphabet);
+        self.config.initial_alphabet = initial_alphabet;
         self
     }
 
