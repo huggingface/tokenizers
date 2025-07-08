@@ -58,6 +58,11 @@ Benchmarked using Criterion across 5 test cycles:
 | Medium     | 4.3 µs               | 3.7–4.0 µs            | ✅ 5–30%  |
 | Long       | \~60–74 µs           | \~50–63 µs            | ✅ 5–15%  |
 
+---
+
+## ⚡ Visual Benchmark
+![Whitespace PreTokenizer Benchmark Results](comparison.png)
+
 * 🔬 Output remains identical to the original `Whitespace` implementation.
 * 🧪 Verified with robust unit tests.
 * 🔁 Consistent results across runs.
