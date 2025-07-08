@@ -93,8 +93,8 @@ This PR does not fix dataset download issues directly, but **adds independent, r
 Clone the fork and use it as a **drop-in `tokenizers/tokenizers` replacement**:
 
 ```bash
-git clone https://github.com/8ria/faster-whitespace-pretok
-cd faster-whitespace-pretok/tokenizers
+git clone --branch faster-whitespace-pretok https://github.com/8ria/tokenizers.git
+cd tokenizers/tokenizers
 cargo bench --bench whitespace_bench
 ```
 
@@ -130,6 +130,4 @@ This fork improves efficiency **without changing outputs or APIs**.
 
 ## 📫 Contact
 
-**AndriaK**
-📧 [hey@andriaK.com](mailto:hey@andriaK.com)
-🔗 [GitHub](https://github.com/8ria)
+**AndriaK** - [hey@andriaK.com](mailto:hey@andriaK.com) - [GitHub](https://github.com/8ria)
