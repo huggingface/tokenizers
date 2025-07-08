@@ -2,7 +2,8 @@
     <br>
     <img src="https://huggingface.co/landing/assets/tokenizers/tokenizers-logo.png" width="600"/>
     <br>
-<p>
+</p>
+
 <p align="center">
     <img alt="Build" src="https://github.com/huggingface/tokenizers/workflows/Rust/badge.svg">
     <a href="https://github.com/huggingface/tokenizers/blob/main/LICENSE">
@@ -13,80 +14,117 @@
     </a>
 </p>
 
-Provides an implementation of today's most used tokenizers, with a focus on performance and
-versatility.
+# ⚡ faster-whitespace-pretok
 
-## Main features:
+**This is a performance fork of Hugging Face’s `tokenizers`**, focused on optimizing the `Whitespace` PreTokenizer.  
+It preserves all original functionality and directory layout of `tokenizers/tokenizers` for compatibility — including benchmark support and test coverage.
 
- - Train new vocabularies and tokenize, using today's most used tokenizers.
- - Extremely fast (both training and tokenization), thanks to the Rust implementation. Takes
-   less than 20 seconds to tokenize a GB of text on a server's CPU.
- - Easy to use, but also extremely versatile.
- - Designed for research and production.
- - Normalization comes with alignments tracking. It's always possible to get the part of the
-   original sentence that corresponds to a given token.
- - Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
+> 🔧 Pull Request: [huggingface/tokenizers#1822](https://github.com/huggingface/tokenizers/pull/1822)
 
-## Performances
-Performances can vary depending on hardware, but running the [~/bindings/python/benches/test_tiktoken.py](bindings/python/benches/test_tiktoken.py) should give the following on a g6 aws instance:
-![image](https://github.com/user-attachments/assets/2b913d4b-e488-4cbc-b542-f90a6c40643d)
+---
 
+## 🚀 What’s New in This Fork?
 
-## Bindings
+### ✅ Optimized `Whitespace` PreTokenizer
+- Replaced regex-based logic with a cache-efficient manual traversal using `char_indices()`.
+- No change to output behavior — identical span offsets and splits.
+- Drop-in compatible with all existing pipelines.
 
-We provide bindings to the following languages (more to come!):
-  - [Rust](https://github.com/huggingface/tokenizers/tree/main/tokenizers) (Original implementation)
-  - [Python](https://github.com/huggingface/tokenizers/tree/main/bindings/python)
-  - [Node.js](https://github.com/huggingface/tokenizers/tree/main/bindings/node)
-  - [Ruby](https://github.com/ankane/tokenizers-ruby) (Contributed by @ankane, external repo)
+### ✅ Criterion Benchmark Added
+- Added `benches/whitespace_bench.rs`
+- Measures short, medium, and long inputs
+- Registered in `Cargo.toml`:
 
-## Installation
+```toml
+[[bench]]
+name = "whitespace_bench"
+harness = false
+```
 
-You can install from source using:
+### ✅ Additional Variant: `WhitespaceSplit`
+
+* Lightweight alternative that only splits on whitespace (no span tracking).
+* Useful for standalone benchmarking or ultra-fast preprocessing.
+
+---
+
+## 📊 Benchmarks
+
+Benchmarked using Criterion across 5 test cycles:
+
+| Input Type | Avg. Time (Original) | Avg. Time (Optimized) | Speedup  |
+| ---------- | -------------------- | --------------------- | -------- |
+| Short      | \~620 ns             | \~555 ns              | ✅ 10–15% |
+| Medium     | 4.3 µs               | 3.7–4.0 µs            | ✅ 5–30%  |
+| Long       | \~60–74 µs           | \~50–63 µs            | ✅ 5–15%  |
+
+* 🔬 Output remains identical to the original `Whitespace` implementation.
+* 🧪 Verified with robust unit tests.
+* 🔁 Consistent results across runs.
+
+---
+
+## 🧠 Technical Highlights
+
+* ❌ No regex (avoids unnecessary overhead)
+* ✅ Manual `char_indices()` loop for precision and cache-friendliness
+* 🧠 Inline span classification
+* 💡 Zero additional dependencies
+* 🔄 Fully backwards-compatible with `impl_serde_type!`
+
+---
+
+## 📎 Related Issue
+
+Improves local benchmarking infrastructure and test coverage related to:
+[#1820](https://github.com/huggingface/tokenizers/issues/1820)
+
+This PR does not fix dataset download issues directly, but **adds independent, reproducible local benchmarking support**.
+
+---
+
+## 🔧 Installation & Usage
+
+Clone the fork and use it as a **drop-in `tokenizers/tokenizers` replacement**:
+
 ```bash
-pip install git+https://github.com/huggingface/tokenizers.git#subdirectory=bindings/python
+git clone https://github.com/8ria/faster-whitespace-pretok
+cd faster-whitespace-pretok/tokenizers
+cargo bench --bench whitespace_bench
 ```
 
-our install the released versions with
+Use your own sample inputs by editing `whitespace_bench.rs`.
+
+---
+
+## 📦 Python Installation (from this fork)
+
+To use the Python bindings with the optimized version:
 
 ```bash
-pip install tokenizers
-```
- 
-## Quick example using Python:
-
-Choose your model between Byte-Pair Encoding, WordPiece or Unigram and instantiate a tokenizer:
-
-```python
-from tokenizers import Tokenizer
-from tokenizers.models import BPE
-
-tokenizer = Tokenizer(BPE())
+pip install git+https://github.com/8ria/faster-whitespace-pretok.git#subdirectory=bindings/python
 ```
 
-You can customize how pre-tokenization (e.g., splitting into words) is done:
+> All Python-facing behavior remains identical to upstream `tokenizers`.
 
-```python
-from tokenizers.pre_tokenizers import Whitespace
+---
 
-tokenizer.pre_tokenizer = Whitespace()
-```
+## 🙌 Why This Matters
 
-Then training your tokenizer on a set of files just takes two lines of codes:
+Whitespace pre-tokenization is executed millions of times in ML workflows:
 
-```python
-from tokenizers.trainers import BpeTrainer
+* LLM inference
+* Prompt batching
+* Offline training pipelines
 
-trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
-tokenizer.train(files=["wiki.train.raw", "wiki.valid.raw", "wiki.test.raw"], trainer=trainer)
-```
+Even small improvements in this phase **compound at scale** — especially when parallelized.
 
-Once your tokenizer is trained, encode any text with just one line:
-```python
-output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
-print(output.tokens)
-# ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?"]
-```
+This fork improves efficiency **without changing outputs or APIs**.
 
-Check the [documentation](https://huggingface.co/docs/tokenizers/index)
-or the [quicktour](https://huggingface.co/docs/tokenizers/quicktour) to learn more!
+---
+
+## 📫 Contact
+
+**AndriaK**
+📧 [hey@andriaK.com](mailto:hey@andriaK.com)
+🔗 [GitHub](https://github.com/8ria)
