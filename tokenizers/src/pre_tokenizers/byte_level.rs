@@ -12,7 +12,7 @@ use crate::utils::macro_rules_attribute;
 
 /// Converts bytes to unicode characters.
 /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L9
-pub(crate) fn bytes_char() -> AHashMap<u8, char> {
+pub fn bytes_char() -> AHashMap<u8, char> {
     let mut bs: Vec<u8> = vec![];
     bs.extend(b'!'..=b'~');
     bs.extend(b'\xA1'..=b'\xAC');

@@ -15,6 +15,12 @@ use std::{
     io::{prelude::*, BufReader},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
+    any::Any,
+};
+
+use crate::{
+    models::bpe,
+    pre_tokenizers,
 };
 
 use serde::de::DeserializeOwned;
@@ -534,6 +540,29 @@ where
     PP: PostProcessor,
     D: Decoder,
 {
+    /// Validates compatibility between a trainer and the current tokenizer configuration.
+    /// Currently only checks:
+    //  For BpeTrainer with `enforce_utf8_boundaries=True` => pretokenizer must be ByteLevel.
+    fn _check_trainer_compat<T: Trainer<Model = M> + 'static>(&self, trainer: &T) -> Result<()> {
+        // Use `Any` to safely check for the BpeTrainer type at runtime
+        if let Some(bpe_trainer) = (trainer as &dyn Any).downcast_ref::<bpe::BpeTrainer>() {
+            if bpe_trainer.enforce_utf8_boundaries {
+                // Now check if the pre_tokenizer is ByteLevel
+                let is_byte_level = self.pre_tokenizer.as_ref().map_or(false, |pretok| {
+                    (pretok as &dyn Any).is::<pre_tokenizers::byte_level::ByteLevel>()
+                });
+
+                if !is_byte_level {
+                    return Err(
+                        "`enforce_utf8_boundaries=True` can only be used with a `ByteLevel` pre-tokenizer."
+                        .into()
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Instantiate a new Tokenizer, with the given Model
     pub fn new(model: M) -> Self {
         Self {
@@ -1345,6 +1374,7 @@ where
     where
         T: Trainer<Model = M> + Sync,
     {
+        self._check_trainer_compat(trainer)?; // check that settings are compatible
         let mut len = 0;
         for file in files.iter() {
             len += File::open(file)
@@ -1420,6 +1450,7 @@ where
         I: Iterator<Item = S> + Send,
         S: AsRef<str> + Send,
     {
+        self._check_trainer_compat(trainer)?; // check that settings are compatible
         let (lower, upper) = sequences.size_hint();
         let len = upper.unwrap_or(lower) as u64;
         let progress = if trainer.should_show_progress() {

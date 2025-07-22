@@ -345,6 +345,7 @@ impl PyBpeTrainer {
                     }
                     "limit_alphabet" => builder = builder.limit_alphabet(val.extract()?),
                     "max_token_length" => builder = builder.max_token_length(val.extract()?),
+                    "enforce_utf8_boundaries" => builder = builder.enforce_utf8_boundaries(val.extract()?),
                     "initial_alphabet" => {
                         let alphabet: Vec<String> = val.extract()?;
                         builder = builder.initial_alphabet(
