@@ -72,7 +72,7 @@ impl Default for BpeTrainerBuilder {
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
                 max_token_length: None,
-                enforce_utf8_boundaries: true,
+                enforce_utf8_boundaries: false,
             },
         }
     }
