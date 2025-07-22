@@ -499,12 +499,9 @@ impl BpeTrainer {
                     part_b = rest;
                 }
             }
-            let new_token = format!("{part_a}{part_b}");
-            // implement sentencepiece-like merge.
-            // if this code were to be merged, integrate a way in the python bindings to communicate this variable
-            // default should be 0/None to maintain previous behavior. 16 is the spm default.
 
             // Insert new token if it does not already exist
+            let new_token = format!("{part_a}{part_b}");
             let new_token_id = word_to_id
                 .get(&CompactString::from(&new_token))
                 .copied()
