@@ -1,4 +1,4 @@
-import { prependNormalizer, stripAccentsNormalizer, stripNormalizer } from '../../'
+import { prependNormalizer, stripAccentsNormalizer, stripNormalizer, unicodeFilter } from '../../'
 
 describe('stripNormalizer', () => {
   it('instantiates with no parameters', () => {
@@ -40,5 +40,50 @@ describe('stripAccentsNormalizer', () => {
   it('initialize', () => {
     const normalizer = stripAccentsNormalizer()
     expect(normalizer.constructor.name).toEqual('Normalizer')
+  })
+})
+
+describe('unicodeFilter', () => {
+  it('instantiates with defaults', () => {
+    const normalizer = unicodeFilter()
+    expect(normalizer.constructor.name).toEqual('Normalizer')
+  })
+
+  it('handles default filtering', () => {
+    const normalizer = unicodeFilter() // Default filters out Unassigned, PrivateUse, Surrogate
+    const input = 'Hello' + String.fromCharCode(0xE000) + String.fromCodePoint(0xF0000) + String.fromCodePoint(0x10FFFF)
+    expect(normalizer.normalizeString(input)).toEqual('Hello')
+  })
+
+  it('accepts custom filter options', () => {
+    // Only filter private use areas
+    const normalizer = unicodeFilter({
+      filterUnassigned: false,
+      filterPrivateUse: true,
+      filterSurrogate: false
+    })
+    const input = 'Hello' + String.fromCharCode(0xE000) + String.fromCodePoint(0xF0000) + String.fromCodePoint(0x10FFFF)
+    const expected = 'Hello' + String.fromCodePoint(0x10FFFF)
+    expect(normalizer.normalizeString(input)).toEqual(expected)
+  })
+
+  it('accepts undefined options', () => {
+    const normalizer = unicodeFilter({
+      filterUnassigned: undefined,
+      filterPrivateUse: undefined,
+      filterSurrogate: undefined
+    })
+    const input = 'Hello' + String.fromCharCode(0xE000) + String.fromCodePoint(0xF0000) + String.fromCodePoint(0x10FFFF)
+    expect(normalizer.normalizeString(input)).toEqual('Hello')
+  })
+
+  it('can disable all filtering', () => {
+    const normalizer = unicodeFilter({
+      filterUnassigned: false,
+      filterPrivateUse: false,
+      filterSurrogate: false
+    })
+    const input = 'Hello' + String.fromCharCode(0xE000) + String.fromCodePoint(0xF0000) + String.fromCodePoint(0x10FFFF)
+    expect(normalizer.normalizeString(input)).toEqual(input)
   })
 })
