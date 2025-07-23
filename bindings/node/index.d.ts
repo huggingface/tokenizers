@@ -71,10 +71,7 @@ export function nfdNormalizer(): Normalizer
 export function nfkdNormalizer(): Normalizer
 export function nfcNormalizer(): Normalizer
 export function nfkcNormalizer(): Normalizer
-export function stripNormalizer(
-  left?: boolean | undefined | null,
-  right?: boolean | undefined | null,
-): Normalizer
+export function stripNormalizer(left?: boolean | undefined | null, right?: boolean | undefined | null): Normalizer
 export function sequenceNormalizer(normalizers: Array<Normalizer>): Normalizer
 export function lowercase(): Normalizer
 export function replace(pattern: string, content: string): Normalizer
@@ -107,11 +104,7 @@ export function metaspacePreTokenizer(
   prependScheme?: prepend_scheme = 'always',
   split?: split = true,
 ): PreTokenizer
-export function splitPreTokenizer(
-  pattern: string,
-  behavior: string,
-  invert?: boolean | undefined | null,
-): PreTokenizer
+export function splitPreTokenizer(pattern: string, behavior: string, invert?: boolean | undefined | null): PreTokenizer
 export function punctuationPreTokenizer(behavior?: string | undefined | null): PreTokenizer
 export function sequencePreTokenizer(preTokenizers: Array<PreTokenizer>): PreTokenizer
 export function charDelimiterSplit(delimiter: string): PreTokenizer
@@ -162,15 +155,8 @@ export interface JsFromPretrainedParameters {
   revision?: string
   authToken?: string
 }
-export function slice(
-  s: string,
-  beginIndex?: number | undefined | null,
-  endIndex?: number | undefined | null,
-): string
-export function mergeEncodings(
-  encodings: Array<Encoding>,
-  growingOffsets?: boolean | undefined | null,
-): Encoding
+export function slice(s: string, beginIndex?: number | undefined | null, endIndex?: number | undefined | null): string
+export function mergeEncodings(encodings: Array<Encoding>, growingOffsets?: boolean | undefined | null): Encoding
 /** Decoder */
 export class Decoder {
   decode(tokens: Array<string>): string
@@ -207,16 +193,16 @@ export class Model {}
 export type Bpe = BPE
 export class BPE {
   static empty(): Model
-  static init(vocab: Record<string, number>, merges: Merges, options?: BpeOptions | undefined | null): Model
+  static init(vocab: Vocab, merges: Merges, options?: BpeOptions | undefined | null): Model
   static fromFile(vocab: string, merges: string, options?: BpeOptions | undefined | null): Promise<Model>
 }
 export class WordPiece {
-  static init(vocab: Record<string, number>, options?: WordPieceOptions | undefined | null): Model
+  static init(vocab: Vocab, options?: WordPieceOptions | undefined | null): Model
   static empty(): WordPiece
   static fromFile(vocab: string, options?: WordPieceOptions | undefined | null): Promise<Model>
 }
 export class WordLevel {
-  static init(vocab: Record<string, number>, options?: WordLevelOptions | undefined | null): Model
+  static init(vocab: Vocab, options?: WordLevelOptions | undefined | null): Model
   static empty(): WordLevel
   static fromFile(vocab: string, options?: WordLevelOptions | undefined | null): Promise<Model>
 }
