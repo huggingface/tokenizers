@@ -94,42 +94,42 @@ export const enum JsSplitDelimiterBehavior {
   Contiguous = 'Contiguous',
 }
 /** byte_level(addPrefixSpace: bool = true, useRegex: bool = true) */
-export declare function byteLevelPreTokenizer(
+export function byteLevelPreTokenizer(
   addPrefixSpace?: boolean | undefined | null,
   useRegex?: boolean | undefined | null,
 ): PreTokenizer
-export declare function byteLevelAlphabet(): Array<string>
-export declare function whitespacePreTokenizer(): PreTokenizer
-export declare function whitespaceSplitPreTokenizer(): PreTokenizer
-export declare function bertPreTokenizer(): PreTokenizer
-export declare function metaspacePreTokenizer(
+export function byteLevelAlphabet(): Array<string>
+export function whitespacePreTokenizer(): PreTokenizer
+export function whitespaceSplitPreTokenizer(): PreTokenizer
+export function bertPreTokenizer(): PreTokenizer
+export function metaspacePreTokenizer(
   replacement?: string = '▁',
   prependScheme?: prepend_scheme = 'always',
   split?: split = true,
 ): PreTokenizer
-export declare function splitPreTokenizer(
+export function splitPreTokenizer(
   pattern: string,
   behavior: string,
   invert?: boolean | undefined | null,
 ): PreTokenizer
-export declare function punctuationPreTokenizer(behavior?: string | undefined | null): PreTokenizer
-export declare function sequencePreTokenizer(preTokenizers: Array<PreTokenizer>): PreTokenizer
-export declare function charDelimiterSplit(delimiter: string): PreTokenizer
-export declare function digitsPreTokenizer(individualDigits?: boolean | undefined | null): PreTokenizer
-export declare function bertProcessing(sep: [string, number], cls: [string, number]): Processor
-export declare function robertaProcessing(
+export function punctuationPreTokenizer(behavior?: string | undefined | null): PreTokenizer
+export function sequencePreTokenizer(preTokenizers: Array<PreTokenizer>): PreTokenizer
+export function charDelimiterSplit(delimiter: string): PreTokenizer
+export function digitsPreTokenizer(individualDigits?: boolean | undefined | null): PreTokenizer
+export function bertProcessing(sep: [string, number], cls: [string, number]): Processor
+export function robertaProcessing(
   sep: [string, number],
   cls: [string, number],
   trimOffsets?: boolean | undefined | null,
   addPrefixSpace?: boolean | undefined | null,
 ): Processor
-export declare function byteLevelProcessing(trimOffsets?: boolean | undefined | null): Processor
-export declare function templateProcessing(
+export function byteLevelProcessing(trimOffsets?: boolean | undefined | null): Processor
+export function templateProcessing(
   single: string,
   pair?: string | undefined | null,
   specialTokens?: Array<[string, number]> | undefined | null,
 ): Processor
-export declare function sequenceProcessing(processors: Array<Processor>): Processor
+export function sequenceProcessing(processors: Array<Processor>): Processor
 export const enum PaddingDirection {
   Left = 0,
   Right = 1,
@@ -162,21 +162,21 @@ export interface JsFromPretrainedParameters {
   revision?: string
   authToken?: string
 }
-export declare function slice(
+export function slice(
   s: string,
   beginIndex?: number | undefined | null,
   endIndex?: number | undefined | null,
 ): string
-export declare function mergeEncodings(
+export function mergeEncodings(
   encodings: Array<Encoding>,
   growingOffsets?: boolean | undefined | null,
 ): Encoding
 /** Decoder */
-export declare class Decoder {
+export class Decoder {
   decode(tokens: Array<string>): string
 }
 export type JsEncoding = Encoding
-export declare class Encoding {
+export class Encoding {
   constructor()
   getLength(): number
   getNSequences(): number
@@ -203,41 +203,41 @@ export declare class Encoding {
   getSequenceIds(): Array<number | undefined | null>
   tokenToSequence(token: number): number | null
 }
-export declare class Model {}
+export class Model {}
 export type Bpe = BPE
-export declare class BPE {
+export class BPE {
   static empty(): Model
   static init(vocab: Record<string, number>, merges: Merges, options?: BpeOptions | undefined | null): Model
   static fromFile(vocab: string, merges: string, options?: BpeOptions | undefined | null): Promise<Model>
 }
-export declare class WordPiece {
+export class WordPiece {
   static init(vocab: Record<string, number>, options?: WordPieceOptions | undefined | null): Model
   static empty(): WordPiece
   static fromFile(vocab: string, options?: WordPieceOptions | undefined | null): Promise<Model>
 }
-export declare class WordLevel {
+export class WordLevel {
   static init(vocab: Record<string, number>, options?: WordLevelOptions | undefined | null): Model
   static empty(): WordLevel
   static fromFile(vocab: string, options?: WordLevelOptions | undefined | null): Promise<Model>
 }
-export declare class Unigram {
+export class Unigram {
   static init(vocab: Array<[string, number]>, options?: UnigramOptions | undefined | null): Model
   static empty(): Model
 }
 /** Normalizer */
-export declare class Normalizer {
+export class Normalizer {
   normalizeString(sequence: string): string
 }
 /** PreTokenizers */
-export declare class PreTokenizer {
+export class PreTokenizer {
   preTokenizeString(sequence: string): [string, [number, number]][]
 }
-export declare class Processor {}
-export declare class AddedToken {
+export class Processor {}
+export class AddedToken {
   constructor(token: string, isSpecial: boolean, options?: AddedTokenOptions | undefined | null)
   getContent(): string
 }
-export declare class Tokenizer {
+export class Tokenizer {
   constructor(model: Model)
   setPreTokenizer(preTokenizer: PreTokenizer): void
   setDecoder(decoder: Decoder): void
@@ -278,4 +278,4 @@ export declare class Tokenizer {
     addSpecialTokens?: boolean | undefined | null,
   ): Encoding
 }
-export declare class Trainer {}
+export class Trainer {}
