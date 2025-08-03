@@ -4,14 +4,13 @@ use super::{Pair, WithFirstLastIterator, Word, BPE};
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::progress::{ProgressBar, ProgressStyle};
-use crate::pre_tokenizers::byte_level::bytes_char;
+use crate::pre_tokenizers::byte_level::CHAR_BYTES;
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use std::sync::LazyLock;
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -226,10 +225,6 @@ impl Default for BpeTrainer {
     }
 }
 
-/// for utf8 boundaries, we need to map gpt2 encoded bytes back
-static CHAR_BYTES: LazyLock<AHashMap<char, u8>> =
-    LazyLock::new(|| bytes_char().into_iter().map(|(b, c)| (c, b)).collect());
-
 impl BpeTrainer {
 
     pub fn new(min_frequency: u64, vocab_size: usize) -> Self {
@@ -327,18 +322,17 @@ impl BpeTrainer {
         let is_a_complete = std::str::from_utf8(&bytes_a).is_ok();
         let is_b_complete = std::str::from_utf8(&bytes_b).is_ok();
 
-        // Rule 1: Allow merging two complete tokens.
+        // - Allow merging two complete tokens.
+        // - Any mix of complete and incomplete is disallowed.
         if is_a_complete && is_b_complete {
             return true;
         }
-
-        // Rule 3 (Implicit): Any mix of complete and incomplete is disallowed.
-        if is_a_complete || is_b_complete {
+        if is_a_complete ^ is_b_complete {
             return false;
         }
 
-        // Rule 2: Both tokens are incomplete. Allow merge only if building a valid
-        // UTF-8 prefix by appending a single byte.
+        // Here we know both tokens are incomplete.
+        // Allow merge only if building a valid UTF-8 prefix by appending a single byte.
         if bytes_b.len() == 1 {
             let mut merged = bytes_a;
             merged.extend_from_slice(&bytes_b);
@@ -923,34 +917,10 @@ mod tests {
         assert_eq!(trained_vocab, expected_vocab)
     }
 
-    // The CHAR_TO_BYTE mapping is kept here *only* for the debug printing helper,
-    // to make the test output readable. It is not used in the core test logic.
     static BYTE_TO_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
-    static CHAR_TO_BYTE: LazyLock<AHashMap<char, u8>> =
-        LazyLock::new(|| BYTE_TO_CHAR.iter().map(|(b, c)| (*c, *b)).collect());
 
     #[test]
     fn test_bpe_utf8_boundary_enforcement_with_byte_level_pretokenizer() {
-        /// A local helper to print the vocabulary with original hex byte representations for clarity.
-        fn print_vocab_with_hex(vocab: &HashMap<String, u32>, title: &str) {
-            println!("\n--- {} ---", title);
-            let mut vocab_items: Vec<_> = vocab.iter().collect();
-            vocab_items.sort_by_key(|(_, id)| *id);
-            for (token, id) in vocab_items {
-                // De-mangle the token back to its original bytes for printing
-                let bytes: Vec<String> = token
-                    .chars()
-                    .map(|c| format!("{:02X}", CHAR_TO_BYTE.get(&c).unwrap_or(&0)))
-                    .collect();
-                println!(
-                    "ID {:<3} Token: {:<12} Bytes: [{}]",
-                    id,
-                    format!("{:?}", token),
-                    bytes.join(" ")
-                );
-            }
-        }
-
         // Use the actual ByteLevel pre-tokenizer to process the input string.
         let byte_level_pretok = ByteLevel::new(false, false, false);
         let process_fn = |s: &str| -> Result<Vec<String>> {
@@ -979,10 +949,7 @@ mod tests {
         unconstrained_trainer
             .train(&mut unconstrained_model)
             .unwrap();
-        print_vocab_with_hex(
-            &unconstrained_model.get_vocab(),
-            "Unconstrained Vocabulary",
-        );
+
         let invalid_merge_token: String =
             [BYTE_TO_CHAR[&b' '], BYTE_TO_CHAR[&0xF0]].iter().collect();
         assert!(
@@ -1003,7 +970,6 @@ mod tests {
             .unwrap();
         let mut constrained_model = BPE::default();
         constrained_trainer.train(&mut constrained_model).unwrap();
-        print_vocab_with_hex(&constrained_model.get_vocab(), "Constrained Vocabulary");
 
         let valid_merge_token: String =
             [BYTE_TO_CHAR[&0xF0], BYTE_TO_CHAR[&0x9F]].iter().collect();
