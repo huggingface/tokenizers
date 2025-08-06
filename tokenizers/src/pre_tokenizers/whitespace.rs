@@ -155,7 +155,7 @@ impl crate::tokenizer::pattern::Pattern for WhitespacePattern {
         }
 
         // Don't forget the last token
-        if let Some(_) = current_type {
+        if current_type.is_some() {
             matches.push(((current_start, current_end), true));
         }
 

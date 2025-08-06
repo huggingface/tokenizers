@@ -3,7 +3,7 @@ extern crate criterion;
 
 use criterion::{Criterion, Throughput};
 use tokenizers::pre_tokenizers::whitespace::{Whitespace, WhitespaceOptimized};
-use tokenizers::{OffsetReferential, OffsetType, PreTokenizer, PreTokenizedString};
+use tokenizers::{OffsetReferential, OffsetType, PreTokenizedString, PreTokenizer};
 
 fn bench_whitespace_comparison(c: &mut Criterion) {
     let mut group = c.benchmark_group("whitespace-pre-tokenizers");
@@ -11,10 +11,19 @@ fn bench_whitespace_comparison(c: &mut Criterion) {
     // Test data with various characteristics
     let test_cases = vec![
         ("simple", "Hello world! How are you doing?"),
-        ("mixed", "This is a test with numbers 123 and symbols @#$% and unicode: café résumé"),
-        ("whitespace_heavy", "Multiple    spaces\tand\nnewlines\r\nhere"),
+        (
+            "mixed",
+            "This is a test with numbers 123 and symbols @#$% and unicode: café résumé",
+        ),
+        (
+            "whitespace_heavy",
+            "Multiple    spaces\tand\nnewlines\r\nhere",
+        ),
         ("symbol_heavy", "Hello!@#$%^&*()world?><>{}[]|\\"),
-        ("word_heavy", "This is a very long sentence with many words that should be tokenized properly"),
+        (
+            "word_heavy",
+            "This is a very long sentence with many words that should be tokenized properly",
+        ),
         ("unicode_heavy", "αβγ δέζ ηθι κλμ νξο πρσ τυφ χψω"),
         ("mixed_unicode", "Hello 123 αβγ !@# world δέζ ηθι"),
     ];
@@ -24,7 +33,7 @@ fn bench_whitespace_comparison(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(data_len));
 
         // Benchmark original regex-based implementation
-        group.bench_function(&format!("{}-original", name), |b| {
+        group.bench_function(format!("{}-original", name), |b| {
             b.iter(|| {
                 let mut pretokenized = PreTokenizedString::from(text);
                 let pretok = Whitespace {};
@@ -38,7 +47,7 @@ fn bench_whitespace_comparison(c: &mut Criterion) {
         });
 
         // Benchmark optimized byte-level implementation
-        group.bench_function(&format!("{}-optimized", name), |b| {
+        group.bench_function(format!("{}-optimized", name), |b| {
             b.iter(|| {
                 let mut pretokenized = PreTokenizedString::from(text);
                 let pretok = WhitespaceOptimized {};
@@ -59,7 +68,8 @@ fn bench_large_text(c: &mut Criterion) {
     let mut group = c.benchmark_group("whitespace-large-text");
 
     // Create a large text by repeating patterns
-    let base_text = "Hello world! This is a test with numbers 123 and symbols @#$% and unicode: café résumé. ";
+    let base_text =
+        "Hello world! This is a test with numbers 123 and symbols @#$% and unicode: café résumé. ";
     let large_text: String = base_text.repeat(1000); // ~50KB of text
     let data_len = large_text.len() as u64;
 
