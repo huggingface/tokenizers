@@ -69,6 +69,7 @@ monostate = "0.1.12"
 ahash = { version = "0.8.11", features = ["serde"] }
 dary_heap = { version = "0.3.6", features = ["serde"] }
 compact_str = { version = "0.9", features = ["serde"] }
+clap = { version = "4.5.4", features = ["derive"] }
 
 [features]
 default = ["progressbar", "onig", "esaxx_fast"]
@@ -79,6 +80,8 @@ unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
 
 [dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.0"
 criterion = "0.6"
 tempfile = "3.10"
 assert_approx_eq = "1.1"
@@ -91,4 +94,8 @@ lto = "fat"
 [[example]]
 name = "encode_batch"
 required-features = ["http"]
+
+[[bin]]
+name = "tokenize"
+path = "bin/tokenize.rs"
 
