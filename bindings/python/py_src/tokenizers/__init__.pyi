@@ -929,6 +929,56 @@ class Tokenizer:
 
         """
         pass
+    
+    async def async_encode_batch(self, input, is_pretokenized=False, add_special_tokens=True):
+        """
+        Asynchronously encode the given batch of inputs. This method can be used to
+        encode multiple sequences in parallel.
+
+        Args:
+            input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
+                A list of single sequences or pair sequences to encode. Each sequence
+                can be either raw text or pre-tokenized, according to the ``is_pretokenized``
+                argument:
+
+                - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
+                - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
+
+            is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+                Whether the input is already pre-tokenized
+
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add the special tokens
+
+        Returns:
+            A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
+        """
+        pass
+    
+    async def async_encode_batch_fast(self, input, is_pretokenized=False, add_special_tokens=True):
+        """
+        Asynchronously encode the given batch of inputs. This method is faster than
+        `async_encode_batch` because it doesn't keep track of offsets, they will be all zeros.
+
+        Args:
+            input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
+                A list of single sequences or pair sequences to encode. Each sequence
+                can be either raw text or pre-tokenized, according to the ``is_pretokenized``
+                argument:
+
+                - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
+                - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
+
+            is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+                Whether the input is already pre-tokenized
+
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add the special tokens
+
+        Returns:
+            A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
+        """
+        pass
 
     @property
     def encode_special_tokens(self):

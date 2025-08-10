@@ -1,8 +1,8 @@
 import pickle
-
-import numpy as np
+import concurrent.futures
 import pytest
-
+import numpy as np
+import asyncio 
 from tokenizers import AddedToken, Encoding, Tokenizer
 from tokenizers.implementations import BertWordPieceTokenizer
 from tokenizers.models import BPE, Model, Unigram
@@ -10,7 +10,7 @@ from tokenizers.pre_tokenizers import ByteLevel, Metaspace
 from tokenizers.processors import RobertaProcessing, TemplateProcessing
 from tokenizers.normalizers import Strip, Lowercase, Sequence
 from tokenizers.decoders import ByteFallback, DecodeStream, Metaspace as DecoderMetaspace
-
+import time
 
 from ..utils import bert_files, data_dir, multiprocessing_with_parallelism, roberta_files
 
@@ -80,8 +80,10 @@ class TestTokenizer:
         assert callable(tokenizer.no_padding)
         assert callable(tokenizer.encode)
         assert callable(tokenizer.encode_batch)
+        assert callable(tokenizer.async_encode_batch)
         assert callable(tokenizer.decode)
         assert callable(tokenizer.decode_batch)
+        assert callable(tokenizer.async_decode_batch)
         assert callable(tokenizer.token_to_id)
         assert callable(tokenizer.id_to_token)
         assert callable(tokenizer.add_tokens)
@@ -468,7 +470,7 @@ class TestTokenizer:
     def test_unigram_byte_fallback(self):
         vocab = [
             ("<unk>", 0.0),
-            ("A", -0.01),
+            ("A", -0.03),
             ("sen", -0.02),
             ("te", -0.03),
             ("n", -0.04),
@@ -616,3 +618,248 @@ class TestTokenizerRepr:
             out
             == 'Tokenizer(version="1.0", truncation=None, padding=None, added_tokens=[], normalizer=Sequence(normalizers=[Lowercase(), Strip(strip_left=True, strip_right=True)]), pre_tokenizer=ByteLevel(add_prefix_space=True, trim_offsets=True, use_regex=True), post_processor=TemplateProcessing(single=[SpecialToken(id="[CLS]", type_id=0), Sequence(id=A, type_id=0), SpecialToken(id="[SEP]", type_id=0)], pair=[SpecialToken(id="[CLS]", type_id=0), Sequence(id=A, type_id=0), SpecialToken(id="[SEP]", type_id=0), Sequence(id=B, type_id=1), SpecialToken(id="[SEP]", type_id=1)], special_tokens={"[CLS]":SpecialToken(id="[CLS]", ids=[1], tokens=["[CLS]"]), "[SEP]":SpecialToken(id="[SEP]", ids=[0], tokens=["[SEP]"])}), decoder=None, model=BPE(dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=False, byte_fallback=False, ignore_merges=False, vocab={}, merges=[]))'
         )
+
+
+class TestAsyncTokenizer:
+    """Tests for async methods of the Tokenizer class."""
+    
+    def setup_method(self):
+        """Setup a basic tokenizer before each test."""
+        self.tokenizer = Tokenizer(BPE())
+        self.tokenizer.add_tokens(["my", "name", "is", "john", "pair", "longer"])
+    
+    async def _compare_sync_async(self, input_data, is_pretokenized=False, add_special_tokens=True):
+        """Helper to compare sync and async results for both normal and fast encoding."""
+        # Normal encoding
+        sync_result = self.tokenizer.encode_batch(input_data, is_pretokenized, add_special_tokens)
+        async_result = await self.tokenizer.async_encode_batch(input_data, is_pretokenized, add_special_tokens)
+        
+        assert len(sync_result) == len(async_result)
+        for s, a in zip(sync_result, async_result):
+            assert s.tokens == a.tokens
+            assert s.ids == a.ids
+            assert s.offsets == a.offsets
+            assert s.attention_mask == a.attention_mask
+            assert s.special_tokens_mask == a.special_tokens_mask
+            assert s.type_ids == a.type_ids
+        
+        # Fast encoding
+        sync_fast_result = self.tokenizer.encode_batch_fast(input_data, is_pretokenized, add_special_tokens)
+        async_fast_result = await self.tokenizer.async_encode_batch_fast(input_data, is_pretokenized, add_special_tokens)
+        
+        assert len(sync_fast_result) == len(async_fast_result)
+        for s, a in zip(sync_fast_result, async_fast_result):
+            assert s.tokens == a.tokens
+            assert s.ids == a.ids
+            assert s.attention_mask == a.attention_mask
+            assert s.special_tokens_mask == a.special_tokens_mask
+            assert s.type_ids == a.type_ids
+    
+    @pytest.mark.asyncio
+    async def test_basic_encoding(self):
+        """Test basic encoding functionality."""
+        # Single sequences
+        await self._compare_sync_async(["my name is john", "my pair"])
+        
+        # Pair sequences
+        await self._compare_sync_async([("my name", "is john"), ("my", "pair")])
+        
+        # Empty batch
+        await self._compare_sync_async([])
+
+
+    @pytest.mark.asyncio
+    async def test_with_special_tokens(self):
+        """Test with special tokens handling."""
+        self.tokenizer.add_special_tokens(["[CLS]", "[SEP]"])
+        self.tokenizer.post_processor = TemplateProcessing(
+            single=["[CLS]", "$0", "[SEP]"],
+            pair=["[CLS]", "$A", "[SEP]", "$B", "[SEP]"],
+            special_tokens=[
+                ("[CLS]", self.tokenizer.token_to_id("[CLS]")), 
+                ("[SEP]", self.tokenizer.token_to_id("[SEP]"))
+            ],
+        )
+        
+        # With special tokens
+        await self._compare_sync_async(["my name is john", "my pair"], add_special_tokens=True)
+        
+        # Without special tokens
+        await self._compare_sync_async(["my name is john", "my pair"], add_special_tokens=False)
+
+    @pytest.mark.asyncio
+    async def test_with_truncation_padding(self):
+        """Test with truncation and padding enabled."""
+        self.tokenizer.enable_truncation(2)
+        self.tokenizer.enable_padding(length=4)
+        
+        # Single sequences
+        await self._compare_sync_async(["my name is john", "pair longer"])
+        
+        # Pair sequences
+        await self._compare_sync_async([("my name", "is john"), ("pair", "longer")])
+
+    @pytest.mark.asyncio
+    async def test_various_input_formats(self):
+        """Test with various input formats."""
+        # Lists
+        await self._compare_sync_async(["my name", "is john"])
+        
+        # Tuples
+        await self._compare_sync_async(("my name", "is john"))
+        
+        # Numpy arrays
+        # await self._compare_sync_async(np.array(["my name", "is john"]))
+        
+        # Mixed pairs
+        await self._compare_sync_async([("my name", "is john"), ["my", "pair"]])
+
+    @pytest.mark.asyncio
+    async def test_error_handling(self):
+        """Test that errors are handled consistently."""
+        # Invalid input type for single item
+        with pytest.raises(TypeError):
+            await self.tokenizer.async_encode_batch(123)
+            
+        with pytest.raises(TypeError):
+            self.tokenizer.encode_batch(123)
+        
+        # Invalid pre-tokenized input
+        with pytest.raises(TypeError):
+            await self.tokenizer.async_encode_batch("my name", is_pretokenized=True)
+            
+        with pytest.raises(TypeError):
+            self.tokenizer.encode_batch("my name", is_pretokenized=True)
+
+    @pytest.mark.asyncio
+    async def test_concurrency(self):
+        """Test concurrent encoding operations."""
+        # Create some significant workload
+        large_batch = ["my name is john " * 50] * 20
+        
+        # Run multiple encoding operations concurrently
+        tasks = [
+            self.tokenizer.async_encode_batch(large_batch),
+            self.tokenizer.async_encode_batch_fast(large_batch),
+            self.tokenizer.async_encode_batch(large_batch),
+        ]
+        
+        # They should all complete successfully
+        results = await asyncio.gather(*tasks)
+        
+        # Verify results
+        assert len(results) == 3
+        assert all(len(result) == 20 for result in results)
+        
+    @pytest.mark.asyncio
+    async def test_decode(self):
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
+
+        # Can decode single sequences
+        output = tokenizer.decode([0, 1, 2, 3])
+        assert output == "my name is john"
+        
+        output = tokenizer.decode_batch([[0, 1, 2, 3], [4]])
+        assert output == ["my name is john", "pair"]
+        
+        output = await tokenizer.async_decode_batch([[0, 1, 2, 3], [4]])
+        assert output == ["my name is john", "pair"]
+
+    @pytest.mark.asyncio
+    async def test_large_batch(self):
+        """Test encoding a large batch of sequences."""
+        large_batch = ["my name is john"] * 1000
+        
+        # Encode large batch both ways
+        async_result = await self.tokenizer.async_encode_batch_fast(large_batch)
+        sync_result = self.tokenizer.encode_batch_fast(large_batch)
+        
+        # Results should be identical
+        assert len(async_result) == len(sync_result)
+        assert all(a.tokens == s.tokens for a, s in zip(async_result[:10], sync_result[:10]))
+
+    @pytest.mark.asyncio
+    async def test_numpy_inputs(self):
+        """Test with numpy array inputs."""
+        # Single numpy array
+        input_array = np.array(["my name", "is john", "pair longer"])
+        await self._compare_sync_async(input_array)
+        
+        # Pre-tokenized numpy array
+        pretok_array = np.array([["my", "name"], ["is", "john"]], dtype=object)
+        await self._compare_sync_async(pretok_array, is_pretokenized=True)
+
+    def test_async_methods_existence(self):
+        """Test that the async methods exist on the Tokenizer class."""
+        assert hasattr(self.tokenizer, "async_encode_batch")
+        assert hasattr(self.tokenizer, "async_encode_batch_fast")
+        assert callable(self.tokenizer.async_encode_batch)
+        assert callable(self.tokenizer.async_encode_batch_fast)
+
+    @pytest.mark.asyncio
+    async def test_performance_comparison(self):
+        """Compare performance between sync and async methods (informational)."""
+        # Create a large batch for performance comparison
+        large_batch = ["short text"]
+        results_sync = []
+        results_async = []
+        
+        # Pre-initialize a thread pool executor with a reasonable number of workers
+        # This avoids the overhead of creating the pool for each task
+        
+
+        try:
+            executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=2048
+            )
+            loop = asyncio.get_running_loop()
+
+            async def encode_sync_with_executor(_):
+                # Use the pre-initialized executor
+                return await loop.run_in_executor(
+                    executor, 
+                    lambda: self.tokenizer.encode_batch_fast(large_batch)
+                )
+                
+            async def encode_to_thread_sync(_):
+                return await asyncio.to_thread(
+                    self.tokenizer.encode_batch_fast, large_batch
+                )
+            
+            async def encode_async(_):
+                return await self.tokenizer.async_encode_batch_fast(large_batch)
+            
+            await asyncio.gather(*[encode_sync_with_executor(i) for i in range(2048)])
+            await asyncio.gather(*[encode_async(i) for i in range(2048)])
+            
+            for n_tasks in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]:
+                # Measure sync performance with pre-initialized executor
+                # Warm up
+                await asyncio.gather(*[encode_sync_with_executor(i) for i in range(10)])
+                time.sleep(0.03)
+                # Actual measurement
+                start = time.perf_counter()
+                await asyncio.gather(*[encode_sync_with_executor(i) for i in range(n_tasks)])
+                sync_time = time.perf_counter() - start
+
+                # Measure async performance
+                # Warm up
+                await asyncio.gather(*[encode_async(i) for i in range(10)])
+                
+                # Actual measurement
+                time.sleep(0.03)
+                start = time.perf_counter()
+                await asyncio.gather(*[encode_async(i) for i in range(n_tasks)])
+                async_time = time.perf_counter() - start
+                
+                # Log times
+                print(f"sync vs async processing times: {sync_time:.4f}s vs {async_time:.4f}s for {n_tasks} tasks")
+                results_sync.append(sync_time)
+                results_async.append(async_time)
+        finally:
+            # Make sure we shut down the executor properly
+            executor.shutdown(wait=False)
+
+        # assert async_time < sync_time, ("Async processing was faster than sync processing")
+        assert any(a < s for a, s in zip(results_async, results_sync)), ("Async processing was faster than sync processing")

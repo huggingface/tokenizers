@@ -175,7 +175,7 @@ impl WordPiece {
     pub fn read_bytes(vocab: &[u8]) -> Result<Vocab> {
         let file = BufReader::new(vocab);
 
-        let mut vocab = HashMap::new();
+        let mut vocab = AHashMap::new();
         for (index, line) in file.lines().enumerate() {
             let line = line?;
             vocab.insert(line.trim_end().to_owned(), index as u32);
