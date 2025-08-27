@@ -645,7 +645,7 @@ pub struct PyDecodeStream {
     /// correctly
     prefix_index: usize,
     /// A helper to make sure we only skip some tokens when we initialize the stream
-    is_first_step: bool,
+    init: bool,
 }
 
 #[derive(Clone)]
@@ -678,7 +678,7 @@ impl PyDecodeStream {
             ids: ids.unwrap_or_default(),
             prefix: String::new(),
             prefix_index: 0,
-            is_first_step: true,
+            init: true,
         }
     }
     #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
@@ -687,8 +687,8 @@ impl PyDecodeStream {
             StreamInput::Id(id) => vec![id],
             StreamInput::Ids(ids) => ids,
         };
-        if !self.ids.is_empty() && self.is_first_step {
-            self.is_first_step = false;
+        if !self.ids.is_empty() && self.init {
+            self.init = false;
             if self.ids.len() > 1 {
                 let mut old_ids = self.ids[..self.ids.len() - 2].to_vec();
                 let _ = tk::tokenizer::step_decode_stream(
