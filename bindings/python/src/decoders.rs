@@ -662,12 +662,11 @@ impl FromPyObject<'_> for StreamInput {
             Ok(StreamInput::Ids(ids))
         } else {
             Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-                "StreamInput must be either an integer or a list of integers"
+                "StreamInput must be either an integer or a list of integers",
             ))
         }
     }
 }
-
 
 #[pymethods]
 impl PyDecodeStream {
@@ -686,13 +685,17 @@ impl PyDecodeStream {
     fn step(&mut self, tokenizer: &PyTokenizer, id: StreamInput) -> PyResult<Option<String>> {
         let id: Vec<u32> = match id {
             StreamInput::Id(id) => vec![id],
-            StreamInput::Ids(ids) => ids
+            StreamInput::Ids(ids) => ids,
         };
-        if !self.ids.is_empty() && self.is_first_step{
+        if !self.ids.is_empty() && self.is_first_step {
             self.is_first_step = false;
             if self.ids.len() > 1 {
-                println!("Decoding stream with ids: {:?} and {:?}",self.ids[ .. self.ids.len() - 2].to_vec(), vec![self.ids[self.ids.len() - 1]]);
-                let mut old_ids = self.ids[ .. self.ids.len() - 2].to_vec();
+                println!(
+                    "Decoding stream with ids: {:?} and {:?}",
+                    self.ids[..self.ids.len() - 2].to_vec(),
+                    vec![self.ids[self.ids.len() - 1]]
+                );
+                let mut old_ids = self.ids[..self.ids.len() - 2].to_vec();
                 let _ = tk::tokenizer::step_decode_stream(
                     &tokenizer.tokenizer,
                     vec![self.ids[self.ids.len() - 1]],
@@ -703,22 +706,21 @@ impl PyDecodeStream {
                 );
                 self.ids = old_ids; // step_decode_stream drains the mut ref passed so we are maybe wasting a copy
             } else {
-                
                 println!("Decoding stream with ids: {:?}", self.ids);
                 let out = tk::tokenizer::step_decode_stream(
                     &tokenizer.tokenizer,
-                    vec![self.ids[self.ids.len()-1]],
+                    vec![self.ids[self.ids.len() - 1]],
                     self.skip_special_tokens,
-                    &mut self.ids[ .. self.ids.len() - 1].to_vec(),
+                    &mut self.ids[..self.ids.len() - 1].to_vec(),
                     &mut self.prefix,
                     &mut self.prefix_index,
                 );
                 if id.is_empty() {
-                    return ToPyResult(out).into()
+                    return ToPyResult(out).into();
                 }
             }
         };
-        
+
         println!("finally decoding stream with ids: {:?}", self.ids);
         ToPyResult(tk::tokenizer::step_decode_stream(
             &tokenizer.tokenizer,
@@ -727,7 +729,8 @@ impl PyDecodeStream {
             &mut self.ids,
             &mut self.prefix,
             &mut self.prefix_index,
-        )).into()
+        ))
+        .into()
     }
 }
 
