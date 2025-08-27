@@ -432,11 +432,11 @@ class TestTokenizer:
 
         stream = DecodeStream([40])
         out = stream.step(tokenizer, 2846)
-        assert out == "I"
+        assert out == "'m"
 
         stream = DecodeStream([40])
         out = stream.step(tokenizer, [2846, 40, 40, 40])
-        assert out == "I"
+        assert out == "'mIII"
 
     def test_decode_stream(self):
         vocab = [

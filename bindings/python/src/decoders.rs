@@ -691,15 +691,20 @@ impl PyDecodeStream {
         if !self.ids.is_empty() && self.is_first_step{
             self.is_first_step = false;
             if self.ids.len() > 1 {
+                println!("Decoding stream with ids: {:?} and {:?}",self.ids[ .. self.ids.len() - 2].to_vec(), vec![self.ids[self.ids.len() - 1]]);
+                let mut old_ids = self.ids[ .. self.ids.len() - 2].to_vec();
                 let _ = tk::tokenizer::step_decode_stream(
                     &tokenizer.tokenizer,
                     vec![self.ids[self.ids.len() - 1]],
                     self.skip_special_tokens,
-                    &mut self.ids[ .. self.ids.len() - 2].to_vec(),
+                    &mut old_ids,
                     &mut self.prefix,
                     &mut self.prefix_index,
                 );
+                self.ids = old_ids; // step_decode_stream drains the mut ref passed so we are maybe wasting a copy
             } else {
+                
+                println!("Decoding stream with ids: {:?}", self.ids);
                 let out = tk::tokenizer::step_decode_stream(
                     &tokenizer.tokenizer,
                     vec![self.ids[self.ids.len()-1]],
@@ -708,12 +713,13 @@ impl PyDecodeStream {
                     &mut self.prefix,
                     &mut self.prefix_index,
                 );
-                if self.ids.is_empty() {
+                if id.is_empty() {
                     return ToPyResult(out).into()
                 }
             }
         };
         
+        println!("finally decoding stream with ids: {:?}", self.ids);
         ToPyResult(tk::tokenizer::step_decode_stream(
             &tokenizer.tokenizer,
             id,
