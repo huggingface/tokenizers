@@ -644,6 +644,8 @@ pub struct PyDecodeStream {
     /// The index within the ids corresponding to the prefix so we can drain
     /// correctly
     prefix_index: usize,
+    /// A helper to make sure we only skip some tokens when we initialize the stream
+    is_first_step: bool,
 }
 
 #[pymethods]
@@ -654,12 +656,38 @@ impl PyDecodeStream {
         PyDecodeStream {
             skip_special_tokens: skip_special_tokens.unwrap_or(false),
             ids: ids.unwrap_or_default(),
-            prefix: "".to_string(),
+            prefix: String::new(),
             prefix_index: 0,
+            is_first_step: true,
         }
     }
     #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
     fn step(&mut self, tokenizer: &PyTokenizer, id: u32) -> PyResult<Option<String>> {
+        if !self.ids.is_empty() && self.is_first_step{
+            self.is_first_step = false;
+            if self.ids.len() > 1 {
+                let _ = tk::tokenizer::step_decode_stream(
+                    &tokenizer.tokenizer,
+                    self.ids[self.ids.len() - 1],
+                    self.skip_special_tokens,
+                    &mut self.ids[ .. self.ids.len() - 2].to_vec(),
+                    &mut self.prefix,
+                    &mut self.prefix_index,
+                );
+            } else {
+                let out = tk::tokenizer::step_decode_stream(
+                    &tokenizer.tokenizer,
+                    self.ids[self.ids.len()-1],
+                    self.skip_special_tokens,
+                    &mut self.ids[ .. self.ids.len() - 1].to_vec(),
+                    &mut self.prefix,
+                    &mut self.prefix_index,
+                );
+                if self.ids.is_empty() {
+                    return ToPyResult(out).into()
+                }
+            }
+        };
         ToPyResult(tk::tokenizer::step_decode_stream(
             &tokenizer.tokenizer,
             id,

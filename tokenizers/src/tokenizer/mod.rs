@@ -1041,8 +1041,12 @@ pub struct DecodeStream<'tok, M, N, PT, PP, D> {
 
 #[derive(thiserror::Error, Debug)]
 pub enum DecodeStreamError {
-    #[error("Invalid prefix encountered")]
-    InvalidPrefix,
+    #[error("Invalid prefix encountered while decoding stream. Token ID: {token_id}, Expected prefix: '{expected_prefix}', Actual string: '{actual_string}'")]
+    InvalidPrefix {
+        token_id: u32,
+        expected_prefix: String,
+        actual_string: String,
+    },
 }
 
 impl<'tok, M, N, PT, PP, D> DecodeStream<'tok, M, N, PT, PP, D>
@@ -1096,7 +1100,11 @@ where
     let string = tokenizer.decode(ids.as_slice(), skip_special_tokens)?;
     if string.len() > prefix.len() && !string.ends_with('�') {
         if !(string.starts_with(&*prefix)) {
-            return Err(Box::new(DecodeStreamError::InvalidPrefix));
+            return Err(Box::new(DecodeStreamError::InvalidPrefix {
+                token_id: id,
+                expected_prefix: prefix.clone(),
+                actual_string: string,
+            }));
         }
         let new_text = &string[prefix.len()..].to_string();
         let new_prefix_index = ids.len() - *prefix_index;
