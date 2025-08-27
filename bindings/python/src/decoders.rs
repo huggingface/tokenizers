@@ -648,6 +648,12 @@ pub struct PyDecodeStream {
     is_first_step: bool,
 }
 
+#[pyclass(module = "tokenizers.decoders", name = "StreamInput")]
+#[derive(Clone)]
+enum StreamInput {
+    Id(u32),
+    Ids(Vec<u32>),
+}
 #[pymethods]
 impl PyDecodeStream {
     #[new]
@@ -662,13 +668,17 @@ impl PyDecodeStream {
         }
     }
     #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
-    fn step(&mut self, tokenizer: &PyTokenizer, id: u32) -> PyResult<Option<String>> {
+    fn step(&mut self, tokenizer: &PyTokenizer, id: StreamInput) -> PyResult<Option<String>> {
+        let id: Vec<u32> = match id {
+            StreamInput::Id(id) => vec![id],
+            StreamInput::Ids(ids) => ids
+        };
         if !self.ids.is_empty() && self.is_first_step{
             self.is_first_step = false;
             if self.ids.len() > 1 {
                 let _ = tk::tokenizer::step_decode_stream(
                     &tokenizer.tokenizer,
-                    self.ids[self.ids.len() - 1],
+                    vec![self.ids[self.ids.len() - 1]],
                     self.skip_special_tokens,
                     &mut self.ids[ .. self.ids.len() - 2].to_vec(),
                     &mut self.prefix,
@@ -677,7 +687,7 @@ impl PyDecodeStream {
             } else {
                 let out = tk::tokenizer::step_decode_stream(
                     &tokenizer.tokenizer,
-                    self.ids[self.ids.len()-1],
+                    vec![self.ids[self.ids.len()-1]],
                     self.skip_special_tokens,
                     &mut self.ids[ .. self.ids.len() - 1].to_vec(),
                     &mut self.prefix,
@@ -689,36 +699,14 @@ impl PyDecodeStream {
             }
         };
         
-        let result = tk::tokenizer::step_decode_stream(
+        ToPyResult(tk::tokenizer::step_decode_stream(
             &tokenizer.tokenizer,
             id,
             self.skip_special_tokens,
             &mut self.ids,
             &mut self.prefix,
             &mut self.prefix_index,
-        );
-        
-        // Provide more helpful error message for DecodeStream context
-        match result {
-            Err(ref e) => {
-                if e.to_string().contains("Invalid prefix encountered") {
-                    let initial_ids = if self.ids.len() > 10 { 
-                        format!("{:?}...", &self.ids[..10])
-                    } else { 
-                        format!("{:?}", self.ids) 
-                    };
-                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                        "DecodeStream error: Unable to decode token {} with current stream state. \
-                        This is likely caused by initializing the DecodeStream with incompatible token IDs {:?}. \
-                        Try initializing DecodeStream without pre-existing IDs, or ensure the initial IDs form a valid decodable sequence. \
-                        Original error: {}",
-                        id, initial_ids, e
-                    )));
-                }
-                ToPyResult(result).into()
-            },
-            Ok(value) => Ok(value)
-        }
+        )).into()
     }
 }
 

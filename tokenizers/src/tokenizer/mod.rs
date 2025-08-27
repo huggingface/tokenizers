@@ -1071,7 +1071,7 @@ where
     pub fn step(&mut self, id: u32) -> Result<Option<String>> {
         step_decode_stream(
             self.tokenizer,
-            id,
+            vec![id],
             self.skip_special_tokens,
             &mut self.ids,
             &mut self.prefix,
@@ -1083,7 +1083,7 @@ where
 /// Internal function exposed only to bypass python limitations
 pub fn step_decode_stream<M, N, PT, PP, D>(
     tokenizer: &TokenizerImpl<M, N, PT, PP, D>,
-    id: u32,
+    token_ids: Vec<u32>,
     skip_special_tokens: bool,
     ids: &mut Vec<u32>,
     prefix: &mut String,
@@ -1096,12 +1096,12 @@ where
     PP: PostProcessor,
     D: Decoder,
 {
-    ids.push(id);
+    ids.extend(token_ids);
     let string = tokenizer.decode(ids.as_slice(), skip_special_tokens)?;
     if string.len() > prefix.len() && !string.ends_with('�') {
         if !(string.starts_with(&*prefix)) {
             return Err(Box::new(DecodeStreamError::InvalidPrefix {
-                token_id: id,
+                token_id: *ids.last().unwrap(),
                 expected_prefix: prefix.clone(),
                 actual_string: string,
             }));
