@@ -649,16 +649,15 @@ pub struct PyDecodeStream {
 #[pymethods]
 impl PyDecodeStream {
     #[new]
-    #[pyo3(signature = (skip_special_tokens), text_signature = "(self, skip_special_tokens)")]
-    fn new(skip_special_tokens: bool) -> Self {
+    #[pyo3(signature = (skip_special_tokens, ids), text_signature = "(self, skip_special_tokens=False, ids=None)")]
+    fn new(skip_special_tokens: Option<bool>, ids: Option<Vec<u32>>) -> Self {
         PyDecodeStream {
-            skip_special_tokens,
-            ids: vec![],
+            skip_special_tokens: skip_special_tokens.unwrap_or(false),
+            ids: ids.unwrap_or_default(),
             prefix: "".to_string(),
             prefix_index: 0,
         }
     }
-
     #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
     fn step(&mut self, tokenizer: &PyTokenizer, id: u32) -> PyResult<Option<String>> {
         ToPyResult(tk::tokenizer::step_decode_stream(
