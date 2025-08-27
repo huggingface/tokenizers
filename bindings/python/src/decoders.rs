@@ -649,8 +649,8 @@ pub struct PyDecodeStream {
 #[pymethods]
 impl PyDecodeStream {
     #[new]
-    #[pyo3(signature = (skip_special_tokens, ids), text_signature = "(self, skip_special_tokens=False, ids=None)")]
-    fn new(skip_special_tokens: Option<bool>, ids: Option<Vec<u32>>) -> Self {
+    #[pyo3(signature = ( ids, skip_special_tokens), text_signature = "(self, ids=None, skip_special_tokens=False)")]
+    fn new(ids: Option<Vec<u32>>, skip_special_tokens: Option<bool>) -> Self {
         PyDecodeStream {
             skip_special_tokens: skip_special_tokens.unwrap_or(false),
             ids: ids.unwrap_or_default(),
