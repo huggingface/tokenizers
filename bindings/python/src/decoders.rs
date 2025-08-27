@@ -648,16 +648,31 @@ pub struct PyDecodeStream {
     is_first_step: bool,
 }
 
-#[pyclass(module = "tokenizers.decoders", name = "StreamInput")]
 #[derive(Clone)]
 enum StreamInput {
     Id(u32),
     Ids(Vec<u32>),
 }
+
+impl FromPyObject<'_> for StreamInput {
+    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        if let Ok(id) = obj.extract::<u32>() {
+            Ok(StreamInput::Id(id))
+        } else if let Ok(ids) = obj.extract::<Vec<u32>>() {
+            Ok(StreamInput::Ids(ids))
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                "StreamInput must be either an integer or a list of integers"
+            ))
+        }
+    }
+}
+
+
 #[pymethods]
 impl PyDecodeStream {
     #[new]
-    #[pyo3(signature = ( ids, skip_special_tokens), text_signature = "(self, ids=None, skip_special_tokens=False)")]
+    #[pyo3(signature = (ids=None, skip_special_tokens=false), text_signature = "(self, ids=None, skip_special_tokens=False)")]
     fn new(ids: Option<Vec<u32>>, skip_special_tokens: Option<bool>) -> Self {
         PyDecodeStream {
             skip_special_tokens: skip_special_tokens.unwrap_or(false),
