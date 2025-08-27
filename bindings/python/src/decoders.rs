@@ -688,15 +688,37 @@ impl PyDecodeStream {
                 }
             }
         };
-        ToPyResult(tk::tokenizer::step_decode_stream(
+        
+        let result = tk::tokenizer::step_decode_stream(
             &tokenizer.tokenizer,
             id,
             self.skip_special_tokens,
             &mut self.ids,
             &mut self.prefix,
             &mut self.prefix_index,
-        ))
-        .into()
+        );
+        
+        // Provide more helpful error message for DecodeStream context
+        match result {
+            Err(ref e) => {
+                if e.to_string().contains("Invalid prefix encountered") {
+                    let initial_ids = if self.ids.len() > 10 { 
+                        format!("{:?}...", &self.ids[..10])
+                    } else { 
+                        format!("{:?}", self.ids) 
+                    };
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "DecodeStream error: Unable to decode token {} with current stream state. \
+                        This is likely caused by initializing the DecodeStream with incompatible token IDs {:?}. \
+                        Try initializing DecodeStream without pre-existing IDs, or ensure the initial IDs form a valid decodable sequence. \
+                        Original error: {}",
+                        id, initial_ids, e
+                    )));
+                }
+                ToPyResult(result).into()
+            },
+            Ok(value) => Ok(value)
+        }
     }
 }
 
