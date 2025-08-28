@@ -23,7 +23,7 @@ classifiers = [
 ]
 keywords = ["NLP", "tokenizer", "BPE", "transformer", "deep learning"]
 dynamic = ["description", "license", "readme", "version"]
-dependencies = ["huggingface_hub>=0.16.4,<1.0"]
+dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/huggingface/tokenizers"
@@ -31,7 +31,7 @@ Source = "https://github.com/huggingface/tokenizers"
 
 
 [project.optional-dependencies]
-testing = ["pytest", "requests", "numpy", "datasets", "black==22.3", "ruff"]
+testing = ["pytest", "requests", "numpy", "datasets", "black==22.3", "ruff","huggingface_hub>=0.16.4,<1.0"]
 docs = ["sphinx", "sphinx_rtd_theme", "setuptools_rust"]
 dev = ["tokenizers[testing]"]
 
