@@ -40,6 +40,10 @@ harness = false
 name = "llama3_benchmark"
 harness = false
 
+[[bench]]
+name = "whitespace_bench"
+harness = false
+
 [dependencies]
 rand = "0.9"
 onig = { version = "6.5.1", default-features = false, optional = true }
