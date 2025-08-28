@@ -10,7 +10,7 @@ use tokenizers as tk;
 use crate::error::{deprecation_warning, PyError};
 
 /// The :class:`~tokenizers.Encoding` represents the output of a :class:`~tokenizers.Tokenizer`.
-#[pyclass(dict, module = "tokenizers", name = "Encoding")]
+#[pyclass(dict, module = "tokenizers", name = "Encoding", frozen)]
 #[repr(transparent)]
 pub struct PyEncoding {
     pub encoding: Mutex<tk::tokenizer::Encoding>,
@@ -43,10 +43,10 @@ impl PyEncoding {
         Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&self, py: Python, state: PyObject) -> PyResult<()> {
         match state.extract::<&[u8]>(py) {
             Ok(s) => {
-                self.encoding = serde_json::from_slice(s).map_err(|e| {
+                *(self.encoding.lock().unwrap()) = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
                         "Error while attempting to unpickle Encoding: {e}"
                     ))
@@ -107,7 +107,7 @@ impl PyEncoding {
     /// Set the given sequence index for the whole range of tokens contained in this
     /// :class:`~tokenizers.Encoding`.
     #[pyo3(text_signature = "(self, sequence_id)")]
-    fn set_sequence_id(&mut self, sequence_id: usize) {
+    fn set_sequence_id(&self, sequence_id: usize) {
         self.encoding.lock().unwrap().set_sequence_id(sequence_id);
     }
 
@@ -413,7 +413,7 @@ impl PyEncoding {
     #[pyo3(
         text_signature = "(self, length, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]')"
     )]
-    fn pad(&mut self, length: usize, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
+    fn pad(&self, length: usize, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
         let mut pad_id = 0;
         let mut pad_type_id = 0;
         let mut pad_token = "[PAD]".to_string();
@@ -465,7 +465,7 @@ impl PyEncoding {
     ///         Truncate direction
     #[pyo3(signature = (max_length, stride = 0, direction = "right"))]
     #[pyo3(text_signature = "(self, max_length, stride=0, direction='right')")]
-    fn truncate(&mut self, max_length: usize, stride: usize, direction: &str) -> PyResult<()> {
+    fn truncate(&self, max_length: usize, stride: usize, direction: &str) -> PyResult<()> {
         let tdir = match direction {
             "left" => Ok(TruncationDirection::Left),
             "right" => Ok(TruncationDirection::Right),
