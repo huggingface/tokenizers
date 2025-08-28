@@ -14,7 +14,6 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     config.addinivalue_line("markers", "slow: mark test as slow to run")
     # Don't warn for `pytest-run-parallel` markers if they're not available
-    breakpoint()
     if not PARALLEL_RUN_AVAILABLE:
         config.addinivalue_line(
             "markers",
