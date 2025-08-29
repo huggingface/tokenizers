@@ -1096,6 +1096,10 @@ where
     PP: PostProcessor,
     D: Decoder,
 {
+    if prefix.is_empty() && !ids.is_empty() {
+        *prefix = tokenizer.decode(ids, skip_special_tokens)?;
+        *prefix_index = ids.len();
+    };
     ids.extend(token_ids);
     let string = tokenizer.decode(ids.as_slice(), skip_special_tokens)?;
     if string.len() > prefix.len() && !string.ends_with('�') {
