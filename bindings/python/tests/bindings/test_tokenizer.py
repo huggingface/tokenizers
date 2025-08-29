@@ -625,7 +625,7 @@ class TestAsyncTokenizer:
 
     def setup_method(self):
         """Setup a basic tokenizer before each test."""
-        self.tokenizer = Tokenizer.from_pretrained("openai/gpt-oss-20b")
+        self.tokenizer = Tokenizer.from_pretrained("hf-internal-testing/gpt-oss-20b")
 
     async def _compare_sync_async(self, input_data, is_pretokenized=False, add_special_tokens=True):
         """Helper to compare sync and async results for both normal and fast encoding."""
