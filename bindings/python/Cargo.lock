@@ -1194,7 +1194,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers"
-version = "0.22.0-rc0"
+version = "0.22.0"
 dependencies = [
  "ahash",
  "aho-corasick",
@@ -1226,7 +1226,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers-python"
-version = "0.22.0-rc0"
+version = "0.22.0"
 dependencies = [
  "ahash",
  "env_logger",
