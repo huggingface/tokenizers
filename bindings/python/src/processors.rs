@@ -341,7 +341,7 @@ impl PyBertProcessing {
     }
 
     #[getter]
-    fn get_sep(self_: PyRef<Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
+    fn get_sep(self_: PyRef<'_, Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
         let py = self_.py();
         let (tok, id) = getter!(self_, Bert, get_sep_copy());
         PyTuple::new(
@@ -358,7 +358,7 @@ impl PyBertProcessing {
     }
 
     #[getter]
-    fn get_cls(self_: PyRef<Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
+    fn get_cls(self_: PyRef<'_, Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
         let py = self_.py();
         let (tok, id) = getter!(self_, Bert, get_cls_copy());
         PyTuple::new(
@@ -422,7 +422,7 @@ impl PyRobertaProcessing {
     }
 
     #[getter]
-    fn get_sep(self_: PyRef<Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
+    fn get_sep(self_: PyRef<'_, Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
         let py = self_.py();
         let (tok, id) = getter!(self_, Roberta, get_sep_copy());
         PyTuple::new(
@@ -439,7 +439,7 @@ impl PyRobertaProcessing {
     }
 
     #[getter]
-    fn get_cls(self_: PyRef<Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
+    fn get_cls(self_: PyRef<'_, Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
         let py = self_.py();
         let (tok, id) = getter!(self_, Roberta, get_cls_copy());
         PyTuple::new(
