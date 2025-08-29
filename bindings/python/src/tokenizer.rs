@@ -557,6 +557,34 @@ impl PyTokenizer {
         }
         Ok(out)
     }
+
+    // Helper method to build a single owned encode input
+    fn build_single_owned_encode_input(
+        sequence: &Bound<'_, PyAny>,
+        pair: Option<&Bound<'_, PyAny>>,
+        is_pretokenized: bool,
+    ) -> PyResult<tk::EncodeInput<'static>> {
+        let owned_sequence: tk::InputSequence<'static> = if is_pretokenized {
+            let seq = Self::extract_pretok_seq(sequence)?;
+            seq.into()
+        } else {
+            let s: String = sequence.extract()?;
+            s.into()
+        };
+
+        if let Some(pair) = pair {
+            let owned_pair: tk::InputSequence<'static> = if is_pretokenized {
+                let seq = Self::extract_pretok_seq(pair)?;
+                seq.into()
+            } else {
+                let s: String = pair.extract()?;
+                s.into()
+            };
+            Ok(tk::EncodeInput::Dual(owned_sequence, owned_pair))
+        } else {
+            Ok(tk::EncodeInput::Single(owned_sequence))
+        }
+    }
 }
 
 #[pymethods]
@@ -1069,6 +1097,76 @@ impl PyTokenizer {
                 .map(|e| e.into()),
         )
         .into()
+    }
+
+    /// Asynchronously encode the given input with character offsets.
+    ///
+    /// This is an async version of encode that can be awaited in async Python code.
+    ///
+    /// Example:
+    ///     Here are some examples of the inputs that are accepted::
+    ///
+    ///         await async_encode("A single sequence")
+    ///
+    /// Args:
+    ///     sequence (:obj:`~tokenizers.InputSequence`):
+    ///         The main input sequence we want to encode. This sequence can be either raw
+    ///         text or pre-tokenized, according to the ``is_pretokenized`` argument:
+    ///
+    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextInputSequence`
+    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedInputSequence`
+    ///
+    ///     pair (:obj:`~tokenizers.InputSequence`, `optional`):
+    ///         An optional input sequence. The expected format is the same that for ``sequence``.
+    ///
+    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+    ///         Whether the input is already pre-tokenized
+    ///
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to add the special tokens
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.Encoding`: The encoded result
+    ///
+    #[pyo3(signature = (sequence, pair = None, is_pretokenized = false, add_special_tokens = true))]
+    #[pyo3(
+        text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True)"
+    )]
+    fn async_encode<'py>(
+        &self,
+        py: Python<'py>,
+        sequence: &Bound<'_, PyAny>,
+        pair: Option<&Bound<'_, PyAny>>,
+        is_pretokenized: bool,
+        add_special_tokens: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        // Extract and fully own the inputs before leaving the GIL/thread
+        let input = Self::build_single_owned_encode_input(sequence, pair, is_pretokenized)?;
+
+        let tokenizer = self.tokenizer.clone();
+        let rt = crate::TOKIO_RUNTIME.clone();
+
+        let fut = py.allow_threads(|| async move {
+            let result = rt
+                .spawn_blocking(move || {
+                    tokenizer
+                        .encode(input, add_special_tokens)
+                        .map(PyEncoding::from)
+                })
+                .await
+                .unwrap();
+
+            // Convert to a Python object directly
+            match result {
+                Ok(encoding) => Python::with_gil(|py| {
+                    let obj: PyObject = encoding.into_pyobject(py)?.into_any().unbind();
+                    Ok(obj)
+                }),
+                Err(e) => Err(exceptions::PyException::new_err(e.to_string())),
+            }
+        });
+
+        pyo3_async_runtimes::tokio::future_into_py(py, fut)
     }
 
     /// Encode the given batch of inputs. This method accept both raw text sequences
