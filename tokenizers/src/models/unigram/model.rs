@@ -356,7 +356,7 @@ impl Unigram {
     }
 
     /// Iterate of vocabulary of the model as a pair of `(token, score)`.
-    pub fn iter(&self) -> UnigramIterator {
+    pub fn iter(&self) -> UnigramIterator<'_> {
         UnigramIterator { model: self, i: 0 }
     }
 
