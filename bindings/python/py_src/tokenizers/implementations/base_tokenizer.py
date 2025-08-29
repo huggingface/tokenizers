@@ -259,6 +259,47 @@ class BaseTokenizer:
 
         return self._tokenizer.encode_batch(inputs, is_pretokenized, add_special_tokens)
 
+    async def async_encode_batch(
+        self,
+        inputs: List[EncodeInput],
+        is_pretokenized: bool = False,
+        add_special_tokens: bool = True,
+    ) -> List[Encoding]:
+        """Asynchronously encode a batch (tracks character offsets).
+
+        Args:
+            inputs: A list of single or pair sequences to encode.
+            is_pretokenized: Whether inputs are already pre-tokenized.
+            add_special_tokens: Whether to add special tokens.
+
+        Returns:
+            A list of Encoding.
+        """
+        if inputs is None:
+            raise ValueError("async_encode_batch: `inputs` can't be `None`")
+        # Exposed by the Rust bindings via pyo3_async_runtimes::tokio::future_into_py
+        return await self._tokenizer.async_encode_batch(inputs, is_pretokenized, add_special_tokens)
+
+    async def async_encode_batch_fast(
+        self,
+        inputs: List[EncodeInput],
+        is_pretokenized: bool = False,
+        add_special_tokens: bool = True,
+    ) -> List[Encoding]:
+        """Asynchronously encode a batch (no character offsets, faster).
+
+        Args:
+            inputs: A list of single or pair sequences to encode.
+            is_pretokenized: Whether inputs are already pre-tokenized.
+            add_special_tokens: Whether to add special tokens.
+
+        Returns:
+            A list of Encoding.
+        """
+        if inputs is None:
+            raise ValueError("async_encode_batch_fast: `inputs` can't be `None`")
+        return await self._tokenizer.async_encode_batch_fast(inputs, is_pretokenized, add_special_tokens)
+
     def decode(self, ids: List[int], skip_special_tokens: Optional[bool] = True) -> str:
         """Decode the given list of ids to a string sequence
 
