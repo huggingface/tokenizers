@@ -973,8 +973,3 @@ class TestAsyncTokenizer:
         finally:
             # Make sure we shut down the executor properly
             executor.shutdown(wait=False)
-
-        # assert async_time < sync_time, ("Async processing was faster than sync processing")
-        # assert any(a < s for a, s in zip(results_async, results_sync)), (
-        #     "Async processing was faster than sync processing"
-        # )
