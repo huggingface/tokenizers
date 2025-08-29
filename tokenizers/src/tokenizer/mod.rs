@@ -1096,31 +1096,72 @@ where
     PP: PostProcessor,
     D: Decoder,
 {
+    println!("--- step_decode_stream start ---");
+    println!("Incoming token_ids: {:?}", token_ids);
+    println!("Current ids: {:?}", ids);
+    println!("Current prefix: '{}', prefix_index: {} (len={})", prefix, prefix_index, prefix.len());
+
     if prefix.is_empty() && !ids.is_empty() {
-        *prefix = tokenizer.decode(ids, skip_special_tokens)?;
-        *prefix_index = ids.len();
-    };
+        let new_prefix = tokenizer.decode(ids, skip_special_tokens)?;
+        if !new_prefix.ends_with('�') {
+            *prefix = new_prefix;
+            *prefix_index = ids.len();
+            println!(
+                "Initialized prefix='{}' from ids (len={}), prefix_index={}",
+                prefix, ids.len(), prefix_index
+            );
+        } else {
+            println!("Prefix is still invalid (len={})", ids.len());
+        }
+
+    }
+
     ids.extend(token_ids);
+    println!("Updated ids after extend: {:?}", ids);
+
     let string = tokenizer.decode(ids.as_slice(), skip_special_tokens)?;
+    println!("Decoded string='{}' (len={})", string, string.len());
+
     if string.len() > prefix.len() && !string.ends_with('�') {
+        println!("New text detected (string longer than prefix, no trailing '�')");
         if !(string.starts_with(&*prefix)) {
+            println!(
+                "ERROR: Prefix mismatch! expected_prefix='{}', actual_string='{}'",
+                prefix, string
+            );
             return Err(Box::new(DecodeStreamError::InvalidPrefix {
                 token_id: *ids.last().unwrap(),
                 expected_prefix: prefix.clone(),
                 actual_string: string,
             }));
         }
+
         let new_text = &string[prefix.len()..].to_string();
         let new_prefix_index = ids.len() - *prefix_index;
+        println!("Extracted new_text='{}'", new_text);
+        println!(
+            "new_prefix_index={}, old_prefix_index={}",
+            new_prefix_index, prefix_index
+        );
+
         *ids = ids.drain(*prefix_index..).collect();
+        println!("Trimmed ids (kept from prefix_index): {:?}", ids);
+
         *prefix = tokenizer.decode(ids, skip_special_tokens)?;
         *prefix_index = new_prefix_index;
+        println!(
+            "Updated prefix='{}', new prefix_index={}",
+            prefix, prefix_index
+        );
+
+        println!("--- step_decode_stream end (yield new_text) ---");
         Ok(Some(new_text.to_string()))
     } else {
+        println!("No new text produced (either shorter than prefix or trailing '�')");
+        println!("--- step_decode_stream end (yield None) ---");
         Ok(None)
     }
 }
-
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: Model,
