@@ -53,8 +53,7 @@ impl PyTrainer {
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.trainer).map_err(|e| {
             exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle PyTrainer: {}",
-                e
+                "Error while attempting to pickle PyTrainer: {e}"
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).into())
@@ -65,8 +64,7 @@ impl PyTrainer {
             Ok(s) => {
                 let unpickled = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle PyTrainer: {}",
-                        e
+                        "Error while attempting to unpickle PyTrainer: {e}"
                     ))
                 })?;
                 self.trainer = unpickled;
@@ -360,7 +358,7 @@ impl PyBpeTrainer {
                         builder = builder.continuing_subword_prefix(val.extract()?)
                     }
                     "end_of_word_suffix" => builder = builder.end_of_word_suffix(val.extract()?),
-                    _ => println!("Ignored unknown kwargs option {}", key),
+                    _ => println!("Ignored unknown kwargs option {key}"),
                 };
             }
         }
@@ -566,7 +564,7 @@ impl PyWordPieceTrainer {
                         builder = builder.continuing_subword_prefix(val.extract()?)
                     }
                     "end_of_word_suffix" => builder = builder.end_of_word_suffix(val.extract()?),
-                    _ => println!("Ignored unknown kwargs option {}", key),
+                    _ => println!("Ignored unknown kwargs option {key}"),
                 };
             }
         }
@@ -699,7 +697,7 @@ impl PyWordLevelTrainer {
                                 .collect::<PyResult<Vec<_>>>()?,
                         );
                     }
-                    _ => println!("Ignored unknown kwargs option {}", key),
+                    _ => println!("Ignored unknown kwargs option {key}"),
                 }
             }
         }
@@ -872,7 +870,7 @@ impl PyUnigramTrainer {
                             .collect::<PyResult<Vec<_>>>()?,
                     ),
                     _ => {
-                        println!("Ignored unknown kwargs option {}", key);
+                        println!("Ignored unknown kwargs option {key}");
                         &mut builder
                     }
                 };
@@ -881,7 +879,7 @@ impl PyUnigramTrainer {
 
         let trainer: tokenizers::models::unigram::UnigramTrainer =
             builder.build().map_err(|e| {
-                exceptions::PyException::new_err(format!("Cannot build UnigramTrainer: {}", e))
+                exceptions::PyException::new_err(format!("Cannot build UnigramTrainer: {e}"))
             })?;
         Ok((PyUnigramTrainer {}, trainer.into()))
     }

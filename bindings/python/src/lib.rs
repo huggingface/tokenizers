@@ -38,8 +38,7 @@ extern "C" fn child_after_fork() {
         eprintln!("To disable this warning, you can either:");
         eprintln!(
             "\t- Avoid using `tokenizers` before the fork if possible\n\
-            \t- Explicitly set the environment variable {}=(true | false)",
-            ENV_VARIABLE
+            \t- Explicitly set the environment variable {ENV_VARIABLE}=(true | false)"
         );
         set_parallelism(false);
     }

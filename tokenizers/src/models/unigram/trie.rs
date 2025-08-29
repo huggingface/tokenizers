@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use ahash::AHashMap;
 use std::hash::Hash;
 
 #[derive(Default)]
@@ -30,7 +30,7 @@ impl<Label: Eq + Hash + Copy> Trie<Label> {
         node.is_leaf = true;
     }
 
-    pub fn common_prefix_search<T>(&self, iterator: T) -> TrieIterator<Label, T>
+    pub fn common_prefix_search<T>(&self, iterator: T) -> TrieIterator<'_, Label, T>
     where
         T: Iterator<Item = Label>,
     {
@@ -78,14 +78,14 @@ impl<Label> Default for Trie<Label> {
 #[derive(Clone)]
 pub struct Node<Label> {
     is_leaf: bool,
-    children: HashMap<Label, Node<Label>>,
+    children: AHashMap<Label, Node<Label>>,
 }
 
 impl<Label> Default for Node<Label> {
     fn default() -> Self {
         Self {
             is_leaf: false,
-            children: HashMap::new(),
+            children: AHashMap::new(),
         }
     }
 }

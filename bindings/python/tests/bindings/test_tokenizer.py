@@ -371,6 +371,110 @@ class TestTokenizer:
         assert stream.step(tokenizer, 2) == " is"
         assert stream.step(tokenizer, 3) == " john"
 
+        stream = DecodeStream(ids=[0, 1, 2])
+        assert stream.step(tokenizer, 3) == " john"
+
+    def test_decode_stream_fallback(self):
+        tokenizer = Tokenizer.from_pretrained("gpt2")
+        # tokenizer.decode([255]) fails because its a fallback
+        # tokenizer.encode("อั").ids = [19567, 255, 19567, 109]
+        stream = DecodeStream()
+        stream.step(tokenizer, [19567])
+        stream.step(tokenizer, [255])
+        stream.step(tokenizer, [19567])
+        out = stream.step(tokenizer, [109])
+        assert out == "ั"
+
+        stream = DecodeStream()
+        out = stream.step(tokenizer, [19567, 255, 19567, 109])
+        assert out == "อั"
+        stream = DecodeStream()
+        stream.step(tokenizer, [19567])
+        out = stream.step(tokenizer, [255, 19567, 109])
+        assert out == "อั"
+
+        stream = DecodeStream()
+        stream.step(tokenizer, [19567])
+        first_out = stream.step(tokenizer, [255])
+        assert first_out == "อ"
+        # since we emitted the 'อ', we can't produce 'อั'
+        out = stream.step(tokenizer, [19567, 109])
+        assert out == "ั"
+
+        stream = DecodeStream([19567, 255, 19567])
+        # the stream's prefix is 'อ�' which is invalid, thus all ids are kept for the next step
+        out = stream.step(tokenizer, [109])
+        assert out == "อั"
+
+    def test_decode_skip_special_tokens(self):
+        tokenizer = Tokenizer.from_pretrained("hf-internal-testing/Llama-3.1-8B-Instruct")
+
+        stream = DecodeStream([40])
+        out = stream.step(tokenizer, [2846, 40, 40, 40])
+        assert out == "'mIII"
+
+        stream = DecodeStream(
+            [
+                128000,
+                128006,
+                9125,
+                128007,
+                271,
+                38766,
+                1303,
+                33025,
+                2696,
+                25,
+                6790,
+                220,
+                2366,
+                18,
+                198,
+                15724,
+                2696,
+                25,
+                220,
+                1627,
+                10263,
+                220,
+                2366,
+                19,
+                271,
+                9514,
+                527,
+                264,
+                11190,
+                18328,
+                13,
+                128009,
+                128006,
+                882,
+                128007,
+                271,
+                15339,
+                11,
+                1268,
+                527,
+                499,
+                30,
+                128009,
+                128006,
+                78191,
+                128007,
+                271,
+            ]
+        )
+        out = stream.step(tokenizer, 40)
+        assert out == "I"
+
+        stream = DecodeStream([40])
+        out = stream.step(tokenizer, 2846)
+        assert out == "'m"
+
+        stream = DecodeStream([40])
+        out = stream.step(tokenizer, [2846, 40, 40, 40])
+        assert out == "'mIII"
+
     def test_decode_stream(self):
         vocab = [
             ("<unk>", 0.0),

@@ -1,8 +1,10 @@
+use std::collections::HashSet;
+
 use super::WordPiece;
 use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder, BPE};
 use crate::tokenizer::{AddedToken, Result, Trainer};
+use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
 /// configuration.
@@ -134,12 +136,14 @@ impl WordPieceTrainer {
         self.bpe_trainer.limit_alphabet = limit;
     }
 
-    pub fn initial_alphabet(&self) -> &HashSet<char> {
+    pub fn initial_alphabet(&self) -> &AHashSet<char> {
         &self.bpe_trainer.initial_alphabet
     }
 
     pub fn set_initial_alphabet(&mut self, alphabet: HashSet<char>) {
-        self.bpe_trainer.initial_alphabet = alphabet;
+        let mut initial_alphabet = AHashSet::with_capacity(alphabet.len());
+        initial_alphabet.extend(alphabet);
+        self.bpe_trainer.initial_alphabet = initial_alphabet;
     }
 
     pub fn continuing_subword_prefix(&self) -> &Option<String> {
@@ -170,7 +174,7 @@ impl WordPieceTrainer {
         // Transfer the vocab
         model.vocab = new_wordpiece.vocab;
         model.vocab_r = new_wordpiece.vocab_r;
-        // The continuing_subword_prefix is the only other option to be overriden by the trainer
+        // The continuing_subword_prefix is the only other option to be overridden by the trainer
         model.continuing_subword_prefix = new_wordpiece.continuing_subword_prefix;
 
         Ok(special_tokens)

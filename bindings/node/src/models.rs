@@ -1,6 +1,7 @@
 use crate::arc_rwlock_serde;
 use crate::tasks::models::{BPEFromFilesTask, WordLevelFromFilesTask, WordPieceFromFilesTask};
 use crate::trainers::Trainer;
+use ahash::AHashMap;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
@@ -8,7 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use tokenizers as tk;
-use tokenizers::models::bpe::{BpeBuilder, Merges, Vocab};
+use tokenizers::models::bpe::{BpeBuilder, Merges};
 use tokenizers::models::wordlevel::WordLevelBuilder;
 use tokenizers::models::wordpiece::WordPieceBuilder;
 
@@ -44,8 +45,13 @@ impl Bpe {
   }
 
   #[napi(factory, ts_return_type = "Model")]
-  pub fn init(vocab: Vocab, merges: Merges, options: Option<BpeOptions>) -> Result<Model> {
+  pub fn init(
+    vocab: HashMap<String, u32>,
+    merges: Merges,
+    options: Option<BpeOptions>,
+  ) -> Result<Model> {
     let options = options.unwrap_or_default();
+    let vocab: AHashMap<_, _> = vocab.into_iter().collect();
     let mut builder = tk::models::bpe::BPE::builder().vocab_and_merges(vocab, merges);
     builder = options.apply_to_bpe_builder(builder);
     let model = builder
@@ -206,10 +212,11 @@ pub struct WordPiece {}
 #[napi]
 impl WordPiece {
   #[napi(factory, ts_return_type = "Model")]
-  pub fn init(vocab: Vocab, options: Option<WordPieceOptions>) -> Result<Model> {
+  pub fn init(vocab: HashMap<String, u32>, options: Option<WordPieceOptions>) -> Result<Model> {
     let options = options.unwrap_or_default();
 
-    let mut builder = tk::models::wordpiece::WordPiece::builder().vocab(vocab);
+    let mut builder = tk::models::wordpiece::WordPiece::builder()
+      .vocab(vocab.into_iter().collect::<AHashMap<_, _>>());
     builder = options.apply_to_wordpiece_builder(builder);
     let model = builder
       .build()
@@ -263,9 +270,10 @@ pub struct WordLevel {}
 #[napi]
 impl WordLevel {
   #[napi(factory, ts_return_type = "Model")]
-  pub fn init(vocab: Vocab, options: Option<WordLevelOptions>) -> Result<Model> {
+  pub fn init(vocab: HashMap<String, u32>, options: Option<WordLevelOptions>) -> Result<Model> {
     let options = options.unwrap_or_default();
-    let mut builder = tk::models::wordlevel::WordLevel::builder().vocab(vocab);
+    let mut builder =
+      tk::models::wordlevel::WordLevel::builder().vocab(vocab.into_iter().collect());
     builder = options.apply_to_wordlevel_builder(builder);
     let model = builder
       .build()
