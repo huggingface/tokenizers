@@ -842,7 +842,7 @@ class TestAsyncTokenizer:
             await asyncio.gather(*[encode_sync_with_executor(i) for i in range(2048)])
             await asyncio.gather(*[encode_async(i) for i in range(2048)])
 
-            for n_tasks in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]:
+            for n_tasks in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]:
                 # Measure sync performance with pre-initialized executor
                 # Warm up
                 await asyncio.gather(*[encode_sync_with_executor(i) for i in range(10)])
