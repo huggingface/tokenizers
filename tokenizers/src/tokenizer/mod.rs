@@ -1041,8 +1041,12 @@ pub struct DecodeStream<'tok, M, N, PT, PP, D> {
 
 #[derive(thiserror::Error, Debug)]
 pub enum DecodeStreamError {
-    #[error("Invalid prefix encountered")]
-    InvalidPrefix,
+    #[error("Invalid prefix encountered while decoding stream. Token ID: {token_id}, Expected prefix: '{expected_prefix}', Actual string: '{actual_string}'")]
+    InvalidPrefix {
+        token_id: u32,
+        expected_prefix: String,
+        actual_string: String,
+    },
 }
 
 impl<'tok, M, N, PT, PP, D> DecodeStream<'tok, M, N, PT, PP, D>
@@ -1067,7 +1071,7 @@ where
     pub fn step(&mut self, id: u32) -> Result<Option<String>> {
         step_decode_stream(
             self.tokenizer,
-            id,
+            vec![id],
             self.skip_special_tokens,
             &mut self.ids,
             &mut self.prefix,
@@ -1079,7 +1083,7 @@ where
 /// Internal function exposed only to bypass python limitations
 pub fn step_decode_stream<M, N, PT, PP, D>(
     tokenizer: &TokenizerImpl<M, N, PT, PP, D>,
-    id: u32,
+    token_ids: Vec<u32>,
     skip_special_tokens: bool,
     ids: &mut Vec<u32>,
     prefix: &mut String,
@@ -1092,12 +1096,25 @@ where
     PP: PostProcessor,
     D: Decoder,
 {
-    ids.push(id);
+    if prefix.is_empty() && !ids.is_empty() {
+        let new_prefix = tokenizer.decode(ids, skip_special_tokens)?;
+        if !new_prefix.ends_with('�') {
+            *prefix = new_prefix;
+            *prefix_index = ids.len();
+        }
+    }
+
+    ids.extend(token_ids);
     let string = tokenizer.decode(ids.as_slice(), skip_special_tokens)?;
     if string.len() > prefix.len() && !string.ends_with('�') {
         if !(string.starts_with(&*prefix)) {
-            return Err(Box::new(DecodeStreamError::InvalidPrefix));
+            return Err(Box::new(DecodeStreamError::InvalidPrefix {
+                token_id: *ids.last().unwrap(),
+                expected_prefix: prefix.clone(),
+                actual_string: string,
+            }));
         }
+
         let new_text = &string[prefix.len()..].to_string();
         let new_prefix_index = ids.len() - *prefix_index;
         *ids = ids.drain(*prefix_index..).collect();
@@ -1108,7 +1125,6 @@ where
         Ok(None)
     }
 }
-
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: Model,
@@ -1128,6 +1144,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     N: Normalizer,
@@ -1388,7 +1405,9 @@ where
                         }
                     }),
                     |seq| {
-                        let normalized = self.do_normalize(seq.as_ref())?;
+                        let normalized = self
+                            .added_vocabulary
+                            .extract_and_normalize(self.normalizer.as_ref(), seq.as_ref());
                         let pre_tokenized = self.do_pre_tokenize(normalized)?;
                         Ok(pre_tokenized
                             .get_splits(OffsetReferential::Original, OffsetType::Byte)
@@ -1439,7 +1458,9 @@ where
                 }
             }),
             |seq| {
-                let normalized = self.do_normalize(seq.as_ref())?;
+                let normalized = self
+                    .added_vocabulary
+                    .extract_and_normalize(self.normalizer.as_ref(), seq.as_ref());
                 let pre_tokenized = self.do_pre_tokenize(normalized)?;
                 Ok(pre_tokenized
                     .get_splits(OffsetReferential::Original, OffsetType::Byte)

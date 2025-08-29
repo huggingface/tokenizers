@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::WordPiece;
 use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder, BPE};
 use crate::tokenizer::{AddedToken, Result, Trainer};
@@ -61,7 +63,7 @@ impl WordPieceTrainerBuilder {
 
     /// Set the initial alphabet
     #[must_use]
-    pub fn initial_alphabet(mut self, alphabet: AHashSet<char>) -> Self {
+    pub fn initial_alphabet(mut self, alphabet: HashSet<char>) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.initial_alphabet(alphabet);
         self
     }
@@ -138,8 +140,10 @@ impl WordPieceTrainer {
         &self.bpe_trainer.initial_alphabet
     }
 
-    pub fn set_initial_alphabet(&mut self, alphabet: AHashSet<char>) {
-        self.bpe_trainer.initial_alphabet = alphabet;
+    pub fn set_initial_alphabet(&mut self, alphabet: HashSet<char>) {
+        let mut initial_alphabet = AHashSet::with_capacity(alphabet.len());
+        initial_alphabet.extend(alphabet);
+        self.bpe_trainer.initial_alphabet = initial_alphabet;
     }
 
     pub fn continuing_subword_prefix(&self) -> &Option<String> {

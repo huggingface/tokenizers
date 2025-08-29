@@ -7,7 +7,7 @@ is both easy to use and blazing fast.
 ## Build a tokenizer from scratch
 
 To illustrate how fast the 🤗 Tokenizers library is, let's train a new
-tokenizer on [wikitext-103](https://blog.einstein.ai/the-wikitext-long-term-dependency-language-modeling-dataset/)
+tokenizer on [wikitext-103](https://www.salesforce.com/blog/the-wikitext-long-term-dependency-language-modeling-dataset/)
 (516M of text) in just a few seconds. First things first, you will need
 to download this dataset and unzip it with:
 
@@ -287,7 +287,7 @@ with the `Tokenizer.encode` method:
 
 This applied the full pipeline of the tokenizer on the text, returning
 an `Encoding` object. To learn more
-about this pipeline, and how to apply (or customize) parts of it, check out [this page](pipeline).
+about this pipeline, and how to apply (or customize) parts of it, check out [this page](https://github.com/huggingface/tokenizers/blob/main/docs/source-doc-builder/pipeline.mdx).
 
 This `Encoding` object then has all the
 attributes you need for your deep learning model (or other). The

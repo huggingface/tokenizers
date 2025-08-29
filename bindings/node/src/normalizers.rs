@@ -25,7 +25,7 @@ impl Normalizer {
 
     self
       .normalize(&mut normalized)
-      .map_err(|e| Error::from_reason(format!("{}", e)))?;
+      .map_err(|e| Error::from_reason(format!("{e}")))?;
 
     Ok(normalized.get().to_string())
   }

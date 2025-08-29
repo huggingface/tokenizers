@@ -21,7 +21,7 @@ impl Task for BPEFromFilesTask {
       .take()
       .ok_or(Error::from_reason("Empty builder".to_string()))?
       .build()
-      .map_err(|e| Error::from_reason(format!("{}", e)))
+      .map_err(|e| Error::from_reason(format!("{e}")))
   }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
@@ -45,7 +45,7 @@ impl Task for WordPieceFromFilesTask {
       .take()
       .ok_or(Error::from_reason("Empty builder".to_string()))?
       .build()
-      .map_err(|e| Error::from_reason(format!("{}", e)))
+      .map_err(|e| Error::from_reason(format!("{e}")))
   }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
@@ -68,7 +68,7 @@ impl Task for WordLevelFromFilesTask {
       .take()
       .ok_or(Error::from_reason("Empty builder".to_string()))?
       .build()
-      .map_err(|e| Error::from_reason(format!("{}", e)))
+      .map_err(|e| Error::from_reason(format!("{e}")))
   }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
