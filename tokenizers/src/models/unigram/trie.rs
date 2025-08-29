@@ -30,7 +30,7 @@ impl<Label: Eq + Hash + Copy> Trie<Label> {
         node.is_leaf = true;
     }
 
-    pub fn common_prefix_search<T>(&self, iterator: T) -> TrieIterator<Label, T>
+    pub fn common_prefix_search<T>(&self, iterator: T) -> TrieIterator<'_, Label, T>
     where
         T: Iterator<Item = Label>,
     {

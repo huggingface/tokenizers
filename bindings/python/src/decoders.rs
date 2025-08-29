@@ -646,21 +646,44 @@ pub struct PyDecodeStream {
     prefix_index: usize,
 }
 
+#[derive(Clone)]
+enum StreamInput {
+    Id(u32),
+    Ids(Vec<u32>),
+}
+
+impl FromPyObject<'_> for StreamInput {
+    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        if let Ok(id) = obj.extract::<u32>() {
+            Ok(StreamInput::Id(id))
+        } else if let Ok(ids) = obj.extract::<Vec<u32>>() {
+            Ok(StreamInput::Ids(ids))
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                "StreamInput must be either an integer or a list of integers",
+            ))
+        }
+    }
+}
+
 #[pymethods]
 impl PyDecodeStream {
     #[new]
-    #[pyo3(signature = (skip_special_tokens), text_signature = "(self, skip_special_tokens)")]
-    fn new(skip_special_tokens: bool) -> Self {
+    #[pyo3(signature = (ids=None, skip_special_tokens=false), text_signature = "(self, ids=None, skip_special_tokens=False)")]
+    fn new(ids: Option<Vec<u32>>, skip_special_tokens: Option<bool>) -> Self {
         PyDecodeStream {
-            skip_special_tokens,
-            ids: vec![],
-            prefix: "".to_string(),
+            skip_special_tokens: skip_special_tokens.unwrap_or(false),
+            ids: ids.unwrap_or_default(),
+            prefix: String::new(),
             prefix_index: 0,
         }
     }
-
     #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
-    fn step(&mut self, tokenizer: &PyTokenizer, id: u32) -> PyResult<Option<String>> {
+    fn step(&mut self, tokenizer: &PyTokenizer, id: StreamInput) -> PyResult<Option<String>> {
+        let id: Vec<u32> = match id {
+            StreamInput::Id(id) => vec![id],
+            StreamInput::Ids(ids) => ids,
+        };
         ToPyResult(tk::tokenizer::step_decode_stream(
             &tokenizer.tokenizer,
             id,
