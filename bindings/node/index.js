@@ -218,7 +218,6 @@ switch (platform) {
         } catch (e) {
           loadError = e
         }
-        break
       case 'riscv64':
         if (isMusl()) {
           localFileExisted = existsSync(join(__dirname, 'tokenizers.linux-riscv64-musl.node'))
@@ -304,6 +303,7 @@ const {
   replace,
   nmt,
   precompiled,
+  unicodeFilter,
   JsSplitDelimiterBehavior,
   PreTokenizer,
   byteLevelPreTokenizer,
@@ -363,6 +363,7 @@ module.exports.lowercase = lowercase
 module.exports.replace = replace
 module.exports.nmt = nmt
 module.exports.precompiled = precompiled
+module.exports.unicodeFilter = unicodeFilter
 module.exports.JsSplitDelimiterBehavior = JsSplitDelimiterBehavior
 module.exports.PreTokenizer = PreTokenizer
 module.exports.byteLevelPreTokenizer = byteLevelPreTokenizer

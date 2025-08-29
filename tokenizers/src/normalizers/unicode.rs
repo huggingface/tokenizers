@@ -82,9 +82,71 @@ impl Normalizer for Nmt {
     }
 }
 
+use unicode_general_category::{get_general_category, GeneralCategory};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UnicodeFilter {
+    filter_unassigned: bool,
+    filter_private_use: bool,
+    filter_surrogate: bool,
+}
+
+impl Default for UnicodeFilter {
+    fn default() -> Self {
+        Self {
+            filter_unassigned: true,
+            filter_private_use: true,
+            filter_surrogate: true,
+        }
+    }
+}
+
+impl UnicodeFilter {
+    /// Filters unicode characters based on their general category.
+    /// Args:
+    ///    filter_unassigned: Whether to filter out unassigned unicode characters
+    ///    filter_private_use: Whether to filter out private use unicode characters
+    ///    filter_surrogate: Whether to filter out surrogate unicode characters
+    pub fn new(filter_unassigned: bool, filter_private_use: bool, filter_surrogate: bool) -> Self {
+        Self {
+            filter_unassigned,
+            filter_private_use,
+            filter_surrogate,
+        }
+    }
+}
+
+impl Normalizer for UnicodeFilter {
+    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
+        normalized.filter(|c| {
+            let category = get_general_category(c);
+            !(self.filter_unassigned && category == GeneralCategory::Unassigned ||
+              self.filter_private_use && category == GeneralCategory::PrivateUse ||
+              self.filter_surrogate && category == GeneralCategory::Surrogate)
+        });
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_unicode_filter() {
+        // Test with default settings (filter all categories)
+        let original = "A\u{20AC}\u{10FFFF}\u{E000}".to_string(); // Regular + Euro + Unassigned + Private Use
+        let normalized = "A\u{20AC}".to_string(); // Keep only valid chars
+        let mut n = NormalizedString::from(original.clone());
+        UnicodeFilter::default().normalize(&mut n).unwrap();
+        assert_eq!(n.get(), normalized);
+
+        // Test with only filtering unassigned
+        let mut n = NormalizedString::from(original);
+        UnicodeFilter::new(true, false, false).normalize(&mut n).unwrap();
+        assert_eq!(n.get(), format!("A\u{20AC}\u{E000}")); // Keep private use, filter unassigned
+    }
 
     #[test]
     fn test_nfkc() {
