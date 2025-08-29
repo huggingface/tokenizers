@@ -664,7 +664,8 @@ impl PyWordLevelTrainer {
     #[new]
     #[pyo3(
         signature = (**kwargs), 
-        text_signature = "(self, vocab_size=3000, min_frequency=0, show_progress=True, special_tokens=[])")
+        text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[])"
+    )]
     pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::wordlevel::WordLevelTrainer::builder();
 
@@ -831,7 +832,7 @@ impl PyUnigramTrainer {
     #[new]
     #[pyo3(
         signature = (**kwargs),
-        text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens=[], shrinking_factor=0.75, unk_token=None, max_piece_length=16, n_sub_iterations=2)"
+        text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens=[], initial_alphabet=[], shrinking_factor=0.75, unk_token=None, max_piece_length=16, n_sub_iterations=2)"
     )]
     pub fn new(kwargs: Option<Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::unigram::UnigramTrainer::builder();
