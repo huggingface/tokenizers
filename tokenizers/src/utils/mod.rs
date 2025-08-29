@@ -133,7 +133,7 @@ macro_rules! impl_serde_type{
         ),*$(,)+
     }
     ) => {
-        pastey::paste!{
+        paste::paste!{
             $(#[$meta])*
             #[derive(Serialize, Deserialize)]
             #[serde(tag = "type", from = $struct_name "Deserializer")]
@@ -182,7 +182,7 @@ macro_rules! impl_serde_type{
      $(#[$meta:meta])*
      $vis:vis struct $struct_name:ident;
     ) => {
-        pastey::paste!{
+        paste::paste!{
             $(#[$meta])*
             $vis struct $struct_name;
 
