@@ -1099,7 +1099,12 @@ where
     println!("--- step_decode_stream start ---");
     println!("Incoming token_ids: {:?}", token_ids);
     println!("Current ids: {:?}", ids);
-    println!("Current prefix: '{}', prefix_index: {} (len={})", prefix, prefix_index, prefix.len());
+    println!(
+        "Current prefix: '{}', prefix_index: {} (len={})",
+        prefix,
+        prefix_index,
+        prefix.len()
+    );
 
     if prefix.is_empty() && !ids.is_empty() {
         let new_prefix = tokenizer.decode(ids, skip_special_tokens)?;
@@ -1108,12 +1113,13 @@ where
             *prefix_index = ids.len();
             println!(
                 "Initialized prefix='{}' from ids (len={}), prefix_index={}",
-                prefix, ids.len(), prefix_index
+                prefix,
+                ids.len(),
+                prefix_index
             );
         } else {
             println!("Prefix is still invalid (len={})", ids.len());
         }
-
     }
 
     ids.extend(token_ids);
