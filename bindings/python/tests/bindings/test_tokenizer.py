@@ -378,6 +378,7 @@ class TestTokenizer:
         tokenizer = Tokenizer.from_pretrained("gpt2")
         # tokenizer.decode([255]) fails because its a fallback
         # tokenizer.encode("อั").ids = [19567, 255, 19567, 109]
+        expected_out = 'ั'
         stream = DecodeStream()
         stream.step(tokenizer, [19567])
         stream.step(tokenizer, [255])
@@ -387,12 +388,12 @@ class TestTokenizer:
 
 
         stream = DecodeStream()
-        expected_out = stream.step(tokenizer, [19567, 255, 19567, 109])
-        assert expected_out == "อั"
+        out = stream.step(tokenizer, [19567, 255, 19567, 109])
+        assert out == 'อั'
         stream = DecodeStream()
         stream.step(tokenizer, [19567])
         out = stream.step(tokenizer, [255, 19567, 109])
-        assert out == expected_out
+        assert out == 'อั'
 
         stream = DecodeStream()
         stream.step(tokenizer, [19567])
@@ -401,9 +402,8 @@ class TestTokenizer:
         assert out == expected_out
 
         stream = DecodeStream([19567, 255, 19567])
-
         out = stream.step(tokenizer, [109])
-        assert out == "'mIII"
+        assert out == 'อั'
 
     def test_decode_skip_special_tokens(self):
         tokenizer = Tokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
