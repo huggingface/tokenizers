@@ -407,7 +407,7 @@ class TestTokenizer:
         assert out == "อั"
 
     def test_decode_skip_special_tokens(self):
-        tokenizer = Tokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
+        tokenizer = Tokenizer.from_pretrained("hf-internal-testing/Llama-3.1-8B-Instruct")
 
         stream = DecodeStream([40])
         out = stream.step(tokenizer, [2846, 40, 40, 40])
