@@ -1,4 +1,4 @@
-use crate::tokenizer::{Encoding, Result};
+use crate::tokenizer::{Encoding, Result, TruncationParamError};
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::mem;
@@ -95,6 +95,13 @@ pub fn truncate_encodings(
     } else {
         return Ok((encoding, pair_encoding));
     };
+
+    if params.stride > params.max_length {
+        return Err(Box::new(TruncationParamError(format!(
+            "tokenizer stride set to {}, which is greater than or equal to its effective max length of {} (= original max length - added special tokens), ",
+            params.stride, params.max_length
+        ))));
+    }
 
     match params.strategy {
         TruncationStrategy::LongestFirst => {
