@@ -37,9 +37,7 @@ pub struct PyDecoder {
 
 impl PyDecoder {
     pub(crate) fn new(decoder: PyDecoderWrapper) -> Self {
-        PyDecoder {
-            decoder: decoder.into(),
-        }
+        PyDecoder { decoder }
     }
 
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
