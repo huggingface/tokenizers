@@ -1761,8 +1761,8 @@ impl PyTokenizer {
         ToPyResult(
             self.tokenizer
                 .post_process(
-                    encoding.encoding.clone(),
-                    pair.map(|p| p.encoding.clone()),
+                    encoding.encoding.lock().unwrap().clone(),
+                    pair.map(|p| p.encoding.lock().unwrap().clone()),
                     add_special_tokens,
                 )
                 .map(|e| e.into()),
