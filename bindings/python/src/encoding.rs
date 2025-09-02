@@ -51,7 +51,7 @@ impl PyEncoding {
                 "Error while attempting to pickle Encoding: {e}"
             ))
         })?;
-        Ok(PyTuple::new(py, [PyBytes::new(py, data.as_bytes())])?.into_py_any(py)?)
+        PyTuple::new(py, [PyBytes::new(py, data.as_bytes())])?.into_py_any(py)
     }
 
     fn __repr__(&self) -> PyResult<String> {
