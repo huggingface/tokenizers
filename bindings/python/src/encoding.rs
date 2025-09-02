@@ -1,6 +1,7 @@
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3::IntoPyObjectExt;
 use tk::tokenizer::{Offsets, PaddingDirection};
 use tk::utils::truncation::TruncationDirection;
 use tokenizers as tk;
@@ -24,33 +25,29 @@ impl From<tk::tokenizer::Encoding> for PyEncoding {
 impl PyEncoding {
     #[new]
     #[pyo3(text_signature = None)]
-    fn new() -> Self {
-        Self {
-            encoding: tk::tokenizer::Encoding::default(),
-        }
+    fn new(encoding: Option<PyObject>, py: Python) -> PyResult<Self> {
+        Ok(Self {
+            encoding: match encoding {
+                Some(encoding) => {
+                    let s = encoding.extract::<&[u8]>(py)?;
+                    serde_json::from_slice(s).map_err(|e| {
+                        exceptions::PyException::new_err(format!(
+                            "Error while attempting to interpret bytes as Encoding: {e}"
+                        ))
+                    })?
+                }
+                None => tk::tokenizer::Encoding::default(),
+            },
+        })
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getnewargs__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.encoding).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle Encoding: {e}"
             ))
         })?;
-        Ok(PyBytes::new(py, data.as_bytes()).into())
-    }
-
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        match state.extract::<&[u8]>(py) {
-            Ok(s) => {
-                self.encoding = serde_json::from_slice(s).map_err(|e| {
-                    exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle Encoding: {e}"
-                    ))
-                })?;
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
+        Ok(PyTuple::new(py, [PyBytes::new(py, data.as_bytes())])?.into_py_any(py)?)
     }
 
     fn __repr__(&self) -> PyResult<String> {
