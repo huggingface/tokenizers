@@ -181,6 +181,11 @@ macro_rules! setter {
 ///         This can help with reducing polluting your vocabulary with
 ///         highly repetitive tokens like `======` for wikipedia
 ///
+///     initial_tokens (:obj:`List[str]`, `optional`):
+///         A list of multi-character tokens to pre-seed the vocabulary (non-special).
+///         They are added after the alphabet computation and before merges; they may
+///         subsequently be produced by merges and will reuse their pre-assigned ids.
+///         Alias: `seed_tokens`.
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "BpeTrainer")]
 pub struct PyBpeTrainer {}
 #[pymethods]
@@ -292,6 +297,16 @@ impl PyBpeTrainer {
     }
 
     #[getter]
+    fn get_initial_tokens(self_: PyRef<Self>) -> Vec<String> {
+        getter!(self_, BpeTrainer, initial_tokens.clone())
+    }
+
+    #[setter]
+    fn set_initial_tokens(self_: PyRef<Self>, tokens: Vec<String>) {
+        setter!(self_, BpeTrainer, initial_tokens, tokens);
+    }
+
+    #[getter]
     fn get_continuing_subword_prefix(self_: PyRef<Self>) -> Option<String> {
         getter!(self_, BpeTrainer, continuing_subword_prefix.clone())
     }
@@ -358,6 +373,14 @@ impl PyBpeTrainer {
                         builder = builder.continuing_subword_prefix(val.extract()?)
                     }
                     "end_of_word_suffix" => builder = builder.end_of_word_suffix(val.extract()?),
+                    "initial_tokens" => {
+                        let toks: Vec<String> = val.extract()?;
+                        builder = builder.initial_tokens(toks);
+                    }
+                    "seed_tokens" => {
+                        let toks: Vec<String> = val.extract()?;
+                        builder = builder.initial_tokens(toks);
+                    }
                     _ => println!("Ignored unknown kwargs option {key}"),
                 };
             }
