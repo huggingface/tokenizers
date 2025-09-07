@@ -172,6 +172,23 @@ impl WordPiece {
         Ok(vocab)
     }
 
+    pub fn read_bytes(vocab: &[u8]) -> Result<Vocab> {
+        let file = BufReader::new(vocab);
+
+        let mut vocab = AHashMap::new();
+        for (index, line) in file.lines().enumerate() {
+            let line = line?;
+            vocab.insert(line.trim_end().to_owned(), index as u32);
+        }
+
+        Ok(vocab)
+    }
+
+    pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<Self> {
+        let tokenizer = serde_json::from_slice(bytes.as_ref())?;
+        Ok(tokenizer)
+    }
+
     /// Initialize a `WordPiece` model from a vocab mapping file.
     pub fn from_file(vocab: &str) -> WordPieceBuilder {
         WordPiece::builder().files(vocab.to_owned())
