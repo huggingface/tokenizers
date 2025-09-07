@@ -50,39 +50,27 @@ describe('unicodeFilter', () => {
   })
 
   it('handles default filtering', () => {
-    const normalizer = unicodeFilter() // Default filters out Unassigned, PrivateUse, Surrogate
+    const normalizer = unicodeFilter() // Default filters out Unassigned, PrivateUse
     const input = 'Hello' + String.fromCharCode(0xE000) + String.fromCodePoint(0xF0000) + String.fromCodePoint(0x10FFFF)
     expect(normalizer.normalizeString(input)).toEqual('Hello')
   })
 
   it('accepts custom filter options', () => {
     // Only filter private use areas
-    const normalizer = unicodeFilter({
-      filterUnassigned: false,
-      filterPrivateUse: true,
-      filterSurrogate: false
-    })
+    const normalizer = unicodeFilter(false, true)
     const input = 'Hello' + String.fromCharCode(0xE000) + String.fromCodePoint(0xF0000) + String.fromCodePoint(0x10FFFF)
     const expected = 'Hello' + String.fromCodePoint(0x10FFFF)
     expect(normalizer.normalizeString(input)).toEqual(expected)
   })
 
   it('accepts undefined options', () => {
-    const normalizer = unicodeFilter({
-      filterUnassigned: undefined,
-      filterPrivateUse: undefined,
-      filterSurrogate: undefined
-    })
+    const normalizer = unicodeFilter(undefined, undefined)
     const input = 'Hello' + String.fromCharCode(0xE000) + String.fromCodePoint(0xF0000) + String.fromCodePoint(0x10FFFF)
     expect(normalizer.normalizeString(input)).toEqual('Hello')
   })
 
   it('can disable all filtering', () => {
-    const normalizer = unicodeFilter({
-      filterUnassigned: false,
-      filterPrivateUse: false,
-      filterSurrogate: false
-    })
+    const normalizer = unicodeFilter(false, false)
     const input = 'Hello' + String.fromCharCode(0xE000) + String.fromCodePoint(0xF0000) + String.fromCodePoint(0x10FFFF)
     expect(normalizer.normalizeString(input)).toEqual(input)
   })

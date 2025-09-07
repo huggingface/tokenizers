@@ -77,12 +77,7 @@ export function lowercase(): Normalizer
 export function replace(pattern: string, content: string): Normalizer
 export function nmt(): Normalizer
 export function precompiled(bytes: Array<number>): Normalizer
-export interface UnicodeFilterOptions {
-  filterUnassigned?: boolean
-  filterPrivateUse?: boolean
-  filterSurrogate?: boolean
-}
-export function unicodeFilter(options?: UnicodeFilterOptions | undefined | null): Normalizer
+export function unicodeFilter(filterUnassigned?: boolean | undefined | null, filterPrivateUse?: boolean | undefined | null): Normalizer
 export const enum JsSplitDelimiterBehavior {
   Removed = 'Removed',
   Isolated = 'Isolated',

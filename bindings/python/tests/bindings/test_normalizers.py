@@ -209,7 +209,7 @@ class TestUnicodeFilter:
         assert isinstance(pickle.loads(pickle.dumps(UnicodeFilter())), UnicodeFilter)
 
     def test_default_filtering(self):
-        normalizer = UnicodeFilter()  # Default filters out Unassigned, PrivateUse, Surrogate
+        normalizer = UnicodeFilter()  # Default filters out Unassigned, PrivateUse
         output = normalizer.normalize_str("Hello\uE000\U000F0000\U0010FFFF")  # Hello + Private Use + Private Use B + Unassigned
         assert output == "Hello"  # Only valid chars remain
 
@@ -218,7 +218,6 @@ class TestUnicodeFilter:
         normalizer = UnicodeFilter(
             filter_unassigned=False,
             filter_private_use=True,
-            filter_surrogate=False
         )
         output = normalizer.normalize_str("Hello\uE000\U000F0000\U0010FFFF")  
         assert output == "Hello\U0010FFFF"  # Private use removed, others kept
@@ -232,7 +231,6 @@ class TestUnicodeFilter:
         normalizer = UnicodeFilter(
             filter_unassigned=False,
             filter_private_use=False,
-            filter_surrogate=False
         )
         output = normalizer.normalize_str("Hello\uE000\U000F0000\U0010FFFF")
         assert output == "Hello\uE000\U000F0000\U0010FFFF"  # Nothing filtered

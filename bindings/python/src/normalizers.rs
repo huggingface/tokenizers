@@ -805,12 +805,11 @@ pub struct PyUnicodeFilter {}
 #[pymethods]
 impl PyUnicodeFilter {
     #[new]
-    #[pyo3(signature = (filter_unassigned = None, filter_private_use = None, filter_surrogate = None), text_signature = "(self, filter_unassigned = True, filter_private_use = True, filter_surrogate = True)")]
-    fn new(filter_unassigned: Option<bool>, filter_private_use: Option<bool>, filter_surrogate: Option<bool>) -> (Self, PyNormalizer) {
+    #[pyo3(signature = (filter_unassigned = None, filter_private_use = None), text_signature = "(self, filter_unassigned = True, filter_private_use = True)")]
+    fn new(filter_unassigned: Option<bool>, filter_private_use: Option<bool>) -> (Self, PyNormalizer) {
         let filter = tk::normalizers::UnicodeFilter::new(
             filter_unassigned.unwrap_or(true),
-            filter_private_use.unwrap_or(true),
-            filter_surrogate.unwrap_or(true)
+            filter_private_use.unwrap_or(true)
         );
         (PyUnicodeFilter {}, filter.into())
     }

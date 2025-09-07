@@ -218,6 +218,7 @@ switch (platform) {
         } catch (e) {
           loadError = e
         }
+        break
       case 'riscv64':
         if (isMusl()) {
           localFileExisted = existsSync(join(__dirname, 'tokenizers.linux-riscv64-musl.node'))

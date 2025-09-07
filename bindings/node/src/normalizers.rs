@@ -187,22 +187,11 @@ pub fn precompiled(bytes: Vec<u8>) -> Result<Normalizer> {
   })
 }
 
-#[napi(object)]
-#[derive(Default)]
-#[allow(non_snake_case)]
-pub struct UnicodeFilterOptions {
-  pub filterUnassigned: Option<bool>,
-  pub filterPrivateUse: Option<bool>, 
-  pub filterSurrogate: Option<bool>,
-}
-
 #[napi]
-pub fn unicode_filter(options: Option<UnicodeFilterOptions>) -> Normalizer {
-  let options = options.unwrap_or_default();
+pub fn unicode_filter(filter_unassigned: Option<bool>, filter_private_use: Option<bool>) -> Normalizer {
   let filter = tk::normalizers::UnicodeFilter::new(
-    options.filterUnassigned.unwrap_or(true),
-    options.filterPrivateUse.unwrap_or(true),
-    options.filterSurrogate.unwrap_or(true)
+    filter_unassigned.unwrap_or(true),
+    filter_private_use.unwrap_or(true)
   );
 
   Normalizer {

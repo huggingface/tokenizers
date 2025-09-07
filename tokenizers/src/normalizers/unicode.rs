@@ -89,7 +89,6 @@ use serde::{Deserialize, Serialize};
 pub struct UnicodeFilter {
     filter_unassigned: bool,
     filter_private_use: bool,
-    filter_surrogate: bool,
 }
 
 impl Default for UnicodeFilter {
@@ -97,7 +96,6 @@ impl Default for UnicodeFilter {
         Self {
             filter_unassigned: true,
             filter_private_use: true,
-            filter_surrogate: true,
         }
     }
 }
@@ -107,12 +105,10 @@ impl UnicodeFilter {
     /// Args:
     ///    filter_unassigned: Whether to filter out unassigned unicode characters
     ///    filter_private_use: Whether to filter out private use unicode characters
-    ///    filter_surrogate: Whether to filter out surrogate unicode characters
-    pub fn new(filter_unassigned: bool, filter_private_use: bool, filter_surrogate: bool) -> Self {
+    pub fn new(filter_unassigned: bool, filter_private_use: bool) -> Self {
         Self {
             filter_unassigned,
             filter_private_use,
-            filter_surrogate,
         }
     }
 }
@@ -122,8 +118,7 @@ impl Normalizer for UnicodeFilter {
         normalized.filter(|c| {
             let category = get_general_category(c);
             !(self.filter_unassigned && category == GeneralCategory::Unassigned ||
-              self.filter_private_use && category == GeneralCategory::PrivateUse ||
-              self.filter_surrogate && category == GeneralCategory::Surrogate)
+              self.filter_private_use && category == GeneralCategory::PrivateUse)
         });
         Ok(())
     }
@@ -144,7 +139,7 @@ mod tests {
 
         // Test with only filtering unassigned
         let mut n = NormalizedString::from(original);
-        UnicodeFilter::new(true, false, false).normalize(&mut n).unwrap();
+        UnicodeFilter::new(true, false).normalize(&mut n).unwrap();
         assert_eq!(n.get(), format!("A\u{20AC}\u{E000}")); // Keep private use, filter unassigned
     }
 
