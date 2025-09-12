@@ -313,7 +313,7 @@ impl PyBpeTrainer {
 
     #[new]
     #[pyo3(
-        signature = (**kwargs), 
+        signature = (**kwargs),
         text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet=[], continuing_subword_prefix=None, end_of_word_suffix=None, max_token_length=None, words={})"
     )]
     pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
@@ -663,7 +663,7 @@ impl PyWordLevelTrainer {
 
     #[new]
     #[pyo3(
-        signature = (**kwargs), 
+        signature = (**kwargs),
         text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[])"
     )]
     pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
