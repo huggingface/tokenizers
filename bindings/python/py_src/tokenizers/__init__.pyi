@@ -97,7 +97,7 @@ class Encoding:
         """
         pass
 
-    def char_to_token(self, char_pos, sequence_index=0):
+    def char_to_token(self, char_pos, sequence_index: int = 0):
         """
         Get the token that contains the char at the given position in the input sequence.
 
@@ -141,7 +141,7 @@ class Encoding:
         pass
 
     @staticmethod
-    def merge(encodings, growing_offsets=True):
+    def merge(encodings, growing_offsets: bool = True):
         """
         Merge the list of encodings into one final :class:`~tokenizers.Encoding`
 
@@ -195,7 +195,7 @@ class Encoding:
         """
         pass
 
-    def pad(self, length, direction="right", pad_id=0, pad_type_id=0, pad_token="[PAD]"):
+    def pad(self, length, direction: str = "right", pad_id=0, pad_type_id=0, pad_token: str = "[PAD]"):
         """
         Pad the :class:`~tokenizers.Encoding` at the given length
 
@@ -1067,6 +1067,10 @@ class Tokenizer:
         """
         pass
 
+    @encode_special_tokens.setter
+    def encode_special_tokens(self, value: bool) -> None:
+        pass
+
     @staticmethod
     def from_buffer(buffer):
         """
@@ -1261,11 +1265,19 @@ class Tokenizer:
         """
         pass
 
+    @post_processor.setter
+    def post_processor(self, value) -> None:
+        pass
+
     @property
     def pre_tokenizer(self):
         """
         The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
         """
+        pass
+
+    @pre_tokenizer.setter
+    def pre_tokenizer(self, value) -> None:
         pass
 
     def save(self, path, pretty=True):
