@@ -23,7 +23,7 @@ classifiers = [
 ]
 keywords = ["NLP", "tokenizer", "BPE", "transformer", "deep learning"]
 dynamic = ["description", "license", "readme", "version"]
-dependencies = ["huggingface_hub>=1.0.0.rc0"]
+dependencies = ["huggingface_hub>=0.16.4,<2.0"]
 
 [project.urls]
 Homepage = "https://github.com/huggingface/tokenizers"
