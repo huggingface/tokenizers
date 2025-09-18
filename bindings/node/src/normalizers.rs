@@ -186,3 +186,15 @@ pub fn precompiled(bytes: Vec<u8>) -> Result<Normalizer> {
     ))),
   })
 }
+
+#[napi]
+pub fn unicode_filter(filter_unassigned: Option<bool>, filter_private_use: Option<bool>) -> Normalizer {
+  let filter = tk::normalizers::UnicodeFilter::new(
+    filter_unassigned.unwrap_or(true),
+    filter_private_use.unwrap_or(true)
+  );
+
+  Normalizer {
+    normalizer: Some(Arc::new(RwLock::new(filter.into()))),
+  }
+}
