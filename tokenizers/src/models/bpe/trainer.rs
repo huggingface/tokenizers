@@ -307,6 +307,13 @@ impl BpeTrainer {
             *alphabet.entry(*c).or_default() = usize::MAX;
         }
 
+        // CRITICAL FIX: Add all characters from initial tokens to ensure they're in the alphabet
+        for token in &self.initial_tokens {
+            for c in token.chars() {
+                *alphabet.entry(c).or_default() = usize::MAX;
+            }
+        }
+
         let mut kept = alphabet.iter().collect::<Vec<_>>();
 
         // Compute the number of chars to remove from the alphabet
@@ -529,46 +536,93 @@ impl BpeTrainer {
 
                 let pair = (current.clone(), next_char.clone());
                 if seen_pairs.insert(pair) {
-                    initial_merges.push((current.clone(), next_char, merged.clone()));
+                    initial_merges.push((current.clone(), next_char.clone(), merged.clone()));
                 }
                 current = merged;
             }
         }
 
-        // Apply each initial merge
-        for (left, right, _merged) in initial_merges {
-            // Find the token IDs, considering prefixes/suffixes
-            let left_id = word_to_id.get(&CompactString::from(&left)).copied();
+        // CRITICAL FIX: Apply each initial merge unconditionally
+        for (left, right, merged) in initial_merges {
+            // Unconditionally add all tokens (left, right, merged) to vocabulary
+            let left_compact = CompactString::from(&left);
+            let right_compact = CompactString::from(&right);
+            let merged_compact = CompactString::from(&merged);
 
+            // Ensure left token is in vocabulary
+            if !word_to_id.contains_key(&left_compact) {
+                id_to_word.push(left_compact.clone());
+                word_to_id.insert(left_compact.clone(), (id_to_word.len() - 1) as u32);
+            }
+
+            // Ensure right token is in vocabulary
+            if !word_to_id.contains_key(&right_compact) {
+                id_to_word.push(right_compact.clone());
+                word_to_id.insert(right_compact.clone(), (id_to_word.len() - 1) as u32);
+            }
+
+            // Ensure merged token is in vocabulary
+            if !word_to_id.contains_key(&merged_compact) {
+                id_to_word.push(merged_compact.clone());
+                word_to_id.insert(merged_compact.clone(), (id_to_word.len() - 1) as u32);
+            }
+
+            let left_id = word_to_id[&left_compact];
+            let right_id = word_to_id[&right_compact];
+            let merged_id = word_to_id[&merged_compact];
+
+            // UNCONDITIONALLY add the merge to the merge list
+            merges.push(((left_id, right_id), merged_id));
+
+            // Now try to apply the merge to corpus, but only if the pair exists
             // Try to find the right token with different prefix/suffix combinations
-            let right_id = if let Some(id) = word_to_id.get(&CompactString::from(&right)) {
-                Some(*id)
-            } else if let Some(prefix) = &self.continuing_subword_prefix {
-                word_to_id.get(&CompactString::from(&format!("{}{}", prefix, right))).copied()
-            } else {
-                None
-            };
+            let right_variants = vec![
+                right.clone(),
+                if let Some(prefix) = &self.continuing_subword_prefix {
+                    format!("{}{}", prefix, right)
+                } else {
+                    String::new()
+                },
+                if let Some(suffix) = &self.end_of_word_suffix {
+                    format!("{}{}", right, suffix)
+                } else {
+                    String::new()
+                },
+                if let (Some(prefix), Some(suffix)) = (&self.continuing_subword_prefix, &self.end_of_word_suffix) {
+                    format!("{}{}{}", prefix, right, suffix)
+                } else {
+                    String::new()
+                },
+            ];
 
-            if let (Some(left_id), Some(right_id)) = (left_id, right_id) {
-                let pair = (left_id, right_id);
+            for right_variant in right_variants {
+                if right_variant.is_empty() {
+                    continue;
+                }
 
-                // Check if this pair exists in our words
-                if let Some(positions) = where_to_update.remove(&pair) {
-                    let new_where_to_update = self.apply_merge(
-                        pair,
-                        positions,
-                        words,
-                        counts,
-                        word_to_id,
-                        id_to_word,
-                        merges,
-                        pair_counts,
-                        max_token_length,
-                    );
+                if let Some(&variant_right_id) = word_to_id.get(&CompactString::from(&right_variant)) {
+                    let pair = (left_id, variant_right_id);
 
-                    // Merge the new positions back
-                    for (k, v) in new_where_to_update {
-                        where_to_update.entry(k).or_default().extend(v);
+                    // Check if this pair exists in our corpus words
+                    if let Some(positions) = where_to_update.remove(&pair) {
+                        // Apply merge to corpus words
+                        let new_where_to_update = self.apply_merge(
+                            pair,
+                            positions,
+                            words,
+                            counts,
+                            word_to_id,
+                            id_to_word,
+                            &mut Vec::new(), // Don't add duplicate merge, we already added it above
+                            pair_counts,
+                            max_token_length,
+                        );
+
+                        // Merge the new positions back
+                        for (k, v) in new_where_to_update {
+                            where_to_update.entry(k).or_default().extend(v);
+                        }
+                        break; // Found and processed this variant
                     }
                 }
             }
@@ -974,3 +1028,4 @@ mod tests {
         assert_eq!(trained_vocab, expected_vocab)
     }
 }
+
