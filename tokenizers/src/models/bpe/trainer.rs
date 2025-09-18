@@ -528,17 +528,23 @@ impl BpeTrainer {
                 continue;
             }
 
-            // Build token character by character, left to right
-            let mut current = chars[0].to_string();
-            for i in 1..chars.len() {
-                let next_char = chars[i].to_string();
-                let merged = format!("{}{}", current, next_char);
+            // For every possible substring length >= 2
+            for start in 0..chars.len() {
+                for end in start + 2..=chars.len() {
+                    // substring = chars[start..end]
+                    let substring: String = chars[start..end].iter().collect();
 
-                let pair = (current.clone(), next_char.clone());
-                if seen_pairs.insert(pair) {
-                    initial_merges.push((current.clone(), next_char.clone(), merged.clone()));
+                    // Now split it into two parts: left + right
+                    for split in (start + 1)..end {
+                        let left: String = chars[start..split].iter().collect();
+                        let right: String = chars[split..end].iter().collect();
+
+                        let pair = (left.clone(), right.clone());
+                        if seen_pairs.insert(pair.clone()) {
+                            initial_merges.push((pair.0, pair.1, substring.clone()));
+                        }
+                    }
                 }
-                current = merged;
             }
         }
 
@@ -1028,4 +1034,3 @@ mod tests {
         assert_eq!(trained_vocab, expected_vocab)
     }
 }
-
