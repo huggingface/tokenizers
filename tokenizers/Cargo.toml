@@ -52,7 +52,7 @@ serde_json = "1.0"
 unicode-normalization-alignments = "0.1"
 unicode_categories = "0.1"
 unicode-segmentation = "1.11"
-indicatif = {version = "0.17", optional = true}
+indicatif = {version = "0.18", optional = true}
 itertools = "0.14"
 log = "0.4"
 derive_builder = "0.20"
