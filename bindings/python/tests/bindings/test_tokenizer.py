@@ -154,6 +154,7 @@ class TestTokenizer:
         output = tokenizer.encode_batch(["my name is john", ("my name is john", "pair")])
         assert len(output) == 2
 
+    @pytest.mark.network
     def test_encode_formats(self, bert_files):
         with pytest.deprecated_call():
             tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
@@ -286,6 +287,7 @@ class TestTokenizer:
         with pytest.raises(TypeError, match="InputSequence must be Union[List[str]"):
             tokenizer.encode(["My", "name", "is", "John"], "pair", is_pretokenized=True)
 
+    @pytest.mark.network
     def test_encode_add_special_tokens(self, roberta_files):
         with pytest.deprecated_call():
             tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))

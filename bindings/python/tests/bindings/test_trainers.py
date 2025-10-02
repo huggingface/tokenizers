@@ -150,6 +150,7 @@ class TestWordLevelTrainer:
 
 
 class TestUnigram:
+    @pytest.mark.network
     def test_train(self, train_files):
         tokenizer = SentencePieceUnigramTokenizer()
         tokenizer.train(train_files["small"], show_progress=False)
@@ -158,6 +159,7 @@ class TestUnigram:
         tokenizer.save(filename)
         os.remove(filename)
 
+    @pytest.mark.network
     def test_train_parallelism_with_custom_pretokenizer(self, train_files):
         class GoodCustomPretok:
             def split(self, n, normalized):
@@ -287,6 +289,7 @@ class TestUnigram:
         trainer.initial_alphabet = ["d", "z"]
         assert sorted(trainer.initial_alphabet) == ["d", "z"]
 
+    @pytest.mark.network
     def test_continuing_prefix_trainer_mismatch(self, train_files):
         UNK = "[UNK]"
         special_tokens = [UNK]

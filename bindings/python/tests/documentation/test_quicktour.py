@@ -45,6 +45,7 @@ class TestQuicktour:
         # END init_pretok
         return tokenizer, trainer
 
+    @pytest.mark.network
     def test_quicktour(self, doc_wiki_tokenizer):
         def print(*args, **kwargs):
             pass
