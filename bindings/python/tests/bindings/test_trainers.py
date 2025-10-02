@@ -186,6 +186,7 @@ class TestUnigram:
 
     def test_train_with_special_tokens(self):
         filename = "tests/data/dummy-unigram-special_tokens-train.txt"
+        os.makedirs("tests/data", exist_ok=True)
         with open(filename, "w") as f:
             f.write(
                 """
