@@ -5,6 +5,7 @@ from tokenizers import BertWordPieceTokenizer
 from ..utils import bert_files, data_dir
 
 
+@pytest.mark.network
 class TestEncoding:
     @pytest.fixture(scope="class")
     def encodings(self, bert_files):

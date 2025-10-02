@@ -154,6 +154,7 @@ class TestTokenizer:
         output = tokenizer.encode_batch(["my name is john", ("my name is john", "pair")])
         assert len(output) == 2
 
+    @pytest.mark.network
     def test_encode_formats(self, bert_files):
         with pytest.deprecated_call():
             tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
@@ -286,6 +287,7 @@ class TestTokenizer:
         with pytest.raises(TypeError, match="InputSequence must be Union[List[str]"):
             tokenizer.encode(["My", "name", "is", "John"], "pair", is_pretokenized=True)
 
+    @pytest.mark.network
     def test_encode_add_special_tokens(self, roberta_files):
         with pytest.deprecated_call():
             tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
@@ -376,6 +378,7 @@ class TestTokenizer:
         stream = DecodeStream(ids=[0, 1, 2])
         assert stream.step(tokenizer, 3) == " john"
 
+    @pytest.mark.network
     def test_decode_stream_fallback(self):
         tokenizer = Tokenizer.from_pretrained("gpt2")
         # tokenizer.decode([255]) fails because its a fallback
@@ -408,6 +411,7 @@ class TestTokenizer:
         out = stream.step(tokenizer, [109])
         assert out == "อั"
 
+    @pytest.mark.network
     def test_decode_skip_special_tokens(self):
         tokenizer = Tokenizer.from_pretrained("hf-internal-testing/Llama-3.1-8B-Instruct")
 
@@ -557,11 +561,13 @@ class TestTokenizer:
         multiprocessing_with_parallelism(tokenizer, False)
         multiprocessing_with_parallelism(tokenizer, True)
 
+    @pytest.mark.network
     def test_from_pretrained(self):
         tokenizer = Tokenizer.from_pretrained("bert-base-cased")
         output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
         assert output.tokens == ["Hey", "there", "dear", "friend", "!"]
 
+    @pytest.mark.network
     def test_from_pretrained_revision(self):
         tokenizer = Tokenizer.from_pretrained("anthony/tokenizers-test")
         output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
@@ -597,6 +603,7 @@ class TestTokenizer:
         assert output.ids == [1, 10, 2, 3, 4, 5, 10, 6, 7, 8, 9]
         assert output.tokens == ["A", " ", "sen", "te", "n", "ce", " ", "<0xF0>", "<0x9F>", "<0xA4>", "<0x97>"]
 
+    @pytest.mark.network
     def test_encode_special_tokens(self):
         tokenizer = Tokenizer.from_pretrained("t5-base")
         tokenizer.add_tokens(["<eot>"])
@@ -628,6 +635,7 @@ class TestTokenizer:
         output = tokenizer.encode("Hey there<end_of_text> dear<eot>friend!", add_special_tokens=False)
         assert output.tokens == ["▁Hey", "▁there", "<", "end", "_", "of_text>", "▁dear", "<eot>", "▁friend", "!"]
 
+    @pytest.mark.network
     def test_splitting(self):
         tokenizer = Tokenizer.from_pretrained("hf-internal-testing/llama-new-metaspace")
         tokenizer.pre_tokenizer.split = False
@@ -724,6 +732,7 @@ class TestTokenizerRepr:
         )
 
 
+@pytest.mark.network
 class TestAsyncTokenizer:
     """Tests for async methods of the Tokenizer class."""
 

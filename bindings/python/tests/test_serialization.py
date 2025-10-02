@@ -1,5 +1,6 @@
 import json
 import os
+import pytest
 import unittest
 
 import tqdm
@@ -11,12 +12,14 @@ from .utils import albert_base, data_dir
 
 
 class TestSerialization:
+    @pytest.mark.network
     def test_full_serialization_albert(self, albert_base):
         # Check we can read this file.
         # This used to fail because of BufReader that would fail because the
         # file exceeds the buffer capacity
         Tokenizer.from_file(albert_base)
 
+    @pytest.mark.network
     def test_str_big(self, albert_base):
         tokenizer = Tokenizer.from_file(albert_base)
         assert (

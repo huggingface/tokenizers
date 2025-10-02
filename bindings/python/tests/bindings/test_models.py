@@ -7,6 +7,7 @@ from ..utils import bert_files, data_dir, roberta_files
 
 
 class TestBPE:
+    @pytest.mark.network
     def test_instantiate(self, roberta_files):
         assert isinstance(BPE(), Model)
         assert isinstance(BPE(), BPE)
@@ -75,6 +76,7 @@ class TestBPE:
 
 
 class TestWordPiece:
+    @pytest.mark.network
     def test_instantiate(self, bert_files):
         assert isinstance(WordPiece(), Model)
         assert isinstance(WordPiece(), WordPiece)
@@ -112,6 +114,7 @@ class TestWordPiece:
 
 
 class TestWordLevel:
+    @pytest.mark.network
     def test_instantiate(self, roberta_files):
         assert isinstance(WordLevel(), Model)
         assert isinstance(WordLevel(), WordLevel)

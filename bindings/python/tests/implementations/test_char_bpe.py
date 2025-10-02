@@ -1,9 +1,11 @@
+import pytest
 from tokenizers import CharBPETokenizer
 
 from ..utils import data_dir, multiprocessing_with_parallelism, openai_files
 
 
 class TestCharBPETokenizer:
+    @pytest.mark.network
     def test_basic_encode(self, openai_files):
         tokenizer = CharBPETokenizer.from_file(openai_files["vocab"], openai_files["merges"])
 
@@ -31,6 +33,7 @@ class TestCharBPETokenizer:
         ]
         assert output.type_ids == [0, 0, 0, 0, 0, 0, 0, 1]
 
+    @pytest.mark.network
     def test_lowercase(self, openai_files):
         tokenizer = CharBPETokenizer.from_file(openai_files["vocab"], openai_files["merges"], lowercase=True)
         output = tokenizer.encode("My name is John", "pair", add_special_tokens=False)
@@ -39,11 +42,13 @@ class TestCharBPETokenizer:
         assert output.offsets == [(0, 2), (3, 7), (8, 10), (11, 15), (0, 4)]
         assert output.type_ids == [0, 0, 0, 0, 1]
 
+    @pytest.mark.network
     def test_decoding(self, openai_files):
         tokenizer = CharBPETokenizer.from_file(openai_files["vocab"], openai_files["merges"], lowercase=True)
         decoded = tokenizer.decode(tokenizer.encode("my name is john").ids)
         assert decoded == "my name is john"
 
+    @pytest.mark.network
     def test_multiprocessing_with_parallelism(self, openai_files):
         tokenizer = CharBPETokenizer.from_file(openai_files["vocab"], openai_files["merges"])
         multiprocessing_with_parallelism(tokenizer, False)
