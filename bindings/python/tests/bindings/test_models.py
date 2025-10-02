@@ -114,6 +114,7 @@ class TestWordPiece:
 
 
 class TestWordLevel:
+    @pytest.mark.network
     def test_instantiate(self, roberta_files):
         assert isinstance(WordLevel(), Model)
         assert isinstance(WordLevel(), WordLevel)
