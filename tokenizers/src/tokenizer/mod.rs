@@ -20,9 +20,9 @@ use std::{
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::utils::iter::ResultShunt;
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
+use crate::{special_tokens_mapping::SpecialTokensMapping, utils::iter::ResultShunt};
 
 mod added_vocabulary;
 mod encoding;
@@ -30,6 +30,7 @@ pub mod normalizer;
 pub mod pattern;
 pub mod pre_tokenizer;
 mod serialization;
+pub mod special_tokens_mapping;
 
 // Re-export wrappers
 pub use crate::decoders::DecoderWrapper;
@@ -293,6 +294,7 @@ pub struct TokenizerBuilder<M, N, PT, PP, D> {
 
     truncation: Option<TruncationParams>,
     padding: Option<PaddingParams>,
+    special_tokens_mapping: Option<SpecialTokensMapping>,
 }
 
 impl<M, N, PT, PP, D> Default for TokenizerBuilder<M, N, PT, PP, D>
@@ -327,6 +329,7 @@ where
             added_vocabulary: AddedVocabulary::new(),
             truncation: None,
             padding: None,
+            special_tokens_mapping: None,
         }
     }
 
@@ -347,6 +350,7 @@ where
             added_vocabulary: self.added_vocabulary,
             truncation: self.truncation,
             padding: self.padding,
+            special_tokens_mapping: self.special_tokens_mapping,
         })
     }
 
@@ -402,6 +406,14 @@ where
     #[must_use]
     pub fn with_padding(mut self, padding: Option<PaddingParams>) -> Self {
         self.padding = padding;
+        self
+    }
+
+    pub fn with_special_tokens_mapping(
+        mut self,
+        special_tokens_mapping: Option<SpecialTokensMapping>,
+    ) -> Self {
+        self.special_tokens_mapping = special_tokens_mapping;
         self
     }
 }
@@ -480,6 +492,7 @@ where
             added_vocabulary: t.added_vocabulary,
             padding: t.padding,
             truncation: t.truncation,
+            special_tokens_mapping: t.special_tokens_mapping,
         })
     }
 }
@@ -524,6 +537,7 @@ pub struct TokenizerImpl<M, N, PT, PP, D> {
     // General processing parameters
     truncation: Option<TruncationParams>,
     padding: Option<PaddingParams>,
+    special_tokens_mapping: Option<SpecialTokensMapping>,
 }
 
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
@@ -547,6 +561,7 @@ where
 
             truncation: None,
             padding: None,
+            special_tokens_mapping: None,
         }
     }
 
@@ -652,6 +667,25 @@ where
     /// Get the currently set padding parameters
     pub fn get_padding(&self) -> Option<&PaddingParams> {
         self.padding.as_ref()
+    }
+
+    /// Set the special_tokens_mapping
+    pub fn with_special_tokens_mapping(
+        &mut self,
+        special_tokens_mapping: Option<SpecialTokensMapping>,
+    ) -> &mut Self {
+        self.special_tokens_mapping = special_tokens_mapping;
+        self
+    }
+
+    /// Get the currently set extra tokens
+    pub fn get_special_tokens_mapping(&self) -> Option<&SpecialTokensMapping> {
+        self.special_tokens_mapping.as_ref()
+    }
+
+    /// Get the currently set extra tokens
+    pub fn get_extra_token_muts(&mut self) -> Option<&mut SpecialTokensMapping> {
+        self.special_tokens_mapping.as_mut()
     }
 
     /// Get a mutable reference to the currently set padding parameters
