@@ -10,11 +10,11 @@ use serde::Serialize;
 // Supports updating one entry, the whole entry
 // Example
 pub struct SpecialTokensMapping {
-    inner: BTreeMap<String, BTreeSet<String>>,
+    inner: BTreeMap<String, BTreeSet<u32>>,
 }
 
 impl SpecialTokensMapping {
-    pub fn new(inner: BTreeMap<String, BTreeSet<String>>) -> Self {
+    pub fn new(inner: BTreeMap<String, BTreeSet<u32>>) -> Self {
         Self { inner }
     }
 }
