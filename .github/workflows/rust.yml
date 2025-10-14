@@ -102,3 +102,9 @@ jobs:
         shell: bash
         working-directory: ./tokenizers
         run: cargo readme > must_match_readme.md && diff must_match_readme.md README.md
+
+      - name: Check semver
+        if: matrix.os == 'ubuntu-latest'
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          manifest-path: ./tokenizers/Cargo.toml
