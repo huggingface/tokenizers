@@ -9,7 +9,7 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
     BertNormalizer, ByteLevel, Lowercase, Nmt, NormalizerWrapper, Precompiled, Prepend, Replace,
-    Strip, StripAccents, NFC, NFD, NFKC, NFKD,
+    Strip, StripAccents, NFC, NFD, NFKC, NFKD, UnicodeFilter,
 };
 use tk::{NormalizedString, Normalizer};
 use tokenizers as tk;
@@ -123,6 +123,10 @@ impl PyNormalizer {
                         .into_any()
                         .into(),
                     NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base))?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .into(),
+                    NormalizerWrapper::UnicodeFilter(_) => Py::new(py, (PyUnicodeFilter {}, base))?
                         .into_pyobject(py)?
                         .into_any()
                         .into(),
@@ -794,6 +798,23 @@ impl Normalizer for PyNormalizerWrapper {
     }
 }
 
+/// UnicodeFilter normalizer that filters out unwanted unicode categories
+#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "UnicodeFilter")]
+pub struct PyUnicodeFilter {}
+
+#[pymethods]
+impl PyUnicodeFilter {
+    #[new]
+    #[pyo3(signature = (filter_unassigned = None, filter_private_use = None), text_signature = "(self, filter_unassigned = True, filter_private_use = True)")]
+    fn new(filter_unassigned: Option<bool>, filter_private_use: Option<bool>) -> (Self, PyNormalizer) {
+        let filter = tk::normalizers::UnicodeFilter::new(
+            filter_unassigned.unwrap_or(true),
+            filter_private_use.unwrap_or(true)
+        );
+        (PyUnicodeFilter {}, filter.into())
+    }
+}
+
 /// Normalizers Module
 #[pymodule]
 pub fn normalizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -812,6 +833,7 @@ pub fn normalizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyNmt>()?;
     m.add_class::<PyPrecompiled>()?;
     m.add_class::<PyReplace>()?;
+    m.add_class::<PyUnicodeFilter>()?;
     Ok(())
 }
 

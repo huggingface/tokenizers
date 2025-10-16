@@ -304,6 +304,7 @@ const {
   replace,
   nmt,
   precompiled,
+  unicodeFilter,
   JsSplitDelimiterBehavior,
   PreTokenizer,
   byteLevelPreTokenizer,
@@ -363,6 +364,7 @@ module.exports.lowercase = lowercase
 module.exports.replace = replace
 module.exports.nmt = nmt
 module.exports.precompiled = precompiled
+module.exports.unicodeFilter = unicodeFilter
 module.exports.JsSplitDelimiterBehavior = JsSplitDelimiterBehavior
 module.exports.PreTokenizer = PreTokenizer
 module.exports.byteLevelPreTokenizer = byteLevelPreTokenizer

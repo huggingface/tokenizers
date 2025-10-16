@@ -12,7 +12,7 @@ pub use crate::normalizers::precompiled::Precompiled;
 pub use crate::normalizers::prepend::Prepend;
 pub use crate::normalizers::replace::Replace;
 pub use crate::normalizers::strip::{Strip, StripAccents};
-pub use crate::normalizers::unicode::{Nmt, NFC, NFD, NFKC, NFKD};
+pub use crate::normalizers::unicode::{Nmt, NFC, NFD, NFKC, NFKD, UnicodeFilter};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -36,6 +36,7 @@ pub enum NormalizerWrapper {
     Replace(Replace),
     Prepend(Prepend),
     ByteLevel(ByteLevel),
+    UnicodeFilter(UnicodeFilter),
 }
 
 impl<'de> Deserialize<'de> for NormalizerWrapper {
@@ -66,6 +67,7 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
             Replace,
             Prepend,
             ByteLevel,
+            UnicodeFilter,
         }
 
         #[derive(Deserialize)]
@@ -92,6 +94,7 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
             Replace(Replace),
             Prepend(Prepend),
             ByteLevel(ByteLevel),
+            UnicodeFilter(UnicodeFilter),
         }
 
         let helper = NormalizerHelper::deserialize(deserializer)?;
@@ -151,6 +154,9 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                     EnumType::ByteLevel => NormalizerWrapper::ByteLevel(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
+                    EnumType::UnicodeFilter => NormalizerWrapper::UnicodeFilter(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
                 }
             }
 
@@ -175,6 +181,7 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                     NormalizerUntagged::Replace(bpe) => NormalizerWrapper::Replace(bpe),
                     NormalizerUntagged::Prepend(bpe) => NormalizerWrapper::Prepend(bpe),
                     NormalizerUntagged::ByteLevel(bpe) => NormalizerWrapper::ByteLevel(bpe),
+                    NormalizerUntagged::UnicodeFilter(uf) => NormalizerWrapper::UnicodeFilter(uf),
                 }
             }
         })
@@ -198,6 +205,7 @@ impl Normalizer for NormalizerWrapper {
             Self::Replace(lc) => lc.normalize(normalized),
             Self::Prepend(lc) => lc.normalize(normalized),
             Self::ByteLevel(lc) => lc.normalize(normalized),
+            Self::UnicodeFilter(uf) => uf.normalize(normalized),
         }
     }
 }
@@ -216,6 +224,7 @@ impl_enum_from!(Precompiled, NormalizerWrapper, Precompiled);
 impl_enum_from!(Replace, NormalizerWrapper, Replace);
 impl_enum_from!(Prepend, NormalizerWrapper, Prepend);
 impl_enum_from!(ByteLevel, NormalizerWrapper, ByteLevel);
+impl_enum_from!(UnicodeFilter, NormalizerWrapper, UnicodeFilter);
 
 #[cfg(test)]
 mod tests {

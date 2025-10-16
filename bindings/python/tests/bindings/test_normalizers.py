@@ -12,6 +12,7 @@ from tokenizers.normalizers import (
     Strip,
     Prepend,
     Replace,
+    UnicodeFilter,
 )
 
 
@@ -199,6 +200,40 @@ class TestPrepend:
         # Modify these
         normalizer.prepend = "-"
         assert normalizer.prepend == "-"
+
+
+class TestUnicodeFilter:
+    def test_instantiate(self):
+        assert isinstance(UnicodeFilter(), Normalizer)
+        assert isinstance(UnicodeFilter(), UnicodeFilter)
+        assert isinstance(pickle.loads(pickle.dumps(UnicodeFilter())), UnicodeFilter)
+
+    def test_default_filtering(self):
+        normalizer = UnicodeFilter()  # Default filters out Unassigned, PrivateUse
+        output = normalizer.normalize_str("Hello\uE000\U000F0000\U0010FFFF")  # Hello + Private Use + Private Use B + Unassigned
+        assert output == "Hello"  # Only valid chars remain
+
+    def test_custom_filtering(self):
+        # Only filter private use areas
+        normalizer = UnicodeFilter(
+            filter_unassigned=False,
+            filter_private_use=True,
+        )
+        output = normalizer.normalize_str("Hello\uE000\U000F0000\U0010FFFF")  
+        assert output == "Hello\U0010FFFF"  # Private use removed, others kept
+
+    def test_can_modify(self):
+        normalizer = UnicodeFilter()
+        output = normalizer.normalize_str("Hello\uE000\U000F0000\U0010FFFF")  
+        assert output == "Hello"  # All filtered by default
+
+        # Disable all filtering
+        normalizer = UnicodeFilter(
+            filter_unassigned=False,
+            filter_private_use=False,
+        )
+        output = normalizer.normalize_str("Hello\uE000\U000F0000\U0010FFFF")
+        assert output == "Hello\uE000\U000F0000\U0010FFFF"  # Nothing filtered
 
 
 class TestCustomNormalizer:
