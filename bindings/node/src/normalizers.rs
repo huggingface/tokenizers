@@ -45,6 +45,15 @@ impl tk::Normalizer for Normalizer {
 }
 
 #[napi]
+pub fn append_normalizer(append: String) -> Normalizer {
+  Normalizer {
+    normalizer: Some(Arc::new(RwLock::new(
+      tk::normalizers::append::Append::new(append).into(),
+    ))),
+  }
+}
+
+#[napi]
 pub fn prepend_normalizer(prepend: String) -> Normalizer {
   Normalizer {
     normalizer: Some(Arc::new(RwLock::new(
