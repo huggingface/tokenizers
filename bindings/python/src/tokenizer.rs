@@ -782,6 +782,16 @@ impl PyTokenizer {
         self.tokenizer.get_vocab(with_added_tokens)
     }
 
+    /// Get the extra tokens
+    ///
+    /// Returns:
+    ///     :obj:`Dict[str, int]`: The vocabulary
+    #[pyo3(signature = ())]
+    #[pyo3(text_signature = "(self)")]
+    fn get_special_tokens_mapping(&self) -> Option<&HashMap<String, Vec<String>>> {
+        self.tokenizer.get_special_tokens_mapping()
+    }
+
     /// Get the underlying vocabulary
     ///
     /// Returns:
@@ -1847,6 +1857,22 @@ impl PyTokenizer {
     #[setter]
     fn set_decoder(&mut self, decoder: Option<PyRef<PyDecoder>>) {
         self.tokenizer.with_decoder(decoder.map(|d| d.clone()));
+    }
+
+    /// The `optional` :class:`~tokenizers.decoders.Decoder` in use by the Tokenizer
+    #[getter]
+    fn get_eos_token(&self, py: Python<'_>) -> Option<Vec<String>> {
+        self.tokenizer
+            .get_special_tokens_mapping()
+            .and_then(|token| token.get("eos_token"))
+            // into_pyobject -> Bound<PyAny>. Turn that into PyObject.
+            .map(|v| v.clone())
+    }
+
+    /// Set the :class:`~tokenizers.decoders.Decoder`
+    #[setter]
+    fn set_eos_token(&mut self, new_eos_token: Option<String>) {
+        self.tokenizer.with_special_tokens_mapping();
     }
 }
 

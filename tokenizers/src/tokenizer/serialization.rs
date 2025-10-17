@@ -42,6 +42,7 @@ where
         tokenizer.serialize_field("post_processor", &self.post_processor)?;
         tokenizer.serialize_field("decoder", &self.decoder)?;
         tokenizer.serialize_field("model", &self.model)?;
+        tokenizer.serialize_field("special_tokens_mapping", &self.special_tokens_mapping)?;
 
         tokenizer.end()
     }
@@ -63,6 +64,7 @@ where
             "Tokenizer",
             &[
                 "version",
+                "special_tokens_mapping",
                 "truncation",
                 "padding",
                 "added_tokens",
@@ -143,6 +145,9 @@ where
                 "post_processor" => {
                     builder = builder.with_post_processor(map.next_value()?);
                 }
+                "special_tokens_mapping" => {
+                    builder = builder.with_special_tokens_mapping(map.next_value()?);
+                }
                 _ => {}
             };
         }
@@ -221,7 +226,8 @@ mod tests {
     "continuing_subword_prefix": "",
     "max_input_chars_per_word": 100,
     "vocab": {}
-  }
+  },
+  "special_tokens_mapping": null
 }"#;
         let tokenizer = Tokenizer::from_str(tok_json).unwrap();
 
