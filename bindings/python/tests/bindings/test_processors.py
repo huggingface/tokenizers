@@ -66,6 +66,7 @@ class TestByteLevelProcessing:
     def test_instantiate(self):
         assert ByteLevel() is not None
         assert ByteLevel(trim_offsets=True) is not None
+        assert ByteLevel(add_prefix_space=True) is not None
         assert isinstance(ByteLevel(), PostProcessor)
         assert isinstance(ByteLevel(), ByteLevel)
         assert isinstance(pickle.loads(pickle.dumps(ByteLevel())), ByteLevel)
