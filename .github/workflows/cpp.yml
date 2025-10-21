@@ -1,0 +1,142 @@
+name: C++
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - bindings/node/**
+      - bindings/python/**
+      - docs/**
+  pull_request:
+    paths-ignore:
+      - bindings/node/**
+      - bindings/python/**
+      - docs/**
+
+jobs:
+  build_and_test:
+    name: Build and test C++ bindings
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            cmake_generator: "Unix Makefiles"
+          - os: macos-latest
+            cmake_generator: "Unix Makefiles"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Stable
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Cache Cargo Registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache Cargo Build
+        uses: actions/cache@v4
+        with:
+          path: |
+            bindings/c/target
+            tokenizers/target
+          key: ${{ runner.os }}-cargo-cpp-build-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install CMake (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Install CMake (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install cmake ninja
+
+      - name: Fetch test resources
+        working-directory: ./tokenizers
+        run: make test
+
+      - name: Configure C++ bindings
+        run: |
+          cmake -S bindings/cpp -B build_cpp -G "${{ matrix.cmake_generator }}"
+
+      - name: Build C++ bindings
+        run: |
+          cmake --build build_cpp -j
+
+      - name: Run C++ tests
+        run: |
+          ctest --test-dir build_cpp -V
+
+      - name: Build example
+        run: |
+          cmake -S bindings/cpp/example -B build_example -G "${{ matrix.cmake_generator }}"
+          cmake --build build_example -j
+
+      - name: Test example executable
+        run: |
+          ./build_example/tokenizer_example tokenizers/data/tokenizer.json "Hello, world!"
+
+  build_windows:
+    name: Build C++ bindings on Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Stable
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Cache Cargo Registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache Cargo Build
+        uses: actions/cache@v4
+        with:
+          path: |
+            bindings/c/target
+            tokenizers/target
+          key: ${{ runner.os }}-cargo-cpp-build-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Fetch test resources
+        shell: bash
+        working-directory: ./tokenizers
+        run: make test
+
+      - name: Configure C++ bindings
+        run: |
+          cmake -S bindings/cpp -B build_cpp
+
+      - name: Build C++ bindings
+        run: |
+          cmake --build build_cpp --config Release -j
+
+      - name: Run C++ tests
+        run: |
+          ctest --test-dir build_cpp -C Release -V
+
+      - name: Build example
+        run: |
+          cmake -S bindings/cpp/example -B build_example
+          cmake --build build_example --config Release -j
+
+      - name: Test example executable (Windows)
+        shell: bash
+        run: |
+          ./build_example/Release/tokenizer_example.exe tokenizers/data/tokenizer.json "Hello, world!"
