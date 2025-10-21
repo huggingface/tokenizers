@@ -98,8 +98,11 @@ class ByteLevel(PostProcessor):
     Args:
         trim_offsets (:obj:`bool`):
             Whether to trim the whitespaces from the produced offsets.
+        add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
+            Whether to add a space to the first word if there isn't already one. This
+            lets us treat `hello` exactly like `say hello`.
     """
-    def __init__(self, trim_offsets=True):
+    def __init__(self, trim_offsets=True, add_prefix_space=True):
         pass
 
     def num_special_tokens_to_add(self, is_pair):
