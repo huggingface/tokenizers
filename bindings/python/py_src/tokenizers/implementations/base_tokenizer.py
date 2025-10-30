@@ -195,6 +195,7 @@ class BaseTokenizer:
         pair: Optional[InputSequence] = None,
         is_pretokenized: bool = False,
         add_special_tokens: bool = True,
+        offset_type: str = "char",
     ) -> Encoding:
         """Encode the given sequence and pair. This method can process raw text sequences as well
         as already pre-tokenized sequences.
@@ -214,19 +215,26 @@ class BaseTokenizer:
             add_special_tokens: bool:
                 Whether to add the special tokens while encoding.
 
+            offset_type: str:
+                The type of offsets to return. Can be one of:
+                - "char": Character-based offsets (default, for backward compatibility)
+                - "byte": Byte-based offsets
+                - "none": No offsets (all zeros, faster)
+
         Returns:
             An Encoding
         """
         if sequence is None:
             raise ValueError("encode: `sequence` can't be `None`")
 
-        return self._tokenizer.encode(sequence, pair, is_pretokenized, add_special_tokens)
+        return self._tokenizer.encode(sequence, pair, is_pretokenized, add_special_tokens, offset_type)
 
     def encode_batch(
         self,
         inputs: List[EncodeInput],
         is_pretokenized: bool = False,
         add_special_tokens: bool = True,
+        offset_type: str = "char",
     ) -> List[Encoding]:
         """Encode the given inputs. This method accept both raw text sequences as well as already
         pre-tokenized sequences.
@@ -250,6 +258,12 @@ class BaseTokenizer:
             add_special_tokens: bool:
                 Whether to add the special tokens while encoding.
 
+            offset_type: str:
+                The type of offsets to return. Can be one of:
+                - "char": Character-based offsets (default, for backward compatibility)
+                - "byte": Byte-based offsets
+                - "none": No offsets (all zeros, faster)
+
         Returns:
             A list of Encoding
         """
@@ -257,7 +271,7 @@ class BaseTokenizer:
         if inputs is None:
             raise ValueError("encode_batch: `inputs` can't be `None`")
 
-        return self._tokenizer.encode_batch(inputs, is_pretokenized, add_special_tokens)
+        return self._tokenizer.encode_batch(inputs, is_pretokenized, add_special_tokens, offset_type)
 
     async def async_encode_batch(
         self,

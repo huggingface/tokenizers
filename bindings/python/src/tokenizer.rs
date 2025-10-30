@@ -1060,12 +1060,18 @@ impl PyTokenizer {
     ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether to add the special tokens
     ///
+    ///     offset_type (:obj:`str`, `optional`, defaults to :obj:`"char"`):
+    ///         The type of offsets to return. Can be one of:
+    ///         - ``"char"``: Character-based offsets (default)
+    ///         - ``"byte"``: Byte-based offsets
+    ///         - ``"none"``: No offsets (all zeros, faster)
+    ///
     /// Returns:
     ///     :class:`~tokenizers.Encoding`: The encoded result
     ///
-    #[pyo3(signature = (sequence, pair = None, is_pretokenized = false, add_special_tokens = true))]
+    #[pyo3(signature = (sequence, pair = None, is_pretokenized = false, add_special_tokens = true, offset_type = "char"))]
     #[pyo3(
-        text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True)"
+        text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True, offset_type='char')"
     )]
     fn encode(
         &self,
@@ -1073,6 +1079,7 @@ impl PyTokenizer {
         pair: Option<&Bound<'_, PyAny>>,
         is_pretokenized: bool,
         add_special_tokens: bool,
+        offset_type: &str,
     ) -> PyResult<PyEncoding> {
         let sequence: tk::InputSequence = if is_pretokenized {
             sequence.extract::<PreTokenizedInputSequence>()?.into()
@@ -1091,12 +1098,20 @@ impl PyTokenizer {
             None => tk::EncodeInput::Single(sequence),
         };
 
-        ToPyResult(
-            self.tokenizer
-                .encode_char_offsets(input, add_special_tokens)
-                .map(|e| e.into()),
-        )
-        .into()
+        let result = match offset_type {
+            "char" => self.tokenizer.encode_char_offsets(input, add_special_tokens),
+            "byte" => self.tokenizer.encode(input, add_special_tokens),
+            "none" => self.tokenizer.encode_fast(input, add_special_tokens),
+            _ => {
+                return Err(PyError(format!(
+                    "Invalid offset_type: '{}'. Must be one of 'char', 'byte', or 'none'",
+                    offset_type
+                ))
+                .into_pyerr::<exceptions::PyValueError>())
+            }
+        };
+
+        ToPyResult(result.map(|e| e.into())).into()
     }
 
     /// Asynchronously encode the given input with character offsets.
@@ -1199,17 +1214,24 @@ impl PyTokenizer {
     ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether to add the special tokens
     ///
+    ///     offset_type (:obj:`str`, `optional`, defaults to :obj:`"char"`):
+    ///         The type of offsets to return. Can be one of:
+    ///         - ``"char"``: Character-based offsets (default)
+    ///         - ``"byte"``: Byte-based offsets
+    ///         - ``"none"``: No offsets (all zeros, faster)
+    ///
     /// Returns:
     ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
     ///
-    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true))]
-    #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
+    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true, offset_type = "char"))]
+    #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True, offset_type='char')")]
     fn encode_batch(
         &self,
         py: Python<'_>,
         input: Vec<Bound<'_, PyAny>>,
         is_pretokenized: bool,
         add_special_tokens: bool,
+        offset_type: &str,
     ) -> PyResult<Vec<PyEncoding>> {
         let mut items = Vec::<tk::EncodeInput>::with_capacity(input.len());
         for item in &input {
@@ -1221,12 +1243,20 @@ impl PyTokenizer {
             items.push(item);
         }
         py.allow_threads(|| {
-            ToPyResult(
-                self.tokenizer
-                    .encode_batch_char_offsets(items, add_special_tokens)
-                    .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
-            )
-            .into()
+            let result = match offset_type {
+                "char" => self.tokenizer.encode_batch_char_offsets(items, add_special_tokens),
+                "byte" => self.tokenizer.encode_batch(items, add_special_tokens),
+                "none" => self.tokenizer.encode_batch_fast(items, add_special_tokens),
+                _ => {
+                    return Err(PyError(format!(
+                        "Invalid offset_type: '{}'. Must be one of 'char', 'byte', or 'none'",
+                        offset_type
+                    ))
+                    .into_pyerr::<exceptions::PyValueError>())
+                }
+            };
+            
+            ToPyResult(result.map(|encodings| encodings.into_iter().map(|e| e.into()).collect())).into()
         })
     }
     /// Asynchronously encode the given batch of inputs with character offsets.
