@@ -1255,7 +1255,6 @@ impl PyTokenizer {
                     .into_pyerr::<exceptions::PyValueError>())
                 }
             };
-            
             ToPyResult(result.map(|encodings| encodings.into_iter().map(|e| e.into()).collect())).into()
         })
     }
