@@ -11,6 +11,7 @@ static const std::map<std::string, int(*)()> test_registry = {
     {"encode_variations", test_encode_variations},
     {"error_handling", test_error_handling},
     {"bert_tokenizer", test_bert_tokenizer},
+    {"serialization_decoding_batch", test_serialization_decoding_batch},
 };
 
 void print_usage(const char* prog_name) {

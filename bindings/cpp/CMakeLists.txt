@@ -50,6 +50,7 @@ add_executable(tokenizer-tests
     tests/test_encode_variations.cpp
     tests/test_error_handling.cpp
     tests/test_bert_tokenizer.cpp
+    tests/test_serialization_decoding_batch.cpp
 )
 add_dependencies(tokenizer-tests build_rust_ffi)
 target_link_libraries(tokenizer-tests PRIVATE ${RUST_LIB_NAME})
@@ -62,5 +63,6 @@ add_test(NAME tokenizers_cpp_special_token_encode COMMAND tokenizer-tests specia
 add_test(NAME tokenizers_cpp_encode_variations COMMAND tokenizer-tests encode_variations)
 add_test(NAME tokenizers_cpp_error_handling COMMAND tokenizer-tests error_handling)
 add_test(NAME tokenizers_cpp_bert_tokenizer COMMAND tokenizer-tests bert_tokenizer)
+add_test(NAME tokenizers_cpp_serialization_decoding_batch COMMAND tokenizer-tests serialization_decoding_batch)
 
 message(STATUS "tokenizers_cpp configured. Build with: cmake -S bindings/cpp -B build && cmake --build build && ctest --test-dir build")

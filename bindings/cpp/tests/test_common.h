@@ -13,3 +13,4 @@ int test_special_token_encode();
 int test_encode_variations();
 int test_error_handling();
 int test_bert_tokenizer();
+int test_serialization_decoding_batch();

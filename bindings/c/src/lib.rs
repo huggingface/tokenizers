@@ -5,6 +5,7 @@ use tokenizers::{Encoding, Tokenizer};
 use tokenizers::AddedToken;
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct tokenizers_encoding_t {
     pub ids: *const i32,
     pub len: usize,
@@ -122,6 +123,54 @@ pub extern "C" fn tokenizers_token_to_id(tokenizer: *mut c_void, token: *const c
 }
 
 #[no_mangle]
+pub extern "C" fn tokenizers_id_to_token(tokenizer: *mut c_void, id: i32) -> *mut c_char {
+    if tokenizer.is_null() { return ptr::null_mut(); }
+    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
+    match c_tok.tokenizer.id_to_token(id as u32) {
+        Some(token) => CString::new(token).unwrap().into_raw(),
+        None => ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn tokenizers_decode(
+    tokenizer: *mut c_void,
+    ids: *const i32,
+    len: usize,
+    skip_special_tokens: bool
+) -> *mut c_char {
+    if tokenizer.is_null() || ids.is_null() { return ptr::null_mut(); }
+    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
+    let ids_slice_i32 = unsafe { std::slice::from_raw_parts(ids, len) };
+    let ids_slice_u32: Vec<u32> = ids_slice_i32.iter().map(|&id| id as u32).collect();
+    
+    match c_tok.tokenizer.decode(&ids_slice_u32, skip_special_tokens) {
+        Ok(s) => CString::new(s).unwrap().into_raw(),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn tokenizers_save(tokenizer: *mut c_void, path: *const c_char, pretty: bool) -> bool {
+    if tokenizer.is_null() || path.is_null() { return false; }
+    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
+    let c_path = unsafe { CStr::from_ptr(path) };
+    let path_str = match c_path.to_str() { Ok(s) => s, Err(_) => return false };
+    
+    c_tok.tokenizer.save(path_str, pretty).is_ok()
+}
+
+#[no_mangle]
+pub extern "C" fn tokenizers_to_str(tokenizer: *mut c_void, pretty: bool) -> *mut c_char {
+    if tokenizer.is_null() { return ptr::null_mut(); }
+    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
+    match c_tok.tokenizer.to_string(pretty) {
+        Ok(s) => CString::new(s).unwrap().into_raw(),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn tokenizers_add_special_token(tokenizer: *mut c_void, token: *const c_char) -> bool {
     if tokenizer.is_null() || token.is_null() { return false; }
     let c_tok = unsafe { &mut *(tokenizer as *mut CTokenizer) };
@@ -130,4 +179,79 @@ pub extern "C" fn tokenizers_add_special_token(tokenizer: *mut c_void, token: *c
     let added = AddedToken::from(token_str.to_string(), true);
     c_tok.tokenizer.add_special_tokens(&[added]);
     true
+}
+
+#[no_mangle]
+pub extern "C" fn tokenizers_add_special_tokens(
+    tokenizer: *mut c_void,
+    tokens: *const *const c_char,
+    len: usize
+) -> usize {
+    if tokenizer.is_null() || tokens.is_null() { return 0; }
+    let c_tok = unsafe { &mut *(tokenizer as *mut CTokenizer) };
+    let c_tokens_ptrs = unsafe { std::slice::from_raw_parts(tokens, len) };
+    
+    let mut added_tokens = Vec::new();
+    for &ptr in c_tokens_ptrs {
+        if ptr.is_null() { continue; }
+        let c_str = unsafe { CStr::from_ptr(ptr) };
+        if let Ok(s) = c_str.to_str() {
+            added_tokens.push(AddedToken::from(s.to_string(), true));
+        }
+    }
+    
+    c_tok.tokenizer.add_special_tokens(&added_tokens)
+}
+
+#[no_mangle]
+pub extern "C" fn tokenizers_encode_batch(
+    tokenizer: *mut c_void,
+    texts: *const *const c_char,
+    len: usize,
+    add_special_tokens: bool
+) -> *mut tokenizers_encoding_t {
+    if tokenizer.is_null() || texts.is_null() { return ptr::null_mut(); }
+    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
+    let c_texts_ptrs = unsafe { std::slice::from_raw_parts(texts, len) };
+    
+    let mut inputs = Vec::with_capacity(len);
+    for &ptr in c_texts_ptrs {
+        if ptr.is_null() { continue; }
+        let c_str = unsafe { CStr::from_ptr(ptr) };
+        if let Ok(s) = c_str.to_str() {
+            inputs.push(s);
+        }
+    }
+    
+    let encode_inputs: Vec<tokenizers::EncodeInput> = inputs.iter()
+        .map(|&s| tokenizers::EncodeInput::Single(s.into()))
+        .collect();
+
+    let encodings = match c_tok.tokenizer.encode_batch(encode_inputs, add_special_tokens) {
+        Ok(e) => e,
+        Err(_) => return ptr::null_mut(),
+    };
+
+    let mut c_encodings = Vec::with_capacity(encodings.len());
+    for encoding in encodings {
+        let ids_vec: Vec<i32> = encoding.get_ids().iter().map(|&v| v as i32).collect();
+        let len = ids_vec.len();
+        let ptr_ids = ids_vec.as_ptr();
+        std::mem::forget(ids_vec);
+        c_encodings.push(tokenizers_encoding_t { ids: ptr_ids, len });
+    }
+    
+    let ptr = c_encodings.as_mut_ptr();
+    std::mem::forget(c_encodings);
+    ptr
+}
+
+#[no_mangle]
+pub extern "C" fn tokenizers_free_batch_encoding(encodings: *mut tokenizers_encoding_t, len: usize) {
+    if encodings.is_null() { return; }
+    let slice = unsafe { std::slice::from_raw_parts_mut(encodings, len) };
+    for enc in slice.iter() {
+        tokenizers_free_encoding(*enc);
+    }
+    unsafe { Vec::from_raw_parts(encodings, len, len); }
 }
