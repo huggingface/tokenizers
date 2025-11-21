@@ -1,13 +1,13 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
 use std::ptr;
-use tokenizers::{Encoding, Tokenizer};
-use tokenizers::AddedToken;
+use tokenizers::{Encoding, Tokenizer, AddedToken, PaddingParams, PaddingStrategy, PaddingDirection};
 
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct tokenizers_encoding_t {
     pub ids: *const i32,
+    pub attention_mask: *const i32,
     pub len: usize,
 }
 
@@ -62,32 +62,93 @@ pub extern "C" fn tokenizers_encode(
     add_special_tokens: bool,
 ) -> tokenizers_encoding_t {
     if tokenizer.is_null() || text.is_null() {
-        return tokenizers_encoding_t { ids: ptr::null(), len: 0 };
+        return tokenizers_encoding_t { ids: ptr::null(), attention_mask: ptr::null(), len: 0 };
     }
     let c_tok = unsafe { &mut *(tokenizer as *mut CTokenizer) };
     let c_text = unsafe { CStr::from_ptr(text) };
     let text_str = match c_text.to_str() { Ok(s) => s, Err(_) => {
-        return tokenizers_encoding_t { ids: ptr::null(), len: 0 };
+        return tokenizers_encoding_t { ids: ptr::null(), attention_mask: ptr::null(), len: 0 };
     }};
 
     let encoding: Encoding = match c_tok.tokenizer.encode(text_str, add_special_tokens) {
         Ok(e) => e,
-        Err(_) => return tokenizers_encoding_t { ids: ptr::null(), len: 0 },
+        Err(_) => return tokenizers_encoding_t { ids: ptr::null(), attention_mask: ptr::null(), len: 0 },
     };
 
     let ids_vec: Vec<i32> = encoding.get_ids().iter().map(|&v| v as i32).collect();
+    let mask_vec: Vec<i32> = encoding.get_attention_mask().iter().map(|&v| v as i32).collect();
     let len = ids_vec.len();
     let ptr_ids = ids_vec.as_ptr();
-    // Leak the vec, will be reclaimed in free_encoding
+    let ptr_mask = mask_vec.as_ptr();
+    
     std::mem::forget(ids_vec);
-    tokenizers_encoding_t { ids: ptr_ids, len }
+    std::mem::forget(mask_vec);
+    
+    tokenizers_encoding_t { ids: ptr_ids, attention_mask: ptr_mask, len }
+}
+
+#[no_mangle]
+pub extern "C" fn tokenizers_encode_batch(
+    tokenizer: *mut c_void,
+    texts: *const *const c_char,
+    len: usize,
+    add_special_tokens: bool,
+) -> *mut tokenizers_encoding_t {
+    if tokenizer.is_null() || texts.is_null() { return ptr::null_mut(); }
+    let c_tok = unsafe { &mut *(tokenizer as *mut CTokenizer) };
+    let c_texts_ptrs = unsafe { std::slice::from_raw_parts(texts, len) };
+    
+    let mut rs_texts = Vec::new();
+    for &ptr in c_texts_ptrs {
+        if ptr.is_null() { continue; }
+        let c_str = unsafe { CStr::from_ptr(ptr) };
+        if let Ok(s) = c_str.to_str() {
+            rs_texts.push(s);
+        }
+    }
+    
+    let encodings = match c_tok.tokenizer.encode_batch(rs_texts, add_special_tokens) {
+        Ok(e) => e,
+        Err(_) => return ptr::null_mut(),
+    };
+    
+    let mut c_encodings = Vec::with_capacity(encodings.len());
+    for encoding in encodings {
+        let ids_vec: Vec<i32> = encoding.get_ids().iter().map(|&v| v as i32).collect();
+        let mask_vec: Vec<i32> = encoding.get_attention_mask().iter().map(|&v| v as i32).collect();
+        let len = ids_vec.len();
+        let ptr_ids = ids_vec.as_ptr();
+        let ptr_mask = mask_vec.as_ptr();
+        
+        std::mem::forget(ids_vec);
+        std::mem::forget(mask_vec);
+        
+        c_encodings.push(tokenizers_encoding_t { ids: ptr_ids, attention_mask: ptr_mask, len });
+    }
+    
+    let ptr = c_encodings.as_mut_ptr();
+    std::mem::forget(c_encodings);
+    ptr
 }
 
 #[no_mangle]
 pub extern "C" fn tokenizers_free_encoding(enc: tokenizers_encoding_t) {
-    if enc.ids.is_null() { return; }
-    // Reconstruct Vec to drop
-    unsafe { Vec::from_raw_parts(enc.ids as *mut i32, enc.len, enc.len); }
+    if !enc.ids.is_null() {
+        unsafe { Vec::from_raw_parts(enc.ids as *mut i32, enc.len, enc.len); }
+    }
+    if !enc.attention_mask.is_null() {
+        unsafe { Vec::from_raw_parts(enc.attention_mask as *mut i32, enc.len, enc.len); }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn tokenizers_free_batch_encoding(encodings: *mut tokenizers_encoding_t, len: usize) {
+    if encodings.is_null() { return; }
+    let slice = unsafe { std::slice::from_raw_parts_mut(encodings, len) };
+    for enc in slice {
+        tokenizers_free_encoding(*enc);
+    }
+    unsafe { Vec::from_raw_parts(encodings, len, len); }
 }
 
 #[no_mangle]
@@ -151,6 +212,59 @@ pub extern "C" fn tokenizers_decode(
 }
 
 #[no_mangle]
+pub extern "C" fn tokenizers_decode_batch(
+    tokenizer: *mut c_void,
+    ids: *const *const i32,
+    lens: *const usize,
+    batch_len: usize,
+    skip_special_tokens: bool
+) -> *mut *mut c_char {
+    if tokenizer.is_null() || ids.is_null() || lens.is_null() { return ptr::null_mut(); }
+    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
+    
+    let ids_ptrs = unsafe { std::slice::from_raw_parts(ids, batch_len) };
+    let lens_slice = unsafe { std::slice::from_raw_parts(lens, batch_len) };
+    
+    let mut batch_ids_u32 = Vec::with_capacity(batch_len);
+    for i in 0..batch_len {
+        let len = lens_slice[i];
+        let ptr = ids_ptrs[i];
+        if ptr.is_null() {
+            batch_ids_u32.push(vec![]);
+            continue;
+        }
+        let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
+        batch_ids_u32.push(slice.iter().map(|&id| id as u32).collect());
+    }
+    
+    let batch_ids_refs: Vec<&[u32]> = batch_ids_u32.iter().map(|v| v.as_slice()).collect();
+    
+    let decoded = match c_tok.tokenizer.decode_batch(&batch_ids_refs, skip_special_tokens) {
+        Ok(s) => s,
+        Err(_) => return ptr::null_mut(),
+    };
+    
+    let mut c_strings = Vec::with_capacity(decoded.len());
+    for s in decoded {
+        c_strings.push(CString::new(s).unwrap().into_raw());
+    }
+    
+    let ptr = c_strings.as_mut_ptr();
+    std::mem::forget(c_strings);
+    ptr
+}
+
+#[no_mangle]
+pub extern "C" fn tokenizers_free_batch_decode(strings: *mut *mut c_char, len: usize) {
+    if strings.is_null() { return; }
+    let slice = unsafe { std::slice::from_raw_parts_mut(strings, len) };
+    for &mut s in slice {
+        tokenizers_string_free(s);
+    }
+    unsafe { Vec::from_raw_parts(strings, len, len); }
+}
+
+#[no_mangle]
 pub extern "C" fn tokenizers_save(tokenizer: *mut c_void, path: *const c_char, pretty: bool) -> bool {
     if tokenizer.is_null() || path.is_null() { return false; }
     let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
@@ -204,54 +318,116 @@ pub extern "C" fn tokenizers_add_special_tokens(
 }
 
 #[no_mangle]
-pub extern "C" fn tokenizers_encode_batch(
+pub extern "C" fn tokenizers_add_tokens(
     tokenizer: *mut c_void,
-    texts: *const *const c_char,
-    len: usize,
-    add_special_tokens: bool
-) -> *mut tokenizers_encoding_t {
-    if tokenizer.is_null() || texts.is_null() { return ptr::null_mut(); }
-    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
-    let c_texts_ptrs = unsafe { std::slice::from_raw_parts(texts, len) };
+    tokens: *const *const c_char,
+    len: usize
+) -> usize {
+    if tokenizer.is_null() || tokens.is_null() { return 0; }
+    let c_tok = unsafe { &mut *(tokenizer as *mut CTokenizer) };
+    let c_tokens_ptrs = unsafe { std::slice::from_raw_parts(tokens, len) };
     
-    let mut inputs = Vec::with_capacity(len);
-    for &ptr in c_texts_ptrs {
+    let mut added_tokens = Vec::new();
+    for &ptr in c_tokens_ptrs {
         if ptr.is_null() { continue; }
         let c_str = unsafe { CStr::from_ptr(ptr) };
         if let Ok(s) = c_str.to_str() {
-            inputs.push(s);
+            added_tokens.push(AddedToken::from(s.to_string(), false));
         }
     }
     
-    let encode_inputs: Vec<tokenizers::EncodeInput> = inputs.iter()
-        .map(|&s| tokenizers::EncodeInput::Single(s.into()))
-        .collect();
+    c_tok.tokenizer.add_tokens(&added_tokens)
+}
 
-    let encodings = match c_tok.tokenizer.encode_batch(encode_inputs, add_special_tokens) {
-        Ok(e) => e,
-        Err(_) => return ptr::null_mut(),
-    };
-
-    let mut c_encodings = Vec::with_capacity(encodings.len());
-    for encoding in encodings {
-        let ids_vec: Vec<i32> = encoding.get_ids().iter().map(|&v| v as i32).collect();
-        let len = ids_vec.len();
-        let ptr_ids = ids_vec.as_ptr();
-        std::mem::forget(ids_vec);
-        c_encodings.push(tokenizers_encoding_t { ids: ptr_ids, len });
-    }
-    
-    let ptr = c_encodings.as_mut_ptr();
-    std::mem::forget(c_encodings);
-    ptr
+#[repr(C)]
+pub struct tokenizers_truncation_params_t {
+    pub max_length: usize,
+    pub stride: usize,
+    pub strategy: i32, // 0: LongestFirst, 1: OnlyFirst, 2: OnlySecond
+    pub direction: i32, // 0: Left, 1: Right
 }
 
 #[no_mangle]
-pub extern "C" fn tokenizers_free_batch_encoding(encodings: *mut tokenizers_encoding_t, len: usize) {
-    if encodings.is_null() { return; }
-    let slice = unsafe { std::slice::from_raw_parts_mut(encodings, len) };
-    for enc in slice.iter() {
-        tokenizers_free_encoding(*enc);
+pub extern "C" fn tokenizers_set_truncation(
+    tokenizer: *mut c_void,
+    params: *const tokenizers_truncation_params_t
+) {
+    if tokenizer.is_null() { return; }
+    let c_tok = unsafe { &mut *(tokenizer as *mut CTokenizer) };
+    
+    if params.is_null() {
+        let _ = c_tok.tokenizer.with_truncation(None);
+        return;
     }
-    unsafe { Vec::from_raw_parts(encodings, len, len); }
+    
+    let p = unsafe { &*params };
+    
+    let strategy = match p.strategy {
+        1 => tokenizers::TruncationStrategy::OnlyFirst,
+        2 => tokenizers::TruncationStrategy::OnlySecond,
+        _ => tokenizers::TruncationStrategy::LongestFirst,
+    };
+    
+    let direction = match p.direction {
+        1 => tokenizers::TruncationDirection::Right,
+        _ => tokenizers::TruncationDirection::Left,
+    };
+    
+    let params = tokenizers::TruncationParams {
+        max_length: p.max_length,
+        stride: p.stride,
+        strategy,
+        direction,
+    };
+    
+    let _ = c_tok.tokenizer.with_truncation(Some(params));
+}
+
+#[repr(C)]
+pub struct tokenizers_padding_params_t {
+    pub pad_id: u32,
+    pub pad_type_id: u32,
+    pub pad_token: *const c_char,
+    pub strategy: i32, // 0: BatchLongest, 1: Fixed
+    pub fixed_length: usize,
+    pub direction: i32, // 0: Left, 1: Right
+    pub pad_to_multiple_of: usize,
+}
+
+#[no_mangle]
+pub extern "C" fn tokenizers_set_padding(
+    tokenizer: *mut c_void,
+    params: *const tokenizers_padding_params_t
+) {
+    if tokenizer.is_null() { return; }
+    let c_tok = unsafe { &mut *(tokenizer as *mut CTokenizer) };
+    
+    if params.is_null() {
+        c_tok.tokenizer.with_padding(None);
+        return;
+    }
+    
+    let p = unsafe { &*params };
+    let pad_token = unsafe { CStr::from_ptr(p.pad_token) }.to_string_lossy().into_owned();
+    
+    let strategy = match p.strategy {
+        1 => PaddingStrategy::Fixed(p.fixed_length),
+        _ => PaddingStrategy::BatchLongest,
+    };
+    
+    let direction = match p.direction {
+        1 => PaddingDirection::Right,
+        _ => PaddingDirection::Left,
+    };
+    
+    let params = PaddingParams {
+        strategy,
+        direction,
+        pad_id: p.pad_id,
+        pad_type_id: p.pad_type_id,
+        pad_token,
+        pad_to_multiple_of: if p.pad_to_multiple_of == 0 { None } else { Some(p.pad_to_multiple_of) },
+    };
+    
+    c_tok.tokenizer.with_padding(Some(params));
 }

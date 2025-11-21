@@ -40,7 +40,7 @@ cmake -S bindings/cpp -B build-cpp
 cmake --build build-cpp -j
 # if you run out of memory, replace "-j" (use all cores) with "-j4" (use only 4 cores)
 
-# Run tests (6 C++ binding tests + original Rust test suite)
+# Run tests (Google Test suite)
 ctest --test-dir build-cpp -V
 ```
 
@@ -52,11 +52,16 @@ C++ `Tokenizer` class methods:
 - `encode(text, add_special_tokens=true)` - encode text to token IDs
 - `encode_batch(texts, add_special_tokens=true)` - encode batch of texts
 - `decode(ids, skip_special_tokens=true)` - decode IDs to string
+- `decode_batch(batch_ids, skip_special_tokens=true)` - decode batch of IDs
 - `vocab_size()` - get vocabulary size
 - `token_to_id(token)` - lookup token ID (returns -1 if not found)
 - `id_to_token(id)` - lookup token string (returns empty if not found)
 - `add_special_token(token)` - add a special token to vocabulary
 - `add_special_tokens(tokens)` - add multiple special tokens
+- `set_padding(params)` - configure padding
+- `disable_padding()` - disable padding
+- `set_truncation(params)` - configure truncation
+- `disable_truncation()` - disable truncation
 - `save(path, pretty=true)` - save tokenizer to JSON file
 - `to_string(pretty=false)` - serialize tokenizer to JSON string
 - `valid()` - check if tokenizer loaded successfully
@@ -64,14 +69,16 @@ C++ `Tokenizer` class methods:
 
 ## Test Coverage
 
-C++ binding tests (`bindings/cpp/tests`):
-1. **test_basic** - Basic encode/decode smoke test
-2. **test_vocab_size** - Vocab size growth after adding special tokens
-3. **test_special_token_encode** - Special token encoding validation
-4. **test_encode_variations** - Encode with/without special tokens, empty input, consistency
-5. **test_error_handling** - Invalid file loading, move semantics, nonexistent tokens
-6. **test_bert_tokenizer** - BERT tokenizer integration with multiple texts
-7. **test_new_features** - Test new APIs (decode, id_to_token, save, to_string, encode_batch, add_special_tokens)
+C++ binding tests are now unified using Google Test in `bindings/cpp/tests/test_tokenizer_gtest.cpp`.
+The suite covers:
+- Basic encode/decode
+- Batch encode/decode
+- Vocabulary operations
+- Padding and Truncation
+- Special tokens management
+- Serialization (save/load/to_string)
+- Error handling
+- Integration with BERT tokenizer
 
 Original Rust tests also available via `ctest -R tokenizers_rust_all`.
 
