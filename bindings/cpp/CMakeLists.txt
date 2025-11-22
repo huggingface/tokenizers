@@ -40,27 +40,26 @@ target_include_directories(tokenizers_cpp INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/
 # Tests
 enable_testing()
 
-# Single unified test executable
-add_executable(tokenizer-tests 
-    tests/main.cpp
-    tests/test_common.cpp
-    tests/test_basic.cpp
-    tests/test_vocab_size.cpp
-    tests/test_special_token_encode.cpp
-    tests/test_encode_variations.cpp
-    tests/test_error_handling.cpp
-    tests/test_bert_tokenizer.cpp
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
 )
-add_dependencies(tokenizer-tests build_rust_ffi)
-target_link_libraries(tokenizer-tests PRIVATE ${RUST_LIB_NAME})
-target_include_directories(tokenizer-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
 
-# Register individual tests that invoke tokenizer-tests with different arguments
-add_test(NAME tokenizers_cpp_basic COMMAND tokenizer-tests basic)
-add_test(NAME tokenizers_cpp_vocab_size COMMAND tokenizer-tests vocab_size)
-add_test(NAME tokenizers_cpp_special_token_encode COMMAND tokenizer-tests special_token_encode)
-add_test(NAME tokenizers_cpp_encode_variations COMMAND tokenizer-tests encode_variations)
-add_test(NAME tokenizers_cpp_error_handling COMMAND tokenizer-tests error_handling)
-add_test(NAME tokenizers_cpp_bert_tokenizer COMMAND tokenizer-tests bert_tokenizer)
+# Google Test executable
+add_executable(tokenizer_tests_gtest
+    tests/test_tokenizer_gtest.cpp
+    tests/test_common.cpp
+)
+add_dependencies(tokenizer_tests_gtest build_rust_ffi)
+target_link_libraries(tokenizer_tests_gtest PRIVATE ${RUST_LIB_NAME} GTest::gtest_main)
+target_include_directories(tokenizer_tests_gtest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+# Register Google Test
+include(GoogleTest)
+gtest_discover_tests(tokenizer_tests_gtest)
 
 message(STATUS "tokenizers_cpp configured. Build with: cmake -S bindings/cpp -B build && cmake --build build && ctest --test-dir build")
