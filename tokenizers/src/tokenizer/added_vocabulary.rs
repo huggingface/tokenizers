@@ -341,22 +341,21 @@ impl AddedVocabulary {
             })
             .partition(|(token, _)| token.normalized);
 
-        // Build non-normalized trie
         let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
         let trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
             .build(tokens.iter().map(|token| &token.content))
-            .expect("Failed to build trie when refreshing tokens");
-        self.split_trie = (trie.clone(), ids.clone());
+            .expect("Failed to build tried when refreshing tokens");
+        self.split_trie = (trie, ids);
 
-        // Build normalized trie
-        if let Some(n) = normalizer {
             let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
             let patterns: Vec<_> = ntokens
                 .iter()
                 .map(|token| {
                     let mut content = NormalizedString::from(token.content.as_ref());
+                if let Some(n) = normalizer {
                     n.normalize(&mut content).unwrap();
+                }
                     content
                 })
                 .collect();
@@ -365,9 +364,6 @@ impl AddedVocabulary {
                 .build(patterns.iter().map(|content| content.get()))
                 .expect("Failed to build tried when refreshing tokens (normalized)");
             self.split_normalized_trie = (normalized_trie, nids);
-        } else {
-            self.split_normalized_trie = (trie, ids); // non normalized is the same
-        }
     }
 
     /// Find any AddedToken in the given sentence, using the provided MatchingSet.
