@@ -42,6 +42,7 @@ harness = false
 
 [[bench]]
 name = "added_vocab_deserialize"
+required-features = ["http"]
 harness = false
 
 [dependencies]

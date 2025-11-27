@@ -274,7 +274,7 @@ impl AddedVocabulary {
 
         let mut ignored = 0;
 
-        let mut existing: HashSet<AddedToken> = self.added_tokens_map_r.values().cloned().collect();
+        let mut existing: AHashSet<AddedToken> = self.added_tokens_map_r.values().cloned().collect();
         let mut next_id = self.added_tokens_map_r.keys().copied().max().map_or(
             model.get_vocab_size() as u32,
             |max| {
