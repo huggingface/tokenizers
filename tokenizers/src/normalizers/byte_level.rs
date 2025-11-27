@@ -4,8 +4,6 @@ use crate::utils::macro_rules_attribute;
 use ahash::{AHashMap, AHashSet};
 use std::sync::LazyLock;
 
-
-
 #[derive(Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct ByteLevel;
@@ -45,7 +43,7 @@ impl Normalizer for ByteLevel {
             }
             normalized.transform(transformations, 0);
         }
-    Ok(())
+        Ok(())
     }
 }
 

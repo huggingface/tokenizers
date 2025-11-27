@@ -1,8 +1,8 @@
 #[macro_use]
 extern crate criterion;
-use std::{process::exit, str::FromStr};
 use criterion::Criterion;
 use std::hint::black_box;
+use std::{process::exit, str::FromStr};
 use tokenizers::{normalizers::*, AddedToken, Normalizer, Tokenizer};
 
 fn serialized_tokenizer<N: Normalizer + Into<NormalizerWrapper>>(
@@ -10,9 +10,7 @@ fn serialized_tokenizer<N: Normalizer + Into<NormalizerWrapper>>(
     normalizer: Option<N>,
     special_tokens: bool,
 ) -> String {
-
     let mut tokenizer = Tokenizer::from_pretrained("t5-small", None).unwrap();
-
 
     if let Some(norm) = normalizer {
         tokenizer.with_normalizer(Some(norm));
@@ -44,7 +42,10 @@ fn bench_deserialize(c: &mut Criterion) {
 
     for &size in &[10_000usize, 100_000, 400_000] {
         for (norm_name, maybe_factory) in &normalizers {
-            let label = format!("special tokens deserialize_added_vocab_{}_norm_{}", size, norm_name);
+            let label = format!(
+                "special tokens deserialize_added_vocab_{}_norm_{}",
+                size, norm_name
+            );
 
             let json = match maybe_factory {
                 Some(factory) => serialized_tokenizer(size, Some(factory()), true),
@@ -57,7 +58,10 @@ fn bench_deserialize(c: &mut Criterion) {
                 })
             });
 
-            let label = format!("non special deserialize_added_vocab_{}_norm_{}", size, norm_name);
+            let label = format!(
+                "non special deserialize_added_vocab_{}_norm_{}",
+                size, norm_name
+            );
 
             let json = match maybe_factory {
                 Some(factory) => serialized_tokenizer(size, Some(factory()), false),
