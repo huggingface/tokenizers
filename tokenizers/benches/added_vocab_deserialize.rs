@@ -1,32 +1,27 @@
 #[macro_use]
 extern crate criterion;
 use std::{process::exit, str::FromStr};
-use criterion::{black_box, Criterion};
-use std::collections::HashMap;
-use tokenizers::{models::wordlevel::WordLevel, normalizers::*, AddedToken, Normalizer, Tokenizer};
+use criterion::Criterion;
+use std::hint::black_box;
+use tokenizers::{normalizers::*, AddedToken, Normalizer, Tokenizer};
 
 fn serialized_tokenizer<N: Normalizer + Into<NormalizerWrapper>>(
     size: usize,
     normalizer: Option<N>,
     special_tokens: bool,
 ) -> String {
-    let mut vocab = HashMap::new();
-    vocab.insert("a".to_string(), 0);
-    let model = WordLevel::builder()
-        .vocab(vocab)
-        .unk_token("[UNK]".into())
-        .build()
-        .unwrap();
 
-    let mut tokenizer = Tokenizer::new(model);
-    let tokens: Vec<_> = (0..size)
-        .map(|i| AddedToken::from(format!("tok{i}"), special_tokens))
-        .collect();
-    tokenizer.add_tokens(&tokens);
+    let mut tokenizer = Tokenizer::from_pretrained("t5-small", None).unwrap();
+
 
     if let Some(norm) = normalizer {
         tokenizer.with_normalizer(Some(norm));
     }
+
+    let tokens: Vec<_> = (0..size)
+        .map(|i| AddedToken::from(format!("tok{i}"), special_tokens))
+        .collect();
+    tokenizer.add_tokens(&tokens);
 
     serde_json::to_string(&tokenizer).unwrap()
 }
