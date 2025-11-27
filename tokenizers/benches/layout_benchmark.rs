@@ -6,8 +6,8 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use criterion::black_box;
 use criterion::Criterion;
+use std::hint::black_box;
 use tokenizers::processors::template::TemplateProcessing;
 use tokenizers::{EncodeInput, Encoding, PostProcessor, Tokenizer};
 

@@ -28,7 +28,7 @@ impl Task for EncodeTask<'static> {
           .ok_or(Error::from_reason("No provided input"))?,
         self.add_special_tokens,
       )
-      .map_err(|e| Error::from_reason(format!("{}", e)))
+      .map_err(|e| Error::from_reason(format!("{e}")))
   }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
@@ -55,7 +55,7 @@ impl Task for DecodeTask {
       .read()
       .unwrap()
       .decode(&self.ids, self.skip_special_tokens)
-      .map_err(|e| Error::from_reason(format!("{}", e)))
+      .map_err(|e| Error::from_reason(format!("{e}")))
   }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
@@ -85,7 +85,7 @@ impl Task for EncodeBatchTask<'static> {
           .ok_or(Error::from_reason("No provided input"))?,
         self.add_special_tokens,
       )
-      .map_err(|e| Error::from_reason(format!("{}", e)))
+      .map_err(|e| Error::from_reason(format!("{e}")))
   }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
@@ -118,7 +118,7 @@ impl Task for DecodeBatchTask {
       .read()
       .unwrap()
       .decode_batch(&ids, self.skip_special_tokens)
-      .map_err(|e| Error::from_reason(format!("{}", e)))
+      .map_err(|e| Error::from_reason(format!("{e}")))
   }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {

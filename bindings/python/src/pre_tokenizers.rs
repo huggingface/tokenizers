@@ -12,6 +12,7 @@ use tk::pre_tokenizers::bert::BertPreTokenizer;
 use tk::pre_tokenizers::byte_level::ByteLevel;
 use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk::pre_tokenizers::digits::Digits;
+use tk::pre_tokenizers::fixed_length::FixedLength;
 use tk::pre_tokenizers::metaspace::{Metaspace, PrependScheme};
 use tk::pre_tokenizers::punctuation::Punctuation;
 use tk::pre_tokenizers::split::Split;
@@ -118,6 +119,12 @@ impl PyPreTokenizer {
                                 .into_any()
                                 .into()
                         }
+                        PreTokenizerWrapper::FixedLength(_) => {
+                            Py::new(py, (PyFixedLength {}, base))?
+                                .into_pyobject(py)?
+                                .into_any()
+                                .into()
+                        }
                     },
                 }
             }
@@ -143,8 +150,7 @@ impl PyPreTokenizer {
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.pretok).map_err(|e| {
             exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle PreTokenizer: {}",
-                e
+                "Error while attempting to pickle PreTokenizer: {e}"
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).into())
@@ -155,8 +161,7 @@ impl PyPreTokenizer {
             Ok(s) => {
                 let unpickled = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle PreTokenizer: {}",
-                        e
+                        "Error while attempting to unpickle PreTokenizer: {e}"
                     ))
                 })?;
                 self.pretok = unpickled;
@@ -341,7 +346,34 @@ impl PyByteLevel {
     }
 }
 
-/// This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`
+/// This pre-tokenizer splits on word boundaries according to the `\w+|[^\w\s]+`
+/// regex pattern. It splits on word characters or characters that aren't words or
+/// whitespaces (punctuation such as hyphens, apostrophes, commas, etc.).
+///
+/// Example:
+///     Use the `Whitespace` function as shown below::
+///
+///         ```python
+///         from tokenizers.pre_tokenizers import Whitespace
+///
+///         pre_tokenizer = Whitespace()
+///         text = "Hello, world! Let's try the Whitespace pre-tokenizer."
+///         pre_tokenizer.pre_tokenize_str(text)
+///         [('Hello', (0, 5)),
+///          (',', (5, 6)),
+///          ('world', (7, 12)),
+///          ('!', (12, 13)),
+///          ('Let', (14, 17)),
+///          ("'", (17, 18)),
+///          ('s', (18, 19)),
+///          ('try', (20, 23)),
+///          ('the', (24, 27)),
+///          ('Whitespace', (28, 38)),
+///          ('pre', (39, 42)),
+///          ('-', (42, 43)),
+///          ('tokenizer', (43, 52)),
+///          ('.', (52, 53))]
+///         ```
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Whitespace")]
 pub struct PyWhitespace {}
 #[pymethods]
@@ -628,8 +660,7 @@ pub(crate) fn from_string(string: String) -> Result<PrependScheme, PyErr> {
         "always" => PrependScheme::Always,
         _ => {
             return Err(exceptions::PyValueError::new_err(format!(
-                "{} is an unknown variant, should be one of ['first', 'never', 'always']",
-                string
+                "{string} is an unknown variant, should be one of ['first', 'never', 'always']"
             )));
         }
     };
@@ -732,6 +763,36 @@ impl PyDigits {
     #[pyo3(signature = (individual_digits = false), text_signature = "(self, individual_digits=False)")]
     fn new(individual_digits: bool) -> (Self, PyPreTokenizer) {
         (PyDigits {}, Digits::new(individual_digits).into())
+    }
+}
+
+/// This pre-tokenizer splits the text into fixed length chunks as used
+/// [here](https://www.biorxiv.org/content/10.1101/2023.01.11.523679v1.full)
+///
+/// Args:
+///     length (:obj:`int`, `optional`, defaults to :obj:`5`):
+///         The length of the chunks to split the text into.
+///
+///         Strings are split on the character level rather than the byte level to avoid
+///         splitting unicode characters consisting of multiple bytes.
+#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "FixedLength")]
+pub struct PyFixedLength {}
+#[pymethods]
+impl PyFixedLength {
+    #[getter]
+    fn get_length(self_: PyRef<Self>) -> usize {
+        getter!(self_, FixedLength, length)
+    }
+
+    #[setter]
+    fn set_length(self_: PyRef<Self>, length: usize) {
+        setter!(self_, FixedLength, length, length);
+    }
+
+    #[new]
+    #[pyo3(signature = (length = 5), text_signature = "(self, length=5)")]
+    fn new(length: usize) -> (Self, PyPreTokenizer) {
+        (PyFixedLength {}, FixedLength::new(length).into())
     }
 }
 
@@ -926,6 +987,7 @@ pub fn pre_tokenizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySequence>()?;
     m.add_class::<PyDigits>()?;
     m.add_class::<PyUnicodeScripts>()?;
+    m.add_class::<PyFixedLength>()?;
     Ok(())
 }
 

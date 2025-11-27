@@ -1,11 +1,12 @@
 use std::time::{Duration, Instant};
 
-use criterion::black_box;
+use std::hint::black_box;
 
 use tokenizers::{
     Decoder, EncodeInput, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerImpl, Trainer,
 };
 
+#[allow(dead_code)]
 pub fn iter_bench_encode<M, N, PT, PP, D>(
     iters: u64,
     tokenizer: &TokenizerImpl<M, N, PT, PP, D>,
@@ -19,19 +20,18 @@ where
     D: Decoder,
 {
     let mut duration = Duration::new(0, 0);
-    let mut line_index: usize = 0;
     for _i in 0..iters {
-        if line_index >= lines.len() {
-            line_index = 0;
+        for line in lines {
+            let input = line.clone();
+            let start = Instant::now();
+            let _ = black_box(tokenizer.encode(input, false));
+            duration = duration.checked_add(start.elapsed()).unwrap();
         }
-        let input = lines[line_index].clone();
-        let start = Instant::now();
-        let _ = black_box(tokenizer.encode(input, false));
-        duration = duration.checked_add(start.elapsed()).unwrap();
     }
     duration
 }
 
+#[allow(dead_code)]
 pub fn iter_bench_encode_batch<M, N, PT, PP, D>(
     iters: u64,
     tokenizer: &TokenizerImpl<M, N, PT, PP, D>,
@@ -45,19 +45,18 @@ where
     D: Decoder + Send + Sync,
 {
     let mut duration = Duration::new(0, 0);
-    let mut batch_index: usize = 0;
     for _i in 0..iters {
-        if batch_index >= batches.len() {
-            batch_index = 0;
+        for batch in batches {
+            let batch = batch.clone();
+            let start = Instant::now();
+            let _ = black_box(tokenizer.encode_batch(batch, false));
+            duration = duration.checked_add(start.elapsed()).unwrap();
         }
-        let batch = batches[batch_index].clone();
-        let start = Instant::now();
-        let _ = black_box(tokenizer.encode_batch(batch, false));
-        duration = duration.checked_add(start.elapsed()).unwrap();
     }
     duration
 }
 
+#[allow(dead_code)]
 pub fn iter_bench_train<T, M, N, PT, PP, D>(
     iters: u64,
     tokenizer: &mut TokenizerImpl<M, N, PT, PP, D>,

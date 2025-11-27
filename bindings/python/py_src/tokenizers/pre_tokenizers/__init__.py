@@ -6,6 +6,7 @@ BertPreTokenizer = pre_tokenizers.BertPreTokenizer
 ByteLevel = pre_tokenizers.ByteLevel
 CharDelimiterSplit = pre_tokenizers.CharDelimiterSplit
 Digits = pre_tokenizers.Digits
+FixedLength = pre_tokenizers.FixedLength
 Metaspace = pre_tokenizers.Metaspace
 Punctuation = pre_tokenizers.Punctuation
 Sequence = pre_tokenizers.Sequence

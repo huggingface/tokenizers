@@ -45,6 +45,20 @@ class BpeTrainer(Trainer):
             highly repetitive tokens like `======` for wikipedia
 
     """
+    def __init__(
+        self,
+        vocab_size=30000,
+        min_frequency=0,
+        show_progress=True,
+        special_tokens=[],
+        limit_alphabet=None,
+        initial_alphabet=[],
+        continuing_subword_prefix=None,
+        end_of_word_suffix=None,
+        max_token_length=None,
+        words={},
+    ):
+        pass
 
 class UnigramTrainer(Trainer):
     """
@@ -85,6 +99,7 @@ class UnigramTrainer(Trainer):
         vocab_size=8000,
         show_progress=True,
         special_tokens=[],
+        initial_alphabet=[],
         shrinking_factor=0.75,
         unk_token=None,
         max_piece_length=16,
@@ -109,6 +124,8 @@ class WordLevelTrainer(Trainer):
         special_tokens (:obj:`List[Union[str, AddedToken]]`):
             A list of special tokens the model should know of.
     """
+    def __init__(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[]):
+        pass
 
 class WordPieceTrainer(Trainer):
     """

@@ -29,7 +29,7 @@ impl Decoder {
       .read()
       .unwrap()
       .decode(tokens)
-      .map_err(|e| Error::from_reason(format!("{}", e)))
+      .map_err(|e| Error::from_reason(format!("{e}")))
   }
 }
 

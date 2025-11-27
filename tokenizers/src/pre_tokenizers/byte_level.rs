@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use ahash::{AHashMap, AHashSet};
 use std::sync::LazyLock;
 
 use crate::utils::SysRegex;
@@ -12,7 +12,7 @@ use crate::utils::macro_rules_attribute;
 
 /// Converts bytes to unicode characters.
 /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L9
-pub(crate) fn bytes_char() -> HashMap<u8, char> {
+pub(crate) fn bytes_char() -> AHashMap<u8, char> {
     let mut bs: Vec<u8> = vec![];
     bs.extend(b'!'..=b'~');
     bs.extend(b'\xA1'..=b'\xAC');
@@ -44,8 +44,8 @@ static RE: LazyLock<SysRegex> = LazyLock::new(|| {
     SysRegex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
         .unwrap()
 });
-static BYTES_CHAR: LazyLock<HashMap<u8, char>> = LazyLock::new(bytes_char);
-static CHAR_BYTES: LazyLock<HashMap<char, u8>> =
+static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
+static CHAR_BYTES: LazyLock<AHashMap<char, u8>> =
     LazyLock::new(|| bytes_char().into_iter().map(|(c, b)| (b, c)).collect());
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -90,7 +90,7 @@ impl ByteLevel {
         }
     }
 
-    pub fn alphabet() -> HashSet<char> {
+    pub fn alphabet() -> AHashSet<char> {
         BYTES_CHAR.values().copied().collect()
     }
 
@@ -132,13 +132,10 @@ impl PreTokenizer for ByteLevel {
         pretokenized.normalize(|normalized| {
             let s = normalized.get();
             let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());
-            let mut i = 0;
-            for cur_char in s.chars() {
+            for (i, cur_char) in s.char_indices() {
                 let size = cur_char.len_utf8();
-                let bytes = &s.as_bytes()[i..i + size];
-                i += size;
                 transformations.extend(
-                    bytes
+                    s.as_bytes()[i..i + size]
                         .iter()
                         .enumerate()
                         .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
@@ -450,7 +447,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::new(),
+            AHashMap::new(),
         );
         process_offsets(&mut encoding, true);
         assert_eq!(
@@ -464,7 +461,7 @@ mod tests {
                 vec![],
                 vec![],
                 vec![],
-                HashMap::new(),
+                AHashMap::new(),
             )
         );
     }
@@ -486,7 +483,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::new(),
+            AHashMap::new(),
         );
         let expected = Encoding::new(
             vec![0; 5],
@@ -503,7 +500,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::from_iter(vec![(0, 0..5)]),
+            AHashMap::from_iter(vec![(0, 0..5)]),
         );
 
         let bytelevel = ByteLevel::default().trim_offsets(true);
@@ -543,7 +540,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            HashMap::from_iter(vec![(0, 0..5), (1, 5..10)]),
+            AHashMap::from_iter(vec![(0, 0..5), (1, 5..10)]),
         );
         assert_eq!(
             pair_expected,

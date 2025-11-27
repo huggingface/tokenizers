@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::iter::FromIterator;
 
+use ahash::AHashMap;
 use tokenizers::decoders::byte_fallback::ByteFallback;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::normalizers::{Sequence, Strip, NFC};
@@ -91,7 +91,7 @@ fn streaming_tokenizer() {
     );
 
     // None example
-    let vocab = HashMap::from_iter([
+    let vocab = AHashMap::from_iter([
         ("<0x20>".to_string(), 0),
         ("<0xC3>".to_string(), 1),
         ("<0xA9>".to_string(), 2),

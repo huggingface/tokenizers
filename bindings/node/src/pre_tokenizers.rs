@@ -80,7 +80,7 @@ impl PreTokenizer {
 
     self
       .pre_tokenize(&mut pretokenized)
-      .map_err(|e| Error::from_reason(format!("{}", e)))?;
+      .map_err(|e| Error::from_reason(format!("{e}")))?;
 
     pretokenized
       .get_splits(tk::OffsetReferential::Original, tk::OffsetType::Char)

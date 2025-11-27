@@ -57,7 +57,7 @@ pub fn from_pretrained<S: AsRef<str>>(
         .into());
     }
 
-    let mut builder = ApiBuilder::new();
+    let mut builder = ApiBuilder::from_env();
     if let Some(token) = params.token {
         builder = builder.with_token(Some(token));
     }

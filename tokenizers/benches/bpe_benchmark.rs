@@ -3,11 +3,7 @@ extern crate criterion;
 
 mod common;
 
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::Path;
-
-use criterion::Criterion;
+use criterion::{Criterion, Throughput};
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::models::TrainerWrapper;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
@@ -36,8 +32,9 @@ fn bench_gpt2(c: &mut Criterion) {
     let tokenizer = create_gpt2_tokenizer(bpe);
     let mut lines: Vec<EncodeInput> = vec![];
     let mut batches: Vec<Vec<EncodeInput>> = vec![vec![]];
-    for line in BufReader::new(File::open(Path::new("data/big.txt")).unwrap()).lines() {
-        let line: EncodeInput = line.unwrap().into();
+    let data = std::fs::read_to_string("data/big.txt").unwrap();
+    for line in data.lines() {
+        let line: EncodeInput = line.into();
         lines.push(line.clone());
         if batches.last().unwrap().len() >= BATCH_SIZE {
             batches.push(vec![]);
@@ -45,11 +42,13 @@ fn bench_gpt2(c: &mut Criterion) {
         batches.last_mut().unwrap().push(line);
     }
 
-    c.bench_function("BPE GPT2 encode", |b| {
+    let mut group = c.benchmark_group("bpe-encode");
+    group.throughput(Throughput::Bytes(data.len() as u64));
+    group.bench_function("BPE GPT2 encode", |b| {
         b.iter_custom(|iters| iter_bench_encode(iters, tokenizer.deref(), &lines))
     });
 
-    c.bench_function("BPE GPT2 encode batch", |b| {
+    group.bench_function("BPE GPT2 encode batch", |b| {
         b.iter_custom(|iters| iter_bench_encode_batch(iters, tokenizer.deref(), &batches))
     });
 
@@ -59,23 +58,26 @@ fn bench_gpt2(c: &mut Criterion) {
         .unwrap();
     let tokenizer = create_gpt2_tokenizer(bpe);
 
-    c.bench_function("BPE GPT2 encode, no cache", |b| {
+    group.bench_function("BPE GPT2 encode, no cache", |b| {
         b.iter_custom(|iters| iter_bench_encode(iters, &tokenizer, &lines))
     });
 
-    c.bench_function("BPE GPT2 encode batch, no cache", |b| {
+    group.bench_function("BPE GPT2 encode batch, no cache", |b| {
         b.iter_custom(|iters| iter_bench_encode_batch(iters, &tokenizer, &batches))
     });
 }
 
-fn bench_train(c: &mut Criterion) {
+fn bench_train_small(c: &mut Criterion) {
     let mut trainer: TrainerWrapper = BpeTrainerBuilder::default()
         .show_progress(false)
         .build()
         .into();
     let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
+    let mut group = c.benchmark_group("bpe-train-small");
+    let data = std::fs::read_to_string("data/small.txt").unwrap();
+    group.throughput(Throughput::Bytes(data.len() as u64));
     tokenizer.with_pre_tokenizer(Some(Whitespace {}));
-    c.bench_function("BPE Train vocabulary (small)", |b| {
+    group.bench_function("BPE Train vocabulary (small)", |b| {
         b.iter_custom(|iters| {
             iter_bench_train(
                 iters,
@@ -85,10 +87,19 @@ fn bench_train(c: &mut Criterion) {
             )
         })
     });
+}
 
+fn bench_train_big(c: &mut Criterion) {
+    let mut trainer: TrainerWrapper = BpeTrainerBuilder::default()
+        .show_progress(false)
+        .build()
+        .into();
     let mut tokenizer = Tokenizer::new(BPE::default()).into_inner();
     tokenizer.with_pre_tokenizer(Some(Whitespace {}));
-    c.bench_function("BPE Train vocabulary (big)", |b| {
+    let mut group = c.benchmark_group("bpe-train-large");
+    let data = std::fs::read_to_string("data/big.txt").unwrap();
+    group.throughput(Throughput::Bytes(data.len() as u64));
+    group.bench_function("BPE Train vocabulary (big)", |b| {
         b.iter_custom(|iters| {
             iter_bench_train(
                 iters,
@@ -106,8 +117,13 @@ criterion_group! {
     targets = bench_gpt2
 }
 criterion_group! {
-    name = benches_train;
+    name = benches_train_small;
     config = Criterion::default().sample_size(10);
-    targets = bench_train
+    targets = bench_train_small
 }
-criterion_main!(benches, benches_train);
+criterion_group! {
+    name = benches_train_big;
+    config = Criterion::default().sample_size(10);
+    targets = bench_train_big
+}
+criterion_main!(benches, benches_train_small, benches_train_big);

@@ -3,9 +3,10 @@
 
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
+use ahash::AHashMap;
+use std::collections::HashMap;
 use std::{
     borrow::Cow,
-    collections::HashMap,
     fs::File,
     io::prelude::*,
     io::{BufRead, BufReader},
@@ -22,8 +23,8 @@ pub enum Error {
     MissingUnkToken,
 }
 
-type Vocab = HashMap<String, u32>;
-type VocabR = HashMap<u32, String>;
+type Vocab = AHashMap<String, u32>;
+type VocabR = AHashMap<u32, String>;
 
 struct Config {
     files: Option<String>,
@@ -43,7 +44,7 @@ impl Default for WordPieceBuilder {
         Self {
             config: Config {
                 files: None,
-                vocab: HashMap::new(),
+                vocab: AHashMap::new(),
                 unk_token: String::from("[UNK]"),
                 continuing_subword_prefix: String::from("##"),
                 max_input_chars_per_word: 100,
@@ -67,8 +68,8 @@ impl WordPieceBuilder {
 
     /// Set the vocab (token -> ID) mapping.
     #[must_use]
-    pub fn vocab(mut self, vocab: Vocab) -> Self {
-        self.config.vocab = vocab;
+    pub fn vocab<V: Into<AHashMap<String, u32>>>(mut self, vocab: V) -> Self {
+        self.config.vocab = vocab.into();
         self
     }
 
@@ -142,8 +143,8 @@ impl std::fmt::Debug for WordPiece {
 impl Default for WordPiece {
     fn default() -> Self {
         Self {
-            vocab: HashMap::new(),
-            vocab_r: HashMap::new(),
+            vocab: AHashMap::new(),
+            vocab_r: AHashMap::new(),
             unk_token: String::from("[UNK]"),
             continuing_subword_prefix: String::from("##"),
             max_input_chars_per_word: 100,
@@ -162,13 +163,30 @@ impl WordPiece {
         let file = File::open(vocab)?;
         let file = BufReader::new(file);
 
-        let mut vocab = HashMap::new();
+        let mut vocab = AHashMap::new();
         for (index, line) in file.lines().enumerate() {
             let line = line?;
             vocab.insert(line.trim_end().to_owned(), index as u32);
         }
 
         Ok(vocab)
+    }
+
+    pub fn read_bytes(vocab: &[u8]) -> Result<Vocab> {
+        let file = BufReader::new(vocab);
+
+        let mut vocab = AHashMap::new();
+        for (index, line) in file.lines().enumerate() {
+            let line = line?;
+            vocab.insert(line.trim_end().to_owned(), index as u32);
+        }
+
+        Ok(vocab)
+    }
+
+    pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<Self> {
+        let tokenizer = serde_json::from_slice(bytes.as_ref())?;
+        Ok(tokenizer)
     }
 
     /// Initialize a `WordPiece` model from a vocab mapping file.
@@ -178,7 +196,10 @@ impl WordPiece {
 
     /// Create a `WordPiece` model from a `BPE` model.
     pub fn from_bpe(bpe: &BPE) -> Self {
-        let mut wp = Self::builder().vocab(bpe.get_vocab()).build().unwrap();
+        let mut wp = Self::builder()
+            .vocab(bpe.get_vocab().into_iter().collect::<AHashMap<_, _>>())
+            .build()
+            .unwrap();
         if let Some(unk) = bpe.get_unk_token() {
             unk.clone_into(&mut wp.unk_token);
         }
@@ -193,7 +214,7 @@ impl Model for WordPiece {
     type Trainer = WordPieceTrainer;
 
     fn get_vocab(&self) -> HashMap<String, u32> {
-        self.vocab.clone()
+        self.vocab.clone().into_iter().collect()
     }
 
     fn get_vocab_size(&self) -> usize {

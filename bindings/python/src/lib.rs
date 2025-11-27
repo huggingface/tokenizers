@@ -5,6 +5,19 @@
 
 extern crate tokenizers as tk;
 
+use once_cell::sync::Lazy;
+use std::sync::Arc;
+use tokio::runtime::Runtime;
+
+// We create a global runtime that will be initialized once when first needed
+// This ensures we always have a runtime available for tokio::task::spawn_blocking
+static TOKIO_RUNTIME: Lazy<Arc<Runtime>> = Lazy::new(|| {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create global Tokio runtime");
+    Arc::new(rt)
+});
 mod decoders;
 mod encoding;
 mod error;
@@ -38,8 +51,7 @@ extern "C" fn child_after_fork() {
         eprintln!("To disable this warning, you can either:");
         eprintln!(
             "\t- Avoid using `tokenizers` before the fork if possible\n\
-            \t- Explicitly set the environment variable {}=(true | false)",
-            ENV_VARIABLE
+            \t- Explicitly set the environment variable {ENV_VARIABLE}=(true | false)"
         );
         set_parallelism(false);
     }

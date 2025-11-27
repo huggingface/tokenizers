@@ -258,6 +258,58 @@ class Digits(PreTokenizer):
         """
         pass
 
+class FixedLength(PreTokenizer):
+    """
+    This pre-tokenizer splits the text into fixed length chunks as used
+    [here](https://www.biorxiv.org/content/10.1101/2023.01.11.523679v1.full)
+
+    Args:
+        length (:obj:`int`, `optional`, defaults to :obj:`5`):
+            The length of the chunks to split the text into.
+
+            Strings are split on the character level rather than the byte level to avoid
+            splitting unicode characters consisting of multiple bytes.
+    """
+    def __init__(self, length=5):
+        pass
+
+    def pre_tokenize(self, pretok):
+        """
+        Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
+
+        This method allows to modify a :class:`~tokenizers.PreTokenizedString` to
+        keep track of the pre-tokenization, and leverage the capabilities of the
+        :class:`~tokenizers.PreTokenizedString`. If you just want to see the result of
+        the pre-tokenization of a raw string, you can use
+        :meth:`~tokenizers.pre_tokenizers.PreTokenizer.pre_tokenize_str`
+
+        Args:
+            pretok (:class:`~tokenizers.PreTokenizedString):
+                The pre-tokenized string on which to apply this
+                :class:`~tokenizers.pre_tokenizers.PreTokenizer`
+        """
+        pass
+
+    def pre_tokenize_str(self, sequence):
+        """
+        Pre tokenize the given string
+
+        This method provides a way to visualize the effect of a
+        :class:`~tokenizers.pre_tokenizers.PreTokenizer` but it does not keep track of the
+        alignment, nor does it provide all the capabilities of the
+        :class:`~tokenizers.PreTokenizedString`. If you need some of these, you can use
+        :meth:`~tokenizers.pre_tokenizers.PreTokenizer.pre_tokenize`
+
+        Args:
+            sequence (:obj:`str`):
+                A string to pre-tokeize
+
+        Returns:
+            :obj:`List[Tuple[str, Offsets]]`:
+                A list of tuple with the pre-tokenized parts and their offsets
+        """
+        pass
+
 class Metaspace(PreTokenizer):
     """
     Metaspace pre-tokenizer
@@ -523,7 +575,34 @@ class UnicodeScripts(PreTokenizer):
 
 class Whitespace(PreTokenizer):
     """
-    This pre-tokenizer simply splits using the following regex: `\w+|[^\w\s]+`
+    This pre-tokenizer splits on word boundaries according to the `\w+|[^\w\s]+`
+    regex pattern. It splits on word characters or characters that aren't words or
+    whitespaces (punctuation such as hyphens, apostrophes, commas, etc.).
+
+    Example:
+        Use the `Whitespace` function as shown below::
+
+            ```python
+            from tokenizers.pre_tokenizers import Whitespace
+
+            pre_tokenizer = Whitespace()
+            text = "Hello, world! Let's try the Whitespace pre-tokenizer."
+            pre_tokenizer.pre_tokenize_str(text)
+            [('Hello', (0, 5)),
+             (',', (5, 6)),
+             ('world', (7, 12)),
+             ('!', (12, 13)),
+             ('Let', (14, 17)),
+             ("'", (17, 18)),
+             ('s', (18, 19)),
+             ('try', (20, 23)),
+             ('the', (24, 27)),
+             ('Whitespace', (28, 38)),
+             ('pre', (39, 42)),
+             ('-', (42, 43)),
+             ('tokenizer', (43, 52)),
+             ('.', (52, 53))]
+            ```
     """
     def __init__(self):
         pass
