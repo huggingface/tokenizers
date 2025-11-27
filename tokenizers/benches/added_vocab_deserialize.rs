@@ -2,7 +2,7 @@
 extern crate criterion;
 use criterion::Criterion;
 use std::hint::black_box;
-use std::{process::exit, str::FromStr};
+use std::str::FromStr;
 use tokenizers::{normalizers::*, AddedToken, Normalizer, Tokenizer};
 
 fn serialized_tokenizer<N: Normalizer + Into<NormalizerWrapper>>(
@@ -24,10 +24,11 @@ fn serialized_tokenizer<N: Normalizer + Into<NormalizerWrapper>>(
     serde_json::to_string(&tokenizer).unwrap()
 }
 
+#[allow(clippy::type_complexity)]
 fn bench_deserialize(c: &mut Criterion) {
     let normalizers: Vec<(&str, Option<fn() -> NormalizerWrapper>)> = vec![
         ("none", None),
-        ("byte_level", Some(|| ByteLevel::default().into())),
+        ("byte_level", Some(|| ByteLevel.into())),
         ("lowercase", Some(|| Lowercase.into())),
         ("nfc", Some(|| NFC.into())),
         ("nfd", Some(|| NFD.into())),
@@ -74,7 +75,6 @@ fn bench_deserialize(c: &mut Criterion) {
                 })
             });
         }
-        exit(0);
     }
 }
 
