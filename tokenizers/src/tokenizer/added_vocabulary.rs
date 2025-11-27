@@ -323,7 +323,7 @@ impl AddedVocabulary {
     }
 
     /// Reconstruct our internal RegexSet when new tokens are added to the vocabulary.
-    ///
+    /// # TODO @ArthurZucker we should probably make this async? rebuilding the regex takes a long time.
     /// We keep two different RegexSet, one that will take care of matching against the
     /// non-normalized string, and one matching against the normalized one.
     fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer: Option<&N>) {

@@ -6,7 +6,7 @@ use std::{process::exit, str::FromStr};
 use tokenizers::{normalizers::*, AddedToken, Normalizer, Tokenizer};
 
 fn serialized_tokenizer<N: Normalizer + Into<NormalizerWrapper>>(
-    size: usize,
+    size: i64,
     normalizer: Option<N>,
     special_tokens: bool,
 ) -> String {
@@ -40,7 +40,7 @@ fn bench_deserialize(c: &mut Criterion) {
         ("bert", Some(|| BertNormalizer::default().into())),
     ];
 
-    for &size in &[10_000usize, 100_000, 400_000] {
+    for &size in &[100_000, 400_000] {
         for (norm_name, maybe_factory) in &normalizers {
             let label = format!(
                 "special tokens deserialize_added_vocab_{}_norm_{}",
@@ -78,5 +78,9 @@ fn bench_deserialize(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, bench_deserialize);
+criterion_group!{
+    name = benches;
+    config = Criterion::default().significance_level(0.1).sample_size(10);
+    targets = bench_deserialize
+}
 criterion_main!(benches);
