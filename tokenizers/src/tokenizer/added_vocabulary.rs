@@ -348,22 +348,22 @@ impl AddedVocabulary {
             .expect("Failed to build tried when refreshing tokens");
         self.split_trie = (trie, ids);
 
-            let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
-            let patterns: Vec<_> = ntokens
-                .iter()
-                .map(|token| {
-                    let mut content = NormalizedString::from(token.content.as_ref());
+        let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
+        let patterns: Vec<_> = ntokens
+            .iter()
+            .map(|token| {
+                let mut content = NormalizedString::from(token.content.as_ref());
                 if let Some(n) = normalizer {
                     n.normalize(&mut content).unwrap();
                 }
-                    content
-                })
-                .collect();
-            let normalized_trie = AhoCorasickBuilder::new()
-                .match_kind(MatchKind::LeftmostLongest)
-                .build(patterns.iter().map(|content| content.get()))
-                .expect("Failed to build tried when refreshing tokens (normalized)");
-            self.split_normalized_trie = (normalized_trie, nids);
+                content
+            })
+            .collect();
+        let normalized_trie = AhoCorasickBuilder::new()
+            .match_kind(MatchKind::LeftmostLongest)
+            .build(patterns.iter().map(|content| content.get()))
+            .expect("Failed to build tried when refreshing tokens (normalized)");
+        self.split_normalized_trie = (normalized_trie, nids);
     }
 
     /// Find any AddedToken in the given sentence, using the provided MatchingSet.
