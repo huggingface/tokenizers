@@ -328,7 +328,7 @@ class Unigram(Model):
         vocab (:obj:`List[Tuple[str, float]]`, `optional`, `optional`):
             A list of vocabulary items and their relative score [("am", -0.2442),...]
     """
-    def __init__(self, vocab, unk_id, byte_fallback):
+    def __init__(self, vocab=None, unk_id=None, byte_fallback=None):
         pass
 
     def get_trainer(self):

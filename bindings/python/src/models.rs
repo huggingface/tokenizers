@@ -877,7 +877,7 @@ pub struct PyUnigram {}
 #[pymethods]
 impl PyUnigram {
     #[new]
-    #[pyo3(signature = (vocab=None, unk_id=None, byte_fallback=None), text_signature = "(self, vocab, unk_id, byte_fallback)")]
+    #[pyo3(signature = (vocab=None, unk_id=None, byte_fallback=None), text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None)")]
     fn new(
         vocab: Option<Vec<(String, f64)>>,
         unk_id: Option<usize>,
