@@ -2,19 +2,21 @@ use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
+use ahash::AHashMap;
 use serde_json::Value;
 use std::borrow::Cow;
+
+use std::collections::HashMap;
 use std::{
-    collections::HashMap,
     fs::File,
     io::prelude::*,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
 
-pub type Vocab = HashMap<String, u32>;
-type VocabR = HashMap<u32, String>;
-pub type MergeMap = HashMap<Pair, (u32, u32)>;
+pub type Vocab = AHashMap<String, u32>;
+type VocabR = AHashMap<u32, String>;
+pub type MergeMap = AHashMap<Pair, (u32, u32)>;
 pub type Merges = Vec<(String, String)>;
 
 struct Config {
@@ -41,7 +43,7 @@ impl Default for BpeBuilder {
         Self {
             config: Config {
                 files: None,
-                vocab: HashMap::new(),
+                vocab: AHashMap::new(),
                 merges: vec![],
                 cache_capacity: DEFAULT_CACHE_CAPACITY,
                 dropout: None,
@@ -71,8 +73,12 @@ impl BpeBuilder {
 
     /// Set the vocab (token -> ID) and merges mappings.
     #[must_use]
-    pub fn vocab_and_merges(mut self, vocab: Vocab, merges: Merges) -> Self {
-        self.config.vocab = vocab;
+    pub fn vocab_and_merges<V: Into<AHashMap<String, u32>>>(
+        mut self,
+        vocab: V,
+        merges: Merges,
+    ) -> Self {
+        self.config.vocab = vocab.into();
         self.config.merges = merges;
         self
     }
@@ -324,7 +330,7 @@ impl BPE {
         let mut buffer = String::new();
         vocab_file.read_to_string(&mut buffer)?;
         let json: Value = serde_json::from_str(&buffer)?;
-        let mut vocab = HashMap::new();
+        let mut vocab = AHashMap::new();
         match json {
             Value::Object(m) => {
                 for (token, id) in m {
@@ -361,8 +367,8 @@ impl BPE {
         }
     }
 
-    pub fn get_vocab(&self) -> Vocab {
-        self.vocab.clone()
+    pub fn get_vocab(&self) -> HashMap<String, u32> {
+        self.vocab.clone().into_iter().collect()
     }
 
     pub fn get_unk_token(&self) -> &Option<String> {
@@ -460,7 +466,7 @@ impl BPE {
         Ok(word)
     }
 
-    fn word_to_tokens<'a, 'b: 'a>(&'a self, word: &'b Word) -> impl Iterator<Item = Token> + 'a {
+    fn word_to_tokens<'a>(&'a self, word: &'a Word) -> impl Iterator<Item = Token> + 'a {
         word.get_chars_iter()
             .zip(word.get_offsets_iter())
             .map(move |(id, offsets)| Token::new(id, self.vocab_r[&id].clone(), offsets))
@@ -471,7 +477,7 @@ impl BPE {
             if let Some(id) = self.vocab.get(sequence) {
                 return Ok(vec![Token::new(
                     *id,
-                    sequence.to_string().clone(),
+                    sequence.to_string(),
                     (0, sequence.len()),
                 )]);
             }
@@ -494,7 +500,7 @@ impl Model for BPE {
     type Trainer = BpeTrainer;
 
     fn get_vocab(&self) -> HashMap<String, u32> {
-        self.vocab.clone()
+        self.vocab.clone().into_iter().collect()
     }
 
     fn get_vocab_size(&self) -> usize {

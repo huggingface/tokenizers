@@ -113,8 +113,7 @@ impl PyPostProcessor {
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         let data = serde_json::to_string(&self.processor).map_err(|e| {
             exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle PostProcessor: {}",
-                e
+                "Error while attempting to pickle PostProcessor: {e}"
             ))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).into())
@@ -125,8 +124,7 @@ impl PyPostProcessor {
             Ok(s) => {
                 self.processor = serde_json::from_slice(s).map_err(|e| {
                     exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle PostProcessor: {}",
-                        e
+                        "Error while attempting to unpickle PostProcessor: {e}"
                     ))
                 })?;
                 Ok(())
@@ -343,7 +341,7 @@ impl PyBertProcessing {
     }
 
     #[getter]
-    fn get_sep(self_: PyRef<Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
+    fn get_sep(self_: PyRef<'_, Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
         let py = self_.py();
         let (tok, id) = getter!(self_, Bert, get_sep_copy());
         PyTuple::new(
@@ -360,7 +358,7 @@ impl PyBertProcessing {
     }
 
     #[getter]
-    fn get_cls(self_: PyRef<Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
+    fn get_cls(self_: PyRef<'_, Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
         let py = self_.py();
         let (tok, id) = getter!(self_, Bert, get_cls_copy());
         PyTuple::new(
@@ -424,7 +422,7 @@ impl PyRobertaProcessing {
     }
 
     #[getter]
-    fn get_sep(self_: PyRef<Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
+    fn get_sep(self_: PyRef<'_, Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
         let py = self_.py();
         let (tok, id) = getter!(self_, Roberta, get_sep_copy());
         PyTuple::new(
@@ -441,7 +439,7 @@ impl PyRobertaProcessing {
     }
 
     #[getter]
-    fn get_cls(self_: PyRef<Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
+    fn get_cls(self_: PyRef<'_, Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
         let py = self_.py();
         let (tok, id) = getter!(self_, Roberta, get_cls_copy());
         PyTuple::new(

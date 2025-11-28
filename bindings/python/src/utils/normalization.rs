@@ -70,8 +70,7 @@ impl PyRange<'_> {
                     let i = -i as usize;
                     if i > max_len {
                         Err(exceptions::PyValueError::new_err(format!(
-                            "{} is bigger than max len",
-                            i
+                            "{i} is bigger than max len"
                         )))
                     } else {
                         Ok(max_len - i..max_len - i + 1)

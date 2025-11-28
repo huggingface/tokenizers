@@ -1,5 +1,6 @@
 use super::OrderedVocabIter;
 use crate::tokenizer::{Model, Result, Token};
+use ahash::AHashMap;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
@@ -12,7 +13,7 @@ mod trainer;
 // Re-export
 pub use trainer::*;
 
-type Vocab = HashMap<String, u32>;
+type Vocab = AHashMap<String, u32>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -24,7 +25,7 @@ pub enum Error {
 
 struct Config {
     files: Option<String>,
-    vocab: HashMap<String, u32>,
+    vocab: AHashMap<String, u32>,
     unk_token: String,
 }
 
@@ -39,7 +40,7 @@ impl Default for WordLevelBuilder {
         Self {
             config: Config {
                 files: None,
-                vocab: HashMap::new(),
+                vocab: AHashMap::new(),
                 unk_token: String::from("<unk>"),
             },
         }
@@ -61,7 +62,7 @@ impl WordLevelBuilder {
 
     /// Set the vocab (token -> ID) mapping.
     #[must_use]
-    pub fn vocab(mut self, vocab: HashMap<String, u32>) -> Self {
+    pub fn vocab(mut self, vocab: AHashMap<String, u32>) -> Self {
         self.config.vocab = vocab;
         self
     }
@@ -96,8 +97,8 @@ impl WordLevelBuilder {
 
 #[derive(PartialEq, Clone, Eq)]
 pub struct WordLevel {
-    vocab: HashMap<String, u32>,
-    vocab_r: HashMap<u32, String>,
+    vocab: AHashMap<String, u32>,
+    vocab_r: AHashMap<u32, String>,
     pub unk_token: String,
 }
 
@@ -119,7 +120,7 @@ impl WordLevel {
         let vocab_file = File::open(vocab_path)?;
         let mut vocab_file = BufReader::new(vocab_file);
         let mut buffer = String::new();
-        let mut vocab = HashMap::new();
+        let mut vocab = AHashMap::new();
 
         vocab_file.read_to_string(&mut buffer)?;
         let json: Value = serde_json::from_str(&buffer)?;
@@ -148,8 +149,8 @@ impl WordLevel {
 impl Default for WordLevel {
     fn default() -> Self {
         Self {
-            vocab: HashMap::new(),
-            vocab_r: HashMap::new(),
+            vocab: AHashMap::new(),
+            vocab_r: AHashMap::new(),
             unk_token: String::from("<unk>"),
         }
     }
@@ -185,7 +186,7 @@ impl Model for WordLevel {
     }
 
     fn get_vocab(&self) -> HashMap<String, u32> {
-        self.vocab.clone()
+        self.vocab.clone().into_iter().collect()
     }
 
     fn get_vocab_size(&self) -> usize {
