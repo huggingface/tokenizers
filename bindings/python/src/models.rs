@@ -491,7 +491,7 @@ impl PyBPE {
     ///     A :obj:`Tuple` with the vocab and the merges:
     ///         The vocabulary and merges loaded into memory
     #[staticmethod]
-    #[pyo3(text_signature = "(self, vocab, merges)")]
+    #[pyo3(text_signature = "(vocab, merges)")]
     fn read_file(vocab: &str, merges: &str) -> PyResult<(HashMap<String, u32>, Merges)> {
         let (vocab, merges) = BPE::read_file(vocab, merges).map_err(|e| {
             exceptions::PyException::new_err(format!(
@@ -524,7 +524,7 @@ impl PyBPE {
     ///     :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
     #[classmethod]
     #[pyo3(signature = (vocab, merges, **kwargs))]
-    #[pyo3(text_signature = "(cls, vocab, merge, **kwargs)")]
+    #[pyo3(text_signature = "(vocab, merges, **kwargs)")]
     fn from_file(
         _cls: &Bound<'_, PyType>,
         py: Python,
@@ -656,7 +656,10 @@ impl PyWordPiece {
     }
 
     #[new]
-    #[pyo3(signature = (vocab=None, **kwargs), text_signature = "(self, vocab, unk_token, max_input_chars_per_word)")]
+    #[pyo3(
+        signature = (vocab=None, **kwargs),
+        text_signature = "(self, vocab=None, unk_token='[UNK]', max_input_chars_per_word=100, continuing_subword_prefix='##')"
+    )]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
@@ -769,7 +772,10 @@ impl PyWordLevel {
     }
 
     #[new]
-    #[pyo3(signature = (vocab=None, unk_token = None), text_signature = "(self, vocab, unk_token)")]
+    #[pyo3(
+        signature = (vocab=None, unk_token = None),
+        text_signature = "(self, vocab=None, unk_token=None)"
+    )]
     fn new(
         py: Python<'_>,
         vocab: Option<PyVocab>,
@@ -848,7 +854,7 @@ impl PyWordLevel {
     ///     :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
     #[classmethod]
     #[pyo3(signature = (vocab, unk_token = None))]
-    #[pyo3(text_signature = "(vocab, unk_token)")]
+    #[pyo3(text_signature = "(vocab, unk_token=None)")]
     fn from_file(
         _cls: &Bound<'_, PyType>,
         py: Python,

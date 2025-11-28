@@ -141,6 +141,7 @@ impl Normalizer for PyNormalizer {
 #[pymethods]
 impl PyNormalizer {
     #[staticmethod]
+    #[pyo3(text_signature = "(normalizer)")]
     fn custom(obj: PyObject) -> Self {
         Self {
             normalizer: PyNormalizerWrapper::Custom(CustomNormalizer::new(obj)).into(),

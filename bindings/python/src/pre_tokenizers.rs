@@ -141,6 +141,7 @@ impl PreTokenizer for PyPreTokenizer {
 #[pymethods]
 impl PyPreTokenizer {
     #[staticmethod]
+    #[pyo3(text_signature = "(pretok)")]
     fn custom(pretok: PyObject) -> Self {
         PyPreTokenizer {
             pretok: PyPreTokenizerWrapper::Custom(CustomPreTokenizer::new(pretok)).into(),
@@ -313,9 +314,13 @@ impl PyByteLevel {
     }
 
     #[new]
-    #[pyo3(signature = (add_prefix_space = true, use_regex = true, **_kwargs), text_signature = "(self, add_prefix_space=True, use_regex=True)")]
+    #[pyo3(
+        signature = (add_prefix_space = true, trim_offsets = true, use_regex = true, **_kwargs),
+        text_signature = "(self, add_prefix_space=True, trim_offsets=True, use_regex=True)"
+    )]
     fn new(
         add_prefix_space: bool,
+        trim_offsets: bool,
         use_regex: bool,
         _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> (Self, PyPreTokenizer) {
@@ -323,6 +328,7 @@ impl PyByteLevel {
             PyByteLevel {},
             ByteLevel::default()
                 .add_prefix_space(add_prefix_space)
+                .trim_offsets(trim_offsets)
                 .use_regex(use_regex)
                 .into(),
         )

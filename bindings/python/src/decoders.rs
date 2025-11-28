@@ -99,6 +99,7 @@ impl Decoder for PyDecoder {
 #[pymethods]
 impl PyDecoder {
     #[staticmethod]
+    #[pyo3(text_signature = "(decoder)")]
     fn custom(decoder: PyObject) -> Self {
         let decoder = PyDecoderWrapper::Custom(Arc::new(RwLock::new(CustomDecoder::new(decoder))));
         PyDecoder::new(decoder)

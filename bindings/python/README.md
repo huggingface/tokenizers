@@ -168,3 +168,7 @@ tokenizer = Tokenizer.from_file("byte-level-bpe.tokenizer.json")
 
 encoded = tokenizer.encode("I can feel the magic, can you?")
 ```
+
+### Typing support and `stub.py`
+
+The compiled PyO3 extension does not expose type annotations, so editors and type checkers would otherwise see most objects as `Any`. The `stub.py` helper walks the loaded extension modules, renders `.pyi` stub files (plus minimal forwarding `__init__.py` shims), and formats them so that tools like mypy/pyright can understand the public API. Run `python stub.py` whenever you change the Python-visible surface to keep the generated stubs in sync.

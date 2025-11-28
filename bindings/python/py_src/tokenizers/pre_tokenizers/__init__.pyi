@@ -105,7 +105,7 @@ class ByteLevel(PreTokenizer):
             Set this to :obj:`False` to prevent this `pre_tokenizer` from using
             the GPT2 specific regexp for spliting on whitespace.
     """
-    def __init__(self, add_prefix_space=True, use_regex=True):
+    def __init__(self, add_prefix_space=True, trim_offsets=True, use_regex=True):
         pass
 
     @property

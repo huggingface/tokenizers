@@ -175,7 +175,7 @@ class BPE(Model):
         pass
 
     @staticmethod
-    def from_file(cls, vocab, merge, **kwargs):
+    def from_file(vocab, merges, **kwargs):
         """
         Instantiate a BPE model from the given files.
 
@@ -246,7 +246,7 @@ class BPE(Model):
         pass
 
     @staticmethod
-    def read_file(self, vocab, merges):
+    def read_file(vocab, merges):
         """
         Read a :obj:`vocab.json` and a :obj:`merges.txt` files
 
@@ -418,11 +418,11 @@ class WordLevel(Model):
         unk_token (:obj:`str`, `optional`):
             The unknown token to be used by the model.
     """
-    def __init__(self, vocab, unk_token):
+    def __init__(self, vocab=None, unk_token=None):
         pass
 
     @staticmethod
-    def from_file(vocab, unk_token):
+    def from_file(vocab, unk_token=None):
         """
         Instantiate a WordLevel model from the given file
 
@@ -557,7 +557,7 @@ class WordPiece(Model):
         max_input_chars_per_word (:obj:`int`, `optional`):
             The maximum number of characters to authorize in a single word.
     """
-    def __init__(self, vocab, unk_token, max_input_chars_per_word):
+    def __init__(self, vocab=None, unk_token="[UNK]", max_input_chars_per_word=100, continuing_subword_prefix="##"):
         pass
 
     @property
