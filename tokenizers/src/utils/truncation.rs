@@ -49,17 +49,12 @@ pub enum TruncationError {
     SequenceTooShort,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, Default)]
 pub enum TruncationStrategy {
+    #[default]
     LongestFirst,
     OnlyFirst,
     OnlySecond,
-}
-
-impl Default for TruncationStrategy {
-    fn default() -> Self {
-        Self::LongestFirst
-    }
 }
 
 impl std::convert::AsRef<str> for TruncationStrategy {

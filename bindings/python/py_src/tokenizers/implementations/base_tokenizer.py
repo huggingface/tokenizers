@@ -187,7 +187,7 @@ class BaseTokenizer:
         Returns:
             The normalized string
         """
-        return self._tokenizer.normalize(sequence)
+        return self._tokenizer.normalizer.normalize_str(sequence)
 
     def encode(
         self,
