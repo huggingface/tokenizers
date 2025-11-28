@@ -1,3 +1,4 @@
+pub mod append;
 pub mod bert;
 pub mod byte_level;
 pub mod precompiled;
@@ -6,6 +7,7 @@ pub mod replace;
 pub mod strip;
 pub mod unicode;
 pub mod utils;
+pub use crate::normalizers::append::Append;
 pub use crate::normalizers::bert::BertNormalizer;
 pub use crate::normalizers::byte_level::ByteLevel;
 pub use crate::normalizers::precompiled::Precompiled;
@@ -34,6 +36,7 @@ pub enum NormalizerWrapper {
     Nmt(Nmt),
     Precompiled(Precompiled),
     Replace(Replace),
+    Append(Append),
     Prepend(Prepend),
     ByteLevel(ByteLevel),
 }
@@ -64,6 +67,7 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
             Nmt,
             Precompiled,
             Replace,
+            Append,
             Prepend,
             ByteLevel,
         }
@@ -90,6 +94,7 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
             Nmt(Nmt),
             Precompiled(Precompiled),
             Replace(Replace),
+            Append(Append),
             Prepend(Prepend),
             ByteLevel(ByteLevel),
         }
@@ -145,6 +150,9 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                     EnumType::Replace => NormalizerWrapper::Replace(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
+                    EnumType::Append => NormalizerWrapper::Append(
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                    ),
                     EnumType::Prepend => NormalizerWrapper::Prepend(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
@@ -173,6 +181,7 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                     NormalizerUntagged::Nmt(bpe) => NormalizerWrapper::Nmt(bpe),
                     NormalizerUntagged::Precompiled(bpe) => NormalizerWrapper::Precompiled(bpe),
                     NormalizerUntagged::Replace(bpe) => NormalizerWrapper::Replace(bpe),
+                    NormalizerUntagged::Append(bpe) => NormalizerWrapper::Append(bpe),
                     NormalizerUntagged::Prepend(bpe) => NormalizerWrapper::Prepend(bpe),
                     NormalizerUntagged::ByteLevel(bpe) => NormalizerWrapper::ByteLevel(bpe),
                 }
@@ -196,6 +205,7 @@ impl Normalizer for NormalizerWrapper {
             Self::Nmt(lc) => lc.normalize(normalized),
             Self::Precompiled(lc) => lc.normalize(normalized),
             Self::Replace(lc) => lc.normalize(normalized),
+            Self::Append(lc) => lc.normalize(normalized),
             Self::Prepend(lc) => lc.normalize(normalized),
             Self::ByteLevel(lc) => lc.normalize(normalized),
         }
@@ -214,6 +224,7 @@ impl_enum_from!(Lowercase, NormalizerWrapper, Lowercase);
 impl_enum_from!(Nmt, NormalizerWrapper, Nmt);
 impl_enum_from!(Precompiled, NormalizerWrapper, Precompiled);
 impl_enum_from!(Replace, NormalizerWrapper, Replace);
+impl_enum_from!(Append, NormalizerWrapper, Append);
 impl_enum_from!(Prepend, NormalizerWrapper, Prepend);
 impl_enum_from!(ByteLevel, NormalizerWrapper, ByteLevel);
 
@@ -238,6 +249,13 @@ mod tests {
             ),
             _ => panic!("Expected an error here"),
         }
+
+        let json = r#"{"append":"a"}"#;
+        let reconstructed = serde_json::from_str::<NormalizerWrapper>(json);
+        assert!(matches!(
+            reconstructed.unwrap(),
+            NormalizerWrapper::Append(_)
+        ));
 
         let json = r#"{"prepend":"a"}"#;
         let reconstructed = serde_json::from_str::<NormalizerWrapper>(json);
