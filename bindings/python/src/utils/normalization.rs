@@ -205,9 +205,9 @@ pub struct PyNormalizedString {
 #[pymethods]
 impl PyNormalizedString {
     #[new]
-    #[pyo3(text_signature = None)]
-    fn new(s: &str) -> Self {
-        NormalizedString::from(s).into()
+    #[pyo3(signature = (sequence), text_signature = "(self, sequence)")]
+    fn new(sequence: &str) -> Self {
+        NormalizedString::from(sequence).into()
     }
 
     /// The normalized part of the string

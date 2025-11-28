@@ -197,6 +197,9 @@ class CharDelimiterSplit(PreTokenizer):
         delimiter: str:
             The delimiter char that will be used to split input
     """
+    def __init__(self, delimiter):
+        pass
+
     @property
     def delimiter(self):
         """ """

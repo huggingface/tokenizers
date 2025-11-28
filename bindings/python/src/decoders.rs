@@ -678,6 +678,19 @@ impl PyDecodeStream {
             prefix_index: 0,
         }
     }
+
+    /// Streaming decode step
+    ///
+    /// Args:
+    ///     tokenizer (:class:`~tokenizers.Tokenizer`):
+    ///        The tokenizer to use for decoding
+    ///    id (:obj:`int` or `List[int]`):
+    ///       The next token id or list of token ids to add to the stream
+    /// 
+    ///
+    /// Returns:
+    ///     :obj:`Optional[str]`: The next decoded string chunk, or None if not enough
+    ///         tokens have been provided yet.
     #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
     fn step(&mut self, tokenizer: &PyTokenizer, id: StreamInput) -> PyResult<Option<String>> {
         let id: Vec<u32> = match id {

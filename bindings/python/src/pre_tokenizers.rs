@@ -507,7 +507,7 @@ impl PyCharDelimiterSplit {
     }
 
     #[new]
-    #[pyo3(text_signature = None)]
+    #[pyo3(signature = (delimiter), text_signature = "(self, delimiter)")]
     pub fn new(delimiter: char) -> PyResult<(Self, PyPreTokenizer)> {
         Ok((
             PyCharDelimiterSplit {},

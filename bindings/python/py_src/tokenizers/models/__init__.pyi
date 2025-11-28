@@ -8,6 +8,9 @@ class Model:
 
     This class cannot be constructed directly. Please use one of the concrete models.
     """
+    def __init__(self):
+        pass
+
     def get_trainer(self):
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`

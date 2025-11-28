@@ -7,6 +7,23 @@ class DecodeStream:
     def __init__(self, ids=None, skip_special_tokens=False):
         pass
 
+    def step(self, tokenizer, id):
+        """
+        Streaming decode step
+
+        Args:
+            tokenizer (:class:`~tokenizers.Tokenizer`):
+               The tokenizer to use for decoding
+           id (:obj:`int` or `List[int]`):
+              The next token id or list of token ids to add to the stream
+
+
+        Returns:
+            :obj:`Optional[str]`: The next decoded string chunk, or None if not enough
+                tokens have been provided yet.
+        """
+        pass
+
 class Decoder:
     """
     Base class for all decoders

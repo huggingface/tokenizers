@@ -125,6 +125,9 @@ class Encoding:
     """
     The :class:`~tokenizers.Encoding` represents the output of a :class:`~tokenizers.Tokenizer`.
     """
+    def __init__(self):
+        pass
+
     @property
     def attention_mask(self):
         """
@@ -627,6 +630,9 @@ class NormalizedString:
         sequence: str:
             The string sequence used to initialize this NormalizedString
     """
+    def __init__(self, sequence):
+        pass
+
     def append(self, s):
         """
         Append the given sequence to the string
@@ -887,6 +893,9 @@ class Regex:
         pass
 
 class Token:
+    def __init__(self, id, value, offsets):
+        pass
+
     @property
     def id(self):
         """ """

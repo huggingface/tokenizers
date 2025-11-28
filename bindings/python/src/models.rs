@@ -102,7 +102,7 @@ where
 #[pymethods]
 impl PyModel {
     #[new]
-    #[pyo3(text_signature = None)]
+    #[pyo3(signature = (), text_signature = "(self)")]
     fn __new__() -> Self {
         // Instantiate a default empty model. This doesn't really make sense, but we need
         // to be able to instantiate an empty model for pickle capabilities.
