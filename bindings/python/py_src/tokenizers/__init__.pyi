@@ -725,6 +725,130 @@ class Tokenizer:
         """
         pass
 
+    def async_decode_batch(self, sequences, skip_special_tokens=True):
+        """
+        Decode a batch of ids back to their corresponding string
+
+        Args:
+            sequences (:obj:`List` of :obj:`List[int]`):
+                The batch of sequences we want to decode
+
+            skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether the special tokens should be removed from the decoded strings
+
+        Returns:
+            :obj:`List[str]`: A list of decoded strings
+        """
+        pass
+
+    def async_encode(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True):
+        """
+        Asynchronously encode the given input with character offsets.
+
+        This is an async version of encode that can be awaited in async Python code.
+
+        Example:
+            Here are some examples of the inputs that are accepted::
+
+                await async_encode("A single sequence")
+
+        Args:
+            sequence (:obj:`~tokenizers.InputSequence`):
+                The main input sequence we want to encode. This sequence can be either raw
+                text or pre-tokenized, according to the ``is_pretokenized`` argument:
+
+                - If ``is_pretokenized=False``: :class:`~tokenizers.TextInputSequence`
+                - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedInputSequence`
+
+            pair (:obj:`~tokenizers.InputSequence`, `optional`):
+                An optional input sequence. The expected format is the same that for ``sequence``.
+
+            is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+                Whether the input is already pre-tokenized
+
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add the special tokens
+
+        Returns:
+            :class:`~tokenizers.Encoding`: The encoded result
+
+        """
+        pass
+
+    def async_encode_batch(self, input, is_pretokenized=False, add_special_tokens=True):
+        """
+        Asynchronously encode the given batch of inputs with character offsets.
+
+        This is an async version of encode_batch that can be awaited in async Python code.
+
+        Example:
+            Here are some examples of the inputs that are accepted::
+
+                await async_encode_batch([
+                    "A single sequence",
+                    ("A tuple with a sequence", "And its pair"),
+                    [ "A", "pre", "tokenized", "sequence" ],
+                    ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
+                ])
+
+        Args:
+            input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
+                A list of single sequences or pair sequences to encode. Each sequence
+                can be either raw text or pre-tokenized, according to the ``is_pretokenized``
+                argument:
+
+                - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
+                - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
+
+            is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+                Whether the input is already pre-tokenized
+
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add the special tokens
+
+        Returns:
+            A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
+
+        """
+        pass
+
+    def async_encode_batch_fast(self, input, is_pretokenized=False, add_special_tokens=True):
+        """
+        Asynchronously encode the given batch of inputs without tracking character offsets.
+
+        This is an async version of encode_batch_fast that can be awaited in async Python code.
+
+        Example:
+            Here are some examples of the inputs that are accepted::
+
+                await async_encode_batch_fast([
+                    "A single sequence",
+                    ("A tuple with a sequence", "And its pair"),
+                    [ "A", "pre", "tokenized", "sequence" ],
+                    ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
+                ])
+
+        Args:
+            input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
+                A list of single sequences or pair sequences to encode. Each sequence
+                can be either raw text or pre-tokenized, according to the ``is_pretokenized``
+                argument:
+
+                - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
+                - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
+
+            is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+                Whether the input is already pre-tokenized
+
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add the special tokens
+
+        Returns:
+            A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
+
+        """
+        pass
+
     def decode(self, ids, skip_special_tokens=True):
         """
         Decode the given list of ids back to a string
