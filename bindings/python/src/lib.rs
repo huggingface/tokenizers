@@ -37,7 +37,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // For users using multiprocessing in python, it is quite easy to fork the process running
 // tokenizers, ending up with a deadlock because we internally make use of multithreading. So
-// we register a callback to be called in the event of a fork so that we can warn the user.
+// we register a callback to be called in the event of a fork to disable parallelism.
 #[cfg(target_family = "unix")]
 static mut REGISTERED_FORK_CALLBACK: bool = false;
 #[cfg(target_family = "unix")]
