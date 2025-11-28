@@ -19,6 +19,14 @@ def function(obj, indent, text_signature=None, owner=None):
     if text_signature is None:
         text_signature = getattr(obj, "__text_signature__", None)
 
+    if name in ("__getitem__", "__setitem__"):
+        # Always expose magic indexing methods, even if they lack a __text_signature__
+        # (PyO3 magic methods often do).
+        if name == "__getitem__":
+            text_signature = "(self, key)"
+        else:
+            text_signature = "(self, key, value)"
+
     # 2) Safely handle missing docstrings
     doc = obj.__doc__ or ""
 
@@ -92,7 +100,7 @@ def pyi_file(obj, indent="", owner=None):
         # Init
         if obj.__text_signature__:
             body += f"{indent}def __init__{obj.__text_signature__}:\n"
-            body += f"{indent+INDENT}pass\n"
+            body += f"{indent + INDENT}pass\n"
             body += "\n"
 
         for name, fn in fns:
@@ -141,11 +149,14 @@ from typing import List, Optional, Tuple
 
 
 def do_ruff(code, is_pyi: bool):
-    command = ["ruff", "format", "--config", "pyproject.toml", "--silent", "-"]
+    command = ["ruff", "format", "--config", "pyproject.toml"]
     if is_pyi:
         command.extend(["--stdin-filename", "test.pyi"])
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
-    stdout, _ = process.communicate(input=code.encode("utf-8"))
+    stdout, stderr = process.communicate(input=code.encode("utf-8"))
+    if stderr:
+        print(code)
+        print(f"Ruff error: {stderr.decode('utf-8')}")
     return stdout.decode("utf-8")
 
 
