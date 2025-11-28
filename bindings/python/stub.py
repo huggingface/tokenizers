@@ -13,17 +13,25 @@ def do_indent(text: str, indent: str):
 
 
 def function(obj, indent, text_signature=None, owner=None):
+    name = obj.__name__
+
+    # 1) Figure out a usable text_signature
     if text_signature is None:
-        text_signature = obj.__text_signature__
+        text_signature = getattr(obj, "__text_signature__", None)
+
+    # 2) Safely handle missing docstrings
+    doc = obj.__doc__ or ""
+
     string = ""
-    string += f"{indent}def {obj.__name__}{text_signature}:\n"
+    string += f"{indent}def {name}{text_signature}:\n"
     indent += INDENT
     string += f'{indent}"""\n'
-    string += f"{indent}{do_indent(obj.__doc__, indent)}\n"
+    if doc:
+        string += f"{indent}{do_indent(doc, indent)}\n"
     string += f'{indent}"""\n'
     string += f"{indent}pass\n"
-    string += "\n"
-    string += "\n"
+    string += "\n\n"
+    print(string)
     return string
 
 
@@ -36,9 +44,14 @@ def member_sort(member):
 
 
 def fn_predicate(obj):
-    value = inspect.ismethoddescriptor(obj) or inspect.isbuiltin(obj)
-    if value:
+    if inspect.ismethoddescriptor(obj) or inspect.isbuiltin(obj):
+        name = obj.__name__
+        # Always expose magic indexing methods, even if they start with "_"
+        # or lack a __text_signature__ (PyO3 magic methods often do).
+        if name in ("__getitem__", "__setitem__"):
+            return True
         return obj.__doc__ and obj.__text_signature__ and not obj.__name__.startswith("_")
+
     if inspect.isgetsetdescriptor(obj):
         return not obj.__name__.startswith("_")
     return False
