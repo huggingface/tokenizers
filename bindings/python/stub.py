@@ -157,6 +157,7 @@ def do_ruff(code, is_pyi: bool):
     if stderr:
         print(code)
         print(f"Ruff error: {stderr.decode('utf-8')}")
+        return code
     return stdout.decode("utf-8")
 
 
@@ -165,7 +166,12 @@ def write(module, directory, origin, check=False):
 
     filename = os.path.join(directory, "__init__.pyi")
     pyi_content = pyi_file(module)
-    pyi_content = do_ruff(pyi_content, is_pyi=True)
+
+    try:
+        pyi_content = do_ruff(pyi_content, is_pyi=True)
+    except Exception as e:
+        print(f"Ruff error: {e}")
+
     os.makedirs(directory, exist_ok=True)
     if check:
         with open(filename, "r") as f:
@@ -177,7 +183,11 @@ def write(module, directory, origin, check=False):
 
     filename = os.path.join(directory, "__init__.py")
     py_content = py_file(module, origin)
-    py_content = do_ruff(py_content, is_pyi=False)
+    try:
+        py_content = do_ruff(py_content, is_pyi=False)
+    except Exception as e:
+        print(f"Ruff error: {e}")
+
     os.makedirs(directory, exist_ok=True)
 
     is_auto = False

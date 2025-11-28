@@ -65,6 +65,36 @@ class BertNormalizer(Normalizer):
     def __init__(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True):
         pass
 
+    @property
+    def clean_text(self):
+        """ """
+        pass
+
+    @clean_text.setter
+    def clean_text(self, value):
+        """ """
+        pass
+
+    @property
+    def handle_chinese_chars(self):
+        """ """
+        pass
+
+    @handle_chinese_chars.setter
+    def handle_chinese_chars(self, value):
+        """ """
+        pass
+
+    @property
+    def lowercase(self):
+        """ """
+        pass
+
+    @lowercase.setter
+    def lowercase(self, value):
+        """ """
+        pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -97,6 +127,16 @@ class BertNormalizer(Normalizer):
         Returns:
             :obj:`str`: A string after normalization
         """
+        pass
+
+    @property
+    def strip_accents(self):
+        """ """
+        pass
+
+    @strip_accents.setter
+    def strip_accents(self, value):
+        """ """
         pass
 
 class ByteLevel(Normalizer):
@@ -469,11 +509,31 @@ class Prepend(Normalizer):
         """
         pass
 
+    @property
+    def prepend(self):
+        """ """
+        pass
+
+    @prepend.setter
+    def prepend(self, value):
+        """ """
+        pass
+
 class Replace(Normalizer):
     """
     Replace normalizer
     """
     def __init__(self, pattern, content):
+        pass
+
+    @property
+    def content(self):
+        """ """
+        pass
+
+    @content.setter
+    def content(self, value):
+        """ """
         pass
 
     def normalize(self, normalized):
@@ -510,6 +570,16 @@ class Replace(Normalizer):
         """
         pass
 
+    @property
+    def pattern(self):
+        """ """
+        pass
+
+    @pattern.setter
+    def pattern(self, value):
+        """ """
+        pass
+
 class Sequence(Normalizer):
     """
     Allows concatenating multiple other Normalizer as a Sequence.
@@ -519,6 +589,21 @@ class Sequence(Normalizer):
         normalizers (:obj:`List[Normalizer]`):
             A list of Normalizer to be run as a sequence
     """
+    def __init__(self, normalizers):
+        pass
+
+    def __getitem__(self, key):
+        """
+        Return self[key].
+        """
+        pass
+
+    def __setitem__(self, key, value):
+        """
+        Set self[key] to value.
+        """
+        pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -560,6 +645,16 @@ class Strip(Normalizer):
     def __init__(self, left=True, right=True):
         pass
 
+    @property
+    def left(self):
+        """ """
+        pass
+
+    @left.setter
+    def left(self, value):
+        """ """
+        pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -592,6 +687,16 @@ class Strip(Normalizer):
         Returns:
             :obj:`str`: A string after normalization
         """
+        pass
+
+    @property
+    def right(self):
+        """ """
+        pass
+
+    @right.setter
+    def right(self, value):
+        """ """
         pass
 
 class StripAccents(Normalizer):

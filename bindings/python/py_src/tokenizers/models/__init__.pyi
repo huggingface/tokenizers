@@ -246,7 +246,7 @@ class BPE(Model):
         pass
 
     @staticmethod
-    def read_file(vocab, merges):
+    def read_file(self, vocab, merges):
         """
         Read a :obj:`vocab.json` and a :obj:`merges.txt` files
 

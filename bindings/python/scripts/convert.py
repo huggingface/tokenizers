@@ -407,7 +407,7 @@ def main():
     status_len = 6
     speedup_len = 8
     print(f"|{'Model':^{model_len}}|{'Status':^{status_len}}|{'Speedup':^{speedup_len}}|")
-    print(f"|{'-'*model_len}|{'-'*status_len}|{'-'*speedup_len}|")
+    print(f"|{'-' * model_len}|{'-' * status_len}|{'-' * speedup_len}|")
     for pretrained in args.models:
         status, speedup = check(pretrained, args.filename)
         print(f"|{pretrained:<{model_len}}|{status:^{status_len}}|{speedup:^{speedup_len - 1}.2f}x|")
