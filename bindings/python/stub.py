@@ -150,8 +150,7 @@ from typing import List, Optional, Tuple
 
 def do_ruff(code, is_pyi: bool):
     command = ["ruff", "format", "--config", "pyproject.toml"]
-    if is_pyi:
-        command.extend(["--stdin-filename", "test.pyi"])
+    command.extend(["--stdin-filename", "test.pyi" if is_pyi else "test.py", "-"])
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
     stdout, stderr = process.communicate(input=code.encode("utf-8"))
     if stderr:
