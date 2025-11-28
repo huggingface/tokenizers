@@ -690,7 +690,7 @@ impl PyDecodeStream {
     ///        The tokenizer to use for decoding
     ///    id (:obj:`int` or `List[int]`):
     ///       The next token id or list of token ids to add to the stream
-    /// 
+    ///
     ///
     /// Returns:
     ///     :obj:`Optional[str]`: The next decoded string chunk, or None if not enough

@@ -484,6 +484,11 @@ impl PyRobertaProcessing {
 /// Args:
 ///     trim_offsets (:obj:`bool`):
 ///         Whether to trim the whitespaces from the produced offsets.
+///
+///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
+///         If :obj:`True`, keeps the first token's offset as is. If :obj:`False`, increments
+///         the start of the first token's offset by 1. Only has an effect if :obj:`trim_offsets`
+///         is set to :obj:`True`.
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "ByteLevel")]
 pub struct PyByteLevel {}
 #[pymethods]

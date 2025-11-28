@@ -66,6 +66,7 @@ class TestByteLevelProcessing:
     def test_instantiate(self):
         assert ByteLevel() is not None
         assert ByteLevel(trim_offsets=True) is not None
+        assert ByteLevel(add_prefix_space=True) is not None
         assert isinstance(ByteLevel(), PostProcessor)
         assert isinstance(ByteLevel(), ByteLevel)
         assert isinstance(pickle.loads(pickle.dumps(ByteLevel())), ByteLevel)
@@ -82,10 +83,22 @@ class TestByteLevelProcessing:
         assert output.offsets == [(0, 2), (2, 7), (7, 10), (10, 15)]
 
         # Trims offsets when activated
-        tokenizer.post_processor = ByteLevel(trim_offsets=True)
+        tokenizer.post_processor = ByteLevel(trim_offsets=True, add_prefix_space=True)
         output = tokenizer.encode("My name is John")
         assert output.tokens == ["ĠMy", "Ġname", "Ġis", "ĠJohn"]
         assert output.offsets == [(0, 2), (3, 7), (8, 10), (11, 15)]
+
+        # Trims offsets without adding prefix space at first token
+        tokenizer.post_processor = ByteLevel(trim_offsets=True, add_prefix_space=False)
+        output = tokenizer.encode("My name is John")
+        assert output.tokens == ["ĠMy", "Ġname", "Ġis", "ĠJohn"]
+        assert output.offsets == [(1, 2), (3, 7), (8, 10), (11, 15)]
+
+        # add_prefix_space without trimming offsets has no effect
+        tokenizer.post_processor = ByteLevel(trim_offsets=False, add_prefix_space=True)
+        output = tokenizer.encode("My name is John")
+        assert output.tokens == ["ĠMy", "Ġname", "Ġis", "ĠJohn"]
+        assert output.offsets == [(0, 2), (2, 7), (7, 10), (10, 15)]
 
     def test_manual_reload(self):
         byte_level = ByteLevel()
