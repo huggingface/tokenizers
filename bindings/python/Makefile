@@ -10,12 +10,14 @@ style:
 	python stub.py
 	ruff check  $(check_dirs) --fix 
 	ruff format $(check_dirs)
+	ty check
 
 # Check the source code is formatted correctly
 check-style:
 	python stub.py --check
 	ruff check $(check_dirs)
 	ruff format --check $(check_dirs)
+	ty check
 
 TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 
