@@ -40,57 +40,6 @@ class Normalizer:
         """
         pass
 
-class Append(Normalizer):
-    """
-    Append normalizer
-    """
-    def __init__(self, append):
-        pass
-
-    @property
-    def append(self):
-        """ """
-        pass
-
-    @append.setter
-    def append(self, value):
-        """ """
-        pass
-
-    def normalize(self, normalized):
-        """
-        Normalize a :class:`~tokenizers.NormalizedString` in-place
-
-        This method allows to modify a :class:`~tokenizers.NormalizedString` to
-        keep track of the alignment information. If you just want to see the result
-        of the normalization on a raw string, you can use
-        :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
-
-        Args:
-            normalized (:class:`~tokenizers.NormalizedString`):
-                The normalized string on which to apply this
-                :class:`~tokenizers.normalizers.Normalizer`
-        """
-        pass
-
-    def normalize_str(self, sequence):
-        """
-        Normalize the given string
-
-        This method provides a way to visualize the effect of a
-        :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
-        information. If you need to get/convert offsets, you can use
-        :meth:`~tokenizers.normalizers.Normalizer.normalize`
-
-        Args:
-            sequence (:obj:`str`):
-                A string to normalize
-
-        Returns:
-            :obj:`str`: A string after normalization
-        """
-        pass
-
 class BertNormalizer(Normalizer):
     """
     BertNormalizer
@@ -640,6 +589,9 @@ class Sequence(Normalizer):
         normalizers (:obj:`List[Normalizer]`):
             A list of Normalizer to be run as a sequence
     """
+    def __init__(self, normalizers):
+        pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
