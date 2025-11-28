@@ -312,7 +312,10 @@ impl PyBpeTrainer {
     }
 
     #[new]
-    #[pyo3(signature = (**kwargs), text_signature = None)]
+    #[pyo3(
+        signature = (**kwargs),
+        text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet=[], continuing_subword_prefix=None, end_of_word_suffix=None, max_token_length=None, words={})"
+    )]
     pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::bpe::BpeTrainer::builder();
         if let Some(kwargs) = kwargs {
@@ -518,7 +521,7 @@ impl PyWordPieceTrainer {
     #[new]
     #[pyo3(
         signature = (** kwargs),
-        text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet= [],continuing_subword_prefix=\"##\", end_of_word_suffix=None)"
+        text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet=[], continuing_subword_prefix=\"##\", end_of_word_suffix=None)"
     )]
     pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::wordpiece::WordPieceTrainer::builder();
@@ -659,7 +662,10 @@ impl PyWordLevelTrainer {
     }
 
     #[new]
-    #[pyo3(signature = (**kwargs), text_signature = None)]
+    #[pyo3(
+        signature = (**kwargs),
+        text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[])"
+    )]
     pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::wordlevel::WordLevelTrainer::builder();
 
@@ -826,7 +832,7 @@ impl PyUnigramTrainer {
     #[new]
     #[pyo3(
         signature = (**kwargs),
-        text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens=[], shrinking_factor=0.75, unk_token=None, max_piece_length=16, n_sub_iterations=2)"
+        text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens=[], initial_alphabet=[], shrinking_factor=0.75, unk_token=None, max_piece_length=16, n_sub_iterations=2)"
     )]
     pub fn new(kwargs: Option<Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::unigram::UnigramTrainer::builder();
