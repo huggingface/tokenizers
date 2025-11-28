@@ -152,11 +152,10 @@ def do_ruff(code, is_pyi: bool):
 def write(module, directory, origin, check=False):
     submodules = [(name, member) for name, member in inspect.getmembers(module) if inspect.ismodule(member)]
 
+    filename = os.path.join(directory, "__init__.pyi")
     pyi_content = pyi_file(module)
     pyi_content = do_ruff(pyi_content, is_pyi=True)
     os.makedirs(directory, exist_ok=True)
-
-    filename = os.path.join(directory, "__init__.pyi")
     if check:
         with open(filename, "r") as f:
             data = f.read()
