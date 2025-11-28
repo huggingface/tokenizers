@@ -31,7 +31,6 @@ def function(obj, indent, text_signature=None, owner=None):
     string += f'{indent}"""\n'
     string += f"{indent}pass\n"
     string += "\n\n"
-    print(string)
     return string
 
 
