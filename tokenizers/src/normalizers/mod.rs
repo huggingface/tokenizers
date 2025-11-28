@@ -1,16 +1,16 @@
+pub mod append;
 pub mod bert;
 pub mod byte_level;
 pub mod precompiled;
-pub mod append;
 pub mod prepend;
 pub mod replace;
 pub mod strip;
 pub mod unicode;
 pub mod utils;
+pub use crate::normalizers::append::Append;
 pub use crate::normalizers::bert::BertNormalizer;
 pub use crate::normalizers::byte_level::ByteLevel;
 pub use crate::normalizers::precompiled::Precompiled;
-pub use crate::normalizers::append::Append;
 pub use crate::normalizers::prepend::Prepend;
 pub use crate::normalizers::replace::Replace;
 pub use crate::normalizers::strip::{Strip, StripAccents};
