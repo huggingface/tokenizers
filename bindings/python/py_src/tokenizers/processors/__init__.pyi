@@ -6,6 +6,14 @@ class PostProcessor:
     This class is not supposed to be instantiated directly. Instead, any implementation of
     a PostProcessor will return an instance of this class when instantiated.
     """
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -54,6 +62,18 @@ class BertProcessing(PostProcessor):
             A tuple with the string representation of the CLS token, and its id
     """
     def __init__(self, sep, cls):
+        pass
+
+    def __getnewargs__(self):
+        """ """
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     @property
@@ -119,7 +139,15 @@ class ByteLevel(PostProcessor):
         trim_offsets (:obj:`bool`):
             Whether to trim the whitespaces from the produced offsets.
     """
-    def __init__(self, trim_offsets=True):
+    def __init__(self, add_prefix_space=None, trim_offsets=None, use_regex=None):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     @property
@@ -214,6 +242,18 @@ class RobertaProcessing(PostProcessor):
     def __init__(self, sep, cls, trim_offsets=True, add_prefix_space=True):
         pass
 
+    def __getnewargs__(self):
+        """ """
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     @property
     def add_prefix_space(self):
         """ """
@@ -303,10 +343,22 @@ class Sequence(PostProcessor):
         """
         pass
 
+    def __getnewargs__(self):
+        """ """
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
     def __setitem__(self, key, value):
         """
         Set self[key] to value.
         """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     def num_special_tokens_to_add(self, is_pair):
@@ -408,7 +460,15 @@ class TemplateProcessing(PostProcessor):
              The given dict expects the provided :obj:`ids` and :obj:`tokens` lists to have
              the same length.
     """
-    def __init__(self, single, pair, special_tokens):
+    def __init__(self, single=None, pair=None, special_tokens=None):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     def num_special_tokens_to_add(self, is_pair):

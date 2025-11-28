@@ -34,7 +34,15 @@ class AddedToken:
             Defines whether this token should be skipped when decoding.
 
     """
-    def __init__(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False):
+    def __init__(self, content=None, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     @property
@@ -126,6 +134,14 @@ class Encoding:
     The :class:`~tokenizers.Encoding` represents the output of a :class:`~tokenizers.Tokenizer`.
     """
     def __init__(self):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     @property
@@ -639,6 +655,12 @@ class NormalizedString:
         """
         pass
 
+    def __getstate__(self, /):
+        """
+        Helper for pickle.
+        """
+        pass
+
     def append(self, s):
         """
         Append the given sequence to the string
@@ -814,6 +836,12 @@ class PreTokenizedString:
     def __init__(self, sequence):
         pass
 
+    def __getstate__(self, /):
+        """
+        Helper for pickle.
+        """
+        pass
+
     def get_splits(self, offset_referential="original", offset_type="char"):
         """
         Get the splits currently managed by the PreTokenizedString
@@ -898,8 +926,24 @@ class Regex:
     def __init__(self, pattern):
         pass
 
+    def __getstate__(self, /):
+        """
+        Helper for pickle.
+        """
+        pass
+
 class Token:
     def __init__(self, id, value, offsets):
+        pass
+
+    def __getstate__(self, /):
+        """
+        Helper for pickle.
+        """
+        pass
+
+    def as_tuple(self):
+        """ """
         pass
 
     @property
@@ -943,6 +987,18 @@ class Tokenizer:
 
     """
     def __init__(self, model):
+        pass
+
+    def __getnewargs__(self):
+        """ """
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     def add_special_tokens(self, tokens):
@@ -1692,3 +1748,53 @@ class Tokenizer:
                 A dict with the current truncation parameters if truncation is enabled
         """
         pass
+
+from enum import Enum
+from typing import List, Tuple, Union, Any
+
+Offsets = Tuple[int, int]
+TextInputSequence = str
+PreTokenizedInputSequence = Union[List[str], Tuple[str, ...]]
+TextEncodeInput = Union[
+    TextInputSequence,
+    Tuple[TextInputSequence, TextInputSequence],
+    List[TextInputSequence],
+]
+PreTokenizedEncodeInput = Union[
+    PreTokenizedInputSequence,
+    Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence],
+    List[PreTokenizedInputSequence],
+]
+InputSequence = Union[TextInputSequence, PreTokenizedInputSequence]
+EncodeInput = Union[TextEncodeInput, PreTokenizedEncodeInput]
+
+class OffsetReferential(Enum):
+    ORIGINAL = "original"
+    NORMALIZED = "normalized"
+
+class OffsetType(Enum):
+    BYTE = "byte"
+    CHAR = "char"
+
+class SplitDelimiterBehavior(Enum):
+    REMOVED = "removed"
+    ISOLATED = "isolated"
+    MERGED_WITH_PREVIOUS = "merged_with_previous"
+    MERGED_WITH_NEXT = "merged_with_next"
+    CONTIGUOUS = "contiguous"
+
+from .implementations import (
+    BertWordPieceTokenizer,
+    ByteLevelBPETokenizer,
+    CharBPETokenizer,
+    SentencePieceBPETokenizer,
+    SentencePieceUnigramTokenizer,
+)
+
+def __getattr__(name: str) -> Any: ...
+
+BertWordPieceTokenizer: Any
+ByteLevelBPETokenizer: Any
+CharBPETokenizer: Any
+SentencePieceBPETokenizer: Any
+SentencePieceUnigramTokenizer: Any

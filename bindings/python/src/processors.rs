@@ -489,7 +489,10 @@ pub struct PyByteLevel {}
 #[pymethods]
 impl PyByteLevel {
     #[new]
-    #[pyo3(signature = (add_prefix_space = None, trim_offsets = None, use_regex = None, **_kwargs), text_signature = "(self, trim_offsets=True)")]
+    #[pyo3(
+        signature = (add_prefix_space = None, trim_offsets = None, use_regex = None, **_kwargs),
+        text_signature = "(self, add_prefix_space=None, trim_offsets=None, use_regex=None)"
+    )]
     fn new(
         add_prefix_space: Option<bool>,
         trim_offsets: Option<bool>,
@@ -680,7 +683,10 @@ pub struct PyTemplateProcessing {}
 #[pymethods]
 impl PyTemplateProcessing {
     #[new]
-    #[pyo3(signature = (single = None, pair = None, special_tokens = None), text_signature = "(self, single, pair, special_tokens)")]
+    #[pyo3(
+        signature = (single = None, pair = None, special_tokens = None),
+        text_signature = "(self, single=None, pair=None, special_tokens=None)"
+    )]
     fn new(
         single: Option<PyTemplate>,
         pair: Option<PyTemplate>,

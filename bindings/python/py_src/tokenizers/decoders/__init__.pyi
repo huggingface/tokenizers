@@ -7,6 +7,12 @@ class DecodeStream:
     def __init__(self, ids=None, skip_special_tokens=False):
         pass
 
+    def __getstate__(self, /):
+        """
+        Helper for pickle.
+        """
+        pass
+
     def step(self, tokenizer, id):
         """
         Streaming decode step
@@ -31,6 +37,19 @@ class Decoder:
     This class is not supposed to be instantiated directly. Instead, any implementation of
     a Decoder will return an instance of this class when instantiated.
     """
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(decoder):
+        """ """
+        pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -54,6 +73,19 @@ class BPEDecoder(Decoder):
             be replaced by whitespaces during the decoding
     """
     def __init__(self, suffix="</w>"):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(decoder):
+        """ """
         pass
 
     def decode(self, tokens):
@@ -90,6 +122,19 @@ class ByteFallback(Decoder):
     def __init__(self):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(decoder):
+        """ """
+        pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -111,6 +156,19 @@ class ByteLevel(Decoder):
     :class:`~tokenizers.pre_tokenizers.PreTokenizer`.
     """
     def __init__(self):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(decoder):
+        """ """
         pass
 
     def decode(self, tokens):
@@ -142,6 +200,14 @@ class CTC(Decoder):
     def __init__(self, pad_token="<pad>", word_delimiter_token="|", cleanup=True):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     @property
     def cleanup(self):
         """ """
@@ -149,6 +215,11 @@ class CTC(Decoder):
 
     @cleanup.setter
     def cleanup(self, value):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(decoder):
         """ """
         pass
 
@@ -195,6 +266,19 @@ class Fuse(Decoder):
     def __init__(self):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(decoder):
+        """ """
+        pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -224,6 +308,19 @@ class Metaspace(Decoder):
             token (relevant when special tokens are used or other pre_tokenizer are used).
     """
     def __init__(self, replacement="▁", prepend_scheme="always", split=True):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(decoder):
+        """ """
         pass
 
     def decode(self, tokens):
@@ -279,6 +376,19 @@ class Replace(Decoder):
     def __init__(self, pattern, content):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(decoder):
+        """ """
+        pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -303,6 +413,23 @@ class Sequence(Decoder):
     def __init__(self, decoders):
         pass
 
+    def __getnewargs__(self):
+        """ """
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(decoder):
+        """ """
+        pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -321,7 +448,15 @@ class Strip(Decoder):
     Strip normalizer
     Strips n left characters of each token, or n right characters of each token
     """
-    def __init__(self, content, left=0, right=0):
+    def __init__(self, content=" ", left=0, right=0):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     @property
@@ -331,6 +466,11 @@ class Strip(Decoder):
 
     @content.setter
     def content(self, value):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(decoder):
         """ """
         pass
 
@@ -382,6 +522,14 @@ class WordPiece(Decoder):
     def __init__(self, prefix="##", cleanup=True):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     @property
     def cleanup(self):
         """ """
@@ -389,6 +537,11 @@ class WordPiece(Decoder):
 
     @cleanup.setter
     def cleanup(self, value):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(decoder):
         """ """
         pass
 

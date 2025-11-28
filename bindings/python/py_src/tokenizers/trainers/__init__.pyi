@@ -6,6 +6,13 @@ class Trainer:
     This class is not supposed to be instantiated directly. Instead, any implementation of a
     Trainer will return an instance of this class when instantiated.
     """
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
 
 class BpeTrainer(Trainer):
     """
@@ -58,6 +65,14 @@ class BpeTrainer(Trainer):
         max_token_length=None,
         words={},
     ):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     @property
@@ -197,6 +212,14 @@ class UnigramTrainer(Trainer):
     ):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     @property
     def initial_alphabet(self):
         """ """
@@ -255,6 +278,14 @@ class WordLevelTrainer(Trainer):
             A list of special tokens the model should know of.
     """
     def __init__(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[]):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     @property
@@ -340,6 +371,14 @@ class WordPieceTrainer(Trainer):
         continuing_subword_prefix="##",
         end_of_word_suffix=None,
     ):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     @property

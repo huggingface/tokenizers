@@ -327,7 +327,10 @@ impl PyStrip {
     }
 
     #[new]
-    #[pyo3(signature = (content=' ', left=0, right=0), text_signature = "(self, content, left=0, right=0)")]
+    #[pyo3(
+        signature = (content=' ', left=0, right=0),
+        text_signature = "(self, content=' ', left=0, right=0)"
+    )]
     fn new(content: char, left: usize, right: usize) -> (Self, PyDecoder) {
         (PyStrip {}, Strip::new(content, left, right).into())
     }

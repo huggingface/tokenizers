@@ -11,6 +11,14 @@ class Model:
     def __init__(self):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     def get_trainer(self):
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`
@@ -132,6 +140,14 @@ class BPE(Model):
         byte_fallback=False,
         ignore_merges=False,
     ):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     @property
@@ -334,6 +350,14 @@ class Unigram(Model):
     def __init__(self, vocab=None, unk_id=None, byte_fallback=None):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     def get_trainer(self):
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`
@@ -419,6 +443,14 @@ class WordLevel(Model):
             The unknown token to be used by the model.
     """
     def __init__(self, vocab=None, unk_token=None):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     @staticmethod
@@ -558,6 +590,14 @@ class WordPiece(Model):
             The maximum number of characters to authorize in a single word.
     """
     def __init__(self, vocab=None, unk_token="[UNK]", max_input_chars_per_word=100, continuing_subword_prefix="##"):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     @property

@@ -6,6 +6,19 @@ class Normalizer:
     This class is not supposed to be instantiated directly. Instead, any implementation of a
     Normalizer will return an instance of this class when instantiated.
     """
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
+        pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -65,6 +78,14 @@ class BertNormalizer(Normalizer):
     def __init__(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     @property
     def clean_text(self):
         """ """
@@ -72,6 +93,11 @@ class BertNormalizer(Normalizer):
 
     @clean_text.setter
     def clean_text(self, value):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
         """ """
         pass
 
@@ -146,6 +172,19 @@ class ByteLevel(Normalizer):
     def __init__(self):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
+        pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -185,6 +224,19 @@ class Lowercase(Normalizer):
     Lowercase Normalizer
     """
     def __init__(self):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
         pass
 
     def normalize(self, normalized):
@@ -228,6 +280,19 @@ class NFC(Normalizer):
     def __init__(self):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
+        pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -267,6 +332,19 @@ class NFD(Normalizer):
     NFD Unicode Normalizer
     """
     def __init__(self):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
         pass
 
     def normalize(self, normalized):
@@ -310,6 +388,19 @@ class NFKC(Normalizer):
     def __init__(self):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
+        pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -351,6 +442,19 @@ class NFKD(Normalizer):
     def __init__(self):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
+        pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -390,6 +494,19 @@ class Nmt(Normalizer):
     Nmt normalizer
     """
     def __init__(self):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
         pass
 
     def normalize(self, normalized):
@@ -434,6 +551,19 @@ class Precompiled(Normalizer):
     def __init__(self, precompiled_charsmap):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
+        pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -473,6 +603,19 @@ class Prepend(Normalizer):
     Prepend normalizer
     """
     def __init__(self, prepend):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
         pass
 
     def normalize(self, normalized):
@@ -526,6 +669,14 @@ class Replace(Normalizer):
     def __init__(self, pattern, content):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     @property
     def content(self):
         """ """
@@ -533,6 +684,11 @@ class Replace(Normalizer):
 
     @content.setter
     def content(self, value):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
         """ """
         pass
 
@@ -598,10 +754,27 @@ class Sequence(Normalizer):
         """
         pass
 
+    def __getnewargs__(self):
+        """ """
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
     def __setitem__(self, key, value):
         """
         Set self[key] to value.
         """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
         pass
 
     def normalize(self, normalized):
@@ -643,6 +816,19 @@ class Strip(Normalizer):
     Strip normalizer
     """
     def __init__(self, left=True, right=True):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
         pass
 
     @property
@@ -706,6 +892,19 @@ class StripAccents(Normalizer):
     def __init__(self):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(normalizer):
+        """ """
+        pass
+
     def normalize(self, normalized):
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
@@ -739,3 +938,9 @@ class StripAccents(Normalizer):
             :obj:`str`: A string after normalization
         """
         pass
+
+from typing import Dict
+
+NORMALIZERS: Dict[str, Normalizer]
+
+def unicode_normalizer_from_str(normalizer: str) -> Normalizer: ...

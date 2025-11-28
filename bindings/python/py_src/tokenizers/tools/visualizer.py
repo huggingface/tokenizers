@@ -16,7 +16,7 @@ with open(css_filename) as f:
 class Annotation:
     start: int
     end: int
-    label: int
+    label: str
 
     def __init__(self, start: int, end: int, label: str):
         self.start = start
@@ -91,7 +91,7 @@ class EncodingVisualizer:
     ):
         if default_to_notebook:
             try:
-                from IPython.core.display import HTML, display
+                from IPython.core.display import HTML, display  # type: ignore[attr-defined]
             except ImportError:
                 raise Exception(
                     """We couldn't import IPython utils for html display.
@@ -108,7 +108,7 @@ class EncodingVisualizer:
     def __call__(
         self,
         text: str,
-        annotations: AnnotationList = [],
+        annotations: List[Any] = [],
         default_to_notebook: Optional[bool] = None,
     ) -> Optional[str]:
         """
@@ -135,7 +135,7 @@ class EncodingVisualizer:
             final_default_to_notebook = default_to_notebook
         if final_default_to_notebook:
             try:
-                from IPython.core.display import HTML, display
+                from IPython.core.display import HTML, display  # type: ignore[attr-defined]
             except ImportError:
                 raise Exception(
                     """We couldn't import IPython utils for html display.
@@ -213,6 +213,8 @@ class EncodingVisualizer:
             return f'<span class="special-token" data-stoken={stoken}></span>'
         # We're not in a special token so this group has a start and end.
         last = consecutive_chars_list[-1]
+        assert first.char_ix is not None
+        assert last.char_ix is not None
         start = first.char_ix
         end = last.char_ix + 1
         span_text = text[start:end]

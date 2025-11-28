@@ -6,6 +6,19 @@ class PreTokenizer:
     This class is not supposed to be instantiated directly. Instead, any implementation of a
     PreTokenizer will return an instance of this class when instantiated.
     """
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(pretok):
+        """ """
+        pass
+
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -51,6 +64,19 @@ class BertPreTokenizer(PreTokenizer):
     Each occurrence of a punctuation character will be treated separately.
     """
     def __init__(self):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(pretok):
+        """ """
         pass
 
     def pre_tokenize(self, pretok):
@@ -108,6 +134,14 @@ class ByteLevel(PreTokenizer):
     def __init__(self, add_prefix_space=True, trim_offsets=True, use_regex=True):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     @property
     def add_prefix_space(self):
         """ """
@@ -130,6 +164,11 @@ class ByteLevel(PreTokenizer):
         Returns:
             :obj:`List[str]`: A list of characters that compose the alphabet
         """
+        pass
+
+    @staticmethod
+    def custom(pretok):
+        """ """
         pass
 
     def pre_tokenize(self, pretok):
@@ -200,6 +239,23 @@ class CharDelimiterSplit(PreTokenizer):
     def __init__(self, delimiter):
         pass
 
+    def __getnewargs__(self):
+        """ """
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(pretok):
+        """ """
+        pass
+
     @property
     def delimiter(self):
         """ """
@@ -264,6 +320,19 @@ class Digits(PreTokenizer):
     def __init__(self, individual_digits=False):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(pretok):
+        """ """
+        pass
+
     @property
     def individual_digits(self):
         """ """
@@ -324,6 +393,19 @@ class FixedLength(PreTokenizer):
             splitting unicode characters consisting of multiple bytes.
     """
     def __init__(self, length=5):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(pretok):
+        """ """
         pass
 
     @property
@@ -393,6 +475,19 @@ class Metaspace(PreTokenizer):
 
     """
     def __init__(self, replacement="_", prepend_scheme="always", split=True):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(pretok):
+        """ """
         pass
 
     def pre_tokenize(self, pretok):
@@ -475,6 +570,14 @@ class Punctuation(PreTokenizer):
     def __init__(self, behavior="isolated"):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     @property
     def behavior(self):
         """ """
@@ -482,6 +585,11 @@ class Punctuation(PreTokenizer):
 
     @behavior.setter
     def behavior(self, value):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(pretok):
         """ """
         pass
 
@@ -535,10 +643,27 @@ class Sequence(PreTokenizer):
         """
         pass
 
+    def __getnewargs__(self):
+        """ """
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
     def __setitem__(self, key, value):
         """
         Set self[key] to value.
         """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(pretok):
+        """ """
         pass
 
     def pre_tokenize(self, pretok):
@@ -604,6 +729,18 @@ class Split(PreTokenizer):
     def __init__(self, pattern, behavior, invert=False):
         pass
 
+    def __getnewargs__(self):
+        """ """
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     @property
     def behavior(self):
         """ """
@@ -611,6 +748,11 @@ class Split(PreTokenizer):
 
     @behavior.setter
     def behavior(self, value):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(pretok):
         """ """
         pass
 
@@ -679,6 +821,19 @@ class UnicodeScripts(PreTokenizer):
     This mimicks SentencePiece Unigram implementation.
     """
     def __init__(self):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(pretok):
+        """ """
         pass
 
     def pre_tokenize(self, pretok):
@@ -752,6 +907,19 @@ class Whitespace(PreTokenizer):
     def __init__(self):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(pretok):
+        """ """
+        pass
+
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -794,6 +962,19 @@ class WhitespaceSplit(PreTokenizer):
     This pre-tokenizer simply splits on the whitespace. Works like `.split()`
     """
     def __init__(self):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @staticmethod
+    def custom(pretok):
+        """ """
         pass
 
     def pre_tokenize(self, pretok):

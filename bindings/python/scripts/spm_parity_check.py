@@ -5,6 +5,7 @@ from collections import Counter
 import json
 import os
 import datetime
+from typing import Any, cast
 
 try:
     from termcolor import colored
@@ -86,7 +87,7 @@ def main():
 
 
 def check_train(args):
-    sp = spm.SentencePieceProcessor()
+    sp = cast(Any, spm.SentencePieceProcessor())
     sp.Load(args.model_file)
 
     tokenizer = tokenizers.SentencePieceUnigramTokenizer()
@@ -206,7 +207,7 @@ def check_details(line, spm_ids, tok_ids, sp, tok):
 
 
 def check_encode(args):
-    sp = spm.SentencePieceProcessor()
+    sp = cast(Any, spm.SentencePieceProcessor())
     sp.Load(args.model_file)
 
     if args.from_spm:

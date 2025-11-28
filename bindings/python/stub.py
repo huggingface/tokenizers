@@ -7,6 +7,12 @@ from pathlib import Path
 INDENT = " " * 4
 GENERATED_COMMENT = "# Generated content DO NOT EDIT\n"
 
+OVERRIDES = {
+    ("tokenizers", "AddedToken", "__init__"): "(self, content=None, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False)",
+    ("tokenizers.decoders", "Strip", "__init__"): "(self, content=' ', left=0, right=0)",
+    ("tokenizers.processors", "TemplateProcessing", "__init__"): "(self, single=None, pair=None, special_tokens=None)",
+}
+
 
 def do_indent(text: str, indent: str):
     return text.replace("\n", f"\n{indent}")
@@ -18,6 +24,14 @@ def function(obj, indent, text_signature=None, owner=None):
     # 1) Figure out a usable text_signature
     if text_signature is None:
         text_signature = getattr(obj, "__text_signature__", None)
+    if owner is not None:
+        key = (getattr(owner, "__module__", ""), owner.__name__, name)
+        if key in OVERRIDES:
+            text_signature = OVERRIDES[key]
+    if text_signature is None:
+        text_signature = "()"
+    else:
+        text_signature = text_signature.replace("$self", "self").replace(" /,", "")
 
     if name in ("__getitem__", "__setitem__"):
         # Always expose magic indexing methods, even if they lack a __text_signature__
@@ -51,13 +65,14 @@ def member_sort(member):
 
 
 def fn_predicate(obj):
+    always = {"__getitem__", "__setitem__", "__getstate__", "__setstate__", "__getnewargs__"}
     if inspect.ismethoddescriptor(obj) or inspect.isbuiltin(obj):
         name = obj.__name__
         # Always expose magic indexing methods, even if they start with "_"
         # or lack a __text_signature__ (PyO3 magic methods often do).
-        if name in ("__getitem__", "__setitem__"):
+        if name in always:
             return True
-        return obj.__doc__ and obj.__text_signature__ and not obj.__name__.startswith("_")
+        return obj.__text_signature__ and not obj.__name__.startswith("_")
 
     if inspect.isgetsetdescriptor(obj):
         return not obj.__name__.startswith("_")
@@ -99,7 +114,9 @@ def pyi_file(obj, indent="", owner=None):
 
         # Init
         if obj.__text_signature__:
-            body += f"{indent}def __init__{obj.__text_signature__}:\n"
+            init_sig = OVERRIDES.get((obj.__module__, obj.__name__, "__init__"), obj.__text_signature__)
+            init_sig = init_sig.replace("$self", "self").replace(" /,", "")
+            body += f"{indent}def __init__{init_sig}:\n"
             body += f"{indent + INDENT}pass\n"
             body += "\n"
 
@@ -166,6 +183,72 @@ def write(module, directory, origin, check=False):
     filename = os.path.join(directory, "__init__.pyi")
     pyi_content = pyi_file(module)
 
+    # Inject extra hints for hand-written Python modules layered on top of the extension.
+    if origin == "tokenizers":
+        extra = """
+from enum import Enum
+from typing import List, Tuple, Union, Any
+
+Offsets = Tuple[int, int]
+TextInputSequence = str
+PreTokenizedInputSequence = Union[List[str], Tuple[str, ...]]
+TextEncodeInput = Union[
+    TextInputSequence,
+    Tuple[TextInputSequence, TextInputSequence],
+    List[TextInputSequence],
+]
+PreTokenizedEncodeInput = Union[
+    PreTokenizedInputSequence,
+    Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence],
+    List[PreTokenizedInputSequence],
+]
+InputSequence = Union[TextInputSequence, PreTokenizedInputSequence]
+EncodeInput = Union[TextEncodeInput, PreTokenizedEncodeInput]
+
+
+class OffsetReferential(Enum):
+    ORIGINAL = "original"
+    NORMALIZED = "normalized"
+
+
+class OffsetType(Enum):
+    BYTE = "byte"
+    CHAR = "char"
+
+
+class SplitDelimiterBehavior(Enum):
+    REMOVED = "removed"
+    ISOLATED = "isolated"
+    MERGED_WITH_PREVIOUS = "merged_with_previous"
+    MERGED_WITH_NEXT = "merged_with_next"
+    CONTIGUOUS = "contiguous"
+
+from .implementations import (
+    BertWordPieceTokenizer,
+    ByteLevelBPETokenizer,
+    CharBPETokenizer,
+    SentencePieceBPETokenizer,
+    SentencePieceUnigramTokenizer,
+)
+
+def __getattr__(name: str) -> Any: ...
+BertWordPieceTokenizer: Any
+ByteLevelBPETokenizer: Any
+CharBPETokenizer: Any
+SentencePieceBPETokenizer: Any
+SentencePieceUnigramTokenizer: Any
+"""
+        pyi_content += extra
+
+    if origin == "normalizers":
+        pyi_content += """
+from typing import Dict
+
+NORMALIZERS: Dict[str, Normalizer]
+
+def unicode_normalizer_from_str(normalizer: str) -> Normalizer: ...
+"""
+
     try:
         pyi_content = do_ruff(pyi_content, is_pyi=True)
     except Exception as e:
@@ -218,4 +301,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     import tokenizers
 
-    write(tokenizers.tokenizers, "py_src/tokenizers/", "tokenizers", check=args.check)
+    # `tokenizers.tokenizers` is the extension module; attribute access is dynamic.
+    write(tokenizers.tokenizers, "py_src/tokenizers/", "tokenizers", check=args.check)  # type: ignore[attr-defined]
