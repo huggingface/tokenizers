@@ -56,16 +56,6 @@ class BertProcessing(PostProcessor):
     def __init__(self, sep, cls):
         pass
 
-    @property
-    def cls(self):
-        """ """
-        pass
-
-    @cls.setter
-    def cls(self, value):
-        """ """
-        pass
-
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -96,16 +86,6 @@ class BertProcessing(PostProcessor):
         Return:
             :class:`~tokenizers.Encoding`: The final encoding
         """
-        pass
-
-    @property
-    def sep(self):
-        """ """
-        pass
-
-    @sep.setter
-    def sep(self, value):
-        """ """
         pass
 
 class ByteLevel(PostProcessor):
@@ -122,16 +102,6 @@ class ByteLevel(PostProcessor):
     def __init__(self, trim_offsets=True):
         pass
 
-    @property
-    def add_prefix_space(self):
-        """ """
-        pass
-
-    @add_prefix_space.setter
-    def add_prefix_space(self, value):
-        """ """
-        pass
-
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -162,26 +132,6 @@ class ByteLevel(PostProcessor):
         Return:
             :class:`~tokenizers.Encoding`: The final encoding
         """
-        pass
-
-    @property
-    def trim_offsets(self):
-        """ """
-        pass
-
-    @trim_offsets.setter
-    def trim_offsets(self, value):
-        """ """
-        pass
-
-    @property
-    def use_regex(self):
-        """ """
-        pass
-
-    @use_regex.setter
-    def use_regex(self, value):
-        """ """
         pass
 
 class RobertaProcessing(PostProcessor):
@@ -214,26 +164,6 @@ class RobertaProcessing(PostProcessor):
     def __init__(self, sep, cls, trim_offsets=True, add_prefix_space=True):
         pass
 
-    @property
-    def add_prefix_space(self):
-        """ """
-        pass
-
-    @add_prefix_space.setter
-    def add_prefix_space(self, value):
-        """ """
-        pass
-
-    @property
-    def cls(self):
-        """ """
-        pass
-
-    @cls.setter
-    def cls(self, value):
-        """ """
-        pass
-
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -264,26 +194,6 @@ class RobertaProcessing(PostProcessor):
         Return:
             :class:`~tokenizers.Encoding`: The final encoding
         """
-        pass
-
-    @property
-    def sep(self):
-        """ """
-        pass
-
-    @sep.setter
-    def sep(self, value):
-        """ """
-        pass
-
-    @property
-    def trim_offsets(self):
-        """ """
-        pass
-
-    @trim_offsets.setter
-    def trim_offsets(self, value):
-        """ """
         pass
 
 class Sequence(PostProcessor):
@@ -429,14 +339,4 @@ class TemplateProcessing(PostProcessor):
         Return:
             :class:`~tokenizers.Encoding`: The final encoding
         """
-        pass
-
-    @property
-    def single(self):
-        """ """
-        pass
-
-    @single.setter
-    def single(self, value):
-        """ """
         pass

@@ -108,16 +108,6 @@ class ByteLevel(PreTokenizer):
     def __init__(self, add_prefix_space=True, use_regex=True):
         pass
 
-    @property
-    def add_prefix_space(self):
-        """ """
-        pass
-
-    @add_prefix_space.setter
-    def add_prefix_space(self, value):
-        """ """
-        pass
-
     @staticmethod
     def alphabet():
         """
@@ -169,26 +159,6 @@ class ByteLevel(PreTokenizer):
         """
         pass
 
-    @property
-    def trim_offsets(self):
-        """ """
-        pass
-
-    @trim_offsets.setter
-    def trim_offsets(self, value):
-        """ """
-        pass
-
-    @property
-    def use_regex(self):
-        """ """
-        pass
-
-    @use_regex.setter
-    def use_regex(self, value):
-        """ """
-        pass
-
 class CharDelimiterSplit(PreTokenizer):
     """
     This pre-tokenizer simply splits on the provided char. Works like `.split(delimiter)`
@@ -197,19 +167,6 @@ class CharDelimiterSplit(PreTokenizer):
         delimiter: str:
             The delimiter char that will be used to split input
     """
-    def __init__(self, delimiter):
-        pass
-
-    @property
-    def delimiter(self):
-        """ """
-        pass
-
-    @delimiter.setter
-    def delimiter(self, value):
-        """ """
-        pass
-
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -264,16 +221,6 @@ class Digits(PreTokenizer):
     def __init__(self, individual_digits=False):
         pass
 
-    @property
-    def individual_digits(self):
-        """ """
-        pass
-
-    @individual_digits.setter
-    def individual_digits(self, value):
-        """ """
-        pass
-
     def pre_tokenize(self, pretok):
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
@@ -324,16 +271,6 @@ class FixedLength(PreTokenizer):
             splitting unicode characters consisting of multiple bytes.
     """
     def __init__(self, length=5):
-        pass
-
-    @property
-    def length(self):
-        """ """
-        pass
-
-    @length.setter
-    def length(self, value):
-        """ """
         pass
 
     def pre_tokenize(self, pretok):
@@ -432,36 +369,6 @@ class Metaspace(PreTokenizer):
         """
         pass
 
-    @property
-    def prepend_scheme(self):
-        """ """
-        pass
-
-    @prepend_scheme.setter
-    def prepend_scheme(self, value):
-        """ """
-        pass
-
-    @property
-    def replacement(self):
-        """ """
-        pass
-
-    @replacement.setter
-    def replacement(self, value):
-        """ """
-        pass
-
-    @property
-    def split(self):
-        """ """
-        pass
-
-    @split.setter
-    def split(self, value):
-        """ """
-        pass
-
 class Punctuation(PreTokenizer):
     """
     This pre-tokenizer simply splits on punctuation as individual characters.
@@ -473,16 +380,6 @@ class Punctuation(PreTokenizer):
             "contiguous"
     """
     def __init__(self, behavior="isolated"):
-        pass
-
-    @property
-    def behavior(self):
-        """ """
-        pass
-
-    @behavior.setter
-    def behavior(self, value):
-        """ """
         pass
 
     def pre_tokenize(self, pretok):
@@ -590,36 +487,6 @@ class Split(PreTokenizer):
             Whether to invert the pattern.
     """
     def __init__(self, pattern, behavior, invert=False):
-        pass
-
-    @property
-    def behavior(self):
-        """ """
-        pass
-
-    @behavior.setter
-    def behavior(self, value):
-        """ """
-        pass
-
-    @property
-    def invert(self):
-        """ """
-        pass
-
-    @invert.setter
-    def invert(self, value):
-        """ """
-        pass
-
-    @property
-    def pattern(self):
-        """ """
-        pass
-
-    @pattern.setter
-    def pattern(self, value):
-        """ """
         pass
 
     def pre_tokenize(self, pretok):

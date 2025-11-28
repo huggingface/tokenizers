@@ -12,7 +12,7 @@ def do_indent(text: str, indent: str):
     return text.replace("\n", f"\n{indent}")
 
 
-def function(obj, indent, text_signature=None):
+def function(obj, indent, text_signature=None, owner=None):
     if text_signature is None:
         text_signature = obj.__text_signature__
     string = ""
@@ -94,19 +94,19 @@ def pyi_file(obj, indent="", owner=None):
 
     elif inspect.isbuiltin(obj):
         string += f"{indent}@staticmethod\n"
-        string += function(obj, indent)
+        string += function(obj, indent, owner=owner)
 
     elif inspect.ismethoddescriptor(obj):
-        string += function(obj, indent)
+        string += function(obj, indent, owner=owner)
 
     elif inspect.isgetsetdescriptor(obj):
         string += f"{indent}@property\n"
-        string += function(obj, indent, text_signature="(self)")
+        string += function(obj, indent, text_signature="(self)", owner=owner)
         # Expose setter in stubs for properties that are writable in Python.
         # If a descriptor is actually read-only at runtime, type checkers may still allow
         # assignment but the runtime will raise, which is acceptable for stubs.
         string += f"{indent}@{obj.__name__}.setter\n"
-        string += function(obj, indent, text_signature="(self, value)")
+        string += function(obj, indent, text_signature="(self, value)", owner=owner)
     else:
         raise Exception(f"Object {obj} is not supported")
     return string
@@ -140,10 +140,11 @@ def do_ruff(code, is_pyi: bool):
 def write(module, directory, origin, check=False):
     submodules = [(name, member) for name, member in inspect.getmembers(module) if inspect.ismodule(member)]
 
-    filename = os.path.join(directory, "__init__.pyi")
     pyi_content = pyi_file(module)
     pyi_content = do_ruff(pyi_content, is_pyi=True)
     os.makedirs(directory, exist_ok=True)
+
+    filename = os.path.join(directory, "__init__.pyi")
     if check:
         with open(filename, "r") as f:
             data = f.read()
