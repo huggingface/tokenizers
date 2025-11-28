@@ -2,11 +2,9 @@ import pickle
 
 import pytest
 
-from tokenizers import NormalizedString, Tokenizer
-from tokenizers.models import WordLevel
+from tokenizers import NormalizedString
 from tokenizers.normalizers import (
     BertNormalizer,
-    Append,
     Lowercase,
     Normalizer,
     Precompiled,
@@ -15,8 +13,6 @@ from tokenizers.normalizers import (
     Prepend,
     Replace,
 )
-from tokenizers.pre_tokenizers import Whitespace
-from tokenizers.processors import TemplateProcessing
 
 
 class TestBertNormalizer:
@@ -181,109 +177,6 @@ class TestStrip:
         assert normalizer.left == False
         normalizer.right = False
         assert normalizer.right == False
-
-
-class TestAppend:
-    def test_instantiate(self):
-        assert isinstance(Append("▁"), Normalizer)
-        assert isinstance(Append("▁"), Append)
-
-    def test_append(self):
-        normalizer = Append(append="▁")
-
-        output = normalizer.normalize_str("hello")
-        assert output == "hello▁"
-
-    def test_does_not_append_empty_string(self):
-        normalizer = Append(append="▁")
-
-        output = normalizer.normalize_str("")
-        assert output == ""
-
-    def test_can_modify(self):
-        normalizer = Append("▁")
-
-        assert normalizer.append == "▁"
-
-        # Modify these
-        normalizer.append = "-"
-        assert normalizer.append == "-"
-
-    def test_with_special_tokens_and_offsets_no_pre_tokenizer(self):
-        text = "This is a somewhat longer string with many words and added tokens"
-        normalized_text = f"{text} <eos>"
-
-        vocab = {"[UNK]": 0, "[CLS]": 1, "[SEP]": 2, normalized_text: 3}
-        tokenizer = Tokenizer(WordLevel(vocab, unk_token="[UNK]"))
-        tokenizer.normalizer = Append(" <eos>")
-        tokenizer.post_processor = TemplateProcessing(
-            single=["[CLS]", "$0", "[SEP]"],
-            pair=["[CLS]", "$A", "[SEP]", "$B", "[SEP]"],
-            special_tokens=[
-                ("[CLS]", tokenizer.token_to_id("[CLS]")),
-                ("[SEP]", tokenizer.token_to_id("[SEP]")),
-            ],
-        )
-
-        encoding = tokenizer.encode(text, add_special_tokens=True)
-
-        assert encoding.tokens == ["[CLS]", normalized_text, "[SEP]"]
-        assert encoding.special_tokens_mask == [1, 0, 1]
-        # Offsets stay tied to the original input length even after appending
-        assert encoding.offsets[1] == (0, len(text))
-        assert encoding.offsets[0] == (0, 0)
-        assert encoding.offsets[2] == (0, 0)
-
-    def test_with_special_tokens_and_offsets_with_whitespace(self):
-        tokens = [
-            "This",
-            "is",
-            "a",
-            "somewhat",
-            "longer",
-            "string",
-            "with",
-            "many",
-            "words",
-            "and",
-            "added",
-            "tokens",
-            "<",
-            "eos",
-            ">",
-        ]
-        vocab = {"[UNK]": 0, "[CLS]": 1, "[SEP]": 2}
-        vocab.update({token: i + 3 for i, token in enumerate(tokens)})
-
-        tokenizer = Tokenizer(WordLevel(vocab, unk_token="[UNK]"))
-        tokenizer.normalizer = Append(" <eos>")
-        tokenizer.pre_tokenizer = Whitespace()
-        tokenizer.post_processor = TemplateProcessing(
-            single=["[CLS]", "$0", "[SEP]"],
-            pair=["[CLS]", "$A", "[SEP]", "$B", "[SEP]"],
-            special_tokens=[
-                ("[CLS]", tokenizer.token_to_id("[CLS]")),
-                ("[SEP]", tokenizer.token_to_id("[SEP]")),
-            ],
-        )
-
-        text = "This is a somewhat longer string with many words and added tokens"
-        encoding = tokenizer.encode(text, add_special_tokens=True)
-
-        assert encoding.tokens == ["[CLS]"] + tokens + ["[SEP]"]
-        assert encoding.special_tokens_mask[0] == 1
-        assert encoding.special_tokens_mask[-1] == 1
-
-        original_len = len(text)
-        last_word_index = encoding.tokens.index("tokens")
-        appended_indices = [i for i, t in enumerate(encoding.tokens) if t in {"<", "eos", ">"}]
-
-        assert encoding.offsets[last_word_index] == (original_len - len("tokens"), original_len)
-        # The appended tokens align to the final original character
-        for idx in appended_indices:
-            assert encoding.offsets[idx] == (original_len - 1, original_len)
-        assert encoding.offsets[0] == (0, 0)
-        assert encoding.offsets[-1] == (0, 0)
 
 
 class TestPrepend:
