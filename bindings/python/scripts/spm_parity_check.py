@@ -1,6 +1,6 @@
 import tokenizers
 from argparse import ArgumentParser
-import sentencepiece as spm
+import sentencepiece as spm  # type: ignore[import]
 from collections import Counter
 import json
 import os
@@ -8,7 +8,7 @@ import datetime
 from typing import Any, cast
 
 try:
-    from termcolor import colored
+    from termcolor import colored  # type: ignore[import]
 
     has_color = True
 except Exception:

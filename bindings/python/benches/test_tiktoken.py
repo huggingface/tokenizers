@@ -2,8 +2,8 @@ import os
 import time
 import argparse
 from datasets import load_dataset
-from tiktoken.load import load_tiktoken_bpe
-import tiktoken
+from tiktoken.load import load_tiktoken_bpe  # type: ignore[import]
+import tiktoken  # type: ignore[import]
 from tokenizers import Tokenizer
 from huggingface_hub import hf_hub_download
 from typing import Tuple, List

@@ -7,7 +7,7 @@ from tempfile import NamedTemporaryFile
 from typing import Dict, List, Tuple
 
 from requests import get
-from sentencepiece import SentencePieceProcessor
+from sentencepiece import SentencePieceProcessor  # type: ignore[import]
 from tqdm import trange, tqdm
 
 basicConfig()

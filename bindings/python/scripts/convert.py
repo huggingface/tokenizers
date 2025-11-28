@@ -1,4 +1,4 @@
-import transformers
+import transformers  # type: ignore[import]
 from tokenizers.implementations import SentencePieceUnigramTokenizer, BaseTokenizer
 from tokenizers.processors import TemplateProcessing
 from tokenizers.models import Unigram, BPE
