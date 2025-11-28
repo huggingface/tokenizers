@@ -60,6 +60,96 @@ class BpeTrainer(Trainer):
     ):
         pass
 
+    @property
+    def continuing_subword_prefix(self):
+        """ """
+        pass
+
+    @continuing_subword_prefix.setter
+    def continuing_subword_prefix(self, value):
+        """ """
+        pass
+
+    @property
+    def end_of_word_suffix(self):
+        """ """
+        pass
+
+    @end_of_word_suffix.setter
+    def end_of_word_suffix(self, value):
+        """ """
+        pass
+
+    @property
+    def initial_alphabet(self):
+        """ """
+        pass
+
+    @initial_alphabet.setter
+    def initial_alphabet(self, value):
+        """ """
+        pass
+
+    @property
+    def limit_alphabet(self):
+        """ """
+        pass
+
+    @limit_alphabet.setter
+    def limit_alphabet(self, value):
+        """ """
+        pass
+
+    @property
+    def max_token_length(self):
+        """ """
+        pass
+
+    @max_token_length.setter
+    def max_token_length(self, value):
+        """ """
+        pass
+
+    @property
+    def min_frequency(self):
+        """ """
+        pass
+
+    @min_frequency.setter
+    def min_frequency(self, value):
+        """ """
+        pass
+
+    @property
+    def show_progress(self):
+        """ """
+        pass
+
+    @show_progress.setter
+    def show_progress(self, value):
+        """ """
+        pass
+
+    @property
+    def special_tokens(self):
+        """ """
+        pass
+
+    @special_tokens.setter
+    def special_tokens(self, value):
+        """ """
+        pass
+
+    @property
+    def vocab_size(self):
+        """ """
+        pass
+
+    @vocab_size.setter
+    def vocab_size(self, value):
+        """ """
+        pass
+
 class UnigramTrainer(Trainer):
     """
     Trainer capable of training a Unigram model
@@ -107,6 +197,46 @@ class UnigramTrainer(Trainer):
     ):
         pass
 
+    @property
+    def initial_alphabet(self):
+        """ """
+        pass
+
+    @initial_alphabet.setter
+    def initial_alphabet(self, value):
+        """ """
+        pass
+
+    @property
+    def show_progress(self):
+        """ """
+        pass
+
+    @show_progress.setter
+    def show_progress(self, value):
+        """ """
+        pass
+
+    @property
+    def special_tokens(self):
+        """ """
+        pass
+
+    @special_tokens.setter
+    def special_tokens(self, value):
+        """ """
+        pass
+
+    @property
+    def vocab_size(self):
+        """ """
+        pass
+
+    @vocab_size.setter
+    def vocab_size(self, value):
+        """ """
+        pass
+
 class WordLevelTrainer(Trainer):
     """
     Trainer capable of training a WorldLevel model
@@ -125,6 +255,46 @@ class WordLevelTrainer(Trainer):
             A list of special tokens the model should know of.
     """
     def __init__(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[]):
+        pass
+
+    @property
+    def min_frequency(self):
+        """ """
+        pass
+
+    @min_frequency.setter
+    def min_frequency(self, value):
+        """ """
+        pass
+
+    @property
+    def show_progress(self):
+        """ """
+        pass
+
+    @show_progress.setter
+    def show_progress(self, value):
+        """ """
+        pass
+
+    @property
+    def special_tokens(self):
+        """ """
+        pass
+
+    @special_tokens.setter
+    def special_tokens(self, value):
+        """ """
+        pass
+
+    @property
+    def vocab_size(self):
+        """ """
+        pass
+
+    @vocab_size.setter
+    def vocab_size(self, value):
+        """ """
         pass
 
 class WordPieceTrainer(Trainer):
@@ -170,4 +340,84 @@ class WordPieceTrainer(Trainer):
         continuing_subword_prefix="##",
         end_of_word_suffix=None,
     ):
+        pass
+
+    @property
+    def continuing_subword_prefix(self):
+        """ """
+        pass
+
+    @continuing_subword_prefix.setter
+    def continuing_subword_prefix(self, value):
+        """ """
+        pass
+
+    @property
+    def end_of_word_suffix(self):
+        """ """
+        pass
+
+    @end_of_word_suffix.setter
+    def end_of_word_suffix(self, value):
+        """ """
+        pass
+
+    @property
+    def initial_alphabet(self):
+        """ """
+        pass
+
+    @initial_alphabet.setter
+    def initial_alphabet(self, value):
+        """ """
+        pass
+
+    @property
+    def limit_alphabet(self):
+        """ """
+        pass
+
+    @limit_alphabet.setter
+    def limit_alphabet(self, value):
+        """ """
+        pass
+
+    @property
+    def min_frequency(self):
+        """ """
+        pass
+
+    @min_frequency.setter
+    def min_frequency(self, value):
+        """ """
+        pass
+
+    @property
+    def show_progress(self):
+        """ """
+        pass
+
+    @show_progress.setter
+    def show_progress(self, value):
+        """ """
+        pass
+
+    @property
+    def special_tokens(self):
+        """ """
+        pass
+
+    @special_tokens.setter
+    def special_tokens(self, value):
+        """ """
+        pass
+
+    @property
+    def vocab_size(self):
+        """ """
+        pass
+
+    @vocab_size.setter
+    def vocab_size(self, value):
+        """ """
         pass

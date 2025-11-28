@@ -40,7 +40,7 @@ def fn_predicate(obj):
     if value:
         return obj.__doc__ and obj.__text_signature__ and not obj.__name__.startswith("_")
     if inspect.isgetsetdescriptor(obj):
-        return obj.__doc__ and not obj.__name__.startswith("_")
+        return not obj.__name__.startswith("_")
     return False
 
 
@@ -54,7 +54,7 @@ def get_module_members(module):
     return members
 
 
-def pyi_file(obj, indent=""):
+def pyi_file(obj, indent="", owner=None):
     string = ""
     if inspect.ismodule(obj):
         string += GENERATED_COMMENT
@@ -84,7 +84,7 @@ def pyi_file(obj, indent=""):
             body += "\n"
 
         for name, fn in fns:
-            body += pyi_file(fn, indent=indent)
+            body += pyi_file(fn, indent=indent, owner=obj)
 
         if not body:
             body += f"{indent}pass\n"
@@ -100,9 +100,13 @@ def pyi_file(obj, indent=""):
         string += function(obj, indent)
 
     elif inspect.isgetsetdescriptor(obj):
-        # TODO it would be interesting to add the setter maybe ?
         string += f"{indent}@property\n"
         string += function(obj, indent, text_signature="(self)")
+        # Expose setter in stubs for properties that are writable in Python.
+        # If a descriptor is actually read-only at runtime, type checkers may still allow
+        # assignment but the runtime will raise, which is acceptable for stubs.
+        string += f"{indent}@{obj.__name__}.setter\n"
+        string += function(obj, indent, text_signature="(self, value)")
     else:
         raise Exception(f"Object {obj} is not supported")
     return string

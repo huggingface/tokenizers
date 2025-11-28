@@ -131,6 +131,46 @@ class BPE(Model):
     ):
         pass
 
+    @property
+    def byte_fallback(self):
+        """ """
+        pass
+
+    @byte_fallback.setter
+    def byte_fallback(self, value):
+        """ """
+        pass
+
+    @property
+    def continuing_subword_prefix(self):
+        """ """
+        pass
+
+    @continuing_subword_prefix.setter
+    def continuing_subword_prefix(self, value):
+        """ """
+        pass
+
+    @property
+    def dropout(self):
+        """ """
+        pass
+
+    @dropout.setter
+    def dropout(self, value):
+        """ """
+        pass
+
+    @property
+    def end_of_word_suffix(self):
+        """ """
+        pass
+
+    @end_of_word_suffix.setter
+    def end_of_word_suffix(self, value):
+        """ """
+        pass
+
     @staticmethod
     def from_file(cls, vocab, merge, **kwargs):
         """
@@ -157,6 +197,16 @@ class BPE(Model):
         """
         pass
 
+    @property
+    def fuse_unk(self):
+        """ """
+        pass
+
+    @fuse_unk.setter
+    def fuse_unk(self, value):
+        """ """
+        pass
+
     def get_trainer(self):
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`
@@ -180,6 +230,16 @@ class BPE(Model):
         Returns:
             :obj:`str`: The token associated to the ID
         """
+        pass
+
+    @property
+    def ignore_merges(self):
+        """ """
+        pass
+
+    @ignore_merges.setter
+    def ignore_merges(self, value):
+        """ """
         pass
 
     @staticmethod
@@ -248,6 +308,16 @@ class BPE(Model):
         Returns:
             A :obj:`List` of :class:`~tokenizers.Token`: The generated tokens
         """
+        pass
+
+    @property
+    def unk_token(self):
+        """ """
+        pass
+
+    @unk_token.setter
+    def unk_token(self, value):
+        """ """
         pass
 
 class Unigram(Model):
@@ -460,6 +530,16 @@ class WordLevel(Model):
         """
         pass
 
+    @property
+    def unk_token(self):
+        """ """
+        pass
+
+    @unk_token.setter
+    def unk_token(self, value):
+        """ """
+        pass
+
 class WordPiece(Model):
     """
     An implementation of the WordPiece algorithm
@@ -475,6 +555,16 @@ class WordPiece(Model):
             The maximum number of characters to authorize in a single word.
     """
     def __init__(self, vocab, unk_token, max_input_chars_per_word):
+        pass
+
+    @property
+    def continuing_subword_prefix(self):
+        """ """
+        pass
+
+    @continuing_subword_prefix.setter
+    def continuing_subword_prefix(self, value):
+        """ """
         pass
 
     @staticmethod
@@ -523,6 +613,16 @@ class WordPiece(Model):
         Returns:
             :obj:`str`: The token associated to the ID
         """
+        pass
+
+    @property
+    def max_input_chars_per_word(self):
+        """ """
+        pass
+
+    @max_input_chars_per_word.setter
+    def max_input_chars_per_word(self, value):
+        """ """
         pass
 
     @staticmethod
@@ -588,4 +688,14 @@ class WordPiece(Model):
         Returns:
             A :obj:`List` of :class:`~tokenizers.Token`: The generated tokens
         """
+        pass
+
+    @property
+    def unk_token(self):
+        """ """
+        pass
+
+    @unk_token.setter
+    def unk_token(self, value):
+        """ """
         pass

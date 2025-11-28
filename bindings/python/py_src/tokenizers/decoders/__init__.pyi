@@ -52,6 +52,16 @@ class BPEDecoder(Decoder):
         """
         pass
 
+    @property
+    def suffix(self):
+        """ """
+        pass
+
+    @suffix.setter
+    def suffix(self, value):
+        """ """
+        pass
+
 class ByteFallback(Decoder):
     """
     ByteFallback Decoder
@@ -115,6 +125,16 @@ class CTC(Decoder):
     def __init__(self, pad_token="<pad>", word_delimiter_token="|", cleanup=True):
         pass
 
+    @property
+    def cleanup(self):
+        """ """
+        pass
+
+    @cleanup.setter
+    def cleanup(self, value):
+        """ """
+        pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -126,6 +146,26 @@ class CTC(Decoder):
         Returns:
             :obj:`str`: The decoded string
         """
+        pass
+
+    @property
+    def pad_token(self):
+        """ """
+        pass
+
+    @pad_token.setter
+    def pad_token(self, value):
+        """ """
+        pass
+
+    @property
+    def word_delimiter_token(self):
+        """ """
+        pass
+
+    @word_delimiter_token.setter
+    def word_delimiter_token(self, value):
+        """ """
         pass
 
 class Fuse(Decoder):
@@ -180,6 +220,36 @@ class Metaspace(Decoder):
         Returns:
             :obj:`str`: The decoded string
         """
+        pass
+
+    @property
+    def prepend_scheme(self):
+        """ """
+        pass
+
+    @prepend_scheme.setter
+    def prepend_scheme(self, value):
+        """ """
+        pass
+
+    @property
+    def replacement(self):
+        """ """
+        pass
+
+    @replacement.setter
+    def replacement(self, value):
+        """ """
+        pass
+
+    @property
+    def split(self):
+        """ """
+        pass
+
+    @split.setter
+    def split(self, value):
+        """ """
         pass
 
 class Replace(Decoder):
@@ -237,6 +307,16 @@ class Strip(Decoder):
     def __init__(self, content, left=0, right=0):
         pass
 
+    @property
+    def content(self):
+        """ """
+        pass
+
+    @content.setter
+    def content(self, value):
+        """ """
+        pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -248,6 +328,26 @@ class Strip(Decoder):
         Returns:
             :obj:`str`: The decoded string
         """
+        pass
+
+    @property
+    def start(self):
+        """ """
+        pass
+
+    @start.setter
+    def start(self, value):
+        """ """
+        pass
+
+    @property
+    def stop(self):
+        """ """
+        pass
+
+    @stop.setter
+    def stop(self, value):
+        """ """
         pass
 
 class WordPiece(Decoder):
@@ -265,6 +365,16 @@ class WordPiece(Decoder):
     def __init__(self, prefix="##", cleanup=True):
         pass
 
+    @property
+    def cleanup(self):
+        """ """
+        pass
+
+    @cleanup.setter
+    def cleanup(self, value):
+        """ """
+        pass
+
     def decode(self, tokens):
         """
         Decode the given list of tokens to a final string
@@ -276,4 +386,14 @@ class WordPiece(Decoder):
         Returns:
             :obj:`str`: The decoded string
         """
+        pass
+
+    @property
+    def prefix(self):
+        """ """
+        pass
+
+    @prefix.setter
+    def prefix(self, value):
+        """ """
         pass
