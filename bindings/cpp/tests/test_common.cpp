@@ -5,14 +5,17 @@
 namespace test_utils {
 
 std::string find_resource(const std::string& name) {
-    std::vector<std::filesystem::path> candidates = {
-        std::filesystem::path("../tokenizers/data") / name,
-        std::filesystem::path("../../tokenizers/data") / name,
-        std::filesystem::path("tokenizers/data") / name,
-        std::filesystem::path("./data") / name
+    // data directory is linked to rust project's data directory
+    // run "make -C ../../tokenizers test" i.e. point -C to rust project depending on where make is run from 
+    namespace fs = std::filesystem;
+    std::vector<fs::path> candidates = {
+        fs::path("./data") / name,
+        fs::path("../data") / name,
+        fs::path("../../data") / name,
+        fs::path("../../../data") / name,
     };
     for (auto& c : candidates) {
-        if (std::filesystem::exists(c)) return c.string();
+        if (fs::exists(c)) return c.string();
     }
     return {};
 }
