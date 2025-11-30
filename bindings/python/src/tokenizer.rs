@@ -248,7 +248,7 @@ impl PyAddedToken {
 
     fn __richcmp__(&self, other: Py<PyAddedToken>, op: CompareOp) -> bool {
         use CompareOp::*;
-        Python::with_gil(|py| match op {
+        Python::attach(|py| match op {
             Lt | Le | Gt | Ge => false,
             Eq => self.get_token() == other.borrow(py).get_token(),
             Ne => self.get_token() != other.borrow(py).get_token(),
@@ -700,7 +700,7 @@ impl PyTokenizer {
         revision: String,
         token: Option<String>,
     ) -> PyResult<Self> {
-        let path = Python::with_gil(|py| -> PyResult<String> {
+        let path = Python::attach(|py| -> PyResult<String> {
             let huggingface_hub = PyModule::import(py, intern!(py, "huggingface_hub"))?;
             let hf_hub_download = huggingface_hub.getattr(intern!(py, "hf_hub_download"))?;
             let kwargs = [
@@ -1158,7 +1158,7 @@ impl PyTokenizer {
 
             // Convert to a Python object directly
             match result {
-                Ok(encoding) => Python::with_gil(|py| {
+                Ok(encoding) => Python::attach(|py| {
                     let obj: PyObject = encoding.into_pyobject(py)?.into_any().unbind();
                     Ok(obj)
                 }),
@@ -1288,7 +1288,7 @@ impl PyTokenizer {
 
             // Convert to a Python object directly rather than going through ToPyResult
             match result {
-                Ok(encodings) => Python::with_gil(|py| {
+                Ok(encodings) => Python::attach(|py| {
                     let obj: PyObject = encodings
                         .into_pyobject(py)? // Vec<PyEncoding> -> Bound<'py, PyList>
                         .into_any() // Bound<'py, PyAny>
@@ -1418,7 +1418,7 @@ impl PyTokenizer {
 
             // Convert to a Python object directly rather than going through ToPyResult
             match result {
-                Ok(encodings) => Python::with_gil(|py| {
+                Ok(encodings) => Python::attach(|py| {
                     let obj: PyObject = encodings
                         .into_pyobject(py)? // Vec<PyEncoding> -> Bound<'py, PyList>
                         .into_any() // Bound<'py, PyAny>
@@ -1508,7 +1508,7 @@ impl PyTokenizer {
                 .unwrap();
 
             match result {
-                Ok(decoded_strings) => Python::with_gil(|py| {
+                Ok(decoded_strings) => Python::attach(|py| {
                     let obj: PyObject = decoded_strings
                         .into_pyobject(py)? // Vec<String> -> Bound<'py, PyList>
                         .into_any() // Bound<'py, PyAny>
@@ -1653,7 +1653,7 @@ impl PyTokenizer {
     fn train(&mut self, files: Vec<String>, trainer: Option<&mut PyTrainer>) -> PyResult<()> {
         let mut trainer =
             trainer.map_or_else(|| self.tokenizer.get_model().get_trainer(), |t| t.clone());
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             py.allow_threads(|| {
                 ToPyResult(
                     self.tokenizer

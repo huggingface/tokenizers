@@ -28,9 +28,7 @@ impl Pattern for PyPattern {
                     s.find_matches(inside)
                 }
             }
-            PyPattern::Regex(r) => {
-                Python::with_gil(|py| (&r.borrow(py).inner).find_matches(inside))
-            }
+            PyPattern::Regex(r) => Python::attach(|py| (&r.borrow(py).inner).find_matches(inside)),
         }
     }
 }
@@ -39,7 +37,7 @@ impl From<PyPattern> for tk::normalizers::replace::ReplacePattern {
     fn from(pattern: PyPattern) -> Self {
         match pattern {
             PyPattern::Str(s) => Self::String(s.to_owned()),
-            PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),
+            PyPattern::Regex(r) => Python::attach(|py| Self::Regex(r.borrow(py).pattern.clone())),
         }
     }
 }
@@ -48,7 +46,7 @@ impl From<PyPattern> for tk::pre_tokenizers::split::SplitPattern {
     fn from(pattern: PyPattern) -> Self {
         match pattern {
             PyPattern::Str(s) => Self::String(s.to_owned()),
-            PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),
+            PyPattern::Regex(r) => Python::attach(|py| Self::Regex(r.borrow(py).pattern.clone())),
         }
     }
 }

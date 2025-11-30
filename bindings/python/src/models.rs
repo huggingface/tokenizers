@@ -945,7 +945,7 @@ mod test {
 
     #[test]
     fn get_subtype() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_model = PyModel::from(BPE::default());
             let py_bpe = py_model.get_as_subtype(py).unwrap();
             assert_eq!("BPE", py_bpe.bind(py).get_type().qualname().unwrap());

@@ -525,7 +525,7 @@ impl CustomDecoder {
 
 impl Decoder for CustomDecoder {
     fn decode(&self, tokens: Vec<String>) -> tk::Result<String> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let decoded = self
                 .inner
                 .call_method(py, "decode", (tokens,), None)?
@@ -535,7 +535,7 @@ impl Decoder for CustomDecoder {
     }
 
     fn decode_chain(&self, tokens: Vec<String>) -> tk::Result<Vec<String>> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let decoded = self
                 .inner
                 .call_method(py, "decode_chain", (tokens,), None)?
@@ -708,7 +708,7 @@ mod test {
 
     #[test]
     fn get_subtype() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_dec = PyDecoder::new(Metaspace::default().into());
             let py_meta = py_dec.get_as_subtype(py).unwrap();
             assert_eq!("Metaspace", py_meta.bind(py).get_type().qualname().unwrap());
@@ -731,7 +731,7 @@ mod test {
             _ => panic!("Expected wrapped, not custom."),
         }
 
-        let obj = Python::with_gil(|py| {
+        let obj = Python::attach(|py| {
             let py_msp = PyDecoder::new(Metaspace::default().into());
             let obj: PyObject = Py::new(py, py_msp)
                 .unwrap()

@@ -642,7 +642,7 @@ impl CustomNormalizer {
 
 impl tk::tokenizer::Normalizer for CustomNormalizer {
     fn normalize(&self, normalized: &mut NormalizedString) -> tk::Result<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let normalized = PyNormalizedStringRefMut::new(normalized);
             let py_normalized = self.inner.bind(py);
             py_normalized.call_method("normalize", (normalized.get().clone(),), None)?;
@@ -826,7 +826,7 @@ mod test {
 
     #[test]
     fn get_subtype() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_norm = PyNormalizer::new(NFC.into());
             let py_nfc = py_norm.get_as_subtype(py).unwrap();
             assert_eq!("NFC", py_nfc.bind(py).get_type().qualname().unwrap());

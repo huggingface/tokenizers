@@ -909,7 +909,7 @@ mod tests {
 
     #[test]
     fn get_subtype() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_trainer = PyTrainer::new(Arc::new(RwLock::new(BpeTrainer::default().into())));
             let py_bpe = py_trainer.get_as_subtype(py).unwrap();
             assert_eq!("BpeTrainer", py_bpe.bind(py).get_type().qualname().unwrap());

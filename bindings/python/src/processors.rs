@@ -835,7 +835,7 @@ mod test {
 
     #[test]
     fn get_subtype() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_proc = PyPostProcessor::new(PyPostProcessorTypeWrapper::Single(Arc::new(
                 RwLock::new(BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 1)).into()),
             )));

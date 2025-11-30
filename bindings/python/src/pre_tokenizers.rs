@@ -824,7 +824,7 @@ impl CustomPreTokenizer {
 
 impl tk::tokenizer::PreTokenizer for CustomPreTokenizer {
     fn pre_tokenize(&self, sentence: &mut PreTokenizedString) -> tk::Result<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let pretok = PyPreTokenizedStringRefMut::new(sentence);
             let py_pretok = self.inner.bind(py);
             py_pretok.call_method("pre_tokenize", (pretok.get().clone(),), None)?;
@@ -1004,7 +1004,7 @@ mod test {
 
     #[test]
     fn get_subtype() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_norm = PyPreTokenizer::new(Whitespace {}.into());
             let py_wsp = py_norm.get_as_subtype(py).unwrap();
             assert_eq!("Whitespace", py_wsp.bind(py).get_type().qualname().unwrap());
@@ -1041,7 +1041,7 @@ mod test {
         let py_ser = serde_json::to_string(&py_seq).unwrap();
         assert_eq!(py_wrapper_ser, py_ser);
 
-        let obj = Python::with_gil(|py| {
+        let obj = Python::attach(|py| {
             let py_wsp = PyPreTokenizer::new(Whitespace {}.into());
             let obj: PyObject = Py::new(py, py_wsp)
                 .unwrap()
