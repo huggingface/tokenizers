@@ -1146,7 +1146,7 @@ impl PyTokenizer {
         let tokenizer = self.tokenizer.clone();
         let rt = crate::TOKIO_RUNTIME.clone();
 
-        let fut = py.allow_threads(|| async move {
+        let fut = py.detach(|| async move {
             let result = rt
                 .spawn_blocking(move || {
                     tokenizer
@@ -1220,7 +1220,7 @@ impl PyTokenizer {
             };
             items.push(item);
         }
-        py.allow_threads(|| {
+        py.detach(|| {
             ToPyResult(
                 self.tokenizer
                     .encode_batch_char_offsets(items, add_special_tokens)
@@ -1276,7 +1276,7 @@ impl PyTokenizer {
         let tokenizer = self.tokenizer.clone();
         let rt = crate::TOKIO_RUNTIME.clone();
 
-        let fut = py.allow_threads(|| async move {
+        let fut = py.detach(|| async move {
             let result = rt
                 .spawn_blocking(move || {
                     tokenizer
@@ -1351,7 +1351,7 @@ impl PyTokenizer {
             };
             items.push(item);
         }
-        py.allow_threads(|| {
+        py.detach(|| {
             ToPyResult(
                 self.tokenizer
                     .encode_batch_fast(items, add_special_tokens)
@@ -1406,7 +1406,7 @@ impl PyTokenizer {
 
         let tokenizer = self.tokenizer.clone();
         let rt = crate::TOKIO_RUNTIME.clone();
-        let fut = py.allow_threads(|| async move {
+        let fut = py.detach(|| async move {
             let result = rt
                 .spawn_blocking(move || {
                     tokenizer
@@ -1470,7 +1470,7 @@ impl PyTokenizer {
         sequences: Vec<Vec<u32>>,
         skip_special_tokens: bool,
     ) -> PyResult<Vec<String>> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let slices = sequences.iter().map(|v| &v[..]).collect::<Vec<&[u32]>>();
             ToPyResult(self.tokenizer.decode_batch(&slices, skip_special_tokens)).into()
         })
@@ -1498,7 +1498,7 @@ impl PyTokenizer {
         let tokenizer = self.tokenizer.clone();
         let rt = crate::TOKIO_RUNTIME.clone();
 
-        let fut = py.allow_threads(|| async move {
+        let fut = py.detach(|| async move {
             let result = rt
                 .spawn_blocking(move || {
                     let slices = sequences.iter().map(|v| &v[..]).collect::<Vec<&[u32]>>();
@@ -1654,7 +1654,7 @@ impl PyTokenizer {
         let mut trainer =
             trainer.map_or_else(|| self.tokenizer.get_model().get_trainer(), |t| t.clone());
         Python::attach(|py| {
-            py.allow_threads(|| {
+            py.detach(|| {
                 ToPyResult(
                     self.tokenizer
                         .train_from_files(&mut trainer, files)
@@ -1718,7 +1718,7 @@ impl PyTokenizer {
             256,
         )?;
 
-        py.allow_threads(|| {
+        py.detach(|| {
             ResultShunt::process(buffered_iter, |iter| {
                 self.tokenizer
                     .train(&mut trainer, MaybeSizedIterator::new(iter, length))
