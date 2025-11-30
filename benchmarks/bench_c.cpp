@@ -48,14 +48,14 @@ int main(int argc, char* argv[]) {
         auto encode_end = std::chrono::high_resolution_clock::now();
         auto encode_time = std::chrono::duration_cast<std::chrono::milliseconds>(encode_end - encode_start);
         
-        if (!encoding.ids) {
+        if (!encoding.ids || encoding.len == 0) {
             tokenizers_free(tokenizer);
             throw std::runtime_error("Failed to encode text");
         }
         
         size_t num_tokens = encoding.len;
         size_t num_chars = text.length();
-        double tokens_per_sec = num_tokens / (encode_time.count() / 1000.0);
+        double tokens_per_sec = (encode_time.count() > 0) ? num_tokens / (encode_time.count() / 1000.0) : 0.0;
         
         // Print results in a parseable format
         std::cout << "load_time_ms:" << load_time.count() << std::endl;

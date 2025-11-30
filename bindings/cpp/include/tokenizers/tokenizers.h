@@ -8,6 +8,7 @@ extern "C" {
         const int32_t* ids;
         const int32_t* attention_mask;
         size_t len;
+        void* _internal_ptr;  // Internal use only - do not access
     };
 
     struct tokenizers_padding_params_t {

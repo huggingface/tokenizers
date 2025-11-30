@@ -10,7 +10,9 @@ extern "C" {
 
 typedef struct {
     const int* ids;
+    const int* attention_mask;
     size_t len;
+    void* _internal_ptr;  // Internal use only - do not access
 } tokenizers_encoding_t;
 
 // Create a new tokenizer from a JSON file

@@ -72,6 +72,7 @@ Each variant was run 3 times. Statistics shown are mean ± standard deviation.
 
 ```bash
 cd benchmarks
+make -C ../tokenizers/ test
 ./build.sh  # Build all variants
 ./run.py    # Run the benchmark suite
 ```

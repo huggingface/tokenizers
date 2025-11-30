@@ -22,8 +22,14 @@ echo
 echo ">>> Building tokenizers-rust..."
 cd "$ROOT_DIR/tokenizers"
 cargo build --release --features http --example encode_batch
+# Find the actual tokenizers rlib file
+TOKENIZERS_LIB=$(find target/release/deps -name "libtokenizers-*.rlib" | head -n1)
+if [ -z "$TOKENIZERS_LIB" ]; then
+    echo "Error: Could not find tokenizers library file"
+    exit 1
+fi
 rustc --edition 2018 -L target/release/deps -L target/release \
-    --extern tokenizers=target/release/libtokenizers.rlib \
+    --extern tokenizers="$TOKENIZERS_LIB" \
     "$SCRIPT_DIR/bench_rust.rs" \
     -o "$SCRIPT_DIR/bench_rust.out" \
     -C opt-level=3

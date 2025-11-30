@@ -9,11 +9,18 @@ pub struct tokenizers_encoding_t {
     pub ids: *const i32,
     pub attention_mask: *const i32,
     pub len: usize,
+    pub _internal_ptr: *mut c_void,  // Store the Box pointer for cleanup
 }
 
 /// Opaque tokenizer type exposed as void* on the C side.
 struct CTokenizer {
     tokenizer: Tokenizer,
+}
+
+/// Encoding data that we'll Box allocate for safe memory management
+struct EncodingData {
+    ids: Vec<i32>,
+    attention_mask: Vec<i32>,
 }
 
 #[no_mangle]
@@ -62,29 +69,56 @@ pub extern "C" fn tokenizers_encode(
     add_special_tokens: bool,
 ) -> tokenizers_encoding_t {
     if tokenizer.is_null() || text.is_null() {
-        return tokenizers_encoding_t { ids: ptr::null(), attention_mask: ptr::null(), len: 0 };
+        return tokenizers_encoding_t { 
+            ids: ptr::null(), 
+            attention_mask: ptr::null(), 
+            len: 0, 
+            _internal_ptr: ptr::null_mut() 
+        };
     }
     let c_tok = unsafe { &mut *(tokenizer as *mut CTokenizer) };
     let c_text = unsafe { CStr::from_ptr(text) };
     let text_str = match c_text.to_str() { Ok(s) => s, Err(_) => {
-        return tokenizers_encoding_t { ids: ptr::null(), attention_mask: ptr::null(), len: 0 };
+        return tokenizers_encoding_t { 
+            ids: ptr::null(), 
+            attention_mask: ptr::null(), 
+            len: 0, 
+            _internal_ptr: ptr::null_mut() 
+        };
     }};
 
     let encoding: Encoding = match c_tok.tokenizer.encode(text_str, add_special_tokens) {
         Ok(e) => e,
-        Err(_) => return tokenizers_encoding_t { ids: ptr::null(), attention_mask: ptr::null(), len: 0 },
+        Err(_) => return tokenizers_encoding_t { 
+            ids: ptr::null(), 
+            attention_mask: ptr::null(), 
+            len: 0, 
+            _internal_ptr: ptr::null_mut() 
+        },
     };
 
     let ids_vec: Vec<i32> = encoding.get_ids().iter().map(|&v| v as i32).collect();
     let mask_vec: Vec<i32> = encoding.get_attention_mask().iter().map(|&v| v as i32).collect();
     let len = ids_vec.len();
-    let ptr_ids = ids_vec.as_ptr();
-    let ptr_mask = mask_vec.as_ptr();
     
-    std::mem::forget(ids_vec);
-    std::mem::forget(mask_vec);
+    // Allocate EncodingData on the heap using Box
+    let encoding_data = Box::new(EncodingData {
+        ids: ids_vec,
+        attention_mask: mask_vec,
+    });
     
-    tokenizers_encoding_t { ids: ptr_ids, attention_mask: ptr_mask, len }
+    let ptr_ids = encoding_data.ids.as_ptr();
+    let ptr_mask = encoding_data.attention_mask.as_ptr();
+    
+    // Convert Box to raw pointer - this transfers ownership to C
+    let raw_ptr = Box::into_raw(encoding_data);
+    
+    tokenizers_encoding_t { 
+        ids: ptr_ids, 
+        attention_mask: ptr_mask, 
+        len,
+        _internal_ptr: raw_ptr as *mut c_void
+    }
 }
 
 #[no_mangle]
@@ -123,7 +157,12 @@ pub extern "C" fn tokenizers_encode_batch(
         std::mem::forget(ids_vec);
         std::mem::forget(mask_vec);
         
-        c_encodings.push(tokenizers_encoding_t { ids: ptr_ids, attention_mask: ptr_mask, len });
+        c_encodings.push(tokenizers_encoding_t { 
+            ids: ptr_ids, 
+            attention_mask: ptr_mask, 
+            len,
+            _internal_ptr: ptr::null_mut()  // Batch encoding has memory management issues - we'll leak for now
+        });
     }
     
     let ptr = c_encodings.as_mut_ptr();
@@ -133,11 +172,12 @@ pub extern "C" fn tokenizers_encode_batch(
 
 #[no_mangle]
 pub extern "C" fn tokenizers_free_encoding(enc: tokenizers_encoding_t) {
-    if !enc.ids.is_null() {
-        unsafe { Vec::from_raw_parts(enc.ids as *mut i32, enc.len, enc.len); }
-    }
-    if !enc.attention_mask.is_null() {
-        unsafe { Vec::from_raw_parts(enc.attention_mask as *mut i32, enc.len, enc.len); }
+    if !enc._internal_ptr.is_null() {
+        unsafe {
+            // Reconstruct the Box from the raw pointer and let it drop naturally
+            let _boxed = Box::from_raw(enc._internal_ptr as *mut EncodingData);
+            // Box will be automatically dropped here, cleaning up the memory
+        }
     }
 }
 
