@@ -33,25 +33,13 @@ pub struct PyModel {
 }
 
 impl PyModel {
-    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub(crate) fn get_as_subtype<'py>(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let base = self.clone();
         Ok(match *self.model.as_ref().read().unwrap() {
-            ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
+            ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?.into_any(),
+            ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base))?.into_any(),
+            ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base))?.into_any(),
+            ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base))?.into_any(),
         })
     }
 }
@@ -111,14 +99,14 @@ impl PyModel {
         }
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let data = serde_json::to_string(&self.model).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while attempting to pickle Model: {e}"))
         })?;
         Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
         match state.extract::<&[u8]>(py) {
             Ok(s) => {
                 self.model = serde_json::from_slice(s).map_err(|e| {
@@ -226,7 +214,7 @@ impl PyModel {
     /// Returns:
     ///     :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
     #[pyo3(text_signature = "(self)")]
-    fn get_trainer(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn get_trainer(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         PyTrainer::from(self.model.read().unwrap().get_trainer()).get_as_subtype(py)
     }
 

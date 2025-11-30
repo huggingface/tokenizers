@@ -4,11 +4,11 @@ use std::hash::{Hash, Hasher};
 
 use numpy::{npyffi, PyArray1, PyArrayMethods};
 use pyo3::class::basic::CompareOp;
-use pyo3::exceptions;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3::IntoPyObject;
+use pyo3::{exceptions, IntoPyObjectExt};
 use tk::models::bpe::BPE;
 use tk::tokenizer::{
     Model, PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
@@ -156,7 +156,7 @@ impl PyAddedToken {
         self.as_pydict(py)
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
         match state.downcast_bound::<PyDict>(py) {
             Ok(state) => {
                 for (key, value) in state {
@@ -331,7 +331,7 @@ impl FromPyObject<'_> for PyArrayUnicode {
                     //     elsize as isize / alignment as isize,
                     // );
                     // let py = ob.py();
-                    // let obj = PyObject::from_owned_ptr(py, unicode);
+                    // let obj = Py<PyAny>::from_owned_ptr(py, unicode);
                     // let s = obj.downcast_bound::<PyString>(py)?;
                     // Ok(s.to_string_lossy().trim_matches(char::from(0)).to_owned())
                 })
@@ -351,7 +351,7 @@ struct PyArrayStr(Vec<String>);
 
 impl FromPyObject<'_> for PyArrayStr {
     fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let array = ob.downcast::<PyArray1<PyObject>>()?;
+        let array = ob.downcast::<PyArray1<Py<PyAny>>>()?;
         let seq = array
             .readonly()
             .as_array()
@@ -595,7 +595,7 @@ impl PyTokenizer {
         PyTokenizer::from_model(model.clone())
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let data = serde_json::to_string(&self.tokenizer).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle Tokenizer: {e}"
@@ -604,7 +604,7 @@ impl PyTokenizer {
         Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
         match state.extract::<&[u8]>(py) {
             Ok(s) => {
                 self.tokenizer = serde_json::from_slice(s).map_err(|e| {
@@ -619,7 +619,7 @@ impl PyTokenizer {
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
-        let model: PyObject = PyModel::from(BPE::default())
+        let model: Py<PyAny> = PyModel::from(BPE::default())
             .into_pyobject(py)?
             .into_any()
             .into();
@@ -1147,23 +1147,14 @@ impl PyTokenizer {
         let rt = crate::TOKIO_RUNTIME.clone();
 
         let fut = py.detach(|| async move {
-            let result = rt
-                .spawn_blocking(move || {
-                    tokenizer
-                        .encode(input, add_special_tokens)
-                        .map(PyEncoding::from)
-                })
-                .await
-                .unwrap();
-
-            // Convert to a Python object directly
-            match result {
-                Ok(encoding) => Python::attach(|py| {
-                    let obj: PyObject = encoding.into_pyobject(py)?.into_any().unbind();
-                    Ok(obj)
-                }),
-                Err(e) => Err(exceptions::PyException::new_err(e.to_string())),
-            }
+            rt.spawn_blocking(move || {
+                tokenizer
+                    .encode(input, add_special_tokens)
+                    .map(PyEncoding::from)
+            })
+            .await
+            .unwrap()
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
         });
 
         pyo3_async_runtimes::tokio::future_into_py(py, fut)
@@ -1277,26 +1268,14 @@ impl PyTokenizer {
         let rt = crate::TOKIO_RUNTIME.clone();
 
         let fut = py.detach(|| async move {
-            let result = rt
-                .spawn_blocking(move || {
-                    tokenizer
-                        .encode_batch_char_offsets(owned_items, add_special_tokens)
-                        .map(|encs| encs.into_iter().map(PyEncoding::from).collect::<Vec<_>>())
-                })
-                .await
-                .unwrap();
-
-            // Convert to a Python object directly rather than going through ToPyResult
-            match result {
-                Ok(encodings) => Python::attach(|py| {
-                    let obj: PyObject = encodings
-                        .into_pyobject(py)? // Vec<PyEncoding> -> Bound<'py, PyList>
-                        .into_any() // Bound<'py, PyAny>
-                        .unbind(); // Py<PyAny> a.k.a. PyObject (owned)
-                    Ok(obj)
-                }),
-                Err(e) => Err(exceptions::PyException::new_err(e.to_string())),
-            }
+            rt.spawn_blocking(move || {
+                tokenizer
+                    .encode_batch_char_offsets(owned_items, add_special_tokens)
+                    .map(|encs| encs.into_iter().map(PyEncoding::from).collect::<Vec<_>>())
+            })
+            .await
+            .unwrap()
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
         });
 
         pyo3_async_runtimes::tokio::future_into_py(py, fut)
@@ -1418,13 +1397,7 @@ impl PyTokenizer {
 
             // Convert to a Python object directly rather than going through ToPyResult
             match result {
-                Ok(encodings) => Python::attach(|py| {
-                    let obj: PyObject = encodings
-                        .into_pyobject(py)? // Vec<PyEncoding> -> Bound<'py, PyList>
-                        .into_any() // Bound<'py, PyAny>
-                        .unbind(); // Py<PyAny> a.k.a. PyObject (owned)
-                    Ok(obj)
-                }),
+                Ok(encodings) => Python::attach(|py| encodings.into_py_any(py)),
                 Err(e) => Err(exceptions::PyException::new_err(e.to_string())),
             }
         });
@@ -1499,24 +1472,13 @@ impl PyTokenizer {
         let rt = crate::TOKIO_RUNTIME.clone();
 
         let fut = py.detach(|| async move {
-            let result = rt
-                .spawn_blocking(move || {
-                    let slices = sequences.iter().map(|v| &v[..]).collect::<Vec<&[u32]>>();
-                    tokenizer.decode_batch(&slices, skip_special_tokens)
-                })
-                .await
-                .unwrap();
-
-            match result {
-                Ok(decoded_strings) => Python::attach(|py| {
-                    let obj: PyObject = decoded_strings
-                        .into_pyobject(py)? // Vec<String> -> Bound<'py, PyList>
-                        .into_any() // Bound<'py, PyAny>
-                        .unbind(); // Py<PyAny> a.k.a. PyObject (owned)
-                    Ok(obj)
-                }),
-                Err(e) => Err(exceptions::PyException::new_err(e.to_string())),
-            }
+            rt.spawn_blocking(move || {
+                let slices = sequences.iter().map(|v| &v[..]).collect::<Vec<&[u32]>>();
+                tokenizer.decode_batch(&slices, skip_special_tokens)
+            })
+            .await
+            .unwrap()
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
         });
 
         pyo3_async_runtimes::tokio::future_into_py(py, fut)
@@ -1772,7 +1734,7 @@ impl PyTokenizer {
 
     /// The :class:`~tokenizers.models.Model` in use by the Tokenizer
     #[getter]
-    fn get_model(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn get_model(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         self.tokenizer.get_model().get_as_subtype(py)
     }
 
@@ -1784,7 +1746,7 @@ impl PyTokenizer {
 
     /// The `optional` :class:`~tokenizers.normalizers.Normalizer` in use by the Tokenizer
     #[getter]
-    fn get_normalizer(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn get_normalizer(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         if let Some(n) = self.tokenizer.get_normalizer() {
             n.get_as_subtype(py)
         } else {
@@ -1801,7 +1763,7 @@ impl PyTokenizer {
 
     /// The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
     #[getter]
-    fn get_pre_tokenizer(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn get_pre_tokenizer(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         if let Some(pt) = self.tokenizer.get_pre_tokenizer() {
             pt.get_as_subtype(py)
         } else {
@@ -1818,7 +1780,7 @@ impl PyTokenizer {
 
     /// The `optional` :class:`~tokenizers.processors.PostProcessor` in use by the Tokenizer
     #[getter]
-    fn get_post_processor(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn get_post_processor(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         if let Some(n) = self.tokenizer.get_post_processor() {
             n.get_as_subtype(py)
         } else {
@@ -1835,7 +1797,7 @@ impl PyTokenizer {
 
     /// The `optional` :class:`~tokenizers.decoders.Decoder` in use by the Tokenizer
     #[getter]
-    fn get_decoder(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn get_decoder(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         if let Some(dec) = self.tokenizer.get_decoder() {
             dec.get_as_subtype(py)
         } else {

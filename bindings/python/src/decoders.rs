@@ -40,51 +40,25 @@ impl PyDecoder {
         PyDecoder { decoder }
     }
 
-    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let base = self.clone();
         Ok(match &self.decoder {
-            PyDecoderWrapper::Custom(_) => Py::new(py, base)?.into_pyobject(py)?.into_any().into(),
+            PyDecoderWrapper::Custom(_) => Py::new(py, base)?.into_any(),
             PyDecoderWrapper::Wrapped(inner) => match &*inner.as_ref().read().unwrap() {
-                DecoderWrapper::Metaspace(_) => Py::new(py, (PyMetaspaceDec {}, base))?
-                    .into_pyobject(py)?
-                    .into_any()
-                    .into(),
-                DecoderWrapper::WordPiece(_) => Py::new(py, (PyWordPieceDec {}, base))?
-                    .into_pyobject(py)?
-                    .into_any()
-                    .into(),
-                DecoderWrapper::ByteFallback(_) => Py::new(py, (PyByteFallbackDec {}, base))?
-                    .into_pyobject(py)?
-                    .into_any()
-                    .into(),
-                DecoderWrapper::Strip(_) => Py::new(py, (PyStrip {}, base))?
-                    .into_pyobject(py)?
-                    .into_any()
-                    .into(),
-                DecoderWrapper::Fuse(_) => Py::new(py, (PyFuseDec {}, base))?
-                    .into_pyobject(py)?
-                    .into_any()
-                    .into(),
-                DecoderWrapper::ByteLevel(_) => Py::new(py, (PyByteLevelDec {}, base))?
-                    .into_pyobject(py)?
-                    .into_any()
-                    .into(),
-                DecoderWrapper::Replace(_) => Py::new(py, (PyReplaceDec {}, base))?
-                    .into_pyobject(py)?
-                    .into_any()
-                    .into(),
-                DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base))?
-                    .into_pyobject(py)?
-                    .into_any()
-                    .into(),
-                DecoderWrapper::CTC(_) => Py::new(py, (PyCTCDecoder {}, base))?
-                    .into_pyobject(py)?
-                    .into_any()
-                    .into(),
-                DecoderWrapper::Sequence(_) => Py::new(py, (PySequenceDecoder {}, base))?
-                    .into_pyobject(py)?
-                    .into_any()
-                    .into(),
+                DecoderWrapper::Metaspace(_) => Py::new(py, (PyMetaspaceDec {}, base))?.into_any(),
+                DecoderWrapper::WordPiece(_) => Py::new(py, (PyWordPieceDec {}, base))?.into_any(),
+                DecoderWrapper::ByteFallback(_) => {
+                    Py::new(py, (PyByteFallbackDec {}, base))?.into_any()
+                }
+                DecoderWrapper::Strip(_) => Py::new(py, (PyStrip {}, base))?.into_any(),
+                DecoderWrapper::Fuse(_) => Py::new(py, (PyFuseDec {}, base))?.into_any(),
+                DecoderWrapper::ByteLevel(_) => Py::new(py, (PyByteLevelDec {}, base))?.into_any(),
+                DecoderWrapper::Replace(_) => Py::new(py, (PyReplaceDec {}, base))?.into_any(),
+                DecoderWrapper::BPE(_) => Py::new(py, (PyBPEDecoder {}, base))?.into_any(),
+                DecoderWrapper::CTC(_) => Py::new(py, (PyCTCDecoder {}, base))?.into_any(),
+                DecoderWrapper::Sequence(_) => {
+                    Py::new(py, (PySequenceDecoder {}, base))?.into_any()
+                }
             },
         })
     }
@@ -99,12 +73,12 @@ impl Decoder for PyDecoder {
 #[pymethods]
 impl PyDecoder {
     #[staticmethod]
-    fn custom(decoder: PyObject) -> Self {
+    fn custom(decoder: Py<PyAny>) -> Self {
         let decoder = PyDecoderWrapper::Custom(Arc::new(RwLock::new(CustomDecoder::new(decoder))));
         PyDecoder::new(decoder)
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let data = serde_json::to_string(&self.decoder).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle Decoder: {e}"
@@ -113,7 +87,7 @@ impl PyDecoder {
         Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
         match state.extract::<&[u8]>(py) {
             Ok(s) => {
                 self.decoder = serde_json::from_slice(s).map_err(|e| {
@@ -514,11 +488,11 @@ impl PySequenceDecoder {
 }
 
 pub(crate) struct CustomDecoder {
-    inner: PyObject,
+    inner: Py<PyAny>,
 }
 
 impl CustomDecoder {
-    pub(crate) fn new(inner: PyObject) -> Self {
+    pub(crate) fn new(inner: Py<PyAny>) -> Self {
         CustomDecoder { inner }
     }
 }
@@ -733,13 +707,7 @@ mod test {
 
         let obj = Python::attach(|py| {
             let py_msp = PyDecoder::new(Metaspace::default().into());
-            let obj: PyObject = Py::new(py, py_msp)
-                .unwrap()
-                .into_pyobject(py)
-                .unwrap()
-                .into_any()
-                .into();
-            obj
+            Py::new(py, py_msp).unwrap().into_any()
         });
         let py_seq = PyDecoderWrapper::Custom(Arc::new(RwLock::new(CustomDecoder::new(obj))));
         assert!(serde_json::to_string(&py_seq).is_err());
