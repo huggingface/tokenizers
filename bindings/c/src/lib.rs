@@ -1,7 +1,10 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
 use std::ptr;
+use std::path::Path;
+use std::fs;
 use tokenizers::{Encoding, Tokenizer, AddedToken, PaddingParams, PaddingStrategy, PaddingDirection};
+use serde_json::Value;
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -12,9 +15,118 @@ pub struct tokenizers_encoding_t {
     pub _internal_ptr: *mut c_void,  // Store the Box pointer for cleanup
 }
 
+/// Tokenizer configuration loaded from tokenizer_config.json
+/// Contains authoritative special token definitions and chat template
+#[derive(Default, Clone)]
+struct TokenizerConfig {
+    bos_token: Option<String>,
+    eos_token: Option<String>,
+    pad_token: Option<String>,
+    unk_token: Option<String>,
+    chat_template: Option<String>,
+    add_bos_token: bool,
+    add_eos_token: bool,
+}
+
+impl TokenizerConfig {
+    /// Load config from a directory containing tokenizer_config.json
+    fn from_dir(dir: &Path) -> Option<Self> {
+        let config_path = dir.join("tokenizer_config.json");
+        Self::from_file(&config_path)
+    }
+    
+    /// Load config from a specific file path
+    fn from_file(path: &Path) -> Option<Self> {
+        let content = fs::read_to_string(path).ok()?;
+        Self::from_json(&content)
+    }
+    
+    /// Parse config from JSON string
+    fn from_json(json: &str) -> Option<Self> {
+        let v: Value = serde_json::from_str(json).ok()?;
+        
+        // Helper to extract token string - handles both string and object formats
+        let extract_token = |v: &Value, key: &str| -> Option<String> {
+            match v.get(key)? {
+                Value::String(s) => Some(s.clone()),
+                Value::Object(obj) => obj.get("content")?.as_str().map(|s| s.to_string()),
+                _ => None,
+            }
+        };
+        
+        Some(TokenizerConfig {
+            bos_token: extract_token(&v, "bos_token"),
+            eos_token: extract_token(&v, "eos_token"),
+            pad_token: extract_token(&v, "pad_token"),
+            unk_token: extract_token(&v, "unk_token"),
+            chat_template: v.get("chat_template").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            add_bos_token: v.get("add_bos_token").and_then(|v| v.as_bool()).unwrap_or(false),
+            add_eos_token: v.get("add_eos_token").and_then(|v| v.as_bool()).unwrap_or(false),
+        })
+    }
+    
+    /// Get special token string by name
+    fn get_special_token(&self, name: &str) -> Option<&str> {
+        match name.to_uppercase().as_str() {
+            "BOS" => self.bos_token.as_deref(),
+            "EOS" => self.eos_token.as_deref(),
+            "PAD" => self.pad_token.as_deref(),
+            "UNK" => self.unk_token.as_deref(),
+            _ => None,
+        }
+    }
+}
+
 /// Opaque tokenizer type exposed as void* on the C side.
+/// Contains tokenizer + optional config (auto-loaded from same directory)
 struct CTokenizer {
     tokenizer: Tokenizer,
+    config: Option<TokenizerConfig>,
+}
+
+impl CTokenizer {
+    fn new_from_file(path: &str, config_path: Option<&str>) -> Option<Self> {
+        let tokenizer = Tokenizer::from_file(path).ok()?;
+        // Load config: explicit path > sibling tokenizer_config.json
+        let config = if let Some(cp) = config_path {
+            TokenizerConfig::from_file(Path::new(cp))
+        } else {
+            Path::new(path).parent().and_then(TokenizerConfig::from_dir)
+        };
+        Some(CTokenizer { tokenizer, config })
+    }
+    
+    fn new_from_str(json: &str) -> Option<Self> {
+        let tokenizer = Tokenizer::from_bytes(json.as_bytes()).ok()?;
+        // No config available when loading from string
+        Some(CTokenizer { tokenizer, config: None })
+    }
+    
+    /// Get special token ID - tries config first, falls back to heuristic
+    fn get_special_token_id(&self, name: &str) -> i32 {
+        // Try config first (authoritative)
+        if let Some(config) = &self.config {
+            if let Some(token) = config.get_special_token(name) {
+                if let Some(id) = self.tokenizer.token_to_id(token) {
+                    return id as i32;
+                }
+            }
+        }
+        // Fall back to heuristic
+        let candidates = match name.to_uppercase().as_str() {
+            "BOS" => &["<bos>", "<s>", "[CLS]", "<|begin_of_text|>", "<|startoftext|>"][..],
+            "EOS" => &["<eos>", "</s>", "[SEP]", "<|end_of_text|>", "<|endoftext|>", "<|eot_id|>"][..],
+            "PAD" => &["<pad>", "[PAD]", "<|padding|>"][..],
+            "UNK" => &["<unk>", "[UNK]", "<|unk|>"][..],
+            _ => return -1,
+        };
+        for token in candidates {
+            if let Some(id) = self.tokenizer.token_to_id(token) {
+                return id as i32;
+            }
+        }
+        -1
+    }
 }
 
 /// Encoding data that we'll Box allocate for safe memory management
@@ -25,6 +137,15 @@ struct EncodingData {
 
 #[no_mangle]
 pub extern "C" fn tokenizers_new_from_file(path: *const c_char) -> *mut c_void {
+    tokenizers_new_from_file_with_config(path, ptr::null())
+}
+
+/// Create tokenizer with explicit config file path
+#[no_mangle]
+pub extern "C" fn tokenizers_new_from_file_with_config(
+    path: *const c_char,
+    config_path: *const c_char
+) -> *mut c_void {
     if path.is_null() {
         return ptr::null_mut();
     }
@@ -33,12 +154,15 @@ pub extern "C" fn tokenizers_new_from_file(path: *const c_char) -> *mut c_void {
         Ok(s) => s,
         Err(_) => return ptr::null_mut(),
     };
-    match Tokenizer::from_file(path_str) {
-        Ok(t) => {
-            let boxed = Box::new(CTokenizer { tokenizer: t });
-            Box::into_raw(boxed) as *mut c_void
-        }
-        Err(_) => ptr::null_mut(),
+    let config_str = if config_path.is_null() {
+        None
+    } else {
+        let c_cfg = unsafe { CStr::from_ptr(config_path) };
+        c_cfg.to_str().ok()
+    };
+    match CTokenizer::new_from_file(path_str, config_str) {
+        Some(t) => Box::into_raw(Box::new(t)) as *mut c_void,
+        None => ptr::null_mut(),
     }
 }
 
@@ -46,13 +170,13 @@ pub extern "C" fn tokenizers_new_from_file(path: *const c_char) -> *mut c_void {
 pub extern "C" fn tokenizers_new_from_str(json: *const c_char) -> *mut c_void {
     if json.is_null() { return ptr::null_mut(); }
     let c_str = unsafe { CStr::from_ptr(json) };
-    let bytes = c_str.to_bytes();
-    match Tokenizer::from_bytes(bytes) {
-        Ok(t) => {
-            let boxed = Box::new(CTokenizer { tokenizer: t });
-            Box::into_raw(boxed) as *mut c_void
-        }
-        Err(_) => ptr::null_mut(),
+    let json_str = match c_str.to_str() {
+        Ok(s) => s,
+        Err(_) => return ptr::null_mut(),
+    };
+    match CTokenizer::new_from_str(json_str) {
+        Some(t) => Box::into_raw(Box::new(t)) as *mut c_void,
+        None => ptr::null_mut(),
     }
 }
 
@@ -471,3 +595,80 @@ pub extern "C" fn tokenizers_set_padding(
     
     c_tok.tokenizer.with_padding(Some(params));
 }
+
+// === Special Token IDs ===
+// Unified API: automatically uses config if available, falls back to heuristic
+
+/// Get special token ID by name ("BOS", "EOS", "PAD", "UNK")
+/// Automatically uses tokenizer_config.json if found, otherwise uses heuristic.
+/// Returns -1 if not found.
+#[no_mangle]
+pub extern "C" fn tokenizers_get_special_token_id(
+    tokenizer: *mut c_void,
+    name: *const c_char
+) -> i32 {
+    if tokenizer.is_null() || name.is_null() { return -1; }
+    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
+    let c_name = unsafe { CStr::from_ptr(name) };
+    let name_str = match c_name.to_str() { Ok(s) => s, Err(_) => return -1 };
+    c_tok.get_special_token_id(name_str)
+}
+
+/// Get special token string by name ("BOS", "EOS", "PAD", "UNK")
+/// Returns the token from config if available, otherwise null.
+/// Caller must free with tokenizers_string_free.
+#[no_mangle]
+pub extern "C" fn tokenizers_get_special_token(
+    tokenizer: *mut c_void,
+    name: *const c_char
+) -> *mut c_char {
+    if tokenizer.is_null() || name.is_null() { return ptr::null_mut(); }
+    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
+    let c_name = unsafe { CStr::from_ptr(name) };
+    let name_str = match c_name.to_str() { Ok(s) => s, Err(_) => return ptr::null_mut() };
+    
+    if let Some(config) = &c_tok.config {
+        if let Some(token) = config.get_special_token(name_str) {
+            return CString::new(token).unwrap().into_raw();
+        }
+    }
+    ptr::null_mut()
+}
+
+/// Get add_bos_token setting from config (false if no config)
+#[no_mangle]
+pub extern "C" fn tokenizers_get_add_bos_token(tokenizer: *mut c_void) -> bool {
+    if tokenizer.is_null() { return false; }
+    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
+    c_tok.config.as_ref().map_or(false, |c| c.add_bos_token)
+}
+
+/// Get add_eos_token setting from config (false if no config)
+#[no_mangle]
+pub extern "C" fn tokenizers_get_add_eos_token(tokenizer: *mut c_void) -> bool {
+    if tokenizer.is_null() { return false; }
+    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
+    c_tok.config.as_ref().map_or(false, |c| c.add_eos_token)
+}
+
+/// Check if tokenizer has a chat template (from config)
+#[no_mangle]
+pub extern "C" fn tokenizers_has_chat_template(tokenizer: *mut c_void) -> bool {
+    if tokenizer.is_null() { return false; }
+    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
+    c_tok.config.as_ref().map_or(false, |c| c.chat_template.is_some())
+}
+
+/// Get chat template string (caller must free with tokenizers_string_free)
+#[no_mangle]
+pub extern "C" fn tokenizers_get_chat_template(tokenizer: *mut c_void) -> *mut c_char {
+    if tokenizer.is_null() { return ptr::null_mut(); }
+    let c_tok = unsafe { &*(tokenizer as *mut CTokenizer) };
+    if let Some(config) = &c_tok.config {
+        if let Some(template) = &config.chat_template {
+            return CString::new(template.as_str()).unwrap().into_raw();
+        }
+    }
+    ptr::null_mut()
+}
+
