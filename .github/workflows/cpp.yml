@@ -51,16 +51,19 @@ jobs:
             tokenizers/target
           key: ${{ runner.os }}-cargo-cpp-build-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install CMake (Ubuntu)
+      - name: Install dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
 
-      - name: Install CMake (macOS)
+      - name: Install dependencies (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          brew install cmake ninja
+          # Install cmake 3.x from homebrew-core (pinned version)
+          brew install ninja
+          brew install cmake@3
+          echo "$(brew --prefix cmake@3)/bin" >> $GITHUB_PATH
 
       - name: Fetch test resources
         working-directory: ./tokenizers
@@ -68,6 +71,7 @@ jobs:
 
       - name: Configure C++ bindings
         run: |
+          echo "Using cmake: $(which cmake) version $(cmake --version | head -1)"
           git submodule update --init --recursive 
           cmake -S bindings/cpp -B build_cpp -G "${{ matrix.cmake_generator }}"
 
