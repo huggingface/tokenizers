@@ -7,6 +7,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Option to force a fresh cargo build
 option(TOKENIZERS_CPP_FORCE_CARGO "Force rebuilding the Rust C FFI library" OFF)
+option(TOKENIZERS_COMPILE_TESTS "Compile tokenizers C++ bindings tests" ON)
 
 # Build directory for Rust output (now at bindings/c)
 set(RUST_CRATE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../c)
@@ -50,30 +51,30 @@ add_library(tokenizers_cpp INTERFACE)
 target_link_libraries(tokenizers_cpp INTERFACE tokenizers_cpp_impl)
 
 # Tests
-enable_testing()
+if(TOKENIZERS_COMPILE_TESTS)
+    enable_testing()
 
-include(FetchContent)
-FetchContent_Declare(
-  googletest
-  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
-)
-# For Windows: Prevent overriding the parent project's compiler/linker settings
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
+    include(FetchContent)
+    FetchContent_Declare(
+      googletest
+      URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+    )
+    # For Windows: Prevent overriding the parent project's compiler/linker settings
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
 
-# Google Test executable
-add_executable(tokenizer_tests_gtest
-    tests/test_tokenizer_gtest.cpp
-)
-target_link_libraries(tokenizer_tests_gtest PRIVATE tokenizers_cpp GTest::gtest_main)
+    # Google Test executable
+    add_executable(tokenizer_tests_gtest
+        tests/test_tokenizer_gtest.cpp
+    )
+    target_link_libraries(tokenizer_tests_gtest PRIVATE tokenizers_cpp GTest::gtest_main)
 
-# Set test data directory for test discovery
-set(TOKENIZERS_TEST_DATA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/data")
+    # Set test data directory for test discovery
+    set(TOKENIZERS_TEST_DATA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/data")
 
-# Register Google Test with environment variable for test data
-include(GoogleTest)
-gtest_discover_tests(tokenizer_tests_gtest
-    PROPERTIES ENVIRONMENT "TOKENIZERS_TEST_DATA=${TOKENIZERS_TEST_DATA_DIR}"
-)
-
-message(STATUS "tokenizers_cpp configured. Build with: cmake -S bindings/cpp -B build && cmake --build build && ctest --test-dir build")
+    # Register Google Test with environment variable for test data
+    include(GoogleTest)
+    gtest_discover_tests(tokenizer_tests_gtest
+        PROPERTIES ENVIRONMENT "TOKENIZERS_TEST_DATA=${TOKENIZERS_TEST_DATA_DIR}"
+    )
+endif()
