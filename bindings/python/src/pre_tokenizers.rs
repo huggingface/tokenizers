@@ -1017,8 +1017,7 @@ mod test {
 
         let obj = Python::attach(|py| {
             let py_wsp = PyPreTokenizer::new(Whitespace {}.into());
-            let obj = Py::new(py, py_wsp).unwrap().into_any();
-            obj
+            Py::new(py, py_wsp).unwrap().into_any()
         });
         let py_seq: PyPreTokenizerWrapper =
             PyPreTokenizerWrapper::Custom(CustomPreTokenizer::new(obj));

@@ -33,7 +33,7 @@ pub struct PyModel {
 }
 
 impl PyModel {
-    pub(crate) fn get_as_subtype<'py>(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let base = self.clone();
         Ok(match *self.model.as_ref().read().unwrap() {
             ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?.into_any(),
