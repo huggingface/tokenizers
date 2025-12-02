@@ -7,7 +7,7 @@ from tempfile import NamedTemporaryFile
 from typing import Dict, List, Tuple
 
 from requests import get
-from sentencepiece import SentencePieceProcessor
+from sentencepiece import SentencePieceProcessor  # type: ignore[import]
 from tqdm import trange, tqdm
 
 basicConfig()
@@ -27,7 +27,7 @@ class SentencePieceExtractor:
 
     def extract(self) -> Tuple[Dict[str, int], List[Tuple]]:
         sp = self.sp
-        vocab = {sp.id_to_piece(index): index for index in trange(sp.GetPieceSize())}
+        vocab = {sp.id_to_piece(index): index for index in trange(sp.GetPieceSize())}  # type: ignore[attr-defined]
 
         # Merges
         merges = []

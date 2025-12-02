@@ -2,8 +2,8 @@ import os
 import time
 import argparse
 from datasets import load_dataset
-from tiktoken.load import load_tiktoken_bpe
-import tiktoken
+from tiktoken.load import load_tiktoken_bpe  # type: ignore[import]
+import tiktoken  # type: ignore[import]
 from tokenizers import Tokenizer
 from huggingface_hub import hf_hub_download
 from typing import Tuple, List
@@ -30,7 +30,9 @@ def benchmark_batch(model: str, documents: list[str], num_threads: int, document
     num_bytes = sum(map(len, map(str.encode, documents)))
     readable_size, unit = format_byte_size(num_bytes)
     print(f"==============")
-    print(f"num_threads: {num_threads}, data size: {readable_size}, documents: {len(documents)} Avg Length: {document_length:.0f}")
+    print(
+        f"num_threads: {num_threads}, data size: {readable_size}, documents: {len(documents)} Avg Length: {document_length:.0f}"
+    )
     filename = hf_hub_download(MODEL_ID, "original/tokenizer.model")
     mergeable_ranks = load_tiktoken_bpe(filename)
     pat_str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"
@@ -46,20 +48,15 @@ def benchmark_batch(model: str, documents: list[str], num_threads: int, document
         "<|end_header_id|>",
         "<|reserved_special_token_4|>",
         "<|eot_id|>",  # end of turn
-    ] + [
-        f"<|reserved_special_token_{i}|>"
-        for i in range(5, num_reserved_special_tokens - 5)
-    ]
+    ] + [f"<|reserved_special_token_{i}|>" for i in range(5, num_reserved_special_tokens - 5)]
     num_base_tokens = len(mergeable_ranks)
-    special_tokens = {
-        token: num_base_tokens + i for i, token in enumerate(special_tokens)
-    }
+    special_tokens = {token: num_base_tokens + i for i, token in enumerate(special_tokens)}
     enc = tiktoken.Encoding(
-            name=model,
-            pat_str=pat_str,
-            mergeable_ranks=mergeable_ranks,
-            special_tokens=special_tokens,
-        )
+        name=model,
+        pat_str=pat_str,
+        mergeable_ranks=mergeable_ranks,
+        special_tokens=special_tokens,
+    )
     out = enc.encode("This is a test")
 
     hf_enc = Tokenizer.from_pretrained(model)
@@ -73,7 +70,6 @@ def benchmark_batch(model: str, documents: list[str], num_threads: int, document
 
     readable_size, unit = format_byte_size(num_bytes / (end - start) * 1e9)
     print(f"tiktoken \t{readable_size}  / s")
-
 
     start = time.perf_counter_ns()
     hf_enc.encode_batch_fast(documents)
@@ -98,7 +94,7 @@ def test(model: str, dataset: str, dataset_config: str, threads: List[int]):
                 else:
                     documents.append(item["premise"]["en"])
             if fuse:
-                documents=["".join(documents)]
+                documents = ["".join(documents)]
 
             document_length = sum(len(d) for d in documents) / len(documents)
 
@@ -115,15 +111,14 @@ def test(model: str, dataset: str, dataset_config: str, threads: List[int]):
 
 
 def main():
-
     parser = argparse.ArgumentParser(
-                    prog='bench_tokenizer',
-                    description='Getting a feel for speed when tokenizing',
+        prog="bench_tokenizer",
+        description="Getting a feel for speed when tokenizing",
     )
-    parser.add_argument('-m', '--model', default=MODEL_ID, type=str)
-    parser.add_argument('-d', '--dataset', default=DATASET, type=str)
-    parser.add_argument('-ds', '--dataset-config', default=DATASET_CONFIG, type=str)
-    parser.add_argument('-t', '--threads', nargs='+', default=DEFAULT_THREADS, type=int)
+    parser.add_argument("-m", "--model", default=MODEL_ID, type=str)
+    parser.add_argument("-d", "--dataset", default=DATASET, type=str)
+    parser.add_argument("-ds", "--dataset-config", default=DATASET_CONFIG, type=str)
+    parser.add_argument("-t", "--threads", nargs="+", default=DEFAULT_THREADS, type=int)
     args = parser.parse_args()
     test(args.model, args.dataset, args.dataset_config, args.threads)
 

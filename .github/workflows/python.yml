@@ -116,7 +116,7 @@ jobs:
           python -m venv .env
           source .env/bin/activate
           pip install -U pip
-          pip install pytest requests setuptools_rust numpy pyarrow datasets
+          pip install pytest requests setuptools_rust numpy pyarrow datasets ty
           pip install -e .[dev]
 
       - name: Check style
@@ -124,6 +124,12 @@ jobs:
         run: |
           source .env/bin/activate
           make check-style
+
+      - name: Type check
+        working-directory: ./bindings/python
+        run: |
+          source .env/bin/activate
+          ty check py_src tests
 
       - name: Run tests
         working-directory: ./bindings/python

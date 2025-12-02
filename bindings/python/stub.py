@@ -7,23 +7,52 @@ from pathlib import Path
 INDENT = " " * 4
 GENERATED_COMMENT = "# Generated content DO NOT EDIT\n"
 
+OVERRIDES = {
+    ("tokenizers", "AddedToken", "__init__"): "(self, content=None, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False)",
+    ("tokenizers.decoders", "Strip", "__init__"): "(self, content=' ', left=0, right=0)",
+    ("tokenizers.processors", "TemplateProcessing", "__init__"): "(self, single=None, pair=None, special_tokens=None)",
+}
+
 
 def do_indent(text: str, indent: str):
     return text.replace("\n", f"\n{indent}")
 
 
-def function(obj, indent, text_signature=None):
+def function(obj, indent, text_signature=None, owner=None):
+    name = obj.__name__
+
+    # 1) Figure out a usable text_signature
     if text_signature is None:
-        text_signature = obj.__text_signature__
+        text_signature = getattr(obj, "__text_signature__", None)
+    if owner is not None:
+        key = (getattr(owner, "__module__", ""), owner.__name__, name)
+        if key in OVERRIDES:
+            text_signature = OVERRIDES[key]
+    if text_signature is None:
+        text_signature = "()"
+    else:
+        text_signature = text_signature.replace("$self", "self").replace(" /,", "")
+
+    if name in ("__getitem__", "__setitem__"):
+        # Always expose magic indexing methods, even if they lack a __text_signature__
+        # (PyO3 magic methods often do).
+        if name == "__getitem__":
+            text_signature = "(self, key)"
+        else:
+            text_signature = "(self, key, value)"
+
+    # 2) Safely handle missing docstrings
+    doc = obj.__doc__ or ""
+
     string = ""
-    string += f"{indent}def {obj.__name__}{text_signature}:\n"
+    string += f"{indent}def {name}{text_signature}:\n"
     indent += INDENT
     string += f'{indent}"""\n'
-    string += f"{indent}{do_indent(obj.__doc__, indent)}\n"
+    if doc:
+        string += f"{indent}{do_indent(doc, indent)}\n"
     string += f'{indent}"""\n'
     string += f"{indent}pass\n"
-    string += "\n"
-    string += "\n"
+    string += "\n\n"
     return string
 
 
@@ -36,11 +65,17 @@ def member_sort(member):
 
 
 def fn_predicate(obj):
-    value = inspect.ismethoddescriptor(obj) or inspect.isbuiltin(obj)
-    if value:
-        return obj.__doc__ and obj.__text_signature__ and not obj.__name__.startswith("_")
+    always = {"__getitem__", "__setitem__", "__getstate__", "__setstate__", "__getnewargs__"}
+    if inspect.ismethoddescriptor(obj) or inspect.isbuiltin(obj):
+        name = obj.__name__
+        # Always expose magic indexing methods, even if they start with "_"
+        # or lack a __text_signature__ (PyO3 magic methods often do).
+        if name in always:
+            return True
+        return obj.__text_signature__ and not obj.__name__.startswith("_")
+
     if inspect.isgetsetdescriptor(obj):
-        return obj.__doc__ and not obj.__name__.startswith("_")
+        return not obj.__name__.startswith("_")
     return False
 
 
@@ -54,7 +89,7 @@ def get_module_members(module):
     return members
 
 
-def pyi_file(obj, indent=""):
+def pyi_file(obj, indent="", owner=None):
     string = ""
     if inspect.ismodule(obj):
         string += GENERATED_COMMENT
@@ -79,12 +114,14 @@ def pyi_file(obj, indent=""):
 
         # Init
         if obj.__text_signature__:
-            body += f"{indent}def __init__{obj.__text_signature__}:\n"
-            body += f"{indent+INDENT}pass\n"
+            init_sig = OVERRIDES.get((obj.__module__, obj.__name__, "__init__"), obj.__text_signature__)
+            init_sig = init_sig.replace("$self", "self").replace(" /,", "")
+            body += f"{indent}def __init__{init_sig}:\n"
+            body += f"{indent + INDENT}pass\n"
             body += "\n"
 
         for name, fn in fns:
-            body += pyi_file(fn, indent=indent)
+            body += pyi_file(fn, indent=indent, owner=obj)
 
         if not body:
             body += f"{indent}pass\n"
@@ -94,15 +131,19 @@ def pyi_file(obj, indent=""):
 
     elif inspect.isbuiltin(obj):
         string += f"{indent}@staticmethod\n"
-        string += function(obj, indent)
+        string += function(obj, indent, owner=owner)
 
     elif inspect.ismethoddescriptor(obj):
-        string += function(obj, indent)
+        string += function(obj, indent, owner=owner)
 
     elif inspect.isgetsetdescriptor(obj):
-        # TODO it would be interesting to add the setter maybe ?
         string += f"{indent}@property\n"
-        string += function(obj, indent, text_signature="(self)")
+        string += function(obj, indent, text_signature="(self)", owner=owner)
+        # Expose setter in stubs for properties that are writable in Python.
+        # If a descriptor is actually read-only at runtime, type checkers may still allow
+        # assignment but the runtime will raise, which is acceptable for stubs.
+        string += f"{indent}@{obj.__name__}.setter\n"
+        string += function(obj, indent, text_signature="(self, value)", owner=owner)
     else:
         raise Exception(f"Object {obj} is not supported")
     return string
@@ -125,11 +166,14 @@ from typing import List, Optional, Tuple
 
 
 def do_ruff(code, is_pyi: bool):
-    command = ["ruff", "format", "--config", "pyproject.toml", "--silent", "-"]
-    if is_pyi:
-        command.extend(["--stdin-filename", "test.pyi"])
+    command = ["ruff", "format", "--config", "pyproject.toml"]
+    command.extend(["--stdin-filename", "test.pyi" if is_pyi else "test.py", "-"])
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
-    stdout, _ = process.communicate(input=code.encode("utf-8"))
+    stdout, stderr = process.communicate(input=code.encode("utf-8"))
+    if stderr:
+        print(code)
+        print(f"Ruff error: {stderr.decode('utf-8')}")
+        return code
     return stdout.decode("utf-8")
 
 
@@ -138,7 +182,78 @@ def write(module, directory, origin, check=False):
 
     filename = os.path.join(directory, "__init__.pyi")
     pyi_content = pyi_file(module)
-    pyi_content = do_ruff(pyi_content, is_pyi=True)
+
+    # Inject extra hints for hand-written Python modules layered on top of the extension.
+    if origin == "tokenizers":
+        extra = """
+from enum import Enum
+from typing import List, Tuple, Union, Any
+
+Offsets = Tuple[int, int]
+TextInputSequence = str
+PreTokenizedInputSequence = Union[List[str], Tuple[str, ...]]
+TextEncodeInput = Union[
+    TextInputSequence,
+    Tuple[TextInputSequence, TextInputSequence],
+    List[TextInputSequence],
+]
+PreTokenizedEncodeInput = Union[
+    PreTokenizedInputSequence,
+    Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence],
+    List[PreTokenizedInputSequence],
+]
+InputSequence = Union[TextInputSequence, PreTokenizedInputSequence]
+EncodeInput = Union[TextEncodeInput, PreTokenizedEncodeInput]
+
+
+class OffsetReferential(Enum):
+    ORIGINAL = "original"
+    NORMALIZED = "normalized"
+
+
+class OffsetType(Enum):
+    BYTE = "byte"
+    CHAR = "char"
+
+
+class SplitDelimiterBehavior(Enum):
+    REMOVED = "removed"
+    ISOLATED = "isolated"
+    MERGED_WITH_PREVIOUS = "merged_with_previous"
+    MERGED_WITH_NEXT = "merged_with_next"
+    CONTIGUOUS = "contiguous"
+
+from .implementations import (
+    BertWordPieceTokenizer,
+    ByteLevelBPETokenizer,
+    CharBPETokenizer,
+    SentencePieceBPETokenizer,
+    SentencePieceUnigramTokenizer,
+)
+
+def __getattr__(name: str) -> Any: ...
+BertWordPieceTokenizer: Any
+ByteLevelBPETokenizer: Any
+CharBPETokenizer: Any
+SentencePieceBPETokenizer: Any
+SentencePieceUnigramTokenizer: Any
+"""
+        pyi_content += extra
+
+    if origin == "normalizers":
+        pyi_content += """
+from typing import Dict
+
+NORMALIZERS: Dict[str, Normalizer]
+
+def unicode_normalizer_from_str(normalizer: str) -> Normalizer: ...
+"""
+
+    try:
+        pyi_content = do_ruff(pyi_content, is_pyi=True)
+    except Exception as e:
+        print(f"Ruff error: {e}")
+
     os.makedirs(directory, exist_ok=True)
     if check:
         with open(filename, "r") as f:
@@ -150,7 +265,11 @@ def write(module, directory, origin, check=False):
 
     filename = os.path.join(directory, "__init__.py")
     py_content = py_file(module, origin)
-    py_content = do_ruff(py_content, is_pyi=False)
+    try:
+        py_content = do_ruff(py_content, is_pyi=False)
+    except Exception as e:
+        print(f"Ruff error: {e}")
+
     os.makedirs(directory, exist_ok=True)
 
     is_auto = False
@@ -182,4 +301,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     import tokenizers
 
-    write(tokenizers.tokenizers, "py_src/tokenizers/", "tokenizers", check=args.check)
+    # `tokenizers.tokenizers` is the extension module; attribute access is dynamic.
+    write(tokenizers.tokenizers, "py_src/tokenizers/", "tokenizers", check=args.check)  # type: ignore[attr-defined]

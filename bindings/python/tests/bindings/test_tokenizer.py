@@ -273,9 +273,9 @@ class TestTokenizer:
 
         # Mal formed
         with pytest.raises(TypeError, match="TextInputSequence must be str"):
-            tokenizer.encode([["my", "name"]])
+            tokenizer.encode([["my", "name"]])  # type: ignore[arg-type]
         with pytest.raises(TypeError, match="TextInputSequence must be str"):
-            tokenizer.encode("My name is john", [["pair"]])
+            tokenizer.encode("My name is john", [["pair"]])  # type: ignore[arg-type]
         with pytest.raises(TypeError, match="TextInputSequence must be str"):
             tokenizer.encode("my name is john", ["pair"])
 

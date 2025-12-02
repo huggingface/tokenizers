@@ -6,6 +6,14 @@ class PostProcessor:
     This class is not supposed to be instantiated directly. Instead, any implementation of
     a PostProcessor will return an instance of this class when instantiated.
     """
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -56,6 +64,28 @@ class BertProcessing(PostProcessor):
     def __init__(self, sep, cls):
         pass
 
+    def __getnewargs__(self):
+        """ """
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @property
+    def cls(self):
+        """ """
+        pass
+
+    @cls.setter
+    def cls(self, value):
+        """ """
+        pass
+
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -86,6 +116,16 @@ class BertProcessing(PostProcessor):
         Return:
             :class:`~tokenizers.Encoding`: The final encoding
         """
+        pass
+
+    @property
+    def sep(self):
+        """ """
+        pass
+
+    @sep.setter
+    def sep(self, value):
+        """ """
         pass
 
 class ByteLevel(PostProcessor):
@@ -104,7 +144,25 @@ class ByteLevel(PostProcessor):
             the start of the first token's offset by 1. Only has an effect if :obj:`trim_offsets`
             is set to :obj:`True`.
     """
-    def __init__(self, trim_offsets=True, add_prefix_state=True):
+    def __init__(self, add_prefix_space=None, trim_offsets=None, use_regex=None):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @property
+    def add_prefix_space(self):
+        """ """
+        pass
+
+    @add_prefix_space.setter
+    def add_prefix_space(self, value):
+        """ """
         pass
 
     def num_special_tokens_to_add(self, is_pair):
@@ -137,6 +195,26 @@ class ByteLevel(PostProcessor):
         Return:
             :class:`~tokenizers.Encoding`: The final encoding
         """
+        pass
+
+    @property
+    def trim_offsets(self):
+        """ """
+        pass
+
+    @trim_offsets.setter
+    def trim_offsets(self, value):
+        """ """
+        pass
+
+    @property
+    def use_regex(self):
+        """ """
+        pass
+
+    @use_regex.setter
+    def use_regex(self, value):
+        """ """
         pass
 
 class RobertaProcessing(PostProcessor):
@@ -169,6 +247,38 @@ class RobertaProcessing(PostProcessor):
     def __init__(self, sep, cls, trim_offsets=True, add_prefix_space=True):
         pass
 
+    def __getnewargs__(self):
+        """ """
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @property
+    def add_prefix_space(self):
+        """ """
+        pass
+
+    @add_prefix_space.setter
+    def add_prefix_space(self, value):
+        """ """
+        pass
+
+    @property
+    def cls(self):
+        """ """
+        pass
+
+    @cls.setter
+    def cls(self, value):
+        """ """
+        pass
+
     def num_special_tokens_to_add(self, is_pair):
         """
         Return the number of special tokens that would be added for single/pair sentences.
@@ -201,6 +311,26 @@ class RobertaProcessing(PostProcessor):
         """
         pass
 
+    @property
+    def sep(self):
+        """ """
+        pass
+
+    @sep.setter
+    def sep(self, value):
+        """ """
+        pass
+
+    @property
+    def trim_offsets(self):
+        """ """
+        pass
+
+    @trim_offsets.setter
+    def trim_offsets(self, value):
+        """ """
+        pass
+
 class Sequence(PostProcessor):
     """
     Sequence Processor
@@ -210,6 +340,30 @@ class Sequence(PostProcessor):
             The processors that need to be chained
     """
     def __init__(self, processors):
+        pass
+
+    def __getitem__(self, key):
+        """
+        Return self[key].
+        """
+        pass
+
+    def __getnewargs__(self):
+        """ """
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setitem__(self, key, value):
+        """
+        Set self[key] to value.
+        """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     def num_special_tokens_to_add(self, is_pair):
@@ -311,7 +465,15 @@ class TemplateProcessing(PostProcessor):
              The given dict expects the provided :obj:`ids` and :obj:`tokens` lists to have
              the same length.
     """
-    def __init__(self, single, pair, special_tokens):
+    def __init__(self, single=None, pair=None, special_tokens=None):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     def num_special_tokens_to_add(self, is_pair):
@@ -344,4 +506,14 @@ class TemplateProcessing(PostProcessor):
         Return:
             :class:`~tokenizers.Encoding`: The final encoding
         """
+        pass
+
+    @property
+    def single(self):
+        """ """
+        pass
+
+    @single.setter
+    def single(self, value):
+        """ """
         pass

@@ -73,6 +73,7 @@ impl Decoder for PyDecoder {
 #[pymethods]
 impl PyDecoder {
     #[staticmethod]
+    #[pyo3(text_signature = "(decoder)")]
     fn custom(decoder: Py<PyAny>) -> Self {
         let decoder = PyDecoderWrapper::Custom(Arc::new(RwLock::new(CustomDecoder::new(decoder))));
         PyDecoder::new(decoder)
@@ -300,7 +301,10 @@ impl PyStrip {
     }
 
     #[new]
-    #[pyo3(signature = (content=' ', left=0, right=0), text_signature = "(self, content, left=0, right=0)")]
+    #[pyo3(
+        signature = (content=' ', left=0, right=0),
+        text_signature = "(self, content=' ', left=0, right=0)"
+    )]
     fn new(content: char, left: usize, right: usize) -> (Self, PyDecoder) {
         (PyStrip {}, Strip::new(content, left, right).into())
     }
@@ -652,6 +656,19 @@ impl PyDecodeStream {
             prefix_index: 0,
         }
     }
+
+    /// Streaming decode step
+    ///
+    /// Args:
+    ///     tokenizer (:class:`~tokenizers.Tokenizer`):
+    ///        The tokenizer to use for decoding
+    ///    id (:obj:`int` or `List[int]`):
+    ///       The next token id or list of token ids to add to the stream
+    ///
+    ///
+    /// Returns:
+    ///     :obj:`Optional[str]`: The next decoded string chunk, or None if not enough
+    ///         tokens have been provided yet.
     #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
     fn step(&mut self, tokenizer: &PyTokenizer, id: StreamInput) -> PyResult<Option<String>> {
         let id: Vec<u32> = match id {

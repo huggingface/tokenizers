@@ -8,6 +8,17 @@ class Model:
 
     This class cannot be constructed directly. Please use one of the concrete models.
     """
+    def __init__(self):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
     def get_trainer(self):
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`
@@ -131,8 +142,56 @@ class BPE(Model):
     ):
         pass
 
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @property
+    def byte_fallback(self):
+        """ """
+        pass
+
+    @byte_fallback.setter
+    def byte_fallback(self, value):
+        """ """
+        pass
+
+    @property
+    def continuing_subword_prefix(self):
+        """ """
+        pass
+
+    @continuing_subword_prefix.setter
+    def continuing_subword_prefix(self, value):
+        """ """
+        pass
+
+    @property
+    def dropout(self):
+        """ """
+        pass
+
+    @dropout.setter
+    def dropout(self, value):
+        """ """
+        pass
+
+    @property
+    def end_of_word_suffix(self):
+        """ """
+        pass
+
+    @end_of_word_suffix.setter
+    def end_of_word_suffix(self, value):
+        """ """
+        pass
+
     @staticmethod
-    def from_file(cls, vocab, merge, **kwargs):
+    def from_file(vocab, merges, **kwargs):
         """
         Instantiate a BPE model from the given files.
 
@@ -155,6 +214,16 @@ class BPE(Model):
         Returns:
             :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
         """
+        pass
+
+    @property
+    def fuse_unk(self):
+        """ """
+        pass
+
+    @fuse_unk.setter
+    def fuse_unk(self, value):
+        """ """
         pass
 
     def get_trainer(self):
@@ -182,8 +251,18 @@ class BPE(Model):
         """
         pass
 
+    @property
+    def ignore_merges(self):
+        """ """
+        pass
+
+    @ignore_merges.setter
+    def ignore_merges(self, value):
+        """ """
+        pass
+
     @staticmethod
-    def read_file(self, vocab, merges):
+    def read_file(vocab, merges):
         """
         Read a :obj:`vocab.json` and a :obj:`merges.txt` files
 
@@ -250,6 +329,16 @@ class BPE(Model):
         """
         pass
 
+    @property
+    def unk_token(self):
+        """ """
+        pass
+
+    @unk_token.setter
+    def unk_token(self, value):
+        """ """
+        pass
+
 class Unigram(Model):
     """
     An implementation of the Unigram algorithm
@@ -258,7 +347,15 @@ class Unigram(Model):
         vocab (:obj:`List[Tuple[str, float]]`, `optional`, `optional`):
             A list of vocabulary items and their relative score [("am", -0.2442),...]
     """
-    def __init__(self, vocab, unk_id, byte_fallback):
+    def __init__(self, vocab=None, unk_id=None, byte_fallback=None):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     def get_trainer(self):
@@ -345,11 +442,19 @@ class WordLevel(Model):
         unk_token (:obj:`str`, `optional`):
             The unknown token to be used by the model.
     """
-    def __init__(self, vocab, unk_token):
+    def __init__(self, vocab=None, unk_token=None):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
         pass
 
     @staticmethod
-    def from_file(vocab, unk_token):
+    def from_file(vocab, unk_token=None):
         """
         Instantiate a WordLevel model from the given file
 
@@ -460,6 +565,16 @@ class WordLevel(Model):
         """
         pass
 
+    @property
+    def unk_token(self):
+        """ """
+        pass
+
+    @unk_token.setter
+    def unk_token(self, value):
+        """ """
+        pass
+
 class WordPiece(Model):
     """
     An implementation of the WordPiece algorithm
@@ -474,7 +589,25 @@ class WordPiece(Model):
         max_input_chars_per_word (:obj:`int`, `optional`):
             The maximum number of characters to authorize in a single word.
     """
-    def __init__(self, vocab, unk_token, max_input_chars_per_word):
+    def __init__(self, vocab=None, unk_token="[UNK]", max_input_chars_per_word=100, continuing_subword_prefix="##"):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @property
+    def continuing_subword_prefix(self):
+        """ """
+        pass
+
+    @continuing_subword_prefix.setter
+    def continuing_subword_prefix(self, value):
+        """ """
         pass
 
     @staticmethod
@@ -523,6 +656,16 @@ class WordPiece(Model):
         Returns:
             :obj:`str`: The token associated to the ID
         """
+        pass
+
+    @property
+    def max_input_chars_per_word(self):
+        """ """
+        pass
+
+    @max_input_chars_per_word.setter
+    def max_input_chars_per_word(self, value):
+        """ """
         pass
 
     @staticmethod
@@ -588,4 +731,14 @@ class WordPiece(Model):
         Returns:
             A :obj:`List` of :class:`~tokenizers.Token`: The generated tokens
         """
+        pass
+
+    @property
+    def unk_token(self):
+        """ """
+        pass
+
+    @unk_token.setter
+    def unk_token(self, value):
+        """ """
         pass

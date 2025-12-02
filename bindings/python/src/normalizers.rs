@@ -109,6 +109,7 @@ impl Normalizer for PyNormalizer {
 #[pymethods]
 impl PyNormalizer {
     #[staticmethod]
+    #[pyo3(text_signature = "(normalizer)")]
     fn custom(obj: Py<PyAny>) -> Self {
         Self {
             normalizer: PyNormalizerWrapper::Custom(CustomNormalizer::new(obj)).into(),
@@ -365,7 +366,7 @@ pub struct PySequence {}
 #[pymethods]
 impl PySequence {
     #[new]
-    #[pyo3(text_signature = None)]
+    #[pyo3(signature = (normalizers), text_signature = "(self, normalizers)")]
     fn new(normalizers: &Bound<'_, PyList>) -> PyResult<(Self, PyNormalizer)> {
         let mut sequence = Vec::with_capacity(normalizers.len());
         for n in normalizers.iter() {

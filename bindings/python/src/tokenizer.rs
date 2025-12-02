@@ -131,7 +131,10 @@ impl From<tk::AddedToken> for PyAddedToken {
 #[pymethods]
 impl PyAddedToken {
     #[new]
-    #[pyo3(signature = (content=None, **kwargs), text_signature = "(self, content, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False)")]
+    #[pyo3(
+        signature = (content=None, **kwargs),
+        text_signature = "(self, content=None, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False)"
+    )]
     fn __new__(content: Option<&str>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let mut token = PyAddedToken::from(content.unwrap_or(""), None);
 
