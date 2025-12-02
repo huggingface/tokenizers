@@ -164,7 +164,7 @@ class EncodingVisualizer:
         """
         if len(annotations) == 0:
             return {}
-        labels = set(map(lambda x: x.label, annotations))
+        labels = {x.label for x in annotations}
         num_labels = len(labels)
         h_step = int(255 / num_labels)
         if h_step < 20:

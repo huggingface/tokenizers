@@ -3,6 +3,7 @@ import concurrent.futures
 import pytest
 import numpy as np
 import asyncio
+from time import perf_counter
 from tokenizers import AddedToken, Encoding, Tokenizer
 from tokenizers.implementations import BertWordPieceTokenizer
 from tokenizers.models import BPE, Model, Unigram
@@ -10,7 +11,6 @@ from tokenizers.pre_tokenizers import ByteLevel, Metaspace
 from tokenizers.processors import RobertaProcessing, TemplateProcessing
 from tokenizers.normalizers import Strip, Lowercase, Sequence
 from tokenizers.decoders import ByteFallback, DecodeStream, Metaspace as DecoderMetaspace
-import time
 
 from ..utils import bert_files, data_dir, multiprocessing_with_parallelism, roberta_files
 
@@ -341,7 +341,7 @@ class TestTokenizer:
 
         # Can pad to the longest in a batch
         output = tokenizer.encode_batch(["my name", "my name is john"])
-        assert all([len(encoding) == 4 for encoding in output])
+        assert all(len(encoding) == 4 for encoding in output)
 
         # Can pad to the specified length otherwise
         tokenizer.enable_padding(length=4)
@@ -950,21 +950,21 @@ class TestAsyncTokenizer:
                 # Measure sync performance with pre-initialized executor
                 # Warm up
                 await asyncio.gather(*[encode_sync_with_executor(i) for i in range(10)])
-                time.sleep(0.03)
+                asyncio.sleep(0.03)
                 # Actual measurement
-                start = time.perf_counter()
+                start = perf_counter()
                 await asyncio.gather(*[encode_sync_with_executor(i) for i in range(n_tasks)])
-                sync_time = time.perf_counter() - start
+                sync_time = perf_counter() - start
 
                 # Measure async performance
                 # Warm up
                 await asyncio.gather(*[encode_async(i) for i in range(10)])
 
                 # Actual measurement
-                time.sleep(0.03)
-                start = time.perf_counter()
+                asyncio.sleep(0.03)
+                start = perf_counter()
                 await asyncio.gather(*[encode_async(i) for i in range(n_tasks)])
-                async_time = time.perf_counter() - start
+                async_time = perf_counter() - start
 
                 # Log times
                 print(f"sync vs async processing times: {sync_time:.4f}s vs {async_time:.4f}s for {n_tasks} tasks")
