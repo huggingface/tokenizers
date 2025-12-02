@@ -1,24 +1,17 @@
-# Minimal stub for the compiled extension module so type checkers can resolve imports
-from typing import Any
-
-AddedToken: type
-Encoding: type
-NormalizedString: type
-PreTokenizedString: type
-Regex: type
-Token: type
-Tokenizer: type
-decoders: Any
-models: Any
-normalizers: Any
-pre_tokenizers: Any
-processors: Any
-trainers: Any
-__version__: str
-
-# Re-exported implementation helpers for type checkers
-BertWordPieceTokenizer: Any
-ByteLevelBPETokenizer: Any
-CharBPETokenizer: Any
-SentencePieceBPETokenizer: Any
-SentencePieceUnigramTokenizer: Any
+# Generated content DO NOT EDIT
+from . import (
+    AddedToken as AddedToken,
+    Encoding as Encoding,
+    NormalizedString as NormalizedString,
+    PreTokenizedString as PreTokenizedString,
+    Regex as Regex,
+    Token as Token,
+    Tokenizer as Tokenizer,
+    __version__ as __version__,
+    decoders as decoders,
+    models as models,
+    normalizers as normalizers,
+    pre_tokenizers as pre_tokenizers,
+    processors as processors,
+    trainers as trainers,
+)
