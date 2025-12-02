@@ -1,6 +1,6 @@
 import tokenizers
 from argparse import ArgumentParser
-import sentencepiece as spm  # type: ignore[import]
+import sentencepiece as spm
 from collections import Counter
 import json
 import os
@@ -8,7 +8,7 @@ import datetime
 from typing import Any, cast
 
 try:
-    from termcolor import colored  # type: ignore[import]
+    from termcolor import colored
 
     has_color = True
 except Exception:
@@ -87,7 +87,7 @@ def main():
 
 
 def check_train(args):
-    sp = cast(Any, spm.SentencePieceProcessor())
+    sp = spm.SentencePieceProcessor()
     sp.Load(args.model_file)
 
     tokenizer = tokenizers.SentencePieceUnigramTokenizer()

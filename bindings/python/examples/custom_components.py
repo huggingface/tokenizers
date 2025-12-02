@@ -1,6 +1,6 @@
 from typing import List
 
-import jieba  # type: ignore[import]
+import jieba
 from tokenizers import NormalizedString, PreTokenizedString, Regex, Tokenizer
 from tokenizers.decoders import Decoder
 from tokenizers.models import BPE

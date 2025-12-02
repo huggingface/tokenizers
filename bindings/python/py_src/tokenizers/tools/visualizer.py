@@ -108,7 +108,7 @@ class EncodingVisualizer:
     def __call__(
         self,
         text: str,
-        annotations: List[Any] = [],
+        annotations: Optional[List[Any]] = None,
         default_to_notebook: Optional[bool] = None,
     ) -> Optional[str]:
         """
@@ -141,6 +141,8 @@ class EncodingVisualizer:
                     """We couldn't import IPython utils for html display.
                     Are you running in a notebook?"""
                 )
+        if annotations is None:
+            annotations = []
         if self.annotation_coverter is not None:
             annotations = list(map(self.annotation_coverter, annotations))
         encoding = self.tokenizer.encode(text)
