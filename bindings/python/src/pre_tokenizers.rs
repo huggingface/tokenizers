@@ -48,13 +48,11 @@ impl PyPreTokenizer {
         PyPreTokenizer { pretok }
     }
 
-    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let base = self.clone();
         Ok(match self.pretok {
             PyPreTokenizerTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
+                .into_any(),
             PyPreTokenizerTypeWrapper::Single(ref inner) => {
                 match &*inner
                     .as_ref()
@@ -66,64 +64,40 @@ impl PyPreTokenizer {
                     }
                     PyPreTokenizerWrapper::Wrapped(inner) => match inner {
                         PreTokenizerWrapper::Whitespace(_) => Py::new(py, (PyWhitespace {}, base))?
-                            .into_pyobject(py)?
-                            .into_any()
-                            .into(),
+                            .into_any(),
                         PreTokenizerWrapper::Split(_) => Py::new(py, (PySplit {}, base))?
-                            .into_pyobject(py)?
-                            .into_any()
-                            .into(),
+                            .into_any(),
                         PreTokenizerWrapper::Punctuation(_) => {
                             Py::new(py, (PyPunctuation {}, base))?
-                                .into_pyobject(py)?
                                 .into_any()
-                                .into()
                         }
                         PreTokenizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
-                            .into_pyobject(py)?
-                            .into_any()
-                            .into(),
+                            .into_any(),
                         PreTokenizerWrapper::Metaspace(_) => Py::new(py, (PyMetaspace {}, base))?
-                            .into_pyobject(py)?
-                            .into_any()
-                            .into(),
+                            .into_any(),
                         PreTokenizerWrapper::Delimiter(_) => {
                             Py::new(py, (PyCharDelimiterSplit {}, base))?
-                                .into_pyobject(py)?
                                 .into_any()
-                                .into()
                         }
                         PreTokenizerWrapper::WhitespaceSplit(_) => {
                             Py::new(py, (PyWhitespaceSplit {}, base))?
-                                .into_pyobject(py)?
                                 .into_any()
-                                .into()
                         }
                         PreTokenizerWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
-                            .into_pyobject(py)?
-                            .into_any()
-                            .into(),
+                            .into_any(),
                         PreTokenizerWrapper::BertPreTokenizer(_) => {
                             Py::new(py, (PyBertPreTokenizer {}, base))?
-                                .into_pyobject(py)?
                                 .into_any()
-                                .into()
                         }
                         PreTokenizerWrapper::Digits(_) => Py::new(py, (PyDigits {}, base))?
-                            .into_pyobject(py)?
-                            .into_any()
-                            .into(),
+                            .into_any(),
                         PreTokenizerWrapper::UnicodeScripts(_) => {
                             Py::new(py, (PyUnicodeScripts {}, base))?
-                                .into_pyobject(py)?
                                 .into_any()
-                                .into()
                         }
                         PreTokenizerWrapper::FixedLength(_) => {
                             Py::new(py, (PyFixedLength {}, base))?
-                                .into_pyobject(py)?
                                 .into_any()
-                                .into()
                         }
                     },
                 }
@@ -141,13 +115,13 @@ impl PreTokenizer for PyPreTokenizer {
 #[pymethods]
 impl PyPreTokenizer {
     #[staticmethod]
-    fn custom(pretok: PyObject) -> Self {
+    fn custom(pretok: Py<PyAny>) -> Self {
         PyPreTokenizer {
             pretok: PyPreTokenizerWrapper::Custom(CustomPreTokenizer::new(pretok)).into(),
         }
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let data = serde_json::to_string(&self.pretok).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle PreTokenizer: {e}"
@@ -156,7 +130,7 @@ impl PyPreTokenizer {
         Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
         match state.extract::<&[u8]>(py) {
             Ok(s) => {
                 let unpickled = serde_json::from_slice(s).map_err(|e| {
@@ -813,18 +787,18 @@ impl PyUnicodeScripts {
 
 #[derive(Clone)]
 pub(crate) struct CustomPreTokenizer {
-    inner: PyObject,
+    inner: Py<PyAny>,
 }
 
 impl CustomPreTokenizer {
-    pub fn new(inner: PyObject) -> Self {
+    pub fn new(inner: Py<PyAny>) -> Self {
         Self { inner }
     }
 }
 
 impl tk::tokenizer::PreTokenizer for CustomPreTokenizer {
     fn pre_tokenize(&self, sentence: &mut PreTokenizedString) -> tk::Result<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let pretok = PyPreTokenizedStringRefMut::new(sentence);
             let py_pretok = self.inner.bind(py);
             py_pretok.call_method("pre_tokenize", (pretok.get().clone(),), None)?;
@@ -1004,7 +978,7 @@ mod test {
 
     #[test]
     fn get_subtype() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_norm = PyPreTokenizer::new(Whitespace {}.into());
             let py_wsp = py_norm.get_as_subtype(py).unwrap();
             assert_eq!("Whitespace", py_wsp.bind(py).get_type().qualname().unwrap());
@@ -1041,15 +1015,9 @@ mod test {
         let py_ser = serde_json::to_string(&py_seq).unwrap();
         assert_eq!(py_wrapper_ser, py_ser);
 
-        let obj = Python::with_gil(|py| {
+        let obj = Python::attach(|py| {
             let py_wsp = PyPreTokenizer::new(Whitespace {}.into());
-            let obj: PyObject = Py::new(py, py_wsp)
-                .unwrap()
-                .into_pyobject(py)
-                .unwrap()
-                .into_any()
-                .into();
-            obj
+            Py::new(py, py_wsp).unwrap().into_any()
         });
         let py_seq: PyPreTokenizerWrapper =
             PyPreTokenizerWrapper::Custom(CustomPreTokenizer::new(obj));
