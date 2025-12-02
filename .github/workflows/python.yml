@@ -129,7 +129,7 @@ jobs:
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
-          ty py_src tests
+          ty check py_src tests
 
       - name: Run tests
         working-directory: ./bindings/python
