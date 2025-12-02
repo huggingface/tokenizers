@@ -82,7 +82,7 @@ where
             return Ok(());
         }
 
-        Python::with_gil(|py| loop {
+        Python::attach(|py| loop {
             if self.buffer.len() >= self.size {
                 return Ok(());
             }

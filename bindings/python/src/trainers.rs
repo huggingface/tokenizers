@@ -26,31 +26,25 @@ impl PyTrainer {
     pub(crate) fn new(trainer: Arc<RwLock<TrainerWrapper>>) -> Self {
         PyTrainer { trainer }
     }
-    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let base = self.clone();
         Ok(match *self.trainer.as_ref().read().unwrap() {
-            TrainerWrapper::BpeTrainer(_) => Py::new(py, (PyBpeTrainer {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            TrainerWrapper::WordPieceTrainer(_) => Py::new(py, (PyWordPieceTrainer {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            TrainerWrapper::WordLevelTrainer(_) => Py::new(py, (PyWordLevelTrainer {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            TrainerWrapper::UnigramTrainer(_) => Py::new(py, (PyUnigramTrainer {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
+            TrainerWrapper::BpeTrainer(_) => Py::new(py, (PyBpeTrainer {}, base))?.into_any(),
+            TrainerWrapper::WordPieceTrainer(_) => {
+                Py::new(py, (PyWordPieceTrainer {}, base))?.into_any()
+            }
+            TrainerWrapper::WordLevelTrainer(_) => {
+                Py::new(py, (PyWordLevelTrainer {}, base))?.into_any()
+            }
+            TrainerWrapper::UnigramTrainer(_) => {
+                Py::new(py, (PyUnigramTrainer {}, base))?.into_any()
+            }
         })
     }
 }
 #[pymethods]
 impl PyTrainer {
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let data = serde_json::to_string(&self.trainer).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle PyTrainer: {e}"
@@ -59,7 +53,7 @@ impl PyTrainer {
         Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
         match state.extract::<&[u8]>(py) {
             Ok(s) => {
                 let unpickled = serde_json::from_slice(s).map_err(|e| {
@@ -909,7 +903,7 @@ mod tests {
 
     #[test]
     fn get_subtype() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_trainer = PyTrainer::new(Arc::new(RwLock::new(BpeTrainer::default().into())));
             let py_bpe = py_trainer.get_as_subtype(py).unwrap();
             assert_eq!("BpeTrainer", py_bpe.bind(py).get_type().qualname().unwrap());
