@@ -71,6 +71,7 @@ class TestByteLevelProcessing:
         assert isinstance(ByteLevel(), ByteLevel)
         assert isinstance(pickle.loads(pickle.dumps(ByteLevel())), ByteLevel)
 
+    @pytest.mark.network
     def test_processing(self, roberta_files):
         # Deprecated in 0.9
         with pytest.deprecated_call():
