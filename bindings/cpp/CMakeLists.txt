@@ -14,12 +14,6 @@ set(RUST_CRATE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../c)
 set(RUST_OUTPUT_DIR ${RUST_CRATE_DIR}/target/release)
 set(RUST_LIB_NAME tokenizers_c)
 
-# Jinja2Cpp for chat template rendering
-set(JINJA2CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(JINJA2CPP_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-set(JINJA2CPP_DEPS_MODE internal CACHE STRING "" FORCE)
-add_subdirectory(third_party/Jinja2Cpp)
-
 # Custom command to build the Rust cdylib
 add_custom_command(
     OUTPUT ${RUST_OUTPUT_DIR}/lib${RUST_LIB_NAME}.so
@@ -43,8 +37,11 @@ add_library(tokenizers_cpp_impl STATIC
     src/tokenizers.cpp
 )
 add_dependencies(tokenizers_cpp_impl build_rust_ffi)
-target_include_directories(tokenizers_cpp_impl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(tokenizers_cpp_impl PUBLIC ${RUST_LIB_NAME} jinja2cpp)
+target_include_directories(tokenizers_cpp_impl 
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${RUST_CRATE_DIR}
+)
+target_link_libraries(tokenizers_cpp_impl PUBLIC ${RUST_LIB_NAME})
 
 # Interface library for easy linking
 add_library(tokenizers_cpp INTERFACE)
@@ -66,6 +63,7 @@ if(TOKENIZERS_COMPILE_TESTS)
     # Google Test executable
     add_executable(tokenizer_tests_gtest
         tests/test_tokenizer_gtest.cpp
+        tests/test_tokenizer_chat_templates.cpp
     )
     target_link_libraries(tokenizer_tests_gtest PRIVATE tokenizers_cpp GTest::gtest_main)
 

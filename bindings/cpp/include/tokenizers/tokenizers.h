@@ -63,6 +63,15 @@ extern "C" {
     bool tokenizers_get_add_eos_token(void* tokenizer);
     bool tokenizers_has_chat_template(void* tokenizer);
     char* tokenizers_get_chat_template(void* tokenizer);
+    char* tokenizers_apply_chat_template(
+        void* tokenizer,
+        const char* template_str,
+        const char* messages_json,
+        bool add_generation_prompt,
+        const char* bos_token,
+        const char* eos_token,
+        char** error_out
+    );
 }
 
 namespace tokenizers {
@@ -387,6 +396,18 @@ public:
     /// @return Formatted string ready for tokenization
     /// @throws ChatTemplateError if no template or rendering fails
     std::string apply_chat_template(
+        const std::vector<ChatMessage>& messages,
+        bool add_generation_prompt = true
+    ) const;
+
+    /// Apply custom chat template to messages
+    /// @param template_str The Jinja2 chat template string to use
+    /// @param messages Vector of ChatMessage with role and content
+    /// @param add_generation_prompt If true, adds prompt for assistant response
+    /// @return Formatted string ready for tokenization
+    /// @throws ChatTemplateError if template rendering fails
+    std::string apply_chat_template(
+        const std::string& template_str,
         const std::vector<ChatMessage>& messages,
         bool add_generation_prompt = true
     ) const;

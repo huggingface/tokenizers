@@ -1,3 +1,0 @@
-[submodule "bindings/cpp/third_party/Jinja2Cpp"]
-	path = bindings/cpp/third_party/Jinja2Cpp
-	url = https://github.com/jinja2cpp/Jinja2Cpp.git
