@@ -672,3 +672,124 @@ pub extern "C" fn tokenizers_get_chat_template(tokenizer: *mut c_void) -> *mut c
     ptr::null_mut()
 }
 
+/// Apply a chat template to render messages
+/// 
+/// Arguments:
+///   - tokenizer: the tokenizer instance
+///   - template: Jinja2 template string
+///   - messages_json: JSON array of messages with "role" and "content" fields
+///   - add_generation_prompt: whether to append generation prompt
+///   - bos_token: optional BOS token string
+///   - eos_token: optional EOS token string
+///   - error_out: pointer to error string (caller must free with tokenizers_string_free)
+///
+/// Returns: rendered template string (caller must free with tokenizers_string_free), or null on error
+#[no_mangle]
+pub extern "C" fn tokenizers_apply_chat_template(
+    tokenizer: *mut c_void,
+    template: *const c_char,
+    messages_json: *const c_char,
+    add_generation_prompt: bool,
+    bos_token: *const c_char,
+    eos_token: *const c_char,
+    error_out: *mut *mut c_char,
+) -> *mut c_char {
+    if tokenizer.is_null() || template.is_null() || messages_json.is_null() {
+        if !error_out.is_null() {
+            let err = CString::new("Invalid arguments: null pointers provided").unwrap();
+            unsafe { *error_out = err.into_raw(); }
+        }
+        return ptr::null_mut();
+    }
+
+    let template_str = match unsafe { CStr::from_ptr(template) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            if !error_out.is_null() {
+                let err = CString::new("Invalid template string encoding").unwrap();
+                unsafe { *error_out = err.into_raw(); }
+            }
+            return ptr::null_mut();
+        }
+    };
+
+    let messages_json_str = match unsafe { CStr::from_ptr(messages_json) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            if !error_out.is_null() {
+                let err = CString::new("Invalid messages JSON encoding").unwrap();
+                unsafe { *error_out = err.into_raw(); }
+            }
+            return ptr::null_mut();
+        }
+    };
+
+    let bos_opt = if !bos_token.is_null() {
+        match unsafe { CStr::from_ptr(bos_token) }.to_str() {
+            Ok(s) => Some(s.to_string()),
+            Err(_) => {
+                if !error_out.is_null() {
+                    let err = CString::new("Invalid BOS token encoding").unwrap();
+                    unsafe { *error_out = err.into_raw(); }
+                }
+                return ptr::null_mut();
+            }
+        }
+    } else {
+        None
+    };
+
+    let eos_opt = if !eos_token.is_null() {
+        match unsafe { CStr::from_ptr(eos_token) }.to_str() {
+            Ok(s) => Some(s.to_string()),
+            Err(_) => {
+                if !error_out.is_null() {
+                    let err = CString::new("Invalid EOS token encoding").unwrap();
+                    unsafe { *error_out = err.into_raw(); }
+                }
+                return ptr::null_mut();
+            }
+        }
+    } else {
+        None
+    };
+
+    // Parse messages JSON
+    let messages: Vec<tokenizers::Message> = match serde_json::from_str(messages_json_str) {
+        Ok(msgs) => msgs,
+        Err(e) => {
+            if !error_out.is_null() {
+                let err = CString::new(format!("Failed to parse messages JSON: {}", e)).unwrap();
+                unsafe { *error_out = err.into_raw(); }
+            }
+            return ptr::null_mut();
+        }
+    };
+
+    // Create and apply chat template
+    match tokenizers::ChatTemplate::new(template_str.to_string(), bos_opt, eos_opt) {
+        Ok(chat_template) => {
+            let inputs = tokenizers::ChatTemplateInputs::new(messages, add_generation_prompt);
+            match chat_template.apply(inputs) {
+                Ok(result) => {
+                    CString::new(result).unwrap().into_raw()
+                }
+                Err(e) => {
+                    if !error_out.is_null() {
+                        let err = CString::new(format!("Template rendering failed: {}", e)).unwrap();
+                        unsafe { *error_out = err.into_raw(); }
+                    }
+                    ptr::null_mut()
+                }
+            }
+        }
+        Err(e) => {
+            if !error_out.is_null() {
+                let err = CString::new(format!("Failed to compile template: {}", e)).unwrap();
+                unsafe { *error_out = err.into_raw(); }
+            }
+            ptr::null_mut()
+        }
+    }
+}
+

@@ -138,6 +138,7 @@ extern crate derive_builder;
 
 #[macro_use]
 pub mod utils;
+pub mod chat_template;
 pub mod decoders;
 pub mod models;
 pub mod normalizers;
@@ -147,6 +148,9 @@ pub mod tokenizer;
 
 // Re-export from tokenizer
 pub use tokenizer::*;
+
+// Re-export chat template types
+pub use chat_template::{ChatTemplate, ChatTemplateError, ChatTemplateInputs, Message};
 
 // Re-export also parallelism utils
 pub use utils::parallelism;

@@ -8,12 +8,16 @@
 extern "C" {
 #endif
 
+// Only define the struct if not already defined
+#ifndef TOKENIZERS_ENCODING_T_DEFINED
+#define TOKENIZERS_ENCODING_T_DEFINED
 typedef struct {
     const int* ids;
     const int* attention_mask;
     size_t len;
     void* _internal_ptr;  // Internal use only - do not access
 } tokenizers_encoding_t;
+#endif
 
 // Create a new tokenizer from a JSON file (auto-loads tokenizer_config.json if present)
 void* tokenizers_new_from_file(const char* path);
@@ -76,6 +80,26 @@ bool tokenizers_has_chat_template(void* tokenizer);
 
 // Get chat template string (must be freed with tokenizers_string_free)
 char* tokenizers_get_chat_template(void* tokenizer);
+
+// Apply a chat template to render messages
+// Arguments:
+//   - tokenizer: the tokenizer instance
+//   - template_str: Jinja2 template string
+//   - messages_json: JSON array of messages with "role" and "content" fields
+//   - add_generation_prompt: whether to append generation prompt
+//   - bos_token: optional BOS token string (can be NULL)
+//   - eos_token: optional EOS token string (can be NULL)
+//   - error_out: pointer to error string (caller must free with tokenizers_string_free)
+// Returns: rendered template string (caller must free with tokenizers_string_free), or NULL on error
+char* tokenizers_apply_chat_template(
+    void* tokenizer,
+    const char* template_str,
+    const char* messages_json,
+    bool add_generation_prompt,
+    const char* bos_token,
+    const char* eos_token,
+    char** error_out
+);
 
 #ifdef __cplusplus
 }
