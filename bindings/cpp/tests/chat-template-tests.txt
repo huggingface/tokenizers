@@ -1,0 +1,173 @@
+==##==
+TEMPLATE: BasicMarkdown
+==##==
+{% for message in messages %}
+{% if message['role'] == 'system' %}
+### System:
+{{ message['content'] }}
+
+{% elif message['role'] == 'user' %}
+### User:
+{{ message['content'] }}
+
+{% elif message['role'] == 'assistant' %}
+### Assistant:
+{{ message['content'] }}
+{% endif %}
+{% if loop.last and add_generation_prompt %}
+### Assistant:
+{% endif %}
+{% endfor %}
+
+==##==
+TEMPLATE: LlamaStyle
+==##==
+{{- bos_token }}
+{% if messages[0]['role'] == 'system' %}
+[SYSTEM]: {{ messages[0]['content'] }}
+{% set messages = messages[1:] %}
+{% endif %}
+{% for message in messages %}
+{% if message['role'] == 'user' %}
+[USER]: {{ message['content'] }}
+{% elif message['role'] == 'assistant' %}
+[ASSISTANT]: {{ message['content'] }}
+{% endif %}
+{% endfor %}
+{% if add_generation_prompt %}
+[ASSISTANT]:
+{% endif %}
+{{- eos_token }}
+==##==
+
+
+==##==
+TEMPLATE: StrictAlternating
+==##==
+{{ bos_token }}
+{% for message in messages %}
+{%- if message['role'] == 'user' %}
+<USER>{{ message['content'] }}</USER>
+{%- elif message['role'] == 'assistant' %}
+<ASSISTANT>{{ message['content'] }}</ASSISTANT>
+{%- endif %}
+{% endfor %}
+{%- if add_generation_prompt %}
+<ASSISTANT>
+{%- endif %}
+{{ eos_token }}
+==##==
+
+
+==##==
+TEMPLATE: CompactJsonStyle
+==##==
+{% for message in messages %}
+{"role": "{{ message['role'] }}", "content": "{{ message['content'] | replace('"', '\\"') | replace('\n', '\\n') }}"}{{ ',' if not loop.last else '' }}
+{% endfor %}
+{% if add_generation_prompt %}
+{"role": "assistant", "content": ""}
+{% endif %}
+==##==
+
+
+==##==
+TEMPLATE: TagWithNewlines
+==##==
+{%- if messages[0]['role'] == 'system' %}
+SYSTEM: {{ messages[0]['content'] }}
+---
+{%- set messages = messages[1:] %}
+{%- endif %}
+{%- for message in messages %}
+{{ message['role'].upper() }}:
+{{ message['content'] }}
+{{ '---' if not loop.last else '' }}
+{%- endfor %}
+{%- if add_generation_prompt %}
+---
+ASSISTANT:
+{%- endif %}
+==##==
+
+
+==##==
+TEMPLATE: PrefixSuffix
+==##==
+[BEGIN_CONVERSATION]
+{% for message in messages %}
+[{{ message['role'] | upper }}_START]
+{{ message['content'] }}
+[{{ message['role'] | upper }}_END]
+{% endfor %}
+{% if add_generation_prompt %}
+[ASSISTANT_START]
+[ASSISTANT_END]
+{% endif %}
+[END_CONVERSATION]
+==##==
+
+
+==##==
+TEMPLATE: MinimalWithDelimiters
+==##==
+{% for message in messages -%}
+[{{ message['role'] }}] {{ message['content'] }}
+{% endfor %}
+{%- if add_generation_prompt %}
+[assistant]
+{%- endif %}
+==##==
+
+
+==##==
+TEMPLATE: HeadersWithContent
+==##==
+{% for message in messages %}
+<|im_start|>{{ message['role'] }}
+{{ message['content'] }}<|im_end|>
+{% endfor %}
+{% if add_generation_prompt %}
+<|im_start|>assistant
+{% endif %}
+==##==
+
+
+==##==
+TEMPLATE: ConditionalSystemMessage
+==##==
+{% if messages | length > 0 and messages[0]['role'] == 'system' %}
+SYSTEM_MSG: {{ messages[0]['content'] }}
+
+{% set messages = messages[1:] %}
+{% endif %}
+{% for message in messages %}
+{{ message['role'] }}: {{ message['content'] }}
+{% endfor %}
+{% if add_generation_prompt %}
+assistant:
+{% endif %}
+
+
+==##==
+TEMPLATE: WithRoleLabel
+==##==
+{%- for message in messages -%}
+{%- if message.role == 'system' -%}
+<<SYSTEM>>
+{{ message.content }}
+<</SYSTEM>>
+{%- elif message.role == 'user' -%}
+<<USER>>
+{{ message.content }}
+<</USER>>
+{%- elif message.role == 'assistant' -%}
+<<ASSISTANT>>
+{{ message.content }}
+<</ASSISTANT>>
+{%- endif -%}
+{% endfor %}
+{%- if add_generation_prompt -%}
+<<ASSISTANT>>
+{%- endif -%}
+==##==
