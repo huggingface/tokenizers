@@ -48,6 +48,11 @@ jobs:
             target: i686
             python-architecture: x86
             interpreter: 3.9 3.10 3.11 3.12 3.13
+          - os: windows-11-arm
+            ls: dir
+            target: aarch64
+            python-architecture: arm64
+            interpreter: 3.11 3.12 3.13
               # - os: windows
               #   ls: dir
               #   target: aarch64
@@ -95,7 +100,10 @@ jobs:
               #     target: x86_64
               # Windows on arm64 only supports Python 3.11+
 
-    runs-on: ${{ matrix.os }}-latest
+    runs-on: ${{
+        matrix.os == 'windows-11-arm' && matrix.os ||
+        format('{0}-latest', matrix.os)
+      }}
     steps:
       - uses: actions/checkout@v4
 
