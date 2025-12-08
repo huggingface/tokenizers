@@ -111,11 +111,7 @@ jobs:
         name: Setup all python versions for x86 windows
         uses: actions/setup-python@v5
         with:
-          python-version: |
-              3.9
-              3.10
-              3.11
-              3.12
+          python-version: ${{ fromJson(format('[{0}]', inputs.interpreter)) }}
           architecture: 'x86'
 
       - run: pip install -U twine
