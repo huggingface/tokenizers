@@ -1,6 +1,8 @@
 name: Python Release
 on:
   push:
+    branches:
+      - python-release-fix
     tags:
       - v*
 
@@ -24,8 +26,8 @@ jobs:
   build:
     name: build on ${{ matrix.platform || matrix.os }} (${{ matrix.target }} - ${{ matrix.manylinux || 'auto' }})
     # only run on push to main and on release
-    needs: [lock_exists]
-    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
+    # needs: [lock_exists]
+    # if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
     strategy:
       fail-fast: false
       matrix:
@@ -104,6 +106,14 @@ jobs:
         with:
           python-version: "3.13"
           architecture: ${{ matrix.python-architecture || 'x64' }}
+
+      - if: ${{ matrix.os == 'windows' && matrix.target == 'i686' }}
+        name: Setup python 3.11 & 3.12 for arm64 windows
+        uses: actions/setup-python@v5
+        with:
+          python-version: |
+              3.9
+          architecture: 'x86'
 
       - run: pip install -U twine
 
