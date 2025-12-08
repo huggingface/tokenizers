@@ -54,6 +54,10 @@ jobs:
             ls: dir
             target: aarch64
             python-architecture: arm64
+            python-install: |
+              3.11
+              3.12
+              3.13
             interpreter: 3.11 3.12 3.13
               # - os: windows
               #   ls: dir
@@ -112,17 +116,8 @@ jobs:
       - name: set up python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-install || '3.13' }}
           architecture: ${{ matrix.python-architecture || 'x64' }}
-
-      - if: ${{ matrix.os == 'windows-11-arm' }}
-        name: Setup python 3.11 & 3.12 for arm64 windows
-        uses: actions/setup-python@v5
-        with:
-          python-version: |
-              3.11
-              3.12
-          architecture: 'arm64'
 
       - run: pip install -U twine
 
