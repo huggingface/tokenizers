@@ -2,7 +2,7 @@ name: Python Release
 on:
   push:
     branches:
-      - arm64-runner
+      - win-arm64
     tags:
       - v*
 
