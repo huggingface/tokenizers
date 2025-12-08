@@ -49,6 +49,12 @@ jobs:
             ls: dir
             target: i686
             python-architecture: x86
+            python-install: | 
+                3.9
+                3.10
+                3.11
+                3.12
+                3.13
             interpreter: 3.9 3.10 3.11 3.12 3.13
               # - os: windows
               #   ls: dir
@@ -104,19 +110,19 @@ jobs:
       - name: set up python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-install || "3.13" }}
           architecture: ${{ matrix.python-architecture || 'x64' }}
 
-      - if: ${{ matrix.os == 'windows' && matrix.target == 'i686' }}
-        name: Setup all python versions for x86 windows
-        uses: actions/setup-python@v5
-        with:
-          python-version: |
-              3.9
-              3.10
-              3.11
-              3.12
-          architecture: 'x86'
+      # - if: ${{ matrix.os == 'windows' && matrix.target == 'i686' }}
+      #   name: Setup all python versions for x86 windows
+      #   uses: actions/setup-python@v5
+      #   with:
+      #     python-version: |
+      #         3.9
+      #         3.10
+      #         3.11
+      #         3.12
+      #     architecture: 'x86'
 
       - run: pip install -U twine
 
