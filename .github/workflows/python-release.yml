@@ -115,6 +115,15 @@ jobs:
           python-version: "3.13"
           architecture: ${{ matrix.python-architecture || 'x64' }}
 
+      - if: ${{ matrix.os == 'windows-11-arm' }}
+        name: Setup python 3.11 & 3.12 for arm64 windows
+        uses: actions/setup-python@v5
+        with:
+          python-version: |
+              3.11
+              3.12
+          architecture: 'arm64'
+
       - run: pip install -U twine
 
       - name: build wheels
