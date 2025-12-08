@@ -45,7 +45,7 @@ static RE: LazyLock<SysRegex> = LazyLock::new(|| {
         .unwrap()
 });
 static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
-static CHAR_BYTES: LazyLock<AHashMap<char, u8>> =
+pub(crate) static CHAR_BYTES: LazyLock<AHashMap<char, u8>> =
     LazyLock::new(|| bytes_char().into_iter().map(|(c, b)| (b, c)).collect());
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

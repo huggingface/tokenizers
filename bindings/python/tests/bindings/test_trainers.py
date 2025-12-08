@@ -74,6 +74,49 @@ class TestBpeTrainer:
         )
 
 
+    def test_enforce_utf8_boundaries(self):
+        # This input is designed to have a very frequent but invalid merge candidate:
+        # a space (0x20) followed by the first byte of different 4-byte encodings (0xF0).
+        # A less frequent but valid candidate is the first two bytes of an emoji (0xF0, 0x9F).
+        data = [" 🤗"] * 10 + [" 𝟑"] * 9
+
+        # Setup a tokenizer with a ByteLevel pre-tokenizer
+        tokenizer = Tokenizer(models.BPE())
+        tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+
+        # 1. Train with `enforce_utf8_boundaries=False` (unconstrained)
+        unconstrained_trainer = trainers.BpeTrainer(
+            vocab_size=260,
+            special_tokens=["<unk>"],
+            enforce_utf8_boundaries=False,
+            show_progress=False,
+        )
+        tokenizer.train_from_iterator(data, trainer=unconstrained_trainer)
+        vocab = tokenizer.get_vocab()
+
+        # The pre-tokenizer maps byte 0x20 to `Ġ` and 0xF0 to `ð`.
+        # The invalid merge of these two should be present.
+        invalid_token = "Ġð"  # Bytes: [20, F0]
+        assert invalid_token in vocab, "Unconstrained trainer should learn the invalid merge"
+
+        # 2. Train with `enforce_utf8_boundaries=True` (constrained)
+        # We must re-initialize the tokenizer to start with a fresh model
+        tokenizer = Tokenizer(models.BPE())
+        tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+        
+        # Train with enforce_utf8_boundaries=True
+        constrained_trainer = trainers.BpeTrainer(
+            vocab_size=260,
+            special_tokens=["<unk>"],
+            enforce_utf8_boundaries=True,
+            show_progress=False,
+        )
+        tokenizer.train_from_iterator(data, trainer=constrained_trainer)
+        vocab = tokenizer.get_vocab()
+        
+        # The invalid merge should not be present when enforcing UTF-8 boundaries
+        assert invalid_token not in vocab, "Constrained trainer should not learn invalid merges"
+
 class TestWordPieceTrainer:
     def test_can_modify(self):
         trainer = trainers.WordPieceTrainer(
