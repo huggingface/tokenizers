@@ -1,7 +1,7 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 use serde::{Deserialize, Serialize};
-use unicode_normalization_alignments::char::is_combining_mark;
+use crate::unicode_normalization_alignments::char::is_combining_mark;
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
@@ -61,7 +61,7 @@ mod tests {
     use crate::normalizer::NormalizedString;
     use crate::normalizers::Lowercase;
     use crate::normalizers::NFKD;
-    use unicode_normalization_alignments::UnicodeNormalization;
+    use crate::unicode_normalization_alignments::UnicodeNormalization;
 
     #[test]
     fn test_strip_accents() {
