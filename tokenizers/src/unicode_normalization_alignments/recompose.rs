@@ -1,7 +1,7 @@
-use unicode_normalization::char::{canonical_combining_class, compose};
 use crate::unicode_normalization_alignments::decompose::Decompositions;
 use smallvec::SmallVec;
 use std::fmt::{self, Write};
+use unicode_normalization::char::{canonical_combining_class, compose};
 
 #[derive(Clone)]
 enum RecompositionState {

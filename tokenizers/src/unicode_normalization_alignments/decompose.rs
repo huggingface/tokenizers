@@ -1,8 +1,10 @@
-use unicode_normalization::char::{canonical_combining_class, decompose_canonical, decompose_compatible};
 use smallvec::SmallVec;
 use std::fmt::{self, Write};
 use std::iter::Fuse;
 use std::ops::Range;
+use unicode_normalization::char::{
+    canonical_combining_class, decompose_canonical, decompose_compatible,
+};
 
 #[derive(Clone)]
 enum DecompositionType {

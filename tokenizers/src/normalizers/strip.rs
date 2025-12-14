@@ -1,7 +1,7 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use crate::unicode_normalization_alignments::char::is_combining_mark;
 use crate::utils::macro_rules_attribute;
 use serde::{Deserialize, Serialize};
-use crate::unicode_normalization_alignments::char::is_combining_mark;
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]

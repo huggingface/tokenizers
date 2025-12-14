@@ -145,7 +145,7 @@ pub mod pre_tokenizers;
 pub mod processors;
 pub mod tokenizer;
 
-pub (crate) mod unicode_normalization_alignments;
+pub(crate) mod unicode_normalization_alignments;
 
 // Re-export from tokenizer
 pub use tokenizer::*;
