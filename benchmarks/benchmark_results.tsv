@@ -1,0 +1,5 @@
+Variant	Load Time (ms)	Load Time StdDev	Encode Time (ms)	Encode Time StdDev	Tokens/sec	Tokens/sec StdDev	Num Tokens	Num Chars
+Rust	0.00	0.00	4805.00	55.56	1042971	11925	5011594.0	6488666.0
+Python	1.00	0.00	7084.67	56.37	707406	5580	5011594.0	6488666.0
+C Bindings	0.00	0.00	4872.00	166.32	1029460	35497	5011594.0	6488666.0
+C++ Bindings	0.00	0.00	4906.33	12.86	1021459	2673	5011594.0	6488666.0
