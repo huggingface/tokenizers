@@ -1,3 +1,4 @@
+import pytest
 from tokenizers import Tokenizer
 from ..utils import data_dir, doc_wiki_tokenizer
 
@@ -45,6 +46,7 @@ class TestQuicktour:
         # END init_pretok
         return tokenizer, trainer
 
+    @pytest.mark.network
     def test_quicktour(self, doc_wiki_tokenizer):
         def print(*args, **kwargs):
             pass

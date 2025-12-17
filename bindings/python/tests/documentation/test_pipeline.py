@@ -1,3 +1,4 @@
+import pytest
 from tokenizers import Tokenizer
 
 from ..utils import data_dir, doc_pipeline_bert_tokenizer, doc_wiki_tokenizer
@@ -12,6 +13,7 @@ def print(*args, **kwargs):
 
 
 class TestPipeline:
+    @pytest.mark.network
     def test_pipeline(self, doc_wiki_tokenizer):
         try:
             # START reload_tokenizer
@@ -143,6 +145,7 @@ class TestPipeline:
         bert_tokenizer.save("data/bert-wiki.json")
         # END bert_train_tokenizer
 
+    @pytest.mark.network
     def test_bert_example(self, doc_pipeline_bert_tokenizer):
         try:
             bert_tokenizer = Tokenizer.from_file("data/bert-wiki.json")

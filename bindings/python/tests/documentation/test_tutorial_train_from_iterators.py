@@ -62,6 +62,7 @@ class TestTrainFromIterators:
         tokenizer.train_from_iterator(data, trainer=trainer)
         # END train_basic
 
+    @pytest.mark.network
     def test_datasets(self):
         tokenizer, trainer = self.get_tokenizer_trainer()
 
@@ -82,6 +83,7 @@ class TestTrainFromIterators:
         tokenizer.train_from_iterator(batch_iterator(), trainer=trainer, length=len(dataset))  # type: ignore[arg-type]
         # END train_datasets
 
+    @pytest.mark.network
     def test_gzip(self, setup_gzip_files):
         tokenizer, trainer = self.get_tokenizer_trainer()
 
