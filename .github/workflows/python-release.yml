@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Cargo.lock
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Cargo.lock lock exists 
         run: cat Cargo.lock
         working-directory: ./bindings/python
@@ -97,10 +97,10 @@ jobs:
 
     runs-on: ${{ matrix.os }}-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: set up python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
           architecture: ${{ matrix.python-architecture || 'x64' }}
@@ -124,7 +124,7 @@ jobs:
       - run: twine check --strict dist/*
         working-directory: ./bindings/python
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: pypi_files-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux }}
           path: ./bindings/python/dist
@@ -133,14 +133,14 @@ jobs:
     needs: [lock_exists]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: ./bindings/python
           command: sdist
           args: --out dist
           rust-toolchain: stable
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: pypi_files-srt
           path: ./bindings/python/dist
@@ -152,15 +152,15 @@ jobs:
     needs: [build, build-sdist]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
           architecture: x64
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: ./bindings/python/dist
           merge-multiple: true
