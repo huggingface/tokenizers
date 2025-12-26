@@ -151,6 +151,9 @@ pub use tokenizer::*;
 // Re-export also parallelism utils
 pub use utils::parallelism;
 
+// Re-export ProgressFormat for trainer configuration
+pub use utils::ProgressFormat;
+
 // Re-export for from_pretrained
 #[cfg(feature = "http")]
 pub use utils::from_pretrained::FromPretrainedParameters;
