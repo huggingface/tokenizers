@@ -72,9 +72,7 @@ class TestByteLevelProcessing:
         assert isinstance(pickle.loads(pickle.dumps(ByteLevel())), ByteLevel)
 
     def test_processing(self, roberta_files):
-        # Deprecated in 0.9
-        with pytest.deprecated_call():
-            tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
+        tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
         tokenizer.pre_tokenizer = ByteLevelPreTokenizer(add_prefix_space=True)
 
         # Keeps original offsets
