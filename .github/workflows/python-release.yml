@@ -47,6 +47,12 @@ jobs:
             ls: dir
             target: i686
             python-architecture: x86
+            python-install: | 
+                3.9
+                3.10
+                3.11
+                3.12
+                3.13
             interpreter: 3.9 3.10 3.11 3.12 3.13
           - os: windows-11-arm
             ls: dir
