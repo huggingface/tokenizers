@@ -424,7 +424,7 @@ impl PyBPE {
         signature = (vocab=None, merges=None, **kwargs),
         text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False, ignore_merges=False)")]
     fn new(
-        py: Python<'_>,
+        _py: Python<'_>,
         vocab: Option<PyVocab>,
         merges: Option<PyMerges>,
         kwargs: Option<&Bound<'_, PyDict>>,
@@ -443,11 +443,6 @@ impl PyBPE {
                     builder = builder.vocab_and_merges(vocab, merges);
                 }
                 (PyVocab::Filename(vocab_filename), PyMerges::Filename(merges_filename)) => {
-                    deprecation_warning(
-                    py,
-                    "0.9.0",
-                    "BPE.__init__ will not create from files anymore, try `BPE.from_file` instead",
-                )?;
                     builder =
                         builder.files(vocab_filename.to_string(), merges_filename.to_string());
                 }
@@ -649,7 +644,7 @@ impl PyWordPiece {
         text_signature = "(self, vocab=None, unk_token='[UNK]', max_input_chars_per_word=100, continuing_subword_prefix='##')"
     )]
     fn new(
-        py: Python<'_>,
+        _py: Python<'_>,
         vocab: Option<PyVocab>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<(Self, PyModel)> {
@@ -662,11 +657,6 @@ impl PyWordPiece {
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
-                    deprecation_warning(
-                        py,
-                        "0.9.0",
-                        "WordPiece.__init__ will not create from files anymore, try `WordPiece.from_file` instead",
-                    )?;
                     builder = builder.files(vocab_filename.to_string());
                 }
             }
@@ -765,7 +755,7 @@ impl PyWordLevel {
         text_signature = "(self, vocab=None, unk_token=None)"
     )]
     fn new(
-        py: Python<'_>,
+        _py: Python<'_>,
         vocab: Option<PyVocab>,
         unk_token: Option<String>,
     ) -> PyResult<(Self, PyModel)> {
@@ -778,12 +768,6 @@ impl PyWordLevel {
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
-                    deprecation_warning(
-                        py,
-                        "0.9.0",
-                        "WordLevel.__init__ will not create from files anymore, \
-                            try `WordLevel.from_file` instead",
-                    )?;
                     builder = builder.files(vocab_filename.to_string());
                 }
             };
