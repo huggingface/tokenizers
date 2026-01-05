@@ -155,8 +155,7 @@ class TestTokenizer:
         assert len(output) == 2
 
     def test_encode_formats(self, bert_files):
-        with pytest.deprecated_call():
-            tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
+        tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
 
         # Encode
         output = tokenizer.encode("my name is john")
@@ -287,8 +286,7 @@ class TestTokenizer:
             tokenizer.encode(["My", "name", "is", "John"], "pair", is_pretokenized=True)
 
     def test_encode_add_special_tokens(self, roberta_files):
-        with pytest.deprecated_call():
-            tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
+        tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
         tokenizer.add_special_tokens(["<s>", "</s>"])
 
         tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=True)
