@@ -443,11 +443,6 @@ impl PyBPE {
                     builder = builder.vocab_and_merges(vocab, merges);
                 }
                 (PyVocab::Filename(vocab_filename), PyMerges::Filename(merges_filename)) => {
-                    deprecation_warning(
-                    py,
-                    "0.9.0",
-                    "BPE.__init__ will not create from files anymore, try `BPE.from_file` instead",
-                )?;
                     builder =
                         builder.files(vocab_filename.to_string(), merges_filename.to_string());
                 }
@@ -662,11 +657,6 @@ impl PyWordPiece {
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
-                    deprecation_warning(
-                        py,
-                        "0.9.0",
-                        "WordPiece.__init__ will not create from files anymore, try `WordPiece.from_file` instead",
-                    )?;
                     builder = builder.files(vocab_filename.to_string());
                 }
             }
@@ -778,12 +768,6 @@ impl PyWordLevel {
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
-                    deprecation_warning(
-                        py,
-                        "0.9.0",
-                        "WordLevel.__init__ will not create from files anymore, \
-                            try `WordLevel.from_file` instead",
-                    )?;
                     builder = builder.files(vocab_filename.to_string());
                 }
             };
