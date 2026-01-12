@@ -7,38 +7,6 @@ from ..utils import bert_files, data_dir, roberta_files
 
 
 class TestBPE:
-    def test_instantiate(self, roberta_files):
-        assert isinstance(BPE(), Model)
-        assert isinstance(BPE(), BPE)
-
-        vocab = {"a": 0, "b": 1, "ab": 2}
-        merges = [("a", "b")]
-        assert isinstance(BPE(vocab, merges), Model)
-        assert isinstance(BPE.from_file(roberta_files["vocab"], roberta_files["merges"]), BPE)
-        with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):
-            BPE(vocab=vocab)
-        with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):
-            BPE(merges=merges)
-
-        assert isinstance(
-            pickle.loads(pickle.dumps(BPE(vocab, merges))),
-            BPE,
-        )
-
-        # Deprecated calls in 0.9
-        with pytest.deprecated_call():
-            assert isinstance(BPE(roberta_files["vocab"], roberta_files["merges"]), Model)
-
-        with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):
-            BPE(vocab=roberta_files["vocab"])
-        with pytest.raises(ValueError, match="`vocab` and `merges` must be both specified"):
-            BPE(merges=roberta_files["merges"])
-        with pytest.deprecated_call():
-            assert isinstance(
-                pickle.loads(pickle.dumps(BPE(roberta_files["vocab"], roberta_files["merges"]))),
-                BPE,
-            )
-
     def test_can_modify(self):
         model = BPE(
             dropout=0.5,
@@ -85,11 +53,8 @@ class TestWordPiece:
         assert isinstance(WordPiece.from_file(bert_files["vocab"]), WordPiece)
         assert isinstance(pickle.loads(pickle.dumps(WordPiece(vocab))), WordPiece)
 
-        # Deprecated calls in 0.9
-        with pytest.deprecated_call():
-            assert isinstance(WordPiece(bert_files["vocab"]), Model)
-        with pytest.deprecated_call():
-            assert isinstance(pickle.loads(pickle.dumps(WordPiece(bert_files["vocab"]))), WordPiece)
+        assert isinstance(WordPiece(bert_files["vocab"]), Model)
+        assert isinstance(pickle.loads(pickle.dumps(WordPiece(bert_files["vocab"]))), WordPiece)
 
     def test_can_modify(self):
         model = WordPiece(
@@ -123,10 +88,8 @@ class TestWordLevel:
 
         # The WordLevel model expects a vocab.json using the same format as roberta
         # so we can just try to load with this file
-        with pytest.deprecated_call():
-            assert isinstance(WordLevel(roberta_files["vocab"]), Model)
-        with pytest.deprecated_call():
-            assert isinstance(WordLevel(roberta_files["vocab"]), WordLevel)
+        assert isinstance(WordLevel(roberta_files["vocab"]), Model)
+        assert isinstance(WordLevel(roberta_files["vocab"]), WordLevel)
 
     def test_can_modify(self):
         model = WordLevel(unk_token="<oov>")

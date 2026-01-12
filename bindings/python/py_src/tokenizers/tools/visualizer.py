@@ -314,6 +314,11 @@ class EncodingVisualizer:
                 encoding=encoding,
             )
         )
+
+        # Close any remaining open annotation span
+        if cur_anno_ix is not None:
+            spans.append("</span>")
+
         res = HTMLBody(spans)  # Send the list of spans to the body of our html
         return res
 
