@@ -825,7 +825,7 @@ impl PyWordLevel {
     /// Returns:
     ///     :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
     #[classmethod]
-    #[pyo3(signature = (vocab, unk_token = None))]
+    #[pyo3(signature = (vocab, unk_token = None)-> "WordLevel")]
     #[pyo3(text_signature = "(vocab, unk_token=None)")]
     fn from_file(
         _cls: &Bound<'_, PyType>,
