@@ -3,19 +3,30 @@ use pyo3::prelude::*;
 #[cfg(feature = "stub-gen")]
 fn main() {
     use std::path::{Path, PathBuf};
-    // Python::attach(|py| {
-    //     let sysconfig = PyModule::import(py, "sysconfig").unwrap();
-    //     let python_version = sysconfig.call_method0("get_python_version").unwrap();
-    //     println!("Using python version: {}", python_version);
-    //     let python_lib = sysconfig
-    //         .call_method("get_config_var", ("LIBDEST",), None)
-    //         .unwrap();
-    //     println!("Using python lib: {}", python_lib);
-    //     let python_site_packages = sysconfig
-    //         .call_method("get_path", ("purelib",), None)
-    //         .unwrap();
-    //     println!("Using python site-packages: {}", python_site_packages);
-    // });
+    pyo3::prepare_freethreaded_python();
+    println!("Gathering Python environment information...");
+    Python::attach(|py| {
+        let sys = py.import("sys").unwrap();
+        println!("sys.version = {}", sys.getattr("version").unwrap());
+        println!("sys.executable = {}", sys.getattr("executable").unwrap());
+        println!("sys.prefix = {}", sys.getattr("prefix").unwrap());
+        println!(
+            "sys.base_prefix = {}",
+            sys.getattr("base_prefix").unwrap()
+        );
+
+        let sysconfig = PyModule::import(py, "sysconfig").unwrap();
+        let python_version = sysconfig.call_method0("get_python_version").unwrap();
+        println!("Using python version: {}", python_version);
+        let python_lib = sysconfig
+            .call_method("get_config_var", ("LIBDEST",), None)
+            .unwrap();
+        println!("Using python lib: {}", python_lib);
+        let python_site_packages = sysconfig
+            .call_method("get_path", ("purelib",), None)
+            .unwrap();
+        println!("Using python site-packages: {}", python_site_packages);
+    });
 
     env_logger::init();
     println!("Generating stub files");
