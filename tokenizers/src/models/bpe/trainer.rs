@@ -3,7 +3,7 @@
 use super::{Pair, WithFirstLastIterator, Word, BPE};
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
-use crate::utils::progress::{ProgressBar, ProgressStyle};
+use crate::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
@@ -42,6 +42,7 @@ struct Config {
     min_frequency: u64,
     vocab_size: usize,
     show_progress: bool,
+    progress_format: ProgressFormat,
     special_tokens: Vec<AddedToken>,
     limit_alphabet: Option<usize>,
     initial_alphabet: AHashSet<char>,
@@ -63,6 +64,7 @@ impl Default for BpeTrainerBuilder {
                 min_frequency: 0,
                 vocab_size: 30000,
                 show_progress: true,
+                progress_format: ProgressFormat::default(),
                 special_tokens: vec![],
                 limit_alphabet: None,
                 initial_alphabet: AHashSet::new(),
@@ -98,6 +100,18 @@ impl BpeTrainerBuilder {
     #[must_use]
     pub fn show_progress(mut self, show: bool) -> Self {
         self.config.show_progress = show;
+        self
+    }
+
+    /// Set the progress output format
+    ///
+    /// Controls how progress information is reported during training.
+    /// - `Indicatif` (default): Interactive terminal progress bars
+    /// - `JsonLines`: Machine-readable JSON lines to stderr
+    /// - `Silent`: No progress output
+    #[must_use]
+    pub fn progress_format(mut self, format: ProgressFormat) -> Self {
+        self.config.progress_format = format;
         self
     }
 
@@ -150,6 +164,7 @@ impl BpeTrainerBuilder {
             min_frequency: self.config.min_frequency,
             vocab_size: self.config.vocab_size,
             show_progress: self.config.show_progress,
+            progress_format: self.config.progress_format,
             special_tokens: self.config.special_tokens,
             limit_alphabet: self.config.limit_alphabet,
             initial_alphabet: self.config.initial_alphabet,
@@ -186,6 +201,8 @@ pub struct BpeTrainer {
     pub vocab_size: usize,
     /// Whether to show progress while training
     pub show_progress: bool,
+    /// Progress output format (Indicatif, JsonLines, or Silent)
+    pub progress_format: ProgressFormat,
     /// A list of special tokens that the model should know of
     pub special_tokens: Vec<AddedToken>,
     /// Whether to limit the number of initial tokens that can be kept before computing merges
@@ -222,9 +239,15 @@ impl BpeTrainer {
         BpeTrainerBuilder::new()
     }
 
-    /// Setup a progress bar if asked to show progress
+    /// Returns the number of unique words in the corpus after feeding.
+    /// This can be used to estimate training time before starting.
+    pub fn get_word_count(&self) -> usize {
+        self.words.len()
+    }
+
+    /// Setup a progress bar if asked to show progress (only for Indicatif format)
     fn setup_progress(&self) -> Option<ProgressBar> {
-        if self.show_progress {
+        if self.show_progress && self.progress_format == ProgressFormat::Indicatif {
             let p = ProgressBar::new(0);
             p.set_style(
                 ProgressStyle::default_bar()
@@ -237,13 +260,24 @@ impl BpeTrainer {
         }
     }
 
+    /// Emit JSON progress line to stderr (for JsonLines format)
+    fn emit_json_progress(&self, stage: &str, current: usize, total: usize) {
+        if self.progress_format == ProgressFormat::JsonLines {
+            eprintln!(
+                r#"{{"stage":"{}","current":{},"total":{}}}"#,
+                stage, current, total
+            );
+        }
+    }
+
     /// Set the progress bar in the finish state
-    fn finalize_progress(&self, p: &Option<ProgressBar>, final_len: usize) {
+    fn finalize_progress(&self, p: &Option<ProgressBar>, final_len: usize, stage: &str) {
         if let Some(p) = p {
             p.set_length(final_len as u64);
             p.finish();
             println!();
         }
+        self.emit_json_progress(stage, final_len, final_len);
     }
 
     /// Update the progress bar with the new provided length and message
@@ -253,6 +287,8 @@ impl BpeTrainer {
             p.set_length(len as u64);
             p.reset();
         }
+        // Emit initial JSON progress for this stage
+        self.emit_json_progress(message, 0, len);
     }
 
     /// Add the provided special tokens to the initial vocabulary
@@ -444,7 +480,7 @@ impl BpeTrainer {
         self.update_progress(&progress, word_counts.len(), "Tokenize words");
         let (mut words, counts) =
             self.tokenize_words(word_counts, &mut word_to_id, &mut id_to_word, &progress);
-        self.finalize_progress(&progress, words.len());
+        self.finalize_progress(&progress, words.len(), "Tokenize words");
 
         //
         // 4. Count pairs in words
@@ -463,7 +499,7 @@ impl BpeTrainer {
                 });
             }
         });
-        self.finalize_progress(&progress, words.len());
+        self.finalize_progress(&progress, words.len(), "Count pairs");
 
         //
         // 5. Do merges
@@ -565,8 +601,9 @@ impl BpeTrainer {
             if let Some(p) = &progress {
                 p.inc(1);
             }
+            self.emit_json_progress("Compute merges", merges.len(), self.vocab_size);
         }
-        self.finalize_progress(&progress, merges.len());
+        self.finalize_progress(&progress, merges.len(), "Compute merges");
 
         // Transfer new vocab & options to model
         //model.vocab = word_to_id;

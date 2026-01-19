@@ -7,6 +7,7 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
 use tk::models::TrainerWrapper;
+use tk::utils::ProgressFormat;
 use tk::Trainer;
 use tokenizers as tk;
 
@@ -209,6 +210,39 @@ impl PyBpeTrainer {
         setter!(self_, BpeTrainer, show_progress, show_progress);
     }
 
+    /// Get the progress output format ("indicatif", "json", or "silent")
+    #[getter]
+    fn get_progress_format(self_: PyRef<Self>) -> String {
+        let format = getter!(self_, BpeTrainer, progress_format);
+        match format {
+            ProgressFormat::Indicatif => "indicatif".to_string(),
+            ProgressFormat::JsonLines => "json".to_string(),
+            ProgressFormat::Silent => "silent".to_string(),
+        }
+    }
+
+    /// Set the progress output format ("indicatif", "json", or "silent")
+    #[setter]
+    fn set_progress_format(self_: PyRef<Self>, format: &str) {
+        let fmt = match format {
+            "json" => ProgressFormat::JsonLines,
+            "silent" => ProgressFormat::Silent,
+            _ => ProgressFormat::Indicatif,
+        };
+        setter!(self_, BpeTrainer, progress_format, fmt);
+    }
+
+    /// Get the number of unique words after feeding the corpus
+    #[pyo3(name = "get_word_count")]
+    fn get_word_count(self_: PyRef<Self>) -> usize {
+        let super_ = self_.as_ref();
+        if let TrainerWrapper::BpeTrainer(ref trainer) = *super_.trainer.read().unwrap() {
+            trainer.get_word_count()
+        } else {
+            0
+        }
+    }
+
     #[getter]
     fn get_special_tokens(self_: PyRef<Self>) -> Vec<PyAddedToken> {
         getter!(
@@ -308,7 +342,7 @@ impl PyBpeTrainer {
     #[new]
     #[pyo3(
         signature = (**kwargs),
-        text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet=[], continuing_subword_prefix=None, end_of_word_suffix=None, max_token_length=None, words={})"
+        text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, progress_format=\"indicatif\", special_tokens=[], limit_alphabet=None, initial_alphabet=[], continuing_subword_prefix=None, end_of_word_suffix=None, max_token_length=None, words={})"
     )]
     pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::bpe::BpeTrainer::builder();
@@ -319,6 +353,15 @@ impl PyBpeTrainer {
                     "vocab_size" => builder = builder.vocab_size(val.extract()?),
                     "min_frequency" => builder = builder.min_frequency(val.extract()?),
                     "show_progress" => builder = builder.show_progress(val.extract()?),
+                    "progress_format" => {
+                        let fmt: String = val.extract()?;
+                        let format = match fmt.as_str() {
+                            "json" => ProgressFormat::JsonLines,
+                            "silent" => ProgressFormat::Silent,
+                            _ => ProgressFormat::Indicatif,
+                        };
+                        builder = builder.progress_format(format);
+                    }
                     "special_tokens" => {
                         builder = builder.special_tokens(
                             val.downcast::<PyList>()?
