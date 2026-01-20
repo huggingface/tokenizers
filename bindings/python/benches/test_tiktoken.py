@@ -78,7 +78,7 @@ def benchmark_batch(model: str, documents: list[str], num_threads: int, document
     print(f"huggingface \t{readable_size} / s")
 
 
-def test(model: str, dataset: str, dataset_config: str, threads: List[int]):
+def test(model: str, dataset: str, dataset_config: str, threads: List[int]) -> None:
     dataset_xnli = load_dataset(dataset, dataset_config)
 
     input_lengths = [(10, False, True), (10_000, False, True), (10_000, False, False)]

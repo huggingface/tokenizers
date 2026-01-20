@@ -160,7 +160,7 @@ class TestUnigram:
 
     def test_train_parallelism_with_custom_pretokenizer(self, train_files):
         class GoodCustomPretok:
-            def split(self, n, normalized):
+            def split(self, n, normalized) -> list:
                 #  Here we just test that we can return a List[NormalizedString], it
                 # does not really make sense to return twice the same otherwise
                 return [normalized, normalized]
