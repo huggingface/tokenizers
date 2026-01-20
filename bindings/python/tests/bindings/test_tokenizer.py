@@ -178,7 +178,7 @@ class TestTokenizer:
             ["[CLS]", "my", "name", "is", "georges", "[SEP]", "pair", "[SEP]"],
         ]
 
-        def format(encodings):
+        def format(encodings) -> list[list[str]]:
             return [e.tokens for e in encodings]
 
         def test_single(input, is_pretokenized=False):

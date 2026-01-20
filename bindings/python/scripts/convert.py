@@ -116,13 +116,13 @@ class SpmConverter(Converter):
 
 
 class AlbertConverter(SpmConverter):
-    def vocab(self, proto):
+    def vocab(self, proto) -> list[tuple[str, float]]:
         return [
             (piece.piece, piece.score) if check_number_comma(piece.piece) else (piece.piece, piece.score - 100)
             for piece in proto.pieces
         ]
 
-    def normalizer(self, proto):
+    def normalizer(self, proto) -> Sequence:
         normalizers = [Replace("``", '"'), Replace("''", '"')]
         if not self.original_tokenizer.keep_accents:
             normalizers.append(NFKD())
@@ -135,7 +135,7 @@ class AlbertConverter(SpmConverter):
         normalizers.append(Replace(Regex(" {2,}"), " "))
         return Sequence(normalizers)
 
-    def post_processor(self, tokenizer):
+    def post_processor(self, tokenizer) -> TemplateProcessing:
         return TemplateProcessing(
             single=["[CLS]", "$0", "[SEP]"],
             pair=["$1", "[SEP]"],
@@ -147,7 +147,7 @@ class AlbertConverter(SpmConverter):
 
 
 class CamembertConverter(SpmConverter):
-    def vocab(self, proto):
+    def vocab(self, proto) -> list[tuple[str, float]]:
         vocab = [
             ("<s>NOTUSED", 0.0),
             ("<pad>", 0.0),
@@ -157,11 +157,11 @@ class CamembertConverter(SpmConverter):
         vocab += [(piece.piece, piece.score) for piece in proto.pieces]
         return vocab
 
-    def unk_id(self, proto):
+    def unk_id(self, proto) -> int:
         # See vocab unk position
         return 3
 
-    def post_processor(self, tokenizer):
+    def post_processor(self, tokenizer) -> TemplateProcessing:
         return TemplateProcessing(
             single=["<s>", "$0", "</s>"],
             pair=["$1", "</s>"],
@@ -173,7 +173,7 @@ class CamembertConverter(SpmConverter):
 
 
 class MBartConverter(SpmConverter):
-    def vocab(self, proto):
+    def vocab(self, proto) -> list[tuple[str, float]]:
         vocab = [
             ("<s>", 0.0),
             ("<pad>", 0.0),
@@ -210,10 +210,10 @@ class MBartConverter(SpmConverter):
         ]
         return vocab
 
-    def unk_id(self, proto):
+    def unk_id(self, proto) -> int:
         return 3
 
-    def post_processor(self, tokenizer):
+    def post_processor(self, tokenizer) -> TemplateProcessing:
         return TemplateProcessing(
             single=["$0", "</s>", "en_XX"],
             pair=["$1", "</s>"],
@@ -225,7 +225,7 @@ class MBartConverter(SpmConverter):
 
 
 class XLMRobertaConverter(SpmConverter):
-    def vocab(self, proto):
+    def vocab(self, proto) -> list[tuple[str, float]]:
         vocab = [
             ("<s>", 0.0),
             ("<pad>", 0.0),
@@ -235,11 +235,11 @@ class XLMRobertaConverter(SpmConverter):
         vocab += [(piece.piece, piece.score) for piece in proto.pieces[3:]]
         return vocab
 
-    def unk_id(self, proto):
+    def unk_id(self, proto) -> int:
         unk_id = 3
         return unk_id
 
-    def post_processor(self, tokenizer):
+    def post_processor(self, tokenizer) -> TemplateProcessing:
         return TemplateProcessing(
             single=["<s>", "$0", "</s>"],
             pair=["$1", "</s>"],
@@ -251,13 +251,13 @@ class XLMRobertaConverter(SpmConverter):
 
 
 class XLNetConverter(SpmConverter):
-    def vocab(self, proto):
+    def vocab(self, proto) -> list[tuple[str, float]]:
         return [
             (piece.piece, piece.score) if check_number_comma(piece.piece) else (piece.piece, piece.score - 100)
             for piece in proto.pieces
         ]
 
-    def normalizer(self, proto):
+    def normalizer(self, proto) -> Sequence:
         normalizers = [Replace("``", '"'), Replace("''", '"')]
         if not self.original_tokenizer.keep_accents:
             normalizers.append(NFKD())
@@ -270,7 +270,7 @@ class XLNetConverter(SpmConverter):
         normalizers.append(Replace(Regex(" {2,}"), " "))
         return Sequence(normalizers)
 
-    def post_processor(self, tokenizer):
+    def post_processor(self, tokenizer) -> TemplateProcessing:
         return TemplateProcessing(
             single=["$0", "<sep>", "<cls>"],
             pair=["$1", "<sep>"],
@@ -288,7 +288,7 @@ class ReformerConverter(SpmConverter):
 class PegasusConverter(SpmConverter):
     offset = 103
 
-    def vocab(self, proto):
+    def vocab(self, proto) -> list[tuple[str, float]]:
         vocab = [
             (self.original_tokenizer.pad_token, 0),
             (self.original_tokenizer.eos_token, 0),
@@ -297,10 +297,10 @@ class PegasusConverter(SpmConverter):
         vocab += [(piece.piece, piece.score) for piece in proto.pieces[2:]]
         return vocab
 
-    def unk_id(self, proto):
+    def unk_id(self, proto) -> int:
         return proto.trainer_spec.unk_id + self.offset
 
-    def post_processor(self, tokenizer):
+    def post_processor(self, tokenizer) -> TemplateProcessing:
         eos = self.original_tokenizer.eos_token
         return TemplateProcessing(
             single=["$0", eos],
@@ -310,7 +310,7 @@ class PegasusConverter(SpmConverter):
 
 
 class T5Converter(SpmConverter):
-    def post_processor(self, tokenizer):
+    def post_processor(self, tokenizer) -> TemplateProcessing:
         return TemplateProcessing(
             single=["$0", "</s>"],
             pair=["$1", "</s>"],
@@ -330,7 +330,7 @@ CONVERTERS = {
 }
 
 
-def check(pretrained, filename):
+def check(pretrained, filename) -> tuple[str, datetime.timedelta]:
     transformer_tokenizer = transformers.AutoTokenizer.from_pretrained(pretrained)
     converter_class = CONVERTERS[transformer_tokenizer.__class__.__name__]
     tokenizer = converter_class(transformer_tokenizer).converted()

@@ -106,21 +106,21 @@ class TestByteLevelProcessing:
 
 
 class TestTemplateProcessing:
-    def get_bert(self):
+    def get_bert(self) -> TemplateProcessing:
         return TemplateProcessing(
             single=["[CLS]", "$0", "[SEP]"],
             pair=["[CLS]", "$A", "[SEP]", "$B:1", "[SEP]:1"],
             special_tokens=[("[CLS]", 1), ("[SEP]", 0)],
         )
 
-    def get_roberta(self):
+    def get_roberta(self) -> TemplateProcessing:
         return TemplateProcessing(
             single="<s> $0 </s>",
             pair="<s> $A </s> </s> $B </s>",
             special_tokens=[("<s>", 0), ("</s>", 1)],
         )
 
-    def get_t5_squad(self):
+    def get_t5_squad(self) -> TemplateProcessing:
         # >>> from transformers import AutoTokenizer
         # >>> tok = AutoTokenizer.from_pretrained("t5-small")
         # >>> tok.tokenize("question: ")
