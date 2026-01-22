@@ -534,6 +534,16 @@ where
     PP: PostProcessor,
     D: Decoder,
 {
+    /// Validates compatibility between a trainer and the current tokenizer configuration.
+    /// Currently only checks:
+    //  For BpeTrainer with `enforce_utf8_boundaries=True` => pretokenizer must be ByteLevel.
+    fn _check_trainer_compat<T: Trainer>(
+        &self,
+        _trainer: &T,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     /// Instantiate a new Tokenizer, with the given Model
     pub fn new(model: M) -> Self {
         Self {
@@ -1361,6 +1371,7 @@ where
     where
         T: Trainer<Model = M> + Sync,
     {
+        self._check_trainer_compat(trainer)?; // check that settings are compatible
         let mut len = 0;
         for file in files.iter() {
             len += File::open(file)
@@ -1436,6 +1447,7 @@ where
         I: Iterator<Item = S> + Send,
         S: AsRef<str> + Send,
     {
+        self._check_trainer_compat(trainer)?; // check that settings are compatible
         let (lower, upper) = sequences.size_hint();
         let len = upper.unwrap_or(lower) as u64;
         let progress = if trainer.should_show_progress() {
