@@ -581,20 +581,33 @@ impl Decoder for PyDecoderWrapper {
 
 /// Decoders Module
 #[pymodule]
-pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyDecoder>()?;
-    m.add_class::<PyByteLevelDec>()?;
-    m.add_class::<PyReplaceDec>()?;
-    m.add_class::<PyWordPieceDec>()?;
-    m.add_class::<PyByteFallbackDec>()?;
-    m.add_class::<PyFuseDec>()?;
-    m.add_class::<PyStrip>()?;
-    m.add_class::<PyMetaspaceDec>()?;
-    m.add_class::<PyBPEDecoder>()?;
-    m.add_class::<PyCTCDecoder>()?;
-    m.add_class::<PySequenceDecoder>()?;
-    m.add_class::<PyDecodeStream>()?;
-    Ok(())
+pub mod decoders {
+    use super::*;
+
+    #[pymodule_export]
+    pub use super::PyDecoder;
+    #[pymodule_export]
+    pub use super::PyByteLevelDec;
+    #[pymodule_export]
+    pub use super::PyReplaceDec;
+    #[pymodule_export]
+    pub use super::PyWordPieceDec;
+    #[pymodule_export]
+    pub use super::PyByteFallbackDec;
+    #[pymodule_export]
+    pub use super::PyFuseDec;
+    #[pymodule_export]
+    pub use super::PyStrip;
+    #[pymodule_export]
+    pub use super::PyMetaspaceDec;
+    #[pymodule_export]
+    pub use super::PyBPEDecoder;
+    #[pymodule_export]
+    pub use super::PyCTCDecoder;
+    #[pymodule_export]
+    pub use super::PySequenceDecoder;
+    #[pymodule_export]
+    pub use super::PyDecodeStream;
 }
 
 /// Class needed for streaming decode

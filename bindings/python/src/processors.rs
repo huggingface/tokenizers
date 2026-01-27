@@ -811,14 +811,21 @@ impl PySequence {
 
 /// Processors Module
 #[pymodule]
-pub fn processors(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyPostProcessor>()?;
-    m.add_class::<PyBertProcessing>()?;
-    m.add_class::<PyRobertaProcessing>()?;
-    m.add_class::<PyByteLevel>()?;
-    m.add_class::<PyTemplateProcessing>()?;
-    m.add_class::<PySequence>()?;
-    Ok(())
+pub mod processors {
+    use super::*;
+
+    #[pymodule_export]
+    pub use super::PyPostProcessor;
+    #[pymodule_export]
+    pub use super::PyBertProcessing;
+    #[pymodule_export]
+    pub use super::PyRobertaProcessing;
+    #[pymodule_export]
+    pub use super::PyByteLevel;
+    #[pymodule_export]
+    pub use super::PyTemplateProcessing;
+    #[pymodule_export]
+    pub use super::PySequence;
 }
 
 #[cfg(test)]

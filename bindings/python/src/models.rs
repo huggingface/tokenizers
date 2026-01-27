@@ -506,7 +506,7 @@ impl PyBPE {
     /// Returns:
     ///     :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
     #[classmethod]
-    #[pyo3(signature = (vocab, merges, **kwargs))]
+    #[pyo3(signature = (vocab, merges, **kwargs) -> "BPE")]
     #[pyo3(text_signature = "(vocab, merges, **kwargs)")]
     fn from_file(
         _cls: &Bound<'_, PyType>,
@@ -705,7 +705,7 @@ impl PyWordPiece {
     /// Returns:
     ///     :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
     #[classmethod]
-    #[pyo3(signature = (vocab, **kwargs))]
+    #[pyo3(signature = (vocab, **kwargs) -> "WordPiece")]
     #[pyo3(text_signature = "(vocab, **kwargs)")]
     fn from_file(
         _cls: &Bound<'_, PyType>,
@@ -905,13 +905,19 @@ impl PyUnigram {
 
 /// Models Module
 #[pymodule]
-pub fn models(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyModel>()?;
-    m.add_class::<PyBPE>()?;
-    m.add_class::<PyWordPiece>()?;
-    m.add_class::<PyWordLevel>()?;
-    m.add_class::<PyUnigram>()?;
-    Ok(())
+pub mod models {
+    use super::*;
+
+    #[pymodule_export]
+    pub use super::PyModel;
+    #[pymodule_export]
+    pub use super::PyBPE;
+    #[pymodule_export]
+    pub use super::PyWordPiece;
+    #[pymodule_export]
+    pub use super::PyWordLevel;
+    #[pymodule_export]
+    pub use super::PyUnigram;
 }
 
 #[cfg(test)]
