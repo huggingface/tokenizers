@@ -187,7 +187,7 @@ If you want to run the steps manually:
 ```bash
 cd bindings/python
 # Build/install into the local venv (ensures the cdylib is up to date)
-maturin develop --release
+maturin develop --release --features stub-gen
 # Refresh the cdylib used by stub_generation
 cp target/release/libtokenizers.so tokenizers.abi3.so
 ```
