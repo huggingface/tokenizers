@@ -266,7 +266,7 @@ impl PyAddedToken {
 }
 
 struct TextInputSequence<'s>(tk::InputSequence<'s>);
-impl<'a, 'py> FromPyObject<'a, 'py> for TextInputSequence<'a> {
+impl<'a, 'py> FromPyObject<'a, 'py> for TextInputSequence<'py> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
@@ -381,10 +381,10 @@ impl From<PyArrayStr> for tk::InputSequence<'_> {
 }
 
 struct PreTokenizedInputSequence<'s>(tk::InputSequence<'s>);
-impl<'s, 'py> FromPyObject<'s, 'py> for PreTokenizedInputSequence<'s> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PreTokenizedInputSequence<'py> {
     type Error = PyErr;
 
-    fn extract(ob: Borrowed<'s, 'py, PyAny>) -> Result<Self, Self::Error> {
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(seq) = ob.extract::<PyArrayUnicode>() {
             return Ok(Self(seq.into()));
         }
@@ -413,20 +413,21 @@ impl<'s> From<PreTokenizedInputSequence<'s>> for tk::InputSequence<'s> {
 }
 
 struct TextEncodeInput<'s>(tk::EncodeInput<'s>);
-impl<'s, 'py> FromPyObject<'s, 'py> for TextEncodeInput<'s> {
+impl<'a, 'py> FromPyObject<'a, 'py> for TextEncodeInput<'py> {
     type Error = PyErr;
 
-    fn extract(ob: Borrowed<'s, 'py, PyAny>) -> Result<Self, Self::Error> {
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(i) = ob.extract::<TextInputSequence>() {
             return Ok(Self(i.into()));
         }
         if let Ok((i1, i2)) = ob.extract::<(TextInputSequence, TextInputSequence)>() {
             return Ok(Self((i1, i2).into()));
         }
-        if let Ok(mut arr) = ob.extract::<Vec<TextInputSequence>>() {
+        if let Ok(arr) = ob.extract::<Vec<Py<PyAny>>>() {
             if arr.len() == 2 {
-                let second = arr.pop().unwrap();
-                let first = arr.pop().unwrap();
+                let py = ob.py();
+                let first = arr[0].bind(py).extract::<TextInputSequence>()?;
+                let second = arr[1].bind(py).extract::<TextInputSequence>()?;
                 return Ok(Self((first, second).into()));
             }
         }
@@ -441,10 +442,10 @@ impl<'s> From<TextEncodeInput<'s>> for tk::tokenizer::EncodeInput<'s> {
     }
 }
 struct PreTokenizedEncodeInput<'s>(tk::EncodeInput<'s>);
-impl<'s, 'py> FromPyObject<'s, 'py> for PreTokenizedEncodeInput<'s> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PreTokenizedEncodeInput<'py> {
     type Error = PyErr;
 
-    fn extract(ob: Borrowed<'s, 'py, PyAny>) -> Result<Self, Self::Error> {
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(i) = ob.extract::<PreTokenizedInputSequence>() {
             return Ok(Self(i.into()));
         }
@@ -452,10 +453,11 @@ impl<'s, 'py> FromPyObject<'s, 'py> for PreTokenizedEncodeInput<'s> {
         {
             return Ok(Self((i1, i2).into()));
         }
-        if let Ok(mut arr) = ob.extract::<Vec<PreTokenizedInputSequence>>() {
+        if let Ok(arr) = ob.extract::<Vec<Py<PyAny>>>() {
             if arr.len() == 2 {
-                let second = arr.pop().unwrap();
-                let first = arr.pop().unwrap();
+                let py = ob.py();
+                let first = arr[0].bind(py).extract::<PreTokenizedInputSequence>()?;
+                let second = arr[1].bind(py).extract::<PreTokenizedInputSequence>()?;
                 return Ok(Self((first, second).into()));
             }
         }
