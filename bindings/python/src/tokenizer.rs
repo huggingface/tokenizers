@@ -423,10 +423,10 @@ impl<'s, 'py> FromPyObject<'s, 'py> for TextEncodeInput<'s> {
         if let Ok((i1, i2)) = ob.extract::<(TextInputSequence, TextInputSequence)>() {
             return Ok(Self((i1, i2).into()));
         }
-        if let Ok(arr) = ob.extract::<Vec<Bound<PyAny>>>() {
+        if let Ok(mut arr) = ob.extract::<Vec<TextInputSequence>>() {
             if arr.len() == 2 {
-                let first = arr[0].extract::<TextInputSequence>()?;
-                let second = arr[1].extract::<TextInputSequence>()?;
+                let second = arr.pop().unwrap();
+                let first = arr.pop().unwrap();
                 return Ok(Self((first, second).into()));
             }
         }
@@ -452,10 +452,10 @@ impl<'s, 'py> FromPyObject<'s, 'py> for PreTokenizedEncodeInput<'s> {
         {
             return Ok(Self((i1, i2).into()));
         }
-        if let Ok(arr) = ob.extract::<Vec<Bound<PyAny>>>() {
+        if let Ok(mut arr) = ob.extract::<Vec<PreTokenizedInputSequence>>() {
             if arr.len() == 2 {
-                let first = arr[0].extract::<PreTokenizedInputSequence>()?;
-                let second = arr[1].extract::<PreTokenizedInputSequence>()?;
+                let second = arr.pop().unwrap();
+                let first = arr.pop().unwrap();
                 return Ok(Self((first, second).into()));
             }
         }

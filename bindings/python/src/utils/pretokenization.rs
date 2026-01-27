@@ -57,7 +57,7 @@ fn tokenize(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResul
             let output = func.call((normalized.get(),), None)?;
             Ok(output
                 .extract::<Bound<PyList>>()
-                .map_err(Into::into)?
+                .map_err(PyErr::from)?
                 .into_iter()
                 .map(|obj| Ok(Token::from(obj.extract::<PyToken>()?)))
                 .collect::<PyResult<Vec<_>>>()?)
