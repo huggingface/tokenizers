@@ -19,7 +19,7 @@ fn main() {
 
     env_logger::init();
     println!("Generating stub files");
-    let lib_name = String::from("/Users/arthurzucker/Work/.venv/lib/python3.13/site-packages/tokenizers/tokenizers.abi3.so");
+    let lib_name = String::from("/home/arthur/Work/tokenizers/bindings/python/target/release/libtokenizers.so");
     let path = Path::new(&lib_name);
     assert!(path.is_file(), "Failed to locate cdylib at {}", lib_name);
     println!("Found cdylib at {}", lib_name);
