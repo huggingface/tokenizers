@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 #[cfg(feature = "stub-gen")]
 fn main() {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     let lib_name = "/home/arthur/Work/tokenizers/bindings/python/tokenizers.abi3.so";
     let path = Path::new(lib_name);
     let so_dir = path.parent().unwrap();
@@ -18,8 +18,6 @@ fn main() {
         let bindings = sys.getattr("path").unwrap();
         let sys_path = bindings.cast::<PyList>().unwrap();
         sys_path.insert(0, so_dir.to_str().unwrap()).unwrap();
-        use std::path::Path;
-
         let lib_path = Path::new("/home/arthur/Work/tokenizers/bindings/python/tokenizers.abi3.so");
         let so_dir = lib_path.parent().unwrap();
 
@@ -56,12 +54,17 @@ fn main() {
         let python_module = pyo3_introspection::introspect_cdylib(path, main_module_name)
             .expect(format!("Failed introspection of {}", main_module_name).as_str());
         let type_stubs = pyo3_introspection::module_stub_files(&python_module);
+        let out_dir = Path::new("py_src/tokenizers");
 
-        let stubst_string = type_stubs
-            .get(&PathBuf::from("__init__.pyi"))
-            .expect("Failed to get __init__.pyi");
-        std::fs::write("tokenizers.pyi", stubst_string).expect("Failed to write stubs file");
-        println!("Generated stubs: {}", "tokenizers.pyi")
+        for (rel_path, contents) in type_stubs {
+            let out_path = out_dir.join(&rel_path);
+            if let Some(parent) = out_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .expect("Failed to create output directory for stubs");
+            }
+            std::fs::write(&out_path, contents).expect("Failed to write stubs file");
+            println!("Generated stub: {}", out_path.display());
+        }
     });
 }
 
