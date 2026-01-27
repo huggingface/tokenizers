@@ -196,3 +196,5 @@ Finally:
 ```bash
 cargo run --bin stub_generation --no-default-features --features stub-gen
 ```
+
+Generated stubs are written under `py_src/tokenizers` (including submodules).
