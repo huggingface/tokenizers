@@ -228,7 +228,7 @@ impl PyPreTokenizedString {
     ///
     /// Returns:
     ///     An Encoding
-    #[pyo3(signature = (type_id = 0, word_idx = None))]
+    #[pyo3(signature = (type_id = 0, word_idx = None) -> "Encoding")]
     #[pyo3(text_signature = "(self, type_id=0, word_idx=None)")]
     fn to_encoding(&self, type_id: u32, word_idx: Option<u32>) -> PyResult<PyEncoding> {
         to_encoding(&self.pretok, type_id, word_idx)

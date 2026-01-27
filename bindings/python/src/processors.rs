@@ -148,7 +148,7 @@ impl PyPostProcessor {
     ///
     /// Return:
     ///     :class:`~tokenizers.Encoding`: The final encoding
-    #[pyo3(signature = (encoding, pair = None, add_special_tokens = true))]
+    #[pyo3(signature = (encoding, pair = None, add_special_tokens = true) -> "Encoding")]
     #[pyo3(text_signature = "(self, encoding, pair=None, add_special_tokens=True)")]
     fn process(
         &self,
@@ -557,7 +557,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PySpecialToken {
             Ok(Self(v.into()))
         } else if let Ok(v) = ob.extract::<(u32, String)>() {
             Ok(Self(v.into()))
-        } else if let Ok(d) = ob.downcast::<PyDict>() {
+        } else if let Ok(d) = ob.cast::<PyDict>() {
             let id = d
                 .get_item("id")?
                 .ok_or_else(|| exceptions::PyValueError::new_err("`id` must be specified"))?
@@ -812,8 +812,6 @@ impl PySequence {
 /// Processors Module
 #[pymodule]
 pub mod processors {
-    use super::*;
-
     #[pymodule_export]
     pub use super::PyPostProcessor;
     #[pymodule_export]

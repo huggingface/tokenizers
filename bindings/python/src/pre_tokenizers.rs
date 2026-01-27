@@ -955,8 +955,6 @@ impl PreTokenizer for PyPreTokenizerWrapper {
 /// PreTokenizers Module
 #[pymodule]
 pub mod pre_tokenizers {
-    use super::*;
-
     #[pymodule_export]
     pub use super::PyPreTokenizer;
     #[pymodule_export]

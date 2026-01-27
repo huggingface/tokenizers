@@ -582,8 +582,6 @@ impl Decoder for PyDecoderWrapper {
 /// Decoders Module
 #[pymodule]
 pub mod decoders {
-    use super::*;
-
     #[pymodule_export]
     pub use super::PyDecoder;
     #[pymodule_export]

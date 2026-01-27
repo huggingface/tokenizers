@@ -79,6 +79,7 @@ pub mod tokenizers {
     #[pymodule_export]
     pub use super::trainers::trainers;
 
+    #[allow(non_upper_case_globals)]
     #[pymodule_export]
     pub const __version__: &str = env!("CARGO_PKG_VERSION");
 

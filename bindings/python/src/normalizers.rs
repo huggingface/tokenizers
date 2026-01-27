@@ -766,8 +766,6 @@ impl Normalizer for PyNormalizerWrapper {
 /// Normalizers Module
 #[pymodule]
 pub mod normalizers {
-    use super::*;
-
     #[pymodule_export]
     pub use super::PyNormalizer;
     #[pymodule_export]

@@ -160,7 +160,7 @@ impl PyAddedToken {
     }
 
     fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
-        match state.downcast_bound::<PyDict>(py) {
+        match state.cast_bound::<PyDict>(py) {
             Ok(state) => {
                 for (key, value) in state {
                     let key: String = key.extract()?;
@@ -360,13 +360,13 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyArrayStr {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        let array = ob.downcast::<PyArray1<Py<PyAny>>>()?;
+        let array = ob.cast::<PyArray1<Py<PyAny>>>()?;
         let seq = array
             .readonly()
             .as_array()
             .iter()
             .map(|obj| {
-                let s = obj.downcast_bound::<PyString>(ob.py())?;
+                let s = obj.cast_bound::<PyString>(ob.py())?;
                 Ok(s.to_string_lossy().into_owned())
             })
             .collect::<PyResult<Vec<_>>>()?;
@@ -391,12 +391,12 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PreTokenizedInputSequence<'py> {
         if let Ok(seq) = ob.extract::<PyArrayStr>() {
             return Ok(Self(seq.into()));
         }
-        if let Ok(s) = ob.downcast::<PyList>() {
+        if let Ok(s) = ob.cast::<PyList>() {
             if let Ok(seq) = s.extract::<Vec<String>>() {
                 return Ok(Self(seq.into()));
             }
         }
-        if let Ok(s) = ob.downcast::<PyTuple>() {
+        if let Ok(s) = ob.cast::<PyTuple>() {
             if let Ok(seq) = s.extract::<Vec<String>>() {
                 return Ok(Self(seq.into()));
             }
@@ -506,10 +506,10 @@ impl PyTokenizer {
         if let Ok(seq) = ob.extract::<PyArrayStr>() {
             return Ok(seq.0);
         }
-        if let Ok(list) = ob.downcast::<PyList>() {
+        if let Ok(list) = ob.cast::<PyList>() {
             return list.extract::<Vec<String>>();
         }
-        if let Ok(tup) = ob.downcast::<PyTuple>() {
+        if let Ok(tup) = ob.cast::<PyTuple>() {
             return tup.extract::<Vec<String>>();
         }
         Err(exceptions::PyTypeError::new_err(
@@ -527,7 +527,7 @@ impl PyTokenizer {
         for it in items {
             if is_pretokenized {
                 // Pair?
-                if let Ok(tup) = it.downcast::<PyTuple>() {
+                if let Ok(tup) = it.cast::<PyTuple>() {
                     if tup.len() == 2 {
                         let a = Self::extract_pretok_seq(&tup.get_item(0)?)?;
                         let b = Self::extract_pretok_seq(&tup.get_item(1)?)?;
@@ -535,7 +535,7 @@ impl PyTokenizer {
                         continue;
                     }
                 }
-                if let Ok(lst) = it.downcast::<PyList>() {
+                if let Ok(lst) = it.cast::<PyList>() {
                     if lst.len() == 2 {
                         let a = Self::extract_pretok_seq(&lst.get_item(0)?)?;
                         let b = Self::extract_pretok_seq(&lst.get_item(1)?)?;
@@ -548,7 +548,7 @@ impl PyTokenizer {
                 out.push(tk::EncodeInput::Single(a.into()));
             } else {
                 // Raw text: pair?
-                if let Ok(tup) = it.downcast::<PyTuple>() {
+                if let Ok(tup) = it.cast::<PyTuple>() {
                     if tup.len() == 2 {
                         let a: String = tup.get_item(0)?.extract()?;
                         let b: String = tup.get_item(1)?.extract()?;
@@ -556,10 +556,10 @@ impl PyTokenizer {
                         continue;
                     }
                 }
-                if let Ok(lst) = it.downcast::<PyList>() {
+                if let Ok(lst) = it.cast::<PyList>() {
                     if lst.len() == 2
-                        && lst.get_item(0)?.downcast::<PyString>().is_ok()
-                        && lst.get_item(1)?.downcast::<PyString>().is_ok()
+                        && lst.get_item(0)?.cast::<PyString>().is_ok()
+                        && lst.get_item(1)?.cast::<PyString>().is_ok()
                     {
                         let a: String = lst.get_item(0)?.extract()?;
                         let b: String = lst.get_item(1)?.extract()?;
@@ -653,6 +653,7 @@ impl PyTokenizer {
     /// Returns:
     ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
+    #[pyo3(signature = (json) -> "Tokenizer")]
     #[pyo3(text_signature = "(json)")]
     fn from_str(json: &str) -> PyResult<Self> {
         let tokenizer: PyResult<_> = ToPyResult(json.parse()).into();
@@ -669,6 +670,7 @@ impl PyTokenizer {
     /// Returns:
     ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
+    #[pyo3(signature = (path) -> "Tokenizer")]
     #[pyo3(text_signature = "(path)")]
     fn from_file(path: &str) -> PyResult<Self> {
         let tokenizer: PyResult<_> = ToPyResult(Tokenizer::from_file(path)).into();
@@ -684,6 +686,7 @@ impl PyTokenizer {
     /// Returns:
     ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
+    #[pyo3(signature = (buffer) -> "Tokenizer")]
     #[pyo3(text_signature = "(buffer)")]
     fn from_buffer(buffer: &Bound<'_, PyBytes>) -> PyResult<Self> {
         let tokenizer = serde_json::from_slice(buffer.as_bytes()).map_err(|e| {
@@ -710,7 +713,7 @@ impl PyTokenizer {
     /// Returns:
     ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
-    #[pyo3(signature = (identifier, revision = String::from("main"), token = None))]
+    #[pyo3(signature = (identifier, revision = String::from("main"), token = None) -> "Tokenizer")]
     #[pyo3(text_signature = "(identifier, revision=\"main\", token=None)")]
     fn from_pretrained(
         identifier: &str,
@@ -745,7 +748,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`str`: A string representing the serialized Tokenizer
-    #[pyo3(signature = (pretty = false))]
+    #[pyo3(signature = (pretty = false) -> "str")]
     #[pyo3(text_signature = "(self, pretty=False)")]
     fn to_str(&self, pretty: bool) -> PyResult<String> {
         ToPyResult(self.tokenizer.to_string(pretty)).into()
@@ -759,7 +762,7 @@ impl PyTokenizer {
     ///
     ///     pretty (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether the JSON file should be pretty formatted.
-    #[pyo3(signature = (path, pretty = true))]
+    #[pyo3(signature = (path, pretty = true) -> "None")]
     #[pyo3(text_signature = "(self, path, pretty=True)")]
     fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
         ToPyResult(self.tokenizer.save(path, pretty)).into()
@@ -793,7 +796,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`Dict[str, int]`: The vocabulary
-    #[pyo3(signature = (with_added_tokens = true))]
+    #[pyo3(signature = (with_added_tokens = true) -> "Dict[str, int]")]
     #[pyo3(text_signature = "(self, with_added_tokens=True)")]
     fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
         self.tokenizer.get_vocab(with_added_tokens)
@@ -803,7 +806,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`Dict[int, AddedToken]`: The vocabulary
-    #[pyo3(signature = ())]
+    #[pyo3(signature = () -> "Dict[int, AddedToken]")]
     #[pyo3(text_signature = "(self)")]
     fn get_added_tokens_decoder(&self) -> BTreeMap<u32, PyAddedToken> {
         let mut sorted_map = BTreeMap::new();
@@ -823,7 +826,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`int`: The size of the vocabulary
-    #[pyo3(signature = (with_added_tokens = true))]
+    #[pyo3(signature = (with_added_tokens = true) -> "int")]
     #[pyo3(text_signature = "(self, with_added_tokens=True)")]
     fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
         self.tokenizer.get_vocab_size(with_added_tokens)
@@ -845,7 +848,7 @@ impl PyTokenizer {
     ///
     ///     direction (:obj:`str`, defaults to :obj:`right`):
     ///         Truncate direction
-    #[pyo3(signature = (max_length, **kwargs))]
+    #[pyo3(signature = (max_length, **kwargs) -> "None")]
     #[pyo3(
         text_signature = "(self, max_length, stride=0, strategy='longest_first', direction='right')"
     )]
@@ -952,7 +955,7 @@ impl PyTokenizer {
     ///     length (:obj:`int`, `optional`):
     ///         If specified, the length at which to pad. If not specified we pad using the size of
     ///         the longest sequence in a batch.
-    #[pyo3(signature = (**kwargs))]
+    #[pyo3(signature = (**kwargs) -> "None")]
     #[pyo3(
         text_signature = "(self, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]', length=None, pad_to_multiple_of=None)"
     )]
@@ -1080,7 +1083,7 @@ impl PyTokenizer {
     /// Returns:
     ///     :class:`~tokenizers.Encoding`: The encoded result
     ///
-    #[pyo3(signature = (sequence, pair = None, is_pretokenized = false, add_special_tokens = true))]
+    #[pyo3(signature = (sequence, pair = None, is_pretokenized = false, add_special_tokens = true) -> "Encoding")]
     #[pyo3(
         text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True)"
     )]
@@ -1210,7 +1213,7 @@ impl PyTokenizer {
     /// Returns:
     ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
     ///
-    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true))]
+    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true) -> "List[Encoding]")]
     #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
     fn encode_batch(
         &self,
@@ -1329,7 +1332,7 @@ impl PyTokenizer {
     /// Returns:
     ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
     ///
-    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true))]
+    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true) -> "List[Encoding]")]
     #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
     fn encode_batch_fast(
         &self,
@@ -1435,7 +1438,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`str`: The decoded string
-    #[pyo3(signature = (ids, skip_special_tokens = true))]
+    #[pyo3(signature = (ids, skip_special_tokens = true) -> "str")]
     #[pyo3(text_signature = "(self, ids, skip_special_tokens=True)")]
     fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> PyResult<String> {
         ToPyResult(self.tokenizer.decode(&ids, skip_special_tokens)).into()
@@ -1452,7 +1455,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`List[str]`: A list of decoded strings
-    #[pyo3(signature = (sequences, skip_special_tokens = true))]
+    #[pyo3(signature = (sequences, skip_special_tokens = true) -> "List[str]")]
     #[pyo3(text_signature = "(self, sequences, skip_special_tokens=True)")]
     fn decode_batch(
         &self,
@@ -1681,7 +1684,7 @@ impl PyTokenizer {
                 // Each element of the iterator can either be:
                 //  - An iterator, to allow batching
                 //  - A string
-                if let Ok(s) = element.downcast::<PyString>() {
+                if let Ok(s) = element.cast::<PyString>() {
                     itertools::Either::Right(std::iter::once(s.to_cow().map(|s| s.into_owned())))
                 } else {
                     match element.try_iter() {

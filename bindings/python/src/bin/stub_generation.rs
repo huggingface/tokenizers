@@ -1,4 +1,6 @@
+#[cfg(feature = "stub-gen")]
 use pyo3::prelude::*;
+#[cfg(feature = "stub-gen")]
 use pyo3::types::PyList;
 #[cfg(feature = "stub-gen")]
 fn main() {

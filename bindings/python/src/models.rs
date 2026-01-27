@@ -90,7 +90,7 @@ where
 #[pymethods]
 impl PyModel {
     #[new]
-    #[pyo3(signature = (), text_signature = "(self)")]
+    #[pyo3(signature = () -> "Model", text_signature = "(self)")]
     fn __new__() -> Self {
         // Instantiate a default empty model. This doesn't really make sense, but we need
         // to be able to instantiate an empty model for pickle capabilities.
@@ -178,7 +178,7 @@ impl PyModel {
     ///
     /// Returns:
     ///     :obj:`List[str]`: The list of saved files
-    #[pyo3(signature = (folder, prefix=None, name=None), text_signature = "(self, folder, prefix)")]
+    #[pyo3(signature = (folder, prefix=None, name=None) -> "List[str]", text_signature = "(self, folder, prefix)")]
     fn save<'a>(
         &self,
         py: Python<'_>,
@@ -531,7 +531,7 @@ impl PyBPE {
     }
 
     /// Clears the internal cache
-    #[pyo3(signature = ())]
+    #[pyo3(signature = () -> "None")]
     #[pyo3(text_signature = "(self)")]
     fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
         let super_ = self_.as_ref();
@@ -543,7 +543,7 @@ impl PyBPE {
     }
 
     /// Resize the internal cache
-    #[pyo3(signature = (capacity))]
+    #[pyo3(signature = (capacity) -> "None")]
     #[pyo3(text_signature = "(self, capacity)")]
     fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
         let super_ = self_.as_ref();
@@ -879,7 +879,7 @@ impl PyUnigram {
     }
 
     /// Clears the internal cache
-    #[pyo3(signature = ())]
+    #[pyo3(signature = () -> "None")]
     #[pyo3(text_signature = "(self)")]
     fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
         let super_ = self_.as_ref();
@@ -891,7 +891,7 @@ impl PyUnigram {
     }
 
     /// Resize the internal cache
-    #[pyo3(signature = (capacity))]
+    #[pyo3(signature = (capacity) -> "None")]
     #[pyo3(text_signature = "(self, capacity)")]
     fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
         let super_ = self_.as_ref();
@@ -906,8 +906,6 @@ impl PyUnigram {
 /// Models Module
 #[pymodule]
 pub mod models {
-    use super::*;
-
     #[pymodule_export]
     pub use super::PyModel;
     #[pymodule_export]
