@@ -179,6 +179,13 @@ Before running the stub we need to compile the extension and refresh `tokenizers
 
 ```bash
 cd bindings/python
+# One-liner helper (recommended)
+./scripts/gen_stubs.sh
+```
+
+If you want to run the steps manually:
+```bash
+cd bindings/python
 # Build/install into the local venv (ensures the cdylib is up to date)
 maturin develop --release
 # Refresh the cdylib used by stub_generation
