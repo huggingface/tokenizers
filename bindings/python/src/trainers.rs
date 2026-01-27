@@ -887,13 +887,19 @@ impl PyUnigramTrainer {
 
 /// Trainers Module
 #[pymodule]
-pub fn trainers(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyTrainer>()?;
-    m.add_class::<PyBpeTrainer>()?;
-    m.add_class::<PyWordPieceTrainer>()?;
-    m.add_class::<PyWordLevelTrainer>()?;
-    m.add_class::<PyUnigramTrainer>()?;
-    Ok(())
+pub mod trainers {
+    use super::*;
+
+    #[pymodule_export]
+    pub use super::PyTrainer;
+    #[pymodule_export]
+    pub use super::PyBpeTrainer;
+    #[pymodule_export]
+    pub use super::PyWordPieceTrainer;
+    #[pymodule_export]
+    pub use super::PyWordLevelTrainer;
+    #[pymodule_export]
+    pub use super::PyUnigramTrainer;
 }
 
 #[cfg(test)]
