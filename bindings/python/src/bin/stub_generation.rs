@@ -1,12 +1,12 @@
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use std::ffi::CStr;
 #[cfg(feature = "stub-gen")]
 fn main() {
     use std::path::{Path, PathBuf};
     let lib_name = "/home/arthur/Work/tokenizers/bindings/python/tokenizers.abi3.so";
     let path = Path::new(lib_name);
-    let so_dir = path.parent().unwrap();    Python::initialize();
+    let so_dir = path.parent().unwrap();
+    Python::initialize();
     println!("Gathering Python environment information...");
     Python::attach(|py| {
         let sys = py.import("sys").unwrap();
@@ -19,7 +19,7 @@ fn main() {
         );
 
         let bindings = sys.getattr("path").unwrap();
-        let sys_path = bindings.downcast().unwrap();
+        let sys_path = bindings.cast::<PyList>().unwrap();
         sys_path.insert(0, so_dir.to_str().unwrap()).unwrap();
         use std::path::Path;
 
