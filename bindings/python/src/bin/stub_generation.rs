@@ -13,10 +13,7 @@ fn main() {
         println!("sys.version = {}", sys.getattr("version").unwrap());
         println!("sys.executable = {}", sys.getattr("executable").unwrap());
         println!("sys.prefix = {}", sys.getattr("prefix").unwrap());
-        println!(
-            "sys.base_prefix = {}",
-            sys.getattr("base_prefix").unwrap()
-        );
+        println!("sys.base_prefix = {}", sys.getattr("base_prefix").unwrap());
 
         let bindings = sys.getattr("path").unwrap();
         let sys_path = bindings.cast::<PyList>().unwrap();
@@ -49,7 +46,8 @@ fn main() {
            None, None).unwrap();
         env_logger::init();
         println!("Generating stub files");
-        let lib_name = String::from("/home/arthur/Work/tokenizers/bindings/python/tokenizers.abi3.so");
+        let lib_name =
+            String::from("/home/arthur/Work/tokenizers/bindings/python/tokenizers.abi3.so");
         let path = Path::new(&lib_name);
         assert!(path.is_file(), "Failed to locate cdylib at {}", lib_name);
         println!("Found cdylib at {}", lib_name);
@@ -64,10 +62,8 @@ fn main() {
             .expect("Failed to get __init__.pyi");
         std::fs::write("tokenizers.pyi", stubst_string).expect("Failed to write stubs file");
         println!("Generated stubs: {}", "tokenizers.pyi")
-
     });
-
-} 
+}
 
 #[cfg(not(feature = "stub-gen"))]
 fn main() {

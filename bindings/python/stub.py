@@ -302,4 +302,4 @@ if __name__ == "__main__":
     import tokenizers
 
     # `tokenizers.tokenizers` is the extension module; attribute access is dynamic.
-    write(tokenizers.tokenizers, "py_src/tokenizers/", "tokenizers", check=args.check)  # type: ignore[attr-defined]
+    write(tokenizers, "py_src/tokenizers/", "tokenizers", check=args.check)  # type: ignore[attr-defined]

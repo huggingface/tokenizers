@@ -52,30 +52,30 @@ pub mod tokenizers {
     use super::*;
 
     #[pymodule_export]
-    pub use super::tokenizer::PyTokenizer;
-    #[pymodule_export]
-    pub use super::tokenizer::PyAddedToken;
+    pub use super::encoding::PyEncoding;
     #[pymodule_export]
     pub use super::token::PyToken;
     #[pymodule_export]
-    pub use super::encoding::PyEncoding;
+    pub use super::tokenizer::PyAddedToken;
     #[pymodule_export]
-    pub use super::utils::PyRegex;
+    pub use super::tokenizer::PyTokenizer;
     #[pymodule_export]
     pub use super::utils::PyNormalizedString;
     #[pymodule_export]
     pub use super::utils::PyPreTokenizedString;
+    #[pymodule_export]
+    pub use super::utils::PyRegex;
 
-    #[pymodule_export]
-    pub use super::models::models;
-    #[pymodule_export]
-    pub use super::pre_tokenizers::pre_tokenizers;
     #[pymodule_export]
     pub use super::decoders::decoders;
     #[pymodule_export]
-    pub use super::processors::processors;
+    pub use super::models::models;
     #[pymodule_export]
     pub use super::normalizers::normalizers;
+    #[pymodule_export]
+    pub use super::pre_tokenizers::pre_tokenizers;
+    #[pymodule_export]
+    pub use super::processors::processors;
     #[pymodule_export]
     pub use super::trainers::trainers;
 
