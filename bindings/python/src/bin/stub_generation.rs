@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 #[cfg(feature = "stub-gen")]
 fn main() {
     use std::path::{Path, PathBuf};
-    pyo3::prepare_freethreaded_python();
+    Python::initialize();
     println!("Gathering Python environment information...");
     Python::attach(|py| {
         let sys = py.import("sys").unwrap();
@@ -30,7 +30,7 @@ fn main() {
 
     env_logger::init();
     println!("Generating stub files");
-    let lib_name = String::from("/home/arthur/Work/tokenizers/bindings/python/target/release/libtokenizers.so");
+    let lib_name = String::from("/home/arthur/Work/tokenizers/bindings/python/tokenizers.abi3.so");
     let path = Path::new(&lib_name);
     assert!(path.is_file(), "Failed to locate cdylib at {}", lib_name);
     println!("Found cdylib at {}", lib_name);

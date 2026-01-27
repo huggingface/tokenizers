@@ -175,6 +175,16 @@ The compiled PyO3 extension does not expose type annotations, so editors and typ
 
 We are now trying to add better typing with Pyo3's latest pyo3-introspect crate. 
 
+Before running the stub we need to compile, link with python and extract the abi3.so file. This is done with:
+
+```bash
+cd bindings/python
+maturin develop --release
+SO=$(python -c "import tokenizers; print(tokenizers.__file__)")
+echo "$SO"
+```
+
+Finally:
 ```bash
 cargo run --bin stub_generation --features stub-gen
 ```
