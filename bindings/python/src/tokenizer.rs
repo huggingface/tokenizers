@@ -266,8 +266,10 @@ impl PyAddedToken {
 }
 
 struct TextInputSequence<'s>(tk::InputSequence<'s>);
-impl<'s> FromPyObject<'s> for TextInputSequence<'s> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for TextInputSequence<'a> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         let err = exceptions::PyTypeError::new_err("TextInputSequence must be str");
         if let Ok(s) = ob.extract::<String>() {
             Ok(Self(s.into()))
@@ -283,8 +285,10 @@ impl<'s> From<TextInputSequence<'s>> for tk::InputSequence<'s> {
 }
 
 struct PyArrayUnicode(Vec<String>);
-impl FromPyObject<'_> for PyArrayUnicode {
-    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyArrayUnicode {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         // SAFETY Making sure the pointer is a valid numpy array requires calling numpy C code
         if unsafe { npyffi::PyArray_Check(ob.py(), ob.as_ptr()) } == 0 {
             return Err(exceptions::PyTypeError::new_err("Expected an np.array"));
@@ -352,8 +356,10 @@ impl From<PyArrayUnicode> for tk::InputSequence<'_> {
 
 struct PyArrayStr(Vec<String>);
 
-impl FromPyObject<'_> for PyArrayStr {
-    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyArrayStr {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         let array = ob.downcast::<PyArray1<Py<PyAny>>>()?;
         let seq = array
             .readonly()
@@ -375,8 +381,10 @@ impl From<PyArrayStr> for tk::InputSequence<'_> {
 }
 
 struct PreTokenizedInputSequence<'s>(tk::InputSequence<'s>);
-impl<'s> FromPyObject<'s> for PreTokenizedInputSequence<'s> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+impl<'s, 'py> FromPyObject<'s, 'py> for PreTokenizedInputSequence<'s> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'s, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(seq) = ob.extract::<PyArrayUnicode>() {
             return Ok(Self(seq.into()));
         }
@@ -405,8 +413,10 @@ impl<'s> From<PreTokenizedInputSequence<'s>> for tk::InputSequence<'s> {
 }
 
 struct TextEncodeInput<'s>(tk::EncodeInput<'s>);
-impl<'s> FromPyObject<'s> for TextEncodeInput<'s> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+impl<'s, 'py> FromPyObject<'s, 'py> for TextEncodeInput<'s> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'s, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(i) = ob.extract::<TextInputSequence>() {
             return Ok(Self(i.into()));
         }
@@ -431,8 +441,10 @@ impl<'s> From<TextEncodeInput<'s>> for tk::tokenizer::EncodeInput<'s> {
     }
 }
 struct PreTokenizedEncodeInput<'s>(tk::EncodeInput<'s>);
-impl<'s> FromPyObject<'s> for PreTokenizedEncodeInput<'s> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+impl<'s, 'py> FromPyObject<'s, 'py> for PreTokenizedEncodeInput<'s> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'s, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(i) = ob.extract::<PreTokenizedInputSequence>() {
             return Ok(Self(i.into()));
         }
@@ -617,7 +629,7 @@ impl PyTokenizer {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 

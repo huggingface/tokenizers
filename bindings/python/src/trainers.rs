@@ -64,7 +64,7 @@ impl PyTrainer {
                 self.trainer = unpickled;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
