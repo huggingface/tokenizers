@@ -61,7 +61,7 @@ class BertProcessing(PostProcessor):
         cls (:obj:`Tuple[str, int]`):
             A tuple with the string representation of the CLS token, and its id
     """
-    def __init__(self, sep, cls):
+    def __init__(self, sep: tuple[str, int], _cls: tuple[str, int]):
         pass
 
     def __getnewargs__(self):
@@ -244,7 +244,7 @@ class RobertaProcessing(PostProcessor):
             Whether the add_prefix_space option was enabled during pre-tokenization. This
             is relevant because it defines the way the offsets are trimmed out.
     """
-    def __init__(self, sep, cls, trim_offsets=True, add_prefix_space=True):
+    def __init__(self, sep: tuple[str, int], _cls: tuple[str, int], trim_offsets=True, add_prefix_space=True):
         pass
 
     def __getnewargs__(self):

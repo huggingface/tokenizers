@@ -11,6 +11,15 @@ OVERRIDES = {
     ("tokenizers", "AddedToken", "__init__"): "(self, content=None, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False)",
     ("tokenizers.decoders", "Strip", "__init__"): "(self, content=' ', left=0, right=0)",
     ("tokenizers.processors", "TemplateProcessing", "__init__"): "(self, single=None, pair=None, special_tokens=None)",
+    ("tokenizers.models", "Model", "save"): "(self, folder: str, prefix: str | None = None) -> list[str]",
+    ("tokenizers.models", "BPE", "save"): "(self, folder: str, prefix: str | None = None) -> list[str]",
+    ("tokenizers.models", "Unigram", "save"): "(self, folder: str, prefix: str | None = None) -> list[str]",
+    ("tokenizers.models", "WordLevel", "save"): "(self, folder: str, prefix: str | None = None) -> list[str]",
+    ("tokenizers.models", "WordPiece", "save"): "(self, folder: str, prefix: str | None = None) -> list[str]",
+    ("tokenizers.processors", "BertProcessing", "__init__"): "(self, sep: tuple[str, int], _cls: tuple[str, int])",
+    ("tokenizers.processors", "BertProcessing", "__new__"): "(cls, /, sep: tuple[str, int], _cls: tuple[str, int])",
+    ("tokenizers.processors", "RobertaProcessing", "__init__"): "(self, sep: tuple[str, int], _cls: tuple[str, int], trim_offsets=True, add_prefix_space=True)",
+    ("tokenizers.processors", "RobertaProcessing", "__new__"): "(cls, /, sep: tuple[str, int], _cls: tuple[str, int], trim_offsets=True, add_prefix_space=True)",
 }
 
 

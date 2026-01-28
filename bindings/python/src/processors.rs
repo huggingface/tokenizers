@@ -319,7 +319,7 @@ pub struct PyBertProcessing {}
 #[pymethods]
 impl PyBertProcessing {
     #[new]
-    #[pyo3(text_signature = "(self, sep, cls)")]
+    #[pyo3(text_signature = "(self, sep, cls: str| int)")]
     fn new(sep: (String, u32), cls: (String, u32)) -> (Self, PyPostProcessor) {
         (PyBertProcessing {}, BertProcessing::new(sep, cls).into())
     }
