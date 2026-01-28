@@ -1,6 +1,7 @@
 import argparse
 import inspect
 import os
+import types
 from pathlib import Path
 
 
@@ -100,6 +101,15 @@ def get_module_members(module):
 
 def pyi_file(obj, indent="", owner=None):
     string = ""
+    if owner is None:
+        # Skip module-level typing constructs and builtins used as type aliases.
+        if getattr(obj, "__module__", "") == "typing" or type(obj).__module__ == "typing":
+            return string
+        union_type = getattr(types, "UnionType", None)
+        if isinstance(obj, types.GenericAlias) or (union_type and isinstance(obj, union_type)):
+            return string
+        if inspect.isclass(obj) and obj.__module__ == "builtins":
+            return string
     if inspect.ismodule(obj):
         string += GENERATED_COMMENT
         members = get_module_members(obj)
