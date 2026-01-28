@@ -1,6 +1,7 @@
 import argparse
 import inspect
 import os
+import types
 from pathlib import Path
 
 
@@ -11,6 +12,15 @@ OVERRIDES = {
     ("tokenizers", "AddedToken", "__init__"): "(self, content=None, single_word=False, lstrip=False, rstrip=False, normalized=True, special=False)",
     ("tokenizers.decoders", "Strip", "__init__"): "(self, content=' ', left=0, right=0)",
     ("tokenizers.processors", "TemplateProcessing", "__init__"): "(self, single=None, pair=None, special_tokens=None)",
+    ("tokenizers.models", "Model", "save"): "(self, folder: str, prefix: str | None = None) -> list[str]",
+    ("tokenizers.models", "BPE", "save"): "(self, folder: str, prefix: str | None = None) -> list[str]",
+    ("tokenizers.models", "Unigram", "save"): "(self, folder: str, prefix: str | None = None) -> list[str]",
+    ("tokenizers.models", "WordLevel", "save"): "(self, folder: str, prefix: str | None = None) -> list[str]",
+    ("tokenizers.models", "WordPiece", "save"): "(self, folder: str, prefix: str | None = None) -> list[str]",
+    ("tokenizers.processors", "BertProcessing", "__init__"): "(self, sep: tuple[str, int], _cls: tuple[str, int])",
+    ("tokenizers.processors", "BertProcessing", "__new__"): "(cls, /, sep: tuple[str, int], _cls: tuple[str, int])",
+    ("tokenizers.processors", "RobertaProcessing", "__init__"): "(self, sep: tuple[str, int], _cls: tuple[str, int], trim_offsets=True, add_prefix_space=True)",
+    ("tokenizers.processors", "RobertaProcessing", "__new__"): "(cls, /, sep: tuple[str, int], _cls: tuple[str, int], trim_offsets=True, add_prefix_space=True)",
 }
 
 
@@ -91,6 +101,15 @@ def get_module_members(module):
 
 def pyi_file(obj, indent="", owner=None):
     string = ""
+    if owner is None:
+        # Skip module-level typing constructs and builtins used as type aliases.
+        if getattr(obj, "__module__", "") == "typing" or type(obj).__module__ == "typing":
+            return string
+        union_type = getattr(types, "UnionType", None)
+        if isinstance(obj, types.GenericAlias) or (union_type and isinstance(obj, union_type)):
+            return string
+        if inspect.isclass(obj) and obj.__module__ == "builtins":
+            return string
     if inspect.ismodule(obj):
         string += GENERATED_COMMENT
         members = get_module_members(obj)
@@ -302,4 +321,4 @@ if __name__ == "__main__":
     import tokenizers
 
     # `tokenizers.tokenizers` is the extension module; attribute access is dynamic.
-    write(tokenizers.tokenizers, "py_src/tokenizers/", "tokenizers", check=args.check)  # type: ignore[attr-defined]
+    write(tokenizers, "py_src/tokenizers/", "tokenizers", check=args.check)  # type: ignore[attr-defined]

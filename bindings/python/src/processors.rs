@@ -117,7 +117,7 @@ impl PyPostProcessor {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -148,7 +148,7 @@ impl PyPostProcessor {
     ///
     /// Return:
     ///     :class:`~tokenizers.Encoding`: The final encoding
-    #[pyo3(signature = (encoding, pair = None, add_special_tokens = true))]
+    #[pyo3(signature = (encoding, pair = None, add_special_tokens = true) -> "Encoding")]
     #[pyo3(text_signature = "(self, encoding, pair=None, add_special_tokens=True)")]
     fn process(
         &self,
@@ -319,7 +319,7 @@ pub struct PyBertProcessing {}
 #[pymethods]
 impl PyBertProcessing {
     #[new]
-    #[pyo3(text_signature = "(self, sep, cls)")]
+    #[pyo3(text_signature = "(self, sep, cls: str| int)")]
     fn new(sep: (String, u32), cls: (String, u32)) -> (Self, PyPostProcessor) {
         (PyBertProcessing {}, BertProcessing::new(sep, cls).into())
     }
@@ -549,13 +549,15 @@ impl From<PySpecialToken> for SpecialToken {
     }
 }
 
-impl FromPyObject<'_> for PySpecialToken {
-    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PySpecialToken {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(v) = ob.extract::<(String, u32)>() {
             Ok(Self(v.into()))
         } else if let Ok(v) = ob.extract::<(u32, String)>() {
             Ok(Self(v.into()))
-        } else if let Ok(d) = ob.downcast::<PyDict>() {
+        } else if let Ok(d) = ob.cast::<PyDict>() {
             let id = d
                 .get_item("id")?
                 .ok_or_else(|| exceptions::PyValueError::new_err("`id` must be specified"))?
@@ -589,8 +591,10 @@ impl From<PyTemplate> for Template {
     }
 }
 
-impl FromPyObject<'_> for PyTemplate {
-    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyTemplate {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(s) = ob.extract::<String>() {
             Ok(Self(
                 s.try_into().map_err(exceptions::PyValueError::new_err)?,
@@ -807,14 +811,19 @@ impl PySequence {
 
 /// Processors Module
 #[pymodule]
-pub fn processors(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyPostProcessor>()?;
-    m.add_class::<PyBertProcessing>()?;
-    m.add_class::<PyRobertaProcessing>()?;
-    m.add_class::<PyByteLevel>()?;
-    m.add_class::<PyTemplateProcessing>()?;
-    m.add_class::<PySequence>()?;
-    Ok(())
+pub mod processors {
+    #[pymodule_export]
+    pub use super::PyBertProcessing;
+    #[pymodule_export]
+    pub use super::PyByteLevel;
+    #[pymodule_export]
+    pub use super::PyPostProcessor;
+    #[pymodule_export]
+    pub use super::PyRobertaProcessing;
+    #[pymodule_export]
+    pub use super::PySequence;
+    #[pymodule_export]
+    pub use super::PyTemplateProcessing;
 }
 
 #[cfg(test)]

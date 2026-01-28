@@ -172,3 +172,29 @@ encoded = tokenizer.encode("I can feel the magic, can you?")
 ### Typing support and `stub.py`
 
 The compiled PyO3 extension does not expose type annotations, so editors and type checkers would otherwise see most objects as `Any`. The `stub.py` helper walks the loaded extension modules, renders `.pyi` stub files (plus minimal forwarding `__init__.py` shims), and formats them so that tools like mypy/pyright can understand the public API. Run `python stub.py` whenever you change the Python-visible surface to keep the generated stubs in sync.
+
+We are now trying to add better typing with Pyo3's latest pyo3-introspect crate. 
+
+Before running the stub we need to compile the extension and refresh `tokenizers.abi3.so` from the build output. The least-manual flow is:
+
+```bash
+cd bindings/python
+# One-liner helper (recommended)
+./scripts/gen_stubs.sh
+```
+
+If you want to run the steps manually:
+```bash
+cd bindings/python
+# Build/install into the local venv (ensures the cdylib is up to date)
+maturin develop --release --features stub-gen
+# Refresh the cdylib used by stub_generation
+cp target/release/libtokenizers.so tokenizers.abi3.so
+```
+
+Finally:
+```bash
+cargo run --bin stub_generation --no-default-features --features stub-gen
+```
+
+Generated stubs are written under `py_src/tokenizers` (including submodules).

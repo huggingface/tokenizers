@@ -44,7 +44,7 @@ class Model:
         """
         pass
 
-    def save(self, folder, prefix):
+    def save(self, folder: str, prefix: str | None = None) -> list[str]:
         """
         Save the current model
 
@@ -283,7 +283,7 @@ class BPE(Model):
         """
         pass
 
-    def save(self, folder, prefix):
+    def save(self, folder: str, prefix: str | None = None) -> list[str]:
         """
         Save the current model
 
@@ -383,7 +383,7 @@ class Unigram(Model):
         """
         pass
 
-    def save(self, folder, prefix):
+    def save(self, folder: str, prefix: str | None = None) -> list[str]:
         """
         Save the current model
 
@@ -519,7 +519,7 @@ class WordLevel(Model):
         """
         pass
 
-    def save(self, folder, prefix):
+    def save(self, folder: str, prefix: str | None = None) -> list[str]:
         """
         Save the current model
 
@@ -687,7 +687,7 @@ class WordPiece(Model):
         """
         pass
 
-    def save(self, folder, prefix):
+    def save(self, folder: str, prefix: str | None = None) -> list[str]:
         """
         Save the current model
 
