@@ -54,7 +54,7 @@ fn main() {
 
         let main_module_name = "tokenizers";
         let python_module = pyo3_introspection::introspect_cdylib(path, main_module_name)
-            .expect(format!("Failed introspection of {}", main_module_name).as_str());
+            .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name));
         let type_stubs = pyo3_introspection::module_stub_files(&python_module);
         let out_dir = Path::new("py_src/tokenizers");
 
@@ -62,7 +62,7 @@ fn main() {
             let out_path = out_dir.join(&rel_path);
             if let Some(parent) = out_path.parent() {
                 std::fs::create_dir_all(parent)
-                    .expect("Failed to create output directory for stubs");
+                    .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name))
             }
             std::fs::write(&out_path, contents).expect("Failed to write stubs file");
             println!("Generated stub: {}", out_path.display());
