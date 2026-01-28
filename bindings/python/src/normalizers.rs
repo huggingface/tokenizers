@@ -767,35 +767,35 @@ impl Normalizer for PyNormalizerWrapper {
 #[pymodule]
 pub mod normalizers {
     #[pymodule_export]
-    pub use super::PyNormalizer;
-    #[pymodule_export]
     pub use super::PyBertNormalizer;
     #[pymodule_export]
-    pub use super::PyNFD;
+    pub use super::PyByteLevel;
     #[pymodule_export]
-    pub use super::PyNFKD;
+    pub use super::PyLowercase;
     #[pymodule_export]
     pub use super::PyNFC;
     #[pymodule_export]
+    pub use super::PyNFD;
+    #[pymodule_export]
     pub use super::PyNFKC;
     #[pymodule_export]
-    pub use super::PySequence;
+    pub use super::PyNFKD;
     #[pymodule_export]
-    pub use super::PyLowercase;
+    pub use super::PyNmt;
+    #[pymodule_export]
+    pub use super::PyNormalizer;
+    #[pymodule_export]
+    pub use super::PyPrecompiled;
+    #[pymodule_export]
+    pub use super::PyPrepend;
+    #[pymodule_export]
+    pub use super::PyReplace;
+    #[pymodule_export]
+    pub use super::PySequence;
     #[pymodule_export]
     pub use super::PyStrip;
     #[pymodule_export]
     pub use super::PyStripAccents;
-    #[pymodule_export]
-    pub use super::PyPrepend;
-    #[pymodule_export]
-    pub use super::PyByteLevel;
-    #[pymodule_export]
-    pub use super::PyNmt;
-    #[pymodule_export]
-    pub use super::PyPrecompiled;
-    #[pymodule_export]
-    pub use super::PyReplace;
 }
 
 #[cfg(test)]

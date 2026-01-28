@@ -907,15 +907,15 @@ impl PyUnigram {
 #[pymodule]
 pub mod models {
     #[pymodule_export]
-    pub use super::PyModel;
-    #[pymodule_export]
     pub use super::PyBPE;
     #[pymodule_export]
-    pub use super::PyWordPiece;
+    pub use super::PyModel;
+    #[pymodule_export]
+    pub use super::PyUnigram;
     #[pymodule_export]
     pub use super::PyWordLevel;
     #[pymodule_export]
-    pub use super::PyUnigram;
+    pub use super::PyWordPiece;
 }
 
 #[cfg(test)]

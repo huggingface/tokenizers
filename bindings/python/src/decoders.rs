@@ -583,29 +583,29 @@ impl Decoder for PyDecoderWrapper {
 #[pymodule]
 pub mod decoders {
     #[pymodule_export]
-    pub use super::PyDecoder;
-    #[pymodule_export]
-    pub use super::PyByteLevelDec;
-    #[pymodule_export]
-    pub use super::PyReplaceDec;
-    #[pymodule_export]
-    pub use super::PyWordPieceDec;
+    pub use super::PyBPEDecoder;
     #[pymodule_export]
     pub use super::PyByteFallbackDec;
     #[pymodule_export]
-    pub use super::PyFuseDec;
-    #[pymodule_export]
-    pub use super::PyStrip;
-    #[pymodule_export]
-    pub use super::PyMetaspaceDec;
-    #[pymodule_export]
-    pub use super::PyBPEDecoder;
+    pub use super::PyByteLevelDec;
     #[pymodule_export]
     pub use super::PyCTCDecoder;
     #[pymodule_export]
+    pub use super::PyDecodeStream;
+    #[pymodule_export]
+    pub use super::PyDecoder;
+    #[pymodule_export]
+    pub use super::PyFuseDec;
+    #[pymodule_export]
+    pub use super::PyMetaspaceDec;
+    #[pymodule_export]
+    pub use super::PyReplaceDec;
+    #[pymodule_export]
     pub use super::PySequenceDecoder;
     #[pymodule_export]
-    pub use super::PyDecodeStream;
+    pub use super::PyStrip;
+    #[pymodule_export]
+    pub use super::PyWordPieceDec;
 }
 
 /// Class needed for streaming decode

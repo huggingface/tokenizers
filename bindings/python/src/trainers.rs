@@ -889,15 +889,15 @@ impl PyUnigramTrainer {
 #[pymodule]
 pub mod trainers {
     #[pymodule_export]
-    pub use super::PyTrainer;
-    #[pymodule_export]
     pub use super::PyBpeTrainer;
     #[pymodule_export]
-    pub use super::PyWordPieceTrainer;
+    pub use super::PyTrainer;
+    #[pymodule_export]
+    pub use super::PyUnigramTrainer;
     #[pymodule_export]
     pub use super::PyWordLevelTrainer;
     #[pymodule_export]
-    pub use super::PyUnigramTrainer;
+    pub use super::PyWordPieceTrainer;
 }
 
 #[cfg(test)]
