@@ -813,17 +813,17 @@ impl PySequence {
 #[pymodule]
 pub mod processors {
     #[pymodule_export]
-    pub use super::PyPostProcessor;
-    #[pymodule_export]
     pub use super::PyBertProcessing;
-    #[pymodule_export]
-    pub use super::PyRobertaProcessing;
     #[pymodule_export]
     pub use super::PyByteLevel;
     #[pymodule_export]
-    pub use super::PyTemplateProcessing;
+    pub use super::PyPostProcessor;
+    #[pymodule_export]
+    pub use super::PyRobertaProcessing;
     #[pymodule_export]
     pub use super::PySequence;
+    #[pymodule_export]
+    pub use super::PyTemplateProcessing;
 }
 
 #[cfg(test)]
