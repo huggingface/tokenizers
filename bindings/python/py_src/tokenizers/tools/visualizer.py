@@ -1,12 +1,11 @@
+import html
 import itertools
 import os
 import re
 from string import Template
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
-import html
 from tokenizers import Encoding, Tokenizer
-
 
 dirname = os.path.dirname(__file__)
 css_filename = os.path.join(dirname, "visualizer-styles.css")
