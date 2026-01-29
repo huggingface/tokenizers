@@ -91,15 +91,17 @@ class EncodingVisualizer:
     ):
         if default_to_notebook:
             try:
-                from IPython.core.display import HTML, display  # type: ignore[attr-defined]
+                from IPython.display import HTML, display  # type: ignore[attr-defined]
             except ImportError:
-                raise Exception(
-                    """We couldn't import IPython utils for html display.
-                        Are you running in a notebook?
-                        You can also pass `default_to_notebook=False` to get back raw HTML
-                    """
-                )
-
+                try:
+                    from IPython.core.display import HTML, display  # type: ignore[attr-defined]
+                except ImportError:
+                    msg = (
+                        "We couldn't import IPython utils for html display.\n"
+                        "Are you running in a notebook?\n"
+                        "You can also pass `default_to_notebook=False` to get back raw HTML.\n"
+                    )
+                    raise ImportError(msg) from None
         self.tokenizer = tokenizer
         self.default_to_notebook = default_to_notebook
         self.annotation_coverter = annotation_converter
@@ -135,12 +137,17 @@ class EncodingVisualizer:
             final_default_to_notebook = default_to_notebook
         if final_default_to_notebook:
             try:
-                from IPython.core.display import HTML, display  # type: ignore[attr-defined]
+                from IPython.display import HTML, display  # type: ignore[attr-defined]
             except ImportError:
-                raise Exception(
-                    """We couldn't import IPython utils for html display.
-                    Are you running in a notebook?"""
-                )
+                try:
+                    from IPython.core.display import HTML, display  # type: ignore[attr-defined]
+                except ImportError:
+                    msg = (
+                        "We couldn't import IPython utils for html display.\n"
+                        "Are you running in a notebook?\n"
+                        "You can also pass `default_to_notebook=False` to get back raw HTML.\n"
+                    )
+                    raise ImportError(msg) from None
         if annotations is None:
             annotations = []
         if self.annotation_coverter is not None:
