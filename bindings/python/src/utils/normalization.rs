@@ -90,8 +90,10 @@ impl PyRange<'_> {
 #[derive(Clone)]
 pub struct PySplitDelimiterBehavior(pub SplitDelimiterBehavior);
 
-impl FromPyObject<'_> for PySplitDelimiterBehavior {
-    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl FromPyObject<'_, '_> for PySplitDelimiterBehavior {
+    type Error = PyErr;
+
+    fn extract(obj: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
         let s = obj.extract::<String>()?;
 
         Ok(Self(match s.as_ref() {

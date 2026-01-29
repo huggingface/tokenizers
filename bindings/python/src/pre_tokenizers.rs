@@ -142,7 +142,7 @@ impl PyPreTokenizer {
                 self.pretok = unpickled;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 

@@ -117,7 +117,7 @@ impl PyPostProcessor {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -549,13 +549,15 @@ impl From<PySpecialToken> for SpecialToken {
     }
 }
 
-impl FromPyObject<'_> for PySpecialToken {
-    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl FromPyObject<'_, '_> for PySpecialToken {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(v) = ob.extract::<(String, u32)>() {
             Ok(Self(v.into()))
         } else if let Ok(v) = ob.extract::<(u32, String)>() {
             Ok(Self(v.into()))
-        } else if let Ok(d) = ob.downcast::<PyDict>() {
+        } else if let Ok(d) = ob.cast::<PyDict>() {
             let id = d
                 .get_item("id")?
                 .ok_or_else(|| exceptions::PyValueError::new_err("`id` must be specified"))?
@@ -589,8 +591,10 @@ impl From<PyTemplate> for Template {
     }
 }
 
-impl FromPyObject<'_> for PyTemplate {
-    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl FromPyObject<'_, '_> for PyTemplate {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(s) = ob.extract::<String>() {
             Ok(Self(
                 s.try_into().map_err(exceptions::PyValueError::new_err)?,

@@ -135,7 +135,7 @@ impl PyNormalizer {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
