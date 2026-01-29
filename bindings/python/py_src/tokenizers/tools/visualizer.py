@@ -4,6 +4,7 @@ import re
 from string import Template
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
+import html
 from tokenizers import Encoding, Tokenizer
 
 
@@ -249,6 +250,7 @@ class EncodingVisualizer:
         data = ""
         for key, val in data_items.items():
             data += f' data-{key}="{val}"'
+        span_text = html.escape(span_text)
         return f"<span {css} {data} >{span_text}</span>"
 
     @staticmethod
