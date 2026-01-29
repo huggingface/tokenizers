@@ -98,7 +98,7 @@ impl PyDecoder {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -630,8 +630,10 @@ enum StreamInput {
     Ids(Vec<u32>),
 }
 
-impl FromPyObject<'_> for StreamInput {
-    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl FromPyObject<'_, '_> for StreamInput {
+    type Error = PyErr;
+
+    fn extract(obj: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(id) = obj.extract::<u32>() {
             Ok(StreamInput::Id(id))
         } else if let Ok(ids) = obj.extract::<Vec<u32>>() {
