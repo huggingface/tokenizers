@@ -9,7 +9,12 @@ echo "Building and installing extension (release, stub-gen enabled)..."
 maturin develop --release --features stub-gen
 
 echo "Refreshing cdylib used for introspection..."
-cp target/release/libtokenizers.so tokenizers.abi3.so
+if [ "$(uname)" == "Darwin" ]; then
+    cp target/release/libtokenizers.dylib tokenizers.abi3.so
+elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+    cp target/release/libtokenizers.so tokenizers.abi3.so
+fi
+
 
 echo "Generating stubs..."
 cargo run --bin stub_generation --no-default-features --features stub-gen
