@@ -198,3 +198,12 @@ cargo run --bin stub_generation --no-default-features --features stub-gen
 ```
 
 Generated stubs are written under `py_src/tokenizers` (including submodules).
+
+
+
+If you have python errors:
+```
+export PYO3_PYTHON=/Users/arthurzucker/Work/.venv/bin/python
+export PYTHONHOME=$(/Users/arthurzucker/Work/.venv/bin/python -c 'import sys; print(sys.base_prefix)')
+```
+

@@ -8,6 +8,7 @@ fn main() {
     let lib_name = "/home/arthur/Work/tokenizers/bindings/python/tokenizers.abi3.so";
     let path = Path::new(lib_name);
     let so_dir = path.parent().unwrap();
+    println!("Initializing python");
     Python::initialize();
     println!("Gathering Python environment information...");
     Python::attach(|py| {
@@ -21,7 +22,6 @@ fn main() {
         let sys_path = bindings.cast::<PyList>().unwrap();
         sys_path.insert(0, so_dir.to_str().unwrap()).unwrap();
         let lib_path = Path::new("/home/arthur/Work/tokenizers/bindings/python/tokenizers.abi3.so");
-        let so_dir = lib_path.parent().unwrap();
 
         let old = std::env::var_os("PYTHONPATH");
         let mut new = std::ffi::OsString::new();
@@ -43,7 +43,8 @@ fn main() {
             .unwrap();
         println!("Using python site-packages: {}", python_site_packages);
         py.run(c"import tokenizers; import sys; print('import ok:', tokenizers.__file__); print('sys.path[0]=', sys.path[0])",
-           None, None).unwrap();
+            None, None).unwrap_or_else(|e| panic!("Failed to import tokenizers: {:?}", e));
+
         env_logger::init();
         println!("Generating stub files");
         let lib_name =
