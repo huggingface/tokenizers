@@ -72,6 +72,7 @@ def write(module, directory, origin, check=False):
             with open(filename, "w") as f:
                 f.write(py_content)
 
+    print(f"Wrote stub for module: {origin}, submodules: {[name for name, _ in submodules]}")
     for name, submodule in submodules:
         print(f"Writing stub for submodule: {name}")
         write(submodule, os.path.join(directory, name), f"{name}", check=check)
