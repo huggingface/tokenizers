@@ -5,10 +5,7 @@ use pyo3::types::PyList;
 #[cfg(feature = "stub-gen")]
 fn main() {
     use std::path::Path;
-    let lib_name = format!(
-        "{}/tokenizers.abi3.so",
-        env!("CARGO_MANIFEST_DIR")
-    );
+    let lib_name = format!("{}/tokenizers.abi3.so", env!("CARGO_MANIFEST_DIR"));
     let path = Path::new(&lib_name);
     let so_dir = path.parent().unwrap();
     println!("Initializing python");
