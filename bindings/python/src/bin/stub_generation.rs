@@ -6,7 +6,7 @@ use pyo3::types::PyList;
 fn main() {
     use std::path::Path;
     let lib_name = format!(
-        "{}/bindings/python/tokenizers.abi3.so",
+        "{}/tokenizers.abi3.so",
         env!("CARGO_MANIFEST_DIR")
     );
     let path = Path::new(&lib_name);
@@ -33,6 +33,7 @@ fn main() {
             new.push(old);
         }
         std::env::set_var("PYTHONPATH", new);
+        println!("New PYTHONPATH={:?}", std::env::var_os("PYTHONPATH"));
         let sysconfig = PyModule::import(py, "sysconfig").unwrap();
         let python_version = sysconfig.call_method0("get_python_version").unwrap();
         println!("Using python version: {}", python_version);
@@ -49,10 +50,6 @@ fn main() {
 
         env_logger::init();
         println!("Generating stub files");
-        let lib_name = format!(
-            "{}/bindings/python/tokenizers.abi3.so",
-            env!("CARGO_MANIFEST_DIR")
-        );
         let path = Path::new(&lib_name);
         assert!(path.is_file(), "Failed to locate cdylib at {}", lib_name);
         println!("Found cdylib at {}", lib_name);
