@@ -200,7 +200,7 @@ def do_ruff(code, is_pyi: bool):
 
 
 def write(module, directory, origin, check=False):
-    submodules = [(name, member) for name, member in inspect.getmembers(module) if inspect.ismodule(member)]
+    submodules = [(name, member) for name, member in inspect.getmembers(module) if inspect.ismodule(member) and member.__package__ and member.__package__.startswith(module.__package__)]
     os.makedirs(directory, exist_ok=True)
 
     filename = os.path.join(directory, "__init__.py")
