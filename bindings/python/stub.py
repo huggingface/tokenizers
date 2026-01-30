@@ -44,8 +44,6 @@ def write(module, directory, origin, check=False):
         (name, member)
         for name, member in inspect.getmembers(module)
         if inspect.ismodule(member)
-        and member.__package__
-        and member.__package__.startswith(module.__package__)
     ]
     os.makedirs(directory, exist_ok=True)
 
@@ -75,6 +73,7 @@ def write(module, directory, origin, check=False):
                 f.write(py_content)
 
     for name, submodule in submodules:
+        print(f"Writing stub for submodule: {name}")
         write(submodule, os.path.join(directory, name), f"{name}", check=check)
 
 
