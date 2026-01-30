@@ -5,8 +5,11 @@ use pyo3::types::PyList;
 #[cfg(feature = "stub-gen")]
 fn main() {
     use std::path::Path;
-    let lib_name = "/home/arthur/Work/tokenizers/bindings/python/tokenizers.abi3.so";
-    let path = Path::new(lib_name);
+    let lib_name = format!(
+        "{}/bindings/python/tokenizers.abi3.so",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let path = Path::new(&lib_name);
     let so_dir = path.parent().unwrap();
     println!("Initializing python");
     Python::initialize();
@@ -21,7 +24,6 @@ fn main() {
         let bindings = sys.getattr("path").unwrap();
         let sys_path = bindings.cast::<PyList>().unwrap();
         sys_path.insert(0, so_dir.to_str().unwrap()).unwrap();
-        let lib_path = Path::new("/home/arthur/Work/tokenizers/bindings/python/tokenizers.abi3.so");
 
         let old = std::env::var_os("PYTHONPATH");
         let mut new = std::ffi::OsString::new();
@@ -47,8 +49,10 @@ fn main() {
 
         env_logger::init();
         println!("Generating stub files");
-        let lib_name =
-            String::from("/home/arthur/Work/tokenizers/bindings/python/tokenizers.abi3.so");
+        let lib_name = format!(
+            "{}/bindings/python/tokenizers.abi3.so",
+            env!("CARGO_MANIFEST_DIR")
+        );
         let path = Path::new(&lib_name);
         assert!(path.is_file(), "Failed to locate cdylib at {}", lib_name);
         println!("Found cdylib at {}", lib_name);
