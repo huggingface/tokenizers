@@ -164,7 +164,7 @@ def pyi_file(obj, indent="", owner=None):
         string += f"{indent}@{obj.__name__}.setter\n"
         string += function(obj, indent, text_signature="(self, value)", owner=owner)
     else:
-        raise Exception(f"Object {obj} is not supported")
+        print(Exception(f"Object {obj} is not supported"))
     return string
 
 
@@ -175,8 +175,11 @@ def py_file(module, origin):
     string += f"from .. import {origin}\n"
     string += "\n"
     for member in members:
-        name = member.__name__
-        string += f"{name} = {origin}.{name}\n"
+        if hasattr(member, "__module__") and member.__module__ == "typing":
+            continue
+        if hasattr(member, "__name__"):
+            name = member.__name__  
+            string += f"{name} = {origin}.{name}\n"
     return string
 
 
@@ -198,89 +201,7 @@ def do_ruff(code, is_pyi: bool):
 
 def write(module, directory, origin, check=False):
     submodules = [(name, member) for name, member in inspect.getmembers(module) if inspect.ismodule(member)]
-
-    filename = os.path.join(directory, "__init__.pyi")
-    pyi_content = pyi_file(module)
-
-    # Inject extra hints for hand-written Python modules layered on top of the extension.
-    if origin == "tokenizers":
-        extra = """
-from enum import Enum
-from typing import List, Tuple, Union, Any
-
-Offsets = Tuple[int, int]
-TextInputSequence = str
-PreTokenizedInputSequence = Union[List[str], Tuple[str, ...]]
-TextEncodeInput = Union[
-    TextInputSequence,
-    Tuple[TextInputSequence, TextInputSequence],
-    List[TextInputSequence],
-]
-PreTokenizedEncodeInput = Union[
-    PreTokenizedInputSequence,
-    Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence],
-    List[PreTokenizedInputSequence],
-]
-InputSequence = Union[TextInputSequence, PreTokenizedInputSequence]
-EncodeInput = Union[TextEncodeInput, PreTokenizedEncodeInput]
-
-
-class OffsetReferential(Enum):
-    ORIGINAL = "original"
-    NORMALIZED = "normalized"
-
-
-class OffsetType(Enum):
-    BYTE = "byte"
-    CHAR = "char"
-
-
-class SplitDelimiterBehavior(Enum):
-    REMOVED = "removed"
-    ISOLATED = "isolated"
-    MERGED_WITH_PREVIOUS = "merged_with_previous"
-    MERGED_WITH_NEXT = "merged_with_next"
-    CONTIGUOUS = "contiguous"
-
-from .implementations import (
-    BertWordPieceTokenizer,
-    ByteLevelBPETokenizer,
-    CharBPETokenizer,
-    SentencePieceBPETokenizer,
-    SentencePieceUnigramTokenizer,
-)
-
-def __getattr__(name: str) -> Any: ...
-BertWordPieceTokenizer: Any
-ByteLevelBPETokenizer: Any
-CharBPETokenizer: Any
-SentencePieceBPETokenizer: Any
-SentencePieceUnigramTokenizer: Any
-"""
-        pyi_content += extra
-
-    if origin == "normalizers":
-        pyi_content += """
-from typing import Dict
-
-NORMALIZERS: Dict[str, Normalizer]
-
-def unicode_normalizer_from_str(normalizer: str) -> Normalizer: ...
-"""
-
-    try:
-        pyi_content = do_ruff(pyi_content, is_pyi=True)
-    except Exception as e:
-        print(f"Ruff error: {e}")
-
     os.makedirs(directory, exist_ok=True)
-    if check:
-        with open(filename, "r") as f:
-            data = f.read()
-            assert data == pyi_content, f"The content of {filename} seems outdated, please run `python stub.py`"
-    else:
-        with open(filename, "w") as f:
-            f.write(pyi_content)
 
     filename = os.path.join(directory, "__init__.py")
     py_content = py_file(module, origin)
