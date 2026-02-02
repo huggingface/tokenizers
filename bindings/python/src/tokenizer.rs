@@ -1438,7 +1438,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`str`: The decoded string
-    #[pyo3(signature = (ids, skip_special_tokens = None) -> "str")]
+    #[pyo3(signature = (ids, skip_special_tokens = true) -> "str")]
     #[pyo3(text_signature = "(self, ids, skip_special_tokens=True)")]
     fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> PyResult<String> {
         ToPyResult(self.tokenizer.decode(&ids, skip_special_tokens)).into()
