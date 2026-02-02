@@ -252,7 +252,7 @@ impl PyAddedToken {
     fn __richcmp__(&self, other: Py<PyAddedToken>, op: CompareOp) -> bool {
         use CompareOp::*;
         Python::attach(|py| match op {
-            Lt | Le | Gt | Ge => false,
+                Lt | Le | Gt | Ge => false,
             Eq => self.get_token() == other.borrow(py).get_token(),
             Ne => self.get_token() != other.borrow(py).get_token(),
         })
@@ -796,7 +796,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`Dict[str, int]`: The vocabulary
-    #[pyo3(signature = (with_added_tokens = true) -> "Dict[str, int]")]
+    #[pyo3(signature = (with_added_tokens = true) -> "dict[str, int]")]
     #[pyo3(text_signature = "(self, with_added_tokens=True)")]
     fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
         self.tokenizer.get_vocab(with_added_tokens)
@@ -806,7 +806,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`Dict[int, AddedToken]`: The vocabulary
-    #[pyo3(signature = () -> "Dict[int, AddedToken]")]
+    #[pyo3(signature = () -> "dict[int, AddedToken]")]
     #[pyo3(text_signature = "(self)")]
     fn get_added_tokens_decoder(&self) -> BTreeMap<u32, PyAddedToken> {
         let mut sorted_map = BTreeMap::new();
@@ -1213,7 +1213,7 @@ impl PyTokenizer {
     /// Returns:
     ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
     ///
-    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true) -> "List[Encoding]")]
+    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true) -> "list[Encoding]")]
     #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
     fn encode_batch(
         &self,
@@ -1332,7 +1332,7 @@ impl PyTokenizer {
     /// Returns:
     ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
     ///
-    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true) -> "List[Encoding]")]
+    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true) -> "list[Encoding]")]
     #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
     fn encode_batch_fast(
         &self,
@@ -1438,7 +1438,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`str`: The decoded string
-    #[pyo3(signature = (ids, skip_special_tokens = true) -> "str")]
+    #[pyo3(signature = (ids, skip_special_tokens = None) -> "str")]
     #[pyo3(text_signature = "(self, ids, skip_special_tokens=True)")]
     fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> PyResult<String> {
         ToPyResult(self.tokenizer.decode(&ids, skip_special_tokens)).into()
@@ -1455,7 +1455,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`List[str]`: A list of decoded strings
-    #[pyo3(signature = (sequences, skip_special_tokens = true) -> "List[str]")]
+    #[pyo3(signature = (sequences, skip_special_tokens = true) -> "list[str]")]
     #[pyo3(text_signature = "(self, sequences, skip_special_tokens=True)")]
     fn decode_batch(
         &self,
@@ -1512,7 +1512,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`Optional[int]`: An optional id, :obj:`None` if out of vocabulary
-    #[pyo3(text_signature = "(self, token)")]
+    #[pyo3(signature = (token) -> "int | None", text_signature = "(self, token)")]
     fn token_to_id(&self, token: &str) -> Option<u32> {
         self.tokenizer.token_to_id(token)
     }
@@ -1525,7 +1525,7 @@ impl PyTokenizer {
     ///
     /// Returns:
     ///     :obj:`Optional[str]`: An optional token, :obj:`None` if out of vocabulary
-    #[pyo3(text_signature = "(self, id)")]
+    #[pyo3(signature = (id) -> "str | None", text_signature = "(self, id)")]
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.tokenizer.id_to_token(id)
     }

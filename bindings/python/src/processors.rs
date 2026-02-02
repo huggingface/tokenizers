@@ -148,7 +148,9 @@ impl PyPostProcessor {
     ///
     /// Return:
     ///     :class:`~tokenizers.Encoding`: The final encoding
-    #[pyo3(signature = (encoding, pair = None, add_special_tokens = true) -> "Encoding")]
+    #[pyo3(
+        signature = (encoding, pair = None, add_special_tokens = true) -> "tokenizers.Encoding"
+    )]
     #[pyo3(text_signature = "(self, encoding, pair=None, add_special_tokens=True)")]
     fn process(
         &self,
@@ -319,9 +321,9 @@ pub struct PyBertProcessing {}
 #[pymethods]
 impl PyBertProcessing {
     #[new]
-    #[pyo3(text_signature = "(self, sep, cls: str| int)")]
-    fn new(sep: (String, u32), cls: (String, u32)) -> (Self, PyPostProcessor) {
-        (PyBertProcessing {}, BertProcessing::new(sep, cls).into())
+    #[pyo3(text_signature = "(self, sep, cls_token: str| int)")]
+    fn new(sep: (String, u32), cls_token: (String, u32)) -> (Self, PyPostProcessor) {
+        (PyBertProcessing {}, BertProcessing::new(sep, cls_token).into())
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
@@ -392,14 +394,17 @@ pub struct PyRobertaProcessing {}
 #[pymethods]
 impl PyRobertaProcessing {
     #[new]
-    #[pyo3(signature = (sep, cls, trim_offsets = true, add_prefix_space = true), text_signature = "(self, sep, cls, trim_offsets=True, add_prefix_space=True)")]
+    #[pyo3(
+        signature = (sep, cls_token, trim_offsets = true, add_prefix_space = true),
+        text_signature = "(self, sep, cls_token, trim_offsets=True, add_prefix_space=True)"
+    )]
     fn new(
         sep: (String, u32),
-        cls: (String, u32),
+        cls_token: (String, u32),
         trim_offsets: bool,
         add_prefix_space: bool,
     ) -> (Self, PyPostProcessor) {
-        let proc = RobertaProcessing::new(sep, cls)
+        let proc = RobertaProcessing::new(sep, cls_token)
             .trim_offsets(trim_offsets)
             .add_prefix_space(add_prefix_space);
         (PyRobertaProcessing {}, proc.into())
