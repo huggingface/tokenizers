@@ -23,7 +23,7 @@ TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 
 # Launch the test suite
 test: $(TESTS_RESOURCES)
-	pip install pytest requests setuptools_rust numpy pyarrow datasets
+	pip install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets
 	python -m pytest -s -v tests
 	cargo test --no-default-features
 
