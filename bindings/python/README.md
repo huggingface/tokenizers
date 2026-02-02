@@ -175,27 +175,13 @@ The compiled PyO3 extension does not expose type annotations, so editors and typ
 
 We are now trying to add better typing with Pyo3's latest pyo3-introspect crate. 
 
-Before running the stub we need to compile the extension and refresh `tokenizers.abi3.so` from the build output. The least-manual flow is:
+Before running the stub we need to compile the extension and refresh `tokenizers.abi3.so` from the build output. The Rust helper can now run the whole flow:
 
 ```bash
 cd bindings/python
-# One-liner helper (recommended)
-./scripts/gen_stubs.sh
+cargo run --bin stub_generation --no-default-features --features stub-gen -- --build
 ```
 
-If you want to run the steps manually:
-```bash
-cd bindings/python
-# Build/install into the local venv (ensures the cdylib is up to date)
-maturin develop --release --features stub-gen
-# Refresh the cdylib used by stub_generation
-cp target/release/libtokenizers.so tokenizers.abi3.so
-```
-
-Finally:
-```bash
-cargo run --bin stub_generation --no-default-features --features stub-gen
-```
 
 Generated stubs are written under `py_src/tokenizers` (including submodules).
 
@@ -206,4 +192,3 @@ If you have python errors:
 export PYO3_PYTHON=/Users/arthurzucker/Work/.venv/bin/python
 export PYTHONHOME=$(/Users/arthurzucker/Work/.venv/bin/python -c 'import sys; print(sys.base_prefix)')
 ```
-

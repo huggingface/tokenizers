@@ -1,61 +1,95 @@
 #[cfg(feature = "stub-gen")]
+use clap::Parser;
+#[cfg(feature = "stub-gen")]
 use pyo3::prelude::*;
 #[cfg(feature = "stub-gen")]
 use pyo3::types::PyList;
 #[cfg(feature = "stub-gen")]
+use std::ffi::OsString;
+#[cfg(feature = "stub-gen")]
+use std::path::{Path, PathBuf};
+#[cfg(feature = "stub-gen")]
+use std::process::Command;
+
+
+#[cfg(feature = "stub-gen")]
 fn main() {
-    use std::path::Path;
-    let lib_name = format!("{}/tokenizers.abi3.so", env!("CARGO_MANIFEST_DIR"));
-    let path = Path::new(&lib_name);
-    let so_dir = path.parent().unwrap();
+    env_logger::try_init().ok();
+
+    let cdylib = default_cdylib_path;
+    let out_dir = default_out_dir;
+
+    build_extension(&args.maturin_bin)?;
+    refresh_cdylib(&cdylib)?;
+    generate_stubs(&cdylib, &out_dir)?;
+    Ok(())
+}
+
+#[cfg(feature = "stub-gen")]
+fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if !cdylib.is_file() {
+        return Err(format!("Failed to locate cdylib at {}", cdylib.display()).into());
+    }
+
     println!("Initializing python");
     Python::initialize();
-    println!("Gathering Python environment information...");
-    Python::attach(|py| {
-        let sys = py.import("sys").unwrap();
-        println!("sys.version = {}", sys.getattr("version").unwrap());
-        println!("sys.executable = {}", sys.getattr("executable").unwrap());
-        println!("sys.prefix = {}", sys.getattr("prefix").unwrap());
-        println!("sys.base_prefix = {}", sys.getattr("base_prefix").unwrap());
+    let cdylib = cdylib.to_path_buf();
+    let out_dir = out_dir.to_path_buf();
 
-        let bindings = sys.getattr("path").unwrap();
-        let sys_path = bindings.cast::<PyList>().unwrap();
-        sys_path.insert(0, so_dir.to_str().unwrap()).unwrap();
+    Python::attach(|py| -> PyResult<()> {
+        println!("Gathering Python environment information...");
+        let sys = py.import("sys")?;
+        println!("sys.version = {}", sys.getattr("version")?);
+        println!("sys.executable = {}", sys.getattr("executable")?);
+        println!("sys.prefix = {}", sys.getattr("prefix")?);
+        println!("sys.base_prefix = {}", sys.getattr("base_prefix")?);
+
+        let so_dir = cdylib
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+
+        let bindings = sys.getattr("path")?;
+        let sys_path = bindings.cast::<PyList>()?;
+        sys_path.insert(0, so_dir.to_str().unwrap())?;
 
         let old = std::env::var_os("PYTHONPATH");
-        let mut new = std::ffi::OsString::new();
-        new.push(so_dir);
+        let mut new = OsString::new();
+        new.push(&so_dir);
         if let Some(old) = old {
             new.push(":");
             new.push(old);
         }
-        std::env::set_var("PYTHONPATH", new);
+        std::env::set_var("PYTHONPATH", &new);
         println!("New PYTHONPATH={:?}", std::env::var_os("PYTHONPATH"));
-        let sysconfig = PyModule::import(py, "sysconfig").unwrap();
-        let python_version = sysconfig.call_method0("get_python_version").unwrap();
+        let sysconfig = PyModule::import(py, "sysconfig")?;
+        let python_version = sysconfig.call_method0("get_python_version")?;
         println!("Using python version: {}", python_version);
-        let python_lib = sysconfig
-            .call_method("get_config_var", ("LIBDEST",), None)
-            .unwrap();
+        let python_lib = sysconfig.call_method("get_config_var", ("LIBDEST",), None)?;
         println!("Using python lib: {}", python_lib);
-        let python_site_packages = sysconfig
-            .call_method("get_path", ("purelib",), None)
-            .unwrap();
+        let python_site_packages =
+            sysconfig.call_method("get_path", ("purelib",), None)?;
         println!("Using python site-packages: {}", python_site_packages);
-        py.run(c"import tokenizers; import sys; print('import ok:', tokenizers.__file__); print('sys.path[0]=', sys.path[0])",
-            None, None).unwrap_or_else(|e| panic!("Failed to import tokenizers: {:?}", e));
+        py.run(
+            c"import tokenizers; import sys; print('import ok:', tokenizers.__file__); print('sys.path[0]=', sys.path[0])",
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("Failed to import tokenizers: {:?}", e));
 
-        env_logger::init();
         println!("Generating stub files");
-        let path = Path::new(&lib_name);
-        assert!(path.is_file(), "Failed to locate cdylib at {}", lib_name);
-        println!("Found cdylib at {}", lib_name);
+        assert!(
+            cdylib.is_file(),
+            "Failed to locate cdylib at {}",
+            cdylib.display()
+        );
+        println!("Found cdylib at {}", cdylib.display());
 
         let main_module_name = "tokenizers";
-        let python_module = pyo3_introspection::introspect_cdylib(path, main_module_name)
-            .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name));
+        let python_module =
+            pyo3_introspection::introspect_cdylib(&cdylib, main_module_name)
+                .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name));
         let type_stubs = pyo3_introspection::module_stub_files(&python_module);
-        let out_dir = Path::new("py_src/tokenizers");
 
         for (rel_path, contents) in type_stubs {
             let out_path = out_dir.join(&rel_path);
@@ -66,7 +100,64 @@ fn main() {
             std::fs::write(&out_path, contents).expect("Failed to write stubs file");
             println!("Generated stub: {}", out_path.display());
         }
-    });
+
+        Ok(())
+    })?;
+
+    Ok(())
+}
+
+#[cfg(feature = "stub-gen")]
+fn build_extension(maturin_bin: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Building and installing extension (release with stub-gen enabled)...");
+    let status = Command::new(maturin_bin)
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args(["develop", "--release", "--features", "stub-gen"])
+        .status()?;
+
+    if !status.success() {
+        return Err("`maturin develop` failed".into());
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "stub-gen")]
+fn refresh_cdylib(cdylib: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let built_cdylib = built_cdylib_path();
+    if !built_cdylib.is_file() {
+        return Err(format!(
+            "Could not find built cdylib at {}. Pass --build or provide --cdylib.",
+            built_cdylib.display()
+        )
+        .into());
+    }
+
+    println!(
+        "Refreshing cdylib used for introspection: {}",
+        cdylib.display()
+    );
+    std::fs::copy(&built_cdylib, cdylib)?;
+    Ok(())
+}
+
+#[cfg(feature = "stub-gen")]
+fn built_cdylib_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "target/release/{}tokenizers.{}",
+        std::env::consts::DLL_PREFIX,
+        std::env::consts::DLL_EXTENSION
+    ))
+}
+
+#[cfg(feature = "stub-gen")]
+fn default_cdylib_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tokenizers.abi3.so")
+}
+
+#[cfg(feature = "stub-gen")]
+fn default_out_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("py_src/tokenizers")
 }
 
 #[cfg(not(feature = "stub-gen"))]
