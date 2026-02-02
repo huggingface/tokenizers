@@ -1,6 +1,4 @@
 #[cfg(feature = "stub-gen")]
-use clap::Parser;
-#[cfg(feature = "stub-gen")]
 use pyo3::prelude::*;
 #[cfg(feature = "stub-gen")]
 use pyo3::types::PyList;
@@ -13,13 +11,13 @@ use std::process::Command;
 
 
 #[cfg(feature = "stub-gen")]
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::try_init().ok();
 
-    let cdylib = default_cdylib_path;
-    let out_dir = default_out_dir;
+    let cdylib = default_cdylib_path();
+    let out_dir = default_out_dir();
 
-    build_extension(&args.maturin_bin)?;
+    build_extension()?;
     refresh_cdylib(&cdylib)?;
     generate_stubs(&cdylib, &out_dir)?;
     Ok(())
@@ -108,9 +106,9 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
 }
 
 #[cfg(feature = "stub-gen")]
-fn build_extension(maturin_bin: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn build_extension() -> Result<(), Box<dyn std::error::Error>> {
     println!("Building and installing extension (release with stub-gen enabled)...");
-    let status = Command::new(maturin_bin)
+    let status = Command::new("maturin")
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .args(["develop", "--release", "--features", "stub-gen"])
         .status()?;
