@@ -7,6 +7,7 @@ check_dirs := examples py_src/tokenizers tests
 
 # Format source code automatically
 style:
+	cargo run --bin stub_generation --no-default-features --features stub-gen -- --build
 	python stub.py
 	ruff check  $(check_dirs) --fix 
 	ruff format $(check_dirs)

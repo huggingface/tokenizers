@@ -323,7 +323,10 @@ impl PyBertProcessing {
     #[new]
     #[pyo3(text_signature = "(self, sep, cls_token: str| int)")]
     fn new(sep: (String, u32), cls_token: (String, u32)) -> (Self, PyPostProcessor) {
-        (PyBertProcessing {}, BertProcessing::new(sep, cls_token).into())
+        (
+            PyBertProcessing {},
+            BertProcessing::new(sep, cls_token).into(),
+        )
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {

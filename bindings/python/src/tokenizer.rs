@@ -252,7 +252,7 @@ impl PyAddedToken {
     fn __richcmp__(&self, other: Py<PyAddedToken>, op: CompareOp) -> bool {
         use CompareOp::*;
         Python::attach(|py| match op {
-                Lt | Le | Gt | Ge => false,
+            Lt | Le | Gt | Ge => false,
             Eq => self.get_token() == other.borrow(py).get_token(),
             Ne => self.get_token() != other.borrow(py).get_token(),
         })
