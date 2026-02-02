@@ -3,7 +3,14 @@ import tokenizers.normalizers
 import typing
 
 class BertNormalizer:
-    def __new__(cls, /, clean_text: bool = True, handle_chinese_chars: bool = True, strip_accents: bool | None = None, lowercase: bool = True) -> None: ...
+    def __new__(
+        cls,
+        /,
+        clean_text: bool = True,
+        handle_chinese_chars: bool = True,
+        strip_accents: bool | None = None,
+        lowercase: bool = True,
+    ) -> None: ...
     @property
     def clean_text(self, /) -> bool: ...
     @clean_text.setter
@@ -49,7 +56,9 @@ class Normalizer:
     def __str__(self, /) -> str: ...
     @staticmethod
     def custom(obj: typing.Any) -> tokenizers.normalizers.Normalizer: ...
-    def normalize(self, /, normalized: tokenizers.NormalizedString | tokenizers.NormalizedStringRefMut) -> typing.Any: ...
+    def normalize(
+        self, /, normalized: tokenizers.NormalizedString | tokenizers.NormalizedStringRefMut
+    ) -> typing.Any: ...
     def normalize_str(self, /, sequence: str) -> str: ...
 
 class Precompiled:
