@@ -74,9 +74,10 @@ def write(module, directory, origin, check=False):
 
     print(f"Wrote stub for module: {origin}, submodules: {[name for name, _ in submodules]}")
     for name, submodule in submodules:
-        print(f"Writing stub for submodule: {name}")
-        write(submodule, os.path.join(directory, name), f"{name}", check=check)
-
+        try:
+            write(submodule, os.path.join(directory, name), f"{name}", check=check)
+        except Exception as e:
+            print(f"Something went wrong with {name}, {submodule}: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
