@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "stub-gen")]
 use std::process::Command;
 
-
 #[cfg(feature = "stub-gen")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::try_init().ok();
@@ -65,8 +64,7 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
         println!("Using python version: {}", python_version);
         let python_lib = sysconfig.call_method("get_config_var", ("LIBDEST",), None)?;
         println!("Using python lib: {}", python_lib);
-        let python_site_packages =
-            sysconfig.call_method("get_path", ("purelib",), None)?;
+        let python_site_packages = sysconfig.call_method("get_path", ("purelib",), None)?;
         println!("Using python site-packages: {}", python_site_packages);
         py.run(
             c"import tokenizers; import sys; print('import ok:', tokenizers.__file__); print('sys.path[0]=', sys.path[0])",
@@ -84,9 +82,8 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
         println!("Found cdylib at {}", cdylib.display());
 
         let main_module_name = "tokenizers";
-        let python_module =
-            pyo3_introspection::introspect_cdylib(&cdylib, main_module_name)
-                .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name));
+        let python_module = pyo3_introspection::introspect_cdylib(&cdylib, main_module_name)
+            .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name));
         let type_stubs = pyo3_introspection::module_stub_files(&python_module);
 
         for (rel_path, contents) in type_stubs {
