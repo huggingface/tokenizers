@@ -718,6 +718,79 @@ class TestTokenizer:
         tokenizer.pre_tokenizer = None
         assert tokenizer.pre_tokenizer == None
 
+    def test_role_to_token(self):
+        tokenizer = Tokenizer(BPE())
+        # Add special tokens to vocabulary
+        tokenizer.add_special_tokens(["</s>", "<s>", "<pad>", "<unk>"])
+
+        # Initially role_to_token should be None
+        assert tokenizer.role_to_token is None
+
+        # Set role_to_token mapping
+        tokenizer.role_to_token = {
+            "eos_token": "</s>",
+            "bos_token": "<s>",
+            "pad_token": "<pad>",
+            "unk_token": "<unk>",
+        }
+
+        # Test getter
+        assert tokenizer.role_to_token == {
+            "eos_token": "</s>",
+            "bos_token": "<s>",
+            "pad_token": "<pad>",
+            "unk_token": "<unk>",
+        }
+
+        # Test individual token properties
+        assert tokenizer.eos_token == "</s>"
+        assert tokenizer.bos_token == "<s>"
+        assert tokenizer.pad_token == "<pad>"
+        assert tokenizer.unk_token == "<unk>"
+
+        # Test token ID properties (tokens are added in order, so ids are 0, 1, 2, 3)
+        assert tokenizer.eos_token_id == 0
+        assert tokenizer.bos_token_id == 1
+        assert tokenizer.pad_token_id == 2
+        assert tokenizer.unk_token_id == 3
+
+        # Test setting individual tokens
+        tokenizer.add_special_tokens(["[NEW_EOS]"])
+        tokenizer.eos_token = "[NEW_EOS]"
+        assert tokenizer.eos_token == "[NEW_EOS]"
+        assert tokenizer.eos_token_id == 4  # New token has id 4
+
+        # Test setting to None removes the role
+        tokenizer.eos_token = None
+        assert tokenizer.eos_token is None
+        assert tokenizer.eos_token_id is None
+
+    def test_role_to_token_serialization(self):
+        import json
+
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_special_tokens(["</s>", "<s>"])
+
+        tokenizer.role_to_token = {
+            "eos_token": "</s>",
+            "bos_token": "<s>",
+        }
+
+        # Serialize
+        serialized = tokenizer.to_str()
+        data = json.loads(serialized)
+
+        # Check role_to_token is in the serialized data
+        assert "role_to_token" in data
+        assert data["role_to_token"]["eos_token"] == "</s>"
+        assert data["role_to_token"]["bos_token"] == "<s>"
+
+        # Deserialize and check preservation
+        loaded = Tokenizer.from_str(serialized)
+        assert loaded.role_to_token == {"eos_token": "</s>", "bos_token": "<s>"}
+        assert loaded.eos_token == "</s>"
+        assert loaded.bos_token == "<s>"
+
 
 class TestTokenizerRepr:
     def test_repr(self):
