@@ -66,6 +66,36 @@ impl PostProcessor for Sequence {
         }
         Ok(encodings)
     }
+
+    fn process_tokens(
+        &self,
+        mut tokens: Vec<String>,
+        mut pair_tokens: Option<Vec<String>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<String>> {
+        for processor in &self.processors {
+            // After first processor, combine into single sequence
+            let result = processor.process_tokens(tokens, pair_tokens, add_special_tokens)?;
+            tokens = result;
+            pair_tokens = None;
+        }
+        Ok(tokens)
+    }
+
+    fn process_ids(
+        &self,
+        mut ids: Vec<u32>,
+        mut pair_ids: Option<Vec<u32>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<u32>> {
+        for processor in &self.processors {
+            // After first processor, combine into single sequence
+            let result = processor.process_ids(ids, pair_ids, add_special_tokens)?;
+            ids = result;
+            pair_ids = None;
+        }
+        Ok(ids)
+    }
 }
 
 #[cfg(test)]

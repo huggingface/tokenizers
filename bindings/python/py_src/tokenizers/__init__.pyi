@@ -1614,6 +1614,60 @@ class Tokenizer:
             :class:`~tokenizers.Encoding`: The final post-processed encoding
         """
         pass
+    def post_process_tokens(
+        self,
+        /,
+        tokens: list[str],
+        pair: list[str] | None = None,
+        add_special_tokens: bool = True,
+    ) -> list[str]:
+        """
+        Post-process a list of tokens (and optionally a pair) and return the processed tokens.
+
+        This is a simplified interface that only handles the token strings, without the full
+        Encoding information. Useful for step-by-step tokenization.
+
+        Args:
+            tokens (:obj:`List[str]`):
+                The main sequence of tokens
+
+            pair (:obj:`List[str]`, `optional`):
+                An optional pair sequence of tokens
+
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add special tokens
+
+        Returns:
+            :obj:`List[str]`: A list of tokens with special tokens added according to the post-processor
+        """
+        ...
+    def post_process_ids(
+        self,
+        /,
+        ids: list[int],
+        pair: list[int] | None = None,
+        add_special_tokens: bool = True,
+    ) -> list[int]:
+        """
+        Post-process a list of token IDs (and optionally a pair) and return the processed IDs.
+
+        This is a simplified interface that only handles the token IDs, without the full
+        Encoding information. Useful for step-by-step tokenization.
+
+        Args:
+            ids (:obj:`List[int]`):
+                The main sequence of token IDs
+
+            pair (:obj:`List[int]`, `optional`):
+                An optional pair sequence of token IDs
+
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add special tokens
+
+        Returns:
+            :obj:`List[int]`: A list of token IDs with special tokens added according to the post-processor
+        """
+        ...
 
     @property
     def post_processor(self):

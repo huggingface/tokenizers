@@ -123,6 +123,24 @@ pub trait PostProcessor {
         encodings: Vec<Encoding>,
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>>;
+
+    /// Process a list of tokens (and optionally a pair) and return the processed tokens.
+    /// This is a simplified interface that only handles the token strings.
+    fn process_tokens(
+        &self,
+        tokens: Vec<String>,
+        pair_tokens: Option<Vec<String>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<String>>;
+
+    /// Process a list of token IDs (and optionally a pair) and return the processed IDs.
+    /// This is a simplified interface that only handles the token IDs.
+    fn process_ids(
+        &self,
+        ids: Vec<u32>,
+        pair_ids: Option<Vec<u32>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<u32>>;
 }
 impl dyn PostProcessor {
     pub fn default_process(
@@ -1255,6 +1273,64 @@ where
         };
 
         Ok(final_encoding)
+    }
+
+    /// Post-process a list of tokens (and optionally a pair) and return the processed tokens.
+    /// This is a simplified interface that only handles the token strings, without the full
+    /// Encoding information.
+    ///
+    /// # Arguments
+    /// * `tokens` - The main sequence of tokens
+    /// * `pair_tokens` - An optional pair sequence of tokens
+    /// * `add_special_tokens` - Whether to add special tokens
+    ///
+    /// # Returns
+    /// A list of tokens with special tokens added according to the post-processor
+    pub fn post_process_tokens(
+        &self,
+        tokens: Vec<String>,
+        pair_tokens: Option<Vec<String>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<String>> {
+        if let Some(processor) = &self.post_processor {
+            processor.process_tokens(tokens, pair_tokens, add_special_tokens)
+        } else {
+            // Default: just concatenate the sequences
+            let mut result = tokens;
+            if let Some(pair) = pair_tokens {
+                result.extend(pair);
+            }
+            Ok(result)
+        }
+    }
+
+    /// Post-process a list of token IDs (and optionally a pair) and return the processed IDs.
+    /// This is a simplified interface that only handles the token IDs, without the full
+    /// Encoding information.
+    ///
+    /// # Arguments
+    /// * `ids` - The main sequence of token IDs
+    /// * `pair_ids` - An optional pair sequence of token IDs
+    /// * `add_special_tokens` - Whether to add special tokens
+    ///
+    /// # Returns
+    /// A list of token IDs with special tokens added according to the post-processor
+    pub fn post_process_ids(
+        &self,
+        ids: Vec<u32>,
+        pair_ids: Option<Vec<u32>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<u32>> {
+        if let Some(processor) = &self.post_processor {
+            processor.process_ids(ids, pair_ids, add_special_tokens)
+        } else {
+            // Default: just concatenate the sequences
+            let mut result = ids;
+            if let Some(pair) = pair_ids {
+                result.extend(pair);
+            }
+            Ok(result)
+        }
     }
 
     fn get_n_added_tokens(&self, is_pair: bool) -> usize {

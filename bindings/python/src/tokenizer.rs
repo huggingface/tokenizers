@@ -1735,6 +1735,70 @@ impl PyTokenizer {
         .into()
     }
 
+    /// Post-process a list of tokens (and optionally a pair) and return the processed tokens.
+    ///
+    /// This is a simplified interface that only handles the token strings, without the full
+    /// Encoding information. Useful for step-by-step tokenization.
+    ///
+    /// Args:
+    ///     tokens (:obj:`List[str]`):
+    ///         The main sequence of tokens
+    ///
+    ///     pair (:obj:`List[str]`, `optional`):
+    ///         An optional pair sequence of tokens
+    ///
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to add special tokens
+    ///
+    /// Returns:
+    ///     :obj:`List[str]`: A list of tokens with special tokens added according to the post-processor
+    #[pyo3(signature = (tokens, pair=None, add_special_tokens=true))]
+    #[pyo3(text_signature = "(self, tokens, pair=None, add_special_tokens=True)")]
+    fn post_process_tokens(
+        &self,
+        tokens: Vec<String>,
+        pair: Option<Vec<String>>,
+        add_special_tokens: bool,
+    ) -> PyResult<Vec<String>> {
+        ToPyResult(
+            self.tokenizer
+                .post_process_tokens(tokens, pair, add_special_tokens),
+        )
+        .into()
+    }
+
+    /// Post-process a list of token IDs (and optionally a pair) and return the processed IDs.
+    ///
+    /// This is a simplified interface that only handles the token IDs, without the full
+    /// Encoding information. Useful for step-by-step tokenization.
+    ///
+    /// Args:
+    ///     ids (:obj:`List[int]`):
+    ///         The main sequence of token IDs
+    ///
+    ///     pair (:obj:`List[int]`, `optional`):
+    ///         An optional pair sequence of token IDs
+    ///
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to add special tokens
+    ///
+    /// Returns:
+    ///     :obj:`List[int]`: A list of token IDs with special tokens added according to the post-processor
+    #[pyo3(signature = (ids, pair=None, add_special_tokens=true))]
+    #[pyo3(text_signature = "(self, ids, pair=None, add_special_tokens=True)")]
+    fn post_process_ids(
+        &self,
+        ids: Vec<u32>,
+        pair: Option<Vec<u32>>,
+        add_special_tokens: bool,
+    ) -> PyResult<Vec<u32>> {
+        ToPyResult(
+            self.tokenizer
+                .post_process_ids(ids, pair, add_special_tokens),
+        )
+        .into()
+    }
+
     /// The :class:`~tokenizers.models.Model` in use by the Tokenizer
     #[getter]
     fn get_model(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {

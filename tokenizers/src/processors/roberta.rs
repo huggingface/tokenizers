@@ -231,6 +231,62 @@ impl PostProcessor for RobertaProcessing {
 
         Ok(encodings)
     }
+
+    fn process_tokens(
+        &self,
+        tokens: Vec<String>,
+        pair_tokens: Option<Vec<String>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<String>> {
+        if !add_special_tokens {
+            let mut result = tokens;
+            if let Some(pair) = pair_tokens {
+                result.extend(pair);
+            }
+            return Ok(result);
+        }
+
+        // Roberta: <s> ... </s> </s> ... </s>
+        let mut result = vec![self.cls.0.clone()];
+        result.extend(tokens);
+        result.push(self.sep.0.clone());
+
+        if let Some(pair) = pair_tokens {
+            result.push(self.sep.0.clone()); // Extra </s> before pair
+            result.extend(pair);
+            result.push(self.sep.0.clone());
+        }
+
+        Ok(result)
+    }
+
+    fn process_ids(
+        &self,
+        ids: Vec<u32>,
+        pair_ids: Option<Vec<u32>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<u32>> {
+        if !add_special_tokens {
+            let mut result = ids;
+            if let Some(pair) = pair_ids {
+                result.extend(pair);
+            }
+            return Ok(result);
+        }
+
+        // Roberta: <s> ... </s> </s> ... </s>
+        let mut result = vec![self.cls.1];
+        result.extend(ids);
+        result.push(self.sep.1);
+
+        if let Some(pair) = pair_ids {
+            result.push(self.sep.1); // Extra </s> before pair
+            result.extend(pair);
+            result.push(self.sep.1);
+        }
+
+        Ok(result)
+    }
 }
 
 #[cfg(test)]

@@ -572,6 +572,46 @@ class TestTokenizer:
         output = tokenizer.post_process(encoding, pair_encoding)
         assert output.tokens == ["my", "pair", "[PAD]", "[PAD]"]
 
+    def test_post_process_tokens(self):
+        from tokenizers.processors import BertProcessing
+
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_special_tokens(["[SEP]", "[CLS]"])
+        tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
+        tokenizer.post_processor = BertProcessing(("[SEP]", 0), ("[CLS]", 1))
+
+        # Single sequence
+        result = tokenizer.post_process_tokens(["my", "name"])
+        assert result == ["[CLS]", "my", "name", "[SEP]"]
+
+        # With pair
+        result = tokenizer.post_process_tokens(["my", "name"], ["pair"])
+        assert result == ["[CLS]", "my", "name", "[SEP]", "pair", "[SEP]"]
+
+        # Without special tokens
+        result = tokenizer.post_process_tokens(["my", "name"], add_special_tokens=False)
+        assert result == ["my", "name"]
+
+    def test_post_process_ids(self):
+        from tokenizers.processors import BertProcessing
+
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_special_tokens(["[SEP]", "[CLS]"])
+        tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
+        tokenizer.post_processor = BertProcessing(("[SEP]", 0), ("[CLS]", 1))
+
+        # Single sequence
+        result = tokenizer.post_process_ids([2, 3])
+        assert result == [1, 2, 3, 0]
+
+        # With pair
+        result = tokenizer.post_process_ids([2, 3], [6])
+        assert result == [1, 2, 3, 0, 6, 0]
+
+        # Without special tokens
+        result = tokenizer.post_process_ids([2, 3], add_special_tokens=False)
+        assert result == [2, 3]
+
     def test_multiprocessing_with_parallelism(self):
         tokenizer = Tokenizer(BPE())
         multiprocessing_with_parallelism(tokenizer, False)
