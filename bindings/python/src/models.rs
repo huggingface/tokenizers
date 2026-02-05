@@ -901,6 +901,58 @@ impl PyUnigram {
         model.resize_cache(capacity);
         Ok(())
     }
+
+    /// Get the unk_token string
+    #[getter]
+    fn get_unk_token(self_: PyRef<Self>) -> Option<String> {
+        let super_ = self_.as_ref();
+        let model = super_.model.read().unwrap();
+        if let ModelWrapper::Unigram(ref unigram) = *model {
+            unigram.get_unk_token().map(|s| s.to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Set the unk_token by looking up its index in the vocabulary
+    #[setter]
+    fn set_unk_token(self_: PyRef<Self>, unk_token: Option<String>) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while setting unk_token: {e}"))
+        })?;
+        if let ModelWrapper::Unigram(ref mut unigram) = *model {
+            match unk_token {
+                Some(token) => {
+                    unigram.set_unk_token(&token).map_err(|e| {
+                        exceptions::PyValueError::new_err(format!(
+                            "Token '{}' not found in vocabulary: {}",
+                            token, e
+                        ))
+                    })?;
+                }
+                None => {
+                    // Cannot set unk_id to None directly, but we can leave it as is
+                    return Err(exceptions::PyValueError::new_err(
+                        "Cannot set unk_token to None for Unigram model",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Get the unk_id
+    #[getter]
+    fn get_unk_id(self_: PyRef<Self>) -> Option<usize> {
+        let super_ = self_.as_ref();
+        let model = super_.model.read().unwrap();
+        if let ModelWrapper::Unigram(ref unigram) = *model {
+            unigram.get_unk_id()
+        } else {
+            None
+        }
+    }
 }
 
 /// Models Module

@@ -429,6 +429,22 @@ class Unigram(Model):
         """
         pass
 
+    def _resize_cache(self, /, capacity: int) -> None:
+        """Resize the internal cache"""
+        ...
+    @property
+    def unk_token(self, /) -> str | None:
+        """Get the unk_token string"""
+        ...
+    @unk_token.setter
+    def unk_token(self, /, unk_token: str | None) -> None:
+        """Set the unk_token by looking up its index in the vocabulary"""
+        ...
+    @property
+    def unk_id(self, /) -> int | None:
+        """Get the unk_id"""
+        ...
+
 class WordLevel(Model):
     """
     An implementation of the WordLevel algorithm
