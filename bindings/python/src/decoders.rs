@@ -685,6 +685,13 @@ impl PyDecodeStream {
         ))
         .into()
     }
+    fn __copy__(&self) -> Self {
+        self.clone()
+    }
+
+    fn __deepcopy__(&self, _memo: &Bound<'_, PyDict>) -> Self {
+        self.clone()
+    }
 }
 
 #[cfg(test)]
