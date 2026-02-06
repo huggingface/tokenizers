@@ -29,6 +29,36 @@ class TestBertProcessing:
             BertProcessing,
         )
 
+    def test_process_tokens(self):
+        processor = BertProcessing(("[SEP]", 102), ("[CLS]", 101))
+
+        # Single sequence
+        result = processor.process_tokens(["Hello", "world"])
+        assert result == ["[CLS]", "Hello", "world", "[SEP]"]
+
+        # With pair
+        result = processor.process_tokens(["Hello"], ["world"])
+        assert result == ["[CLS]", "Hello", "[SEP]", "world", "[SEP]"]
+
+        # Without special tokens
+        result = processor.process_tokens(["Hello", "world"], add_special_tokens=False)
+        assert result == ["Hello", "world"]
+
+    def test_process_ids(self):
+        processor = BertProcessing(("[SEP]", 102), ("[CLS]", 101))
+
+        # Single sequence
+        result = processor.process_ids([10, 20])
+        assert result == [101, 10, 20, 102]
+
+        # With pair
+        result = processor.process_ids([10], [20])
+        assert result == [101, 10, 102, 20, 102]
+
+        # Without special tokens
+        result = processor.process_ids([10, 20], add_special_tokens=False)
+        assert result == [10, 20]
+
     def test_processing(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.add_special_tokens(["[SEP]", "[CLS]"])
@@ -50,6 +80,36 @@ class TestRobertaProcessing:
             pickle.loads(pickle.dumps(RobertaProcessing(("</s>", 1), ("<s>", 0)))),
             RobertaProcessing,
         )
+
+    def test_process_tokens(self):
+        processor = RobertaProcessing(("</s>", 1), ("<s>", 0))
+
+        # Single sequence
+        result = processor.process_tokens(["Hello", "world"])
+        assert result == ["<s>", "Hello", "world", "</s>"]
+
+        # With pair (Roberta adds extra </s> before pair)
+        result = processor.process_tokens(["Hello"], ["world"])
+        assert result == ["<s>", "Hello", "</s>", "</s>", "world", "</s>"]
+
+        # Without special tokens
+        result = processor.process_tokens(["Hello", "world"], add_special_tokens=False)
+        assert result == ["Hello", "world"]
+
+    def test_process_ids(self):
+        processor = RobertaProcessing(("</s>", 1), ("<s>", 0))
+
+        # Single sequence
+        result = processor.process_ids([10, 20])
+        assert result == [0, 10, 20, 1]
+
+        # With pair (Roberta adds extra </s> before pair)
+        result = processor.process_ids([10], [20])
+        assert result == [0, 10, 1, 1, 20, 1]
+
+        # Without special tokens
+        result = processor.process_ids([10, 20], add_special_tokens=False)
+        assert result == [10, 20]
 
     def test_processing(self):
         tokenizer = Tokenizer(BPE())
@@ -192,6 +252,36 @@ class TestTemplateProcessing:
         tokenizer.post_processor = self.get_roberta()
         template = tokenizer.encode("my name is john", "pair")
         assert original.ids == template.ids
+
+    def test_process_tokens(self):
+        processor = self.get_bert()
+
+        # Single sequence
+        result = processor.process_tokens(["Hello", "world"])
+        assert result == ["[CLS]", "Hello", "world", "[SEP]"]
+
+        # With pair
+        result = processor.process_tokens(["Hello"], ["world"])
+        assert result == ["[CLS]", "Hello", "[SEP]", "world", "[SEP]"]
+
+        # Without special tokens
+        result = processor.process_tokens(["Hello", "world"], add_special_tokens=False)
+        assert result == ["Hello", "world"]
+
+    def test_process_ids(self):
+        processor = self.get_bert()
+
+        # Single sequence
+        result = processor.process_ids([10, 20])
+        assert result == [1, 10, 20, 0]
+
+        # With pair
+        result = processor.process_ids([10], [20])
+        assert result == [1, 10, 0, 20, 0]
+
+        # Without special tokens
+        result = processor.process_ids([10, 20], add_special_tokens=False)
+        assert result == [10, 20]
 
 
 class TestSequenceProcessing:

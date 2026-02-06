@@ -683,6 +683,78 @@ impl PostProcessor for TemplateProcessing {
         let encodings = self.apply_template(template, encodings, add_special_tokens)?;
         Ok(encodings)
     }
+
+    fn process_tokens(
+        &self,
+        tokens: Vec<String>,
+        pair_tokens: Option<Vec<String>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<String>> {
+        let template = if pair_tokens.is_some() {
+            &self.pair.0
+        } else {
+            &self.single.0
+        };
+
+        let mut result = Vec::new();
+
+        for piece in template {
+            match piece {
+                Piece::Sequence { id, .. } => {
+                    let seq_tokens = match id {
+                        Sequence::A => &tokens,
+                        Sequence::B => pair_tokens.as_ref().unwrap_or(&tokens),
+                    };
+                    result.extend(seq_tokens.iter().cloned());
+                }
+                Piece::SpecialToken { id, .. } => {
+                    if add_special_tokens {
+                        if let Some(tok) = self.special_tokens.0.get(id) {
+                            result.extend(tok.tokens.iter().cloned());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    fn process_ids(
+        &self,
+        ids: Vec<u32>,
+        pair_ids: Option<Vec<u32>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<u32>> {
+        let template = if pair_ids.is_some() {
+            &self.pair.0
+        } else {
+            &self.single.0
+        };
+
+        let mut result = Vec::new();
+
+        for piece in template {
+            match piece {
+                Piece::Sequence { id, .. } => {
+                    let seq_ids = match id {
+                        Sequence::A => &ids,
+                        Sequence::B => pair_ids.as_ref().unwrap_or(&ids),
+                    };
+                    result.extend(seq_ids.iter().copied());
+                }
+                Piece::SpecialToken { id, .. } => {
+                    if add_special_tokens {
+                        if let Some(tok) = self.special_tokens.0.get(id) {
+                            result.extend(tok.ids.iter().copied());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(result)
+    }
 }
 
 #[cfg(test)]

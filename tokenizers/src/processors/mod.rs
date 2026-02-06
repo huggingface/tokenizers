@@ -50,6 +50,38 @@ impl PostProcessor for PostProcessorWrapper {
             Self::Sequence(bl) => bl.process_encodings(encodings, add_special_tokens),
         }
     }
+
+    fn process_tokens(
+        &self,
+        tokens: Vec<String>,
+        pair_tokens: Option<Vec<String>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<String>> {
+        match self {
+            Self::Bert(bert) => bert.process_tokens(tokens, pair_tokens, add_special_tokens),
+            Self::ByteLevel(bl) => bl.process_tokens(tokens, pair_tokens, add_special_tokens),
+            Self::Roberta(roberta) => roberta.process_tokens(tokens, pair_tokens, add_special_tokens),
+            Self::Template(template) => {
+                template.process_tokens(tokens, pair_tokens, add_special_tokens)
+            }
+            Self::Sequence(seq) => seq.process_tokens(tokens, pair_tokens, add_special_tokens),
+        }
+    }
+
+    fn process_ids(
+        &self,
+        ids: Vec<u32>,
+        pair_ids: Option<Vec<u32>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<u32>> {
+        match self {
+            Self::Bert(bert) => bert.process_ids(ids, pair_ids, add_special_tokens),
+            Self::ByteLevel(bl) => bl.process_ids(ids, pair_ids, add_special_tokens),
+            Self::Roberta(roberta) => roberta.process_ids(ids, pair_ids, add_special_tokens),
+            Self::Template(template) => template.process_ids(ids, pair_ids, add_special_tokens),
+            Self::Sequence(seq) => seq.process_ids(ids, pair_ids, add_special_tokens),
+        }
+    }
 }
 
 impl_enum_from!(BertProcessing, PostProcessorWrapper, Bert);
