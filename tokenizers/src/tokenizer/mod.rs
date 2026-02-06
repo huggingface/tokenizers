@@ -913,7 +913,47 @@ where
     pub fn decode_stream(&self, skip_special_tokens: bool) -> DecodeStream<'_, M, N, PT, PP, D> {
         DecodeStream::new(self, skip_special_tokens)
     }
+
+    /// Apply a chat template to render messages into a formatted string
+    /// 
+    /// This is useful for models that require specific formatting for chat interactions.
+    /// The template uses Jinja2 syntax and has access to the messages list and generation_prompt flag.
+    /// 
+    /// # Arguments
+    /// * `template` - The Jinja2 template string (typically from tokenizer_config.json)
+    /// * `messages` - List of chat messages with role and content
+    /// * `add_generation_prompt` - Whether to append a generation prompt at the end
+    /// 
+    /// # Returns
+    /// The rendered template as a string
+    /// 
+    /// # Example
+    /// ```ignore
+    /// let template = r#"{% for msg in messages %}{{ msg.role }}: {{ msg.content }}\n{% endfor %}"#;
+    /// let messages = vec![
+    ///     Message::new("user", "Hello"),
+    ///     Message::new("assistant", "Hi!"),
+    /// ];
+    /// let result = tokenizer.apply_chat_template(template, messages, true)?;
+    /// ```
+    pub fn apply_chat_template(
+        &self,
+        template: &str,
+        messages: Vec<crate::Message>,
+        add_generation_prompt: bool,
+    ) -> Result<String> {
+        let chat_template = crate::ChatTemplate::new(
+            template.to_string(),
+            None,
+            None,
+        ).map_err(|e| format!("{}", e))?;
+
+        let inputs = crate::ChatTemplateInputs::new(messages, add_generation_prompt);
+        chat_template.apply(inputs)
+            .map_err(|e| format!("{}", e).into())
+    }
 }
+
 
 /// DecodeStream will keep the state necessary to produce individual chunks of
 /// strings given an input stream of token_ids.

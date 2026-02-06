@@ -1,0 +1,20 @@
+[package]
+name = "tokenizers_c"
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib"]
+name = "tokenizers_c"
+
+[dependencies]
+# Path to the core tokenizers crate relative to this Cargo.toml
+# Current file is at bindings/tokenizers_c/Cargo.toml, core crate at tokenizers/
+tokenizers = { path = "../../tokenizers" }
+serde_json = "1.0"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = true
