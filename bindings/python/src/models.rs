@@ -855,13 +855,43 @@ pub struct PyUnigram {}
 #[pymethods]
 impl PyUnigram {
     #[new]
-    #[pyo3(signature = (vocab=None, unk_id=None, byte_fallback=None), text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None)")]
+    #[pyo3(signature = (vocab=None, unk_id=None, byte_fallback=None, unk_token=None), text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None, unk_token=None)")]
     fn new(
         vocab: Option<Vec<(String, f64)>>,
         unk_id: Option<usize>,
         byte_fallback: Option<bool>,
+        unk_token: Option<String>,
     ) -> PyResult<(Self, PyModel)> {
-        match (vocab, unk_id, byte_fallback) {
+        // Check for conflicting parameters
+        if unk_id.is_some() && unk_token.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "Cannot specify both `unk_id` and `unk_token`",
+            ));
+        }
+
+        // Resolve unk_id from unk_token if provided
+        let resolved_unk_id = match (&vocab, &unk_token) {
+            (Some(v), Some(token)) => {
+                let idx = v
+                    .iter()
+                    .position(|(t, _)| t == token)
+                    .ok_or_else(|| {
+                        exceptions::PyValueError::new_err(format!(
+                            "Token '{}' not found in vocabulary",
+                            token
+                        ))
+                    })?;
+                Some(idx)
+            }
+            (None, Some(_)) => {
+                return Err(exceptions::PyValueError::new_err(
+                    "`unk_token` requires `vocab` to be specified",
+                ));
+            }
+            _ => unk_id,
+        };
+
+        match (vocab, resolved_unk_id, byte_fallback) {
             (Some(vocab), unk_id, byte_fallback) => {
                 let model =
                     Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false)).map_err(|e| {
@@ -900,58 +930,6 @@ impl PyUnigram {
         })?;
         model.resize_cache(capacity);
         Ok(())
-    }
-
-    /// Get the unk_token string
-    #[getter]
-    fn get_unk_token(self_: PyRef<Self>) -> Option<String> {
-        let super_ = self_.as_ref();
-        let model = super_.model.read().unwrap();
-        if let ModelWrapper::Unigram(ref unigram) = *model {
-            unigram.get_unk_token().map(|s| s.to_string())
-        } else {
-            None
-        }
-    }
-
-    /// Set the unk_token by looking up its index in the vocabulary
-    #[setter]
-    fn set_unk_token(self_: PyRef<Self>, unk_token: Option<String>) -> PyResult<()> {
-        let super_ = self_.as_ref();
-        let mut model = super_.model.write().map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while setting unk_token: {e}"))
-        })?;
-        if let ModelWrapper::Unigram(ref mut unigram) = *model {
-            match unk_token {
-                Some(token) => {
-                    unigram.set_unk_token(&token).map_err(|e| {
-                        exceptions::PyValueError::new_err(format!(
-                            "Token '{}' not found in vocabulary: {}",
-                            token, e
-                        ))
-                    })?;
-                }
-                None => {
-                    // Cannot set unk_id to None directly, but we can leave it as is
-                    return Err(exceptions::PyValueError::new_err(
-                        "Cannot set unk_token to None for Unigram model",
-                    ));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Get the unk_id
-    #[getter]
-    fn get_unk_id(self_: PyRef<Self>) -> Option<usize> {
-        let super_ = self_.as_ref();
-        let model = super_.model.read().unwrap();
-        if let ModelWrapper::Unigram(ref unigram) = *model {
-            unigram.get_unk_id()
-        } else {
-            None
-        }
     }
 }
 

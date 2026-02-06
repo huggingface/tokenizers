@@ -2,7 +2,7 @@ import pickle
 
 import pytest
 
-from tokenizers.models import BPE, Model, WordLevel, WordPiece, Unigram
+from tokenizers.models import BPE, Model, WordLevel, WordPiece
 from ..utils import bert_files, data_dir, roberta_files
 
 
@@ -99,47 +99,3 @@ class TestWordLevel:
         # Modify these
         model.unk_token = "<unk>"
         assert model.unk_token == "<unk>"
-
-
-class TestUnigram:
-    def test_unk_token_property(self):
-        # Create Unigram with vocab containing <unk>
-        vocab = [
-            ("<unk>", 0.0),
-            ("hello", -1.0),
-            ("world", -1.5),
-        ]
-        model = Unigram(vocab, unk_id=0)
-
-        # Test unk_token getter returns str
-        assert model.unk_token == "<unk>"
-        assert isinstance(model.unk_token, str)
-
-        # Test unk_id getter returns int
-        assert model.unk_id == 0
-        assert isinstance(model.unk_id, int)
-
-        # Test unk_token setter - set to existing token
-        model.unk_token = "hello"
-        assert model.unk_token == "hello"
-        assert model.unk_id == 1
-
-        # Test unk_token setter - non-existent token should raise
-        with pytest.raises(ValueError, match="not found in vocabulary"):
-            model.unk_token = "nonexistent"
-
-        # Test unk_token setter - None should raise
-        with pytest.raises(ValueError, match="Cannot set unk_token to None"):
-            model.unk_token = None
-
-    def test_unk_token_without_unk_id(self):
-        # Create Unigram without unk_id
-        vocab = [
-            ("hello", -1.0),
-            ("world", -1.5),
-        ]
-        model = Unigram(vocab, unk_id=None)
-
-        # unk_token should be None when unk_id is not set
-        assert model.unk_token is None
-        assert model.unk_id is None
