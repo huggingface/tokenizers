@@ -160,7 +160,7 @@ impl PyAddedToken {
     }
 
     fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
-        match state.downcast_bound::<PyDict>(py) {
+        match state.cast_bound::<PyDict>(py) {
             Ok(state) => {
                 for (key, value) in state {
                     let key: String = key.extract()?;
@@ -266,8 +266,10 @@ impl PyAddedToken {
 }
 
 struct TextInputSequence<'s>(tk::InputSequence<'s>);
-impl<'s> FromPyObject<'s> for TextInputSequence<'s> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+impl<'s> FromPyObject<'_, 's> for TextInputSequence<'s> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 's, PyAny>) -> Result<Self, Self::Error> {
         let err = exceptions::PyTypeError::new_err("TextInputSequence must be str");
         if let Ok(s) = ob.extract::<String>() {
             Ok(Self(s.into()))
@@ -283,8 +285,10 @@ impl<'s> From<TextInputSequence<'s>> for tk::InputSequence<'s> {
 }
 
 struct PyArrayUnicode(Vec<String>);
-impl FromPyObject<'_> for PyArrayUnicode {
-    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl FromPyObject<'_, '_> for PyArrayUnicode {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
         // SAFETY Making sure the pointer is a valid numpy array requires calling numpy C code
         if unsafe { npyffi::PyArray_Check(ob.py(), ob.as_ptr()) } == 0 {
             return Err(exceptions::PyTypeError::new_err("Expected an np.array"));
@@ -352,15 +356,17 @@ impl From<PyArrayUnicode> for tk::InputSequence<'_> {
 
 struct PyArrayStr(Vec<String>);
 
-impl FromPyObject<'_> for PyArrayStr {
-    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let array = ob.downcast::<PyArray1<Py<PyAny>>>()?;
+impl FromPyObject<'_, '_> for PyArrayStr {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
+        let array = ob.cast::<PyArray1<Py<PyAny>>>()?;
         let seq = array
             .readonly()
             .as_array()
             .iter()
             .map(|obj| {
-                let s = obj.downcast_bound::<PyString>(ob.py())?;
+                let s = obj.cast_bound::<PyString>(ob.py())?;
                 Ok(s.to_string_lossy().into_owned())
             })
             .collect::<PyResult<Vec<_>>>()?;
@@ -375,20 +381,22 @@ impl From<PyArrayStr> for tk::InputSequence<'_> {
 }
 
 struct PreTokenizedInputSequence<'s>(tk::InputSequence<'s>);
-impl<'s> FromPyObject<'s> for PreTokenizedInputSequence<'s> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+impl<'s> FromPyObject<'_, 's> for PreTokenizedInputSequence<'s> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 's, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(seq) = ob.extract::<PyArrayUnicode>() {
             return Ok(Self(seq.into()));
         }
         if let Ok(seq) = ob.extract::<PyArrayStr>() {
             return Ok(Self(seq.into()));
         }
-        if let Ok(s) = ob.downcast::<PyList>() {
+        if let Ok(s) = ob.cast::<PyList>() {
             if let Ok(seq) = s.extract::<Vec<String>>() {
                 return Ok(Self(seq.into()));
             }
         }
-        if let Ok(s) = ob.downcast::<PyTuple>() {
+        if let Ok(s) = ob.cast::<PyTuple>() {
             if let Ok(seq) = s.extract::<Vec<String>>() {
                 return Ok(Self(seq.into()));
             }
@@ -405,8 +413,10 @@ impl<'s> From<PreTokenizedInputSequence<'s>> for tk::InputSequence<'s> {
 }
 
 struct TextEncodeInput<'s>(tk::EncodeInput<'s>);
-impl<'s> FromPyObject<'s> for TextEncodeInput<'s> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+impl<'s> FromPyObject<'_, 's> for TextEncodeInput<'s> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 's, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(i) = ob.extract::<TextInputSequence>() {
             return Ok(Self(i.into()));
         }
@@ -431,8 +441,10 @@ impl<'s> From<TextEncodeInput<'s>> for tk::tokenizer::EncodeInput<'s> {
     }
 }
 struct PreTokenizedEncodeInput<'s>(tk::EncodeInput<'s>);
-impl<'s> FromPyObject<'s> for PreTokenizedEncodeInput<'s> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+impl<'s> FromPyObject<'_, 's> for PreTokenizedEncodeInput<'s> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 's, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(i) = ob.extract::<PreTokenizedInputSequence>() {
             return Ok(Self(i.into()));
         }
@@ -492,10 +504,10 @@ impl PyTokenizer {
         if let Ok(seq) = ob.extract::<PyArrayStr>() {
             return Ok(seq.0);
         }
-        if let Ok(list) = ob.downcast::<PyList>() {
+        if let Ok(list) = ob.cast::<PyList>() {
             return list.extract::<Vec<String>>();
         }
-        if let Ok(tup) = ob.downcast::<PyTuple>() {
+        if let Ok(tup) = ob.cast::<PyTuple>() {
             return tup.extract::<Vec<String>>();
         }
         Err(exceptions::PyTypeError::new_err(
@@ -513,7 +525,7 @@ impl PyTokenizer {
         for it in items {
             if is_pretokenized {
                 // Pair?
-                if let Ok(tup) = it.downcast::<PyTuple>() {
+                if let Ok(tup) = it.cast::<PyTuple>() {
                     if tup.len() == 2 {
                         let a = Self::extract_pretok_seq(&tup.get_item(0)?)?;
                         let b = Self::extract_pretok_seq(&tup.get_item(1)?)?;
@@ -521,7 +533,7 @@ impl PyTokenizer {
                         continue;
                     }
                 }
-                if let Ok(lst) = it.downcast::<PyList>() {
+                if let Ok(lst) = it.cast::<PyList>() {
                     if lst.len() == 2 {
                         let a = Self::extract_pretok_seq(&lst.get_item(0)?)?;
                         let b = Self::extract_pretok_seq(&lst.get_item(1)?)?;
@@ -534,7 +546,7 @@ impl PyTokenizer {
                 out.push(tk::EncodeInput::Single(a.into()));
             } else {
                 // Raw text: pair?
-                if let Ok(tup) = it.downcast::<PyTuple>() {
+                if let Ok(tup) = it.cast::<PyTuple>() {
                     if tup.len() == 2 {
                         let a: String = tup.get_item(0)?.extract()?;
                         let b: String = tup.get_item(1)?.extract()?;
@@ -542,10 +554,10 @@ impl PyTokenizer {
                         continue;
                     }
                 }
-                if let Ok(lst) = it.downcast::<PyList>() {
+                if let Ok(lst) = it.cast::<PyList>() {
                     if lst.len() == 2
-                        && lst.get_item(0)?.downcast::<PyString>().is_ok()
-                        && lst.get_item(1)?.downcast::<PyString>().is_ok()
+                        && lst.get_item(0)?.cast::<PyString>().is_ok()
+                        && lst.get_item(1)?.cast::<PyString>().is_ok()
                     {
                         let a: String = lst.get_item(0)?.extract()?;
                         let b: String = lst.get_item(1)?.extract()?;
@@ -617,7 +629,7 @@ impl PyTokenizer {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1667,7 +1679,7 @@ impl PyTokenizer {
                 // Each element of the iterator can either be:
                 //  - An iterator, to allow batching
                 //  - A string
-                if let Ok(s) = element.downcast::<PyString>() {
+                if let Ok(s) = element.cast::<PyString>() {
                     itertools::Either::Right(std::iter::once(s.to_cow().map(|s| s.into_owned())))
                 } else {
                     match element.try_iter() {

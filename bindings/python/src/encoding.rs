@@ -49,7 +49,7 @@ impl PyEncoding {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
