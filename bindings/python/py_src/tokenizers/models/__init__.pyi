@@ -344,10 +344,17 @@ class Unigram(Model):
     An implementation of the Unigram algorithm
 
     Args:
-        vocab (:obj:`List[Tuple[str, float]]`, `optional`, `optional`):
+        vocab (:obj:`List[Tuple[str, float]]`, `optional`):
             A list of vocabulary items and their relative score [("am", -0.2442),...]
+        unk_id (:obj:`int`, `optional`):
+            The id of the unknown token in the vocabulary
+        byte_fallback (:obj:`bool`, `optional`):
+            Whether to use byte fallback
+        unk_token (:obj:`str`, `optional`):
+            The unknown token string. If provided, the token will be looked up in the vocab
+            to find its index. Cannot be used together with `unk_id`.
     """
-    def __init__(self, vocab=None, unk_id=None, byte_fallback=None):
+    def __init__(self, vocab=None, unk_id=None, byte_fallback=None, unk_token=None):
         pass
 
     def __getstate__(self):

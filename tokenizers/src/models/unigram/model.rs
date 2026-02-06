@@ -153,6 +153,29 @@ impl Unigram {
     pub fn byte_fallback(&self) -> bool {
         self.byte_fallback
     }
+
+    /// Get the unk_id
+    pub fn get_unk_id(&self) -> Option<usize> {
+        self.unk_id
+    }
+
+    /// Set the unk_token by looking up its index in the vocabulary
+    pub fn set_unk_token(&mut self, token: &str) -> Result<()> {
+        if let Some(id) = self.token_to_ids.get(token) {
+            self.unk_id = Some(*id as usize);
+            self.cache = self.cache.fresh();
+            Ok(())
+        } else {
+            Err(Box::new(UnigramError::UnkIdNotInVocabulary))
+        }
+    }
+
+    /// Get the unk_token string if unk_id is set
+    pub fn get_unk_token(&self) -> Option<&str> {
+        self.unk_id
+            .and_then(|id| self.vocab.get(id))
+            .map(|(token, _)| token.as_str())
+    }
     pub(super) fn len(&self) -> usize {
         self.vocab.len()
     }
