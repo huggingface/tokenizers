@@ -56,7 +56,8 @@ fn tokenize(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResul
         ToPyResult(pretok.tokenize(|normalized| {
             let output = func.call((normalized.get(),), None)?;
             Ok(output
-                .extract::<Bound<PyList>>()?
+                .extract::<Bound<PyList>>()
+                .map_err(PyErr::from)?
                 .into_iter()
                 .map(|obj| Ok(Token::from(obj.extract::<PyToken>()?)))
                 .collect::<PyResult<Vec<_>>>()?)
@@ -68,8 +69,10 @@ fn tokenize(pretok: &mut PreTokenizedString, func: &Bound<'_, PyAny>) -> PyResul
 /// This is an enum
 #[derive(Clone)]
 pub struct PyOffsetReferential(OffsetReferential);
-impl FromPyObject<'_> for PyOffsetReferential {
-    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyOffsetReferential {
+    type Error = PyErr;
+
+    fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         let s = obj.extract::<String>()?;
 
         Ok(Self(match s.as_ref() {
@@ -84,8 +87,10 @@ impl FromPyObject<'_> for PyOffsetReferential {
 
 #[derive(Clone)]
 pub struct PyOffsetType(OffsetType);
-impl FromPyObject<'_> for PyOffsetType {
-    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyOffsetType {
+    type Error = PyErr;
+
+    fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         let s = obj.extract::<String>()?;
 
         Ok(Self(match s.as_ref() {
@@ -223,7 +228,7 @@ impl PyPreTokenizedString {
     ///
     /// Returns:
     ///     An Encoding
-    #[pyo3(signature = (type_id = 0, word_idx = None))]
+    #[pyo3(signature = (type_id = 0, word_idx = None) -> "Encoding")]
     #[pyo3(text_signature = "(self, type_id=0, word_idx=None)")]
     fn to_encoding(&self, type_id: u32, word_idx: Option<u32>) -> PyResult<PyEncoding> {
         to_encoding(&self.pretok, type_id, word_idx)
