@@ -16,4 +16,5 @@ jobs:
       package: tokenizers
       path_to_docs: tokenizers/docs/source-doc-builder/
       package_path: tokenizers/bindings/python/
+      version_tag_suffix: bindings/python/py_src/
       install_rust: true
