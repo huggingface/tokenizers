@@ -244,6 +244,11 @@ impl AddedVocabulary {
         self.special_tokens_set.contains(token)
     }
 
+    /// Get the set of special tokens
+    pub fn get_special_tokens(&self) -> &AHashSet<String> {
+        &self.special_tokens_set
+    }
+
     /// Add some special tokens to the vocabulary
     pub fn add_special_tokens<N: Normalizer>(
         &mut self,

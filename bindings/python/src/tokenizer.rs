@@ -815,6 +815,28 @@ impl PyTokenizer {
         self.tokenizer.get_vocab_size(with_added_tokens)
     }
 
+    /// Get the list of special tokens
+    ///
+    /// Returns:
+    ///     :obj:`List[str]`: The list of special tokens
+    #[pyo3(text_signature = "(self)")]
+    fn get_special_tokens(&self) -> Vec<String> {
+        self.tokenizer.get_special_tokens()
+    }
+
+    /// Check if a token is a special token
+    ///
+    /// Args:
+    ///     token (:obj:`str`):
+    ///         The token to check
+    ///
+    /// Returns:
+    ///     :obj:`bool`: Whether the token is a special token
+    #[pyo3(text_signature = "(self, token)")]
+    fn is_special_token(&self, token: &str) -> bool {
+        self.tokenizer.is_special_token(token)
+    }
+
     /// Enable truncation
     ///
     /// Args:

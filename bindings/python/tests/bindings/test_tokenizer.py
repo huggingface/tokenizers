@@ -125,6 +125,37 @@ class TestTokenizer:
         assert tokens[0].normalized == False
         assert tokens[1].normalized == True
 
+    def test_get_special_tokens(self):
+        tokenizer = Tokenizer(BPE())
+
+        # Initially no special tokens
+        special_tokens = tokenizer.get_special_tokens()
+        assert special_tokens == []
+
+        # Add special tokens
+        tokenizer.add_special_tokens(["[CLS]", "[SEP]", "[PAD]"])
+
+        # Check get_special_tokens returns them
+        special_tokens = tokenizer.get_special_tokens()
+        assert set(special_tokens) == {"[CLS]", "[SEP]", "[PAD]"}
+
+        # Check is_special_token
+        assert tokenizer.is_special_token("[CLS]") == True
+        assert tokenizer.is_special_token("[SEP]") == True
+        assert tokenizer.is_special_token("[PAD]") == True
+        assert tokenizer.is_special_token("[UNK]") == False
+
+        # Add regular tokens (not special)
+        tokenizer.add_tokens(["hello", "world"])
+
+        # Regular tokens should not be special
+        assert tokenizer.is_special_token("hello") == False
+        assert tokenizer.is_special_token("world") == False
+
+        # Special tokens list should not change
+        special_tokens = tokenizer.get_special_tokens()
+        assert set(special_tokens) == {"[CLS]", "[SEP]", "[PAD]"}
+
     def test_encode(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])

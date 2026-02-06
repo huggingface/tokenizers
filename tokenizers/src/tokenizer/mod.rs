@@ -714,6 +714,20 @@ where
         self.added_vocabulary.get_encode_special_tokens()
     }
 
+    /// Check if a token is a special token
+    pub fn is_special_token(&self, token: &str) -> bool {
+        self.added_vocabulary.is_special_token(token)
+    }
+
+    /// Get the set of special tokens
+    pub fn get_special_tokens(&self) -> Vec<String> {
+        self.added_vocabulary
+            .get_special_tokens()
+            .iter()
+            .cloned()
+            .collect()
+    }
+
     /// Encode a single sequence
     fn encode_single_sequence(
         &self,

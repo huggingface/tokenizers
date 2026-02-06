@@ -1501,6 +1501,28 @@ class Tokenizer:
         """
         pass
 
+    def get_special_tokens(self) -> List[str]:
+        """
+        Get the list of special tokens
+
+        Returns:
+            :obj:`List[str]`: The list of special tokens
+        """
+        pass
+
+    def is_special_token(self, token: str) -> bool:
+        """
+        Check if a token is a special token
+
+        Args:
+            token (:obj:`str`):
+                The token to check
+
+        Returns:
+            :obj:`bool`: Whether the token is a special token
+        """
+        pass
+
     def id_to_token(self, id):
         """
         Convert the given id to its corresponding token if it exists
