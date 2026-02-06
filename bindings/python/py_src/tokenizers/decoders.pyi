@@ -45,14 +45,14 @@ class DecodeStream:
     def step(self, /, tokenizer: tokenizers.Tokenizer, id: typing.Any) -> typing.Any:
         """
         Streaming decode step
-        
+
         Args:
             tokenizer (:class:`~tokenizers.Tokenizer`):
                The tokenizer to use for decoding
            id (:obj:`int` or `List[int]`):
               The next token id or list of token ids to add to the stream
-        
-        
+
+
         Returns:
             :obj:`Optional[str]`: The next decoded string chunk, or None if not enough
                 tokens have been provided yet.
@@ -73,11 +73,11 @@ class Decoder:
     def decode(self, /, tokens: typing.Any) -> str:
         """
         Decode the given list of tokens to a final string
-        
+
         Args:
             tokens (:obj:`List[str]`):
                 The list of tokens to decode
-        
+
         Returns:
             :obj:`str`: The decoded string
         """

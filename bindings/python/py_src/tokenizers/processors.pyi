@@ -51,11 +51,11 @@ class PostProcessor:
     def num_special_tokens_to_add(self, /, is_pair: bool) -> int:
         """
         Return the number of special tokens that would be added for single/pair sentences.
-        
+
         Args:
             is_pair (:obj:`bool`):
                 Whether the input would be a pair of sequences
-        
+
         Returns:
             :obj:`int`: The number of tokens to add
         """
@@ -69,17 +69,17 @@ class PostProcessor:
     ) -> tokenizers.Encoding:
         """
         Post-process the given encodings, generating the final one
-        
+
         Args:
             encoding (:class:`~tokenizers.Encoding`):
                 The encoding for the first sequence
-        
+
             pair (:class:`~tokenizers.Encoding`, `optional`):
                 The encoding for the pair sequence
-        
+
             add_special_tokens (:obj:`bool`):
                 Whether to add the special tokens
-        
+
         Return:
             :class:`~tokenizers.Encoding`: The final encoding
         """

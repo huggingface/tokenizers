@@ -169,26 +169,49 @@ tokenizer = Tokenizer.from_file("byte-level-bpe.tokenizer.json")
 encoded = tokenizer.encode("I can feel the magic, can you?")
 ```
 
-### Typing support and `stub.py`
+### Typing support and stub generation
 
-The compiled PyO3 extension does not expose type annotations, so editors and type checkers would otherwise see most objects as `Any`. The `stub.py` helper walks the loaded extension modules, renders `.pyi` stub files (plus minimal forwarding `__init__.py` shims), and formats them so that tools like mypy/pyright can understand the public API. Run `python stub.py` whenever you change the Python-visible surface to keep the generated stubs in sync.
+The compiled PyO3 extension does not expose type annotations, so editors and type checkers would otherwise see most objects as `Any`. To provide full typing support, we use a two-step stub generation process:
 
-We are now trying to add better typing with Pyo3's latest pyo3-introspect crate. 
+1. **Rust introspection** (`tools/stub-gen/`): Uses `pyo3-introspection` to analyze the compiled extension and generate `.pyi` stub files
+2. **Python enrichment** (`stub.py`): Adds docstrings from the runtime module and generates forwarding `__init__.py` shims
 
-Before running the stub we need to compile the extension and refresh `tokenizers.abi3.so` from the build output. The Rust helper can now run the whole flow:
+#### Running stub generation
+
+The easiest way to regenerate stubs is via `make style`:
 
 ```bash
 cd bindings/python
-cargo run --bin stub_generation --no-default-features --features stub-gen -- --build
+make style
 ```
 
+This will:
+1. Build the extension with `maturin develop --release`
+2. Run introspection to generate `.pyi` files
+3. Enrich stubs with docstrings via `stub.py`
+4. Format with `ruff`
 
-Generated stubs are written under `py_src/tokenizers` (including submodules).
+#### Running manually
 
+To run the stub generator directly:
 
-
-If you have python errors:
+```bash
+cd bindings/python
+cargo run --manifest-path tools/stub-gen/Cargo.toml
+python stub.py
 ```
-export PYO3_PYTHON=/Users/arthurzucker/Work/.venv/bin/python
-export PYTHONHOME=$(/Users/arthurzucker/Work/.venv/bin/python -c 'import sys; print(sys.base_prefix)')
+
+The stub generator automatically:
+- Builds the extension using maturin
+- Copies the built `.so` to the project root for introspection
+- Detects and sets `PYTHONHOME` for embedded Python (handles uv/venv environments)
+- Generates stubs to `py_src/tokenizers/`
+
+#### Troubleshooting
+
+If you encounter Python initialization errors, you can manually set `PYTHONHOME`:
+
+```bash
+export PYTHONHOME=$(python3 -c 'import sys; print(sys.base_prefix)')
+cargo run --manifest-path tools/stub-gen/Cargo.toml
 ```

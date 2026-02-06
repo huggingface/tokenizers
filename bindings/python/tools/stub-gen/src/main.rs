@@ -1,28 +1,82 @@
-#[cfg(feature = "stub-gen")]
 use pyo3::prelude::*;
-#[cfg(feature = "stub-gen")]
 use pyo3::types::PyList;
-#[cfg(feature = "stub-gen")]
 use std::ffi::OsString;
-#[cfg(feature = "stub-gen")]
 use std::path::{Path, PathBuf};
-#[cfg(feature = "stub-gen")]
 use std::process::Command;
 
-#[cfg(feature = "stub-gen")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::try_init().ok();
 
-    let cdylib = default_cdylib_path();
-    let out_dir = default_out_dir();
+    let manifest_dir = find_manifest_dir()?;
+    let cdylib = manifest_dir.join("tokenizers.abi3.so");
+    let out_dir = manifest_dir.join("py_src/tokenizers");
 
-    build_extension()?;
-    refresh_cdylib(&cdylib)?;
+    build_extension(&manifest_dir)?;
+    refresh_cdylib(&manifest_dir, &cdylib)?;
+    setup_python_env()?;
     generate_stubs(&cdylib, &out_dir)?;
     Ok(())
 }
 
-#[cfg(feature = "stub-gen")]
+/// Set up PYTHONHOME environment variable if not already set.
+/// This is needed for PyO3 embedded Python to find the standard library,
+/// especially when using virtual environments created by uv.
+fn setup_python_env() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var_os("PYTHONHOME").is_some() {
+        return Ok(());
+    }
+
+    // Query Python for its base_prefix (the actual Python installation, not venv)
+    let output = Command::new("python3")
+        .args(["-c", "import sys; print(sys.base_prefix, end='')"])
+        .output()?;
+
+    if !output.status.success() {
+        return Err("Failed to query Python base_prefix".into());
+    }
+
+    let base_prefix = String::from_utf8(output.stdout)?;
+    if !base_prefix.is_empty() {
+        println!("Setting PYTHONHOME={}", base_prefix);
+        std::env::set_var("PYTHONHOME", &base_prefix);
+    }
+
+    Ok(())
+}
+
+fn find_manifest_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    // Look for the bindings/python directory relative to current working directory
+    // or from the tool's location
+    let cwd = std::env::current_dir()?;
+
+    // Check if we're already in bindings/python
+    if cwd.join("pyproject.toml").exists() && cwd.join("py_src").exists() {
+        return Ok(cwd);
+    }
+
+    // Check if bindings/python exists relative to cwd
+    let bindings_python = cwd.join("bindings/python");
+    if bindings_python.join("pyproject.toml").exists() {
+        return Ok(bindings_python);
+    }
+
+    // Try to find it from the executable location
+    if let Ok(exe) = std::env::current_exe() {
+        // Go up from tools/stub-gen/target/... to bindings/python
+        let mut path = exe.as_path();
+        for _ in 0..10 {
+            if let Some(parent) = path.parent() {
+                if parent.join("pyproject.toml").exists() && parent.join("py_src").exists() {
+                    return Ok(parent.to_path_buf());
+                }
+                path = parent;
+            }
+        }
+    }
+
+    Err("Could not find bindings/python directory. Run from the tokenizers root or bindings/python directory.".into())
+}
+
 fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     if !cdylib.is_file() {
         return Err(format!("Failed to locate cdylib at {}", cdylib.display()).into());
@@ -102,12 +156,11 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
-#[cfg(feature = "stub-gen")]
-fn build_extension() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Building and installing extension (release with stub-gen enabled)...");
+fn build_extension(manifest_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Building and installing extension (release)...");
     let status = Command::new("maturin")
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .args(["develop", "--release", "--features", "stub-gen"])
+        .current_dir(manifest_dir)
+        .args(["develop", "--release"])
         .status()?;
 
     if !status.success() {
@@ -117,12 +170,16 @@ fn build_extension() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(feature = "stub-gen")]
-fn refresh_cdylib(cdylib: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let built_cdylib = built_cdylib_path();
+fn refresh_cdylib(manifest_dir: &Path, cdylib: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let built_cdylib = manifest_dir.join(format!(
+        "target/release/{}tokenizers.{}",
+        std::env::consts::DLL_PREFIX,
+        std::env::consts::DLL_EXTENSION
+    ));
+
     if !built_cdylib.is_file() {
         return Err(format!(
-            "Could not find built cdylib at {}. Pass --build or provide --cdylib.",
+            "Could not find built cdylib at {}.",
             built_cdylib.display()
         )
         .into());
@@ -134,31 +191,4 @@ fn refresh_cdylib(cdylib: &Path) -> Result<(), Box<dyn std::error::Error>> {
     );
     std::fs::copy(&built_cdylib, cdylib)?;
     Ok(())
-}
-
-#[cfg(feature = "stub-gen")]
-fn built_cdylib_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
-        "target/release/{}tokenizers.{}",
-        std::env::consts::DLL_PREFIX,
-        std::env::consts::DLL_EXTENSION
-    ))
-}
-
-#[cfg(feature = "stub-gen")]
-fn default_cdylib_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tokenizers.abi3.so")
-}
-
-#[cfg(feature = "stub-gen")]
-fn default_out_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("py_src/tokenizers")
-}
-
-#[cfg(not(feature = "stub-gen"))]
-fn main() {
-    panic!(
-        "The `stub_generation` binary requires the `stub-gen` feature.\n\
-         Run with: cargo run --bin stub_generation --features stub-gen"
-    );
 }

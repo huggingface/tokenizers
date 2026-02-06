@@ -22,7 +22,6 @@ numpy = "0.27"
 ndarray = "0.16"
 itertools = "0.14"
 ahash = { version = "0.8.11", features = ["serde"] }
-pyo3-introspection =  { version ="0.27.2", optional=true}
 pyo3-ffi = "0.27.2"
 
 [dependencies.tokenizers]
@@ -36,4 +35,3 @@ pyo3 = { version = "0.27.2", features = ["auto-initialize"] }
 [features]
 default = ["ext-module"]
 ext-module = ["pyo3/extension-module"]
-stub-gen = ["pyo3-introspection", "pyo3/experimental-inspect"]
