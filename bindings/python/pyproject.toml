@@ -1,5 +1,6 @@
 [project]
 name = "tokenizers"
+license = { file = "LICENSE" }
 requires-python = ">=3.9"
 authors = [
   { name = "Nicolas Patry", email = "patry.nicolas@protonmail.com" },
@@ -22,7 +23,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 keywords = ["NLP", "tokenizer", "BPE", "transformer", "deep learning"]
-dynamic = ["description", "license", "readme", "version"]
+dynamic = ["description", "readme", "version"]
 dependencies = ["huggingface_hub>=0.16.4,<2.0"]
 
 [project.urls]
