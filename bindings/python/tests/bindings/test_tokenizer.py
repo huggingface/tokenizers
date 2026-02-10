@@ -578,7 +578,6 @@ class TestTokenizer:
         multiprocessing_with_parallelism(tokenizer, True)
 
     def test_multithreaded_concurrency(self):
-
         # Thread worker functions
         def encode_batch(batch):
             tokenizer = Tokenizer(BPE())
@@ -605,7 +604,7 @@ class TestTokenizer:
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
         futures = []
-        for (function, argument) in tasks:
+        for function, argument in tasks:
             futures.append(executor.submit(function, argument))
 
         # All tasks should complete successfully
