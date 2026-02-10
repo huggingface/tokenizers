@@ -605,8 +605,8 @@ class TestTokenizer:
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
         futures = []
-        for task in tasks:
-            futures.append(executor.submit(*task))
+        for (function, argument) in tasks:
+            futures.append(executor.submit(function, argument))
 
         # All tasks should complete successfully
         results = [f.result() for f in futures]
