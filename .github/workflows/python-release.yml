@@ -62,8 +62,7 @@ jobs:
               3.11
               3.12
               3.13
-              3.14
-            interpreter: 3.11 3.12 3.13 3.14
+            interpreter: 3.11 3.12 3.13
               # - os: windows
               #   ls: dir
               #   target: aarch64
