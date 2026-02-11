@@ -1211,6 +1211,68 @@ class Tokenizer:
         """
         pass
 
+    @property
+    def role_to_token(self, /) -> dict[str, str] | None:
+        """
+        Get the role to token mapping
+
+        Returns:
+            :obj:`Dict[str, str]` or :obj:`None`: The role to token mapping if set
+        """
+        ...
+    @role_to_token.setter
+    def role_to_token(self, /, role_to_token: dict[str, str] | None) -> None:
+        """Set the role to token mapping"""
+        ...
+    @property
+    def eos_token(self, /) -> str | None:
+        """Get the EOS token string"""
+        ...
+    @eos_token.setter
+    def eos_token(self, /, token: str | None) -> None:
+        """Set the EOS token"""
+        ...
+    @property
+    def eos_token_id(self, /) -> int | None:
+        """Get the EOS token ID"""
+        ...
+    @property
+    def bos_token(self, /) -> str | None:
+        """Get the BOS token string"""
+        ...
+    @bos_token.setter
+    def bos_token(self, /, token: str | None) -> None:
+        """Set the BOS token"""
+        ...
+    @property
+    def bos_token_id(self, /) -> int | None:
+        """Get the BOS token ID"""
+        ...
+    @property
+    def pad_token(self, /) -> str | None:
+        """Get the PAD token string"""
+        ...
+    @pad_token.setter
+    def pad_token(self, /, token: str | None) -> None:
+        """Set the PAD token"""
+        ...
+    @property
+    def pad_token_id(self, /) -> int | None:
+        """Get the PAD token ID"""
+        ...
+    @property
+    def unk_token(self, /) -> str | None:
+        """Get the UNK token string"""
+        ...
+    @unk_token.setter
+    def unk_token(self, /, token: str | None) -> None:
+        """Set the UNK token"""
+        ...
+    @property
+    def unk_token_id(self, /) -> int | None:
+        """Get the UNK token ID"""
+        ...
+
     def enable_padding(
         self, direction="right", pad_id=0, pad_type_id=0, pad_token="[PAD]", length=None, pad_to_multiple_of=None
     ):
