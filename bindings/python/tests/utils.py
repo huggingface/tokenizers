@@ -9,7 +9,7 @@ import requests
 DATA_PATH = os.path.join("tests", "data")
 
 
-def download(url, with_filename=None):
+def download(url, with_filename=None) -> str:
     filename = with_filename if with_filename is not None else url.rsplit("/")[-1]
     filepath = os.path.join(DATA_PATH, filename)
     if not os.path.exists(filepath):
@@ -30,7 +30,7 @@ def data_dir():
 
 
 @pytest.fixture(scope="session")
-def roberta_files(data_dir):
+def roberta_files(data_dir) -> dict[str, str]:
     return {
         "vocab": download("https://s3.amazonaws.com/models.huggingface.co/bert/roberta-base-vocab.json"),
         "merges": download("https://s3.amazonaws.com/models.huggingface.co/bert/roberta-base-merges.txt"),
@@ -38,14 +38,14 @@ def roberta_files(data_dir):
 
 
 @pytest.fixture(scope="session")
-def bert_files(data_dir):
+def bert_files(data_dir) -> dict[str, str]:
     return {
         "vocab": download("https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-vocab.txt"),
     }
 
 
 @pytest.fixture(scope="session")
-def openai_files(data_dir):
+def openai_files(data_dir) -> dict[str, str]:
     return {
         "vocab": download("https://s3.amazonaws.com/models.huggingface.co/bert/openai-gpt-vocab.json"),
         "merges": download("https://s3.amazonaws.com/models.huggingface.co/bert/openai-gpt-merges.txt"),
@@ -53,7 +53,7 @@ def openai_files(data_dir):
 
 
 @pytest.fixture(scope="session")
-def train_files(data_dir):
+def train_files(data_dir) -> dict[str, str]:
     big = download("https://norvig.com/big.txt")
     small = os.path.join(DATA_PATH, "small.txt")
     with open(small, "w") as f:
@@ -69,12 +69,12 @@ def train_files(data_dir):
 
 
 @pytest.fixture(scope="session")
-def albert_base(data_dir):
+def albert_base(data_dir) -> str:
     return download("https://s3.amazonaws.com/models.huggingface.co/bert/albert-base-v1-tokenizer.json")
 
 
 @pytest.fixture(scope="session")
-def doc_wiki_tokenizer(data_dir):
+def doc_wiki_tokenizer(data_dir) -> str:
     return download(
         "https://s3.amazonaws.com/models.huggingface.co/bert/anthony/doc-quicktour/tokenizer.json",
         "tokenizer-wiki.json",
@@ -82,7 +82,7 @@ def doc_wiki_tokenizer(data_dir):
 
 
 @pytest.fixture(scope="session")
-def doc_pipeline_bert_tokenizer(data_dir):
+def doc_pipeline_bert_tokenizer(data_dir) -> str:
     return download(
         "https://s3.amazonaws.com/models.huggingface.co/bert/anthony/doc-pipeline/tokenizer.json",
         "bert-wiki.json",

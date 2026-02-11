@@ -3,6 +3,7 @@ import logging
 import time
 
 from tqdm import tqdm
+from typing import List
 
 from tokenizers import Tokenizer, decoders, pre_tokenizers
 from tokenizers.models import BPE, WordPiece
@@ -84,11 +85,11 @@ else:
     raise Exception(f"Unknown type {args.type}")
 
 
-def tokenize_r():
+def tokenize_r() -> List:
     return tok_r.encode_batch(text)
 
 
-def tokenize_p():
+def tokenize_p() -> List[List[int]]:
     return [tok_p.encode(sentence, add_special_tokens=True) for sentence in tqdm(text)]
 
 

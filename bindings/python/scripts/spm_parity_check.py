@@ -126,7 +126,7 @@ def check_train(args):
     print("Ok our trainer is at least more efficient than the SPM one")
 
 
-def check_diff(spm_diff, tok_diff, sp, tok):
+def check_diff(spm_diff, tok_diff, sp, tok) -> bool:
     if spm_diff == list(reversed(tok_diff)):
         # AAA -> AA+A vs A+AA case.
         return True
@@ -147,7 +147,7 @@ def check_diff(spm_diff, tok_diff, sp, tok):
     return False
 
 
-def check_details(line, spm_ids, tok_ids, sp, tok):
+def check_details(line, spm_ids, tok_ids, sp, tok) -> bool:
     # Encoding can be the same with same result AAA -> A + AA vs AA + A
     # We can check that we use at least exactly the same number of tokens.
     for i, (spm_id, tok_id) in enumerate(zip(spm_ids, tok_ids)):
@@ -206,7 +206,7 @@ def check_details(line, spm_ids, tok_ids, sp, tok):
     return False
 
 
-def check_encode(args):
+def check_encode(args) -> None:
     sp = cast(Any, spm.SentencePieceProcessor())
     sp.Load(args.model_file)
 
