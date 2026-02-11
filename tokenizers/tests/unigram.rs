@@ -65,6 +65,32 @@ fn test_train_unigram_from_file() {
     assert_eq!(model.get_vocab_size(), 719);
 }
 
+#[test]
+fn test_unigram_unk_token() {
+    // Create a simple vocab with <unk> token
+    let vocab = vec![
+        ("<unk>".to_string(), 0.0),
+        ("hello".to_string(), -1.0),
+        ("world".to_string(), -1.5),
+    ];
+    let mut model = Unigram::from(vocab, Some(0), false).unwrap();
+
+    // Test get_unk_id
+    assert_eq!(model.get_unk_id(), Some(0));
+
+    // Test get_unk_token
+    assert_eq!(model.get_unk_token(), Some("<unk>"));
+
+    // Test set_unk_token to an existing token
+    model.set_unk_token("hello").unwrap();
+    assert_eq!(model.get_unk_id(), Some(1));
+    assert_eq!(model.get_unk_token(), Some("hello"));
+
+    // Test set_unk_token to non-existent token (should fail)
+    let result = model.set_unk_token("nonexistent");
+    assert!(result.is_err());
+}
+
 #[cfg(not(debug_assertions))]
 #[test]
 fn test_sample() {

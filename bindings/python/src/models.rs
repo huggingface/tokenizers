@@ -855,13 +855,43 @@ pub struct PyUnigram {}
 #[pymethods]
 impl PyUnigram {
     #[new]
-    #[pyo3(signature = (vocab=None, unk_id=None, byte_fallback=None), text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None)")]
+    #[pyo3(signature = (vocab=None, unk_id=None, byte_fallback=None, unk_token=None), text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None, unk_token=None)")]
     fn new(
         vocab: Option<Vec<(String, f64)>>,
         unk_id: Option<usize>,
         byte_fallback: Option<bool>,
+        unk_token: Option<String>,
     ) -> PyResult<(Self, PyModel)> {
-        match (vocab, unk_id, byte_fallback) {
+        // Check for conflicting parameters
+        if unk_id.is_some() && unk_token.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "Cannot specify both `unk_id` and `unk_token`",
+            ));
+        }
+
+        // Resolve unk_id from unk_token if provided
+        let resolved_unk_id = match (&vocab, &unk_token) {
+            (Some(v), Some(token)) => {
+                let idx = v
+                    .iter()
+                    .position(|(t, _)| t == token)
+                    .ok_or_else(|| {
+                        exceptions::PyValueError::new_err(format!(
+                            "Token '{}' not found in vocabulary",
+                            token
+                        ))
+                    })?;
+                Some(idx)
+            }
+            (None, Some(_)) => {
+                return Err(exceptions::PyValueError::new_err(
+                    "`unk_token` requires `vocab` to be specified",
+                ));
+            }
+            _ => unk_id,
+        };
+
+        match (vocab, resolved_unk_id, byte_fallback) {
             (Some(vocab), unk_id, byte_fallback) => {
                 let model =
                     Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false)).map_err(|e| {
