@@ -34,7 +34,8 @@ use super::utils::*;
     dict,
     module = "tokenizers.pre_tokenizers",
     name = "PreTokenizer",
-    subclass
+    subclass,
+    from_py_object
 )]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(transparent)]

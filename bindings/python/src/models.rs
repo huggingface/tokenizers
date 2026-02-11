@@ -25,7 +25,12 @@ use super::error::{deprecation_warning, ToPyResult};
 /// will contain and manage the learned vocabulary.
 ///
 /// This class cannot be constructed directly. Please use one of the concrete models.
-#[pyclass(module = "tokenizers.models", name = "Model", subclass)]
+#[pyclass(
+    module = "tokenizers.models",
+    name = "Model",
+    subclass,
+    skip_from_py_object
+)]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PyModel {
