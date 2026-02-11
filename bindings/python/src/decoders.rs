@@ -98,7 +98,7 @@ impl PyDecoder {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -581,20 +581,31 @@ impl Decoder for PyDecoderWrapper {
 
 /// Decoders Module
 #[pymodule]
-pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyDecoder>()?;
-    m.add_class::<PyByteLevelDec>()?;
-    m.add_class::<PyReplaceDec>()?;
-    m.add_class::<PyWordPieceDec>()?;
-    m.add_class::<PyByteFallbackDec>()?;
-    m.add_class::<PyFuseDec>()?;
-    m.add_class::<PyStrip>()?;
-    m.add_class::<PyMetaspaceDec>()?;
-    m.add_class::<PyBPEDecoder>()?;
-    m.add_class::<PyCTCDecoder>()?;
-    m.add_class::<PySequenceDecoder>()?;
-    m.add_class::<PyDecodeStream>()?;
-    Ok(())
+pub mod decoders {
+    #[pymodule_export]
+    pub use super::PyBPEDecoder;
+    #[pymodule_export]
+    pub use super::PyByteFallbackDec;
+    #[pymodule_export]
+    pub use super::PyByteLevelDec;
+    #[pymodule_export]
+    pub use super::PyCTCDecoder;
+    #[pymodule_export]
+    pub use super::PyDecodeStream;
+    #[pymodule_export]
+    pub use super::PyDecoder;
+    #[pymodule_export]
+    pub use super::PyFuseDec;
+    #[pymodule_export]
+    pub use super::PyMetaspaceDec;
+    #[pymodule_export]
+    pub use super::PyReplaceDec;
+    #[pymodule_export]
+    pub use super::PySequenceDecoder;
+    #[pymodule_export]
+    pub use super::PyStrip;
+    #[pymodule_export]
+    pub use super::PyWordPieceDec;
 }
 
 /// Class needed for streaming decode
@@ -630,8 +641,10 @@ enum StreamInput {
     Ids(Vec<u32>),
 }
 
-impl FromPyObject<'_> for StreamInput {
-    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for StreamInput {
+    type Error = PyErr;
+
+    fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(id) = obj.extract::<u32>() {
             Ok(StreamInput::Id(id))
         } else if let Ok(ids) = obj.extract::<Vec<u32>>() {
