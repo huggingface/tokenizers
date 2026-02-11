@@ -94,6 +94,26 @@ impl PostProcessor for PyPostProcessor {
         self.processor
             .process_encodings(encodings, add_special_tokens)
     }
+
+    fn process_tokens(
+        &self,
+        tokens: Vec<String>,
+        pair_tokens: Option<Vec<String>>,
+        add_special_tokens: bool,
+    ) -> tk::Result<Vec<String>> {
+        self.processor
+            .process_tokens(tokens, pair_tokens, add_special_tokens)
+    }
+
+    fn process_ids(
+        &self,
+        ids: Vec<u32>,
+        pair_ids: Option<Vec<u32>>,
+        add_special_tokens: bool,
+    ) -> tk::Result<Vec<u32>> {
+        self.processor
+            .process_ids(ids, pair_ids, add_special_tokens)
+    }
 }
 
 #[pymethods]
@@ -163,6 +183,66 @@ impl PyPostProcessor {
         ))
         .into_py()?;
         Ok(final_encoding.into())
+    }
+
+    /// Process a list of tokens (and optionally a pair) and return the processed tokens.
+    ///
+    /// This is a simplified interface that only handles the token strings, without the full
+    /// Encoding information. Useful for step-by-step tokenization.
+    ///
+    /// Args:
+    ///     tokens (:obj:`List[str]`):
+    ///         The main sequence of tokens
+    ///
+    ///     pair (:obj:`List[str]`, `optional`):
+    ///         An optional pair sequence of tokens
+    ///
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to add special tokens
+    ///
+    /// Returns:
+    ///     :obj:`List[str]`: A list of tokens with special tokens added
+    #[pyo3(signature = (tokens, pair = None, add_special_tokens = true))]
+    #[pyo3(text_signature = "(self, tokens, pair=None, add_special_tokens=True)")]
+    fn process_tokens(
+        &self,
+        tokens: Vec<String>,
+        pair: Option<Vec<String>>,
+        add_special_tokens: bool,
+    ) -> PyResult<Vec<String>> {
+        ToPyResult(
+            self.processor
+                .process_tokens(tokens, pair, add_special_tokens),
+        )
+        .into()
+    }
+
+    /// Process a list of token IDs (and optionally a pair) and return the processed IDs.
+    ///
+    /// This is a simplified interface that only handles the token IDs, without the full
+    /// Encoding information. Useful for step-by-step tokenization.
+    ///
+    /// Args:
+    ///     ids (:obj:`List[int]`):
+    ///         The main sequence of token IDs
+    ///
+    ///     pair (:obj:`List[int]`, `optional`):
+    ///         An optional pair sequence of token IDs
+    ///
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to add special tokens
+    ///
+    /// Returns:
+    ///     :obj:`List[int]`: A list of token IDs with special tokens added
+    #[pyo3(signature = (ids, pair = None, add_special_tokens = true))]
+    #[pyo3(text_signature = "(self, ids, pair=None, add_special_tokens=True)")]
+    fn process_ids(
+        &self,
+        ids: Vec<u32>,
+        pair: Option<Vec<u32>>,
+        add_special_tokens: bool,
+    ) -> PyResult<Vec<u32>> {
+        ToPyResult(self.processor.process_ids(ids, pair, add_special_tokens)).into()
     }
 
     fn __repr__(&self) -> PyResult<String> {
@@ -255,6 +335,56 @@ impl PostProcessor for PyPostProcessorTypeWrapper {
                         .process_encodings(encodings, add_special_tokens)?;
                 }
         Ok(encodings)
+            },
+        }
+    }
+
+    fn process_tokens(
+        &self,
+        mut tokens: Vec<String>,
+        mut pair_tokens: Option<Vec<String>>,
+        add_special_tokens: bool,
+    ) -> tk::Result<Vec<String>> {
+        match self {
+            PyPostProcessorTypeWrapper::Single(inner) => inner
+                .read()
+                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
+                .process_tokens(tokens, pair_tokens, add_special_tokens),
+            PyPostProcessorTypeWrapper::Sequence(inner) => {
+                for processor in inner.iter() {
+                    let result = processor
+                        .read()
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
+                        .process_tokens(tokens, pair_tokens, add_special_tokens)?;
+                    tokens = result;
+                    pair_tokens = None;
+                }
+                Ok(tokens)
+            },
+        }
+    }
+
+    fn process_ids(
+        &self,
+        mut ids: Vec<u32>,
+        mut pair_ids: Option<Vec<u32>>,
+        add_special_tokens: bool,
+    ) -> tk::Result<Vec<u32>> {
+        match self {
+            PyPostProcessorTypeWrapper::Single(inner) => inner
+                .read()
+                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
+                .process_ids(ids, pair_ids, add_special_tokens),
+            PyPostProcessorTypeWrapper::Sequence(inner) => {
+                for processor in inner.iter() {
+                    let result = processor
+                        .read()
+                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
+                        .process_ids(ids, pair_ids, add_special_tokens)?;
+                    ids = result;
+                    pair_ids = None;
+                }
+                Ok(ids)
             },
         }
     }

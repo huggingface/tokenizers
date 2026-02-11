@@ -197,6 +197,34 @@ impl PostProcessor for ByteLevel {
         Ok(encodings)
         //<dyn PostProcessor>::default_process(encodings, add_special_tokens)
     }
+
+    fn process_tokens(
+        &self,
+        tokens: Vec<String>,
+        pair_tokens: Option<Vec<String>>,
+        _add_special_tokens: bool,
+    ) -> Result<Vec<String>> {
+        // ByteLevel doesn't add any special tokens, just concatenates
+        let mut result = tokens;
+        if let Some(pair) = pair_tokens {
+            result.extend(pair);
+        }
+        Ok(result)
+    }
+
+    fn process_ids(
+        &self,
+        ids: Vec<u32>,
+        pair_ids: Option<Vec<u32>>,
+        _add_special_tokens: bool,
+    ) -> Result<Vec<u32>> {
+        // ByteLevel doesn't add any special tokens, just concatenates
+        let mut result = ids;
+        if let Some(pair) = pair_ids {
+            result.extend(pair);
+        }
+        Ok(result)
+    }
 }
 
 pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {

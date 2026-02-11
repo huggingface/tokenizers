@@ -17,7 +17,7 @@ use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::pre_tokenizers::PreTokenizerWrapper;
 use tokenizers::processors::bert::BertProcessing;
 use tokenizers::processors::PostProcessorWrapper;
-use tokenizers::{SplitDelimiterBehavior, Tokenizer, TokenizerImpl};
+use tokenizers::{PostProcessor, SplitDelimiterBehavior, Tokenizer, TokenizerImpl};
 
 #[test]
 fn bpe_serde() {
@@ -247,4 +247,50 @@ fn bpe_with_dropout_serde() {
 #[test]
 fn test_deserialize_long_file() {
     let _tokenizer = Tokenizer::from_file("data/albert-base-v1-tokenizer.json").unwrap();
+}
+
+#[test]
+fn test_bert_process_tokens() {
+    let processor = BertProcessing::new(("[SEP]".into(), 102), ("[CLS]".into(), 101));
+    let tokens = vec!["Hello".into(), "world".into()];
+    let result = processor
+        .process_tokens(tokens, None, true)
+        .unwrap();
+    assert_eq!(
+        result,
+        vec!["[CLS]", "Hello", "world", "[SEP]"]
+    );
+
+    // With pair
+    let tokens = vec!["Hello".into()];
+    let pair = Some(vec!["world".into()]);
+    let result = processor.process_tokens(tokens, pair, true).unwrap();
+    assert_eq!(
+        result,
+        vec!["[CLS]", "Hello", "[SEP]", "world", "[SEP]"]
+    );
+
+    // Without special tokens
+    let tokens = vec!["Hello".into(), "world".into()];
+    let result = processor.process_tokens(tokens, None, false).unwrap();
+    assert_eq!(result, vec!["Hello", "world"]);
+}
+
+#[test]
+fn test_bert_process_ids() {
+    let processor = BertProcessing::new(("[SEP]".into(), 102), ("[CLS]".into(), 101));
+    let ids = vec![10, 20];
+    let result = processor.process_ids(ids, None, true).unwrap();
+    assert_eq!(result, vec![101, 10, 20, 102]);
+
+    // With pair
+    let ids = vec![10];
+    let pair = Some(vec![20]);
+    let result = processor.process_ids(ids, pair, true).unwrap();
+    assert_eq!(result, vec![101, 10, 102, 20, 102]);
+
+    // Without special tokens
+    let ids = vec![10, 20];
+    let result = processor.process_ids(ids, None, false).unwrap();
+    assert_eq!(result, vec![10, 20]);
 }
