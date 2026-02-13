@@ -28,7 +28,13 @@ use super::error::ToPyResult;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of
 /// a Decoder will return an instance of this class when instantiated.
-#[pyclass(dict, module = "tokenizers.decoders", name = "Decoder", subclass)]
+#[pyclass(
+    dict,
+    module = "tokenizers.decoders",
+    name = "Decoder",
+    subclass,
+    from_py_object
+)]
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct PyDecoder {
@@ -610,7 +616,7 @@ pub mod decoders {
 
 /// Class needed for streaming decode
 ///
-#[pyclass(module = "tokenizers.decoders", name = "DecodeStream")]
+#[pyclass(module = "tokenizers.decoders", name = "DecodeStream", from_py_object)]
 #[derive(Clone)]
 pub struct PyDecodeStream {
     /// Regular decode option that is kept throughout.

@@ -29,7 +29,8 @@ use tokenizers as tk;
     dict,
     module = "tokenizers.processors",
     name = "PostProcessor",
-    subclass
+    subclass,
+    from_py_object
 )]
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(transparent)]
