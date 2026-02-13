@@ -18,7 +18,7 @@ use tokenizers as tk;
     module = "tokenizers.trainers",
     name = "Trainer",
     subclass,
-    skip_from_py_object
+    from_py_object
 )]
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(transparent)]

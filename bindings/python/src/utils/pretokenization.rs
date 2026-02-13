@@ -264,11 +264,7 @@ impl PyPreTokenizedString {
     }
 }
 
-#[pyclass(
-    module = "tokenizers",
-    name = "PreTokenizedString",
-    skip_from_py_object
-)]
+#[pyclass(module = "tokenizers", name = "PreTokenizedString", from_py_object)]
 #[derive(Clone)]
 pub struct PyPreTokenizedStringRefMut {
     inner: RefMutContainer<PreTokenizedString>,

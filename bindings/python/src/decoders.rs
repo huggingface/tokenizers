@@ -33,7 +33,7 @@ use super::error::ToPyResult;
     module = "tokenizers.decoders",
     name = "Decoder",
     subclass,
-    skip_from_py_object
+    from_py_object
 )]
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(transparent)]
@@ -616,11 +616,7 @@ pub mod decoders {
 
 /// Class needed for streaming decode
 ///
-#[pyclass(
-    module = "tokenizers.decoders",
-    name = "DecodeStream",
-    skip_from_py_object
-)]
+#[pyclass(module = "tokenizers.decoders", name = "DecodeStream", from_py_object)]
 #[derive(Clone)]
 pub struct PyDecodeStream {
     /// Regular decode option that is kept throughout.
