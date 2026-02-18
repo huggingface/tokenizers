@@ -29,7 +29,7 @@ path = "../../tokenizers"
 
 [dev-dependencies]
 tempfile = "3.10"
-pyo3 = { version = "0.28.0", features = ["auto-initialize"] }
+pyo3 = { version = "0.28.2", features = ["auto-initialize"] }
 
 
 [features]
