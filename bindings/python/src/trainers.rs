@@ -14,7 +14,12 @@ use tokenizers as tk;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Trainer will return an instance of this class when instantiated.
-#[pyclass(module = "tokenizers.trainers", name = "Trainer", subclass)]
+#[pyclass(
+    module = "tokenizers.trainers",
+    name = "Trainer",
+    subclass,
+    from_py_object
+)]
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct PyTrainer {
