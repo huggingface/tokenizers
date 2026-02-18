@@ -639,8 +639,15 @@ impl PyTokenizer {
 
         // Check if attr ends with "_id" and handle token ID lookup
         if let Some(role) = attr.strip_suffix("_id") {
-            if let Some(id) = self.tokenizer.get_id_for_role(role) {
-                return Ok(id.into_pyobject(py)?.into_any().unbind());
+            // Only handle if the role ends with "_token"
+            if role.ends_with("_token") {
+                if let Some(id) = self.tokenizer.get_id_for_role(role) {
+                    return Ok(id.into_pyobject(py)?.into_any().unbind());
+                }
+                // If role_to_token exists, return None for missing roles
+                if self.tokenizer.get_role_to_token().is_some() {
+                    return Ok(py.None().into_pyobject(py)?.into_any().unbind());
+                }
             }
         }
 
@@ -649,9 +656,84 @@ impl PyTokenizer {
             return Ok(PyString::new(py, v).into_any().unbind());
         }
 
+        // If the role_to_token map exists and attr ends with _token, return None
+        // This handles the case where a role was removed (set to None)
+        if attr.ends_with("_token") && self.tokenizer.get_role_to_token().is_some() {
+            return Ok(py.None().into_pyobject(py)?.into_any().unbind());
+        }
+
         Err(exceptions::PyAttributeError::new_err(format!(
             "'{type_name}' object has no attribute '{attr}'",
             type_name = "Tokenizer"
+        )))
+    }
+
+    fn __setattr__(&mut self, attr: &str, value: Bound<'_, PyAny>) -> PyResult<()> {
+        // Handle known settable attributes first
+        match attr {
+            "model" => {
+                let model: PyRef<PyModel> = value.extract()?;
+                self.tokenizer.with_model(model.clone());
+                return Ok(());
+            }
+            "normalizer" => {
+                let normalizer: Option<PyRef<PyNormalizer>> = value.extract()?;
+                self.tokenizer
+                    .with_normalizer(normalizer.map(|n| n.clone()));
+                return Ok(());
+            }
+            "pre_tokenizer" => {
+                let pretok: Option<PyRef<PyPreTokenizer>> = value.extract()?;
+                self.tokenizer
+                    .with_pre_tokenizer(pretok.map(|p| p.clone()));
+                return Ok(());
+            }
+            "post_processor" => {
+                let processor: Option<PyRef<PyPostProcessor>> = value.extract()?;
+                self.tokenizer
+                    .with_post_processor(processor.map(|p| p.clone()));
+                return Ok(());
+            }
+            "decoder" => {
+                let decoder: Option<PyRef<PyDecoder>> = value.extract()?;
+                self.tokenizer.with_decoder(decoder.map(|d| d.clone()));
+                return Ok(());
+            }
+            "encode_special_tokens" => {
+                let val: bool = value.extract()?;
+                self.tokenizer.set_encode_special_tokens(val);
+                return Ok(());
+            }
+            "role_to_token" => {
+                let role_to_token: Option<HashMap<String, String>> = value.extract()?;
+                self.tokenizer.with_role_to_token(role_to_token);
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        // Handle setting role tokens like tokenizer.eos_token = "..."
+        // Only handle attributes ending with "_token"
+        if attr.ends_with("_token") {
+            // Initialize role_to_token if needed
+            if self.tokenizer.get_role_to_token().is_none() {
+                self.tokenizer.with_role_to_token(Some(HashMap::new()));
+            }
+
+            if let Some(map) = self.tokenizer.get_role_to_token_mut() {
+                if value.is_none() {
+                    map.remove(attr);
+                } else {
+                    let token: String = value.extract()?;
+                    map.insert(attr.to_string(), token);
+                }
+            }
+            return Ok(());
+        }
+
+        // For other attributes, raise an error
+        Err(exceptions::PyAttributeError::new_err(format!(
+            "cannot set '{attr}' attribute of 'Tokenizer' object"
         )))
     }
 
