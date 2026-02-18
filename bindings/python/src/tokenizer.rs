@@ -498,6 +498,19 @@ impl PyTokenizer {
         PyTokenizer::new(TokenizerImpl::new(model))
     }
 
+    fn __getattr__(self_: PyRef<'_, Self>, py: Python<'_>, attr: &str) -> PyResult<Py<PyAny>> {
+        // Allow user to do tokenizer.eos_token / tokenizer.eos_token_id using the `role_to_token`.
+        // __getattr__ is only called when normal attribute lookup fails, so we just need to
+        // check for role tokens and raise AttributeError if not found.
+        if let Some(v) = self_.tokenizer.get_token_for_role(attr) {
+            return Ok(PyString::new(py, v).into_any().unbind());
+        }
+        Err(exceptions::PyAttributeError::new_err(format!(
+            "'{type_name}' object has no attribute '{attr}'",
+            type_name = "Tokenizer"
+        )))
+    }
+
     /// Helper method to set a token for a given role
     #[allow(dead_code)]
     fn set_token_for_role(&mut self, role: &str, token: Option<String>) {
