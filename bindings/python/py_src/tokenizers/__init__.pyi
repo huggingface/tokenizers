@@ -1195,6 +1195,24 @@ class Tokenizer:
     def pre_tokenizer(self, /, pretok: tokenizers.pre_tokenizers.PreTokenizer | None) -> None:
         """The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer"""
         ...
+    @property
+    def role_to_token(self, /) -> typing.Any:
+        """
+        Get the role to token mapping
+
+        Returns:
+            :obj:`Dict[str, str]` or :obj:`None`: The role to token mapping if set
+        """
+        ...
+    @role_to_token.setter
+    def role_to_token(self, /, role_to_token: typing.Any | None) -> None:
+        """
+        Get the role to token mapping
+
+        Returns:
+            :obj:`Dict[str, str]` or :obj:`None`: The role to token mapping if set
+        """
+        ...
     def save(self, /, path: str, pretty: bool = True) -> None:
         """
         Save the :class:`~tokenizers.Tokenizer` to the file at the given path.

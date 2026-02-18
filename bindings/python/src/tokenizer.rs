@@ -499,6 +499,7 @@ impl PyTokenizer {
     }
 
     /// Helper method to set a token for a given role
+    #[allow(dead_code)]
     fn set_token_for_role(&mut self, role: &str, token: Option<String>) {
         match token {
             Some(t) => {
@@ -1863,102 +1864,6 @@ impl PyTokenizer {
     #[setter]
     fn set_role_to_token(&mut self, role_to_token: Option<HashMap<String, String>>) {
         self.tokenizer.with_role_to_token(role_to_token);
-    }
-
-    /// Get the EOS token string
-    ///
-    /// Returns:
-    ///     :obj:`str` or :obj:`None`: The EOS token string if set
-    #[getter]
-    fn get_eos_token(&self) -> Option<String> {
-        self.tokenizer.get_token_for_role("eos_token").cloned()
-    }
-
-    /// Set the EOS token
-    #[setter]
-    fn set_eos_token(&mut self, token: Option<String>) {
-        self.set_token_for_role("eos_token", token);
-    }
-
-    /// Get the EOS token ID
-    ///
-    /// Returns:
-    ///     :obj:`int` or :obj:`None`: The EOS token ID if set
-    #[getter]
-    fn get_eos_token_id(&self) -> Option<u32> {
-        self.tokenizer.get_id_for_role("eos_token")
-    }
-
-    /// Get the BOS token string
-    ///
-    /// Returns:
-    ///     :obj:`str` or :obj:`None`: The BOS token string if set
-    #[getter]
-    fn get_bos_token(&self) -> Option<String> {
-        self.tokenizer.get_token_for_role("bos_token").cloned()
-    }
-
-    /// Set the BOS token
-    #[setter]
-    fn set_bos_token(&mut self, token: Option<String>) {
-        self.set_token_for_role("bos_token", token);
-    }
-
-    /// Get the BOS token ID
-    ///
-    /// Returns:
-    ///     :obj:`int` or :obj:`None`: The BOS token ID if set
-    #[getter]
-    fn get_bos_token_id(&self) -> Option<u32> {
-        self.tokenizer.get_id_for_role("bos_token")
-    }
-
-    /// Get the PAD token string
-    ///
-    /// Returns:
-    ///     :obj:`str` or :obj:`None`: The PAD token string if set
-    #[getter]
-    fn get_pad_token(&self) -> Option<String> {
-        self.tokenizer.get_token_for_role("pad_token").cloned()
-    }
-
-    /// Set the PAD token
-    #[setter]
-    fn set_pad_token(&mut self, token: Option<String>) {
-        self.set_token_for_role("pad_token", token);
-    }
-
-    /// Get the PAD token ID
-    ///
-    /// Returns:
-    ///     :obj:`int` or :obj:`None`: The PAD token ID if set
-    #[getter]
-    fn get_pad_token_id(&self) -> Option<u32> {
-        self.tokenizer.get_id_for_role("pad_token")
-    }
-
-    /// Get the UNK token string
-    ///
-    /// Returns:
-    ///     :obj:`str` or :obj:`None`: The UNK token string if set
-    #[getter]
-    fn get_unk_token(&self) -> Option<String> {
-        self.tokenizer.get_token_for_role("unk_token").cloned()
-    }
-
-    /// Set the UNK token
-    #[setter]
-    fn set_unk_token(&mut self, token: Option<String>) {
-        self.set_token_for_role("unk_token", token);
-    }
-
-    /// Get the UNK token ID
-    ///
-    /// Returns:
-    ///     :obj:`int` or :obj:`None`: The UNK token ID if set
-    #[getter]
-    fn get_unk_token_id(&self) -> Option<u32> {
-        self.tokenizer.get_id_for_role("unk_token")
     }
 }
 
