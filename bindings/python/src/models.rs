@@ -90,7 +90,7 @@ where
 #[pymethods]
 impl PyModel {
     #[new]
-    #[pyo3(signature = (), text_signature = "(self)")]
+    #[pyo3(signature = () -> "Model", text_signature = "(self)")]
     fn __new__() -> Self {
         // Instantiate a default empty model. This doesn't really make sense, but we need
         // to be able to instantiate an empty model for pickle capabilities.
@@ -116,7 +116,7 @@ impl PyModel {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -178,7 +178,7 @@ impl PyModel {
     ///
     /// Returns:
     ///     :obj:`List[str]`: The list of saved files
-    #[pyo3(signature = (folder, prefix=None, name=None), text_signature = "(self, folder, prefix)")]
+    #[pyo3(signature = (folder, prefix=None, name=None) -> "list[str]", text_signature = "(self, folder, prefix)")]
     fn save<'a>(
         &self,
         py: Python<'_>,
@@ -506,7 +506,7 @@ impl PyBPE {
     /// Returns:
     ///     :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
     #[classmethod]
-    #[pyo3(signature = (vocab, merges, **kwargs))]
+    #[pyo3(signature = (vocab, merges, **kwargs) -> "BPE")]
     #[pyo3(text_signature = "(vocab, merges, **kwargs)")]
     fn from_file(
         _cls: &Bound<'_, PyType>,
@@ -531,7 +531,7 @@ impl PyBPE {
     }
 
     /// Clears the internal cache
-    #[pyo3(signature = ())]
+    #[pyo3(signature = () -> "None")]
     #[pyo3(text_signature = "(self)")]
     fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
         let super_ = self_.as_ref();
@@ -543,7 +543,7 @@ impl PyBPE {
     }
 
     /// Resize the internal cache
-    #[pyo3(signature = (capacity))]
+    #[pyo3(signature = (capacity) -> "None")]
     #[pyo3(text_signature = "(self, capacity)")]
     fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
         let super_ = self_.as_ref();
@@ -705,7 +705,7 @@ impl PyWordPiece {
     /// Returns:
     ///     :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
     #[classmethod]
-    #[pyo3(signature = (vocab, **kwargs))]
+    #[pyo3(signature = (vocab, **kwargs) -> "WordPiece")]
     #[pyo3(text_signature = "(vocab, **kwargs)")]
     fn from_file(
         _cls: &Bound<'_, PyType>,
@@ -825,7 +825,7 @@ impl PyWordLevel {
     /// Returns:
     ///     :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
     #[classmethod]
-    #[pyo3(signature = (vocab, unk_token = None))]
+    #[pyo3(signature = (vocab, unk_token = None)-> "WordLevel")]
     #[pyo3(text_signature = "(vocab, unk_token=None)")]
     fn from_file(
         _cls: &Bound<'_, PyType>,
@@ -879,7 +879,7 @@ impl PyUnigram {
     }
 
     /// Clears the internal cache
-    #[pyo3(signature = ())]
+    #[pyo3(signature = () -> "None")]
     #[pyo3(text_signature = "(self)")]
     fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
         let super_ = self_.as_ref();
@@ -891,7 +891,7 @@ impl PyUnigram {
     }
 
     /// Resize the internal cache
-    #[pyo3(signature = (capacity))]
+    #[pyo3(signature = (capacity) -> "None")]
     #[pyo3(text_signature = "(self, capacity)")]
     fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
         let super_ = self_.as_ref();
@@ -905,13 +905,17 @@ impl PyUnigram {
 
 /// Models Module
 #[pymodule]
-pub fn models(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyModel>()?;
-    m.add_class::<PyBPE>()?;
-    m.add_class::<PyWordPiece>()?;
-    m.add_class::<PyWordLevel>()?;
-    m.add_class::<PyUnigram>()?;
-    Ok(())
+pub mod models {
+    #[pymodule_export]
+    pub use super::PyBPE;
+    #[pymodule_export]
+    pub use super::PyModel;
+    #[pymodule_export]
+    pub use super::PyUnigram;
+    #[pymodule_export]
+    pub use super::PyWordLevel;
+    #[pymodule_export]
+    pub use super::PyWordPiece;
 }
 
 #[cfg(test)]

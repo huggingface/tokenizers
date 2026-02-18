@@ -142,7 +142,7 @@ impl PyPreTokenizer {
                 self.pretok = unpickled;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -954,21 +954,33 @@ impl PreTokenizer for PyPreTokenizerWrapper {
 
 /// PreTokenizers Module
 #[pymodule]
-pub fn pre_tokenizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyPreTokenizer>()?;
-    m.add_class::<PyByteLevel>()?;
-    m.add_class::<PyWhitespace>()?;
-    m.add_class::<PyWhitespaceSplit>()?;
-    m.add_class::<PySplit>()?;
-    m.add_class::<PyBertPreTokenizer>()?;
-    m.add_class::<PyMetaspace>()?;
-    m.add_class::<PyCharDelimiterSplit>()?;
-    m.add_class::<PyPunctuation>()?;
-    m.add_class::<PySequence>()?;
-    m.add_class::<PyDigits>()?;
-    m.add_class::<PyUnicodeScripts>()?;
-    m.add_class::<PyFixedLength>()?;
-    Ok(())
+pub mod pre_tokenizers {
+    #[pymodule_export]
+    pub use super::PyBertPreTokenizer;
+    #[pymodule_export]
+    pub use super::PyByteLevel;
+    #[pymodule_export]
+    pub use super::PyCharDelimiterSplit;
+    #[pymodule_export]
+    pub use super::PyDigits;
+    #[pymodule_export]
+    pub use super::PyFixedLength;
+    #[pymodule_export]
+    pub use super::PyMetaspace;
+    #[pymodule_export]
+    pub use super::PyPreTokenizer;
+    #[pymodule_export]
+    pub use super::PyPunctuation;
+    #[pymodule_export]
+    pub use super::PySequence;
+    #[pymodule_export]
+    pub use super::PySplit;
+    #[pymodule_export]
+    pub use super::PyUnicodeScripts;
+    #[pymodule_export]
+    pub use super::PyWhitespace;
+    #[pymodule_export]
+    pub use super::PyWhitespaceSplit;
 }
 
 #[cfg(test)]

@@ -49,7 +49,7 @@ impl PyEncoding {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -77,7 +77,7 @@ impl PyEncoding {
     /// Returns:
     ///     :class:`~tokenizers.Encoding`: The resulting Encoding
     #[staticmethod]
-    #[pyo3(signature = (encodings, growing_offsets = true))]
+    #[pyo3(signature = (encodings, growing_offsets = true) -> "Encoding")]
     #[pyo3(text_signature = "(encodings, growing_offsets=True)")]
     fn merge(encodings: Vec<PyRef<PyEncoding>>, growing_offsets: bool) -> PyEncoding {
         tk::tokenizer::Encoding::merge(
@@ -385,7 +385,7 @@ impl PyEncoding {
     ///
     ///     pad_token (:obj:`str`, defaults to `[PAD]`):
     ///         The pad token to use
-    #[pyo3(signature = (length, **kwargs))]
+    #[pyo3(signature = (length, **kwargs) -> "None")]
     #[pyo3(
         text_signature = "(self, length, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]')"
     )]
@@ -437,7 +437,7 @@ impl PyEncoding {
     ///
     ///     direction (:obj:`str`, defaults to :obj:`right`):
     ///         Truncate direction
-    #[pyo3(signature = (max_length, stride = 0, direction = "right"))]
+    #[pyo3(signature = (max_length, stride = 0, direction = "right") -> "None")]
     #[pyo3(text_signature = "(self, max_length, stride=0, direction='right')")]
     fn truncate(&mut self, max_length: usize, stride: usize, direction: &str) -> PyResult<()> {
         let tdir = match direction {

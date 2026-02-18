@@ -64,7 +64,7 @@ impl PyTrainer {
                 self.trainer = unpickled;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -321,7 +321,7 @@ impl PyBpeTrainer {
                     "show_progress" => builder = builder.show_progress(val.extract()?),
                     "special_tokens" => {
                         builder = builder.special_tokens(
-                            val.downcast::<PyList>()?
+                            val.cast::<PyList>()?
                                 .into_iter()
                                 .map(|token| {
                                     if let Ok(content) = token.extract::<String>() {
@@ -528,7 +528,7 @@ impl PyWordPieceTrainer {
                     "show_progress" => builder = builder.show_progress(val.extract()?),
                     "special_tokens" => {
                         builder = builder.special_tokens(
-                            val.downcast::<PyList>()?
+                            val.cast::<PyList>()?
                                 .into_iter()
                                 .map(|token| {
                                     if let Ok(content) = token.extract::<String>() {
@@ -678,7 +678,7 @@ impl PyWordLevelTrainer {
                     }
                     "special_tokens" => {
                         builder.special_tokens(
-                            val.downcast::<PyList>()?
+                            val.cast::<PyList>()?
                                 .into_iter()
                                 .map(|token| {
                                     if let Ok(content) = token.extract::<String>() {
@@ -851,7 +851,7 @@ impl PyUnigramTrainer {
                         )
                     }
                     "special_tokens" => builder.special_tokens(
-                        val.downcast::<PyList>()?
+                        val.cast::<PyList>()?
                             .into_iter()
                             .map(|token| {
                                 if let Ok(content) = token.extract::<String>() {
@@ -887,13 +887,17 @@ impl PyUnigramTrainer {
 
 /// Trainers Module
 #[pymodule]
-pub fn trainers(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyTrainer>()?;
-    m.add_class::<PyBpeTrainer>()?;
-    m.add_class::<PyWordPieceTrainer>()?;
-    m.add_class::<PyWordLevelTrainer>()?;
-    m.add_class::<PyUnigramTrainer>()?;
-    Ok(())
+pub mod trainers {
+    #[pymodule_export]
+    pub use super::PyBpeTrainer;
+    #[pymodule_export]
+    pub use super::PyTrainer;
+    #[pymodule_export]
+    pub use super::PyUnigramTrainer;
+    #[pymodule_export]
+    pub use super::PyWordLevelTrainer;
+    #[pymodule_export]
+    pub use super::PyWordPieceTrainer;
 }
 
 #[cfg(test)]

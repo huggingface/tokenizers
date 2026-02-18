@@ -577,6 +577,43 @@ class TestTokenizer:
         multiprocessing_with_parallelism(tokenizer, False)
         multiprocessing_with_parallelism(tokenizer, True)
 
+    def test_multithreaded_concurrency(self):
+        # Thread worker functions
+        def encode_batch(batch):
+            tokenizer = Tokenizer(BPE())
+            return tokenizer.encode_batch(batch)
+
+        def encode_batch_fast(batch):
+            tokenizer = Tokenizer(BPE())
+            return tokenizer.encode_batch_fast(batch)
+
+        # Create some significant workload
+        batches = [
+            ["my name is john " * 50] * 20,
+            ["my name is paul " * 50] * 20,
+            ["my name is ringo " * 50] * 20,
+        ]
+
+        # Many encoding operations to run concurrently
+        tasks = [
+            (encode_batch, batches[0]),
+            (encode_batch_fast, batches[1]),
+            (encode_batch, batches[2]),
+        ] * 10
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+        futures = []
+        for function, argument in tasks:
+            futures.append(executor.submit(function, argument))
+
+        # All tasks should complete successfully
+        results = [f.result() for f in futures]
+
+        # Verify results
+        assert len(results) == 30
+        assert all(len(result) == 20 for result in results)
+
     def test_from_pretrained(self):
         tokenizer = Tokenizer.from_pretrained("bert-base-cased")
         output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
