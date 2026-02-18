@@ -498,19 +498,6 @@ impl PyTokenizer {
         PyTokenizer::new(TokenizerImpl::new(model))
     }
 
-    fn __getattr__(self_: PyRef<'_, Self>, py: Python<'_>, attr: &str) -> PyResult<Py<PyAny>> {
-        // Allow user to do tokenizer.eos_token / tokenizer.eos_token_id using the `role_to_token`.
-        // __getattr__ is only called when normal attribute lookup fails, so we just need to
-        // check for role tokens and raise AttributeError if not found.
-        if let Some(v) = self_.tokenizer.get_token_for_role(attr) {
-            return Ok(PyString::new(py, v).into_any().unbind());
-        }
-        Err(exceptions::PyAttributeError::new_err(format!(
-            "'{type_name}' object has no attribute '{attr}'",
-            type_name = "Tokenizer"
-        )))
-    }
-
     /// Helper method to set a token for a given role
     #[allow(dead_code)]
     fn set_token_for_role(&mut self, role: &str, token: Option<String>) {
@@ -643,6 +630,29 @@ impl PyTokenizer {
     #[pyo3(text_signature = "(self, model)")]
     fn __new__(model: PyRef<PyModel>) -> Self {
         PyTokenizer::from_model(model.clone())
+    }
+
+    fn __getattr__(&self, py: Python<'_>, attr: &str) -> PyResult<Py<PyAny>> {
+        // Allow user to do tokenizer.eos_token / tokenizer.eos_token_id using the `role_to_token`.
+        // __getattr__ is only called when normal attribute lookup fails, so we just need to
+        // check for role tokens and raise AttributeError if not found.
+
+        // Check if attr ends with "_id" and handle token ID lookup
+        if let Some(role) = attr.strip_suffix("_id") {
+            if let Some(id) = self.tokenizer.get_id_for_role(role) {
+                return Ok(id.into_pyobject(py)?.into_any().unbind());
+            }
+        }
+
+        // Check for direct role to token lookup
+        if let Some(v) = self.tokenizer.get_token_for_role(attr) {
+            return Ok(PyString::new(py, v).into_any().unbind());
+        }
+
+        Err(exceptions::PyAttributeError::new_err(format!(
+            "'{type_name}' object has no attribute '{attr}'",
+            type_name = "Tokenizer"
+        )))
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
