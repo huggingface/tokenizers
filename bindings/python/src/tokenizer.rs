@@ -684,8 +684,7 @@ impl PyTokenizer {
             }
             "pre_tokenizer" => {
                 let pretok: Option<PyRef<PyPreTokenizer>> = value.extract()?;
-                self.tokenizer
-                    .with_pre_tokenizer(pretok.map(|p| p.clone()));
+                self.tokenizer.with_pre_tokenizer(pretok.map(|p| p.clone()));
                 return Ok(());
             }
             "post_processor" => {
