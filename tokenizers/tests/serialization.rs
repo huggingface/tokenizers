@@ -285,7 +285,9 @@ fn test_role_to_token_serialization() {
     let de: Tokenizer = serde_json::from_str(&ser).unwrap();
 
     // Verify role_to_token preserved
-    let role_map = de.get_role_to_token().expect("role_to_token should be present");
+    let role_map = de
+        .get_role_to_token()
+        .expect("role_to_token should be present");
     assert_eq!(role_map.get("eos_token"), Some(&"</s>".to_string()));
     assert_eq!(role_map.get("bos_token"), Some(&"<s>".to_string()));
     assert_eq!(role_map.get("pad_token"), Some(&"<pad>".to_string()));
