@@ -42,6 +42,9 @@ jobs:
           - runner: ubuntu-latest
             arch: ppc64le
             target: powerpc64le
+          - runner: ubuntu-latest
+            arch: riscv64
+            target: riscv64gc
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
