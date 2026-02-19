@@ -498,25 +498,6 @@ impl PyTokenizer {
         PyTokenizer::new(TokenizerImpl::new(model))
     }
 
-    /// Helper method to set a token for a given role
-    #[allow(dead_code)]
-    fn set_token_for_role(&mut self, role: &str, token: Option<String>) {
-        match token {
-            Some(t) => {
-                if self.tokenizer.get_role_to_token().is_none() {
-                    self.tokenizer.with_role_to_token(Some(HashMap::new()));
-                }
-                if let Some(map) = self.tokenizer.get_role_to_token_mut() {
-                    map.insert(role.to_string(), t);
-                }
-            }
-            None => {
-                if let Some(map) = self.tokenizer.get_role_to_token_mut() {
-                    map.remove(role);
-                }
-            }
-        }
-    }
 
     // Extract a pretokenized sequence into an owned Vec<String>
     fn extract_pretok_seq(ob: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
@@ -714,17 +695,23 @@ impl PyTokenizer {
         // Handle setting role tokens like tokenizer.eos_token = "..."
         // Only handle attributes ending with "_token"
         if attr.ends_with("_token") {
-            // Initialize role_to_token if needed
-            if self.tokenizer.get_role_to_token().is_none() {
-                self.tokenizer.with_role_to_token(Some(HashMap::new()));
-            }
+            let token_str = value.extract::<Option<String>>()?;
+            match token_str {
+                Some(t) => {
+                    if self.tokenizer.get_role_to_token().is_none() {
+                        self.tokenizer.with_role_to_token(Some(HashMap::new()));
+                    }
+                    if let Some(map) = self.tokenizer.get_role_to_token_mut() {
+                        map.insert(attr.to_string(), t.clone());
+                    }
+                    let token = PyAddedToken::from(&t, Some(true)).get_token();
+                    self.tokenizer.add_tokens(&[token]); // No-op if already exists.
 
-            if let Some(map) = self.tokenizer.get_role_to_token_mut() {
-                if value.is_none() {
-                    map.remove(attr);
-                } else {
-                    let token: String = value.extract()?;
-                    map.insert(attr.to_string(), token);
+                }
+                None => {
+                    if let Some(map) = self.tokenizer.get_role_to_token_mut() {
+                        map.remove(attr);
+                    }
                 }
             }
             return Ok(());
