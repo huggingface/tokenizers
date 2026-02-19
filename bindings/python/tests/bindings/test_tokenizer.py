@@ -802,6 +802,11 @@ class TestTokenizer:
         assert tokenizer.eos_token is None
         assert tokenizer.eos_token_id is None
 
+        tokenizer.eos_token = "[|NEW_EOS_TOKEN|]"
+        assert tokenizer.eos_token == "[|NEW_EOS_TOKEN|]"
+        assert tokenizer.eos_token_id == 5
+        assert "[|NEW_EOS_TOKEN|]" in tokenizer.get_vocab(with_added_tokens=True)
+
     def test_role_to_token_serialization(self):
         import json
 
