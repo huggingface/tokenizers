@@ -312,7 +312,8 @@ impl AddedVocabulary {
             // Finally add the token to the classic set if special
             if !self.special_tokens_set.contains(&token.content) {
                 self.added_tokens.push(token.clone());
-            } else if !token.special { // token was special but it not anymore, should be removed from skipped list!
+            } else if !token.special {
+                // token was special but it not anymore, should be removed from skipped list!
                 self.special_tokens_set.remove(&token.content);
             }
             existing.insert(token.clone());

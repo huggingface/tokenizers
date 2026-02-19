@@ -811,12 +811,12 @@ class TestTokenizer:
         tokenizer.unk_token = None
         assert tokenizer.unk_token is None
         assert tokenizer.unk_token_id is None
-        assert tokenizer.decode([3], False) == "<unk>" # we don't delete tokens.
+        assert tokenizer.decode([3], False) == "<unk>"  # we don't delete tokens.
 
         added = tokenizer.add_tokens([AddedToken("[|NEW_EOS_TOKEN|]", special=False)])
-        assert added # this should have updated the token to no longer be special.
+        assert added  # this should have updated the token to no longer be special.
         print(tokenizer.get_added_tokens_decoder())
-        assert tokenizer.decode([5], True) == "[|NEW_EOS_TOKEN|]" # its no longer special
+        assert tokenizer.decode([5], True) == "[|NEW_EOS_TOKEN|]"  # its no longer special
 
     def test_role_to_token_serialization(self):
         import json
