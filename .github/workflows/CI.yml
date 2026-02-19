@@ -61,43 +61,43 @@ jobs:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
 
-  musllinux:
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      matrix:
-        platform:
-          - runner: ubuntu-22.04
-            target: x86_64
-          - runner: ubuntu-22.04
-            target: x86
-          - runner: ubuntu-22.04
-            target: aarch64
-          # - runner: ubuntu-22.04
-          #   target: armv7
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.x
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist --manifest-path bindings/python/Cargo.toml
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: musllinux_1_2
-      - name: Build free-threaded wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist --manifest-path bindings/python/Cargo.toml -i python3.13t
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: musllinux_1_2
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-musllinux-${{ matrix.platform.target }}
-          path: dist
+  # musllinux:
+  #   runs-on: ${{ matrix.platform.runner }}
+  #   strategy:
+  #     matrix:
+  #       platform:
+  #         - runner: ubuntu-22.04
+  #           target: x86_64
+  #         - runner: ubuntu-22.04
+  #           target: x86
+  #         - runner: ubuntu-22.04
+  #           target: aarch64
+  #         - runner: ubuntu-22.04
+  #           target: armv7
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: 3.x
+  #     - name: Build wheels
+  #       uses: PyO3/maturin-action@v1
+  #       with:
+  #         target: ${{ matrix.platform.target }}
+  #         args: --release --out dist --manifest-path bindings/python/Cargo.toml
+  #         sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  #         manylinux: musllinux_1_2
+  #     - name: Build free-threaded wheels
+  #       uses: PyO3/maturin-action@v1
+  #       with:
+  #         target: ${{ matrix.platform.target }}
+  #         args: --release --out dist --manifest-path bindings/python/Cargo.toml -i python3.13t
+  #         sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  #         manylinux: musllinux_1_2
+  #     - name: Upload wheels
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: wheels-musllinux-${{ matrix.platform.target }}
+  #         path: dist
 
   windows:
     runs-on: ${{ matrix.platform.runner }}
