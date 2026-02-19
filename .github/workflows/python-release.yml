@@ -37,49 +37,38 @@ jobs:
             platform: linux
           - os: windows
             ls: dir
-            interpreter: 3.10 3.11 3.12 3.13 3.14 3.14t
+            interpreter: 3.14 3.14t
           - os: windows
             ls: dir
             target: x86_64
             python-architecture: x64
             python-install: |
-                3.10
-                3.11
-                3.12
-                3.13
                 3.14
                 3.14t
-            interpreter: 3.10 3.11 3.12 3.13 3.14 3.14t
+            interpreter: 3.14 3.14t
           - os: windows
             ls: dir
             target: i686
             python-architecture: x86
             python-install: | 
-                3.10
-                3.11
-                3.12
-                3.13
                 3.14
                 3.14t
-            interpreter: 3.10 3.11 3.12 3.13 3.14 3.14t
+            interpreter: 3.14 3.14t
           - os: windows-11-arm
             ls: dir
             target: aarch64
             python-architecture: arm64
             python-install: |
-              3.11
-              3.12
-              3.13
               3.14
               3.14t
-            interpreter: 3.11 3.12 3.13 3.14 3.14t
+            interpreter: 3.14 3.14t
               # - os: windows
               #   ls: dir
               #   target: aarch64
               #   interpreter: 3.11 3.12
           - os: macos
             target: aarch64
-            interpreter: 3.10 3.11 3.12 3.13 3.14 3.14t
+            interpreter: 3.14 3.14t
           - os: ubuntu
             platform: linux
             target: i686
@@ -90,7 +79,7 @@ jobs:
           - os: ubuntu
             platform: linux
             target: armv7
-            interpreter: 3.10 3.11 3.12 3.13 3.14 3.14t
+            interpreter: 3.14 3.14t
           # musllinux
           - os: ubuntu
             platform: linux
@@ -103,11 +92,11 @@ jobs:
           - os: ubuntu
             platform: linux
             target: ppc64le
-            interpreter: 3.10 3.11 3.12 3.13 3.14 3.14t
+            interpreter: 3.14 3.14t
           - os: ubuntu
             platform: linux
             target: s390x
-            interpreter: 3.10 3.11 3.12 3.13 3.14 3.14t
+            interpreter: 3.14 3.14t
         exclude:
           - os: windows
             target: aarch64
@@ -142,7 +131,7 @@ jobs:
           working-directory: ./bindings/python
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
-          args: --release --out dist --interpreter ${{ matrix.interpreter || '3.10 3.11 3.12 3.13 3.14 3.14t' }} ${{ matrix.extra-build-args }}
+          args: --release --out dist --interpreter ${{ matrix.interpreter || '3.14 3.14t' }} ${{ matrix.extra-build-args }}
           rust-toolchain: stable
           docker-options: -e CI
 
