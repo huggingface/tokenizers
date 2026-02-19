@@ -259,7 +259,7 @@ fn test_role_to_token_serialization() {
     let mut tokenizer = Tokenizer::new(wordpiece);
 
     // Add some tokens to the vocabulary
-    let tokens = vec![
+    let tokens = [
         AddedToken::from("</s>", true),
         AddedToken::from("<s>", true),
         AddedToken::from("<pad>", true),
@@ -302,7 +302,7 @@ fn test_role_to_token_methods() {
     let mut tokenizer = Tokenizer::new(wordpiece);
 
     // Add tokens to vocabulary first
-    let tokens = vec![
+    let tokens = [
         AddedToken::from("</s>", true),
         AddedToken::from("<unk>", true),
     ];
