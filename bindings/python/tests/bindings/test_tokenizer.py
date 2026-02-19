@@ -578,14 +578,15 @@ class TestTokenizer:
         multiprocessing_with_parallelism(tokenizer, True)
 
     def test_multithreaded_concurrency(self):
-        # Thread worker functions
+        # Create a single shared tokenizer instance (thread-safe)
+        shared_tokenizer = Tokenizer(BPE())
+
+        # Thread worker functions that use the SAME tokenizer instance
         def encode_batch(batch):
-            tokenizer = Tokenizer(BPE())
-            return tokenizer.encode_batch(batch)
+            return shared_tokenizer.encode_batch(batch)
 
         def encode_batch_fast(batch):
-            tokenizer = Tokenizer(BPE())
-            return tokenizer.encode_batch_fast(batch)
+            return shared_tokenizer.encode_batch_fast(batch)
 
         # Create some significant workload
         batches = [
@@ -594,7 +595,7 @@ class TestTokenizer:
             ["my name is ringo " * 50] * 20,
         ]
 
-        # Many encoding operations to run concurrently
+        # Many encoding operations to run concurrently using the same tokenizer
         tasks = [
             (encode_batch, batches[0]),
             (encode_batch_fast, batches[1]),
