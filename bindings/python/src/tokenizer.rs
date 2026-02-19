@@ -498,7 +498,6 @@ impl PyTokenizer {
         PyTokenizer::new(TokenizerImpl::new(model))
     }
 
-
     // Extract a pretokenized sequence into an owned Vec<String>
     fn extract_pretok_seq(ob: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
         if let Ok(seq) = ob.extract::<PyArrayUnicode>() {
@@ -706,7 +705,6 @@ impl PyTokenizer {
                     }
                     let token = PyAddedToken::from(&t, Some(true)).get_token();
                     self.tokenizer.add_tokens(&[token]); // No-op if already exists.
-
                 }
                 None => {
                     if let Some(map) = self.tokenizer.get_role_to_token_mut() {
