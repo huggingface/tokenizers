@@ -598,6 +598,7 @@ class Token:
     def value(self, /) -> str: ...
 
 class Tokenizer:
+    def __getattr__(self, /, attr: str) -> typing.Any: ...
     def __getnewargs__(self, /) -> typing.Any: ...
     def __getstate__(self, /) -> typing.Any: ...
     def __new__(cls, /, model: tokenizers.models.Model) -> None:
@@ -605,6 +606,9 @@ class Tokenizer:
         ...
     def __repr__(self, /) -> str:
         """Return repr(self)."""
+        ...
+    def __setattr__(self, /, attr: str, value: typing.Any) -> typing.Any:
+        """Implement setattr(self, name, value)."""
         ...
     def __setstate__(self, /, state: typing.Any) -> typing.Any: ...
     def __str__(self, /) -> str:
@@ -1194,6 +1198,24 @@ class Tokenizer:
     @pre_tokenizer.setter
     def pre_tokenizer(self, /, pretok: tokenizers.pre_tokenizers.PreTokenizer | None) -> None:
         """The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer"""
+        ...
+    @property
+    def role_to_token(self, /) -> typing.Any:
+        """
+        Get the role to token mapping
+
+        Returns:
+            :obj:`Dict[str, str]` or :obj:`None`: The role to token mapping if set
+        """
+        ...
+    @role_to_token.setter
+    def role_to_token(self, /, role_to_token: typing.Any | None) -> None:
+        """
+        Get the role to token mapping
+
+        Returns:
+            :obj:`Dict[str, str]` or :obj:`None`: The role to token mapping if set
+        """
         ...
     def save(self, /, path: str, pretty: bool = True) -> None:
         """

@@ -17,6 +17,7 @@ use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::pre_tokenizers::PreTokenizerWrapper;
 use tokenizers::processors::bert::BertProcessing;
 use tokenizers::processors::PostProcessorWrapper;
+use tokenizers::tokenizer::AddedToken;
 use tokenizers::{SplitDelimiterBehavior, Tokenizer, TokenizerImpl};
 
 #[test]
@@ -247,4 +248,86 @@ fn bpe_with_dropout_serde() {
 #[test]
 fn test_deserialize_long_file() {
     let _tokenizer = Tokenizer::from_file("data/albert-base-v1-tokenizer.json").unwrap();
+}
+
+#[test]
+fn test_role_to_token_serialization() {
+    use std::collections::HashMap;
+
+    // Create tokenizer with role_to_token
+    let wordpiece = WordPiece::default();
+    let mut tokenizer = Tokenizer::new(wordpiece);
+
+    // Add some tokens to the vocabulary
+    let tokens = [
+        AddedToken::from("</s>", true),
+        AddedToken::from("<s>", true),
+        AddedToken::from("<pad>", true),
+    ];
+    tokenizer.add_special_tokens(&tokens[..]);
+
+    // Set up role_to_token mapping
+    let mut role_to_token = HashMap::new();
+    role_to_token.insert("eos_token".to_string(), "</s>".to_string());
+    role_to_token.insert("bos_token".to_string(), "<s>".to_string());
+    role_to_token.insert("pad_token".to_string(), "<pad>".to_string());
+    tokenizer.with_role_to_token(Some(role_to_token));
+
+    // Serialize to JSON
+    let ser = serde_json::to_string(&tokenizer).unwrap();
+
+    // Check that role_to_token is in the JSON
+    assert!(ser.contains("role_to_token"));
+    assert!(ser.contains("eos_token"));
+    assert!(ser.contains("bos_token"));
+
+    // Deserialize back
+    let de: Tokenizer = serde_json::from_str(&ser).unwrap();
+
+    // Verify role_to_token preserved
+    let role_map = de
+        .get_role_to_token()
+        .expect("role_to_token should be present");
+    assert_eq!(role_map.get("eos_token"), Some(&"</s>".to_string()));
+    assert_eq!(role_map.get("bos_token"), Some(&"<s>".to_string()));
+    assert_eq!(role_map.get("pad_token"), Some(&"<pad>".to_string()));
+}
+
+#[test]
+fn test_role_to_token_methods() {
+    use std::collections::HashMap;
+    use tokenizers::tokenizer::AddedToken;
+
+    let wordpiece = WordPiece::default();
+    let mut tokenizer = Tokenizer::new(wordpiece);
+
+    // Add tokens to vocabulary first
+    let tokens = [
+        AddedToken::from("</s>", true),
+        AddedToken::from("<unk>", true),
+    ];
+    tokenizer.add_special_tokens(&tokens[..]);
+
+    // Set up role_to_token mapping
+    let mut role_to_token = HashMap::new();
+    role_to_token.insert("eos_token".to_string(), "</s>".to_string());
+    role_to_token.insert("unk_token".to_string(), "<unk>".to_string());
+    tokenizer.with_role_to_token(Some(role_to_token));
+
+    // Test get_token_for_role
+    assert_eq!(
+        tokenizer.get_token_for_role("eos_token"),
+        Some(&"</s>".to_string())
+    );
+    assert_eq!(
+        tokenizer.get_token_for_role("unk_token"),
+        Some(&"<unk>".to_string())
+    );
+    assert_eq!(tokenizer.get_token_for_role("nonexistent"), None);
+
+    // Test get_id_for_role (looks up the token in vocab)
+    // </s> should be id 0, <unk> should be id 1
+    assert_eq!(tokenizer.get_id_for_role("eos_token"), Some(0));
+    assert_eq!(tokenizer.get_id_for_role("unk_token"), Some(1));
+    assert_eq!(tokenizer.get_id_for_role("nonexistent"), None);
 }
