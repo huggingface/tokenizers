@@ -445,6 +445,7 @@ impl Tokenizer {
         Ok(tokenizer)
     }
     #[cfg(feature = "http")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http")))]
     pub fn from_pretrained<S: AsRef<str>>(
         identifier: S,
         params: Option<crate::utils::from_pretrained::FromPretrainedParameters>,
@@ -1539,6 +1540,7 @@ where
         note = "Users should download the file separately using https://github.com/huggingface/hf-hub instead, which splits concerns of accessing the web, and should use the new cache layout"
     )]
     #[cfg(feature = "http")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http")))]
     /// Instantiate a new Tokenizer from a file hosted on the Hugging Face Hub.
     /// It expects the `identifier` of a model that includes a `tokenizer.json` file.
     pub fn from_pretrained<S: AsRef<str>>(
