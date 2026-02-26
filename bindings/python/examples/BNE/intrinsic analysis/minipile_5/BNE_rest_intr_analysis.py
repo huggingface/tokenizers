@@ -9,7 +9,7 @@ import os
 name = "bne_rest_byteLevel_minipile_5_tokens_"
 
 # Vocab length
-tokens = [2**18] #, 2**17, 2**16, 2**15, 2**14, 2**13]
+tokens = [2**18, 2**17, 2**16, 2**15, 2**14, 2**13]
 
 # Build tokenizer
 models = []
