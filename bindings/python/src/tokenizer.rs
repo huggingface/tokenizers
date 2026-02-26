@@ -482,7 +482,7 @@ type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProc
 ///     model (:class:`~tokenizers.models.Model`):
 ///         The core algorithm that this :obj:`Tokenizer` should be using.
 ///
-#[pyclass(dict, module = "tokenizers", name = "Tokenizer")]
+#[pyclass(dict, module = "tokenizers", name = "Tokenizer", from_py_object)]
 #[derive(Clone, Serialize)]
 #[serde(transparent)]
 pub struct PyTokenizer {

@@ -15,6 +15,9 @@ with a focus on performances and versatility.
 """
 exclude = [ "rust-toolchain", "target/*", "Cargo.lock", "benches/*.txt", "benches/*.json", "data/*" ]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lib]
 name = "tokenizers"
 path = "src/lib.rs"
