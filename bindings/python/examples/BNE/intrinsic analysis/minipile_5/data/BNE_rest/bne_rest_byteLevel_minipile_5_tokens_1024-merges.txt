@@ -1,0 +1,805 @@
+#version: 0.2
+Ġ t h e
+Ġ Ġ Ġ Ġ Ġ
+Ġ a
+i n
+e r
+t i o n
+Ġ t
+r e
+Ġ o f
+e n
+Ġ s
+Ġa n d
+a t
+o n
+o r
+Ġ c
+Ġ w
+i s
+e s
+e d
+a l
+i t
+a n
+Ġ p
+Ġ f
+Ġ b
+o u
+in g
+Ġ in
+â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ
+a r
+Ġ m
+Ġ d
+i c
+l e
+Ġt o
+Ġ h
+a s
+r o
+en t
+Ġt h
+- - - - - - - -
+e t
+Ġ re
+e l
+Ġ n
+o m
+Ġw it h
+s t
+e c
+i l
+a c
+Ġ T h
+Ġ l
+Ġ e
+Ġ Ġ Ġ
+o t
+i g h t
+i d
+i m
+Ġ is
+Ġ g
+Ġ (
+o l
+v e
+a m
+Ġ I
+a tion
+Ġ y ou
+â Ģ
+u s
+l y
+Ġf or
+o w
+Ġ S
+ĠĠĠĠĠ ĠĠĠĠĠ ĠĠĠĠĠ
+Ġth at
+Ġ on
+v er
+u r
+Ġ A
+Ġ C
+u n
+a d
+u t
+Ġs t
+Ġb e
+u l
+Ġ 1
+Ġw h
+a y
+i g
+i f
+c e
+= = = = = = = = = =
+t er
+Ġc on
+o s
+Ġf ro m
+c h
+e m
+Ġa s
+Ġa n
+i r
+o d
+o p
+Ġh a ve
+Ġ $
+Ġp ro
+t h
+Ċ ĠĠĠĠĠ Ġ Ġ
+a b
+u m
+at e
+ou l d
+a g
+Ġ it
+Ġ M
+Ġ v
+r i
+Ġa l
+Ġ "
+Ġ 2
+Ġ P
+re s
+p p
+q u
+Ġc om p
+c t
+a in
+es t
+er e
+Ġe x
+Ġ r
+Ġw as
+is t
+Ġ or
+er s
+Ġ B
+i on
+an t
+o c
+Ġ \
+ec t
+0 0
+Ġa re
+s e
+Ġ =
+Ġ -
+i v
+Ġs u
+it y
+Ġa t
+Ġ F
+es s
+ou n d
+Ġ H
+m ent
+o re
+ou t
+Ġb y
+Ġ D
+il l
+ou r
+Ġd e
+an d
+Ġ W
+ĠTh e
+Ġ T
+Ġwh ic h
+Ġs h
+en d
+Ġn ot
+h er
+i ve
+Ġ R
+k e
+T h e
+* *
+a p
+Ġ L
+ou g h
+Ġ N
+Ġc h
+Ġth is
+e w
+Ċ ĠĠĠ
+or t
+ar t
+âĢ Ļ
+Ġw e
+u d
+Ġ us
+i al
+{ \
+el l
+u re
+Ġb et w e en
+i es
+Ġ G
+Ġ E
+Ċ ĠĠĠĠĠ ĠĠĠĠĠ Ġ
+Ġ un
+at ed
+Ġs e
+Ġh e
+Ġ u p
+y p e
+p l
+Ġ o
+f or m
+in e
+Ġ y e ar
+al l
+Ġ 0
+Ġt r
+Ġ k n ow
+Ġ le
+' s
+o g
+e x t
+Ġb ec a us e
+Ġ *
+g e
+ic al
+Ġd if f er
+n t
+f f
+) .
+Ġc an
+Ġ O
+ac t
+Ġ 3
+u st
+d er
+u e
+am e
+Ġ im p
+om e
+Ġal s o
+i b
+i z
+Ċ Ġ
+Ġre s
+c tion
+as e
+ab le
+l as s
+a re
+ag e
+Ġp at i ent s
+Ġ ot her
+ac k
+Ġs p
+ar d
+Ġ j
+ul t
+Ġa b out
+as t
+u b l ic
+) ;
+Ġ âĢ ľ
+Ġt im e
+o o k
+Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł
+Ġ {
+en ce
+Ġcon t
+_ {
+o st
+ĠI n
+at h
+an s
+Ġ U
+Ġin c l ud
+Ġa d
+i p
+Ġw ere
+Ġp l
+ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â
+Ġ J
+e p
+a v
+= "
+. "
+0 1
+a k
+Ġw or k
+ig n
+Ġal l
+Ġf ol l ow
+Ġ [
+p er
+Ġin t
+Ġp e op le
+Ġ +
+Ġa c c
+Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ
+Ġc om m
+i tion
+en s
+Ġh as
+Ġd o
+ac h
+i re
+id e
+f t
+in d
+ar y
+Ġn e
+ou s
+ic e
+Ġ 4
+Ġm e
+on e
+Ġt w o
+Ġs a id
+Ġa pp
+Ġs y st em
+Ġg r ou p
+Ġb ut
+Ġd is
+res s
+ation s
+d u
+Ġre t ur n
+p t
+r u
+Ġw ill
+in t
+Ġl i ke
+on g
+Ġa r
+p h
+) ,
+- -
+Ġg o
+i le
+Ġ Ġ
+Ġ &
+b er
+Ċ ĉ ĉ
+os e
+Ġ 5
+Ġf ir st
+Ġ <
+an ce
+Ġ if
+Ġ en
+Ġa f ter
+Ġp er
+i a
+e f
+el y
+Ġ out
+Ġp re
+al ly
+ac e
+r a
+an g
+or d
+or y
+Ġon e
+Ġc l
+Ċ ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ
+. . .
+Ċ ĠĠĠĠĠ
+Ġ qu
+Ġh is
+Ġe v
+Ġthe y
+ow n
+Ġ op
+âĢ Ŀ
+a il
+r y
+ĠS t
+Ġs o
+} \
+Ġs ign if ic ant
+Ġd at a
+b j ect
+or s
+/ /
+Ġp art
+Ġm ore
+Â ł
+Ġthe ir
+Ġ K
+Ġin ter
+Ġthe re
+Ġ$ \
+y s
+a ke
+Ġf un ction
+Ġa g
+on d
+ent s
+Ġde v el op
+Ġh ig h
+it e
+ver y
+i el d
+b s
+Ġm et h od
+ĠĠĠ Ġ
+} $
+Ġyou r
+ou nt
+at es
+Ġbe en
+er m
+Ġh ad
+r ight
+re e
+f r ac
+Ġg en er
+Ġ }
+r ic
+Ġan y
+Ġn o
+c l
+on t
+Ġm an
+Ġcon s id er
+Ġth r ough
+Ġ k
+Ġre c
+Ġwh o
+Ġ\ [ [ @
+er v
+Ġas s
+l l
+Ġ '
+is h
+t e
+Ġ V
+Ġw ould
+Ġin c re
+Ġwh en
+Ġ 6
+Ġe ff ect
+I n
+en c
+Ġpro b le m
+g r
+re at
+ol d
+Ġin d iv id u al
+Ġre p
+\ ]
+^ {
+Ġth an
+Ġex p
+Ġo ver
+Ġm y
+Ġde f
+il d
+Ġs c
+-------- -------- --------
+< /
+ro w
+u b
+ri b
+ot h
+Ġ1 9
+Ġit s
+ow e ver
+} }
+' t
+m ath
+in k
+1 0
+le ct
+Ġp os s ib
+e x
+ver s
+Ġv ar i
+Ġp o int
+i e
+Ġ _
+ay s
+g et
+Ġs om et h ing
+tion s
+on s
+h at
+Ġn ew
+as s
+am p le
+Ġof f
+Ġa m
+t r
+Ġs ome
+] { }
+at er
+od e
+i ed
+ing s
+Ġn um ber
+ĠC h
+Ġ Y
+l o
+c om
+1 9
+t t p
+Ġbe f ore
+Ġun der
+Ġp r
+ic k
+Ġa ct
+Ġc ur re nt
+Ġ our
+Ġre l
+Ġv al ue
+Ġg et
+Ġe m pl o y
+Ġd es
+Ġc our t
+Ġ 7
+o v
+re f
+at ive
+le ft
+ar k
+Ġint o
+is s
+Ġst ud y
+u c
+ĠI t
+Ġon ly
+Ġd ec
+i an
+Ġw or l d
+Ġm od el
+Ġm ay
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ
+Ġp h
+am b d a
+n d
+Ġ âĢ
+v i
+] ( #
+Ġ ro
+Ġa b
+a w
+ul ar
+er t
+oc k
+Ġp res ent
+o ve
+Ġs ec
+Ġin v
+e g
+1 2
+Ġm ad e
+Ġpro c ess
+Ġh er
+Ġch ar ac ter
+Ġre g
+Ġad d
+Ġ 8
+Ġle v el
+Ġtr ans
+Ġthe m
+m a
+â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ
+Ċ Ċ
+Ġsu pp ort
+ĠA m er ic
+Ġc o
+Ġan al ys is
+Ġm u ch
+Ġwh at
+e ar
+ĠTh is
+Ġin d
+an c
+i ent
+Ġ im
+Ġh el p
+T h
+as ed
+Ġg r
+Ġsu ch
+Ġfor m
+n e
+ol og
+Ġ2 01
+at ing
+Ġt ec h n
+it t
+Ġc ol
+a pp
+ĠW e
+u p
+Ġd ur ing
+i x
+Ġthe se
+Ġo b t ain
+Ġres p
+el f
+il ity
+Ġ 9
+Ġj ust
+y m
+Ġ1 0
+Ġpro v
+st r
+s p
+ĠĠĠĠĠ ĠĠĠĠĠ
+Ġus e
+o x
+Ġwh ere
+if ic
+s s
+Ġd et
+ĠU n i vers ity
+Ġthe n
+id ent
+t y
+Ġn et w or k
+Ġne ed
+Ġs et
+Ġp ol
+f er
+u tion
+al ph a
+Ġre qu ire
+u g
+Ġc ell s
+Ġc lass
+Ġs m all
+Ġgo ver n ment
+Ġc ould
+it h
+im e
+Ġres ult
+l es
+Ġre m
+Ġag ain st
+Ġc om
+iz e
+Ġs im il ar
+( )
+Ġa c
+[ @
+Ġ y
+1 1
+ĠU n it ed
+" ,
+ion s
+an ge
+Ġsu g g est
+h e
+is e
+al s
+o b
+Ġus ed
+Ġp ers on
+le ment
+Ġcont ro l
+u es
+2 0
+ter n
+Ġsu b
+Ġf e
+u al
+n ing
+Ġb l
+Ġd ire ct
+Ċ ĉ
+Ġin form ation
+Ġsh ow
+Ġs ur
+- >
+Ġf act
+Ġp ot ent ial
+E R
+Ġc or
+a x
+t o
+e v
+Ġf l
+Ġd id
+Ġsh ould
+t ype
+re d
+ro p
+et a
+Ġf ur th er
+Ġat t
+" >
+Ġsp ec
+Ġ end
+Ġre se ar ch
+or m
+ul l
+c ed
+f ig
+Ġd ist
+Ġf am il y
+00 0
+ow er
+ĠH e
+k s
+ec tion
+it s
+Ġst r
+i o
+re n
+in al
+O N
+Ġ est ab l ish
+Ġcon d ition
+# # #
+Ġus ing
+Ġm a j or
+it ies
+Ġa v ail able
+Ġ .
+ic s
+. ,
+1 5
+ru ct
+a us e
+Ġse e
+ic t
+Ġsh e
+I N
+em ent
+Ġs ch o ol
+r it
+Ġs in ce
+ain t if f
+C ate g ory
+Ġm ost
+Ġen er g y
+Ġhe al th
+Ġ er r
+p ort
+o od
+Ġass oc i ated
+) {
+Ġl if e
+Ġb ack
+Ġb us in ess
+) $
+1 3
+math c al
+c ri p tion
+1 6
+Ġw ell
+Ġe m
+Ġp ar am et
+Ġt est
+Ġst at
+Ġcl a im
+Ġ$ $ \
+Ġ i
+du ct
+l i
+Ġ :
+u res
+Ġan ot her
+Ġt reat ment
+Ġh im
+Ġdiffer ent
+_ {\
+ation al
+Ġr ight
+p os
+at ch
+p r
+v en
+Ġg iv en
+Ġ oc c
+in ed
+Ġm on th
+Ġc ase
+Ġe ach
+Ġen v ir on ment
+og r ap h
+ut e
+ar g
+ro m
+al c ul
+Ġpro gr am
+1 4
+Ġcon s
+Ġal re ad y
+Ġdis c us s
+âĢ ī
+ect ed
+at or
+ur n
+l ab el
+Ġw ant
+ical ly
+Ġm ec h an is m
+Ġh ow
+Ġin f
+iz ed
+( \

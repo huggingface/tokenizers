@@ -1,0 +1,7973 @@
+#version: 0.2
+Ġ t h e
+Ġ Ġ Ġ Ġ Ġ
+Ġ a
+i n
+e r
+t i o n
+Ġ t
+r e
+Ġ o f
+e n
+Ġ s
+Ġa n d
+a t
+o n
+o r
+Ġ c
+Ġ w
+i s
+e s
+e d
+a l
+i t
+a n
+Ġ p
+Ġ f
+Ġ b
+o u
+in g
+Ġ in
+â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ
+a r
+Ġ m
+Ġ d
+i c
+l e
+Ġt o
+Ġ h
+a s
+r o
+en t
+Ġt h
+- - - - - - - -
+e t
+Ġ re
+e l
+Ġ n
+o m
+Ġw it h
+s t
+e c
+i l
+a c
+Ġ T h
+Ġ l
+Ġ e
+Ġ Ġ Ġ
+o t
+i g h t
+i d
+i m
+Ġ is
+Ġ g
+Ġ (
+o l
+v e
+a m
+Ġ I
+a tion
+Ġ y ou
+â Ģ
+u s
+l y
+Ġf or
+o w
+Ġ S
+ĠĠĠĠĠ ĠĠĠĠĠ ĠĠĠĠĠ
+Ġth at
+Ġ on
+v er
+u r
+Ġ A
+Ġ C
+u n
+a d
+u t
+Ġs t
+Ġb e
+u l
+Ġ 1
+Ġw h
+a y
+i g
+i f
+c e
+= = = = = = = = = =
+t er
+Ġc on
+o s
+Ġf ro m
+c h
+e m
+Ġa s
+Ġa n
+i r
+o d
+o p
+Ġh a ve
+Ġ $
+Ġp ro
+t h
+Ċ ĠĠĠĠĠ Ġ Ġ
+a b
+u m
+at e
+ou l d
+a g
+Ġ it
+Ġ M
+Ġ v
+r i
+Ġa l
+Ġ "
+Ġ 2
+Ġ P
+re s
+p p
+q u
+Ġc om p
+c t
+a in
+es t
+er e
+Ġe x
+Ġ r
+Ġw as
+is t
+Ġ or
+er s
+Ġ B
+i on
+an t
+o c
+Ġ \
+ec t
+0 0
+Ġa re
+s e
+Ġ =
+Ġ -
+i v
+Ġs u
+it y
+Ġa t
+Ġ F
+es s
+ou n d
+Ġ H
+m ent
+o re
+ou t
+Ġb y
+Ġ D
+il l
+ou r
+Ġd e
+an d
+Ġ W
+ĠTh e
+Ġ T
+Ġwh ic h
+Ġs h
+en d
+Ġn ot
+h er
+i ve
+Ġ R
+k e
+T h e
+* *
+a p
+Ġ L
+ou g h
+Ġ N
+Ġc h
+Ġth is
+e w
+Ċ ĠĠĠ
+or t
+ar t
+âĢ Ļ
+Ġw e
+u d
+Ġ us
+i al
+{ \
+el l
+u re
+Ġb et w e en
+i es
+Ġ G
+Ġ E
+Ċ ĠĠĠĠĠ ĠĠĠĠĠ Ġ
+Ġ un
+at ed
+Ġs e
+Ġh e
+Ġ u p
+y p e
+p l
+Ġ o
+f or m
+in e
+Ġ y e ar
+al l
+Ġ 0
+Ġt r
+Ġ k n ow
+Ġ le
+' s
+o g
+e x t
+Ġb ec a us e
+Ġ *
+g e
+ic al
+Ġd if f er
+n t
+f f
+) .
+Ġc an
+Ġ O
+ac t
+Ġ 3
+u st
+d er
+u e
+am e
+Ġ im p
+om e
+Ġal s o
+i b
+i z
+Ċ Ġ
+Ġre s
+c tion
+as e
+ab le
+l as s
+a re
+ag e
+Ġp at i ent s
+Ġ ot her
+ac k
+Ġs p
+ar d
+Ġ j
+ul t
+Ġa b out
+as t
+u b l ic
+) ;
+Ġ âĢ ľ
+Ġt im e
+o o k
+Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł
+Ġ {
+en ce
+Ġcon t
+_ {
+o st
+ĠI n
+at h
+an s
+Ġ U
+Ġin c l ud
+Ġa d
+i p
+Ġw ere
+Ġp l
+ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â ł Â
+Ġ J
+e p
+a v
+= "
+. "
+0 1
+a k
+Ġw or k
+ig n
+Ġal l
+Ġf ol l ow
+Ġ [
+p er
+Ġin t
+Ġp e op le
+Ġ +
+Ġa c c
+Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ
+Ġc om m
+i tion
+en s
+Ġh as
+Ġd o
+ac h
+i re
+id e
+f t
+in d
+ar y
+Ġn e
+ou s
+ic e
+Ġ 4
+Ġm e
+on e
+Ġt w o
+Ġs a id
+Ġa pp
+Ġs y st em
+Ġg r ou p
+Ġb ut
+Ġd is
+res s
+ation s
+d u
+Ġre t ur n
+p t
+r u
+Ġw ill
+in t
+Ġl i ke
+on g
+Ġa r
+p h
+) ,
+- -
+Ġg o
+i le
+Ġ Ġ
+Ġ &
+b er
+Ċ ĉ ĉ
+os e
+Ġ 5
+Ġf ir st
+Ġ <
+an ce
+Ġ if
+Ġ en
+Ġa f ter
+Ġp er
+i a
+e f
+el y
+Ġ out
+Ġp re
+al ly
+ac e
+r a
+an g
+or d
+or y
+Ġon e
+Ġc l
+Ċ ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ
+. . .
+Ċ ĠĠĠĠĠ
+Ġ qu
+Ġh is
+Ġe v
+Ġthe y
+ow n
+Ġ op
+âĢ Ŀ
+a il
+r y
+ĠS t
+Ġs o
+} \
+Ġs ign if ic ant
+Ġd at a
+b j ect
+or s
+/ /
+Ġp art
+Ġm ore
+Â ł
+Ġthe ir
+Ġ K
+Ġin ter
+Ġthe re
+Ġ$ \
+y s
+a ke
+Ġf un ction
+Ġa g
+on d
+ent s
+Ġde v el op
+Ġh ig h
+it e
+ver y
+i el d
+b s
+Ġm et h od
+ĠĠĠ Ġ
+} $
+Ġyou r
+ou nt
+at es
+Ġbe en
+er m
+Ġh ad
+r ight
+re e
+f r ac
+Ġg en er
+Ġ }
+r ic
+Ġan y
+Ġn o
+c l
+on t
+Ġm an
+Ġcon s id er
+Ġth r ough
+Ġ k
+Ġre c
+Ġwh o
+Ġ\ [ [ @
+er v
+Ġas s
+l l
+Ġ '
+is h
+t e
+Ġ V
+Ġw ould
+Ġin c re
+Ġwh en
+Ġ 6
+Ġe ff ect
+I n
+en c
+Ġpro b le m
+g r
+re at
+ol d
+Ġin d iv id u al
+Ġre p
+\ ]
+^ {
+Ġth an
+Ġex p
+Ġo ver
+Ġm y
+Ġde f
+il d
+Ġs c
+-------- -------- --------
+< /
+ro w
+u b
+ri b
+ot h
+Ġ1 9
+Ġit s
+ow e ver
+} }
+' t
+m ath
+in k
+1 0
+le ct
+Ġp os s ib
+e x
+ver s
+Ġv ar i
+Ġp o int
+i e
+Ġ _
+ay s
+g et
+Ġs om et h ing
+tion s
+on s
+h at
+Ġn ew
+as s
+am p le
+Ġof f
+Ġa m
+t r
+Ġs ome
+] { }
+at er
+od e
+i ed
+ing s
+Ġn um ber
+ĠC h
+Ġ Y
+l o
+c om
+1 9
+t t p
+Ġbe f ore
+Ġun der
+Ġp r
+ic k
+Ġa ct
+Ġc ur re nt
+Ġ our
+Ġre l
+Ġv al ue
+Ġg et
+Ġe m pl o y
+Ġd es
+Ġc our t
+Ġ 7
+o v
+re f
+at ive
+le ft
+ar k
+Ġint o
+is s
+Ġst ud y
+u c
+ĠI t
+Ġon ly
+Ġd ec
+i an
+Ġw or l d
+Ġm od el
+Ġm ay
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ
+Ġp h
+am b d a
+n d
+Ġ âĢ
+v i
+] ( #
+Ġ ro
+Ġa b
+a w
+ul ar
+er t
+oc k
+Ġp res ent
+o ve
+Ġs ec
+Ġin v
+e g
+1 2
+Ġm ad e
+Ġpro c ess
+Ġh er
+Ġch ar ac ter
+Ġre g
+Ġad d
+Ġ 8
+Ġle v el
+Ġtr ans
+Ġthe m
+m a
+â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ
+Ċ Ċ
+Ġsu pp ort
+ĠA m er ic
+Ġc o
+Ġan al ys is
+Ġm u ch
+Ġwh at
+e ar
+ĠTh is
+Ġin d
+an c
+i ent
+Ġ im
+Ġh el p
+T h
+as ed
+Ġg r
+Ġsu ch
+Ġfor m
+n e
+ol og
+Ġ2 01
+at ing
+Ġt ec h n
+it t
+Ġc ol
+a pp
+ĠW e
+u p
+Ġd ur ing
+i x
+Ġthe se
+Ġo b t ain
+Ġres p
+el f
+il ity
+Ġ 9
+Ġj ust
+y m
+Ġ1 0
+Ġpro v
+st r
+s p
+ĠĠĠĠĠ ĠĠĠĠĠ
+Ġus e
+o x
+Ġwh ere
+if ic
+s s
+Ġd et
+ĠU n i vers ity
+Ġthe n
+id ent
+t y
+Ġn et w or k
+Ġne ed
+Ġs et
+Ġp ol
+f er
+u tion
+al ph a
+Ġre qu ire
+u g
+Ġc ell s
+Ġc lass
+Ġs m all
+Ġgo ver n ment
+Ġc ould
+it h
+im e
+Ġres ult
+l es
+Ġre m
+Ġag ain st
+Ġc om
+iz e
+Ġs im il ar
+( )
+Ġa c
+[ @
+Ġ y
+1 1
+ĠU n it ed
+" ,
+ion s
+an ge
+Ġsu g g est
+h e
+is e
+al s
+o b
+Ġus ed
+Ġp ers on
+le ment
+Ġcont ro l
+u es
+2 0
+ter n
+Ġsu b
+Ġf e
+u al
+n ing
+Ġb l
+Ġd ire ct
+Ċ ĉ
+Ġin form ation
+Ġsh ow
+Ġs ur
+- >
+Ġf act
+Ġp ot ent ial
+E R
+Ġc or
+a x
+t o
+e v
+Ġf l
+Ġd id
+Ġsh ould
+t ype
+re d
+ro p
+et a
+Ġf ur th er
+Ġat t
+" >
+Ġsp ec
+Ġ end
+Ġre se ar ch
+or m
+ul l
+c ed
+f ig
+Ġd ist
+Ġf am il y
+00 0
+ow er
+ĠH e
+k s
+ec tion
+it s
+Ġst r
+i o
+re n
+in al
+O N
+Ġ est ab l ish
+Ġcon d ition
+# # #
+Ġus ing
+Ġm a j or
+it ies
+Ġa v ail able
+Ġ .
+ic s
+. ,
+1 5
+ru ct
+a us e
+Ġse e
+ic t
+Ġsh e
+I N
+em ent
+Ġs ch o ol
+r it
+Ġs in ce
+ain t if f
+C ate g ory
+Ġm ost
+Ġen er g y
+Ġhe al th
+Ġ er r
+p ort
+o od
+Ġass oc i ated
+) {
+Ġl if e
+Ġb ack
+Ġb us in ess
+) $
+1 3
+math c al
+c ri p tion
+1 6
+Ġw ell
+Ġe m
+Ġp ar am et
+Ġt est
+Ġst at
+Ġcl a im
+Ġ$ $ \
+Ġ i
+du ct
+l i
+Ġ :
+u res
+Ġan ot her
+Ġt reat ment
+Ġh im
+Ġdiffer ent
+_ {\
+ation al
+Ġr ight
+p os
+at ch
+p r
+v en
+Ġg iv en
+Ġ oc c
+in ed
+Ġm on th
+Ġc ase
+Ġe ach
+Ġen v ir on ment
+og r ap h
+ut e
+ar g
+ro m
+al c ul
+Ġpro gr am
+1 4
+Ġcon s
+Ġal re ad y
+Ġdis c us s
+âĢ ī
+ect ed
+at or
+ur n
+l ab el
+Ġw ant
+ical ly
+Ġm ec h an is m
+Ġh ow
+Ġin f
+iz ed
+( \
+Ġt e
+Ġdo es
+im es
+Ġ ent
+Ġd if f ic ult
+Ġin st
+Ġ[ @
+un d
+Ġsu c c ess
+Ġcon st
+Ġm in
+Ġapp l ic
+o ver
+Ġimp ort ant
+Ġm ake
+Ġa ut h
+Ġ es p ec ial ly
+Ġev id ence
+Ġp os
+el t a
+Ġl im it
+Ġs ame
+e e
+ĠW h
+Ġb r
+are d
+" }
+le t
+re t
+v al
+p ar
+] \] .
+Ġwh et her
+Ġ2 00
+y n
+Ġe very
+] ,
+Ġev en
+u pp
+Ġd i
+en g th
+Ġyear s
+E S
+p ut
+at a
+as es
+Ġf ind
+1 8
+Ġo bs erv
+c ri pt
+Ġt ri
+c ent
+Ġc all
+ant s
+Ġth ose
+a ir
+Ġ x
+Ġl ar ge
+Ġb oth
+c on
+Ġm ed
+s h
+Ġpart ic
+as h
+Ġ |
+Ġw ay
+Ġdes c rib
+Ġb et ter
+y l
+S t
+â Ī Ĵ
+Ġn ow
+Ġs im p
+Ġ1 2
+Ġ very
+Ġd on
+y p
+math b b
+Ġs er
+Ġ @
+) )
+h t m l
+Ġrep res ent
+en se
+in s
+Ġ el
+f ul
+as on
+Ġme as ure
+a ve
+ag es
+at ure
+Ġl ong
+A T
+= = =
+ĠC om
+p ro
+Ġ ke
+Ġc le ar
+Ġex per
+et h
+w ard
+, \
+r m
+ce pt
+Ġf ound
+Ġb u
+. . / . . /
+l ed
+ou n
+5 0
+Ġl oc
+o le
+Ġb el
+} {
+Ġbe ing
+Ġh ere
+Ġqu es tion
+Ġl ook
+Ġpl ay
+ress ion
+o k
+ign ed
+in es
+al e
+ic h
+1 7
+Ġv i ew
+Ġth ink
+Ġp ublic
+Ġc ar
+t ing
+Ġ ec on om
+Ġman y
+Ġ Q
+ment s
+Ġ /
+o id
+Ġv al
+ak ing
+Ģ â Ķ Ģ â Ķ Ģ â Ķ Ģ â Ķ
+v ed
+th e
+if ied
+iv ely
+os p it al
+3 0
+l ine
+s q r t
+o f
+c er
+? "
+Ġc ir c
+Ġg u
+I t
+Ġex t
+ic es
+Ġst ud
+Ġf il
+3 2
+Ġun t il
+' ,
+Ġm ult ip le
+Ġe qu
+Ġh av ing
+2 01
+Ġrep ort
+Ġm em b ers
+Ġ Â
+n er
+an k
+Ġp ri v ate
+Ġ //
+Ġin s
+i k
+Ġl itt le
+Ġcor res p ond
+" :
+Ġs ol
+Ġbe h av i
+m s
+ib le
+b eg in
+Ġor der
+Ġh um an
+vi ew
+Ċ ĊĠĠĠ
+Ġpre vi ous
+ĠF or
+od y
+Ġgo od
+Ġwh ile
+Ġe it her
+ĠĠĠĠĠ ĠĠĠ
+. âĢĿ
+Ġal w ays
+Ġt erm
+d ay
+n ess
+Ġd em on str
+Ġh ig her
+oc um ent
+: :
+n ot
+Ġor g an
+Ġwe e k
+2 5
+m in ist r
+ĠTh es e
+p s
+n g
+s et
+Ġm ater ial
+Ġn ame
+Ġg en
+Ġst art
+W e
+Ġn on
+Ġd own
+u ally
+is ion
+o y
+l d
+t s
+ĠL et
+Ġs erv
+Ġc ount
+: //
+ĠI f
+Ġf r
+Ġrel ations h ip
+Ġre ce iv ed
+A R
+Ġto t al
+ĠâĢ ĵ
+Ġre ad
+E N
+Ġs ing le
+Ġde p
+al ity
+a f
+ĠA l
+Ġst and ard
+our ce
+Ċĉĉ ĉ
+Ġsec ond
+Ġpro j ect
+Ġth ree
+ff ic ient
+Ġh and
+ĠC our t
+Ġch ild ren
+Ġ own
+Ġapp ro ach
+** ** ** ** ** ** ** ** ** ** ** **
+Ġse ver al
+ĠJ o h n
+2 4
+m ed
+Ġunder st and
+Ġwith out
+Ġinv est ig
+b r
+Ġm od
+O R
+^ {\
+an y
+Ġl ine
+N A
+um p
+( -
+am p
+Ġst ate
+S T
+\ [
+Ġs l
+ain ing
+_ _
+Ġprov id
+iz ation
+$ ,
+$ .
+if y
+Ġper i od
+, "
+em ber
+ce p tion
+Ġan t
+ĠA nd
+8 0
+w ay
+ec k
+y st em
+cl ud e
+m an
+Ġ2 0
+a h
+Ġact iv
+olog y
+am pl es
+Ġc re
+r ay
+Ġm et
+at her
+i ous
+ab ility
+enc es
+enc y
+Ġt ar get
+ĠP ro
+or k
+t on
+Ġper form
+( "
+C R
+iv es
+e ad
+ul ation
+Ġp res
+Ġg reat
+ist s
+W hat
+Ġt ype
+at ic
+ĠB ut
+Ġop er
+Ġpro per
+Ġresp on se
+Ġc ert ain
+E x
+Ġc our se
+ĠT r
+Ġs ign
+ĠA s
+Ġr is k
+d d
+a u
+ep end ent
+i qu e
+-------- -- --
+Ġl ast
+4 0
+g er
+n ame
+Ġ **
+is m
+Ġle ad
+Ġis s ue
+C T
+Ġp ur
+I T
+Ġm ust
+ar ch
+Ġp at
+Ġt em per ature
+e b
+S tr ing
+Ġs ay
+Ġof t en
+W h
+Ġc ap
+Ġcont in u
+Ġl aw
+âĢ ľ
+Ġb ec
+ĠTh ere
+Ġ et
+Ġd er iv
+r on
+ar s
+Ġt ake
+it ive
+ain s
+ac tion
+m iss ion
+Ġm at ter
+Ġ1 5
+Ġr un
+f or
+en tion
+2 2
+L et
+s ig ma
+Ġf in
+an n
+Ġcon f
+in ation
+========== ========== ==========
+an e
+Ġm ain
+Ġb re
+ar m
+Ġc a us
+al k
+c es
+Ġw r
+b l
+ro ss
+Ġst ill
+Ġw om en
+am es
+Ġacc ord ing
+Ġb en ef
+Ġdis e ase
+Ġn ec ess ary
+ou se
+3 6
+Ġ est im
+Ġdef end ant
+Ġe ar
+c c ord ing
+a ug h
+u le
+Ġle t
+ag n
+Ġc r
+ĊĠ Ġ
+ec h
+et s
+i er
+Ġe lect
+Ġch ang es
+ad e
+Ġex pl
+Ġc ent
+Ġresult s
+V i ew
+ĠN ew
+w h
+le x
+] .
+Ġev al u
+Ġin c
+A L
+ot s
+Ġth ough
+c i
+Ġn orm al
+Ġm ic ro
+Ġan s w er
+Ġ ident
+3 5
+Ġ z
+s el v es
+2 7
+Ġp ost
+Ġto get her
+Ġst ruct ure
+ĠY ou
+Ġdet erm
+Ġapp ro x im
+a z
+Ġpro b ab ly
+d ef
+( );
+âĢ ĵ
+ĠA n
+Ġp ub l ish
+A N
+0 5
+Ġre f
+Ġd ay
+Ġf ri end
+le ase
+Ġ1 8
+ĠS h
+2 00
+ain ed
+b old s ym b ol
+at ri x
+Ġth ir d
+en er
+Ġfollow ing
+o ol
+il y
+g am ma
+Ġa ff
+b f
+at ely
+Ġs at is f
+Th is
+Ġall ow
+Ġj ud g ment
+Ġ ed
+du ction
+C h
+ou p
+ĠE u rop e
+s on
+Ġl ang u age
+o ot
+h ib it
+4 5
+Ġ1 6
+Ġgo ing
+l and
+âĢ Ķ
+t ext
+s c
+2 6
+o int
+Ġpro te in
+Ġre al
+us ep ack age
+Ġd ru g
+Ġp ri or
+le ction
+Ġ ,
+v ar
+b e
+Ġv i ol
+Ġsur f ace
+Ġwith in
+Ġm ark
+Ġm one y
+) \
+w w w
+p art ial
+Ġc ell
+ur al
+ep s il on
+2 8
+Ġpro t
+Ġs um m
+r al
+Ġd el
+2 3
+} (
+am s
+Ġme an
+Ġinter est
+Ġrec om m end
+i um
+ak es
+Ġf re qu
+ĠC al if or n ia
+I D
+Ġh app en
+Ġc are
+, âĢĿ
+l ess
+Ġre qu est
+ou b le
+Ġb as
+ot e
+oc i
+p or
+ter s
+} ,
+Ġf oc us
+Ġad v
+Ġ X
+Ġf ield
+w e
+Ġadd ition
+Ġin it ial
+ĊĠĠĠ Ġ
+s u
+ã ģ
+F ig
+Ġs oc ial
+os ed
+Ġp ass
+ĠĠĠĠĠ Ġ
+2 9
+el s
+Ġ vers ion
+c o
+Ġresp ect
+Ġar ound
+Ġint e gr
+Ġex ample
+ĠA r
+Ġ1 4
+du ced
+ent ly
+Ġf al se
+ver t
+c ont
+us h
+Ġ oth ers
+os s
+r ing
+Ġp ower
+ĠH owever
+Ġp ar
+3 7
+r h o
+Ġar g
+Ġthe r ap
+S E
+Ġcomm un
+Ġn um b ers
+Ã ©
+Ġar t ic le
+Ġop en
+P ro
+Ġinclud ing
+Ġl ik ely
+ot t
+6 4
+3 8
+Ġre st
+= \
+Ġl ist
+are nt
+b y
+p i
+h ttp
+ĠE x
+re l
+Ġf ut ure
+-- -
+Ġ Z
+ur y
+re en
+' m
+Ġexper i ence
+Ġt ak en
+ĠP h
+re g
+Ġ u
+9 9
+re ad
+} ^{
+Ġl o
+e qu
+Ġto p
+Ġl ow
+Ġ #
+Ġm ill ion
+Ġcon cent r
+Ġb lo od
+Ġre ally
+Ġ\ [
+er n
+Ġ* /
+m in
+Ġtr y
+Ġm ight
+lo b al
+Ġcont r
+Ġan al y
+I C
+ĠN o
+Ġl ess
+Ġmin ut es
+Ġhe ad
+ric t
+Ġ< /
+( '
+3 4
+6 0
+s ec
+) /
+Ġh our s
+ĠIn d
+or th
+C ont
+Ġsu pp
+Ġs it u
+Ġf ew
+m u
+op y
+ĠU n
+Ġb ased
+Ġto o
+e y
+Ġde v ice
+} _
+ang le
+ĠA pp
+Ġs elf
+R E
+3 9
+Ġbel ie ve
+ĠJ ap an
+ro ll
+ect or
+2 1
+e ed
+Ġso ft w are
+Ġrec ord
+et y
+Y ou
+ens ion
+ĠThe y
+I ON
+Ġind ic
+f ore
+^ ,
+. .
+th ing
+Ġch ange
+Ġh al f
+ĠA f ter
+Ġpro duct
+Ġimp ro ve
+Ġim m un
+re m
+ig h
+et ic
+Ġc ust om
+ĠO n
+Ġp op
+is ed
+w id et ild e
+Ġf our
+l u
+or g
+in ft y
+Ġh ist ory
+Ġre t
+Ġa ction
+ri v
+Ġas k ed
+Ġ ess ent ial
+Ġ1 1
+v ent
+i ver
+$ $
+Ġ{ #
+ate g
+Ġ3 0
+Ġch all en
+Ġv is
+ĠS p
+Ġs ym pt om
+\ ! \ ! \ ! \ ! \ ! \ ! \ !
+L E
+Ġf ile
+er y
+č Ċ č
+le g
+Ġle g
+ĠI s
+ĠW hat
+le v
+ĠD ep art ment
+7 0
+Ġcomm on
+Ġp ath
+Ġa ch ie
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ
+Ġpl ace
+Ġf ail
+Ġn ext
+O m eg a
+a ult
+Ġo bject
+ĠCh r ist
+y d ro
+Ċ ĊĠ
+b ox
+Ġh ome
+Ġb est
+s elf
+Ġcl in ical
+ĠA t
+ĠS o
+Ġ ve h ic
+Ġle ft
+Ġp ut
+Ġb o
+Ġcon n
+it ed
+Ġcor re ct
+om et
+d iv
+ac y
+Ġinv ol
+at t
+Ġp ap er
+Ġg row
+Ġpro f ess ion
+} _{
+ad d
+ed er al
+N ame
+ĠC on
+ol l
+en e
+ire d
+7 5
+ome g a
+Ġpartic ular
+Ġab ove
+ap h
+em s
+' re
+ĉ ĉ
+Ġtr ue
+ĠC l
+ph i
+A S
+e al
+math f r ak
+ur re nt
+9 0
+Ġdis c
+Ġe as
+9 5
+ĠĠĠĠĠ ĠĠ
+T o
+Ġre ason
+Ġm o tion
+ific ation
+Ġb i
+C om
+Ġatt em pt
+Ġh el d
+ĠA ll
+Ġle ast
+Ġpossib le
+Ġne ver
+Ġoff ic ial
+iv ing
+v are ps il on
+ĠU S
+right ar row
+Ġpol ic y
+op e
+Ġis s ues
+s um
+Ġcon cer n
+Ġl a
+r or
+: **
+ĠĠĠĠĠ ĠĠĠĠ
+Ġw ater
+ur s
+E D
+uc k
+Ġal m ost
+ĠP l
+R O
+Ġnot h ing
+3 3
+end ing
+ub un t u
+Ġs k
+Ġm ov
+t ild e
+I S
+Ġbe g in
+ra w
+Ġ ide a
+T r
+Ġre fer
+Ġ ! =
+f un ction
+Ġdist rib ution
+Ġpos ition
+ĠF ur th erm ore
+Ġc amp a ign
+it ch
+4 8
+Ġs m
+olog ical
+al igned
+Ġ= =
+c ess
+ar n
+ĠJ an u ary
+Ġd ue
+c d ot
+Ġp ay
+Ġexp ression
+Ġl ight
+}$ $
+} ^
+C on
+Ġapp rop ri ate
+E T
+ar i
+ĠâĢ Ķ
+in a
+ap s
+Ġre qu i res
+Ġtri al
+] ;
+ĠS ou th
+Ġdis pl ay
+at s
+n ew
+Ġd ays
+ĠT H E
+Ġrec og n
+Ġin j
+et er
+Ġst ren g th
+Ġg ive
+I f
+Ġs ize
+ĠT o
+Ġm il it ary
+Ġincre as ing
+Ġ %
+Ġe lement
+A C
+c ol
+Ġc ome
+Ġm om ent
+Ġpre d ict
+Ġd en
+ĠG r
+Ġt yp
+Ġc ost
+i or
+Ġw ord s
+ut h
+Ġ {\
+Ġ2 5
+Ġa ver age
+Ġm on
+Ġexper im ent
+re am
+A s
+Ġloc al
+Ġth ings
+Ġ1 7
+rib ut ed
+Ġf ree
+y t
+is ter
+at ory
+Ġb ig
+Ġman u f act
+Ġn uc le
+cl us ion
+- \
+Ġc ases
+Ġpro m
+anc es
+Ġ- -
+Ġor ig inal
+th ough
+ul es
+ĊĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠ
+Ġe ff ort
+Ġp e
+ff er
+Ġ )
+Ġc ode
+d ata
+ĊĠĠĠĠĠ ĠĠĠĠ
+ĠSt ate
+m itt ed
+4 4
+Ġproper t ies
+Ġph ys ical
+Ġsh own
+g en
+ic ation
+Ġd r
+ri es
+Ġm ole c
+n al
+ĠF r
+ĠSt ates
+Ġel se
+Ġcomp le te
+Ġt um or
+Ġpol it ical
+Ġ1 3
+Ġv ol
+Ġp ress ure
+T ype
+ch em
+I d
+w id th
+as k
+ab les
+Ġte am
+Ġp s y ch
+V al ue
+er c
+Ġprov ide
+Ã ¿ Ã ¿ Ã ¿
+Ġg ot
+it al
+in c
+Ġs us p
+op er
+ap e
+ĠR es
+Ġgener al
+Ġout s ide
+Ġsu per
+6 8
+Ġre pl ac
+end ed
+Ġal g or ith
+" / >
+Ġr and om
+e q
+9 8
+Ġsub st ant ial
+Ġag ain
+Ġcom b
+Ġt urn
+du ce
+Ġg ame
+Ġknow n
+Ġs w
+Ġspec ific
+Ġbu ild
+Ġcall ed
+Ġd ire ction
+er g
+C ON C L U S ION
+Ġr ate
+ru ction
+Ġc oun s el
+ne y
+Ġke ep
+em oc r
+F or
+ym m et
+Ġfe el
+) :
+6 7
+us s
+c le
+Ġsp ace
+Ġr ad i
+Ġse qu ence
+l ambda
+b eta
+B ut
+b ack
+h ip
+0 4
+Ġc ur
+Ġd iv
+op h
+Ġb ro
+m on
+Ġm ax im
+id d le
+id es
+Ġo b vi ous
+p m
+s o
+Ġa ut
+is on
+\ _
+Ġpr im ary
+6 5
+U L
+ay er
+Ġ2 4
+a it
+Ġim med i ately
+ac es
+Ġw on
+9 7
+Ġpl an
+Ġfe at ures
+Ġval ues
+Ġj ur is d ic tion
+{ {\
+Ġab le
+id ed
+b ar
+ib r
+Ġm ass
+os is
+Ġstud ies
+Ġknow led ge
+Ġ >
+Ġme ans
+Ġa bs
+ure d
+at ors
+th er
+it ud e
+Ġwe e ks
+ĠO ct o ber
+ess age
+Ġqu es tions
+ĠS upp ose
+f ile
+> </
+Ġare a
+f l
+Ġne g
+ĠL ic ense
+Ġcont in ue
+00 00
+IN T RO D U CT ION
+th is
+ot her
+_ \
+} )
+Ġop port un ity
+C l
+ĠN ove m ber
+Ġf ull
+Ġm ove
+a ff
+ress ed
+ĠW ash ing ton
+Ġapp ear
+Ġre view
+ĠTh at
+Ġch o
+m od
+ĠĠĠĠĠĠĠĠĠĠ ĠĠ
+ĠS ep t ember
+Ġc rit
+Ġl ater
+Ġ id
+p on
+Ġre ve al ed
+f o
+Ġn at ural
+ĠO b am a
+A P
+im port
+lect ed
+t d
+Ġbe a ut if ul
+Ġwh y
+ĠP res ident
+Ġf av or
+H e
+Ġd ri
+Ġa v oid
+Ġt imes
+A M
+ar ing
+Ġf am il
+Ġs ens
+Ġb ody
+Ġh old
+Ġreport ed
+Ġl i qu id
+s er
+ic i
+A nd
+Ġm em
+g es
+Ġv ide o
+ĠR e
+ore d
+Ġa ge
+Ġd om
+Ġgroup s
+Ġapp l ied
+Ġh ard
+Ġsh ort
+] (
+Ċ ĊĠĠĠĠĠĠĠ
+Ġag re ement
+Ġl ower
+$ \
+um e
+! \ ! \ ! \ ! \ ! \ ! \ ! \
+and s
+ur ing
+Ġs ide
+ir st
+n on um ber
+in ce
+it le
+is ing
+Ġex ist
+Ġacc ess
+3 1
+â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ â ĸ Ķ
+end s
+Ġerr or
+S upp ose
+6 9
+Ġl ot
+Ġ1 00
+im al
+ound s
+um n
+Ġam ount
+Ġf ar
+if t
+Ġt re
+U T
+iv ity
+Ġ= >
+! "
+ĠWh en
+y le
+st it
+Ġd at ab ase
+it or
+ĠF eb ru ary
+> <
+O D
+en n
+O n
+l er
+ind ow
+Ġbe h ind
+Ġrequire d
+c lass
+Ġam ong
+Ġtest im on y
+g o
+^{ -
+ĠCom m it te e
+ĠC ol
+ĠS he
+Ġs ent
+Ġt ext
+Ġwr itt en
+Ġw ar
+Ġstr ong
+Ġd one
+Ġlevel s
+A D
+Ġpr act
+ĠW or ld
+p one
+Ġcomp ared
+Ġterm s
+Ġne ar
+4 7
+Ġl ab
+Ġdid n
+Ġf ac
+R es
+' ve
+Ġcomp on ent
+Ġar t
+I s
+l ing
+t ime
+se qu
+Ġl ink
+% )
+t able
+A G
+l og
+Ġsu re
+Ġal ong
+ĊĠĠĠĠĠ Ġ
+8 8
+Ġsu bject
+Ġke y
+Ġ5 0
+Ġper cent
+Ġsec ur ity
+ĠF l or id a
+Ġf inal
+Ġl it er
+Ġpur p ose
+am m
+ĠC ount y
+u tions
+ã ĥ
+Ġdevelop ment
+ol ution
+Ġactiv ity
+it es
+es e
+ĠA d
+o res
+Ġ$ {\
+------------------------ ------------------------
+ã Ĥ
+ĠC o
+or n
+Ġh owever
+iv al
+b ig
+Ġdes ign
+1 00
+Ġm en
+Ġincre ased
+ĠO r
+Ġc le an
+Ġst ep
+us e
+Ġpro pos ed
+Ġp i ec
+em pl ate
+A n
+8 5
+9 6
+Ġd yn am
+} {\
+Ġman ag
+Ġ â
+d e
+Ġarg um ent
+Ġs al
+Ġch ar
+Ġf und
+er ed
+Ġacc ount
+Ġcont ent
+e op le
+A l
+Ġpartic ip
+Ġs ays
+du c ing
+Ġco ver
+Ġev ent
+or ies
+Ġp ack
+ĠG ener al
+Ġch eck
+Ġre ce
+A r
+id s
+U n
+Ġro le
+Ġen g
+Ġg ir l
+Ġm aking
+Ġcomp l
+Ġp o or
+Ġk ind
+Ġa ir
+Ġwork ing
+Ġc y
+Ġd ens ity
+Ġcomp on ents
+Ġincre ase
+lo ad
+Ġmonth s
+Ġs im
+if f
+Ġa way
+Ġauth or
+ven tion
+un g
+Ġcan cer
+or der
+t est
+Ġbec ome
+Ġcomp ut
+b o
+as ter
+if e
+] \]
+ret urn
+Ġfact ors
+Ġf ore
+Ġde g ree
+Ġf ood
+' ll
+ĠI N
+le y
+Ġqu ant
+Ġinclud e
+Ġcan not
+I M
+av a
+Ġprovid ed
+0 8
+Ġto ld
+Ġr ange
+Ġth ing
+L ist
+ab ly
+Ġus ef ul
+Ġresp ons
+Ġex c
+Ġfin anc ial
+A pp
+Ġp ast
+Ġm ult
+ect s
+Ġ es
+9 4
+ĠR ep
+ke y
+d ate
+Ġne igh b
+ĠS ch
+Ġor ig in
+O T
+Ġl arg er
+i vers
+Ġpre t ty
+Ġ `
+Ġper f ect
+ain t
+v es
+Ġeffect s
+U R
+5 5
+S h
+our ces
+ĠM ed
+} }\
+Ġen c
+ĠJ un e
+i ef
+Ġbl ock
+Ġup on
+Ġt ell
+I G
+Ġ old
+Ġcirc um st ances
+i pp
+Ġobserv ed
+Ġac k n ow led
+Ġdet ail
+Ġen ough
+m l
+Ġse en
+Ġh y per
+Ġpro ce ed
+ĠL e
+ir m
+Ġcon duct
+Ġserv ice
+in ter
+Ġsec tion
+Ġc alcul
+6 6
+ough t
+i j
+C H
+Ġdef in ition
+Ġl og
+Ġdoes n
+ĠâĢ ĺ
+in ary
+Ġreg ard
+ist ic
+Ġcomp an ies
+O M
+Ġproper ty
+Ġtr ad ition
+str ing
+Ġan n
+b u
+ĠA ss
+am ent
+Ġcondition s
+Ġpos itive
+ĠC an ad
+Ġf ix ed
+Ġcomp lex
+k n own
+ĠS c
+Ġ Î
+0 2
+Ġtechn i qu es
+0 7
+ol ic
+Ġop t
+Ġinter p ret
+Ġh ttp
+Ġm iss
+Th ere
+I I
+Ġm or
+" )
+Ġreg ion
+er ing
+Ġdec re
+Ġus er
+IN G
+gr ound
+at ter
+fig ur ation
+o ff
+il es
+. )
+le q
+Ġse par
+Ġw om an
+Ġt ax
+__ __ __ __ __ __ __ __
+] ).
+Ġb ase
+com p
+) *
+Ġc ou pl
+Ġa p
+Ġ( [@
+Ġcount ry
+Ġl ove
+x i
+Ġm us
+ĠHe al th
+ĠĠĠĠĠĠĠĠĠĠ Ġ
+Ġt alk
+ĠA N D
+ĠS ee
+ect ive
+0 9
+7 7
+A t
+ĊĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ
+Ġt iss ue
+Ġp ick
+Ġde ath
+Ġperform ed
+Ġst op
+Ġ ill ust r
+âĢ ¦
+Ġb ook
+Ġr at io
+Ġe p
+d en
+ens ive
+w are
+Ġc ut
+l im
+ĠA pr il
+âĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶ Ģ âĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶ Ģ âĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶ ĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶ ĢâĶĢâĶĢâĶĢâĶ Ģ â Ķ Ģ â Ķ Ģ â Ķ
+ra ft
+Ġfl u
+C ol
+A B
+ap t
+Ġspec ial
+Ġcre ate
+Ġr ather
+N o
+a i
+Ġpro b
+Ġc ult
+se e
+Ġdo ing
+m p
+Ġdef ined
+Ġv ir
+sp an
+Ġpoint s
+Ġdescrib ed
+Ġind ust ry
+Ġcomp let ely
+Ġse ason
+Ġf oot b all
+n bs p
+Ġear ly
+O P
+ĠJ u ly
+Ġop in ion
+Ġph ot
+os c
+um er
+Ġj o
+ver se
+Ġear li er
+ish ed
+ro id
+ĠM ar
+Ġdec l
+Ġed uc ation
+Ġc and id
+Ġen j oy
+ĠW ed n es day
++ \
+pl ic
+ex p
+Ġpat ient
+ri ed
+0 3
+ĠS up rem e
+Ġs af
+Ġcomp any
+ch ed
+Ġn ec ess ar ily
+5 7
+d is
+ĠM ay
+em b
+ĠE ng l ish
+Ġre as ons
+m m
+ire ct
+Ġass ess
+Ġshow ed
+Ġd em
+ĠS ec
+he ad
+cl ud ed
+S o
+r am
+ĠG o og le
+Ġim age
+im ension al
+Ġn ull
+ess ion
+end er
+Ġac ross
+Ġac cept
+Ġre lev ant
+in ing
+Ġm ix
+Ġ q
+G am ma
+I L
+Ġb it
+Ġ( [
+Ġ& &
+ĠS u
+ĠP r
+b it
+m ater ial
+Ġwe ight
+Ġre ach
+O S
+y ear
+Ġobtain ed
+c al
+E r ror
+Ġme et
+ĠC ir c u it
+Ġ$ (
+Ġcont rib
+in o
+ĠAmeric an
+res h
+Ġact ually
+Ġf ive
+8 4
+Ġad j ust
+om es
+ib ility
+Ġex ec ut
+on es
+Ġb ar
+ĠC ent
+Ġwho le
+c y
+et ition
+os ure
+Ġg l
+Ġbel ow
+Ġle ar ning
+Ġv oid
+O L
+Ġconsider ed
+ĠF ig
+og en
+Ġch ang ed
+^ \
+Ġm akes
+Ġvari ous
+er o
+Ġstr ing
+Ġbre ak
+P E
+Ġpro te ins
+Ġw rit ing
+Ġs ource
+Ġshow s
+Ġrel ated
+ach e
+Ġon ce
+Ġ Ċ
+Ġst ates
+00 3
+Ġinter n ational
+ĠB r
+Ġs yn th es
+Ġsp e
+on al
+Ġr a
+Ġthough t
+upp lement ary
+Ġan al ys es
+Ġbe g an
+Ġrespect ively
+Ġinclud ed
+Ġadd ed
+ĠA m
+~ ~ ~
+l a
+Ġbu il t
+n u
+c ir c
+Ġ ver
+Ġde v ices
+4 2
+Ġch ild
+qu e ue b ot
+n a
+U S
+oc al
+Ġd am
+) }
+Ġsur ger y
+Ġc ard
+Ġsol ution
+ĠA ug ust
+Ġocc ur
+"} ).
+ĠJ es us
+ic ro so ft
+Ġw id th
+Ġex am
+) (
+ĠD ist rict
+Ġpr inc ip
+Ġde al
+ĠC ar
+Ġar re st
+Ġmark et
+Ġsignificant ly
+Ġapplic ation
+ĠP at
+val ue
+b t
+Ġpro ced ure
+4 9
+ĠO F
+Ġf ul ly
+Ġfact or
+Ġe y es
+ĠB l
+Ġpro g ress
+C C
+Ġse x
+Ġbe y ond
+EN T
+8 6
+s l
+Ġc oun ter
+e an
+00 1
+Ġsu bs
+ĠO ne
+Ġmain t
+ill ed
+n o
+ĠÂ §
+Ġant i
+8 7
+Ġst ruct
+ĠD ec ember
+ĠA dd
+Ġsign al
+g g
+R ES UL T S
+Ġsystem s
+th eta
+Ġser ies
+/ *
+od es
+ĠM ET H OD S
+Ġto ok
+ĠW ith
+' d
+Ġto ward s
+Ġs ite
+Ġm ar
+Ġwe bs ite
+Ġ ut il
+Ġ ...
+Fig ure
+n et
+tr act
+Ġy et
+Ġcons ist
+P h
+Ġe ver
+Ġpl aintiff
+Ġc ame
+tern al
+ĠM r
+Ġl and
+Ġrel at ively
+Ġro om
+Ġex act ly
+Ġcommun ity
+Ġsp ect
+Ġre d
+t au
+ĠC oun c il
+l ation
+Ġl oss
+c ode
+Ġb ir th
+ul ated
+Ġc ause
+Ġdec ision
+ip s
+Ġc oup le
+Ġad ministr ation
+" );
+math bf
+Ġh ref
+Ġh ouse
+ym b ol
+Ġexper im ents
+o h
+4 6
+' )
+d om
+Ġt em
+re ed
+ĠM ore over
+id er
+Ġdi agn
+Ġadd ress
+Ġse arch
+v ing
+t imes
+Ġh us b and
+op s
+Ġinf lu ence
+ĠB ec ause
+ĠF ace b ook
+ol ve
+T R
+d elta
+E L
+Ġ upp er
+oper ator name
+Ġ2 1
+ĠTh en
+c k
+Ġf el t
+Ġn ight
+D ata
+b ody
+Ġm agn
+8 3
+ĠA ct
+m it
+um b
+Ġp arent s
+r angle
+tr ans
+us ed
+G r
+Ġs ix
+Ġb ound
+ĠD ef end ant
+Ġcirc u it
+Ġph os ph
+Ġcontr act
+Ġany thing
+Ġv ict im
+Ġb ind ing
+s ize
+is es
+Ġ2 7
+9 3
+Ġmethod s
+ic tion
+Ġm ind
+Ġyou ng
+ag ing
+ĠG over n ment
+Ġ( *
+Ġre le ased
+Ġatt ack
+c c
+Ġal leg ed
+Ġv ar
+ig r
+Ġ ens ure
+S S
+Ġserv ices
+r im
+Ġaddition al
+Ġthere fore
+ĠIs ra el
+Ġw ro te
+ĠG od
+iz ing
+a j
+Ġt able
+ro l
+ly ing
+Ġimp lement
+Ġto w n
+Ġb ill
+g ed
+A f ter
+Ġc e le br
+Ġo b
+Ġtr av el
+Ġdiffer ence
+ag ed
+Ġto day
+op t
+erv ice
+}$ ,
+Ġres ist ance
+Ġent ire
+ĠTh us
+an ch
+Ġother w ise
+Ġp ers
+ĠÂ ±
+Ġtry ing
+Ġth us
+ĠB e
+S p
+Ġcl ose
+Ġp or tion
+ĠA f ric
+Ã ³ n
+Ġqu ick ly
+Ġneed ed
+Ġh yp oth es
+0 6
+Ġm ach ine
+Ġl ength
+ac tions
+8 9
+Ġcomp ar ison
+Ġal ge b ra
+^ *
+m er
+par am
+u ff
+Ġsimp le
+re w
+Ġc ross
+at us
+ĠRes ear ch
+w it ter
+Ġv ia
+ĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠ
+! [
+Ġint ro
+D E
+Ġm ot
+U N
+Ġ ir
+def ine
+Ġm atch
+ol der
+Ġgen e
+ĠIn c
+Ġp a id
+Ġrem ov ed
+pos ition
+Ġpat tern
+Ġ( -
+Ġcont act
+d o
+p re
+al es
+Ġneed s
+i ents
+}$ .
+al se
+ĊĊ Ċ
+ĠC ity
+itt ing
+ĠIn tern ational
+Ġb ott om
+i ke
+In d ex
+Ġf un
+il ities
+Ġs omet imes
+ĠĠĠĠĠĠĠĠĠĠ ĠĠĠ
+Ġ( \[
+b ut
+| \
+K ey
+Ġ ^
+Ġqu ality
+as c
+I m
+Ġinvol ved
+Ġcap ac ity
+Ġm ut
+Ġd ig
+4 1
+f ace
+Ġse em
+Ġin it i
+fer ence
+at ur
+Ġstud ents
+Ġan g
+ĠA ust ral
+Ġpart y
+ĠM c
+Ġcharacter ist ics
+-- -- --
+9 2
+], [@
+S et
+ĠB o ard
+ĠC ont
+Ġmodel s
+ib er
+] )
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ
+v ir on ment
+4 3
+Ġj ob
+5 6
+math rm
+st ruct
+Ġw it ness
+ĠM y
+f ield
+Ġpop ulation
+b ased
+Ġp ain
+v ec
+Ġperform ance
+Ġw ent
+Ġf ace
+Ġ2 6
+m y
+Ġf ig ure
+om or ph
+un ch
+p tion
+Ġget ting
+Ġrec ent
+Ġqu e
+Ġh app
+Ġexp ected
+Ġfl ow
+t i
+ĠS e
+Ġgrow th
+Ġ\ \
+Ġ4 0
+Ġch ann el
+I R
+ĠE n
+I V
+id ence
+Ġind ependent
+Ġinf l amm
+Ġlook ing
+Ð ¾ Ð
+iv ed
+r c
+Ġpol ice
+Ġcor rel
+Ġfunction s
+ĠIn ter est
+Ġal co h ol
+Ġw in
+ĠM in
+Ġproblem s
+Ġright s
+\] )
+9 1
+im il ar
+Ġf lo
+\ \
+Ġcom es
+ent ial
+d ev
+Ġmed ia
+er ve
+Ġpro f
+Ġc red it
+* ,
+Ġp an
+O ver r ide
+Ġexp ect
+Ġexper i enc ed
+E M
+ĠN UL L
+Ġd est ro y
+b ib
+eth od
+v el
+Ġ ur
+ĠM ich a el
+Ġpl ac ed
+Ġc ry st
+Ġc ity
+Ġ2 8
+m iss
+ĠN ot
+Ġb ri ef
+ĠD ev el op ment
+ĠB y
+Ġm ys elf
+med i ate
+Ġse ems
+T hat
+Ġd ail y
+Ġt ou ch
+Ġto ol
+Wh en
+p ath
+ĠC D
+Ġpro duction
+Ġin put
+Ġc iv il
+Ġ2 2
+C L
+ic on
+R ef er
+Ġm i R
+ac ter
+c ome
+an ks
+p le
+Ġst ory
+l ist
+i ence
+Ġprovid es
+ous ly
+Ġ$ $
+D elta
+Ġme as ures
+on y
+Ġhe art
+Ġn am ed
+Ġal tern ative
+st ate
+Ġc al
+Ġh ost
+Ġch em
+Ġemploy e es
+H ow
+Ġconf l ict
+Ġinst ead
+S im pl ify
+and ing
+T able
+Ġoff ic er
+Ġpre c
+Ġt aking
+Ġsimp ly
+anc ed
+om a
+ps i
+O bject
+Â ±
+er r
+W ith
+G et
+j ect
+ĊĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠĠ
+Ġstr ateg y
+ĠTr ump
+Ġsur v ival
+k ing
+Ġle arn
+Ġex erc ise
+Ġbl ack
+Ġs le ep
+d es
+Ġthe ory
+M an ag er
+d s
+it ing
+ĠR o
+g ing
+** ]{} ,
+Ġmin im um
+ĠD o
+Ġimp act
+P S
+in clude
+um ents
+ind uc ed
+E C
+F L
+Ġimp ort
+n orm al
+Ġev ents
+Ġco ord in
+Ġspec if ically
+" ;
+Ġsome one
+Ġh und red
+Ġr ap id
+\ *
+Ġt w
+Ġstart ed
+A ll
+ast ro ent er ology
+Ġm ention ed
+Ġpl at form
+Ġp age
+B y
+p o
+w o
+row n
+f r
+Ġcol or
+Ġf all
+p oint
+ĠN ational
+h y d r
+c m
+Ġst ra ight
+Ġw or
+ent al
+l ight
+w ith
+Ġph en om en
+l in
+7 4
+Ġval id
+Ġ2 3
+Ġlo ad
+Ġpre p ared
+ĠC or
+Ġs amples
+ron ic
+in it
+Ġconf ir med
+Ġdes p ite
+http s
+d own
+Ġw atch
+ar r
+Ġcol l
+u k
+ol es
+Ġj ud
+um ber
+em ents
+Ġbas is
+Ġproduct s
+A dd
+E n
+7 6
+Ġcon v
+Ġcl os
+Ġl ines
+Ġ} ,
+P C
+Ġimp ro
+ast ic
+wh ere
+Ġfr am ew ork
+Ġpresent ed
+Ġcr im inal
+l ink
+) );
+Ġfollow s
+Ġdep end
+Ġparamet ers
+5 8
+us ion
+eth yl
+ch ar
+ĠP a ul
+un t
+R e
+Ġs ample
+Ġ Ð
+Ġb ad
+ri p
+Ġdeterm ined
+M S
+Ġdeterm ine
+Ġst or age
+Ġl ack
+ĠM an
+Ġstat ic
+Ġcomm erc ial
+ĠD r
+Ġh om
+li ke
+M y
+Ġsh all
+f ort
+w ork
+oc ol
+t op
+Ġmed ical
+Ġind ex
+Ġeffect ive
+at al
+Ġanaly z ed
+Ġpro l if er ation
+Ġm ap
+Ġl ive
+Ġ Ã
+Ġnew s
+Ġem b
+Ġd ate
+Ġform er
+5 9
+Ġperson al
+Ġpres ence
+Ġs oci ety
+Ġident ified
+Ġfor ce
+Ġ ide
+Ġass oci ation
+Ġpr in ci pl es
+Ġgen es
+Ġ âĪĴ
+Ġs qu
+S D
+Ġf em ale
+// // // // // // // // // // // // //
+re ate
+C D
+6 3
+ou th
+Ġpr int
+Ġph ys
+y th on
+S c
+P I
+Ġits elf
+Ġde g re es
+Ġatt or ney
+} =
+Ġsm o oth
+y ing
+Ġv el oc ity
+ĠN orth
+ĠC alcul ate
+Ġfil m
+M od el
+e ff
+6 2
+ĠD av id
+an a
+Ġo x
+ĠA g
+Ġapp ell ant
+Ġ est
+Ġd ocument
+Ġc it iz ens
+Ġs il
+Ġph ase
+Ġadv ant age
+ro s
+$ -
+Ġe ff ici ency
+er ror
+Ġcont ext
+ĠY ork
+5 4
+Ġfr ont
+ĠW ill i
+Ġlong er
+Ġd im
+Ġoff ic ers
+Ġc opy
+gr oup
+w ord
+Ġre n der
+ul a
+Ġconst ant
+} ^{\
+Ġtyp es
+ĠCom p
+T H
+Ġtrans fer
+ĠP enn s yl v an ia
+ill s
+Ġper h aps
+Ġwork s
+s im
+Ġsc ri pt
+Ġstat ement
+Ġpar al le l
+D is
+Ġgr ound
+) =
+7 2
+Ġstat us
+5 3
+ĠI nt
++ +
+Ġse ver e
+Ġevery thing
+en ing
+Ġs ense
+Ġd raw
+Ġan im als
+Ġinv est
+Ġelement s
+ĠB ra z il
+7 9
+Ġf ru it
+ro ph
+ul ations
+7 8
+os ition
+Ġwr ong
+P ar am
+Ġbig g est
+Ġs y nd rom e
+Ġpre vent
+p x
+ful ly
+Ġm is
+Ġh ist
+ult s
+ĠA b
+ĠC ong ress
+pl oy
+h ib ition
+ĠSt ring
+Ġrem ain
+Ġrun ning
+E d
+Ġch arg
+Ġpur pos es
+Ġsc reen
+Ġout put
+Ã ¡
+F ile
+Ġconst it
+Ġr ad
+u x
+Ã Ń
+Ġass ert
+P s
+Ġun it
+Ġcre ated
+Ġd ang er
+P l
+m box
+Ġac id
+Ġb ur
+Ġbr ing
+Ġh u ge
+Ġtherap e ut ic
+Ġ201 2
+it ation
+ĠI I
+Ġar ray
+Ġs em
+ard s
+Ġm ember
+var phi
+P A
+m e
+Ġn ode
+ut es
+8 2
+I nt
+av ing
+m ail
+Ġl ik el i h ood
+Ġresp ond
+Ġc am er a
+ms g
+Ġtr aining
+Ġqu ite
+Ġinst all
+ur ch
+m un
+Ġins ur ance
+Ġw alk
+=== === =
+ou d
+Ġde ep
+ag ue
+Ġv s
+ĠP ar
+ac c
+Ġo il
+Ġm ob ile
+ĠG e or ge
+ĠW AR R AN T
+Ġeas y
+Ġcon vention al
+Ġare as
+Ġn ational
+Ġins ide
+Ġl ayer
+Ġdist rict
+Ġp le
+Ġex ch ange
+Ġsl ight ly
+ĠP art
+Ġr ates
+im ate
+Ġse lect
+5 2
+e ver
+ec tions
+### ###
+N S
+ers on
+ef ore
+ad es
+ĠThere fore
+ĠI m
+Ġim pl
+Ġc reat
+av es
+iss ion
+"> <
+ĠG u
+av en
+N ot
+ĊĠĠĠĠĠ ĠĠĠĠĠĠĠĠ
+Ġg as
+Ġre lease
+pl ace
+T ext
+Ġs om ew
+C alcul ate
+7 3
+Ġequ ival ent
+Ġv ector
+ĊĠĠĠĠĠ ĠĠĠ
+ĠIn stit ute
+Ġclaim s
+us er
+i et
+le ge
+ĠG erm
+Ġwant ed
+g n
+] {
+oc yt es
+Ġcont roll
+ĠO ur
+is ions
+i ans
+at ives
+ĠCh ic ag o
+Ġdirect ly
+a ut
+art ment
+Ġne are st
+( $
+e at
+Ġtrans form
+ĠH ow
+5 1
+ĠPh ys
+C A
+Ġag o
+* ]{}
+Ġrep res ents
+Ġ201 3
+f rom
+7 1
+Ġlimit ed
+ĠF in
+Ġcont ain
+h a
+Ġm er
+Ġneighb or h ood
+Ġis n
+p ublic
+Ġ/ >
+Ġf a ith
+ĠCh ines e
+Ġst ay
+Ġab ility
+su bs et
+pl ay
+Ġar bit r
+n ers
+con st
+pr ime
+Ġs q r t
+Ġ --------
+ĠW es tern
+s k
+Ġre duced
+Ġl ym ph
+Ġ[ **
+Ġdevelop ed
+ĠB rit ish
+l angle
+Ċĉĉĉ ĉĉ
+Ġ ?
+cl us
+Ġc ook
+ell ing
+R NA
+sp ec ific
+8 1
+ag s
+iv en ess
+Ġp ict ure
+z e
+Ġl at est
+ic ations
+Ġneg ative
+w r ite
+v oid
+ar ray
+E X
+om y
+ĠR uss
+Ġcrit er ia
+per ty
+Ġdist in ct
+Ġprevious ly
+Ġacc ur
+Ġgreat er
+ĠF ound ation
+Ġl ic ense
+Ġr ule
+O r
+Ġar ch it ect
+O C
+Ġfor ward
+Ġsur r ound
+o o
+Ġop tion
+qu e
+Ġinclud es
+Ġset t
+ma x
+B u
+row s
+Ġint eg er
+Ġc up
+ore m
+Ġinc or por
+Ġ ;
+oc ation
+R equ est
+Ċĉĉĉ ĉ
+Ġne u ro
+Ġsh are
+Ġexp ress
+ĠL ond on
+b i
+ï ¼
+Ġen z ym
+Ġpro por tion
+Ġm ur der
+Ġm ech an
+Ġbehavi or
+st er
+Ġp ort
+I F
+p en
+vers ion
+Ġf ire
+Ġgr aph
+Ġd ou bt
+Ġpro p
+Ġh ot
+ter m
+cl ud ing
+ri al
+k en
+} (\
+Ġv o ice
+M L
+Ġse qu
+Ġl arg est
+Ġann oun ced
+Ġar r ang
+re et
+Ġabs ol ut ely
+č ĊĠĠĠ
+Ġwh ite
+Ġrep e ated
+ĠFr id ay
+Ġacc om
+Ġs n
+Ġinst ance
+Ġcol umn
+Ġvol t age
+Ġstat ist
+ep t
+ĠAt t or ney
+G F
+i i
+ĠH ere
+p art
+un ction
+Ġdef ault
+Ġmem ory
+w ide
+Ġm ice
+Ġp air
+Ġg ames
+ab or
+ĠR ec
+itt ed
+re qu
+or ing
+Ġb all
+Ġ er
+Ġ2 9
+rib ute
+)$ .
+o tion
+Ġcomp et
+Ġ );
+ĠJ ust
+pl it
+l ock
+ĠS ystem
+c ur
+Ġwh ate ver
+6 1
+s ub
+ĠD is
+Ġfind ings
+\ <
+Â °
+Ġgener ally
+I P
+j s
+Ġc ateg
+Ġe y e
+ĠP er
+v il le
+S ec
+Ġet c
+Ġ6 0
+Ġl ost
+ĠC ir
+Ġres id
+Ġfollow ed
+Ġgr ant
+pr int
+Ġt itle
+Ġcar b on
+Ġapp eal
+Ġus ually
+Ġtre ated
+Ġa im
+om ic
+Ġre cept or
+ĠH is
+Ġw ord
+Ġpres ident
+Ġcomp let ed
+Ġrefer ence
+Ġm atrix
+ĠI d
+Ġcorrespond ing
+s m
+Ġe ff ic acy
+ĠS T
+Ġout com es
+n ab la
+en ed
+Ġsu g ar
+Ġ il leg al
+Ġg lobal
+Ġ3 2
+ĠS ince
+Ġline ar
+Ġparticular ly
+Ġre v
+Ġem pt y
+.. ."
+Ġdel i very
+Ġ[ *
+ĠT ex as
+Ġplay ers
+ĠA f g h an ist an
+Ġst ru gg
+ĠD e
+g ith ub
+Ġgu il ty
+ĠB ar
+Ġcom ing
+Ġg e
+Ġdiffer ences
+ĠS m
+al t
+p ed
+Ġpl as ma
+Ġinv ention
+o ke
+Ġf ight
+l ib
+ĠM ond ay
+ĠCh ina
+ĠP ol
+Ġspect r um
+Ġnot e
+Ġbuild ing
+" .
+ĠWh ile
+Ġh ospital
+Ġdis e ases
+ĠM arch
+Ġderiv ative
+an o
+ot ic
+osc op ic
+Ġact ive
+ĠD es
+act ive
+ber t
+Ġpr im ar ily
+Ġaut om at ically
+Ġgu id el ines
+Ġon line
+ur b
+Ġequ ip ment
+k app a
+Ġexpl ic it
+el ess
+Ġreg ular
+Ġ201 4
+Ġgr ad
+[ '
+al ys is
+ist ry
+Ġm essage
+( (
+Ġin hibit
+( ).
+Ġcomm it te e
+el ine
+ĠR eg
+M A
+Ġw ait
+Ġr out
+d f
+Ġfail ed
+ial ly
+o es
+st e in
+Ġwh ose
+Ġoff ice
+ĠF irst
+Ġconst ruct
+Ġapp e ared
+l or
+Ġs aw
+Ġwr ite
+Ġsens it ivity
+Ġ- ->
+Ġtherap y
+ĠT ech n
+Ġl ate
+our s
+Ġst yle
+Ġop port un ities
+Cont roll er
+Ġle ave
+i able
+Ġs yn
+D ef
+Ġcost s
+b re
+Ġst im ul
+Ġal though
+ĠP ak ist an
+Ġpur ch
+u ed
+Ġhe at
+sum m ary
+Ġm ort ality
+f il
+Ġpract ice
+Ġsitu ation
+Ġchar ge
+Ġsay ing
+Ġs chem e
+or iz ont al
+ĠW IT H
+Ġoff er
+Ġcount ries
+qu ad
+on ic
+Ġqu ar ter
+Ġt akes
+Ġhe av y
+O W
+Ġrel ative
+Ġsub str ate
+Ġleg al
+anc y
+m ark
+ĠO R
+Ġf at
+ĠD NA
+s w
+C lass
+en g
+Ġmix t ure
+ĠH ouse
+Ġw all
+ç ļ Ħ
+âĢ Ĳ
+Ġrec ently
+id ge
+Ġd riv ing
+Ġun if orm
+} _{\
+Ġpre fer
+ĠI r an
+B C
+d b
+ĠC ons
+Ġun c ert ain
+Ġas p
+Ġro t
+P ath
+Ġsu fficient
+ank ru pt cy
+= =
+âĢ ¢
+Ġh ous ing
+ĠE d
+s ource
+Ġv ot
+Ġte ach
+ve y
+Ġint r
+ar row
+Ġm arg in
+it able
+es is
+ĠD ef
+pp ed
+c ap
+Ġg ives
+ch i
+Ġj our nal
+Ġ201 6
+Ġst e
+Ġcent er
+Ð ° Ð
+Ġsub sequ ent
+Ġint ell ig ence
+un c
+ut ri tion
+Ġn ature
+Ġser ious
+ĠQ u
+Q u
+le te
+as ing
+ĠV ir g in ia
+A d
+Ġgu ar ant
+ig en
+Ġdef end ants
+Ġst age
+ĠAmeric a
+ang ing
+Ġspec ies
+' ;
+Ġpr ime
+Ġident ify
+Ġor g
+Ġen h
+Ġ3 1
+ĠI S
+Ġtri ed
+\] .
+ĠS ome
+Ġapp ro
+Ġb al ance
+A mer ic an
+Ġany one
+g l
+Ġapp re ci
+Ġh ydro
+Ġim ages
+Ġevery one
+Ġl ibr ary
+ĠT ues day
+pro t ob u f
+Ġfe ed
+ĠU s ing
+ill ing
+S e
+Ġd ouble
+Ġtr ack
+p at
+Ġ201 5
+ĠO ff
+Ġj ury
+Ġl iving
+ad em
+Ġ ult
+^ [@
+c ell
+Ġun ique
+ar ies
+B S
+O ne
+ĠW ar
+Ġl es
+om b
+Ġant ib od ies
+Ġh ope
+re c
+p rop
+Ġindividual s
+enc ies
+Ġor d
+Ġ/ *
+Ġbro ad
+) -
+il s
+Ġse lected
+\ ; \ ; \ ; \ ;
+Ġwar r ant
+m ap
+Ġsc ale
+Ġext rem ely
+Ġ vers
+Ġcho ice
+Ġf ederal
+ay out
+iz es
+Ġsp ir it
+b all
+Ġw ays
+Ġmeasure d
+g y
+Ġpro ced ures
+Ġis su ed
+m and
+Ġ// /
+Ġch os en
+Ġdis s
+Ġass um
+Ġdes igned
+Ġd ut y
+P L
+\ '
+Ġoper ation
+č ĊĠ
+Ġth ous ands
+Ġallow ed
+p ack
+T est
+] ^
+u el
+other ap y
+ir ing
+as is
+Ġhigh ly
+ĠAl though
+ro om
+Ġthem selves
+} }$
+Ġpart ies
+uth or
+Ġis ol ated
+ĠJ ud ge
+Ġsp eed
+Ġdetail s
+Ġf it
+T ime
+h and
+Ġmem br ane
+Ġf reed om
+Ġpublish ed
+ĠS en
+Ġbec ame
+in fo
+Ġass ist
+Ġdo ct
+c ast
+L ambda
+Ġfail ure
+ĠS er
+a e
+b m
+ĠN ow
+Ġf ib
+in ity
+l ength
+Ġ201 0
+i ation
+ap ter
+Ġmet ab ol
+Ð µ
+Ġb ox
+st ance
+ĠTh urs day
+ĠM ich ig an
+c d
+et t
+Ġpol ic ies
+O f
+Ġcom ment
+it em
+Ġcomp os ite
+c rib
+ens es
+. \
+Ġdi ab et es
+ind ex
+Ġd ur ation
+n ode
+)$ ,
+Ġ: =
+Ġ201 1
+Ġint ens ity
+ä ¸
+in ated
+Ġpr ice
+Ġh os p it als
+Ġvis it
+S he
+Ġb le ed ing
+ĠM ER CH AN T AB IL IT Y
+Ġst ress
+Ġexp ressed
+Ġgo al
+ĠS ci ence
+ĠF ren ch
+C E
+il it
+Ġexp ans ion
+c ount
+Ġr ound
+Ġcent ral
+Ġtechn ology
+Ġs ort
+ab led
+Ġnot ice
+Ġinf r ast ruct ure
+Ġh ar
+' );
+Ġcurrent ly
+ĠA c
+Ġequ al
+Ġlead ing
+ĠS und ay
+Ġrec o very
+b ur g
+^ +
+ES T
+ames p ace
+Ġ3 5
+Ġ ech o
+Ġe lection
+ograph y
+ĠA M
+b ase
+ĠC al
+Ġtrans ition
+Ġf ast
+Ġequ ation
+ub e
+ĠIn tern et
+Ġc ru c ial
+D es
+Ġpre d
+Ġl ed
+Ġop tions
+u i
+Ġan al og
+ic o
+Ġw indow
+ow ing
+ig ation
+Ġeas ily
+() );
+Ġcaus ed
+ir d
+Ġb ud get
+Ġem erg
+ect ing
+ĠS w
+th at
+Ġover all
+ic a
+Ġso on
+Ġcomm and
+ĠSt ud
+Ġ\ <
+Ġinj ury
+Ġpol yn om ial
+F F
+in ess
+Ġg ave
+Ġp ush
+Ġsc ore
+Ġmean ing
+Ġmanag ement
+Ġback ground
+ĠE l
+Ġhim self
+Ġent it led
+Ġpro of
+Ġ ve
+ul ate
+Ġfil ed
+ĠRep ublic
+Ġt en
+Ġconn ection
+Ġp ull
+Ġf air
+ou l
+Ex ception
+Ġl im its
+Ġa w
+Ġwe ak
+ĠN one
+ĠT e
+ĠD et erm ine
+Ġg al ax
+Ġgo ver n
+it is
+o ch
+Ġth reat
+ĠM at th ew
+i ated
+am a
+r is
+C P
+Ġbr ain
+Ġext ra
+Ġallow s
+Ġparamet er
+Ġbel ie ved
+Ġh it
+Ġloc ation
+Ġch e
+Ġsw itch
+ĠF ur ther
+al ign
+T P
+ic ated
+Ġal one
+id ing
+ĠA ma z on
+Ġac qu
+Ġapp ly
+Ġden om in ator
+Ġst ated
+Ġclear ly
+Ġfriend s
+Ġcrit ical
+f n
+et her
+ail s
+Ġdist ance
+od ing
+Ġbu y
+Ġp ric es
+ĠC opy right
+} ;
+Ġ 00
+du c
+d ocument
+Ġth resh old
+ec ut ive
+Ñ Ĥ
+Ġvari able
+Ġ( $
+Ġre duce
+Ex p
+âĢ Ĭ
+Ġhe ight
+} ,\
+% ,
+le m
+č ĊĠĠĠĠĠ
+Ġ201 7
+Ġfe ature
+ĠTr ans
+Ġelect ro
+ers ion
+Ġcard i ov asc ular
+Ġwon der
+N ew
+ĠAss oci ation
+A b
+Ġrel ig ious
+S C
+st atic
+ĠV al
+B A
+Ġas k
+ri er
+Ġlead ers
+os ing
+op l
+ul f
+Ġestablish ed
+for ce
+( ),
+a res
+Ġtem per at ures
+S P
+N ow
+ic ial
+Ġon es
+Ġvir t ual
+) ).
+us ing
+enc ing
+Ġb ab y
+ath em at
+Ġbo ard
+h ere
+ã Ģ
+Ġne it her
+ic les
+in f
+Ġ200 8
+Ġbenef its
+Ġre duction
+Ġde b
+Ġparticip ants
+Ġmult i
+Ġfield s
+ĠH am il ton
+o e
+st ream
+Ġex cept
+. _
+The y
+ump tion
+Ġst ri
+Ġrec ip
+ĠE ng land
+Ġus ers
+Ġregard ing
+as ion
+č Ċ
+Ġeng ine
+Ġph il os oph
+c in
+Ġact ual
+Ġk new
+Ġpart s
+Ġpos s
+Ġ ing red ients
+Ġhigh est
+h old
+s f
+Ġexc ell ent
+ĠIs l am
+Ġdis cl
+o ad
+es ter
+ĠR ev
+Ġd at as
+Ġtr ig ger
+ĠL a
+Ġfil es
+Ġsu ffer
+Ġrem ains
+Ġloc ated
+Ġcont aining
+Ġfund ament al
+over line
+Ġfrequ ency
+c ons
+Ġp en
+Tr ue
+Ġcont ains
+Ġsupport ed
+Ġser ver
+âĢ ĥ
+Ġin str um ent
+Ġgener ated
+in ate
+Ġatt ention
+i os
+ĠW indow s
+ĠS atur day
+Ġunderstand ing
+Ġappear s
+Ġrece ive
+p tions
+Ġop pos
+Ġsl ow
+T ER
+Ġa x
+Ġactiv ities
+Ġsol id
+Ġw id ely
+Ġd og
+Ġt um ors
+) **
+Ġfind ing
+v is
+un k
+Ġf ine
+] -- [@
+' ]
+Ġwe b
+ge q
+Ġdis p
+F rom
+ĠI L
+ĠS y ri
+AT E
+Ġp ress
+Ġrem ember
+Ġ200 9
+ens ure math
+Ġw orth
+Ġeconom ic
+Ġs ites
+Ġa ud
+Ġh op
+ĠW est
+t ar get
+Ġd u
+Ġn umer
+Ġun ivers
+L ab el
+j p g
+Ġin form
+ĠA D
+ĠCent er
+Ġdecl ared
+ing er
+re p
+ĠSch ool
+Ġtr ust
+h al
+Ġn or
+ĠA N
+R ec
+Ġcontr ast
+Ġspe ak
+Ġm id
+t x
+Ġdisc over ed
+Ġsc en ar io
+Ġvari ables
+Ġwas n
+} .
+Ġqu al
+Ġcap t
+ĠA ccording
+Ġst ar
+Ġdist ing u ish
+* -
+ĠE m
+Ġmaint en ance
+Ġre action
+Ġs um
+Ġconcentr ation
+ad o
+Ġm ari j u ana
+Ġgo es
+Ġs ch ol
+Ġs on
+Ġs en ior
+Ġf ab ric
+Ġleg is l
+Ġt im
+F r
+c all
+Ġ ill
+Ġp lease
+Ġent er
+Ġcult ure
+Ġauth ors
+p an
+ĠInd ia
+Ġox y gen
+Ġcon str ain ts
+im age
+Ġtr aff ic
+Ġr ules
+ĠD ata
+ĠM ark
+Ġinst ruction s
+Ġs we et
+Ġp o
+¿ Ã ¿ Ã ¿ Ã
+Ġst ore
+Ġh on
+Ġpre val ence
+Ġcon c
+P R
+Ġus es
+Ġbec om ing
+Ġapp ar atus
+od ds id em arg in
+Ġapplic ations
+Ġreport s
+H and ler
+Ġc op
+Ġthe ore t ical
+... ... ... ...
+Ġd augh ter
+C S
+Ġhe aring
+Ġsur pr
+q l
+Ġ ]
+Ġin sp
+ric h
+Ġm other
+Ġoper ator
+Ġinter view
+Ġinterest ing
+Ġbec omes
+rel ated
+o on
+un n
+Ġset ting
+Ġd oc uments
+F orm
+ĠO f
+ĠUS A
+ot al
+Ġhand s
+ed d
+h am
+Ġrest a ur
+ĠM ass ach us et ts
+B D
+Ġde ad
+Ġshow ing
+Ġconst ruction
+Ġs am pl ing
+Ġin n
+Ġstr ateg ies
+[ ]
+Ġit ems
+Ġpol ym er
+ell ow
+Ġh y br id
+ĠA ng el es
+ĠH ar
+col or
+Ġsmall er
+Ġsur g ical
+ic ip
+Ġe ight
+Ġresult ing
+os es
+ĠD emocr
+Ġy ield
+ens ions
+Ġmajor ity
+Ġne ur ons
+Ġcl ust
+Ġim m igr
+Ġcor re ction
+It em
+erv ed
+p a
+Ġpol it
+Ġst aff
+Ġc og n itive
+o bject
+Ġman us cript
+Ġ| |
+Ġdom ain
+enc ed
+Ġreg ions
+Ġco eff ici ents
+it er
+Ġ< <
+* .
+Ġpro duce
+Ġt iss ues
+Ġs ymmet ry
+Ġinj ur ies
+form ation
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ
+ĠN e
+Dis cl osure
+Ġst ock
+Ġvol ume
+s ide
+res ent
+Ġdef init ely
+ry ing
+ĠPh il ad el ph ia
+Ġtrans port
+C t
+Ġcon sequ
+Ġreason able
+fort un ately
+Ġpro duced
+Ġ4 5
+Ġinst it
+ry pt
+Ġmed ium
+Ġad j ac ent
+Ġindic ated
+Ġturn ed
+Ġex tr
+Ġsk in
+Ġsaf ety
+re ated
+s cript
+Ġdef ense
+Ġlook s
+Ġstart ing
+Ġdiv ided
+ĠMed ic ine
+ĠP ublic
+att le
+A IM S
+Ġread ing
+St ate
+Ġdec ided
+Ġat m os ph ere
+A ss
+Ġcont in ues
+Ġs ound
+at ric
+Ġform s
+\ ,
+Ġp etition
+Ġget s
+an i
+Ġsu p
+Ġ8 0
+Ġlab or
+Ġv it ro
+Ġbr ought
+ĠT H
+b b
+ĠF rom
+ort s
+pon ent
+l s
+Ġex ists
+ĠB u
+Ġb ed
+Ġwork ed
+= '
+ĊĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠĠĠĠĠĠ
+z z
+Î ²
+Ġd ark
+ĠC O
+Ġdef ine
+){ #
+Ġdisc re tion
+* (
+Ġcomp re h ensive
+Ġf ix
+E G
+ĠIn st ead
+Ġst and
+Ġf ra ud
+} -
+Ġmaterial s
+en z
+ĠH um an
+' :
+ĠT able
+al th
+Ġinter action
+Ġro ad
+ce ed
+\ |
+f ree
+Ġmaxim um
+pp er
+Ġprom ot
+T Y PE
+ang u age
+Ġst d
+Ġro ot
+Ġm g
+/ (
+Ġcomput er
+go og le
+Ġex tract
+un der
+Ġfact s
+Ġunder st ood
+ĠA ri z on a
+Ġ9 5
+b ook
+Ġz ero
+Ġsepar ate
+Ġman if est
+Ġit em
+ĠCh ar
+el le
+Ġnot ed
+_ .
+Ġ- >
+Ġn orm
+Ġcon cer ning
+Ġl ov
+Ġne ut
+n ow
+ight s
+Ġdri ve
+f e
+Ġplay ed
+Ġl i ability
+p y
+Ġdo or
+Ġ9 0
+Ġt ast e
+Ġatt ach ed
+Ġabs ol ute
+Ġinter nal
+Ġthrough out
+% % % % % % % % % % % % % % % % % % % % % % % % % %
+t t
+l en
+Ġg un
+Ġbas ic
+ole c ules
+Ġ !
+ch eck
+Ġprocess es
+M R
+ĠM od
+Ġ eth
+Ġachie ve
+A A
+Ġs ources
+ĠI ra q
+Ġdis ci pl
+Ġt reat
+ĠS ection
+n s
+in ant
+Ġhealth y
+Ġag ree
+Ġform ation
+N ode
+Ġmagn etic
+Ġto t ally
+Ġch ann els
+Ġco ol
+Ġcol lect
+Ġpro sec ut
+om as
+ĠI ll ino is
+In fo
+if ier
+00 4
+Ġd rop
+Ġtest s
+Ġm ode
+Ġplay er
+Ġhe ard
+Ġimp oss ible
+ish ing
+Ġtr u ly
+Ġd est
+Ġw rit
+Ġdel iver
+Ġfunction al
+Ġsymptom s
+Ġm ess ages
+E vent
+l ic
+ag r
+amp ions hip
+Ġconn ected
+du ces
+Ġaction s
+Ġconduct ed
+Ġmar ri age
+Ġform ed
+im b
+al ing
+Ġto x ic
+Ġre cept ors
+Ġpre par ation
+z eta
+Ġ} );
+Ġass emb ly
+Ġrem ove
+Ġcol lection
+U s
+Ġf resh
+Ġk n
+ep h
+Ġref lect
+app ro x
+upp ort
+Ġread y
+Ġcomb ination
+S A
+Ġa ward
+V ert
+Ġdiagn osis
+Ġc ra z y
+============================== ==============================
+Ġm il k
+Ġl ives
+Ġcon cept
+Ġcl osed
+Ġ3 3
+lo b
+d et
+------------------------ --------
+ĠC H
+p riv ate
+w ed ge
+Ġw ide
+Ġset s
+Ġs old
+Ġm ount
+f ri end
+Ġ4 8
+wh ich
+us es
+l t
+Ġincre ases
+Ġa ware
+Ġ/ **
+Ġsc ient ific
+S U
+Ġ" "
+Ġph one
+r ad
+t itle
+. [
+en u
+Ġ ri
+ĠM ore
+Ġp ict ures
+L e
+Ġpol y
+Ġplay ing
+Ġg ast ro int est inal
+) ^
+P D
+um in
+Ġse ven
+Cont ext
+Ġl if
+Ġr ace
+Ġ3 7
+Ġres ources
+ol ved
+Ġsu dd en
+Ġcr is is
+gr ad
+S M
+st art
+ĠI D
+Ġcon fig
+Ġsim ult ane ously
+F A
+Ġcalcul ated
+is ation
+ot o
+ĠG e
+w ays
+Ġdes cription
+Ġsem icon duct or
+Ġb ow
+Ġdi am eter
+Ġdemonstr ated
+Ġstep s
+ir t
+Ġquant um
+con n
+ain e
+H T
+g ener
+Ġsp in
+ber g
+Ġpro g ression
+Ġh um
+Ġlook ed
+Ġl arg ely
+ric k
+j o
+eb ug
+Ġmov ed
+f lo at
+Ġequ il ib ri um
+ust om
+Ġcho ose
+arm ace ut ical
+}} _
+pon se
+p arent
+Ġp arent
+ic ed
+Ġmeet ing
+Ġl as er
+w ise
+A not her
+Î ±
+Ġto ward
+Ġ ign
+Ġhappen ed
+Ġpack age
+Ġmon itor ing
+Ġp or
+Ġpro ve
+Ġprovid ing
+Ġcap ital
+Ġper ip her al
+Ġmor ning
+. '
+Ġse g ment
+| |
+Ġf ather
+ĠR ed
+Ġpl ant
+F il ter
+P O
+r act
+ĠL aw
+Ġmov ing
+Ġfamil i ar
+Ġexp osure
+ĠCl int on
+j ection
+Ġconsist ent
+Ġthe rm al
+Ġthink ing
+Ġdel ay
+H ere
+in put
+Ġsh ape
+Ġ( \
+Ġman if old
+)/ (-
+Ġg au ge
+x y
+Ġsign ific ance
+stit ution
+O ut
+Ġ\ ,
+Ġb ul
+g s
+st yle
+Ġp ow
+Ġp riv
+Ġcontinu ous
+i am
+Ġg iving
+Ġv iv o
+Ġâ ī ¥
+Ġdam age
+ter ed
+Ġhttp s
+ĠE q
+Ġco ach
+Ġt ables po ons
+Ġt ask
+Ġcard i ac
+ab s
+o z
+ĠL ist
+Ġrem ov al
+( {
+ur ity
+Ġpe ak
+or re ct
+F alse
+B ig
+em pt
+ĠG et
+Ġg on na
+ĠMin n es ot a
+ad a
+Ġs ched ul ed
+ĠC R
+ĠF l
+Ġdet ected
+ren ce
+ĠK ore a
+Ġfamil ies
+ot ype
+Ċ ĊĠĠĠĠĠĠĠĠĠĠĠ
+Ġp ul
+^{ (
+Ġh arm
+à ¤
+al y
+L og
+h y
+v est
+Ġo bs
+\] ,
+Ġindic ate
+Ġnear ly
+ac ell ular
+Ġte lev ision
+app ing
+ĠInd ian
+Ġam az ing
+Ġun s
+Ġmus ic
+Ġte le ph one
+Ġemb od im ent
+Ġm iddle
+Ġd oll ars
+as m
+ĊĊ ĉ
+av as cript
+Ġsec ret
+Ġbl og
+S ig ma
+ĠT est
+Ġ201 8
+h ost
+Ġch oles ter ol
+00 2
+Ġr ul ing
+Ġpre m
+tr ue
+č ĊĠĠĠĠĠĠĠ
+ock et
+Ġh yp
+Ġant ib ody
+ĠA L
+ĊĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ
+Ġmet al
+Ġt as ks
+/ (-
+Ġcon sp ir acy
+p ol
+f ord
+ent y
+Ġdist ributed
+Ġcon vers ation
+ĠK ing
+ac ing
+} =\
+Ġwork ers
+E P
+r ange
+ĠH igh
+ect ors
+Ġvehic le
+Ġm ac
+Ġhe ar
+}} (
+ĠS oc ial
+ain er
+ĠH er
+cl es
+Ċ ĊĠĠĠĠĠ
+Ġn il
+,\ * ^,
+c ase
+Ġexist ing
+Ġpop ular
+Ġco e fficient
+I A
+Ġl ip
+Ġro b
+Ġcom ments
+es h
+Ġbenef it
+ĠFig ure
+R D PC ST X
+ĠP ost
+Ġsuggest ed
+Ġdiscuss ed
+r un
+go ing
+e ah
+Ġb and
+A V
+I B
+() )
+k a
+Ġch ance
+"> </
+r ation
+Ġad opt ed
+Ġp ot
+Ġf oot
+========== ===
+Ġro ll
+ĠS erv ices
+en ame
+Ġc ert
+ici ans
+Ġ( (
+ĠS an
+Ġmed ic ine
+Ġcor por
+Ġm ag
+Ġfin ally
+ĠS O F T W AR E
+] :
+Ġm m
+ĠH ol
+Ġim ag
+ĠAl so
+Ġ ou ter
+ĠD iv ision
+Ġapp arent ly
+ĠApp ell ant
+Ġ3 4
+Ġh or
+at ively
+ĠI R
+Ġwith d raw
+Ġsaf e
+Ġa f ra id
+Ġad min ister ed
+# #
+Ġb und le
+am in
+i qu
+Ġlab el
+\ /
+ĠM us
+Ġreg ul
+ĠP ark
+Col or
+U M
+c os
+re st
+ĠM e
+Ġ7 0
+Ġfore ign
+m et
+Ġinf ection
+Ġlet ter
+Ġactiv ation
+Ġexper i ences
+Ġcol on
+Ġtest ing
+per t
+Ġb ank
+Ġd iff
+ld ots
+V ER
+Ġn ation
+Ġg reen
+m ing
+Ġinc ome
+Ġde v
+Ġpers p ective
+Ġun its
+ĠCom mission
+Ġbre ast
+ph p
+Tr ans
+l ong
+Ġman ner
+ĠU K
+g u
+B ox
+Ġem ail
+Ġsumm ary
+ur t
+Ġs end
+Ġw a
+Ġdrug s
+O h
+Ġorgan iz ations
+bo ard
+ag er
+sp ace
+n ed
+con fig
+Ġstud ied
+Ġfin ite
+Ġ3 6
+E lement
+Ġt ree
+ĠSo ft ware
+Ġa v ail ability
+p ing
+Ġf ash ion
+ĠA not her
+ĠE ar th
+ĠWh ite
+Ġdis co very
+ol f
+m essage
+ĠE ven
+j ava
+Ġcl ick
+Ġyour self
+Ġrespons ible
+Ġprob ability
+u ate
+Ð ¸
+Ġsh oot ing
+ĠSec ret ary
+Ġf ear
+ĠR NA
+Ġun li k ely
+b a
+Ġtr ade
+ĠJapan ese
+C M
+Ġb od ies
+ater ial s
+Ġh em
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ Ġ
+air s
+Ġapproxim ately
+ĠSp ec
+ĠT O
+Ġsex ual
+Ġend oth el ial
+Ġobject s
+f a
+id den
+Ġneg l ig
+ĠFr anc is
+Ġsh ot
+In ter
+Ġdom est ic
+[ \
+p ass
+ic le
+Ġp anc reat ic
+Ġinvestig ation
+Ġm ale
+Ar ray
+b le
+ĠA nt
+Ġst ation
+Ġprogram s
+Ġden ied
+Ġmove ment
+ĠL ou is
+Ġ2 000
+Ġl ay ers
+ru pt
+ĠR el
+ĠP M
+Ġc augh t
+Ġpan el
+O U
+Ġacc ord ance
+ĠS eb ast ian
+Ġrecord s
+Ġcomp ar
+Ġvari ety
+p e
+id get
+Ġ= \
+Ġcontinu ed
+Ġstruct ures
+[ ^
+Ġw ife
+Ġj u ice
+Ġto m or row
+âĢ ²
+ĠO ther
+U ser
+ak er
+Ġ4 2
+Ġpass ed
+Ġw ave
+ES S
+ĠV i ew
+Ġcomp r
+k y
+ĠS im
+Ġbegin ning
+S ize
+Ġs ave
+Ġcont ro vers
+Ġcar ried
+ar a
+T S
+ap er
+) ?
+Ġun n ec ess ary
+* ~
+Ġb acter
+Ġg ast ric
+Ġass ume
+d ep
+Ġacc el er
+i ers
+ĠM on
+ĠC anc er
+Ġl iver
+ĠC ode
+if fer ent
+Ġs ing
+or b
+Ġexperiment al
+st ruction
+Ġse ed
+ĠCar ol ina
+Ġb order
+Ġdis char ge
+Ġopt im
+Ġth ick
+Ġprocess ing
+ĠJ ew ish
+Ġc atch
+il i
+R ead
+ĠC an
+Ġ ut
+Ġelect r ical
+est s
+Ġno vel
+Ġp se ud
+ĠR ef
+Ġtalk ing
+Ġf ig ures
+Ġem otion al
+a im
+Ġst uff
+Ġstat ute
+ol id
+ĠS ur
+Ġcon ver
+Ġex ception
+Ġdet ection
+C O
+Ġhapp y
+Ġar ri ved
+Ġinf lu
+U p
+Ġup d ated
+Ġin duced
+ĠH ospital
+ot imes
+Ġv an
+Ġsuccess ful
+Ġref r ig er
+ĠC ON
+Ġcorrel ation
+ĠSt at
+ad ing
+Ġcomp li ance
+ĠJ our nal
+Ġrem aining
+A Y
+Ġp ark
+Ġk in
+Ġc ore
+ĠD onal d
+T C
+Ġprofession al
+Ġs ell
+Ġag g
+Ġs or ry
+ind ing
+Ġtest ed
+Ġk illed
+ĠG en
+et ro le um
+Ġcol le ag ues
+ĠT R
+ĠO h io
+C all
+Ġse lection
+Ġb ond
+Ġsh ift
+Ġmin or
+Ġreach ed
+ĠL em ma
+V al
+"} ,
+s ur
+Ġcomb ined
+ud es
+Ġt end
+act or
+Ġreturn ed
+Ġup date
+Ġelect ric
+Ġdiagn ost ic
+one y
+yn c
+: \
+Ġclass es
+Ġjud ge
+Ġtr uth
+ĠN ote
+sh ip
+Ġimpro ved
+c ar
+Ġfr ame
+Ġr at
+Ġwant s
+Ġser ve
+Ġsol utions
+Ġon to
+Ġth row
+Ġst ro ke
+Ġf irm
+Ġsuggest s
+bl ock
+Ġcare er
+Ġep is ode
+Ġconstit ution al
+Ġmay be
+Ġv ac u um
+Y es
+Ġc amp
+Ġchallen ge
+Ġ200 6
+Ġ osc ill
+Ġrel ation
+Ġreplac ement
+Ġw av el ength
+Ġh our
+d ot
+Ġofficial s
+s ection
+Ġcontrol s
+** ^
+Ġsent ence
+Ġun less
+AT ION
+Ċĉĉĉĉĉ ĉĉ ĉĉ ĉĉ
+Ġ$ {
+Ġ- --
+ĠM art in
+en ch
+Ġlead s
+Ġtyp ically
+ar c
+ĠAr t
+Ġult im ately
+Ġam pl
+Ġwhere as
+P r
+Ġag reed
+af ter
+Ġexpl ain
+a ud
+Ġcomm it
+ify ing
+Ġ200 7
+ĠN ever th eless
+D R
+P er
+it z
+Ġderiv ed
+Ġcomp ens ation
+Ġd ied
+at in
+Ġra ised
+Ġep ith el ial
+Ġoccur red
+Ġpur su ant
+ores c ence
+k g
+ĠIn ter
+Ġdecre ased
+Ġpick ed
+Ġdi vers ity
+Ġsh ip
+Ġin equ ality
+Ġdist rib utions
+Ġd ed
+op tion
+& &
+oc y te
+Ġleg is lation
+and ed
+i us
+Ġt al
+Ġsp read
+D ec
+ĠN OT
+Ġdis miss
+P P
+Ġreg ister
+l ication
+Ġaff ected
+Ġbill ion
+ĠS imilar ly
+C ode
+Ġr are
+y r
+R ep
+ag ement
+Ġnucle ar
+M ethod
+Ġgrow ing
+Ġaut om
+lev el
+Ġ row
+ĠD ec
+Ġed ge
+ĠGr oup
+}} {
+str act
+Ġbu ffer
+Ġn ames
+Ġsu g ges
+ĠApp e als
+Ġdisc rim ination
+ĠAdd ition ally
+Ġd ie
+ap i
+Ġpl ans
+Ġtool s
+bu ild
+Ġm o
+Ġsu st ain
+C ount
+h el
+Ġgener ation
+Ġk id
+Ġchem ical
+ĠR et urn
+h ib its
+Ġw ild
+Ġsp ent
+Ġad equ ate
+Ġ od
+Ġcl ient
+d ec
+i ant
+( {\
+Ġw ish
+Ġrepresent ation
+ĠE ast
+ĠEurope an
+Ġmolec ular
+S ervice
+Ġde bt
+Ġco h ort
+Ġcall s
+Ġas ym pt
+Ġfe et
+in fl amm atory
+EX PE CT ED
+D o
+S u
+č Ċĉ
+op en
+Im age
+at ab ase
+m ain
+ĠM ost
+ĊĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠ
+Ġalgorith m
+Ġsubject s
+Ġestim ated
+5 00
+Ġn one
+Ġdis ad v ant
+ĠT V
+ograph ic
+Ġlo op
+F ield
+y d
+An y
+ĠT enn es see
+Ġpl aces
+Ġ_ _
+Ġm igr ation
+n ut ri ents
+ĠP al
+pt r
+Wh y
+ign ment
+Ġprot ect
+omet ry
+F l
+Ġh ers elf
+ĠR ich ard
+Ġmod er ate
+Key W ord
+Ġintro duced
+ing ly
+Ġpr im
+Ġso ft
+act ory
+Ġeffort s
+Ñ Ģ
+Ġt er
+Ġhand le
+Ġdiscuss ion
+Ġpl ann ed
+Ġn et
+Ġbl ue
+ĠP AR T IC UL AR
+re lease
+Ġn ice
+Ġprot ocol
+ress ive
+Q L
+Ġand roid
+ole an
+T A
+Ġv ent
+Ġ& \
+D ep artment
+Ġcy to k
+Ġdr ink
+Ġexpl an ation
+ĠB ro
+Ġlet ters
+Com p
+Ġdi et
+i res
+Ġap opt osis
+Ġm it och ond
+Ġl ock
+Ġv ote
+Ġprot ection
+in ner
+ĠY our
+A ct
+ty p es
+ĠN S
+Ġdescrib e
+Ġcould n
+Ġvis ual
+B ec ause
+ĠA rm y
+ĠE R
+ĠPl aintiff
+ĠD on
+Ġunder w ent
+Ġsur ve ill ance
+Ġ200 5
+Ġmod ern
+* )
+Ġout come
+Ġd ro pped
+c ore
+Ġser um
+ĠD irect or
+Ġâ Ĩ Ĵ
+N F
+c reate
+** (-
+Ġar m
+Ġc row d
+Ġâ ī ¤
+; \ ; \ ; \ ; \
+Ġ3 8
+p ref ix
+Ġmet ab olic
+S ee
+Ġc oc on ut
+! !
+Ġcol lected
+Ġaff ect
+Ġevalu ated
+h es
+Ġm ental
+Ġad apt
+Ġpl ate
+Ġem ph as
+B I
+Ġpl us
+k ay
+Ġtechn ique
+]\] ,
+ĠB ank
+sequ ently
+ang ed
+g t
+Ġ( **
+Ġmov ie
+Ġan sw ers
+Ġwe ap ons
+Ġstud ent
+Bu il der
+Ġtr a um a
+Ġmiss ing
+Ġsur v
+ĠSu per
+st on
+Ġcertain ly
+Ġm ill ions
+Ġ ~
+Ġwould n
+Ġ( )
+Ġlink s
+p c
+Ġac adem ic
+ic ens ed
+Ġdis ord ers
+ĠP C
+w ell
+Ġcommun ication
+$ ]{} ;
+ĠS oci ety
+Ġexpl ained
+Ã ³
+res p
+Ġ( !
+Ġtem por
+M od
+res ult
+Ġproject s
+Ġvol un te
+G C
+ĠE nd
+Ġ ĊĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ
+Ġe fficient
+Ġoper ations
+ĠO ver
+Ġenc our
+Ġc red
+Ġeconom y
+Ġabs ence
+R et urn
+` ` `
+ur l
+ĠA T
+gr am
+ub l
+Ġ vert ical
+ĠNew s
+D e
+Ġinvol ve ment
+Ġver d ict
+Ġtrans l
+ab il
+c uss ion
+Ġm om ents
+Ġex ternal
+' .
+Ġh air
+Ġfor ces
+Ġb us
+Wh ile
+Ġlaw s
+Ġrel ig ion
+l ocal
+b or
+x ml
+Ġc m
+** ,
+Ġke pt
+ition al
+Ġnetwork s
+ev en
+Ġaccept ed
+Ġsupp ly
+Ġv ide os
+Ġpre p are
+D A
+Ġsur f aces
+Ġdecre ase
+Ġp un
+ĠC P U
+S ty le
+ĠCom mun
+C ON
+201 5
+Ġjo bs
+il ed
+S er
+Ġk ids
+i h
+B e
+f alse
+Ġm ist
+Ġelect ron
+Ġsc ience
+Ġch ronic
+r l
+ial og
+Ġrespons es
+Ġf arm
+ow s
+Ġen force ment
+Ġneg ot i
+Ġauthor ity
+R eg
+Ġf lex
+Ġmot or
+am ily
+mod el
+Ġdis app
+Ġc oun c il
+i en
+le ar
+Ġad en oc ar cin oma
+b efore
+Ġc ast
+Ñ ģ
+os h
+Ġk itch en
+Ġint ended
+ĠB ost on
+} +
+ol t
+\ ! \ !
+ill er
+Ġb row ser
+Ġstat ut ory
+Ġocc up
+ĠN et
+Ġrequire ments
+cont ent
+Ġm uc os
+. $$
+/ **
+Ġs y
+ĠC lass
+Ġadd ing
+yp es
+âĢĿ .
+Ġserv ed
+Ġag ent
+Ġide as
+Ġhist or
+Ġch ain
+ear ch
+Ġent ry
+Ġt our
+ict ed
+Ġbel ong
+Ġgu y
+Ġtradition al
+. [@
+O ur
+ill a
+Ġpre j ud
+Ġext ent
+Ġj ava
+c r
+Ġapp l ies
+Ġgl uc ose
+Ġexper t
+Ġcreat ing
+Ġj oint
+Ġhold s
+ot ed
+ĠF OR
+ram ew ork
+Ġm ort g age
+ĠE duc ation
+ut ed
+ĠAm end ment
+Ġfl av
+, -
+Ġinterest s
+Ġf em ales
+Ġch rom
+Ġte ams
+Ġwh om
+n am
+Ġtre nd
+Ġfr ag ment
+or ter
+Ġgu ess
+Ġinter val
+M ap
+Ġal ph a
+F irst
+i ot
+Ġan xi ety
+Ġper man ent
+M C
+ĠW ell
+Ġfeel ing
+Ġs au ce
+Ġequ ations
+M P
+ro t
+Ġcy cle
+ĠG iv en
+Ġsp ok es
+. ](
+^ âĪĴ
+pp ing
+Ġdirect or
+yn am ic
+T O
+p ost
+Ġ ec
+Ġev olution
+ĠGerm any
+Ġcur ve
+Ġs outh
+Ġinter face
+cont ext
+Ġsh ar p
+E qu
+et ers
+$ (
+Ġse ver ity
+)/ (
+Ġe lev ated
+Ġrep ro
+! --
+At t
+ĠA ir
+ĠE ach
+Ġgr and
+am b
+ĠAn y
+Ġassess ment
+Ġpol ym or ph
+- (
+D L
+Ġinter actions
+ĠS ub
+un e
+Ġent ered
+Ġdi ag ram
+l ast
+Ġrec on
+ĠY oun g
+\ {
+am er
+Ġw ind
+d t
+b ound
+Ġd ose
+ĠU R L
+Ġe at
+Ġel im
+Ġgu ys
+S ystem
+} |
+Ġm al
+val id
+Ġconcentr ations
+FL AG S
+in ite
+m ore
+r ap
+Ġc yt
+O UT
+c or
+il t
+Ġcaus es
+ĠG reen
+in i
+B r
+olog ies
+ĠCanad a
+AL L
+Ġrad io
+Ġsp at ial
+Ġair c raft
+f ont
+n av
+ir al
+Ġmod ule
+Ġre qu iring
+Ġes c ape
+Ġim plic
+ĠA R
+d ir
+ĠR em
+ist ent
+ag on
+ĠM or
+n y
+in der
+T ok en
+Ġval u able
+S I
+Ġconf irm
+ĠCom mon we alth
+let s
+H owever
+ĠC L
+Ġpro pos al
+W ell
+ward s
+Ã £ o
+Ġst ret ch
+Ġâ Ķ Ĥ
+ĠDes p ite
+c a
+Ġre j ected
+Pro perty
+Ġfil ter
+Ġproper ly
+ĠSu ch
+Ġpattern s
+B L
+h ow
+ang es
+C an
+ĠT wo
+Ġestim ate
+Ġrest ric
+c are
+ic ate
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠ
+ĠO N
+Ġmechanism s
+Ġh eter og ene
+Ġst ream
+Ġex ec
+av ed
+AB LE
+el se
+Ġevalu ate
+Ġ} ;
+Ġpiec e
+Ġbe g ins
+ch ild
+wh ile
+ĠÎ ¼
+E m pt y
+Ġv ict ory
+ep s
+ĠB oth
+il ing
+Ġ( "
+Ġ{ {\
+d oc
+ail ed
+sp ec
+F in ally
+Ġcharg es
+Ġun d
+et we en
+r ough
+Ġrest rict ed
+Ġann oun ce
+00 01
+ens or
+Ġcr ime
+M E
+j ust
+in y
+U E
+S ome
+ĠC A
+Ġstat ements
+Ġf ro z en
+iv ari ate
+ell o
+Ġform ula
+re y
+ut il
+ĠO k l ah oma
+Ġn orth
+Ġindic ates
+Con n ection
+S H
+ĠG N U
+Ġ ens
+Ġ" [
+Ġcont ained
+Ġm el
+Ġorgan ization
+Ġinv al id
+Ġal leg
+Ġrecord ed
+Ġcons c ious
+Ġcon clusion
+Ġun em ploy ment
+Ġinterest ed
+Ġcontroll ed
+D ate
+Ġ+ +
+Ġoff ered
+ĠC ath olic
+ition s
+Ġpossib ility
+Ġph en
+def ault
+W id th
+s rc
+ĠSt e
+at o
+Ġres olution
+Ġexist ence
+Gr oup
+ac i Ã³n
+Ġr is ks
+= &
+Ġn odes
+Ġa th let
+Ġs ched ule
+Ġg old
+Ġare n
+Ġl ib
+Ġ4 4
+S ource
+Ġg one
+Ġqu ick
+Ġflu id
+ĠOr g an
+Ġbas k et ball
+ĠO ly mp
+Ġant im ic ro b ial
+Ġcons erv
+. *
+K E
+Ġind ust rial
+u ation
+Ġgo als
+Ġinv ari ant
+ĠT ok y o
+and roid
+ĠUn der
+Ġrefer red
+Ġt ur ning
+Ġg ain
+Ġbe hal f
+c urrent
+Ġdri ver
+ĠJ ack son
+d i
+Ġv acc
+qu ery
+Ġcom fort able
+iz er
+Ġch ick en
+} )$
+t ag
+Ġcon vert
+Ġint el lect ual
+y g
+Ġst ars
+)* (
+ĠE v
+J oh n
+re te
+st ant
+ST R
+Ġflo or
+f irst
+Ġhold ing
+Pro v ider
+O X
+Ġ om
+Ġs ale
+Ġ4 3
+Ġsumm er
+Ġliter ature
+Ġag ents
+Ġcol lege
+wide hat
+** ** **
+r ine
+Ġ older
+Ġoff ers
+Ġte as po on
+E nt
+ĠM ex ico
+est ed
+ĠH T
+ĠE r
+' '
+Ã ¶
+Ġprec is ely
+Ġan al ys ed
+Ġcol ore ct al
+D S
+Ġgener ate
+w or ld
+ĠT ime
+Ġ5 00
+ĠS H
+ud d
+Ġw ire
+Ġbr anch
+C N
+c an
+w ood
+Ġimport ance
+ou ch
+Ġdevelop ing
+Ġcons um
+Ġs in
+Ġcon figuration
+------------ -
+yp her m ox
+Ġbre ath
+Ġident ity
+w as
+Ġab use
+Ġext ended
+ĠEx p
+Ġex amples
+we ight
+Ġsal t
+Ġhapp ens
+n ight
+Ġ3 9
+Ġpr ison
+Ġb atter y
+ĠC E O
+ĠF RO M
+Ġext rem e
+b in
+Ġr ise
+Ġsc al
+Ġthan k
+om eth ing
+Ġst im ulation
+d imensional
+ĠA P
+Ġexam ined
+ĠBl ack
+b ott om
+Ġf am ous
+Ġo bl ig
+Ġrec over
+Ġform at
+Ġerr ors
+l n
+ac ed
+im g
+ĠS olve
+ĠP eople
+Ġy ester day
+Ġcharacter s
+Ġent re pre ne
+d r
+ĠP re
+Ġcomp ounds
+ev ent
+Ġb inary
+ipp ed
+d ist
+ĠM al
+fl ow
+ĠW H
+Ġspe ech
+x x
+Ġcharg ed
+ĠB us iness
+Ġpartic les
+Ġm ax
+" ).
+Ġschool s
+Ġpen al ty
+Ġc old
+Ġpro sp
+Ġsal es
+Ċ ĊĠĠĠĠĠĠ
+om s
+â ĸ Ķ â ĸ Ķ â ĸ Ķ
+ol ar
+Ġmor ph
+ĠD et
+anc ing
+Ġcover age
+Ġsqu are
+; \
+ĠAt l ant
+Ġpro file
+D on
+Ġreturn s
+ree k
+ĠB rit ain
+ĠT or ont o
+Ġin ner
+Ġcateg ory
+Ġevalu ation
+Ġl ang u ages
+ĠS et
+ĠThe orem
+ĠMed ical
+Ġs us cept
+se lect
+Ġmus cle
+ĠK e
+Ġpay ment
+B ack
+ĠD el
+and a
+Ġcl in
+Ġpart ners
+Ġhigh light
+Ġspec ified
+t es
+Ġdim ension
+ĠF orm
+Ġ0 5
+Ġme ant
+Ġcl ub
+app ed
+n um
+P H
+c el
+Ġv asc ular
+oth ing
+Ġst able
+Ġn atur ally
+ic ity
+Ġsequ ences
+L C
+Ġinvestig ated
+ab ilities
+ĠC am br idge
+L O
+ĠE very
+Ġex act
+** )
+Ġn am ely
+ev el
+Ġdig it
+E CT
+Ġmet ast
+m atch
+P ar
+Ġgo og le
+------------------------------------------------ ------------------------------------------------
+Ġm atric es
+Ġch am ber
+B ar
+ul ating
+Ġf if th
+Ġsh ared
+Ġmeasure ment
+Ġdem and
+Ġme as uring
+(\ [
+Ġtrans pl ant
+Ġcar cin oma
+Ġd ry
+Ġ200 4
+Ġconcern s
+G A
+Ġsm ok ing
+ĠS ervice
+Ġcon clude
+Ġmeasure ments
+Âł Âł Âł
+Ġre ality
+ĠGerm an
+Ġpercent age
+Ġw es tern
+â Ķ ľ âĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶ ¼ âĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶĢâĶ ¤
+st d
+00 5
+Ġs igned
+Ġsu it
+Ġrepresent ed
+Ġopt ical
+k in
+Ġa head
+OD E
+Ġp ure
+Ġachie ved
+Ġ4 6
+Ġopen ing
+Ġposition s
+Ġco ff ee
+M T
+U D
+ĠWh y
+ĠUn ion
+Ġr ank
+201 0
+201 7
+Ġp ap ers
+Ġg ard en
+um m ary
+Int eg er
+ear s
+ĠSec ond
+ad s
+Ġ5 5
+** ]{}
+Ġ$ {{\
+c ss
+ĠB er
+Ġknow s
+Ġrece iving
+Ġimplement ation
+g ent
+Ġcomp osition
+Ġmaint ain
+and ard
+201 3
+oper ative
+Ġdig ital
+ĠF e
+ĠFr ance
+Ġre ve
+ĠC a
+Ġst rict
+ĠM et
+op ro te in
+ĠCol lege
+Ph i
+E nd
+ab b
+ĠR ead
+Ġt augh t
+Ġoper ating
+Ġsu c ceed
+Ġla un ched
+Ġph arm ac
+Ġag ency
+Ġfour th
+i as
+Ġd raft
+ĠR om
+Ġallow ing
+Ġcon ven ient
+Ġ7 5
+in ations
+Ġpl ants
+A F
+------------ --
+Ġw el come
+Ġsc en ari os
+Ġsh op
+Ġcustom ers
+ĠW il son
+Ġown ers
+Ġcar ry
+AS S
+% .
+m ic
+ĠB re
+ĠU N
+Ġviol ence
+Ġd ys
+Ġqu ery
+Ġown er
+Ġins ul in
+sc op ic
+Ġs an ction s
+M essage
+Ġ4 1
+Ġk ern el
+ĠC ell
+ĠFin ally
+Ġgo ver ning
+S ub
+land s
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠ
+Ġhelp ed
+( &
+ĠO ut
+ĠAmeric ans
+cent er
+H and le
+Ġab and on
+ar ian
+Ġw ides p read
+Ġ6 4
+Ġd er
+Ġext ension
+ane ous
+s d
+Ġat tract
+A ccording
+Ġdes ired
+Ġle aves
+str ong
+Ġr ac
+ĠM ac
+ĠD ep
+os it ory
+G u
+ĠC I
+Ġdec isions
+ref er
+Ġv ul ner able
+Ġgrant ed
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠ
+ren cy
+Ġs at
+Ġestim ates
+ĠSt reet
+Ġconn ect
+i ance
+u int
+Ġad ministr ative
+Ġact s
+ĠI II
+ĠCh urch
+Ġsupp lement
+Ġins ert
+Ġcal ci um
+Ġg lass
+âĢĶ âĢĶ
+Ġcover ed
+ĠLe ague
+Ġover r ide
+P T
+Ġinvestig ate
+M O ES M
+15 34 7 35 4 19 8 27 0 98
+c s
+Ġg ly
+Ġeas ier
+Ġre ven ue
+Ġpurch ase
+ĠE ner gy
+am ss ym b
+Ġtest ified
+AN D
+Ġassess ed
+ef ul
+CH EC K
+Ġunder lying
+Ġcon d
+am ine
+Ġch urch
+Ġrun s
+ĠJ ames
+Ġatt or ne ys
+.. /
+Ġs un
+Ġsec tions
+Ġocc urs
+EN D
+y an
+Ġan imal
+ĠB ay
+Â ·
+Ġ4 9
+Ġaccur acy
+Ġte ac her
+Ġreg ulation
+â Ī
+ĠU se
+ific ations
+ĠChrist ian
+ĠC iv il
+Ġsim pl
+m ar
+Ġed uc
+Ġh ab
+ĠO pen
+Ġsk ills
+Ġ4 7
+Ġemploy ee
+Ġcor on av ir us
+ĠCON D IT ION S
+Ġdes c
+Ġstrong ly
+math r sf s
+ĠP ort
+Ġst ick
+os p
+Ġv ine g ar
+ĠG a uss ian
+it ative
+Ġinc ident
+Ġinter v als
+Ġsur vey
+ĠSm ith
+* \
+ĠB it co in
+Ġp ip
+Ġp ool
+}} _{
+f unc
+Ġr ich
+Ġover l
+p age
+ell ed
+Ġlead er
+. </
+ĠA S
+Ġbut ton
+ĠT od ay
+B P
+Ġ ĊĠ
+ĠM o
+Ġ5 6
+Ġper t
+Ġn av
+Ġres ource
+Ġpower ful
+ymmet ric
+ĠL eg is l
+1 01
+O ver
+ĠM any
+Ġst ories
+Ġal ter
+ĠM aj or
+Ġw arm
+âĢĿ ,
+Ġappro ved
+ĠD av is
+RE F ER EN C ES
+\[ [@
+Ġin qu ir y
+ĠB el
+c p
+omet ric
+u a
+Ġins u fficient
+Ġpossib ly
+------------ ---
+Ġpath way
+Ġh aven
+ĠS al
+Ġtrans mission
+Ġlimit ations
+Ġde vi ation
+Th en
+Ġapproach es
+ud e
+ak ers
+Ġra ise
+: "
+Ġth read
+port s
+ĠD ay
+R el
+Ġdep ends
+is ms
+ĠD i
+IC EN SE
+B l
+Ġmost ly
+A c
+ut s
+=" ../../
+ar ily
+for all
+Ġdeterm ination
+r s
+Ġlif et ime
+Ġind ep end ence
+E F
+^ -
+ĠW om en
+Ġj our ney
+S olve
+m t
+Ġb an
+Ġb ag
+ost er
+Ġl att ice
+G ener
+Ġremain der
+ĠChrist m as
+le tion
+Ġs rc
+or ks
+Ġl ung
+Ġk ill
+Ġdetail ed
+n eg ative
+Ġprot ected
+N UL L
+T T
+Ġc ash
+d ependent
+Ġcomp are
+Ġint est inal
+Ġpre gn ancy
+p il as eng ine
+B M
+Ġ6 5
+Ġaut o
+Ġbel ie ves
+ĠGe org ia
+L ine
+com ing
+Ġ _{
+Ġmix ed
+r d
+Ġdep th
+Ġlist ed
+Ġlearn ed
+a uthor
+w in
+ĠE ng ine
+ĠAd ministr ation
+Ġapp oint
+z a
+Ġacc ident
+Ġrec ru
+/ \
+Ġinvest ment
+ĠB ur
+ĠD uring
+Ġun cle ar
+Ġup d ates
+Ġresp ir atory
+ĠS ing ap ore
+et ch
+Ġrem ark
+I O
+t emplate
+Ġcomm itted
+Ġfl at
+Ġsecond ary
+ĠU b unt u
+Ġver te x
+; &
+st all
+Ġth or ough
+b ul
+Ð °
+Ġs ymbol
+Ġb orn
+ot es
+ĠCor por ation
+Ġc it iz en
+E E
+Ġpl ays
+Ġtri als
+Ġc atal
+st anding
+ĠA re
+IT Y
+ï¼ ļ
+ĠE gy pt
+Ġm aster
+Ġaff ord
+ĠComp any
+S ince
+y a
+Ġh ole
+Ġrel ief
+Ġimprove ment
+im ent
+C ell
+Ġ+ =
+Ġenvironment al
+Ġplan ning
+Th ese
+Ġarg uments
+Ġcommun ities
+Ġc at
+Ġapplic able
+Ġopen ed
+chem a
+Ġl atter
+Ġv ary
+Ġbook s
+Ġresult ed
+Ġgreat est
+ug in
+AR T
+D F
+k i
+ä »
+: #
+Ġres ist
+Ġac ute
+Ġy es
+Ġbel ief
+Ġafter no on
+] [
+m ut
+Ġb io
+ĠY es
+Ġm ach ines
+Ġabs or ption
+Ġis ol
+P V
+Ġun known
+Ġ201 9
+Ġfocus ed
+ĠC r
+Ġf av our
+M ed
+Ġmet ric
+Ġgen etic
+Ġex hibit
+ĠT witter
+Ġconsider ing
+osc opy
+or tion
+bre ak
+if er
+ĠC oun s el
+Ġth in
+ĠP RO
+\] ).
+is her
+el ly
+** *
+Ġassum ing
+Ġg ar
+201 2
+Qu ery
+Ġd ou b
+k er
+ĠW is cons in
+n ext
+Ġtyp ical
+Ġsp ot
+Ġ5 2
+he ight
+C V
+Ġadv anced
+Ġfund s
+Ġf uel
+ch e
+ĠH ill
+Ġdirect ed
+St art
+Ġview s
+org an
+Ġdep ending
+olic y
+it a
+Ġm ouse
+ĠB rown
+et te
+Ġperson n el
+leq sl ant
+2 000
+R S
+Ð ½
+pro t
+mon th
+Ġsett ings
+Ġsign als
+ĠDef end ants
+a us
+Ġch anging
+Ġsu st ained
+M ore
+il er
+Ġcall ing
+Ġad ult
+Ġevent ually
+ĠRuss ian
+Ġsu itable
+Ġplaintiff s
+ĠAg re ement
+Ġre act
+... .
+Ġv ess el
+] ),
+Ġt ight
+an es
+Ġinter vention
+Ġd ual
+Ġvir us
+In put
+Ġ7 2
+ann el
+ĠS ci ences
+ĠP ac ific
+oph age al
+Î ¼
+Ġt error
+Ġex cess
+bl ing
+ur a
+Ġle aving
+Ġsens or
+il ater al
+Ġadv ant ages
+ow ed
+ĠF ree
+Ġb oy
+Ġfor ced
+Ġcon clus ions
+? âĢĿ
+U C
+Ġsignal ing
+ĠRuss ia
+on ym ous
+C o
+ut or
+ĠP ress
+Ġseem ed
+Ġad vert
+Ġsm art
+Ġth ous and
+d sl c
+Ġlaw y er
+al d
+ec e
+ĠT ay lor
+st atus
+Ġbur den
+Ġsc ores
+Ġmanag er
+Ġst ored
+Ġcandid ate
+ĠJ er us al em
+ĠT om
+Ġsh ock
+Ġr ing
+Ġfrequ ently
+w ee k
+ĠU k r
+Ġ1 20
+b an
+ipp ing
+g ather ed
+Ġwh e el
+Ġatt rib utes
+h ood
+Ġpl ot
+Ġpre lim inary
+ĠB en
+Ġno ise
+Ġcomp etition
+Ġstatist ical
+C I
+W indow
+Ġtw ice
+ĠAc adem y
+pm b
+E W
+ĠA ng
+$ {
+Ġ* )
+rop ri
+Ġf ru its
+Ġn ec ess
+Ġch ec ks
+N O
+Ġc le
+ĠG o
+om al
+Ġdet ect
+iver se
+Ġr ul ed
+Ġret ro sp
+4 00
+ĠP rop osition
+Ġdiv is or
+are n
+Ġmot iv
+Ġem p ir ical
+}\ ,
+Ġinvol ving
+clus ive
+ĠJ os eph
+ĠOff ic er
+Ġb ool
+Ġre nt
+ess or
+d ots
+ĠR ule
+ac le
+Ġ5 1
+Ġcontrib ution
+r h
+ĠB o
+Ġpar agr aph
+E V
+Ġtri p
+as p
+Ġass oci
+Ġsc ient ists
+ĠR od r ig ue z
+om er
+Ġradi ation
+K P X
+Ġrem ov ing
+Ġd at ab ases
+Ġn an
+Ġpl ane
+Ġun f
+Ġad ults
+ist ory
+Ġexam ination
+ur th erm ore
+Ġs ides
+ĠM S
+Ġw er en
+Ġim aging
+Ġmolec ules
+Ġu int
+d ag ger
+Ġp il ot
+Ġre vers
+ĠN or
+Ġwill ing
+Ġles ions
+Ġf ill
+Ġstandard s
+Ġcent ury
+Ġr ough ly
+H ead er
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠ
+h as
+Ġ200 2
+Ġfin ished
+Ġse as ons
+ass oci ated
+c f
+ro g
+Ġsp aces
+201 6
+Ġind eed
+Ġ5 4
+Ġre verse
+Ġsee ing
+Ġapp e als
+od ed
+ĠG ood
+Ġoper ators
+cd ots
+m ost
+Ġh el
+ĠA p
+ĠP e
+Ġacc um
+Ġmin im
+00 7
+Ġorder ed
+ed i atric
+ĠG l
+G L
+j son
+ic ian
+Ġn om
+Ġt unn el
+Ġp ne um on ia
+Ġrelationship s
+Ġimmun e
+Ġcons ult
+Ġ200 3
+Ġsupp osed
+Ġlong it ud inal
+a a
+c up
+Ġj ump
+Ġthan ks
+}^ \
+Ġs ession
+) =\
+Ġext ends
+but ton
+J ust
+med ia
+Ġint ent
+Ġindic ating
+Ġdemonstr ate
+Ġl ose
+Ġtrans cription
+200 9
+d el
+gr ou ps
+Res ult
+Ġjo in
+Ð ¾
+ass ert
+Ġmiss ion
+ĠSen ate
+Ġn ine
+ER S
+Ġcons ent
+s in
+Ġt u ber c ul osis
+Ġwas h
+form at
+Ġrec all
+Ġrel ates
+F R
+am ing
+Ġst re
+Ġconcern ed
+ogen esis
+Ġform al
+Ġmain ly
+Ġpiec es
+Ġfr action
+Ġdep artment
+Ġattack s
+Ġar ter
+Ġinc ub ated
+Ġw ood
+and er
+end if
+ĠU p
+Ġfin ish
+Ġpl ur ality
+Ċ ĊĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ
+\ )
+dis play
+Ġbound ary
+Ġs ac r
+Ġv ess els
+ox y
+Ġ ion
+on ly
+al a
+Ġinst ant
+Ġw w w
+Ġbe aut y
+ĠL in ux
+Ġ_ , _
+R em
+Ġfund ing
+ĠF ed er ation
+Ġwe ap on
+k ins
+s plit
+Ġm and
+ĠPart y
+ĠOff ice
+A m
+y st
+F I
+ic tions
+reat ment
+Ġor ient ation
+ĠP AT I ENT S
+3 00
+Ġpro sec ution
+Ġp ix
+ĠOn ly
+AG E
+Ġox id
+Ġsc ene
+Ġop in ions
+Ġep is odes
+Ġas king
+Ġinterpret ation
+ul s
+ER R OR
+I ST
+Ġsp end
+_{ {\
+gr aph
+Ġsc an
+Ġfe es
+ri or
+ĠW ork
+Ġag ric ult
+Ġpost er ior
+f ix
+r ite
+} +\
+Ġf ans
+Ġl augh
+Ġarg ues
+r itt en
+M e
+c ard
+Ġd il
+ĠS N
+-- --
+Ġchallen ges
+Ġenh ance
+Ġvers us
+Ġt on
+Ġm RNA
+c ateg ory
+Ġfavor ite
+Ġcon ference
+Ġadv ice
+s ime q
+Ġphosph ory lation
+Ġpol ar
+200 8
+Ġcy cl
+Ġtr ain
+Ġang le
+Ġfor th
+ĠAn n
+N et
+P re
+Ġs ector
+ct or
+Ġ+ / -
+l ang
+Ġre place
+Ġass ay
+col umn
+ĠF ederal
+Ġmed ian
+": "
+Ġbi as
+ĠF oll owing
+Ġinter ven tions
+Ġel ig ible
+O K
+ĠH all
+. **
+l aw
+if ies
+Ġ200 1
+201 4
+g ers
+-------- --------
+Ġ5 3
+Ġpotential ly
+Ġclaim ed
+Ġin her
+Ġsp ring
+ĊĊ ĊĊ
+Ġconf idence
+f lo or
+Ġs ess ions
+Ġh ous es
+Ġrec ur rence
+Ġacqu is ition
+um ent
+ĠM A
+Ġde grad ation
+Ġhelp s
+Ġrecogn ized
+Ġest ate
+y ou
+ad y
+ut ing
+ob ile
+ĠFin anc ial
+Ġemploy ed
+Ġcap able
+ĠPh il
+E val uate
+Ġcomp act
+ĠR ob
+Ġadv ance
+But ton
+F C
+h i
+Ġm ention
+Ġv ill
+ij ms
+Ġh ence
+Ġl it
+Ġsc atter ing
+ĠSt r
+Ġt it
+ic ious
+Ġh a
+0000 0000
+v t
+am ed
+M in
+def ined
+ĠAustral ia
+s upplementary
+op ath
+Ġcourt s
+Cl ient
+ĠTh om ps on
+T D
+Ġ1 01
+ĠM ont
+ĠG reat
+ert ain
+Ġl ig
+ĠCl in ical
+Set t ings
+Ġsyn ch ron
+Ġar ch
+ex ec
+> &
+Ġc os
+Ġfil ms
+Ġmark ed
+Ġimpl ies
+Ġg ap
+Cl ick
+h an
+Ġp itch
+201 8
+d eg ree
+Ġch ocol ate
+ĠAdd ress
+b on
+ĠP lease
+Ġus ual
+Ġrel ax
+Ġgr av
+", "
+Ġrespons ibility
+Ġdam ages
+ĠR oy al
+Ġm aps
+ĠP H
+) ]
+p df
+Ġscreen ing
+Ġbi ological
+Ġab und ance
+Ġincre d ib ly
+oh ist o chem
+ĠM iss iss ipp i
+h r
+}} }
+Ġe gg
+Ġsmall est
+Ġaccur ate
+Ġconf r ont
+Ġv ac
+Ġoff ense
+h ouse
+t a
+ĠF ield
+Cont act
+d x
+Ġp al
+as ure
+Ġso le ly
+Ġr ats
+uc cess
+Ġcontrib ute
+prop osed
+Ġposs ession
+â ģ Ħ
+" ),
+out put
+ap ache
+ĠJ an
+Ġdec ide
+Ġdown load
+u ch
+ent er
+Ġre ct
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠ
+Ġsh ut
+line ar
+Ġart icles
+U G
+um s
+Ġme at
+ĠM ary
+Ġexp osed
+Ġwait ing
+T ar get
+S R
+Ġc e
+Ġm ethyl
+Ġper ce ived
+c ing
+{ {
+Ġm ir
+Ġl ens
+Ġl ik
+}} {\
+equ al
+Ġh ipp oc amp
+Ġrel ations
+Ġsee k
+Ġst anding
+Ġpart ial
+Ġcrit ic
+V ersion
+ĠH ence
+em ia
+ĠD C
+r ate
+D B
+Ġ3 00
+â Ħ ¢
+Ġb ir ds
+Sp ec
+ĠS aud i
+D C
+ĊĠĠĠĠĠ ĠĠĠĠĠĠĠĠĠ
+201 1
+M an
+ash ed
+Refer ences
+G o
+å ı
+Ġ1 50
+ĠT ype
+Ġvari ation
+Ġprov ision
+Ġaccom pl ish
+e z
+m em
+ĠI P
+UR L
+ĠP s y ch
+Ġmy oc ard ial
+r ist
+ĠT ur
+L ast
+h box
+ain ts
+S L
+it ro gen
+Ġhe av ily
+â Ķ Ģ â Ķ
+ĠG ive
+Ġelect ronic
+id ers
+Ġrem ained
+ĠF IG
+Ġm un icip al
+Ã ¼
+Ġs od ium
+Ġs plit
+ĠC ap
+ad ed
+Ġve get
+os ph
+Ġsp ending
+Wh ich
+Ġan c ient
+Ġpro gn ost ic
+$ )
+Ġann ual
+ĠB ill
+ĠWe b
+"} .
+Ch eck
+m en
+Ġpart ner
+ĠC T
+Ġg ender
+ĠG old
+ĠOn ce
+Ġexp on ential
+ĠJ ava S cript
+Ġf old
+Ġst ability
+** (
+ak ed
+ER T
+ĠInd eed
+Ġcompl aint
+& \
+u ro
+ä ½
+ri ve
+Ġ5 8
+Ġtechn ical
+Cont ent
+oun ter
+s n ap
+b al
+n on
+Ġdynam ics
+Ġf re
+Ġam end ment
+Ġhyper t ension
+u ous
+ĠB i
+ack s
+Ġfac ilit
+Ġaccom pan ied
+st at
+Ġcomm ission
+Ġent h us i
+> >
+) ^{
+Ġthere by
+Ġend s
+Ġcustom er
+U I
+Ġ ice
+Ġax is
+R ight
+æ ľ
+========== ==========
+B R
+C reate
+E A
+ĠB M I
+Ġr an
+Ġoppos ite
+Ġemploy ment
+Ġla unch
+Ġcon cluded
+Ġit er
+ch ange
+Ġconsider ation
+Ġcons ens us
+Ġfib ro bl ast s
+Ġstart s
+Ġbas eline
+Ġwor se
+Ġind iv id ually
+A ction
+ĊĠĠĠĠĠĠĠĠĠĠĠ Ġ
+OR T
+Ġdoct or
+Ġc ours es
+N umber
+ĠE X
+f ind
+ur er
+Ġor al
+Cont rol
+Ġep id em
+h igh
+ick s
+Ġasp ects
+Ġnumer ous
+requ est
+Ġdr am at ically
+ar ia
+Ġro ck
+Ġsub stit
+Ġcl oth es
+ĠCh ild ren
+Ġsuggest ing
+Ġmod ified
+Ġd ow nt own
+H S
+Ġn arrow
+Ġcommon ly
+tx t
+e es
+m L
+m g
+Ġ ol
+Ġdifferent ial
+ĠV ict or
+st y les he et
+R ef
+Ġthe orem
+Ġpers ons
+art if act Id
+f s
+Ġcl ar
+app end
+Ġrequire ment
+ĠM ic ro
+Ġk ne e
+Ġret ire ment
+p ower
+Ġsecond s
+Ġstop ped
+U P
+Ġposs ess
+Ġsee king
+re al
+ĠS pr
+P art
+ro ad
+Ġnot es
+Ġphot o
+Ġal tern
+Ġtrans f
+IN E
+Ġear th
+Ġex ha ust
+Ġgen u ine
+ĠZ eal and
+ik ip ed ia
+ĠP R
+and om
+Ġrecommend ed
+% ),
+G R
+Ġsupport ing
+Ġocc asion
+Ġpop ulations
+ibr ary
+C OM
+Ġsuccess fully
+ed y
+ĠD en
+trans lation
+ĠAfric a
+Ġn erv ous
+ign ific ant
+Ġab dom inal
+Ġflu ct u ations
+d im
+à ®
+over n
+ĠRepublic an
+m ethod
+el d
+ĠâĢ ¦
+Ġt ro ops
+Ġpro gn osis
+ĠJ ew s
+Ġhom og ene ous
+n ull
+Ġch ief
+pro cess
+ĠAN Y
+Y our
+ĠS l
+IN T
+Ġinc idence
+ĠD ani el
+ĠIt al ian
+en ess
+Ġen able
+Ġsign s
+v as
+equ iv
+> (
+P M
+Ġf iber
+Con fig
+Ġdepend ent
+Ġst up id
+Ġdes ir able
+H R
+Ġpre v
+Ġpract ices
+Ġemerg ency
+12 0
+Ġstr ain
+pos ed
+Ġintegr al
+Ġide al
+1 10
+e k
+ĠThe ir
+Ġd oll ar
+ĠC apt ain
+Ġun us ual
+Ã Ĺ
+urs or
+Ġreplac ed
+arg s
+ĠJ ers ey
+Ġover wh el
+a o
+s g
+Ġc ort
+Ġto ler
+ĠSp an ish
+Ġoff set
+Ġend ed
+ĠM ad
+ĠJust ice
+Ġt um our
+Ġcon j
+Ġbe at
+Ġcons umption
+fr ame
+Ġen em y
+Ġen erg ies
+act iv
+] $
+rom agn etic
+Ġm iles
+201 9
+ir ty
+Ġcell ular
+Ġh ier arch
+A CT
+ust er
+con f
+sm all
+Ġinter act
+Ġ ì
+ĠE qu
+we et
+Ġan ter ior
+SE LE CT
+| {\
+In d
+Ġgu ide
+Ġf ish
+Ġ5 7
+Ġviol ation
+p ush
+w ar
+ĠF our
+Ġpul mon ary
+S ON
+l ar
+o bs
+Ġsol ve
+L A
+ri ers
+ĠCol umb ia
+Ġgirl s
+O ff
+id a
+ole c ular
+ap ed
+ap se
+Ġinstit ution
+Ġc art
+ĠS and
+em pl
+sc ale
+Ġentire ly
+Ġa fore m ention ed
+Ġc a
+st ar
+Ġsup ra
+v o
+en a
+Ġappear ance
+Ġamount s
+r ons
+Ġp over ty
+ult ip le
+Ġspec im ens
+Ġel der ly
+B ase
+as y
+ĠL ike
+.. \
+Ġprom ote
+' ).
+S O
+Ġt ag
+Ġs it
+ĠF ile
+Ġeffect ively
+ĠM ethod s
+ĠAss emb ly
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠ
+ur d
+\] ),
+Ġreport ing
+ĠMin ister
+Ġf ont
+ĠI ll
+ĠH D
+Ġad mitted
+t ab
+st e
+ĠI V
+ĠS ant
+gr ade
+cont rol
+Ġteach ing
+0 36 35 4 65 18 8 15 15 9
+Ġsc ope
+s of ia
+Ġl iber al
+Ġst ead y
+A re
+Ġs ym
+Ġl os
+ro duction
+Ġun ion
+č Ċĉĉĉ
+Ġbehavi our
+Ġorgan ic
+$ _
+++ )
+T wo
+l ines
+Ġp add ing
+Ġc ere br al
+un s
+ĠT imes
+Ġgr id
+pro duct
+ĠCent ral
+G B
+Ġb attle
+Ġassum ed
+M ay
+Ġun able
+Ġinf o
+f it
+Ġreg ression
+Ġst ru ck
+r id
+ri an
+ĠL ie
+ĠG al
+m at
+Ġal t
+Ġjust ice
+Ex t
+ĠPl an
+Ġkeep ing
+Ġassist ance
+em por ary
+Ġco oper ation
+Ġp ump
+Ġcomp ound
+] \
+# :
+N ote
+er ry
+or i
+Ġdec ades
+Ġobserv ations
+Ġc oc aine
+Ġres on ance
+Ġad oles c ents
+Ġcent r if ug
+ĠA PI
+Ġun a
+or ters
+Ġst reet
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠĠĠ
+Ġpe ace
+Ġt ables
+ĠE as tern
+Ġph r ase
+Ġlaw su it
+Ġpartic le
+m d
+Ġ5 9
+call ed
+Ġcharacter ized
+Ġs ought
+Ġcoupl ing
+P lease
+ĠA lex
+ap es
+ĠP UR PO SE
+Ġpl astic
+Ġf ing ers
+ond ition
+Ġresearch ers
+Ġmass ive
+yt es
+Ġid x
+Ġprop ag
+ï ½ ¡
+Ġd ut ies
+c ut
+Ġre form
+z er
+Ġb one
+Ġdis k
+ĠR ad
+og n
+Ġgr ade
+ĠÎ ²
+b ec
+ac ement
+Ġsupp l
+ĠWARRANT I ES
+Ġdist ing u ished
+Ġb right
+ĠS am
+Ġ{ }
+Ġass igned
+Ġobject ive
+e lement
+th ers
+y e
+ĠI F
+Ġdis pl
+Ġcontain er
+Ġresid ents
+Ġact ing
+Ġpro min ent
+ag en
+ĠJ ud
+Ġ[ [
+S tr
+crib e
+Ġpr on oun
+i ate
+ĠW ill
+Ġcontrib utions
+Ġstruct ural
+Ġmer ely
+Ġr ig
+ĠR E
+Ġ9 9
+Ġtri v ial
+ĠE N D OS C OP
+###### ###### ###### ###### ###### ######
+or ation
+pro perty
+Ġref u ge
+* ^
+erv es
+Ġmanag ed
+Al though
+Ġad m
+oll ow
+n an om aterials
+Ġb al
+ord s
+Ġinj ection
+r r
+ang er
+Ġgu ard
+ĠJohn son
+ogen ic
+Ġord ers
+Ġwe ar
+to ol
+Ġlink ed
+Ġc ov ari
+ĠSpec if ically
+ook ing
+ĠJ ones
+UL T
+Ġin hibition
+ĠO bject
+Se lect
+s i
+Ġclust er
+Ġbi ops y
+is c
+yt ic
+l ocation
+Ġmin ute
+Ġprincip al
+O V
+Ġed itor
+or al
+im er
+Ġ\ >
+ĠAr ab
+Ġbro ken
+Ġs and w ich
+Ġcan n ab is
+Ġcompl ications
+) }\
+e gr
+em p
+Ġpredict ed
+Ġnew sp aper
+ĠSe ver al
+} )\
+p ng
+end ant
+Ġim m
+ĠN av
+Ġinform ed
+{ (
+ĠSt ar
+lect ric
+Ġauthor ities
+Ġprincip le
+D P
+C ons
+ident ial
+Bu ffer
+Ġident ification
+ĠP etition er
+ĠPal est in
+G E
+Ġp p
+ici ency
+miss ions
+Ġpro x im ity
+Wh ere
+ott ed
+Ġret ri ev
+. -
+ri ef
+Ġp in
+Ġreg ist ration
+n orm
+ĠM ath
+pack age
+Ġsens itive
+Ġse g ments
+Ġdist in ction
+Ġlow est
+Ġa id
+ro ot
+Ġre in
+Ġf an
+im ation
+ach ing
+Ġap art
+f ast
+Ġsec ure
+u rop
+it ors
+Ġb ug
+Ġcor ner
+Ġ ĊĠĠĠ
+Ġ19 99
+Ġf aster
+ĠW al
+F O
+w eb
+Ġconv iction
+th m
+Ġcons ole
+s a
+our se
+Ġar ms
+### #
+j w at son
+ĠB alt im ore
+P ost
+str aint
+ic ular
+ĊĠĠĠĠĠ ĠĠĠĠĠ
+Ġsupport s
+cont in
+Ġcandid ates
+Ġinn ov
+m bf a
+S upp
+Ġf ell
+Ġre ducing
+Ġtr aj ect ory
+X X
+ast ro
+St at
+Ġkn ock
+Ġdis ag ree
+Ġin fer
+Ġflo at
+Ġhum ans
+Ġclass ical
+Ġunivers ity
+ä º
+up s
+St atus
+ĠH en ry
+F IG
+Ġir re lev ant
+ĠN a
+Ġinvol ves
+h um an
+i ary
+Ġf illed
+ri e
+ï¼ Į
+ĠI T
+b ion ic
+Ġ" \
+ĠL abor
+]^ .
+M ENT
+ys is
+Ġexp ensive
+Ġm athemat ical
+L oad
+Ġw arn
+ĠV ol
+l ayout
+ut o
+In stance
+Ġfac ilities
+ĠF IT N ESS
+Ġt ick
+Ġm ic
+Ġv en
+ri a
+Ġch air
+bu ffer
+Ġclos ely
+roll ed
+c at
+Ġn arr ative
+Ġmicro sc opy
+Ġaw es ome
+ĠP an
+Ġex ceed
+ak en
+15 0
+fil ter
+Ġm outh
+Ġenh anced
+æ ĺ ¯
+Ġst om ach
+G O
+ub b
+Ġdeterm ining
+pon ents
+ĊĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ Ġ
+a ired
+Ġre pl
+ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠĠ
+ĠL ife
+ãĢ Ĥ
+( [
+] );
+Ġb ott le
+ist rib ution
+F S
+Ġtr ail
+ĠU s
+OR D
+Ġblock s
+Ġf ol ks
+Ġcomp at ible
+Â ¶
+Ġt ub
+ĠF und
+ĠApp le
+Ġmar ried
+ł Â
+it her
+Ġb ath
+Ġe ating
+id d
+Ġmin imal
+Com ponent
+Ġcorrect ly
+Ġhundred s
+edd ing
+a is
+Ġread s
+Ġz one
+Ã ¤
+Ġs itting
+ent ed
+Ġass ets
+Ġgu id ance
+Ġass ault
+com mon
+Ġprov isions
+Ġmatter s
+Ġdecre asing
+Ġpre gn ant
+Ġyou th
+Ġfor g
+Ġinstall ed
+L a
+Ġ1 10
+Ġcount s
+Ġp ept ide
+Ġl ibr aries
+)) )
+Ġput ting
+Ġrout e
+U t
+un it
+se arch
+ĠCol or ado
+Ġc ities
+ĠP itt s burg h
+crib ed
+/ >
+Ġst ack
+Ġint ention
+Ġh t ml
+Ġcan c ers
+Ġob es ity
+Ġcompar is ons
+Ġr ational
+ĠB ig
+mod ule
+ĠRo bert
+ĠTh omas
+ĠF ib
+Ġext end
+ĠÃ Ĺ
+ĠH ou ston
+ress R out e C ir c u
+P oint
+Ġm es
+ĠL ord
+Ġarg ued
+Th anks
+ot a
+Ġpack ages
+Ġc as
+Ġp ages
+ĠC N
+add r
+Ġbro ther
+ph one
+) }{
+ear ing
+Ġdynam ic
+F ind
+Ps i
+= (
+n umber
+ĠS D
+ĠS k
+Ġpass ing
+ar X iv
+Id ent ifier
+m id
+ent ry
+ĠP ut
+Ġem bar r ass
+M D
+ĠÎ ±
+t ic
+ik i
+Ġinitial ly
+Ġaccount s
+Ġ ],
+Ġlif est yle
+O b
+Ġjo ined
+Ġs pl
+ĠM ag
+Ġcor on ary
+) "
+F P
+s ens
+ol a
+ĠM em
+ĠF ind
+Ġrequest ed
+Ġaccom p any ing
+* /
+Ġcre ation
+Ġemb edd ed
+Ġmag az ine
+l ife
+Ġh al
+Ġpract ical
+ph asis
+Ġinter net
+msg str
+Ġpre dom inant
+Ġle ague
+ra z
+S im
+ĠFr ank
+msg id
+Ġdef ic it
+Ġquestion na ire
+L S
+č Ċĉĉ

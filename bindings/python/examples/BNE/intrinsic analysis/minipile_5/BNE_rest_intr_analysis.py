@@ -9,7 +9,8 @@ import os
 name = "bne_rest_byteLevel_minipile_5_tokens_"
 
 # Vocab length
-tokens = [2**18, 2**17, 2**16, 2**15, 2**14, 2**13]
+#tokens = [2**18, 2**17, 2**16, 2**15, 2**14, 2**13, 2**12, 2**11, 2**10]
+tokens = [2**12, 2**11, 2**10]
 
 # Build tokenizer
 models = []
@@ -34,7 +35,7 @@ def batch_iterator():
         yield batch["text"]
 
 
-os.mkdir("data/BNE_rest/")
+#os.mkdir("data/BNE_rest/")
 for index in range(len(tokens)):
     tokenizers[index].train_from_iterator(batch_iterator(), trainers[index], length=len(dataset))
     tokenizers[index].save(f"data/BNE_rest/{name}{tokens[index]}.json")
