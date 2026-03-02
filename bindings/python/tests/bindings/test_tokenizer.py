@@ -746,6 +746,33 @@ class TestTokenizer:
         assert output == "name is john"
         assert tokenizer.get_added_tokens_decoder()[0] == AddedToken("my", special=True)
 
+    def test_weakref_support(self):
+        import weakref
+
+        tokenizer = Tokenizer(BPE())
+        weak_ref = weakref.ref(tokenizer)
+
+        assert weak_ref() is not None
+        assert weak_ref() is tokenizer
+
+        del tokenizer
+        assert weak_ref() is None
+
+    def test_weakref_with_multiple_references(self):
+        import weakref
+
+        tokenizer = Tokenizer(BPE())
+        weak_ref = weakref.ref(tokenizer)
+        another_ref = tokenizer
+
+        assert weak_ref() is not None
+
+        del tokenizer
+        assert weak_ref() is not None
+
+        del another_ref
+        assert weak_ref() is None
+
     def test_setting_to_none(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.normalizer = Strip()
