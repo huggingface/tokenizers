@@ -98,6 +98,10 @@ jobs:
             platform: linux
             target: s390x
             interpreter: 3.9 3.10 3.11 3.12 3.13
+          - os: ubuntu
+            platform: linux
+            target: riscv64
+            interpreter: 3.9 3.10 3.11 3.12 3.13
         exclude:
           - os: windows
             target: aarch64
