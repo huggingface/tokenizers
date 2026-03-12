@@ -143,7 +143,11 @@ where
                 "post_processor" => {
                     builder = builder.with_post_processor(map.next_value()?);
                 }
-                _ => {}
+                _ => {
+                    // Skip unknown fields (consume the value); useful behavior for experimental 
+                    // wrappers who may store their own configs
+                    map.next_value::<serde::de::IgnoredAny>()?;
+                }
             };
         }
         let mut tokenizer = builder
