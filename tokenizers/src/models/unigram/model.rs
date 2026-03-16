@@ -30,11 +30,15 @@ pub struct Unigram {
     is_optimized: bool,
     byte_fallback: bool,
 
-    pub theta: Option<f64>,
+    pub alpha: Option<f64>,
+    pub nbest_size: Option<usize>,
 }
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
-        self.unk_id == other.unk_id && self.vocab == other.vocab && self.theta == other.theta
+        self.unk_id == other.unk_id
+            && self.vocab == other.vocab
+            && self.alpha == other.alpha
+            && self.nbest_size == other.nbest_size
     }
 }
 
@@ -55,7 +59,8 @@ impl Clone for Unigram {
             fuse_unk: self.fuse_unk,
             is_optimized: self.is_optimized,
             byte_fallback: self.byte_fallback,
-            theta: self.theta,
+            alpha: self.alpha,
+            nbest_size: self.nbest_size,
         }
     }
 }
@@ -140,7 +145,8 @@ impl Unigram {
             cache: Cache::default(),
             is_optimized,
             byte_fallback,
-            theta: None,
+            alpha: None,
+            nbest_size: None,
         })
     }
 
@@ -226,7 +232,7 @@ impl Unigram {
         if sentence.is_empty() {
             return Ok(vec![]);
         }
-        if self.theta.is_none() || self.theta == Some(0.0) {
+        if self.alpha.is_none() || self.alpha == Some(0.0) {
             if let Some(result) = self.cache.get(sentence) {
                 Ok(result.to_vec())
             } else {
@@ -340,10 +346,10 @@ impl Unigram {
     fn encode_unoptimized(&self, sentence: &str) -> Result<Vec<String>> {
         let mut lattice = Lattice::from(sentence, self.bos_id, self.eos_id);
         self.populate_nodes(&mut lattice);
-        let path = if let Some(theta) = self.theta {
-            lattice.sample(theta)
-        } else {
-            lattice.viterbi()
+        let path = match (self.nbest_size, self.alpha) {
+            (Some(n), Some(alpha)) if n > 0 => lattice.sample_nbest(n, alpha),
+            (_, Some(alpha)) => lattice.sample(alpha),
+            _ => lattice.viterbi(),
         };
         if self.fuse_unk {
             let mut results = vec![];

@@ -855,22 +855,36 @@ pub struct PyUnigram {}
 #[pymethods]
 impl PyUnigram {
     #[getter]
-    fn get_theta(self_: PyRef<Self>) -> Option<f64> {
-        getter!(self_, Unigram, theta)
+    fn get_alpha(self_: PyRef<Self>) -> Option<f64> {
+        getter!(self_, Unigram, alpha)
     }
 
     #[setter]
-    fn set_theta(self_: PyRef<Self>, theta: Option<f64>) {
-        setter!(self_, Unigram, theta, theta);
+    fn set_alpha(self_: PyRef<Self>, alpha: Option<f64>) {
+        setter!(self_, Unigram, alpha, alpha);
+    }
+
+    #[getter]
+    fn get_nbest_size(self_: PyRef<Self>) -> Option<usize> {
+        getter!(self_, Unigram, nbest_size)
+    }
+
+    #[setter]
+    fn set_nbest_size(self_: PyRef<Self>, nbest_size: Option<usize>) {
+        setter!(self_, Unigram, nbest_size, nbest_size);
     }
 
     #[new]
-    #[pyo3(signature = (vocab=None, unk_id=None, byte_fallback=None, theta=None), text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None, theta=None)")]
+    #[pyo3(
+        signature = (vocab=None, unk_id=None, byte_fallback=None, alpha=None, nbest_size=None), 
+        text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None, alpha=None, nbest_size=None)"
+    )]
     fn new(
         vocab: Option<Vec<(String, f64)>>,
         unk_id: Option<usize>,
         byte_fallback: Option<bool>,
-        theta: Option<f64>,
+        alpha: Option<f64>,
+        nbest_size: Option<usize>,
     ) -> PyResult<(Self, PyModel)> {
         match (vocab, unk_id, byte_fallback) {
             (Some(vocab), unk_id, byte_fallback) => {
@@ -880,12 +894,14 @@ impl PyUnigram {
                             "Error while loading Unigram: {e}"
                         ))
                     })?;
-                model.theta = theta;
+                model.alpha = alpha;
+                model.nbest_size = nbest_size;
                 Ok((PyUnigram {}, model.into()))
             }
             (None, None, _) => {
                 let mut model = Unigram::default();
-                model.theta = theta;
+                model.alpha = alpha;
+                model.nbest_size = nbest_size;
                 Ok((PyUnigram {}, model.into()))
             },
             _ => Err(exceptions::PyValueError::new_err(
