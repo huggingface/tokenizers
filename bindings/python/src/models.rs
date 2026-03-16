@@ -854,24 +854,40 @@ pub struct PyUnigram {}
 
 #[pymethods]
 impl PyUnigram {
+    #[getter]
+    fn get_theta(self_: PyRef<Self>) -> Option<f64> {
+        getter!(self_, Unigram, theta)
+    }
+
+    #[setter]
+    fn set_theta(self_: PyRef<Self>, theta: Option<f64>) {
+        setter!(self_, Unigram, theta, theta);
+    }
+
     #[new]
-    #[pyo3(signature = (vocab=None, unk_id=None, byte_fallback=None), text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None)")]
+    #[pyo3(signature = (vocab=None, unk_id=None, byte_fallback=None, theta=None), text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None, theta=None)")]
     fn new(
         vocab: Option<Vec<(String, f64)>>,
         unk_id: Option<usize>,
         byte_fallback: Option<bool>,
+        theta: Option<f64>,
     ) -> PyResult<(Self, PyModel)> {
         match (vocab, unk_id, byte_fallback) {
             (Some(vocab), unk_id, byte_fallback) => {
-                let model =
+                let mut model =
                     Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false)).map_err(|e| {
                         exceptions::PyException::new_err(format!(
                             "Error while loading Unigram: {e}"
                         ))
                     })?;
+                model.theta = theta;
                 Ok((PyUnigram {}, model.into()))
             }
-            (None, None, _) => Ok((PyUnigram {}, Unigram::default().into())),
+            (None, None, _) => {
+                let mut model = Unigram::default();
+                model.theta = theta;
+                Ok((PyUnigram {}, model.into()))
+            },
             _ => Err(exceptions::PyValueError::new_err(
                 "`vocab` and `unk_id` must be both specified",
             )),
