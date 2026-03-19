@@ -6,6 +6,7 @@ mod common;
 use common::{iter_bench_encode, iter_bench_encode_batch, iter_bench_train};
 use criterion::{Criterion, Throughput};
 use std::hint::black_box;
+use std::sync::Arc;
 use tokenizers::{
     models::{bpe::BpeTrainerBuilder, TrainerWrapper},
     EncodeInput, Tokenizer,
@@ -43,6 +44,42 @@ pub fn llama3(c: &mut Criterion) {
     group.bench_function("llama3-batch", |b| {
         b.iter_custom(|iters| iter_bench_encode_batch(iters, &tokenizer, &batches))
     });
+
+    // Cache effectiveness: encode the same medium-length input 1000 times
+    group.bench_function("llama3-cache-repeated", |b| {
+        let sample = data.lines().find(|l| l.len() > 200).unwrap_or("hello world");
+        b.iter(|| {
+            for _ in 0..1000 {
+                let _ = black_box(tokenizer.encode(black_box(sample), false));
+            }
+        })
+    });
+
+    // Concurrent: N threads each encode a medium prompt
+    let tokenizer_arc = Arc::new(tokenizer.clone());
+    for num_threads in [2, 4, 8] {
+        let tok = tokenizer_arc.clone();
+        let sample: String = data.lines().take(3).collect::<Vec<_>>().join("\n");
+        group.bench_function(format!("llama3-concurrent-{num_threads}t"), move |b| {
+            b.iter(|| {
+                std::thread::scope(|s| {
+                    let handles: Vec<_> = (0..num_threads)
+                        .map(|_| {
+                            let tok = &tok;
+                            let sample = &sample;
+                            s.spawn(move || {
+                                let _ = black_box(tok.encode(black_box(sample.as_str()), false));
+                            })
+                        })
+                        .collect();
+                    for h in handles {
+                        h.join().unwrap();
+                    }
+                });
+            })
+        });
+    }
+
     let mut trainer: TrainerWrapper = BpeTrainerBuilder::default()
         .show_progress(false)
         .build()
