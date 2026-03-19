@@ -3,11 +3,14 @@ extern crate criterion;
 
 mod common;
 
-use common::{iter_bench_encode, iter_bench_encode_batch};
+use common::{iter_bench_encode, iter_bench_encode_batch, iter_bench_train};
 use criterion::{Criterion, Throughput};
 use std::hint::black_box;
 use std::sync::Arc;
-use tokenizers::{EncodeInput, Tokenizer};
+use tokenizers::{
+    models::{bpe::BpeTrainerBuilder, TrainerWrapper},
+    EncodeInput, Tokenizer,
+};
 
 static BATCH_SIZE: usize = 1_000;
 
@@ -41,16 +44,11 @@ pub fn llama3(c: &mut Criterion) {
     group.bench_function("llama3-batch", |b| {
         b.iter_custom(|iters| iter_bench_encode_batch(iters, &tokenizer, &batches))
     });
-
     // Concurrent long-context: N threads each encode a different large input (80k chars)
-    // through a shared tokenizer. Each thread gets 1000 unique lines, simulating
-    // concurrent inference requests. Stresses DFA cache contention in the regex
-    // engine — per-thread regex copies avoid thrashing here.
     let all_lines: Vec<&str> = data.lines().collect();
     let lines_per_thread = 1000;
     let tokenizer_arc = Arc::new(tokenizer.clone());
     for num_threads in [1, 2, 4, 8] {
-        // Pre-build per-thread inputs (each thread gets a different 1000-line chunk)
         let inputs: Vec<String> = (0..num_threads)
             .map(|i| {
                 let start = i * lines_per_thread;
@@ -79,6 +77,22 @@ pub fn llama3(c: &mut Criterion) {
             })
         });
     }
+
+    let mut trainer: TrainerWrapper = BpeTrainerBuilder::default()
+        .show_progress(false)
+        .build()
+        .into();
+    let mut tokenizer = Tokenizer::from_file("data/llama-3-tokenizer.json").unwrap();
+    group.bench_function("BPE Train vocabulary (big)", |b| {
+        b.iter_custom(|iters| {
+            iter_bench_train(
+                iters,
+                &mut tokenizer,
+                &mut trainer,
+                vec!["data/big.txt".to_string()],
+            )
+        })
+    });
     group.finish();
 }
 
