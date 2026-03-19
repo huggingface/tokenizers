@@ -336,6 +336,24 @@ class BaseTokenizer:
 
         return self._tokenizer.decode_batch(sequences, skip_special_tokens=skip_special_tokens)
 
+    async def async_decode_batch(
+        self,
+        sequences: List[List[int]],
+        skip_special_tokens: bool = True,
+    ) -> List[str]:
+        """Asynchronously decode a batch of sequences.
+
+        Args:
+            sequences: A list of sequences of ids to decode.
+            skip_special_tokens: Whether to remove special tokens from output.
+
+        Returns:
+            A list of decoded strings.
+        """
+        if sequences is None:
+            raise ValueError("async_decode_batch: `sequences` can't be `None`")
+        return await self._tokenizer.async_decode_batch(sequences, skip_special_tokens)
+
     def token_to_id(self, token: str) -> Optional[int]:
         """Convert the given token to its corresponding id
 
