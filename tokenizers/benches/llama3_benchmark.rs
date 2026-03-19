@@ -44,15 +44,15 @@ pub fn llama3(c: &mut Criterion) {
     group.bench_function("llama3-batch", |b| {
         b.iter_custom(|iters| iter_bench_encode_batch(iters, &tokenizer, &batches))
     });
-    // Concurrent long-context: N threads each encode a *different* ~10KB input
-    // through a shared tokenizer. Each thread gets 200 unique lines, simulating
+    // Concurrent long-context: N threads each encode a different large input (80k chars)
+    // through a shared tokenizer. Each thread gets 1000 unique lines, simulating
     // concurrent inference requests. Stresses DFA cache contention in the regex
     // engine — per-thread regex copies avoid thrashing here.
     let all_lines: Vec<&str> = data.lines().collect();
-    let lines_per_thread = 200;
+    let lines_per_thread = 1000;
     let tokenizer_arc = Arc::new(tokenizer.clone());
-    for num_threads in [2, 4, 8] {
-        // Pre-build per-thread inputs (each thread gets a different 200-line chunk)
+    for num_threads in [1, 2, 4, 8] {
+        // Pre-build per-thread inputs (each thread gets a different 1000-line chunk)
         let inputs: Vec<String> = (0..num_threads)
             .map(|i| {
                 let start = i * lines_per_thread;
