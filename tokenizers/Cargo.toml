@@ -81,6 +81,7 @@ compact_str = { version = "0.9", features = ["serde"] }
 
 [features]
 default = ["progressbar", "onig", "esaxx_fast"]
+pcre2 = ["dep:pcre2", "fancy-regex"]
 esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
