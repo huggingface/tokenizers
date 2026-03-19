@@ -1,8 +1,24 @@
 use tokenizers::{
     normalizers,
+    parallelism::{get_parallelism, set_parallelism},
     pre_tokenizers::split::{Split, SplitPattern},
     AddedToken, NormalizerWrapper, PreTokenizerWrapper, SplitDelimiterBehavior, Tokenizer,
 };
+
+#[cfg(feature = "pcre2")]
+use std::sync::{LazyLock, Mutex};
+
+#[cfg(feature = "pcre2")]
+static PARALLELISM_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+#[cfg(feature = "pcre2")]
+fn with_parallelism<T>(parallel: bool, f: impl FnOnce() -> T) -> T {
+    let previous = get_parallelism();
+    set_parallelism(parallel);
+    let result = f();
+    set_parallelism(previous);
+    result
+}
 
 #[test]
 fn test_decoding_with_added_bpe() {
@@ -75,4 +91,45 @@ fn test_decode_stream_step_no_panic() {
     assert_eq!(decode_stream.step(243).unwrap(), Some("뽕".to_string()));
     assert_eq!(decode_stream.step(102457).unwrap(), None);
     assert_eq!(decode_stream.step(113).unwrap(), Some("빵".to_string()));
+}
+
+#[cfg(feature = "pcre2")]
+#[test]
+fn test_long_context_encode_matches_sequential() {
+    let _guard = PARALLELISM_LOCK.lock().unwrap();
+    let tokenizer = Tokenizer::from_file("data/llama-3-tokenizer.json").unwrap();
+    let chunk = "Hello, y'all! How are you 😁 ? 12345 -- Καλημέρα.\n";
+    let input = chunk.repeat(600);
+    assert!(input.len() > 16_384);
+
+    let sequential = with_parallelism(false, || tokenizer.encode(input.as_str(), false).unwrap());
+    let parallel = with_parallelism(true, || tokenizer.encode(input.as_str(), false).unwrap());
+
+    assert_eq!(sequential.get_ids(), parallel.get_ids());
+    assert_eq!(sequential.get_tokens(), parallel.get_tokens());
+}
+
+#[cfg(feature = "pcre2")]
+#[test]
+fn test_long_context_char_offsets_match_sequential() {
+    let _guard = PARALLELISM_LOCK.lock().unwrap();
+    let tokenizer = Tokenizer::from_file("data/llama-3-tokenizer.json").unwrap();
+    let chunk = "Hello, y'all! How are you 😁 ? 12345 -- Καλημέρα.\n";
+    let input = chunk.repeat(600);
+    assert!(input.len() > 16_384);
+
+    let sequential = with_parallelism(false, || {
+        tokenizer
+            .encode_char_offsets(input.as_str(), false)
+            .unwrap()
+    });
+    let parallel = with_parallelism(true, || {
+        tokenizer
+            .encode_char_offsets(input.as_str(), false)
+            .unwrap()
+    });
+
+    assert_eq!(sequential.get_ids(), parallel.get_ids());
+    assert_eq!(sequential.get_tokens(), parallel.get_tokens());
+    assert_eq!(sequential.get_offsets(), parallel.get_offsets());
 }
