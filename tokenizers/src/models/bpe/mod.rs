@@ -1,4 +1,5 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
+use rustc_hash::FxHashMap;
 use std::{iter, mem};
 
 mod model;
@@ -7,6 +8,78 @@ pub mod trainer;
 mod word;
 
 type Pair = (u32, u32);
+
+/// Packs a `(u32, u32)` pair into a single `u64` for faster hashing.
+#[inline]
+fn pack_pair(pair: &Pair) -> u64 {
+    (pair.0 as u64) << 32 | pair.1 as u64
+}
+
+/// Unpacks a `u64` back into a `(u32, u32)` pair.
+#[inline]
+fn unpack_pair(packed: u64) -> Pair {
+    ((packed >> 32) as u32, packed as u32)
+}
+
+/// A merge-lookup map that packs `(u32, u32)` pair keys into single `u64` values
+/// for faster hashing (single FxHash multiply instead of hashing two fields).
+///
+/// Values are `(rank, new_id)` tuples.
+#[derive(Clone, Debug)]
+pub(crate) struct MergeMap {
+    inner: FxHashMap<u64, (u32, u32)>,
+}
+
+impl MergeMap {
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        MergeMap {
+            inner: FxHashMap::default(),
+        }
+    }
+
+    pub fn with_capacity(cap: usize) -> Self {
+        MergeMap {
+            inner: FxHashMap::with_capacity_and_hasher(cap, Default::default()),
+        }
+    }
+
+    #[inline]
+    pub fn get(&self, pair: &Pair) -> Option<&(u32, u32)> {
+        self.inner.get(&pack_pair(pair))
+    }
+
+    pub fn insert(&mut self, pair: Pair, value: (u32, u32)) -> Option<(u32, u32)> {
+        self.inner.insert(pack_pair(&pair), value)
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Iterate over `(Pair, &(rank, new_id))`.
+    pub fn iter(&self) -> impl Iterator<Item = (Pair, &(u32, u32))> {
+        self.inner.iter().map(|(k, v)| (unpack_pair(*k), v))
+    }
+}
+
+impl PartialEq for MergeMap {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl std::iter::FromIterator<(Pair, (u32, u32))> for MergeMap {
+    fn from_iter<I: IntoIterator<Item = (Pair, (u32, u32))>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let (lo, _) = iter.size_hint();
+        let mut map = MergeMap::with_capacity(lo);
+        for (pair, val) in iter {
+            map.insert(pair, val);
+        }
+        map
+    }
+}
 
 /// Errors that can be encountered while using or constructing a `BPE` model.
 #[derive(thiserror::Error, Debug)]

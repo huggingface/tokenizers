@@ -1,4 +1,4 @@
-use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
+use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, MergeMap, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
@@ -16,7 +16,6 @@ use std::{
 
 pub type Vocab = AHashMap<String, u32>;
 type VocabR = AHashMap<u32, String>;
-pub type MergeMap = AHashMap<Pair, (u32, u32)>;
 pub type Merges = Vec<(String, String)>;
 
 struct Config {
@@ -553,12 +552,12 @@ impl Model for BPE {
             .iter()
             .collect();
         let mut merges_file = File::create(&merges_path)?;
-        let mut merges: Vec<(&Pair, &u32)> = self
+        let mut merges: Vec<(Pair, u32)> = self
             .merges
             .iter()
-            .map(|(pair, (rank, _))| (pair, rank))
+            .map(|(pair, (rank, _))| (pair, *rank))
             .collect();
-        merges.sort_unstable_by_key(|k| *k.1);
+        merges.sort_unstable_by_key(|k| k.1);
         merges_file.write_all(b"#version: 0.2\n")?;
         merges_file.write_all(
             &merges
