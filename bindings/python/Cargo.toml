@@ -3,6 +3,7 @@ name = "tokenizers-python"
 version = "0.22.3-dev.0"
 authors = ["Anthony MOI <m.anthony.moi@gmail.com>"]
 edition = "2021"
+license = "Apache-2.0"
 
 [lib]
 name = "tokenizers"
