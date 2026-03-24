@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 
 thread_local! {
     static TL_MERGE_HEAP: RefCell<QuaternaryHeap<Merge>> = RefCell::new(QuaternaryHeap::new());
-    static TL_MERGE_SKIP: RefCell<Vec<Merge>> = RefCell::new(Vec::new());
+    static TL_MERGE_SKIP: RefCell<Vec<Merge>> = const { RefCell::new(Vec::new()) };
 }
 
 #[derive(Debug, Eq)]
