@@ -11,16 +11,16 @@ check_dirs := examples py_src/tokenizers tests
 HAS_UV := $(shell command -v uv >/dev/null 2>&1 && echo 1 || echo 0)
 ifeq ($(HAS_UV),1)
   PIP := uv pip
-  CARGO_TEST_ENV := DYLD_FALLBACK_LIBRARY_PATH=$(shell python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))") \
+  CARGO_ENV := DYLD_FALLBACK_LIBRARY_PATH=$(shell python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))") \
     PYTHONHOME=$(shell python3 -c "import sys; print(sys.base_prefix)")
 else
   PIP := pip
-  CARGO_TEST_ENV :=
+  CARGO_ENV :=
 endif
 
 # Format source code automatically
 style:
-	cargo run --manifest-path tools/stub-gen/Cargo.toml
+	$(CARGO_ENV) cargo run --manifest-path tools/stub-gen/Cargo.toml
 	python stub.py
 	ruff check  $(check_dirs) --fix
 	ruff format $(check_dirs)
@@ -39,7 +39,7 @@ TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 test: $(TESTS_RESOURCES)
 	$(PIP) install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets
 	python -m pytest -s -v tests
-	$(CARGO_TEST_ENV) cargo test --no-default-features
+	$(CARGO_ENV) cargo test --no-default-features
 
 $(DATA_DIR)/big.txt :
 	$(dir_guard)
