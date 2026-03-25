@@ -30,7 +30,7 @@ style:
 
 # Check the source code is formatted correctly
 check-style:
-	cargo run --manifest-path tools/stub-gen/Cargo.toml
+	$(CARGO_ENV) cargo run --manifest-path tools/stub-gen/Cargo.toml
 	python stub.py --check
 	ruff check $(check_dirs)
 	ruff format --check $(check_dirs)
