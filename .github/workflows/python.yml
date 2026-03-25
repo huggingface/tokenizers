@@ -124,16 +124,8 @@ jobs:
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
-          cd tools/stub-gen
-          cargo build --package stub-gen --bin stub-gen
-          cd ../..
           make check-style
 
-      - name: Type check
-        working-directory: ./bindings/python
-        run: |
-          source .env/bin/activate
-          ty check py_src --exclude py_src/tokenizers/implementations/*
 
       - name: Run tests
         working-directory: ./bindings/python

@@ -20,7 +20,8 @@ endif
 
 # Format source code automatically
 style:
-	$(CARGO_ENV) cargo run --manifest-path tools/stub-gen/Cargo.toml
+	$(CARGO_ENV) cargo build --release --manifest-path ./tools/stub-gen/Cargo.toml
+	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml
 	python stub.py
 	ruff check  $(check_dirs) --fix
 	ruff format $(check_dirs)
@@ -30,7 +31,8 @@ style:
 
 # Check the source code is formatted correctly
 check-style:
-	$(CARGO_ENV) cargo run --manifest-path tools/stub-gen/Cargo.toml
+	$(CARGO_ENV) cargo build --release --manifest-path ./tools/stub-gen/Cargo.toml
+	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml
 	python stub.py --check
 	ruff check $(check_dirs)
 	ruff format --check $(check_dirs)
