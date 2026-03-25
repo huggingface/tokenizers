@@ -1,16 +1,18 @@
-import tokenizers
-import tokenizers.pre_tokenizers
-import typing
+from _typeshed import Incomplete
+from tokenizers import PreTokenizedString, Regex
+from typing import Any, final
 
-class BertPreTokenizer:
-    def __new__(cls, /) -> None:
+@final
+class BertPreTokenizer(PreTokenizer):
+    def __new__(cls, /) -> BertPreTokenizer:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
 
-class ByteLevel:
+@final
+class ByteLevel(PreTokenizer):
     def __new__(
         cls, /, add_prefix_space: bool = True, trim_offsets: bool = True, use_regex: bool = True, **_kwargs
-    ) -> None:
+    ) -> ByteLevel:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
@@ -18,7 +20,7 @@ class ByteLevel:
     @add_prefix_space.setter
     def add_prefix_space(self, /, add_prefix_space: bool) -> None: ...
     @staticmethod
-    def alphabet() -> typing.Any:
+    def alphabet() -> list[str]:
         """
         Returns the alphabet used by this PreTokenizer.
 
@@ -39,9 +41,10 @@ class ByteLevel:
     @use_regex.setter
     def use_regex(self, /, use_regex: bool) -> None: ...
 
-class CharDelimiterSplit:
-    def __getnewargs__(self, /) -> typing.Any: ...
-    def __new__(cls, /, delimiter: str) -> None:
+@final
+class CharDelimiterSplit(PreTokenizer):
+    def __getnewargs__(self, /) -> tuple: ...
+    def __new__(cls, /, delimiter: str) -> CharDelimiterSplit:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
@@ -49,8 +52,9 @@ class CharDelimiterSplit:
     @delimiter.setter
     def delimiter(self, /, delimiter: str) -> None: ...
 
-class Digits:
-    def __new__(cls, /, individual_digits: bool = False) -> None:
+@final
+class Digits(PreTokenizer):
+    def __new__(cls, /, individual_digits: bool = False) -> Digits:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
@@ -58,8 +62,9 @@ class Digits:
     @individual_digits.setter
     def individual_digits(self, /, individual_digits: bool) -> None: ...
 
-class FixedLength:
-    def __new__(cls, /, length: int = 5) -> None:
+@final
+class FixedLength(PreTokenizer):
+    def __new__(cls, /, length: int = 5) -> FixedLength:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
@@ -67,14 +72,15 @@ class FixedLength:
     @length.setter
     def length(self, /, length: int) -> None: ...
 
-class Metaspace:
-    def __new__(cls, /, replacement: str = "▁", prepend_scheme: str = ..., split: bool = True) -> None:
+@final
+class Metaspace(PreTokenizer):
+    def __new__(cls, /, replacement: str = "▁", prepend_scheme: str = ..., split: bool = True) -> Metaspace:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
     def prepend_scheme(self, /) -> str: ...
     @prepend_scheme.setter
-    def prepend_scheme(self, /, prepend_scheme: str) -> typing.Any: ...
+    def prepend_scheme(self, /, prepend_scheme: str) -> None: ...
     @property
     def replacement(self, /) -> str: ...
     @replacement.setter
@@ -85,17 +91,17 @@ class Metaspace:
     def split(self, /, split: bool) -> None: ...
 
 class PreTokenizer:
-    def __getstate__(self, /) -> typing.Any: ...
+    def __getstate__(self, /) -> Any: ...
     def __repr__(self, /) -> str:
         """Return repr(self)."""
         ...
-    def __setstate__(self, /, state: typing.Any) -> typing.Any: ...
+    def __setstate__(self, /, state: Any) -> None: ...
     def __str__(self, /) -> str:
         """Return str(self)."""
         ...
     @staticmethod
-    def custom(pretok: typing.Any) -> tokenizers.pre_tokenizers.PreTokenizer: ...
-    def pre_tokenize(self, /, pretok: tokenizers.PreTokenizedString) -> typing.Any:
+    def custom(pretok: Any) -> PreTokenizer: ...
+    def pre_tokenize(self, /, pretok: PreTokenizedString) -> None:
         """
         Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
 
@@ -111,7 +117,7 @@ class PreTokenizer:
                 :class:`~tokenizers.pre_tokenizers.PreTokenizer`
         """
         ...
-    def pre_tokenize_str(self, /, s: str) -> typing.Any:
+    def pre_tokenize_str(self, /, s: str) -> list[tuple[str, tuple[int, int]]]:
         """
         Pre tokenize the given string
 
@@ -131,56 +137,62 @@ class PreTokenizer:
         """
         ...
 
-class Punctuation:
-    def __new__(cls, /, behavior: typing.Any = ...) -> None:
+@final
+class Punctuation(PreTokenizer):
+    def __new__(cls, /, behavior: Incomplete = ...) -> Punctuation:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
     def behavior(self, /) -> str: ...
     @behavior.setter
-    def behavior(self, /, behavior: str) -> typing.Any: ...
+    def behavior(self, /, behavior: str) -> None: ...
 
-class Sequence:
-    def __getitem__(self, /, index: int) -> typing.Any:
+@final
+class Sequence(PreTokenizer):
+    def __getitem__(self, /, index: int) -> Any:
         """Return self[key]."""
         ...
-    def __getnewargs__(self, /) -> typing.Any: ...
-    def __new__(cls, /, pre_tokenizers: typing.Any) -> None:
+    def __getnewargs__(self, /) -> tuple: ...
+    def __new__(cls, /, pre_tokenizers: list) -> Sequence:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
-    def __setitem__(self, /, index: int, value: typing.Any) -> typing.Any:
+    def __setitem__(self, /, index: int, value: Any) -> None:
         """Set self[key] to value."""
         ...
 
-class Split:
-    def __getnewargs__(self, /) -> typing.Any: ...
-    def __new__(cls, /, pattern: str | tokenizers.Regex, behavior: typing.Any, invert: bool = False) -> None:
+@final
+class Split(PreTokenizer):
+    def __getnewargs__(self, /) -> tuple: ...
+    def __new__(cls, /, pattern: str | Regex, behavior: Incomplete, invert: bool = False) -> Split:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
     def behavior(self, /) -> str: ...
     @behavior.setter
-    def behavior(self, /, behavior: str) -> typing.Any: ...
+    def behavior(self, /, behavior: str) -> None: ...
     @property
     def invert(self, /) -> bool: ...
     @invert.setter
     def invert(self, /, invert: bool) -> None: ...
     @property
-    def pattern(self, /) -> typing.Any: ...
+    def pattern(self, /) -> None: ...
     @pattern.setter
-    def pattern(self, /, _pattern: str | tokenizers.Regex) -> typing.Any: ...
+    def pattern(self, /, _pattern: str | Regex) -> None: ...
 
-class UnicodeScripts:
-    def __new__(cls, /) -> None:
+@final
+class UnicodeScripts(PreTokenizer):
+    def __new__(cls, /) -> UnicodeScripts:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
 
-class Whitespace:
-    def __new__(cls, /) -> None:
+@final
+class Whitespace(PreTokenizer):
+    def __new__(cls, /) -> Whitespace:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
 
-class WhitespaceSplit:
-    def __new__(cls, /) -> None:
+@final
+class WhitespaceSplit(PreTokenizer):
+    def __new__(cls, /) -> WhitespaceSplit:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...

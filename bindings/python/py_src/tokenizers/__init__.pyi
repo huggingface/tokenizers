@@ -1,45 +1,46 @@
-import _typeshed
-import tokenizers
-import tokenizers.decoders
-import tokenizers.models
-import tokenizers.normalizers
-import tokenizers.pre_tokenizers
-import tokenizers.processors
-import tokenizers.trainers
-import typing
+from _typeshed import Incomplete
+from collections.abc import Sequence
+from tokenizers.decoders import Decoder
+from tokenizers.models import Model
+from tokenizers.normalizers import Normalizer
+from tokenizers.pre_tokenizers import PreTokenizer
+from tokenizers.processors import PostProcessor
+from tokenizers.trainers import Trainer
+from typing import Any, Final, final
 
-__version__: typing.Final[str]
+__version__: Final[str]
 
+@final
 class AddedToken:
-    def __eq__(self, /, other: tokenizers.AddedToken) -> bool:
+    def __eq__(self, /, other: AddedToken) -> bool:
         """Return self==value."""
         ...
-    def __ge__(self, /, other: tokenizers.AddedToken) -> bool:
+    def __ge__(self, /, other: AddedToken) -> bool:
         """Return self>=value."""
         ...
-    def __getstate__(self, /) -> typing.Any: ...
-    def __gt__(self, /, other: tokenizers.AddedToken) -> bool:
+    def __getstate__(self, /) -> dict: ...
+    def __gt__(self, /, other: AddedToken) -> bool:
         """Return self>value."""
         ...
     def __hash__(self, /) -> int:
         """Return hash(self)."""
         ...
-    def __le__(self, /, other: tokenizers.AddedToken) -> bool:
+    def __le__(self, /, other: AddedToken) -> bool:
         """Return self<=value."""
         ...
-    def __lt__(self, /, other: tokenizers.AddedToken) -> bool:
+    def __lt__(self, /, other: AddedToken) -> bool:
         """Return self<value."""
         ...
-    def __ne__(self, /, other: tokenizers.AddedToken) -> bool:
+    def __ne__(self, /, other: AddedToken) -> bool:
         """Return self!=value."""
         ...
-    def __new__(cls, /, content: str | None = None, **kwargs) -> None:
+    def __new__(cls, /, content: str | None = None, **kwargs) -> AddedToken:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     def __repr__(self, /) -> str:
         """Return repr(self)."""
         ...
-    def __setstate__(self, /, state: typing.Any) -> typing.Any: ...
+    def __setstate__(self, /, state: Any) -> None: ...
     def __str__(self, /) -> str:
         """Return str(self)."""
         ...
@@ -76,20 +77,21 @@ class AddedToken:
         """Get the value of the :obj:`special` option"""
         ...
 
+@final
 class Encoding:
-    def __getstate__(self, /) -> typing.Any: ...
+    def __getstate__(self, /) -> Any: ...
     def __len__(self, /) -> int:
         """Return len(self)."""
         ...
-    def __new__(cls, /) -> None:
+    def __new__(cls, /) -> Encoding:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     def __repr__(self, /) -> str:
         """Return repr(self)."""
         ...
-    def __setstate__(self, /, state: typing.Any) -> typing.Any: ...
+    def __setstate__(self, /, state: Any) -> None: ...
     @property
-    def attention_mask(self, /) -> typing.Any:
+    def attention_mask(self, /) -> list[int]:
         """
         The attention mask
 
@@ -101,7 +103,7 @@ class Encoding:
            :obj:`List[int]`: The attention mask
         """
         ...
-    def char_to_token(self, /, char_pos: int, sequence_index: int = 0) -> typing.Any:
+    def char_to_token(self, /, char_pos: int, sequence_index: int = 0) -> int | None:
         """
         Get the token that contains the char at the given position in the input sequence.
 
@@ -115,7 +117,7 @@ class Encoding:
             :obj:`int`: The index of the token that contains this char in the encoded sequence
         """
         ...
-    def char_to_word(self, /, char_pos: int, sequence_index: int = 0) -> typing.Any:
+    def char_to_word(self, /, char_pos: int, sequence_index: int = 0) -> int | None:
         """
         Get the word that contains the char at the given position in the input sequence.
 
@@ -130,7 +132,7 @@ class Encoding:
         """
         ...
     @property
-    def ids(self, /) -> typing.Any:
+    def ids(self, /) -> list[int]:
         """
         The generated IDs
 
@@ -142,7 +144,7 @@ class Encoding:
         """
         ...
     @staticmethod
-    def merge(encodings: typing.Any, growing_offsets: bool = True) -> Encoding:
+    def merge(encodings: Sequence[Encoding], growing_offsets: bool = True) -> "Encoding":
         """
         Merge the list of encodings into one final :class:`~tokenizers.Encoding`
 
@@ -167,7 +169,7 @@ class Encoding:
         """
         ...
     @property
-    def offsets(self, /) -> typing.Any:
+    def offsets(self, /) -> list[tuple[int, int]]:
         """
         The offsets associated to each token
 
@@ -179,7 +181,7 @@ class Encoding:
         """
         ...
     @property
-    def overflowing(self, /) -> typing.Any:
+    def overflowing(self, /) -> list[Encoding]:
         """
         A :obj:`List` of overflowing :class:`~tokenizers.Encoding`
 
@@ -192,7 +194,7 @@ class Encoding:
         maximum length.
         """
         ...
-    def pad(self, /, length: int, **kwargs) -> None:
+    def pad(self, /, length: int, **kwargs) -> "None":
         """
         Pad the :class:`~tokenizers.Encoding` at the given length
 
@@ -214,7 +216,7 @@ class Encoding:
         """
         ...
     @property
-    def sequence_ids(self, /) -> typing.Any:
+    def sequence_ids(self, /) -> list[int | None]:
         """
         The generated sequence indices.
 
@@ -235,7 +237,7 @@ class Encoding:
         """
         ...
     @property
-    def special_tokens_mask(self, /) -> typing.Any:
+    def special_tokens_mask(self, /) -> list[int]:
         """
         The special token mask
 
@@ -245,7 +247,7 @@ class Encoding:
             :obj:`List[int]`: The special tokens mask
         """
         ...
-    def token_to_chars(self, /, token_index: int) -> typing.Any:
+    def token_to_chars(self, /, token_index: int) -> tuple[int, int] | None:
         """
         Get the offsets of the token at the given index.
 
@@ -261,7 +263,7 @@ class Encoding:
             :obj:`Tuple[int, int]`: The token offsets :obj:`(first, last + 1)`
         """
         ...
-    def token_to_sequence(self, /, token_index: int) -> typing.Any:
+    def token_to_sequence(self, /, token_index: int) -> int | None:
         """
         Get the index of the sequence represented by the given token.
 
@@ -276,7 +278,7 @@ class Encoding:
             :obj:`int`: The sequence id of the given token
         """
         ...
-    def token_to_word(self, /, token_index: int) -> typing.Any:
+    def token_to_word(self, /, token_index: int) -> int | None:
         """
         Get the index of the word that contains the token in one of the input sequences.
 
@@ -293,7 +295,7 @@ class Encoding:
         """
         ...
     @property
-    def tokens(self, /) -> typing.Any:
+    def tokens(self, /) -> list[str]:
         """
         The generated tokens
 
@@ -303,7 +305,7 @@ class Encoding:
             :obj:`List[str]`: The list of tokens
         """
         ...
-    def truncate(self, /, max_length: int, stride: int = 0, direction: str = "right") -> None:
+    def truncate(self, /, max_length: int, stride: int = 0, direction: str = "right") -> "None":
         """
         Truncate the :class:`~tokenizers.Encoding` at the given length
 
@@ -322,7 +324,7 @@ class Encoding:
         """
         ...
     @property
-    def type_ids(self, /) -> typing.Any:
+    def type_ids(self, /) -> list[int]:
         """
         The generated type IDs
 
@@ -334,7 +336,7 @@ class Encoding:
         """
         ...
     @property
-    def word_ids(self, /) -> typing.Any:
+    def word_ids(self, /) -> list[int | None]:
         """
         The generated word indices.
 
@@ -350,7 +352,7 @@ class Encoding:
             A :obj:`List` of :obj:`Optional[int]`: A list of optional word index.
         """
         ...
-    def word_to_chars(self, /, word_index: int, sequence_index: int = 0) -> typing.Any:
+    def word_to_chars(self, /, word_index: int, sequence_index: int = 0) -> tuple[int, int] | None:
         """
         Get the offsets of the word at the given index in one of the input sequences.
 
@@ -364,7 +366,7 @@ class Encoding:
             :obj:`Tuple[int, int]`: The range of characters (span) :obj:`(first, last + 1)`
         """
         ...
-    def word_to_tokens(self, /, word_index: int, sequence_index: int = 0) -> typing.Any:
+    def word_to_tokens(self, /, word_index: int, sequence_index: int = 0) -> tuple[int, int] | None:
         """
         Get the encoded tokens corresponding to the word at the given index
         in one of the input sequences.
@@ -380,7 +382,7 @@ class Encoding:
         """
         ...
     @property
-    def words(self, /) -> typing.Any:
+    def words(self, /) -> list[int | None]:
         """
         The generated word indices.
 
@@ -401,11 +403,12 @@ class Encoding:
         """
         ...
 
+@final
 class NormalizedString:
-    def __getitem__(self, /, range: int | tuple[int, int] | typing.Any) -> typing.Any:
+    def __getitem__(self, /, range: int | tuple[int, int] | slice) -> NormalizedString | None:
         """Return self[key]."""
         ...
-    def __new__(cls, /, sequence: str) -> None:
+    def __new__(cls, /, sequence: str) -> NormalizedString:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     def __repr__(self, /) -> str:
@@ -420,10 +423,10 @@ class NormalizedString:
     def clear(self, /) -> None:
         """Clears the string"""
         ...
-    def filter(self, /, func: typing.Any) -> typing.Any:
+    def filter(self, /, func: Any) -> None:
         """Filter each character of the string using the given func"""
         ...
-    def for_each(self, /, func: typing.Any) -> typing.Any:
+    def for_each(self, /, func: Any) -> None:
         """Calls the given function for each character of the string"""
         ...
     def lowercase(self, /) -> None:
@@ -432,7 +435,7 @@ class NormalizedString:
     def lstrip(self, /) -> None:
         """Strip the left of the string"""
         ...
-    def map(self, /, func: typing.Any) -> typing.Any:
+    def map(self, /, func: Any) -> None:
         """
         Calls the given function for each character of the string
 
@@ -461,7 +464,7 @@ class NormalizedString:
     def prepend(self, /, s: str) -> None:
         """Prepend the given sequence to the string"""
         ...
-    def replace(self, /, pattern: str | tokenizers.Regex, content: str) -> typing.Any:
+    def replace(self, /, pattern: str | Regex, content: str) -> None:
         """
         Replace the content of the given pattern with the provided content
 
@@ -476,10 +479,10 @@ class NormalizedString:
     def rstrip(self, /) -> None:
         """Strip the right of the string"""
         ...
-    def slice(self, /, range: int | tuple[int, int] | typing.Any) -> typing.Any:
+    def slice(self, /, range: int | tuple[int, int] | slice) -> NormalizedString | None:
         """Slice the string using the given range"""
         ...
-    def split(self, /, pattern: str | tokenizers.Regex, behavior: typing.Any) -> typing.Any:
+    def split(self, /, pattern: str | Regex, behavior: Incomplete) -> list[NormalizedString]:
         """
         Split the NormalizedString using the given pattern and the specified behavior
 
@@ -503,11 +506,14 @@ class NormalizedString:
         """Uppercase the string"""
         ...
 
+@final
 class PreTokenizedString:
-    def __new__(cls, /, s: str) -> None:
+    def __new__(cls, /, s: str) -> PreTokenizedString:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
-    def get_splits(self, /, offset_referential: typing.Any = ..., offset_type: typing.Any = ...) -> typing.Any:
+    def get_splits(
+        self, /, offset_referential: Incomplete = ..., offset_type: Incomplete = ...
+    ) -> list[tuple[str, tuple[int, int], list[Token] | None]]:
         """
         Get the splits currently managed by the PreTokenizedString
 
@@ -527,7 +533,7 @@ class PreTokenizedString:
             A list of splits
         """
         ...
-    def normalize(self, /, func: typing.Any) -> typing.Any:
+    def normalize(self, /, func: Any) -> None:
         """
         Normalize each split of the `PreTokenizedString` using the given `func`
 
@@ -538,7 +544,7 @@ class PreTokenizedString:
                 NormalizedString allow its modification.
         """
         ...
-    def split(self, /, func: typing.Any) -> typing.Any:
+    def split(self, /, func: Any) -> None:
         """
         Split the PreTokenizedString using the given `func`
 
@@ -552,7 +558,7 @@ class PreTokenizedString:
                 should come from calling either `.split` or `.slice` on the received one.
         """
         ...
-    def to_encoding(self, /, type_id: int = 0, word_idx: int | None = None) -> Encoding:
+    def to_encoding(self, /, type_id: int = 0, word_idx: int | None = None) -> "Encoding":
         """
         Return an Encoding generated from this PreTokenizedString
 
@@ -569,7 +575,7 @@ class PreTokenizedString:
             An Encoding
         """
         ...
-    def tokenize(self, /, func: typing.Any) -> typing.Any:
+    def tokenize(self, /, func: Any) -> None:
         """
         Tokenize each split of the `PreTokenizedString` using the given `func`
 
@@ -580,37 +586,40 @@ class PreTokenizedString:
         """
         ...
 
+@final
 class Regex:
-    def __new__(cls, /, s: str) -> None:
+    def __new__(cls, /, s: str) -> Regex:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
 
+@final
 class Token:
-    def __new__(cls, /, id: int, value: str, offsets: typing.Any) -> None:
+    def __new__(cls, /, id: int, value: str, offsets: tuple[int, int]) -> Token:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
-    def as_tuple(self, /) -> typing.Any: ...
+    def as_tuple(self, /) -> tuple[int, str, tuple[int, int]]: ...
     @property
     def id(self, /) -> int: ...
     @property
-    def offsets(self, /) -> typing.Any: ...
+    def offsets(self, /) -> tuple[int, int]: ...
     @property
     def value(self, /) -> str: ...
 
+@final
 class Tokenizer:
-    def __getnewargs__(self, /) -> typing.Any: ...
-    def __getstate__(self, /) -> typing.Any: ...
-    def __new__(cls, /, model: tokenizers.models.Model) -> None:
+    def __getnewargs__(self, /) -> tuple: ...
+    def __getstate__(self, /) -> Any: ...
+    def __new__(cls, /, model: Model) -> Tokenizer:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     def __repr__(self, /) -> str:
         """Return repr(self)."""
         ...
-    def __setstate__(self, /, state: typing.Any) -> typing.Any: ...
+    def __setstate__(self, /, state: Any) -> None: ...
     def __str__(self, /) -> str:
         """Return str(self)."""
         ...
-    def add_special_tokens(self, /, tokens: typing.Any) -> int:
+    def add_special_tokens(self, /, tokens: list) -> int:
         """
         Add the given special tokens to the Tokenizer.
 
@@ -630,7 +639,7 @@ class Tokenizer:
             :obj:`int`: The number of tokens that were created in the vocabulary
         """
         ...
-    def add_tokens(self, /, tokens: typing.Any) -> int:
+    def add_tokens(self, /, tokens: list) -> int:
         """
         Add the given tokens to the vocabulary
 
@@ -646,7 +655,7 @@ class Tokenizer:
             :obj:`int`: The number of tokens that were created in the vocabulary
         """
         ...
-    def async_decode_batch(self, /, sequences: typing.Any, skip_special_tokens: bool = True) -> typing.Any:
+    def async_decode_batch(self, /, sequences: Sequence[Sequence[int]], skip_special_tokens: bool = True) -> Any:
         """
         Decode a batch of ids back to their corresponding string
 
@@ -662,13 +671,8 @@ class Tokenizer:
         """
         ...
     def async_encode(
-        self,
-        /,
-        sequence: typing.Any,
-        pair: typing.Any | None = None,
-        is_pretokenized: bool = False,
-        add_special_tokens: bool = True,
-    ) -> typing.Any:
+        self, /, sequence: Any, pair: Any | None = None, is_pretokenized: bool = False, add_special_tokens: bool = True
+    ) -> Any:
         """
         Asynchronously encode the given input with character offsets.
 
@@ -701,8 +705,8 @@ class Tokenizer:
         """
         ...
     def async_encode_batch(
-        self, /, input: typing.Any, is_pretokenized: bool = False, add_special_tokens: bool = True
-    ) -> typing.Any:
+        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True
+    ) -> Any:
         """
         Asynchronously encode the given batch of inputs with character offsets.
 
@@ -738,8 +742,8 @@ class Tokenizer:
         """
         ...
     def async_encode_batch_fast(
-        self, /, input: typing.Any, is_pretokenized: bool = False, add_special_tokens: bool = True
-    ) -> typing.Any:
+        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True
+    ) -> Any:
         """
         Asynchronously encode the given batch of inputs without tracking character offsets.
 
@@ -774,7 +778,7 @@ class Tokenizer:
             A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
         """
         ...
-    def decode(self, /, ids: typing.Any, skip_special_tokens: bool = True) -> str:
+    def decode(self, /, ids: Sequence[int], skip_special_tokens: bool = True) -> "str":
         """
         Decode the given list of ids back to a string
 
@@ -791,7 +795,7 @@ class Tokenizer:
             :obj:`str`: The decoded string
         """
         ...
-    def decode_batch(self, /, sequences: typing.Any, skip_special_tokens: bool = True) -> list[str]:
+    def decode_batch(self, /, sequences: Sequence[Sequence[int]], skip_special_tokens: bool = True) -> "list[str]":
         """
         Decode a batch of ids back to their corresponding string
 
@@ -807,14 +811,14 @@ class Tokenizer:
         """
         ...
     @property
-    def decoder(self, /) -> typing.Any:
+    def decoder(self, /) -> Any:
         """The `optional` :class:`~tokenizers.decoders.Decoder` in use by the Tokenizer"""
         ...
     @decoder.setter
-    def decoder(self, /, decoder: tokenizers.decoders.Decoder | None) -> None:
+    def decoder(self, /, decoder: Decoder | None) -> None:
         """The `optional` :class:`~tokenizers.decoders.Decoder` in use by the Tokenizer"""
         ...
-    def enable_padding(self, /, **kwargs) -> None:
+    def enable_padding(self, /, **kwargs) -> "None":
         """
         Enable the padding
 
@@ -841,7 +845,7 @@ class Tokenizer:
                 the longest sequence in a batch.
         """
         ...
-    def enable_truncation(self, /, max_length: int, **kwargs) -> None:
+    def enable_truncation(self, /, max_length: int, **kwargs) -> "None":
         """
         Enable truncation
 
@@ -862,13 +866,8 @@ class Tokenizer:
         """
         ...
     def encode(
-        self,
-        /,
-        sequence: typing.Any,
-        pair: typing.Any | None = None,
-        is_pretokenized: bool = False,
-        add_special_tokens: bool = True,
-    ) -> Encoding:
+        self, /, sequence: Any, pair: Any | None = None, is_pretokenized: bool = False, add_special_tokens: bool = True
+    ) -> "Encoding":
         """
         Encode the given sequence and pair. This method can process raw text sequences
         as well as already pre-tokenized sequences.
@@ -906,8 +905,8 @@ class Tokenizer:
         """
         ...
     def encode_batch(
-        self, /, input: typing.Any, is_pretokenized: bool = False, add_special_tokens: bool = True
-    ) -> list[Encoding]:
+        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True
+    ) -> "list[Encoding]":
         """
         Encode the given batch of inputs. This method accept both raw text sequences
         as well as already pre-tokenized sequences. The reason we use `PySequence` is
@@ -944,8 +943,8 @@ class Tokenizer:
         """
         ...
     def encode_batch_fast(
-        self, /, input: typing.Any, is_pretokenized: bool = False, add_special_tokens: bool = True
-    ) -> list[Encoding]:
+        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True
+    ) -> "list[Encoding]":
         """
         Encode the given batch of inputs. This method is faster than `encode_batch`
         because it doesn't keep track of offsets, they will be all zeros.
@@ -1002,7 +1001,7 @@ class Tokenizer:
         """
         ...
     @staticmethod
-    def from_buffer(buffer: typing.Any) -> Tokenizer:
+    def from_buffer(buffer: bytes) -> "Tokenizer":
         """
         Instantiate a new :class:`~tokenizers.Tokenizer` from the given buffer.
 
@@ -1015,7 +1014,7 @@ class Tokenizer:
         """
         ...
     @staticmethod
-    def from_file(path: str) -> Tokenizer:
+    def from_file(path: str) -> "Tokenizer":
         """
         Instantiate a new :class:`~tokenizers.Tokenizer` from the file at the given path.
 
@@ -1029,7 +1028,7 @@ class Tokenizer:
         """
         ...
     @staticmethod
-    def from_pretrained(identifier: str, revision: str = ..., token: str | None = None) -> Tokenizer:
+    def from_pretrained(identifier: str, revision: str = ..., token: str | None = None) -> "Tokenizer":
         """
         Instantiate a new :class:`~tokenizers.Tokenizer` from an existing file on the
         Hugging Face Hub.
@@ -1049,7 +1048,7 @@ class Tokenizer:
         """
         ...
     @staticmethod
-    def from_str(json: str) -> Tokenizer:
+    def from_str(json: str) -> "Tokenizer":
         """
         Instantiate a new :class:`~tokenizers.Tokenizer` from the given JSON string.
 
@@ -1062,7 +1061,7 @@ class Tokenizer:
             :class:`~tokenizers.Tokenizer`: The new tokenizer
         """
         ...
-    def get_added_tokens_decoder(self, /) -> dict[int, AddedToken]:
+    def get_added_tokens_decoder(self, /) -> "dict[int, AddedToken]":
         """
         Get the underlying vocabulary
 
@@ -1070,7 +1069,7 @@ class Tokenizer:
             :obj:`Dict[int, AddedToken]`: The vocabulary
         """
         ...
-    def get_vocab(self, /, with_added_tokens: bool = True) -> dict[str, int]:
+    def get_vocab(self, /, with_added_tokens: bool = True) -> "dict[str, int]":
         """
         Get the underlying vocabulary
 
@@ -1082,7 +1081,7 @@ class Tokenizer:
             :obj:`Dict[str, int]`: The vocabulary
         """
         ...
-    def get_vocab_size(self, /, with_added_tokens: bool = True) -> int:
+    def get_vocab_size(self, /, with_added_tokens: bool = True) -> "int":
         """
         Get the size of the underlying vocabulary
 
@@ -1094,7 +1093,7 @@ class Tokenizer:
             :obj:`int`: The size of the vocabulary
         """
         ...
-    def id_to_token(self, /, id: int) -> str | None:
+    def id_to_token(self, /, id: int) -> "str | None":
         """
         Convert the given id to its corresponding token if it exists
 
@@ -1107,11 +1106,11 @@ class Tokenizer:
         """
         ...
     @property
-    def model(self, /) -> typing.Any:
+    def model(self, /) -> Any:
         """The :class:`~tokenizers.models.Model` in use by the Tokenizer"""
         ...
     @model.setter
-    def model(self, /, model: tokenizers.models.Model) -> None:
+    def model(self, /, model: Model) -> None:
         """The :class:`~tokenizers.models.Model` in use by the Tokenizer"""
         ...
     def no_padding(self, /) -> None:
@@ -1121,11 +1120,11 @@ class Tokenizer:
         """Disable truncation"""
         ...
     @property
-    def normalizer(self, /) -> typing.Any:
+    def normalizer(self, /) -> Any:
         """The `optional` :class:`~tokenizers.normalizers.Normalizer` in use by the Tokenizer"""
         ...
     @normalizer.setter
-    def normalizer(self, /, normalizer: tokenizers.normalizers.Normalizer | None) -> None:
+    def normalizer(self, /, normalizer: Normalizer | None) -> None:
         """The `optional` :class:`~tokenizers.normalizers.Normalizer` in use by the Tokenizer"""
         ...
     def num_special_tokens_to_add(self, /, is_pair: bool) -> int:
@@ -1136,7 +1135,7 @@ class Tokenizer:
         """
         ...
     @property
-    def padding(self, /) -> typing.Any:
+    def padding(self, /) -> dict | None:
         """
         Get the current padding parameters
 
@@ -1148,12 +1147,8 @@ class Tokenizer:
         """
         ...
     def post_process(
-        self,
-        /,
-        encoding: tokenizers.Encoding,
-        pair: tokenizers.Encoding | None = None,
-        add_special_tokens: bool = True,
-    ) -> tokenizers.Encoding:
+        self, /, encoding: Encoding, pair: Encoding | None = None, add_special_tokens: bool = True
+    ) -> Encoding:
         """
         Apply all the post-processing steps to the given encodings.
 
@@ -1180,22 +1175,22 @@ class Tokenizer:
         """
         ...
     @property
-    def post_processor(self, /) -> typing.Any:
+    def post_processor(self, /) -> Any:
         """The `optional` :class:`~tokenizers.processors.PostProcessor` in use by the Tokenizer"""
         ...
     @post_processor.setter
-    def post_processor(self, /, processor: tokenizers.processors.PostProcessor | None) -> None:
+    def post_processor(self, /, processor: PostProcessor | None) -> None:
         """The `optional` :class:`~tokenizers.processors.PostProcessor` in use by the Tokenizer"""
         ...
     @property
-    def pre_tokenizer(self, /) -> typing.Any:
+    def pre_tokenizer(self, /) -> Any:
         """The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer"""
         ...
     @pre_tokenizer.setter
-    def pre_tokenizer(self, /, pretok: tokenizers.pre_tokenizers.PreTokenizer | None) -> None:
+    def pre_tokenizer(self, /, pretok: PreTokenizer | None) -> None:
         """The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer"""
         ...
-    def save(self, /, path: str, pretty: bool = True) -> None:
+    def save(self, /, path: str, pretty: bool = True) -> "None":
         """
         Save the :class:`~tokenizers.Tokenizer` to the file at the given path.
 
@@ -1207,7 +1202,7 @@ class Tokenizer:
                 Whether the JSON file should be pretty formatted.
         """
         ...
-    def to_str(self, /, pretty: bool = False) -> str:
+    def to_str(self, /, pretty: bool = False) -> "str":
         """
         Gets a serialized string representing this :class:`~tokenizers.Tokenizer`.
 
@@ -1219,7 +1214,7 @@ class Tokenizer:
             :obj:`str`: A string representing the serialized Tokenizer
         """
         ...
-    def token_to_id(self, /, token: str) -> int | None:
+    def token_to_id(self, /, token: str) -> "int | None":
         """
         Convert the given token to its corresponding id if it exists
 
@@ -1231,7 +1226,7 @@ class Tokenizer:
             :obj:`Optional[int]`: An optional id, :obj:`None` if out of vocabulary
         """
         ...
-    def train(self, /, files: typing.Any, trainer: tokenizers.trainers.Trainer | None = None) -> typing.Any:
+    def train(self, /, files: Sequence[str], trainer: Trainer | None = None) -> None:
         """
         Train the Tokenizer using the given files.
 
@@ -1247,9 +1242,7 @@ class Tokenizer:
                 An optional trainer that should be used to train our Model
         """
         ...
-    def train_from_iterator(
-        self, /, iterator: typing.Any, trainer: tokenizers.trainers.Trainer | None = None, length: int | None = None
-    ) -> typing.Any:
+    def train_from_iterator(self, /, iterator: Any, trainer: Trainer | None = None, length: int | None = None) -> None:
         """
         Train the Tokenizer using the provided iterator.
 
@@ -1273,7 +1266,7 @@ class Tokenizer:
         """
         ...
     @property
-    def truncation(self, /) -> typing.Any:
+    def truncation(self, /) -> dict | None:
         """
         Get the currently set truncation parameters
 
@@ -1285,4 +1278,4 @@ class Tokenizer:
         """
         ...
 
-def __getattr__(name: str) -> _typeshed.Incomplete: ...
+def __getattr__(name: str) -> Incomplete: ...
