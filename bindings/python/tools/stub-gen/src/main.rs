@@ -163,10 +163,10 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path, check: bool) -> Result<(), Box<
             }
         }
         if !dirty.is_empty() {
-            return Err(PyErr::new(format!(
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
                 "{} stub file(s) are out of date. Run `cargo run --manifest-path tools/stub-gen/Cargo.toml` to regenerate.",
                 dirty.len()
-            ).into()));
+            )));
         }
 
         Ok(())
