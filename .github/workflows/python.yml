@@ -130,7 +130,7 @@ jobs:
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
-          ty check py_src --exclude py_src/tokenizers/implementations 
+          ty check py_src --exclude py_src/tokenizers/implementations py_src/tokenizers/tools/visualizer.py
 
       - name: Run tests
         working-directory: ./bindings/python

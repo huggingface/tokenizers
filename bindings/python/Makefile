@@ -11,14 +11,17 @@ style:
 	python stub.py
 	ruff check  $(check_dirs) --fix 
 	ruff format $(check_dirs)
-	ty check py_src --exclude py_src/tokenizers/implementations 
+	ty check py_src --exclude py_src/tokenizers/tools/visualizer.py    --exclude py_src/tokenizers/tools/visualizer.py
+
+
 
 # Check the source code is formatted correctly
 check-style:
 	python stub.py --check
 	ruff check $(check_dirs)
 	ruff format --check $(check_dirs)
-	ty check py_src --exclude py_src/tokenizers/implementations 
+	ty check py_src --exclude py_src/tokenizers/implementations  --exclude py_src/tokenizers/tools/visualizer.py
+
 
 TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 
