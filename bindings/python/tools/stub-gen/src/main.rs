@@ -7,6 +7,8 @@ use std::process::Command;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::try_init().ok();
 
+    let check = std::env::args().any(|a| a == "--check");
+
     let manifest_dir = find_manifest_dir()?;
     let cdylib = manifest_dir.join("tokenizers.abi3.so");
     let out_dir = manifest_dir.join("py_src/tokenizers");
@@ -14,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     build_extension(&manifest_dir)?;
     refresh_cdylib(&manifest_dir, &cdylib)?;
     setup_python_env()?;
-    generate_stubs(&cdylib, &out_dir)?;
+    generate_stubs(&cdylib, &out_dir, check)?;
     Ok(())
 }
 
@@ -77,7 +79,7 @@ fn find_manifest_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     Err("Could not find bindings/python directory. Run from the tokenizers root or bindings/python directory.".into())
 }
 
-fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn generate_stubs(cdylib: &Path, out_dir: &Path, check: bool) -> Result<(), Box<dyn std::error::Error>> {
     if !cdylib.is_file() {
         return Err(format!("Failed to locate cdylib at {}", cdylib.display()).into());
     }
@@ -140,14 +142,31 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
             .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name));
         let type_stubs = pyo3_introspection::module_stub_files(&python_module);
 
+        let mut dirty = Vec::new();
         for (rel_path, contents) in type_stubs {
             let out_path = out_dir.join(&rel_path);
-            if let Some(parent) = out_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name))
+            if check {
+                let existing = std::fs::read_to_string(&out_path).unwrap_or_default();
+                if existing != contents {
+                    eprintln!("Stub out of date: {}", out_path.display());
+                    dirty.push(out_path);
+                } else {
+                    println!("Stub up to date: {}", out_path.display());
+                }
+            } else {
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent)
+                        .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name))
+                }
+                std::fs::write(&out_path, &contents).expect("Failed to write stubs file");
+                println!("Generated stub: {}", out_path.display());
             }
-            std::fs::write(&out_path, contents).expect("Failed to write stubs file");
-            println!("Generated stub: {}", out_path.display());
+        }
+        if !dirty.is_empty() {
+            return Err(PyErr::new(format!(
+                "{} stub file(s) are out of date. Run `cargo run --manifest-path tools/stub-gen/Cargo.toml` to regenerate.",
+                dirty.len()
+            ).into()));
         }
 
         Ok(())
