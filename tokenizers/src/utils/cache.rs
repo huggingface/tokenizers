@@ -23,10 +23,6 @@ fn fx_hash<K: Hash + ?Sized>(key: &K) -> u64 {
     h.finish()
 }
 
-// ---------------------------------------------------------------------------
-// Sharded cache
-// ---------------------------------------------------------------------------
-
 struct ShardedMap<K, V> {
     shards: Vec<RwLock<FxHashMap<K, V>>>,
     per_shard_capacity: usize,
