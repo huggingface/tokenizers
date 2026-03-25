@@ -80,7 +80,7 @@ unsafe impl Sync for Pcre2Regex {}
 /// avoiding DFA cache contention under concurrent use.
 ///
 /// Falls back to `fancy_regex` at runtime if PCRE2 compilation fails for a
-/// particular pattern.
+/// particular regex pattern.
 pub struct SysRegex {
     /// Per-thread PCRE2 instances. None if PCRE2 compilation failed.
     pcre2_pool: Option<Vec<Pcre2Regex>>,
