@@ -1,15 +1,22 @@
-import typing
+from collections.abc import Sequence
+from tokenizers import Token
+from typing import Any, final
 
-class BPE:
+@final
+class BPE(Model):
     def __new__(
-        cls, /, vocab: typing.Any | str | None = None, merges: typing.Any | str | None = None, **kwargs
-    ) -> None:
+        cls,
+        /,
+        vocab: dict[str, int] | str | None = None,
+        merges: Sequence[tuple[str, str]] | str | None = None,
+        **kwargs,
+    ) -> BPE:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
-    def _clear_cache(self, /) -> None:
+    def _clear_cache(self, /) -> "None":
         """Clears the internal cache"""
         ...
-    def _resize_cache(self, /, capacity: int) -> None:
+    def _resize_cache(self, /, capacity: int) -> "None":
         """Resize the internal cache"""
         ...
     @property
@@ -17,19 +24,19 @@ class BPE:
     @byte_fallback.setter
     def byte_fallback(self, /, byte_fallback: bool) -> None: ...
     @property
-    def continuing_subword_prefix(self, /) -> typing.Any: ...
+    def continuing_subword_prefix(self, /) -> str | None: ...
     @continuing_subword_prefix.setter
     def continuing_subword_prefix(self, /, continuing_subword_prefix: str | None) -> None: ...
     @property
-    def dropout(self, /) -> typing.Any: ...
+    def dropout(self, /) -> float | None: ...
     @dropout.setter
     def dropout(self, /, dropout: float | None) -> None: ...
     @property
-    def end_of_word_suffix(self, /) -> typing.Any: ...
+    def end_of_word_suffix(self, /) -> str | None: ...
     @end_of_word_suffix.setter
     def end_of_word_suffix(self, /, end_of_word_suffix: str | None) -> None: ...
     @classmethod
-    def from_file(cls, /, vocab: str, merges: str, **kwargs) -> BPE:
+    def from_file(cls, /, vocab: str, merges: str, **kwargs) -> "BPE":
         """
         Instantiate a BPE model from the given files.
 
@@ -62,7 +69,7 @@ class BPE:
     @ignore_merges.setter
     def ignore_merges(self, /, ignore_merges: bool) -> None: ...
     @staticmethod
-    def read_file(vocab: str, merges: str) -> typing.Any:
+    def read_file(vocab: str, merges: str) -> tuple[dict[str, int], list[tuple[str, str]]]:
         """
         Read a :obj:`vocab.json` and a :obj:`merges.txt` files
 
@@ -83,23 +90,23 @@ class BPE:
         """
         ...
     @property
-    def unk_token(self, /) -> typing.Any: ...
+    def unk_token(self, /) -> str | None: ...
     @unk_token.setter
     def unk_token(self, /, unk_token: str | None) -> None: ...
 
 class Model:
-    def __getstate__(self, /) -> typing.Any: ...
-    def __new__(cls, /) -> Model:
+    def __getstate__(self, /) -> Any: ...
+    def __new__(cls, /) -> "Model":
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     def __repr__(self, /) -> str:
         """Return repr(self)."""
         ...
-    def __setstate__(self, /, state: typing.Any) -> typing.Any: ...
+    def __setstate__(self, /, state: Any) -> None: ...
     def __str__(self, /) -> str:
         """Return str(self)."""
         ...
-    def get_trainer(self, /) -> typing.Any:
+    def get_trainer(self, /) -> Any:
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`
 
@@ -110,7 +117,7 @@ class Model:
             :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
         """
         ...
-    def id_to_token(self, /, id: int) -> typing.Any:
+    def id_to_token(self, /, id: int) -> str | None:
         """
         Get the token associated to an ID
 
@@ -122,7 +129,7 @@ class Model:
             :obj:`str`: The token associated to the ID
         """
         ...
-    def save(self, /, folder: str, prefix: str | None = None, name: str | None = None) -> list[str]:
+    def save(self, /, folder: str, prefix: str | None = None, name: str | None = None) -> "list[str]":
         """
         Save the current model
 
@@ -141,7 +148,7 @@ class Model:
             :obj:`List[str]`: The list of saved files
         """
         ...
-    def token_to_id(self, /, token: str) -> typing.Any:
+    def token_to_id(self, /, token: str) -> int | None:
         """
         Get the ID associated to a token
 
@@ -153,7 +160,7 @@ class Model:
             :obj:`int`: The ID associated to the token
         """
         ...
-    def tokenize(self, /, sequence: str) -> typing.Any:
+    def tokenize(self, /, sequence: str) -> list[Token]:
         """
         Tokenize a sequence
 
@@ -166,25 +173,31 @@ class Model:
         """
         ...
 
-class Unigram:
+@final
+class Unigram(Model):
     def __new__(
-        cls, /, vocab: typing.Any | None = None, unk_id: int | None = None, byte_fallback: bool | None = None
-    ) -> None:
+        cls,
+        /,
+        vocab: Sequence[tuple[str, float]] | None = None,
+        unk_id: int | None = None,
+        byte_fallback: bool | None = None,
+    ) -> Unigram:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
-    def _clear_cache(self, /) -> None:
+    def _clear_cache(self, /) -> "None":
         """Clears the internal cache"""
         ...
-    def _resize_cache(self, /, capacity: int) -> None:
+    def _resize_cache(self, /, capacity: int) -> "None":
         """Resize the internal cache"""
         ...
 
-class WordLevel:
-    def __new__(cls, /, vocab: typing.Any | str | None = None, unk_token: str | None = None) -> None:
+@final
+class WordLevel(Model):
+    def __new__(cls, /, vocab: dict[str, int] | str | None = None, unk_token: str | None = None) -> WordLevel:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @classmethod
-    def from_file(cls, /, vocab: str, unk_token: str | None = None) -> WordLevel:
+    def from_file(cls, /, vocab: str, unk_token: str | None = None) -> "WordLevel":
         """
         Instantiate a WordLevel model from the given file
 
@@ -206,7 +219,7 @@ class WordLevel:
         """
         ...
     @staticmethod
-    def read_file(vocab: str) -> typing.Any:
+    def read_file(vocab: str) -> dict[str, int]:
         """
         Read a :obj:`vocab.json`
 
@@ -227,8 +240,9 @@ class WordLevel:
     @unk_token.setter
     def unk_token(self, /, unk_token: str) -> None: ...
 
-class WordPiece:
-    def __new__(cls, /, vocab: typing.Any | str | None = None, **kwargs) -> None:
+@final
+class WordPiece(Model):
+    def __new__(cls, /, vocab: dict[str, int] | str | None = None, **kwargs) -> WordPiece:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
@@ -236,7 +250,7 @@ class WordPiece:
     @continuing_subword_prefix.setter
     def continuing_subword_prefix(self, /, continuing_subword_prefix: str) -> None: ...
     @classmethod
-    def from_file(cls, /, vocab: str, **kwargs) -> WordPiece:
+    def from_file(cls, /, vocab: str, **kwargs) -> "WordPiece":
         """
         Instantiate a WordPiece model from the given file
 
@@ -262,7 +276,7 @@ class WordPiece:
     @max_input_chars_per_word.setter
     def max_input_chars_per_word(self, /, max: int) -> None: ...
     @staticmethod
-    def read_file(vocab: str) -> typing.Any:
+    def read_file(vocab: str) -> dict[str, int]:
         """
         Read a :obj:`vocab.txt` file
 
