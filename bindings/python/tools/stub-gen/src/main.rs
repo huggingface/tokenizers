@@ -10,7 +10,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = find_manifest_dir()?;
     let cdylib = manifest_dir.join("tokenizers.abi3.so");
     let out_dir = manifest_dir.join("py_src/tokenizers");
-
+    println!("Using manifest directory: {}", manifest_dir.display());
+    println!("Using cdylib: {}", cdylib.display());
+    println!("Using output directory: {}", out_dir.display());
     build_extension(&manifest_dir)?;
     refresh_cdylib(&manifest_dir, &cdylib)?;
     setup_python_env()?;
