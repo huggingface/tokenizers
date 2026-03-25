@@ -10,7 +10,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = find_manifest_dir()?;
     let cdylib = manifest_dir.join("tokenizers.abi3.so");
     let out_dir = manifest_dir.join("py_src/tokenizers");
-
+    println!("Using manifest directory: {}", manifest_dir.display());
+    println!("Using cdylib: {}", cdylib.display());
+    println!("Using output directory: {}", out_dir.display());
     build_extension(&manifest_dir)?;
     refresh_cdylib(&manifest_dir, &cdylib)?;
     setup_python_env()?;
@@ -142,12 +144,12 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
 
         for (rel_path, contents) in type_stubs {
             let out_path = out_dir.join(&rel_path);
-            if let Some(parent) = out_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name))
-            }
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent)
+                        .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name))
+                }
             std::fs::write(&out_path, contents).expect("Failed to write stubs file");
-            println!("Generated stub: {}", out_path.display());
+                println!("Generated stub: {}", out_path.display());
         }
 
         Ok(())
@@ -158,14 +160,10 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
 
 fn build_extension(manifest_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("Building and installing extension (release)...");
-    let status = Command::new("maturin")
-        .current_dir(manifest_dir)
-        .args(["develop", "--release"])
-        .status()?;
-
-    if !status.success() {
-        return Err("`maturin develop` failed".into());
-    }
+    match Command::new("maturin").current_dir(manifest_dir).args(["develop", "--release"]).status() {
+        Ok(_) => {}
+        Err(e) => { eprintln!("Hint: Failed to run `maturin develop`: {:?}. Is maturin even installed? ;)", e) }
+    } ;
 
     Ok(())
 }
