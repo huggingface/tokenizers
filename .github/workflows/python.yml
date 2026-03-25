@@ -124,6 +124,9 @@ jobs:
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
+          cd tools/stub-gen
+          cargo build --package stub-gen --bin stub-gen
+          cd ../..
           make check-style
 
       - name: Type check
