@@ -12,10 +12,6 @@ pub static MAX_LENGTH: usize = 256;
 /// Number of shards in the shared cache.
 const SHARED_CACHE_SHARDS: usize = 64;
 
-// ---------------------------------------------------------------------------
-// FxHash helper
-// ---------------------------------------------------------------------------
-
 #[inline]
 fn fx_hash<K: Hash + ?Sized>(key: &K) -> u64 {
     let mut h = rustc_hash::FxHasher::default();
