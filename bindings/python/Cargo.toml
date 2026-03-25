@@ -35,8 +35,3 @@ pyo3 = { version = "0.28.2", features = ["auto-initialize"] }
 [features]
 default = ["ext-module"]
 ext-module = ["pyo3/extension-module"]
-
-[profile.release]
-debug = "full"
-strip = "none"
-split-debuginfo = "packed"
