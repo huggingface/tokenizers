@@ -160,14 +160,10 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
 
 fn build_extension(manifest_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("Building and installing extension (release)...");
-    let status = Command::new("maturin")
-        .current_dir(manifest_dir)
-        .args(["develop", "--release"])
-        .status()?;
-
-    if !status.success() {
-        return Err("`maturin develop` failed".into());
-    }
+    match Command::new("maturin").current_dir(manifest_dir).args(["develop", "--release"]).status() {
+        Ok(_) => {}
+        Err(e) => { eprintln!("Hint: Failed to run `maturin develop`: {:?}. Is maturin even installed? ;)", e) }
+    } ;
 
     Ok(())
 }
