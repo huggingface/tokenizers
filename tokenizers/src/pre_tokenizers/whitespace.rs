@@ -112,14 +112,14 @@ fn classify(ch: char) -> CharType {
 fn is_word_char(ch: char) -> bool {
     use unicode_categories::UnicodeCategories;
 
-    ch.is_alphabetic()               // Unicode Alphabetic property (L* + some others)
-        || ch.is_number_decimal_digit()  // Nd only (not Nl/No like superscripts, fractions)
+    ch.is_alphabetic() // Unicode Alphabetic property (L* + some others)
+        || ch.is_number_decimal_digit() // Nd only (not Nl/No like superscripts, fractions)
         || ch.is_punctuation_connector() // Pc: underscore, undertie, fullwidth low line, etc.
-        || ch.is_mark_nonspacing()       // Mn: combining diacriticals, nukta, etc.
+        || ch.is_mark_nonspacing() // Mn: combining diacriticals, nukta, etc.
         || ch.is_mark_spacing_combining() // Mc: spacing combining marks (vowel signs)
-        || ch.is_mark_enclosing()        // Me: enclosing marks
-        || ch == '\u{200c}'              // Zero-Width Non-Joiner
-        || ch == '\u{200d}'              // Zero-Width Joiner
+        || ch.is_mark_enclosing() // Me: enclosing marks
+        || ch == '\u{200c}' // Zero-Width Non-Joiner
+        || ch == '\u{200d}' // Zero-Width Joiner
 }
 
 #[cfg(test)]
