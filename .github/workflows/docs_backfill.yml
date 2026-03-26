@@ -26,7 +26,6 @@ jobs:
       version_tag_suffix: bindings/python/py_src/
       install_rust: true
       pre_command: |
-        yq -i '.versions += ["${{ matrix.version }}"]' _versions.yml
         cd tokenizers
         git fetch --tags --force
         git checkout "refs/tags/${{ matrix.version }}"
