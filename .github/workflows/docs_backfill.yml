@@ -35,6 +35,6 @@ jobs:
         source ../../../.venv/bin/activate
         curl --silent --show-error --retry 5 https://bootstrap.pypa.io/get-pip.py | python
         python -m pip install maturin
-        python -m pip install -e .[dev]
+        RUSTFLAGS="--cap-lints=warn" python -m pip install -e .[dev]
     secrets:
       hf_token: ${{ secrets.HF_DOC_BUILD_PUSH }}
