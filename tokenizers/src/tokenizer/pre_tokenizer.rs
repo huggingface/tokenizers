@@ -126,7 +126,7 @@ impl PreTokenizedString {
         Ok(())
     }
 
-    pub fn tokenizer_with_limit<F>(&mut self, tokenize: F, max_tokens: usize) -> Result<()>
+    pub fn tokenize_with_limit<F>(&mut self, tokenize: F, max_tokens: usize) -> Result<()>
     where
         F: Fn(&NormalizedString) -> Result<Vec<Token>>,
     {

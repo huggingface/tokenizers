@@ -1147,7 +1147,7 @@ where
                 strategy,
                 ..
             }) if *strategy != TruncationStrategy::OnlySecond || type_id != 0 => pretokenized
-                .tokenizer_with_limit(
+                .tokenize_with_limit(
                     |normalized| self.model.tokenize(normalized.get()),
                     *max_length,
                 )?,
