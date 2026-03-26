@@ -9,7 +9,7 @@ class TocTreeTags(TocTree):
         filtered = []
         for e in entries:
             m = self.hasPat.match(e)
-            if m != None:
+            if m is not None:
                 if self.env.app.tags.has(m.groups()[0]):
                     filtered.append(m.groups()[1])
             else:
