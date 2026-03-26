@@ -150,7 +150,7 @@ impl PyPostProcessor {
     /// Return:
     ///     :class:`~tokenizers.Encoding`: The final encoding
     #[pyo3(
-        signature = (encoding, pair = None, add_special_tokens = true) -> "tokenizers.Encoding"
+        signature = (encoding, pair = None, add_special_tokens = true) -> "Encoding"
     )]
     #[pyo3(text_signature = "(self, encoding, pair=None, add_special_tokens=True)")]
     fn process(
