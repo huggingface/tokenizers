@@ -32,6 +32,7 @@ jobs:
         git checkout "refs/tags/${{ matrix.version }}"
         cd bindings/python
         source ../../../.venv/bin/activate
+        curl --silent --show-error --retry 5 https://bootstrap.pypa.io/get-pip.py 
         python -m pip install maturin
         python -m pip install -e .[dev]
     secrets:
