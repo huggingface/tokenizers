@@ -1140,7 +1140,17 @@ where
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
         let mut pretokenized: PreTokenizedString = pretokenized.into();
-        pretokenized.tokenize(|normalized| self.model.tokenize(normalized.get()))?;
+        match self.truncation.as_ref() {
+            Some(TruncationParams {
+                direction: TruncationDirection::Right,
+                max_length,
+                ..
+            }) => pretokenized.tokenizer_with_limit(
+                |normalized| self.model.tokenize(normalized.get()),
+                *max_length,
+            )?,
+            _ => pretokenized.tokenize(|normalized| self.model.tokenize(normalized.get()))?,
+        }
         pretokenized.into_encoding(word_idx, type_id, offsets_type)
     }
 }
@@ -1577,5 +1587,88 @@ where
         file.write_all(serialized.as_bytes())?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::wordlevel::WordLevelBuilder;
+    use crate::pre_tokenizers::whitespace::WhitespaceSplit;
+    use ahash::AHashMap;
+
+    /// Build a tokenizer with a known vocabulary: "a"=0, "b"=1, ... "j"=9, "<unk>"=10
+    /// Uses WhitespaceSplit so each space-separated word maps to one token.
+    fn test_tokenizer() -> Tokenizer {
+        let vocab: AHashMap<String, u32> = ('a'..='j')
+            .enumerate()
+            .map(|(i, c)| (c.to_string(), i as u32))
+            .chain(std::iter::once(("<unk>".to_string(), 10)))
+            .collect();
+
+        let model = WordLevelBuilder::new()
+            .vocab(vocab)
+            .unk_token("<unk>".to_string())
+            .build()
+            .unwrap();
+
+        let mut tokenizer = Tokenizer::new(model);
+        tokenizer.with_pre_tokenizer(Some(WhitespaceSplit));
+        tokenizer
+    }
+
+    #[test]
+    fn right_truncation_early_exit_matches_full_encode() {
+        // "a b c d e f g h i j" → 10 tokens [0,1,2,3,4,5,6,7,8,9]
+        // Right truncation to 3 → [0,1,2]
+        let input = "a b c d e f g h i j";
+
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 3,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 0,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        let truncated = tok.encode(input, false).unwrap();
+
+        let tok_full = test_tokenizer();
+        let full = tok_full.encode(input, false).unwrap();
+
+        assert_eq!(truncated.get_ids().len(), 3);
+        assert_eq!(
+            truncated.get_ids(),
+            &full.get_ids()[..3],
+            "Right-truncated should match first 3 tokens of full encoding"
+        );
+    }
+
+    #[test]
+    fn left_truncation_keeps_tail_tokens() {
+        // "a b c d e f g h i j" → 10 tokens [0,1,2,3,4,5,6,7,8,9]
+        // Left truncation to 3 → [7,8,9]
+        let input = "a b c d e f g h i j";
+
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 3,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 0,
+            direction: TruncationDirection::Left,
+        }))
+        .unwrap();
+        let truncated = tok.encode(input, false).unwrap();
+
+        let tok_full = test_tokenizer();
+        let full = tok_full.encode(input, false).unwrap();
+        let n = full.get_ids().len();
+
+        assert_eq!(truncated.get_ids().len(), 3);
+        assert_eq!(
+            truncated.get_ids(),
+            &full.get_ids()[n - 3..],
+            "Left-truncated should match last 3 tokens of full encoding"
+        );
     }
 }

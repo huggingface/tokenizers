@@ -126,6 +126,35 @@ impl PreTokenizedString {
         Ok(())
     }
 
+    pub fn tokenizer_with_limit<F>(&mut self, tokenize: F, max_tokens: usize) -> Result<()>
+    where
+        F: Fn(&NormalizedString) -> Result<Vec<Token>>,
+    {
+        let mut total_tokens = 0;
+        let mut last_tokenized_idx = 0;
+
+        for (i, split) in self.splits.iter_mut().enumerate() {
+            if let Some(tokens) = &split.tokens {
+                total_tokens += tokens.len();
+                last_tokenized_idx = i + 1;
+                continue;
+            }
+
+            let tokens = tokenize(&split.normalized)?;
+            total_tokens += tokens.len();
+            split.tokens = Some(tokens);
+            last_tokenized_idx = i + 1;
+
+            if total_tokens >= max_tokens {
+                break;
+            }
+        }
+
+        self.splits.truncate(last_tokenized_idx);
+
+        Ok(())
+    }
+
     /// Transform the current `PreTokenizedString` into an `Encoding`.
     ///
     /// If a `word_idx` is provided, any word in the generated `Encoding`
