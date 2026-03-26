@@ -1,3 +1,8 @@
+name: Backfill documentation
+
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
     inputs:
@@ -27,3 +32,5 @@ jobs:
         cd bindings/python
         source ../../../.venv/bin/activate
         pip install -e .[dev]
+    secrets:
+      hf_token: ${{ secrets.HF_DOC_BUILD_PUSH }}
