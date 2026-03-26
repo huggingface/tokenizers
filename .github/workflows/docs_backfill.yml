@@ -27,20 +27,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Python dependencies
-        run: python -m pip install --quiet --break-system-packages packaging pyyaml huggingface_hub
-
       - id: compute
         env:
           INPUT_VERSIONS: ${{ github.event.inputs.versions }}
           INCLUDE_RCS: ${{ github.event.inputs.include_rcs }}
         run: |
-          python - <<'PY'
+          set -e
+          apt-get update
+          apt-get install -y python3 python3-pip
+          python3 -m pip install --quiet packaging pyyaml huggingface_hub
+          python3 - <<'PY'
           import json
           import os
           import re
