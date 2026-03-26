@@ -7,100 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       versions:
-        description: 'Comma-separated list of tags (e.g., v0.21.4,v0.22.2). Leave empty to auto-detect missing stable tags >= v0.13.0.'
-        required: false
-        default: ""
-      include_rcs:
-        description: 'Include release candidate tags (rc) in auto-detection.'
-        required: false
-        type: boolean
-        default: false
+        description: 'JSON array of tags (e.g. ["v0.21.4","v0.22.2"])'
+        required: true
+        type: string
 
 jobs:
-  compute_matrix:
-    runs-on: ubuntu-latest
-    outputs:
-      versions: ${{ steps.compute.outputs.matrix }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - id: compute
-        env:
-          INPUT_VERSIONS: ${{ github.event.inputs.versions }}
-          INCLUDE_RCS: ${{ github.event.inputs.include_rcs }}
-        run: |
-          set -e
-          apt-get update
-          apt-get install -y python3 python3-pip
-          python3 -m pip install --quiet packaging pyyaml huggingface_hub
-          python3 - <<'PY'
-          import json
-          import os
-          import re
-          import subprocess
-          from packaging import version
-          import yaml
-
-          try:
-            from huggingface_hub import hf_hub_download
-          except ImportError:
-            print("::error::huggingface_hub failed to import")
-            raise
-
-          def is_candidate(tag: str, include_rcs: bool) -> bool:
-            m = re.match(r"v(\d+\.\d+\.\d+)(.*)$", tag)
-            if not m:
-              return False
-            suffix = m.group(2)
-            if suffix and not include_rcs:
-              # filter out rc/beta/etc
-              return False
-            return version.parse(m.group(1)) >= version.parse("0.13.0")
-
-          raw_tags = subprocess.check_output(["git", "tag", "--list", "v*"]).decode().split()
-          include_rcs = (os.getenv("INCLUDE_RCS", "false").lower() == "true")
-          candidates = sorted({t for t in raw_tags if is_candidate(t, include_rcs)}, key=lambda t: version.parse(re.sub(r"^v", "", re.sub(r"rc.*", "", t))))
-
-          pattern = re.compile(r"^v\d+\.\d+\.\d+(?:[a-zA-Z0-9.-]+)?$")
-
-          input_versions = os.getenv("INPUT_VERSIONS", "").strip()
-          if input_versions:
-            build_list = []
-            for v in (v.strip() for v in input_versions.split(",")):
-              if not v:
-                continue
-              if not pattern.match(v):
-                raise SystemExit(f"Invalid version format: {v}")
-              build_list.append(v)
-          else:
-            try:
-              path = hf_hub_download(repo_id="hf-doc-build/doc-build", filename="tokenizers/_versions.yml", repo_type="dataset")
-              with open(path, "r", encoding="utf-8") as f:
-                existing = [entry["version"] for entry in yaml.safe_load(f)]
-            except Exception as e:
-              print(f"::warning::Could not load remote _versions.yml ({e}); assuming none built")
-              existing = []
-            build_list = [v for v in candidates if v not in existing]
-
-          if not build_list:
-            print("::notice::No versions to build")
-
-          matrix = json.dumps(build_list)
-          print(f"matrix={matrix}")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-            fh.write(f"matrix={matrix}\n")
-          PY
-
   build:
-    needs: compute_matrix
-    if: needs.compute_matrix.outputs.versions != '[]' && needs.compute_matrix.outputs.versions != ''
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        version: ${{ fromJson(needs.compute_matrix.outputs.versions) }}
+        version: ${{ fromJson(github.event.inputs.versions) }}
     uses: huggingface/doc-builder/.github/workflows/build_main_documentation.yml@main
     with:
       commit_sha: ${{ matrix.version }}
