@@ -1144,11 +1144,13 @@ where
             Some(TruncationParams {
                 direction: TruncationDirection::Right,
                 max_length,
+                strategy,
                 ..
-            }) => pretokenized.tokenizer_with_limit(
-                |normalized| self.model.tokenize(normalized.get()),
-                *max_length,
-            )?,
+            }) if *strategy != TruncationStrategy::OnlySecond || type_id != 0 => pretokenized
+                .tokenizer_with_limit(
+                    |normalized| self.model.tokenize(normalized.get()),
+                    *max_length,
+                )?,
             _ => pretokenized.tokenize(|normalized| self.model.tokenize(normalized.get()))?,
         }
         pretokenized.into_encoding(word_idx, type_id, offsets_type)
