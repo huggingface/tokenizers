@@ -64,3 +64,7 @@ lint.ignore = [
   # Fixtures unused import
   "F811",
 ]
+
+[tool.ty.rules]
+invalid-method-override = "ignore"
+invalid-type-form = "ignore"

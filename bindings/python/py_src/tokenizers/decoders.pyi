@@ -1,0 +1,161 @@
+from _typeshed import Incomplete
+from collections.abc import Sequence as Sequence2
+from tokenizers import Regex, Tokenizer
+from typing import Any, final
+
+@final
+class BPEDecoder(Decoder):
+    def __new__(cls, /, suffix: str = ...) -> BPEDecoder:
+        """Create and return a new object.  See help(type) for accurate signature."""
+        ...
+    @property
+    def suffix(self, /) -> str: ...
+    @suffix.setter
+    def suffix(self, /, suffix: str) -> None: ...
+
+@final
+class ByteFallback(Decoder):
+    def __new__(cls, /) -> ByteFallback:
+        """Create and return a new object.  See help(type) for accurate signature."""
+        ...
+
+@final
+class ByteLevel(Decoder):
+    def __new__(cls, /, **_kwargs) -> ByteLevel:
+        """Create and return a new object.  See help(type) for accurate signature."""
+        ...
+
+@final
+class CTC(Decoder):
+    def __new__(cls, /, pad_token: str = ..., word_delimiter_token: str = ..., cleanup: bool = True) -> CTC:
+        """Create and return a new object.  See help(type) for accurate signature."""
+        ...
+    @property
+    def cleanup(self, /) -> bool: ...
+    @cleanup.setter
+    def cleanup(self, /, cleanup: bool) -> None: ...
+    @property
+    def pad_token(self, /) -> str: ...
+    @pad_token.setter
+    def pad_token(self, /, pad_token: str) -> None: ...
+    @property
+    def word_delimiter_token(self, /) -> str: ...
+    @word_delimiter_token.setter
+    def word_delimiter_token(self, /, word_delimiter_token: str) -> None: ...
+
+@final
+class DecodeStream:
+    def __copy__(self, /) -> DecodeStream: ...
+    def __deepcopy__(self, /, _memo: dict) -> DecodeStream: ...
+    def __new__(cls, /, ids: Sequence2[int] | None = None, skip_special_tokens: bool | None = False) -> DecodeStream:
+        """Create and return a new object.  See help(type) for accurate signature."""
+        ...
+    def step(self, /, tokenizer: Tokenizer, id: Incomplete) -> str | None:
+        """
+        Streaming decode step
+
+        Args:
+            tokenizer (:class:`~tokenizers.Tokenizer`):
+               The tokenizer to use for decoding
+           id (:obj:`int` or `List[int]`):
+              The next token id or list of token ids to add to the stream
+
+
+        Returns:
+            :obj:`Optional[str]`: The next decoded string chunk, or None if not enough
+                tokens have been provided yet.
+        """
+        ...
+
+class Decoder:
+    def __getstate__(self, /) -> Any: ...
+    def __repr__(self, /) -> str:
+        """Return repr(self)."""
+        ...
+    def __setstate__(self, /, state: Any) -> None: ...
+    def __str__(self, /) -> str:
+        """Return str(self)."""
+        ...
+    @staticmethod
+    def custom(decoder: Any) -> Decoder: ...
+    def decode(self, /, tokens: Sequence2[str]) -> str:
+        """
+        Decode the given list of tokens to a final string
+
+        Args:
+            tokens (:obj:`List[str]`):
+                The list of tokens to decode
+
+        Returns:
+            :obj:`str`: The decoded string
+        """
+        ...
+
+@final
+class Fuse(Decoder):
+    def __new__(cls, /) -> Fuse:
+        """Create and return a new object.  See help(type) for accurate signature."""
+        ...
+
+@final
+class Metaspace(Decoder):
+    def __new__(cls, /, replacement: str = "▁", prepend_scheme: str = ..., split: bool = True) -> Metaspace:
+        """Create and return a new object.  See help(type) for accurate signature."""
+        ...
+    @property
+    def prepend_scheme(self, /) -> str: ...
+    @prepend_scheme.setter
+    def prepend_scheme(self, /, prepend_scheme: str) -> None: ...
+    @property
+    def replacement(self, /) -> str: ...
+    @replacement.setter
+    def replacement(self, /, replacement: str) -> None: ...
+    @property
+    def split(self, /) -> bool: ...
+    @split.setter
+    def split(self, /, split: bool) -> None: ...
+
+@final
+class Replace(Decoder):
+    def __new__(cls, /, pattern: str | Regex, content: str) -> Replace:
+        """Create and return a new object.  See help(type) for accurate signature."""
+        ...
+
+@final
+class Sequence(Decoder):
+    def __getnewargs__(self, /) -> tuple: ...
+    def __new__(cls, /, decoders_py: list) -> Sequence:
+        """Create and return a new object.  See help(type) for accurate signature."""
+        ...
+
+@final
+class Strip(Decoder):
+    def __new__(cls, /, content: str = " ", left: int = 0, right: int = 0) -> Strip:
+        """Create and return a new object.  See help(type) for accurate signature."""
+        ...
+    @property
+    def content(self, /) -> str: ...
+    @content.setter
+    def content(self, /, content: str) -> None: ...
+    @property
+    def start(self, /) -> int: ...
+    @start.setter
+    def start(self, /, start: int) -> None: ...
+    @property
+    def stop(self, /) -> int: ...
+    @stop.setter
+    def stop(self, /, stop: int) -> None: ...
+
+@final
+class WordPiece(Decoder):
+    def __new__(cls, /, prefix: str = ..., cleanup: bool = True) -> WordPiece:
+        """Create and return a new object.  See help(type) for accurate signature."""
+        ...
+    @property
+    def cleanup(self, /) -> bool: ...
+    @cleanup.setter
+    def cleanup(self, /, cleanup: bool) -> None: ...
+    @property
+    def prefix(self, /) -> str: ...
+    @prefix.setter
+    def prefix(self, /, prefix: str) -> None: ...

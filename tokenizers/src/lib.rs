@@ -1,3 +1,4 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::all)]
 #![allow(clippy::upper_case_acronyms)]
 #![doc(html_favicon_url = "https://huggingface.co/favicon.ico")]

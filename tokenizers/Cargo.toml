@@ -15,6 +15,9 @@ with a focus on performances and versatility.
 """
 exclude = [ "rust-toolchain", "target/*", "Cargo.lock", "benches/*.txt", "benches/*.json", "data/*" ]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lib]
 name = "tokenizers"
 path = "src/lib.rs"
@@ -67,7 +70,7 @@ aho-corasick = "1.1"
 paste = "1.0.14"
 macro_rules_attribute = "0.2.0"
 thiserror = "2"
-fancy-regex = { version = "0.14", optional = true}
+fancy-regex = { version = "0.17", optional = true}
 getrandom = { version = "0.3" }
 esaxx-rs = { version = "0.1.10", default-features = false, features=[]}
 monostate = "0.1.12"

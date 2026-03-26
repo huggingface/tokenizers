@@ -1,4 +1,5 @@
 import pickle
+import copy
 import concurrent.futures
 import pytest
 import numpy as np
@@ -155,8 +156,7 @@ class TestTokenizer:
         assert len(output) == 2
 
     def test_encode_formats(self, bert_files):
-        with pytest.deprecated_call():
-            tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
+        tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
 
         # Encode
         output = tokenizer.encode("my name is john")
@@ -287,8 +287,7 @@ class TestTokenizer:
             tokenizer.encode(["My", "name", "is", "John"], "pair", is_pretokenized=True)
 
     def test_encode_add_special_tokens(self, roberta_files):
-        with pytest.deprecated_call():
-            tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
+        tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
         tokenizer.add_special_tokens(["<s>", "</s>"])
 
         tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=True)
@@ -375,6 +374,27 @@ class TestTokenizer:
 
         stream = DecodeStream(ids=[0, 1, 2])
         assert stream.step(tokenizer, 3) == " john"
+
+    def test_decode_stream_copy_and_prefix_ids(self):
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_tokens(["my", "name", "is", "john"])
+        token_ids = [0, 1, 2, 3]
+
+        stream = DecodeStream(skip_special_tokens=False)
+        assert stream.step(tokenizer, token_ids[0]) == "my"
+        assert stream.step(tokenizer, token_ids[1]) == " name"
+        stream_copy = copy.copy(stream)
+        assert stream.step(tokenizer, token_ids[2]) == " is"
+        assert stream_copy.step(tokenizer, token_ids[2]) == " is"
+        assert stream.step(tokenizer, token_ids[3]) == " john"
+        assert stream_copy.step(tokenizer, token_ids[3]) == " john"
+
+        stream_steps = DecodeStream([])
+        last_chunk = None
+        for tid in token_ids:
+            last_chunk = stream_steps.step(tokenizer, tid)
+        stream_prefill = DecodeStream(token_ids[:-1])
+        assert stream_prefill.step(tokenizer, token_ids[-1]) == last_chunk
 
     def test_decode_stream_fallback(self):
         tokenizer = Tokenizer.from_pretrained("gpt2")
@@ -557,6 +577,44 @@ class TestTokenizer:
         multiprocessing_with_parallelism(tokenizer, False)
         multiprocessing_with_parallelism(tokenizer, True)
 
+    def test_multithreaded_concurrency(self):
+        # Create a single shared tokenizer instance (thread-safe)
+        shared_tokenizer = Tokenizer(BPE())
+
+        # Thread worker functions that use the SAME tokenizer instance
+        def encode_batch(batch):
+            return shared_tokenizer.encode_batch(batch)
+
+        def encode_batch_fast(batch):
+            return shared_tokenizer.encode_batch_fast(batch)
+
+        # Create some significant workload
+        batches = [
+            ["my name is john " * 50] * 20,
+            ["my name is paul " * 50] * 20,
+            ["my name is ringo " * 50] * 20,
+        ]
+
+        # Many encoding operations to run concurrently using the same tokenizer
+        tasks = [
+            (encode_batch, batches[0]),
+            (encode_batch_fast, batches[1]),
+            (encode_batch, batches[2]),
+        ] * 10
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+        futures = []
+        for function, argument in tasks:
+            futures.append(executor.submit(function, argument))
+
+        # All tasks should complete successfully
+        results = [f.result() for f in futures]
+
+        # Verify results
+        assert len(results) == 30
+        assert all(len(result) == 20 for result in results)
+
     def test_from_pretrained(self):
         tokenizer = Tokenizer.from_pretrained("bert-base-cased")
         output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
@@ -687,6 +745,33 @@ class TestTokenizer:
         output = tokenizer.decode([0, 1, 2, 3], skip_special_tokens=True)
         assert output == "name is john"
         assert tokenizer.get_added_tokens_decoder()[0] == AddedToken("my", special=True)
+
+    def test_weakref_support(self):
+        import weakref
+
+        tokenizer = Tokenizer(BPE())
+        weak_ref = weakref.ref(tokenizer)
+
+        assert weak_ref() is not None
+        assert weak_ref() is tokenizer
+
+        del tokenizer
+        assert weak_ref() is None
+
+    def test_weakref_with_multiple_references(self):
+        import weakref
+
+        tokenizer = Tokenizer(BPE())
+        weak_ref = weakref.ref(tokenizer)
+        another_ref = tokenizer
+
+        assert weak_ref() is not None
+
+        del tokenizer
+        assert weak_ref() is not None
+
+        del another_ref
+        assert weak_ref() is None
 
     def test_setting_to_none(self):
         tokenizer = Tokenizer(BPE())

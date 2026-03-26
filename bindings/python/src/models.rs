@@ -25,7 +25,7 @@ use super::error::{deprecation_warning, ToPyResult};
 /// will contain and manage the learned vocabulary.
 ///
 /// This class cannot be constructed directly. Please use one of the concrete models.
-#[pyclass(module = "tokenizers.models", name = "Model", subclass)]
+#[pyclass(module = "tokenizers.models", name = "Model", subclass, from_py_object)]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PyModel {
@@ -90,7 +90,7 @@ where
 #[pymethods]
 impl PyModel {
     #[new]
-    #[pyo3(signature = (), text_signature = "(self)")]
+    #[pyo3(signature = () -> "Model", text_signature = "(self)")]
     fn __new__() -> Self {
         // Instantiate a default empty model. This doesn't really make sense, but we need
         // to be able to instantiate an empty model for pickle capabilities.
@@ -116,7 +116,7 @@ impl PyModel {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -178,7 +178,7 @@ impl PyModel {
     ///
     /// Returns:
     ///     :obj:`List[str]`: The list of saved files
-    #[pyo3(signature = (folder, prefix=None, name=None), text_signature = "(self, folder, prefix)")]
+    #[pyo3(signature = (folder, prefix=None, name=None) -> "list[str]", text_signature = "(self, folder, prefix)")]
     fn save<'a>(
         &self,
         py: Python<'_>,
@@ -424,7 +424,7 @@ impl PyBPE {
         signature = (vocab=None, merges=None, **kwargs),
         text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False, ignore_merges=False)")]
     fn new(
-        py: Python<'_>,
+        _py: Python<'_>,
         vocab: Option<PyVocab>,
         merges: Option<PyMerges>,
         kwargs: Option<&Bound<'_, PyDict>>,
@@ -443,11 +443,6 @@ impl PyBPE {
                     builder = builder.vocab_and_merges(vocab, merges);
                 }
                 (PyVocab::Filename(vocab_filename), PyMerges::Filename(merges_filename)) => {
-                    deprecation_warning(
-                    py,
-                    "0.9.0",
-                    "BPE.__init__ will not create from files anymore, try `BPE.from_file` instead",
-                )?;
                     builder =
                         builder.files(vocab_filename.to_string(), merges_filename.to_string());
                 }
@@ -511,7 +506,7 @@ impl PyBPE {
     /// Returns:
     ///     :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
     #[classmethod]
-    #[pyo3(signature = (vocab, merges, **kwargs))]
+    #[pyo3(signature = (vocab, merges, **kwargs) -> "BPE")]
     #[pyo3(text_signature = "(vocab, merges, **kwargs)")]
     fn from_file(
         _cls: &Bound<'_, PyType>,
@@ -536,7 +531,7 @@ impl PyBPE {
     }
 
     /// Clears the internal cache
-    #[pyo3(signature = ())]
+    #[pyo3(signature = () -> "None")]
     #[pyo3(text_signature = "(self)")]
     fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
         let super_ = self_.as_ref();
@@ -548,7 +543,7 @@ impl PyBPE {
     }
 
     /// Resize the internal cache
-    #[pyo3(signature = (capacity))]
+    #[pyo3(signature = (capacity) -> "None")]
     #[pyo3(text_signature = "(self, capacity)")]
     fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
         let super_ = self_.as_ref();
@@ -649,7 +644,7 @@ impl PyWordPiece {
         text_signature = "(self, vocab=None, unk_token='[UNK]', max_input_chars_per_word=100, continuing_subword_prefix='##')"
     )]
     fn new(
-        py: Python<'_>,
+        _py: Python<'_>,
         vocab: Option<PyVocab>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<(Self, PyModel)> {
@@ -662,11 +657,6 @@ impl PyWordPiece {
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
-                    deprecation_warning(
-                        py,
-                        "0.9.0",
-                        "WordPiece.__init__ will not create from files anymore, try `WordPiece.from_file` instead",
-                    )?;
                     builder = builder.files(vocab_filename.to_string());
                 }
             }
@@ -715,7 +705,7 @@ impl PyWordPiece {
     /// Returns:
     ///     :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
     #[classmethod]
-    #[pyo3(signature = (vocab, **kwargs))]
+    #[pyo3(signature = (vocab, **kwargs) -> "WordPiece")]
     #[pyo3(text_signature = "(vocab, **kwargs)")]
     fn from_file(
         _cls: &Bound<'_, PyType>,
@@ -765,7 +755,7 @@ impl PyWordLevel {
         text_signature = "(self, vocab=None, unk_token=None)"
     )]
     fn new(
-        py: Python<'_>,
+        _py: Python<'_>,
         vocab: Option<PyVocab>,
         unk_token: Option<String>,
     ) -> PyResult<(Self, PyModel)> {
@@ -778,12 +768,6 @@ impl PyWordLevel {
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
-                    deprecation_warning(
-                        py,
-                        "0.9.0",
-                        "WordLevel.__init__ will not create from files anymore, \
-                            try `WordLevel.from_file` instead",
-                    )?;
                     builder = builder.files(vocab_filename.to_string());
                 }
             };
@@ -841,7 +825,7 @@ impl PyWordLevel {
     /// Returns:
     ///     :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
     #[classmethod]
-    #[pyo3(signature = (vocab, unk_token = None))]
+    #[pyo3(signature = (vocab, unk_token = None)-> "WordLevel")]
     #[pyo3(text_signature = "(vocab, unk_token=None)")]
     fn from_file(
         _cls: &Bound<'_, PyType>,
@@ -895,7 +879,7 @@ impl PyUnigram {
     }
 
     /// Clears the internal cache
-    #[pyo3(signature = ())]
+    #[pyo3(signature = () -> "None")]
     #[pyo3(text_signature = "(self)")]
     fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
         let super_ = self_.as_ref();
@@ -907,7 +891,7 @@ impl PyUnigram {
     }
 
     /// Resize the internal cache
-    #[pyo3(signature = (capacity))]
+    #[pyo3(signature = (capacity) -> "None")]
     #[pyo3(text_signature = "(self, capacity)")]
     fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
         let super_ = self_.as_ref();
@@ -921,13 +905,17 @@ impl PyUnigram {
 
 /// Models Module
 #[pymodule]
-pub fn models(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyModel>()?;
-    m.add_class::<PyBPE>()?;
-    m.add_class::<PyWordPiece>()?;
-    m.add_class::<PyWordLevel>()?;
-    m.add_class::<PyUnigram>()?;
-    Ok(())
+pub mod models {
+    #[pymodule_export]
+    pub use super::PyBPE;
+    #[pymodule_export]
+    pub use super::PyModel;
+    #[pymodule_export]
+    pub use super::PyUnigram;
+    #[pymodule_export]
+    pub use super::PyWordLevel;
+    #[pymodule_export]
+    pub use super::PyWordPiece;
 }
 
 #[cfg(test)]

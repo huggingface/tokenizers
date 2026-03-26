@@ -41,7 +41,13 @@ impl PyNormalizedStringMut<'_> {
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Normalizer will return an instance of this class when instantiated.
-#[pyclass(dict, module = "tokenizers.normalizers", name = "Normalizer", subclass)]
+#[pyclass(
+    dict,
+    module = "tokenizers.normalizers",
+    name = "Normalizer",
+    subclass,
+    from_py_object
+)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PyNormalizer {
@@ -135,7 +141,7 @@ impl PyNormalizer {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -765,23 +771,37 @@ impl Normalizer for PyNormalizerWrapper {
 
 /// Normalizers Module
 #[pymodule]
-pub fn normalizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyNormalizer>()?;
-    m.add_class::<PyBertNormalizer>()?;
-    m.add_class::<PyNFD>()?;
-    m.add_class::<PyNFKD>()?;
-    m.add_class::<PyNFC>()?;
-    m.add_class::<PyNFKC>()?;
-    m.add_class::<PySequence>()?;
-    m.add_class::<PyLowercase>()?;
-    m.add_class::<PyStrip>()?;
-    m.add_class::<PyStripAccents>()?;
-    m.add_class::<PyPrepend>()?;
-    m.add_class::<PyByteLevel>()?;
-    m.add_class::<PyNmt>()?;
-    m.add_class::<PyPrecompiled>()?;
-    m.add_class::<PyReplace>()?;
-    Ok(())
+pub mod normalizers {
+    #[pymodule_export]
+    pub use super::PyBertNormalizer;
+    #[pymodule_export]
+    pub use super::PyByteLevel;
+    #[pymodule_export]
+    pub use super::PyLowercase;
+    #[pymodule_export]
+    pub use super::PyNFC;
+    #[pymodule_export]
+    pub use super::PyNFD;
+    #[pymodule_export]
+    pub use super::PyNFKC;
+    #[pymodule_export]
+    pub use super::PyNFKD;
+    #[pymodule_export]
+    pub use super::PyNmt;
+    #[pymodule_export]
+    pub use super::PyNormalizer;
+    #[pymodule_export]
+    pub use super::PyPrecompiled;
+    #[pymodule_export]
+    pub use super::PyPrepend;
+    #[pymodule_export]
+    pub use super::PyReplace;
+    #[pymodule_export]
+    pub use super::PySequence;
+    #[pymodule_export]
+    pub use super::PyStrip;
+    #[pymodule_export]
+    pub use super::PyStripAccents;
 }
 
 #[cfg(test)]
