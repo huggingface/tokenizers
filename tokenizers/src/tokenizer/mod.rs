@@ -1142,7 +1142,7 @@ where
         let mut pretokenized: PreTokenizedString = pretokenized.into();
         match self.truncation.as_ref() {
             Some(TruncationParams {
-                direction: TruncationDirection::Right,
+                direction,
                 max_length,
                 strategy,
                 ..
@@ -1150,6 +1150,7 @@ where
                 .tokenize_with_limit(
                     |normalized| self.model.tokenize(normalized.get()),
                     *max_length,
+                    *direction,
                 )?,
             _ => pretokenized.tokenize(|normalized| self.model.tokenize(normalized.get()))?,
         }

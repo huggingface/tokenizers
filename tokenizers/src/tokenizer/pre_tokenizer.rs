@@ -1,5 +1,6 @@
 use crate::{
     normalizer::Range, Encoding, NormalizedString, OffsetReferential, Offsets, Result, Token,
+    TruncationDirection,
 };
 use std::collections::HashMap;
 
@@ -126,31 +127,62 @@ impl PreTokenizedString {
         Ok(())
     }
 
-    pub fn tokenize_with_limit<F>(&mut self, tokenize: F, max_tokens: usize) -> Result<()>
+    pub fn tokenize_with_limit<F>(
+        &mut self,
+        tokenize: F,
+        max_tokens: usize,
+        direction: TruncationDirection,
+    ) -> Result<()>
     where
         F: Fn(&NormalizedString) -> Result<Vec<Token>>,
     {
         let mut total_tokens = 0;
-        let mut last_tokenized_idx = 0;
+        match direction {
+            TruncationDirection::Left => {
+                let mut first_tokenized_idx = self.splits.len();
 
-        for (i, split) in self.splits.iter_mut().enumerate() {
-            if let Some(tokens) = &split.tokens {
-                total_tokens += tokens.len();
-                last_tokenized_idx = i + 1;
-                continue;
+                for (i, split) in self.splits.iter_mut().enumerate().rev() {
+                    if let Some(tokens) = &split.tokens {
+                        total_tokens += tokens.len();
+                        first_tokenized_idx = i;
+                        continue;
+                    }
+
+                    let tokens = tokenize(&split.normalized)?;
+                    total_tokens += tokens.len();
+                    split.tokens = Some(tokens);
+                    first_tokenized_idx = i;
+
+                    if total_tokens >= max_tokens {
+                        break;
+                    }
+                }
+
+                self.splits.drain(..first_tokenized_idx);
             }
+            TruncationDirection::Right => {
+                let mut last_tokenized_idx = 0;
 
-            let tokens = tokenize(&split.normalized)?;
-            total_tokens += tokens.len();
-            split.tokens = Some(tokens);
-            last_tokenized_idx = i + 1;
+                for (i, split) in self.splits.iter_mut().enumerate() {
+                    if let Some(tokens) = &split.tokens {
+                        total_tokens += tokens.len();
+                        last_tokenized_idx = i + 1;
+                        continue;
+                    }
 
-            if total_tokens >= max_tokens {
-                break;
+                    let tokens = tokenize(&split.normalized)?;
+                    total_tokens += tokens.len();
+                    split.tokens = Some(tokens);
+                    last_tokenized_idx = i + 1;
+
+                    if total_tokens >= max_tokens {
+                        break;
+                    }
+                }
+
+                self.splits.truncate(last_tokenized_idx);
             }
-        }
-
-        self.splits.truncate(last_tokenized_idx);
+        };
 
         Ok(())
     }
