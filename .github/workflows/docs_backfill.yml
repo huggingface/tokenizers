@@ -33,6 +33,6 @@ jobs:
         cd bindings/python
         source ../../../.venv/bin/activate
         python -m pip install maturin
-        pip install -e .[dev]
+        python -m pip install -e .[dev]
     secrets:
       hf_token: ${{ secrets.HF_DOC_BUILD_PUSH }}
