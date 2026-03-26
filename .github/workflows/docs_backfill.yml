@@ -1,8 +1,3 @@
-name: Backfill documentation
-
-permissions:
-  contents: read
-
 on:
   workflow_dispatch:
     inputs:
@@ -19,11 +14,16 @@ jobs:
         version: ${{ fromJson(github.event.inputs.versions) }}
     uses: huggingface/doc-builder/.github/workflows/build_main_documentation.yml@main
     with:
-      commit_sha: refs/tags/${{ matrix.version }}
+      commit_sha: ${{ matrix.version }}
       package: tokenizers
       path_to_docs: tokenizers/docs/source-doc-builder/
       package_path: tokenizers/bindings/python/
       version_tag_suffix: bindings/python/py_src/
       install_rust: true
-    secrets:
-      hf_token: ${{ secrets.HF_DOC_BUILD_PUSH }}
+      pre_command: |
+        cd tokenizers
+        git fetch --tags --force
+        git checkout "refs/tags/${{ matrix.version }}"
+        cd bindings/python
+        source ../../../.venv/bin/activate
+        pip install -e .[dev]
