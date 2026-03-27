@@ -266,16 +266,6 @@ impl AddedVocabulary {
         model: &impl Model,
         normalizer: Option<&N>,
     ) -> usize {
-        // Handle special tokens (if any)
-        for token in tokens {
-            if token.special
-                && !token.content.is_empty()
-                && !self.special_tokens_set.contains(&token.content)
-            {
-                self.special_tokens.push(token.to_owned());
-                self.special_tokens_set.insert(token.content.clone());
-            }
-        }
 
         let mut ignored = 0;
 
@@ -292,8 +282,8 @@ impl AddedVocabulary {
             },
         );
 
-        for token in tokens {
-            if token.content.is_empty() || existing.contains(token) {
+        for mut token in tokens.iter().cloned() {
+            if token.content.is_empty() || existing.contains(&token) {
                 ignored += 1;
                 continue;
             }
@@ -306,28 +296,33 @@ impl AddedVocabulary {
                 id
             };
 
-            // Update the current revert operation
-            let mut new_tok = token.clone();
             if token.normalized {
                 if let Some(n) = normalizer {
-                    let mut content = NormalizedString::from(new_tok.content.as_ref());
+                    let mut content = NormalizedString::from(token.content.as_ref());
                     n.normalize(&mut content).unwrap();
-                    new_tok.content = content.get().to_string();
+                    token.content = content.get().to_string();
                 }
             }
 
             *self
                 .added_tokens_map
-                .entry(new_tok.content.clone())
+                .entry(token.content.clone())
                 .or_default() = new_id;
 
             *self.added_tokens_map_r.entry(new_id).or_default() = token.clone();
             // Make sure to remove previous entry (if the token gets a new id)
-
+            if token.special
+                && !token.content.is_empty()
+                && !self.special_tokens_set.contains(&token.content)
+            {
+                self.special_tokens.push(token.to_owned());
+                self.special_tokens_set.insert(token.content.clone());
+            } else {
             // Finally add the token to the classic set if special
-            if !self.special_tokens_set.contains(&token.content) {
+
                 self.added_tokens.push(token.clone());
             }
+
             existing.insert(token.clone());
         }
 
