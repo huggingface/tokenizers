@@ -338,10 +338,10 @@ impl AddedVocabulary {
             .iter_mut()
             .map(|(idx, token)| {
                 if token.normalized {
-                    let mut content = NormalizedString::from(token.content.as_ref());
                     if let Some(n) = normalizer {
+                        let mut content = NormalizedString::from(token.content.as_ref());
                         n.normalize(&mut content).unwrap();
-                        token.content = content.get().to_string();
+                        token.content = content.get().to_string(); // this ensures the decoder is aligned with the string its gonna receive.
                     }
                 }
                 (token, *idx)
