@@ -2,7 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
 };
 use ahash::{AHashMap, AHashSet};
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
+use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::sync::LazyLock;
@@ -98,7 +98,7 @@ impl std::hash::Hash for AddedToken {
     }
 }
 
-type MatchingSet = (AhoCorasick, Vec<u32>);
+type MatchingSet = Option<DoubleArrayAhoCorasick<u32>>;
 
 static STARTS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\w").unwrap());
 static ENDS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\w$").unwrap());
@@ -142,7 +142,7 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
 /// were to add new tokens after this training process, we couldn't make sure the merges pairs
 /// exist as required.
 ///
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AddedVocabulary {
     /// Contains the mapping from String (token content) to ID. This map contains both special
     /// tokens and classic added tokens that were added to the this vocabulary.
@@ -169,24 +169,29 @@ pub struct AddedVocabulary {
     encode_special_tokens: bool,
 }
 
+impl std::fmt::Debug for AddedVocabulary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AddedVocabulary")
+            .field("added_tokens_map", &self.added_tokens_map)
+            .field("added_tokens_map_r", &self.added_tokens_map_r)
+            .field("added_tokens", &self.added_tokens)
+            .field("special_tokens", &self.special_tokens)
+            .field("special_tokens_set", &self.special_tokens_set)
+            .field("encode_special_tokens", &self.encode_special_tokens)
+            .finish_non_exhaustive()
+    }
+}
+
 impl AddedVocabulary {
     pub fn new() -> Self {
-        let trie = AhoCorasickBuilder::new()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build::<_, &&[u8]>([])
-            .expect("The trie should build correctly");
-        let normalized_trie = AhoCorasickBuilder::new()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build::<_, &&[u8]>([])
-            .expect("The normalized trie should build correctly");
         Self {
             added_tokens_map: AHashMap::new(),
             added_tokens_map_r: AHashMap::new(),
             added_tokens: vec![],
             special_tokens: vec![],
             special_tokens_set: AHashSet::new(),
-            split_trie: (trie, vec![]),
-            split_normalized_trie: (normalized_trie, vec![]),
+            split_trie: None,
+            split_normalized_trie: None,
             encode_special_tokens: false,
         }
     }
@@ -306,11 +311,22 @@ impl AddedVocabulary {
                 id
             };
 
+            // Update the current revert operation
+            let mut new_tok = token.clone();
+            if token.normalized {
+                if let Some(n) = normalizer {
+                    let mut content = NormalizedString::from(new_tok.content.as_ref());
+                    n.normalize(&mut content).unwrap();
+                    new_tok.content = content.get().to_string();
+                    println!("new content {}", &new_tok.content);
+                }
+            }
+
             *self
                 .added_tokens_map
-                .entry(token.content.clone())
+                .entry(new_tok.content.clone())
                 .or_default() = new_id;
-            // Update the current revert operation
+
             *self.added_tokens_map_r.entry(new_id).or_default() = token.clone();
             // Make sure to remove previous entry (if the token gets a new id)
 
@@ -338,11 +354,12 @@ impl AddedVocabulary {
     ) {
         use rayon::prelude::*;
         type TupleTokenId<'a> = (&'a mut AddedToken, u32);
-        // Normalize token content in-place — each token is independent, run in parallel.
-        self.special_tokens
+
+        // Normalize token content in place — parallel since each token is independent.
+        // Updates added_tokens_map_r so the decoder sees the normalized form.
+        self.added_tokens_map_r
             .par_iter_mut()
-            .chain(self.added_tokens.par_iter_mut())
-            .for_each(|token| {
+            .for_each(|(_, token)| {
                 if token.normalized {
                     if let Some(n) = normalizer {
                         let mut content = NormalizedString::from(token.content.as_ref());
@@ -352,47 +369,37 @@ impl AddedVocabulary {
                 }
             });
 
-        // Now look up ids (immutable borrow of self) and pair with tokens (mutable borrow).
-        // We collect ids separately to avoid simultaneous mut + immut borrows.
-        let ids: Vec<u32> = self
-            .special_tokens
-            .iter()
-            .chain(self.added_tokens.iter())
-            .map(|token| {
-                self.token_to_id(&token.content, model)
-                    .expect("Missing additional token")
-            })
-            .collect();
-
+        // IDs come directly from the map keys — no token_to_id lookup needed.
         let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
-            .special_tokens
+            .added_tokens_map_r
             .iter_mut()
-            .chain(self.added_tokens.iter_mut())
-            .zip(ids)
-            .map(|(token, id)| (token, id))
+            .map(|(idx, token)| (token, *idx))
             .partition(|(token, _)| token.normalized);
 
         let (tokens, ids): (Vec<&mut AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
         let (ntokens, nids): (Vec<&mut AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
 
         // Build both tries in parallel — each is independent.
+        // Token IDs are stored directly as values in the automaton, eliminating the Vec<u32> indirection.
+        // daachorse requires at least 1 pattern, so we skip building for empty sets.
+        let build = |toks: &[&mut AddedToken], token_ids: &[u32]| -> MatchingSet {
+            if toks.is_empty() {
+                return None;
+            }
+            Some(
+                DoubleArrayAhoCorasickBuilder::new()
+                    .match_kind(MatchKind::LeftmostLongest)
+                    .build_with_values(toks.iter().map(|t| &t.content).zip(token_ids.iter().copied()))
+                    .expect("Failed to build trie when refreshing tokens"),
+            )
+        };
         let (trie, normalized_trie) = rayon::join(
-            || {
-                AhoCorasickBuilder::new()
-                    .match_kind(MatchKind::LeftmostLongest)
-                    .build(tokens.iter().map(|token| &token.content))
-                    .expect("Failed to build trie when refreshing tokens")
-            },
-            || {
-                AhoCorasickBuilder::new()
-                    .match_kind(MatchKind::LeftmostLongest)
-                    .build(ntokens.iter().map(|token| &token.content))
-                    .expect("Failed to build trie when refreshing tokens (normalized)")
-            },
+            || build(&tokens, &ids),
+            || build(&ntokens, &nids),
         );
 
-        self.split_normalized_trie = (normalized_trie, nids);
-        self.split_trie = (trie, ids);
+        self.split_normalized_trie = normalized_trie;
+        self.split_trie = trie;
     }
 
     /// Find any AddedToken in the given sentence, using the provided MatchingSet.
@@ -407,11 +414,16 @@ impl AddedVocabulary {
         let mut start_offset = 0;
         let mut splits = vec![];
 
-        for mat in split_re.0.find_iter(sentence) {
+        let trie = match split_re {
+            Some(t) => t,
+            None => {
+                return vec![(None, (0, sentence.len()))];
+            }
+        };
+        for mat in trie.leftmost_find_iter(sentence) {
             let mut start = mat.start();
             let mut stop = mat.end();
-            let aho_id = mat.pattern();
-            let id = split_re.1[aho_id];
+            let id = mat.value();
             let added_token = &self.added_tokens_map_r.get(&id).unwrap();
 
             if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content)

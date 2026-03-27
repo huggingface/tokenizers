@@ -4,12 +4,13 @@ import concurrent.futures
 import pytest
 import numpy as np
 import asyncio
-from tokenizers import AddedToken, Encoding, Tokenizer
+from tokenizers import AddedToken, Encoding, Tokenizer, decoders
 from tokenizers.implementations import BertWordPieceTokenizer
 from tokenizers.models import BPE, Model, Unigram
 from tokenizers.pre_tokenizers import ByteLevel, Metaspace
 from tokenizers.processors import RobertaProcessing, TemplateProcessing
 from tokenizers.normalizers import Strip, Lowercase, Sequence
+from tokenizers.normalizers import ByteLevel as NormalizerByteLevel
 from tokenizers.decoders import ByteFallback, DecodeStream, Metaspace as DecoderMetaspace
 import time
 
@@ -109,6 +110,18 @@ class TestTokenizer:
         assert added == 2
         assert tokens[0].normalized == True
         assert tokens[1].normalized == False
+    
+    def test_add_tokens_with_normalizer(self):
+        tokenizer = Tokenizer(BPE())
+        tokenizer.normalizer = NormalizerByteLevel()
+        tokenizer.decoder = decoders.ByteLevel()
+
+        new_tokens = [AddedToken("Začnimo", normalized=False, special=True), AddedToken("kuća"), AddedToken("međa")]
+        tokenizer.add_tokens(new_tokens)
+        print(tokenizer.get_added_tokens_decoder())
+        enc = tokenizer.encode(new_tokens[0].content  + new_tokens[1].content + " " + new_tokens[2].content)
+        print(enc)
+        assert tokenizer.decode(enc.ids, False) == 'Za\rnimokućameđa'
 
     def test_add_special_tokens(self):
         tokenizer = Tokenizer(BPE())
