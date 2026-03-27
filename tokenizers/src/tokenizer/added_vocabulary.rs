@@ -331,35 +331,65 @@ impl AddedVocabulary {
     /// # TODO @ArthurZucker we should probably make this async? rebuilding the regex takes a long time.
     /// We keep two different RegexSet, one that will take care of matching against the
     /// non-normalized string, and one matching against the normalized one.
-    fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer: Option<&N>) {
+    fn refresh_added_tokens<N: Normalizer>(
+        &mut self,
+        model: &impl Model,
+        normalizer: Option<&N>,
+    ) {
+        use rayon::prelude::*;
         type TupleTokenId<'a> = (&'a mut AddedToken, u32);
-        let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
-            .added_tokens_map_r
-            .iter_mut()
-            .map(|(idx, token)| {
+        // Normalize token content in-place — each token is independent, run in parallel.
+        self.special_tokens
+            .par_iter_mut()
+            .chain(self.added_tokens.par_iter_mut())
+            .for_each(|token| {
                 if token.normalized {
                     if let Some(n) = normalizer {
                         let mut content = NormalizedString::from(token.content.as_ref());
                         n.normalize(&mut content).unwrap();
-                        token.content = content.get().to_string(); // this ensures the decoder is aligned with the string its gonna receive.
+                        token.content = content.get().to_string();
                     }
                 }
-                (token, *idx)
+            });
+
+        // Now look up ids (immutable borrow of self) and pair with tokens (mutable borrow).
+        // We collect ids separately to avoid simultaneous mut + immut borrows.
+        let ids: Vec<u32> = self
+            .special_tokens
+            .iter()
+            .chain(self.added_tokens.iter())
+            .map(|token| {
+                self.token_to_id(&token.content, model)
+                    .expect("Missing additional token")
             })
+            .collect();
+
+        let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
+            .special_tokens
+            .iter_mut()
+            .chain(self.added_tokens.iter_mut())
+            .zip(ids)
+            .map(|(token, id)| (token, id))
             .partition(|(token, _)| token.normalized);
 
         let (tokens, ids): (Vec<&mut AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
-        let trie = AhoCorasickBuilder::new()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build(tokens.iter().map(|token| &token.content))
-            .expect("Failed to build tried when refreshing tokens");
-
         let (ntokens, nids): (Vec<&mut AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
 
-        let normalized_trie = AhoCorasickBuilder::new()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build(ntokens.iter().map(|token| &token.content))
-            .expect("Failed to build tried when refreshing tokens (normalized)");
+        // Build both tries in parallel — each is independent.
+        let (trie, normalized_trie) = rayon::join(
+            || {
+                AhoCorasickBuilder::new()
+                    .match_kind(MatchKind::LeftmostLongest)
+                    .build(tokens.iter().map(|token| &token.content))
+                    .expect("Failed to build trie when refreshing tokens")
+            },
+            || {
+                AhoCorasickBuilder::new()
+                    .match_kind(MatchKind::LeftmostLongest)
+                    .build(ntokens.iter().map(|token| &token.content))
+                    .expect("Failed to build trie when refreshing tokens (normalized)")
+            },
+        );
 
         self.split_normalized_trie = (normalized_trie, nids);
         self.split_trie = (trie, ids);
