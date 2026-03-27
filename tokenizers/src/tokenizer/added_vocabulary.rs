@@ -334,7 +334,8 @@ impl AddedVocabulary {
     fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer: Option<&N>) {
         type TupleTokenId<'a> = (&'a mut AddedToken, u32);
         let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
-            .added_tokens_map_r.iter_mut()
+            .added_tokens_map_r
+            .iter_mut()
             .map(|(idx, token)| {
                 if token.normalized {
                     let mut content = NormalizedString::from(token.content.as_ref());
@@ -343,25 +344,22 @@ impl AddedVocabulary {
                         token.content = content.get().to_string();
                     }
                 }
-                (
-                    token, *idx
-                )
+                (token, *idx)
             })
             .partition(|(token, _)| token.normalized);
 
-        let (tokens, ids): (Vec<& mut AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
+        let (tokens, ids): (Vec<&mut AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
         let trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
             .build(tokens.iter().map(|token| &token.content))
             .expect("Failed to build tried when refreshing tokens");
 
-        let (ntokens, nids): (Vec<& mut AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
+        let (ntokens, nids): (Vec<&mut AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
 
         let normalized_trie = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
             .build(ntokens.iter().map(|token| &token.content))
             .expect("Failed to build tried when refreshing tokens (normalized)");
-        
 
         self.split_normalized_trie = (normalized_trie, nids);
         self.split_trie = (trie, ids);
