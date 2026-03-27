@@ -73,11 +73,6 @@ impl AddedToken {
         self.special = special;
         self
     }
-
-    pub fn content(mut self, content: String) -> Self {
-        self.content = content;
-        self
-    }
 }
 impl Default for AddedToken {
     fn default() -> Self {
@@ -318,7 +313,6 @@ impl AddedVocabulary {
                     let mut content = NormalizedString::from(new_tok.content.as_ref());
                     n.normalize(&mut content).unwrap();
                     new_tok.content = content.get().to_string();
-
                 }
             }
 
@@ -347,12 +341,7 @@ impl AddedVocabulary {
     /// # TODO @ArthurZucker we should probably make this async? rebuilding the regex takes a long time.
     /// We keep two different RegexSet, one that will take care of matching against the
     /// non-normalized string, and one matching against the normalized one.
-    fn refresh_added_tokens<N: Normalizer>(
-        &mut self,
-        model: &impl Model,
-        normalizer: Option<&N>,
-    ) {
-        use rayon::prelude::*;
+    fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer: Option<&N>) {
         type TupleTokenId<'a> = (&'a mut AddedToken, u32);
 
         // IDs come directly from the map keys — no token_to_id lookup needed.
@@ -375,14 +364,16 @@ impl AddedVocabulary {
             Some(
                 DoubleArrayAhoCorasickBuilder::new()
                     .match_kind(MatchKind::LeftmostLongest)
-                    .build_with_values(toks.iter().map(|t| &t.content).zip(token_ids.iter().copied()))
+                    .build_with_values(
+                        toks.iter()
+                            .map(|t| &t.content)
+                            .zip(token_ids.iter().copied()),
+                    )
                     .expect("Failed to build trie when refreshing tokens"),
             )
         };
-        let (trie, normalized_trie) = rayon::join(
-            || build(&tokens, &ids),
-            || build(&ntokens, &nids),
-        );
+        let (trie, normalized_trie) =
+            rayon::join(|| build(&tokens, &ids), || build(&ntokens, &nids));
 
         self.split_normalized_trie = normalized_trie;
         self.split_trie = trie;
