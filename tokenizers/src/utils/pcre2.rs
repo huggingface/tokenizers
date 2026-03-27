@@ -1,3 +1,29 @@
+//! PCRE2 regex engine backend for tokenizers.
+//!
+//! This module provides a PCRE2-based backend as an alternative to the default Oniguruma regex engine.
+//!
+//! # Features
+//!
+//! Enable the `pcre2` feature to use this backend instead of the default Oniguruma engine:
+//!
+//! ```toml
+//! [dependencies]
+//! tokenizers = { version = "...", features = ["pcre2"] }
+//! ```
+//!
+//! # Performance
+//!
+//! PCRE2 with JIT can offer ~16% faster encoding compared to the default
+//! Oniguruma backend for models using BPE pre-tokenization.
+//!
+//!
+//! # Build
+//!
+//! The underlying `pcre2-sys` crate will use a system-installed libpcre2 via pkg-config if
+//! available, otherwise it builds PCRE2 from bundled source automatically. No external
+//! dependencies are required.
+//!
+
 use pcre2::bytes::RegexBuilder;
 
 #[derive(Debug)]
