@@ -9,10 +9,10 @@ from huggingface_hub import hf_hub_download
 from typing import Tuple, List
 from multiprocessing import Process
 
-MODEL_ID = "meta-llama/Meta-Llama-3.1-8B"
+MODEL_ID = "meta-llama/Llama-3.2-1B"
 DATASET = "facebook/xnli"
 DATASET_CONFIG = "all_languages"
-DEFAULT_THREADS = [2**i for i in range(8) if 2**i <= os.cpu_count()]
+DEFAULT_THREADS = [2**i for i in range(8) if 2**i]
 
 
 def format_byte_size(num_bytes: int) -> Tuple[str, str]:

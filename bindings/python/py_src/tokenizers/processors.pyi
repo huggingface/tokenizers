@@ -1,21 +1,25 @@
-import tokenizers
-import typing
+from _typeshed import Incomplete
+from collections.abc import Sequence as Sequence2
+from tokenizers import Encoding
+from typing import Any, final
 
-class BertProcessing:
-    def __getnewargs__(self, /) -> typing.Any: ...
-    def __new__(cls, /, sep: typing.Any, cls_token: typing.Any) -> None:
+@final
+class BertProcessing(PostProcessor):
+    def __getnewargs__(self, /) -> tuple: ...
+    def __new__(cls, /, sep: tuple[str, int], cls_token: tuple[str, int]) -> BertProcessing:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
-    def cls(self, /) -> typing.Any: ...
+    def cls(self, /) -> tuple: ...
     @cls.setter
-    def cls(self, /, cls: typing.Any) -> typing.Any: ...
+    def cls(self, /, cls: tuple) -> None: ...
     @property
-    def sep(self, /) -> typing.Any: ...
+    def sep(self, /) -> tuple: ...
     @sep.setter
-    def sep(self, /, sep: typing.Any) -> typing.Any: ...
+    def sep(self, /, sep: tuple) -> None: ...
 
-class ByteLevel:
+@final
+class ByteLevel(PostProcessor):
     def __new__(
         cls,
         /,
@@ -23,7 +27,7 @@ class ByteLevel:
         trim_offsets: bool | None = None,
         use_regex: bool | None = None,
         **_kwargs,
-    ) -> None:
+    ) -> ByteLevel:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
@@ -40,11 +44,11 @@ class ByteLevel:
     def use_regex(self, /, use_regex: bool) -> None: ...
 
 class PostProcessor:
-    def __getstate__(self, /) -> typing.Any: ...
+    def __getstate__(self, /) -> Any: ...
     def __repr__(self, /) -> str:
         """Return repr(self)."""
         ...
-    def __setstate__(self, /, state: typing.Any) -> typing.Any: ...
+    def __setstate__(self, /, state: Any) -> None: ...
     def __str__(self, /) -> str:
         """Return str(self)."""
         ...
@@ -61,12 +65,8 @@ class PostProcessor:
         """
         ...
     def process(
-        self,
-        /,
-        encoding: tokenizers.Encoding,
-        pair: tokenizers.Encoding | None = None,
-        add_special_tokens: bool = True,
-    ) -> tokenizers.Encoding:
+        self, /, encoding: Encoding, pair: Encoding | None = None, add_special_tokens: bool = True
+    ) -> "Encoding":
         """
         Post-process the given encodings, generating the final one
 
@@ -85,11 +85,17 @@ class PostProcessor:
         """
         ...
 
-class RobertaProcessing:
-    def __getnewargs__(self, /) -> typing.Any: ...
+@final
+class RobertaProcessing(PostProcessor):
+    def __getnewargs__(self, /) -> tuple: ...
     def __new__(
-        cls, /, sep: typing.Any, cls_token: typing.Any, trim_offsets: bool = True, add_prefix_space: bool = True
-    ) -> None:
+        cls,
+        /,
+        sep: tuple[str, int],
+        cls_token: tuple[str, int],
+        trim_offsets: bool = True,
+        add_prefix_space: bool = True,
+    ) -> RobertaProcessing:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
@@ -97,41 +103,43 @@ class RobertaProcessing:
     @add_prefix_space.setter
     def add_prefix_space(self, /, add_prefix_space: bool) -> None: ...
     @property
-    def cls(self, /) -> typing.Any: ...
+    def cls(self, /) -> tuple: ...
     @cls.setter
-    def cls(self, /, cls: typing.Any) -> typing.Any: ...
+    def cls(self, /, cls: tuple) -> None: ...
     @property
-    def sep(self, /) -> typing.Any: ...
+    def sep(self, /) -> tuple: ...
     @sep.setter
-    def sep(self, /, sep: typing.Any) -> typing.Any: ...
+    def sep(self, /, sep: tuple) -> None: ...
     @property
     def trim_offsets(self, /) -> bool: ...
     @trim_offsets.setter
     def trim_offsets(self, /, trim_offsets: bool) -> None: ...
 
-class Sequence:
-    def __getitem__(self, /, index: int) -> typing.Any:
+@final
+class Sequence(PostProcessor):
+    def __getitem__(self, /, index: int) -> Any:
         """Return self[key]."""
         ...
-    def __getnewargs__(self, /) -> typing.Any: ...
-    def __new__(cls, /, processors_py: typing.Any) -> None:
+    def __getnewargs__(self, /) -> tuple: ...
+    def __new__(cls, /, processors_py: list) -> Sequence:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
-    def __setitem__(self, /, index: int, value: typing.Any) -> typing.Any:
+    def __setitem__(self, /, index: int, value: Any) -> None:
         """Set self[key] to value."""
         ...
 
-class TemplateProcessing:
+@final
+class TemplateProcessing(PostProcessor):
     def __new__(
         cls,
         /,
-        single: typing.Any | None = None,
-        pair: typing.Any | None = None,
-        special_tokens: typing.Any | None = None,
-    ) -> None:
+        single: Incomplete | None = None,
+        pair: Incomplete | None = None,
+        special_tokens: Sequence2[Incomplete] | None = None,
+    ) -> TemplateProcessing:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
     def single(self, /) -> str: ...
     @single.setter
-    def single(self, /, single: typing.Any) -> typing.Any: ...
+    def single(self, /, single: Incomplete) -> None: ...

@@ -1,8 +1,9 @@
-import tokenizers
-import tokenizers.normalizers
-import typing
+from collections.abc import Sequence as Sequence2
+from tokenizers import NormalizedString, Regex
+from typing import Any, final
 
-class BertNormalizer:
+@final
+class BertNormalizer(Normalizer):
     def __new__(
         cls,
         /,
@@ -10,7 +11,7 @@ class BertNormalizer:
         handle_chinese_chars: bool = True,
         strip_accents: bool | None = None,
         lowercase: bool = True,
-    ) -> None:
+    ) -> BertNormalizer:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
@@ -26,57 +27,64 @@ class BertNormalizer:
     @lowercase.setter
     def lowercase(self, /, lowercase: bool) -> None: ...
     @property
-    def strip_accents(self, /) -> typing.Any: ...
+    def strip_accents(self, /) -> bool | None: ...
     @strip_accents.setter
     def strip_accents(self, /, strip_accents: bool | None) -> None: ...
 
-class ByteLevel:
-    def __new__(cls, /) -> None:
+@final
+class ByteLevel(Normalizer):
+    def __new__(cls, /) -> ByteLevel:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
 
-class Lowercase:
-    def __new__(cls, /) -> None:
+@final
+class Lowercase(Normalizer):
+    def __new__(cls, /) -> Lowercase:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
 
-class NFC:
-    def __new__(cls, /) -> None:
+@final
+class NFC(Normalizer):
+    def __new__(cls, /) -> NFC:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
 
-class NFD:
-    def __new__(cls, /) -> None:
+@final
+class NFD(Normalizer):
+    def __new__(cls, /) -> NFD:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
 
-class NFKC:
-    def __new__(cls, /) -> None:
+@final
+class NFKC(Normalizer):
+    def __new__(cls, /) -> NFKC:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
 
-class NFKD:
-    def __new__(cls, /) -> None:
+@final
+class NFKD(Normalizer):
+    def __new__(cls, /) -> NFKD:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
 
-class Nmt:
-    def __new__(cls, /) -> None:
+@final
+class Nmt(Normalizer):
+    def __new__(cls, /) -> Nmt:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
 
 class Normalizer:
-    def __getstate__(self, /) -> typing.Any: ...
+    def __getstate__(self, /) -> Any: ...
     def __repr__(self, /) -> str:
         """Return repr(self)."""
         ...
-    def __setstate__(self, /, state: typing.Any) -> typing.Any: ...
+    def __setstate__(self, /, state: Any) -> None: ...
     def __str__(self, /) -> str:
         """Return str(self)."""
         ...
     @staticmethod
-    def custom(obj: typing.Any) -> tokenizers.normalizers.Normalizer: ...
-    def normalize(self, /, normalized: tokenizers.NormalizedString | tokenizers.NormalizedStringRefMut) -> typing.Any:
+    def custom(obj: Any) -> Normalizer: ...
+    def normalize(self, /, normalized: NormalizedString | Any) -> None:
         """
         Normalize a :class:`~tokenizers.NormalizedString` in-place
 
@@ -109,13 +117,15 @@ class Normalizer:
         """
         ...
 
-class Precompiled:
-    def __new__(cls, /, precompiled_charsmap: typing.Any) -> None:
+@final
+class Precompiled(Normalizer):
+    def __new__(cls, /, precompiled_charsmap: Sequence2[int]) -> Precompiled:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
 
-class Prepend:
-    def __new__(cls, /, prepend: str = ...) -> None:
+@final
+class Prepend(Normalizer):
+    def __new__(cls, /, prepend: str = ...) -> Prepend:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
@@ -123,8 +133,9 @@ class Prepend:
     @prepend.setter
     def prepend(self, /, prepend: str) -> None: ...
 
-class Replace:
-    def __new__(cls, /, pattern: str | tokenizers.Regex, content: str) -> None:
+@final
+class Replace(Normalizer):
+    def __new__(cls, /, pattern: str | Regex, content: str) -> Replace:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
@@ -132,27 +143,29 @@ class Replace:
     @content.setter
     def content(self, /, content: str) -> None: ...
     @property
-    def pattern(self, /) -> typing.Any: ...
+    def pattern(self, /) -> None: ...
     @pattern.setter
-    def pattern(self, /, _pattern: str | tokenizers.Regex) -> typing.Any: ...
+    def pattern(self, /, _pattern: str | Regex) -> None: ...
 
-class Sequence:
-    def __getitem__(self, /, index: int) -> typing.Any:
+@final
+class Sequence(Normalizer):
+    def __getitem__(self, /, index: int) -> Any:
         """Return self[key]."""
         ...
-    def __getnewargs__(self, /) -> typing.Any: ...
+    def __getnewargs__(self, /) -> tuple: ...
     def __len__(self, /) -> int:
         """Return len(self)."""
         ...
-    def __new__(cls, /, normalizers: typing.Any) -> None:
+    def __new__(cls, /, normalizers: list) -> Sequence:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
-    def __setitem__(self, /, index: int, value: typing.Any) -> typing.Any:
+    def __setitem__(self, /, index: int, value: Any) -> None:
         """Set self[key] to value."""
         ...
 
-class Strip:
-    def __new__(cls, /, left: bool = True, right: bool = True) -> None:
+@final
+class Strip(Normalizer):
+    def __new__(cls, /, left: bool = True, right: bool = True) -> Strip:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
     @property
@@ -164,7 +177,8 @@ class Strip:
     @right.setter
     def right(self, /, right: bool) -> None: ...
 
-class StripAccents:
-    def __new__(cls, /) -> None:
+@final
+class StripAccents(Normalizer):
+    def __new__(cls, /) -> StripAccents:
         """Create and return a new object.  See help(type) for accurate signature."""
         ...
