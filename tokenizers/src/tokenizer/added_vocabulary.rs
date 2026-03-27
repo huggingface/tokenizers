@@ -318,7 +318,7 @@ impl AddedVocabulary {
                     let mut content = NormalizedString::from(new_tok.content.as_ref());
                     n.normalize(&mut content).unwrap();
                     new_tok.content = content.get().to_string();
-                    println!("new content {}", &new_tok.content);
+
                 }
             }
 
@@ -354,20 +354,6 @@ impl AddedVocabulary {
     ) {
         use rayon::prelude::*;
         type TupleTokenId<'a> = (&'a mut AddedToken, u32);
-
-        // Normalize token content in place — parallel since each token is independent.
-        // Updates added_tokens_map_r so the decoder sees the normalized form.
-        self.added_tokens_map_r
-            .par_iter_mut()
-            .for_each(|(_, token)| {
-                if token.normalized {
-                    if let Some(n) = normalizer {
-                        let mut content = NormalizedString::from(token.content.as_ref());
-                        n.normalize(&mut content).unwrap();
-                        token.content = content.get().to_string();
-                    }
-                }
-            });
 
         // IDs come directly from the map keys — no token_to_id lookup needed.
         let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
