@@ -266,7 +266,6 @@ impl AddedVocabulary {
         model: &impl Model,
         normalizer: Option<&N>,
     ) -> usize {
-
         let mut ignored = 0;
 
         let mut existing: AHashSet<AddedToken> =
@@ -318,7 +317,7 @@ impl AddedVocabulary {
                 self.special_tokens.push(token.to_owned());
                 self.special_tokens_set.insert(token.content.clone());
             } else {
-            // Finally add the token to the classic set if special
+                // Finally add the token to the classic set if special
 
                 self.added_tokens.push(token.clone());
             }
@@ -336,7 +335,11 @@ impl AddedVocabulary {
     /// # TODO @ArthurZucker we should probably make this async? rebuilding the regex takes a long time.
     /// We keep two different RegexSet, one that will take care of matching against the
     /// non-normalized string, and one matching against the normalized one.
-    fn refresh_added_tokens<N: Normalizer>(&mut self, _model: &impl Model, _normalizer: Option<&N>) {
+    fn refresh_added_tokens<N: Normalizer>(
+        &mut self,
+        _model: &impl Model,
+        _normalizer: Option<&N>,
+    ) {
         type TupleTokenId<'a> = (&'a mut AddedToken, u32);
 
         // IDs come directly from the map keys — no token_to_id lookup needed.

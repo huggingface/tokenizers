@@ -110,7 +110,7 @@ class TestTokenizer:
         assert added == 2
         assert tokens[0].normalized == True
         assert tokens[1].normalized == False
-    
+
     def test_add_tokens_with_normalizer(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.normalizer = NormalizerByteLevel()
@@ -119,9 +119,9 @@ class TestTokenizer:
         new_tokens = [AddedToken("Začnimo", normalized=False, special=True), AddedToken("kuća"), AddedToken("međa")]
         tokenizer.add_tokens(new_tokens)
         print(tokenizer.get_added_tokens_decoder())
-        enc = tokenizer.encode(new_tokens[0].content  + new_tokens[1].content + " " + new_tokens[2].content)
+        enc = tokenizer.encode(new_tokens[0].content + new_tokens[1].content + " " + new_tokens[2].content)
         print(enc)
-        assert tokenizer.decode(enc.ids, False) == 'Za\rnimokućameđa'
+        assert tokenizer.decode(enc.ids, False) == "Za\rnimokućameđa"
 
     def test_add_special_tokens(self):
         tokenizer = Tokenizer(BPE())
