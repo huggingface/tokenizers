@@ -292,12 +292,12 @@ class TestCustomPreTokenizer:
             pass
 
     class GoodCustomPretok:
-        def split(self, n, normalized):
+        def split(self, n, normalized) -> list:
             #  Here we just test that we can return a List[NormalizedString], it
             # does not really make sense to return twice the same otherwise
             return [normalized, normalized]
 
-        def pre_tokenize(self, pretok):
+        def pre_tokenize(self, pretok) -> None:
             pretok.split(self.split)
 
     def test_instantiate(self):
@@ -325,7 +325,7 @@ class TestCustomPreTokenizer:
                 else:
                     return "rest"
 
-            def split(self, n, normalized):
+            def split(self, n, normalized) -> list:
                 i = 0
                 # states = {"any", "lower", "upper", "digit", "rest"}
                 state = "any"
