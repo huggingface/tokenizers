@@ -14,15 +14,6 @@ use crate::error::{deprecation_warning, PyError};
 /// returned by :meth:`~tokenizers.Tokenizer.encode` and
 /// :meth:`~tokenizers.Tokenizer.encode_batch`.
 ///
-/// Attributes:
-///     ids (:obj:`List[int]`): The token IDs.
-///     tokens (:obj:`List[str]`): The token strings.
-///     type_ids (:obj:`List[int]`): The token type IDs (0 for first sequence, 1 for second).
-///     offsets (:obj:`List[Tuple[int, int]]`): Character offsets of each token in the original string.
-///     attention_mask (:obj:`List[int]`): The attention mask (1 for real tokens, 0 for padding).
-///     special_tokens_mask (:obj:`List[int]`): Mask for special tokens (1 for special, 0 for regular).
-///     overflowing (:obj:`List[Encoding]`): Any overflowing encodings when truncation is enabled.
-///
 /// Example::
 ///
 ///     >>> from tokenizers import Tokenizer
