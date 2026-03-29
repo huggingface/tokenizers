@@ -331,7 +331,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyArrayUnicode {
             let seq = (0..n_elem)
                 .map(|i| {
                     let bytes = &all_bytes[i * elsize..(i + 1) * elsize];
-                    Ok(std::str::from_utf8(bytes)?.to_owned())
+                    Ok(std::str::from_utf8(bytes)
+                        .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?
+                        .to_owned())
                     // let unicode = pyo3::ffi::PyUnicode_FromKindAndData(
                     //     pyo3::ffi::PyUnicode_4BYTE_KIND as _,
                     //     bytes.as_ptr() as *const _,

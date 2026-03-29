@@ -10,5 +10,5 @@ path = "src/main.rs"
 
 [dependencies]
 env_logger = "0.11"
-pyo3 = { version = "0.28.2", default-features = false, features = ["auto-initialize"] }
-pyo3-introspection = "0.28.2"
+pyo3 = { git = "https://github.com/PyO3/pyo3.git", rev = "2ba9cda59a8b2fb07ad9b2b7f20d82e96d7ab0d2", default-features = false, features = ["auto-initialize", "experimental-inspect"] }
+pyo3-introspection = {path="/Users/arthurzucker/Work/pyo3/pyo3-introspection"}
