@@ -478,9 +478,31 @@ type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProc
 /// A :obj:`Tokenizer` works as a pipeline. It processes some raw text as input
 /// and outputs an :class:`~tokenizers.Encoding`.
 ///
+/// The pipeline is structured as follows:
+///
+///     1. The :class:`~tokenizers.normalizers.Normalizer` normalizes the raw input text.
+///     2. The :class:`~tokenizers.pre_tokenizers.PreTokenizer` splits the normalized text
+///        into word-level tokens.
+///     3. The :class:`~tokenizers.models.Model` tokenizes each word into subword tokens
+///        and maps them to IDs.
+///     4. The :class:`~tokenizers.processors.PostProcessor` applies any final
+///        transformations (e.g., adding special tokens like ``[CLS]`` and ``[SEP]``).
+///
 /// Args:
 ///     model (:class:`~tokenizers.models.Model`):
 ///         The core algorithm that this :obj:`Tokenizer` should be using.
+///
+/// Example::
+///
+///     >>> from tokenizers import Tokenizer
+///     >>> from tokenizers.models import BPE
+///     >>> from tokenizers.normalizers import Lowercase
+///     >>> from tokenizers.pre_tokenizers import Whitespace
+///     >>> tokenizer = Tokenizer(BPE(unk_token="<unk>"))
+///     >>> tokenizer.normalizer = Lowercase()
+///     >>> tokenizer.pre_tokenizer = Whitespace()
+///     >>> # Load a pre-built tokenizer from HuggingFace Hub
+///     >>> tokenizer = Tokenizer.from_pretrained("bert-base-uncased")
 ///
 #[pyclass(
     dict,
