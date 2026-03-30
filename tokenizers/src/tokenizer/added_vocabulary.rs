@@ -260,16 +260,17 @@ impl AddedVocabulary {
         let mut ignored = 0;
         let mut total = 0;
 
-        let mut next_id = self.added_tokens_map_r.keys().max().map_or(
-            model.get_vocab_size() as u32,
-            |max| {
-                if *max >= model.get_vocab_size() as u32 || model.get_vocab_size() == 0 {
-                    max + 1
-                } else {
-                    model.get_vocab_size() as u32
-                }
-            },
-        );
+        let mut next_id =
+            self.added_tokens_map_r
+                .keys()
+                .max()
+                .map_or(model.get_vocab_size() as u32, |max| {
+                    if *max >= model.get_vocab_size() as u32 || model.get_vocab_size() == 0 {
+                        max + 1
+                    } else {
+                        model.get_vocab_size() as u32
+                    }
+                });
 
         for mut token in tokens {
             total += 1;
@@ -299,7 +300,6 @@ impl AddedVocabulary {
                 .entry(token.content.clone())
                 .or_default() = new_id;
 
-            
             // Insert into the reverse map first (consuming token), then record the ID
             let is_new_special = token.special
                 && !token.content.is_empty()
