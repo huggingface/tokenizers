@@ -323,11 +323,11 @@ impl AddedVocabulary {
             .map(|(idx, token)| (token, *idx))
             .partition(|(token, _)| token.normalized);
 
-        let (tokens, ids): (Vec<& AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
-        let (ntokens, nids): (Vec<& AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
+        let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
+        let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
 
         // Build both tries in parallel — each is independent.
-        let build = |toks: &[& AddedToken], token_ids: Vec<u32>| -> MatchingSet {
+        let build = |toks: &[&AddedToken], token_ids: Vec<u32>| -> MatchingSet {
             if toks.is_empty() {
                 return None;
             }
