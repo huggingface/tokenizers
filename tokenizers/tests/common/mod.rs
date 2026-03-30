@@ -3,7 +3,7 @@ use tokenizers::models::bpe::BPE;
 use tokenizers::models::wordpiece::WordPiece;
 use tokenizers::normalizers::bert::BertNormalizer;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
-use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::pre_tokenizers::byte_level::{ByteLevel, ByteLevelDecoder, ByteLevelPostProcessor};
 use tokenizers::processors::bert::BertProcessing;
 use tokenizers::tokenizer::{Model, Tokenizer};
 
@@ -26,8 +26,11 @@ pub fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
         .with_pre_tokenizer(Some(
             ByteLevel::default().add_prefix_space(add_prefix_space),
         ))
-        .with_decoder(Some(ByteLevel::default()))
-        .with_post_processor(Some(ByteLevel::default().trim_offsets(trim_offsets)));
+        .with_decoder(Some(ByteLevelDecoder::default()))
+        .with_post_processor(Some(ByteLevelPostProcessor::new(
+            add_prefix_space,
+            trim_offsets,
+        )));
 
     tokenizer
 }

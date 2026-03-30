@@ -1,7 +1,7 @@
 mod common;
 
 use common::*;
-use tokenizers::decoders::byte_level::ByteLevel;
+use tokenizers::decoders::byte_level::{ByteLevel, ByteLevelDecoder};
 use tokenizers::decoders::DecoderWrapper;
 use tokenizers::models::bpe::BPE;
 use tokenizers::models::wordlevel::WordLevel;
@@ -169,20 +169,28 @@ fn pretoks() {
 
 #[test]
 fn decoders() {
-    let byte_level = ByteLevel::default();
-    let byte_level_ser = serde_json::to_string(&byte_level).unwrap();
-    assert_eq!(
-        byte_level_ser,
-        r#"{"type":"ByteLevel","add_prefix_space":true,"trim_offsets":true,"use_regex":true}"#
-    );
-    serde_json::from_str::<ByteLevel>(&byte_level_ser).unwrap();
-    let byte_level_wrapper: DecoderWrapper = serde_json::from_str(&byte_level_ser).unwrap();
+    // ByteLevelDecoder serializes with no extra fields
+    let decoder = ByteLevelDecoder::default();
+    let decoder_ser = serde_json::to_string(&decoder).unwrap();
+    assert_eq!(decoder_ser, r#"{"type":"ByteLevel"}"#);
+
+    // Old format (with all fields) still deserializes into DecoderWrapper::ByteLevel
+    let old_format =
+        r#"{"type":"ByteLevel","add_prefix_space":true,"trim_offsets":true,"use_regex":true}"#;
+    let byte_level_wrapper: DecoderWrapper = serde_json::from_str(old_format).unwrap();
     match &byte_level_wrapper {
         DecoderWrapper::ByteLevel(_) => (),
         _ => panic!("ByteLevel wrapped with incorrect variant"),
     }
-    let ser_wrapped = serde_json::to_string(&byte_level_wrapper).unwrap();
-    assert_eq!(ser_wrapped, byte_level_ser);
+
+    // ByteLevel (pre-tokenizer) serializes add_prefix_space and use_regex only
+    let pre_tok = ByteLevel::default();
+    let pre_tok_ser = serde_json::to_string(&pre_tok).unwrap();
+    assert_eq!(
+        pre_tok_ser,
+        r#"{"type":"ByteLevel","add_prefix_space":true,"use_regex":true}"#
+    );
+    serde_json::from_str::<ByteLevel>(&pre_tok_ser).unwrap();
 }
 
 #[test]
