@@ -96,7 +96,15 @@ tracing-subscriber = "0.3.18"
 [profile.release]
 lto = "fat"
 
+[profile.profiling]
+inherits = "release"
+debug = true
+
 [[example]]
 name = "encode_batch"
+required-features = ["http"]
+
+[[example]]
+name = "profile_added_vocab_deserialize"
 required-features = ["http"]
 
