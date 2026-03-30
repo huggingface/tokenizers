@@ -18,10 +18,14 @@ else
   CARGO_ENV :=
 endif
 
+PYO3_PATCH := \n[patch.crates-io]\npyo3 = { git = "https://github.com/PyO3/pyo3.git", rev = "2ba9cda59a8b2fb07ad9b2b7f20d82e96d7ab0d2" }\npyo3-ffi = { git = "https://github.com/PyO3/pyo3.git", rev = "2ba9cda59a8b2fb07ad9b2b7f20d82e96d7ab0d2" }\n
+
 # Format source code automatically
 style:
-	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml
-	python stub.py
+	cp .cargo/config.toml .cargo/config.toml.bak
+	printf '$(PYO3_PATCH)' >> .cargo/config.toml
+	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml; \
+	  status=$$?; cp .cargo/config.toml.bak .cargo/config.toml; rm -f .cargo/config.toml.bak; exit $$status
 	ruff check  $(check_dirs) --fix
 	ruff format $(check_dirs)
 	ty check py_src --exclude py_src/tokenizers/implementations --exclude py_src/tokenizers/tools/visualizer.py
@@ -30,8 +34,10 @@ style:
 
 # Check the source code is formatted correctly
 check-style:
-	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml
-	python stub.py --check
+	cp .cargo/config.toml .cargo/config.toml.bak
+	printf '$(PYO3_PATCH)' >> .cargo/config.toml
+	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml; \
+	  status=$$?; cp .cargo/config.toml.bak .cargo/config.toml; rm -f .cargo/config.toml.bak; exit $$status
 	ruff check $(check_dirs)
 	ruff format py_src/tokenizers/*.pyi
 	ruff format --check $(check_dirs)
