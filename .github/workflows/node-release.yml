@@ -61,6 +61,9 @@ jobs:
             target: aarch64-linux-android
             build: yarn build --target aarch64-linux-android
           - host: ubuntu-latest
+            target: armv7-linux-androideabi
+            build: yarn build --target armv7-linux-androideabi
+          - host: ubuntu-latest
             target: x86_64-unknown-freebsd
             build: yarn build --target x86_64-unknown-freebsd --zig
     name: build - ${{ matrix.settings.target }}
@@ -85,7 +88,7 @@ jobs:
       - name: Install dependencies
         if: ${{ !matrix.settings.docker }}
         working-directory: ./bindings/node
-        run: yarn install --frozen-lockfile
+        run: yarn install --immutable
 
       - name: Setup zig
         if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--zig') }}
@@ -107,7 +110,7 @@ jobs:
             -w /build/bindings/node
           run: |
             corepack enable
-            yarn install --frozen-lockfile
+            yarn install --immutable
             ${{ matrix.settings.build }}
 
       - name: Upload artifact
@@ -131,7 +134,7 @@ jobs:
           cache-dependency-path: ./bindings/node/yarn.lock
       - name: Install dependencies
         working-directory: ./bindings/node
-        run: yarn install --frozen-lockfile
+        run: yarn install --immutable
       - name: Download macOS x86_64 artifact
         uses: actions/download-artifact@v4
         with:
@@ -144,7 +147,7 @@ jobs:
           path: ./bindings/node/artifacts
       - name: Combine into universal binary
         working-directory: ./bindings/node
-        run: yarn universal
+        run: npx napi universal --name ${{ env.APP_NAME }}
       - name: Upload universal artifact
         uses: actions/upload-artifact@v4
         with:
@@ -168,7 +171,7 @@ jobs:
           cache-dependency-path: ./bindings/node/yarn.lock
       - name: Install dependencies
         working-directory: ./bindings/node
-        run: yarn install --frozen-lockfile
+        run: yarn install --immutable
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
