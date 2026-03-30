@@ -27,7 +27,7 @@ jobs:
       version_tag_suffix: bindings/python/py_src/
       install_rust: true
       pre_command: |
-        VERSION="${{ matrix.version }}" yq -i '.versions += [strenv(VERSION)]' build_dir/tokenizers/_versions.yml
+        VERSION="${{ matrix.version }}" yq -i '. += [{"version": strenv(VERSION)}]' build_dir/tokenizers/_versions.yml
         cd tokenizers
         git fetch --tags --force
         git checkout "refs/tags/${{ matrix.version }}"
@@ -35,6 +35,6 @@ jobs:
         source ../../../.venv/bin/activate
         curl --silent --show-error --retry 5 https://bootstrap.pypa.io/get-pip.py | python
         python -m pip install maturin
-        python -m pip install -e .[dev]
+        RUSTFLAGS="--cap-lints=warn" python -m pip install -e .[dev]
     secrets:
       hf_token: ${{ secrets.HF_DOC_BUILD_PUSH }}
