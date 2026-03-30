@@ -314,20 +314,20 @@ impl AddedVocabulary {
         _model: &impl Model,
         _normalizer: Option<&N>,
     ) {
-        type TupleTokenId<'a> = (&'a mut AddedToken, u32);
+        type TupleTokenId<'a> = (&'a AddedToken, u32);
 
         // IDs come directly from the map keys — no token_to_id lookup needed.
         let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
             .added_tokens_map_r
-            .iter_mut()
+            .iter()
             .map(|(idx, token)| (token, *idx))
             .partition(|(token, _)| token.normalized);
 
-        let (tokens, ids): (Vec<&mut AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
-        let (ntokens, nids): (Vec<&mut AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
+        let (tokens, ids): (Vec<& AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
+        let (ntokens, nids): (Vec<& AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
 
         // Build both tries in parallel — each is independent.
-        let build = |toks: &[&mut AddedToken], token_ids: Vec<u32>| -> MatchingSet {
+        let build = |toks: &[& AddedToken], token_ids: Vec<u32>| -> MatchingSet {
             if toks.is_empty() {
                 return None;
             }
