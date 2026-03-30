@@ -2,14 +2,14 @@
 extern crate criterion;
 use criterion::Criterion;
 use std::hint::black_box;
-use std::str::FromStr;
+use std::path::PathBuf;
 use tokenizers::{normalizers::*, AddedToken, Normalizer, Tokenizer};
 
-fn serialized_tokenizer<N: Normalizer + Into<NormalizerWrapper>>(
+fn saved_tokenizer_path<N: Normalizer + Into<NormalizerWrapper>>(
     size: i64,
     normalizer: Option<N>,
     special_tokens: bool,
-) -> String {
+) -> PathBuf {
     let mut tokenizer = Tokenizer::from_pretrained("t5-small", None).unwrap();
 
     if let Some(norm) = normalizer {
@@ -21,7 +21,15 @@ fn serialized_tokenizer<N: Normalizer + Into<NormalizerWrapper>>(
         .collect();
     tokenizer.add_tokens(&tokens);
 
-    serde_json::to_string(&tokenizer).unwrap()
+    let path = std::env::temp_dir().join(format!(
+        "bench_tok_{size}_{special_tokens}_{}.json",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos()
+    ));
+    tokenizer.save(&path, false).unwrap();
+    path
 }
 
 #[allow(clippy::type_complexity)]
@@ -48,39 +56,41 @@ fn bench_deserialize(c: &mut Criterion) {
                 size, norm_name
             );
 
-            let json = match maybe_factory {
-                Some(factory) => serialized_tokenizer(size, Some(factory()), true),
-                None => serialized_tokenizer::<NormalizerWrapper>(size, None, true),
+            let path = match maybe_factory {
+                Some(factory) => saved_tokenizer_path(size, Some(factory()), true),
+                None => saved_tokenizer_path::<NormalizerWrapper>(size, None, true),
             };
             c.bench_function(&label, |b| {
                 b.iter(|| {
-                    let tok: Tokenizer = black_box(Tokenizer::from_str(&json).unwrap());
+                    let tok: Tokenizer = black_box(Tokenizer::from_file(&path).unwrap());
                     black_box(tok);
                 })
             });
+            std::fs::remove_file(&path).unwrap();
 
             let label = format!(
                 "non special deserialize_added_vocab_{}_norm_{}",
                 size, norm_name
             );
 
-            let json = match maybe_factory {
-                Some(factory) => serialized_tokenizer(size, Some(factory()), false),
-                None => serialized_tokenizer::<NormalizerWrapper>(size, None, false),
+            let path = match maybe_factory {
+                Some(factory) => saved_tokenizer_path(size, Some(factory()), false),
+                None => saved_tokenizer_path::<NormalizerWrapper>(size, None, false),
             };
             c.bench_function(&label, |b| {
                 b.iter(|| {
-                    let tok: Tokenizer = black_box(Tokenizer::from_str(&json).unwrap());
+                    let tok: Tokenizer = black_box(Tokenizer::from_file(&path).unwrap());
                     black_box(tok);
                 })
             });
+            std::fs::remove_file(&path).unwrap();
         }
     }
 }
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().significance_level(0.1).sample_size(10);
+    config = Criterion::default().significance_level(0.1).sample_size(3);
     targets = bench_deserialize
 }
 criterion_main!(benches);
